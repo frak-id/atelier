@@ -3,16 +3,18 @@
 	email ssl@frak.id
 }
 
-api.sandbox.nivelais.com {
+(cloudflare_tls) {
+	tls /etc/ssl/cloudflare/nivelais.com.pem /etc/ssl/cloudflare/nivelais.com.key
+}
+
+sandbox-api.nivelais.com {
+	import cloudflare_tls
 	reverse_proxy localhost:4000
 }
 
-dashboard.sandbox.nivelais.com {
+sandbox-dash.nivelais.com {
+	import cloudflare_tls
 	root * /opt/frak-sandbox/apps/dashboard/dist
 	file_server
 	try_files {path} /index.html
-}
-
-sandbox.nivelais.com {
-	respond "Sandbox root - API at api.sandbox.nivelais.com, Dashboard at dashboard.sandbox.nivelais.com" 200
 }

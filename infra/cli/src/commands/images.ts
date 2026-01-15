@@ -98,16 +98,32 @@ async function buildImage(args: string[]) {
 
   const spinner = p.spinner();
 
-  // Check if image directory exists
   const imageDir = `${IMAGES_DIR}/${imageName}`;
   const dirExists = await exec(`test -d ${imageDir}`, { throws: false });
   if (!dirExists.success) {
     throw new Error(`Image directory not found: ${imageDir}`);
   }
 
-  // Build Docker image
+  const agentScript = `${IMAGES_DIR}/sandbox-agent.mjs`;
+  const agentExists = await exec(`test -f ${agentScript}`, { throws: false });
+  if (!agentExists.success) {
+    throw new Error(
+      `sandbox-agent.mjs not found at: ${agentScript}\n` +
+      `Deploy with 'bun run deploy' first, or build manually on dev machine:\n` +
+      `  cd packages/sandbox-agent && bun run build`
+    );
+  }
+
+  spinner.start("Preparing build context");
+  await exec(`cp ${agentScript} ${imageDir}/sandbox-agent.mjs`);
+  spinner.stop("Build context ready");
+
   spinner.start(`Building Docker image: frak-sandbox/${imageName}`);
-  await exec(`docker build -t frak-sandbox/${imageName} ${imageDir}`);
+  try {
+    await exec(`docker build -t frak-sandbox/${imageName} ${imageDir}`);
+  } finally {
+    await exec(`rm -f ${imageDir}/sandbox-agent.mjs`, { throws: false });
+  }
   spinner.stop("Docker image built");
 
   // Create container and export
@@ -163,9 +179,9 @@ async function buildImage(args: string[]) {
       await exec(`lvremove -f ${LVM.VG_NAME}/${lvmVolume}`);
     }
 
-    // Create thin volume
+    // Create thin volume (volumeSize is in GB)
     await exec(
-      `lvcreate -V ${image.volumeSize} -T ${LVM.VG_NAME}/${LVM.THIN_POOL} -n ${lvmVolume}`
+      `lvcreate -V ${image.volumeSize}G -T ${LVM.VG_NAME}/${LVM.THIN_POOL} -n ${lvmVolume}`
     );
 
     // Copy ext4 image to LVM volume

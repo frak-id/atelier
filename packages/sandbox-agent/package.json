@@ -5,14 +5,12 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build --compile --target=bun-linux-x64 src/index.ts --outfile dist/sandbox-agent",
+    "build": "bun build --target=node src/index.ts --outfile dist/sandbox-agent.mjs",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "elysia": "^1.2.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.7.0",
-    "@types/bun": "latest"
+    "@types/node": "^22.0.0"
   }
 }

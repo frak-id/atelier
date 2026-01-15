@@ -29,7 +29,7 @@ export const BASE_IMAGES: Record<BaseImageId, BaseImage> = {
     id: "dev-base",
     name: "Base Development",
     description: "Minimal dev environment with code-server, OpenCode, Bun, and Git",
-    volumeSize: 4,
+    volumeSize: 5,
     tools: ["code-server", "opencode", "bun", "node", "git", "curl", "ssh", "htop"],
     volumeName: "image-dev-base",
     available: true,

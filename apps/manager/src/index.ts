@@ -10,6 +10,7 @@ import { sandboxRoutes } from "./routes/sandboxes/index.ts";
 import { projectRoutes } from "./routes/projects/index.ts";
 import { imageRoutes } from "./routes/images/index.ts";
 import { debugRoutes } from "./routes/debug/index.ts";
+import { proxyRoutes } from "./routes/proxy/index.ts";
 
 const app = new Elysia()
   .use(cors())
@@ -71,6 +72,7 @@ const app = new Elysia()
     }
   })
   .use(healthRoutes)
+  .use(proxyRoutes)
   .group("/api", (app) =>
     app
       .use(systemRoutes)

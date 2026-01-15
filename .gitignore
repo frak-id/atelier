@@ -35,3 +35,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Bun build
 **/*.bun-build
+
+# Temp files
+apps/manager/server.js

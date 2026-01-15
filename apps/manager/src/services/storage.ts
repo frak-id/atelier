@@ -162,7 +162,7 @@ export const StorageService = {
     log.info({ sandboxId, sourceVolume, baseImage }, "Cloning volume");
 
     await exec(
-      `lvcreate -s -n ${volumeName} ${LVM.VG_NAME}/${sourceVolume}`,
+      `lvcreate -s -kn -n ${volumeName} ${LVM.VG_NAME}/${sourceVolume}`,
       { throws: true }
     );
 

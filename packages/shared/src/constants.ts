@@ -72,8 +72,7 @@ export const LVM = {
 export const CADDY = {
   /** Caddy admin API endpoint */
   ADMIN_API: "http://localhost:2019",
-  /** Default sandbox domain suffix */
-  DOMAIN_SUFFIX: "sandbox.frak.dev",
+  DOMAIN_SUFFIX: "nivelais.com",
 } as const;
 
 export const DEFAULTS = {

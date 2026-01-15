@@ -101,7 +101,7 @@ export const FirecrackerService = {
       if (!paths.useLvm) {
         await this.createOverlay(sandboxId, paths);
       }
-      await this.injectSandboxConfig(paths.overlay, sandboxId, network, project);
+      await this.injectSandboxConfig(paths.overlay, sandboxId, network, project, paths.useLvm);
 
       const pid = await this.startFirecracker(sandboxId, paths);
       sandbox.pid = pid;
@@ -207,12 +207,14 @@ export const FirecrackerService = {
     overlayPath: string,
     sandboxId: string,
     network: { ipAddress: string; gateway: string },
-    project?: Project
+    project?: Project,
+    isLvm = false
   ): Promise<void> {
     const mountPoint = `/tmp/rootfs-mount-${Date.now()}`;
 
     await exec(`mkdir -p ${mountPoint}`);
-    await exec(`mount -o loop ${overlayPath} ${mountPoint}`);
+    const mountCmd = isLvm ? `mount ${overlayPath} ${mountPoint}` : `mount -o loop ${overlayPath} ${mountPoint}`;
+    await exec(mountCmd);
 
     try {
       const networkScript = `#!/bin/bash
@@ -355,7 +357,7 @@ Your code is located in \`/home/dev/workspace\`
     resources: { vcpus: number; memoryMb: number }
   ): Promise<void> {
     const curlBase = `curl -s --unix-socket ${paths.socket}`;
-    const bootArgs = "console=ttyS0 reboot=k panic=1 pci=off";
+    const bootArgs = "console=ttyS0 reboot=k panic=1 pci=off init=/etc/sandbox/sandbox-init.sh";
 
     await exec(`${curlBase} -X PUT "http://localhost/boot-source" \
       -H "Content-Type: application/json" \

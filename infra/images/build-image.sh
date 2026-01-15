@@ -25,25 +25,39 @@ if [ ! -d "$IMAGE_DIR" ]; then
     exit 1
 fi
 
+AGENT_SCRIPT="$SCRIPT_DIR/sandbox-agent.mjs"
+if [ ! -f "$AGENT_SCRIPT" ]; then
+    echo "Error: sandbox-agent.mjs not found at: $AGENT_SCRIPT"
+    echo "Deploy with 'bun run deploy' first, or build manually:"
+    echo "  cd packages/sandbox-agent && bun run build"
+    exit 1
+fi
+
 echo "=== Building $IMAGE_NAME image ==="
 echo "Image directory: $IMAGE_DIR"
 echo "Output directory: $OUTPUT_DIR"
 
 echo ""
-echo "Step 1: Building Docker image..."
-docker build -t "frak-sandbox/$IMAGE_NAME" "$IMAGE_DIR"
+echo "Step 1: Preparing build context..."
+cp "$AGENT_SCRIPT" "$IMAGE_DIR/sandbox-agent.mjs"
 
 echo ""
-echo "Step 2: Creating container..."
+echo "Step 2: Building Docker image..."
+docker build -t "frak-sandbox/$IMAGE_NAME" "$IMAGE_DIR"
+
+rm -f "$IMAGE_DIR/sandbox-agent.mjs"
+
+echo ""
+echo "Step 3: Creating container..."
 docker create --name "$CONTAINER_NAME" "frak-sandbox/$IMAGE_NAME"
 
 echo ""
-echo "Step 3: Exporting filesystem..."
+echo "Step 4: Exporting filesystem..."
 ROOTFS_TAR="$TEMP_DIR/rootfs.tar"
 docker export "$CONTAINER_NAME" -o "$ROOTFS_TAR"
 
 echo ""
-echo "Step 4: Creating ext4 image..."
+echo "Step 5: Creating ext4 image..."
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_FILE="$OUTPUT_DIR/$IMAGE_NAME.ext4"
 
@@ -59,7 +73,7 @@ dd if=/dev/zero of="$OUTPUT_FILE" bs=1M count=0 seek="$IMAGE_SIZE" 2>/dev/null
 mkfs.ext4 -F -q "$OUTPUT_FILE"
 
 echo ""
-echo "Step 5: Extracting rootfs to image..."
+echo "Step 6: Extracting rootfs to image..."
 MOUNT_POINT="$TEMP_DIR/mnt"
 mkdir -p "$MOUNT_POINT"
 

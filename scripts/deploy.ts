@@ -6,9 +6,12 @@ import { resolve } from "path";
 const ROOT = resolve(import.meta.dirname, "..");
 const CLI_DIR = resolve(ROOT, "infra/cli");
 const MANAGER_DIR = resolve(ROOT, "apps/manager");
+const AGENT_DIR = resolve(ROOT, "packages/sandbox-agent");
 const INFRA_DIR = resolve(ROOT, "infra");
+const IMAGES_DIR = resolve(ROOT, "infra/images");
 
 const REMOTE_APP_DIR = "/opt/frak-sandbox";
+const REMOTE_IMAGES_DIR = `${REMOTE_APP_DIR}/infra/images`;
 
 const { SSH_KEY_PATH, SSH_USER, SSH_HOST, SSH_KEY_PASSPHRASE } = process.env;
 
@@ -32,20 +35,31 @@ async function main() {
   const target = `${SSH_USER}@${SSH_HOST}`;
   const ssh = (cmd: string) => $`ssh -i ${SSH_KEY_PATH} ${target} ${cmd}`;
   const scp = (src: string, dest: string) => $`scp -i ${SSH_KEY_PATH} ${src} ${target}:${dest}`;
+  const scpDir = (src: string, dest: string) =>
+    $`scp -i ${SSH_KEY_PATH} -r ${src} ${target}:${dest}`;
 
   console.log("\n📦 Building...");
   await $`bun run --filter @frak-sandbox/cli build:linux`;
   await $`bun run --filter @frak-sandbox/manager build`;
+  await $`bun run --filter @frak-sandbox/agent build`;
 
   console.log("\n🚀 Deploying...");
-  await ssh(`mkdir -p ${REMOTE_APP_DIR}`);
+  await ssh(`mkdir -p ${REMOTE_APP_DIR} ${REMOTE_IMAGES_DIR}`);
 
   await scp(resolve(CLI_DIR, "dist/frak-sandbox-linux-x64"), "/usr/local/bin/frak-sandbox");
   await ssh("chmod +x /usr/local/bin/frak-sandbox");
   console.log("   ✓ CLI");
 
   await scp(resolve(MANAGER_DIR, "dist/server.js"), `${REMOTE_APP_DIR}/server.js`);
-  console.log("   ✓ API");
+  console.log("   ✓ Manager API");
+
+  await scp(resolve(AGENT_DIR, "dist/sandbox-agent.mjs"), `${REMOTE_IMAGES_DIR}/sandbox-agent.mjs`);
+  console.log("   ✓ Sandbox Agent");
+
+  await scp(`${IMAGES_DIR}/build-image.sh`, `${REMOTE_IMAGES_DIR}/build-image.sh`);
+  await ssh(`chmod +x ${REMOTE_IMAGES_DIR}/build-image.sh`);
+  await scpDir(`${IMAGES_DIR}/dev-base`, REMOTE_IMAGES_DIR);
+  console.log("   ✓ Base Images");
 
   await scp(`${INFRA_DIR}/systemd/frak-sandbox-manager.service`, "/etc/systemd/system/");
   await scp(`${INFRA_DIR}/systemd/frak-sandbox-network.service`, "/etc/systemd/system/");
@@ -56,7 +70,7 @@ async function main() {
   await ssh("systemctl reload caddy || systemctl start caddy || true");
   console.log("   ✓ Caddy");
 
-  console.log("\n🔄 Restarting...");
+  console.log("\n🔄 Restarting manager...");
   await ssh("systemctl restart frak-sandbox-manager");
 
   await Bun.sleep(2000);
@@ -66,6 +80,9 @@ async function main() {
   } catch {
     console.log("   ⚠ Health check failed");
   }
+
+  console.log("\n📋 Post-deploy:");
+  console.log("   Build base image: frak-sandbox images build dev-base");
 
   console.log("\n✅ Done!");
 }

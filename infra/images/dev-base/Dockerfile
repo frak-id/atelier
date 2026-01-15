@@ -48,12 +48,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Bun
-RUN curl -fsSL https://bun.sh/install | bash \
-    && mv /root/.bun /home/dev/.bun \
-    && chown -R dev:dev /home/dev/.bun
+# Install Bun for dev user
 ENV BUN_INSTALL=/home/dev/.bun
 ENV PATH=$BUN_INSTALL/bin:$PATH
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
+    && chown -R dev:dev /home/dev/.bun
 
 # Install code-server
 RUN curl -fsSL https://code-server.dev/install.sh | sh
@@ -77,6 +76,9 @@ RUN mkdir -p /etc/sandbox/secrets \
 # Copy sandbox init scripts
 COPY rootfs/etc/sandbox/ /etc/sandbox/
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
+
+# Copy sandbox-agent script (runs with Node)
+COPY --chown=root:root sandbox-agent.mjs /usr/local/lib/sandbox-agent.mjs
 
 # Set default working directory
 WORKDIR /home/dev/workspace
