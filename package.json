@@ -1,0 +1,14 @@
+{
+  "name": "oc-sandbox",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "workspaces": [
+    "packages/*", "apps/*", "infra/*"
+  ]
+}
