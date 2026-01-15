@@ -5,31 +5,17 @@ import { resolve } from "path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const CLI_DIR = resolve(ROOT, "infra/cli");
-const ENV_FILE = resolve(ROOT, ".env");
+const MANAGER_DIR = resolve(ROOT, "apps/manager");
+const INFRA_DIR = resolve(ROOT, "infra");
+
+const REMOTE_APP_DIR = "/opt/frak-sandbox";
+
+const { SSH_KEY_PATH, SSH_USER, SSH_HOST, SSH_KEY_PASSPHRASE } = process.env;
 
 async function main() {
-  if (!existsSync(ENV_FILE)) {
-    console.error("Missing .env file. Copy .env.example and fill in your values:");
-    console.error("  cp .env.example .env");
-    process.exit(1);
-  }
-
-  const env = await Bun.file(ENV_FILE).text();
-  const config = Object.fromEntries(
-    env
-      .split("\n")
-      .filter((line) => line && !line.startsWith("#"))
-      .map((line) => {
-        const idx = line.indexOf("=");
-        if (idx === -1) return [line.trim(), ""];
-        return [line.slice(0, idx).trim(), line.slice(idx + 1).trim()];
-      })
-  );
-
-  const { SSH_KEY_PATH, SSH_USER, SSH_HOST, SSH_KEY_PASSPHRASE } = config;
-
   if (!SSH_KEY_PATH || !SSH_USER || !SSH_HOST) {
-    console.error("Missing required env vars: SSH_KEY_PATH, SSH_USER, SSH_HOST");
+    console.error("Missing env: SSH_KEY_PATH, SSH_USER, SSH_HOST");
+    console.error("Set in .env or export them");
     process.exit(1);
   }
 
@@ -43,40 +29,61 @@ async function main() {
     await addKeyToAgent(SSH_KEY_PATH, SSH_KEY_PASSPHRASE);
   }
 
-  console.log("Building Linux executable...");
-  await $`cd ${CLI_DIR} && bun run build:linux`;
+  const target = `${SSH_USER}@${SSH_HOST}`;
+  const ssh = (cmd: string) => $`ssh -i ${SSH_KEY_PATH} ${target} ${cmd}`;
+  const scp = (src: string, dest: string) => $`scp -i ${SSH_KEY_PATH} ${src} ${target}:${dest}`;
 
-  const binary = resolve(CLI_DIR, "dist/frak-sandbox-linux-x64");
-  const remotePath = "/usr/local/bin/frak-sandbox";
+  console.log("\n📦 Building...");
+  await $`bun run --filter @frak-sandbox/cli build:linux`;
+  await $`bun run --filter @frak-sandbox/manager build`;
 
-  const tempPath = "/tmp/frak-sandbox-upload";
+  console.log("\n🚀 Deploying...");
+  await ssh(`mkdir -p ${REMOTE_APP_DIR}`);
 
-  console.log(`\nUploading to ${SSH_USER}@${SSH_HOST}...`);
-  await $`scp -i ${SSH_KEY_PATH} ${binary} ${SSH_USER}@${SSH_HOST}:${tempPath}`;
+  await scp(resolve(CLI_DIR, "dist/frak-sandbox-linux-x64"), "/usr/local/bin/frak-sandbox");
+  await ssh("chmod +x /usr/local/bin/frak-sandbox");
+  console.log("   ✓ CLI");
 
-  console.log("Installing binary...");
-  await $`ssh -i ${SSH_KEY_PATH} ${SSH_USER}@${SSH_HOST} ${"mv " + tempPath + " " + remotePath + " && chmod +x " + remotePath}`;
+  await scp(resolve(MANAGER_DIR, "dist/server.js"), `${REMOTE_APP_DIR}/server.js`);
+  console.log("   ✓ API");
 
-  console.log("\n✅ Deployed successfully!");
-  console.log(`\nRun on server:`);
-  console.log(`  ssh -i '${SSH_KEY_PATH}' ${SSH_USER}@${SSH_HOST} frak-sandbox`);
+  await scp(`${INFRA_DIR}/systemd/frak-sandbox-manager.service`, "/etc/systemd/system/");
+  await scp(`${INFRA_DIR}/systemd/frak-sandbox-network.service`, "/etc/systemd/system/");
+  await ssh("systemctl daemon-reload && systemctl enable frak-sandbox-network frak-sandbox-manager");
+  console.log("   ✓ Systemd");
+
+  await scp(`${INFRA_DIR}/caddy/Caddyfile`, "/etc/caddy/Caddyfile");
+  await ssh("systemctl reload caddy || systemctl start caddy || true");
+  console.log("   ✓ Caddy");
+
+  console.log("\n🔄 Restarting...");
+  await ssh("systemctl restart frak-sandbox-manager");
+
+  await Bun.sleep(2000);
+  try {
+    await ssh("curl -sf http://localhost:4000/health/live");
+    console.log("   ✓ Healthy");
+  } catch {
+    console.log("   ⚠ Health check failed");
+  }
+
+  console.log("\n✅ Done!");
 }
 
 async function addKeyToAgent(keyPath: string, passphrase: string) {
-  const askpassScript = `/tmp/ssh-askpass-${process.pid}`;
-  
-  await Bun.write(askpassScript, `#!/bin/sh\necho '${passphrase.replace(/'/g, "'\\''")}'`);
-  await $`chmod +x ${askpassScript}`;
+  const askpass = `/tmp/ssh-askpass-${process.pid}`;
+  await Bun.write(askpass, `#!/bin/sh\necho '${passphrase.replace(/'/g, "'\\''")}'`);
+  await $`chmod +x ${askpass}`;
 
   try {
-    await $`SSH_ASKPASS=${askpassScript} SSH_ASKPASS_REQUIRE=force ssh-add ${keyPath}`.env({
+    await $`ssh-add ${keyPath}`.env({
       ...process.env,
-      SSH_ASKPASS: askpassScript,
+      SSH_ASKPASS: askpass,
       SSH_ASKPASS_REQUIRE: "force",
       DISPLAY: ":0",
     });
   } finally {
-    await $`rm -f ${askpassScript}`.quiet();
+    await $`rm -f ${askpass}`.quiet();
   }
 }
 

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
-    "build": "bun build src/index.ts --target=bun --outdir=dist"
+    "build": "bun build src/index.ts --target=bun --outfile=dist/server.js --minify"
   },
   "dependencies": {
     "@frak-sandbox/shared": "workspace:*",

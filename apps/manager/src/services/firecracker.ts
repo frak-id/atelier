@@ -195,6 +195,8 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
   ): Promise<number> {
     await exec(`mkdir -p ${config.paths.SOCKET_DIR} ${config.paths.LOG_DIR}`);
     await exec(`rm -f ${paths.socket}`);
+    // Firecracker requires log file to exist before startup
+    await exec(`touch ${paths.log}`);
 
     const proc = Bun.spawn(
       [

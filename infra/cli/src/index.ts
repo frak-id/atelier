@@ -70,16 +70,12 @@ async function runFullSetup() {
     p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
   }
 
-  p.log.step("Deploying Manager API");
-  await deployManager(["deploy"]);
-
-  p.log.success("Full setup complete!");
+  p.log.success("Server setup complete!");
   p.note(
-    `Next steps:
-  1. Test VM:     frak-sandbox vm start
-  2. API Status:  frak-sandbox manager status
-  3. API Logs:    frak-sandbox manager logs
-  4. Swagger:     http://localhost:4000/swagger`,
+    `Server is ready. Next:
+  1. From dev machine: bun run deploy
+  2. Test VM: frak-sandbox vm start
+  3. API status: frak-sandbox manager status`,
     "Setup Complete"
   );
 }
@@ -109,16 +105,15 @@ frak-sandbox - Firecracker sandbox management CLI
 Usage: frak-sandbox [command] [subcommand]
 
 Commands:
-  setup           Run complete server setup (recommended for new servers)
+  setup           Run complete server setup (new servers)
   base            Install base packages, Bun, Docker, Caddy, verify KVM
   firecracker     Download Firecracker, kernel, and rootfs
   network         Configure persistent bridge for VM networking
   storage         Configure LVM thin provisioning
-  manager         Deploy/manage the sandbox manager API
+  manager         Manage the sandbox manager API service
   vm              Start/stop/manage test VM
 
 Manager Subcommands:
-  manager deploy  Deploy/update the manager API
   manager start   Start the manager service
   manager stop    Stop the manager service
   manager restart Restart the manager service
@@ -135,10 +130,9 @@ Options:
   --help, -h      Show this help message
 
 Examples:
-  frak-sandbox                  Interactive mode
-  frak-sandbox setup            Run full setup (new server)
-  frak-sandbox manager deploy   Deploy/update manager API
-  frak-sandbox manager status   Check manager health
+  frak-sandbox setup            Prepare server (run once)
+  frak-sandbox manager status   Check API health
+  frak-sandbox manager logs     Follow API logs
   frak-sandbox vm start         Start test VM
 `);
 }
