@@ -17,9 +17,13 @@ export const FIRECRACKER = {
 export const NETWORK = {
   BRIDGE_NAME: "br0",
   BRIDGE_IP: "172.16.0.1",
-  BRIDGE_CIDR: "172.16.0.1/24",
+  BRIDGE_CIDR: "172.16.0.0/24",
+  BRIDGE_NETMASK: "24",
   GUEST_IP_START: 10,
   GUEST_SUBNET: "172.16.0",
+  TEST_VM_IP: "172.16.0.2",
+  TEST_VM_MAC: "06:00:AC:10:00:02",
+  TEST_TAP: "tap-test",
 } as const;
 
 export const LVM = {

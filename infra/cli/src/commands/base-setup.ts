@@ -58,6 +58,26 @@ export async function baseSetup(_args: string[] = []) {
     spinner.stop("Docker installed");
   }
 
+  if (await commandExists("caddy")) {
+    const { stdout } = await exec("caddy version");
+    p.log.success(`Caddy already installed: ${stdout.split(" ")[0]}`);
+  } else {
+    spinner.start("Installing Caddy");
+    await exec(
+      "apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl"
+    );
+    await exec(
+      "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+    );
+    await exec(
+      "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list"
+    );
+    await exec("apt-get update -qq");
+    await exec("apt-get install -y -qq caddy");
+    await exec("systemctl stop caddy"); // Don't start yet, needs config
+    spinner.stop("Caddy installed");
+  }
+
   spinner.start("Verifying KVM support");
   const kvmLoaded = await exec("lsmod | grep kvm", { throws: false });
 
@@ -124,7 +144,7 @@ export async function baseSetup(_args: string[] = []) {
 
   p.log.success("Base setup complete");
   p.note(
-    `Installed: essential packages, Bun, Docker
+    `Installed: essential packages, Bun, Docker, Caddy
 Verified: KVM support
 Created: ${PATHS.SANDBOX_DIR}`,
     "Summary"

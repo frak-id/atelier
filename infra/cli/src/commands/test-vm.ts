@@ -3,9 +3,6 @@ import { exec, execLive, fileExists } from "../lib/shell";
 import { PATHS, NETWORK } from "../lib/context";
 
 const VM_NAME = "test-vm";
-const TAP_DEV = "tap-test";
-const GUEST_IP = "172.16.0.2";
-const GUEST_MAC = "06:00:AC:10:00:02";
 
 interface VmPaths {
   socket: string;
@@ -92,9 +89,9 @@ async function startVm() {
 
   const spinner = p.spinner();
 
-  spinner.start("Setting up network");
-  await setupNetwork();
-  spinner.stop("Network configured");
+  spinner.start("Creating TAP device");
+  await createTap();
+  spinner.stop(`TAP ${NETWORK.TEST_TAP} attached to ${NETWORK.BRIDGE_NAME}`);
 
   spinner.start("Creating working copy of rootfs");
   await exec(`cp ${PATHS.ROOTFS_DIR}/rootfs.ext4 ${paths.rootfs}`);
@@ -146,25 +143,29 @@ async function startVm() {
       -H "Content-Type: application/json" \
       -d '{"action_type": "InstanceStart"}'`
   );
-  
+
   await Bun.sleep(2000);
-  
+
   const stillAlive = await exec(`kill -0 ${proc.pid}`, { throws: false });
   if (!stillAlive.success) {
     spinner.stop("VM crashed after boot");
     p.log.error(`Check logs: ${paths.log}`);
     throw new Error("VM crashed");
   }
-  
+
   spinner.stop("VM booted");
 
   p.log.success(`VM started (PID: ${proc.pid})`);
-  p.log.info(`SSH: frak-sandbox vm ssh`);
+  p.note(
+    `Guest IP: ${NETWORK.TEST_VM_IP}
+SSH: frak-sandbox vm ssh
+Stop: frak-sandbox vm stop`,
+    "Test VM"
+  );
 }
 
 async function configureVm(paths: VmPaths) {
   const curlBase = `curl -s --unix-socket ${paths.socket}`;
-
   const bootArgs = "console=ttyS0 reboot=k panic=1 pci=off";
 
   await exec(`${curlBase} -X PUT "http://localhost/boot-source" \
@@ -177,7 +178,7 @@ async function configureVm(paths: VmPaths) {
 
   await exec(`${curlBase} -X PUT "http://localhost/network-interfaces/eth0" \
     -H "Content-Type: application/json" \
-    -d '{"iface_id": "eth0", "guest_mac": "${GUEST_MAC}", "host_dev_name": "${TAP_DEV}"}'`);
+    -d '{"iface_id": "eth0", "guest_mac": "${NETWORK.TEST_VM_MAC}", "host_dev_name": "${NETWORK.TEST_TAP}"}'`);
 
   await exec(`${curlBase} -X PUT "http://localhost/machine-config" \
     -H "Content-Type: application/json" \
@@ -195,7 +196,7 @@ async function stopVm() {
   if (await fileExists(paths.pid)) {
     const pid = (await Bun.file(paths.pid).text()).trim();
     await exec(`kill ${pid} 2>/dev/null || true`);
-    await Bun.sleep(1000);
+    await Bun.sleep(500);
     await exec(`kill -9 ${pid} 2>/dev/null || true`);
     await exec(`rm -f ${paths.pid}`);
   }
@@ -206,9 +207,9 @@ async function stopVm() {
 
   spinner.stop("VM stopped");
 
-  spinner.start("Cleaning up network");
-  await exec(`ip link del ${TAP_DEV} 2>/dev/null || true`);
-  spinner.stop("Network cleaned up");
+  spinner.start("Cleaning up TAP");
+  await exec(`ip link del ${NETWORK.TEST_TAP} 2>/dev/null || true`);
+  spinner.stop("TAP removed");
 
   p.log.success("VM stopped and cleaned up");
 }
@@ -218,8 +219,9 @@ async function vmStatus() {
 
   const socketExists = await fileExists(paths.socket);
   const pidExists = await fileExists(paths.pid);
-  const tapExists = (await exec(`ip link show ${TAP_DEV}`, { throws: false })).success;
-  const pingable = (await exec(`ping -c 1 -W 1 ${GUEST_IP}`, { throws: false })).success;
+  const bridgeExists = (await exec(`ip link show ${NETWORK.BRIDGE_NAME}`, { throws: false })).success;
+  const tapExists = (await exec(`ip link show ${NETWORK.TEST_TAP}`, { throws: false })).success;
+  const pingable = (await exec(`ping -c 1 -W 1 ${NETWORK.TEST_VM_IP}`, { throws: false })).success;
 
   let processRunning = false;
   if (pidExists) {
@@ -230,10 +232,11 @@ async function vmStatus() {
   console.log("");
   console.log("VM Status:");
   console.log("----------");
+  console.log(`  Bridge:  ${bridgeExists ? `✓ ${NETWORK.BRIDGE_NAME}` : "✗ not found (run 'frak-sandbox network')"}`);
+  console.log(`  TAP:     ${tapExists ? `✓ ${NETWORK.TEST_TAP}` : "○ not created"}`);
   console.log(`  Socket:  ${socketExists ? "✓ exists" : "✗ not found"}`);
-  console.log(`  Process: ${processRunning ? "✓ running" : pidExists ? "✗ dead (stale PID)" : "○ unknown"}`);
-  console.log(`  Network: ${tapExists ? "✓ configured" : "✗ not configured"}`);
-  console.log(`  Guest:   ${pingable ? "✓ reachable" : "✗ not reachable"} (${GUEST_IP})`);
+  console.log(`  Process: ${processRunning ? "✓ running" : pidExists ? "✗ dead (stale PID)" : "○ not running"}`);
+  console.log(`  Guest:   ${pingable ? "✓ reachable" : "○ not reachable"} (${NETWORK.TEST_VM_IP})`);
   console.log("");
 }
 
@@ -244,30 +247,29 @@ async function sshToVm() {
     throw new Error(`SSH key not found: ${paths.sshKey}`);
   }
 
-  p.log.info(`Connecting to ${GUEST_IP}...`);
+  p.log.info(`Connecting to ${NETWORK.TEST_VM_IP}...`);
 
   await execLive(
     `ssh -i ${paths.sshKey} \
       -o StrictHostKeyChecking=no \
       -o UserKnownHostsFile=/dev/null \
-      root@${GUEST_IP}`
+      root@${NETWORK.TEST_VM_IP}`
   );
 }
 
-async function setupNetwork() {
-  await exec(`ip link del ${TAP_DEV} 2>/dev/null || true`);
-  await exec(`ip tuntap add dev ${TAP_DEV} mode tap`);
-  await exec(`ip addr add ${NETWORK.BRIDGE_IP}/30 dev ${TAP_DEV}`);
-  await exec(`ip link set dev ${TAP_DEV} up`);
-
-  await exec("echo 1 > /proc/sys/net/ipv4/ip_forward");
-
-  const { stdout: hostIface } = await exec("ip -j route list default | jq -r '.[0].dev'");
-  await exec(`iptables -t nat -D POSTROUTING -o ${hostIface} -j MASQUERADE 2>/dev/null || true`);
-  await exec(`iptables -t nat -A POSTROUTING -o ${hostIface} -j MASQUERADE`);
+async function createTap() {
+  await exec(`ip link del ${NETWORK.TEST_TAP} 2>/dev/null || true`);
+  await exec(`ip tuntap add dev ${NETWORK.TEST_TAP} mode tap`);
+  await exec(`ip link set ${NETWORK.TEST_TAP} master ${NETWORK.BRIDGE_NAME}`);
+  await exec(`ip link set dev ${NETWORK.TEST_TAP} up`);
 }
 
 async function checkPrerequisites(paths: VmPaths) {
+  const bridgeExists = await exec(`ip link show ${NETWORK.BRIDGE_NAME}`, { throws: false });
+  if (!bridgeExists.success) {
+    throw new Error(`Bridge ${NETWORK.BRIDGE_NAME} not found. Run 'frak-sandbox network' first.`);
+  }
+
   const checks = [
     { path: "/usr/local/bin/firecracker", name: "Firecracker" },
     { path: paths.kernel, name: "Kernel" },
@@ -288,13 +290,13 @@ async function checkPrerequisites(paths: VmPaths) {
 
 async function injectNetworkConfig(rootfsPath: string) {
   const mountPoint = `/tmp/rootfs-mount-${Date.now()}`;
-  
+
   await exec(`mkdir -p ${mountPoint}`);
   await exec(`mount -o loop ${rootfsPath} ${mountPoint}`);
 
   try {
     const networkScript = `#!/bin/bash
-ip addr add ${GUEST_IP}/30 dev eth0
+ip addr add ${NETWORK.TEST_VM_IP}/${NETWORK.BRIDGE_NETMASK} dev eth0
 ip link set eth0 up
 ip route add default via ${NETWORK.BRIDGE_IP} dev eth0
 echo 'nameserver 8.8.8.8' > /etc/resolv.conf
@@ -311,10 +313,10 @@ exit 0
     await Bun.write(rcLocalPath, rcLocalContent);
     await exec(`chmod +x ${rcLocalPath}`);
 
-    const systemdServicePath = `${mountPoint}/etc/systemd/system/network-setup.service`;
     const hasSystemd = await exec(`test -d ${mountPoint}/etc/systemd/system`, { throws: false });
-    
+
     if (hasSystemd.success) {
+      const systemdServicePath = `${mountPoint}/etc/systemd/system/network-setup.service`;
       const serviceContent = `[Unit]
 Description=Configure network for sandbox
 After=network.target
@@ -328,7 +330,9 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 `;
       await Bun.write(systemdServicePath, serviceContent);
-      await exec(`ln -sf /etc/systemd/system/network-setup.service ${mountPoint}/etc/systemd/system/multi-user.target.wants/network-setup.service`);
+      await exec(
+        `ln -sf /etc/systemd/system/network-setup.service ${mountPoint}/etc/systemd/system/multi-user.target.wants/network-setup.service`
+      );
     }
   } finally {
     await exec(`umount ${mountPoint}`);

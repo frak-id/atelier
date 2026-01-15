@@ -2,24 +2,30 @@ import * as p from "@clack/prompts";
 import { isRoot } from "./lib/shell";
 import { baseSetup } from "./commands/base-setup";
 import { installFirecracker } from "./commands/install-firecracker";
+import { setupNetwork } from "./commands/setup-network";
 import { testVm } from "./commands/test-vm";
 import { setupStorage } from "./commands/setup-storage";
 
 const COMMANDS = {
   setup: {
     label: "Full Setup",
-    description: "Run complete server setup (base + firecracker + storage)",
+    description: "Run complete server setup (base + firecracker + network)",
     handler: runFullSetup,
   },
   base: {
     label: "Base Setup",
-    description: "Install base packages, Bun, Docker, verify KVM",
+    description: "Install base packages, Bun, Docker, Caddy, verify KVM",
     handler: baseSetup,
   },
   firecracker: {
     label: "Install Firecracker",
     description: "Download Firecracker, kernel, and rootfs",
     handler: installFirecracker,
+  },
+  network: {
+    label: "Setup Network",
+    description: "Configure persistent bridge for VM networking",
+    handler: setupNetwork,
   },
   storage: {
     label: "Setup Storage",
@@ -38,9 +44,10 @@ type CommandKey = keyof typeof COMMANDS;
 async function runFullSetup() {
   await baseSetup();
   await installFirecracker();
+  await setupNetwork();
 
   const setupStorageNow = await p.confirm({
-    message: "Setup LVM storage now? (requires dedicated partition)",
+    message: "Setup LVM storage now? (requires dedicated partition or loop file)",
     initialValue: false,
   });
 
@@ -84,8 +91,9 @@ Usage: frak-sandbox [command]
 
 Commands:
   setup        Run complete server setup
-  base         Install base packages, Bun, Docker, verify KVM
+  base         Install base packages, Bun, Docker, Caddy, verify KVM
   firecracker  Download Firecracker, kernel, and rootfs
+  network      Configure persistent bridge for VM networking
   storage      Configure LVM thin provisioning
   vm           Start/stop/manage test VM
 
