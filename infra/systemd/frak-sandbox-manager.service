@@ -1,0 +1,27 @@
+[Unit]
+Description=Frak Sandbox Manager API
+Documentation=https://github.com/frak-id/frak-sandbox
+After=network.target frak-sandbox-network.service
+Wants=frak-sandbox-network.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/frak-sandbox/apps/manager
+Environment=PATH=/root/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+Environment=SANDBOX_MODE=production
+Environment=PORT=4000
+ExecStart=bun run start
+
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=10
+StartLimitIntervalSec=300
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=frak-sandbox-manager
+
+[Install]
+WantedBy=multi-user.target

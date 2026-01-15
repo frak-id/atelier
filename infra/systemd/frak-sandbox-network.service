@@ -1,0 +1,12 @@
+[Unit]
+Description=Frak Sandbox Network Bridge
+Documentation=https://github.com/frak-id/frak-sandbox
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=frak-sandbox network
+
+[Install]
+WantedBy=multi-user.target

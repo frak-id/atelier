@@ -39,12 +39,14 @@ const app = new Elysia()
     }
 
     switch (code) {
-      case "VALIDATION":
+      case "VALIDATION": {
+        const validationMessage = error instanceof Error ? error.message : "Validation failed";
         set.status = 400;
         return {
           error: "VALIDATION_ERROR",
-          message: error.message,
+          message: validationMessage,
         };
+      }
 
       case "NOT_FOUND":
         set.status = 404;
@@ -53,13 +55,15 @@ const app = new Elysia()
           message: "Endpoint not found",
         };
 
-      default:
-        logger.error({ code, error }, "Unhandled error");
+      default: {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error({ code, error: errorMessage }, "Unhandled error");
         set.status = 500;
         return {
           error: "INTERNAL_ERROR",
-          message: config.isProduction() ? "Internal server error" : error.message,
+          message: config.isProduction() ? "Internal server error" : errorMessage,
         };
+      }
     }
   })
   .use(healthRoutes)

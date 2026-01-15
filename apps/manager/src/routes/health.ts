@@ -47,7 +47,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
       }),
     }
   )
-  .get("/live", () => ({ status: "ok" }), {
+  .get("/live", () => ({ status: "ok" as const }), {
     response: t.Object({ status: t.Literal("ok") }),
   })
   .get("/ready", async ({ set }) => {

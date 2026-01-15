@@ -5,11 +5,12 @@ import { installFirecracker } from "./commands/install-firecracker";
 import { setupNetwork } from "./commands/setup-network";
 import { testVm } from "./commands/test-vm";
 import { setupStorage } from "./commands/setup-storage";
+import { deployManager } from "./commands/deploy-manager";
 
 const COMMANDS = {
   setup: {
     label: "Full Setup",
-    description: "Run complete server setup (base + firecracker + network)",
+    description: "Run complete server setup (base + firecracker + network + manager)",
     handler: runFullSetup,
   },
   base: {
@@ -32,6 +33,11 @@ const COMMANDS = {
     description: "Configure LVM thin provisioning",
     handler: setupStorage,
   },
+  manager: {
+    label: "Manager API",
+    description: "Deploy/manage the sandbox manager API",
+    handler: deployManager,
+  },
   vm: {
     label: "Test VM",
     description: "Start/stop/manage test VM",
@@ -42,6 +48,8 @@ const COMMANDS = {
 type CommandKey = keyof typeof COMMANDS;
 
 async function runFullSetup() {
+  p.log.info("Starting full server setup...\n");
+
   await baseSetup();
   await installFirecracker();
   await setupNetwork();
@@ -62,7 +70,18 @@ async function runFullSetup() {
     p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
   }
 
-  p.log.success("Setup complete! Run 'frak-sandbox vm' to test.");
+  p.log.step("Deploying Manager API");
+  await deployManager(["deploy"]);
+
+  p.log.success("Full setup complete!");
+  p.note(
+    `Next steps:
+  1. Test VM:     frak-sandbox vm start
+  2. API Status:  frak-sandbox manager status
+  3. API Logs:    frak-sandbox manager logs
+  4. Swagger:     http://localhost:4000/swagger`,
+    "Setup Complete"
+  );
 }
 
 async function selectCommand(): Promise<CommandKey> {
@@ -87,24 +106,40 @@ function printHelp() {
   console.log(`
 frak-sandbox - Firecracker sandbox management CLI
 
-Usage: frak-sandbox [command]
+Usage: frak-sandbox [command] [subcommand]
 
 Commands:
-  setup        Run complete server setup
-  base         Install base packages, Bun, Docker, Caddy, verify KVM
-  firecracker  Download Firecracker, kernel, and rootfs
-  network      Configure persistent bridge for VM networking
-  storage      Configure LVM thin provisioning
-  vm           Start/stop/manage test VM
+  setup           Run complete server setup (recommended for new servers)
+  base            Install base packages, Bun, Docker, Caddy, verify KVM
+  firecracker     Download Firecracker, kernel, and rootfs
+  network         Configure persistent bridge for VM networking
+  storage         Configure LVM thin provisioning
+  manager         Deploy/manage the sandbox manager API
+  vm              Start/stop/manage test VM
+
+Manager Subcommands:
+  manager deploy  Deploy/update the manager API
+  manager start   Start the manager service
+  manager stop    Stop the manager service
+  manager restart Restart the manager service
+  manager status  Show service status and health
+  manager logs    View manager logs (follows)
+
+VM Subcommands:
+  vm start        Start test VM
+  vm stop         Stop test VM
+  vm status       Show VM status
+  vm ssh          SSH into VM
 
 Options:
-  --help, -h   Show this help message
+  --help, -h      Show this help message
 
 Examples:
-  frak-sandbox              Interactive mode
-  frak-sandbox setup        Run full setup
-  frak-sandbox vm start     Start test VM
-  frak-sandbox vm stop      Stop test VM
+  frak-sandbox                  Interactive mode
+  frak-sandbox setup            Run full setup (new server)
+  frak-sandbox manager deploy   Deploy/update manager API
+  frak-sandbox manager status   Check manager health
+  frak-sandbox vm start         Start test VM
 `);
 }
 
