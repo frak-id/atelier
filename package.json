@@ -2,6 +2,10 @@
   "name": "oc-sandbox",
   "type": "module",
   "private": true,
+  "scripts": {
+    "deploy": "bun run scripts/deploy.ts",
+    "build:cli": "bun run --filter @frak-sandbox/cli build:linux"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

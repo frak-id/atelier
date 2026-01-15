@@ -1,0 +1,142 @@
+import * as p from "@clack/prompts";
+import { isRoot } from "./lib/shell";
+import { baseSetup } from "./commands/base-setup";
+import { installFirecracker } from "./commands/install-firecracker";
+import { testVm } from "./commands/test-vm";
+import { setupStorage } from "./commands/setup-storage";
+
+const COMMANDS = {
+  setup: {
+    label: "Full Setup",
+    description: "Run complete server setup (base + firecracker + storage)",
+    handler: runFullSetup,
+  },
+  base: {
+    label: "Base Setup",
+    description: "Install base packages, Bun, Docker, verify KVM",
+    handler: baseSetup,
+  },
+  firecracker: {
+    label: "Install Firecracker",
+    description: "Download Firecracker, kernel, and rootfs",
+    handler: installFirecracker,
+  },
+  storage: {
+    label: "Setup Storage",
+    description: "Configure LVM thin provisioning",
+    handler: setupStorage,
+  },
+  vm: {
+    label: "Test VM",
+    description: "Start/stop/manage test VM",
+    handler: testVm,
+  },
+} as const;
+
+type CommandKey = keyof typeof COMMANDS;
+
+async function runFullSetup() {
+  await baseSetup();
+  await installFirecracker();
+
+  const setupStorageNow = await p.confirm({
+    message: "Setup LVM storage now? (requires dedicated partition)",
+    initialValue: false,
+  });
+
+  if (p.isCancel(setupStorageNow)) {
+    p.cancel("Setup cancelled");
+    process.exit(0);
+  }
+
+  if (setupStorageNow) {
+    await setupStorage();
+  } else {
+    p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
+  }
+
+  p.log.success("Setup complete! Run 'frak-sandbox vm' to test.");
+}
+
+async function selectCommand(): Promise<CommandKey> {
+  const command = await p.select({
+    message: "What would you like to do?",
+    options: Object.entries(COMMANDS).map(([key, { label, description }]) => ({
+      value: key as CommandKey,
+      label,
+      hint: description,
+    })),
+  });
+
+  if (p.isCancel(command)) {
+    p.cancel("Cancelled");
+    process.exit(0);
+  }
+
+  return command;
+}
+
+function printHelp() {
+  console.log(`
+frak-sandbox - Firecracker sandbox management CLI
+
+Usage: frak-sandbox [command]
+
+Commands:
+  setup        Run complete server setup
+  base         Install base packages, Bun, Docker, verify KVM
+  firecracker  Download Firecracker, kernel, and rootfs
+  storage      Configure LVM thin provisioning
+  vm           Start/stop/manage test VM
+
+Options:
+  --help, -h   Show this help message
+
+Examples:
+  frak-sandbox              Interactive mode
+  frak-sandbox setup        Run full setup
+  frak-sandbox vm start     Start test VM
+  frak-sandbox vm stop      Stop test VM
+`);
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+
+  if (args.includes("--help") || args.includes("-h")) {
+    printHelp();
+    process.exit(0);
+  }
+
+  if (!(await isRoot())) {
+    p.log.error("This tool must be run as root (use sudo)");
+    process.exit(1);
+  }
+
+  p.intro("frak-sandbox");
+
+  let command: CommandKey;
+  const subArgs = args.slice(1);
+
+  if (args.length === 0) {
+    command = await selectCommand();
+  } else {
+    const cmd = args[0] as CommandKey;
+    if (!(cmd in COMMANDS)) {
+      p.log.error(`Unknown command: ${cmd}`);
+      printHelp();
+      process.exit(1);
+    }
+    command = cmd;
+  }
+
+  try {
+    await COMMANDS[command].handler(subArgs);
+    p.outro("Done!");
+  } catch (error) {
+    p.log.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+main();
