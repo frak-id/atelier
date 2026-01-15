@@ -26,22 +26,15 @@ export interface SystemStats {
 }
 
 export interface HealthStatus {
-  /** Overall health status */
   status: "ok" | "degraded" | "error";
-  /** Server uptime in seconds */
   uptime: number;
-  /** Current timestamp */
   timestamp: number;
-  /** Individual component checks */
   checks: {
-    /** Firecracker availability */
     firecracker: "ok" | "error";
-    /** Network bridge status */
     network: "ok" | "error";
-    /** Caddy proxy status */
     caddy: "ok" | "error";
-    /** Storage availability */
     storage: "ok" | "error";
+    lvm: "ok" | "unavailable";
   };
 }
 

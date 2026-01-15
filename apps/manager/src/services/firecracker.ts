@@ -7,29 +7,44 @@ import { createChildLogger } from "../lib/logger.ts";
 import { sandboxStore } from "../state/store.ts";
 import { NetworkService } from "./network.ts";
 import { CaddyService } from "./caddy.ts";
+import { StorageService } from "./storage.ts";
+import { QueueService } from "./queue.ts";
 
 const log = createChildLogger("firecracker");
 
 const VSCODE_PORT = 8080;
 const OPENCODE_PORT = 3000;
 
-function getSandboxPaths(sandboxId: string) {
+let lvmAvailable: boolean | null = null;
+
+function getSandboxPaths(sandboxId: string, lvmVolumePath?: string) {
   return {
     socket: `${config.paths.SOCKET_DIR}/${sandboxId}.sock`,
     pid: `${config.paths.SOCKET_DIR}/${sandboxId}.pid`,
     log: `${config.paths.LOG_DIR}/${sandboxId}.log`,
-    overlay: `${config.paths.OVERLAY_DIR}/${sandboxId}.ext4`,
+    overlay: lvmVolumePath || `${config.paths.OVERLAY_DIR}/${sandboxId}.ext4`,
     kernel: `${config.paths.KERNEL_DIR}/vmlinux`,
     rootfs: `${config.paths.ROOTFS_DIR}/rootfs.ext4`,
+    useLvm: !!lvmVolumePath,
   };
 }
 
 export const FirecrackerService = {
   async spawn(options: CreateSandboxOptions = {}): Promise<Sandbox> {
     const sandboxId = options.id || nanoid(12);
-    const paths = getSandboxPaths(sandboxId);
 
-    log.info({ sandboxId, options }, "Spawning sandbox");
+    if (lvmAvailable === null) {
+      lvmAvailable = await StorageService.isAvailable();
+      log.info({ lvmAvailable }, "LVM availability checked");
+    }
+
+    let lvmVolumePath: string | undefined;
+    if (lvmAvailable) {
+      lvmVolumePath = await StorageService.createSandboxVolume(sandboxId, options.projectId);
+    }
+
+    const paths = getSandboxPaths(sandboxId, lvmVolumePath);
+    log.info({ sandboxId, options, useLvm: paths.useLvm }, "Spawning sandbox");
 
     const sandbox: Sandbox = {
       id: sandboxId,
@@ -69,7 +84,10 @@ export const FirecrackerService = {
       }
 
       await NetworkService.createTap(network.tapDevice);
-      await this.createOverlay(sandboxId, paths);
+
+      if (!paths.useLvm) {
+        await this.createOverlay(sandboxId, paths);
+      }
       await this.injectNetworkConfig(paths.overlay, network);
 
       const pid = await this.startFirecracker(sandboxId, paths);
@@ -90,11 +108,16 @@ export const FirecrackerService = {
       sandbox.status = "running";
 
       sandboxStore.update(sandboxId, sandbox);
-      log.info({ sandboxId, pid }, "Sandbox spawned successfully");
+      log.info({ sandboxId, pid, useLvm: paths.useLvm }, "Sandbox spawned successfully");
 
       return sandbox;
     } catch (error) {
       log.error({ sandboxId, error }, "Failed to spawn sandbox");
+
+      if (lvmAvailable) {
+        await StorageService.deleteSandboxVolume(sandboxId).catch(() => {});
+      }
+
       sandboxStore.updateStatus(
         sandboxId,
         "error",
@@ -122,7 +145,12 @@ export const FirecrackerService = {
       }
 
       await exec(`rm -f ${paths.socket} ${paths.pid}`);
-      await exec(`rm -f ${paths.overlay}`);
+
+      if (lvmAvailable) {
+        await StorageService.deleteSandboxVolume(sandboxId);
+      } else {
+        await exec(`rm -f ${paths.overlay}`);
+      }
 
       const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
       await NetworkService.deleteTap(tapDevice);
@@ -307,4 +335,15 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
     const kvmOk = await exec("test -r /dev/kvm && test -w /dev/kvm", { throws: false });
     return kvmOk.success;
   },
+
+  isLvmEnabled(): boolean {
+    return lvmAvailable === true;
+  },
+
+  async checkLvmAvailability(): Promise<boolean> {
+    lvmAvailable = await StorageService.isAvailable();
+    return lvmAvailable;
+  },
 };
+
+QueueService.setHandler((options) => FirecrackerService.spawn(options));

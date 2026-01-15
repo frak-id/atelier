@@ -3,6 +3,7 @@ import type { HealthStatus } from "@frak-sandbox/shared/types";
 import { FirecrackerService } from "../services/firecracker.ts";
 import { CaddyService } from "../services/caddy.ts";
 import { NetworkService } from "../services/network.ts";
+import { StorageService } from "../services/storage.ts";
 import { config } from "../lib/config.ts";
 import { dirExists } from "../lib/shell.ts";
 
@@ -12,13 +13,15 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
   .get(
     "/",
     async (): Promise<HealthStatus> => {
-      const [firecracker, caddy, network, storage] = await Promise.all([
+      const [firecracker, caddy, network, storageDir, lvmAvailable] = await Promise.all([
         FirecrackerService.isHealthy(),
         CaddyService.isHealthy(),
         NetworkService.getBridgeStatus().then((s) => s.exists),
         dirExists(config.paths.SANDBOX_DIR),
+        StorageService.isAvailable(),
       ]);
 
+      const storage = storageDir || lvmAvailable;
       const allHealthy = firecracker && caddy && network && storage;
 
       return {
@@ -30,6 +33,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
           caddy: caddy ? "ok" : "error",
           network: network ? "ok" : "error",
           storage: storage ? "ok" : "error",
+          lvm: lvmAvailable ? "ok" : "unavailable",
         },
       };
     },
@@ -43,6 +47,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
           caddy: t.Union([t.Literal("ok"), t.Literal("error")]),
           network: t.Union([t.Literal("ok"), t.Literal("error")]),
           storage: t.Union([t.Literal("ok"), t.Literal("error")]),
+          lvm: t.Union([t.Literal("ok"), t.Literal("unavailable")]),
         }),
       }),
     }

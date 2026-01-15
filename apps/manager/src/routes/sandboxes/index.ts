@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { SandboxModel } from "./model.ts";
 import { FirecrackerService } from "../../services/firecracker.ts";
+import { QueueService } from "../../services/queue.ts";
 import { sandboxStore } from "../../state/store.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../lib/errors.ts";
 import { config } from "../../lib/config.ts";
@@ -32,22 +33,72 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .post(
     "/",
     async ({ body, set }) => {
-      const activeCount = sandboxStore.countByStatus("running") +
-        sandboxStore.countByStatus("creating");
+      const { async: useQueue, ...options } = body;
+      const activeCount =
+        sandboxStore.countByStatus("running") + sandboxStore.countByStatus("creating");
 
       if (activeCount >= config.defaults.MAX_SANDBOXES) {
         throw new ResourceExhaustedError("sandboxes");
       }
 
-      log.info({ body }, "Creating sandbox");
-      const sandbox = await FirecrackerService.spawn(body);
+      log.info({ body, useQueue }, "Creating sandbox");
 
+      if (useQueue) {
+        const job = await QueueService.enqueue(options);
+        set.status = 202;
+        return {
+          id: job.id,
+          status: job.status,
+          queuedAt: job.queuedAt,
+          startedAt: job.startedAt,
+          completedAt: job.completedAt,
+          error: job.error,
+        };
+      }
+
+      const sandbox = await FirecrackerService.spawn(options);
       set.status = 201;
       return sandbox;
     },
     {
-      body: SandboxModel.create,
-      response: SandboxModel.response,
+      body: SandboxModel.createQueued,
+      response: t.Union([SandboxModel.response, SandboxModel.jobResponse]),
+    }
+  )
+  .get(
+    "/job/:id",
+    ({ params }) => {
+      const job = QueueService.getJob(params.id);
+      if (!job) {
+        throw new NotFoundError("Job", params.id);
+      }
+
+      return {
+        id: job.id,
+        status: job.status,
+        queuedAt: job.queuedAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        error: job.error,
+        result: job.result,
+      };
+    },
+    {
+      params: SandboxModel.idParam,
+      response: t.Object({
+        id: t.String(),
+        status: t.Union([
+          t.Literal("queued"),
+          t.Literal("running"),
+          t.Literal("completed"),
+          t.Literal("failed"),
+        ]),
+        queuedAt: t.String(),
+        startedAt: t.Optional(t.String()),
+        completedAt: t.Optional(t.String()),
+        error: t.Optional(t.String()),
+        result: t.Optional(SandboxModel.response),
+      }),
     }
   )
   .get(
