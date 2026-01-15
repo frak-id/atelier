@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import { SandboxModel } from "./model.ts";
 import { FirecrackerService } from "../../services/firecracker.ts";
 import { QueueService } from "../../services/queue.ts";
+import { AgentClient } from "../../services/agent.ts";
 import { sandboxStore } from "../../state/store.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../lib/errors.ts";
 import { config } from "../../lib/config.ts";
@@ -131,5 +132,145 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     },
     {
       params: SandboxModel.idParam,
+    }
+  )
+  // Agent routes - communicate with sandbox-agent inside VM
+  .get(
+    "/:id/health",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      return AgentClient.health(params.id);
+    },
+    {
+      params: SandboxModel.idParam,
+      detail: { tags: ["sandboxes"], summary: "Get sandbox agent health" },
+    }
+  )
+  .get(
+    "/:id/metrics",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      return AgentClient.metrics(params.id);
+    },
+    {
+      params: SandboxModel.idParam,
+      detail: { tags: ["sandboxes"], summary: "Get sandbox resource metrics" },
+    }
+  )
+  .get(
+    "/:id/apps",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      return AgentClient.getApps(params.id);
+    },
+    {
+      params: SandboxModel.idParam,
+      detail: { tags: ["sandboxes"], summary: "List registered apps in sandbox" },
+    }
+  )
+  .post(
+    "/:id/apps",
+    async ({ params, body }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      return AgentClient.registerApp(params.id, body.port, body.name);
+    },
+    {
+      params: SandboxModel.idParam,
+      body: t.Object({
+        port: t.Number({ minimum: 1, maximum: 65535 }),
+        name: t.String(),
+      }),
+      detail: { tags: ["sandboxes"], summary: "Register an app port in sandbox" },
+    }
+  )
+  .delete(
+    "/:id/apps/:port",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      return AgentClient.unregisterApp(params.id, parseInt(params.port, 10));
+    },
+    {
+      params: t.Object({
+        id: t.String(),
+        port: t.String(),
+      }),
+      detail: { tags: ["sandboxes"], summary: "Unregister an app port from sandbox" },
+    }
+  )
+  .post(
+    "/:id/exec",
+    async ({ params, body }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      log.info({ sandboxId: params.id, command: body.command }, "Executing command in sandbox");
+      return AgentClient.exec(params.id, body.command, { timeout: body.timeout });
+    },
+    {
+      params: SandboxModel.idParam,
+      body: t.Object({
+        command: t.String(),
+        timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),
+      }),
+      detail: { tags: ["sandboxes"], summary: "Execute a command in sandbox" },
+    }
+  )
+  .get(
+    "/:id/logs/:service",
+    async ({ params, query }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      const lines = query.lines ? parseInt(query.lines, 10) : 100;
+      return AgentClient.logs(params.id, params.service, lines);
+    },
+    {
+      params: t.Object({
+        id: t.String(),
+        service: t.String(),
+      }),
+      query: t.Object({
+        lines: t.Optional(t.String()),
+      }),
+      detail: { tags: ["sandboxes"], summary: "Get service logs from sandbox" },
+    }
+  )
+  .get(
+    "/:id/services",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      return AgentClient.services(params.id);
+    },
+    {
+      params: SandboxModel.idParam,
+      detail: { tags: ["sandboxes"], summary: "Get service status from sandbox" },
     }
   );

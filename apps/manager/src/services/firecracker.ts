@@ -1,14 +1,16 @@
 import { nanoid } from "nanoid";
-import type { Sandbox, CreateSandboxOptions } from "@frak-sandbox/shared/types";
+import type { Sandbox, CreateSandboxOptions, Project } from "@frak-sandbox/shared/types";
 import { FIRECRACKER } from "@frak-sandbox/shared/constants";
 import { exec, fileExists, readFile } from "../lib/shell.ts";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { sandboxStore } from "../state/store.ts";
+import { projectStore } from "../state/project-store.ts";
 import { NetworkService } from "./network.ts";
 import { CaddyService } from "./caddy.ts";
 import { StorageService } from "./storage.ts";
 import { QueueService } from "./queue.ts";
+import { SecretsService } from "./secrets.ts";
 
 const log = createChildLogger("firecracker");
 
@@ -33,6 +35,14 @@ export const FirecrackerService = {
   async spawn(options: CreateSandboxOptions = {}): Promise<Sandbox> {
     const sandboxId = options.id || nanoid(12);
 
+    let project: Project | undefined;
+    if (options.projectId) {
+      project = projectStore.getById(options.projectId);
+    }
+
+    // Priority: explicit option > project config > default
+    const baseImage = options.baseImage ?? project?.baseImage;
+
     if (lvmAvailable === null) {
       lvmAvailable = await StorageService.isAvailable();
       log.info({ lvmAvailable }, "LVM availability checked");
@@ -40,24 +50,27 @@ export const FirecrackerService = {
 
     let lvmVolumePath: string | undefined;
     if (lvmAvailable) {
-      lvmVolumePath = await StorageService.createSandboxVolume(sandboxId, options.projectId);
+      lvmVolumePath = await StorageService.createSandboxVolume(sandboxId, {
+        projectId: options.projectId,
+        baseImage,
+      });
     }
 
     const paths = getSandboxPaths(sandboxId, lvmVolumePath);
-    log.info({ sandboxId, options, useLvm: paths.useLvm }, "Spawning sandbox");
+    log.info({ sandboxId, options, baseImage, useLvm: paths.useLvm }, "Spawning sandbox");
+
+    const vcpus = options.vcpus ?? project?.vcpus ?? config.defaults.VCPUS;
+    const memoryMb = options.memoryMb ?? project?.memoryMb ?? config.defaults.MEMORY_MB;
 
     const sandbox: Sandbox = {
       id: sandboxId,
       status: "creating",
       projectId: options.projectId,
-      branch: options.branch,
+      branch: options.branch ?? project?.defaultBranch,
       ipAddress: "",
       macAddress: "",
       urls: { vscode: "", opencode: "", ssh: "" },
-      resources: {
-        vcpus: options.vcpus ?? config.defaults.VCPUS,
-        memoryMb: options.memoryMb ?? config.defaults.MEMORY_MB,
-      },
+      resources: { vcpus, memoryMb },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -88,7 +101,7 @@ export const FirecrackerService = {
       if (!paths.useLvm) {
         await this.createOverlay(sandboxId, paths);
       }
-      await this.injectNetworkConfig(paths.overlay, network);
+      await this.injectSandboxConfig(paths.overlay, sandboxId, network, project);
 
       const pid = await this.startFirecracker(sandboxId, paths);
       sandbox.pid = pid;
@@ -190,9 +203,11 @@ export const FirecrackerService = {
     log.debug({ sandboxId }, "Overlay created");
   },
 
-  async injectNetworkConfig(
+  async injectSandboxConfig(
     overlayPath: string,
-    network: { ipAddress: string; gateway: string }
+    sandboxId: string,
+    network: { ipAddress: string; gateway: string },
+    project?: Project
   ): Promise<void> {
     const mountPoint = `/tmp/rootfs-mount-${Date.now()}`;
 
@@ -206,15 +221,91 @@ ip link set eth0 up
 ip route add default via ${network.gateway} dev eth0
 echo 'nameserver 8.8.8.8' > /etc/resolv.conf
 `;
-
       await Bun.write(`${mountPoint}/etc/network-setup.sh`, networkScript);
       await exec(`chmod +x ${mountPoint}/etc/network-setup.sh`);
+
+      await exec(`mkdir -p ${mountPoint}/etc/sandbox/secrets`);
+
+      const sandboxConfig = {
+        sandboxId,
+        projectId: project?.id,
+        projectName: project?.name,
+        gitUrl: project?.gitUrl,
+        createdAt: new Date().toISOString(),
+      };
+      await Bun.write(`${mountPoint}/etc/sandbox/config.json`, JSON.stringify(sandboxConfig, null, 2));
+
+      if (project?.secrets && Object.keys(project.secrets).length > 0) {
+        const decryptedSecrets = await SecretsService.decryptSecrets(project.secrets);
+        const envFile = SecretsService.generateEnvFile(decryptedSecrets);
+        await Bun.write(`${mountPoint}/etc/sandbox/secrets/.env`, envFile);
+      }
+
+      if (project?.startCommands && project.startCommands.length > 0) {
+        const startScript = `#!/bin/bash\nset -e\n${project.startCommands.join("\n")}\n`;
+        await Bun.write(`${mountPoint}/etc/sandbox/start.sh`, startScript);
+        await exec(`chmod +x ${mountPoint}/etc/sandbox/start.sh`);
+      }
+
+      const sandboxMd = this.generateSandboxMd(sandboxId, network.ipAddress, project);
+      await Bun.write(`${mountPoint}/home/dev/SANDBOX.md`, sandboxMd);
+      await exec(`chown 1000:1000 ${mountPoint}/home/dev/SANDBOX.md`);
     } finally {
       await exec(`umount ${mountPoint}`);
       await exec(`rmdir ${mountPoint}`);
     }
 
-    log.debug({ overlayPath, network }, "Network config injected");
+    log.debug({ overlayPath, sandboxId }, "Sandbox config injected");
+  },
+
+  generateSandboxMd(sandboxId: string, ipAddress: string, project?: Project): string {
+    const projectSection = project
+      ? `## Project: ${project.name}
+- **Repository**: ${project.gitUrl}
+- **Branch**: ${project.defaultBranch}
+`
+      : "";
+
+    return `# Sandbox Environment: ${sandboxId}
+
+${projectSection}## Available Services
+
+| Service | URL | Port |
+|---------|-----|------|
+| VSCode Server | http://localhost:8080 | 8080 |
+| OpenCode Server | http://localhost:3000 | 3000 |
+| SSH | \`ssh dev@${ipAddress}\` | 22 |
+
+## Quick Commands
+
+\`\`\`bash
+# Check sandbox status
+cat /etc/sandbox/config.json
+
+# View service logs
+tail -f /var/log/sandbox/code-server.log
+tail -f /var/log/sandbox/opencode.log
+
+# Restart services
+sudo systemctl restart code-server
+sudo systemctl restart opencode
+\`\`\`
+
+## Environment Variables
+
+Secrets are available in \`/etc/sandbox/secrets/.env\`
+Source with: \`source /etc/sandbox/secrets/.env\`
+
+## Workspace
+
+Your code is located in \`/home/dev/workspace\`
+
+## Troubleshooting
+
+- Services not responding? Check \`/var/log/sandbox/\`
+- Network issues? Run \`ping 172.16.0.1\`
+- Need help? Check the project documentation
+`;
   },
 
   async startFirecracker(

@@ -1,4 +1,6 @@
 import { LVM } from "@frak-sandbox/shared/constants";
+import type { BaseImageId } from "@frak-sandbox/shared/types";
+import { DEFAULT_BASE_IMAGE, getBaseImage } from "@frak-sandbox/shared/types";
 import { exec, commandExists } from "../lib/shell.ts";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
@@ -106,31 +108,58 @@ export const StorageService = {
     return result.success;
   },
 
-  async hasPrebuild(projectId: string): Promise<boolean> {
-    if (config.isMock()) return false;
+  async hasImageVolume(imageId: BaseImageId): Promise<boolean> {
+    if (config.isMock()) return true;
+
+    const image = getBaseImage(imageId);
+    if (!image) return false;
 
     const result = await exec(
-      `lvs ${LVM.VG_NAME}/prebuild-${projectId} --noheadings 2>/dev/null`,
+      `lvs ${LVM.VG_NAME}/${image.volumeName} --noheadings 2>/dev/null`,
       { throws: false }
     );
     return result.success;
   },
 
-  async createSandboxVolume(sandboxId: string, projectId?: string): Promise<string> {
-    const volumeName = `sandbox-${sandboxId}`;
+  async hasPrebuild(projectId: string): Promise<boolean> {
+    if (config.isMock()) return false;
+
+    const result = await exec(
+      `lvs ${LVM.VG_NAME}/${LVM.PREBUILD_PREFIX}${projectId} --noheadings 2>/dev/null`,
+      { throws: false }
+    );
+    return result.success;
+  },
+
+  async createSandboxVolume(
+    sandboxId: string,
+    options?: { projectId?: string; baseImage?: BaseImageId }
+  ): Promise<string> {
+    const volumeName = `${LVM.SANDBOX_PREFIX}${sandboxId}`;
     const volumePath = `/dev/${LVM.VG_NAME}/${volumeName}`;
+    const { projectId, baseImage } = options ?? {};
 
     if (config.isMock()) {
-      log.debug({ sandboxId, projectId }, "Mock: sandbox volume creation");
+      log.debug({ sandboxId, projectId, baseImage }, "Mock: sandbox volume creation");
       return volumePath;
     }
 
-    const sourceVolume =
-      projectId && (await this.hasPrebuild(projectId))
-        ? `prebuild-${projectId}`
-        : LVM.BASE_VOLUME;
+    // Priority: prebuild > image volume > legacy base volume
+    let sourceVolume: string;
 
-    log.info({ sandboxId, sourceVolume }, "Cloning volume");
+    if (projectId && (await this.hasPrebuild(projectId))) {
+      sourceVolume = `${LVM.PREBUILD_PREFIX}${projectId}`;
+    } else if (baseImage && (await this.hasImageVolume(baseImage))) {
+      const image = getBaseImage(baseImage);
+      sourceVolume = image!.volumeName;
+    } else if (await this.hasImageVolume(DEFAULT_BASE_IMAGE)) {
+      const defaultImage = getBaseImage(DEFAULT_BASE_IMAGE);
+      sourceVolume = defaultImage!.volumeName;
+    } else {
+      sourceVolume = LVM.BASE_VOLUME;
+    }
+
+    log.info({ sandboxId, sourceVolume, baseImage }, "Cloning volume");
 
     await exec(
       `lvcreate -s -n ${volumeName} ${LVM.VG_NAME}/${sourceVolume}`,
@@ -142,7 +171,7 @@ export const StorageService = {
   },
 
   async deleteSandboxVolume(sandboxId: string): Promise<void> {
-    const volumeName = `sandbox-${sandboxId}`;
+    const volumeName = `${LVM.SANDBOX_PREFIX}${sandboxId}`;
 
     if (config.isMock()) {
       log.debug({ sandboxId }, "Mock: sandbox volume deletion");
@@ -154,8 +183,8 @@ export const StorageService = {
   },
 
   async createPrebuild(projectId: string, sandboxId: string): Promise<void> {
-    const prebuildVolume = `prebuild-${projectId}`;
-    const sandboxVolume = `sandbox-${sandboxId}`;
+    const prebuildVolume = `${LVM.PREBUILD_PREFIX}${projectId}`;
+    const sandboxVolume = `${LVM.SANDBOX_PREFIX}${sandboxId}`;
 
     if (config.isMock()) {
       log.debug({ projectId, sandboxId }, "Mock: prebuild creation");
@@ -177,7 +206,7 @@ export const StorageService = {
       return;
     }
 
-    await exec(`lvremove -f ${LVM.VG_NAME}/prebuild-${projectId} 2>/dev/null || true`);
+    await exec(`lvremove -f ${LVM.VG_NAME}/${LVM.PREBUILD_PREFIX}${projectId} 2>/dev/null || true`);
     log.info({ projectId }, "Prebuild deleted");
   },
 

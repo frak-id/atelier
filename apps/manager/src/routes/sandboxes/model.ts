@@ -7,10 +7,19 @@ const SandboxStatus = t.Union([
   t.Literal("error"),
 ]);
 
+const BaseImageEnum = t.Union([
+  t.Literal("dev-base"),
+  t.Literal("dev-node"),
+  t.Literal("dev-rust"),
+  t.Literal("dev-python"),
+  t.Literal("dev-go"),
+]);
+
 export const SandboxModel = {
   create: t.Object({
     id: t.Optional(t.String({ minLength: 1, maxLength: 32 })),
     projectId: t.Optional(t.String()),
+    baseImage: t.Optional(BaseImageEnum),
     branch: t.Optional(t.String()),
     vcpus: t.Optional(t.Number({ minimum: 1, maximum: 8 })),
     memoryMb: t.Optional(t.Number({ minimum: 512, maximum: 8192 })),
@@ -19,6 +28,7 @@ export const SandboxModel = {
   createQueued: t.Object({
     id: t.Optional(t.String({ minLength: 1, maxLength: 32 })),
     projectId: t.Optional(t.String()),
+    baseImage: t.Optional(BaseImageEnum),
     branch: t.Optional(t.String()),
     vcpus: t.Optional(t.Number({ minimum: 1, maximum: 8 })),
     memoryMb: t.Optional(t.Number({ minimum: 512, maximum: 8192 })),

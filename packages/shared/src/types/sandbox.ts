@@ -47,11 +47,15 @@ export interface Sandbox {
   error?: string;
 }
 
+import type { BaseImageId } from "./image.ts";
+
 export interface CreateSandboxOptions {
   /** Optional custom ID */
   id?: string;
-  /** Project ID to clone */
+  /** Project ID to clone (if set, uses project's baseImage and config) */
   projectId?: string;
+  /** Base image to use (only when projectId is not set) */
+  baseImage?: BaseImageId;
   /** Git branch to checkout */
   branch?: string;
   /** Number of vCPUs (default: 2) */

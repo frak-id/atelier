@@ -6,6 +6,7 @@ import { setupNetwork } from "./commands/setup-network";
 import { testVm } from "./commands/test-vm";
 import { setupStorage } from "./commands/setup-storage";
 import { deployManager } from "./commands/deploy-manager";
+import { images } from "./commands/images";
 
 const COMMANDS = {
   setup: {
@@ -37,6 +38,11 @@ const COMMANDS = {
     label: "Manager API",
     description: "Deploy/manage the sandbox manager API",
     handler: deployManager,
+  },
+  images: {
+    label: "Images",
+    description: "Build and manage base images",
+    handler: images,
   },
   vm: {
     label: "Test VM",
@@ -111,6 +117,7 @@ Commands:
   network         Configure persistent bridge for VM networking
   storage         Configure LVM thin provisioning
   manager         Manage the sandbox manager API service
+  images          Build and manage base images
   vm              Start/stop/manage test VM
 
 Manager Subcommands:
@@ -119,6 +126,11 @@ Manager Subcommands:
   manager restart Restart the manager service
   manager status  Show service status and health
   manager logs    View manager logs (follows)
+
+Images Subcommands:
+  images build    Build a base image (interactive or: images build dev-base)
+  images list     List available base images
+  images status   Check which images are built
 
 VM Subcommands:
   vm start        Start test VM
@@ -133,6 +145,7 @@ Examples:
   frak-sandbox setup            Prepare server (run once)
   frak-sandbox manager status   Check API health
   frak-sandbox manager logs     Follow API logs
+  frak-sandbox images build     Build base image
   frak-sandbox vm start         Start test VM
 `);
 }

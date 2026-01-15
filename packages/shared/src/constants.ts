@@ -57,10 +57,16 @@ export const LVM = {
   VG_NAME: "sandbox-vg",
   /** Thin pool name */
   THIN_POOL: "thin-pool",
-  /** Base volume name */
+  /** Base volume name (legacy, use image volumes) */
   BASE_VOLUME: "base-rootfs",
-  /** Base volume size */
+  /** Base volume size (legacy) */
   BASE_SIZE: "2G",
+  /** Image volume prefix */
+  IMAGE_PREFIX: "image-",
+  /** Prebuild volume prefix */
+  PREBUILD_PREFIX: "prebuild-",
+  /** Sandbox volume prefix */
+  SANDBOX_PREFIX: "sandbox-",
 } as const;
 
 export const CADDY = {

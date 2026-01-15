@@ -7,6 +7,8 @@ import { SandboxError } from "./lib/errors.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { systemRoutes } from "./routes/system/index.ts";
 import { sandboxRoutes } from "./routes/sandboxes/index.ts";
+import { projectRoutes } from "./routes/projects/index.ts";
+import { imageRoutes } from "./routes/images/index.ts";
 import { debugRoutes } from "./routes/debug/index.ts";
 
 const app = new Elysia()
@@ -23,6 +25,8 @@ const app = new Elysia()
         tags: [
           { name: "health", description: "Health check endpoints" },
           { name: "sandboxes", description: "Sandbox lifecycle management" },
+          { name: "projects", description: "Project configuration management" },
+          { name: "images", description: "Base image management" },
           { name: "system", description: "System statistics and maintenance" },
           { name: "debug", description: "Debug and diagnostic endpoints" },
         ],
@@ -71,6 +75,8 @@ const app = new Elysia()
     app
       .use(systemRoutes)
       .use(sandboxRoutes)
+      .use(projectRoutes)
+      .use(imageRoutes)
   )
   .use(debugRoutes)
   .get("/", () => ({
