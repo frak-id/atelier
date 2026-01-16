@@ -94,8 +94,8 @@ function rowToSandbox(row: Record<string, unknown>): Sandbox {
   return {
     id: row.id as string,
     status: row.status as SandboxStatus,
-    projectId: row.project_id as string | undefined,
-    branch: row.branch as string | undefined,
+    projectId: (row.project_id as string | null) ?? undefined,
+    branch: (row.branch as string | null) ?? undefined,
     ipAddress: row.ip_address as string,
     macAddress: row.mac_address as string,
     urls: {
@@ -107,8 +107,8 @@ function rowToSandbox(row: Record<string, unknown>): Sandbox {
       vcpus: row.vcpus as number,
       memoryMb: row.memory_mb as number,
     },
-    pid: row.pid as number | undefined,
-    error: row.error as string | undefined,
+    pid: (row.pid as number | null) ?? undefined,
+    error: (row.error as string | null) ?? undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -147,7 +147,7 @@ function rowToProject(row: Record<string, unknown>): Project {
     startCommands: JSON.parse(row.start_commands as string),
     secrets: JSON.parse(row.secrets as string),
     exposedPorts: JSON.parse(row.exposed_ports as string),
-    latestPrebuildId: row.latest_prebuild_id as string | undefined,
+    latestPrebuildId: (row.latest_prebuild_id as string | null) ?? undefined,
     prebuildStatus: row.prebuild_status as PrebuildStatus,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

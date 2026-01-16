@@ -135,6 +135,40 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       params: SandboxModel.idParam,
     },
   )
+  .post(
+    "/:id/stop",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      log.info({ sandboxId: params.id }, "Stopping sandbox");
+      return FirecrackerService.stop(params.id);
+    },
+    {
+      params: SandboxModel.idParam,
+      response: SandboxModel.response,
+      detail: { tags: ["sandboxes"], summary: "Stop (pause) a running sandbox" },
+    },
+  )
+  .post(
+    "/:id/start",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      log.info({ sandboxId: params.id }, "Starting sandbox");
+      return FirecrackerService.start(params.id);
+    },
+    {
+      params: SandboxModel.idParam,
+      response: SandboxModel.response,
+      detail: { tags: ["sandboxes"], summary: "Start (resume) a stopped sandbox" },
+    },
+  )
   // Agent routes - communicate with sandbox-agent inside VM
   .get(
     "/:id/health",

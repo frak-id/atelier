@@ -14,6 +14,7 @@ import { sandboxRoutes } from "./routes/sandboxes/index.ts";
 import { systemRoutes } from "./routes/system/index.ts";
 import { initDatabase } from "./state/database.ts";
 
+logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");
 

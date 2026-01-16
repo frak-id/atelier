@@ -6,12 +6,14 @@ import { $ } from "bun";
 const ROOT = resolve(import.meta.dirname, "..");
 const CLI_DIR = resolve(ROOT, "infra/cli");
 const MANAGER_DIR = resolve(ROOT, "apps/manager");
+const DASHBOARD_DIR = resolve(ROOT, "apps/dashboard");
 const AGENT_DIR = resolve(ROOT, "packages/sandbox-agent");
 const INFRA_DIR = resolve(ROOT, "infra");
 const IMAGES_DIR = resolve(ROOT, "infra/images");
 
 const REMOTE_APP_DIR = "/opt/frak-sandbox";
 const REMOTE_IMAGES_DIR = `${REMOTE_APP_DIR}/infra/images`;
+const REMOTE_DASHBOARD_DIR = `${REMOTE_APP_DIR}/apps/dashboard`;
 
 const { SSH_KEY_PATH, SSH_USER, SSH_HOST, SSH_KEY_PASSPHRASE } = process.env;
 
@@ -43,9 +45,12 @@ async function main() {
   await $`bun run --filter @frak-sandbox/cli build:linux`;
   await $`bun run --filter @frak-sandbox/manager build`;
   await $`bun run --filter @frak-sandbox/agent build`;
+  await $`bun run --filter @frak-sandbox/dashboard build`;
 
   console.log("\n🚀 Deploying...");
-  await ssh(`mkdir -p ${REMOTE_APP_DIR} ${REMOTE_IMAGES_DIR}`);
+  await ssh(
+    `mkdir -p ${REMOTE_APP_DIR} ${REMOTE_IMAGES_DIR} ${REMOTE_DASHBOARD_DIR}`,
+  );
 
   await scp(
     resolve(CLI_DIR, "dist/frak-sandbox-linux-x64"),
@@ -65,6 +70,10 @@ async function main() {
     `${REMOTE_IMAGES_DIR}/sandbox-agent.mjs`,
   );
   console.log("   ✓ Sandbox Agent");
+
+  await ssh(`rm -rf ${REMOTE_DASHBOARD_DIR}/dist`);
+  await scpDir(resolve(DASHBOARD_DIR, "dist"), `${REMOTE_DASHBOARD_DIR}/`);
+  console.log("   ✓ Dashboard");
 
   await scp(
     `${IMAGES_DIR}/build-image.sh`,

@@ -12,6 +12,7 @@ Environment=PATH=/root/.bun/bin:/usr/local/bin:/usr/bin:/bin
 Environment=NODE_ENV=production
 Environment=SANDBOX_MODE=production
 Environment=PORT=4000
+Environment=DATA_DIR=/opt/frak-sandbox/data
 ExecStart=/root/.bun/bin/bun server.js
 
 Restart=on-failure

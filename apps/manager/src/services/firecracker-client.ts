@@ -102,10 +102,42 @@ export class FirecrackerClient {
     });
   }
 
+  async pause(): Promise<void> {
+    await this.request("/vm", {
+      method: "PATCH",
+      body: { state: "Paused" },
+    });
+  }
+
+  async resume(): Promise<void> {
+    await this.request("/vm", {
+      method: "PATCH",
+      body: { state: "Resumed" },
+    });
+  }
+
+  async getVmState(): Promise<"Running" | "Paused" | "Not started"> {
+    try {
+      const response = await this.request<{ state: string }>("/vm");
+      return response.state as "Running" | "Paused" | "Not started";
+    } catch {
+      return "Not started";
+    }
+  }
+
   async isRunning(): Promise<boolean> {
     try {
       const state = await this.getState();
       return state.state === "Running";
+    } catch {
+      return false;
+    }
+  }
+
+  async isPaused(): Promise<boolean> {
+    try {
+      const vmState = await this.getVmState();
+      return vmState === "Paused";
     } catch {
       return false;
     }

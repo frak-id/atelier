@@ -77,10 +77,76 @@ export const FirecrackerService = {
     const socketExists = await fileExists(socketPath);
 
     if (processAlive.exitCode !== 0 || !socketExists) {
-      SandboxRepository.updateStatus(sandboxId, "stopped");
+      if (sandbox.status !== "stopped") {
+        SandboxRepository.updateStatus(sandboxId, "error");
+      }
     }
 
     return SandboxRepository.getById(sandboxId) ?? sandbox;
+  },
+
+  async stop(sandboxId: string): Promise<Sandbox> {
+    const sandbox = SandboxRepository.getById(sandboxId);
+    if (!sandbox) {
+      throw new Error(`Sandbox '${sandboxId}' not found`);
+    }
+
+    if (sandbox.status !== "running") {
+      throw new Error(`Sandbox '${sandboxId}' is not running (status: ${sandbox.status})`);
+    }
+
+    log.info({ sandboxId }, "Stopping sandbox");
+
+    if (!config.isMock()) {
+      const socketPath = getSocketPath(sandboxId);
+      if (!(await fileExists(socketPath))) {
+        throw new Error(`Socket not found for sandbox '${sandboxId}'`);
+      }
+
+      const client = new FirecrackerClient(socketPath);
+      await client.pause();
+    }
+
+    SandboxRepository.updateStatus(sandboxId, "stopped");
+    log.info({ sandboxId }, "Sandbox stopped");
+
+    return SandboxRepository.getById(sandboxId)!;
+  },
+
+  async start(sandboxId: string): Promise<Sandbox> {
+    const sandbox = SandboxRepository.getById(sandboxId);
+    if (!sandbox) {
+      throw new Error(`Sandbox '${sandboxId}' not found`);
+    }
+
+    if (sandbox.status !== "stopped") {
+      throw new Error(`Sandbox '${sandboxId}' is not stopped (status: ${sandbox.status})`);
+    }
+
+    log.info({ sandboxId }, "Starting sandbox");
+
+    if (!config.isMock()) {
+      const socketPath = getSocketPath(sandboxId);
+      if (!(await fileExists(socketPath))) {
+        throw new Error(`Socket not found for sandbox '${sandboxId}' - VM may have crashed`);
+      }
+
+      const processAlive = sandbox.pid
+        ? await $`kill -0 ${sandbox.pid}`.quiet().nothrow()
+        : { exitCode: 1 };
+
+      if (processAlive.exitCode !== 0) {
+        throw new Error(`Sandbox '${sandboxId}' process is not running - cannot resume`);
+      }
+
+      const client = new FirecrackerClient(socketPath);
+      await client.resume();
+    }
+
+    SandboxRepository.updateStatus(sandboxId, "running");
+    log.info({ sandboxId }, "Sandbox started");
+
+    return SandboxRepository.getById(sandboxId)!;
   },
 
   async getFirecrackerState(sandboxId: string): Promise<unknown> {

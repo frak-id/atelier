@@ -2,8 +2,8 @@ import { exec as execCallback, execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { promisify } from "node:util";
-import { Elysia, t } from "elysia";
 import { node } from "@elysiajs/node";
+import { Elysia, t } from "elysia";
 
 const exec = promisify(execCallback);
 

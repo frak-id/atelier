@@ -1,8 +1,8 @@
 import {
+  type BaseImageId,
   getAllImages,
   getAvailableImages,
   getBaseImage,
-  type BaseImageId,
 } from "@frak-sandbox/shared/types";
 import { Elysia, t } from "elysia";
 import { NotFoundError } from "../../lib/errors.ts";

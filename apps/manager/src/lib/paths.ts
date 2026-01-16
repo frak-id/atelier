@@ -5,15 +5,18 @@ const APP_NAME = "frak-sandbox";
 
 const paths = envPaths(APP_NAME, { suffix: "" });
 
+// Allow explicit data directory override for production deployments
+const dataDir = process.env.DATA_DIR ?? paths.data;
+
 export const appPaths = {
-  data: paths.data,
-  config: paths.config,
-  cache: paths.cache,
-  log: paths.log,
+  data: dataDir,
+  config: process.env.DATA_DIR ? dataDir : paths.config,
+  cache: process.env.DATA_DIR ? dataDir : paths.cache,
+  log: process.env.DATA_DIR ? `${dataDir}/logs` : paths.log,
   temp: paths.temp,
 
   get database() {
-    return `${paths.data}/manager.db`;
+    return `${dataDir}/manager.db`;
   },
 };
 
