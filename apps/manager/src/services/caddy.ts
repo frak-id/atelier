@@ -13,33 +13,37 @@ export const CaddyService = {
   async registerRoutes(
     sandboxId: string,
     ipAddress: string,
-    ports: { vscode: number; opencode: number },
-  ): Promise<{ vscode: string; opencode: string }> {
+    ports: { vscode: number; opencode: number; terminal: number },
+  ): Promise<{ vscode: string; opencode: string; terminal: string }> {
     const vscodeDomain = `sandbox-${sandboxId}.${config.caddy.domainSuffix}`;
     const opencodeDomain = `opencode-${sandboxId}.${config.caddy.domainSuffix}`;
+    const terminalDomain = `terminal-${sandboxId}.${config.caddy.domainSuffix}`;
 
     if (config.isMock()) {
       log.debug(
-        { sandboxId, vscodeDomain, opencodeDomain },
+        { sandboxId, vscodeDomain, opencodeDomain, terminalDomain },
         "Mock: Caddy routes registered",
       );
       return {
         vscode: `https://${vscodeDomain}`,
         opencode: `https://${opencodeDomain}`,
+        terminal: `https://${terminalDomain}`,
       };
     }
 
     await this.addRoute(vscodeDomain, `${ipAddress}:${ports.vscode}`);
     await this.addRoute(opencodeDomain, `${ipAddress}:${ports.opencode}`);
+    await this.addRoute(terminalDomain, `${ipAddress}:${ports.terminal}`);
 
     log.info(
-      { sandboxId, vscodeDomain, opencodeDomain },
+      { sandboxId, vscodeDomain, opencodeDomain, terminalDomain },
       "Caddy routes registered",
     );
 
     return {
       vscode: `https://${vscodeDomain}`,
       opencode: `https://${opencodeDomain}`,
+      terminal: `https://${terminalDomain}`,
     };
   },
 
@@ -74,6 +78,7 @@ export const CaddyService = {
   async removeRoutes(sandboxId: string): Promise<void> {
     const vscodeDomain = `sandbox-${sandboxId}.${config.caddy.domainSuffix}`;
     const opencodeDomain = `opencode-${sandboxId}.${config.caddy.domainSuffix}`;
+    const terminalDomain = `terminal-${sandboxId}.${config.caddy.domainSuffix}`;
 
     if (config.isMock()) {
       log.debug({ sandboxId }, "Mock: Caddy routes removed");
@@ -82,6 +87,7 @@ export const CaddyService = {
 
     await this.removeRoute(vscodeDomain);
     await this.removeRoute(opencodeDomain);
+    await this.removeRoute(terminalDomain);
 
     log.info({ sandboxId }, "Caddy routes removed");
   },

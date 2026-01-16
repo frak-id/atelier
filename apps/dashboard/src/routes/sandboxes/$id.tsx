@@ -20,6 +20,7 @@ import {
   useStartSandbox,
   useStopSandbox,
 } from "@/api/queries";
+import { SandboxTerminal } from "@/components/terminal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -203,6 +204,9 @@ function SandboxDetailPage() {
           <CardContent className="space-y-3">
             <UrlRow label="VSCode" url={sandbox.urls.vscode} />
             <UrlRow label="OpenCode" url={sandbox.urls.opencode} />
+            {sandbox.urls.terminal && (
+              <UrlRow label="Terminal" url={sandbox.urls.terminal} />
+            )}
             <DetailRow label="SSH" value={sandbox.urls.ssh} mono />
           </CardContent>
         </Card>
@@ -265,6 +269,7 @@ function SandboxDetailPage() {
           <TabsList>
             <TabsTrigger value="services">Services</TabsTrigger>
             <TabsTrigger value="terminal">Terminal</TabsTrigger>
+            <TabsTrigger value="exec">Exec</TabsTrigger>
           </TabsList>
 
           <TabsContent value="services">
@@ -303,7 +308,13 @@ function SandboxDetailPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="terminal">
+          <TabsContent value="terminal" className="h-[500px]">
+            {sandbox.urls.terminal && (
+              <SandboxTerminal terminalUrl={sandbox.urls.terminal} />
+            )}
+          </TabsContent>
+
+          <TabsContent value="exec">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

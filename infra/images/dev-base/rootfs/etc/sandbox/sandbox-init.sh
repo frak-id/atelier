@@ -99,6 +99,15 @@ else
     fi
 fi
 
+log "Starting ttyd terminal server..."
+if command -v ttyd >/dev/null 2>&1; then
+    # Run ttyd as dev user with login shell for full environment
+    ttyd -p 7681 -W -t fontSize=14 -t fontFamily="monospace" su - dev > "$LOG_DIR/ttyd.log" 2>&1 &
+    log "ttyd started (PID $!) on port 7681"
+else
+    log "WARNING: ttyd not found"
+fi
+
 log "Starting sandbox-agent..."
 if [ -f /usr/local/lib/sandbox-agent.mjs ]; then
     node /usr/local/lib/sandbox-agent.mjs > "$LOG_DIR/agent.log" 2>&1 &
@@ -115,7 +124,7 @@ if [ -f "$START_SCRIPT" ]; then
 fi
 
 log "Sandbox initialization complete"
-log "Services: SSH(22), code-server(8080), opencode(3000), agent(9999)"
+log "Services: SSH(22), code-server(8080), opencode(3000), ttyd(7681), agent(9999)"
 
 # List running processes
 log "Running processes:"

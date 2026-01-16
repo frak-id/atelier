@@ -56,6 +56,7 @@ export const PrebuildService = {
 
       await this.cloneRepository(prebuildSandboxId, project);
       await this.runInitCommands(prebuildSandboxId, project);
+      await AgentClient.exec(prebuildSandboxId, "sync");
       await StorageService.createPrebuild(projectId, prebuildSandboxId);
 
       log.info({ projectId, prebuildSandboxId }, "Prebuild snapshot created");
@@ -89,14 +90,29 @@ export const PrebuildService = {
       "Cloning repository in prebuild sandbox",
     );
 
+    await AgentClient.exec(sandboxId, `rm -rf ${WORKSPACE_DIR}`);
+
     const cloneCmd = `git clone --depth 1 -b ${project.defaultBranch} ${project.gitUrl} ${WORKSPACE_DIR}`;
     const result = await AgentClient.exec(sandboxId, cloneCmd, {
       timeout: COMMAND_TIMEOUT,
     });
 
     if (result.exitCode !== 0) {
+      log.error(
+        { sandboxId, exitCode: result.exitCode, stderr: result.stderr },
+        "Git clone failed",
+      );
       throw new Error(`Git clone failed: ${result.stderr}`);
     }
+
+    const verifyResult = await AgentClient.exec(
+      sandboxId,
+      `ls ${WORKSPACE_DIR} | head -5`,
+    );
+    log.info(
+      { sandboxId, files: verifyResult.stdout.trim() },
+      "Clone verification",
+    );
 
     await AgentClient.exec(sandboxId, `chown -R dev:dev ${WORKSPACE_DIR}`);
     await AgentClient.exec(

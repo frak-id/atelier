@@ -144,7 +144,7 @@ export interface Sandbox {
   branch?: string;
   ipAddress: string;
   macAddress: string;
-  urls: { vscode: string; opencode: string; ssh: string };
+  urls: { vscode: string; opencode: string; terminal: string; ssh: string };
   resources: { vcpus: number; memoryMb: number };
   pid?: number;
   createdAt: string;

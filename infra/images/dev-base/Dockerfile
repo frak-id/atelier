@@ -57,6 +57,11 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
 # Install code-server
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
+# Install ttyd for web terminal access
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ttyd \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install OpenCode
 RUN npm install -g opencode-ai
 

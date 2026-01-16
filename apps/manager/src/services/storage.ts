@@ -201,7 +201,7 @@ export const StorageService = {
       log.info({ projectId }, "Old prebuild removed");
     }
 
-    await $`${LVCREATE} -s -n ${prebuildVolume} ${vg}/${sandboxVolume}`.quiet();
+    await $`${LVCREATE} -s -kn -n ${prebuildVolume} ${vg}/${sandboxVolume}`.quiet();
     log.info({ projectId, sandboxId }, "Prebuild created from sandbox");
   },
 

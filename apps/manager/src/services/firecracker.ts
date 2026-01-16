@@ -2,6 +2,7 @@ import { FIRECRACKER } from "@frak-sandbox/shared/constants";
 import type { CreateSandboxOptions, Sandbox } from "@frak-sandbox/shared/types";
 import { $ } from "bun";
 import { config } from "../lib/config.ts";
+import { NotFoundError } from "../lib/errors.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { fileExists } from "../lib/shell.ts";
 import { SandboxRepository } from "../state/database.ts";
@@ -28,7 +29,7 @@ export const FirecrackerService = {
   async destroy(sandboxId: string): Promise<void> {
     const sandbox = SandboxRepository.getById(sandboxId);
     if (!sandbox) {
-      throw new Error(`Sandbox '${sandboxId}' not found`);
+      throw new NotFoundError("Sandbox", sandboxId);
     }
 
     log.info({ sandboxId }, "Destroying sandbox");
@@ -62,10 +63,10 @@ export const FirecrackerService = {
     log.info({ sandboxId }, "Sandbox destroyed");
   },
 
-  async getStatus(sandboxId: string): Promise<Sandbox> {
+  async getStatus(sandboxId: string): Promise<Sandbox | undefined> {
     const sandbox = SandboxRepository.getById(sandboxId);
     if (!sandbox) {
-      throw new Error(`Sandbox '${sandboxId}' not found`);
+      return undefined;
     }
 
     if (config.isMock() || !sandbox.pid) {
@@ -78,6 +79,16 @@ export const FirecrackerService = {
 
     if (processAlive.exitCode !== 0 || !socketExists) {
       if (sandbox.status !== "stopped") {
+        log.warn(
+          {
+            sandboxId,
+            pid: sandbox.pid,
+            processAlive: processAlive.exitCode === 0,
+            socketPath,
+            socketExists,
+          },
+          "Sandbox liveness check failed, marking as error",
+        );
         SandboxRepository.updateStatus(sandboxId, "error");
       }
     }
@@ -88,7 +99,7 @@ export const FirecrackerService = {
   async stop(sandboxId: string): Promise<Sandbox> {
     const sandbox = SandboxRepository.getById(sandboxId);
     if (!sandbox) {
-      throw new Error(`Sandbox '${sandboxId}' not found`);
+      throw new NotFoundError("Sandbox", sandboxId);
     }
 
     if (sandbox.status !== "running") {
@@ -118,7 +129,7 @@ export const FirecrackerService = {
   async start(sandboxId: string): Promise<Sandbox> {
     const sandbox = SandboxRepository.getById(sandboxId);
     if (!sandbox) {
-      throw new Error(`Sandbox '${sandboxId}' not found`);
+      throw new NotFoundError("Sandbox", sandboxId);
     }
 
     if (sandbox.status !== "stopped") {

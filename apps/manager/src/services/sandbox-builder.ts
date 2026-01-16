@@ -21,6 +21,7 @@ const log = createChildLogger("sandbox-builder");
 
 const VSCODE_PORT = 8080;
 const OPENCODE_PORT = 3000;
+const TERMINAL_PORT = 7681;
 
 interface SandboxPaths {
   socket: string;
@@ -162,7 +163,7 @@ export class SandboxBuilder {
       branch: this.options.branch ?? this.project?.defaultBranch,
       ipAddress: this.network.ipAddress,
       macAddress: this.network.macAddress,
-      urls: { vscode: "", opencode: "", ssh: "" },
+      urls: { vscode: "", opencode: "", terminal: "", ssh: "" },
       resources: { vcpus, memoryMb },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -180,6 +181,7 @@ export class SandboxBuilder {
     this.sandbox.urls = {
       vscode: `https://sandbox-${this.sandboxId}.${config.caddy.domainSuffix}`,
       opencode: `https://opencode-${this.sandboxId}.${config.caddy.domainSuffix}`,
+      terminal: `https://terminal-${this.sandboxId}.${config.caddy.domainSuffix}`,
       ssh: `ssh root@${this.network?.ipAddress}`,
     };
     this.sandbox.status = "running";
@@ -444,6 +446,8 @@ Your code is located in \`/home/dev/workspace\`
       "Cloning repository in sandbox",
     );
 
+    await AgentClient.exec(this.sandboxId, `rm -rf ${workspace}`);
+
     const result = await AgentClient.exec(
       this.sandboxId,
       `git clone --depth 1 -b ${branch} ${this.project.gitUrl} ${workspace}`,
@@ -480,6 +484,7 @@ Your code is located in \`/home/dev/workspace\`
       {
         vscode: VSCODE_PORT,
         opencode: OPENCODE_PORT,
+        terminal: TERMINAL_PORT,
       },
     );
 

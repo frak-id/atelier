@@ -130,15 +130,16 @@ async function getServiceLogs(service: string, lines = 100): Promise<string> {
 const app = new Elysia({ adapter: node() })
   .get("/health", async () => {
     const config = await loadConfig();
-    const [vscode, opencode, sshd] = await Promise.all([
+    const [vscode, opencode, sshd, ttyd] = await Promise.all([
       checkPort(8080),
       checkPort(3000),
       checkPort(22),
+      checkPort(7681),
     ]);
     return {
       status: "healthy",
       sandboxId: config?.sandboxId,
-      services: { vscode, opencode, sshd },
+      services: { vscode, opencode, sshd, ttyd },
       uptime: process.uptime(),
     };
   })
@@ -219,12 +220,13 @@ const app = new Elysia({ adapter: node() })
     return { service: params.service, content };
   })
   .get("/services", async () => {
-    const [codeServer, opencode, sshd] = await Promise.all([
+    const [codeServer, opencode, sshd, ttyd] = await Promise.all([
       getServiceStatus("code-server"),
       getServiceStatus("opencode"),
       getServiceStatus("sshd"),
+      getServiceStatus("ttyd"),
     ]);
-    return { services: [codeServer, opencode, sshd] };
+    return { services: [codeServer, opencode, sshd, ttyd] };
   })
   .listen(AGENT_PORT, () => {
     console.log(`Sandbox agent running at http://0.0.0.0:${AGENT_PORT}`);

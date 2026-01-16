@@ -9,6 +9,8 @@ export interface SandboxUrls {
   vscode: string;
   /** OpenCode URL */
   opencode: string;
+  /** Web terminal URL (ttyd) */
+  terminal: string;
   /** SSH connection string */
   ssh: string;
 }
