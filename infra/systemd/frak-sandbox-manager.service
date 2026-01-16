@@ -13,6 +13,7 @@ Environment=NODE_ENV=production
 Environment=SANDBOX_MODE=production
 Environment=PORT=4000
 Environment=DATA_DIR=/opt/frak-sandbox/data
+Environment=MIGRATIONS_DIR=/opt/frak-sandbox/drizzle
 ExecStart=/root/.bun/bin/bun server.js
 
 Restart=on-failure

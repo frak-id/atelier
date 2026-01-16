@@ -164,7 +164,9 @@ export function useStopSandbox() {
     mutationFn: (id: string) => api.sandboxes.stop(id),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.detail(id) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(id),
+      });
     },
   });
 }
@@ -175,7 +177,9 @@ export function useStartSandbox() {
     mutationFn: (id: string) => api.sandboxes.start(id),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.detail(id) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(id),
+      });
     },
   });
 }

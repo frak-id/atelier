@@ -149,7 +149,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       params: SandboxModel.idParam,
       response: SandboxModel.response,
-      detail: { tags: ["sandboxes"], summary: "Stop (pause) a running sandbox" },
+      detail: {
+        tags: ["sandboxes"],
+        summary: "Stop (pause) a running sandbox",
+      },
     },
   )
   .post(
@@ -166,7 +169,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       params: SandboxModel.idParam,
       response: SandboxModel.response,
-      detail: { tags: ["sandboxes"], summary: "Start (resume) a stopped sandbox" },
+      detail: {
+        tags: ["sandboxes"],
+        summary: "Start (resume) a stopped sandbox",
+      },
     },
   )
   // Agent routes - communicate with sandbox-agent inside VM

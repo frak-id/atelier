@@ -92,7 +92,9 @@ export const FirecrackerService = {
     }
 
     if (sandbox.status !== "running") {
-      throw new Error(`Sandbox '${sandboxId}' is not running (status: ${sandbox.status})`);
+      throw new Error(
+        `Sandbox '${sandboxId}' is not running (status: ${sandbox.status})`,
+      );
     }
 
     log.info({ sandboxId }, "Stopping sandbox");
@@ -120,7 +122,9 @@ export const FirecrackerService = {
     }
 
     if (sandbox.status !== "stopped") {
-      throw new Error(`Sandbox '${sandboxId}' is not stopped (status: ${sandbox.status})`);
+      throw new Error(
+        `Sandbox '${sandboxId}' is not stopped (status: ${sandbox.status})`,
+      );
     }
 
     log.info({ sandboxId }, "Starting sandbox");
@@ -128,7 +132,9 @@ export const FirecrackerService = {
     if (!config.isMock()) {
       const socketPath = getSocketPath(sandboxId);
       if (!(await fileExists(socketPath))) {
-        throw new Error(`Socket not found for sandbox '${sandboxId}' - VM may have crashed`);
+        throw new Error(
+          `Socket not found for sandbox '${sandboxId}' - VM may have crashed`,
+        );
       }
 
       const processAlive = sandbox.pid
@@ -136,7 +142,9 @@ export const FirecrackerService = {
         : { exitCode: 1 };
 
       if (processAlive.exitCode !== 0) {
-        throw new Error(`Sandbox '${sandboxId}' process is not running - cannot resume`);
+        throw new Error(
+          `Sandbox '${sandboxId}' process is not running - cannot resume`,
+        );
       }
 
       const client = new FirecrackerClient(socketPath);

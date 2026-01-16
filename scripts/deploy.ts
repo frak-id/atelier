@@ -63,7 +63,9 @@ async function main() {
     resolve(MANAGER_DIR, "dist/server.js"),
     `${REMOTE_APP_DIR}/server.js`,
   );
-  console.log("   ✓ Manager API");
+  await ssh(`rm -rf ${REMOTE_APP_DIR}/drizzle`);
+  await scpDir(resolve(MANAGER_DIR, "drizzle"), `${REMOTE_APP_DIR}/`);
+  console.log("   ✓ Manager API + Migrations");
 
   await scp(
     resolve(AGENT_DIR, "dist/sandbox-agent.mjs"),

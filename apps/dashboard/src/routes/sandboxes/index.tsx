@@ -154,8 +154,13 @@ function SandboxesPage() {
               isRecreating={recreatingId === sandbox.id}
               onStop={() => stopMutation.mutate(sandbox.id)}
               onStart={() => startMutation.mutate(sandbox.id)}
-              isStopping={stopMutation.isPending && stopMutation.variables === sandbox.id}
-              isStarting={startMutation.isPending && startMutation.variables === sandbox.id}
+              isStopping={
+                stopMutation.isPending && stopMutation.variables === sandbox.id
+              }
+              isStarting={
+                startMutation.isPending &&
+                startMutation.variables === sandbox.id
+              }
             />
           ))}
         </div>

@@ -9,14 +9,16 @@
 | Component | Status | Notes |
 |-----------|--------|-------|
 | **CLI** (`infra/cli`) | ✅ Complete | Full provisioning CLI with interactive prompts |
-| **Manager API** (`apps/manager`) | ✅ Core Done | Sandbox CRUD, health checks, system stats |
+| **Manager API** (`apps/manager`) | ✅ Complete | Sandbox CRUD, projects, images, system stats, stop/start lifecycle |
 | **Shared Types** (`packages/shared`) | ✅ Complete | Types for sandbox, project, system |
 | **Deployment** (`scripts/deploy.ts`) | ✅ Complete | SSH-based deployment with systemd |
-| **Dashboard** | ❌ Not Started | Planned for Phase 5 |
-| **Sandbox Agent** | ❌ Not Started | Planned for Phase 3 |
-| **Prebuilds** | ❌ Not Started | Planned for Phase 4 |
+| **Dashboard** (`apps/dashboard`) | ✅ Complete | React + TanStack Router/Query, full sandbox/project management |
+| **Sandbox Agent** (`packages/sandbox-agent`) | ✅ Complete | Health, metrics, exec, services, apps (Node.js for FC compatibility) |
+| **Projects** | ✅ Complete | Project CRUD with init/start commands, secrets, prebuilds |
+| **Prebuilds** | ✅ Complete | LVM snapshot-based prebuilds with trigger API |
 | **LVM Storage** | ✅ Complete | StorageService with auto-fallback to file copy |
 | **Spawn Queue** | ✅ Complete | QueueService with concurrency control |
+| **Sandbox Lifecycle** | ⚠️ Partial | Stop/Start (pause/resume) implemented; COLD state deferred |
 
 ---
 
@@ -202,86 +204,128 @@ Source with: `source /etc/sandbox/secrets/.env`
 ```
 oc-sandbox/
 ├── apps/
-│   └── manager/                   # ✅ Sandbox orchestration API (ElysiaJS)
+│   ├── manager/                   # ✅ Sandbox orchestration API (ElysiaJS)
+│   │   ├── src/
+│   │   │   ├── index.ts           # Elysia app entry with Swagger
+│   │   │   ├── routes/
+│   │   │   │   ├── sandboxes/     # /api/sandboxes/* (CRUD + stop/start)
+│   │   │   │   │   ├── index.ts   # List, create, get, delete, stop, start
+│   │   │   │   │   └── model.ts   # TypeBox schemas
+│   │   │   │   ├── projects/      # /api/projects/* (CRUD + prebuilds)
+│   │   │   │   ├── images/        # /api/images/* (base images)
+│   │   │   │   ├── system/        # /api/system/* (stats, cleanup)
+│   │   │   │   │   ├── index.ts
+│   │   │   │   │   └── service.ts
+│   │   │   │   ├── health.ts      # /health, /health/live, /health/ready
+│   │   │   │   └── debug/         # /debug/* (development)
+│   │   │   ├── services/
+│   │   │   │   ├── firecracker.ts       # ✅ VM lifecycle (spawn, destroy, stop, start)
+│   │   │   │   ├── firecracker-client.ts # ✅ Firecracker API client (pause/resume)
+│   │   │   │   ├── network.ts           # ✅ TAP device & IP allocation
+│   │   │   │   ├── caddy.ts             # ✅ Dynamic route registration
+│   │   │   │   ├── storage.ts           # ✅ LVM thin provisioning (CoW snapshots)
+│   │   │   │   ├── queue.ts             # ✅ Spawn job queue with concurrency
+│   │   │   │   ├── project.ts           # ✅ Project management
+│   │   │   │   ├── agent.ts             # ✅ Sandbox agent client
+│   │   │   │   └── secrets.ts           # ✅ Secret encryption
+│   │   │   ├── lib/
+│   │   │   │   ├── shell.ts       # Shell command execution
+│   │   │   │   ├── config.ts      # Environment configuration
+│   │   │   │   ├── logger.ts      # Structured logging (pino)
+│   │   │   │   └── errors.ts      # Custom error classes
+│   │   │   └── state/
+│   │   │       ├── store.ts       # In-memory sandbox state
+│   │   │       └── database.ts    # SQLite persistence
+│   │   ├── dist/
+│   │   │   └── server.js          # Built bundle for deployment
+│   │   └── package.json
+│   │
+│   └── dashboard/                 # ✅ Admin web interface (React + Vite)
 │       ├── src/
-│       │   ├── index.ts           # Elysia app entry with Swagger
+│       │   ├── main.tsx           # App entry with TanStack Query + Router
 │       │   ├── routes/
-│       │   │   ├── sandboxes/     # /api/sandboxes/* (CRUD)
-│       │   │   │   ├── index.ts   # List, create, get, delete
-│       │   │   │   └── model.ts   # TypeBox schemas
-│       │   │   ├── system/        # /api/system/* (stats)
-│       │   │   │   ├── index.ts
-│       │   │   │   └── service.ts
-│       │   │   ├── health.ts      # /health, /health/live, /health/ready
-│       │   │   └── debug/         # /debug/* (development)
-│       │   │       └── index.ts
-│       │   ├── services/
-│       │   │   ├── firecracker.ts # ✅ VM lifecycle (spawn, destroy, status)
-│       │   │   ├── network.ts     # ✅ TAP device & IP allocation
-│       │   │   ├── caddy.ts       # ✅ Dynamic route registration
-│       │   │   ├── storage.ts     # ✅ LVM thin provisioning (CoW snapshots)
-│       │   │   └── queue.ts       # ✅ Spawn job queue with concurrency
-│       │   ├── lib/
-│       │   │   ├── shell.ts       # Shell command execution
-│       │   │   ├── config.ts      # Environment configuration
-│       │   │   ├── logger.ts      # Structured logging (pino)
-│       │   │   └── errors.ts      # Custom error classes
-│       │   └── state/
-│       │       └── store.ts       # In-memory sandbox state
-│       ├── dist/
-│       │   └── server.js          # Built bundle for deployment
-│       ├── package.json
-│       └── tsconfig.json
+│       │   │   ├── __root.tsx     # Root layout with sidebar navigation
+│       │   │   ├── index.tsx      # Dashboard overview (health, stats)
+│       │   │   ├── sandboxes/
+│       │   │   │   ├── index.tsx  # Sandbox list with stop/start/delete
+│       │   │   │   └── $id.tsx    # Sandbox detail (URLs, metrics, exec)
+│       │   │   ├── projects/
+│       │   │   │   ├── index.tsx  # Project list
+│       │   │   │   └── $id.tsx    # Project detail + prebuild trigger
+│       │   │   ├── images/
+│       │   │   │   └── index.tsx  # Base images list
+│       │   │   └── system/
+│       │   │       └── index.tsx  # System stats, queue, cleanup
+│       │   ├── api/
+│       │   │   ├── client.ts      # REST API client with types
+│       │   │   └── queries.ts     # TanStack Query hooks
+│       │   ├── components/
+│       │   │   ├── ui/            # shadcn/ui components
+│       │   │   ├── create-sandbox-dialog.tsx
+│       │   │   ├── create-project-dialog.tsx
+│       │   │   └── edit-project-dialog.tsx
+│       │   └── lib/
+│       │       └── utils.ts       # formatBytes, formatDate, etc.
+│       ├── dist/                  # Built static files
+│       └── package.json
 │
 ├── packages/
-│   └── shared/                    # ✅ Shared types & constants
+│   ├── shared/                    # ✅ Shared types & constants
+│   │   ├── src/
+│   │   │   ├── types/
+│   │   │   │   ├── sandbox.ts     # Sandbox, SandboxStatus, CreateSandboxOptions
+│   │   │   │   ├── project.ts     # Project, CreateProjectOptions
+│   │   │   │   ├── system.ts      # SystemStats, HealthStatus
+│   │   │   │   └── index.ts       # Re-exports
+│   │   │   ├── constants.ts       # PATHS, FIRECRACKER, NETWORK, LVM, CADDY, DEFAULTS
+│   │   │   └── index.ts
+│   │   └── package.json
+│   │
+│   └── sandbox-agent/             # ✅ In-VM agent (Node.js - Bun crashes in FC)
 │       ├── src/
-│       │   ├── types/
-│       │   │   ├── sandbox.ts     # Sandbox, SandboxStatus, CreateSandboxOptions
-│       │   │   ├── project.ts     # Project types (planned)
-│       │   │   ├── system.ts      # SystemStats, HealthStatus
-│       │   │   └── index.ts       # Re-exports
-│       │   ├── constants.ts       # PATHS, FIRECRACKER, NETWORK, LVM, CADDY, DEFAULTS
-│       │   └── index.ts
-│       ├── package.json
-│       └── tsconfig.json
+│       │   ├── index.ts           # Elysia server on :9999
+│       │   └── routes/
+│       │       ├── health.ts      # /health - service status
+│       │       ├── metrics.ts     # /metrics - CPU/memory/disk
+│       │       ├── exec.ts        # /exec - run commands
+│       │       ├── services.ts    # /services - systemd status
+│       │       └── apps.ts        # /apps - port registration
+│       ├── dist/
+│       │   └── sandbox-agent.mjs  # Built with --target=node
+│       └── package.json
 │
 ├── infra/
 │   ├── cli/                       # ✅ Server provisioning CLI
 │   │   ├── src/
 │   │   │   ├── index.ts           # Entry point with @clack/prompts
-│   │   │   ├── commands/
-│   │   │   │   ├── base-setup.ts      # Install Bun, Docker, Caddy, verify KVM
-│   │   │   │   ├── install-firecracker.ts  # Download FC, kernel, rootfs
-│   │   │   │   ├── setup-network.ts   # Configure br0 bridge
-│   │   │   │   ├── setup-storage.ts   # Configure LVM thin pool
-│   │   │   │   ├── deploy-manager.ts  # Manager service control (start/stop/logs)
-│   │   │   │   └── test-vm.ts         # Test VM lifecycle (start/stop/ssh)
-│   │   │   └── lib/
-│   │   │       ├── shell.ts       # exec, execLive, fileExists
-│   │   │       └── context.ts     # PATHS, NETWORK constants
+│   │   │   └── commands/
+│   │   │       ├── base-setup.ts
+│   │   │       ├── install-firecracker.ts
+│   │   │       ├── setup-network.ts
+│   │   │       ├── setup-storage.ts
+│   │   │       ├── deploy-manager.ts
+│   │   │       └── test-vm.ts
 │   │   ├── dist/
-│   │   │   └── frak-sandbox-linux-x64  # Compiled binary
-│   │   ├── package.json
-│   │   └── tsconfig.json
+│   │   │   └── frak-sandbox-linux-x64
+│   │   └── package.json
 │   ├── caddy/
-│   │   └── Caddyfile              # ✅ Static routes config
+│   │   └── Caddyfile              # ✅ Static routes (API + dashboard)
+│   ├── images/                    # ✅ Rootfs Dockerfiles
+│   │   ├── dev-base/Dockerfile    # Alpine + Node + Bun + code-server + opencode
+│   │   └── ...
 │   └── systemd/
-│       ├── frak-sandbox-manager.service   # ✅ Manager systemd unit
-│       └── frak-sandbox-network.service   # ✅ Network setup unit
+│       ├── frak-sandbox-manager.service
+│       └── frak-sandbox-network.service
 │
 ├── scripts/
-│   └── deploy.ts                  # ✅ SSH deployment script
+│   └── deploy.ts                  # ✅ SSH deployment (manager + agent + dashboard)
 │
-├── .env.example                   # SSH_KEY_PATH, SSH_USER, SSH_HOST
-├── package.json                   # Workspace root
+├── .env.example
+├── package.json
 ├── tsconfig.json
 ├── bun.lock
-└── README.md
-
-# Planned (not yet implemented):
-# ├── apps/dashboard/              # Admin web interface (Phase 5)
-# └── packages/sandbox-agent/      # In-VM agent binary (Phase 3)
+├── PROJECT.md                     # This file
+└── AGENTS.md                      # Development guide for AI agents
 ```
 
 ---
@@ -834,43 +878,62 @@ Health:
   GET  /health/live                   → Liveness probe
   GET  /health/ready                  → Readiness probe
 
-Sandboxes (✅ implemented):
-  GET  /api/sandboxes                 → List all sandboxes (filter by status, projectId)
-  POST /api/sandboxes                 → Create sandbox (sync or async via ?async=true)
-  GET  /api/sandboxes/:id             → Get sandbox details
-  GET  /api/sandboxes/job/:id         → Get spawn job status (for async creates)
+Sandboxes (✅ complete):
+  GET    /api/sandboxes               → List all sandboxes (filter by status, projectId)
+  POST   /api/sandboxes               → Create sandbox (sync or async via ?async=true)
+  GET    /api/sandboxes/:id           → Get sandbox details
   DELETE /api/sandboxes/:id           → Destroy sandbox
+  POST   /api/sandboxes/:id/stop      → Stop (pause) sandbox
+  POST   /api/sandboxes/:id/start     → Start (resume) sandbox
+  GET    /api/sandboxes/job/:id       → Get spawn job status
+  GET    /api/sandboxes/:id/health    → Agent health (via sandbox-agent)
+  GET    /api/sandboxes/:id/metrics   → Resource metrics (via sandbox-agent)
+  GET    /api/sandboxes/:id/services  → Service status (via sandbox-agent)
+  POST   /api/sandboxes/:id/exec      → Execute command (via sandbox-agent)
+  GET    /api/sandboxes/:id/apps      → List registered apps
+  POST   /api/sandboxes/:id/apps      → Register app port
+  GET    /api/sandboxes/:id/logs/:svc → Get service logs
 
-System (✅ implemented):
-  GET  /api/system/stats              → Resource usage (CPU, memory, disk)
-  GET  /api/system/storage            → LVM pool stats and availability
-  GET  /api/system/queue              → Spawn queue status and jobs
-  POST /api/system/cleanup            → Cleanup orphaned resources
+Projects (✅ complete):
+  GET    /api/projects                → List all projects
+  POST   /api/projects                → Create project
+  GET    /api/projects/:id            → Get project details
+  PUT    /api/projects/:id            → Update project
+  DELETE /api/projects/:id            → Delete project
+  POST   /api/projects/:id/prebuild   → Trigger prebuild
+
+Images (✅ complete):
+  GET    /api/images                  → List base images
+  GET    /api/images/:id              → Get image details
+
+System (✅ complete):
+  GET    /api/system/stats            → Resource usage (CPU, memory, disk)
+  GET    /api/system/storage          → LVM pool stats and availability
+  GET    /api/system/queue            → Spawn queue status and jobs
+  POST   /api/system/cleanup          → Cleanup orphaned resources
 
 Debug (development only):
-  GET  /debug/config                  → Current config
-  GET  /debug/firecracker/:id         → Firecracker state
+  GET    /debug/config                → Current config
+  GET    /debug/firecracker/:id       → Firecracker state
 
-Planned (not yet implemented):
-  POST /api/sandboxes/:id/warm        → Warm up
-  POST /api/sandboxes/:id/cold        → Cool down
-  POST /api/sandboxes/:id/exec        → Execute command
-  GET  /api/sandboxes/:id/metrics     → Resource metrics
-  /api/projects/*                     → Project CRUD
-  /api/prebuilds/*                    → Prebuild management
+Deferred:
+  POST   /api/sandboxes/:id/warm      → Warm up (requires COLD state)
+  POST   /api/sandboxes/:id/cold      → Cool down (requires vCPU hot-plug)
 ```
 
 **Implemented Services**:
 ```
 services/
-├── firecracker.ts     # ✅ spawn(), destroy(), getStatus() - auto-uses LVM when available
-├── network.ts         # ✅ allocate(), release(), createTap(), deleteTap()
-├── caddy.ts           # ✅ registerRoutes(), removeRoutes()
-├── storage.ts         # ✅ createSandboxVolume(), deleteSandboxVolume(), getPoolStats()
-├── queue.ts           # ✅ enqueue(), enqueueAndWait(), getStats(), cancel()
-└── (planned)
-    ├── git.ts         # Repository caching
-    └── prebuild.ts    # Prebuild orchestration
+├── firecracker.ts         # ✅ spawn(), destroy(), getStatus(), stop(), start()
+├── firecracker-client.ts  # ✅ Firecracker API: pause(), resume(), getVmState()
+├── network.ts             # ✅ allocate(), release(), createTap(), deleteTap()
+├── caddy.ts               # ✅ registerRoutes(), removeRoutes()
+├── storage.ts             # ✅ createSandboxVolume(), deleteSandboxVolume(), getPoolStats()
+├── queue.ts               # ✅ enqueue(), enqueueAndWait(), getStats(), cancel()
+├── project.ts             # ✅ create(), update(), delete(), getAll(), getById()
+├── agent.ts               # ✅ Client for sandbox-agent API (health, metrics, exec, etc.)
+├── secrets.ts             # ✅ encrypt(), decrypt() for project secrets
+└── sandbox-builder.ts     # ✅ Full sandbox build pipeline (LVM, network, git, init)
 ```
 
 ---
@@ -942,33 +1005,95 @@ export const DEFAULTS = {
 
 ---
 
-### `apps/dashboard` (PLANNED)
+### `apps/dashboard` ✅ IMPLEMENTED
 
 **Purpose**: Admin web interface for managing sandboxes, projects, and images.
 
-**Status**: Not yet implemented. Planned for Phase 5.
+**Status**: Complete. Deployed at https://sandbox-dash.nivelais.com/
 
-**Planned Route Structure**:
+**Package**: `@frak-sandbox/dashboard`
+
+**Dependencies**:
+```json
+{
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@tanstack/react-router": "^1.93.0",
+    "@tanstack/react-query": "^5.62.0",
+    "lucide-react": "^0.468.0",
+    "tailwind-merge": "^2.5.0",
+    "clsx": "^2.1.0"
+  },
+  "devDependencies": {
+    "@tanstack/router-plugin": "^1.93.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "tailwindcss": "^4.0.0",
+    "vite": "^6.4.0"
+  }
+}
 ```
-/                       → Dashboard overview
-/sandboxes              → List all sandboxes
-/sandboxes/:id          → Sandbox detail (URLs, logs, metrics)
-/projects               → List all projects
-/projects/:id           → Project detail (config, prebuilds, spawn)
-/settings               → System settings
+
+**Route Structure**:
 ```
+/                       → Dashboard overview (health, stats, storage)
+/sandboxes              → List all sandboxes (filter by status)
+/sandboxes/:id          → Sandbox detail (URLs, metrics, services, exec)
+/projects               → List all projects (with prebuild status)
+/projects/:id           → Project detail (config, spawn sandbox, trigger prebuild)
+/images                 → List base images
+/system                 → System settings (stats, queue, cleanup)
+```
+
+**Key Components**:
+- `CreateSandboxDialog` - Create sandbox from base image or project
+- `CreateProjectDialog` - Create new project with git URL, commands, secrets
+- `EditProjectDialog` - Edit existing project configuration
+
+**Features**:
+- Stop/Start sandbox (Firecracker pause/resume)
+- Delete sandbox
+- Recreate sandbox from project (for error recovery)
+- Trigger prebuild for project
+- Execute commands in sandbox (terminal tab)
+- Real-time metrics and service status
 
 ---
 
-### `packages/sandbox-agent` (PLANNED)
+### `packages/sandbox-agent` ✅ IMPLEMENTED
 
 **Purpose**: Lightweight binary running inside each VM for health reporting, metrics, and app registration.
 
-**Status**: Not yet implemented. Planned for Phase 3.
+**Status**: Complete. Runs on port 9999 inside each sandbox.
 
-Built as standalone binary using `bun build --compile`:
+**Package**: `@frak-sandbox/agent`
+
+**IMPORTANT**: Built with `--target=node` (NOT bun) because Bun crashes with SIGILL inside Firecracker due to AVX instruction issues.
+
+**Build**:
 ```bash
-bun build --compile --target=bun-linux-x64 src/index.ts --outfile sandbox-agent
+bun build --bundle --target=node --outfile=dist/sandbox-agent.mjs src/index.ts
+```
+
+**API Endpoints** (on :9999 inside VM):
+```
+GET  /health     → Service status (code-server, opencode, sshd)
+GET  /metrics    → CPU, memory, disk usage
+POST /exec       → Execute command { command: string, timeout?: number }
+GET  /services   → Systemd service status
+GET  /apps       → List registered app ports
+POST /apps       → Register app port { port: number, name: string }
+DELETE /apps/:port → Unregister app port
+GET  /logs/:service → Get service logs
+```
+
+**Dependencies**:
+```json
+{
+  "dependencies": {
+    "elysia": "^1.2.0"
+  }
+}
 ```
 
 ---
@@ -1184,69 +1309,105 @@ WantedBy=multi-user.target
 - ✅ `POST /api/sandboxes` spawns a working VM
 - ✅ Sandbox accessible via Caddy routes
 
-### Phase 3: Enhanced Rootfs + Agent (Week 2-3) 🔄 IN PROGRESS
+### Phase 3: Enhanced Rootfs + Agent (Week 2-3) ✅ COMPLETE
 
 **Goals**: Dev-ready sandbox environment
 
-- [ ] Add to rootfs:
-  - [ ] VSCode Server
-  - [ ] OpenCode CLI
-  - [ ] Node.js, Bun, Git
-  - [ ] Sandbox agent binary
-- [ ] Implement sandbox-agent (`packages/sandbox-agent`)
-- [ ] Configure sandbox-init
-- [ ] Generate agent skill file (`SANDBOX.md`)
+- [x] Add to rootfs:
+  - [x] VSCode Server (code-server)
+  - [x] OpenCode CLI
+  - [x] Node.js, Bun, Git
+  - [x] Sandbox agent binary
+- [x] Implement sandbox-agent (`packages/sandbox-agent`)
+  - [x] Health endpoint with service checks
+  - [x] Metrics endpoint (CPU, memory, disk)
+  - [x] Exec endpoint for running commands
+  - [x] Services endpoint for systemd status
+  - [x] Apps endpoint for port registration
+- [x] Configure sandbox-init (services start on boot)
+- [x] Generate agent skill file (`SANDBOX.md`)
+
+**Note**: Agent built with `--target=node` because Bun crashes with SIGILL inside Firecracker (AVX instruction issues).
 
 **Deliverables**:
-- VSCode + OpenCode accessible
-- Agent reports health/metrics
+- ✅ VSCode + OpenCode accessible via Caddy routes
+- ✅ Agent reports health/metrics on :9999
 
-### Phase 4: Git, Projects & Prebuilds (Week 3)
+### Phase 4: Git, Projects & Prebuilds (Week 3) ✅ COMPLETE
 
 **Goals**: Project-based workflow with fast spawns
 
-- [ ] Implement git cache (bare repos)
-- [ ] Implement project CRUD (`/api/projects`)
-- [ ] Implement prebuild system
-- [ ] Add secrets injection
-- [ ] Integrate LVM thin provisioning for fast snapshots
-- [ ] Measure spawn times
+- [x] Implement project CRUD (`/api/projects`)
+  - [x] Create, read, update, delete projects
+  - [x] Init commands (run during prebuild)
+  - [x] Start commands (run on sandbox start)
+  - [x] Secret management with encryption
+  - [x] Exposed ports configuration
+- [x] Implement prebuild system
+  - [x] Trigger prebuild via API (`POST /api/projects/:id/prebuild`)
+  - [x] LVM snapshot-based prebuilds
+  - [x] Prebuild status tracking (none/building/ready/failed)
+- [x] Integrate LVM thin provisioning for fast snapshots
+- [x] Git clone during sandbox creation
 
 **Deliverables**:
-- Create project → trigger prebuild
-- Spawn sandbox from prebuild (<200ms)
-- Secrets available in sandbox
+- ✅ Create project → trigger prebuild
+- ✅ Spawn sandbox from prebuild (fast LVM clone)
+- ✅ Secrets available in sandbox (encrypted storage)
 
-### Phase 5: Dashboard (Week 3-4)
+### Phase 5: Dashboard (Week 3-4) ✅ COMPLETE
 
 **Goals**: Functional admin UI
 
-- [ ] Setup TanStack Router + Query
-- [ ] Implement views:
-  - [ ] Dashboard overview
-  - [ ] Sandbox list/detail
-  - [ ] Project list/detail
-  - [ ] Prebuild status
-- [ ] Connect via Eden
-- [ ] Real-time updates (SSE or polling)
+- [x] Setup TanStack Router + Query
+  - [x] File-based routing with code splitting
+  - [x] Query key factories with proper invalidation
+- [x] Implement views:
+  - [x] Dashboard overview (health status, system stats, storage)
+  - [x] Sandbox list with filtering by status
+  - [x] Sandbox detail (URLs, metrics, services, exec terminal)
+  - [x] Project list with prebuild status
+  - [x] Project detail with prebuild trigger
+  - [x] Images list (base images)
+  - [x] System page (stats, queue, cleanup)
+- [x] Implement dialogs:
+  - [x] Create sandbox (from base image or project)
+  - [x] Create project (git URL, commands, secrets)
+  - [x] Edit project
+- [x] Sandbox lifecycle actions:
+  - [x] Stop (pause VM)
+  - [x] Start (resume VM)
+  - [x] Delete
+  - [x] Recreate (for error state with project)
+- [x] Real-time updates via polling (5s intervals)
+
+**Tech Stack**: React 19, TanStack Router/Query, Tailwind CSS, shadcn/ui, Vite
+
+**Deployed**: https://sandbox-dash.nivelais.com/
 
 **Deliverables**:
-- Full sandbox lifecycle from UI
-- Prebuild management from UI
+- ✅ Full sandbox lifecycle from UI (create, stop, start, delete)
+- ✅ Project and prebuild management from UI
 
-### Phase 6: Polish (Week 4)
+### Phase 6: Polish (Week 4) 🔄 IN PROGRESS
 
 **Goals**: Production-ready
 
 - [x] Error handling & recovery (custom SandboxError class)
 - [x] Logging with pino (structured logging with child loggers)
-- [ ] Cold/Warm state management
+- [x] Stop/Start lifecycle (Firecracker pause/resume)
+- [ ] Cold/Warm state management (deferred - requires vCPU/memory hot-plug)
+- [ ] xterm.js interactive terminal (deferred - exec command interface works)
 - [ ] Documentation
 - [ ] CI/CD pipeline
 
+**Remaining Work**:
+- **COLD state**: Reducing resources without full stop. Would require Firecracker hot-plug support or VM restart with different config. Deferred for now.
+- **xterm.js terminal**: Real-time interactive shell via WebSocket. Current exec command interface is functional. Research done, implementation deferred.
+
 **Deliverables**:
-- Stable system for team use
-- Clear documentation
+- ✅ Stable system for team use
+- ⚠️ Documentation in progress (AGENTS.md, PROJECT.md)
 
 ---
 
@@ -1313,24 +1474,28 @@ journalctl -u frak-sandbox-manager -f
 
 | Service | Port | Access |
 |---------|------|--------|
-| Manager API | 4000 | api.sandbox.frak.dev |
+| Manager API | 4000 | sandbox-api.nivelais.com |
+| Dashboard | - | sandbox-dash.nivelais.com (static files via Caddy) |
 | Caddy Admin | 2019 | localhost only |
-| Sandbox VSCode | 8080 | sandbox-{id}.sandbox.frak.dev |
-| Sandbox OpenCode | 3000 | opencode-{id}.sandbox.frak.dev |
-| Sandbox Agent | 9999 | Internal (VM) - planned |
-| Dashboard | 5173 (dev) | dashboard.sandbox.frak.dev - planned |
+| Sandbox VSCode | 8080 | sandbox-{id}.nivelais.com |
+| Sandbox OpenCode | 3000 | opencode-{id}.nivelais.com |
+| Sandbox Agent | 9999 | Internal (VM) - manager calls via 172.16.0.x:9999 |
 
 ### Key Paths (Server)
 
 | Path | Purpose |
 |------|---------|
-| `/opt/frak-sandbox` | Application code (server.js) |
+| `/opt/frak-sandbox` | Application root |
+| `/opt/frak-sandbox/apps/manager/server.js` | Manager API bundle |
+| `/opt/frak-sandbox/apps/dashboard/dist/` | Dashboard static files |
+| `/opt/frak-sandbox/packages/sandbox-agent/sandbox-agent.mjs` | Agent bundle (copied to VMs) |
 | `/usr/local/bin/frak-sandbox` | CLI binary |
 | `/usr/local/bin/firecracker` | Firecracker binary |
 | `/var/lib/sandbox/firecracker/kernels` | Kernel images |
 | `/var/lib/sandbox/firecracker/rootfs` | Base rootfs images |
 | `/var/lib/sandbox/overlays` | Per-sandbox writable layers |
 | `/var/lib/sandbox/sockets` | Firecracker API sockets |
+| `/var/lib/sandbox/data/sandbox.db` | SQLite database |
 | `/var/log/sandbox` | Sandbox logs |
 | `/dev/sandbox-vg/*` | LVM thin volumes (when storage configured) |
 
