@@ -5,8 +5,10 @@ import {
 } from "@tanstack/react-query";
 import {
   api,
+  type CreateConfigFileOptions,
   type CreateProjectOptions,
   type CreateSandboxOptions,
+  type UpdateConfigFileOptions,
   type UpdateProjectOptions,
 } from "./client";
 import {
@@ -28,6 +30,8 @@ export const queryKeys = {
     metrics: (id: string) => ["sandboxes", id, "metrics"] as const,
     apps: (id: string) => ["sandboxes", id, "apps"] as const,
     services: (id: string) => ["sandboxes", id, "services"] as const,
+    discoverConfigs: (id: string) =>
+      ["sandboxes", id, "discoverConfigs"] as const,
   },
   opencode: {
     health: (baseUrl: string) => ["opencode", baseUrl, "health"] as const,
@@ -50,6 +54,14 @@ export const queryKeys = {
     stats: ["system", "stats"] as const,
     storage: ["system", "storage"] as const,
     queue: ["system", "queue"] as const,
+  },
+  configFiles: {
+    all: ["configFiles"] as const,
+    list: (params?: { scope?: string; projectId?: string }) =>
+      ["configFiles", "list", params] as const,
+    detail: (id: string) => ["configFiles", "detail", id] as const,
+    merged: (projectId?: string) =>
+      ["configFiles", "merged", projectId] as const,
   },
 };
 
@@ -292,6 +304,71 @@ export function useDeleteOpenCodeSession(baseUrl: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.opencode.sessions(baseUrl),
       });
+    },
+  });
+}
+
+// Config Files queries and mutations
+export const configFilesListQuery = (params?: {
+  scope?: string;
+  projectId?: string;
+}) =>
+  queryOptions({
+    queryKey: queryKeys.configFiles.list(params),
+    queryFn: () => api.configFiles.list(params),
+  });
+
+export const configFileMergedQuery = (projectId?: string) =>
+  queryOptions({
+    queryKey: queryKeys.configFiles.merged(projectId),
+    queryFn: () => api.configFiles.getMerged(projectId),
+  });
+
+export function useCreateConfigFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateConfigFileOptions) => api.configFiles.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
+    },
+  });
+}
+
+export function useUpdateConfigFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateConfigFileOptions }) =>
+      api.configFiles.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
+    },
+  });
+}
+
+export function useDeleteConfigFile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.configFiles.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
+    },
+  });
+}
+
+// Sandbox config discovery and extraction
+export const sandboxDiscoverConfigsQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.discoverConfigs(id),
+    queryFn: () => api.sandboxes.discoverConfigs(id),
+    enabled: !!id,
+  });
+
+export function useExtractConfig(sandboxId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (path: string) => api.sandboxes.extractConfig(sandboxId, path),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
   });
 }

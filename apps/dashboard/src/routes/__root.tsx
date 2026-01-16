@@ -3,7 +3,6 @@ import {
   createRootRouteWithContext,
   Link,
   Outlet,
-  useLocation,
 } from "@tanstack/react-router";
 import {
   Box,
@@ -13,8 +12,9 @@ import {
   LayoutDashboard,
   Menu,
   Settings,
+  Sliders,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -32,11 +32,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const location = useLocation();
-
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [location.pathname]);
 
   return (
     <TooltipProvider>
@@ -63,6 +58,9 @@ function RootLayout() {
             </NavLink>
             <NavLink to="/system" icon={Settings}>
               System
+            </NavLink>
+            <NavLink to="/settings" icon={Sliders}>
+              Settings
             </NavLink>
           </nav>
           <div className="p-4 border-t text-xs text-muted-foreground">
@@ -95,6 +93,9 @@ function RootLayout() {
               </NavLink>
               <NavLink to="/system" icon={Settings}>
                 System
+              </NavLink>
+              <NavLink to="/settings" icon={Sliders}>
+                Settings
               </NavLink>
             </nav>
             <div className="p-4 border-t text-xs text-muted-foreground">

@@ -6,6 +6,7 @@ import { config } from "./lib/config.ts";
 import { SandboxError } from "./lib/errors.ts";
 import { logger } from "./lib/logger.ts";
 import { appPaths } from "./lib/paths.ts";
+import { configRoutes } from "./routes/config/index.ts";
 import { debugRoutes } from "./routes/debug/index.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { imageRoutes } from "./routes/images/index.ts";
@@ -38,6 +39,7 @@ const app = new Elysia()
           { name: "projects", description: "Project configuration management" },
           { name: "images", description: "Base image management" },
           { name: "system", description: "System statistics and maintenance" },
+          { name: "config", description: "Platform configuration management" },
           { name: "debug", description: "Debug and diagnostic endpoints" },
         ],
       },
@@ -102,7 +104,8 @@ const app = new Elysia()
       .use(systemRoutes)
       .use(sandboxRoutes)
       .use(projectRoutes)
-      .use(imageRoutes),
+      .use(imageRoutes)
+      .use(configRoutes),
   )
   .use(debugRoutes)
   .get("/", () => ({

@@ -1,25 +1,58 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Edit, Play, RefreshCw, Rocket, Trash2 } from "lucide-react";
-import { useState } from "react";
 import {
+  ArrowLeft,
+  Edit,
+  FileCode,
+  Play,
+  Plus,
+  RefreshCw,
+  Rocket,
+  Trash2,
+} from "lucide-react";
+import { useState } from "react";
+import type { ConfigFile } from "@/api/client";
+import {
+  configFilesListQuery,
   projectDetailQuery,
   sandboxListQuery,
+  useCreateConfigFile,
   useCreateSandbox,
+  useDeleteConfigFile,
   useDeleteProject,
   useTriggerPrebuild,
+  useUpdateConfigFile,
 } from "@/api/queries";
 import { EditProjectDialog } from "@/components/edit-project-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/utils";
 
 export const Route = createFileRoute("/projects/$id")({
   component: ProjectDetailPage,
   loader: ({ context, params }) => {
     context.queryClient.ensureQueryData(projectDetailQuery(params.id));
+    context.queryClient.ensureQueryData(
+      configFilesListQuery({ scope: "project", projectId: params.id }),
+    );
   },
   pendingComponent: () => (
     <div className="p-6 space-y-6">
@@ -36,11 +69,19 @@ function ProjectDetailPage() {
   const { data: sandboxes } = useSuspenseQuery(
     sandboxListQuery({ projectId: id }),
   );
+  const { data: configFiles } = useSuspenseQuery(
+    configFilesListQuery({ scope: "project", projectId: id }),
+  );
   const [editOpen, setEditOpen] = useState(false);
+  const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<ConfigFile | null>(null);
 
   const deleteMutation = useDeleteProject();
   const prebuildMutation = useTriggerPrebuild();
   const createSandboxMutation = useCreateSandbox();
+  const createConfigMutation = useCreateConfigFile();
+  const updateConfigMutation = useUpdateConfigFile();
+  const deleteConfigMutation = useDeleteConfigFile();
 
   const handleDelete = () => {
     if (confirm(`Delete project "${project.name}"?`)) {
@@ -195,8 +236,8 @@ function ProjectDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="bg-muted rounded p-3 font-mono text-sm space-y-1">
-                {project.initCommands.map((cmd, i) => (
-                  <div key={i}>$ {cmd}</div>
+                {project.initCommands.map((cmd) => (
+                  <div key={cmd}>$ {cmd}</div>
                 ))}
               </div>
             </CardContent>
@@ -210,13 +251,77 @@ function ProjectDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="bg-muted rounded p-3 font-mono text-sm space-y-1">
-                {project.startCommands.map((cmd, i) => (
-                  <div key={i}>$ {cmd}</div>
+                {project.startCommands.map((cmd) => (
+                  <div key={cmd}>$ {cmd}</div>
                 ))}
               </div>
             </CardContent>
           </Card>
         )}
+
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FileCode className="h-5 w-5" />
+              Config Files ({configFiles.length})
+            </CardTitle>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingConfig(null);
+                setConfigDialogOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {configFiles.length === 0 ? (
+              <p className="text-muted-foreground">
+                No project-specific config files. Add one to override global
+                configs.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {configFiles.map((config) => (
+                  <div
+                    key={config.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-sm">{config.path}</span>
+                      <Badge variant="secondary">{config.contentType}</Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditingConfig(config);
+                          setConfigDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          if (confirm(`Delete config file "${config.path}"?`)) {
+                            deleteConfigMutation.mutate(config.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -266,6 +371,32 @@ function ProjectDetailPage() {
         open={editOpen}
         onOpenChange={setEditOpen}
       />
+
+      <ConfigFileDialog
+        projectId={id}
+        config={editingConfig}
+        open={configDialogOpen}
+        onOpenChange={(open) => {
+          setConfigDialogOpen(open);
+          if (!open) setEditingConfig(null);
+        }}
+        onSubmit={(data) => {
+          if (editingConfig) {
+            updateConfigMutation.mutate(
+              { id: editingConfig.id, data },
+              { onSuccess: () => setConfigDialogOpen(false) },
+            );
+          } else {
+            createConfigMutation.mutate(
+              { ...data, scope: "project", projectId: id },
+              { onSuccess: () => setConfigDialogOpen(false) },
+            );
+          }
+        }}
+        isPending={
+          createConfigMutation.isPending || updateConfigMutation.isPending
+        }
+      />
     </div>
   );
 }
@@ -284,5 +415,113 @@ function DetailRow({
       <span className="text-muted-foreground">{label}</span>
       <span className={mono ? "font-mono" : ""}>{value}</span>
     </div>
+  );
+}
+
+type ConfigDialogProps = {
+  projectId: string;
+  config: ConfigFile | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: {
+    path: string;
+    content: string;
+    contentType: "json" | "text" | "binary";
+  }) => void;
+  isPending: boolean;
+};
+
+function ConfigFileDialog({
+  config,
+  open,
+  onOpenChange,
+  onSubmit,
+  isPending,
+}: ConfigDialogProps) {
+  const [path, setPath] = useState(config?.path ?? "");
+  const [content, setContent] = useState(config?.content ?? "");
+  const [contentType, setContentType] = useState<"json" | "text" | "binary">(
+    config?.contentType ?? "json",
+  );
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit({ path, content, contentType });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            {config ? "Edit Config File" : "Add Config File"}
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="path">Path</Label>
+            <Input
+              id="path"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder="/home/coder/.config/opencode/config.json"
+              disabled={!!config}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="contentType">Content Type</Label>
+            <Select
+              value={contentType}
+              onValueChange={(v) =>
+                setContentType(v as "json" | "text" | "binary")
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="json">JSON</SelectItem>
+                <SelectItem value="text">Text</SelectItem>
+                <SelectItem value="binary">Binary (base64)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="content">Content</Label>
+            <Textarea
+              id="content"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={
+                contentType === "json"
+                  ? '{\n  "key": "value"\n}'
+                  : "File content..."
+              }
+              className="font-mono text-sm min-h-[200px]"
+              required
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              {config ? "Update" : "Create"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

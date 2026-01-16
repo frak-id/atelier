@@ -8,81 +8,90 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./routes/__root"
-import { Route as IndexRouteImport } from "./routes/index"
-import { Route as SystemIndexRouteImport } from "./routes/system/index"
-import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index"
-import { Route as ProjectsIndexRouteImport } from "./routes/projects/index"
-import { Route as ImagesIndexRouteImport } from "./routes/images/index"
-import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id"
-import { Route as ProjectsIdRouteImport } from "./routes/projects/$id"
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as SystemIndexRouteImport } from "./routes/system/index";
+import { Route as SettingsIndexRouteImport } from "./routes/settings/index";
+import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index";
+import { Route as ProjectsIndexRouteImport } from "./routes/projects/index";
+import { Route as ImagesIndexRouteImport } from "./routes/images/index";
+import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id";
+import { Route as ProjectsIdRouteImport } from "./routes/projects/$id";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SystemIndexRoute = SystemIndexRouteImport.update({
   id: "/system/",
   path: "/system/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: "/settings/",
+  path: "/settings/",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const SandboxesIndexRoute = SandboxesIndexRouteImport.update({
   id: "/sandboxes/",
   path: "/sandboxes/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
   id: "/projects/",
   path: "/projects/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ImagesIndexRoute = ImagesIndexRouteImport.update({
   id: "/images/",
   path: "/images/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SandboxesIdRoute = SandboxesIdRouteImport.update({
   id: "/sandboxes/$id",
   path: "/sandboxes/$id",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ProjectsIdRoute = ProjectsIdRouteImport.update({
   id: "/projects/$id",
   path: "/projects/$id",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute
-  "/projects/$id": typeof ProjectsIdRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/images": typeof ImagesIndexRoute
-  "/projects": typeof ProjectsIndexRoute
-  "/sandboxes": typeof SandboxesIndexRoute
-  "/system": typeof SystemIndexRoute
+  "/": typeof IndexRoute;
+  "/projects/$id": typeof ProjectsIdRoute;
+  "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/images": typeof ImagesIndexRoute;
+  "/projects": typeof ProjectsIndexRoute;
+  "/sandboxes": typeof SandboxesIndexRoute;
+  "/settings": typeof SettingsIndexRoute;
+  "/system": typeof SystemIndexRoute;
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute
-  "/projects/$id": typeof ProjectsIdRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/images": typeof ImagesIndexRoute
-  "/projects": typeof ProjectsIndexRoute
-  "/sandboxes": typeof SandboxesIndexRoute
-  "/system": typeof SystemIndexRoute
+  "/": typeof IndexRoute;
+  "/projects/$id": typeof ProjectsIdRoute;
+  "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/images": typeof ImagesIndexRoute;
+  "/projects": typeof ProjectsIndexRoute;
+  "/sandboxes": typeof SandboxesIndexRoute;
+  "/settings": typeof SettingsIndexRoute;
+  "/system": typeof SystemIndexRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  "/": typeof IndexRoute
-  "/projects/$id": typeof ProjectsIdRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/images/": typeof ImagesIndexRoute
-  "/projects/": typeof ProjectsIndexRoute
-  "/sandboxes/": typeof SandboxesIndexRoute
-  "/system/": typeof SystemIndexRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/projects/$id": typeof ProjectsIdRoute;
+  "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/images/": typeof ImagesIndexRoute;
+  "/projects/": typeof ProjectsIndexRoute;
+  "/sandboxes/": typeof SandboxesIndexRoute;
+  "/settings/": typeof SettingsIndexRoute;
+  "/system/": typeof SystemIndexRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
+  fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
     | "/projects/$id"
@@ -90,8 +99,9 @@ export interface FileRouteTypes {
     | "/images"
     | "/projects"
     | "/sandboxes"
-    | "/system"
-  fileRoutesByTo: FileRoutesByTo
+    | "/settings"
+    | "/system";
+  fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
     | "/projects/$id"
@@ -99,7 +109,8 @@ export interface FileRouteTypes {
     | "/images"
     | "/projects"
     | "/sandboxes"
-    | "/system"
+    | "/settings"
+    | "/system";
   id:
     | "__root__"
     | "/"
@@ -108,70 +119,79 @@ export interface FileRouteTypes {
     | "/images/"
     | "/projects/"
     | "/sandboxes/"
-    | "/system/"
-  fileRoutesById: FileRoutesById
+    | "/settings/"
+    | "/system/";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  ProjectsIdRoute: typeof ProjectsIdRoute
-  SandboxesIdRoute: typeof SandboxesIdRoute
-  ImagesIndexRoute: typeof ImagesIndexRoute
-  ProjectsIndexRoute: typeof ProjectsIndexRoute
-  SandboxesIndexRoute: typeof SandboxesIndexRoute
-  SystemIndexRoute: typeof SystemIndexRoute
+  IndexRoute: typeof IndexRoute;
+  ProjectsIdRoute: typeof ProjectsIdRoute;
+  SandboxesIdRoute: typeof SandboxesIdRoute;
+  ImagesIndexRoute: typeof ImagesIndexRoute;
+  ProjectsIndexRoute: typeof ProjectsIndexRoute;
+  SandboxesIndexRoute: typeof SandboxesIndexRoute;
+  SettingsIndexRoute: typeof SettingsIndexRoute;
+  SystemIndexRoute: typeof SystemIndexRoute;
 }
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
     "/": {
-      id: "/"
-      path: "/"
-      fullPath: "/"
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/system/": {
-      id: "/system/"
-      path: "/system"
-      fullPath: "/system"
-      preLoaderRoute: typeof SystemIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/system/";
+      path: "/system";
+      fullPath: "/system";
+      preLoaderRoute: typeof SystemIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/settings/": {
+      id: "/settings/";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof SettingsIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/sandboxes/": {
-      id: "/sandboxes/"
-      path: "/sandboxes"
-      fullPath: "/sandboxes"
-      preLoaderRoute: typeof SandboxesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/sandboxes/";
+      path: "/sandboxes";
+      fullPath: "/sandboxes";
+      preLoaderRoute: typeof SandboxesIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/projects/": {
-      id: "/projects/"
-      path: "/projects"
-      fullPath: "/projects"
-      preLoaderRoute: typeof ProjectsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/projects/";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof ProjectsIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/images/": {
-      id: "/images/"
-      path: "/images"
-      fullPath: "/images"
-      preLoaderRoute: typeof ImagesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/images/";
+      path: "/images";
+      fullPath: "/images";
+      preLoaderRoute: typeof ImagesIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/sandboxes/$id": {
-      id: "/sandboxes/$id"
-      path: "/sandboxes/$id"
-      fullPath: "/sandboxes/$id"
-      preLoaderRoute: typeof SandboxesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/sandboxes/$id";
+      path: "/sandboxes/$id";
+      fullPath: "/sandboxes/$id";
+      preLoaderRoute: typeof SandboxesIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/projects/$id": {
-      id: "/projects/$id"
-      path: "/projects/$id"
-      fullPath: "/projects/$id"
-      preLoaderRoute: typeof ProjectsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/projects/$id";
+      path: "/projects/$id";
+      fullPath: "/projects/$id";
+      preLoaderRoute: typeof ProjectsIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
@@ -182,8 +202,9 @@ const rootRouteChildren: RootRouteChildren = {
   ImagesIndexRoute: ImagesIndexRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
   SandboxesIndexRoute: SandboxesIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
   SystemIndexRoute: SystemIndexRoute,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();

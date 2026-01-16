@@ -157,10 +157,10 @@ export const StorageService = {
       sourceVolume = `${prebuildPrefix}${projectId}`;
     } else if (baseImage && (await this.hasImageVolume(baseImage))) {
       const image = getBaseImage(baseImage);
-      sourceVolume = image?.volumeName;
+      sourceVolume = image?.volumeName ?? baseVolume;
     } else if (await this.hasImageVolume(DEFAULT_BASE_IMAGE)) {
       const defaultImage = getBaseImage(DEFAULT_BASE_IMAGE);
-      sourceVolume = defaultImage?.volumeName;
+      sourceVolume = defaultImage?.volumeName ?? baseVolume;
     } else {
       sourceVolume = baseVolume;
     }

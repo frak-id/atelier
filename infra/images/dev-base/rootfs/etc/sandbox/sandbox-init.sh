@@ -81,7 +81,22 @@ fi
 log "Starting code-server..."
 if command -v code-server >/dev/null 2>&1; then
     su - dev -c "code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry /home/dev/workspace > $LOG_DIR/code-server.log 2>&1" &
-    log "code-server started (PID $!) with workspace /home/dev/workspace"
+    CODE_SERVER_PID=$!
+    log "code-server started (PID $CODE_SERVER_PID) with workspace /home/dev/workspace"
+    
+    EXTENSIONS_FILE="/etc/sandbox/vscode-extensions.json"
+    if [ -f "$EXTENSIONS_FILE" ]; then
+        log "Installing VSCode extensions in background..."
+        (
+            sleep 10
+            EXTENSIONS=$(cat "$EXTENSIONS_FILE" | tr -d '[]"' | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$')
+            for ext in $EXTENSIONS; do
+                log "Installing extension: $ext"
+                su - dev -c "code-server --install-extension $ext" >> "$LOG_DIR/extensions.log" 2>&1 || true
+            done
+            log "Extension installation complete"
+        ) &
+    fi
 else
     log "ERROR: code-server not found"
 fi

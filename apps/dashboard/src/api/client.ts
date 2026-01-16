@@ -86,6 +86,15 @@ export const api = {
       }),
     services: (id: string) =>
       request<{ services: ServiceStatus[] }>(`/api/sandboxes/${id}/services`),
+    discoverConfigs: (id: string) =>
+      request<{ configs: DiscoveredConfig[] }>(
+        `/api/sandboxes/${id}/config/discover`,
+      ),
+    extractConfig: (id: string, path: string) =>
+      request<ExtractConfigResult>(`/api/sandboxes/${id}/config/extract`, {
+        method: "POST",
+        body: { path },
+      }),
   },
 
   projects: {
@@ -121,6 +130,25 @@ export const api = {
     queue: () => request<QueueStats>("/api/system/queue"),
     cleanup: () =>
       request<CleanupResult>("/api/system/cleanup", { method: "POST" }),
+  },
+
+  configFiles: {
+    list: (params?: { scope?: string; projectId?: string }) =>
+      request<ConfigFile[]>("/api/config-files", { params }),
+    get: (id: string) => request<ConfigFile>(`/api/config-files/${id}`),
+    create: (data: CreateConfigFileOptions) =>
+      request<ConfigFile>("/api/config-files", { method: "POST", body: data }),
+    update: (id: string, data: UpdateConfigFileOptions) =>
+      request<ConfigFile>(`/api/config-files/${id}`, {
+        method: "PUT",
+        body: data,
+      }),
+    delete: (id: string) =>
+      request<null>(`/api/config-files/${id}`, { method: "DELETE" }),
+    getMerged: (projectId?: string) =>
+      request<MergedConfigFile[]>("/api/config-files/merged", {
+        params: { projectId },
+      }),
   },
 };
 
@@ -289,4 +317,50 @@ export interface ServiceStatus {
   name: string;
   running: boolean;
   pid?: number;
+}
+
+export type ConfigFileContentType = "json" | "text" | "binary";
+export type ConfigFileScope = "global" | "project";
+
+export interface ConfigFile {
+  id: string;
+  path: string;
+  content: string;
+  contentType: ConfigFileContentType;
+  scope: ConfigFileScope;
+  projectId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateConfigFileOptions {
+  path: string;
+  content: string;
+  contentType: ConfigFileContentType;
+  scope: ConfigFileScope;
+  projectId?: string;
+}
+
+export interface UpdateConfigFileOptions {
+  content?: string;
+  contentType?: ConfigFileContentType;
+}
+
+export interface MergedConfigFile {
+  path: string;
+  content: string;
+  contentType: ConfigFileContentType;
+}
+
+export interface DiscoveredConfig {
+  path: string;
+  displayPath: string;
+  category: "opencode" | "vscode" | "other";
+  exists: boolean;
+  size?: number;
+}
+
+export interface ExtractConfigResult {
+  action: "created" | "updated";
+  configFile: ConfigFile;
 }

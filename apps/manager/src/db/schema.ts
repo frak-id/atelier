@@ -1,5 +1,25 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+export const configFileContentTypes = ["json", "text", "binary"] as const;
+export type ConfigFileContentType = (typeof configFileContentTypes)[number];
+
+export const configFileScopes = ["global", "project"] as const;
+export type ConfigFileScope = (typeof configFileScopes)[number];
+
+export const configFiles = sqliteTable("config_files", {
+  id: text("id").primaryKey(),
+  path: text("path").notNull(),
+  content: text("content").notNull(),
+  contentType: text("content_type", { enum: configFileContentTypes }).notNull(),
+  scope: text("scope", { enum: configFileScopes }).notNull(),
+  projectId: text("project_id"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export type ConfigFileRow = typeof configFiles.$inferSelect;
+export type NewConfigFileRow = typeof configFiles.$inferInsert;
+
 export const sandboxStatusValues = [
   "creating",
   "running",

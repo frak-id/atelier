@@ -13,7 +13,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
-      "node:child_process": resolve(__dirname, "./src/shims/node-child-process.ts"),
+      "node:child_process": resolve(
+        __dirname,
+        "./src/shims/node-child-process.ts",
+      ),
     },
   },
   server: {

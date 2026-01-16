@@ -331,4 +331,83 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         summary: "Get service status from sandbox",
       },
     },
+  )
+  .get(
+    "/:id/config/discover",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      const configs = await AgentClient.discoverConfigs(params.id);
+      return { configs };
+    },
+    {
+      params: SandboxModel.idParam,
+      detail: {
+        tags: ["sandboxes"],
+        summary: "Discover config files in sandbox",
+      },
+    },
+  )
+  .post(
+    "/:id/config/extract",
+    async ({ params, body, set }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      if (!sandbox.projectId) {
+        set.status = 400;
+        return { error: "Sandbox is not associated with a project" };
+      }
+
+      const configContent = await AgentClient.readConfigFile(
+        params.id,
+        body.path,
+      );
+      if (!configContent) {
+        set.status = 404;
+        return { error: "Config file not found in sandbox" };
+      }
+
+      const { ConfigFilesService } = await import(
+        "../../services/config-files.ts"
+      );
+
+      const existing = ConfigFilesService.getByPath(
+        configContent.displayPath,
+        "project",
+        sandbox.projectId,
+      );
+
+      if (existing) {
+        const updated = ConfigFilesService.update(existing.id, {
+          content: configContent.content,
+          contentType: configContent.contentType,
+        });
+        return { action: "updated", configFile: updated };
+      }
+
+      const created = ConfigFilesService.create({
+        path: configContent.displayPath,
+        content: configContent.content,
+        contentType: configContent.contentType,
+        scope: "project",
+        projectId: sandbox.projectId,
+      });
+      return { action: "created", configFile: created };
+    },
+    {
+      params: SandboxModel.idParam,
+      body: t.Object({
+        path: t.String(),
+      }),
+      detail: {
+        tags: ["sandboxes"],
+        summary: "Extract config file from sandbox to project",
+      },
+    },
   );

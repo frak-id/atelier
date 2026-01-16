@@ -134,7 +134,7 @@ class SpawnQueue {
       job.result = result;
       job.completedAt = new Date().toISOString();
 
-      log.info({ jobId: job.id, sandboxId: result.id }, "Job completed");
+      log.info({ jobId: job.id, sandboxId: result?.id }, "Job completed");
     } catch (error) {
       job.status = "failed";
       job.error = error instanceof Error ? error.message : String(error);

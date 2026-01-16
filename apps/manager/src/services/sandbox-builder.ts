@@ -12,6 +12,7 @@ import { ensureDir } from "../lib/shell.ts";
 import { ProjectRepository, SandboxRepository } from "../state/database.ts";
 import { AgentClient } from "./agent.ts";
 import { CaddyService } from "./caddy.ts";
+import { ConfigFilesService } from "./config-files.ts";
 import { FirecrackerClient } from "./firecracker-client.ts";
 import { type NetworkAllocation, NetworkService } from "./network.ts";
 import { SecretsService } from "./secrets.ts";
@@ -259,6 +260,8 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
         await $`chmod +x ${mountPoint}/etc/sandbox/start.sh`.quiet();
       }
 
+      await this.injectEditorConfigs(mountPoint);
+
       const sandboxMd = this.generateSandboxMd();
       await Bun.write(`${mountPoint}/home/dev/SANDBOX.md`, sandboxMd);
       await $`chown 1000:1000 ${mountPoint}/home/dev/SANDBOX.md`.quiet();
@@ -268,6 +271,36 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
     }
 
     log.debug({ sandboxId: this.sandboxId }, "Config injected");
+  }
+
+  private async injectEditorConfigs(mountPoint: string): Promise<void> {
+    const configs = ConfigFilesService.getMergedForSandbox(this.project?.id);
+
+    for (const configFile of configs) {
+      const targetPath = configFile.path.replace(/^~/, "/home/dev");
+      const fullPath = `${mountPoint}${targetPath}`;
+      const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
+
+      await ensureDir(dir);
+
+      if (configFile.contentType === "binary") {
+        const buffer = Buffer.from(configFile.content, "base64");
+        await Bun.write(fullPath, buffer);
+      } else {
+        await Bun.write(fullPath, configFile.content);
+      }
+    }
+
+    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.local`.quiet().nothrow();
+    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.config`
+      .quiet()
+      .nothrow();
+    await $`chown -R 1000:1000 ${mountPoint}/etc/sandbox`.quiet().nothrow();
+
+    log.debug(
+      { sandboxId: this.sandboxId, configCount: configs.length },
+      "Config files injected",
+    );
   }
 
   private generateSandboxMd(): string {
@@ -321,19 +354,23 @@ Your code is located in \`/home/dev/workspace\`
   }
 
   private async launchFirecracker(): Promise<void> {
+    if (!this.paths) {
+      throw new Error("Sandbox paths not initialized");
+    }
+
     await ensureDir(config.paths.SOCKET_DIR);
     await ensureDir(config.paths.LOG_DIR);
 
-    await $`rm -f ${this.paths?.socket}`.quiet().nothrow();
-    await $`touch ${this.paths?.log}`.quiet();
+    await $`rm -f ${this.paths.socket}`.quiet().nothrow();
+    await $`touch ${this.paths.log}`.quiet();
 
     const proc = Bun.spawn(
       [
         FIRECRACKER.BINARY_PATH,
         "--api-sock",
-        this.paths?.socket,
+        this.paths.socket,
         "--log-path",
-        this.paths?.log,
+        this.paths.log,
         "--level",
         "Warning",
       ],
@@ -341,12 +378,12 @@ Your code is located in \`/home/dev/workspace\`
     );
 
     this.pid = proc.pid;
-    await Bun.write(this.paths?.pid, String(proc.pid));
+    await Bun.write(this.paths.pid, String(proc.pid));
     await Bun.sleep(500);
 
     const alive = await $`kill -0 ${proc.pid}`.quiet().nothrow();
     if (alive.exitCode !== 0) {
-      const logContent = await Bun.file(this.paths?.log)
+      const logContent = await Bun.file(this.paths.log)
         .text()
         .catch(() => "");
       log.error(
@@ -356,7 +393,7 @@ Your code is located in \`/home/dev/workspace\`
       throw new Error("Firecracker process died on startup");
     }
 
-    this.client = new FirecrackerClient(this.paths?.socket);
+    this.client = new FirecrackerClient(this.paths.socket);
     log.debug(
       { sandboxId: this.sandboxId, pid: proc.pid },
       "Firecracker process started",
@@ -364,19 +401,23 @@ Your code is located in \`/home/dev/workspace\`
   }
 
   private async configureVm(): Promise<void> {
+    if (!this.client || !this.paths || !this.network || !this.sandbox) {
+      throw new Error("VM prerequisites not initialized");
+    }
+
     const bootArgs =
       "console=ttyS0 reboot=k panic=1 pci=off init=/etc/sandbox/sandbox-init.sh";
 
-    await this.client?.setBootSource(this.paths?.kernel, bootArgs);
-    await this.client?.setDrive("rootfs", this.paths?.overlay, true);
-    await this.client?.setNetworkInterface(
+    await this.client.setBootSource(this.paths.kernel, bootArgs);
+    await this.client.setDrive("rootfs", this.paths.overlay, true);
+    await this.client.setNetworkInterface(
       "eth0",
-      this.network?.macAddress,
-      this.network?.tapDevice,
+      this.network.macAddress,
+      this.network.tapDevice,
     );
 
     const cpuTemplatePath = `${config.paths.SANDBOX_DIR}/cpu-template-no-avx.json`;
-    const cpuTemplateApplied = await this.client?.setCpuConfig(cpuTemplatePath);
+    const cpuTemplateApplied = await this.client.setCpuConfig(cpuTemplatePath);
     if (cpuTemplateApplied) {
       log.info(
         { sandboxId: this.sandboxId },
@@ -384,9 +425,9 @@ Your code is located in \`/home/dev/workspace\`
       );
     }
 
-    await this.client?.setMachineConfig(
-      this.sandbox?.resources.vcpus,
-      this.sandbox?.resources.memoryMb,
+    await this.client.setMachineConfig(
+      this.sandbox.resources.vcpus,
+      this.sandbox.resources.memoryMb,
     );
 
     await Bun.sleep(100);

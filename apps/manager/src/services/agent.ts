@@ -47,6 +47,17 @@ interface ExecResult {
   stderr: string;
 }
 
+interface EditorConfig {
+  vscode: {
+    settings: Record<string, unknown>;
+    extensions: string[];
+  };
+  opencode: {
+    auth: Record<string, unknown>;
+    config: Record<string, unknown>;
+  };
+}
+
 export const AgentClient = {
   /**
    * Get agent base URL for a sandbox
@@ -249,4 +260,93 @@ export const AgentClient = {
 
     return results;
   },
+
+  async getEditorConfig(sandboxId: string): Promise<EditorConfig | null> {
+    try {
+      return await this.request<EditorConfig>(sandboxId, "/editor-config");
+    } catch (error) {
+      log.error({ sandboxId, error }, "Failed to get editor config");
+      return null;
+    }
+  },
+
+  async getInstalledExtensions(sandboxId: string): Promise<string[]> {
+    try {
+      const result = await this.request<{ extensions: string[] }>(
+        sandboxId,
+        "/vscode/extensions/installed",
+      );
+      return result.extensions;
+    } catch (error) {
+      log.error({ sandboxId, error }, "Failed to get installed extensions");
+      return [];
+    }
+  },
+
+  async installExtensions(
+    sandboxId: string,
+    extensions: string[],
+  ): Promise<{ extension: string; success: boolean; error?: string }[]> {
+    try {
+      const result = await this.request<{
+        results: { extension: string; success: boolean; error?: string }[];
+      }>(sandboxId, "/vscode/extensions/install", {
+        method: "POST",
+        body: { extensions },
+        timeout: 300000,
+      });
+      return result.results;
+    } catch (error) {
+      log.error({ sandboxId, error }, "Failed to install extensions");
+      return extensions.map((ext) => ({
+        extension: ext,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  },
+
+  async discoverConfigs(sandboxId: string): Promise<DiscoveredConfig[]> {
+    try {
+      const result = await this.request<{ configs: DiscoveredConfig[] }>(
+        sandboxId,
+        "/config/discover",
+      );
+      return result.configs;
+    } catch (error) {
+      log.error({ sandboxId, error }, "Failed to discover configs");
+      return [];
+    }
+  },
+
+  async readConfigFile(
+    sandboxId: string,
+    path: string,
+  ): Promise<ConfigFileContent | null> {
+    try {
+      return await this.request<ConfigFileContent>(
+        sandboxId,
+        `/config/read?path=${encodeURIComponent(path)}`,
+      );
+    } catch (error) {
+      log.error({ sandboxId, path, error }, "Failed to read config file");
+      return null;
+    }
+  },
 };
+
+interface DiscoveredConfig {
+  path: string;
+  displayPath: string;
+  category: "opencode" | "vscode" | "other";
+  exists: boolean;
+  size?: number;
+}
+
+interface ConfigFileContent {
+  path: string;
+  displayPath: string;
+  content: string;
+  contentType: "json" | "text";
+  size: number;
+}

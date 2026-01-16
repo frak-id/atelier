@@ -1,6 +1,7 @@
 import { exec as execCallback, execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { node } from "@elysiajs/node";
 import { Elysia, t } from "elysia";
@@ -10,6 +11,11 @@ const exec = promisify(execCallback);
 const AGENT_PORT = 9999;
 const CONFIG_PATH = "/etc/sandbox/config.json";
 const LOG_DIR = "/var/log/sandbox";
+const VSCODE_SETTINGS_PATH =
+  "/home/dev/.local/share/code-server/User/settings.json";
+const VSCODE_EXTENSIONS_PATH = "/etc/sandbox/vscode-extensions.json";
+const OPENCODE_AUTH_PATH = "/home/dev/.config/opencode/auth.json";
+const OPENCODE_CONFIG_PATH = "/home/dev/.config/opencode/config.json";
 
 interface SandboxConfig {
   sandboxId: string;
@@ -127,6 +133,95 @@ async function getServiceLogs(service: string, lines = 100): Promise<string> {
   }
 }
 
+interface DiscoveredConfig {
+  path: string;
+  displayPath: string;
+  category: "opencode" | "vscode" | "other";
+  exists: boolean;
+  size?: number;
+}
+
+const KNOWN_CONFIG_PATHS = [
+  {
+    path: "/home/dev/.config/opencode/auth.json",
+    category: "opencode" as const,
+  },
+  {
+    path: "/home/dev/.config/opencode/config.json",
+    category: "opencode" as const,
+  },
+  {
+    path: "/home/dev/.local/share/code-server/User/settings.json",
+    category: "vscode" as const,
+  },
+];
+
+const CONFIG_DIRECTORIES = [
+  { dir: "/home/dev/.config/opencode", category: "opencode" as const },
+  { dir: "/home/dev/.opencode", category: "opencode" as const },
+];
+
+function discoverConfigFiles(): DiscoveredConfig[] {
+  const results: DiscoveredConfig[] = [];
+  const seenPaths = new Set<string>();
+
+  for (const { path, category } of KNOWN_CONFIG_PATHS) {
+    if (seenPaths.has(path)) continue;
+    seenPaths.add(path);
+
+    const exists = existsSync(path);
+    let size: number | undefined;
+    if (exists) {
+      try {
+        size = statSync(path).size;
+      } catch {}
+    }
+
+    results.push({
+      path,
+      displayPath: path.replace("/home/dev", "~"),
+      category,
+      exists,
+      size,
+    });
+  }
+
+  for (const { dir, category } of CONFIG_DIRECTORIES) {
+    if (!existsSync(dir)) continue;
+
+    try {
+      const files = readdirSync(dir);
+      for (const file of files) {
+        if (
+          !file.endsWith(".json") &&
+          !file.endsWith(".js") &&
+          !file.endsWith(".ts")
+        )
+          continue;
+
+        const fullPath = join(dir, file);
+        if (seenPaths.has(fullPath)) continue;
+        seenPaths.add(fullPath);
+
+        try {
+          const stats = statSync(fullPath);
+          if (!stats.isFile()) continue;
+
+          results.push({
+            path: fullPath,
+            displayPath: fullPath.replace("/home/dev", "~"),
+            category,
+            exists: true,
+            size: stats.size,
+          });
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return results.filter((r) => r.exists);
+}
+
 const app = new Elysia({ adapter: node() })
   .get("/health", async () => {
     const config = await loadConfig();
@@ -228,6 +323,130 @@ const app = new Elysia({ adapter: node() })
     ]);
     return { services: [codeServer, opencode, sshd, ttyd] };
   })
+  .get("/editor-config", async () => {
+    const [vscodeSettings, vscodeExtensions, opencodeAuth, opencodeConfig] =
+      await Promise.all([
+        readFile(VSCODE_SETTINGS_PATH, "utf-8").catch(() => "{}"),
+        readFile(VSCODE_EXTENSIONS_PATH, "utf-8").catch(() => "[]"),
+        readFile(OPENCODE_AUTH_PATH, "utf-8").catch(() => "{}"),
+        readFile(OPENCODE_CONFIG_PATH, "utf-8").catch(() => "{}"),
+      ]);
+
+    return {
+      vscode: {
+        settings: JSON.parse(vscodeSettings),
+        extensions: JSON.parse(vscodeExtensions),
+      },
+      opencode: {
+        auth: JSON.parse(opencodeAuth),
+        config: JSON.parse(opencodeConfig),
+      },
+    };
+  })
+  .get("/config/discover", () => {
+    return { configs: discoverConfigFiles() };
+  })
+  .get(
+    "/config/read",
+    async ({ query, set }) => {
+      const path = query.path;
+      if (!path) {
+        set.status = 400;
+        return { error: "path query parameter required" };
+      }
+
+      const normalizedPath = path.replace(/^~/, "/home/dev");
+
+      if (
+        !normalizedPath.startsWith("/home/dev/") &&
+        !normalizedPath.startsWith("/etc/sandbox/")
+      ) {
+        set.status = 403;
+        return {
+          error: "Access denied - path must be under /home/dev or /etc/sandbox",
+        };
+      }
+
+      try {
+        const content = await readFile(normalizedPath, "utf-8");
+        const stats = await stat(normalizedPath);
+
+        let contentType: "json" | "text" = "text";
+        if (normalizedPath.endsWith(".json")) {
+          try {
+            JSON.parse(content);
+            contentType = "json";
+          } catch {}
+        }
+
+        return {
+          path: normalizedPath,
+          displayPath: normalizedPath.replace("/home/dev", "~"),
+          content,
+          contentType,
+          size: stats.size,
+        };
+      } catch (error) {
+        set.status = 404;
+        return { error: "File not found or not readable" };
+      }
+    },
+    {
+      query: t.Object({
+        path: t.String(),
+      }),
+    },
+  )
+  .get("/vscode/extensions/installed", async () => {
+    try {
+      const { stdout } = await exec(
+        "code-server --list-extensions 2>/dev/null || true",
+      );
+      const extensions = stdout
+        .trim()
+        .split("\n")
+        .filter((e) => e.length > 0);
+      return { extensions };
+    } catch {
+      return { extensions: [] };
+    }
+  })
+  .post(
+    "/vscode/extensions/install",
+    async ({ body }) => {
+      try {
+        const results: {
+          extension: string;
+          success: boolean;
+          error?: string;
+        }[] = [];
+        for (const ext of body.extensions) {
+          try {
+            await exec(`code-server --install-extension ${ext}`, {
+              timeout: 120000,
+            });
+            results.push({ extension: ext, success: true });
+          } catch (error: unknown) {
+            const err = error as { message?: string };
+            results.push({
+              extension: ext,
+              success: false,
+              error: err.message ?? "Unknown error",
+            });
+          }
+        }
+        return { results };
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        return { error: err.message ?? "Failed to install extensions" };
+      }
+    },
+    {
+      body: t.Object({
+        extensions: t.Array(t.String()),
+      }),
+    },
+  )
   .listen(AGENT_PORT, () => {
     console.log(`Sandbox agent running at http://0.0.0.0:${AGENT_PORT}`);
   });
