@@ -10,6 +10,7 @@ import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { ensureDir } from "../lib/shell.ts";
 import { ProjectRepository, SandboxRepository } from "../state/database.ts";
+import { AgentClient } from "./agent.ts";
 import { CaddyService } from "./caddy.ts";
 import { FirecrackerClient } from "./firecracker-client.ts";
 import { type NetworkAllocation, NetworkService } from "./network.ts";
@@ -55,6 +56,7 @@ export class SandboxBuilder {
   private paths?: SandboxPaths;
   private pid?: number;
   private client?: FirecrackerClient;
+  private usedPrebuild = false;
 
   private constructor(options: CreateSandboxOptions) {
     this.sandboxId = options.id || nanoid(12);
@@ -81,6 +83,7 @@ export class SandboxBuilder {
       await this.launchFirecracker();
       await this.configureVm();
       await this.boot();
+      await this.waitForAgentAndSetup();
       await this.registerRoutes();
 
       return this.finalize();
@@ -112,6 +115,12 @@ export class SandboxBuilder {
     const baseImage = this.options.baseImage ?? this.project?.baseImage;
     const lvmAvailable = await StorageService.isAvailable();
 
+    if (this.options.projectId) {
+      this.usedPrebuild = await StorageService.hasPrebuild(
+        this.options.projectId,
+      );
+    }
+
     let lvmVolumePath: string | undefined;
     if (lvmAvailable) {
       lvmVolumePath = await StorageService.createSandboxVolume(this.sandboxId, {
@@ -122,7 +131,11 @@ export class SandboxBuilder {
 
     this.paths = getSandboxPaths(this.sandboxId, lvmVolumePath);
     log.debug(
-      { sandboxId: this.sandboxId, useLvm: this.paths.useLvm },
+      {
+        sandboxId: this.sandboxId,
+        useLvm: this.paths.useLvm,
+        usedPrebuild: this.usedPrebuild,
+      },
       "Volume created",
     );
   }
@@ -395,6 +408,62 @@ Your code is located in \`/home/dev/workspace\`
     }
 
     throw new Error(`VM boot timeout after ${timeoutMs}ms`);
+  }
+
+  private async waitForAgentAndSetup(): Promise<void> {
+    const agentReady = await AgentClient.waitForAgent(this.sandboxId, {
+      timeout: 60000,
+    });
+
+    if (!agentReady) {
+      log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
+      return;
+    }
+
+    if (this.needsRepoClone()) {
+      await this.cloneRepository();
+    }
+  }
+
+  private needsRepoClone(): boolean {
+    return (
+      !this.usedPrebuild &&
+      !!this.project?.gitUrl &&
+      this.project.gitUrl.length > 0
+    );
+  }
+
+  private async cloneRepository(): Promise<void> {
+    if (!this.project?.gitUrl) return;
+
+    const branch = this.options.branch ?? this.project.defaultBranch;
+    const workspace = "/home/dev/workspace";
+
+    log.info(
+      { sandboxId: this.sandboxId, gitUrl: this.project.gitUrl, branch },
+      "Cloning repository in sandbox",
+    );
+
+    const result = await AgentClient.exec(
+      this.sandboxId,
+      `git clone --depth 1 -b ${branch} ${this.project.gitUrl} ${workspace}`,
+      { timeout: 120000 },
+    );
+
+    if (result.exitCode !== 0) {
+      log.error(
+        { sandboxId: this.sandboxId, stderr: result.stderr },
+        "Git clone failed",
+      );
+      throw new Error(`Git clone failed: ${result.stderr}`);
+    }
+
+    await AgentClient.exec(this.sandboxId, `chown -R dev:dev ${workspace}`);
+    await AgentClient.exec(
+      this.sandboxId,
+      `su - dev -c 'git config --global --add safe.directory ${workspace}'`,
+    );
+    log.info({ sandboxId: this.sandboxId }, "Repository cloned successfully");
   }
 
   private async registerRoutes(): Promise<void> {

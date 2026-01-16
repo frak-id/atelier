@@ -28,10 +28,15 @@ const vg = LVM.VG_NAME;
 const thinPool = LVM.THIN_POOL;
 const baseVolume = LVM.BASE_VOLUME;
 const sandboxPrefix = LVM.SANDBOX_PREFIX;
+
+const LVCREATE = "/usr/sbin/lvcreate";
+const LVREMOVE = "/usr/sbin/lvremove";
+const LVS = "/usr/sbin/lvs";
+const VGS = "/usr/sbin/vgs";
 const prebuildPrefix = LVM.PREBUILD_PREFIX;
 
 async function lvExists(volumePath: string): Promise<boolean> {
-  const result = await $`lvs ${volumePath} --noheadings 2>/dev/null`
+  const result = await $`${LVS} ${volumePath} --noheadings 2>/dev/null`
     .quiet()
     .nothrow();
   return result.exitCode === 0;
@@ -41,8 +46,8 @@ export const StorageService = {
   async isAvailable(): Promise<boolean> {
     if (config.isMock()) return true;
 
-    const hasLvm = await commandExists("lvm");
-    if (!hasLvm) return false;
+    const result = await $`test -x /usr/sbin/lvm`.quiet().nothrow();
+    if (result.exitCode !== 0) return false;
 
     return lvExists(`${vg}/${thinPool}`);
   },
@@ -72,11 +77,11 @@ export const StorageService = {
     }
 
     const poolInfo =
-      await $`lvs ${vg}/${thinPool} -o lv_size,data_percent,metadata_percent --noheadings --units g --nosuffix`
+      await $`${LVS} ${vg}/${thinPool} -o lv_size,data_percent,metadata_percent --noheadings --units g --nosuffix`
         .quiet()
         .nothrow();
 
-    const volumeCountResult = await $`lvs ${vg} -o lv_name --noheadings`
+    const volumeCountResult = await $`${LVS} ${vg} -o lv_name --noheadings`
       .quiet()
       .nothrow();
     const volumeCount = volumeCountResult.stdout
@@ -162,7 +167,7 @@ export const StorageService = {
 
     log.info({ sandboxId, sourceVolume, baseImage }, "Cloning volume");
 
-    await $`lvcreate -s -kn -n ${volumeName} ${vg}/${sourceVolume}`.quiet();
+    await $`${LVCREATE} -s -kn -n ${volumeName} ${vg}/${sourceVolume}`.quiet();
 
     log.info({ sandboxId, volumePath, sourceVolume }, "Sandbox volume created");
     return volumePath;
@@ -176,7 +181,7 @@ export const StorageService = {
       return;
     }
 
-    await $`lvremove -f ${vg}/${volumeName} 2>/dev/null || true`
+    await $`${LVREMOVE} -f ${vg}/${volumeName} 2>/dev/null || true`
       .quiet()
       .nothrow();
     log.info({ sandboxId }, "Sandbox volume deleted");
@@ -192,11 +197,11 @@ export const StorageService = {
     }
 
     if (await this.hasPrebuild(projectId)) {
-      await $`lvremove -f ${vg}/${prebuildVolume}`.quiet();
+      await $`${LVREMOVE} -f ${vg}/${prebuildVolume}`.quiet();
       log.info({ projectId }, "Old prebuild removed");
     }
 
-    await $`lvcreate -s -n ${prebuildVolume} ${vg}/${sandboxVolume}`.quiet();
+    await $`${LVCREATE} -s -n ${prebuildVolume} ${vg}/${sandboxVolume}`.quiet();
     log.info({ projectId, sandboxId }, "Prebuild created from sandbox");
   },
 
@@ -206,7 +211,7 @@ export const StorageService = {
       return;
     }
 
-    await $`lvremove -f ${vg}/${prebuildPrefix}${projectId} 2>/dev/null || true`
+    await $`${LVREMOVE} -f ${vg}/${prebuildPrefix}${projectId} 2>/dev/null || true`
       .quiet()
       .nothrow();
     log.info({ projectId }, "Prebuild deleted");
@@ -216,7 +221,7 @@ export const StorageService = {
     if (config.isMock()) return [];
 
     const result =
-      await $`lvs ${vg} -o lv_name,lv_size,data_percent,origin --noheadings`
+      await $`${LVS} ${vg} -o lv_name,lv_size,data_percent,origin --noheadings`
         .quiet()
         .nothrow();
 
@@ -245,7 +250,7 @@ export const StorageService = {
     }
 
     const result =
-      await $`lvs ${vg}/sandbox-${sandboxId} -o lv_size,data_percent,origin --noheadings`
+      await $`${LVS} ${vg}/sandbox-${sandboxId} -o lv_size,data_percent,origin --noheadings`
         .quiet()
         .nothrow();
 

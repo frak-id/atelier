@@ -8,7 +8,9 @@ import { DEFAULT_BASE_IMAGE } from "@frak-sandbox/shared/types";
 import { nanoid } from "nanoid";
 import { createChildLogger } from "../lib/logger.ts";
 import { projectStore } from "../state/project-store.ts";
+import { PrebuildService } from "./prebuild.ts";
 import { SecretsService } from "./secrets.ts";
+import { StorageService } from "./storage.ts";
 
 const log = createChildLogger("project");
 
@@ -91,8 +93,7 @@ export const ProjectService = {
       throw new Error(`Project '${id}' not found`);
     }
 
-    // TODO: Clean up prebuilds and sandboxes associated with this project
-
+    await StorageService.deletePrebuild(id);
     projectStore.delete(id);
     log.info({ projectId: id }, "Project deleted");
   },
@@ -120,10 +121,7 @@ export const ProjectService = {
       throw new Error(`Project '${id}' already has a prebuild in progress`);
     }
 
-    projectStore.updatePrebuildStatus(id, "building");
     log.info({ projectId: id }, "Prebuild triggered");
-
-    // TODO: Actually trigger the prebuild process
-    // This will be implemented in the prebuild service
+    await PrebuildService.createInBackground(id);
   },
 };

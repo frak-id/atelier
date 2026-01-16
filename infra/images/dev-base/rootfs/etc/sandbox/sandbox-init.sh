@@ -29,6 +29,19 @@ mount -t tmpfs tmpfs /dev/shm 2>&1 | tee -a "$LOG_DIR/init.log"
 mount -t tmpfs tmpfs /run 2>&1 | tee -a "$LOG_DIR/init.log"
 mount -t tmpfs tmpfs /tmp 2>&1 | tee -a "$LOG_DIR/init.log"
 
+log "Creating device nodes..."
+[ -e /dev/null ] || mknod -m 666 /dev/null c 1 3
+[ -e /dev/zero ] || mknod -m 666 /dev/zero c 1 5
+[ -e /dev/random ] || mknod -m 666 /dev/random c 1 8
+[ -e /dev/urandom ] || mknod -m 666 /dev/urandom c 1 9
+[ -e /dev/tty ] || mknod -m 666 /dev/tty c 5 0
+[ -e /dev/console ] || mknod -m 600 /dev/console c 5 1
+[ -e /dev/ptmx ] || mknod -m 666 /dev/ptmx c 5 2
+ln -sf /proc/self/fd /dev/fd 2>/dev/null
+ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null
+ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null
+ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null
+
 log "Setting up hostname..."
 if [ -f "$CONFIG_FILE" ]; then
     SANDBOX_ID=$(cat "$CONFIG_FILE" | grep -o '"sandboxId"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
