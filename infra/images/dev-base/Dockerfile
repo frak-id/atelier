@@ -75,8 +75,12 @@ RUN mkdir -p /var/run/sshd \
 RUN mkdir -p /etc/sandbox/secrets \
     && mkdir -p /var/log/sandbox \
     && mkdir -p /home/dev/workspace \
+    && mkdir -p /home/dev/.local/share/code-server/User \
     && chown -R dev:dev /home/dev \
     && chown -R dev:dev /var/log/sandbox
+
+# Copy code-server settings (disable workspace trust, etc.)
+COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 
 # Copy sandbox init scripts
 COPY rootfs/etc/sandbox/ /etc/sandbox/

@@ -101,22 +101,22 @@ function SandboxesPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Sandboxes</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">Sandboxes</h1>
           <p className="text-muted-foreground">
             Manage your development environments
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />
           New Sandbox
         </Button>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>
@@ -199,8 +199,8 @@ function SandboxCard({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div className="flex items-center gap-3">
+      <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           <Link to="/sandboxes/$id" params={{ id: sandbox.id }}>
             <CardTitle className="hover:underline cursor-pointer">
               {sandbox.id}
@@ -213,7 +213,7 @@ function SandboxCard({
             <Badge variant="outline">{sandbox.projectId}</Badge>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {sandbox.status === "running" && (
             <>
               <Button variant="outline" size="sm" asChild>

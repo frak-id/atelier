@@ -3,6 +3,7 @@ import {
   createRootRouteWithContext,
   Link,
   Outlet,
+  useLocation,
 } from "@tanstack/react-router";
 import {
   Box,
@@ -10,8 +11,17 @@ import {
   FolderGit2,
   HardDrive,
   LayoutDashboard,
+  Menu,
   Settings,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
@@ -21,10 +31,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 );
 
 function RootLayout() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
   return (
     <TooltipProvider>
       <div className="flex h-screen bg-background">
-        <aside className="w-64 border-r bg-card flex flex-col">
+        <aside className="hidden md:flex w-64 border-r bg-card flex-col">
           <div className="p-6 border-b">
             <Link to="/" className="flex items-center gap-2">
               <Box className="h-6 w-6 text-primary" />
@@ -52,9 +69,60 @@ function RootLayout() {
             v0.1.0
           </div>
         </aside>
-        <main className="flex-1 overflow-auto">
-          <Outlet />
-        </main>
+
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetContent side="left" className="w-64 p-0">
+            <SheetHeader className="p-6 border-b">
+              <SheetTitle>
+                <Link to="/" className="flex items-center gap-2">
+                  <Box className="h-6 w-6 text-primary" />
+                  <span className="font-bold text-lg">Frak Sandbox</span>
+                </Link>
+              </SheetTitle>
+            </SheetHeader>
+            <nav className="flex-1 p-4 space-y-1">
+              <NavLink to="/" icon={LayoutDashboard}>
+                Dashboard
+              </NavLink>
+              <NavLink to="/sandboxes" icon={Boxes}>
+                Sandboxes
+              </NavLink>
+              <NavLink to="/projects" icon={FolderGit2}>
+                Projects
+              </NavLink>
+              <NavLink to="/images" icon={HardDrive}>
+                Images
+              </NavLink>
+              <NavLink to="/system" icon={Settings}>
+                System
+              </NavLink>
+            </nav>
+            <div className="p-4 border-t text-xs text-muted-foreground">
+              v0.1.0
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <header className="md:hidden flex items-center gap-4 p-4 border-b bg-card">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Open menu</span>
+            </Button>
+            <Link to="/" className="flex items-center gap-2">
+              <Box className="h-5 w-5 text-primary" />
+              <span className="font-bold">Frak Sandbox</span>
+            </Link>
+          </header>
+
+          <main className="flex-1 overflow-auto">
+            <Outlet />
+          </main>
+        </div>
       </div>
     </TooltipProvider>
   );

@@ -29,7 +29,7 @@ function ImagesPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Base Images</h1>
+        <h1 className="text-2xl font-bold sm:text-3xl">Base Images</h1>
         <p className="text-muted-foreground">
           Available development environment images
         </p>
@@ -38,8 +38,8 @@ function ImagesPage() {
       <div className="grid gap-4">
         {images.map((image) => (
           <Card key={image.id}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <div className="flex items-center gap-3">
+            <CardHeader className="pb-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <HardDrive className="h-5 w-5 text-muted-foreground" />
                 <CardTitle>{image.name}</CardTitle>
                 <Badge variant={image.available ? "success" : "secondary"}>

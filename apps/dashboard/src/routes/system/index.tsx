@@ -46,9 +46,9 @@ function SystemPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">System</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">System</h1>
           <p className="text-muted-foreground">
             System statistics and maintenance
           </p>
@@ -57,6 +57,7 @@ function SystemPage() {
           variant="outline"
           onClick={handleCleanup}
           disabled={cleanupMutation.isPending}
+          className="w-full sm:w-auto"
         >
           {cleanupMutation.isPending ? (
             <RefreshCw className="h-4 w-4 mr-2 animate-spin" />

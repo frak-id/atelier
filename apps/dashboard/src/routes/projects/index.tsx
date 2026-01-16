@@ -40,14 +40,14 @@ function ProjectsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Projects</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">Projects</h1>
           <p className="text-muted-foreground">
             Configure repositories and prebuilds
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button onClick={() => setCreateOpen(true)} className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />
           New Project
         </Button>
@@ -97,8 +97,8 @@ function ProjectCard({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div className="flex items-center gap-3">
+      <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           <Link to="/projects/$id" params={{ id: project.id }}>
             <CardTitle className="hover:underline cursor-pointer">
               {project.name}

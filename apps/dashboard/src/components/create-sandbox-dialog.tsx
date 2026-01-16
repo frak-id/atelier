@@ -96,16 +96,19 @@ export function CreateSandboxDialog({
             <div className="space-y-2">
               <Label htmlFor="project">Project (optional)</Label>
               <Select
-                value={formData.projectId}
+                value={formData.projectId || "none"}
                 onValueChange={(value) =>
-                  setFormData({ ...formData, projectId: value })
+                  setFormData({
+                    ...formData,
+                    projectId: value === "none" ? "" : value,
+                  })
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="No project" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No project</SelectItem>
+                  <SelectItem value="none">No project</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
