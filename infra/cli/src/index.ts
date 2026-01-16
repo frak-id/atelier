@@ -1,12 +1,12 @@
 import * as p from "@clack/prompts";
-import { isRoot } from "./lib/shell";
 import { baseSetup } from "./commands/base-setup";
-import { installFirecracker } from "./commands/install-firecracker";
-import { setupNetwork } from "./commands/setup-network";
-import { testVm } from "./commands/test-vm";
-import { setupStorage } from "./commands/setup-storage";
 import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
+import { installFirecracker } from "./commands/install-firecracker";
+import { setupNetwork } from "./commands/setup-network";
+import { setupStorage } from "./commands/setup-storage";
+import { testVm } from "./commands/test-vm";
+import { isRoot } from "./lib/shell";
 
 const COMMANDS = {
   setup: {

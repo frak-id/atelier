@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
-import { exec, commandExists } from "../lib/shell";
 import { PATHS } from "../lib/context";
+import { commandExists, exec } from "../lib/shell";
 
 export async function baseSetup(_args: string[] = []) {
   p.log.step("Phase 1.1: Base Setup");

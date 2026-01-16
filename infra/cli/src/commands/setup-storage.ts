@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
+import { LVM, PATHS } from "../lib/context";
 import { exec, fileExists } from "../lib/shell";
-import { PATHS, LVM } from "../lib/context";
 
 const LOOP_FILE = "/var/lib/sandbox/thin-pool.img";
 const DEFAULT_LOOP_SIZE_GB = 100;
@@ -85,8 +85,8 @@ async function setupWithLoopFile(spinner: ReturnType<typeof p.spinner>) {
     placeholder: String(DEFAULT_LOOP_SIZE_GB),
     initialValue: String(DEFAULT_LOOP_SIZE_GB),
     validate: (value: string) => {
-      const num = parseInt(value);
-      if (isNaN(num) || num < 10) return "Minimum 10GB";
+      const num = parseInt(value, 10);
+      if (Number.isNaN(num) || num < 10) return "Minimum 10GB";
       return undefined;
     },
   });
@@ -96,7 +96,7 @@ async function setupWithLoopFile(spinner: ReturnType<typeof p.spinner>) {
     process.exit(0);
   }
 
-  const sizeGb = parseInt(sizeInput);
+  const sizeGb = parseInt(sizeInput, 10);
 
   spinner.start(`Creating ${sizeGb}GB sparse file`);
   await exec(`truncate -s ${sizeGb}G ${LOOP_FILE}`);

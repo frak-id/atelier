@@ -1,18 +1,18 @@
-import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
+import { Elysia } from "elysia";
 import { config } from "./lib/config.ts";
+import { SandboxError } from "./lib/errors.ts";
 import { logger } from "./lib/logger.ts";
 import { appPaths } from "./lib/paths.ts";
-import { SandboxError } from "./lib/errors.ts";
-import { initDatabase } from "./state/database.ts";
-import { healthRoutes } from "./routes/health.ts";
-import { systemRoutes } from "./routes/system/index.ts";
-import { sandboxRoutes } from "./routes/sandboxes/index.ts";
-import { projectRoutes } from "./routes/projects/index.ts";
-import { imageRoutes } from "./routes/images/index.ts";
 import { debugRoutes } from "./routes/debug/index.ts";
+import { healthRoutes } from "./routes/health.ts";
+import { imageRoutes } from "./routes/images/index.ts";
+import { projectRoutes } from "./routes/projects/index.ts";
 import { proxyRoutes } from "./routes/proxy/index.ts";
+import { sandboxRoutes } from "./routes/sandboxes/index.ts";
+import { systemRoutes } from "./routes/system/index.ts";
+import { initDatabase } from "./state/database.ts";
 
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");

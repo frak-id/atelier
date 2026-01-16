@@ -1,5 +1,5 @@
-import { createChildLogger } from "../lib/logger.ts";
 import { config } from "../lib/config.ts";
+import { createChildLogger } from "../lib/logger.ts";
 
 const log = createChildLogger("secrets");
 

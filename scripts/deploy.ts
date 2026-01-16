@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { $ } from "bun";
-import { existsSync } from "fs";
-import { resolve } from "path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const CLI_DIR = resolve(ROOT, "infra/cli");

@@ -24,7 +24,7 @@ function extractSandboxId(
 
   for (const { regex, type } of patterns) {
     const match = host.match(regex);
-    if (match && match[1]) {
+    if (match?.[1]) {
       return { type, id: match[1] };
     }
   }

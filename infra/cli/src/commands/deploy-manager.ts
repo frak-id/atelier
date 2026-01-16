@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
-import { exec, fileExists } from "../lib/shell";
 import { PATHS } from "../lib/context";
+import { exec, fileExists } from "../lib/shell";
 
 const MANAGER_SERVICE = "frak-sandbox-manager";
 const MANAGER_PORT = 4000;

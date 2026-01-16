@@ -1,5 +1,5 @@
-import envPaths from "env-paths";
 import { mkdir } from "node:fs/promises";
+import envPaths from "env-paths";
 
 const APP_NAME = "frak-sandbox";
 

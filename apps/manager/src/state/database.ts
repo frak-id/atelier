@@ -1,8 +1,12 @@
 import { Database } from "bun:sqlite";
-import type { Sandbox, SandboxStatus } from "@frak-sandbox/shared/types";
-import type { Project, PrebuildStatus } from "@frak-sandbox/shared/types";
-import { appPaths, ensureAppDirs } from "../lib/paths.ts";
+import type {
+  PrebuildStatus,
+  Project,
+  Sandbox,
+  SandboxStatus,
+} from "@frak-sandbox/shared/types";
 import { createChildLogger } from "../lib/logger.ts";
+import { appPaths, ensureAppDirs } from "../lib/paths.ts";
 
 const log = createChildLogger("database");
 

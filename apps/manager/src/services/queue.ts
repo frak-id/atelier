@@ -1,6 +1,6 @@
-import { nanoid } from "nanoid";
 import { DEFAULTS } from "@frak-sandbox/shared/constants";
 import type { CreateSandboxOptions, Sandbox } from "@frak-sandbox/shared/types";
+import { nanoid } from "nanoid";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
 
@@ -129,7 +129,7 @@ class SpawnQueue {
 
   private async executeJob(job: SpawnJob): Promise<void> {
     try {
-      const result = await this.spawnHandler!(job.options);
+      const result = await this.spawnHandler?.(job.options);
       job.status = "completed";
       job.result = result;
       job.completedAt = new Date().toISOString();

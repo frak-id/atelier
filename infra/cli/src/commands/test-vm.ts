@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
+import { NETWORK, PATHS } from "../lib/context";
 import { exec, execLive, fileExists } from "../lib/shell";
-import { PATHS, NETWORK } from "../lib/context";
 
 const VM_NAME = "test-vm";
 

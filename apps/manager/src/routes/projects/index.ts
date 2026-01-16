@@ -1,8 +1,8 @@
 import { Elysia, t } from "elysia";
-import { ProjectModel } from "./model.ts";
-import { ProjectService } from "../../services/project.ts";
 import { NotFoundError } from "../../lib/errors.ts";
 import { createChildLogger } from "../../lib/logger.ts";
+import { ProjectService } from "../../services/project.ts";
+import { ProjectModel } from "./model.ts";
 
 const log = createChildLogger("projects-route");
 

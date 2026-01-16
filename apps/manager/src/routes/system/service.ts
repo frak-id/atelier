@@ -1,9 +1,9 @@
-import type { SystemStats, CleanupResult } from "@frak-sandbox/shared/types";
-import { exec, dirExists } from "../../lib/shell.ts";
+import type { CleanupResult, SystemStats } from "@frak-sandbox/shared/types";
 import { config } from "../../lib/config.ts";
-import { sandboxStore } from "../../state/store.ts";
-import { NetworkService } from "../../services/network.ts";
 import { createChildLogger } from "../../lib/logger.ts";
+import { dirExists, exec } from "../../lib/shell.ts";
+import { NetworkService } from "../../services/network.ts";
+import { sandboxStore } from "../../state/store.ts";
 
 const log = createChildLogger("system");
 const startTime = Date.now();

@@ -1,4 +1,4 @@
-import type { Project, PrebuildStatus } from "@frak-sandbox/shared/types";
+import type { PrebuildStatus, Project } from "@frak-sandbox/shared/types";
 import { ProjectRepository } from "./database.ts";
 
 export const projectStore = {

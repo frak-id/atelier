@@ -1,16 +1,16 @@
-import { $ } from "bun";
-import type { Sandbox, CreateSandboxOptions } from "@frak-sandbox/shared/types";
 import { FIRECRACKER } from "@frak-sandbox/shared/constants";
-import { fileExists } from "../lib/shell.ts";
+import type { CreateSandboxOptions, Sandbox } from "@frak-sandbox/shared/types";
+import { $ } from "bun";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
+import { fileExists } from "../lib/shell.ts";
 import { SandboxRepository } from "../state/database.ts";
-import { NetworkService } from "./network.ts";
 import { CaddyService } from "./caddy.ts";
-import { StorageService } from "./storage.ts";
+import { FirecrackerClient } from "./firecracker-client.ts";
+import { NetworkService } from "./network.ts";
 import { QueueService } from "./queue.ts";
 import { SandboxBuilder } from "./sandbox-builder.ts";
-import { FirecrackerClient } from "./firecracker-client.ts";
+import { StorageService } from "./storage.ts";
 
 const log = createChildLogger("firecracker");
 
@@ -80,7 +80,7 @@ export const FirecrackerService = {
       SandboxRepository.updateStatus(sandboxId, "stopped");
     }
 
-    return SandboxRepository.getById(sandboxId)!;
+    return SandboxRepository.getById(sandboxId) ?? sandbox;
   },
 
   async getFirecrackerState(sandboxId: string): Promise<unknown> {

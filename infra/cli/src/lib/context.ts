@@ -1,6 +1,6 @@
 export {
-  PATHS,
   FIRECRACKER,
-  NETWORK,
   LVM,
+  NETWORK,
+  PATHS,
 } from "@frak-sandbox/shared/constants";

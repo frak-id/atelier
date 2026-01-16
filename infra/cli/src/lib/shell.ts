@@ -9,9 +9,9 @@ export interface ExecResult {
 
 export async function exec(
   command: string,
-  options: { quiet?: boolean; throws?: boolean } = {},
+  options: { throws?: boolean } = {},
 ): Promise<ExecResult> {
-  const { quiet = false, throws = true } = options;
+  const { throws = true } = options;
 
   try {
     const result = await $`sh -c ${command}`.quiet();

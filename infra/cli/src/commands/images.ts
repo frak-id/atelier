@@ -1,11 +1,11 @@
 import * as p from "@clack/prompts";
-import { exec, commandExists } from "../lib/shell";
-import { PATHS, LVM } from "../lib/context";
 import {
   BASE_IMAGES,
-  getAvailableImages,
   type BaseImageId,
+  getAvailableImages,
 } from "@frak-sandbox/shared/types";
+import { LVM, PATHS } from "../lib/context";
+import { commandExists, exec } from "../lib/shell";
 
 const IMAGES_DIR = "/opt/frak-sandbox/infra/images";
 

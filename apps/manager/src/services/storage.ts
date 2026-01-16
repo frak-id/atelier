@@ -1,10 +1,10 @@
-import { $ } from "bun";
 import { LVM } from "@frak-sandbox/shared/constants";
 import type { BaseImageId } from "@frak-sandbox/shared/types";
 import { DEFAULT_BASE_IMAGE, getBaseImage } from "@frak-sandbox/shared/types";
-import { commandExists } from "../lib/shell.ts";
+import { $ } from "bun";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
+import { commandExists } from "../lib/shell.ts";
 
 const log = createChildLogger("storage");
 
@@ -152,10 +152,10 @@ export const StorageService = {
       sourceVolume = `${prebuildPrefix}${projectId}`;
     } else if (baseImage && (await this.hasImageVolume(baseImage))) {
       const image = getBaseImage(baseImage);
-      sourceVolume = image!.volumeName;
+      sourceVolume = image?.volumeName;
     } else if (await this.hasImageVolume(DEFAULT_BASE_IMAGE)) {
       const defaultImage = getBaseImage(DEFAULT_BASE_IMAGE);
-      sourceVolume = defaultImage!.volumeName;
+      sourceVolume = defaultImage?.volumeName;
     } else {
       sourceVolume = baseVolume;
     }

@@ -1,9 +1,10 @@
-import { Elysia, t } from "elysia";
 import {
   getAllImages,
   getAvailableImages,
   getBaseImage,
+  type BaseImageId,
 } from "@frak-sandbox/shared/types";
+import { Elysia, t } from "elysia";
 import { NotFoundError } from "../../lib/errors.ts";
 
 const ImageResponse = t.Object({
@@ -34,7 +35,7 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
   .get(
     "/:id",
     ({ params }) => {
-      const image = getBaseImage(params.id as any);
+      const image = getBaseImage(params.id as BaseImageId);
       if (!image) {
         throw new NotFoundError("Image", params.id);
       }

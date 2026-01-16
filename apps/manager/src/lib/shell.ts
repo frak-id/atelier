@@ -1,5 +1,5 @@
+import { mkdir, stat } from "node:fs/promises";
 import { $ } from "bun";
-import { stat, mkdir } from "node:fs/promises";
 
 export interface ExecResult {
   stdout: string;

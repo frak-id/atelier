@@ -1,20 +1,20 @@
-import { $ } from "bun";
-import { nanoid } from "nanoid";
+import { FIRECRACKER } from "@frak-sandbox/shared/constants";
 import type {
-  Sandbox,
   CreateSandboxOptions,
   Project,
+  Sandbox,
 } from "@frak-sandbox/shared/types";
-import { FIRECRACKER } from "@frak-sandbox/shared/constants";
+import { $ } from "bun";
+import { nanoid } from "nanoid";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
-import { fileExists, ensureDir } from "../lib/shell.ts";
-import { SandboxRepository, ProjectRepository } from "../state/database.ts";
-import { NetworkService, type NetworkAllocation } from "./network.ts";
+import { ensureDir } from "../lib/shell.ts";
+import { ProjectRepository, SandboxRepository } from "../state/database.ts";
 import { CaddyService } from "./caddy.ts";
-import { StorageService } from "./storage.ts";
-import { SecretsService } from "./secrets.ts";
 import { FirecrackerClient } from "./firecracker-client.ts";
+import { type NetworkAllocation, NetworkService } from "./network.ts";
+import { SecretsService } from "./secrets.ts";
+import { StorageService } from "./storage.ts";
 
 const log = createChildLogger("sandbox-builder");
 
@@ -128,6 +128,13 @@ export class SandboxBuilder {
   }
 
   private async initializeSandbox(): Promise<void> {
+    if (!this.paths) {
+      throw new Error("Sandbox paths not initialized");
+    }
+    if (!this.network) {
+      throw new Error("Network not allocated");
+    }
+
     const vcpus =
       this.options.vcpus ?? this.project?.vcpus ?? config.defaults.VCPUS;
     const memoryMb =
@@ -140,8 +147,8 @@ export class SandboxBuilder {
       status: "creating",
       projectId: this.options.projectId,
       branch: this.options.branch ?? this.project?.defaultBranch,
-      ipAddress: this.network!.ipAddress,
-      macAddress: this.network!.macAddress,
+      ipAddress: this.network.ipAddress,
+      macAddress: this.network.macAddress,
       urls: { vscode: "", opencode: "", ssh: "" },
       resources: { vcpus, memoryMb },
       createdAt: new Date().toISOString(),
@@ -153,21 +160,28 @@ export class SandboxBuilder {
   }
 
   private finalizeMock(): Sandbox {
-    this.sandbox!.urls = {
+    if (!this.sandbox) {
+      throw new Error("Sandbox not initialized");
+    }
+
+    this.sandbox.urls = {
       vscode: `https://sandbox-${this.sandboxId}.${config.caddy.domainSuffix}`,
       opencode: `https://opencode-${this.sandboxId}.${config.caddy.domainSuffix}`,
-      ssh: `ssh root@${this.network!.ipAddress}`,
+      ssh: `ssh root@${this.network?.ipAddress}`,
     };
-    this.sandbox!.status = "running";
-    this.sandbox!.pid = Math.floor(Math.random() * 100000);
+    this.sandbox.status = "running";
+    this.sandbox.pid = Math.floor(Math.random() * 100000);
 
-    SandboxRepository.update(this.sandboxId, this.sandbox!);
+    SandboxRepository.update(this.sandboxId, this.sandbox);
     log.info({ sandboxId: this.sandboxId }, "Mock sandbox created");
-    return this.sandbox!;
+    return this.sandbox;
   }
 
   private async createTapDevice(): Promise<void> {
-    await NetworkService.createTap(this.network!.tapDevice);
+    if (!this.network) {
+      throw new Error("Network not allocated");
+    }
+    await NetworkService.createTap(this.network.tapDevice);
   }
 
   private async injectConfig(): Promise<void> {
@@ -175,22 +189,22 @@ export class SandboxBuilder {
 
     await ensureDir(mountPoint);
 
-    const mountCmd = this.paths!.useLvm
-      ? `mount ${this.paths!.overlay} ${mountPoint}`
-      : `mount -o loop ${this.paths!.overlay} ${mountPoint}`;
+    const mountCmd = this.paths?.useLvm
+      ? `mount ${this.paths?.overlay} ${mountPoint}`
+      : `mount -o loop ${this.paths?.overlay} ${mountPoint}`;
 
-    if (!this.paths!.useLvm) {
+    if (!this.paths?.useLvm) {
       await ensureDir(config.paths.OVERLAY_DIR);
-      await $`cp ${this.paths!.rootfs} ${this.paths!.overlay}`.quiet();
+      await $`cp ${this.paths?.rootfs} ${this.paths?.overlay}`.quiet();
     }
 
     await $`${{ raw: mountCmd }}`.quiet();
 
     try {
       const networkScript = `#!/bin/bash
-ip addr add ${this.network!.ipAddress}/24 dev eth0
+ip addr add ${this.network?.ipAddress}/24 dev eth0
 ip link set eth0 up
-ip route add default via ${this.network!.gateway} dev eth0
+ip route add default via ${this.network?.gateway} dev eth0
 echo 'nameserver 8.8.8.8' > /etc/resolv.conf
 `;
       await Bun.write(`${mountPoint}/etc/network-setup.sh`, networkScript);
@@ -257,7 +271,7 @@ ${projectSection}## Available Services
 |---------|-----|------|
 | VSCode Server | http://localhost:8080 | 8080 |
 | OpenCode Server | http://localhost:3000 | 3000 |
-| SSH | \`ssh dev@${this.network!.ipAddress}\` | 22 |
+| SSH | \`ssh dev@${this.network?.ipAddress}\` | 22 |
 
 ## Quick Commands
 
@@ -295,16 +309,16 @@ Your code is located in \`/home/dev/workspace\`
     await ensureDir(config.paths.SOCKET_DIR);
     await ensureDir(config.paths.LOG_DIR);
 
-    await $`rm -f ${this.paths!.socket}`.quiet().nothrow();
-    await $`touch ${this.paths!.log}`.quiet();
+    await $`rm -f ${this.paths?.socket}`.quiet().nothrow();
+    await $`touch ${this.paths?.log}`.quiet();
 
     const proc = Bun.spawn(
       [
         FIRECRACKER.BINARY_PATH,
         "--api-sock",
-        this.paths!.socket,
+        this.paths?.socket,
         "--log-path",
-        this.paths!.log,
+        this.paths?.log,
         "--level",
         "Warning",
       ],
@@ -312,12 +326,12 @@ Your code is located in \`/home/dev/workspace\`
     );
 
     this.pid = proc.pid;
-    await Bun.write(this.paths!.pid, String(proc.pid));
+    await Bun.write(this.paths?.pid, String(proc.pid));
     await Bun.sleep(500);
 
     const alive = await $`kill -0 ${proc.pid}`.quiet().nothrow();
     if (alive.exitCode !== 0) {
-      const logContent = await Bun.file(this.paths!.log)
+      const logContent = await Bun.file(this.paths?.log)
         .text()
         .catch(() => "");
       log.error(
@@ -327,7 +341,7 @@ Your code is located in \`/home/dev/workspace\`
       throw new Error("Firecracker process died on startup");
     }
 
-    this.client = new FirecrackerClient(this.paths!.socket);
+    this.client = new FirecrackerClient(this.paths?.socket);
     log.debug(
       { sandboxId: this.sandboxId, pid: proc.pid },
       "Firecracker process started",
@@ -338,16 +352,16 @@ Your code is located in \`/home/dev/workspace\`
     const bootArgs =
       "console=ttyS0 reboot=k panic=1 pci=off init=/etc/sandbox/sandbox-init.sh";
 
-    await this.client!.setBootSource(this.paths!.kernel, bootArgs);
-    await this.client!.setDrive("rootfs", this.paths!.overlay, true);
-    await this.client!.setNetworkInterface(
+    await this.client?.setBootSource(this.paths?.kernel, bootArgs);
+    await this.client?.setDrive("rootfs", this.paths?.overlay, true);
+    await this.client?.setNetworkInterface(
       "eth0",
-      this.network!.macAddress,
-      this.network!.tapDevice,
+      this.network?.macAddress,
+      this.network?.tapDevice,
     );
 
     const cpuTemplatePath = `${config.paths.SANDBOX_DIR}/cpu-template-no-avx.json`;
-    const cpuTemplateApplied = await this.client!.setCpuConfig(cpuTemplatePath);
+    const cpuTemplateApplied = await this.client?.setCpuConfig(cpuTemplatePath);
     if (cpuTemplateApplied) {
       log.info(
         { sandboxId: this.sandboxId },
@@ -355,9 +369,9 @@ Your code is located in \`/home/dev/workspace\`
       );
     }
 
-    await this.client!.setMachineConfig(
-      this.sandbox!.resources.vcpus,
-      this.sandbox!.resources.memoryMb,
+    await this.client?.setMachineConfig(
+      this.sandbox?.resources.vcpus,
+      this.sandbox?.resources.memoryMb,
     );
 
     await Bun.sleep(100);
@@ -365,7 +379,7 @@ Your code is located in \`/home/dev/workspace\`
   }
 
   private async boot(): Promise<void> {
-    await this.client!.start();
+    await this.client?.start();
     await this.waitForBoot();
     log.debug({ sandboxId: this.sandboxId }, "VM booted");
   }
@@ -375,7 +389,7 @@ Your code is located in \`/home/dev/workspace\`
 
     while (Date.now() < deadline) {
       try {
-        if (await this.client!.isRunning()) return;
+        if (await this.client?.isRunning()) return;
       } catch {}
       await Bun.sleep(200);
     }
@@ -384,32 +398,42 @@ Your code is located in \`/home/dev/workspace\`
   }
 
   private async registerRoutes(): Promise<void> {
+    if (!this.network) {
+      throw new Error("Network not allocated");
+    }
+    if (!this.sandbox) {
+      throw new Error("Sandbox not initialized");
+    }
+
     const urls = await CaddyService.registerRoutes(
       this.sandboxId,
-      this.network!.ipAddress,
+      this.network.ipAddress,
       {
         vscode: VSCODE_PORT,
         opencode: OPENCODE_PORT,
       },
     );
 
-    this.sandbox!.urls = {
+    this.sandbox.urls = {
       ...urls,
-      ssh: `ssh root@${this.network!.ipAddress}`,
+      ssh: `ssh root@${this.network?.ipAddress}`,
     };
   }
 
   private finalize(): Sandbox {
-    this.sandbox!.status = "running";
-    this.sandbox!.pid = this.pid;
+    if (!this.sandbox) {
+      throw new Error("Sandbox not initialized");
+    }
+    this.sandbox.status = "running";
+    this.sandbox.pid = this.pid;
 
-    SandboxRepository.update(this.sandboxId, this.sandbox!);
+    SandboxRepository.update(this.sandboxId, this.sandbox);
     log.info(
       { sandboxId: this.sandboxId, pid: this.pid, useLvm: this.paths?.useLvm },
       "Sandbox created successfully",
     );
 
-    return this.sandbox!;
+    return this.sandbox;
   }
 
   private async rollback(): Promise<void> {

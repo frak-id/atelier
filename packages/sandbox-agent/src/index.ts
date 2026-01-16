@@ -1,10 +1,12 @@
-import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { readFile, stat, readdir } from "node:fs/promises";
-import { readFileSync as readFileSyncCallback } from "node:fs";
-import { execSync, exec as execCallback } from "node:child_process";
+import { exec as execCallback, execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { promisify } from "node:util";
+import { Elysia, t } from "elysia";
+import { node } from "@elysiajs/node";
 
 const exec = promisify(execCallback);
+
 const AGENT_PORT = 9999;
 const CONFIG_PATH = "/etc/sandbox/config.json";
 const LOG_DIR = "/var/log/sandbox";
@@ -15,12 +17,6 @@ interface SandboxConfig {
   projectName?: string;
   gitUrl?: string;
   createdAt: string;
-}
-
-interface ServiceStatus {
-  name: string;
-  running: boolean;
-  pid?: number;
 }
 
 interface AppPort {
@@ -51,7 +47,7 @@ async function checkPort(port: number): Promise<boolean> {
   }
 }
 
-async function getServiceStatus(service: string): Promise<ServiceStatus> {
+async function getServiceStatus(service: string) {
   try {
     const { stdout } = await exec(`pgrep -f "${service}" 2>/dev/null || true`);
     const pids = stdout.trim().split("\n").filter(Boolean);
@@ -67,7 +63,7 @@ async function getServiceStatus(service: string): Promise<ServiceStatus> {
 
 function getCpuUsage(): number {
   try {
-    const loadavg = readFileSyncCallback("/proc/loadavg", "utf-8");
+    const loadavg = readFileSync("/proc/loadavg", "utf-8");
     const [load1] = loadavg.split(" ");
     return parseFloat(load1 || "0");
   } catch {
@@ -77,7 +73,7 @@ function getCpuUsage(): number {
 
 function getMemoryUsage(): { total: number; used: number; free: number } {
   try {
-    const meminfo = readFileSyncCallback("/proc/meminfo", "utf-8");
+    const meminfo = readFileSync("/proc/meminfo", "utf-8");
     const lines = meminfo.split("\n");
     const values: Record<string, number> = {};
 
@@ -88,10 +84,10 @@ function getMemoryUsage(): { total: number; used: number; free: number } {
       }
     }
 
-    const total = values["MemTotal"] || 0;
-    const free = values["MemFree"] || 0;
-    const buffers = values["Buffers"] || 0;
-    const cached = values["Cached"] || 0;
+    const total = values.MemTotal || 0;
+    const free = values.MemFree || 0;
+    const buffers = values.Buffers || 0;
+    const cached = values.Cached || 0;
 
     return {
       total: Math.round(total / 1024),
@@ -117,10 +113,7 @@ function getDiskUsage(): { total: number; used: number; free: number } {
   }
 }
 
-async function getServiceLogs(
-  service: string,
-  lines: number = 100,
-): Promise<string> {
+async function getServiceLogs(service: string, lines = 100): Promise<string> {
   const logPath = `${LOG_DIR}/${service}.log`;
   try {
     const fileInfo = await stat(logPath);
@@ -134,74 +127,39 @@ async function getServiceLogs(
   }
 }
 
-function parseBody(req: IncomingMessage): Promise<any> {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", () => {
-      try {
-        resolve(body ? JSON.parse(body) : {});
-      } catch {
-        resolve({});
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
-function json(res: ServerResponse, data: any, status = 200) {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(data));
-}
-
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host}`);
-  const path = url.pathname;
-  const method = req.method || "GET";
-
-  try {
-    if (method === "GET" && path === "/health") {
-      const config = await loadConfig();
-      const [vscode, opencode, sshd] = await Promise.all([
-        checkPort(8080),
-        checkPort(3000),
-        checkPort(22),
-      ]);
-      return json(res, {
-        status: "healthy",
-        sandboxId: config?.sandboxId,
-        services: { vscode, opencode, sshd },
-        uptime: process.uptime(),
-      });
-    }
-
-    if (method === "GET" && path === "/metrics") {
-      return json(res, {
-        cpu: getCpuUsage(),
-        memory: getMemoryUsage(),
-        disk: getDiskUsage(),
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    if (method === "GET" && path === "/config") {
-      const config = await loadConfig();
-      return json(res, config ?? { error: "Config not found" });
-    }
-
-    if (method === "GET" && path === "/apps") {
-      return json(res, registeredApps);
-    }
-
-    if (method === "POST" && path === "/apps") {
-      const body = await parseBody(req);
-      if (!body.port || !body.name) {
-        return json(res, { error: "port and name required" }, 400);
-      }
+const app = new Elysia({ adapter: node() })
+  .get("/health", async () => {
+    const config = await loadConfig();
+    const [vscode, opencode, sshd] = await Promise.all([
+      checkPort(8080),
+      checkPort(3000),
+      checkPort(22),
+    ]);
+    return {
+      status: "healthy",
+      sandboxId: config?.sandboxId,
+      services: { vscode, opencode, sshd },
+      uptime: process.uptime(),
+    };
+  })
+  .get("/metrics", () => ({
+    cpu: getCpuUsage(),
+    memory: getMemoryUsage(),
+    disk: getDiskUsage(),
+    timestamp: new Date().toISOString(),
+  }))
+  .get("/config", async () => {
+    const config = await loadConfig();
+    return config ?? { error: "Config not found" };
+  })
+  .get("/apps", () => registeredApps)
+  .post(
+    "/apps",
+    ({ body }) => {
       const existing = registeredApps.find((a) => a.port === body.port);
       if (existing) {
         existing.name = body.name;
-        return json(res, existing);
+        return existing;
       }
       const app: AppPort = {
         port: body.port,
@@ -209,59 +167,67 @@ const server = createServer(async (req, res) => {
         registeredAt: new Date().toISOString(),
       };
       registeredApps.push(app);
-      return json(res, app);
-    }
-
-    if (method === "DELETE" && path.startsWith("/apps/")) {
-      const port = parseInt(path.split("/")[2], 10);
-      const index = registeredApps.findIndex((a) => a.port === port);
-      if (index === -1) return json(res, { success: false });
-      registeredApps.splice(index, 1);
-      return json(res, { success: true });
-    }
-
-    if (method === "POST" && path === "/exec") {
-      const body = await parseBody(req);
-      if (!body.command) {
-        return json(res, { error: "command required" }, 400);
-      }
+      return app;
+    },
+    {
+      body: t.Object({
+        port: t.Number({ minimum: 1, maximum: 65535 }),
+        name: t.String(),
+      }),
+    },
+  )
+  .delete("/apps/:port", ({ params }) => {
+    const port = parseInt(params.port, 10);
+    const index = registeredApps.findIndex((a) => a.port === port);
+    if (index === -1) return { success: false };
+    registeredApps.splice(index, 1);
+    return { success: true };
+  })
+  .post(
+    "/exec",
+    async ({ body }) => {
       try {
         const { stdout, stderr } = await exec(body.command, {
           timeout: body.timeout ?? 30000,
           maxBuffer: 10 * 1024 * 1024,
         });
-        return json(res, { exitCode: 0, stdout, stderr });
-      } catch (error: any) {
-        return json(res, {
-          exitCode: error.code ?? 1,
-          stdout: error.stdout ?? "",
-          stderr: error.stderr ?? error.message,
-        });
+        return { exitCode: 0, stdout, stderr };
+      } catch (error: unknown) {
+        const err = error as {
+          code?: number;
+          stdout?: string;
+          stderr?: string;
+          message?: string;
+        };
+        return {
+          exitCode: err.code ?? 1,
+          stdout: err.stdout ?? "",
+          stderr: err.stderr ?? err.message ?? "",
+        };
       }
-    }
+    },
+    {
+      body: t.Object({
+        command: t.String(),
+        timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),
+      }),
+    },
+  )
+  .get("/logs/:service", async ({ params, query }) => {
+    const lines = query.lines ? parseInt(query.lines, 10) : 100;
+    const content = await getServiceLogs(params.service, lines);
+    return { service: params.service, content };
+  })
+  .get("/services", async () => {
+    const [codeServer, opencode, sshd] = await Promise.all([
+      getServiceStatus("code-server"),
+      getServiceStatus("opencode"),
+      getServiceStatus("sshd"),
+    ]);
+    return { services: [codeServer, opencode, sshd] };
+  })
+  .listen(AGENT_PORT, () => {
+    console.log(`Sandbox agent running at http://0.0.0.0:${AGENT_PORT}`);
+  });
 
-    if (method === "GET" && path.startsWith("/logs/")) {
-      const service = path.split("/")[2];
-      const lines = parseInt(url.searchParams.get("lines") || "100", 10);
-      const content = await getServiceLogs(service, lines);
-      return json(res, { service, content });
-    }
-
-    if (method === "GET" && path === "/services") {
-      const [codeServer, opencode, sshd] = await Promise.all([
-        getServiceStatus("code-server"),
-        getServiceStatus("opencode"),
-        getServiceStatus("sshd"),
-      ]);
-      return json(res, { services: [codeServer, opencode, sshd] });
-    }
-
-    json(res, { error: "Not found" }, 404);
-  } catch (error: any) {
-    json(res, { error: error.message }, 500);
-  }
-});
-
-server.listen(AGENT_PORT, "0.0.0.0", () => {
-  console.log(`Sandbox agent running at http://0.0.0.0:${AGENT_PORT}`);
-});
+export type App = typeof app;

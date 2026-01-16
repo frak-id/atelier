@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
-import { exec, getArch, fileExists, isValidElf } from "../lib/shell";
-import { PATHS, FIRECRACKER } from "../lib/context";
+import { FIRECRACKER, PATHS } from "../lib/context";
+import { exec, fileExists, getArch, isValidElf } from "../lib/shell";
 
 export async function installFirecracker(_args: string[] = []) {
   p.log.step("Phase 1.2: Install Firecracker");
@@ -90,8 +90,8 @@ async function downloadKernel(
     throw new Error("Could not find kernel in Firecracker CI S3 bucket");
   }
 
-  const latestKey = keys.sort().pop()!;
-  const kernelName = latestKey.split("/").pop()!;
+  const latestKey = keys.sort().pop() ?? "";
+  const kernelName = latestKey.split("/").pop() ?? "unknown";
   const kernelPath = `${PATHS.KERNEL_DIR}/${kernelName}`;
 
   if (await fileExists(kernelPath)) {
@@ -134,7 +134,7 @@ async function downloadRootfs(
     throw new Error("Could not find rootfs in Firecracker CI S3 bucket");
   }
 
-  const latestKey = keys.sort().pop()!;
+  const latestKey = keys.sort().pop() ?? "";
   const ubuntuVersion = latestKey.match(/ubuntu-(\d+\.\d+)/)?.[1] ?? "unknown";
   const rootfsName = `ubuntu-${ubuntuVersion}.ext4`;
   const rootfsPath = `${PATHS.ROOTFS_DIR}/${rootfsName}`;

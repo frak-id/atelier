@@ -1,11 +1,11 @@
-import { nanoid } from "nanoid";
+import { DEFAULTS } from "@frak-sandbox/shared/constants";
 import type {
-  Project,
   CreateProjectOptions,
+  Project,
   UpdateProjectOptions,
 } from "@frak-sandbox/shared/types";
 import { DEFAULT_BASE_IMAGE } from "@frak-sandbox/shared/types";
-import { DEFAULTS } from "@frak-sandbox/shared/constants";
+import { nanoid } from "nanoid";
 import { createChildLogger } from "../lib/logger.ts";
 import { projectStore } from "../state/project-store.ts";
 import { SecretsService } from "./secrets.ts";

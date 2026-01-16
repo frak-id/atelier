@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
-import { SystemService } from "./service.ts";
-import { StorageService } from "../../services/storage.ts";
 import { QueueService } from "../../services/queue.ts";
+import { StorageService } from "../../services/storage.ts";
+import { SystemService } from "./service.ts";
 
 export const systemRoutes = new Elysia({ prefix: "/system" })
   .get(

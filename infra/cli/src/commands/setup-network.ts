@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
-import { exec } from "../lib/shell";
 import { NETWORK, PATHS } from "../lib/context";
+import { exec } from "../lib/shell";
 
 const SYSTEMD_SERVICE_PATH = "/etc/systemd/system/sandbox-network.service";
 const NETWORK_SCRIPT_PATH = `${PATHS.APP_DIR}/infra/scripts/configure-network.sh`;
@@ -97,24 +97,24 @@ BRIDGE="${NETWORK.BRIDGE_NAME}"
 BRIDGE_IP="${NETWORK.BRIDGE_IP}"
 BRIDGE_CIDR="${NETWORK.BRIDGE_CIDR}"
 
-if ! ip link show "\$BRIDGE" &>/dev/null; then
-  ip link add name "\$BRIDGE" type bridge
-  ip addr add "\$BRIDGE_IP/${NETWORK.BRIDGE_NETMASK}" dev "\$BRIDGE"
-  ip link set dev "\$BRIDGE" up
+if ! ip link show "$BRIDGE" &>/dev/null; then
+  ip link add name "$BRIDGE" type bridge
+  ip addr add "$BRIDGE_IP/${NETWORK.BRIDGE_NETMASK}" dev "$BRIDGE"
+  ip link set dev "$BRIDGE" up
 fi
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
 HOST_IFACE=$(ip -j route list default | jq -r '.[0].dev')
 
-iptables -t nat -C POSTROUTING -s "\$BRIDGE_CIDR" -o "\$HOST_IFACE" -j MASQUERADE 2>/dev/null || \\
-  iptables -t nat -A POSTROUTING -s "\$BRIDGE_CIDR" -o "\$HOST_IFACE" -j MASQUERADE
+iptables -t nat -C POSTROUTING -s "$BRIDGE_CIDR" -o "$HOST_IFACE" -j MASQUERADE 2>/dev/null || \\
+  iptables -t nat -A POSTROUTING -s "$BRIDGE_CIDR" -o "$HOST_IFACE" -j MASQUERADE
 
-iptables -C FORWARD -i "\$BRIDGE" -o "\$HOST_IFACE" -j ACCEPT 2>/dev/null || \\
-  iptables -A FORWARD -i "\$BRIDGE" -o "\$HOST_IFACE" -j ACCEPT
+iptables -C FORWARD -i "$BRIDGE" -o "$HOST_IFACE" -j ACCEPT 2>/dev/null || \\
+  iptables -A FORWARD -i "$BRIDGE" -o "$HOST_IFACE" -j ACCEPT
 
-iptables -C FORWARD -i "\$HOST_IFACE" -o "\$BRIDGE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \\
-  iptables -A FORWARD -i "\$HOST_IFACE" -o "\$BRIDGE" -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -C FORWARD -i "$HOST_IFACE" -o "$BRIDGE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \\
+  iptables -A FORWARD -i "$HOST_IFACE" -o "$BRIDGE" -m state --state RELATED,ESTABLISHED -j ACCEPT
 
 echo "Sandbox network configured"
 `;

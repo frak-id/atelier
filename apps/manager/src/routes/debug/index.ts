@@ -1,9 +1,9 @@
 import { Elysia, t } from "elysia";
-import { FirecrackerService } from "../../services/firecracker.ts";
+import { config } from "../../lib/config.ts";
 import { CaddyService } from "../../services/caddy.ts";
+import { FirecrackerService } from "../../services/firecracker.ts";
 import { NetworkService } from "../../services/network.ts";
 import { sandboxStore } from "../../state/store.ts";
-import { config } from "../../lib/config.ts";
 
 export const debugRoutes = new Elysia({ prefix: "/debug" })
   .guard({
