@@ -55,24 +55,102 @@ export const CaddyService = {
         {
           handler: "reverse_proxy",
           upstreams: [{ dial: upstream }],
+          // Enable WebSocket support for OpenCode SSE and code-server
+          transport: {
+            protocol: "http",
+            read_buffer_size: 4096,
+          },
+          // Disable buffering for SSE streams
+          flush_interval: -1,
         },
       ],
       terminal: true,
     };
 
-    const response = await fetch(
+    await this.ensureWildcardIsLast(async () => {
+      const response = await fetch(
+        `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(routeConfig),
+        },
+      );
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to add Caddy route: ${error}`);
+      }
+    });
+  },
+
+  async ensureWildcardIsLast(operation: () => Promise<void>): Promise<void> {
+    const wildcardIndex = await this.findWildcardRouteIndex();
+    const hadWildcard = wildcardIndex >= 0;
+
+    if (hadWildcard) {
+      await fetch(
+        `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes/${wildcardIndex}`,
+        { method: "DELETE" },
+      );
+    }
+
+    await operation();
+
+    if (hadWildcard) {
+      await this.addWildcardFallback();
+    }
+  },
+
+  async findWildcardRouteIndex(): Promise<number> {
+    try {
+      const routes = await this.getRoutes();
+      for (let i = 0; i < routes.length; i++) {
+        const route = routes[i] as {
+          match?: Array<{ host?: string[] }>;
+        };
+        const hosts = route?.match?.[0]?.host;
+        if (hosts?.some((h) => h.startsWith("*."))) {
+          return i;
+        }
+      }
+    } catch {
+      log.warn("Failed to find wildcard route index");
+    }
+    return -1;
+  },
+
+  async addWildcardFallback(): Promise<void> {
+    const wildcardConfig = {
+      "@id": "wildcard-fallback",
+      match: [{ host: [`*.${config.caddy.domainSuffix}`] }],
+      handle: [
+        {
+          handler: "subroute",
+          routes: [
+            {
+              handle: [
+                {
+                  handler: "static_response",
+                  body: "Sandbox not found or not running",
+                  status_code: 502,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      terminal: true,
+    };
+
+    await fetch(
       `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(routeConfig),
+        body: JSON.stringify(wildcardConfig),
       },
     );
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to add Caddy route: ${error}`);
-    }
   },
 
   async removeRoutes(sandboxId: string): Promise<void> {

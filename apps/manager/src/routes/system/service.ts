@@ -220,7 +220,7 @@ export const SystemService = {
       try {
         await CaddyService.registerRoutes(sandbox.id, sandbox.ipAddress, {
           vscode: 8080,
-          opencode: 7682,
+          opencode: 3000,
           terminal: 7681,
         });
         result.routesRegistered++;

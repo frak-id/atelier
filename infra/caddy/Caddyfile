@@ -18,3 +18,10 @@ sandbox-dash.nivelais.com {
 	file_server
 	try_files {path} /index.html
 }
+
+# Wildcard TLS config - routes are managed dynamically via Caddy admin API
+# The manager ensures sandbox routes come before the wildcard fallback
+*.nivelais.com {
+	import cloudflare_tls
+	respond "Sandbox not found or not running" 502
+}

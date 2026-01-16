@@ -9,6 +9,12 @@ import {
   type CreateSandboxOptions,
   type UpdateProjectOptions,
 } from "./client";
+import {
+  deleteOpenCodeSession,
+  fetchOpenCodeHealth,
+  fetchOpenCodeMessages,
+  fetchOpenCodeSessions,
+} from "./opencode";
 
 export const queryKeys = {
   health: ["health"] as const,
@@ -22,6 +28,12 @@ export const queryKeys = {
     metrics: (id: string) => ["sandboxes", id, "metrics"] as const,
     apps: (id: string) => ["sandboxes", id, "apps"] as const,
     services: (id: string) => ["sandboxes", id, "services"] as const,
+  },
+  opencode: {
+    health: (baseUrl: string) => ["opencode", baseUrl, "health"] as const,
+    sessions: (baseUrl: string) => ["opencode", baseUrl, "sessions"] as const,
+    messages: (baseUrl: string, sessionId: string) =>
+      ["opencode", baseUrl, "messages", sessionId] as const,
   },
   projects: {
     all: ["projects"] as const,
@@ -244,6 +256,42 @@ export function useSystemCleanup() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.storage });
+    },
+  });
+}
+
+export const opencodeHealthQuery = (baseUrl: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.health(baseUrl),
+    queryFn: () => fetchOpenCodeHealth(baseUrl),
+    refetchInterval: 30000,
+    enabled: !!baseUrl,
+  });
+
+export const opencodeSessionsQuery = (baseUrl: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.sessions(baseUrl),
+    queryFn: () => fetchOpenCodeSessions(baseUrl),
+    refetchInterval: 10000,
+    enabled: !!baseUrl,
+  });
+
+export const opencodeMessagesQuery = (baseUrl: string, sessionId: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.messages(baseUrl, sessionId),
+    queryFn: () => fetchOpenCodeMessages(baseUrl, sessionId),
+    enabled: !!baseUrl && !!sessionId,
+  });
+
+export function useDeleteOpenCodeSession(baseUrl: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      deleteOpenCodeSession(baseUrl, sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.opencode.sessions(baseUrl),
+      });
     },
   });
 }

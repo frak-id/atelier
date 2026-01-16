@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ExternalLink,
   Loader2,
+  MessageSquare,
   Pause,
   Play,
   RefreshCw,
@@ -12,9 +13,11 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import {
+  opencodeSessionsQuery,
   sandboxDetailQuery,
   sandboxMetricsQuery,
   sandboxServicesQuery,
+  useDeleteOpenCodeSession,
   useDeleteSandbox,
   useExecCommand,
   useStartSandbox,
@@ -268,6 +271,7 @@ function SandboxDetailPage() {
         <Tabs defaultValue="services">
           <TabsList>
             <TabsTrigger value="services">Services</TabsTrigger>
+            <TabsTrigger value="opencode">OpenCode Sessions</TabsTrigger>
             <TabsTrigger value="terminal">Terminal</TabsTrigger>
             <TabsTrigger value="exec">Exec</TabsTrigger>
           </TabsList>
@@ -306,6 +310,10 @@ function SandboxDetailPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="opencode">
+            <OpenCodeSessions opencodeUrl={sandbox.urls.opencode} />
           </TabsContent>
 
           <TabsContent value="terminal" className="h-[500px]">
@@ -376,6 +384,107 @@ function SandboxDetailPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+function OpenCodeSessions({ opencodeUrl }: { opencodeUrl: string }) {
+  const { data: sessions, isLoading } = useQuery(
+    opencodeSessionsQuery(opencodeUrl),
+  );
+  const deleteMutation = useDeleteOpenCodeSession(opencodeUrl);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            OpenCode Sessions
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading sessions...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <MessageSquare className="h-5 w-5" />
+          OpenCode Sessions
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {sessions && sessions.length > 0 ? (
+          <div className="space-y-2">
+            {sessions.map((session) => (
+              <div
+                key={session.id}
+                className="flex items-center justify-between py-3 px-4 border rounded-lg"
+              >
+                <div className="flex-1">
+                  <div className="font-medium">
+                    {session.title || `Session ${session.id.slice(0, 8)}`}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    ID: {session.id}
+                  </div>
+                  {session.createdAt && (
+                    <div className="text-xs text-muted-foreground">
+                      Created: {formatDate(session.createdAt)}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" asChild>
+                    <a
+                      href={`${opencodeUrl}?session=${session.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="h-4 w-4 mr-1" />
+                      Open
+                    </a>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm("Delete this session?")) {
+                        deleteMutation.mutate(session.id);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>No OpenCode sessions yet</p>
+            <p className="text-sm mt-1">
+              Start a session by opening the OpenCode terminal in this sandbox
+            </p>
+            <Button variant="outline" className="mt-4" asChild>
+              <a href={opencodeUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Open OpenCode
+              </a>
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -80,22 +80,23 @@ fi
 
 log "Starting code-server..."
 if command -v code-server >/dev/null 2>&1; then
-    su - dev -c "code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry > $LOG_DIR/code-server.log 2>&1" &
-    log "code-server started (PID $!)"
+    su - dev -c "code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry /home/dev/workspace > $LOG_DIR/code-server.log 2>&1" &
+    log "code-server started (PID $!) with workspace /home/dev/workspace"
 else
     log "ERROR: code-server not found"
 fi
 
 log "Starting OpenCode server..."
+OPENCODE_CORS="--cors https://sandbox-dash.nivelais.com"
 if [ -x /usr/bin/opencode ] || command -v opencode >/dev/null 2>&1; then
-    su - dev -c "opencode serve --hostname 0.0.0.0 --port 3000 > $LOG_DIR/opencode.log 2>&1" &
-    log "OpenCode started (PID $!)"
+    su - dev -c "cd /home/dev/workspace && opencode serve --hostname 0.0.0.0 --port 3000 $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
+    log "OpenCode started (PID $!) with CORS enabled"
 else
     log "WARNING: opencode not found in PATH"
     # Try to find it
     if [ -f /usr/lib/node_modules/opencode-ai/bin/opencode ]; then
         log "Found opencode at /usr/lib/node_modules/opencode-ai/bin/opencode"
-        su - dev -c "/usr/lib/node_modules/opencode-ai/bin/opencode serve --hostname 0.0.0.0 --port 3000 > $LOG_DIR/opencode.log 2>&1" &
+        su - dev -c "cd /home/dev/workspace && /usr/lib/node_modules/opencode-ai/bin/opencode serve --hostname 0.0.0.0 --port 3000 $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
     fi
 fi
 
