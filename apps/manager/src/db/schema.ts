@@ -34,6 +34,7 @@ export const sandboxes = sqliteTable("sandboxes", {
   macAddress: text("mac_address").notNull(),
   urlsVscode: text("urls_vscode").notNull(),
   urlsOpencode: text("urls_opencode").notNull(),
+  urlsTerminal: text("urls_terminal"),
   urlsSsh: text("urls_ssh").notNull(),
   vcpus: integer("vcpus").notNull(),
   memoryMb: integer("memory_mb").notNull(),

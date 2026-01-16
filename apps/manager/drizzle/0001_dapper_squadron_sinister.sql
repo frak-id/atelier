@@ -1,0 +1,1 @@
+ALTER TABLE `sandboxes` ADD `urls_terminal` text;

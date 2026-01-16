@@ -85,7 +85,7 @@ export const api = {
         params: { lines: lines?.toString() },
       }),
     services: (id: string) =>
-      request<ServiceStatus[]>(`/api/sandboxes/${id}/services`),
+      request<{ services: ServiceStatus[] }>(`/api/sandboxes/${id}/services`),
   },
 
   projects: {

@@ -61,6 +61,7 @@ function rowToSandbox(row: SandboxRow): Sandbox {
     urls: {
       vscode: row.urlsVscode,
       opencode: row.urlsOpencode,
+      terminal: row.urlsTerminal ?? "",
       ssh: row.urlsSsh,
     },
     resources: {
@@ -84,6 +85,7 @@ function sandboxToRow(s: Sandbox): typeof sandboxes.$inferInsert {
     macAddress: s.macAddress,
     urlsVscode: s.urls.vscode,
     urlsOpencode: s.urls.opencode,
+    urlsTerminal: s.urls.terminal || null,
     urlsSsh: s.urls.ssh,
     vcpus: s.resources.vcpus,
     memoryMb: s.resources.memoryMb,

@@ -278,9 +278,9 @@ function SandboxDetailPage() {
                 <CardTitle>Services</CardTitle>
               </CardHeader>
               <CardContent>
-                {services ? (
+                {services?.services ? (
                   <div className="space-y-2">
-                    {services.map((service) => (
+                    {services.services.map((service) => (
                       <div
                         key={service.name}
                         className="flex items-center justify-between py-2 border-b last:border-0"

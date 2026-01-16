@@ -2,7 +2,10 @@ import type { CleanupResult, SystemStats } from "@frak-sandbox/shared/types";
 import { config } from "../../lib/config.ts";
 import { createChildLogger } from "../../lib/logger.ts";
 import { dirExists, exec } from "../../lib/shell.ts";
+import { AgentClient } from "../../services/agent.ts";
+import { CaddyService } from "../../services/caddy.ts";
 import { NetworkService } from "../../services/network.ts";
+import { SandboxRepository } from "../../state/database.ts";
 import { sandboxStore } from "../../state/store.ts";
 
 const log = createChildLogger("system");
@@ -190,5 +193,70 @@ export const SystemService = {
     }
 
     return { count };
+  },
+
+  async reconcile(): Promise<{
+    routesRegistered: number;
+    statusUpdated: number;
+    errors: string[];
+  }> {
+    log.info("Starting reconciliation");
+
+    const result = {
+      routesRegistered: 0,
+      statusUpdated: 0,
+      errors: [] as string[],
+    };
+
+    if (config.isMock()) {
+      return result;
+    }
+
+    const sandboxes = sandboxStore
+      .getAll()
+      .filter((s) => s.status === "running" || s.status === "creating");
+
+    for (const sandbox of sandboxes) {
+      try {
+        await CaddyService.registerRoutes(sandbox.id, sandbox.ipAddress, {
+          vscode: 8080,
+          opencode: 7682,
+          terminal: 7681,
+        });
+        result.routesRegistered++;
+
+        try {
+          const health = await AgentClient.health(sandbox.id);
+          if (health.status === "healthy" && sandbox.status !== "running") {
+            SandboxRepository.updateStatus(sandbox.id, "running");
+            result.statusUpdated++;
+            log.info({ sandboxId: sandbox.id }, "Status updated to running");
+          }
+        } catch {
+          if (sandbox.status === "running") {
+            SandboxRepository.updateStatus(
+              sandbox.id,
+              "error",
+              "Agent not responding",
+            );
+            result.statusUpdated++;
+            log.warn(
+              { sandboxId: sandbox.id },
+              "Agent not responding, marked as error",
+            );
+          }
+        }
+      } catch (err) {
+        const errMsg = `Failed to reconcile ${sandbox.id}: ${err}`;
+        result.errors.push(errMsg);
+        log.error(
+          { sandboxId: sandbox.id, error: err },
+          "Reconciliation error",
+        );
+      }
+    }
+
+    log.info({ result }, "Reconciliation completed");
+    return result;
   },
 };

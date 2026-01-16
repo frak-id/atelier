@@ -1,4 +1,5 @@
 import { cors } from "@elysiajs/cors";
+import { cron, Patterns } from "@elysiajs/cron";
 import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
 import { config } from "./lib/config.ts";
@@ -12,6 +13,7 @@ import { projectRoutes } from "./routes/projects/index.ts";
 import { proxyRoutes } from "./routes/proxy/index.ts";
 import { sandboxRoutes } from "./routes/sandboxes/index.ts";
 import { systemRoutes } from "./routes/system/index.ts";
+import { SystemService } from "./routes/system/service.ts";
 import { initDatabase } from "./state/database.ts";
 
 logger.info({ dataDir: appPaths.data }, "Using data directory");
@@ -38,6 +40,17 @@ const app = new Elysia()
           { name: "system", description: "System statistics and maintenance" },
           { name: "debug", description: "Debug and diagnostic endpoints" },
         ],
+      },
+    }),
+  )
+  .use(
+    cron({
+      name: "reconcile",
+      pattern: Patterns.EVERY_10_MINUTES,
+      async run() {
+        logger.debug("Running scheduled reconciliation");
+        const result = await SystemService.reconcile();
+        logger.info({ result }, "Scheduled reconciliation completed");
       },
     }),
   )
@@ -104,7 +117,7 @@ app.listen(
     port: config.port,
     hostname: config.host,
   },
-  ({ hostname, port }) => {
+  async ({ hostname, port }) => {
     logger.info(
       {
         hostname,
@@ -114,6 +127,9 @@ app.listen(
       },
       "Frak Sandbox Manager started",
     );
+
+    const reconcileResult = await SystemService.reconcile();
+    logger.info({ reconcileResult }, "Startup reconciliation completed");
   },
 );
 

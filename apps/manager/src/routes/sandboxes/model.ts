@@ -45,6 +45,7 @@ export const SandboxModel = {
     urls: t.Object({
       vscode: t.String(),
       opencode: t.String(),
+      terminal: t.String(),
       ssh: t.String(),
     }),
     resources: t.Object({

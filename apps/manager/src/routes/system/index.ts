@@ -121,4 +121,17 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
         jobsRemoved: t.Number(),
       }),
     },
+  )
+  .post(
+    "/reconcile",
+    async () => {
+      return SystemService.reconcile();
+    },
+    {
+      response: t.Object({
+        routesRegistered: t.Number(),
+        statusUpdated: t.Number(),
+        errors: t.Array(t.String()),
+      }),
+    },
   );

@@ -37,7 +37,12 @@ export async function commandExists(command: string): Promise<boolean> {
 }
 
 export async function fileExists(path: string): Promise<boolean> {
-  return Bun.file(path).exists();
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function dirExists(path: string): Promise<boolean> {
