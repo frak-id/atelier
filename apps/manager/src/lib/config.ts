@@ -1,4 +1,9 @@
-import { PATHS, NETWORK, CADDY, DEFAULTS } from "@frak-sandbox/shared/constants";
+import {
+  PATHS,
+  NETWORK,
+  CADDY,
+  DEFAULTS,
+} from "@frak-sandbox/shared/constants";
 
 export type Mode = "production" | "mock";
 

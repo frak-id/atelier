@@ -64,7 +64,7 @@ class SpawnQueue {
 
   async enqueueAndWait(
     options: CreateSandboxOptions,
-    timeoutMs = DEFAULTS.BOOT_TIMEOUT_MS
+    timeoutMs = DEFAULTS.BOOT_TIMEOUT_MS,
   ): Promise<Sandbox> {
     const job = await this.enqueue(options);
 
@@ -213,7 +213,10 @@ class SpawnQueue {
 
   getRecentJobs(limit = 20): SpawnJob[] {
     return Array.from(this.jobs.values())
-      .sort((a, b) => new Date(b.queuedAt).getTime() - new Date(a.queuedAt).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.queuedAt).getTime() - new Date(a.queuedAt).getTime(),
+      )
       .slice(0, limit);
   }
 
@@ -223,7 +226,9 @@ class SpawnQueue {
 
     for (const [jobId, job] of this.jobs.entries()) {
       if (job.status !== "queued" && job.status !== "running") {
-        const completedAt = job.completedAt ? new Date(job.completedAt).getTime() : 0;
+        const completedAt = job.completedAt
+          ? new Date(job.completedAt).getTime()
+          : 0;
         if (completedAt < cutoff) {
           this.jobs.delete(jobId);
           removed++;
@@ -239,4 +244,6 @@ class SpawnQueue {
   }
 }
 
-export const QueueService = new SpawnQueue(config.defaults.MAX_SANDBOXES > 3 ? 3 : 2);
+export const QueueService = new SpawnQueue(
+  config.defaults.MAX_SANDBOXES > 3 ? 3 : 2,
+);

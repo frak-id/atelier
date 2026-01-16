@@ -13,13 +13,14 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
   .get(
     "/",
     async (): Promise<HealthStatus> => {
-      const [firecracker, caddy, network, storageDir, lvmAvailable] = await Promise.all([
-        FirecrackerService.isHealthy(),
-        CaddyService.isHealthy(),
-        NetworkService.getBridgeStatus().then((s) => s.exists),
-        dirExists(config.paths.SANDBOX_DIR),
-        StorageService.isAvailable(),
-      ]);
+      const [firecracker, caddy, network, storageDir, lvmAvailable] =
+        await Promise.all([
+          FirecrackerService.isHealthy(),
+          CaddyService.isHealthy(),
+          NetworkService.getBridgeStatus().then((s) => s.exists),
+          dirExists(config.paths.SANDBOX_DIR),
+          StorageService.isAvailable(),
+        ]);
 
       const storage = storageDir || lvmAvailable;
       const allHealthy = firecracker && caddy && network && storage;
@@ -39,7 +40,11 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
     },
     {
       response: t.Object({
-        status: t.Union([t.Literal("ok"), t.Literal("degraded"), t.Literal("error")]),
+        status: t.Union([
+          t.Literal("ok"),
+          t.Literal("degraded"),
+          t.Literal("error"),
+        ]),
         uptime: t.Number(),
         timestamp: t.Number(),
         checks: t.Object({
@@ -50,7 +55,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
           lvm: t.Union([t.Literal("ok"), t.Literal("unavailable")]),
         }),
       }),
-    }
+    },
   )
   .get("/live", () => ({ status: "ok" as const }), {
     response: t.Object({ status: t.Literal("ok") }),

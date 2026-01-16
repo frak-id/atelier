@@ -11,7 +11,8 @@ import { images } from "./commands/images";
 const COMMANDS = {
   setup: {
     label: "Full Setup",
-    description: "Run complete server setup (base + firecracker + network + manager)",
+    description:
+      "Run complete server setup (base + firecracker + network + manager)",
     handler: runFullSetup,
   },
   base: {
@@ -61,7 +62,8 @@ async function runFullSetup() {
   await setupNetwork();
 
   const setupStorageNow = await p.confirm({
-    message: "Setup LVM storage now? (requires dedicated partition or loop file)",
+    message:
+      "Setup LVM storage now? (requires dedicated partition or loop file)",
     initialValue: false,
   });
 
@@ -82,7 +84,7 @@ async function runFullSetup() {
   1. From dev machine: bun run deploy
   2. Test VM: frak-sandbox vm start
   3. API status: frak-sandbox manager status`,
-    "Setup Complete"
+    "Setup Complete",
   );
 }
 

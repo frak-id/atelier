@@ -18,7 +18,11 @@ export async function setupStorage(_args: string[] = []) {
       options: [
         { value: "status", label: "Show status only" },
         { value: "test", label: "Test snapshot performance" },
-        { value: "destroy", label: "Destroy and recreate", hint: "⚠️  Deletes all sandbox data" },
+        {
+          value: "destroy",
+          label: "Destroy and recreate",
+          hint: "⚠️  Deletes all sandbox data",
+        },
       ],
     });
 
@@ -180,7 +184,9 @@ async function setupWithDevice(spinner: ReturnType<typeof p.spinner>) {
 }
 
 async function createBaseVolume(spinner: ReturnType<typeof p.spinner>) {
-  const baseExists = await exec(`lvs ${LVM.VG_NAME}/${LVM.BASE_VOLUME}`, { throws: false });
+  const baseExists = await exec(`lvs ${LVM.VG_NAME}/${LVM.BASE_VOLUME}`, {
+    throws: false,
+  });
   if (baseExists.success) {
     p.log.success("Base volume already exists");
     return;
@@ -188,7 +194,7 @@ async function createBaseVolume(spinner: ReturnType<typeof p.spinner>) {
 
   spinner.start(`Creating base rootfs volume (${LVM.BASE_SIZE})`);
   await exec(
-    `lvcreate -V ${LVM.BASE_SIZE} -T ${LVM.VG_NAME}/${LVM.THIN_POOL} -n ${LVM.BASE_VOLUME}`
+    `lvcreate -V ${LVM.BASE_SIZE} -T ${LVM.VG_NAME}/${LVM.THIN_POOL} -n ${LVM.BASE_VOLUME}`,
   );
   spinner.stop("Base volume created");
 
@@ -196,12 +202,14 @@ async function createBaseVolume(spinner: ReturnType<typeof p.spinner>) {
   if (await fileExists(rootfsSource)) {
     spinner.start("Copying rootfs to base volume");
     await exec(
-      `dd if=${rootfsSource} of=/dev/${LVM.VG_NAME}/${LVM.BASE_VOLUME} bs=4M status=none`
+      `dd if=${rootfsSource} of=/dev/${LVM.VG_NAME}/${LVM.BASE_VOLUME} bs=4M status=none`,
     );
     spinner.stop("Rootfs copied to base volume");
   } else {
     p.log.warn(`Rootfs not found at ${rootfsSource}`);
-    p.log.info(`Copy manually: dd if=/path/to/rootfs.ext4 of=/dev/${LVM.VG_NAME}/${LVM.BASE_VOLUME} bs=4M`);
+    p.log.info(
+      `Copy manually: dd if=/path/to/rootfs.ext4 of=/dev/${LVM.VG_NAME}/${LVM.BASE_VOLUME} bs=4M`,
+    );
   }
 }
 
@@ -222,8 +230,13 @@ async function destroyStorage() {
   await exec(`lvremove -f ${LVM.VG_NAME}`, { throws: false });
   await exec(`vgremove -f ${LVM.VG_NAME}`, { throws: false });
 
-  const { stdout: pvs } = await exec(`pvs --noheadings -o pv_name`, { throws: false });
-  for (const pv of pvs.split("\n").map((s) => s.trim()).filter(Boolean)) {
+  const { stdout: pvs } = await exec(`pvs --noheadings -o pv_name`, {
+    throws: false,
+  });
+  for (const pv of pvs
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     if (pv.startsWith("/dev/loop")) {
       await exec(`pvremove -f ${pv}`, { throws: false });
       await exec(`losetup -d ${pv}`, { throws: false });
@@ -234,8 +247,12 @@ async function destroyStorage() {
     await exec(`rm -f ${LOOP_FILE}`);
   }
 
-  await exec("systemctl disable sandbox-loop.service 2>/dev/null || true", { throws: false });
-  await exec("rm -f /etc/systemd/system/sandbox-loop.service", { throws: false });
+  await exec("systemctl disable sandbox-loop.service 2>/dev/null || true", {
+    throws: false,
+  });
+  await exec("rm -f /etc/systemd/system/sandbox-loop.service", {
+    throws: false,
+  });
 
   spinner.stop("Storage destroyed");
 }
@@ -261,7 +278,7 @@ async function showStorageStatus() {
     `Create snapshot:  lvcreate -s -n sandbox-{id} ${LVM.VG_NAME}/${LVM.BASE_VOLUME}
 Delete snapshot:  lvremove -f ${LVM.VG_NAME}/sandbox-{id}
 List volumes:     lvs ${LVM.VG_NAME}`,
-    "Usage"
+    "Usage",
   );
 }
 

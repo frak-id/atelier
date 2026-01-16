@@ -1,5 +1,9 @@
 import { nanoid } from "nanoid";
-import type { Project, CreateProjectOptions, UpdateProjectOptions } from "@frak-sandbox/shared/types";
+import type {
+  Project,
+  CreateProjectOptions,
+  UpdateProjectOptions,
+} from "@frak-sandbox/shared/types";
 import { DEFAULT_BASE_IMAGE } from "@frak-sandbox/shared/types";
 import { DEFAULTS } from "@frak-sandbox/shared/constants";
 import { createChildLogger } from "../lib/logger.ts";
@@ -19,7 +23,7 @@ export const ProjectService = {
 
   async create(options: CreateProjectOptions): Promise<Project> {
     const projectId = nanoid(12);
-    
+
     const project: Project = {
       id: projectId,
       name: options.name,
@@ -44,7 +48,7 @@ export const ProjectService = {
 
     projectStore.create(project);
     log.info({ projectId, name: project.name }, "Project created");
-    
+
     return project;
   },
 
@@ -55,17 +59,21 @@ export const ProjectService = {
     }
 
     const updates: Partial<Project> = {};
-    
+
     if (options.name !== undefined) updates.name = options.name;
     if (options.gitUrl !== undefined) updates.gitUrl = options.gitUrl;
-    if (options.defaultBranch !== undefined) updates.defaultBranch = options.defaultBranch;
+    if (options.defaultBranch !== undefined)
+      updates.defaultBranch = options.defaultBranch;
     if (options.baseImage !== undefined) updates.baseImage = options.baseImage;
     if (options.vcpus !== undefined) updates.vcpus = options.vcpus;
     if (options.memoryMb !== undefined) updates.memoryMb = options.memoryMb;
-    if (options.initCommands !== undefined) updates.initCommands = options.initCommands;
-    if (options.startCommands !== undefined) updates.startCommands = options.startCommands;
-    if (options.exposedPorts !== undefined) updates.exposedPorts = options.exposedPorts;
-    
+    if (options.initCommands !== undefined)
+      updates.initCommands = options.initCommands;
+    if (options.startCommands !== undefined)
+      updates.startCommands = options.startCommands;
+    if (options.exposedPorts !== undefined)
+      updates.exposedPorts = options.exposedPorts;
+
     // Handle secrets update
     if (options.secrets !== undefined) {
       updates.secrets = await SecretsService.encryptSecrets(options.secrets);
@@ -73,7 +81,7 @@ export const ProjectService = {
 
     const updated = projectStore.update(id, updates);
     log.info({ projectId: id }, "Project updated");
-    
+
     return updated;
   },
 
@@ -84,7 +92,7 @@ export const ProjectService = {
     }
 
     // TODO: Clean up prebuilds and sandboxes associated with this project
-    
+
     projectStore.delete(id);
     log.info({ projectId: id }, "Project deleted");
   },

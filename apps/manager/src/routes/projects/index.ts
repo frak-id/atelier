@@ -13,7 +13,9 @@ export const projectRoutes = new Elysia({ prefix: "/projects" })
       let projects = await ProjectService.list();
 
       if (query.prebuildStatus) {
-        projects = projects.filter((p) => p.prebuildStatus === query.prebuildStatus);
+        projects = projects.filter(
+          (p) => p.prebuildStatus === query.prebuildStatus,
+        );
       }
 
       return projects;
@@ -21,7 +23,7 @@ export const projectRoutes = new Elysia({ prefix: "/projects" })
     {
       query: ProjectModel.listQuery,
       response: t.Array(ProjectModel.response),
-    }
+    },
   )
   .post(
     "/",
@@ -34,7 +36,7 @@ export const projectRoutes = new Elysia({ prefix: "/projects" })
     {
       body: ProjectModel.create,
       response: ProjectModel.response,
-    }
+    },
   )
   .get(
     "/:id",
@@ -48,7 +50,7 @@ export const projectRoutes = new Elysia({ prefix: "/projects" })
     {
       params: ProjectModel.idParam,
       response: ProjectModel.response,
-    }
+    },
   )
   .put(
     "/:id",
@@ -66,7 +68,7 @@ export const projectRoutes = new Elysia({ prefix: "/projects" })
       params: ProjectModel.idParam,
       body: ProjectModel.update,
       response: ProjectModel.response,
-    }
+    },
   )
   .delete(
     "/:id",
@@ -84,7 +86,7 @@ export const projectRoutes = new Elysia({ prefix: "/projects" })
     },
     {
       params: ProjectModel.idParam,
-    }
+    },
   )
   .post(
     "/:id/prebuild",
@@ -106,5 +108,5 @@ export const projectRoutes = new Elysia({ prefix: "/projects" })
         message: t.String(),
         projectId: t.String(),
       }),
-    }
+    },
   );

@@ -13,13 +13,16 @@ export const CaddyService = {
   async registerRoutes(
     sandboxId: string,
     ipAddress: string,
-    ports: { vscode: number; opencode: number }
+    ports: { vscode: number; opencode: number },
   ): Promise<{ vscode: string; opencode: string }> {
     const vscodeDomain = `sandbox-${sandboxId}.${config.caddy.domainSuffix}`;
     const opencodeDomain = `opencode-${sandboxId}.${config.caddy.domainSuffix}`;
 
     if (config.isMock()) {
-      log.debug({ sandboxId, vscodeDomain, opencodeDomain }, "Mock: Caddy routes registered");
+      log.debug(
+        { sandboxId, vscodeDomain, opencodeDomain },
+        "Mock: Caddy routes registered",
+      );
       return {
         vscode: `https://${vscodeDomain}`,
         opencode: `https://${opencodeDomain}`,
@@ -29,7 +32,10 @@ export const CaddyService = {
     await this.addRoute(vscodeDomain, `${ipAddress}:${ports.vscode}`);
     await this.addRoute(opencodeDomain, `${ipAddress}:${ports.opencode}`);
 
-    log.info({ sandboxId, vscodeDomain, opencodeDomain }, "Caddy routes registered");
+    log.info(
+      { sandboxId, vscodeDomain, opencodeDomain },
+      "Caddy routes registered",
+    );
 
     return {
       vscode: `https://${vscodeDomain}`,
@@ -50,11 +56,14 @@ export const CaddyService = {
       terminal: true,
     };
 
-    const response = await fetch(`${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(routeConfig),
-    });
+    const response = await fetch(
+      `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(routeConfig),
+      },
+    );
 
     if (!response.ok) {
       const error = await response.text();
@@ -83,7 +92,10 @@ export const CaddyService = {
     });
 
     if (!response.ok && response.status !== 404) {
-      log.warn({ domain, status: response.status }, "Failed to remove Caddy route");
+      log.warn(
+        { domain, status: response.status },
+        "Failed to remove Caddy route",
+      );
     }
   },
 
@@ -105,7 +117,7 @@ export const CaddyService = {
     }
 
     const response = await fetch(
-      `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`
+      `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
     );
     if (!response.ok) {
       return [];

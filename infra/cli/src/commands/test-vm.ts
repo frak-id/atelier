@@ -102,7 +102,9 @@ async function startVm() {
   spinner.stop("Network configured in rootfs");
 
   spinner.start("Starting Firecracker");
-  await exec(`mkdir -p ${PATHS.SOCKET_DIR} ${PATHS.LOG_DIR} ${PATHS.OVERLAY_DIR}`);
+  await exec(
+    `mkdir -p ${PATHS.SOCKET_DIR} ${PATHS.LOG_DIR} ${PATHS.OVERLAY_DIR}`,
+  );
   await exec(`rm -f ${paths.socket}`);
 
   const proc = Bun.spawn(
@@ -119,7 +121,7 @@ async function startVm() {
       stdout: "ignore",
       stderr: "ignore",
       stdin: "ignore",
-    }
+    },
   );
 
   await Bun.write(paths.pid, String(proc.pid));
@@ -141,7 +143,7 @@ async function startVm() {
   await exec(
     `curl -s --unix-socket ${paths.socket} -X PUT "http://localhost/actions" \
       -H "Content-Type: application/json" \
-      -d '{"action_type": "InstanceStart"}'`
+      -d '{"action_type": "InstanceStart"}'`,
   );
 
   await Bun.sleep(2000);
@@ -160,7 +162,7 @@ async function startVm() {
     `Guest IP: ${NETWORK.TEST_VM_IP}
 SSH: frak-sandbox vm ssh
 Stop: frak-sandbox vm stop`,
-    "Test VM"
+    "Test VM",
   );
 }
 
@@ -201,7 +203,9 @@ async function stopVm() {
     await exec(`rm -f ${paths.pid}`);
   }
 
-  await exec(`pkill -f "firecracker.*${VM_NAME}.sock" 2>/dev/null || true`, { throws: false });
+  await exec(`pkill -f "firecracker.*${VM_NAME}.sock" 2>/dev/null || true`, {
+    throws: false,
+  });
   await exec(`rm -f ${paths.socket}`);
   await exec(`rm -f ${paths.rootfs}`);
 
@@ -219,9 +223,15 @@ async function vmStatus() {
 
   const socketExists = await fileExists(paths.socket);
   const pidExists = await fileExists(paths.pid);
-  const bridgeExists = (await exec(`ip link show ${NETWORK.BRIDGE_NAME}`, { throws: false })).success;
-  const tapExists = (await exec(`ip link show ${NETWORK.TEST_TAP}`, { throws: false })).success;
-  const pingable = (await exec(`ping -c 1 -W 1 ${NETWORK.TEST_VM_IP}`, { throws: false })).success;
+  const bridgeExists = (
+    await exec(`ip link show ${NETWORK.BRIDGE_NAME}`, { throws: false })
+  ).success;
+  const tapExists = (
+    await exec(`ip link show ${NETWORK.TEST_TAP}`, { throws: false })
+  ).success;
+  const pingable = (
+    await exec(`ping -c 1 -W 1 ${NETWORK.TEST_VM_IP}`, { throws: false })
+  ).success;
 
   let processRunning = false;
   if (pidExists) {
@@ -232,11 +242,19 @@ async function vmStatus() {
   console.log("");
   console.log("VM Status:");
   console.log("----------");
-  console.log(`  Bridge:  ${bridgeExists ? `✓ ${NETWORK.BRIDGE_NAME}` : "✗ not found (run 'frak-sandbox network')"}`);
-  console.log(`  TAP:     ${tapExists ? `✓ ${NETWORK.TEST_TAP}` : "○ not created"}`);
+  console.log(
+    `  Bridge:  ${bridgeExists ? `✓ ${NETWORK.BRIDGE_NAME}` : "✗ not found (run 'frak-sandbox network')"}`,
+  );
+  console.log(
+    `  TAP:     ${tapExists ? `✓ ${NETWORK.TEST_TAP}` : "○ not created"}`,
+  );
   console.log(`  Socket:  ${socketExists ? "✓ exists" : "✗ not found"}`);
-  console.log(`  Process: ${processRunning ? "✓ running" : pidExists ? "✗ dead (stale PID)" : "○ not running"}`);
-  console.log(`  Guest:   ${pingable ? "✓ reachable" : "○ not reachable"} (${NETWORK.TEST_VM_IP})`);
+  console.log(
+    `  Process: ${processRunning ? "✓ running" : pidExists ? "✗ dead (stale PID)" : "○ not running"}`,
+  );
+  console.log(
+    `  Guest:   ${pingable ? "✓ reachable" : "○ not reachable"} (${NETWORK.TEST_VM_IP})`,
+  );
   console.log("");
 }
 
@@ -253,7 +271,7 @@ async function sshToVm() {
     `ssh -i ${paths.sshKey} \
       -o StrictHostKeyChecking=no \
       -o UserKnownHostsFile=/dev/null \
-      root@${NETWORK.TEST_VM_IP}`
+      root@${NETWORK.TEST_VM_IP}`,
   );
 }
 
@@ -265,9 +283,13 @@ async function createTap() {
 }
 
 async function checkPrerequisites(paths: VmPaths) {
-  const bridgeExists = await exec(`ip link show ${NETWORK.BRIDGE_NAME}`, { throws: false });
+  const bridgeExists = await exec(`ip link show ${NETWORK.BRIDGE_NAME}`, {
+    throws: false,
+  });
   if (!bridgeExists.success) {
-    throw new Error(`Bridge ${NETWORK.BRIDGE_NAME} not found. Run 'frak-sandbox network' first.`);
+    throw new Error(
+      `Bridge ${NETWORK.BRIDGE_NAME} not found. Run 'frak-sandbox network' first.`,
+    );
   }
 
   const checks = [
@@ -278,11 +300,15 @@ async function checkPrerequisites(paths: VmPaths) {
 
   for (const check of checks) {
     if (!(await fileExists(check.path))) {
-      throw new Error(`${check.name} not found: ${check.path}. Run 'frak-sandbox firecracker' first.`);
+      throw new Error(
+        `${check.name} not found: ${check.path}. Run 'frak-sandbox firecracker' first.`,
+      );
     }
   }
 
-  const kvmOk = await exec("test -r /dev/kvm && test -w /dev/kvm", { throws: false });
+  const kvmOk = await exec("test -r /dev/kvm && test -w /dev/kvm", {
+    throws: false,
+  });
   if (!kvmOk.success) {
     throw new Error("KVM not accessible. Run 'frak-sandbox base' first.");
   }
@@ -313,7 +339,9 @@ exit 0
     await Bun.write(rcLocalPath, rcLocalContent);
     await exec(`chmod +x ${rcLocalPath}`);
 
-    const hasSystemd = await exec(`test -d ${mountPoint}/etc/systemd/system`, { throws: false });
+    const hasSystemd = await exec(`test -d ${mountPoint}/etc/systemd/system`, {
+      throws: false,
+    });
 
     if (hasSystemd.success) {
       const systemdServicePath = `${mountPoint}/etc/systemd/system/network-setup.service`;
@@ -331,7 +359,7 @@ WantedBy=multi-user.target
 `;
       await Bun.write(systemdServicePath, serviceContent);
       await exec(
-        `ln -sf /etc/systemd/system/network-setup.service ${mountPoint}/etc/systemd/system/multi-user.target.wants/network-setup.service`
+        `ln -sf /etc/systemd/system/network-setup.service ${mountPoint}/etc/systemd/system/multi-user.target.wants/network-setup.service`,
       );
     }
   } finally {

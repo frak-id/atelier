@@ -3,7 +3,9 @@ import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { config } from "./lib/config.ts";
 import { logger } from "./lib/logger.ts";
+import { appPaths } from "./lib/paths.ts";
 import { SandboxError } from "./lib/errors.ts";
+import { initDatabase } from "./state/database.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { systemRoutes } from "./routes/system/index.ts";
 import { sandboxRoutes } from "./routes/sandboxes/index.ts";
@@ -11,6 +13,9 @@ import { projectRoutes } from "./routes/projects/index.ts";
 import { imageRoutes } from "./routes/images/index.ts";
 import { debugRoutes } from "./routes/debug/index.ts";
 import { proxyRoutes } from "./routes/proxy/index.ts";
+
+await initDatabase();
+logger.info({ dbPath: appPaths.database }, "Database ready");
 
 const app = new Elysia()
   .use(cors())
@@ -21,7 +26,8 @@ const app = new Elysia()
         info: {
           title: "Frak Sandbox Manager API",
           version: "0.1.0",
-          description: "API for managing Firecracker-based sandbox environments",
+          description:
+            "API for managing Firecracker-based sandbox environments",
         },
         tags: [
           { name: "health", description: "Health check endpoints" },
@@ -32,7 +38,7 @@ const app = new Elysia()
           { name: "debug", description: "Debug and diagnostic endpoints" },
         ],
       },
-    })
+    }),
   )
   .onError(({ code, error, set }) => {
     if (error instanceof SandboxError) {
@@ -45,7 +51,8 @@ const app = new Elysia()
 
     switch (code) {
       case "VALIDATION": {
-        const validationMessage = error instanceof Error ? error.message : "Validation failed";
+        const validationMessage =
+          error instanceof Error ? error.message : "Validation failed";
         set.status = 400;
         return {
           error: "VALIDATION_ERROR",
@@ -61,12 +68,15 @@ const app = new Elysia()
         };
 
       default: {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         logger.error({ code, error: errorMessage }, "Unhandled error");
         set.status = 500;
         return {
           error: "INTERNAL_ERROR",
-          message: config.isProduction() ? "Internal server error" : errorMessage,
+          message: config.isProduction()
+            ? "Internal server error"
+            : errorMessage,
         };
       }
     }
@@ -78,7 +88,7 @@ const app = new Elysia()
       .use(systemRoutes)
       .use(sandboxRoutes)
       .use(projectRoutes)
-      .use(imageRoutes)
+      .use(imageRoutes),
   )
   .use(debugRoutes)
   .get("/", () => ({
@@ -101,9 +111,9 @@ app.listen(
         mode: config.mode,
         swagger: `http://${hostname}:${port}/swagger`,
       },
-      "Frak Sandbox Manager started"
+      "Frak Sandbox Manager started",
     );
-  }
+  },
 );
 
 export type App = typeof app;

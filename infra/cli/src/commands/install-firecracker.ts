@@ -18,7 +18,9 @@ export async function installFirecracker(_args: string[] = []) {
     if (currentVersion === FIRECRACKER.VERSION) {
       p.log.success(`Firecracker v${FIRECRACKER.VERSION} already installed`);
     } else {
-      p.log.warn(`Upgrading Firecracker from v${currentVersion} to v${FIRECRACKER.VERSION}`);
+      p.log.warn(
+        `Upgrading Firecracker from v${currentVersion} to v${FIRECRACKER.VERSION}`,
+      );
       await downloadFirecracker(spinner, arch);
     }
   } else {
@@ -34,13 +36,13 @@ export async function installFirecracker(_args: string[] = []) {
     `Kernel: ${PATHS.KERNEL_DIR}/vmlinux
 Rootfs: ${PATHS.ROOTFS_DIR}/rootfs.ext4
 SSH Key: ${PATHS.ROOTFS_DIR}/vm-ssh-key`,
-    "Installed"
+    "Installed",
   );
 }
 
 async function downloadFirecracker(
   spinner: ReturnType<typeof p.spinner>,
-  arch: string
+  arch: string,
 ) {
   spinner.start(`Downloading Firecracker v${FIRECRACKER.VERSION}`);
 
@@ -48,14 +50,18 @@ async function downloadFirecracker(
   const url = `${FIRECRACKER.RELEASE_URL}/download/v${FIRECRACKER.VERSION}/${tarball}`;
   const releaseDir = `release-v${FIRECRACKER.VERSION}-${arch}`;
 
-  await exec("rm -rf /tmp/firecracker-release && mkdir -p /tmp/firecracker-release");
-  await exec(`cd /tmp/firecracker-release && wget -q ${url} && tar -xzf ${tarball}`);
-
   await exec(
-    `install -m 0755 /tmp/firecracker-release/${releaseDir}/firecracker-v${FIRECRACKER.VERSION}-${arch} /usr/local/bin/firecracker`
+    "rm -rf /tmp/firecracker-release && mkdir -p /tmp/firecracker-release",
   );
   await exec(
-    `install -m 0755 /tmp/firecracker-release/${releaseDir}/jailer-v${FIRECRACKER.VERSION}-${arch} /usr/local/bin/jailer`
+    `cd /tmp/firecracker-release && wget -q ${url} && tar -xzf ${tarball}`,
+  );
+
+  await exec(
+    `install -m 0755 /tmp/firecracker-release/${releaseDir}/firecracker-v${FIRECRACKER.VERSION}-${arch} /usr/local/bin/firecracker`,
+  );
+  await exec(
+    `install -m 0755 /tmp/firecracker-release/${releaseDir}/jailer-v${FIRECRACKER.VERSION}-${arch} /usr/local/bin/jailer`,
   );
 
   await exec("rm -rf /tmp/firecracker-release");
@@ -64,7 +70,7 @@ async function downloadFirecracker(
 
 async function downloadKernel(
   spinner: ReturnType<typeof p.spinner>,
-  arch: string
+  arch: string,
 ) {
   spinner.start("Fetching latest CI kernel");
 
@@ -76,8 +82,8 @@ async function downloadKernel(
   const keys = xml.match(
     new RegExp(
       `firecracker-ci/${latestVersion}/${arch}/vmlinux-[0-9]+\\.[0-9]+\\.[0-9]{1,3}`,
-      "g"
-    )
+      "g",
+    ),
   );
 
   if (!keys?.length) {
@@ -92,7 +98,9 @@ async function downloadKernel(
     spinner.stop(`Kernel already exists: ${kernelName}`);
   } else {
     spinner.message(`Downloading ${kernelName}`);
-    await exec(`wget -q -O ${kernelPath} ${FIRECRACKER.S3_BUCKET}/${latestKey}`);
+    await exec(
+      `wget -q -O ${kernelPath} ${FIRECRACKER.S3_BUCKET}/${latestKey}`,
+    );
 
     if (!(await isValidElf(kernelPath))) {
       await exec(`rm -f ${kernelPath}`);
@@ -106,7 +114,7 @@ async function downloadKernel(
 
 async function downloadRootfs(
   spinner: ReturnType<typeof p.spinner>,
-  arch: string
+  arch: string,
 ) {
   spinner.start("Fetching latest CI rootfs");
 
@@ -118,8 +126,8 @@ async function downloadRootfs(
   const keys = xml.match(
     new RegExp(
       `firecracker-ci/${latestVersion}/${arch}/ubuntu-[0-9]+\\.[0-9]+\\.squashfs`,
-      "g"
-    )
+      "g",
+    ),
   );
 
   if (!keys?.length) {
@@ -138,14 +146,20 @@ async function downloadRootfs(
     const extractDir = `/tmp/squashfs-root-${Date.now()}`;
 
     spinner.message(`Downloading Ubuntu ${ubuntuVersion} squashfs`);
-    await exec(`wget -q -O ${squashfsPath} ${FIRECRACKER.S3_BUCKET}/${latestKey}`);
+    await exec(
+      `wget -q -O ${squashfsPath} ${FIRECRACKER.S3_BUCKET}/${latestKey}`,
+    );
 
     spinner.message("Extracting and converting to ext4");
-    await exec(`rm -rf ${extractDir} && unsquashfs -d ${extractDir} ${squashfsPath}`);
+    await exec(
+      `rm -rf ${extractDir} && unsquashfs -d ${extractDir} ${squashfsPath}`,
+    );
 
     const sshKeyPath = `${PATHS.ROOTFS_DIR}/vm-ssh-key`;
     if (!(await fileExists(sshKeyPath))) {
-      await exec(`ssh-keygen -t ed25519 -f ${sshKeyPath} -N "" -C "sandbox-vm-key"`);
+      await exec(
+        `ssh-keygen -t ed25519 -f ${sshKeyPath} -N "" -C "sandbox-vm-key"`,
+      );
     }
 
     await exec(`mkdir -p ${extractDir}/root/.ssh`);
@@ -166,7 +180,7 @@ async function downloadRootfs(
 
 async function getLatestCIVersion(): Promise<string> {
   const { stdout } = await exec(
-    `curl -fsSLI -o /dev/null -w '%{url_effective}' ${FIRECRACKER.RELEASE_URL}/latest`
+    `curl -fsSLI -o /dev/null -w '%{url_effective}' ${FIRECRACKER.RELEASE_URL}/latest`,
   );
   const version = stdout.split("/").pop() ?? "";
   return version.replace(/\.\d+$/, "");

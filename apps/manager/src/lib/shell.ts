@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import { stat, mkdir } from "node:fs/promises";
 
 export interface ExecResult {
   stdout: string;
@@ -7,55 +8,52 @@ export interface ExecResult {
   success: boolean;
 }
 
+/** @deprecated Use Bun's $ tagged template directly for new code */
 export async function exec(
   command: string,
-  options: { quiet?: boolean; throws?: boolean } = {}
+  options: { throws?: boolean } = {},
 ): Promise<ExecResult> {
   const { throws = true } = options;
 
-  try {
-    const result = await $`sh -c ${command}`.quiet();
-    return {
-      stdout: result.stdout.toString().trim(),
-      stderr: result.stderr.toString().trim(),
-      exitCode: result.exitCode,
-      success: result.exitCode === 0,
-    };
-  } catch (error) {
-    const err = error as { stdout?: Buffer; stderr?: Buffer; exitCode?: number };
-    const result: ExecResult = {
-      stdout: err.stdout?.toString().trim() ?? "",
-      stderr: err.stderr?.toString().trim() ?? "",
-      exitCode: err.exitCode ?? 1,
-      success: false,
-    };
+  const result = await $`${{ raw: command }}`.quiet().nothrow();
 
-    if (throws) {
-      throw new Error(`Command failed: ${command}\n${result.stderr}`);
-    }
+  const execResult: ExecResult = {
+    stdout: result.stdout.toString().trim(),
+    stderr: result.stderr.toString().trim(),
+    exitCode: result.exitCode,
+    success: result.exitCode === 0,
+  };
 
-    return result;
+  if (throws && !execResult.success) {
+    throw new Error(`Command failed: ${command}\n${execResult.stderr}`);
   }
+
+  return execResult;
 }
 
 export async function commandExists(command: string): Promise<boolean> {
-  const result = await exec(`command -v ${command}`, { throws: false });
-  return result.success;
+  const result = await $`command -v ${command}`.quiet().nothrow();
+  return result.exitCode === 0;
 }
 
 export async function fileExists(path: string): Promise<boolean> {
-  const result = await exec(`test -f ${path}`, { throws: false });
-  return result.success;
+  return Bun.file(path).exists();
 }
 
 export async function dirExists(path: string): Promise<boolean> {
-  const result = await exec(`test -d ${path}`, { throws: false });
-  return result.success;
+  try {
+    const s = await stat(path);
+    return s.isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export async function readFile(path: string): Promise<string | null> {
   try {
-    return await Bun.file(path).text();
+    const file = Bun.file(path);
+    if (!(await file.exists())) return null;
+    return await file.text();
   } catch {
     return null;
   }
@@ -63,4 +61,8 @@ export async function readFile(path: string): Promise<string | null> {
 
 export async function writeFile(path: string, content: string): Promise<void> {
   await Bun.write(path, content);
+}
+
+export async function ensureDir(path: string): Promise<void> {
+  await mkdir(path, { recursive: true });
 }

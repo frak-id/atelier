@@ -1,7 +1,11 @@
 import * as p from "@clack/prompts";
 import { exec, commandExists } from "../lib/shell";
 import { PATHS, LVM } from "../lib/context";
-import { BASE_IMAGES, getAvailableImages, type BaseImageId } from "@frak-sandbox/shared/types";
+import {
+  BASE_IMAGES,
+  getAvailableImages,
+  type BaseImageId,
+} from "@frak-sandbox/shared/types";
 
 const IMAGES_DIR = "/opt/frak-sandbox/infra/images";
 
@@ -27,9 +31,21 @@ async function imagesMenu() {
   const action = await p.select({
     message: "Image management",
     options: [
-      { value: "build", label: "Build Image", hint: "Build a base image from Dockerfile" },
-      { value: "list", label: "List Images", hint: "Show available base images" },
-      { value: "status", label: "Image Status", hint: "Check which images are built" },
+      {
+        value: "build",
+        label: "Build Image",
+        hint: "Build a base image from Dockerfile",
+      },
+      {
+        value: "list",
+        label: "List Images",
+        hint: "Show available base images",
+      },
+      {
+        value: "status",
+        label: "Image Status",
+        hint: "Check which images are built",
+      },
     ],
   });
 
@@ -56,7 +72,9 @@ async function buildImage(args: string[]) {
 
   // Check Docker is available
   if (!(await commandExists("docker"))) {
-    throw new Error("Docker is required to build images. Run: frak-sandbox base");
+    throw new Error(
+      "Docker is required to build images. Run: frak-sandbox base",
+    );
   }
 
   // Get image to build
@@ -109,8 +127,8 @@ async function buildImage(args: string[]) {
   if (!agentExists.success) {
     throw new Error(
       `sandbox-agent.mjs not found at: ${agentScript}\n` +
-      `Deploy with 'bun run deploy' first, or build manually on dev machine:\n` +
-      `  cd packages/sandbox-agent && bun run build`
+        `Deploy with 'bun run deploy' first, or build manually on dev machine:\n` +
+        `  cd packages/sandbox-agent && bun run build`,
     );
   }
 
@@ -132,7 +150,9 @@ async function buildImage(args: string[]) {
 
   try {
     spinner.start("Creating container");
-    await exec(`docker create --name ${containerName} frak-sandbox/${imageName}`);
+    await exec(
+      `docker create --name ${containerName} frak-sandbox/${imageName}`,
+    );
     spinner.stop("Container created");
 
     spinner.start("Exporting filesystem");
@@ -149,7 +169,9 @@ async function buildImage(args: string[]) {
     const outputFile = `${PATHS.ROOTFS_DIR}/${imageName}.ext4`;
 
     // Create sparse file
-    await exec(`dd if=/dev/zero of=${outputFile} bs=1M count=0 seek=${imageSizeMB} 2>/dev/null`);
+    await exec(
+      `dd if=/dev/zero of=${outputFile} bs=1M count=0 seek=${imageSizeMB} 2>/dev/null`,
+    );
 
     // Create ext4 filesystem
     await exec(`mkfs.ext4 -F -q ${outputFile}`);
@@ -171,7 +193,7 @@ async function buildImage(args: string[]) {
     // Check if volume exists
     const volumeExists = await exec(
       `lvs ${LVM.VG_NAME}/${lvmVolume} 2>/dev/null`,
-      { throws: false }
+      { throws: false },
     );
 
     if (volumeExists.success) {
@@ -181,7 +203,7 @@ async function buildImage(args: string[]) {
 
     // Create thin volume (volumeSize is in GB)
     await exec(
-      `lvcreate -V ${image.volumeSize}G -T ${LVM.VG_NAME}/${LVM.THIN_POOL} -n ${lvmVolume}`
+      `lvcreate -V ${image.volumeSize}G -T ${LVM.VG_NAME}/${LVM.THIN_POOL} -n ${lvmVolume}`,
     );
 
     // Copy ext4 image to LVM volume
@@ -197,10 +219,11 @@ async function buildImage(args: string[]) {
     const { stdout: finalSize } = await exec(`du -h ${outputFile} | cut -f1`);
     p.log.success(`Image built: ${outputFile} (${finalSize.trim()})`);
     p.log.success(`LVM volume: ${LVM.VG_NAME}/${lvmVolume}`);
-
   } finally {
     // Cleanup
-    await exec(`docker rm -f ${containerName} 2>/dev/null || true`, { throws: false });
+    await exec(`docker rm -f ${containerName} 2>/dev/null || true`, {
+      throws: false,
+    });
     await exec(`rm -rf ${tempDir}`, { throws: false });
   }
 
@@ -209,7 +232,7 @@ async function buildImage(args: string[]) {
 Sandboxes using this image will boot from:
   LVM: ${LVM.VG_NAME}/${LVM.IMAGE_PREFIX}${imageName}
   Fallback: ${PATHS.ROOTFS_DIR}/${imageName}.ext4`,
-    "Build Complete"
+    "Build Complete",
   );
 }
 
@@ -220,13 +243,16 @@ async function listImages() {
 
   console.log("");
   console.log("  ID            Name                Available  Tools");
-  console.log("  ─────────────────────────────────────────────────────────────");
+  console.log(
+    "  ─────────────────────────────────────────────────────────────",
+  );
 
   for (const img of images) {
     const status = img.available ? "✓" : "○";
-    const tools = img.tools.slice(0, 3).join(", ") + (img.tools.length > 3 ? "..." : "");
+    const tools =
+      img.tools.slice(0, 3).join(", ") + (img.tools.length > 3 ? "..." : "");
     console.log(
-      `  ${img.id.padEnd(12)}  ${img.name.padEnd(18)}  ${status.padEnd(9)}  ${tools}`
+      `  ${img.id.padEnd(12)}  ${img.name.padEnd(18)}  ${status.padEnd(9)}  ${tools}`,
     );
   }
 
@@ -257,12 +283,14 @@ async function imageStatus() {
     const ext4Exists = await exec(`test -f ${ext4Path}`, { throws: false });
     const lvmExists = await exec(
       `lvs ${LVM.VG_NAME}/${lvmVolume} 2>/dev/null`,
-      { throws: false }
+      { throws: false },
     );
 
     let size: string | undefined;
     if (ext4Exists.success) {
-      const { stdout } = await exec(`du -h ${ext4Path} | cut -f1`, { throws: false });
+      const { stdout } = await exec(`du -h ${ext4Path} | cut -f1`, {
+        throws: false,
+      });
       size = stdout.trim();
     }
 
@@ -286,7 +314,7 @@ async function imageStatus() {
     const lvmStatus = r.lvm ? "✓" : "✗";
     const size = r.size || "-";
     console.log(
-      `  ${r.id.padEnd(12)}  ${ext4Status.padEnd(6)}  ${lvmStatus.padEnd(6)}  ${size}`
+      `  ${r.id.padEnd(12)}  ${ext4Status.padEnd(6)}  ${lvmStatus.padEnd(6)}  ${size}`,
     );
   }
 

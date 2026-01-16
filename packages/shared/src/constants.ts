@@ -24,7 +24,7 @@ export const PATHS = {
 } as const;
 
 export const FIRECRACKER = {
-  VERSION: "1.10.1",
+  VERSION: "1.14.0",
   RELEASE_URL: "https://github.com/firecracker-microvm/firecracker/releases",
   S3_BUCKET: "https://s3.amazonaws.com/spec.ccfc.min",
   /** Path to firecracker binary */

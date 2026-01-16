@@ -4,15 +4,21 @@
   "private": true,
   "scripts": {
     "deploy": "bun run scripts/deploy.ts",
-    "build:cli": "bun run --filter @frak-sandbox/cli build:linux"
+    "build:cli": "bun run --filter @frak-sandbox/cli build:linux",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check --write ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.11",
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "workspaces": [
-    "packages/*", "apps/*", "infra/*"
+    "packages/*",
+    "apps/*",
+    "infra/*"
   ]
 }

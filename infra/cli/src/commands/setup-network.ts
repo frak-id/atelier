@@ -20,7 +20,11 @@ export async function setupNetwork(_args: string[] = []) {
       message: "Network bridge already configured. What would you like to do?",
       options: [
         { value: "status", label: "Show status only" },
-        { value: "recreate", label: "Recreate bridge", hint: "Destroys existing bridge" },
+        {
+          value: "recreate",
+          label: "Recreate bridge",
+          hint: "Destroys existing bridge",
+        },
       ],
     });
 
@@ -53,7 +57,9 @@ export async function setupNetwork(_args: string[] = []) {
 
 async function createBridge() {
   await exec(`ip link add name ${NETWORK.BRIDGE_NAME} type bridge`);
-  await exec(`ip addr add ${NETWORK.BRIDGE_IP}/${NETWORK.BRIDGE_NETMASK} dev ${NETWORK.BRIDGE_NAME}`);
+  await exec(
+    `ip addr add ${NETWORK.BRIDGE_IP}/${NETWORK.BRIDGE_NETMASK} dev ${NETWORK.BRIDGE_NAME}`,
+  );
   await exec(`ip link set dev ${NETWORK.BRIDGE_NAME} up`);
 }
 
@@ -61,23 +67,25 @@ async function configureNat() {
   await exec("echo 1 > /proc/sys/net/ipv4/ip_forward");
 
   await exec(
-    'grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf'
+    'grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf',
   );
 
-  const { stdout: hostIface } = await exec("ip -j route list default | jq -r '.[0].dev'");
+  const { stdout: hostIface } = await exec(
+    "ip -j route list default | jq -r '.[0].dev'",
+  );
 
   await exec(
     `iptables -t nat -C POSTROUTING -s ${NETWORK.BRIDGE_CIDR} -o ${hostIface} -j MASQUERADE 2>/dev/null || \
-     iptables -t nat -A POSTROUTING -s ${NETWORK.BRIDGE_CIDR} -o ${hostIface} -j MASQUERADE`
+     iptables -t nat -A POSTROUTING -s ${NETWORK.BRIDGE_CIDR} -o ${hostIface} -j MASQUERADE`,
   );
 
   await exec(
     `iptables -C FORWARD -i ${NETWORK.BRIDGE_NAME} -o ${hostIface} -j ACCEPT 2>/dev/null || \
-     iptables -A FORWARD -i ${NETWORK.BRIDGE_NAME} -o ${hostIface} -j ACCEPT`
+     iptables -A FORWARD -i ${NETWORK.BRIDGE_NAME} -o ${hostIface} -j ACCEPT`,
   );
   await exec(
     `iptables -C FORWARD -i ${hostIface} -o ${NETWORK.BRIDGE_NAME} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-     iptables -A FORWARD -i ${hostIface} -o ${NETWORK.BRIDGE_NAME} -m state --state RELATED,ESTABLISHED -j ACCEPT`
+     iptables -A FORWARD -i ${hostIface} -o ${NETWORK.BRIDGE_NAME} -m state --state RELATED,ESTABLISHED -j ACCEPT`,
   );
 }
 
@@ -142,7 +150,7 @@ async function destroyBridge() {
 
   const { stdout: taps } = await exec(
     `ip link show master ${NETWORK.BRIDGE_NAME} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || true`,
-    { throws: false }
+    { throws: false },
   );
 
   for (const tap of taps.split("\n").filter(Boolean)) {
@@ -157,7 +165,9 @@ async function destroyBridge() {
 async function showNetworkStatus() {
   p.log.info("Network Status:");
 
-  const bridgeInfo = await exec(`ip addr show ${NETWORK.BRIDGE_NAME}`, { throws: false });
+  const bridgeInfo = await exec(`ip addr show ${NETWORK.BRIDGE_NAME}`, {
+    throws: false,
+  });
   if (bridgeInfo.success) {
     console.log(bridgeInfo.stdout);
   }
@@ -166,20 +176,27 @@ async function showNetworkStatus() {
 
   const { stdout: attachedTaps } = await exec(
     `ip link show master ${NETWORK.BRIDGE_NAME} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || echo "None"`,
-    { throws: false }
+    { throws: false },
   );
-  console.log(`Attached TAPs: ${attachedTaps.split("\n").filter(Boolean).join(", ") || "None"}`);
+  console.log(
+    `Attached TAPs: ${attachedTaps.split("\n").filter(Boolean).join(", ") || "None"}`,
+  );
 
   console.log("");
 
-  const serviceStatus = await exec("systemctl is-enabled sandbox-network.service", { throws: false });
-  console.log(`Systemd service: ${serviceStatus.success ? "enabled" : "not installed"}`);
+  const serviceStatus = await exec(
+    "systemctl is-enabled sandbox-network.service",
+    { throws: false },
+  );
+  console.log(
+    `Systemd service: ${serviceStatus.success ? "enabled" : "not installed"}`,
+  );
 
   console.log("");
   p.note(
     `Bridge: ${NETWORK.BRIDGE_NAME} (${NETWORK.BRIDGE_IP}/${NETWORK.BRIDGE_NETMASK})
 Guest IPs: ${NETWORK.GUEST_SUBNET}.${NETWORK.GUEST_IP_START}+
 Test VM IP: ${NETWORK.TEST_VM_IP}`,
-    "Network Info"
+    "Network Info",
   );
 }

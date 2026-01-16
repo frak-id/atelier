@@ -22,7 +22,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
         maxSandboxes: t.Number(),
         uptime: t.Number(),
       }),
-    }
+    },
   )
   .get(
     "/storage",
@@ -52,7 +52,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
           volumeCount: t.Number(),
         }),
       }),
-    }
+    },
   )
   .get(
     "/queue",
@@ -89,17 +89,17 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
             id: t.String(),
             projectId: t.Optional(t.String()),
             queuedAt: t.String(),
-          })
+          }),
         ),
         running: t.Array(
           t.Object({
             id: t.String(),
             projectId: t.Optional(t.String()),
             startedAt: t.Optional(t.String()),
-          })
+          }),
         ),
       }),
-    }
+    },
   )
   .post(
     "/cleanup",
@@ -120,5 +120,5 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
         spaceFreed: t.Number(),
         jobsRemoved: t.Number(),
       }),
-    }
+    },
   );

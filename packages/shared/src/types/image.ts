@@ -3,7 +3,12 @@
  */
 
 /** Available base image identifiers */
-export type BaseImageId = "dev-base" | "dev-node" | "dev-rust" | "dev-python" | "dev-go";
+export type BaseImageId =
+  | "dev-base"
+  | "dev-node"
+  | "dev-rust"
+  | "dev-python"
+  | "dev-go";
 
 /** Base image definition */
 export interface BaseImage {
@@ -28,9 +33,19 @@ export const BASE_IMAGES: Record<BaseImageId, BaseImage> = {
   "dev-base": {
     id: "dev-base",
     name: "Base Development",
-    description: "Minimal dev environment with code-server, OpenCode, Bun, and Git",
+    description:
+      "Minimal dev environment with code-server, OpenCode, Bun, and Git",
     volumeSize: 5,
-    tools: ["code-server", "opencode", "bun", "node", "git", "curl", "ssh", "htop"],
+    tools: [
+      "code-server",
+      "opencode",
+      "bun",
+      "node",
+      "git",
+      "curl",
+      "ssh",
+      "htop",
+    ],
     volumeName: "image-dev-base",
     available: true,
   },

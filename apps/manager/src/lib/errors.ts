@@ -2,7 +2,7 @@ export class SandboxError extends Error {
   constructor(
     message: string,
     public code: string,
-    public statusCode: number = 500
+    public statusCode: number = 500,
   ) {
     super(message);
     this.name = "SandboxError";

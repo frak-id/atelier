@@ -34,7 +34,8 @@ async function main() {
 
   const target = `${SSH_USER}@${SSH_HOST}`;
   const ssh = (cmd: string) => $`ssh -i ${SSH_KEY_PATH} ${target} ${cmd}`;
-  const scp = (src: string, dest: string) => $`scp -i ${SSH_KEY_PATH} ${src} ${target}:${dest}`;
+  const scp = (src: string, dest: string) =>
+    $`scp -i ${SSH_KEY_PATH} ${src} ${target}:${dest}`;
   const scpDir = (src: string, dest: string) =>
     $`scp -i ${SSH_KEY_PATH} -r ${src} ${target}:${dest}`;
 
@@ -46,24 +47,44 @@ async function main() {
   console.log("\n🚀 Deploying...");
   await ssh(`mkdir -p ${REMOTE_APP_DIR} ${REMOTE_IMAGES_DIR}`);
 
-  await scp(resolve(CLI_DIR, "dist/frak-sandbox-linux-x64"), "/usr/local/bin/frak-sandbox");
+  await scp(
+    resolve(CLI_DIR, "dist/frak-sandbox-linux-x64"),
+    "/usr/local/bin/frak-sandbox",
+  );
   await ssh("chmod +x /usr/local/bin/frak-sandbox");
   console.log("   ✓ CLI");
 
-  await scp(resolve(MANAGER_DIR, "dist/server.js"), `${REMOTE_APP_DIR}/server.js`);
+  await scp(
+    resolve(MANAGER_DIR, "dist/server.js"),
+    `${REMOTE_APP_DIR}/server.js`,
+  );
   console.log("   ✓ Manager API");
 
-  await scp(resolve(AGENT_DIR, "dist/sandbox-agent.mjs"), `${REMOTE_IMAGES_DIR}/sandbox-agent.mjs`);
+  await scp(
+    resolve(AGENT_DIR, "dist/sandbox-agent.mjs"),
+    `${REMOTE_IMAGES_DIR}/sandbox-agent.mjs`,
+  );
   console.log("   ✓ Sandbox Agent");
 
-  await scp(`${IMAGES_DIR}/build-image.sh`, `${REMOTE_IMAGES_DIR}/build-image.sh`);
+  await scp(
+    `${IMAGES_DIR}/build-image.sh`,
+    `${REMOTE_IMAGES_DIR}/build-image.sh`,
+  );
   await ssh(`chmod +x ${REMOTE_IMAGES_DIR}/build-image.sh`);
   await scpDir(`${IMAGES_DIR}/dev-base`, REMOTE_IMAGES_DIR);
   console.log("   ✓ Base Images");
 
-  await scp(`${INFRA_DIR}/systemd/frak-sandbox-manager.service`, "/etc/systemd/system/");
-  await scp(`${INFRA_DIR}/systemd/frak-sandbox-network.service`, "/etc/systemd/system/");
-  await ssh("systemctl daemon-reload && systemctl enable frak-sandbox-network frak-sandbox-manager");
+  await scp(
+    `${INFRA_DIR}/systemd/frak-sandbox-manager.service`,
+    "/etc/systemd/system/",
+  );
+  await scp(
+    `${INFRA_DIR}/systemd/frak-sandbox-network.service`,
+    "/etc/systemd/system/",
+  );
+  await ssh(
+    "systemctl daemon-reload && systemctl enable frak-sandbox-network frak-sandbox-manager",
+  );
   console.log("   ✓ Systemd");
 
   await scp(`${INFRA_DIR}/caddy/Caddyfile`, "/etc/caddy/Caddyfile");
@@ -89,7 +110,10 @@ async function main() {
 
 async function addKeyToAgent(keyPath: string, passphrase: string) {
   const askpass = `/tmp/ssh-askpass-${process.pid}`;
-  await Bun.write(askpass, `#!/bin/sh\necho '${passphrase.replace(/'/g, "'\\''")}'`);
+  await Bun.write(
+    askpass,
+    `#!/bin/sh\necho '${passphrase.replace(/'/g, "'\\''")}'`,
+  );
   await $`chmod +x ${askpass}`;
 
   try {

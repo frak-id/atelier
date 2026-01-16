@@ -9,7 +9,7 @@ export interface ExecResult {
 
 export async function exec(
   command: string,
-  options: { quiet?: boolean; throws?: boolean } = {}
+  options: { quiet?: boolean; throws?: boolean } = {},
 ): Promise<ExecResult> {
   const { quiet = false, throws = true } = options;
 
@@ -22,7 +22,11 @@ export async function exec(
       success: result.exitCode === 0,
     };
   } catch (error) {
-    const err = error as { stdout?: Buffer; stderr?: Buffer; exitCode?: number };
+    const err = error as {
+      stdout?: Buffer;
+      stderr?: Buffer;
+      exitCode?: number;
+    };
     const result: ExecResult = {
       stdout: err.stdout?.toString().trim() ?? "",
       stderr: err.stderr?.toString().trim() ?? "",
@@ -73,7 +77,12 @@ export async function isValidElf(path: string): Promise<boolean> {
     const file = Bun.file(path);
     const buffer = await file.slice(0, 4).arrayBuffer();
     const magic = new Uint8Array(buffer);
-    return magic[0] === 0x7f && magic[1] === 0x45 && magic[2] === 0x4c && magic[3] === 0x46;
+    return (
+      magic[0] === 0x7f &&
+      magic[1] === 0x45 &&
+      magic[2] === 0x4c &&
+      magic[3] === 0x46
+    );
   } catch {
     return false;
   }

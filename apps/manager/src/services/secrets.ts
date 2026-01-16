@@ -6,23 +6,27 @@ const log = createChildLogger("secrets");
 const ENCRYPTION_PREFIX = "enc:";
 
 export const SecretsService = {
-  async encryptSecrets(secrets: Record<string, string>): Promise<Record<string, string>> {
+  async encryptSecrets(
+    secrets: Record<string, string>,
+  ): Promise<Record<string, string>> {
     const encrypted: Record<string, string> = {};
-    
+
     for (const [key, value] of Object.entries(secrets)) {
       encrypted[key] = await this.encrypt(value);
     }
-    
+
     return encrypted;
   },
 
-  async decryptSecrets(encrypted: Record<string, string>): Promise<Record<string, string>> {
+  async decryptSecrets(
+    encrypted: Record<string, string>,
+  ): Promise<Record<string, string>> {
     const decrypted: Record<string, string> = {};
-    
+
     for (const [key, value] of Object.entries(encrypted)) {
       decrypted[key] = await this.decrypt(value);
     }
-    
+
     return decrypted;
   },
 
@@ -33,12 +37,12 @@ export const SecretsService = {
 
     const key = await this.getEncryptionKey();
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    
+
     const encoded = new TextEncoder().encode(value);
     const encrypted = await crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
       key,
-      encoded
+      encoded,
     );
 
     const combined = new Uint8Array(iv.length + encrypted.byteLength);
@@ -55,21 +59,21 @@ export const SecretsService = {
     }
 
     const data = encrypted.slice(ENCRYPTION_PREFIX.length);
-    
+
     if (config.isMock()) {
       return Buffer.from(data, "base64").toString("utf-8");
     }
 
     const key = await this.getEncryptionKey();
     const combined = Buffer.from(data, "base64");
-    
+
     const iv = combined.slice(0, 12);
     const ciphertext = combined.slice(12);
 
     const decrypted = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv },
       key,
-      ciphertext
+      ciphertext,
     );
 
     return new TextDecoder().decode(decrypted);
@@ -77,38 +81,44 @@ export const SecretsService = {
 
   async getEncryptionKey(): Promise<CryptoKey> {
     const keyMaterial = await this.getKeyMaterial();
-    
+
     return crypto.subtle.importKey(
       "raw",
       keyMaterial,
       { name: "AES-GCM" },
       false,
-      ["encrypt", "decrypt"]
+      ["encrypt", "decrypt"],
     );
   },
 
   async getKeyMaterial(): Promise<ArrayBuffer> {
-    const secretKey = process.env.SANDBOX_SECRETS_KEY || "default-dev-key-change-in-production";
-    
-    if (secretKey === "default-dev-key-change-in-production" && !config.isMock()) {
-      log.warn("Using default secrets key - set SANDBOX_SECRETS_KEY in production!");
+    const secretKey =
+      process.env.SANDBOX_SECRETS_KEY || "default-dev-key-change-in-production";
+
+    if (
+      secretKey === "default-dev-key-change-in-production" &&
+      !config.isMock()
+    ) {
+      log.warn(
+        "Using default secrets key - set SANDBOX_SECRETS_KEY in production!",
+      );
     }
 
     const encoder = new TextEncoder();
     const keyData = encoder.encode(secretKey);
-    
+
     const hash = await crypto.subtle.digest("SHA-256", keyData);
     return hash;
   },
 
   generateEnvFile(secrets: Record<string, string>): string {
     const lines: string[] = [];
-    
+
     for (const [key, value] of Object.entries(secrets)) {
       const escapedValue = value.replace(/"/g, '\\"');
       lines.push(`export ${key}="${escapedValue}"`);
     }
-    
+
     return lines.join("\n");
   },
 };

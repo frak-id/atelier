@@ -1,7 +1,8 @@
+import { $ } from "bun";
 import { LVM } from "@frak-sandbox/shared/constants";
 import type { BaseImageId } from "@frak-sandbox/shared/types";
 import { DEFAULT_BASE_IMAGE, getBaseImage } from "@frak-sandbox/shared/types";
-import { exec, commandExists } from "../lib/shell.ts";
+import { commandExists } from "../lib/shell.ts";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
 
@@ -23,21 +24,27 @@ export interface PoolStats {
   volumeCount: number;
 }
 
+const vg = LVM.VG_NAME;
+const thinPool = LVM.THIN_POOL;
+const baseVolume = LVM.BASE_VOLUME;
+const sandboxPrefix = LVM.SANDBOX_PREFIX;
+const prebuildPrefix = LVM.PREBUILD_PREFIX;
+
+async function lvExists(volumePath: string): Promise<boolean> {
+  const result = await $`lvs ${volumePath} --noheadings 2>/dev/null`
+    .quiet()
+    .nothrow();
+  return result.exitCode === 0;
+}
+
 export const StorageService = {
   async isAvailable(): Promise<boolean> {
-    if (config.isMock()) {
-      return true;
-    }
+    if (config.isMock()) return true;
 
     const hasLvm = await commandExists("lvm");
     if (!hasLvm) return false;
 
-    const poolCheck = await exec(
-      `lvs ${LVM.VG_NAME}/${LVM.THIN_POOL} --noheadings 2>/dev/null`,
-      { throws: false }
-    );
-
-    return poolCheck.success;
+    return lvExists(`${vg}/${thinPool}`);
   },
 
   async getPoolStats(): Promise<PoolStats> {
@@ -64,17 +71,20 @@ export const StorageService = {
       };
     }
 
-    const poolInfo = await exec(
-      `lvs ${LVM.VG_NAME}/${LVM.THIN_POOL} -o lv_size,data_percent,metadata_percent --noheadings --units g --nosuffix`,
-      { throws: false }
-    );
+    const poolInfo =
+      await $`lvs ${vg}/${thinPool} -o lv_size,data_percent,metadata_percent --noheadings --units g --nosuffix`
+        .quiet()
+        .nothrow();
 
-    const volumeCount = await exec(
-      `lvs ${LVM.VG_NAME} -o lv_name --noheadings | grep -c '^  sandbox-' || echo 0`,
-      { throws: false }
-    );
+    const volumeCountResult = await $`lvs ${vg} -o lv_name --noheadings`
+      .quiet()
+      .nothrow();
+    const volumeCount = volumeCountResult.stdout
+      .toString()
+      .split("\n")
+      .filter((line) => line.trim().startsWith("sandbox-")).length;
 
-    if (!poolInfo.success) {
+    if (poolInfo.exitCode !== 0) {
       return {
         exists: false,
         dataPercent: 0,
@@ -85,7 +95,10 @@ export const StorageService = {
       };
     }
 
-    const [size, dataPercent, metadataPercent] = poolInfo.stdout.trim().split(/\s+/);
+    const [size, dataPercent, metadataPercent] = poolInfo.stdout
+      .toString()
+      .trim()
+      .split(/\s+/);
     const dataPct = Number.parseFloat(dataPercent || "0");
 
     return {
@@ -94,18 +107,13 @@ export const StorageService = {
       metadataPercent: Number.parseFloat(metadataPercent || "0"),
       totalSize: `${size}G`,
       usedSize: `${((dataPct / 100) * Number.parseFloat(size || "0")).toFixed(1)}G`,
-      volumeCount: Number.parseInt(volumeCount.stdout.trim() || "0", 10),
+      volumeCount,
     };
   },
 
   async hasBaseVolume(): Promise<boolean> {
     if (config.isMock()) return true;
-
-    const result = await exec(
-      `lvs ${LVM.VG_NAME}/${LVM.BASE_VOLUME} --noheadings 2>/dev/null`,
-      { throws: false }
-    );
-    return result.success;
+    return lvExists(`${vg}/${baseVolume}`);
   },
 
   async hasImageVolume(imageId: BaseImageId): Promise<boolean> {
@@ -114,41 +122,34 @@ export const StorageService = {
     const image = getBaseImage(imageId);
     if (!image) return false;
 
-    const result = await exec(
-      `lvs ${LVM.VG_NAME}/${image.volumeName} --noheadings 2>/dev/null`,
-      { throws: false }
-    );
-    return result.success;
+    return lvExists(`${vg}/${image.volumeName}`);
   },
 
   async hasPrebuild(projectId: string): Promise<boolean> {
     if (config.isMock()) return false;
-
-    const result = await exec(
-      `lvs ${LVM.VG_NAME}/${LVM.PREBUILD_PREFIX}${projectId} --noheadings 2>/dev/null`,
-      { throws: false }
-    );
-    return result.success;
+    return lvExists(`${vg}/${prebuildPrefix}${projectId}`);
   },
 
   async createSandboxVolume(
     sandboxId: string,
-    options?: { projectId?: string; baseImage?: BaseImageId }
+    options?: { projectId?: string; baseImage?: BaseImageId },
   ): Promise<string> {
-    const volumeName = `${LVM.SANDBOX_PREFIX}${sandboxId}`;
-    const volumePath = `/dev/${LVM.VG_NAME}/${volumeName}`;
+    const volumeName = `${sandboxPrefix}${sandboxId}`;
+    const volumePath = `/dev/${vg}/${volumeName}`;
     const { projectId, baseImage } = options ?? {};
 
     if (config.isMock()) {
-      log.debug({ sandboxId, projectId, baseImage }, "Mock: sandbox volume creation");
+      log.debug(
+        { sandboxId, projectId, baseImage },
+        "Mock: sandbox volume creation",
+      );
       return volumePath;
     }
 
-    // Priority: prebuild > image volume > legacy base volume
     let sourceVolume: string;
 
     if (projectId && (await this.hasPrebuild(projectId))) {
-      sourceVolume = `${LVM.PREBUILD_PREFIX}${projectId}`;
+      sourceVolume = `${prebuildPrefix}${projectId}`;
     } else if (baseImage && (await this.hasImageVolume(baseImage))) {
       const image = getBaseImage(baseImage);
       sourceVolume = image!.volumeName;
@@ -156,35 +157,34 @@ export const StorageService = {
       const defaultImage = getBaseImage(DEFAULT_BASE_IMAGE);
       sourceVolume = defaultImage!.volumeName;
     } else {
-      sourceVolume = LVM.BASE_VOLUME;
+      sourceVolume = baseVolume;
     }
 
     log.info({ sandboxId, sourceVolume, baseImage }, "Cloning volume");
 
-    await exec(
-      `lvcreate -s -kn -n ${volumeName} ${LVM.VG_NAME}/${sourceVolume}`,
-      { throws: true }
-    );
+    await $`lvcreate -s -kn -n ${volumeName} ${vg}/${sourceVolume}`.quiet();
 
     log.info({ sandboxId, volumePath, sourceVolume }, "Sandbox volume created");
     return volumePath;
   },
 
   async deleteSandboxVolume(sandboxId: string): Promise<void> {
-    const volumeName = `${LVM.SANDBOX_PREFIX}${sandboxId}`;
+    const volumeName = `${sandboxPrefix}${sandboxId}`;
 
     if (config.isMock()) {
       log.debug({ sandboxId }, "Mock: sandbox volume deletion");
       return;
     }
 
-    await exec(`lvremove -f ${LVM.VG_NAME}/${volumeName} 2>/dev/null || true`);
+    await $`lvremove -f ${vg}/${volumeName} 2>/dev/null || true`
+      .quiet()
+      .nothrow();
     log.info({ sandboxId }, "Sandbox volume deleted");
   },
 
   async createPrebuild(projectId: string, sandboxId: string): Promise<void> {
-    const prebuildVolume = `${LVM.PREBUILD_PREFIX}${projectId}`;
-    const sandboxVolume = `${LVM.SANDBOX_PREFIX}${sandboxId}`;
+    const prebuildVolume = `${prebuildPrefix}${projectId}`;
+    const sandboxVolume = `${sandboxPrefix}${sandboxId}`;
 
     if (config.isMock()) {
       log.debug({ projectId, sandboxId }, "Mock: prebuild creation");
@@ -192,11 +192,11 @@ export const StorageService = {
     }
 
     if (await this.hasPrebuild(projectId)) {
-      await exec(`lvremove -f ${LVM.VG_NAME}/${prebuildVolume}`);
+      await $`lvremove -f ${vg}/${prebuildVolume}`.quiet();
       log.info({ projectId }, "Old prebuild removed");
     }
 
-    await exec(`lvcreate -s -n ${prebuildVolume} ${LVM.VG_NAME}/${sandboxVolume}`);
+    await $`lvcreate -s -n ${prebuildVolume} ${vg}/${sandboxVolume}`.quiet();
     log.info({ projectId, sandboxId }, "Prebuild created from sandbox");
   },
 
@@ -206,27 +206,27 @@ export const StorageService = {
       return;
     }
 
-    await exec(`lvremove -f ${LVM.VG_NAME}/${LVM.PREBUILD_PREFIX}${projectId} 2>/dev/null || true`);
+    await $`lvremove -f ${vg}/${prebuildPrefix}${projectId} 2>/dev/null || true`
+      .quiet()
+      .nothrow();
     log.info({ projectId }, "Prebuild deleted");
   },
 
   async listSandboxVolumes(): Promise<VolumeInfo[]> {
-    if (config.isMock()) {
-      return [];
-    }
+    if (config.isMock()) return [];
 
-    const result = await exec(
-      `lvs ${LVM.VG_NAME} -o lv_name,lv_size,data_percent,origin --noheadings | grep '  sandbox-'`,
-      { throws: false }
-    );
+    const result =
+      await $`lvs ${vg} -o lv_name,lv_size,data_percent,origin --noheadings`
+        .quiet()
+        .nothrow();
 
-    if (!result.success || !result.stdout.trim()) {
-      return [];
-    }
+    if (result.exitCode !== 0) return [];
 
     return result.stdout
+      .toString()
       .trim()
       .split("\n")
+      .filter((line) => line.includes("sandbox-"))
       .map((line) => {
         const [name, size, used, origin] = line.trim().split(/\s+/);
         return {
@@ -244,16 +244,14 @@ export const StorageService = {
       return { name: sandboxId, size: "4G", used: "1.2" };
     }
 
-    const result = await exec(
-      `lvs ${LVM.VG_NAME}/sandbox-${sandboxId} -o lv_size,data_percent,origin --noheadings`,
-      { throws: false }
-    );
+    const result =
+      await $`lvs ${vg}/sandbox-${sandboxId} -o lv_size,data_percent,origin --noheadings`
+        .quiet()
+        .nothrow();
 
-    if (!result.success) {
-      return null;
-    }
+    if (result.exitCode !== 0) return null;
 
-    const [size, used, origin] = result.stdout.trim().split(/\s+/);
+    const [size, used, origin] = result.stdout.toString().trim().split(/\s+/);
     return {
       name: sandboxId,
       size: size || "0",

@@ -29,14 +29,15 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       query: SandboxModel.listQuery,
       response: t.Array(SandboxModel.response),
-    }
+    },
   )
   .post(
     "/",
     async ({ body, set }) => {
       const { async: useQueue, ...options } = body;
       const activeCount =
-        sandboxStore.countByStatus("running") + sandboxStore.countByStatus("creating");
+        sandboxStore.countByStatus("running") +
+        sandboxStore.countByStatus("creating");
 
       if (activeCount >= config.defaults.MAX_SANDBOXES) {
         throw new ResourceExhaustedError("sandboxes");
@@ -64,7 +65,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       body: SandboxModel.createQueued,
       response: t.Union([SandboxModel.response, SandboxModel.jobResponse]),
-    }
+    },
   )
   .get(
     "/job/:id",
@@ -100,7 +101,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         error: t.Optional(t.String()),
         result: t.Optional(SandboxModel.response),
       }),
-    }
+    },
   )
   .get(
     "/:id",
@@ -114,7 +115,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       params: SandboxModel.idParam,
       response: SandboxModel.response,
-    }
+    },
   )
   .delete(
     "/:id",
@@ -132,7 +133,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     },
     {
       params: SandboxModel.idParam,
-    }
+    },
   )
   // Agent routes - communicate with sandbox-agent inside VM
   .get(
@@ -148,7 +149,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       params: SandboxModel.idParam,
       detail: { tags: ["sandboxes"], summary: "Get sandbox agent health" },
-    }
+    },
   )
   .get(
     "/:id/metrics",
@@ -163,7 +164,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       params: SandboxModel.idParam,
       detail: { tags: ["sandboxes"], summary: "Get sandbox resource metrics" },
-    }
+    },
   )
   .get(
     "/:id/apps",
@@ -177,8 +178,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     },
     {
       params: SandboxModel.idParam,
-      detail: { tags: ["sandboxes"], summary: "List registered apps in sandbox" },
-    }
+      detail: {
+        tags: ["sandboxes"],
+        summary: "List registered apps in sandbox",
+      },
+    },
   )
   .post(
     "/:id/apps",
@@ -196,8 +200,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         port: t.Number({ minimum: 1, maximum: 65535 }),
         name: t.String(),
       }),
-      detail: { tags: ["sandboxes"], summary: "Register an app port in sandbox" },
-    }
+      detail: {
+        tags: ["sandboxes"],
+        summary: "Register an app port in sandbox",
+      },
+    },
   )
   .delete(
     "/:id/apps/:port",
@@ -214,8 +221,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         id: t.String(),
         port: t.String(),
       }),
-      detail: { tags: ["sandboxes"], summary: "Unregister an app port from sandbox" },
-    }
+      detail: {
+        tags: ["sandboxes"],
+        summary: "Unregister an app port from sandbox",
+      },
+    },
   )
   .post(
     "/:id/exec",
@@ -225,8 +235,13 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         throw new NotFoundError("Sandbox", params.id);
       }
 
-      log.info({ sandboxId: params.id, command: body.command }, "Executing command in sandbox");
-      return AgentClient.exec(params.id, body.command, { timeout: body.timeout });
+      log.info(
+        { sandboxId: params.id, command: body.command },
+        "Executing command in sandbox",
+      );
+      return AgentClient.exec(params.id, body.command, {
+        timeout: body.timeout,
+      });
     },
     {
       params: SandboxModel.idParam,
@@ -235,7 +250,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),
       }),
       detail: { tags: ["sandboxes"], summary: "Execute a command in sandbox" },
-    }
+    },
   )
   .get(
     "/:id/logs/:service",
@@ -257,7 +272,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         lines: t.Optional(t.String()),
       }),
       detail: { tags: ["sandboxes"], summary: "Get service logs from sandbox" },
-    }
+    },
   )
   .get(
     "/:id/services",
@@ -271,6 +286,9 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     },
     {
       params: SandboxModel.idParam,
-      detail: { tags: ["sandboxes"], summary: "Get service status from sandbox" },
-    }
+      detail: {
+        tags: ["sandboxes"],
+        summary: "Get service status from sandbox",
+      },
+    },
   );

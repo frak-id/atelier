@@ -72,7 +72,7 @@ export const AgentClient = {
       method?: "GET" | "POST" | "PUT" | "DELETE";
       body?: unknown;
       timeout?: number;
-    } = {}
+    } = {},
   ): Promise<T> {
     const baseUrl = this.getAgentUrl(sandboxId);
     const url = `${baseUrl}${path}`;
@@ -84,13 +84,17 @@ export const AgentClient = {
     try {
       const response = await fetch(url, {
         method: options.method ?? "GET",
-        headers: options.body ? { "Content-Type": "application/json" } : undefined,
+        headers: options.body
+          ? { "Content-Type": "application/json" }
+          : undefined,
         body: options.body ? JSON.stringify(options.body) : undefined,
         signal: controller.signal,
       });
 
       if (!response.ok) {
-        throw new Error(`Agent request failed: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `Agent request failed: ${response.status} ${response.statusText}`,
+        );
       }
 
       return (await response.json()) as T;
@@ -116,7 +120,7 @@ export const AgentClient = {
    */
   async waitForAgent(
     sandboxId: string,
-    options: { timeout?: number; interval?: number } = {}
+    options: { timeout?: number; interval?: number } = {},
   ): Promise<boolean> {
     const timeout = options.timeout ?? 60000;
     const interval = options.interval ?? 2000;
@@ -163,7 +167,11 @@ export const AgentClient = {
   /**
    * Register an application port
    */
-  async registerApp(sandboxId: string, port: number, name: string): Promise<AppPort> {
+  async registerApp(
+    sandboxId: string,
+    port: number,
+    name: string,
+  ): Promise<AppPort> {
     return this.request<AppPort>(sandboxId, "/apps", {
       method: "POST",
       body: { port, name },
@@ -173,7 +181,10 @@ export const AgentClient = {
   /**
    * Unregister an application port
    */
-  async unregisterApp(sandboxId: string, port: number): Promise<{ success: boolean }> {
+  async unregisterApp(
+    sandboxId: string,
+    port: number,
+  ): Promise<{ success: boolean }> {
     return this.request<{ success: boolean }>(sandboxId, `/apps/${port}`, {
       method: "DELETE",
     });
@@ -185,7 +196,7 @@ export const AgentClient = {
   async exec(
     sandboxId: string,
     command: string,
-    options: { timeout?: number } = {}
+    options: { timeout?: number } = {},
   ): Promise<ExecResult> {
     return this.request<ExecResult>(sandboxId, "/exec", {
       method: "POST",
@@ -200,11 +211,11 @@ export const AgentClient = {
   async logs(
     sandboxId: string,
     service: string,
-    lines: number = 100
+    lines: number = 100,
   ): Promise<{ service: string; content: string }> {
     return this.request<{ service: string; content: string }>(
       sandboxId,
-      `/logs/${service}?lines=${lines}`
+      `/logs/${service}?lines=${lines}`,
     );
   },
 
@@ -219,7 +230,7 @@ export const AgentClient = {
    * Batch check health of multiple sandboxes
    */
   async batchHealth(
-    sandboxIds: string[]
+    sandboxIds: string[],
   ): Promise<Map<string, AgentHealth | { error: string }>> {
     const results = new Map<string, AgentHealth | { error: string }>();
 
@@ -233,7 +244,7 @@ export const AgentClient = {
             error: error instanceof Error ? error.message : String(error),
           });
         }
-      })
+      }),
     );
 
     return results;

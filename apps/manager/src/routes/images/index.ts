@@ -1,5 +1,9 @@
 import { Elysia, t } from "elysia";
-import { getAllImages, getAvailableImages, getBaseImage } from "@frak-sandbox/shared/types";
+import {
+  getAllImages,
+  getAvailableImages,
+  getBaseImage,
+} from "@frak-sandbox/shared/types";
 import { NotFoundError } from "../../lib/errors.ts";
 
 const ImageResponse = t.Object({
@@ -16,7 +20,8 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
   .get(
     "/",
     ({ query }) => {
-      const images = query.all === "true" ? getAllImages() : getAvailableImages();
+      const images =
+        query.all === "true" ? getAllImages() : getAvailableImages();
       return images;
     },
     {
@@ -24,7 +29,7 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
         all: t.Optional(t.String()),
       }),
       response: t.Array(ImageResponse),
-    }
+    },
   )
   .get(
     "/:id",
@@ -40,5 +45,5 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
         id: t.String(),
       }),
       response: ImageResponse,
-    }
+    },
   );

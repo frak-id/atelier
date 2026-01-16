@@ -14,16 +14,22 @@ export async function baseSetup(_args: string[] = []) {
     await exec("apt-get update -qq");
     spinner.message(`Installing ${missingPkgs.length} packages`);
     await exec(
-      `DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${missingPkgs.join(" ")}`
+      `DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${missingPkgs.join(" ")}`,
     );
     spinner.stop("Essential packages installed");
   } else {
     spinner.stop("Essential packages already installed");
   }
 
-  const bunInstalled = await exec("test -x /root/.bun/bin/bun || command -v bun", { throws: false });
+  const bunInstalled = await exec(
+    "test -x /root/.bun/bin/bun || command -v bun",
+    { throws: false },
+  );
   if (bunInstalled.success) {
-    const { stdout } = await exec("/root/.bun/bin/bun --version 2>/dev/null || bun --version", { throws: false });
+    const { stdout } = await exec(
+      "/root/.bun/bin/bun --version 2>/dev/null || bun --version",
+      { throws: false },
+    );
     p.log.success(`Bun already installed: v${stdout}`);
   } else {
     spinner.start("Installing Bun");
@@ -38,7 +44,7 @@ export async function baseSetup(_args: string[] = []) {
     spinner.start("Installing Docker");
     await exec("install -m 0755 -d /etc/apt/keyrings");
     await exec(
-      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
     );
     await exec("chmod a+r /etc/apt/keyrings/docker.gpg");
 
@@ -51,7 +57,7 @@ export async function baseSetup(_args: string[] = []) {
 
     await exec("apt-get update -qq");
     await exec(
-      "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin"
+      "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin",
     );
     await exec("systemctl start docker");
     await exec("systemctl enable docker");
@@ -64,13 +70,13 @@ export async function baseSetup(_args: string[] = []) {
   } else {
     spinner.start("Installing Caddy");
     await exec(
-      "apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl"
+      "apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl",
     );
     await exec(
-      "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg"
+      "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg",
     );
     await exec(
-      "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list"
+      "curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list",
     );
     await exec("apt-get update -qq");
     await exec("apt-get install -y -qq caddy");
@@ -97,16 +103,21 @@ export async function baseSetup(_args: string[] = []) {
   if (!kvmExists.success) {
     spinner.stop("KVM verification failed");
     throw new Error(
-      "/dev/kvm not found. Ensure this is a bare metal server with VT-x/AMD-V enabled."
+      "/dev/kvm not found. Ensure this is a bare metal server with VT-x/AMD-V enabled.",
     );
   }
 
-  await exec("setfacl -m u:root:rw /dev/kvm 2>/dev/null || chmod 666 /dev/kvm", {
-    throws: false,
-  });
+  await exec(
+    "setfacl -m u:root:rw /dev/kvm 2>/dev/null || chmod 666 /dev/kvm",
+    {
+      throws: false,
+    },
+  );
   spinner.stop("KVM verified and accessible");
 
-  const dirsExist = await exec(`test -d ${PATHS.SANDBOX_DIR}/sockets`, { throws: false });
+  const dirsExist = await exec(`test -d ${PATHS.SANDBOX_DIR}/sockets`, {
+    throws: false,
+  });
   if (dirsExist.success) {
     p.log.success("Directory structure already exists");
   } else {
@@ -129,14 +140,16 @@ export async function baseSetup(_args: string[] = []) {
     spinner.stop("Directory structure created");
   }
 
-  const ipForward = await exec("cat /proc/sys/net/ipv4/ip_forward", { throws: false });
+  const ipForward = await exec("cat /proc/sys/net/ipv4/ip_forward", {
+    throws: false,
+  });
   if (ipForward.stdout === "1") {
     p.log.success("IP forwarding already enabled");
   } else {
     spinner.start("Enabling IP forwarding");
     await exec("echo 1 > /proc/sys/net/ipv4/ip_forward");
     await exec(
-      'grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf'
+      'grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf',
     );
     await exec("sysctl -p > /dev/null 2>&1", { throws: false });
     spinner.stop("IP forwarding enabled");
@@ -147,7 +160,7 @@ export async function baseSetup(_args: string[] = []) {
     `Installed: essential packages, Bun, Docker, Caddy
 Verified: KVM support
 Created: ${PATHS.SANDBOX_DIR}`,
-    "Summary"
+    "Summary",
   );
 }
 
@@ -178,9 +191,12 @@ async function getMissingPackages(): Promise<string[]> {
   const missing: string[] = [];
 
   for (const pkg of REQUIRED_PACKAGES) {
-    const result = await exec(`dpkg -s ${pkg} 2>/dev/null | grep -q "Status: install ok"`, {
-      throws: false,
-    });
+    const result = await exec(
+      `dpkg -s ${pkg} 2>/dev/null | grep -q "Status: install ok"`,
+      {
+        throws: false,
+      },
+    );
     if (!result.success) {
       missing.push(pkg);
     }

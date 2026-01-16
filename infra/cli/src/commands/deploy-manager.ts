@@ -14,7 +14,11 @@ export async function deployManager(args: string[] = []) {
       options: [
         { value: "start", label: "Start", hint: "Start the manager service" },
         { value: "stop", label: "Stop", hint: "Stop the manager service" },
-        { value: "restart", label: "Restart", hint: "Restart the manager service" },
+        {
+          value: "restart",
+          label: "Restart",
+          hint: "Restart the manager service",
+        },
         { value: "status", label: "Status", hint: "Show service status" },
         { value: "logs", label: "Logs", hint: "View manager logs" },
       ],
@@ -57,7 +61,9 @@ async function runAction(action: string) {
 async function startService() {
   const serverExists = await fileExists(`${PATHS.APP_DIR}/server.js`);
   if (!serverExists) {
-    throw new Error("server.js not found. Deploy the manager first using 'bun run deploy'");
+    throw new Error(
+      "server.js not found. Deploy the manager first using 'bun run deploy'",
+    );
   }
 
   const spinner = p.spinner();
@@ -87,14 +93,19 @@ async function restartService() {
 }
 
 async function checkHealth(): Promise<boolean> {
-  const result = await exec(`curl -sf http://localhost:${MANAGER_PORT}/health/live`, { throws: false });
+  const result = await exec(
+    `curl -sf http://localhost:${MANAGER_PORT}/health/live`,
+    { throws: false },
+  );
   return result.success;
 }
 
 async function showStatus() {
   console.log("");
 
-  const serviceStatus = await exec(`systemctl is-active ${MANAGER_SERVICE}`, { throws: false });
+  const serviceStatus = await exec(`systemctl is-active ${MANAGER_SERVICE}`, {
+    throws: false,
+  });
   const isRunning = serviceStatus.success;
 
   console.log("Service Status:");
@@ -102,12 +113,17 @@ async function showStatus() {
   console.log(`  Systemd: ${isRunning ? "✓ running" : "✗ stopped"}`);
 
   if (isRunning) {
-    const health = await exec(`curl -sf http://localhost:${MANAGER_PORT}/health`, { throws: false });
+    const health = await exec(
+      `curl -sf http://localhost:${MANAGER_PORT}/health`,
+      { throws: false },
+    );
 
     if (health.success) {
       try {
         const data = JSON.parse(health.stdout);
-        console.log(`  Health:  ${data.status === "ok" ? "✓ healthy" : "⚠ degraded"}`);
+        console.log(
+          `  Health:  ${data.status === "ok" ? "✓ healthy" : "⚠ degraded"}`,
+        );
         console.log(`  Uptime:  ${data.uptime}s`);
         console.log("  Checks:");
         for (const [key, value] of Object.entries(data.checks || {})) {

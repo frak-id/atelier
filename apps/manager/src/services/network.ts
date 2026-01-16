@@ -1,4 +1,4 @@
-import { exec } from "../lib/shell.ts";
+import { $ } from "bun";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
 
@@ -50,10 +50,10 @@ export const NetworkService = {
       return;
     }
 
-    await exec(`ip link del ${tapDevice} 2>/dev/null || true`);
-    await exec(`ip tuntap add dev ${tapDevice} mode tap`);
-    await exec(`ip link set dev ${tapDevice} master ${config.network.BRIDGE_NAME}`);
-    await exec(`ip link set dev ${tapDevice} up`);
+    await $`ip link del ${tapDevice} 2>/dev/null || true`.quiet().nothrow();
+    await $`ip tuntap add dev ${tapDevice} mode tap`.quiet();
+    await $`ip link set dev ${tapDevice} master ${config.network.BRIDGE_NAME}`.quiet();
+    await $`ip link set dev ${tapDevice} up`.quiet();
 
     log.info({ tapDevice }, "TAP device created");
   },
@@ -64,7 +64,7 @@ export const NetworkService = {
       return;
     }
 
-    await exec(`ip link del ${tapDevice} 2>/dev/null || true`);
+    await $`ip link del ${tapDevice} 2>/dev/null || true`.quiet().nothrow();
     log.info({ tapDevice }, "TAP device deleted");
   },
 
@@ -84,30 +84,35 @@ export const NetworkService = {
       return { exists: true, ip: config.network.BRIDGE_IP, interfaces: [] };
     }
 
-    const bridgeCheck = await exec(
-      `ip link show ${config.network.BRIDGE_NAME}`,
-      { throws: false }
-    );
+    const bridgeName = config.network.BRIDGE_NAME;
+    const bridgeCheck = await $`ip link show ${bridgeName}`.quiet().nothrow();
 
-    if (!bridgeCheck.success) {
+    if (bridgeCheck.exitCode !== 0) {
       return { exists: false, ip: null, interfaces: [] };
     }
 
-    const ipResult = await exec(
-      `ip -j addr show ${config.network.BRIDGE_NAME} | jq -r '.[0].addr_info[0].local // empty'`,
-      { throws: false }
-    );
+    const ipResult = await $`ip -j addr show ${bridgeName}`.quiet().nothrow();
+    let ip: string | null = null;
+    if (ipResult.exitCode === 0) {
+      try {
+        const parsed = JSON.parse(ipResult.stdout.toString());
+        ip = parsed[0]?.addr_info?.[0]?.local ?? null;
+      } catch {
+        ip = null;
+      }
+    }
 
-    const interfacesResult = await exec(
-      `bridge link show master ${config.network.BRIDGE_NAME} 2>/dev/null | awk '{print $2}' | tr -d ':'`,
-      { throws: false }
-    );
+    const interfacesResult =
+      await $`bridge link show master ${bridgeName} 2>/dev/null`
+        .quiet()
+        .nothrow();
+    const interfaces = interfacesResult.stdout
+      .toString()
+      .split("\n")
+      .map((line) => line.match(/^\d+:\s+(\S+):/)?.[1])
+      .filter((iface): iface is string => !!iface);
 
-    return {
-      exists: true,
-      ip: ipResult.stdout || null,
-      interfaces: interfacesResult.stdout.split("\n").filter(Boolean),
-    };
+    return { exists: true, ip, interfaces };
   },
 
   async listTapDevices(): Promise<string[]> {
@@ -115,11 +120,13 @@ export const NetworkService = {
       return [];
     }
 
-    const result = await exec(
-      `ip link show type tuntap | grep -E '^[0-9]+: tap-' | awk -F': ' '{print $2}'`,
-      { throws: false }
-    );
+    const result = await $`ip link show type tuntap`.quiet().nothrow();
+    if (result.exitCode !== 0) return [];
 
-    return result.stdout.split("\n").filter(Boolean);
+    return result.stdout
+      .toString()
+      .split("\n")
+      .map((line) => line.match(/^\d+:\s+(tap-\S+):/)?.[1])
+      .filter((device): device is string => !!device);
   },
 };

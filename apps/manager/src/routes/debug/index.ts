@@ -68,7 +68,7 @@ export const debugRoutes = new Elysia({ prefix: "/debug" })
     },
     {
       params: t.Object({ id: t.String() }),
-    }
+    },
   )
   .get("/store", () => ({
     sandboxes: sandboxStore.getAll(),

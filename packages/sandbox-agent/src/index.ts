@@ -42,7 +42,9 @@ async function loadConfig(): Promise<SandboxConfig | null> {
 
 async function checkPort(port: number): Promise<boolean> {
   try {
-    const { stdout } = await exec(`ss -tlnp 'sport = :${port}' 2>/dev/null | grep -q LISTEN && echo yes || echo no`);
+    const { stdout } = await exec(
+      `ss -tlnp 'sport = :${port}' 2>/dev/null | grep -q LISTEN && echo yes || echo no`,
+    );
     return stdout.trim() === "yes";
   } catch {
     return false;
@@ -115,7 +117,10 @@ function getDiskUsage(): { total: number; used: number; free: number } {
   }
 }
 
-async function getServiceLogs(service: string, lines: number = 100): Promise<string> {
+async function getServiceLogs(
+  service: string,
+  lines: number = 100,
+): Promise<string> {
   const logPath = `${LOG_DIR}/${service}.log`;
   try {
     const fileInfo = await stat(logPath);

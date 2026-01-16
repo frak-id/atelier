@@ -44,7 +44,7 @@ export const SystemService = {
   async getCpuUsage(): Promise<number> {
     const result = await exec(
       `top -bn1 | grep "Cpu(s)" | sed "s/.*, *\\([0-9.]*\\)%* id.*/\\1/" | awk '{print 100 - $1}'`,
-      { throws: false }
+      { throws: false },
     );
     return Number.parseFloat(result.stdout) || 0;
   },
@@ -54,14 +54,14 @@ export const SystemService = {
     memoryTotal: number;
     memoryPercent: number;
   }> {
-    const result = await exec(
-      `free -b | awk '/Mem:/ {print $2, $3}'`,
-      { throws: false }
-    );
+    const result = await exec(`free -b | awk '/Mem:/ {print $2, $3}'`, {
+      throws: false,
+    });
     const [total, used] = result.stdout.split(" ").map(Number);
     const memoryTotal = total || 0;
     const memoryUsed = used || 0;
-    const memoryPercent = memoryTotal > 0 ? (memoryUsed / memoryTotal) * 100 : 0;
+    const memoryPercent =
+      memoryTotal > 0 ? (memoryUsed / memoryTotal) * 100 : 0;
 
     return { memoryUsed, memoryTotal, memoryPercent };
   },
@@ -73,7 +73,7 @@ export const SystemService = {
   }> {
     const result = await exec(
       `df -B1 ${config.paths.SANDBOX_DIR} 2>/dev/null | awk 'NR==2 {print $2, $3}'`,
-      { throws: false }
+      { throws: false },
     );
     const [total, used] = result.stdout.split(" ").map(Number);
     const diskTotal = total || 0;
@@ -97,9 +97,7 @@ export const SystemService = {
       return result;
     }
 
-    const activeSandboxIds = new Set(
-      sandboxStore.getAll().map((s) => s.id)
-    );
+    const activeSandboxIds = new Set(sandboxStore.getAll().map((s) => s.id));
 
     const socketCleanup = await this.cleanupOrphanedSockets(activeSandboxIds);
     result.socketsRemoved = socketCleanup.count;
@@ -115,14 +113,16 @@ export const SystemService = {
     return result;
   },
 
-  async cleanupOrphanedSockets(activeSandboxIds: Set<string>): Promise<{ count: number }> {
+  async cleanupOrphanedSockets(
+    activeSandboxIds: Set<string>,
+  ): Promise<{ count: number }> {
     if (!(await dirExists(config.paths.SOCKET_DIR))) {
       return { count: 0 };
     }
 
     const result = await exec(
       `ls ${config.paths.SOCKET_DIR}/*.sock 2>/dev/null | xargs -I{} basename {} .sock`,
-      { throws: false }
+      { throws: false },
     );
 
     const sockets = result.stdout.split("\n").filter(Boolean);
@@ -130,7 +130,9 @@ export const SystemService = {
 
     for (const socketId of sockets) {
       if (!activeSandboxIds.has(socketId)) {
-        await exec(`rm -f ${config.paths.SOCKET_DIR}/${socketId}.sock ${config.paths.SOCKET_DIR}/${socketId}.pid`);
+        await exec(
+          `rm -f ${config.paths.SOCKET_DIR}/${socketId}.sock ${config.paths.SOCKET_DIR}/${socketId}.pid`,
+        );
         count++;
       }
     }
@@ -138,14 +140,16 @@ export const SystemService = {
     return { count };
   },
 
-  async cleanupOrphanedOverlays(activeSandboxIds: Set<string>): Promise<{ count: number; spaceFreed: number }> {
+  async cleanupOrphanedOverlays(
+    activeSandboxIds: Set<string>,
+  ): Promise<{ count: number; spaceFreed: number }> {
     if (!(await dirExists(config.paths.OVERLAY_DIR))) {
       return { count: 0, spaceFreed: 0 };
     }
 
     const result = await exec(
       `ls ${config.paths.OVERLAY_DIR}/*.ext4 2>/dev/null | xargs -I{} basename {} .ext4`,
-      { throws: false }
+      { throws: false },
     );
 
     const overlays = result.stdout.split("\n").filter(Boolean);
@@ -156,7 +160,7 @@ export const SystemService = {
       if (!activeSandboxIds.has(overlayId)) {
         const sizeResult = await exec(
           `stat -c%s ${config.paths.OVERLAY_DIR}/${overlayId}.ext4`,
-          { throws: false }
+          { throws: false },
         );
         spaceFreed += Number.parseInt(sizeResult.stdout, 10) || 0;
         await exec(`rm -f ${config.paths.OVERLAY_DIR}/${overlayId}.ext4`);
@@ -167,14 +171,16 @@ export const SystemService = {
     return { count, spaceFreed };
   },
 
-  async cleanupOrphanedTaps(activeSandboxIds: Set<string>): Promise<{ count: number }> {
+  async cleanupOrphanedTaps(
+    activeSandboxIds: Set<string>,
+  ): Promise<{ count: number }> {
     const tapDevices = await NetworkService.listTapDevices();
     let count = 0;
 
     for (const tap of tapDevices) {
       const sandboxId = tap.replace(/^tap-/, "");
       const matchingSandbox = Array.from(activeSandboxIds).find((id) =>
-        id.startsWith(sandboxId)
+        id.startsWith(sandboxId),
       );
 
       if (!matchingSandbox) {

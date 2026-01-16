@@ -1,0 +1,113 @@
+type RequestOptions = {
+  method?: "GET" | "PUT" | "PATCH";
+  body?: unknown;
+};
+
+export class FirecrackerClient {
+  constructor(private socketPath: string) {}
+
+  private async request<T = unknown>(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<T> {
+    const { method = "GET", body } = options;
+
+    const response = await fetch(`http://localhost${path}`, {
+      method,
+      unix: this.socketPath,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    } as RequestInit);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new Error(
+        `Firecracker API error [${response.status}]: ${errorText}`,
+      );
+    }
+
+    const text = await response.text();
+    if (!text) return undefined as T;
+
+    return JSON.parse(text) as T;
+  }
+
+  async getState(): Promise<{ state: string }> {
+    return this.request("/");
+  }
+
+  async setBootSource(kernelPath: string, bootArgs: string): Promise<void> {
+    await this.request("/boot-source", {
+      method: "PUT",
+      body: { kernel_image_path: kernelPath, boot_args: bootArgs },
+    });
+  }
+
+  async setDrive(
+    driveId: string,
+    hostPath: string,
+    isRoot: boolean,
+    isReadOnly = false,
+  ): Promise<void> {
+    await this.request(`/drives/${driveId}`, {
+      method: "PUT",
+      body: {
+        drive_id: driveId,
+        path_on_host: hostPath,
+        is_root_device: isRoot,
+        is_read_only: isReadOnly,
+      },
+    });
+  }
+
+  async setNetworkInterface(
+    ifaceId: string,
+    guestMac: string,
+    hostDevName: string,
+  ): Promise<void> {
+    await this.request(`/network-interfaces/${ifaceId}`, {
+      method: "PUT",
+      body: {
+        iface_id: ifaceId,
+        guest_mac: guestMac,
+        host_dev_name: hostDevName,
+      },
+    });
+  }
+
+  async setCpuConfig(configPath: string): Promise<boolean> {
+    try {
+      const configFile = Bun.file(configPath);
+      if (!(await configFile.exists())) return false;
+
+      const config = await configFile.json();
+      await this.request("/cpu-config", { method: "PUT", body: config });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async setMachineConfig(vcpuCount: number, memSizeMib: number): Promise<void> {
+    await this.request("/machine-config", {
+      method: "PUT",
+      body: { vcpu_count: vcpuCount, mem_size_mib: memSizeMib },
+    });
+  }
+
+  async start(): Promise<void> {
+    await this.request("/actions", {
+      method: "PUT",
+      body: { action_type: "InstanceStart" },
+    });
+  }
+
+  async isRunning(): Promise<boolean> {
+    try {
+      const state = await this.getState();
+      return state.state === "Running";
+    } catch {
+      return false;
+    }
+  }
+}
