@@ -25,5 +25,13 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  "references": [
+    { "path": "./apps/manager" },
+    { "path": "./apps/dashboard" },
+    { "path": "./packages/shared" },
+    { "path": "./packages/sandbox-agent" },
+    { "path": "./infra/cli" }
+  ],
+  "files": []
 }

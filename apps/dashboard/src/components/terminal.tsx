@@ -21,7 +21,7 @@ export function SandboxTerminal({ terminalUrl }: TerminalProps) {
     useState<ConnectionState>("disconnected");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const wsUrl = terminalUrl.replace(/^https?:/, "wss:") + "/ws";
+  const wsUrl = `${terminalUrl.replace(/^https?:/, "wss:")}/ws`;
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -46,7 +46,7 @@ export function SandboxTerminal({ terminalUrl }: TerminalProps) {
       if (fitAddonRef.current && terminalRef.current) {
         fitAddonRef.current.fit();
         const { cols, rows } = terminalRef.current;
-        ws.send("2" + JSON.stringify({ columns: cols, rows }));
+        ws.send(`2${JSON.stringify({ columns: cols, rows })}`);
       }
     };
 
@@ -113,13 +113,13 @@ export function SandboxTerminal({ terminalUrl }: TerminalProps) {
 
     terminal.onData((data) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send("0" + data);
+        wsRef.current.send(`0${data}`);
       }
     });
 
     terminal.onResize(({ cols, rows }) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send("2" + JSON.stringify({ columns: cols, rows }));
+        wsRef.current.send(`2${JSON.stringify({ columns: cols, rows })}`);
       }
     });
 

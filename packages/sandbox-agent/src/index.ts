@@ -386,7 +386,7 @@ const app = new Elysia({ adapter: node() })
           contentType,
           size: stats.size,
         };
-      } catch (error) {
+      } catch (_error) {
         set.status = 404;
         return { error: "File not found or not readable" };
       }

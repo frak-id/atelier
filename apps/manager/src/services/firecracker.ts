@@ -123,7 +123,11 @@ export const FirecrackerService = {
     SandboxRepository.updateStatus(sandboxId, "stopped");
     log.info({ sandboxId }, "Sandbox stopped");
 
-    return SandboxRepository.getById(sandboxId)!;
+    const updated = SandboxRepository.getById(sandboxId);
+    if (!updated) {
+      throw new Error(`Sandbox not found after stop: ${sandboxId}`);
+    }
+    return updated;
   },
 
   async start(sandboxId: string): Promise<Sandbox> {
@@ -165,7 +169,11 @@ export const FirecrackerService = {
     SandboxRepository.updateStatus(sandboxId, "running");
     log.info({ sandboxId }, "Sandbox started");
 
-    return SandboxRepository.getById(sandboxId)!;
+    const updated = SandboxRepository.getById(sandboxId);
+    if (!updated) {
+      throw new Error(`Sandbox not found after start: ${sandboxId}`);
+    }
+    return updated;
   },
 
   async getFirecrackerState(sandboxId: string): Promise<unknown> {

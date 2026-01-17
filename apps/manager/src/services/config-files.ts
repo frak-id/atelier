@@ -149,7 +149,11 @@ export const ConfigFilesService = {
     db.update(configFiles).set(updates).where(eq(configFiles.id, id)).run();
     log.info({ id, path: existing.path }, "Config file updated");
 
-    return this.getById(id)!;
+    const updated = this.getById(id);
+    if (!updated) {
+      throw new Error(`Config file not found after update: ${id}`);
+    }
+    return updated;
   },
 
   delete(id: string): void {

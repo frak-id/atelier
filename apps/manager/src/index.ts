@@ -135,5 +135,3 @@ app.listen(
     logger.info({ reconcileResult }, "Startup reconciliation completed");
   },
 );
-
-export type App = typeof app;

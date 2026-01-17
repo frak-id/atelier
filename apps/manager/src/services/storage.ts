@@ -4,7 +4,6 @@ import { DEFAULT_BASE_IMAGE, getBaseImage } from "@frak-sandbox/shared/types";
 import { $ } from "bun";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
-import { commandExists } from "../lib/shell.ts";
 
 const log = createChildLogger("storage");
 
@@ -32,7 +31,6 @@ const sandboxPrefix = LVM.SANDBOX_PREFIX;
 const LVCREATE = "/usr/sbin/lvcreate";
 const LVREMOVE = "/usr/sbin/lvremove";
 const LVS = "/usr/sbin/lvs";
-const VGS = "/usr/sbin/vgs";
 const prebuildPrefix = LVM.PREBUILD_PREFIX;
 
 async function lvExists(volumePath: string): Promise<boolean> {
