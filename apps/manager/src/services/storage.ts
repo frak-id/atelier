@@ -10,14 +10,14 @@ import {
 
 const log = createChildLogger("storage");
 
-export interface VolumeInfo {
+interface VolumeInfo {
   name: string;
   size: string;
   used: string;
   origin?: string;
 }
 
-export interface PoolStats {
+interface PoolStats {
   exists: boolean;
   dataPercent: number;
   metadataPercent: number;

@@ -29,7 +29,7 @@ export function formatDuration(seconds: number): string {
   return parts.join(" ");
 }
 
-export function formatDate(date: string | Date): string {
+export function formatDate(date: string | Date | number): string {
   return new Date(date).toLocaleString();
 }
 

@@ -3,12 +3,6 @@ import { createChildLogger } from "../lib/logger.ts";
 
 const log = createChildLogger("caddy");
 
-export interface CaddyRoute {
-  sandboxId: string;
-  subdomain: string;
-  upstream: string;
-}
-
 export const CaddyService = {
   async registerRoutes(
     sandboxId: string,

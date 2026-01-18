@@ -11,7 +11,7 @@ const log = createChildLogger("agent");
 const AGENT_PORT = 9999;
 const DEFAULT_TIMEOUT = 10000;
 
-export interface AgentHealth {
+interface AgentHealth {
   status: string;
   sandboxId?: string;
   services: {
@@ -22,32 +22,32 @@ export interface AgentHealth {
   uptime: number;
 }
 
-export interface AgentMetrics {
+interface AgentMetrics {
   cpu: number;
   memory: { total: number; used: number; free: number };
   disk: { total: number; used: number; free: number };
   timestamp: string;
 }
 
-export interface AppPort {
+interface AppPort {
   port: number;
   name: string;
   registeredAt: string;
 }
 
-export interface ServiceStatus {
+interface ServiceStatus {
   name: string;
   running: boolean;
   pid?: number;
 }
 
-export interface ExecResult {
+interface ExecResult {
   exitCode: number;
   stdout: string;
   stderr: string;
 }
 
-export interface EditorConfig {
+interface EditorConfig {
   vscode: {
     settings: Record<string, unknown>;
     extensions: string[];
@@ -335,7 +335,7 @@ export const AgentClient = {
   },
 };
 
-export interface DiscoveredConfig {
+interface DiscoveredConfig {
   path: string;
   displayPath: string;
   category: "opencode" | "vscode" | "other";
@@ -343,7 +343,7 @@ export interface DiscoveredConfig {
   size?: number;
 }
 
-export interface ConfigFileContent {
+interface ConfigFileContent {
   path: string;
   displayPath: string;
   content: string;

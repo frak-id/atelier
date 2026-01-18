@@ -5,7 +5,7 @@ import {
   PATHS,
 } from "@frak-sandbox/shared/constants";
 
-export type Mode = "production" | "mock";
+type Mode = "production" | "mock";
 
 function getMode(): Mode {
   const mode = process.env.SANDBOX_MODE;

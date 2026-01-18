@@ -87,12 +87,3 @@ export async function isValidElf(path: string): Promise<boolean> {
     return false;
   }
 }
-
-export async function dirExists(path: string): Promise<boolean> {
-  try {
-    const stat = await Bun.file(path).stat();
-    return stat?.isDirectory?.() ?? false;
-  } catch {
-    return false;
-  }
-}

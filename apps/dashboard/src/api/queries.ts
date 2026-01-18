@@ -4,12 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { api } from "./client";
-import {
-  deleteOpenCodeSession,
-  fetchOpenCodeHealth,
-  fetchOpenCodeMessages,
-  fetchOpenCodeSessions,
-} from "./opencode";
+import { deleteOpenCodeSession, fetchOpenCodeSessions } from "./opencode";
 
 function unwrap<T>(result: { data: T; error: unknown }): T {
   if (result.error) {
@@ -18,7 +13,7 @@ function unwrap<T>(result: { data: T; error: unknown }): T {
   return result.data;
 }
 
-export const queryKeys = {
+const queryKeys = {
   health: ["health"] as const,
   sandboxes: {
     all: ["sandboxes"] as const,
@@ -97,32 +92,11 @@ export const sandboxDetailQuery = (id: string) =>
     refetchInterval: 5000,
   });
 
-export const sandboxJobQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.job(id),
-    queryFn: async () => unwrap(await api.api.sandboxes.job({ id }).get()),
-    refetchInterval: 2000,
-  });
-
-export const sandboxHealthQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.health(id),
-    queryFn: async () => unwrap(await api.api.sandboxes({ id }).health.get()),
-    refetchInterval: 10000,
-  });
-
 export const sandboxMetricsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.metrics(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).metrics.get()),
     refetchInterval: 5000,
-  });
-
-export const sandboxAppsQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.apps(id),
-    queryFn: async () => unwrap(await api.api.sandboxes({ id }).apps.get()),
-    refetchInterval: 10000,
   });
 
 export const sandboxServicesQuery = (id: string) =>
@@ -298,27 +272,12 @@ export function useSystemCleanup() {
   });
 }
 
-export const opencodeHealthQuery = (baseUrl: string) =>
-  queryOptions({
-    queryKey: queryKeys.opencode.health(baseUrl),
-    queryFn: () => fetchOpenCodeHealth(baseUrl),
-    refetchInterval: 30000,
-    enabled: !!baseUrl,
-  });
-
 export const opencodeSessionsQuery = (baseUrl: string) =>
   queryOptions({
     queryKey: queryKeys.opencode.sessions(baseUrl),
     queryFn: () => fetchOpenCodeSessions(baseUrl),
     refetchInterval: 10000,
     enabled: !!baseUrl,
-  });
-
-export const opencodeMessagesQuery = (baseUrl: string, sessionId: string) =>
-  queryOptions({
-    queryKey: queryKeys.opencode.messages(baseUrl, sessionId),
-    queryFn: () => fetchOpenCodeMessages(baseUrl, sessionId),
-    enabled: !!baseUrl && !!sessionId,
   });
 
 export function useDeleteOpenCodeSession(baseUrl: string) {
@@ -344,17 +303,6 @@ export const configFilesListQuery = (params?: {
       unwrap(
         await api.api["config-files"].get({
           query: params as Record<string, string>,
-        }),
-      ),
-  });
-
-export const configFileMergedQuery = (workspaceId?: string) =>
-  queryOptions({
-    queryKey: queryKeys.configFiles.merged(workspaceId),
-    queryFn: async () =>
-      unwrap(
-        await api.api["config-files"].merged.get({
-          query: workspaceId ? { workspaceId } : {},
         }),
       ),
   });

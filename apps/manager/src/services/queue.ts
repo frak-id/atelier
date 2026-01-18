@@ -6,9 +6,9 @@ import type { CreateSandboxBody, Sandbox } from "../schemas/index.ts";
 
 const log = createChildLogger("queue");
 
-export type JobStatus = "queued" | "running" | "completed" | "failed";
+type JobStatus = "queued" | "running" | "completed" | "failed";
 
-export interface SpawnJob {
+interface SpawnJob {
   id: string;
   options: CreateSandboxBody;
   status: JobStatus;
@@ -19,7 +19,7 @@ export interface SpawnJob {
   completedAt?: string;
 }
 
-export interface QueueStats {
+interface QueueStats {
   queued: number;
   running: number;
   completed: number;

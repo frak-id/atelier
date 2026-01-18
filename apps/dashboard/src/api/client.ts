@@ -10,17 +10,9 @@ export const api = treaty<ManagerApp>(API_HOST);
 export type {
   ConfigFile,
   ConfigFileContentType,
-  ConfigFileScope,
-  GitSource,
-  GitSourceType,
   Sandbox,
-  SandboxRuntime,
-  SandboxStatus,
   Workspace,
-  WorkspaceConfig,
 } from "@frak-sandbox/manager/types";
-
-export type { BaseImage } from "@frak-sandbox/shared/types";
 
 // Infer GitHub repository type from API response
 type GitHubReposResponse = Awaited<

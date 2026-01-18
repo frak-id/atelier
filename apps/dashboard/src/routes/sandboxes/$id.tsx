@@ -470,9 +470,9 @@ function OpenCodeSessions({ opencodeUrl }: { opencodeUrl: string }) {
                   <div className="text-sm text-muted-foreground">
                     ID: {session.id}
                   </div>
-                  {session.createdAt && (
+                  {session.time.created && (
                     <div className="text-xs text-muted-foreground">
-                      Created: {formatDate(session.createdAt)}
+                      Created: {formatDate(session.time.created)}
                     </div>
                   )}
                 </div>
