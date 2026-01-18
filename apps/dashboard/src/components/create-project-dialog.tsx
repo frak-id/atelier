@@ -1,6 +1,12 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
-import { imageListQuery, useCreateProject } from "@/api/queries";
+import {
+  githubStatusQuery,
+  imageListQuery,
+  useCreateProject,
+} from "@/api/queries";
+import { RepositoryPicker } from "@/components/repository-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,8 +37,10 @@ export function CreateProjectDialog({
   onOpenChange,
 }: CreateProjectDialogProps) {
   const { data: images } = useSuspenseQuery(imageListQuery());
+  const { data: githubStatus } = useQuery(githubStatusQuery);
   const createMutation = useCreateProject();
 
+  const [showManualUrl, setShowManualUrl] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     gitUrl: "",
@@ -43,6 +51,8 @@ export function CreateProjectDialog({
     initCommands: "",
     startCommands: "",
   });
+
+  const isGitHubConnected = githubStatus?.connected === true;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,16 +113,52 @@ export function CreateProjectDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="gitUrl">Git Repository URL</Label>
-              <Input
-                id="gitUrl"
-                required
-                placeholder="https://github.com/org/repo.git"
-                value={formData.gitUrl}
-                onChange={(e) =>
-                  setFormData({ ...formData, gitUrl: e.target.value })
-                }
-              />
+              <Label>Git Repository</Label>
+              {isGitHubConnected && !showManualUrl ? (
+                <div className="space-y-2">
+                  <RepositoryPicker
+                    value={formData.gitUrl}
+                    onSelect={(repo) => {
+                      setFormData({
+                        ...formData,
+                        gitUrl: repo.cloneUrl,
+                        defaultBranch: repo.defaultBranch,
+                        name: formData.name || repo.name,
+                      });
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowManualUrl(true)}
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                    Or enter URL manually
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Input
+                    id="gitUrl"
+                    required
+                    placeholder="https://github.com/org/repo.git"
+                    value={formData.gitUrl}
+                    onChange={(e) =>
+                      setFormData({ ...formData, gitUrl: e.target.value })
+                    }
+                  />
+                  {isGitHubConnected && (
+                    <button
+                      type="button"
+                      onClick={() => setShowManualUrl(false)}
+                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                    >
+                      <ChevronUp className="h-3 w-3" />
+                      Select from GitHub
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

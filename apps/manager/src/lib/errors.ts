@@ -43,3 +43,10 @@ export class ResourceExhaustedError extends SandboxError {
     this.name = "ResourceExhaustedError";
   }
 }
+
+export class UnauthorizedError extends SandboxError {
+  constructor(message: string) {
+    super(message, "UNAUTHORIZED", 401);
+    this.name = "UnauthorizedError";
+  }
+}

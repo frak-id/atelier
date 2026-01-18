@@ -15,11 +15,33 @@ const REMOTE_APP_DIR = "/opt/frak-sandbox";
 const REMOTE_IMAGES_DIR = `${REMOTE_APP_DIR}/infra/images`;
 const REMOTE_DASHBOARD_DIR = `${REMOTE_APP_DIR}/apps/dashboard`;
 
-const { SSH_KEY_PATH, SSH_USER, SSH_HOST, SSH_KEY_PASSPHRASE } = process.env;
+const {
+  SSH_KEY_PATH,
+  SSH_USER,
+  SSH_HOST,
+  SSH_KEY_PASSPHRASE,
+  GITHUB_CLIENT_ID,
+  GITHUB_CLIENT_SECRET,
+  GITHUB_CALLBACK_URL,
+  DASHBOARD_URL,
+} = process.env;
 
 async function main() {
   if (!SSH_KEY_PATH || !SSH_USER || !SSH_HOST) {
     console.error("Missing env: SSH_KEY_PATH, SSH_USER, SSH_HOST");
+    console.error("Set in .env or export them");
+    process.exit(1);
+  }
+
+  if (
+    !GITHUB_CLIENT_ID ||
+    !GITHUB_CLIENT_SECRET ||
+    !GITHUB_CALLBACK_URL ||
+    !DASHBOARD_URL
+  ) {
+    console.error(
+      "Missing GitHub OAuth env: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_CALLBACK_URL, DASHBOARD_URL",
+    );
     console.error("Set in .env or export them");
     process.exit(1);
   }
@@ -85,10 +107,20 @@ async function main() {
   await scpDir(`${IMAGES_DIR}/dev-base`, REMOTE_IMAGES_DIR);
   console.log("   ✓ Base Images");
 
-  await scp(
+  const managerServiceTemplate = await Bun.file(
     `${INFRA_DIR}/systemd/frak-sandbox-manager.service`,
-    "/etc/systemd/system/",
-  );
+  ).text();
+  const managerService = managerServiceTemplate
+    .replace("{{GITHUB_CLIENT_ID}}", process.env.GITHUB_CLIENT_ID || "")
+    .replace("{{GITHUB_CLIENT_SECRET}}", process.env.GITHUB_CLIENT_SECRET || "")
+    .replace("{{GITHUB_CALLBACK_URL}}", process.env.GITHUB_CALLBACK_URL || "")
+    .replace("{{DASHBOARD_URL}}", process.env.DASHBOARD_URL || "");
+
+  const tmpServicePath = `/tmp/frak-sandbox-manager-${Date.now()}.service`;
+  await Bun.write(tmpServicePath, managerService);
+  await scp(tmpServicePath, "/etc/systemd/system/frak-sandbox-manager.service");
+  await $`rm ${tmpServicePath}`;
+
   await scp(
     `${INFRA_DIR}/systemd/frak-sandbox-network.service`,
     "/etc/systemd/system/",

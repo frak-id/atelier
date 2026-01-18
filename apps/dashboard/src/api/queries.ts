@@ -8,6 +8,7 @@ import {
   type CreateConfigFileOptions,
   type CreateProjectOptions,
   type CreateSandboxOptions,
+  type GitHubReposParams,
   type UpdateConfigFileOptions,
   type UpdateProjectOptions,
 } from "./client";
@@ -62,6 +63,10 @@ export const queryKeys = {
     detail: (id: string) => ["configFiles", "detail", id] as const,
     merged: (projectId?: string) =>
       ["configFiles", "merged", projectId] as const,
+  },
+  github: {
+    status: ["github", "status"] as const,
+    repos: (params?: GitHubReposParams) => ["github", "repos", params] as const,
   },
 };
 
@@ -369,6 +374,28 @@ export function useExtractConfig(sandboxId: string) {
     mutationFn: (path: string) => api.sandboxes.extractConfig(sandboxId, path),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
+    },
+  });
+}
+
+export const githubStatusQuery = queryOptions({
+  queryKey: queryKeys.github.status,
+  queryFn: () => api.github.status(),
+  staleTime: 60000,
+});
+
+export const githubReposQuery = (params?: GitHubReposParams) =>
+  queryOptions({
+    queryKey: queryKeys.github.repos(params),
+    queryFn: () => api.github.repos(params),
+  });
+
+export function useGitHubLogout() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.github.logout(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.github.status });
     },
   });
 }

@@ -9,6 +9,8 @@ import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import {
+  type GitHubConnectionRow,
+  githubConnections,
   type PrebuildStatus,
   type ProjectRow,
   projects,
@@ -304,5 +306,115 @@ export const ProjectRepository = {
       .from(projects)
       .get();
     return result?.count ?? 0;
+  },
+};
+
+export interface GitHubConnection {
+  id: string;
+  githubUserId: string;
+  githubUsername: string;
+  avatarUrl?: string;
+  accessToken: string;
+  scope: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToGitHubConnection(row: GitHubConnectionRow): GitHubConnection {
+  return {
+    id: row.id,
+    githubUserId: row.githubUserId,
+    githubUsername: row.githubUsername,
+    avatarUrl: row.avatarUrl ?? undefined,
+    accessToken: row.accessToken,
+    scope: row.scope,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export const GitHubConnectionRepository = {
+  get(): GitHubConnection | undefined {
+    const row = getDatabase().select().from(githubConnections).get();
+    return row ? rowToGitHubConnection(row) : undefined;
+  },
+
+  getByGitHubUserId(githubUserId: string): GitHubConnection | undefined {
+    const row = getDatabase()
+      .select()
+      .from(githubConnections)
+      .where(eq(githubConnections.githubUserId, githubUserId))
+      .get();
+    return row ? rowToGitHubConnection(row) : undefined;
+  },
+
+  create(connection: GitHubConnection): GitHubConnection {
+    getDatabase()
+      .insert(githubConnections)
+      .values({
+        id: connection.id,
+        githubUserId: connection.githubUserId,
+        githubUsername: connection.githubUsername,
+        avatarUrl: connection.avatarUrl ?? null,
+        accessToken: connection.accessToken,
+        scope: connection.scope,
+        createdAt: connection.createdAt,
+        updatedAt: connection.updatedAt,
+      })
+      .run();
+    log.info(
+      { connectionId: connection.id, username: connection.githubUsername },
+      "GitHub connection created",
+    );
+    return connection;
+  },
+
+  update(
+    id: string,
+    updates: Partial<Omit<GitHubConnection, "id" | "createdAt">>,
+  ): GitHubConnection {
+    const existing = this.get();
+    if (!existing || existing.id !== id) {
+      throw new Error(`GitHub connection '${id}' not found`);
+    }
+
+    const updated: GitHubConnection = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+
+    getDatabase()
+      .update(githubConnections)
+      .set({
+        githubUserId: updated.githubUserId,
+        githubUsername: updated.githubUsername,
+        avatarUrl: updated.avatarUrl ?? null,
+        accessToken: updated.accessToken,
+        scope: updated.scope,
+        updatedAt: updated.updatedAt,
+      })
+      .where(eq(githubConnections.id, id))
+      .run();
+
+    log.debug({ connectionId: id }, "GitHub connection updated");
+    return updated;
+  },
+
+  delete(id: string): boolean {
+    const existing = this.get();
+    if (!existing || existing.id !== id) return false;
+
+    getDatabase()
+      .delete(githubConnections)
+      .where(eq(githubConnections.id, id))
+      .run();
+    log.info({ connectionId: id }, "GitHub connection deleted");
+    return true;
+  },
+
+  deleteAll(): void {
+    getDatabase().delete(githubConnections).run();
+    log.info("All GitHub connections deleted");
   },
 };

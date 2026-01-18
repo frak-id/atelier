@@ -150,6 +150,23 @@ export const api = {
         params: { projectId },
       }),
   },
+
+  github: {
+    status: () => request<GitHubStatus>("/auth/github/status"),
+    logout: () =>
+      request<{ success: boolean }>("/auth/github/logout", { method: "POST" }),
+    repos: (params?: GitHubReposParams) =>
+      request<GitHubReposResponse>("/api/github/repos", {
+        params: params
+          ? {
+              page: params.page?.toString(),
+              perPage: params.perPage?.toString(),
+              affiliation: params.affiliation,
+              sort: params.sort,
+            }
+          : undefined,
+      }),
+  },
 };
 
 export interface HealthStatus {
@@ -363,4 +380,48 @@ export interface DiscoveredConfig {
 export interface ExtractConfigResult {
   action: "created" | "updated";
   configFile: ConfigFile;
+}
+
+export interface GitHubStatus {
+  connected: boolean;
+  user?: {
+    login: string;
+    avatarUrl: string;
+  };
+}
+
+export interface GitHubRepository {
+  id: number;
+  name: string;
+  fullName: string;
+  owner: {
+    login: string;
+    avatarUrl: string;
+  };
+  private: boolean;
+  htmlUrl: string;
+  cloneUrl: string;
+  sshUrl: string;
+  defaultBranch: string;
+  updatedAt: string;
+  description: string | null;
+  language: string | null;
+  stargazersCount: number;
+  fork: boolean;
+}
+
+export interface GitHubReposResponse {
+  repositories: GitHubRepository[];
+  pagination: {
+    page: number;
+    perPage: number;
+    hasMore: boolean;
+  };
+}
+
+export interface GitHubReposParams {
+  page?: number;
+  perPage?: number;
+  affiliation?: "owner" | "collaborator" | "organization_member";
+  sort?: "created" | "updated" | "pushed" | "full_name";
 }

@@ -29,6 +29,13 @@
       "when": 1768633200000,
       "tag": "0003_generic_config_files",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1737225600000,
+      "tag": "0004_github_connections",
+      "breakpoints": true
     }
   ]
 }

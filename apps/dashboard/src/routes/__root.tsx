@@ -14,7 +14,8 @@ import {
   Settings,
   Sliders,
 } from "lucide-react";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { GitHubStatus } from "@/components/github-status";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -63,8 +64,11 @@ function RootLayout() {
               Settings
             </NavLink>
           </nav>
-          <div className="p-4 border-t text-xs text-muted-foreground">
-            v0.1.0
+          <div className="p-4 border-t space-y-3">
+            <Suspense fallback={null}>
+              <GitHubStatus />
+            </Suspense>
+            <div className="text-xs text-muted-foreground">v0.1.0</div>
           </div>
         </aside>
 
@@ -98,8 +102,11 @@ function RootLayout() {
                 Settings
               </NavLink>
             </nav>
-            <div className="p-4 border-t text-xs text-muted-foreground">
-              v0.1.0
+            <div className="p-4 border-t space-y-3">
+              <Suspense fallback={null}>
+                <GitHubStatus />
+              </Suspense>
+              <div className="text-xs text-muted-foreground">v0.1.0</div>
             </div>
           </SheetContent>
         </Sheet>

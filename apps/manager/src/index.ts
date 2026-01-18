@@ -6,8 +6,10 @@ import { config } from "./lib/config.ts";
 import { SandboxError } from "./lib/errors.ts";
 import { logger } from "./lib/logger.ts";
 import { appPaths } from "./lib/paths.ts";
+import { authRoutes } from "./routes/auth/index.ts";
 import { configRoutes } from "./routes/config/index.ts";
 import { debugRoutes } from "./routes/debug/index.ts";
+import { githubRoutes } from "./routes/github/index.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { imageRoutes } from "./routes/images/index.ts";
 import { projectRoutes } from "./routes/projects/index.ts";
@@ -99,13 +101,15 @@ const app = new Elysia()
   })
   .use(healthRoutes)
   .use(proxyRoutes)
+  .use(authRoutes)
   .group("/api", (app) =>
     app
       .use(systemRoutes)
       .use(sandboxRoutes)
       .use(projectRoutes)
       .use(imageRoutes)
-      .use(configRoutes),
+      .use(configRoutes)
+      .use(githubRoutes),
   )
   .use(debugRoutes)
   .get("/", () => ({

@@ -26,6 +26,16 @@ export const config = {
   },
   defaults: DEFAULTS,
 
+  github: {
+    clientId: process.env.GITHUB_CLIENT_ID || "",
+    clientSecret: process.env.GITHUB_CLIENT_SECRET || "",
+    callbackUrl:
+      process.env.GITHUB_CALLBACK_URL ||
+      "http://localhost:4000/auth/github/callback",
+  },
+
+  dashboardUrl: process.env.DASHBOARD_URL || "http://localhost:5173",
+
   isMock: () => config.mode === "mock",
   isProduction: () => config.mode === "production",
 } as const;

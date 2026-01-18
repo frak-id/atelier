@@ -17,6 +17,10 @@ Environment=SANDBOX_MODE=production
 Environment=PORT=4000
 Environment=DATA_DIR=/opt/frak-sandbox/data
 Environment=MIGRATIONS_DIR=/opt/frak-sandbox/drizzle
+Environment=GITHUB_CLIENT_ID={{GITHUB_CLIENT_ID}}
+Environment=GITHUB_CLIENT_SECRET={{GITHUB_CLIENT_SECRET}}
+Environment=GITHUB_CALLBACK_URL={{GITHUB_CALLBACK_URL}}
+Environment=DASHBOARD_URL={{DASHBOARD_URL}}
 ExecStart=/root/.bun/bin/bun server.js
 
 Restart=on-failure

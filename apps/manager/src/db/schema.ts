@@ -96,3 +96,18 @@ export type SandboxRow = typeof sandboxes.$inferSelect;
 export type NewSandboxRow = typeof sandboxes.$inferInsert;
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProjectRow = typeof projects.$inferInsert;
+
+// GitHub OAuth connections
+export const githubConnections = sqliteTable("github_connections", {
+  id: text("id").primaryKey(),
+  githubUserId: text("github_user_id").notNull().unique(),
+  githubUsername: text("github_username").notNull(),
+  avatarUrl: text("avatar_url"),
+  accessToken: text("access_token").notNull(), // Encrypted
+  scope: text("scope").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export type GitHubConnectionRow = typeof githubConnections.$inferSelect;
+export type NewGitHubConnectionRow = typeof githubConnections.$inferInsert;
