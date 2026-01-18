@@ -276,6 +276,17 @@ export function useDeleteWorkspace() {
   });
 }
 
+export function useTriggerPrebuild() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.workspaces({ id }).prebuild.post()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
+    },
+  });
+}
+
 export function useSystemCleanup() {
   const queryClient = useQueryClient();
   return useMutation({

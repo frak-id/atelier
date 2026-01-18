@@ -18,6 +18,7 @@ import {
   useCreateSandbox,
   useDeleteConfigFile,
   useDeleteWorkspace,
+  useTriggerPrebuild,
   useUpdateConfigFile,
   workspaceDetailQuery,
 } from "@/api/queries";
@@ -76,6 +77,7 @@ function WorkspaceDetailPage() {
 
   const deleteMutation = useDeleteWorkspace();
   const createSandboxMutation = useCreateSandbox();
+  const prebuildMutation = useTriggerPrebuild();
   const createConfigMutation = useCreateConfigFile();
   const updateConfigMutation = useUpdateConfigFile();
   const deleteConfigMutation = useDeleteConfigFile();
@@ -130,6 +132,19 @@ function WorkspaceDetailPage() {
             <Badge variant={prebuildVariant[prebuildStatus]}>
               Prebuild: {prebuildStatus}
             </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => prebuildMutation.mutate(id)}
+              disabled={
+                prebuildMutation.isPending || prebuildStatus === "building"
+              }
+              title="Rebuild prebuild"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${prebuildMutation.isPending || prebuildStatus === "building" ? "animate-spin" : ""}`}
+              />
+            </Button>
           </div>
           <p className="text-muted-foreground text-sm">
             {workspace.config.repos.length} repository(ies) configured

@@ -2,6 +2,8 @@ import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
 import { NotFoundError } from "../../lib/errors.ts";
 import { createChildLogger } from "../../lib/logger.ts";
+import { PrebuildService } from "../../services/prebuild.ts";
+import { StorageService } from "../../services/storage.ts";
 import { WorkspaceRepository } from "../../state/database.ts";
 import {
   DEFAULT_WORKSPACE_CONFIG,
@@ -37,6 +39,12 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
         "Creating workspace",
       );
       WorkspaceRepository.create(workspace);
+
+      if (config.repos && config.repos.length > 0) {
+        log.info({ workspaceId: workspace.id }, "Triggering initial prebuild");
+        PrebuildService.createInBackground(workspace.id);
+      }
+
       set.status = 201;
       return workspace;
     },
@@ -91,14 +99,63 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
   )
   .delete(
     "/:id",
-    ({ params, set }) => {
+    async ({ params, set }) => {
       const existing = WorkspaceRepository.getById(params.id);
       if (!existing) {
         throw new NotFoundError("Workspace", params.id);
       }
 
       log.info({ workspaceId: params.id }, "Deleting workspace");
+      await StorageService.deletePrebuild(params.id);
       WorkspaceRepository.delete(params.id);
+      set.status = 204;
+      return null;
+    },
+    {
+      params: t.Object({ id: t.String() }),
+    },
+  )
+  .post(
+    "/:id/prebuild",
+    async ({ params, set }) => {
+      const workspace = WorkspaceRepository.getById(params.id);
+      if (!workspace) {
+        throw new NotFoundError("Workspace", params.id);
+      }
+
+      if (workspace.config.prebuild?.status === "building") {
+        return {
+          message: "Prebuild already in progress",
+          workspaceId: params.id,
+          status: "building",
+        };
+      }
+
+      log.info({ workspaceId: params.id }, "Triggering prebuild");
+      PrebuildService.createInBackground(params.id);
+
+      set.status = 202;
+      return {
+        message: "Prebuild triggered",
+        workspaceId: params.id,
+        status: "building",
+      };
+    },
+    {
+      params: t.Object({ id: t.String() }),
+    },
+  )
+  .delete(
+    "/:id/prebuild",
+    async ({ params, set }) => {
+      const workspace = WorkspaceRepository.getById(params.id);
+      if (!workspace) {
+        throw new NotFoundError("Workspace", params.id);
+      }
+
+      log.info({ workspaceId: params.id }, "Deleting prebuild");
+      await PrebuildService.delete(params.id);
+
       set.status = 204;
       return null;
     },

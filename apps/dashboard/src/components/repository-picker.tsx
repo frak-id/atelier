@@ -10,6 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 const API_BASE = import.meta.env.PROD ? "https://sandbox-api.nivelais.com" : "";
@@ -66,7 +67,7 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
   );
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={false}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -100,7 +101,7 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
             className="h-8"
           />
         </div>
-        <div className="max-h-[300px] overflow-y-auto">
+        <ScrollArea className="h-[300px]">
           {isLoadingRepos ? (
             <div className="p-4 text-center text-sm text-muted-foreground">
               Loading repositories...
@@ -128,7 +129,7 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
               ))}
             </div>
           )}
-        </div>
+        </ScrollArea>
       </PopoverContent>
     </Popover>
   );

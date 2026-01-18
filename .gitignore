@@ -38,3 +38,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Temp files
 apps/manager/server.js
+
+*.tar.gz
+.deploy-staging/

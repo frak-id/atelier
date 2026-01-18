@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { $ } from "bun";
 
@@ -11,9 +11,8 @@ const AGENT_DIR = resolve(ROOT, "packages/sandbox-agent");
 const INFRA_DIR = resolve(ROOT, "infra");
 const IMAGES_DIR = resolve(ROOT, "infra/images");
 
-const REMOTE_APP_DIR = "/opt/frak-sandbox";
-const REMOTE_IMAGES_DIR = `${REMOTE_APP_DIR}/infra/images`;
-const REMOTE_DASHBOARD_DIR = `${REMOTE_APP_DIR}/apps/dashboard`;
+const STAGING_DIR = resolve(ROOT, ".deploy-staging");
+const TARBALL_NAME = "frak-sandbox-deploy.tar.gz";
 
 const {
   SSH_KEY_PATH,
@@ -57,11 +56,6 @@ async function main() {
   }
 
   const target = `${SSH_USER}@${SSH_HOST}`;
-  const ssh = (cmd: string) => $`ssh -i ${SSH_KEY_PATH} ${target} ${cmd}`;
-  const scp = (src: string, dest: string) =>
-    $`scp -i ${SSH_KEY_PATH} ${src} ${target}:${dest}`;
-  const scpDir = (src: string, dest: string) =>
-    $`scp -i ${SSH_KEY_PATH} -r ${src} ${target}:${dest}`;
 
   console.log("\n📦 Building...");
   await $`bun run --filter @frak-sandbox/cli build:linux`;
@@ -69,81 +63,132 @@ async function main() {
   await $`bun run --filter @frak-sandbox/agent build`;
   await $`bun run --filter @frak-sandbox/dashboard build`;
 
-  console.log("\n🚀 Deploying...");
-  await ssh(
-    `mkdir -p ${REMOTE_APP_DIR} ${REMOTE_IMAGES_DIR} ${REMOTE_DASHBOARD_DIR}`,
-  );
+  console.log("\n📁 Staging files...");
+  rmSync(STAGING_DIR, { recursive: true, force: true });
+  mkdirSync(STAGING_DIR, { recursive: true });
 
-  await scp(
+  const dirs = [
+    "opt/frak-sandbox/drizzle",
+    "opt/frak-sandbox/infra/images/dev-base",
+    "opt/frak-sandbox/apps/dashboard",
+    "usr/local/bin",
+    "etc/systemd/system",
+    "etc/caddy",
+  ];
+  for (const dir of dirs) {
+    mkdirSync(resolve(STAGING_DIR, dir), { recursive: true });
+  }
+
+  cpSync(
     resolve(CLI_DIR, "dist/frak-sandbox-linux-x64"),
-    "/usr/local/bin/frak-sandbox",
+    resolve(STAGING_DIR, "usr/local/bin/frak-sandbox"),
   );
-  await ssh("chmod +x /usr/local/bin/frak-sandbox");
-  console.log("   ✓ CLI");
-
-  await scp(
+  cpSync(
     resolve(MANAGER_DIR, "dist/server.js"),
-    `${REMOTE_APP_DIR}/server.js`,
+    resolve(STAGING_DIR, "opt/frak-sandbox/server.js"),
   );
-  await ssh(`rm -rf ${REMOTE_APP_DIR}/drizzle`);
-  await scpDir(resolve(MANAGER_DIR, "drizzle"), `${REMOTE_APP_DIR}/`);
-  console.log("   ✓ Manager API + Migrations");
-
-  await scp(
+  cpSync(
+    resolve(MANAGER_DIR, "drizzle"),
+    resolve(STAGING_DIR, "opt/frak-sandbox/drizzle"),
+    { recursive: true },
+  );
+  cpSync(
     resolve(AGENT_DIR, "dist/sandbox-agent.mjs"),
-    `${REMOTE_IMAGES_DIR}/sandbox-agent.mjs`,
+    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/sandbox-agent.mjs"),
   );
-  console.log("   ✓ Sandbox Agent");
-
-  await ssh(`rm -rf ${REMOTE_DASHBOARD_DIR}/dist`);
-  await scpDir(resolve(DASHBOARD_DIR, "dist"), `${REMOTE_DASHBOARD_DIR}/`);
-  console.log("   ✓ Dashboard");
-
-  await scp(
-    `${IMAGES_DIR}/build-image.sh`,
-    `${REMOTE_IMAGES_DIR}/build-image.sh`,
+  cpSync(
+    resolve(DASHBOARD_DIR, "dist"),
+    resolve(STAGING_DIR, "opt/frak-sandbox/apps/dashboard/dist"),
+    { recursive: true },
   );
-  await ssh(`chmod +x ${REMOTE_IMAGES_DIR}/build-image.sh`);
-  await scpDir(`${IMAGES_DIR}/dev-base`, REMOTE_IMAGES_DIR);
-  console.log("   ✓ Base Images");
+  cpSync(
+    resolve(IMAGES_DIR, "build-image.sh"),
+    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/build-image.sh"),
+  );
+  cpSync(
+    resolve(IMAGES_DIR, "dev-base"),
+    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/dev-base"),
+    { recursive: true },
+  );
 
   const managerServiceTemplate = await Bun.file(
-    `${INFRA_DIR}/systemd/frak-sandbox-manager.service`,
+    resolve(INFRA_DIR, "systemd/frak-sandbox-manager.service"),
   ).text();
   const managerService = managerServiceTemplate
-    .replace("{{GITHUB_CLIENT_ID}}", process.env.GITHUB_CLIENT_ID || "")
-    .replace("{{GITHUB_CLIENT_SECRET}}", process.env.GITHUB_CLIENT_SECRET || "")
-    .replace("{{GITHUB_CALLBACK_URL}}", process.env.GITHUB_CALLBACK_URL || "")
-    .replace("{{DASHBOARD_URL}}", process.env.DASHBOARD_URL || "");
-
-  const tmpServicePath = `/tmp/frak-sandbox-manager-${Date.now()}.service`;
-  await Bun.write(tmpServicePath, managerService);
-  await scp(tmpServicePath, "/etc/systemd/system/frak-sandbox-manager.service");
-  await $`rm ${tmpServicePath}`;
-
-  await scp(
-    `${INFRA_DIR}/systemd/frak-sandbox-network.service`,
-    "/etc/systemd/system/",
+    .replace("{{GITHUB_CLIENT_ID}}", GITHUB_CLIENT_ID || "")
+    .replace("{{GITHUB_CLIENT_SECRET}}", GITHUB_CLIENT_SECRET || "")
+    .replace("{{GITHUB_CALLBACK_URL}}", GITHUB_CALLBACK_URL || "")
+    .replace("{{DASHBOARD_URL}}", DASHBOARD_URL || "");
+  await Bun.write(
+    resolve(STAGING_DIR, "etc/systemd/system/frak-sandbox-manager.service"),
+    managerService,
   );
-  await ssh(
-    "systemctl daemon-reload && systemctl enable frak-sandbox-network frak-sandbox-manager",
+  cpSync(
+    resolve(INFRA_DIR, "systemd/frak-sandbox-network.service"),
+    resolve(STAGING_DIR, "etc/systemd/system/frak-sandbox-network.service"),
   );
-  console.log("   ✓ Systemd");
+  cpSync(
+    resolve(INFRA_DIR, "caddy/Caddyfile"),
+    resolve(STAGING_DIR, "etc/caddy/Caddyfile"),
+  );
+  console.log("   ✓ Staged all artifacts");
 
-  await scp(`${INFRA_DIR}/caddy/Caddyfile`, "/etc/caddy/Caddyfile");
-  await ssh("systemctl reload caddy || systemctl start caddy || true");
-  console.log("   ✓ Caddy");
+  console.log("\n📦 Creating tarball...");
+  const tarballPath = resolve(ROOT, TARBALL_NAME);
+  await $`tar -czf ${tarballPath} -C ${STAGING_DIR} .`;
+  const tarballSize = (await Bun.file(tarballPath).size) / 1024 / 1024;
+  console.log(`   ✓ Created ${TARBALL_NAME} (${tarballSize.toFixed(2)} MB)`);
 
-  console.log("\n🔄 Restarting manager...");
-  await ssh("systemctl restart frak-sandbox-manager");
+  console.log("\n🚀 Uploading...");
+  await $`scp -i ${SSH_KEY_PATH} ${tarballPath} ${target}:/tmp/${TARBALL_NAME}`;
+  console.log("   ✓ Uploaded tarball");
 
-  await Bun.sleep(2000);
-  try {
-    await ssh("curl -sf http://localhost:4000/health/live");
-    console.log("   ✓ Healthy");
-  } catch {
-    console.log("   ⚠ Health check failed");
+  console.log("\n⚙️  Installing on server...");
+
+  const installScript = `
+set -e
+
+DEPLOY_TMP="/tmp/frak-deploy-$$"
+mkdir -p "$DEPLOY_TMP"
+tar -xzf /tmp/${TARBALL_NAME} -C "$DEPLOY_TMP"
+
+mkdir -p /opt/frak-sandbox/infra/images /opt/frak-sandbox/apps/dashboard /opt/frak-sandbox/drizzle
+cp "$DEPLOY_TMP/usr/local/bin/frak-sandbox" /usr/local/bin/frak-sandbox
+cp "$DEPLOY_TMP/opt/frak-sandbox/server.js" /opt/frak-sandbox/server.js
+cp -r "$DEPLOY_TMP/opt/frak-sandbox/drizzle/." /opt/frak-sandbox/drizzle/
+cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/sandbox-agent.mjs" /opt/frak-sandbox/infra/images/sandbox-agent.mjs
+cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/build-image.sh" /opt/frak-sandbox/infra/images/build-image.sh
+cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-base/." /opt/frak-sandbox/infra/images/dev-base/
+cp -r "$DEPLOY_TMP/opt/frak-sandbox/apps/dashboard/dist/." /opt/frak-sandbox/apps/dashboard/dist/
+cp "$DEPLOY_TMP/etc/systemd/system/frak-sandbox-manager.service" /etc/systemd/system/frak-sandbox-manager.service
+cp "$DEPLOY_TMP/etc/systemd/system/frak-sandbox-network.service" /etc/systemd/system/frak-sandbox-network.service
+cp "$DEPLOY_TMP/etc/caddy/Caddyfile" /etc/caddy/Caddyfile
+
+chmod +x /usr/local/bin/frak-sandbox
+chmod +x /opt/frak-sandbox/infra/images/build-image.sh
+
+systemctl daemon-reload
+systemctl enable frak-sandbox-network frak-sandbox-manager
+systemctl reload caddy || systemctl start caddy || true
+systemctl restart frak-sandbox-manager
+
+rm -rf "$DEPLOY_TMP" /tmp/${TARBALL_NAME}
+
+sleep 2
+curl -sf http://localhost:4000/health/live > /dev/null && echo "HEALTH_OK" || echo "HEALTH_FAIL"
+`;
+
+  const result =
+    await $`ssh -i ${SSH_KEY_PATH} ${target} ${installScript}`.text();
+
+  if (result.includes("HEALTH_OK")) {
+    console.log("   ✓ Installed and healthy");
+  } else {
+    console.log("   ⚠ Installed but health check failed");
   }
+
+  rmSync(STAGING_DIR, { recursive: true, force: true });
+  rmSync(tarballPath, { force: true });
 
   console.log("\n📋 Post-deploy:");
   console.log("   Build base image: frak-sandbox images build dev-base");

@@ -1,3 +1,6 @@
+
+DROP TABLE `config_files`;--> statement-breakpoint
+
 CREATE TABLE `config_files` (
 	`id` text PRIMARY KEY NOT NULL,
 	`path` text NOT NULL,
