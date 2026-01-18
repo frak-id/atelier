@@ -6,11 +6,16 @@ import { createChildLogger } from "../lib/logger.ts";
 import { ensureDir } from "../lib/shell.ts";
 import type {
   CreateSandboxBody,
+  GitHubSourceConfig,
   RepoConfig,
   Sandbox,
   Workspace,
 } from "../schemas/index.ts";
-import { SandboxRepository, WorkspaceRepository } from "../state/database.ts";
+import {
+  GitSourceRepository,
+  SandboxRepository,
+  WorkspaceRepository,
+} from "../state/database.ts";
 import { AgentClient } from "./agent.ts";
 import { CaddyService } from "./caddy.ts";
 import { ConfigFilesService } from "./config-files.ts";
@@ -267,6 +272,8 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
         await Bun.write(`${mountPoint}/etc/sandbox/secrets/.env`, envFile);
       }
 
+      await this.injectGitCredentials(mountPoint);
+
       if (
         this.workspace?.config.startCommands &&
         this.workspace.config.startCommands.length > 0
@@ -316,6 +323,57 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
     log.debug(
       { sandboxId: this.sandboxId, configCount: configs.length },
       "Config files injected",
+    );
+  }
+
+  private async injectGitCredentials(mountPoint: string): Promise<void> {
+    const repos = this.workspace?.config.repos ?? [];
+    const sourceIds = new Set<string>();
+
+    for (const repo of repos) {
+      if ("sourceId" in repo && repo.sourceId) {
+        sourceIds.add(repo.sourceId);
+      }
+    }
+
+    if (sourceIds.size === 0) return;
+
+    const credentials: string[] = [];
+
+    for (const sourceId of sourceIds) {
+      const source = GitSourceRepository.getById(sourceId);
+      if (!source) continue;
+
+      if (source.type === "github") {
+        const ghConfig = source.config as GitHubSourceConfig;
+        if (ghConfig.accessToken) {
+          credentials.push(
+            `https://x-access-token:${ghConfig.accessToken}@github.com`,
+          );
+        }
+      }
+    }
+
+    if (credentials.length === 0) return;
+
+    await Bun.write(
+      `${mountPoint}/etc/sandbox/secrets/git-credentials`,
+      `${credentials.join("\n")}\n`,
+    );
+    await $`chmod 600 ${mountPoint}/etc/sandbox/secrets/git-credentials`.quiet();
+
+    const gitconfig = `[credential]
+\thelper = store --file=/etc/sandbox/secrets/git-credentials
+[user]
+\temail = sandbox@frak.dev
+\tname = Sandbox User
+`;
+    await Bun.write(`${mountPoint}/home/dev/.gitconfig`, gitconfig);
+    await $`chown 1000:1000 ${mountPoint}/home/dev/.gitconfig`.quiet();
+
+    log.debug(
+      { sandboxId: this.sandboxId, sourceCount: credentials.length },
+      "Git credentials injected",
     );
   }
 
@@ -556,8 +614,22 @@ Your code is located in \`/home/dev/workspace\`
     branch: string;
     clonePath: string;
   }): Promise<string> {
-    // TODO: Look up sourceId in GitSourceRepository and construct clone URL
-    // For now, assume GitHub and construct URL
+    const source = GitSourceRepository.getById(repo.sourceId);
+    if (!source) {
+      log.warn(
+        { sourceId: repo.sourceId },
+        "Git source not found, using public URL",
+      );
+      return `https://github.com/${repo.repo}.git`;
+    }
+
+    if (source.type === "github") {
+      const ghConfig = source.config as GitHubSourceConfig;
+      if (ghConfig.accessToken) {
+        return `https://x-access-token:${ghConfig.accessToken}@github.com/${repo.repo}.git`;
+      }
+    }
+
     return `https://github.com/${repo.repo}.git`;
   }
 

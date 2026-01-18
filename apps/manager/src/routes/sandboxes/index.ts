@@ -13,6 +13,7 @@ import {
   ExecResponseSchema,
   ExtractConfigBodySchema,
   ExtractConfigResponseSchema,
+  GitStatusResponseSchema,
   IdParamSchema,
   LogsParamsSchema,
   LogsQuerySchema,
@@ -258,6 +259,20 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       params: IdParamSchema,
       response: ServicesResponseSchema,
+    },
+  )
+  .get(
+    "/:id/git/status",
+    async ({ params }) => {
+      const sandbox = sandboxStore.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+      return AgentClient.gitStatus(params.id);
+    },
+    {
+      params: IdParamSchema,
+      response: GitStatusResponseSchema,
     },
   )
   .get(

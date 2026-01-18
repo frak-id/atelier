@@ -5,6 +5,7 @@ import {
   Check,
   ExternalLink,
   FileCode,
+  GitBranch,
   Loader2,
   MessageSquare,
   Pause,
@@ -18,6 +19,7 @@ import {
   opencodeSessionsQuery,
   sandboxDetailQuery,
   sandboxDiscoverConfigsQuery,
+  sandboxGitStatusQuery,
   sandboxMetricsQuery,
   sandboxServicesQuery,
   useDeleteOpenCodeSession,
@@ -289,8 +291,9 @@ function SandboxDetailPage() {
       </div>
 
       {sandbox.status === "running" && (
-        <Tabs defaultValue="services">
+        <Tabs defaultValue="repos">
           <TabsList>
+            <TabsTrigger value="repos">Repositories</TabsTrigger>
             <TabsTrigger value="services">Services</TabsTrigger>
             <TabsTrigger value="opencode">OpenCode Sessions</TabsTrigger>
             <TabsTrigger value="terminal">Terminal</TabsTrigger>
@@ -299,6 +302,10 @@ function SandboxDetailPage() {
               <TabsTrigger value="config">Extract Config</TabsTrigger>
             )}
           </TabsList>
+
+          <TabsContent value="repos">
+            <RepositoriesTab sandboxId={id} />
+          </TabsContent>
 
           <TabsContent value="services">
             <Card>
@@ -621,6 +628,88 @@ function ConfigExtractor({
                     "Extract"
                   )}
                 </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RepositoriesTab({ sandboxId }: { sandboxId: string }) {
+  const { data, isLoading, refetch } = useQuery(
+    sandboxGitStatusQuery(sandboxId),
+  );
+
+  const repos = data?.repos ?? [];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="flex items-center gap-2">
+          <GitBranch className="h-5 w-5" />
+          Repositories
+        </CardTitle>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className="h-4 w-4 mr-1" />
+          Refresh
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground py-8 justify-center">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading repositories...
+          </div>
+        ) : repos.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <GitBranch className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>No repositories configured</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {repos.map((repo) => (
+              <div
+                key={repo.path}
+                className="flex items-center justify-between p-4 rounded-lg border bg-muted/30"
+              >
+                <div className="flex-1">
+                  <div className="font-mono text-sm font-medium">
+                    {repo.path}
+                  </div>
+                  {repo.error ? (
+                    <div className="text-sm text-destructive">{repo.error}</div>
+                  ) : (
+                    <div className="flex items-center gap-3 mt-1">
+                      {repo.branch && (
+                        <div className="flex items-center gap-1 text-sm">
+                          <GitBranch className="h-3 w-3" />
+                          <span className="font-mono">{repo.branch}</span>
+                        </div>
+                      )}
+                      {repo.lastCommit && (
+                        <span className="text-xs text-muted-foreground truncate max-w-[300px]">
+                          {repo.lastCommit}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {repo.dirty && (
+                    <Badge variant="warning">Uncommitted changes</Badge>
+                  )}
+                  {repo.ahead > 0 && (
+                    <Badge variant="secondary">{repo.ahead} ahead</Badge>
+                  )}
+                  {repo.behind > 0 && (
+                    <Badge variant="secondary">{repo.behind} behind</Badge>
+                  )}
+                  {!repo.error && !repo.dirty && repo.ahead === 0 && (
+                    <Badge variant="success">Clean</Badge>
+                  )}
+                </div>
               </div>
             ))}
           </div>

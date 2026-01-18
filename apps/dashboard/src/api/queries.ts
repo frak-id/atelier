@@ -27,6 +27,7 @@ const queryKeys = {
     services: (id: string) => ["sandboxes", id, "services"] as const,
     discoverConfigs: (id: string) =>
       ["sandboxes", id, "discoverConfigs"] as const,
+    gitStatus: (id: string) => ["sandboxes", id, "gitStatus"] as const,
   },
   opencode: {
     health: (baseUrl: string) => ["opencode", baseUrl, "health"] as const,
@@ -103,6 +104,14 @@ export const sandboxServicesQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.services(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).services.get()),
+    refetchInterval: 10000,
+  });
+
+export const sandboxGitStatusQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.gitStatus(id),
+    queryFn: async () =>
+      unwrap(await api.api.sandboxes({ id }).git.status.get()),
     refetchInterval: 10000,
   });
 

@@ -1,12 +1,12 @@
-import { createOpencodeClient, Session } from "@opencode-ai/sdk/v2"
+import { createOpencodeClient, Session } from "@opencode-ai/sdk/v2";
 
 export async function fetchOpenCodeSessions(
   baseUrl: string,
 ): Promise<Session[]> {
   try {
-    const client = createOpencodeClient({ 
+    const client = createOpencodeClient({
       baseUrl,
-    })
+    });
     const { data } = await client.session.list();
     return data ?? [];
   } catch {
@@ -19,9 +19,9 @@ export async function deleteOpenCodeSession(
   sessionId: string,
 ): Promise<boolean> {
   try {
-    const client = createOpencodeClient({ 
+    const client = createOpencodeClient({
       baseUrl,
-    })
+    });
     const result = await client.session.delete({ sessionID: sessionId });
     return result.data ?? false;
   } catch {

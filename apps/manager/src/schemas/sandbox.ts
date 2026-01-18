@@ -184,3 +184,19 @@ export const ExtractConfigBodySchema = t.Object({
   path: t.String({ minLength: 1 }),
 });
 export type ExtractConfigBody = Static<typeof ExtractConfigBodySchema>;
+
+export const RepoGitStatusSchema = t.Object({
+  path: t.String(),
+  branch: t.Union([t.String(), t.Null()]),
+  dirty: t.Boolean(),
+  ahead: t.Number(),
+  behind: t.Number(),
+  lastCommit: t.Union([t.String(), t.Null()]),
+  error: t.Optional(t.String()),
+});
+export type RepoGitStatus = Static<typeof RepoGitStatusSchema>;
+
+export const GitStatusResponseSchema = t.Object({
+  repos: t.Array(RepoGitStatusSchema),
+});
+export type GitStatusResponse = Static<typeof GitStatusResponseSchema>;

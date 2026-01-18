@@ -4,7 +4,6 @@ import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import {
-  configFiles,
   gitSources,
   type SandboxStatus,
   sandboxes,
@@ -13,7 +12,6 @@ import {
 import { createChildLogger } from "../lib/logger.ts";
 import { appPaths, ensureAppDirs } from "../lib/paths.ts";
 import type {
-  ConfigFile,
   GitSource,
   Sandbox,
   Workspace,

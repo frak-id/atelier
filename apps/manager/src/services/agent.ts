@@ -333,7 +333,23 @@ export const AgentClient = {
       return null;
     }
   },
+
+  async gitStatus(sandboxId: string): Promise<GitStatus> {
+    return this.request<GitStatus>(sandboxId, "/git/status");
+  },
 };
+
+interface GitStatus {
+  repos: {
+    path: string;
+    branch: string | null;
+    dirty: boolean;
+    ahead: number;
+    behind: number;
+    lastCommit: string | null;
+    error?: string;
+  }[];
+}
 
 interface DiscoveredConfig {
   path: string;
