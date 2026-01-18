@@ -16,6 +16,8 @@
       "name": "@frak-sandbox/dashboard",
       "version": "0.1.0",
       "dependencies": {
+        "@elysiajs/eden": "^1.4.6",
+        "@frak-sandbox/manager": "workspace:*",
         "@frak-sandbox/shared": "workspace:*",
         "@opencode-ai/sdk": "^1.1.23",
         "@radix-ui/react-dialog": "^1.1.4",
@@ -176,6 +178,8 @@
     "@elysiajs/cors": ["@elysiajs/cors@1.4.1", "", { "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-lQfad+F3r4mNwsxRKbXyJB8Jg43oAOXjRwn7sKUL6bcOW3KjUqUimTS+woNpO97efpzjtDE0tEjGk9DTw8lqTQ=="],
 
     "@elysiajs/cron": ["@elysiajs/cron@1.4.1", "", { "dependencies": { "croner": "^6.0.3" }, "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-Y+jqXtMJ+m17QzNWlWc09ugd1Fn1Wh7lqE+y9qSW8eiQZEqsRADXWmbLuXRSRaSC5dkfOyRSiwNCp6n8L/yuqA=="],
+
+    "@elysiajs/eden": ["@elysiajs/eden@1.4.6", "", { "peerDependencies": { "elysia": ">=1.4.19" } }, "sha512-Tsa4NwXEWg/u73vWiYZQ3L5/ecgZSxqiEjYwpS+4qBKXeTZqZKl2hcgHJSVBL+InEDMi35Xugct7qyAXE5oM4Q=="],
 
     "@elysiajs/node": ["@elysiajs/node@1.4.3", "", { "dependencies": { "crossws": "^0.4.1", "srvx": "^0.10.0" }, "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-Qw2SGfiVB7R+L8iU3fjGDGHdTPP/lUkQyi15dfvvsMPcmVEDweKW+FSt6ae6SSvQc5Di111g44vTV9FHwUPdvA=="],
 

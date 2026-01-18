@@ -38,6 +38,14 @@ function SystemPage() {
   const { data: queue } = useSuspenseQuery(systemQueueQuery);
   const cleanupMutation = useSystemCleanup();
 
+  if (!stats || !storage || !queue) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">Loading system data...</p>
+      </div>
+    );
+  }
+
   const handleCleanup = () => {
     if (confirm("Run system cleanup? This will remove orphaned resources.")) {
       cleanupMutation.mutate();
@@ -75,7 +83,7 @@ function SystemPage() {
               <AlertCircle className="h-4 w-4" />
               Cleanup completed
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <span className="text-muted-foreground">Sockets</span>
                 <p>{cleanupMutation.data.socketsRemoved}</p>
@@ -87,10 +95,6 @@ function SystemPage() {
               <div>
                 <span className="text-muted-foreground">TAP Devices</span>
                 <p>{cleanupMutation.data.tapDevicesRemoved}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Jobs</span>
-                <p>{cleanupMutation.data.jobsRemoved}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Space Freed</span>
@@ -276,8 +280,8 @@ function SystemPage() {
                         >
                           <span className="font-mono text-sm">{job.id}</span>
                           <div className="flex items-center gap-2">
-                            {job.projectId && (
-                              <Badge variant="outline">{job.projectId}</Badge>
+                            {job.workspaceId && (
+                              <Badge variant="outline">{job.workspaceId}</Badge>
                             )}
                             <Badge variant="warning">Running</Badge>
                           </div>
@@ -297,8 +301,8 @@ function SystemPage() {
                         >
                           <span className="font-mono text-sm">{job.id}</span>
                           <div className="flex items-center gap-2">
-                            {job.projectId && (
-                              <Badge variant="outline">{job.projectId}</Badge>
+                            {job.workspaceId && (
+                              <Badge variant="outline">{job.workspaceId}</Badge>
                             )}
                             <Badge variant="secondary">Queued</Badge>
                           </div>

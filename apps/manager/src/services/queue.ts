@@ -1,8 +1,8 @@
 import { DEFAULTS } from "@frak-sandbox/shared/constants";
-import type { CreateSandboxOptions, Sandbox } from "@frak-sandbox/shared/types";
 import { nanoid } from "nanoid";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
+import type { CreateSandboxOptions, Sandbox } from "../types/index.ts";
 
 const log = createChildLogger("queue");
 

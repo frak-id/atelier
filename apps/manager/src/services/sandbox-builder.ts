@@ -1,15 +1,16 @@
 import { FIRECRACKER } from "@frak-sandbox/shared/constants";
-import type {
-  CreateSandboxOptions,
-  Project,
-  Sandbox,
-} from "@frak-sandbox/shared/types";
 import { $ } from "bun";
 import { nanoid } from "nanoid";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { ensureDir } from "../lib/shell.ts";
-import { ProjectRepository, SandboxRepository } from "../state/database.ts";
+import { SandboxRepository, WorkspaceRepository } from "../state/database.ts";
+import type {
+  CreateSandboxOptions,
+  RepoConfig,
+  Sandbox,
+  Workspace,
+} from "../types/index.ts";
 import { AgentClient } from "./agent.ts";
 import { CaddyService } from "./caddy.ts";
 import { ConfigFilesService } from "./config-files.ts";
@@ -52,7 +53,7 @@ function getSandboxPaths(
 export class SandboxBuilder {
   private sandboxId: string;
   private options: CreateSandboxOptions;
-  private project?: Project;
+  private workspace?: Workspace;
   private sandbox?: Sandbox;
   private network?: NetworkAllocation;
   private paths?: SandboxPaths;
@@ -61,7 +62,7 @@ export class SandboxBuilder {
   private usedPrebuild = false;
 
   private constructor(options: CreateSandboxOptions) {
-    this.sandboxId = options.id || nanoid(12);
+    this.sandboxId = nanoid(12);
     this.options = options;
   }
 
@@ -71,7 +72,7 @@ export class SandboxBuilder {
 
   async build(): Promise<Sandbox> {
     try {
-      await this.loadProject();
+      await this.loadWorkspace();
       await this.allocateNetwork();
       await this.createVolume();
       await this.initializeSandbox();
@@ -99,9 +100,9 @@ export class SandboxBuilder {
     }
   }
 
-  private async loadProject(): Promise<void> {
-    if (this.options.projectId) {
-      this.project = ProjectRepository.getById(this.options.projectId);
+  private async loadWorkspace(): Promise<void> {
+    if (this.options.workspaceId) {
+      this.workspace = WorkspaceRepository.getById(this.options.workspaceId);
     }
   }
 
@@ -114,19 +115,23 @@ export class SandboxBuilder {
   }
 
   private async createVolume(): Promise<void> {
-    const baseImage = this.options.baseImage ?? this.project?.baseImage;
+    const baseImage =
+      this.options.baseImage ?? this.workspace?.config.baseImage;
     const lvmAvailable = await StorageService.isAvailable();
 
-    if (this.options.projectId) {
+    if (
+      this.options.workspaceId &&
+      this.workspace?.config.prebuild?.status === "ready"
+    ) {
       this.usedPrebuild = await StorageService.hasPrebuild(
-        this.options.projectId,
+        this.options.workspaceId,
       );
     }
 
     let lvmVolumePath: string | undefined;
     if (lvmAvailable) {
       lvmVolumePath = await StorageService.createSandboxVolume(this.sandboxId, {
-        projectId: this.options.projectId,
+        workspaceId: this.options.workspaceId,
         baseImage,
       });
     }
@@ -151,21 +156,25 @@ export class SandboxBuilder {
     }
 
     const vcpus =
-      this.options.vcpus ?? this.project?.vcpus ?? config.defaults.VCPUS;
+      this.options.vcpus ??
+      this.workspace?.config.vcpus ??
+      config.defaults.VCPUS;
     const memoryMb =
       this.options.memoryMb ??
-      this.project?.memoryMb ??
+      this.workspace?.config.memoryMb ??
       config.defaults.MEMORY_MB;
 
     this.sandbox = {
       id: this.sandboxId,
       status: "creating",
-      projectId: this.options.projectId,
-      branch: this.options.branch ?? this.project?.defaultBranch,
-      ipAddress: this.network.ipAddress,
-      macAddress: this.network.macAddress,
-      urls: { vscode: "", opencode: "", terminal: "", ssh: "" },
-      resources: { vcpus, memoryMb },
+      workspaceId: this.options.workspaceId,
+      runtime: {
+        ipAddress: this.network.ipAddress,
+        macAddress: this.network.macAddress,
+        urls: { vscode: "", opencode: "", terminal: "", ssh: "" },
+        vcpus,
+        memoryMb,
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -179,14 +188,14 @@ export class SandboxBuilder {
       throw new Error("Sandbox not initialized");
     }
 
-    this.sandbox.urls = {
+    this.sandbox.runtime.urls = {
       vscode: `https://sandbox-${this.sandboxId}.${config.caddy.domainSuffix}`,
       opencode: `https://opencode-${this.sandboxId}.${config.caddy.domainSuffix}`,
       terminal: `https://terminal-${this.sandboxId}.${config.caddy.domainSuffix}`,
       ssh: `ssh root@${this.network?.ipAddress}`,
     };
     this.sandbox.status = "running";
-    this.sandbox.pid = Math.floor(Math.random() * 100000);
+    this.sandbox.runtime.pid = Math.floor(Math.random() * 100000);
 
     SandboxRepository.update(this.sandboxId, this.sandbox);
     log.info({ sandboxId: this.sandboxId }, "Mock sandbox created");
@@ -230,9 +239,9 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
 
       const sandboxConfig = {
         sandboxId: this.sandboxId,
-        projectId: this.project?.id,
-        projectName: this.project?.name,
-        gitUrl: this.project?.gitUrl,
+        workspaceId: this.workspace?.id,
+        workspaceName: this.workspace?.name,
+        repos: this.workspace?.config.repos ?? [],
         createdAt: new Date().toISOString(),
       };
       await Bun.write(
@@ -241,21 +250,21 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
       );
 
       if (
-        this.project?.secrets &&
-        Object.keys(this.project.secrets).length > 0
+        this.workspace?.config.secrets &&
+        Object.keys(this.workspace.config.secrets).length > 0
       ) {
         const decryptedSecrets = await SecretsService.decryptSecrets(
-          this.project.secrets,
+          this.workspace.config.secrets,
         );
         const envFile = SecretsService.generateEnvFile(decryptedSecrets);
         await Bun.write(`${mountPoint}/etc/sandbox/secrets/.env`, envFile);
       }
 
       if (
-        this.project?.startCommands &&
-        this.project.startCommands.length > 0
+        this.workspace?.config.startCommands &&
+        this.workspace.config.startCommands.length > 0
       ) {
-        const startScript = `#!/bin/bash\nset -e\n${this.project.startCommands.join("\n")}\n`;
+        const startScript = `#!/bin/bash\nset -e\n${this.workspace.config.startCommands.join("\n")}\n`;
         await Bun.write(`${mountPoint}/etc/sandbox/start.sh`, startScript);
         await $`chmod +x ${mountPoint}/etc/sandbox/start.sh`.quiet();
       }
@@ -274,7 +283,7 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
   }
 
   private async injectEditorConfigs(mountPoint: string): Promise<void> {
-    const configs = ConfigFilesService.getMergedForSandbox(this.project?.id);
+    const configs = ConfigFilesService.getMergedForSandbox(this.workspace?.id);
 
     for (const configFile of configs) {
       const targetPath = configFile.path.replace(/^~/, "/home/dev");
@@ -304,16 +313,17 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
   }
 
   private generateSandboxMd(): string {
-    const projectSection = this.project
-      ? `## Project: ${this.project.name}
-- **Repository**: ${this.project.gitUrl}
-- **Branch**: ${this.project.defaultBranch}
+    const workspaceSection = this.workspace
+      ? `## Workspace: ${this.workspace.name}
+
+### Repositories
+${this.workspace.config.repos.map((r) => `- ${this.getRepoDisplayName(r)}`).join("\n") || "No repositories configured"}
 `
       : "";
 
     return `# Sandbox Environment: ${this.sandboxId}
 
-${projectSection}## Available Services
+${workspaceSection}## Available Services
 
 | Service | URL | Port |
 |---------|-----|------|
@@ -351,6 +361,13 @@ Your code is located in \`/home/dev/workspace\`
 - Network issues? Run \`ping 172.16.0.1\`
 - Need help? Check the project documentation
 `;
+  }
+
+  private getRepoDisplayName(repo: RepoConfig): string {
+    if ("url" in repo) {
+      return `${repo.url} (branch: ${repo.branch})`;
+    }
+    return `${repo.repo} (branch: ${repo.branch})`;
   }
 
   private async launchFirecracker(): Promise<void> {
@@ -426,8 +443,8 @@ Your code is located in \`/home/dev/workspace\`
     }
 
     await this.client.setMachineConfig(
-      this.sandbox.resources.vcpus,
-      this.sandbox.resources.memoryMb,
+      this.sandbox.runtime.vcpus,
+      this.sandbox.runtime.memoryMb,
     );
 
     await Bun.sleep(100);
@@ -464,34 +481,46 @@ Your code is located in \`/home/dev/workspace\`
     }
 
     if (this.needsRepoClone()) {
-      await this.cloneRepository();
+      await this.cloneRepositories();
     }
   }
 
   private needsRepoClone(): boolean {
     return (
       !this.usedPrebuild &&
-      !!this.project?.gitUrl &&
-      this.project.gitUrl.length > 0
+      !!this.workspace?.config.repos &&
+      this.workspace.config.repos.length > 0
     );
   }
 
-  private async cloneRepository(): Promise<void> {
-    if (!this.project?.gitUrl) return;
+  private async cloneRepositories(): Promise<void> {
+    if (
+      !this.workspace?.config.repos ||
+      this.workspace.config.repos.length === 0
+    ) {
+      return;
+    }
 
-    const branch = this.options.branch ?? this.project.defaultBranch;
-    const workspace = "/home/dev/workspace";
+    for (const repo of this.workspace.config.repos) {
+      await this.cloneRepository(repo);
+    }
+  }
+
+  private async cloneRepository(repo: RepoConfig): Promise<void> {
+    const clonePath = `/home/dev/workspace/${repo.clonePath}`;
+    const gitUrl = "url" in repo ? repo.url : await this.resolveSourceUrl(repo);
+    const branch = repo.branch;
 
     log.info(
-      { sandboxId: this.sandboxId, gitUrl: this.project.gitUrl, branch },
+      { sandboxId: this.sandboxId, gitUrl, branch, clonePath },
       "Cloning repository in sandbox",
     );
 
-    await AgentClient.exec(this.sandboxId, `rm -rf ${workspace}`);
+    await AgentClient.exec(this.sandboxId, `rm -rf ${clonePath}`);
 
     const result = await AgentClient.exec(
       this.sandboxId,
-      `git clone --depth 1 -b ${branch} ${this.project.gitUrl} ${workspace}`,
+      `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
       { timeout: 120000 },
     );
 
@@ -503,12 +532,26 @@ Your code is located in \`/home/dev/workspace\`
       throw new Error(`Git clone failed: ${result.stderr}`);
     }
 
-    await AgentClient.exec(this.sandboxId, `chown -R dev:dev ${workspace}`);
+    await AgentClient.exec(this.sandboxId, `chown -R dev:dev ${clonePath}`);
     await AgentClient.exec(
       this.sandboxId,
-      `su - dev -c 'git config --global --add safe.directory ${workspace}'`,
+      `su - dev -c 'git config --global --add safe.directory ${clonePath}'`,
     );
-    log.info({ sandboxId: this.sandboxId }, "Repository cloned successfully");
+    log.info(
+      { sandboxId: this.sandboxId, clonePath },
+      "Repository cloned successfully",
+    );
+  }
+
+  private async resolveSourceUrl(repo: {
+    sourceId: string;
+    repo: string;
+    branch: string;
+    clonePath: string;
+  }): Promise<string> {
+    // TODO: Look up sourceId in GitSourceRepository and construct clone URL
+    // For now, assume GitHub and construct URL
+    return `https://github.com/${repo.repo}.git`;
   }
 
   private async registerRoutes(): Promise<void> {
@@ -529,7 +572,7 @@ Your code is located in \`/home/dev/workspace\`
       },
     );
 
-    this.sandbox.urls = {
+    this.sandbox.runtime.urls = {
       ...urls,
       ssh: `ssh root@${this.network?.ipAddress}`,
     };
@@ -540,7 +583,7 @@ Your code is located in \`/home/dev/workspace\`
       throw new Error("Sandbox not initialized");
     }
     this.sandbox.status = "running";
-    this.sandbox.pid = this.pid;
+    this.sandbox.runtime.pid = this.pid;
 
     SandboxRepository.update(this.sandboxId, this.sandbox);
     log.info(

@@ -37,6 +37,14 @@ function DashboardPage() {
   const { data: storage } = useSuspenseQuery(systemStorageQuery);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
 
+  if (!health || !stats || !storage || !sandboxes) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">Loading dashboard...</p>
+      </div>
+    );
+  }
+
   const runningSandboxes = sandboxes.filter(
     (s) => s.status === "running",
   ).length;

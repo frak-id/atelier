@@ -54,15 +54,6 @@ function SandboxDetailPage() {
   const navigate = Route.useNavigate();
   const { data: sandbox } = useSuspenseQuery(sandboxDetailQuery(id));
 
-  const { data: metrics } = useQuery({
-    ...sandboxMetricsQuery(id),
-    enabled: sandbox.status === "running",
-  });
-  const { data: services } = useQuery({
-    ...sandboxServicesQuery(id),
-    enabled: sandbox.status === "running",
-  });
-
   const deleteMutation = useDeleteSandbox();
   const stopMutation = useStopSandbox();
   const startMutation = useStartSandbox();
@@ -73,6 +64,23 @@ function SandboxDetailPage() {
     exitCode: number;
   } | null>(null);
   const execMutation = useExecCommand(id);
+
+  const { data: metrics } = useQuery({
+    ...sandboxMetricsQuery(id),
+    enabled: sandbox?.status === "running",
+  });
+  const { data: services } = useQuery({
+    ...sandboxServicesQuery(id),
+    enabled: sandbox?.status === "running",
+  });
+
+  if (!sandbox) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">Sandbox not found</p>
+      </div>
+    );
+  }
 
   const handleDelete = () => {
     if (confirm(`Delete sandbox ${id}?`)) {
@@ -126,7 +134,7 @@ function SandboxDetailPage() {
             <>
               <Button variant="outline" asChild>
                 <a
-                  href={sandbox.urls.vscode}
+                  href={sandbox.runtime.urls.vscode}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -136,7 +144,7 @@ function SandboxDetailPage() {
               </Button>
               <Button variant="outline" asChild>
                 <a
-                  href={sandbox.urls.opencode}
+                  href={sandbox.runtime.urls.opencode}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -186,20 +194,25 @@ function SandboxDetailPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <DetailRow label="ID" value={sandbox.id} mono />
-            <DetailRow label="IP Address" value={sandbox.ipAddress} mono />
-            <DetailRow label="MAC Address" value={sandbox.macAddress} mono />
+            <DetailRow
+              label="IP Address"
+              value={sandbox.runtime.ipAddress}
+              mono
+            />
+            <DetailRow
+              label="MAC Address"
+              value={sandbox.runtime.macAddress}
+              mono
+            />
             <DetailRow
               label="Resources"
-              value={`${sandbox.resources.vcpus} vCPU / ${sandbox.resources.memoryMb}MB`}
+              value={`${sandbox.runtime.vcpus} vCPU / ${sandbox.runtime.memoryMb}MB`}
             />
-            {sandbox.projectId && (
-              <DetailRow label="Project" value={sandbox.projectId} />
+            {sandbox.workspaceId && (
+              <DetailRow label="Workspace" value={sandbox.workspaceId} />
             )}
-            {sandbox.branch && (
-              <DetailRow label="Branch" value={sandbox.branch} mono />
-            )}
-            {sandbox.pid && (
-              <DetailRow label="PID" value={String(sandbox.pid)} />
+            {sandbox.runtime.pid && (
+              <DetailRow label="PID" value={String(sandbox.runtime.pid)} />
             )}
           </CardContent>
         </Card>
@@ -209,12 +222,12 @@ function SandboxDetailPage() {
             <CardTitle>URLs</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <UrlRow label="VSCode" url={sandbox.urls.vscode} />
-            <UrlRow label="OpenCode" url={sandbox.urls.opencode} />
-            {sandbox.urls.terminal && (
-              <UrlRow label="Terminal" url={sandbox.urls.terminal} />
+            <UrlRow label="VSCode" url={sandbox.runtime.urls.vscode} />
+            <UrlRow label="OpenCode" url={sandbox.runtime.urls.opencode} />
+            {sandbox.runtime.urls.terminal && (
+              <UrlRow label="Terminal" url={sandbox.runtime.urls.terminal} />
             )}
-            <DetailRow label="SSH" value={sandbox.urls.ssh} mono />
+            <DetailRow label="SSH" value={sandbox.runtime.urls.ssh} mono />
           </CardContent>
         </Card>
 
@@ -247,7 +260,9 @@ function SandboxDetailPage() {
                 <div className="h-2 bg-secondary rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary transition-all"
-                    style={{ width: `${metrics.memory.percent}%` }}
+                    style={{
+                      width: `${(metrics.memory.used / metrics.memory.total) * 100}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -262,7 +277,9 @@ function SandboxDetailPage() {
                 <div className="h-2 bg-secondary rounded-full overflow-hidden">
                   <div
                     className="h-full bg-primary transition-all"
-                    style={{ width: `${metrics.disk.percent}%` }}
+                    style={{
+                      width: `${(metrics.disk.used / metrics.disk.total) * 100}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -278,7 +295,7 @@ function SandboxDetailPage() {
             <TabsTrigger value="opencode">OpenCode Sessions</TabsTrigger>
             <TabsTrigger value="terminal">Terminal</TabsTrigger>
             <TabsTrigger value="exec">Exec</TabsTrigger>
-            {sandbox.projectId && (
+            {sandbox.workspaceId && (
               <TabsTrigger value="config">Extract Config</TabsTrigger>
             )}
           </TabsList>
@@ -320,12 +337,12 @@ function SandboxDetailPage() {
           </TabsContent>
 
           <TabsContent value="opencode">
-            <OpenCodeSessions opencodeUrl={sandbox.urls.opencode} />
+            <OpenCodeSessions opencodeUrl={sandbox.runtime.urls.opencode} />
           </TabsContent>
 
           <TabsContent value="terminal" className="h-[500px]">
-            {sandbox.urls.terminal && (
-              <SandboxTerminal terminalUrl={sandbox.urls.terminal} />
+            {sandbox.runtime.urls.terminal && (
+              <SandboxTerminal terminalUrl={sandbox.runtime.urls.terminal} />
             )}
           </TabsContent>
 
@@ -378,21 +395,26 @@ function SandboxDetailPage() {
             </Card>
           </TabsContent>
 
-          {sandbox.projectId && (
+          {sandbox.workspaceId && (
             <TabsContent value="config">
-              <ConfigExtractor sandboxId={id} projectId={sandbox.projectId} />
+              <ConfigExtractor
+                sandboxId={id}
+                workspaceId={sandbox.workspaceId}
+              />
             </TabsContent>
           )}
         </Tabs>
       )}
 
-      {sandbox.error && (
+      {sandbox.runtime.error && (
         <Card className="border-destructive">
           <CardHeader>
             <CardTitle className="text-destructive">Error</CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="whitespace-pre-wrap text-sm">{sandbox.error}</pre>
+            <pre className="whitespace-pre-wrap text-sm">
+              {sandbox.runtime.error}
+            </pre>
           </CardContent>
         </Card>
       )}
@@ -503,10 +525,10 @@ function OpenCodeSessions({ opencodeUrl }: { opencodeUrl: string }) {
 
 function ConfigExtractor({
   sandboxId,
-  projectId,
+  workspaceId,
 }: {
   sandboxId: string;
-  projectId: string;
+  workspaceId: string;
 }) {
   const { data, isLoading, refetch } = useQuery(
     sandboxDiscoverConfigsQuery(sandboxId),
@@ -529,7 +551,7 @@ function ConfigExtractor({
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <FileCode className="h-5 w-5" />
-          Extract Config to Project
+          Extract Config to Workspace
         </CardTitle>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
           <RefreshCw className="h-4 w-4 mr-1" />
@@ -538,14 +560,14 @@ function ConfigExtractor({
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground mb-4">
-          Extract config files from this sandbox to save as project-specific
+          Extract config files from this sandbox to save as workspace-specific
           configuration. These will be applied to new sandboxes created from{" "}
           <Link
-            to="/projects/$id"
-            params={{ id: projectId }}
+            to="/workspaces/$id"
+            params={{ id: workspaceId }}
             className="text-primary hover:underline"
           >
-            this project
+            this workspace
           </Link>
           .
         </p>

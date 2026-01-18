@@ -1,11 +1,11 @@
 import { FIRECRACKER } from "@frak-sandbox/shared/constants";
-import type { CreateSandboxOptions, Sandbox } from "@frak-sandbox/shared/types";
 import { $ } from "bun";
 import { config } from "../lib/config.ts";
 import { NotFoundError } from "../lib/errors.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { fileExists } from "../lib/shell.ts";
 import { SandboxRepository } from "../state/database.ts";
+import type { CreateSandboxOptions, Sandbox } from "../types/index.ts";
 import { CaddyService } from "./caddy.ts";
 import { FirecrackerClient } from "./firecracker-client.ts";
 import { NetworkService } from "./network.ts";
@@ -35,10 +35,14 @@ export const FirecrackerService = {
     log.info({ sandboxId }, "Destroying sandbox");
 
     if (!config.isMock()) {
-      if (sandbox.pid) {
-        await $`kill ${sandbox.pid} 2>/dev/null || true`.quiet().nothrow();
+      if (sandbox.runtime.pid) {
+        await $`kill ${sandbox.runtime.pid} 2>/dev/null || true`
+          .quiet()
+          .nothrow();
         await Bun.sleep(500);
-        await $`kill -9 ${sandbox.pid} 2>/dev/null || true`.quiet().nothrow();
+        await $`kill -9 ${sandbox.runtime.pid} 2>/dev/null || true`
+          .quiet()
+          .nothrow();
       }
 
       const socketPath = getSocketPath(sandboxId);
@@ -55,7 +59,7 @@ export const FirecrackerService = {
       const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
       await NetworkService.deleteTap(tapDevice);
 
-      NetworkService.release(sandbox.ipAddress);
+      NetworkService.release(sandbox.runtime.ipAddress);
       await CaddyService.removeRoutes(sandboxId);
     }
 
@@ -69,12 +73,14 @@ export const FirecrackerService = {
       return undefined;
     }
 
-    if (config.isMock() || !sandbox.pid) {
+    if (config.isMock() || !sandbox.runtime.pid) {
       return sandbox;
     }
 
     const socketPath = getSocketPath(sandboxId);
-    const processAlive = await $`kill -0 ${sandbox.pid}`.quiet().nothrow();
+    const processAlive = await $`kill -0 ${sandbox.runtime.pid}`
+      .quiet()
+      .nothrow();
     const socketExists = await fileExists(socketPath);
 
     if (processAlive.exitCode !== 0 || !socketExists) {
@@ -82,7 +88,7 @@ export const FirecrackerService = {
         log.warn(
           {
             sandboxId,
-            pid: sandbox.pid,
+            pid: sandbox.runtime.pid,
             processAlive: processAlive.exitCode === 0,
             socketPath,
             socketExists,
@@ -152,8 +158,8 @@ export const FirecrackerService = {
         );
       }
 
-      const processAlive = sandbox.pid
-        ? await $`kill -0 ${sandbox.pid}`.quiet().nothrow()
+      const processAlive = sandbox.runtime.pid
+        ? await $`kill -0 ${sandbox.runtime.pid}`.quiet().nothrow()
         : { exitCode: 1 };
 
       if (processAlive.exitCode !== 0) {

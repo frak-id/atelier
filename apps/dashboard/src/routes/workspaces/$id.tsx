@@ -7,23 +7,21 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Rocket,
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
 import type { ConfigFile } from "@/api/client";
 import {
   configFilesListQuery,
-  projectDetailQuery,
   sandboxListQuery,
   useCreateConfigFile,
   useCreateSandbox,
   useDeleteConfigFile,
-  useDeleteProject,
-  useTriggerPrebuild,
+  useDeleteWorkspace,
   useUpdateConfigFile,
+  workspaceDetailQuery,
 } from "@/api/queries";
-import { EditProjectDialog } from "@/components/edit-project-dialog";
+import { EditWorkspaceDialog } from "@/components/edit-workspace-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,12 +44,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/utils";
 
-export const Route = createFileRoute("/projects/$id")({
-  component: ProjectDetailPage,
+export const Route = createFileRoute("/workspaces/$id")({
+  component: WorkspaceDetailPage,
   loader: ({ context, params }) => {
-    context.queryClient.ensureQueryData(projectDetailQuery(params.id));
+    context.queryClient.ensureQueryData(workspaceDetailQuery(params.id));
     context.queryClient.ensureQueryData(
-      configFilesListQuery({ scope: "project", projectId: params.id }),
+      configFilesListQuery({ scope: "workspace", workspaceId: params.id }),
     );
   },
   pendingComponent: () => (
@@ -62,45 +60,44 @@ export const Route = createFileRoute("/projects/$id")({
   ),
 });
 
-function ProjectDetailPage() {
+function WorkspaceDetailPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { data: project } = useSuspenseQuery(projectDetailQuery(id));
+  const { data: workspace } = useSuspenseQuery(workspaceDetailQuery(id));
   const { data: sandboxes } = useSuspenseQuery(
-    sandboxListQuery({ projectId: id }),
+    sandboxListQuery({ workspaceId: id }),
   );
   const { data: configFiles } = useSuspenseQuery(
-    configFilesListQuery({ scope: "project", projectId: id }),
+    configFilesListQuery({ scope: "workspace", workspaceId: id }),
   );
   const [editOpen, setEditOpen] = useState(false);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ConfigFile | null>(null);
 
-  const deleteMutation = useDeleteProject();
-  const prebuildMutation = useTriggerPrebuild();
+  const deleteMutation = useDeleteWorkspace();
   const createSandboxMutation = useCreateSandbox();
   const createConfigMutation = useCreateConfigFile();
   const updateConfigMutation = useUpdateConfigFile();
   const deleteConfigMutation = useDeleteConfigFile();
 
+  if (!workspace) {
+    return <div>Workspace not found</div>;
+  }
+
   const handleDelete = () => {
-    if (confirm(`Delete project "${project.name}"?`)) {
+    if (confirm(`Delete workspace "${workspace.name}"?`)) {
       deleteMutation.mutate(id, {
-        onSuccess: () => navigate({ to: "/projects" }),
+        onSuccess: () => navigate({ to: "/workspaces" }),
       });
     }
   };
 
-  const handlePrebuild = () => {
-    prebuildMutation.mutate(id);
-  };
-
   const handleSpawnSandbox = () => {
     createSandboxMutation.mutate(
-      { projectId: id },
+      { workspaceId: id },
       {
         onSuccess: (result) => {
-          if ("id" in result && result.status !== "queued") {
+          if (result && "id" in result) {
             navigate({ to: "/sandboxes/$id", params: { id: result.id } });
           }
         },
@@ -108,6 +105,7 @@ function ProjectDetailPage() {
     );
   };
 
+  const prebuildStatus = workspace.config.prebuild?.status ?? "none";
   const prebuildVariant = {
     none: "secondary",
     building: "warning",
@@ -115,25 +113,26 @@ function ProjectDetailPage() {
     failed: "error",
   } as const;
 
-  const projectSandboxes = sandboxes.filter((s) => s.projectId === id);
+  const workspaceSandboxes =
+    sandboxes?.filter((s) => s.workspaceId === id) ?? [];
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link to="/projects">
+          <Link to="/workspaces">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">{project.name}</h1>
-            <Badge variant={prebuildVariant[project.prebuildStatus]}>
-              Prebuild: {project.prebuildStatus}
+            <h1 className="text-3xl font-bold">{workspace.name}</h1>
+            <Badge variant={prebuildVariant[prebuildStatus]}>
+              Prebuild: {prebuildStatus}
             </Badge>
           </div>
-          <p className="text-muted-foreground font-mono text-sm">
-            {project.gitUrl}
+          <p className="text-muted-foreground text-sm">
+            {workspace.config.repos.length} repository(ies) configured
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -148,24 +147,6 @@ function ProjectDetailPage() {
               <Play className="h-4 w-4 mr-2" />
             )}
             Spawn Sandbox
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handlePrebuild}
-            disabled={
-              prebuildMutation.isPending ||
-              project.prebuildStatus === "building"
-            }
-          >
-            {prebuildMutation.isPending ||
-            project.prebuildStatus === "building" ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Rocket className="h-4 w-4 mr-2" />
-            )}
-            {project.prebuildStatus === "building"
-              ? "Building..."
-              : "Trigger Prebuild"}
           </Button>
           <Button variant="outline" onClick={() => setEditOpen(true)}>
             <Edit className="h-4 w-4 mr-2" />
@@ -184,59 +165,70 @@ function ProjectDetailPage() {
             <CardTitle>Configuration</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <DetailRow label="ID" value={project.id} mono />
-            <DetailRow
-              label="Default Branch"
-              value={project.defaultBranch}
-              mono
-            />
-            <DetailRow label="Base Image" value={project.baseImage} />
+            <DetailRow label="ID" value={workspace.id} mono />
+            <DetailRow label="Base Image" value={workspace.config.baseImage} />
             <DetailRow
               label="Resources"
-              value={`${project.vcpus} vCPU / ${project.memoryMb}MB`}
+              value={`${workspace.config.vcpus} vCPU / ${workspace.config.memoryMb}MB`}
             />
-            <DetailRow label="Created" value={formatDate(project.createdAt)} />
-            <DetailRow label="Updated" value={formatDate(project.updatedAt)} />
+            <DetailRow
+              label="Exposed Ports"
+              value={
+                workspace.config.exposedPorts.length > 0
+                  ? workspace.config.exposedPorts.join(", ")
+                  : "None"
+              }
+            />
+            <DetailRow
+              label="Created"
+              value={formatDate(workspace.createdAt)}
+            />
+            <DetailRow
+              label="Updated"
+              value={formatDate(workspace.updatedAt)}
+            />
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Prebuild Status</CardTitle>
+            <CardTitle>
+              Repositories ({workspace.config.repos.length})
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Status</span>
-              <Badge variant={prebuildVariant[project.prebuildStatus]}>
-                {project.prebuildStatus}
-              </Badge>
-            </div>
-            {project.latestPrebuildId && (
-              <DetailRow
-                label="Latest Prebuild"
-                value={project.latestPrebuildId}
-                mono
-              />
+          <CardContent>
+            {workspace.config.repos.length === 0 ? (
+              <p className="text-muted-foreground">
+                No repositories configured
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {workspace.config.repos.map((repo, idx) => (
+                  <div
+                    key={`repo-${idx}`}
+                    className="p-2 bg-muted rounded text-sm font-mono"
+                  >
+                    {"url" in repo
+                      ? repo.url
+                      : `${repo.repo} (source: ${repo.sourceId})`}
+                    <span className="text-muted-foreground ml-2">
+                      → {repo.clonePath}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
-            <DetailRow
-              label="Exposed Ports"
-              value={
-                project.exposedPorts.length > 0
-                  ? project.exposedPorts.join(", ")
-                  : "None"
-              }
-            />
           </CardContent>
         </Card>
 
-        {project.initCommands.length > 0 && (
+        {workspace.config.initCommands.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Init Commands</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="bg-muted rounded p-3 font-mono text-sm space-y-1">
-                {project.initCommands.map((cmd) => (
+                {workspace.config.initCommands.map((cmd) => (
                   <div key={cmd}>$ {cmd}</div>
                 ))}
               </div>
@@ -244,14 +236,14 @@ function ProjectDetailPage() {
           </Card>
         )}
 
-        {project.startCommands.length > 0 && (
+        {workspace.config.startCommands.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Start Commands</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="bg-muted rounded p-3 font-mono text-sm space-y-1">
-                {project.startCommands.map((cmd) => (
+                {workspace.config.startCommands.map((cmd) => (
                   <div key={cmd}>$ {cmd}</div>
                 ))}
               </div>
@@ -263,7 +255,7 @@ function ProjectDetailPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <FileCode className="h-5 w-5" />
-              Config Files ({configFiles.length})
+              Config Files ({configFiles?.length ?? 0})
             </CardTitle>
             <Button
               size="sm"
@@ -277,9 +269,9 @@ function ProjectDetailPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            {configFiles.length === 0 ? (
+            {!configFiles || configFiles.length === 0 ? (
               <p className="text-muted-foreground">
-                No project-specific config files. Add one to override global
+                No workspace-specific config files. Add one to override global
                 configs.
               </p>
             ) : (
@@ -325,16 +317,18 @@ function ProjectDetailPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Active Sandboxes ({projectSandboxes.length})</CardTitle>
+            <CardTitle>
+              Active Sandboxes ({workspaceSandboxes.length})
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            {projectSandboxes.length === 0 ? (
+            {workspaceSandboxes.length === 0 ? (
               <p className="text-muted-foreground">
-                No sandboxes for this project
+                No sandboxes for this workspace
               </p>
             ) : (
               <div className="space-y-2">
-                {projectSandboxes.map((sandbox) => (
+                {workspaceSandboxes.map((sandbox) => (
                   <Link
                     key={sandbox.id}
                     to="/sandboxes/$id"
@@ -356,7 +350,7 @@ function ProjectDetailPage() {
                       </Badge>
                     </div>
                     <span className="text-muted-foreground text-sm">
-                      {sandbox.ipAddress}
+                      {sandbox.runtime.ipAddress}
                     </span>
                   </Link>
                 ))}
@@ -366,14 +360,14 @@ function ProjectDetailPage() {
         </Card>
       </div>
 
-      <EditProjectDialog
-        project={project}
+      <EditWorkspaceDialog
+        workspace={workspace}
         open={editOpen}
         onOpenChange={setEditOpen}
       />
 
       <ConfigFileDialog
-        projectId={id}
+        workspaceId={id}
         config={editingConfig}
         open={configDialogOpen}
         onOpenChange={(open) => {
@@ -388,7 +382,7 @@ function ProjectDetailPage() {
             );
           } else {
             createConfigMutation.mutate(
-              { ...data, scope: "project", projectId: id },
+              { ...data, scope: "workspace", workspaceId: id },
               { onSuccess: () => setConfigDialogOpen(false) },
             );
           }
@@ -419,7 +413,7 @@ function DetailRow({
 }
 
 type ConfigDialogProps = {
-  projectId: string;
+  workspaceId: string;
   config: ConfigFile | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;

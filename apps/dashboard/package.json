@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@elysiajs/eden": "^1.4.6",
+    "@frak-sandbox/manager": "workspace:*",
     "@frak-sandbox/shared": "workspace:*",
     "@opencode-ai/sdk": "^1.1.23",
     "@radix-ui/react-dialog": "^1.1.4",

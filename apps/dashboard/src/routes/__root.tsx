@@ -51,8 +51,8 @@ function RootLayout() {
             <NavLink to="/sandboxes" icon={Boxes}>
               Sandboxes
             </NavLink>
-            <NavLink to="/projects" icon={FolderGit2}>
-              Projects
+            <NavLink to="/workspaces" icon={FolderGit2}>
+              Workspaces
             </NavLink>
             <NavLink to="/images" icon={HardDrive}>
               Images
@@ -89,8 +89,8 @@ function RootLayout() {
               <NavLink to="/sandboxes" icon={Boxes}>
                 Sandboxes
               </NavLink>
-              <NavLink to="/projects" icon={FolderGit2}>
-                Projects
+              <NavLink to="/workspaces" icon={FolderGit2}>
+                Workspaces
               </NavLink>
               <NavLink to="/images" icon={HardDrive}>
                 Images

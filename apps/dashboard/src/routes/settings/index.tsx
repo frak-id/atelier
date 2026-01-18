@@ -1,8 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Download, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
-import { api, type ConfigFile, type ConfigFileContentType } from "@/api/client";
+import type { ConfigFile, ConfigFileContentType } from "@/api/client";
+import {
+  configFilesListQuery,
+  useCreateConfigFile,
+  useDeleteConfigFile,
+  useUpdateConfigFile,
+  workspaceListQuery,
+} from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,53 +28,28 @@ export const Route = createFileRoute("/settings/")({
 });
 
 function SettingsPage() {
-  const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const { data: globalConfigs, isLoading: loadingGlobal } = useQuery({
-    queryKey: ["config-files", "global"],
-    queryFn: () => api.configFiles.list({ scope: "global" }),
-  });
+  const { data: globalConfigs, isLoading: loadingGlobal } = useQuery(
+    configFilesListQuery({ scope: "global" }),
+  );
 
-  const { data: projects } = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => api.projects.list(),
-  });
+  const { data: workspaces } = useQuery(workspaceListQuery());
 
-  const { data: allProjectConfigs } = useQuery({
-    queryKey: ["config-files", "project"],
-    queryFn: () => api.configFiles.list({ scope: "project" }),
-  });
+  const { data: allWorkspaceConfigs } = useQuery(
+    configFilesListQuery({ scope: "workspace" }),
+  );
 
-  const createMutation = useMutation({
-    mutationFn: api.configFiles.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["config-files"] });
-    },
-  });
+  const createMutation = useCreateConfigFile();
+  const updateMutation = useUpdateConfigFile();
+  const deleteMutation = useDeleteConfigFile();
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: { content?: string } }) =>
-      api.configFiles.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["config-files"] });
-      setEditingId(null);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: api.configFiles.delete,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["config-files"] });
-    },
-  });
-
-  const projectConfigCounts = new Map<string, number>();
-  allProjectConfigs?.forEach((c) => {
-    if (c.projectId) {
-      projectConfigCounts.set(
-        c.projectId,
-        (projectConfigCounts.get(c.projectId) ?? 0) + 1,
+  const workspaceConfigCounts = new Map<string, number>();
+  allWorkspaceConfigs?.forEach((c: ConfigFile) => {
+    if (c.workspaceId) {
+      workspaceConfigCounts.set(
+        c.workspaceId,
+        (workspaceConfigCounts.get(c.workspaceId) ?? 0) + 1,
       );
     }
   });
@@ -93,7 +75,9 @@ function SettingsPage() {
       </div>
 
       <AddConfigFileDialog
-        onAdd={(data) => createMutation.mutate({ ...data, scope: "global" })}
+        onAdd={(data) =>
+          createMutation.mutate({ ...data, scope: "global" as const })
+        }
         isPending={createMutation.isPending}
       />
 
@@ -105,14 +89,17 @@ function SettingsPage() {
             </CardContent>
           </Card>
         ) : (
-          globalConfigs?.map((config) => (
+          globalConfigs?.map((config: ConfigFile) => (
             <ConfigFileCard
               key={config.id}
               config={config}
               isEditing={editingId === config.id}
               onEdit={() => setEditingId(config.id)}
               onSave={(content) =>
-                updateMutation.mutate({ id: config.id, data: { content } })
+                updateMutation.mutate(
+                  { id: config.id, data: { content } },
+                  { onSuccess: () => setEditingId(null) },
+                )
               }
               onCancel={() => setEditingId(null)}
               onDelete={() => {
@@ -127,19 +114,19 @@ function SettingsPage() {
       </div>
 
       <div className="border-t pt-6">
-        <h2 className="text-xl font-bold mb-4">Project Config Overrides</h2>
-        {projects?.length === 0 ? (
-          <p className="text-muted-foreground">No projects yet.</p>
+        <h2 className="text-xl font-bold mb-4">Workspace Config Overrides</h2>
+        {!workspaces || workspaces.length === 0 ? (
+          <p className="text-muted-foreground">No workspaces yet.</p>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {projects?.map((project) => {
-              const count = projectConfigCounts.get(project.id) ?? 0;
+            {workspaces.map((workspace) => {
+              const count = workspaceConfigCounts.get(workspace.id) ?? 0;
               return (
-                <Card key={project.id}>
+                <Card key={workspace.id}>
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base flex items-center justify-between">
-                      {project.name}
-                      <Link to="/projects/$id" params={{ id: project.id }}>
+                      {workspace.name}
+                      <Link to="/workspaces/$id" params={{ id: workspace.id }}>
                         <Button variant="ghost" size="sm">
                           <ExternalLink className="h-4 w-4" />
                         </Button>

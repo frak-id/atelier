@@ -67,8 +67,8 @@ function SandboxesPage() {
 
   const filteredSandboxes =
     statusFilter === "all"
-      ? sandboxes
-      : sandboxes.filter((s) => s.status === statusFilter);
+      ? (sandboxes ?? [])
+      : (sandboxes ?? []).filter((s) => s.status === statusFilter);
 
   const handleDelete = (id: string) => {
     if (confirm(`Delete sandbox ${id}?`)) {
@@ -77,10 +77,10 @@ function SandboxesPage() {
   };
 
   const handleRecreate = async (sandbox: Sandbox) => {
-    if (!sandbox.projectId) return;
+    if (!sandbox.workspaceId) return;
     if (
       !confirm(
-        `This will delete the current sandbox and create a new one from project "${sandbox.projectId}". Continue?`,
+        `This will delete the current sandbox and create a new one from workspace "${sandbox.workspaceId}". Continue?`,
       )
     ) {
       return;
@@ -90,9 +90,7 @@ function SandboxesPage() {
     try {
       await deleteMutation.mutateAsync(sandbox.id);
       await createMutation.mutateAsync({
-        projectId: sandbox.projectId,
-        branch: sandbox.branch,
-        async: true,
+        workspaceId: sandbox.workspaceId,
       });
     } finally {
       setRecreatingId(null);
@@ -212,8 +210,8 @@ function SandboxCard({
           <Badge variant={statusVariant[sandbox.status]}>
             {sandbox.status}
           </Badge>
-          {sandbox.projectId && (
-            <Badge variant="outline">{sandbox.projectId}</Badge>
+          {sandbox.workspaceId && (
+            <Badge variant="outline">{sandbox.workspaceId}</Badge>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -221,7 +219,7 @@ function SandboxCard({
             <>
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href={sandbox.urls.vscode}
+                  href={sandbox.runtime.urls.vscode}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -231,7 +229,7 @@ function SandboxCard({
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href={sandbox.urls.opencode}
+                  href={sandbox.runtime.urls.opencode}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -291,7 +289,7 @@ function SandboxCard({
               </TooltipContent>
             </Tooltip>
           )}
-          {sandbox.status === "error" && sandbox.projectId && onRecreate && (
+          {sandbox.status === "error" && sandbox.workspaceId && onRecreate && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -335,31 +333,31 @@ function SandboxCard({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-muted-foreground">IP Address</span>
-            <p className="font-mono">{sandbox.ipAddress}</p>
+            <p className="font-mono">{sandbox.runtime.ipAddress}</p>
           </div>
           <div>
             <span className="text-muted-foreground">Resources</span>
             <p>
-              {sandbox.resources.vcpus} vCPU / {sandbox.resources.memoryMb}MB
+              {sandbox.runtime.vcpus} vCPU / {sandbox.runtime.memoryMb}MB
             </p>
           </div>
           <div>
             <span className="text-muted-foreground">Created</span>
             <p>{formatRelativeTime(sandbox.createdAt)}</p>
           </div>
-          {sandbox.branch && (
+          {sandbox.workspaceId && (
             <div>
-              <span className="text-muted-foreground">Branch</span>
-              <p className="font-mono">{sandbox.branch}</p>
+              <span className="text-muted-foreground">Workspace</span>
+              <p className="font-mono">{sandbox.workspaceId}</p>
             </div>
           )}
         </div>
-        {sandbox.error && (
+        {sandbox.runtime.error && (
           <div className="mt-3 p-2 bg-destructive/10 rounded text-sm text-destructive">
-            {sandbox.error}
+            {sandbox.runtime.error}
           </div>
         )}
-        {sandbox.status === "stopped" && !sandbox.projectId && (
+        {sandbox.status === "stopped" && !sandbox.workspaceId && (
           <div className="mt-3 p-2 bg-muted rounded text-sm text-muted-foreground">
             This sandbox is stopped and cannot be restarted. You can delete it
             or create a new one.

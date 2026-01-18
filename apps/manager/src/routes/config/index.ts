@@ -11,13 +11,15 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
     ({ query }) => {
       return ConfigFilesService.list({
         scope: query.scope,
-        projectId: query.projectId,
+        workspaceId: query.workspaceId,
       });
     },
     {
       query: t.Object({
-        scope: t.Optional(t.Union([t.Literal("global"), t.Literal("project")])),
-        projectId: t.Optional(t.String()),
+        scope: t.Optional(
+          t.Union([t.Literal("global"), t.Literal("workspace")]),
+        ),
+        workspaceId: t.Optional(t.String()),
       }),
     },
   )
@@ -44,7 +46,7 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
           content: body.content,
           contentType: body.contentType,
           scope: body.scope,
-          projectId: body.projectId,
+          workspaceId: body.workspaceId,
         };
         return ConfigFilesService.create(options);
       } catch (error) {
@@ -63,8 +65,8 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
           t.Literal("text"),
           t.Literal("binary"),
         ]),
-        scope: t.Union([t.Literal("global"), t.Literal("project")]),
-        projectId: t.Optional(t.String()),
+        scope: t.Union([t.Literal("global"), t.Literal("workspace")]),
+        workspaceId: t.Optional(t.String()),
       }),
     },
   )
@@ -115,11 +117,11 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
   .get(
     "/merged",
     ({ query }) => {
-      return ConfigFilesService.getMergedForSandbox(query.projectId);
+      return ConfigFilesService.getMergedForSandbox(query.workspaceId);
     },
     {
       query: t.Object({
-        projectId: t.Optional(t.String()),
+        workspaceId: t.Optional(t.String()),
       }),
     },
   );

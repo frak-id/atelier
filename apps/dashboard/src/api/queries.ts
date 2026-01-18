@@ -3,15 +3,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import {
-  api,
-  type CreateConfigFileOptions,
-  type CreateProjectOptions,
-  type CreateSandboxOptions,
-  type GitHubReposParams,
-  type UpdateConfigFileOptions,
-  type UpdateProjectOptions,
-} from "./client";
+import { api } from "./client";
 import {
   deleteOpenCodeSession,
   fetchOpenCodeHealth,
@@ -19,11 +11,18 @@ import {
   fetchOpenCodeSessions,
 } from "./opencode";
 
+function unwrap<T>(result: { data: T; error: unknown }): T {
+  if (result.error) {
+    throw result.error;
+  }
+  return result.data;
+}
+
 export const queryKeys = {
   health: ["health"] as const,
   sandboxes: {
     all: ["sandboxes"] as const,
-    list: (filters?: { status?: string; projectId?: string }) =>
+    list: (filters?: { status?: string; workspaceId?: string }) =>
       ["sandboxes", "list", filters] as const,
     detail: (id: string) => ["sandboxes", "detail", id] as const,
     job: (id: string) => ["sandboxes", "job", id] as const,
@@ -40,11 +39,10 @@ export const queryKeys = {
     messages: (baseUrl: string, sessionId: string) =>
       ["opencode", baseUrl, "messages", sessionId] as const,
   },
-  projects: {
-    all: ["projects"] as const,
-    list: (filters?: { prebuildStatus?: string }) =>
-      ["projects", "list", filters] as const,
-    detail: (id: string) => ["projects", "detail", id] as const,
+  workspaces: {
+    all: ["workspaces"] as const,
+    list: () => ["workspaces", "list"] as const,
+    detail: (id: string) => ["workspaces", "detail", id] as const,
   },
   images: {
     all: ["images"] as const,
@@ -58,116 +56,128 @@ export const queryKeys = {
   },
   configFiles: {
     all: ["configFiles"] as const,
-    list: (params?: { scope?: string; projectId?: string }) =>
+    list: (params?: { scope?: string; workspaceId?: string }) =>
       ["configFiles", "list", params] as const,
     detail: (id: string) => ["configFiles", "detail", id] as const,
-    merged: (projectId?: string) =>
-      ["configFiles", "merged", projectId] as const,
+    merged: (workspaceId?: string) =>
+      ["configFiles", "merged", workspaceId] as const,
   },
   github: {
     status: ["github", "status"] as const,
-    repos: (params?: GitHubReposParams) => ["github", "repos", params] as const,
+    repos: (params?: { page?: number; perPage?: number }) =>
+      ["github", "repos", params] as const,
   },
 };
 
 export const healthQuery = queryOptions({
   queryKey: queryKeys.health,
-  queryFn: () => api.health.get(),
+  queryFn: async () => unwrap(await api.health.get()),
   refetchInterval: 30000,
 });
 
 export const sandboxListQuery = (filters?: {
   status?: string;
-  projectId?: string;
+  workspaceId?: string;
 }) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.list(filters),
-    queryFn: () => api.sandboxes.list(filters),
+    queryFn: async () =>
+      unwrap(
+        await api.api.sandboxes.get({
+          query: filters as Record<string, string>,
+        }),
+      ),
     refetchInterval: 5000,
   });
 
 export const sandboxDetailQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.detail(id),
-    queryFn: () => api.sandboxes.get(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).get()),
     refetchInterval: 5000,
   });
 
 export const sandboxJobQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.job(id),
-    queryFn: () => api.sandboxes.getJob(id),
+    queryFn: async () => unwrap(await api.api.sandboxes.job({ id }).get()),
     refetchInterval: 2000,
   });
 
 export const sandboxHealthQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.health(id),
-    queryFn: () => api.sandboxes.health(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).health.get()),
     refetchInterval: 10000,
   });
 
 export const sandboxMetricsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.metrics(id),
-    queryFn: () => api.sandboxes.metrics(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).metrics.get()),
     refetchInterval: 5000,
   });
 
 export const sandboxAppsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.apps(id),
-    queryFn: () => api.sandboxes.apps(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).apps.get()),
     refetchInterval: 10000,
   });
 
 export const sandboxServicesQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.services(id),
-    queryFn: () => api.sandboxes.services(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).services.get()),
     refetchInterval: 10000,
   });
 
-export const projectListQuery = (filters?: { prebuildStatus?: string }) =>
+export const workspaceListQuery = () =>
   queryOptions({
-    queryKey: queryKeys.projects.list(filters),
-    queryFn: () => api.projects.list(filters),
+    queryKey: queryKeys.workspaces.list(),
+    queryFn: async () => unwrap(await api.api.workspaces.get()),
   });
 
-export const projectDetailQuery = (id: string) =>
+export const workspaceDetailQuery = (id: string) =>
   queryOptions({
-    queryKey: queryKeys.projects.detail(id),
-    queryFn: () => api.projects.get(id),
+    queryKey: queryKeys.workspaces.detail(id),
+    queryFn: async () => unwrap(await api.api.workspaces({ id }).get()),
   });
 
 export const imageListQuery = (all?: boolean) =>
   queryOptions({
     queryKey: queryKeys.images.list(all),
-    queryFn: () => api.images.list(all),
+    queryFn: async () =>
+      unwrap(await api.api.images.get({ query: { all: all ?? undefined } })),
   });
 
 export const systemStatsQuery = queryOptions({
   queryKey: queryKeys.system.stats,
-  queryFn: () => api.system.stats(),
+  queryFn: async () => unwrap(await api.api.system.stats.get()),
   refetchInterval: 5000,
 });
 
 export const systemStorageQuery = queryOptions({
   queryKey: queryKeys.system.storage,
-  queryFn: () => api.system.storage(),
+  queryFn: async () => unwrap(await api.api.system.storage.get()),
   refetchInterval: 30000,
 });
 
 export const systemQueueQuery = queryOptions({
   queryKey: queryKeys.system.queue,
-  queryFn: () => api.system.queue(),
+  queryFn: async () => unwrap(await api.api.system.queue.get()),
   refetchInterval: 2000,
 });
 
 export function useCreateSandbox() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: CreateSandboxOptions) => api.sandboxes.create(data),
+    mutationFn: async (data: {
+      workspaceId?: string;
+      baseImage?: string;
+      vcpus?: number;
+      memoryMb?: number;
+    }) => unwrap(await api.api.sandboxes.post(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
@@ -179,7 +189,8 @@ export function useCreateSandbox() {
 export function useDeleteSandbox() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.sandboxes.delete(id),
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).delete()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
@@ -190,7 +201,8 @@ export function useDeleteSandbox() {
 export function useStopSandbox() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.sandboxes.stop(id),
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).stop.post()),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({
@@ -203,7 +215,8 @@ export function useStopSandbox() {
 export function useStartSandbox() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.sandboxes.start(id),
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).start.post()),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({
@@ -215,53 +228,50 @@ export function useStartSandbox() {
 
 export function useExecCommand(sandboxId: string) {
   return useMutation({
-    mutationFn: (data: { command: string; timeout?: number }) =>
-      api.sandboxes.exec(sandboxId, data),
+    mutationFn: async (data: { command: string; timeout?: number }) =>
+      unwrap(await api.api.sandboxes({ id: sandboxId }).exec.post(data)),
   });
 }
 
-export function useCreateProject() {
+export function useCreateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: CreateProjectOptions) => api.projects.create(data),
+    mutationFn: async (data: {
+      name: string;
+      config?: Record<string, unknown>;
+    }) => unwrap(await api.api.workspaces.post(data)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
     },
   });
 }
 
-export function useUpdateProject() {
+export function useUpdateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateProjectOptions }) =>
-      api.projects.update(id, data),
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: { name?: string; config?: Record<string, unknown> };
+    }) => unwrap(await api.api.workspaces({ id }).put(data)),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.detail(variables.id),
+        queryKey: queryKeys.workspaces.detail(variables.id),
       });
     },
   });
 }
 
-export function useDeleteProject() {
+export function useDeleteWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.projects.delete(id),
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.workspaces({ id }).delete()),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
-    },
-  });
-}
-
-export function useTriggerPrebuild() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.projects.triggerPrebuild(id),
-    onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.detail(id),
-      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
     },
   });
 }
@@ -269,7 +279,7 @@ export function useTriggerPrebuild() {
 export function useSystemCleanup() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api.system.cleanup(),
+    mutationFn: async () => unwrap(await api.api.system.cleanup.post()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.storage });
@@ -313,26 +323,41 @@ export function useDeleteOpenCodeSession(baseUrl: string) {
   });
 }
 
-// Config Files queries and mutations
 export const configFilesListQuery = (params?: {
   scope?: string;
-  projectId?: string;
+  workspaceId?: string;
 }) =>
   queryOptions({
     queryKey: queryKeys.configFiles.list(params),
-    queryFn: () => api.configFiles.list(params),
+    queryFn: async () =>
+      unwrap(
+        await api.api["config-files"].get({
+          query: params as Record<string, string>,
+        }),
+      ),
   });
 
-export const configFileMergedQuery = (projectId?: string) =>
+export const configFileMergedQuery = (workspaceId?: string) =>
   queryOptions({
-    queryKey: queryKeys.configFiles.merged(projectId),
-    queryFn: () => api.configFiles.getMerged(projectId),
+    queryKey: queryKeys.configFiles.merged(workspaceId),
+    queryFn: async () =>
+      unwrap(
+        await api.api["config-files"].merged.get({
+          query: workspaceId ? { workspaceId } : {},
+        }),
+      ),
   });
 
 export function useCreateConfigFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: CreateConfigFileOptions) => api.configFiles.create(data),
+    mutationFn: async (data: {
+      path: string;
+      content: string;
+      contentType: "json" | "text" | "binary";
+      scope: "global" | "workspace";
+      workspaceId?: string;
+    }) => unwrap(await api.api["config-files"].post(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
@@ -342,8 +367,13 @@ export function useCreateConfigFile() {
 export function useUpdateConfigFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateConfigFileOptions }) =>
-      api.configFiles.update(id, data),
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: { content?: string; contentType?: "json" | "text" | "binary" };
+    }) => unwrap(await api.api["config-files"]({ id }).put(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
@@ -353,25 +383,31 @@ export function useUpdateConfigFile() {
 export function useDeleteConfigFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.configFiles.delete(id),
+    mutationFn: async (id: string) =>
+      unwrap(await api.api["config-files"]({ id }).delete()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
   });
 }
 
-// Sandbox config discovery and extraction
 export const sandboxDiscoverConfigsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.discoverConfigs(id),
-    queryFn: () => api.sandboxes.discoverConfigs(id),
+    queryFn: async () =>
+      unwrap(await api.api.sandboxes({ id }).config.discover.get()),
     enabled: !!id,
   });
 
 export function useExtractConfig(sandboxId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (path: string) => api.sandboxes.extractConfig(sandboxId, path),
+    mutationFn: async (path: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).config.extract.post({
+          path,
+        }),
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
@@ -380,20 +416,33 @@ export function useExtractConfig(sandboxId: string) {
 
 export const githubStatusQuery = queryOptions({
   queryKey: queryKeys.github.status,
-  queryFn: () => api.github.status(),
+  queryFn: async () => unwrap(await api.auth.github.status.get()),
   staleTime: 60000,
 });
 
-export const githubReposQuery = (params?: GitHubReposParams) =>
+export const githubReposQuery = (params?: {
+  page?: number;
+  perPage?: number;
+}) =>
   queryOptions({
     queryKey: queryKeys.github.repos(params),
-    queryFn: () => api.github.repos(params),
+    queryFn: async () =>
+      unwrap(
+        await api.api.github.repos.get({
+          query: params
+            ? {
+                page: params.page?.toString(),
+                perPage: params.perPage?.toString(),
+              }
+            : {},
+        }),
+      ),
   });
 
 export function useGitHubLogout() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api.github.logout(),
+    mutationFn: async () => unwrap(await api.auth.github.logout.post()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.github.status });
     },

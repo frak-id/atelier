@@ -30,7 +30,7 @@ export function GitHubStatus() {
         size="sm"
         className="gap-2"
         onClick={() => {
-          window.location.href = `${API_BASE}/auth/github`;
+          window.location.href = `${API_BASE}/auth/github/login`;
         }}
       >
         <Github className="h-4 w-4" />

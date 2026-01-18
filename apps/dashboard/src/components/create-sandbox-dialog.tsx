@@ -2,8 +2,8 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   imageListQuery,
-  projectListQuery,
   useCreateSandbox,
+  workspaceListQuery,
 } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -34,12 +33,11 @@ export function CreateSandboxDialog({
   onOpenChange,
 }: CreateSandboxDialogProps) {
   const { data: images } = useSuspenseQuery(imageListQuery());
-  const { data: projects } = useSuspenseQuery(projectListQuery());
+  const { data: workspaces } = useSuspenseQuery(workspaceListQuery());
   const createMutation = useCreateSandbox();
 
   const [formData, setFormData] = useState({
-    id: "",
-    projectId: "",
+    workspaceId: "",
     baseImage: "dev-base",
     vcpus: 2,
     memoryMb: 2048,
@@ -49,8 +47,7 @@ export function CreateSandboxDialog({
     e.preventDefault();
     createMutation.mutate(
       {
-        id: formData.id || undefined,
-        projectId: formData.projectId || undefined,
+        workspaceId: formData.workspaceId || undefined,
         baseImage: formData.baseImage,
         vcpus: formData.vcpus,
         memoryMb: formData.memoryMb,
@@ -59,8 +56,7 @@ export function CreateSandboxDialog({
         onSuccess: () => {
           onOpenChange(false);
           setFormData({
-            id: "",
-            projectId: "",
+            workspaceId: "",
             baseImage: "dev-base",
             vcpus: 2,
             memoryMb: 2048,
@@ -82,36 +78,24 @@ export function CreateSandboxDialog({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="id">Sandbox ID (optional)</Label>
-              <Input
-                id="id"
-                placeholder="Auto-generated if empty"
-                value={formData.id}
-                onChange={(e) =>
-                  setFormData({ ...formData, id: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="project">Project (optional)</Label>
+              <Label htmlFor="workspace">Workspace (optional)</Label>
               <Select
-                value={formData.projectId || "none"}
+                value={formData.workspaceId || "none"}
                 onValueChange={(value) =>
                   setFormData({
                     ...formData,
-                    projectId: value === "none" ? "" : value,
+                    workspaceId: value === "none" ? "" : value,
                   })
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="No project" />
+                  <SelectValue placeholder="No workspace" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No project</SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
+                  <SelectItem value="none">No workspace</SelectItem>
+                  {workspaces?.map((workspace) => (
+                    <SelectItem key={workspace.id} value={workspace.id}>
+                      {workspace.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -130,7 +114,7 @@ export function CreateSandboxDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {images.map((image) => (
+                  {images?.map((image) => (
                     <SelectItem
                       key={image.id}
                       value={image.id}

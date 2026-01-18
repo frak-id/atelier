@@ -1,5 +1,6 @@
 import type {
   ConfigFile,
+  ConfigFileScope,
   CreateConfigFileOptions,
   MergedConfigFile,
   UpdateConfigFileOptions,
@@ -19,29 +20,29 @@ function rowToConfigFile(row: typeof configFiles.$inferSelect): ConfigFile {
     content: row.content,
     contentType: row.contentType,
     scope: row.scope,
-    projectId: row.projectId ?? undefined,
+    workspaceId: row.workspaceId ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
 export const ConfigFilesService = {
-  list(filters?: { scope?: string; projectId?: string }): ConfigFile[] {
+  list(filters?: { scope?: string; workspaceId?: string }): ConfigFile[] {
     const db = getDatabase();
     let query = db.select().from(configFiles);
 
     if (filters?.scope === "global") {
       query = query.where(eq(configFiles.scope, "global")) as typeof query;
-    } else if (filters?.scope === "project" && filters.projectId) {
+    } else if (filters?.scope === "workspace" && filters.workspaceId) {
       query = query.where(
         and(
-          eq(configFiles.scope, "project"),
-          eq(configFiles.projectId, filters.projectId),
+          eq(configFiles.scope, "workspace"),
+          eq(configFiles.workspaceId, filters.workspaceId),
         ),
       ) as typeof query;
-    } else if (filters?.projectId) {
+    } else if (filters?.workspaceId) {
       query = query.where(
-        eq(configFiles.projectId, filters.projectId),
+        eq(configFiles.workspaceId, filters.workspaceId),
       ) as typeof query;
     }
 
@@ -60,8 +61,8 @@ export const ConfigFilesService = {
 
   getByPath(
     path: string,
-    scope: "global" | "project",
-    projectId?: string,
+    scope: ConfigFileScope,
+    workspaceId?: string,
   ): ConfigFile | undefined {
     const db = getDatabase();
 
@@ -74,15 +75,15 @@ export const ConfigFilesService = {
       return row ? rowToConfigFile(row) : undefined;
     }
 
-    if (scope === "project" && projectId) {
+    if (scope === "workspace" && workspaceId) {
       const row = db
         .select()
         .from(configFiles)
         .where(
           and(
             eq(configFiles.path, path),
-            eq(configFiles.scope, "project"),
-            eq(configFiles.projectId, projectId),
+            eq(configFiles.scope, "workspace"),
+            eq(configFiles.workspaceId, workspaceId),
           ),
         )
         .get();
@@ -99,7 +100,7 @@ export const ConfigFilesService = {
     const existing = this.getByPath(
       options.path,
       options.scope,
-      options.projectId,
+      options.workspaceId,
     );
     if (existing) {
       throw new Error(
@@ -113,7 +114,7 @@ export const ConfigFilesService = {
       content: options.content,
       contentType: options.contentType,
       scope: options.scope,
-      projectId: options.projectId ?? null,
+      workspaceId: options.workspaceId ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -167,10 +168,34 @@ export const ConfigFilesService = {
     log.info({ id, path: existing.path }, "Config file deleted");
   },
 
-  getMergedForSandbox(projectId?: string): MergedConfigFile[] {
+  extractFromSandbox(
+    workspaceId: string | undefined,
+    path: string,
+    content: string,
+    contentType: "json" | "text",
+  ): { action: "created" | "updated"; configFile: ConfigFile } {
+    const scope: ConfigFileScope = workspaceId ? "workspace" : "global";
+    const existing = this.getByPath(path, scope, workspaceId);
+
+    if (existing) {
+      const updated = this.update(existing.id, { content, contentType });
+      return { action: "updated", configFile: updated };
+    }
+
+    const created = this.create({
+      path,
+      content,
+      contentType,
+      scope,
+      workspaceId,
+    });
+    return { action: "created", configFile: created };
+  },
+
+  getMergedForSandbox(workspaceId?: string): MergedConfigFile[] {
     const globalConfigs = this.list({ scope: "global" });
-    const projectConfigs = projectId
-      ? this.list({ scope: "project", projectId })
+    const workspaceConfigs = workspaceId
+      ? this.list({ scope: "workspace", workspaceId })
       : [];
 
     const pathMap = new Map<string, MergedConfigFile>();
@@ -183,7 +208,7 @@ export const ConfigFilesService = {
       });
     }
 
-    for (const config of projectConfigs) {
+    for (const config of workspaceConfigs) {
       const existing = pathMap.get(config.path);
 
       if (!existing) {

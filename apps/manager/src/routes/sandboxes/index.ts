@@ -3,12 +3,19 @@ import { config } from "../../lib/config.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../lib/errors.ts";
 import { createChildLogger } from "../../lib/logger.ts";
 import { AgentClient } from "../../services/agent.ts";
+import { ConfigFilesService } from "../../services/config-files.ts";
 import { FirecrackerService } from "../../services/firecracker.ts";
 import { QueueService } from "../../services/queue.ts";
 import { sandboxStore } from "../../state/store.ts";
-import { SandboxModel } from "./model.ts";
 
 const log = createChildLogger("sandboxes-route");
+
+const SandboxStatusEnum = t.Union([
+  t.Literal("creating"),
+  t.Literal("running"),
+  t.Literal("stopped"),
+  t.Literal("error"),
+]);
 
 export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
@@ -20,21 +27,24 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         sandboxes = sandboxes.filter((s) => s.status === query.status);
       }
 
-      if (query.projectId) {
-        sandboxes = sandboxes.filter((s) => s.projectId === query.projectId);
+      if (query.workspaceId) {
+        sandboxes = sandboxes.filter(
+          (s) => s.workspaceId === query.workspaceId,
+        );
       }
 
       return sandboxes;
     },
     {
-      query: SandboxModel.listQuery,
-      response: t.Array(SandboxModel.response),
+      query: t.Object({
+        status: t.Optional(SandboxStatusEnum),
+        workspaceId: t.Optional(t.String()),
+      }),
     },
   )
   .post(
     "/",
     async ({ body, set }) => {
-      const { async: useQueue, ...options } = body;
       const activeCount =
         sandboxStore.countByStatus("running") +
         sandboxStore.countByStatus("creating");
@@ -43,63 +53,18 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         throw new ResourceExhaustedError("sandboxes");
       }
 
-      log.info({ body, useQueue }, "Creating sandbox");
+      log.info({ body }, "Creating sandbox");
 
-      if (useQueue) {
-        const job = await QueueService.enqueue(options);
-        set.status = 202;
-        return {
-          id: job.id,
-          status: job.status,
-          queuedAt: job.queuedAt,
-          startedAt: job.startedAt,
-          completedAt: job.completedAt,
-          error: job.error,
-        };
-      }
-
-      const sandbox = await FirecrackerService.spawn(options);
+      const sandbox = await FirecrackerService.spawn(body);
       set.status = 201;
       return sandbox;
     },
     {
-      body: SandboxModel.createQueued,
-      response: t.Union([SandboxModel.response, SandboxModel.jobResponse]),
-    },
-  )
-  .get(
-    "/job/:id",
-    ({ params }) => {
-      const job = QueueService.getJob(params.id);
-      if (!job) {
-        throw new NotFoundError("Job", params.id);
-      }
-
-      return {
-        id: job.id,
-        status: job.status,
-        queuedAt: job.queuedAt,
-        startedAt: job.startedAt,
-        completedAt: job.completedAt,
-        error: job.error,
-        result: job.result,
-      };
-    },
-    {
-      params: SandboxModel.idParam,
-      response: t.Object({
-        id: t.String(),
-        status: t.Union([
-          t.Literal("queued"),
-          t.Literal("running"),
-          t.Literal("completed"),
-          t.Literal("failed"),
-        ]),
-        queuedAt: t.String(),
-        startedAt: t.Optional(t.String()),
-        completedAt: t.Optional(t.String()),
-        error: t.Optional(t.String()),
-        result: t.Optional(SandboxModel.response),
+      body: t.Object({
+        workspaceId: t.Optional(t.String()),
+        baseImage: t.Optional(t.String()),
+        vcpus: t.Optional(t.Number({ minimum: 1, maximum: 8 })),
+        memoryMb: t.Optional(t.Number({ minimum: 512, maximum: 16384 })),
       }),
     },
   )
@@ -113,8 +78,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return sandbox;
     },
     {
-      params: SandboxModel.idParam,
-      response: SandboxModel.response,
+      params: t.Object({ id: t.String() }),
     },
   )
   .delete(
@@ -132,7 +96,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return null;
     },
     {
-      params: SandboxModel.idParam,
+      params: t.Object({ id: t.String() }),
     },
   )
   .post(
@@ -147,12 +111,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return FirecrackerService.stop(params.id);
     },
     {
-      params: SandboxModel.idParam,
-      response: SandboxModel.response,
-      detail: {
-        tags: ["sandboxes"],
-        summary: "Stop (pause) a running sandbox",
-      },
+      params: t.Object({ id: t.String() }),
     },
   )
   .post(
@@ -167,15 +126,22 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return FirecrackerService.start(params.id);
     },
     {
-      params: SandboxModel.idParam,
-      response: SandboxModel.response,
-      detail: {
-        tags: ["sandboxes"],
-        summary: "Start (resume) a stopped sandbox",
-      },
+      params: t.Object({ id: t.String() }),
     },
   )
-  // Agent routes - communicate with sandbox-agent inside VM
+  .get(
+    "/job/:id",
+    ({ params }) => {
+      const job = QueueService.getJob(params.id);
+      if (!job) {
+        throw new NotFoundError("Job", params.id);
+      }
+      return job;
+    },
+    {
+      params: t.Object({ id: t.String() }),
+    },
+  )
   .get(
     "/:id/health",
     async ({ params }) => {
@@ -183,12 +149,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-
       return AgentClient.health(params.id);
     },
     {
-      params: SandboxModel.idParam,
-      detail: { tags: ["sandboxes"], summary: "Get sandbox agent health" },
+      params: t.Object({ id: t.String() }),
     },
   )
   .get(
@@ -198,12 +162,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-
       return AgentClient.metrics(params.id);
     },
     {
-      params: SandboxModel.idParam,
-      detail: { tags: ["sandboxes"], summary: "Get sandbox resource metrics" },
+      params: t.Object({ id: t.String() }),
     },
   )
   .get(
@@ -213,15 +175,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-
       return AgentClient.getApps(params.id);
     },
     {
-      params: SandboxModel.idParam,
-      detail: {
-        tags: ["sandboxes"],
-        summary: "List registered apps in sandbox",
-      },
+      params: t.Object({ id: t.String() }),
     },
   )
   .post(
@@ -231,40 +188,14 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-
       return AgentClient.registerApp(params.id, body.port, body.name);
     },
     {
-      params: SandboxModel.idParam,
+      params: t.Object({ id: t.String() }),
       body: t.Object({
         port: t.Number({ minimum: 1, maximum: 65535 }),
-        name: t.String(),
+        name: t.String({ minLength: 1, maxLength: 100 }),
       }),
-      detail: {
-        tags: ["sandboxes"],
-        summary: "Register an app port in sandbox",
-      },
-    },
-  )
-  .delete(
-    "/:id/apps/:port",
-    async ({ params }) => {
-      const sandbox = sandboxStore.getById(params.id);
-      if (!sandbox) {
-        throw new NotFoundError("Sandbox", params.id);
-      }
-
-      return AgentClient.unregisterApp(params.id, parseInt(params.port, 10));
-    },
-    {
-      params: t.Object({
-        id: t.String(),
-        port: t.String(),
-      }),
-      detail: {
-        tags: ["sandboxes"],
-        summary: "Unregister an app port from sandbox",
-      },
     },
   )
   .post(
@@ -274,22 +205,16 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-
-      log.info(
-        { sandboxId: params.id, command: body.command },
-        "Executing command in sandbox",
-      );
       return AgentClient.exec(params.id, body.command, {
         timeout: body.timeout,
       });
     },
     {
-      params: SandboxModel.idParam,
+      params: t.Object({ id: t.String() }),
       body: t.Object({
-        command: t.String(),
+        command: t.String({ minLength: 1 }),
         timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),
       }),
-      detail: { tags: ["sandboxes"], summary: "Execute a command in sandbox" },
     },
   )
   .get(
@@ -299,19 +224,13 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-
-      const lines = query.lines ? parseInt(query.lines, 10) : 100;
-      return AgentClient.logs(params.id, params.service, lines);
+      const lines = query.lines ? Number.parseInt(query.lines, 10) : 100;
+      const result = await AgentClient.logs(params.id, params.service, lines);
+      return { logs: result.content };
     },
     {
-      params: t.Object({
-        id: t.String(),
-        service: t.String(),
-      }),
-      query: t.Object({
-        lines: t.Optional(t.String()),
-      }),
-      detail: { tags: ["sandboxes"], summary: "Get service logs from sandbox" },
+      params: t.Object({ id: t.String(), service: t.String() }),
+      query: t.Object({ lines: t.Optional(t.String()) }),
     },
   )
   .get(
@@ -321,15 +240,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-
       return AgentClient.services(params.id);
     },
     {
-      params: SandboxModel.idParam,
-      detail: {
-        tags: ["sandboxes"],
-        summary: "Get service status from sandbox",
-      },
+      params: t.Object({ id: t.String() }),
     },
   )
   .get(
@@ -339,75 +253,40 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-
       const configs = await AgentClient.discoverConfigs(params.id);
       return { configs };
     },
     {
-      params: SandboxModel.idParam,
-      detail: {
-        tags: ["sandboxes"],
-        summary: "Discover config files in sandbox",
-      },
+      params: t.Object({ id: t.String() }),
     },
   )
   .post(
     "/:id/config/extract",
-    async ({ params, body, set }) => {
+    async ({ params, body }) => {
       const sandbox = sandboxStore.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
 
-      if (!sandbox.projectId) {
-        set.status = 400;
-        return { error: "Sandbox is not associated with a project" };
-      }
-
-      const configContent = await AgentClient.readConfigFile(
+      const fileContent = await AgentClient.readConfigFile(
         params.id,
         body.path,
       );
-      if (!configContent) {
-        set.status = 404;
-        return { error: "Config file not found in sandbox" };
+      if (!fileContent) {
+        throw new NotFoundError("ConfigFile", body.path);
       }
 
-      const { ConfigFilesService } = await import(
-        "../../services/config-files.ts"
+      const result = await ConfigFilesService.extractFromSandbox(
+        sandbox.workspaceId,
+        fileContent.path,
+        fileContent.content,
+        fileContent.contentType,
       );
 
-      const existing = ConfigFilesService.getByPath(
-        configContent.displayPath,
-        "project",
-        sandbox.projectId,
-      );
-
-      if (existing) {
-        const updated = ConfigFilesService.update(existing.id, {
-          content: configContent.content,
-          contentType: configContent.contentType,
-        });
-        return { action: "updated", configFile: updated };
-      }
-
-      const created = ConfigFilesService.create({
-        path: configContent.displayPath,
-        content: configContent.content,
-        contentType: configContent.contentType,
-        scope: "project",
-        projectId: sandbox.projectId,
-      });
-      return { action: "created", configFile: created };
+      return result;
     },
     {
-      params: SandboxModel.idParam,
-      body: t.Object({
-        path: t.String(),
-      }),
-      detail: {
-        tags: ["sandboxes"],
-        summary: "Extract config file from sandbox to project",
-      },
+      params: t.Object({ id: t.String() }),
+      body: t.Object({ path: t.String({ minLength: 1 }) }),
     },
   );

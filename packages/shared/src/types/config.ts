@@ -1,5 +1,5 @@
 export type ConfigFileContentType = "json" | "text" | "binary";
-export type ConfigFileScope = "global" | "project";
+export type ConfigFileScope = "global" | "workspace";
 
 export interface ConfigFile {
   id: string;
@@ -7,7 +7,7 @@ export interface ConfigFile {
   content: string;
   contentType: ConfigFileContentType;
   scope: ConfigFileScope;
-  projectId?: string;
+  workspaceId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -17,7 +17,7 @@ export interface CreateConfigFileOptions {
   content: string;
   contentType: ConfigFileContentType;
   scope: ConfigFileScope;
-  projectId?: string;
+  workspaceId?: string;
 }
 
 export interface UpdateConfigFileOptions {

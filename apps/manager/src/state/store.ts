@@ -1,4 +1,5 @@
-import type { Sandbox, SandboxStatus } from "@frak-sandbox/shared/types";
+import type { SandboxStatus } from "@frak-sandbox/shared/types";
+import type { Sandbox } from "../types/index.ts";
 import { SandboxRepository } from "./database.ts";
 
 export const sandboxStore = {
@@ -14,8 +15,8 @@ export const sandboxStore = {
     return SandboxRepository.getByStatus(status);
   },
 
-  getByProjectId(projectId: string): Sandbox[] {
-    return SandboxRepository.getByProjectId(projectId);
+  getByWorkspaceId(workspaceId: string): Sandbox[] {
+    return SandboxRepository.getByWorkspaceId(workspaceId);
   },
 
   create(sandbox: Sandbox): Sandbox {

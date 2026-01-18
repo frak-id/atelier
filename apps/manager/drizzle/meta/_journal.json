@@ -36,6 +36,13 @@
       "when": 1737225600000,
       "tag": "0004_github_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1768735249555,
+      "tag": "0005_curved_gambit",
+      "breakpoints": true
     }
   ]
 }

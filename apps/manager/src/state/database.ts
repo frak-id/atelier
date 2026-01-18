@@ -1,24 +1,23 @@
 import { Database } from "bun:sqlite";
-import type {
-  Project,
-  Sandbox,
-  SandboxStatus,
-} from "@frak-sandbox/shared/types";
 import { eq, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import {
-  type GitHubConnectionRow,
-  githubConnections,
-  type PrebuildStatus,
-  type ProjectRow,
-  projects,
-  type SandboxRow,
+  configFiles,
+  gitSources,
+  type SandboxStatus,
   sandboxes,
+  workspaces,
 } from "../db/schema.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { appPaths, ensureAppDirs } from "../lib/paths.ts";
+import type {
+  ConfigFile,
+  GitSource,
+  Sandbox,
+  Workspace,
+} from "../types/index.ts";
 
 const log = createChildLogger("database");
 
@@ -52,89 +51,208 @@ export function getDatabase(): BunSQLiteDatabase {
   return db;
 }
 
-function rowToSandbox(row: SandboxRow): Sandbox {
+export const GitSourceRepository = {
+  getAll(): GitSource[] {
+    return getDatabase()
+      .select()
+      .from(gitSources)
+      .all()
+      .map((row) => ({
+        id: row.id,
+        type: row.type,
+        name: row.name,
+        config: row.config,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      }));
+  },
+
+  getById(id: string): GitSource | undefined {
+    const row = getDatabase()
+      .select()
+      .from(gitSources)
+      .where(eq(gitSources.id, id))
+      .get();
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      type: row.type,
+      name: row.name,
+      config: row.config,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  },
+
+  getByType(type: string): GitSource[] {
+    return getDatabase()
+      .select()
+      .from(gitSources)
+      .where(eq(gitSources.type, type as "github" | "gitlab" | "custom"))
+      .all()
+      .map((row) => ({
+        id: row.id,
+        type: row.type,
+        name: row.name,
+        config: row.config,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      }));
+  },
+
+  create(source: GitSource): GitSource {
+    getDatabase()
+      .insert(gitSources)
+      .values({
+        id: source.id,
+        type: source.type,
+        name: source.name,
+        config: source.config,
+        createdAt: source.createdAt,
+        updatedAt: source.updatedAt,
+      })
+      .run();
+    log.info({ sourceId: source.id, type: source.type }, "Git source created");
+    return source;
+  },
+
+  update(id: string, updates: Partial<GitSource>): GitSource {
+    const existing = this.getById(id);
+    if (!existing) throw new Error(`Git source '${id}' not found`);
+
+    const updated: GitSource = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      createdAt: existing.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    getDatabase()
+      .update(gitSources)
+      .set({
+        name: updated.name,
+        config: updated.config,
+        updatedAt: updated.updatedAt,
+      })
+      .where(eq(gitSources.id, id))
+      .run();
+
+    log.debug({ sourceId: id }, "Git source updated");
+    return updated;
+  },
+
+  delete(id: string): boolean {
+    const existing = this.getById(id);
+    if (!existing) return false;
+
+    getDatabase().delete(gitSources).where(eq(gitSources.id, id)).run();
+    log.info({ sourceId: id }, "Git source deleted");
+    return true;
+  },
+};
+
+export const WorkspaceRepository = {
+  getAll(): Workspace[] {
+    return getDatabase()
+      .select()
+      .from(workspaces)
+      .all()
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        config: row.config,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      }));
+  },
+
+  getById(id: string): Workspace | undefined {
+    const row = getDatabase()
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, id))
+      .get();
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      name: row.name,
+      config: row.config,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  },
+
+  create(workspace: Workspace): Workspace {
+    getDatabase()
+      .insert(workspaces)
+      .values({
+        id: workspace.id,
+        name: workspace.name,
+        config: workspace.config,
+        createdAt: workspace.createdAt,
+        updatedAt: workspace.updatedAt,
+      })
+      .run();
+    log.info(
+      { workspaceId: workspace.id, name: workspace.name },
+      "Workspace created",
+    );
+    return workspace;
+  },
+
+  update(id: string, updates: Partial<Workspace>): Workspace {
+    const existing = this.getById(id);
+    if (!existing) throw new Error(`Workspace '${id}' not found`);
+
+    const updated: Workspace = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      createdAt: existing.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    getDatabase()
+      .update(workspaces)
+      .set({
+        name: updated.name,
+        config: updated.config,
+        updatedAt: updated.updatedAt,
+      })
+      .where(eq(workspaces.id, id))
+      .run();
+
+    log.debug({ workspaceId: id }, "Workspace updated");
+    return updated;
+  },
+
+  delete(id: string): boolean {
+    const existing = this.getById(id);
+    if (!existing) return false;
+
+    getDatabase().delete(workspaces).where(eq(workspaces.id, id)).run();
+    log.info({ workspaceId: id }, "Workspace deleted");
+    return true;
+  },
+
+  count(): number {
+    const result = getDatabase()
+      .select({ count: sql<number>`count(*)` })
+      .from(workspaces)
+      .get();
+    return result?.count ?? 0;
+  },
+};
+
+function rowToSandbox(row: typeof sandboxes.$inferSelect): Sandbox {
   return {
     id: row.id,
+    workspaceId: row.workspaceId ?? undefined,
     status: row.status,
-    projectId: row.projectId ?? undefined,
-    branch: row.branch ?? undefined,
-    ipAddress: row.ipAddress,
-    macAddress: row.macAddress,
-    urls: {
-      vscode: row.urlsVscode,
-      opencode: row.urlsOpencode,
-      terminal: row.urlsTerminal ?? "",
-      ssh: row.urlsSsh,
-    },
-    resources: {
-      vcpus: row.vcpus,
-      memoryMb: row.memoryMb,
-    },
-    pid: row.pid ?? undefined,
-    error: row.error ?? undefined,
+    runtime: row.runtime,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-  };
-}
-
-function sandboxToRow(s: Sandbox): typeof sandboxes.$inferInsert {
-  return {
-    id: s.id,
-    status: s.status,
-    projectId: s.projectId ?? null,
-    branch: s.branch ?? null,
-    ipAddress: s.ipAddress,
-    macAddress: s.macAddress,
-    urlsVscode: s.urls.vscode,
-    urlsOpencode: s.urls.opencode,
-    urlsTerminal: s.urls.terminal || null,
-    urlsSsh: s.urls.ssh,
-    vcpus: s.resources.vcpus,
-    memoryMb: s.resources.memoryMb,
-    pid: s.pid ?? null,
-    error: s.error ?? null,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-  };
-}
-
-function rowToProject(row: ProjectRow): Project {
-  return {
-    id: row.id,
-    name: row.name,
-    gitUrl: row.gitUrl,
-    defaultBranch: row.defaultBranch,
-    baseImage: row.baseImage,
-    vcpus: row.vcpus,
-    memoryMb: row.memoryMb,
-    initCommands: row.initCommands,
-    startCommands: row.startCommands,
-    secrets: row.secrets,
-    exposedPorts: row.exposedPorts,
-    latestPrebuildId: row.latestPrebuildId ?? undefined,
-    prebuildStatus: row.prebuildStatus,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function projectToRow(p: Project): typeof projects.$inferInsert {
-  return {
-    id: p.id,
-    name: p.name,
-    gitUrl: p.gitUrl,
-    defaultBranch: p.defaultBranch,
-    baseImage: p.baseImage,
-    vcpus: p.vcpus,
-    memoryMb: p.memoryMb,
-    initCommands: p.initCommands,
-    startCommands: p.startCommands,
-    secrets: p.secrets,
-    exposedPorts: p.exposedPorts,
-    latestPrebuildId: p.latestPrebuildId ?? null,
-    prebuildStatus: p.prebuildStatus,
-    createdAt: p.createdAt,
-    updatedAt: p.updatedAt,
   };
 }
 
@@ -161,17 +279,27 @@ export const SandboxRepository = {
       .map(rowToSandbox);
   },
 
-  getByProjectId(projectId: string): Sandbox[] {
+  getByWorkspaceId(workspaceId: string): Sandbox[] {
     return getDatabase()
       .select()
       .from(sandboxes)
-      .where(eq(sandboxes.projectId, projectId))
+      .where(eq(sandboxes.workspaceId, workspaceId))
       .all()
       .map(rowToSandbox);
   },
 
   create(sandbox: Sandbox): Sandbox {
-    getDatabase().insert(sandboxes).values(sandboxToRow(sandbox)).run();
+    getDatabase()
+      .insert(sandboxes)
+      .values({
+        id: sandbox.id,
+        workspaceId: sandbox.workspaceId ?? null,
+        status: sandbox.status,
+        runtime: sandbox.runtime,
+        createdAt: sandbox.createdAt,
+        updatedAt: sandbox.updatedAt,
+      })
+      .run();
     log.info({ sandboxId: sandbox.id }, "Sandbox created in database");
     return sandbox;
   },
@@ -190,7 +318,12 @@ export const SandboxRepository = {
 
     getDatabase()
       .update(sandboxes)
-      .set(sandboxToRow(updated))
+      .set({
+        workspaceId: updated.workspaceId ?? null,
+        status: updated.status,
+        runtime: updated.runtime,
+        updatedAt: updated.updatedAt,
+      })
       .where(eq(sandboxes.id, id))
       .run();
 
@@ -199,7 +332,12 @@ export const SandboxRepository = {
   },
 
   updateStatus(id: string, status: SandboxStatus, error?: string): Sandbox {
-    return this.update(id, { status, error });
+    const existing = this.getById(id);
+    if (!existing) throw new Error(`Sandbox '${id}' not found`);
+
+    const runtime = error ? { ...existing.runtime, error } : existing.runtime;
+
+    return this.update(id, { status, runtime });
   },
 
   delete(id: string): boolean {
@@ -229,40 +367,136 @@ export const SandboxRepository = {
   },
 };
 
-export const ProjectRepository = {
-  getAll(): Project[] {
-    return getDatabase().select().from(projects).all().map(rowToProject);
-  },
-
-  getById(id: string): Project | undefined {
-    const row = getDatabase()
-      .select()
-      .from(projects)
-      .where(eq(projects.id, id))
-      .get();
-    return row ? rowToProject(row) : undefined;
-  },
-
-  getByPrebuildStatus(status: PrebuildStatus): Project[] {
+export const ConfigFileRepository = {
+  getAll(): ConfigFile[] {
     return getDatabase()
       .select()
-      .from(projects)
-      .where(eq(projects.prebuildStatus, status))
+      .from(configFiles)
       .all()
-      .map(rowToProject);
+      .map((row) => ({
+        id: row.id,
+        path: row.path,
+        content: row.content,
+        contentType: row.contentType,
+        scope: row.scope,
+        workspaceId: row.workspaceId ?? undefined,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      }));
   },
 
-  create(project: Project): Project {
-    getDatabase().insert(projects).values(projectToRow(project)).run();
-    log.info({ projectId: project.id }, "Project created in database");
-    return project;
+  getById(id: string): ConfigFile | undefined {
+    const row = getDatabase()
+      .select()
+      .from(configFiles)
+      .where(eq(configFiles.id, id))
+      .get();
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      path: row.path,
+      content: row.content,
+      contentType: row.contentType,
+      scope: row.scope,
+      workspaceId: row.workspaceId ?? undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
   },
 
-  update(id: string, updates: Partial<Project>): Project {
+  getByScope(scope: "global" | "workspace"): ConfigFile[] {
+    return getDatabase()
+      .select()
+      .from(configFiles)
+      .where(eq(configFiles.scope, scope))
+      .all()
+      .map((row) => ({
+        id: row.id,
+        path: row.path,
+        content: row.content,
+        contentType: row.contentType,
+        scope: row.scope,
+        workspaceId: row.workspaceId ?? undefined,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      }));
+  },
+
+  getByWorkspaceId(workspaceId: string): ConfigFile[] {
+    return getDatabase()
+      .select()
+      .from(configFiles)
+      .where(eq(configFiles.workspaceId, workspaceId))
+      .all()
+      .map((row) => ({
+        id: row.id,
+        path: row.path,
+        content: row.content,
+        contentType: row.contentType,
+        scope: row.scope,
+        workspaceId: row.workspaceId ?? undefined,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      }));
+  },
+
+  getByPath(
+    path: string,
+    scope: "global" | "workspace",
+    workspaceId?: string,
+  ): ConfigFile | undefined {
+    const query = getDatabase()
+      .select()
+      .from(configFiles)
+      .where(eq(configFiles.path, path));
+
+    const results = query.all();
+    const match = results.find((row) => {
+      if (row.scope !== scope) return false;
+      if (scope === "workspace" && row.workspaceId !== workspaceId)
+        return false;
+      return true;
+    });
+
+    if (!match) return undefined;
+    return {
+      id: match.id,
+      path: match.path,
+      content: match.content,
+      contentType: match.contentType,
+      scope: match.scope,
+      workspaceId: match.workspaceId ?? undefined,
+      createdAt: match.createdAt,
+      updatedAt: match.updatedAt,
+    };
+  },
+
+  create(configFile: ConfigFile): ConfigFile {
+    getDatabase()
+      .insert(configFiles)
+      .values({
+        id: configFile.id,
+        path: configFile.path,
+        content: configFile.content,
+        contentType: configFile.contentType,
+        scope: configFile.scope,
+        workspaceId: configFile.workspaceId ?? null,
+        createdAt: configFile.createdAt,
+        updatedAt: configFile.updatedAt,
+      })
+      .run();
+    log.info(
+      { configFileId: configFile.id, path: configFile.path },
+      "Config file created",
+    );
+    return configFile;
+  },
+
+  update(id: string, updates: Partial<ConfigFile>): ConfigFile {
     const existing = this.getById(id);
-    if (!existing) throw new Error(`Project '${id}' not found`);
+    if (!existing) throw new Error(`Config file '${id}' not found`);
 
-    const updated: Project = {
+    const updated: ConfigFile = {
       ...existing,
       ...updates,
       id: existing.id,
@@ -271,150 +505,28 @@ export const ProjectRepository = {
     };
 
     getDatabase()
-      .update(projects)
-      .set(projectToRow(updated))
-      .where(eq(projects.id, id))
+      .update(configFiles)
+      .set({
+        path: updated.path,
+        content: updated.content,
+        contentType: updated.contentType,
+        scope: updated.scope,
+        workspaceId: updated.workspaceId ?? null,
+        updatedAt: updated.updatedAt,
+      })
+      .where(eq(configFiles.id, id))
       .run();
 
-    log.debug({ projectId: id }, "Project updated in database");
+    log.debug({ configFileId: id }, "Config file updated");
     return updated;
-  },
-
-  updatePrebuildStatus(
-    id: string,
-    status: PrebuildStatus,
-    prebuildId?: string,
-  ): Project {
-    return this.update(id, {
-      prebuildStatus: status,
-      ...(prebuildId && { latestPrebuildId: prebuildId }),
-    });
   },
 
   delete(id: string): boolean {
     const existing = this.getById(id);
     if (!existing) return false;
 
-    getDatabase().delete(projects).where(eq(projects.id, id)).run();
-    log.info({ projectId: id }, "Project deleted from database");
+    getDatabase().delete(configFiles).where(eq(configFiles.id, id)).run();
+    log.info({ configFileId: id }, "Config file deleted");
     return true;
-  },
-
-  count(): number {
-    const result = getDatabase()
-      .select({ count: sql<number>`count(*)` })
-      .from(projects)
-      .get();
-    return result?.count ?? 0;
-  },
-};
-
-export interface GitHubConnection {
-  id: string;
-  githubUserId: string;
-  githubUsername: string;
-  avatarUrl?: string;
-  accessToken: string;
-  scope: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-function rowToGitHubConnection(row: GitHubConnectionRow): GitHubConnection {
-  return {
-    id: row.id,
-    githubUserId: row.githubUserId,
-    githubUsername: row.githubUsername,
-    avatarUrl: row.avatarUrl ?? undefined,
-    accessToken: row.accessToken,
-    scope: row.scope,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-export const GitHubConnectionRepository = {
-  get(): GitHubConnection | undefined {
-    const row = getDatabase().select().from(githubConnections).get();
-    return row ? rowToGitHubConnection(row) : undefined;
-  },
-
-  getByGitHubUserId(githubUserId: string): GitHubConnection | undefined {
-    const row = getDatabase()
-      .select()
-      .from(githubConnections)
-      .where(eq(githubConnections.githubUserId, githubUserId))
-      .get();
-    return row ? rowToGitHubConnection(row) : undefined;
-  },
-
-  create(connection: GitHubConnection): GitHubConnection {
-    getDatabase()
-      .insert(githubConnections)
-      .values({
-        id: connection.id,
-        githubUserId: connection.githubUserId,
-        githubUsername: connection.githubUsername,
-        avatarUrl: connection.avatarUrl ?? null,
-        accessToken: connection.accessToken,
-        scope: connection.scope,
-        createdAt: connection.createdAt,
-        updatedAt: connection.updatedAt,
-      })
-      .run();
-    log.info(
-      { connectionId: connection.id, username: connection.githubUsername },
-      "GitHub connection created",
-    );
-    return connection;
-  },
-
-  update(
-    id: string,
-    updates: Partial<Omit<GitHubConnection, "id" | "createdAt">>,
-  ): GitHubConnection {
-    const existing = this.get();
-    if (!existing || existing.id !== id) {
-      throw new Error(`GitHub connection '${id}' not found`);
-    }
-
-    const updated: GitHubConnection = {
-      ...existing,
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-
-    getDatabase()
-      .update(githubConnections)
-      .set({
-        githubUserId: updated.githubUserId,
-        githubUsername: updated.githubUsername,
-        avatarUrl: updated.avatarUrl ?? null,
-        accessToken: updated.accessToken,
-        scope: updated.scope,
-        updatedAt: updated.updatedAt,
-      })
-      .where(eq(githubConnections.id, id))
-      .run();
-
-    log.debug({ connectionId: id }, "GitHub connection updated");
-    return updated;
-  },
-
-  delete(id: string): boolean {
-    const existing = this.get();
-    if (!existing || existing.id !== id) return false;
-
-    getDatabase()
-      .delete(githubConnections)
-      .where(eq(githubConnections.id, id))
-      .run();
-    log.info({ connectionId: id }, "GitHub connection deleted");
-    return true;
-  },
-
-  deleteAll(): void {
-    getDatabase().delete(githubConnections).run();
-    log.info("All GitHub connections deleted");
   },
 };

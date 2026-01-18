@@ -67,10 +67,10 @@ export const AgentClient = {
     if (!sandbox) {
       throw new Error(`Sandbox '${sandboxId}' not found`);
     }
-    if (!sandbox.ipAddress) {
+    if (!sandbox.runtime.ipAddress) {
       throw new Error(`Sandbox '${sandboxId}' has no IP address`);
     }
-    return `http://${sandbox.ipAddress}:${AGENT_PORT}`;
+    return `http://${sandbox.runtime.ipAddress}:${AGENT_PORT}`;
   },
 
   /**

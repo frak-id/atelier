@@ -1,10 +1,10 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
   githubStatusQuery,
   imageListQuery,
-  useCreateProject,
+  useCreateWorkspace,
 } from "@/api/queries";
 import { RepositoryPicker } from "@/components/repository-picker";
 import { Button } from "@/components/ui/button";
@@ -27,63 +27,90 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-interface CreateProjectDialogProps {
+interface RepoEntry {
+  url: string;
+  branch: string;
+  clonePath: string;
+}
+
+interface CreateWorkspaceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function CreateProjectDialog({
+export function CreateWorkspaceDialog({
   open,
   onOpenChange,
-}: CreateProjectDialogProps) {
+}: CreateWorkspaceDialogProps) {
   const { data: images } = useSuspenseQuery(imageListQuery());
   const { data: githubStatus } = useQuery(githubStatusQuery);
-  const createMutation = useCreateProject();
+  const createMutation = useCreateWorkspace();
 
   const [showManualUrl, setShowManualUrl] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
-    gitUrl: "",
-    defaultBranch: "main",
     baseImage: "dev-base",
     vcpus: 2,
     memoryMb: 2048,
     initCommands: "",
     startCommands: "",
   });
+  const [repos, setRepos] = useState<RepoEntry[]>([]);
+  const [newRepo, setNewRepo] = useState<RepoEntry>({
+    url: "",
+    branch: "main",
+    clonePath: "/workspace",
+  });
 
   const isGitHubConnected = githubStatus?.connected === true;
+
+  const addRepo = () => {
+    if (newRepo.url) {
+      setRepos([...repos, newRepo]);
+      setNewRepo({ url: "", branch: "main", clonePath: "/workspace" });
+    }
+  };
+
+  const removeRepo = (index: number) => {
+    setRepos(repos.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     createMutation.mutate(
       {
         name: formData.name,
-        gitUrl: formData.gitUrl,
-        defaultBranch: formData.defaultBranch,
-        baseImage: formData.baseImage,
-        vcpus: formData.vcpus,
-        memoryMb: formData.memoryMb,
-        initCommands: formData.initCommands
-          .split("\n")
-          .filter((cmd) => cmd.trim()),
-        startCommands: formData.startCommands
-          .split("\n")
-          .filter((cmd) => cmd.trim()),
+        config: {
+          baseImage: formData.baseImage,
+          vcpus: formData.vcpus,
+          memoryMb: formData.memoryMb,
+          initCommands: formData.initCommands
+            .split("\n")
+            .filter((cmd) => cmd.trim()),
+          startCommands: formData.startCommands
+            .split("\n")
+            .filter((cmd) => cmd.trim()),
+          repos: repos.map((r) => ({
+            url: r.url,
+            branch: r.branch,
+            clonePath: r.clonePath,
+          })),
+          secrets: {},
+          exposedPorts: [],
+        },
       },
       {
         onSuccess: () => {
           onOpenChange(false);
           setFormData({
             name: "",
-            gitUrl: "",
-            defaultBranch: "main",
             baseImage: "dev-base",
             vcpus: 2,
             memoryMb: 2048,
             initCommands: "",
             startCommands: "",
           });
+          setRepos([]);
         },
       },
     );
@@ -91,17 +118,17 @@ export function CreateProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Create Project</DialogTitle>
+            <DialogTitle>Create Workspace</DialogTitle>
             <DialogDescription>
-              Configure a new project for sandbox development
+              Configure a new workspace for sandbox development
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+          <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Project Name</Label>
+              <Label htmlFor="name">Workspace Name</Label>
               <Input
                 id="name"
                 required
@@ -113,20 +140,64 @@ export function CreateProjectDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Git Repository</Label>
+              <Label>Repositories</Label>
+              {repos.length > 0 && (
+                <div className="space-y-2 mb-2">
+                  {repos.map((repo, idx) => (
+                    <div
+                      key={`repo-${idx}`}
+                      className="flex items-center gap-2 p-2 bg-muted rounded text-sm"
+                    >
+                      <span className="flex-1 font-mono truncate">
+                        {repo.url}
+                      </span>
+                      <span className="text-muted-foreground">
+                        → {repo.clonePath}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeRepo(idx)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {isGitHubConnected && !showManualUrl ? (
                 <div className="space-y-2">
                   <RepositoryPicker
-                    value={formData.gitUrl}
+                    value={newRepo.url}
                     onSelect={(repo) => {
-                      setFormData({
-                        ...formData,
-                        gitUrl: repo.cloneUrl,
-                        defaultBranch: repo.defaultBranch,
-                        name: formData.name || repo.name,
+                      setNewRepo({
+                        url: repo.cloneUrl,
+                        branch: repo.defaultBranch,
+                        clonePath: `/workspace/${repo.name}`,
                       });
+                      if (!formData.name) {
+                        setFormData({ ...formData, name: repo.name });
+                      }
                     }}
                   />
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Clone path"
+                      value={newRepo.clonePath}
+                      onChange={(e) =>
+                        setNewRepo({ ...newRepo, clonePath: e.target.value })
+                      }
+                    />
+                    <Button
+                      type="button"
+                      onClick={addRepo}
+                      disabled={!newRepo.url}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setShowManualUrl(true)}
@@ -138,15 +209,38 @@ export function CreateProjectDialog({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Input
-                    id="gitUrl"
-                    required
-                    placeholder="https://github.com/org/repo.git"
-                    value={formData.gitUrl}
-                    onChange={(e) =>
-                      setFormData({ ...formData, gitUrl: e.target.value })
-                    }
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="https://github.com/org/repo.git"
+                      value={newRepo.url}
+                      onChange={(e) =>
+                        setNewRepo({ ...newRepo, url: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Branch"
+                      value={newRepo.branch}
+                      onChange={(e) =>
+                        setNewRepo({ ...newRepo, branch: e.target.value })
+                      }
+                    />
+                    <Input
+                      placeholder="Clone path"
+                      value={newRepo.clonePath}
+                      onChange={(e) =>
+                        setNewRepo({ ...newRepo, clonePath: e.target.value })
+                      }
+                    />
+                    <Button
+                      type="button"
+                      onClick={addRepo}
+                      disabled={!newRepo.url}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
                   {isGitHubConnected && (
                     <button
                       type="button"
@@ -162,17 +256,6 @@ export function CreateProjectDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="branch">Default Branch</Label>
-              <Input
-                id="branch"
-                value={formData.defaultBranch}
-                onChange={(e) =>
-                  setFormData({ ...formData, defaultBranch: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="image">Base Image</Label>
               <Select
                 value={formData.baseImage}
@@ -184,7 +267,7 @@ export function CreateProjectDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {images.map((image) => (
+                  {images?.map((image) => (
                     <SelectItem key={image.id} value={image.id}>
                       {image.name}
                     </SelectItem>

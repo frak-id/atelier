@@ -1,7 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import type { Project } from "@/api/client";
-import { imageListQuery, useUpdateProject } from "@/api/queries";
+import { useState } from "react";
+import type { Workspace } from "@/api/client";
+import { imageListQuery, useUpdateWorkspace } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,112 +22,75 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-interface EditProjectDialogProps {
-  project: Project;
+interface EditWorkspaceDialogProps {
+  workspace: Workspace;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function EditProjectDialog({
-  project,
+export function EditWorkspaceDialog({
+  workspace,
   open,
   onOpenChange,
-}: EditProjectDialogProps) {
+}: EditWorkspaceDialogProps) {
   const { data: images } = useSuspenseQuery(imageListQuery());
-  const updateMutation = useUpdateProject();
+  const updateMutation = useUpdateWorkspace();
 
   const [formData, setFormData] = useState({
-    name: project.name,
-    gitUrl: project.gitUrl,
-    defaultBranch: project.defaultBranch,
-    baseImage: project.baseImage,
-    vcpus: project.vcpus,
-    memoryMb: project.memoryMb,
-    initCommands: project.initCommands.join("\n"),
-    startCommands: project.startCommands.join("\n"),
+    name: workspace.name,
+    baseImage: workspace.config.baseImage,
+    vcpus: workspace.config.vcpus,
+    memoryMb: workspace.config.memoryMb,
+    initCommands: workspace.config.initCommands.join("\n"),
+    startCommands: workspace.config.startCommands.join("\n"),
   });
-
-  useEffect(() => {
-    setFormData({
-      name: project.name,
-      gitUrl: project.gitUrl,
-      defaultBranch: project.defaultBranch,
-      baseImage: project.baseImage,
-      vcpus: project.vcpus,
-      memoryMb: project.memoryMb,
-      initCommands: project.initCommands.join("\n"),
-      startCommands: project.startCommands.join("\n"),
-    });
-  }, [project]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     updateMutation.mutate(
       {
-        id: project.id,
+        id: workspace.id,
         data: {
           name: formData.name,
-          gitUrl: formData.gitUrl,
-          defaultBranch: formData.defaultBranch,
-          baseImage: formData.baseImage,
-          vcpus: formData.vcpus,
-          memoryMb: formData.memoryMb,
-          initCommands: formData.initCommands
-            .split("\n")
-            .filter((cmd) => cmd.trim()),
-          startCommands: formData.startCommands
-            .split("\n")
-            .filter((cmd) => cmd.trim()),
+          config: {
+            ...workspace.config,
+            baseImage: formData.baseImage,
+            vcpus: formData.vcpus,
+            memoryMb: formData.memoryMb,
+            initCommands: formData.initCommands
+              .split("\n")
+              .filter((cmd) => cmd.trim()),
+            startCommands: formData.startCommands
+              .split("\n")
+              .filter((cmd) => cmd.trim()),
+          },
         },
       },
       {
-        onSuccess: () => {
-          onOpenChange(false);
-        },
+        onSuccess: () => onOpenChange(false),
       },
     );
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Edit Project</DialogTitle>
-            <DialogDescription>Update project configuration</DialogDescription>
+            <DialogTitle>Edit Workspace</DialogTitle>
+            <DialogDescription>
+              Update workspace configuration
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+          <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Project Name</Label>
+              <Label htmlFor="name">Workspace Name</Label>
               <Input
                 id="name"
                 required
                 value={formData.name}
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="gitUrl">Git Repository URL</Label>
-              <Input
-                id="gitUrl"
-                required
-                value={formData.gitUrl}
-                onChange={(e) =>
-                  setFormData({ ...formData, gitUrl: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="branch">Default Branch</Label>
-              <Input
-                id="branch"
-                value={formData.defaultBranch}
-                onChange={(e) =>
-                  setFormData({ ...formData, defaultBranch: e.target.value })
                 }
               />
             </div>
@@ -144,7 +107,7 @@ export function EditProjectDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {images.map((image) => (
+                  {images?.map((image) => (
                     <SelectItem key={image.id} value={image.id}>
                       {image.name}
                     </SelectItem>
@@ -230,7 +193,7 @@ export function EditProjectDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? "Saving..." : "Save Changes"}
+              {updateMutation.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </form>

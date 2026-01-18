@@ -128,33 +128,34 @@ export const StorageService = {
     return lvExists(`${vg}/${image.volumeName}`);
   },
 
-  async hasPrebuild(projectId: string): Promise<boolean> {
+  async hasPrebuild(workspaceId: string): Promise<boolean> {
     if (config.isMock()) return false;
-    return lvExists(`${vg}/${prebuildPrefix}${projectId}`);
+    return lvExists(`${vg}/${prebuildPrefix}${workspaceId}`);
   },
 
   async createSandboxVolume(
     sandboxId: string,
-    options?: { projectId?: string; baseImage?: BaseImageId },
+    options?: { workspaceId?: string; baseImage?: string },
   ): Promise<string> {
     const volumeName = `${sandboxPrefix}${sandboxId}`;
     const volumePath = `/dev/${vg}/${volumeName}`;
-    const { projectId, baseImage } = options ?? {};
+    const { workspaceId, baseImage } = options ?? {};
 
     if (config.isMock()) {
       log.debug(
-        { sandboxId, projectId, baseImage },
+        { sandboxId, workspaceId, baseImage },
         "Mock: sandbox volume creation",
       );
       return volumePath;
     }
 
     let sourceVolume: string;
+    const baseImageId = baseImage as BaseImageId | undefined;
 
-    if (projectId && (await this.hasPrebuild(projectId))) {
-      sourceVolume = `${prebuildPrefix}${projectId}`;
-    } else if (baseImage && (await this.hasImageVolume(baseImage))) {
-      const image = getBaseImage(baseImage);
+    if (workspaceId && (await this.hasPrebuild(workspaceId))) {
+      sourceVolume = `${prebuildPrefix}${workspaceId}`;
+    } else if (baseImageId && (await this.hasImageVolume(baseImageId))) {
+      const image = getBaseImage(baseImageId);
       sourceVolume = image?.volumeName ?? baseVolume;
     } else if (await this.hasImageVolume(DEFAULT_BASE_IMAGE)) {
       const defaultImage = getBaseImage(DEFAULT_BASE_IMAGE);
@@ -185,34 +186,34 @@ export const StorageService = {
     log.info({ sandboxId }, "Sandbox volume deleted");
   },
 
-  async createPrebuild(projectId: string, sandboxId: string): Promise<void> {
-    const prebuildVolume = `${prebuildPrefix}${projectId}`;
+  async createPrebuild(workspaceId: string, sandboxId: string): Promise<void> {
+    const prebuildVolume = `${prebuildPrefix}${workspaceId}`;
     const sandboxVolume = `${sandboxPrefix}${sandboxId}`;
 
     if (config.isMock()) {
-      log.debug({ projectId, sandboxId }, "Mock: prebuild creation");
+      log.debug({ workspaceId, sandboxId }, "Mock: prebuild creation");
       return;
     }
 
-    if (await this.hasPrebuild(projectId)) {
+    if (await this.hasPrebuild(workspaceId)) {
       await $`${LVREMOVE} -f ${vg}/${prebuildVolume}`.quiet();
-      log.info({ projectId }, "Old prebuild removed");
+      log.info({ workspaceId }, "Old prebuild removed");
     }
 
     await $`${LVCREATE} -s -kn -n ${prebuildVolume} ${vg}/${sandboxVolume}`.quiet();
-    log.info({ projectId, sandboxId }, "Prebuild created from sandbox");
+    log.info({ workspaceId, sandboxId }, "Prebuild created from sandbox");
   },
 
-  async deletePrebuild(projectId: string): Promise<void> {
+  async deletePrebuild(workspaceId: string): Promise<void> {
     if (config.isMock()) {
-      log.debug({ projectId }, "Mock: prebuild deletion");
+      log.debug({ workspaceId }, "Mock: prebuild deletion");
       return;
     }
 
-    await $`${LVREMOVE} -f ${vg}/${prebuildPrefix}${projectId} 2>/dev/null || true`
+    await $`${LVREMOVE} -f ${vg}/${prebuildPrefix}${workspaceId} 2>/dev/null || true`
       .quiet()
       .nothrow();
-    log.info({ projectId }, "Prebuild deleted");
+    log.info({ workspaceId }, "Prebuild deleted");
   },
 
   async listSandboxVolumes(): Promise<VolumeInfo[]> {

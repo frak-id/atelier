@@ -1,22 +1,19 @@
 import { cors } from "@elysiajs/cors";
-import { cron, Patterns } from "@elysiajs/cron";
 import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
 import { config } from "./lib/config.ts";
 import { SandboxError } from "./lib/errors.ts";
 import { logger } from "./lib/logger.ts";
 import { appPaths } from "./lib/paths.ts";
-import { authRoutes } from "./routes/auth/index.ts";
+import { githubAuthRoutes } from "./routes/auth/github.ts";
 import { configRoutes } from "./routes/config/index.ts";
-import { debugRoutes } from "./routes/debug/index.ts";
-import { githubRoutes } from "./routes/github/index.ts";
+import { githubApiRoutes } from "./routes/github/index.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { imageRoutes } from "./routes/images/index.ts";
-import { projectRoutes } from "./routes/projects/index.ts";
-import { proxyRoutes } from "./routes/proxy/index.ts";
 import { sandboxRoutes } from "./routes/sandboxes/index.ts";
+import { sourceRoutes } from "./routes/sources/index.ts";
 import { systemRoutes } from "./routes/system/index.ts";
-import { SystemService } from "./routes/system/service.ts";
+import { workspaceRoutes } from "./routes/workspaces/index.ts";
 import { initDatabase } from "./state/database.ts";
 
 logger.info({ dataDir: appPaths.data }, "Using data directory");
@@ -38,23 +35,13 @@ const app = new Elysia()
         tags: [
           { name: "health", description: "Health check endpoints" },
           { name: "sandboxes", description: "Sandbox lifecycle management" },
-          { name: "projects", description: "Project configuration management" },
+          { name: "workspaces", description: "Workspace configuration" },
+          { name: "sources", description: "Git source connections" },
+          { name: "config", description: "Config file management" },
+          { name: "system", description: "System monitoring and management" },
           { name: "images", description: "Base image management" },
-          { name: "system", description: "System statistics and maintenance" },
-          { name: "config", description: "Platform configuration management" },
-          { name: "debug", description: "Debug and diagnostic endpoints" },
+          { name: "github", description: "GitHub integration" },
         ],
-      },
-    }),
-  )
-  .use(
-    cron({
-      name: "reconcile",
-      pattern: Patterns.EVERY_10_MINUTES,
-      async run() {
-        logger.debug("Running scheduled reconciliation");
-        const result = await SystemService.reconcile();
-        logger.info({ result }, "Scheduled reconciliation completed");
       },
     }),
   )
@@ -100,18 +87,17 @@ const app = new Elysia()
     }
   })
   .use(healthRoutes)
-  .use(proxyRoutes)
-  .use(authRoutes)
+  .group("/auth", (app) => app.use(githubAuthRoutes))
   .group("/api", (app) =>
     app
-      .use(systemRoutes)
       .use(sandboxRoutes)
-      .use(projectRoutes)
-      .use(imageRoutes)
+      .use(workspaceRoutes)
+      .use(sourceRoutes)
       .use(configRoutes)
-      .use(githubRoutes),
+      .use(systemRoutes)
+      .use(imageRoutes)
+      .use(githubApiRoutes),
   )
-  .use(debugRoutes)
   .get("/", () => ({
     name: "Frak Sandbox Manager",
     version: "0.1.0",
@@ -124,7 +110,7 @@ app.listen(
     port: config.port,
     hostname: config.host,
   },
-  async ({ hostname, port }) => {
+  ({ hostname, port }) => {
     logger.info(
       {
         hostname,
@@ -134,8 +120,7 @@ app.listen(
       },
       "Frak Sandbox Manager started",
     );
-
-    const reconcileResult = await SystemService.reconcile();
-    logger.info({ reconcileResult }, "Startup reconciliation completed");
   },
 );
+
+export type App = typeof app;

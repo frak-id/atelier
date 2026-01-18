@@ -6,45 +6,43 @@ import {
 } from "@frak-sandbox/shared/types";
 import { Elysia, t } from "elysia";
 import { NotFoundError } from "../../lib/errors.ts";
-
-const ImageResponse = t.Object({
-  id: t.String(),
-  name: t.String(),
-  description: t.String(),
-  volumeSize: t.Number(),
-  tools: t.Array(t.String()),
-  volumeName: t.String(),
-  available: t.Boolean(),
-});
+import { StorageService } from "../../services/storage.ts";
 
 export const imageRoutes = new Elysia({ prefix: "/images" })
   .get(
     "/",
-    ({ query }) => {
-      const images =
-        query.all === "true" ? getAllImages() : getAvailableImages();
-      return images;
+    async ({ query }) => {
+      const images = query.all ? getAllImages() : getAvailableImages();
+
+      const imagesWithAvailability = await Promise.all(
+        images.map(async (img) => ({
+          ...img,
+          available: await StorageService.hasImageVolume(img.id),
+        })),
+      );
+
+      return imagesWithAvailability;
     },
     {
       query: t.Object({
-        all: t.Optional(t.String()),
+        all: t.Optional(t.BooleanString()),
       }),
-      response: t.Array(ImageResponse),
+      detail: { tags: ["images"] },
     },
   )
   .get(
     "/:id",
-    ({ params }) => {
+    async ({ params }) => {
       const image = getBaseImage(params.id as BaseImageId);
       if (!image) {
         throw new NotFoundError("Image", params.id);
       }
-      return image;
+
+      const available = await StorageService.hasImageVolume(image.id);
+      return { ...image, available };
     },
     {
-      params: t.Object({
-        id: t.String(),
-      }),
-      response: ImageResponse,
+      params: t.Object({ id: t.String() }),
+      detail: { tags: ["images"] },
     },
   );
