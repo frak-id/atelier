@@ -1,0 +1,37 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignoreBinaries": [
+    "top",
+    "awk",
+    "free",
+    "tail",
+    "ip",
+    "bridge",
+    "umount",
+    "tsc",
+    "tar",
+    "ssh-add"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.ts"]
+    },
+    "apps/manager": {
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["pino-pretty"]
+    },
+    "apps/dashboard": {
+      "entry": ["src/main.tsx"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "packages/shared": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/sandbox-agent": {
+      "project": ["src/**/*.ts"]
+    },
+    "infra/cli": {
+      "project": ["src/**/*.ts"]
+    }
+  }
+}

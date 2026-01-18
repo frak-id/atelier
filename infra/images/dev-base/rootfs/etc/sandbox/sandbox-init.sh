@@ -78,11 +78,19 @@ else
     log "ERROR: sshd not found"
 fi
 
+WORKSPACE_DIR_FILE="/etc/sandbox/workspace-dir"
+if [ -f "$WORKSPACE_DIR_FILE" ]; then
+    WORKSPACE_DIR=$(cat "$WORKSPACE_DIR_FILE")
+else
+    WORKSPACE_DIR="/home/dev/workspace"
+fi
+log "Workspace directory: $WORKSPACE_DIR"
+
 log "Starting code-server..."
 if command -v code-server >/dev/null 2>&1; then
-    su - dev -c "code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry /home/dev/workspace > $LOG_DIR/code-server.log 2>&1" &
+    su - dev -c "code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry $WORKSPACE_DIR > $LOG_DIR/code-server.log 2>&1" &
     CODE_SERVER_PID=$!
-    log "code-server started (PID $CODE_SERVER_PID) with workspace /home/dev/workspace"
+    log "code-server started (PID $CODE_SERVER_PID) with workspace $WORKSPACE_DIR"
     
     EXTENSIONS_FILE="/etc/sandbox/vscode-extensions.json"
     if [ -f "$EXTENSIONS_FILE" ]; then
@@ -104,14 +112,13 @@ fi
 log "Starting OpenCode server..."
 OPENCODE_CORS="--cors https://sandbox-dash.nivelais.com"
 if [ -x /usr/bin/opencode ] || command -v opencode >/dev/null 2>&1; then
-    su - dev -c "cd /home/dev/workspace && opencode serve --hostname 0.0.0.0 --port 3000 $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
-    log "OpenCode started (PID $!) with CORS enabled"
+    su - dev -c "cd $WORKSPACE_DIR && opencode serve --hostname 0.0.0.0 --port 3000 $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
+    log "OpenCode started (PID $!) in $WORKSPACE_DIR with CORS enabled"
 else
     log "WARNING: opencode not found in PATH"
-    # Try to find it
     if [ -f /usr/lib/node_modules/opencode-ai/bin/opencode ]; then
         log "Found opencode at /usr/lib/node_modules/opencode-ai/bin/opencode"
-        su - dev -c "cd /home/dev/workspace && /usr/lib/node_modules/opencode-ai/bin/opencode serve --hostname 0.0.0.0 --port 3000 $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
+        su - dev -c "cd $WORKSPACE_DIR && /usr/lib/node_modules/opencode-ai/bin/opencode serve --hostname 0.0.0.0 --port 3000 $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
     fi
 fi
 

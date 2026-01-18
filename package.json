@@ -8,11 +8,13 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check --write .",
-    "typecheck": "tsc --build"
+    "typecheck": "tsc --build",
+    "knip": "knip"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "knip": "^5.82.0"
   },
   "peerDependencies": {
     "typescript": "^5"

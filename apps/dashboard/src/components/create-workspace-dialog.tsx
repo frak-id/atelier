@@ -146,18 +146,19 @@ export function CreateWorkspaceDialog({
                   {repos.map((repo, idx) => (
                     <div
                       key={`repo-${idx}`}
-                      className="flex items-center gap-2 p-2 bg-muted rounded text-sm"
+                      className="flex items-center gap-2 p-2 bg-muted rounded text-sm min-w-0"
                     >
-                      <span className="flex-1 font-mono truncate">
+                      <span className="flex-1 font-mono truncate min-w-0">
                         {repo.url}
                       </span>
-                      <span className="text-muted-foreground">
+                      <span className="text-muted-foreground truncate shrink-0 max-w-[40%]">
                         → {repo.clonePath}
                       </span>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
+                        className="shrink-0"
                         onClick={() => removeRepo(idx)}
                       >
                         <Trash2 className="h-4 w-4" />

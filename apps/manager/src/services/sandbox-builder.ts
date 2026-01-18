@@ -237,17 +237,24 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
 
       await ensureDir(`${mountPoint}/etc/sandbox/secrets`);
 
+      const repos = this.workspace?.config.repos ?? [];
       const sandboxConfig = {
         sandboxId: this.sandboxId,
         workspaceId: this.workspace?.id,
         workspaceName: this.workspace?.name,
-        repos: this.workspace?.config.repos ?? [],
+        repos,
         createdAt: new Date().toISOString(),
       };
       await Bun.write(
         `${mountPoint}/etc/sandbox/config.json`,
         JSON.stringify(sandboxConfig, null, 2),
       );
+
+      const workspaceDir =
+        repos.length === 1 && repos[0]?.clonePath
+          ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
+          : "/home/dev/workspace";
+      await Bun.write(`${mountPoint}/etc/sandbox/workspace-dir`, workspaceDir);
 
       if (
         this.workspace?.config.secrets &&
