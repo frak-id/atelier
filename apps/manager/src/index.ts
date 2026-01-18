@@ -14,13 +14,47 @@ import { sandboxRoutes } from "./routes/sandboxes/index.ts";
 import { sourceRoutes } from "./routes/sources/index.ts";
 import { systemRoutes } from "./routes/system/index.ts";
 import { workspaceRoutes } from "./routes/workspaces/index.ts";
+import { CaddyService } from "./services/caddy.ts";
 import { initDatabase } from "./state/database.ts";
+import { sandboxStore } from "./state/store.ts";
 
 logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");
 
 const app = new Elysia()
+  .on("start", async () => {
+    // Re-register Caddy routes for running sandboxes after server restart
+    const sandboxes = sandboxStore
+      .getAll()
+      .filter((s) => s.status === "running");
+
+    for (const sandbox of sandboxes) {
+      try {
+        await CaddyService.registerRoutes(
+          sandbox.id,
+          sandbox.runtime.ipAddress,
+          {
+            vscode: 8080,
+            opencode: 3000,
+            terminal: 7681,
+          },
+        );
+      } catch (err) {
+        logger.error(
+          { sandboxId: sandbox.id, error: err },
+          "Failed to re-register Caddy routes on startup",
+        );
+      }
+    }
+
+    if (sandboxes.length > 0) {
+      logger.info(
+        { count: sandboxes.length },
+        "Startup reconciliation: Caddy routes re-registered",
+      );
+    }
+  })
   .use(cors())
   .use(
     swagger({

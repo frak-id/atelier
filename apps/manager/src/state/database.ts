@@ -11,11 +11,7 @@ import {
 } from "../db/schema.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { appPaths, ensureAppDirs } from "../lib/paths.ts";
-import type {
-  GitSource,
-  Sandbox,
-  Workspace,
-} from "../schemas/index.ts";
+import type { GitSource, Sandbox, Workspace } from "../schemas/index.ts";
 
 const log = createChildLogger("database");
 
