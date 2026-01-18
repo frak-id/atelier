@@ -29,7 +29,7 @@ import {
   useStartSandbox,
   useStopSandbox,
 } from "@/api/queries";
-import { SandboxTerminal } from "@/components/terminal";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -226,9 +226,6 @@ function SandboxDetailPage() {
           <CardContent className="space-y-3">
             <UrlRow label="VSCode" url={sandbox.runtime.urls.vscode} />
             <UrlRow label="OpenCode" url={sandbox.runtime.urls.opencode} />
-            {sandbox.runtime.urls.terminal && (
-              <UrlRow label="Terminal" url={sandbox.runtime.urls.terminal} />
-            )}
             <DetailRow label="SSH" value={sandbox.runtime.urls.ssh} mono />
           </CardContent>
         </Card>
@@ -296,7 +293,7 @@ function SandboxDetailPage() {
             <TabsTrigger value="repos">Repositories</TabsTrigger>
             <TabsTrigger value="services">Services</TabsTrigger>
             <TabsTrigger value="opencode">OpenCode Sessions</TabsTrigger>
-            <TabsTrigger value="terminal">Terminal</TabsTrigger>
+
             <TabsTrigger value="exec">Exec</TabsTrigger>
             {sandbox.workspaceId && (
               <TabsTrigger value="config">Extract Config</TabsTrigger>
@@ -345,12 +342,6 @@ function SandboxDetailPage() {
 
           <TabsContent value="opencode">
             <OpenCodeSessions opencodeUrl={sandbox.runtime.urls.opencode} />
-          </TabsContent>
-
-          <TabsContent value="terminal" className="h-[500px]">
-            {sandbox.runtime.urls.terminal && (
-              <SandboxTerminal terminalUrl={sandbox.runtime.urls.terminal} />
-            )}
           </TabsContent>
 
           <TabsContent value="exec">
