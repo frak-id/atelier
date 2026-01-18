@@ -226,7 +226,7 @@ function SandboxDetailPage() {
           <CardContent className="space-y-3">
             <UrlRow label="VSCode" url={sandbox.runtime.urls.vscode} />
             <UrlRow label="OpenCode" url={sandbox.runtime.urls.opencode} />
-            <DetailRow label="SSH" value={sandbox.runtime.urls.ssh} mono />
+            <UrlRow label="Terminal" url={sandbox.runtime.urls.terminal} />
           </CardContent>
         </Card>
 

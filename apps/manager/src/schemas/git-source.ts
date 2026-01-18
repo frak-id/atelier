@@ -115,3 +115,15 @@ export const GitHubReposQuerySchema = t.Object({
   sort: t.Optional(t.String()),
 });
 export type GitHubReposQuery = Static<typeof GitHubReposQuerySchema>;
+
+export const SourceRepoSchema = t.Object({
+  id: t.String(),
+  fullName: t.String(),
+  cloneUrl: t.String(),
+  defaultBranch: t.String(),
+  private: t.Boolean(),
+});
+export type SourceRepo = Static<typeof SourceRepoSchema>;
+
+export const SourceReposResponseSchema = t.Array(SourceRepoSchema);
+export type SourceReposResponse = Static<typeof SourceReposResponseSchema>;

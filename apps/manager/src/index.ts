@@ -1,33 +1,75 @@
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
-import { config } from "./lib/config.ts";
-import { SandboxError } from "./lib/errors.ts";
-import { logger } from "./lib/logger.ts";
-import { appPaths } from "./lib/paths.ts";
-import { githubAuthRoutes } from "./routes/auth/github.ts";
-import { configRoutes } from "./routes/config/index.ts";
-import { githubApiRoutes } from "./routes/github/index.ts";
-import { healthRoutes } from "./routes/health.ts";
-import { imageRoutes } from "./routes/images/index.ts";
-import { sandboxRoutes } from "./routes/sandboxes/index.ts";
-import { sourceRoutes } from "./routes/sources/index.ts";
-import { systemRoutes } from "./routes/system/index.ts";
-import { workspaceRoutes } from "./routes/workspaces/index.ts";
-import { CaddyService } from "./services/caddy.ts";
-import { initDatabase } from "./state/database.ts";
-import { sandboxStore } from "./state/store.ts";
+import { setAgentSandboxStore } from "./infrastructure/agent/index.ts";
+import { initDatabase } from "./infrastructure/database/index.ts";
+import { CaddyService } from "./infrastructure/proxy/index.ts";
+import {
+  ConfigFileService,
+  configFileRoutes,
+} from "./modules/config-file/index.ts";
+import {
+  GitSourceService,
+  gitSourceRoutes,
+} from "./modules/git-source/index.ts";
+import { githubApiRoutes, githubAuthRoutes } from "./modules/github/index.ts";
+import { healthRoutes } from "./modules/health/index.ts";
+import { imageRoutes } from "./modules/image/index.ts";
+import {
+  initPrebuildService,
+  PrebuildService,
+} from "./modules/prebuild/index.ts";
+import {
+  initSandboxService,
+  SandboxService,
+  sandboxRoutes,
+} from "./modules/sandbox/index.ts";
+import { systemRoutes } from "./modules/system/index.ts";
+import {
+  setPrebuildCreator,
+  WorkspaceService,
+  workspaceRoutes,
+} from "./modules/workspace/index.ts";
+import { SandboxError } from "./shared/errors.ts";
+import { config } from "./shared/lib/config.ts";
+import { logger } from "./shared/lib/logger.ts";
+import { appPaths } from "./shared/lib/paths.ts";
 
 logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");
 
+setAgentSandboxStore({
+  getById: (id: string) => SandboxService.getById(id),
+});
+
+initSandboxService({
+  getWorkspace: (id) => WorkspaceService.getById(id),
+  getGitSource: (id) => GitSourceService.getById(id),
+  getConfigFiles: (workspaceId) =>
+    ConfigFileService.getMergedForSandbox(workspaceId),
+});
+
+initPrebuildService({
+  getWorkspace: (id) => WorkspaceService.getById(id),
+  updateWorkspace: (id, updates) => {
+    try {
+      return WorkspaceService.update(id, updates);
+    } catch {
+      return undefined;
+    }
+  },
+  spawnSandbox: (options) => SandboxService.spawn(options),
+  destroySandbox: (id) => SandboxService.destroy(id),
+});
+
+setPrebuildCreator((workspaceId) => {
+  PrebuildService.createInBackground(workspaceId);
+});
+
 const app = new Elysia()
   .on("start", async () => {
-    // Re-register Caddy routes for running sandboxes after server restart
-    const sandboxes = sandboxStore
-      .getAll()
-      .filter((s) => s.status === "running");
+    const sandboxes = SandboxService.getByStatus("running");
 
     for (const sandbox of sandboxes) {
       try {
@@ -126,8 +168,8 @@ const app = new Elysia()
     app
       .use(sandboxRoutes)
       .use(workspaceRoutes)
-      .use(sourceRoutes)
-      .use(configRoutes)
+      .use(gitSourceRoutes)
+      .use(configFileRoutes)
       .use(systemRoutes)
       .use(imageRoutes)
       .use(githubApiRoutes),
