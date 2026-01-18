@@ -1,7 +1,11 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import { createChildLogger } from "../../lib/logger.ts";
+import {
+  GitHubReposQuerySchema,
+  GitHubReposResponseSchema,
+  type GitHubSourceConfig,
+} from "../../schemas/index.ts";
 import { GitSourceRepository } from "../../state/database.ts";
-import type { GitHubSourceConfig } from "../../types/index.ts";
 
 const log = createChildLogger("github-api");
 
@@ -105,12 +109,8 @@ export const githubApiRoutes = new Elysia({ prefix: "/github" }).get(
     };
   },
   {
-    query: t.Object({
-      page: t.Optional(t.String()),
-      perPage: t.Optional(t.String()),
-      affiliation: t.Optional(t.String()),
-      sort: t.Optional(t.String()),
-    }),
+    query: GitHubReposQuerySchema,
+    response: GitHubReposResponseSchema,
     detail: { tags: ["github"] },
   },
 );

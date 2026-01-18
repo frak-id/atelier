@@ -4,13 +4,13 @@ import { nanoid } from "nanoid";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { ensureDir } from "../lib/shell.ts";
-import { SandboxRepository, WorkspaceRepository } from "../state/database.ts";
 import type {
-  CreateSandboxOptions,
+  CreateSandboxBody,
   RepoConfig,
   Sandbox,
   Workspace,
-} from "../types/index.ts";
+} from "../schemas/index.ts";
+import { SandboxRepository, WorkspaceRepository } from "../state/database.ts";
 import { AgentClient } from "./agent.ts";
 import { CaddyService } from "./caddy.ts";
 import { ConfigFilesService } from "./config-files.ts";
@@ -52,7 +52,7 @@ function getSandboxPaths(
 
 export class SandboxBuilder {
   private sandboxId: string;
-  private options: CreateSandboxOptions;
+  private options: CreateSandboxBody;
   private workspace?: Workspace;
   private sandbox?: Sandbox;
   private network?: NetworkAllocation;
@@ -61,12 +61,12 @@ export class SandboxBuilder {
   private client?: FirecrackerClient;
   private usedPrebuild = false;
 
-  private constructor(options: CreateSandboxOptions) {
+  private constructor(options: CreateSandboxBody) {
     this.sandboxId = nanoid(12);
     this.options = options;
   }
 
-  static create(options: CreateSandboxOptions = {}): SandboxBuilder {
+  static create(options: CreateSandboxBody = {}): SandboxBuilder {
     return new SandboxBuilder(options);
   }
 

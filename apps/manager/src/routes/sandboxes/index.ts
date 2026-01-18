@@ -1,7 +1,29 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import { config } from "../../lib/config.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../lib/errors.ts";
 import { createChildLogger } from "../../lib/logger.ts";
+import {
+  AgentHealthSchema,
+  AgentMetricsSchema,
+  AppPortListResponseSchema,
+  AppPortSchema,
+  CreateSandboxBodySchema,
+  DiscoverConfigsResponseSchema,
+  ExecBodySchema,
+  ExecResponseSchema,
+  ExtractConfigBodySchema,
+  ExtractConfigResponseSchema,
+  IdParamSchema,
+  LogsParamsSchema,
+  LogsQuerySchema,
+  LogsResponseSchema,
+  RegisterAppBodySchema,
+  SandboxListQuerySchema,
+  SandboxListResponseSchema,
+  SandboxSchema,
+  ServicesResponseSchema,
+  SpawnJobSchema,
+} from "../../schemas/index.ts";
 import { AgentClient } from "../../services/agent.ts";
 import { ConfigFilesService } from "../../services/config-files.ts";
 import { FirecrackerService } from "../../services/firecracker.ts";
@@ -9,13 +31,6 @@ import { QueueService } from "../../services/queue.ts";
 import { sandboxStore } from "../../state/store.ts";
 
 const log = createChildLogger("sandboxes-route");
-
-const SandboxStatusEnum = t.Union([
-  t.Literal("creating"),
-  t.Literal("running"),
-  t.Literal("stopped"),
-  t.Literal("error"),
-]);
 
 export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
@@ -36,10 +51,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return sandboxes;
     },
     {
-      query: t.Object({
-        status: t.Optional(SandboxStatusEnum),
-        workspaceId: t.Optional(t.String()),
-      }),
+      query: SandboxListQuerySchema,
+      response: SandboxListResponseSchema,
     },
   )
   .post(
@@ -60,12 +73,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return sandbox;
     },
     {
-      body: t.Object({
-        workspaceId: t.Optional(t.String()),
-        baseImage: t.Optional(t.String()),
-        vcpus: t.Optional(t.Number({ minimum: 1, maximum: 8 })),
-        memoryMb: t.Optional(t.Number({ minimum: 512, maximum: 16384 })),
-      }),
+      body: CreateSandboxBodySchema,
+      response: SandboxSchema,
     },
   )
   .get(
@@ -78,7 +87,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return sandbox;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: SandboxSchema,
     },
   )
   .delete(
@@ -96,7 +106,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return null;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
     },
   )
   .post(
@@ -111,7 +121,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return FirecrackerService.stop(params.id);
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: SandboxSchema,
     },
   )
   .post(
@@ -126,7 +137,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return FirecrackerService.start(params.id);
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: SandboxSchema,
     },
   )
   .get(
@@ -139,7 +151,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return job;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: SpawnJobSchema,
     },
   )
   .get(
@@ -152,7 +165,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return AgentClient.health(params.id);
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: AgentHealthSchema,
     },
   )
   .get(
@@ -165,7 +179,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return AgentClient.metrics(params.id);
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: AgentMetricsSchema,
     },
   )
   .get(
@@ -178,7 +193,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return AgentClient.getApps(params.id);
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: AppPortListResponseSchema,
     },
   )
   .post(
@@ -191,11 +207,9 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return AgentClient.registerApp(params.id, body.port, body.name);
     },
     {
-      params: t.Object({ id: t.String() }),
-      body: t.Object({
-        port: t.Number({ minimum: 1, maximum: 65535 }),
-        name: t.String({ minLength: 1, maxLength: 100 }),
-      }),
+      params: IdParamSchema,
+      body: RegisterAppBodySchema,
+      response: AppPortSchema,
     },
   )
   .post(
@@ -210,11 +224,9 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       });
     },
     {
-      params: t.Object({ id: t.String() }),
-      body: t.Object({
-        command: t.String({ minLength: 1 }),
-        timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),
-      }),
+      params: IdParamSchema,
+      body: ExecBodySchema,
+      response: ExecResponseSchema,
     },
   )
   .get(
@@ -229,8 +241,9 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return { logs: result.content };
     },
     {
-      params: t.Object({ id: t.String(), service: t.String() }),
-      query: t.Object({ lines: t.Optional(t.String()) }),
+      params: LogsParamsSchema,
+      query: LogsQuerySchema,
+      response: LogsResponseSchema,
     },
   )
   .get(
@@ -243,7 +256,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return AgentClient.services(params.id);
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: ServicesResponseSchema,
     },
   )
   .get(
@@ -257,7 +271,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return { configs };
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: DiscoverConfigsResponseSchema,
     },
   )
   .post(
@@ -286,7 +301,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       return result;
     },
     {
-      params: t.Object({ id: t.String() }),
-      body: t.Object({ path: t.String({ minLength: 1 }) }),
+      params: IdParamSchema,
+      body: ExtractConfigBodySchema,
+      response: ExtractConfigResponseSchema,
     },
   );

@@ -1,20 +1,31 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import { nanoid } from "nanoid";
 import { NotFoundError } from "../../lib/errors.ts";
 import { createChildLogger } from "../../lib/logger.ts";
+import {
+  CreateGitSourceBodySchema,
+  type GitSource,
+  type GitSourceConfig,
+  GitSourceListResponseSchema,
+  GitSourceSchema,
+  type GitSourceType,
+  IdParamSchema,
+  UpdateGitSourceBodySchema,
+} from "../../schemas/index.ts";
 import { GitSourceRepository } from "../../state/database.ts";
-import type {
-  GitSource,
-  GitSourceConfig,
-  GitSourceType,
-} from "../../types/index.ts";
 
 const log = createChildLogger("sources-route");
 
 export const sourceRoutes = new Elysia({ prefix: "/sources" })
-  .get("/", () => {
-    return GitSourceRepository.getAll();
-  })
+  .get(
+    "/",
+    () => {
+      return GitSourceRepository.getAll();
+    },
+    {
+      response: GitSourceListResponseSchema,
+    },
+  )
   .post(
     "/",
     async ({ body, set }) => {
@@ -37,15 +48,8 @@ export const sourceRoutes = new Elysia({ prefix: "/sources" })
       return source;
     },
     {
-      body: t.Object({
-        type: t.Union([
-          t.Literal("github"),
-          t.Literal("gitlab"),
-          t.Literal("custom"),
-        ]),
-        name: t.String({ minLength: 1, maxLength: 100 }),
-        config: t.Record(t.String(), t.Unknown()),
-      }),
+      body: CreateGitSourceBodySchema,
+      response: GitSourceSchema,
     },
   )
   .get(
@@ -58,7 +62,8 @@ export const sourceRoutes = new Elysia({ prefix: "/sources" })
       return source;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: GitSourceSchema,
     },
   )
   .put(
@@ -79,11 +84,9 @@ export const sourceRoutes = new Elysia({ prefix: "/sources" })
       return GitSourceRepository.update(params.id, updates);
     },
     {
-      params: t.Object({ id: t.String() }),
-      body: t.Object({
-        name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
-        config: t.Optional(t.Record(t.String(), t.Unknown())),
-      }),
+      params: IdParamSchema,
+      body: UpdateGitSourceBodySchema,
+      response: GitSourceSchema,
     },
   )
   .delete(
@@ -100,7 +103,7 @@ export const sourceRoutes = new Elysia({ prefix: "/sources" })
       return null;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
     },
   )
   .get(
@@ -112,12 +115,12 @@ export const sourceRoutes = new Elysia({ prefix: "/sources" })
       }
 
       if (source.type === "github") {
-        const config = source.config as { accessToken: string };
+        const sourceConfig = source.config as { accessToken: string };
         const response = await fetch(
           "https://api.github.com/user/repos?per_page=100&sort=updated",
           {
             headers: {
-              Authorization: `Bearer ${config.accessToken}`,
+              Authorization: `Bearer ${sourceConfig.accessToken}`,
               Accept: "application/vnd.github+json",
               "X-GitHub-Api-Version": "2022-11-28",
             },
@@ -149,6 +152,6 @@ export const sourceRoutes = new Elysia({ prefix: "/sources" })
       return [];
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
     },
   );

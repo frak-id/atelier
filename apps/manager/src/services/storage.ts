@@ -1,9 +1,12 @@
 import { LVM } from "@frak-sandbox/shared/constants";
-import type { BaseImageId } from "@frak-sandbox/shared/types";
-import { DEFAULT_BASE_IMAGE, getBaseImage } from "@frak-sandbox/shared/types";
 import { $ } from "bun";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
+import {
+  type BaseImageId,
+  DEFAULT_BASE_IMAGE,
+  getBaseImage,
+} from "../schemas/index.ts";
 
 const log = createChildLogger("storage");
 

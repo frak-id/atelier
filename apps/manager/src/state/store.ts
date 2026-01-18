@@ -1,5 +1,4 @@
-import type { SandboxStatus } from "@frak-sandbox/shared/types";
-import type { Sandbox } from "../types/index.ts";
+import type { Sandbox, SandboxStatus } from "../schemas/index.ts";
 import { SandboxRepository } from "./database.ts";
 
 export const sandboxStore = {

@@ -4,8 +4,8 @@ import { config } from "../lib/config.ts";
 import { NotFoundError } from "../lib/errors.ts";
 import { createChildLogger } from "../lib/logger.ts";
 import { fileExists } from "../lib/shell.ts";
+import type { CreateSandboxBody, Sandbox } from "../schemas/index.ts";
 import { SandboxRepository } from "../state/database.ts";
-import type { CreateSandboxOptions, Sandbox } from "../types/index.ts";
 import { CaddyService } from "./caddy.ts";
 import { FirecrackerClient } from "./firecracker-client.ts";
 import { NetworkService } from "./network.ts";
@@ -22,7 +22,7 @@ function getSocketPath(sandboxId: string): string {
 }
 
 export const FirecrackerService = {
-  async spawn(options: CreateSandboxOptions = {}): Promise<Sandbox> {
+  async spawn(options: CreateSandboxBody = {}): Promise<Sandbox> {
     return SandboxBuilder.create(options).build();
   },
 

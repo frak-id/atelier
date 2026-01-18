@@ -17,7 +17,7 @@ import type {
   GitSource,
   Sandbox,
   Workspace,
-} from "../types/index.ts";
+} from "../schemas/index.ts";
 
 const log = createChildLogger("database");
 

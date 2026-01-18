@@ -1,8 +1,13 @@
-import type {
-  CreateConfigFileOptions,
-  UpdateConfigFileOptions,
-} from "@frak-sandbox/shared/types";
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
+import {
+  ConfigFileListQuerySchema,
+  ConfigFileListResponseSchema,
+  CreateConfigFileBodySchema,
+  IdParamSchema,
+  MergedConfigQuerySchema,
+  MergedConfigResponseSchema,
+  UpdateConfigFileBodySchema,
+} from "../../schemas/index.ts";
 import { ConfigFilesService } from "../../services/config-files.ts";
 
 export const configRoutes = new Elysia({ prefix: "/config-files" })
@@ -15,12 +20,8 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
       });
     },
     {
-      query: t.Object({
-        scope: t.Optional(
-          t.Union([t.Literal("global"), t.Literal("workspace")]),
-        ),
-        workspaceId: t.Optional(t.String()),
-      }),
+      query: ConfigFileListQuerySchema,
+      response: ConfigFileListResponseSchema,
     },
   )
   .get(
@@ -34,21 +35,20 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
       return config;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
     },
   )
   .post(
     "/",
     ({ body, set }) => {
       try {
-        const options: CreateConfigFileOptions = {
+        return ConfigFilesService.create({
           path: body.path,
           content: body.content,
           contentType: body.contentType,
           scope: body.scope,
           workspaceId: body.workspaceId,
-        };
-        return ConfigFilesService.create(options);
+        });
       } catch (error) {
         set.status = 400;
         return {
@@ -57,24 +57,17 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
       }
     },
     {
-      body: t.Object({
-        path: t.String(),
-        content: t.String(),
-        contentType: t.Union([
-          t.Literal("json"),
-          t.Literal("text"),
-          t.Literal("binary"),
-        ]),
-        scope: t.Union([t.Literal("global"), t.Literal("workspace")]),
-        workspaceId: t.Optional(t.String()),
-      }),
+      body: CreateConfigFileBodySchema,
     },
   )
   .put(
     "/:id",
     ({ params, body, set }) => {
       try {
-        const options: UpdateConfigFileOptions = {};
+        const options: {
+          content?: string;
+          contentType?: "json" | "text" | "binary";
+        } = {};
         if (body.content !== undefined) options.content = body.content;
         if (body.contentType !== undefined)
           options.contentType = body.contentType;
@@ -87,13 +80,8 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
       }
     },
     {
-      params: t.Object({ id: t.String() }),
-      body: t.Object({
-        content: t.Optional(t.String()),
-        contentType: t.Optional(
-          t.Union([t.Literal("json"), t.Literal("text"), t.Literal("binary")]),
-        ),
-      }),
+      params: IdParamSchema,
+      body: UpdateConfigFileBodySchema,
     },
   )
   .delete(
@@ -111,7 +99,7 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
       }
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
     },
   )
   .get(
@@ -120,8 +108,7 @@ export const configRoutes = new Elysia({ prefix: "/config-files" })
       return ConfigFilesService.getMergedForSandbox(query.workspaceId);
     },
     {
-      query: t.Object({
-        workspaceId: t.Optional(t.String()),
-      }),
+      query: MergedConfigQuerySchema,
+      response: MergedConfigResponseSchema,
     },
   );

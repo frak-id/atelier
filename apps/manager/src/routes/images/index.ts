@@ -1,11 +1,15 @@
+import { Elysia } from "elysia";
+import { NotFoundError } from "../../lib/errors.ts";
 import {
   type BaseImageId,
+  BaseImageSchema,
   getAllImages,
   getAvailableImages,
   getBaseImage,
-} from "@frak-sandbox/shared/types";
-import { Elysia, t } from "elysia";
-import { NotFoundError } from "../../lib/errors.ts";
+  IdParamSchema,
+  ImageListQuerySchema,
+  ImageListResponseSchema,
+} from "../../schemas/index.ts";
 import { StorageService } from "../../services/storage.ts";
 
 export const imageRoutes = new Elysia({ prefix: "/images" })
@@ -24,9 +28,8 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
       return imagesWithAvailability;
     },
     {
-      query: t.Object({
-        all: t.Optional(t.BooleanString()),
-      }),
+      query: ImageListQuerySchema,
+      response: ImageListResponseSchema,
       detail: { tags: ["images"] },
     },
   )
@@ -42,7 +45,8 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
       return { ...image, available };
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: BaseImageSchema,
       detail: { tags: ["images"] },
     },
   );

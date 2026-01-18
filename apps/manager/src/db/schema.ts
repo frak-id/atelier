@@ -3,7 +3,7 @@ import type {
   GitSourceConfig,
   SandboxRuntime,
   WorkspaceConfig,
-} from "../types/index.ts";
+} from "../schemas/index.ts";
 
 export const gitSourceTypeValues = ["github", "gitlab", "custom"] as const;
 

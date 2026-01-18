@@ -1,15 +1,27 @@
-import type {
-  ConfigFile,
-  ConfigFileScope,
-  CreateConfigFileOptions,
-  MergedConfigFile,
-  UpdateConfigFileOptions,
-} from "@frak-sandbox/shared/types";
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { configFiles } from "../db/schema.ts";
 import { createChildLogger } from "../lib/logger.ts";
+import type {
+  ConfigFile,
+  ConfigFileContentType,
+  ConfigFileScope,
+  MergedConfigFile,
+} from "../schemas/index.ts";
 import { getDatabase } from "../state/database.ts";
+
+interface CreateConfigFileOptions {
+  path: string;
+  content: string;
+  contentType: ConfigFileContentType;
+  scope: ConfigFileScope;
+  workspaceId?: string;
+}
+
+interface UpdateConfigFileOptions {
+  content?: string;
+  contentType?: ConfigFileContentType;
+}
 
 const log = createChildLogger("config-files");
 

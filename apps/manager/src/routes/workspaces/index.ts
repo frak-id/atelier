@@ -1,22 +1,34 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import { nanoid } from "nanoid";
 import { NotFoundError } from "../../lib/errors.ts";
 import { createChildLogger } from "../../lib/logger.ts";
+import {
+  CreateWorkspaceBodySchema,
+  DEFAULT_WORKSPACE_CONFIG,
+  IdParamSchema,
+  PrebuildTriggerResponseSchema,
+  UpdateWorkspaceBodySchema,
+  type Workspace,
+  type WorkspaceConfig,
+  WorkspaceListResponseSchema,
+  WorkspaceSchema,
+} from "../../schemas/index.ts";
 import { PrebuildService } from "../../services/prebuild.ts";
 import { StorageService } from "../../services/storage.ts";
 import { WorkspaceRepository } from "../../state/database.ts";
-import {
-  DEFAULT_WORKSPACE_CONFIG,
-  type Workspace,
-  type WorkspaceConfig,
-} from "../../types/index.ts";
 
 const log = createChildLogger("workspaces-route");
 
 export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
-  .get("/", () => {
-    return WorkspaceRepository.getAll();
-  })
+  .get(
+    "/",
+    () => {
+      return WorkspaceRepository.getAll();
+    },
+    {
+      response: WorkspaceListResponseSchema,
+    },
+  )
   .post(
     "/",
     async ({ body, set }) => {
@@ -49,10 +61,8 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       return workspace;
     },
     {
-      body: t.Object({
-        name: t.String({ minLength: 1, maxLength: 100 }),
-        config: t.Optional(t.Record(t.String(), t.Unknown())),
-      }),
+      body: CreateWorkspaceBodySchema,
+      response: WorkspaceSchema,
     },
   )
   .get(
@@ -65,7 +75,8 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       return workspace;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: WorkspaceSchema,
     },
   )
   .put(
@@ -90,11 +101,9 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       return WorkspaceRepository.update(params.id, updates);
     },
     {
-      params: t.Object({ id: t.String() }),
-      body: t.Object({
-        name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
-        config: t.Optional(t.Record(t.String(), t.Unknown())),
-      }),
+      params: IdParamSchema,
+      body: UpdateWorkspaceBodySchema,
+      response: WorkspaceSchema,
     },
   )
   .delete(
@@ -112,7 +121,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       return null;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
     },
   )
   .post(
@@ -142,7 +151,8 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       };
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
+      response: PrebuildTriggerResponseSchema,
     },
   )
   .delete(
@@ -160,6 +170,6 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       return null;
     },
     {
-      params: t.Object({ id: t.String() }),
+      params: IdParamSchema,
     },
   );

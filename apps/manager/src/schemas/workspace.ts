@@ -1,0 +1,92 @@
+import type { Static } from "elysia";
+import { t } from "elysia";
+
+export const PrebuildStatusSchema = t.Union([
+  t.Literal("none"),
+  t.Literal("building"),
+  t.Literal("ready"),
+  t.Literal("failed"),
+]);
+export type PrebuildStatus = Static<typeof PrebuildStatusSchema>;
+
+export const RepoConfigUrlSchema = t.Object({
+  url: t.String(),
+  branch: t.String(),
+  clonePath: t.String(),
+});
+
+export const RepoConfigSourceSchema = t.Object({
+  sourceId: t.String(),
+  repo: t.String(),
+  branch: t.String(),
+  clonePath: t.String(),
+});
+
+export const RepoConfigSchema = t.Union([
+  RepoConfigUrlSchema,
+  RepoConfigSourceSchema,
+]);
+export type RepoConfig = Static<typeof RepoConfigSchema>;
+
+export const PrebuildInfoSchema = t.Object({
+  status: PrebuildStatusSchema,
+  latestId: t.Optional(t.String()),
+  builtAt: t.Optional(t.String()),
+});
+
+export const WorkspaceConfigSchema = t.Object({
+  baseImage: t.String({ default: "dev-base" }),
+  vcpus: t.Number({ minimum: 1, maximum: 8, default: 2 }),
+  memoryMb: t.Number({ minimum: 512, maximum: 16384, default: 2048 }),
+  initCommands: t.Array(t.String(), { default: [] }),
+  startCommands: t.Array(t.String(), { default: [] }),
+  secrets: t.Record(t.String(), t.String(), { default: {} }),
+  repos: t.Array(RepoConfigSchema, { default: [] }),
+  exposedPorts: t.Array(t.Number(), { default: [] }),
+  prebuild: t.Optional(PrebuildInfoSchema),
+});
+export type WorkspaceConfig = Static<typeof WorkspaceConfigSchema>;
+
+export const WorkspaceSchema = t.Object({
+  id: t.String(),
+  name: t.String(),
+  config: WorkspaceConfigSchema,
+  createdAt: t.String(),
+  updatedAt: t.String(),
+});
+export type Workspace = Static<typeof WorkspaceSchema>;
+
+export const CreateWorkspaceBodySchema = t.Object({
+  name: t.String({ minLength: 1, maxLength: 100 }),
+  config: t.Optional(t.Partial(WorkspaceConfigSchema)),
+});
+export type CreateWorkspaceBody = Static<typeof CreateWorkspaceBodySchema>;
+
+export const UpdateWorkspaceBodySchema = t.Object({
+  name: t.Optional(t.String({ minLength: 1, maxLength: 100 })),
+  config: t.Optional(t.Partial(WorkspaceConfigSchema)),
+});
+export type UpdateWorkspaceBody = Static<typeof UpdateWorkspaceBodySchema>;
+
+export const WorkspaceListResponseSchema = t.Array(WorkspaceSchema);
+export type WorkspaceListResponse = Static<typeof WorkspaceListResponseSchema>;
+
+export const PrebuildTriggerResponseSchema = t.Object({
+  message: t.String(),
+  workspaceId: t.String(),
+  status: t.String(),
+});
+export type PrebuildTriggerResponse = Static<
+  typeof PrebuildTriggerResponseSchema
+>;
+
+export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
+  baseImage: "dev-base",
+  vcpus: 2,
+  memoryMb: 2048,
+  initCommands: [],
+  startCommands: [],
+  secrets: {},
+  repos: [],
+  exposedPorts: [],
+};

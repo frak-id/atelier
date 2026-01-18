@@ -2,7 +2,7 @@ import { DEFAULTS } from "@frak-sandbox/shared/constants";
 import { nanoid } from "nanoid";
 import { config } from "../lib/config.ts";
 import { createChildLogger } from "../lib/logger.ts";
-import type { CreateSandboxOptions, Sandbox } from "../types/index.ts";
+import type { CreateSandboxBody, Sandbox } from "../schemas/index.ts";
 
 const log = createChildLogger("queue");
 
@@ -10,7 +10,7 @@ export type JobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface SpawnJob {
   id: string;
-  options: CreateSandboxOptions;
+  options: CreateSandboxBody;
   status: JobStatus;
   result?: Sandbox;
   error?: string;
@@ -27,7 +27,7 @@ export interface QueueStats {
   maxConcurrent: number;
 }
 
-type SpawnHandler = (options: CreateSandboxOptions) => Promise<Sandbox>;
+type SpawnHandler = (options: CreateSandboxBody) => Promise<Sandbox>;
 
 class SpawnQueue {
   private jobs = new Map<string, SpawnJob>();
@@ -44,7 +44,7 @@ class SpawnQueue {
     this.spawnHandler = handler;
   }
 
-  async enqueue(options: CreateSandboxOptions): Promise<SpawnJob> {
+  async enqueue(options: CreateSandboxBody): Promise<SpawnJob> {
     const jobId = nanoid(8);
     const job: SpawnJob = {
       id: jobId,
@@ -63,7 +63,7 @@ class SpawnQueue {
   }
 
   async enqueueAndWait(
-    options: CreateSandboxOptions,
+    options: CreateSandboxBody,
     timeoutMs = DEFAULTS.BOOT_TIMEOUT_MS,
   ): Promise<Sandbox> {
     const job = await this.enqueue(options);

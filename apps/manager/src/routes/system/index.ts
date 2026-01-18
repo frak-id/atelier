@@ -1,8 +1,15 @@
-import type { CleanupResult, SystemStats } from "@frak-sandbox/shared/types";
 import { $ } from "bun";
 import { Elysia } from "elysia";
 import { config } from "../../lib/config.ts";
 import { createChildLogger } from "../../lib/logger.ts";
+import {
+  type CleanupResult,
+  CleanupResultSchema,
+  QueueStatusSchema,
+  StorageStatusSchema,
+  type SystemStats,
+  SystemStatsSchema,
+} from "../../schemas/index.ts";
 import { QueueService } from "../../services/queue.ts";
 import { StorageService } from "../../services/storage.ts";
 import { sandboxStore } from "../../state/store.ts";
@@ -124,6 +131,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
       return getSystemStats();
     },
     {
+      response: SystemStatsSchema,
       detail: { tags: ["system"] },
     },
   )
@@ -143,6 +151,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
       };
     },
     {
+      response: StorageStatusSchema,
       detail: { tags: ["system"] },
     },
   )
@@ -164,6 +173,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
       return { stats, queued, running };
     },
     {
+      response: QueueStatusSchema,
       detail: { tags: ["system"] },
     },
   )
@@ -173,6 +183,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
       return performCleanup();
     },
     {
+      response: CleanupResultSchema,
       detail: { tags: ["system"] },
     },
   );

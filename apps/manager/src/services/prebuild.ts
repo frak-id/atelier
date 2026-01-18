@@ -1,11 +1,11 @@
 import { nanoid } from "nanoid";
 import { createChildLogger } from "../lib/logger.ts";
-import { WorkspaceRepository } from "../state/database.ts";
 import type {
   PrebuildStatus,
   Workspace,
   WorkspaceConfig,
-} from "../types/index.ts";
+} from "../schemas/index.ts";
+import { WorkspaceRepository } from "../state/database.ts";
 import { AgentClient } from "./agent.ts";
 import { FirecrackerService } from "./firecracker.ts";
 import { StorageService } from "./storage.ts";

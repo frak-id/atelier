@@ -1,7 +1,12 @@
-import type { HealthStatus } from "@frak-sandbox/shared/types";
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import { config } from "../lib/config.ts";
 import { dirExists } from "../lib/shell.ts";
+import {
+  type HealthStatus,
+  HealthStatusSchema,
+  LiveStatusSchema,
+  ReadyStatusSchema,
+} from "../schemas/index.ts";
 import { CaddyService } from "../services/caddy.ts";
 import { FirecrackerService } from "../services/firecracker.ts";
 import { NetworkService } from "../services/network.ts";
@@ -39,32 +44,26 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
       };
     },
     {
-      response: t.Object({
-        status: t.Union([
-          t.Literal("ok"),
-          t.Literal("degraded"),
-          t.Literal("error"),
-        ]),
-        uptime: t.Number(),
-        timestamp: t.Number(),
-        checks: t.Object({
-          firecracker: t.Union([t.Literal("ok"), t.Literal("error")]),
-          caddy: t.Union([t.Literal("ok"), t.Literal("error")]),
-          network: t.Union([t.Literal("ok"), t.Literal("error")]),
-          storage: t.Union([t.Literal("ok"), t.Literal("error")]),
-          lvm: t.Union([t.Literal("ok"), t.Literal("unavailable")]),
-        }),
-      }),
+      response: HealthStatusSchema,
     },
   )
   .get("/live", () => ({ status: "ok" as const }), {
-    response: t.Object({ status: t.Literal("ok") }),
+    response: LiveStatusSchema,
   })
-  .get("/ready", async ({ set }) => {
-    const firecracker = await FirecrackerService.isHealthy();
-    if (!firecracker) {
-      set.status = 503;
-      return { status: "not ready", reason: "firecracker unavailable" };
-    }
-    return { status: "ready" };
-  });
+  .get(
+    "/ready",
+    async ({ set }) => {
+      const firecracker = await FirecrackerService.isHealthy();
+      if (!firecracker) {
+        set.status = 503;
+        return {
+          status: "not ready" as const,
+          reason: "firecracker unavailable",
+        };
+      }
+      return { status: "ready" as const };
+    },
+    {
+      response: ReadyStatusSchema,
+    },
+  );

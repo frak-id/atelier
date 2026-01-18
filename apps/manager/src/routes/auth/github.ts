@@ -2,8 +2,12 @@ import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
 import { config } from "../../lib/config.ts";
 import { createChildLogger } from "../../lib/logger.ts";
+import type {
+  GitHubSourceConfig,
+  GitHubStatusResponse,
+  GitSource,
+} from "../../schemas/index.ts";
 import { GitSourceRepository } from "../../state/database.ts";
-import type { GitHubSourceConfig, GitSource } from "../../types/index.ts";
 
 const log = createChildLogger("github-auth");
 
@@ -70,7 +74,7 @@ async function fetchGitHubUser(accessToken: string): Promise<GitHubUser> {
 }
 
 export const githubAuthRoutes = new Elysia({ prefix: "/github" })
-  .get("/status", () => {
+  .get("/status", (): GitHubStatusResponse => {
     const source = getGitHubSource();
 
     if (!source) {
