@@ -3,6 +3,11 @@ import { createChildLogger } from "../lib/logger.ts";
 
 const log = createChildLogger("caddy");
 
+interface RouteDefinition {
+  domain: string;
+  upstream: string;
+}
+
 export const CaddyService = {
   async registerRoutes(
     sandboxId: string,
@@ -25,9 +30,11 @@ export const CaddyService = {
       };
     }
 
-    await this.addRoute(vscodeDomain, `${ipAddress}:${ports.vscode}`);
-    await this.addRoute(opencodeDomain, `${ipAddress}:${ports.opencode}`);
-    await this.addRoute(terminalDomain, `${ipAddress}:${ports.terminal}`);
+    await this.addRoutes([
+      { domain: vscodeDomain, upstream: `${ipAddress}:${ports.vscode}` },
+      { domain: opencodeDomain, upstream: `${ipAddress}:${ports.opencode}` },
+      { domain: terminalDomain, upstream: `${ipAddress}:${ports.terminal}` },
+    ]);
 
     log.info(
       { sandboxId, vscodeDomain, opencodeDomain, terminalDomain },
@@ -41,44 +48,7 @@ export const CaddyService = {
     };
   },
 
-  async addRoute(domain: string, upstream: string): Promise<void> {
-    const routeConfig = {
-      "@id": domain,
-      match: [{ host: [domain] }],
-      handle: [
-        {
-          handler: "reverse_proxy",
-          upstreams: [{ dial: upstream }],
-          // Enable WebSocket support for OpenCode SSE and code-server
-          transport: {
-            protocol: "http",
-            read_buffer_size: 4096,
-          },
-          // Disable buffering for SSE streams
-          flush_interval: -1,
-        },
-      ],
-      terminal: true,
-    };
-
-    await this.ensureWildcardIsLast(async () => {
-      const response = await fetch(
-        `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(routeConfig),
-        },
-      );
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Failed to add Caddy route: ${error}`);
-      }
-    });
-  },
-
-  async ensureWildcardIsLast(operation: () => Promise<void>): Promise<void> {
+  async addRoutes(routes: RouteDefinition[]): Promise<void> {
     const wildcardIndex = await this.findWildcardRouteIndex();
     const hadWildcard = wildcardIndex >= 0;
 
@@ -89,11 +59,48 @@ export const CaddyService = {
       );
     }
 
-    await operation();
+    await Promise.all(routes.map((route) => this.addRouteDirect(route)));
 
     if (hadWildcard) {
       await this.addWildcardFallback();
     }
+  },
+
+  async addRouteDirect(route: RouteDefinition): Promise<void> {
+    const routeConfig = {
+      "@id": route.domain,
+      match: [{ host: [route.domain] }],
+      handle: [
+        {
+          handler: "reverse_proxy",
+          upstreams: [{ dial: route.upstream }],
+          transport: {
+            protocol: "http",
+            read_buffer_size: 4096,
+          },
+          flush_interval: -1,
+        },
+      ],
+      terminal: true,
+    };
+
+    const response = await fetch(
+      `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(routeConfig),
+      },
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to add Caddy route: ${error}`);
+    }
+  },
+
+  async addRoute(domain: string, upstream: string): Promise<void> {
+    await this.addRoutes([{ domain, upstream }]);
   },
 
   async findWildcardRouteIndex(): Promise<number> {
@@ -157,9 +164,11 @@ export const CaddyService = {
       return;
     }
 
-    await this.removeRoute(vscodeDomain);
-    await this.removeRoute(opencodeDomain);
-    await this.removeRoute(terminalDomain);
+    await Promise.all([
+      this.removeRoute(vscodeDomain),
+      this.removeRoute(opencodeDomain),
+      this.removeRoute(terminalDomain),
+    ]);
 
     log.info({ sandboxId }, "Caddy routes removed");
   },

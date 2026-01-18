@@ -461,7 +461,7 @@ Your code is located in \`/home/dev/workspace\`
 
     this.pid = proc.pid;
     await Bun.write(this.paths.pid, String(proc.pid));
-    await Bun.sleep(500);
+    await Bun.sleep(50);
 
     const alive = await $`kill -0 ${proc.pid}`.quiet().nothrow();
     if (alive.exitCode !== 0) {
@@ -512,7 +512,6 @@ Your code is located in \`/home/dev/workspace\`
       this.sandbox.runtime.memoryMb,
     );
 
-    await Bun.sleep(100);
     log.debug({ sandboxId: this.sandboxId }, "VM configured");
   }
 

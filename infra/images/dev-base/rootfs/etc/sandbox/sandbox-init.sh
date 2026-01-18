@@ -68,6 +68,16 @@ if [ -f "$SECRETS_FILE" ]; then
     set +a
 fi
 
+# Start sandbox-agent FIRST for fast boot detection by manager
+log "Starting sandbox-agent..."
+if [ -f /usr/local/lib/sandbox-agent.mjs ]; then
+    node /usr/local/lib/sandbox-agent.mjs > "$LOG_DIR/agent.log" 2>&1 &
+    log "sandbox-agent started (PID $!)"
+else
+    log "ERROR: sandbox-agent.mjs not found"
+    ls -la /usr/local/lib/ 2>&1 | tee -a "$LOG_DIR/init.log"
+fi
+
 log "Starting SSH daemon..."
 mkdir -p /run/sshd
 chmod 0755 /run/sshd
@@ -129,15 +139,6 @@ if command -v ttyd >/dev/null 2>&1; then
     log "ttyd started (PID $!) on port 7681"
 else
     log "WARNING: ttyd not found"
-fi
-
-log "Starting sandbox-agent..."
-if [ -f /usr/local/lib/sandbox-agent.mjs ]; then
-    node /usr/local/lib/sandbox-agent.mjs > "$LOG_DIR/agent.log" 2>&1 &
-    log "sandbox-agent started (PID $!)"
-else
-    log "ERROR: sandbox-agent.mjs not found"
-    ls -la /usr/local/lib/ 2>&1 | tee -a "$LOG_DIR/init.log"
 fi
 
 if [ -f "$START_SCRIPT" ]; then

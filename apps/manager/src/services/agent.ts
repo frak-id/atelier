@@ -134,7 +134,7 @@ export const AgentClient = {
     options: { timeout?: number; interval?: number } = {},
   ): Promise<boolean> {
     const timeout = options.timeout ?? 60000;
-    const interval = options.interval ?? 2000;
+    const interval = options.interval ?? 200;
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {

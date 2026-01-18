@@ -1,4 +1,4 @@
-import { createOpencodeClient, Session } from "@opencode-ai/sdk/v2";
+import { createOpencodeClient, type Session } from "@opencode-ai/sdk/v2";
 
 export async function fetchOpenCodeSessions(
   baseUrl: string,
