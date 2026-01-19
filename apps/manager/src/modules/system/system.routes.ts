@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import { Elysia } from "elysia";
+import { sandboxService } from "../../container.ts";
 import { QueueService } from "../../infrastructure/queue/index.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
 import {
@@ -12,7 +13,6 @@ import {
 } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { SandboxService } from "../sandbox/index.ts";
 
 const log = createChildLogger("system-routes");
 const startTime = Date.now();
@@ -27,7 +27,7 @@ async function getSystemStats(): Promise<SystemStats> {
       diskUsed: 50 * 1024 * 1024 * 1024,
       diskTotal: 500 * 1024 * 1024 * 1024,
       diskPercent: 10,
-      activeSandboxes: SandboxService.countByStatus("running"),
+      activeSandboxes: sandboxService.countByStatus("running"),
       maxSandboxes: config.defaults.MAX_SANDBOXES,
       uptime: Math.floor((Date.now() - startTime) / 1000),
     };
@@ -59,7 +59,7 @@ async function getSystemStats(): Promise<SystemStats> {
     diskUsed,
     diskTotal,
     diskPercent: diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0,
-    activeSandboxes: SandboxService.countByStatus("running"),
+    activeSandboxes: sandboxService.countByStatus("running"),
     maxSandboxes: config.defaults.MAX_SANDBOXES,
     uptime: Math.floor((Date.now() - startTime) / 1000),
   };

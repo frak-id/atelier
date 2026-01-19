@@ -18,10 +18,10 @@ function rowToWorkspace(row: typeof workspaces.$inferSelect): Workspace {
   };
 }
 
-export const WorkspaceRepository = {
+export class WorkspaceRepository {
   getAll(): Workspace[] {
     return getDatabase().select().from(workspaces).all().map(rowToWorkspace);
-  },
+  }
 
   getById(id: string): Workspace | undefined {
     const row = getDatabase()
@@ -30,7 +30,7 @@ export const WorkspaceRepository = {
       .where(eq(workspaces.id, id))
       .get();
     return row ? rowToWorkspace(row) : undefined;
-  },
+  }
 
   create(workspace: Workspace): Workspace {
     getDatabase()
@@ -48,7 +48,7 @@ export const WorkspaceRepository = {
       "Workspace created",
     );
     return workspace;
-  },
+  }
 
   update(id: string, updates: Partial<Workspace>): Workspace {
     const existing = this.getById(id);
@@ -74,7 +74,7 @@ export const WorkspaceRepository = {
 
     log.debug({ workspaceId: id }, "Workspace updated");
     return updated;
-  },
+  }
 
   delete(id: string): boolean {
     const existing = this.getById(id);
@@ -83,7 +83,7 @@ export const WorkspaceRepository = {
     getDatabase().delete(workspaces).where(eq(workspaces.id, id)).run();
     log.info({ workspaceId: id }, "Workspace deleted");
     return true;
-  },
+  }
 
   count(): number {
     const result = getDatabase()
@@ -91,5 +91,5 @@ export const WorkspaceRepository = {
       .from(workspaces)
       .get();
     return result?.count ?? 0;
-  },
-};
+  }
+}

@@ -1,2 +1,3 @@
+export { SandboxRepository } from "./sandbox.repository.ts";
 export { sandboxRoutes } from "./sandbox.routes.ts";
-export { initSandboxService, SandboxService } from "./sandbox.service.ts";
+export { SandboxService } from "./sandbox.service.ts";

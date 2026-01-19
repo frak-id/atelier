@@ -4,34 +4,31 @@ import type { Workspace, WorkspaceConfig } from "../../schemas/index.ts";
 import { DEFAULT_WORKSPACE_CONFIG } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { WorkspaceRepository } from "./workspace.repository.ts";
+import type { WorkspaceRepository } from "./workspace.repository.ts";
 
 const log = createChildLogger("workspace-service");
 
-type PrebuildCreator = (workspaceId: string) => void;
+export class WorkspaceService {
+  constructor(
+    private readonly workspaceRepository: WorkspaceRepository,
+    private readonly prebuildCreator?: (workspaceId: string) => void,
+  ) {}
 
-let prebuildCreator: PrebuildCreator | null = null;
-
-export function setPrebuildCreator(creator: PrebuildCreator): void {
-  prebuildCreator = creator;
-}
-
-export const WorkspaceService = {
   getAll(): Workspace[] {
-    return WorkspaceRepository.getAll();
-  },
+    return this.workspaceRepository.getAll();
+  }
 
   getById(id: string): Workspace | undefined {
-    return WorkspaceRepository.getById(id);
-  },
+    return this.workspaceRepository.getById(id);
+  }
 
   getByIdOrThrow(id: string): Workspace {
-    const workspace = WorkspaceRepository.getById(id);
+    const workspace = this.workspaceRepository.getById(id);
     if (!workspace) {
       throw new NotFoundError("Workspace", id);
     }
     return workspace;
-  },
+  }
 
   create(name: string, partialConfig?: Partial<WorkspaceConfig>): Workspace {
     const now = new Date().toISOString();
@@ -52,15 +49,15 @@ export const WorkspaceService = {
       { workspaceId: workspace.id, name: workspace.name },
       "Creating workspace",
     );
-    WorkspaceRepository.create(workspace);
+    this.workspaceRepository.create(workspace);
 
-    if (config.repos && config.repos.length > 0 && prebuildCreator) {
+    if (config.repos && config.repos.length > 0 && this.prebuildCreator) {
       log.info({ workspaceId: workspace.id }, "Triggering initial prebuild");
-      prebuildCreator(workspace.id);
+      this.prebuildCreator(workspace.id);
     }
 
     return workspace;
-  },
+  }
 
   update(
     id: string,
@@ -81,18 +78,18 @@ export const WorkspaceService = {
       } as WorkspaceConfig;
     }
 
-    return WorkspaceRepository.update(id, workspaceUpdates);
-  },
+    return this.workspaceRepository.update(id, workspaceUpdates);
+  }
 
   async delete(id: string): Promise<void> {
     this.getByIdOrThrow(id);
 
     log.info({ workspaceId: id }, "Deleting workspace");
     await StorageService.deletePrebuild(id);
-    WorkspaceRepository.delete(id);
-  },
+    this.workspaceRepository.delete(id);
+  }
 
   count(): number {
-    return WorkspaceRepository.count();
-  },
-};
+    return this.workspaceRepository.count();
+  }
+}

@@ -1,5 +1,6 @@
 import { FIRECRACKER } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
+import type { AgentClient } from "../../infrastructure/agent/index.ts";
 import {
   FirecrackerClient,
   getSocketPath,
@@ -18,7 +19,7 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { fileExists } from "../../shared/lib/shell.ts";
 import { SandboxBuilder } from "./sandbox.builder.ts";
-import { SandboxRepository } from "./sandbox.repository.ts";
+import type { SandboxRepository } from "./sandbox.repository.ts";
 
 const log = createChildLogger("sandbox-service");
 
@@ -27,38 +28,38 @@ let lvmAvailable: boolean | null = null;
 type GitSourceGetter = (
   id: string,
 ) => { type: string; config: unknown } | undefined;
-type ConfigFilesGetter = (
-  workspaceId?: string,
-) => {
+type ConfigFilesGetter = (workspaceId?: string) => {
   path: string;
   content: string;
   contentType: "json" | "text" | "binary";
 }[];
 type WorkspaceGetter = (id: string) => Workspace | undefined;
 
-let deps: {
+interface SandboxServiceDependencies {
   getWorkspace: WorkspaceGetter;
   getGitSource: GitSourceGetter;
   getConfigFiles: ConfigFilesGetter;
-} | null = null;
-
-export function initSandboxService(dependencies: {
-  getWorkspace: WorkspaceGetter;
-  getGitSource: GitSourceGetter;
-  getConfigFiles: ConfigFilesGetter;
-}): void {
-  deps = dependencies;
-  QueueService.setHandler((options) => SandboxService.spawn(options));
+  agentClient: AgentClient;
 }
 
-export const SandboxService = {
+export class SandboxService {
+  constructor(
+    private readonly sandboxRepository: SandboxRepository,
+    private readonly deps: SandboxServiceDependencies,
+  ) {
+    QueueService.setHandler((options) => this.spawn(options));
+  }
+
   async spawn(options: CreateSandboxBody = {}): Promise<Sandbox> {
-    if (!deps) throw new Error("SandboxService not initialized");
-    return SandboxBuilder.create(options, deps).build();
-  },
+    return SandboxBuilder.create(
+      this.sandboxRepository,
+      options,
+      this.deps,
+    ).build();
+  }
 
   async destroy(sandboxId: string): Promise<void> {
-    const sandbox = SandboxRepository.getById(sandboxId);
+    const sandbox = this.sandboxRepository.getById(sandboxId);
     if (!sandbox) {
       throw new NotFoundError("Sandbox", sandboxId);
     }
@@ -94,12 +95,12 @@ export const SandboxService = {
       await CaddyService.removeRoutes(sandboxId);
     }
 
-    SandboxRepository.delete(sandboxId);
+    this.sandboxRepository.delete(sandboxId);
     log.info({ sandboxId }, "Sandbox destroyed");
-  },
+  }
 
   async getStatus(sandboxId: string): Promise<Sandbox | undefined> {
-    const sandbox = SandboxRepository.getById(sandboxId);
+    const sandbox = this.sandboxRepository.getById(sandboxId);
     if (!sandbox) {
       return undefined;
     }
@@ -126,15 +127,15 @@ export const SandboxService = {
           },
           "Sandbox liveness check failed, marking as error",
         );
-        SandboxRepository.updateStatus(sandboxId, "error");
+        this.sandboxRepository.updateStatus(sandboxId, "error");
       }
     }
 
-    return SandboxRepository.getById(sandboxId) ?? sandbox;
-  },
+    return this.sandboxRepository.getById(sandboxId) ?? sandbox;
+  }
 
   async stop(sandboxId: string): Promise<Sandbox> {
-    const sandbox = SandboxRepository.getById(sandboxId);
+    const sandbox = this.sandboxRepository.getById(sandboxId);
     if (!sandbox) {
       throw new NotFoundError("Sandbox", sandboxId);
     }
@@ -157,18 +158,18 @@ export const SandboxService = {
       await client.pause();
     }
 
-    SandboxRepository.updateStatus(sandboxId, "stopped");
+    this.sandboxRepository.updateStatus(sandboxId, "stopped");
     log.info({ sandboxId }, "Sandbox stopped");
 
-    const updated = SandboxRepository.getById(sandboxId);
+    const updated = this.sandboxRepository.getById(sandboxId);
     if (!updated) {
       throw new Error(`Sandbox not found after stop: ${sandboxId}`);
     }
     return updated;
-  },
+  }
 
   async start(sandboxId: string): Promise<Sandbox> {
-    const sandbox = SandboxRepository.getById(sandboxId);
+    const sandbox = this.sandboxRepository.getById(sandboxId);
     if (!sandbox) {
       throw new NotFoundError("Sandbox", sandboxId);
     }
@@ -203,15 +204,15 @@ export const SandboxService = {
       await client.resume();
     }
 
-    SandboxRepository.updateStatus(sandboxId, "running");
+    this.sandboxRepository.updateStatus(sandboxId, "running");
     log.info({ sandboxId }, "Sandbox started");
 
-    const updated = SandboxRepository.getById(sandboxId);
+    const updated = this.sandboxRepository.getById(sandboxId);
     if (!updated) {
       throw new Error(`Sandbox not found after start: ${sandboxId}`);
     }
     return updated;
-  },
+  }
 
   async getFirecrackerState(sandboxId: string): Promise<unknown> {
     if (config.isMock()) {
@@ -229,7 +230,7 @@ export const SandboxService = {
     } catch {
       return { error: "Failed to query Firecracker", sandboxId };
     }
-  },
+  }
 
   async isHealthy(): Promise<boolean> {
     if (config.isMock()) {
@@ -243,38 +244,38 @@ export const SandboxService = {
       .quiet()
       .nothrow();
     return kvmOk.exitCode === 0;
-  },
+  }
 
   isLvmEnabled(): boolean {
     return lvmAvailable === true;
-  },
+  }
 
   async checkLvmAvailability(): Promise<boolean> {
     lvmAvailable = await StorageService.isAvailable();
     return lvmAvailable;
-  },
+  }
 
   getAll(): Sandbox[] {
-    return SandboxRepository.getAll();
-  },
+    return this.sandboxRepository.getAll();
+  }
 
   getById(id: string): Sandbox | undefined {
-    return SandboxRepository.getById(id);
-  },
+    return this.sandboxRepository.getById(id);
+  }
 
   getByStatus(status: "creating" | "running" | "stopped" | "error"): Sandbox[] {
-    return SandboxRepository.getByStatus(status);
-  },
+    return this.sandboxRepository.getByStatus(status);
+  }
 
   getByWorkspaceId(workspaceId: string): Sandbox[] {
-    return SandboxRepository.getByWorkspaceId(workspaceId);
-  },
+    return this.sandboxRepository.getByWorkspaceId(workspaceId);
+  }
 
   count(): number {
-    return SandboxRepository.count();
-  },
+    return this.sandboxRepository.count();
+  }
 
   countByStatus(status: "creating" | "running" | "stopped" | "error"): number {
-    return SandboxRepository.countByStatus(status);
-  },
-};
+    return this.sandboxRepository.countByStatus(status);
+  }
+}

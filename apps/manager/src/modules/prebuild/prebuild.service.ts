@@ -1,8 +1,9 @@
 import { nanoid } from "nanoid";
-import { AgentClient } from "../../infrastructure/agent/index.ts";
+import type { AgentClient } from "../../infrastructure/agent/index.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
 import type {
   PrebuildStatus,
+  Sandbox,
   Workspace,
   WorkspaceConfig,
 } from "../../schemas/index.ts";
@@ -24,51 +25,41 @@ type SandboxSpawner = (options: {
   baseImage: string;
   vcpus: number;
   memoryMb: number;
-}) => Promise<{ id: string; runtime: { ipAddress: string } }>;
+}) => Promise<Sandbox>;
 type SandboxDestroyer = (id: string) => Promise<void>;
 
-let deps: {
+interface PrebuildServiceDependencies {
   getWorkspace: WorkspaceGetter;
   updateWorkspace: WorkspaceUpdater;
   spawnSandbox: SandboxSpawner;
   destroySandbox: SandboxDestroyer;
-} | null = null;
-
-export function initPrebuildService(dependencies: {
-  getWorkspace: WorkspaceGetter;
-  updateWorkspace: WorkspaceUpdater;
-  spawnSandbox: SandboxSpawner;
-  destroySandbox: SandboxDestroyer;
-}): void {
-  deps = dependencies;
+  agentClient: AgentClient;
 }
 
-function updatePrebuildStatus(
-  workspaceId: string,
-  status: PrebuildStatus,
-  latestId?: string,
-): Workspace | undefined {
-  if (!deps) return undefined;
+export class PrebuildService {
+  constructor(private readonly deps: PrebuildServiceDependencies) {}
 
-  const workspace = deps.getWorkspace(workspaceId);
-  if (!workspace) return undefined;
+  private updatePrebuildStatus(
+    workspaceId: string,
+    status: PrebuildStatus,
+    latestId?: string,
+  ): Workspace | undefined {
+    const workspace = this.deps.getWorkspace(workspaceId);
+    if (!workspace) return undefined;
 
-  const prebuild: WorkspaceConfig["prebuild"] = {
-    status,
-    latestId: latestId ?? workspace.config.prebuild?.latestId,
-    builtAt: status === "ready" ? new Date().toISOString() : undefined,
-  };
+    const prebuild: WorkspaceConfig["prebuild"] = {
+      status,
+      latestId: latestId ?? workspace.config.prebuild?.latestId,
+      builtAt: status === "ready" ? new Date().toISOString() : undefined,
+    };
 
-  return deps.updateWorkspace(workspaceId, {
-    config: { ...workspace.config, prebuild },
-  });
-}
+    return this.deps.updateWorkspace(workspaceId, {
+      config: { ...workspace.config, prebuild },
+    });
+  }
 
-export const PrebuildService = {
   async create(workspaceId: string): Promise<void> {
-    if (!deps) throw new Error("PrebuildService not initialized");
-
-    const workspace = deps.getWorkspace(workspaceId);
+    const workspace = this.deps.getWorkspace(workspaceId);
     if (!workspace) {
       throw new Error(`Workspace '${workspaceId}' not found`);
     }
@@ -79,7 +70,7 @@ export const PrebuildService = {
       );
     }
 
-    updatePrebuildStatus(workspaceId, "building");
+    this.updatePrebuildStatus(workspaceId, "building");
     log.info(
       { workspaceId, workspaceName: workspace.name },
       "Starting prebuild",
@@ -88,7 +79,7 @@ export const PrebuildService = {
     const prebuildSandboxId = `prebuild-${nanoid(8)}`;
 
     try {
-      const sandbox = await deps.spawnSandbox({
+      const sandbox = await this.deps.spawnSandbox({
         workspaceId,
         baseImage: workspace.config.baseImage,
         vcpus: workspace.config.vcpus,
@@ -100,7 +91,7 @@ export const PrebuildService = {
         "Prebuild sandbox spawned",
       );
 
-      const agentReady = await AgentClient.waitForAgent(sandbox.id, {
+      const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
         timeout: AGENT_READY_TIMEOUT,
       });
 
@@ -110,7 +101,7 @@ export const PrebuildService = {
 
       await this.cloneRepositories(sandbox.id, workspace);
       await this.runInitCommands(sandbox.id, workspace);
-      await AgentClient.exec(sandbox.id, "sync");
+      await this.deps.agentClient.exec(sandbox.id, "sync");
       await StorageService.createPrebuild(workspaceId, sandbox.id);
 
       log.info(
@@ -118,9 +109,9 @@ export const PrebuildService = {
         "Prebuild snapshot created",
       );
 
-      await deps.destroySandbox(sandbox.id);
+      await this.deps.destroySandbox(sandbox.id);
 
-      updatePrebuildStatus(workspaceId, "ready", sandbox.id);
+      this.updatePrebuildStatus(workspaceId, "ready", sandbox.id);
       log.info({ workspaceId }, "Prebuild completed successfully");
     } catch (error) {
       const errorMessage =
@@ -128,7 +119,7 @@ export const PrebuildService = {
       log.error({ workspaceId, error: errorMessage }, "Prebuild failed");
 
       try {
-        await deps.destroySandbox(prebuildSandboxId);
+        await this.deps.destroySandbox(prebuildSandboxId);
       } catch (cleanupError) {
         log.warn(
           { prebuildSandboxId, error: cleanupError },
@@ -136,10 +127,10 @@ export const PrebuildService = {
         );
       }
 
-      updatePrebuildStatus(workspaceId, "failed");
+      this.updatePrebuildStatus(workspaceId, "failed");
       throw error;
     }
-  },
+  }
 
   async cloneRepositories(
     sandboxId: string,
@@ -154,8 +145,6 @@ export const PrebuildService = {
     for (const repo of repos) {
       const cloneUrl = "url" in repo ? repo.url : repo.repo;
       const branch = repo.branch;
-      // clonePath from config is like "/workspace/repo-name"
-      // Full path is /home/dev + clonePath = /home/dev/workspace/repo-name
       const clonePath = `/home/dev${repo.clonePath || "/workspace"}`;
 
       log.info(
@@ -163,11 +152,14 @@ export const PrebuildService = {
         "Cloning repository in prebuild sandbox",
       );
 
-      await AgentClient.exec(sandboxId, `rm -rf ${clonePath}`);
-      await AgentClient.exec(sandboxId, `mkdir -p $(dirname ${clonePath})`);
+      await this.deps.agentClient.exec(sandboxId, `rm -rf ${clonePath}`);
+      await this.deps.agentClient.exec(
+        sandboxId,
+        `mkdir -p $(dirname ${clonePath})`,
+      );
 
       const cloneCmd = `git clone --depth 1 -b ${branch} ${cloneUrl} ${clonePath}`;
-      const result = await AgentClient.exec(sandboxId, cloneCmd, {
+      const result = await this.deps.agentClient.exec(sandboxId, cloneCmd, {
         timeout: COMMAND_TIMEOUT,
       });
 
@@ -179,15 +171,18 @@ export const PrebuildService = {
         throw new Error(`Git clone failed: ${result.stderr}`);
       }
 
-      await AgentClient.exec(sandboxId, `chown -R dev:dev ${clonePath}`);
-      await AgentClient.exec(
+      await this.deps.agentClient.exec(
+        sandboxId,
+        `chown -R dev:dev ${clonePath}`,
+      );
+      await this.deps.agentClient.exec(
         sandboxId,
         `su - dev -c 'git config --global --add safe.directory ${clonePath}'`,
       );
 
       log.info({ sandboxId, clonePath }, "Repository cloned successfully");
     }
-  },
+  }
 
   async runInitCommands(
     sandboxId: string,
@@ -207,7 +202,7 @@ export const PrebuildService = {
     for (const command of initCommands) {
       log.info({ sandboxId, command }, "Executing init command");
 
-      const result = await AgentClient.exec(
+      const result = await this.deps.agentClient.exec(
         sandboxId,
         `cd ${WORKSPACE_DIR} && su dev -c '${command.replace(/'/g, "'\\''")}'`,
         { timeout: COMMAND_TIMEOUT },
@@ -233,7 +228,7 @@ export const PrebuildService = {
     }
 
     log.info({ sandboxId }, "All init commands completed");
-  },
+  }
 
   createInBackground(workspaceId: string): void {
     setImmediate(() => {
@@ -241,15 +236,15 @@ export const PrebuildService = {
         log.error({ workspaceId, error }, "Background prebuild failed");
       });
     });
-  },
+  }
 
   async delete(workspaceId: string): Promise<void> {
     await StorageService.deletePrebuild(workspaceId);
-    updatePrebuildStatus(workspaceId, "none");
+    this.updatePrebuildStatus(workspaceId, "none");
     log.info({ workspaceId }, "Prebuild deleted");
-  },
+  }
 
   async hasPrebuild(workspaceId: string): Promise<boolean> {
     return StorageService.hasPrebuild(workspaceId);
-  },
-};
+  }
+}

@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
+import { gitSourceService } from "../../container.ts";
 import type {
   GitHubSourceConfig,
   GitHubStatusResponse,
@@ -8,7 +9,6 @@ import type {
 } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { GitSourceService } from "../git-source/index.ts";
 
 const log = createChildLogger("github-auth");
 
@@ -19,7 +19,7 @@ const GITHUB_USER_URL = "https://api.github.com/user";
 const GITHUB_SOURCE_TYPE = "github";
 
 function getGitHubSource(): GitSource | undefined {
-  const sources = GitSourceService.getAll();
+  const sources = gitSourceService.getAll();
   return sources.find((s) => s.type === GITHUB_SOURCE_TYPE);
 }
 
@@ -131,7 +131,7 @@ export const githubAuthRoutes = new Elysia({ prefix: "/github" })
         };
 
         if (existingSource) {
-          GitSourceService.update(existingSource.id, {
+          gitSourceService.update(existingSource.id, {
             config: sourceConfig as unknown as GitSourceConfig,
           });
           log.info(
@@ -139,7 +139,7 @@ export const githubAuthRoutes = new Elysia({ prefix: "/github" })
             "GitHub reconnected",
           );
         } else {
-          GitSourceService.create(
+          gitSourceService.create(
             GITHUB_SOURCE_TYPE,
             `GitHub (${user.login})`,
             sourceConfig as unknown as GitSourceConfig,
@@ -165,7 +165,7 @@ export const githubAuthRoutes = new Elysia({ prefix: "/github" })
     const source = getGitHubSource();
 
     if (source) {
-      GitSourceService.delete(source.id);
+      gitSourceService.delete(source.id);
       log.info("GitHub disconnected");
     }
 

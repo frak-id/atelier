@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { configFileService } from "../../container.ts";
 import {
   ConfigFileListQuerySchema,
   ConfigFileListResponseSchema,
@@ -8,13 +9,12 @@ import {
   MergedConfigResponseSchema,
   UpdateConfigFileBodySchema,
 } from "../../schemas/index.ts";
-import { ConfigFileService } from "./config-file.service.ts";
 
 export const configFileRoutes = new Elysia({ prefix: "/config-files" })
   .get(
     "/",
     ({ query }) => {
-      return ConfigFileService.list({
+      return configFileService.list({
         scope: query.scope,
         workspaceId: query.workspaceId,
       });
@@ -27,7 +27,7 @@ export const configFileRoutes = new Elysia({ prefix: "/config-files" })
   .get(
     "/:id",
     ({ params, set }) => {
-      const config = ConfigFileService.getById(params.id);
+      const config = configFileService.getById(params.id);
       if (!config) {
         set.status = 404;
         return { error: "Config file not found" };
@@ -42,7 +42,7 @@ export const configFileRoutes = new Elysia({ prefix: "/config-files" })
     "/",
     ({ body, set }) => {
       try {
-        return ConfigFileService.create({
+        return configFileService.create({
           path: body.path,
           content: body.content,
           contentType: body.contentType,
@@ -71,7 +71,7 @@ export const configFileRoutes = new Elysia({ prefix: "/config-files" })
         if (body.content !== undefined) options.content = body.content;
         if (body.contentType !== undefined)
           options.contentType = body.contentType;
-        return ConfigFileService.update(params.id, options);
+        return configFileService.update(params.id, options);
       } catch (error) {
         set.status = 404;
         return {
@@ -88,7 +88,7 @@ export const configFileRoutes = new Elysia({ prefix: "/config-files" })
     "/:id",
     ({ params, set }) => {
       try {
-        ConfigFileService.delete(params.id);
+        configFileService.delete(params.id);
         set.status = 204;
         return null;
       } catch (error) {
@@ -105,7 +105,7 @@ export const configFileRoutes = new Elysia({ prefix: "/config-files" })
   .get(
     "/merged",
     ({ query }) => {
-      return ConfigFileService.getMergedForSandbox(query.workspaceId);
+      return configFileService.getMergedForSandbox(query.workspaceId);
     },
     {
       query: MergedConfigQuerySchema,

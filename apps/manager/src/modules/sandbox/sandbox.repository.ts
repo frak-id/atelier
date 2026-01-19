@@ -20,10 +20,10 @@ function rowToSandbox(row: typeof sandboxes.$inferSelect): Sandbox {
   };
 }
 
-export const SandboxRepository = {
+export class SandboxRepository {
   getAll(): Sandbox[] {
     return getDatabase().select().from(sandboxes).all().map(rowToSandbox);
-  },
+  }
 
   getById(id: string): Sandbox | undefined {
     const row = getDatabase()
@@ -32,7 +32,7 @@ export const SandboxRepository = {
       .where(eq(sandboxes.id, id))
       .get();
     return row ? rowToSandbox(row) : undefined;
-  },
+  }
 
   getByStatus(status: SandboxStatus): Sandbox[] {
     return getDatabase()
@@ -41,7 +41,7 @@ export const SandboxRepository = {
       .where(eq(sandboxes.status, status))
       .all()
       .map(rowToSandbox);
-  },
+  }
 
   getByWorkspaceId(workspaceId: string): Sandbox[] {
     return getDatabase()
@@ -50,7 +50,7 @@ export const SandboxRepository = {
       .where(eq(sandboxes.workspaceId, workspaceId))
       .all()
       .map(rowToSandbox);
-  },
+  }
 
   create(sandbox: Sandbox): Sandbox {
     getDatabase()
@@ -66,7 +66,7 @@ export const SandboxRepository = {
       .run();
     log.info({ sandboxId: sandbox.id }, "Sandbox created in database");
     return sandbox;
-  },
+  }
 
   update(id: string, updates: Partial<Sandbox>): Sandbox {
     const existing = this.getById(id);
@@ -93,7 +93,7 @@ export const SandboxRepository = {
 
     log.debug({ sandboxId: id }, "Sandbox updated in database");
     return updated;
-  },
+  }
 
   updateStatus(id: string, status: SandboxStatus, error?: string): Sandbox {
     const existing = this.getById(id);
@@ -102,7 +102,7 @@ export const SandboxRepository = {
     const runtime = error ? { ...existing.runtime, error } : existing.runtime;
 
     return this.update(id, { status, runtime });
-  },
+  }
 
   delete(id: string): boolean {
     const existing = this.getById(id);
@@ -111,7 +111,7 @@ export const SandboxRepository = {
     getDatabase().delete(sandboxes).where(eq(sandboxes.id, id)).run();
     log.info({ sandboxId: id }, "Sandbox deleted from database");
     return true;
-  },
+  }
 
   count(): number {
     const result = getDatabase()
@@ -119,7 +119,7 @@ export const SandboxRepository = {
       .from(sandboxes)
       .get();
     return result?.count ?? 0;
-  },
+  }
 
   countByStatus(status: SandboxStatus): number {
     const result = getDatabase()
@@ -128,5 +128,5 @@ export const SandboxRepository = {
       .where(eq(sandboxes.status, status))
       .get();
     return result?.count ?? 0;
-  },
-};
+  }
+}

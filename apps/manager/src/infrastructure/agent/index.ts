@@ -1,1 +1,1 @@
-export { AgentClient, setAgentSandboxStore } from "./agent.client.ts";
+export { AgentClient } from "./agent.client.ts";

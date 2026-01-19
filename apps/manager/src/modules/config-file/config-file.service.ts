@@ -6,7 +6,7 @@ import type {
 } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { ConfigFileRepository } from "./config-file.repository.ts";
+import type { ConfigFileRepository } from "./config-file.repository.ts";
 
 const log = createChildLogger("config-file-service");
 
@@ -23,33 +23,35 @@ interface UpdateOptions {
   contentType?: ConfigFileContentType;
 }
 
-export const ConfigFileService = {
+export class ConfigFileService {
+  constructor(private readonly configFileRepository: ConfigFileRepository) {}
+
   list(filters?: { scope?: string; workspaceId?: string }): ConfigFile[] {
-    return ConfigFileRepository.list(filters);
-  },
+    return this.configFileRepository.list(filters);
+  }
 
   getById(id: string): ConfigFile | undefined {
-    return ConfigFileRepository.getById(id);
-  },
+    return this.configFileRepository.getById(id);
+  }
 
   getByIdOrThrow(id: string): ConfigFile {
-    const file = ConfigFileRepository.getById(id);
+    const file = this.configFileRepository.getById(id);
     if (!file) {
       throw new NotFoundError("ConfigFile", id);
     }
     return file;
-  },
+  }
 
   getByPath(
     path: string,
     scope: ConfigFileScope,
     workspaceId?: string,
   ): ConfigFile | undefined {
-    return ConfigFileRepository.getByPath(path, scope, workspaceId);
-  },
+    return this.configFileRepository.getByPath(path, scope, workspaceId);
+  }
 
   create(options: CreateOptions): ConfigFile {
-    const existing = ConfigFileRepository.getByPath(
+    const existing = this.configFileRepository.getByPath(
       options.path,
       options.scope,
       options.workspaceId,
@@ -60,31 +62,31 @@ export const ConfigFileService = {
       );
     }
 
-    return ConfigFileRepository.create(options);
-  },
+    return this.configFileRepository.create(options);
+  }
 
   update(id: string, options: UpdateOptions): ConfigFile {
-    const existing = ConfigFileRepository.getById(id);
+    const existing = this.configFileRepository.getById(id);
     if (!existing) {
       throw new NotFoundError("ConfigFile", id);
     }
 
-    const updated = ConfigFileRepository.update(id, options);
+    const updated = this.configFileRepository.update(id, options);
     if (!updated) {
       throw new Error(`Failed to update config file: ${id}`);
     }
     return updated;
-  },
+  }
 
   delete(id: string): void {
-    const existing = ConfigFileRepository.getById(id);
+    const existing = this.configFileRepository.getById(id);
     if (!existing) {
       throw new NotFoundError("ConfigFile", id);
     }
 
-    ConfigFileRepository.delete(id);
+    this.configFileRepository.delete(id);
     log.info({ id, path: existing.path }, "Config file deleted");
-  },
+  }
 
   extractFromSandbox(
     workspaceId: string | undefined,
@@ -93,10 +95,14 @@ export const ConfigFileService = {
     contentType: "json" | "text",
   ): { action: "created" | "updated"; configFile: ConfigFile } {
     const scope: ConfigFileScope = workspaceId ? "workspace" : "global";
-    const existing = ConfigFileRepository.getByPath(path, scope, workspaceId);
+    const existing = this.configFileRepository.getByPath(
+      path,
+      scope,
+      workspaceId,
+    );
 
     if (existing) {
-      const updated = ConfigFileRepository.update(existing.id, {
+      const updated = this.configFileRepository.update(existing.id, {
         content,
         contentType,
       });
@@ -106,7 +112,7 @@ export const ConfigFileService = {
       return { action: "updated", configFile: updated };
     }
 
-    const created = ConfigFileRepository.create({
+    const created = this.configFileRepository.create({
       path,
       content,
       contentType,
@@ -114,12 +120,12 @@ export const ConfigFileService = {
       workspaceId,
     });
     return { action: "created", configFile: created };
-  },
+  }
 
   getMergedForSandbox(workspaceId?: string): MergedConfigFile[] {
-    const globalConfigs = ConfigFileRepository.list({ scope: "global" });
+    const globalConfigs = this.configFileRepository.list({ scope: "global" });
     const workspaceConfigs = workspaceId
-      ? ConfigFileRepository.list({ scope: "workspace", workspaceId })
+      ? this.configFileRepository.list({ scope: "workspace", workspaceId })
       : [];
 
     const pathMap = new Map<string, MergedConfigFile>();
@@ -171,8 +177,8 @@ export const ConfigFileService = {
     }
 
     return Array.from(pathMap.values());
-  },
-};
+  }
+}
 
 function deepMerge(target: unknown, source: unknown): unknown {
   if (isObject(target) && isObject(source)) {

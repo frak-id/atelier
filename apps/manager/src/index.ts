@@ -1,35 +1,17 @@
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
-import { setAgentSandboxStore } from "./infrastructure/agent/index.ts";
+import { sandboxService } from "./container.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { CaddyService } from "./infrastructure/proxy/index.ts";
-import {
-  ConfigFileService,
-  configFileRoutes,
-} from "./modules/config-file/index.ts";
-import {
-  GitSourceService,
-  gitSourceRoutes,
-} from "./modules/git-source/index.ts";
+import { configFileRoutes } from "./modules/config-file/index.ts";
+import { gitSourceRoutes } from "./modules/git-source/index.ts";
 import { githubApiRoutes, githubAuthRoutes } from "./modules/github/index.ts";
 import { healthRoutes } from "./modules/health/index.ts";
 import { imageRoutes } from "./modules/image/index.ts";
-import {
-  initPrebuildService,
-  PrebuildService,
-} from "./modules/prebuild/index.ts";
-import {
-  initSandboxService,
-  SandboxService,
-  sandboxRoutes,
-} from "./modules/sandbox/index.ts";
+import { sandboxRoutes } from "./modules/sandbox/index.ts";
 import { systemRoutes } from "./modules/system/index.ts";
-import {
-  setPrebuildCreator,
-  WorkspaceService,
-  workspaceRoutes,
-} from "./modules/workspace/index.ts";
+import { workspaceRoutes } from "./modules/workspace/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { config } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
@@ -39,37 +21,9 @@ logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");
 
-setAgentSandboxStore({
-  getById: (id: string) => SandboxService.getById(id),
-});
-
-initSandboxService({
-  getWorkspace: (id) => WorkspaceService.getById(id),
-  getGitSource: (id) => GitSourceService.getById(id),
-  getConfigFiles: (workspaceId) =>
-    ConfigFileService.getMergedForSandbox(workspaceId),
-});
-
-initPrebuildService({
-  getWorkspace: (id) => WorkspaceService.getById(id),
-  updateWorkspace: (id, updates) => {
-    try {
-      return WorkspaceService.update(id, updates);
-    } catch {
-      return undefined;
-    }
-  },
-  spawnSandbox: (options) => SandboxService.spawn(options),
-  destroySandbox: (id) => SandboxService.destroy(id),
-});
-
-setPrebuildCreator((workspaceId) => {
-  PrebuildService.createInBackground(workspaceId);
-});
-
 const app = new Elysia()
   .on("start", async () => {
-    const sandboxes = SandboxService.getByStatus("running");
+    const sandboxes = sandboxService.getByStatus("running");
 
     for (const sandbox of sandboxes) {
       try {

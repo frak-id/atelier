@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { gitSourceService } from "../../container.ts";
 import type { GitSourceConfig, GitSourceType } from "../../schemas/index.ts";
 import {
   CreateGitSourceBodySchema,
@@ -9,7 +10,6 @@ import {
   UpdateGitSourceBodySchema,
 } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { GitSourceService } from "./git-source.service.ts";
 
 const log = createChildLogger("git-source-routes");
 
@@ -17,7 +17,7 @@ export const gitSourceRoutes = new Elysia({ prefix: "/sources" })
   .get(
     "/",
     () => {
-      return GitSourceService.getAll();
+      return gitSourceService.getAll();
     },
     {
       response: GitSourceListResponseSchema,
@@ -27,7 +27,7 @@ export const gitSourceRoutes = new Elysia({ prefix: "/sources" })
     "/",
     async ({ body, set }) => {
       log.info({ type: body.type, name: body.name }, "Creating git source");
-      const source = GitSourceService.create(
+      const source = gitSourceService.create(
         body.type as GitSourceType,
         body.name,
         body.config as unknown as GitSourceConfig,
@@ -43,7 +43,7 @@ export const gitSourceRoutes = new Elysia({ prefix: "/sources" })
   .get(
     "/:id",
     ({ params }) => {
-      return GitSourceService.getByIdOrThrow(params.id);
+      return gitSourceService.getByIdOrThrow(params.id);
     },
     {
       params: IdParamSchema,
@@ -54,7 +54,7 @@ export const gitSourceRoutes = new Elysia({ prefix: "/sources" })
     "/:id",
     ({ params, body }) => {
       log.info({ sourceId: params.id }, "Updating git source");
-      return GitSourceService.update(params.id, {
+      return gitSourceService.update(params.id, {
         name: body.name,
         config: body.config as unknown as GitSourceConfig,
       });
@@ -69,7 +69,7 @@ export const gitSourceRoutes = new Elysia({ prefix: "/sources" })
     "/:id",
     ({ params, set }) => {
       log.info({ sourceId: params.id }, "Deleting git source");
-      GitSourceService.delete(params.id);
+      gitSourceService.delete(params.id);
       set.status = 204;
       return null;
     },
@@ -80,7 +80,7 @@ export const gitSourceRoutes = new Elysia({ prefix: "/sources" })
   .get(
     "/:id/repos",
     async ({ params }) => {
-      return GitSourceService.fetchRepos(params.id);
+      return gitSourceService.fetchRepos(params.id);
     },
     {
       params: IdParamSchema,

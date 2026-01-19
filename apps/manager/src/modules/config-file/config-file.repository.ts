@@ -39,7 +39,7 @@ interface UpdateOptions {
   contentType?: ConfigFileContentType;
 }
 
-export const ConfigFileRepository = {
+export class ConfigFileRepository {
   list(filters?: { scope?: string; workspaceId?: string }): ConfigFile[] {
     const db = getDatabase();
     let query = db.select().from(configFiles);
@@ -60,7 +60,7 @@ export const ConfigFileRepository = {
     }
 
     return query.all().map(rowToConfigFile);
-  },
+  }
 
   getById(id: string): ConfigFile | undefined {
     const db = getDatabase();
@@ -70,7 +70,7 @@ export const ConfigFileRepository = {
       .where(eq(configFiles.id, id))
       .get();
     return row ? rowToConfigFile(row) : undefined;
-  },
+  }
 
   getByPath(
     path: string,
@@ -104,7 +104,7 @@ export const ConfigFileRepository = {
     }
 
     return undefined;
-  },
+  }
 
   create(options: CreateOptions): ConfigFile {
     const db = getDatabase();
@@ -128,7 +128,7 @@ export const ConfigFileRepository = {
     );
 
     return rowToConfigFile(row as typeof configFiles.$inferSelect);
-  },
+  }
 
   update(id: string, options: UpdateOptions): ConfigFile | undefined {
     const db = getDatabase();
@@ -151,7 +151,7 @@ export const ConfigFileRepository = {
     log.info({ id, path: existing.path }, "Config file updated");
 
     return this.getById(id);
-  },
+  }
 
   delete(id: string): boolean {
     const db = getDatabase();
@@ -161,5 +161,5 @@ export const ConfigFileRepository = {
     db.delete(configFiles).where(eq(configFiles.id, id)).run();
     log.info({ id, path: existing.path }, "Config file deleted");
     return true;
-  },
-};
+  }
+}

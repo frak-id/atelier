@@ -1,1 +1,1 @@
-export { initPrebuildService, PrebuildService } from "./prebuild.service.ts";
+export { PrebuildService } from "./prebuild.service.ts";

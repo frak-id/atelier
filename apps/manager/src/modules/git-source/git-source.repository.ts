@@ -19,10 +19,10 @@ function rowToGitSource(row: typeof gitSources.$inferSelect): GitSource {
   };
 }
 
-export const GitSourceRepository = {
+export class GitSourceRepository {
   getAll(): GitSource[] {
     return getDatabase().select().from(gitSources).all().map(rowToGitSource);
-  },
+  }
 
   getById(id: string): GitSource | undefined {
     const row = getDatabase()
@@ -31,7 +31,7 @@ export const GitSourceRepository = {
       .where(eq(gitSources.id, id))
       .get();
     return row ? rowToGitSource(row) : undefined;
-  },
+  }
 
   create(source: GitSource): GitSource {
     getDatabase()
@@ -47,7 +47,7 @@ export const GitSourceRepository = {
       .run();
     log.info({ sourceId: source.id, type: source.type }, "Git source created");
     return source;
-  },
+  }
 
   update(id: string, updates: Partial<GitSource>): GitSource {
     const existing = this.getById(id);
@@ -73,7 +73,7 @@ export const GitSourceRepository = {
 
     log.debug({ sourceId: id }, "Git source updated");
     return updated;
-  },
+  }
 
   delete(id: string): boolean {
     const existing = this.getById(id);
@@ -82,7 +82,7 @@ export const GitSourceRepository = {
     getDatabase().delete(gitSources).where(eq(gitSources.id, id)).run();
     log.info({ sourceId: id }, "Git source deleted");
     return true;
-  },
+  }
 
   count(): number {
     const result = getDatabase()
@@ -90,5 +90,5 @@ export const GitSourceRepository = {
       .from(gitSources)
       .get();
     return result?.count ?? 0;
-  },
-};
+  }
+}

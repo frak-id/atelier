@@ -1,5 +1,9 @@
 import { Elysia } from "elysia";
-import { AgentClient } from "../../infrastructure/agent/index.ts";
+import {
+  agentClient,
+  configFileService,
+  sandboxService,
+} from "../../container.ts";
 import { QueueService } from "../../infrastructure/queue/index.ts";
 import {
   AgentHealthSchema,
@@ -27,8 +31,6 @@ import {
 import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { ConfigFileService } from "../config-file/index.ts";
-import { SandboxService } from "./sandbox.service.ts";
 
 const log = createChildLogger("sandbox-routes");
 
@@ -36,7 +38,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/",
     ({ query }) => {
-      let sandboxes = SandboxService.getAll();
+      let sandboxes = sandboxService.getAll();
 
       if (query.status) {
         sandboxes = sandboxes.filter((s) => s.status === query.status);
@@ -59,8 +61,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     "/",
     async ({ body, set }) => {
       const activeCount =
-        SandboxService.countByStatus("running") +
-        SandboxService.countByStatus("creating");
+        sandboxService.countByStatus("running") +
+        sandboxService.countByStatus("creating");
 
       if (activeCount >= config.defaults.MAX_SANDBOXES) {
         throw new ResourceExhaustedError("sandboxes");
@@ -68,7 +70,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
       log.info({ body }, "Creating sandbox");
 
-      const sandbox = await SandboxService.spawn(body);
+      const sandbox = await sandboxService.spawn(body);
       set.status = 201;
       return sandbox;
     },
@@ -80,7 +82,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id",
     async ({ params }) => {
-      const sandbox = await SandboxService.getStatus(params.id);
+      const sandbox = await sandboxService.getStatus(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
@@ -94,13 +96,13 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .delete(
     "/:id",
     async ({ params, set }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
 
       log.info({ sandboxId: params.id }, "Deleting sandbox");
-      await SandboxService.destroy(params.id);
+      await sandboxService.destroy(params.id);
 
       set.status = 204;
       return null;
@@ -112,13 +114,13 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .post(
     "/:id/stop",
     async ({ params }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
 
       log.info({ sandboxId: params.id }, "Stopping sandbox");
-      return SandboxService.stop(params.id);
+      return sandboxService.stop(params.id);
     },
     {
       params: IdParamSchema,
@@ -128,13 +130,13 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .post(
     "/:id/start",
     async ({ params }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
 
       log.info({ sandboxId: params.id }, "Starting sandbox");
-      return SandboxService.start(params.id);
+      return sandboxService.start(params.id);
     },
     {
       params: IdParamSchema,
@@ -158,11 +160,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id/health",
     async ({ params }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return AgentClient.health(params.id);
+      return agentClient.health(params.id);
     },
     {
       params: IdParamSchema,
@@ -172,11 +174,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id/metrics",
     async ({ params }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return AgentClient.metrics(params.id);
+      return agentClient.metrics(params.id);
     },
     {
       params: IdParamSchema,
@@ -186,11 +188,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id/apps",
     async ({ params }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return AgentClient.getApps(params.id);
+      return agentClient.getApps(params.id);
     },
     {
       params: IdParamSchema,
@@ -200,11 +202,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .post(
     "/:id/apps",
     async ({ params, body }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return AgentClient.registerApp(params.id, body.port, body.name);
+      return agentClient.registerApp(params.id, body.port, body.name);
     },
     {
       params: IdParamSchema,
@@ -215,11 +217,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .post(
     "/:id/exec",
     async ({ params, body }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return AgentClient.exec(params.id, body.command, {
+      return agentClient.exec(params.id, body.command, {
         timeout: body.timeout,
       });
     },
@@ -232,12 +234,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id/logs/:service",
     async ({ params, query }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
       const lines = query.lines ? Number.parseInt(query.lines, 10) : 100;
-      const result = await AgentClient.logs(params.id, params.service, lines);
+      const result = await agentClient.logs(params.id, params.service, lines);
       return { logs: result.content };
     },
     {
@@ -249,11 +251,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id/services",
     async ({ params }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return AgentClient.services(params.id);
+      return agentClient.services(params.id);
     },
     {
       params: IdParamSchema,
@@ -263,11 +265,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id/git/status",
     async ({ params }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return AgentClient.gitStatus(params.id);
+      return agentClient.gitStatus(params.id);
     },
     {
       params: IdParamSchema,
@@ -277,11 +279,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id/config/discover",
     async ({ params }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      const configs = await AgentClient.discoverConfigs(params.id);
+      const configs = await agentClient.discoverConfigs(params.id);
       return { configs };
     },
     {
@@ -292,12 +294,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .post(
     "/:id/config/extract",
     async ({ params, body }) => {
-      const sandbox = SandboxService.getById(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
 
-      const fileContent = await AgentClient.readConfigFile(
+      const fileContent = await agentClient.readConfigFile(
         params.id,
         body.path,
       );
@@ -305,7 +307,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         throw new NotFoundError("ConfigFile", body.path);
       }
 
-      const result = ConfigFileService.extractFromSandbox(
+      const result = configFileService.extractFromSandbox(
         sandbox.workspaceId,
         fileContent.path,
         fileContent.content,

@@ -80,22 +80,15 @@ interface ConfigFileContent {
   size: number;
 }
 
-type SandboxStore = {
-  getById(id: string): { runtime: { ipAddress: string } } | undefined;
-};
+type SandboxGetter = (
+  id: string,
+) => { runtime: { ipAddress: string } } | undefined;
 
-let sandboxStore: SandboxStore | null = null;
+export class AgentClient {
+  constructor(private readonly getSandbox: SandboxGetter) {}
 
-export function setAgentSandboxStore(store: SandboxStore): void {
-  sandboxStore = store;
-}
-
-export const AgentClient = {
   getAgentUrl(sandboxId: string): string {
-    if (!sandboxStore) {
-      throw new Error("SandboxStore not initialized for AgentClient");
-    }
-    const sandbox = sandboxStore.getById(sandboxId);
+    const sandbox = this.getSandbox(sandboxId);
     if (!sandbox) {
       throw new Error(`Sandbox '${sandboxId}' not found`);
     }
@@ -103,7 +96,7 @@ export const AgentClient = {
       throw new Error(`Sandbox '${sandboxId}' has no IP address`);
     }
     return `http://${sandbox.runtime.ipAddress}:${AGENT_PORT}`;
-  },
+  }
 
   async request<T>(
     sandboxId: string,
@@ -146,11 +139,11 @@ export const AgentClient = {
     } finally {
       clearTimeout(timeoutId);
     }
-  },
+  }
 
   async health(sandboxId: string): Promise<AgentHealth> {
     return this.request<AgentHealth>(sandboxId, "/health");
-  },
+  }
 
   async waitForAgent(
     sandboxId: string,
@@ -175,19 +168,19 @@ export const AgentClient = {
 
     log.warn({ sandboxId, timeout }, "Agent did not become healthy in time");
     return false;
-  },
+  }
 
   async metrics(sandboxId: string): Promise<AgentMetrics> {
     return this.request<AgentMetrics>(sandboxId, "/metrics");
-  },
+  }
 
   async config(sandboxId: string): Promise<Record<string, unknown>> {
     return this.request<Record<string, unknown>>(sandboxId, "/config");
-  },
+  }
 
   async getApps(sandboxId: string): Promise<AppPort[]> {
     return this.request<AppPort[]>(sandboxId, "/apps");
-  },
+  }
 
   async registerApp(
     sandboxId: string,
@@ -198,7 +191,7 @@ export const AgentClient = {
       method: "POST",
       body: { port, name },
     });
-  },
+  }
 
   async unregisterApp(
     sandboxId: string,
@@ -207,7 +200,7 @@ export const AgentClient = {
     return this.request<{ success: boolean }>(sandboxId, `/apps/${port}`, {
       method: "DELETE",
     });
-  },
+  }
 
   async exec(
     sandboxId: string,
@@ -219,7 +212,7 @@ export const AgentClient = {
       body: { command, timeout: options.timeout },
       timeout: (options.timeout ?? 30000) + 5000,
     });
-  },
+  }
 
   async logs(
     sandboxId: string,
@@ -230,11 +223,11 @@ export const AgentClient = {
       sandboxId,
       `/logs/${service}?lines=${lines}`,
     );
-  },
+  }
 
   async services(sandboxId: string): Promise<{ services: ServiceStatus[] }> {
     return this.request<{ services: ServiceStatus[] }>(sandboxId, "/services");
-  },
+  }
 
   async batchHealth(
     sandboxIds: string[],
@@ -255,7 +248,7 @@ export const AgentClient = {
     );
 
     return results;
-  },
+  }
 
   async getEditorConfig(sandboxId: string): Promise<EditorConfig | null> {
     try {
@@ -264,7 +257,7 @@ export const AgentClient = {
       log.error({ sandboxId, error }, "Failed to get editor config");
       return null;
     }
-  },
+  }
 
   async getInstalledExtensions(sandboxId: string): Promise<string[]> {
     try {
@@ -277,7 +270,7 @@ export const AgentClient = {
       log.error({ sandboxId, error }, "Failed to get installed extensions");
       return [];
     }
-  },
+  }
 
   async installExtensions(
     sandboxId: string,
@@ -300,7 +293,7 @@ export const AgentClient = {
         error: error instanceof Error ? error.message : String(error),
       }));
     }
-  },
+  }
 
   async discoverConfigs(sandboxId: string): Promise<DiscoveredConfig[]> {
     try {
@@ -313,7 +306,7 @@ export const AgentClient = {
       log.error({ sandboxId, error }, "Failed to discover configs");
       return [];
     }
-  },
+  }
 
   async readConfigFile(
     sandboxId: string,
@@ -328,9 +321,9 @@ export const AgentClient = {
       log.error({ sandboxId, path, error }, "Failed to read config file");
       return null;
     }
-  },
+  }
 
   async gitStatus(sandboxId: string): Promise<GitStatus> {
     return this.request<GitStatus>(sandboxId, "/git/status");
-  },
-};
+  }
+}

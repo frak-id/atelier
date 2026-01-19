@@ -1,7 +1,7 @@
 import { FIRECRACKER } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import { nanoid } from "nanoid";
-import { AgentClient } from "../../infrastructure/agent/index.ts";
+import type { AgentClient } from "../../infrastructure/agent/index.ts";
 import {
   FirecrackerClient,
   getSandboxPaths,
@@ -24,7 +24,7 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { ensureDir } from "../../shared/lib/shell.ts";
 import { SandboxProvisioner } from "./sandbox.provisioner.ts";
-import { SandboxRepository } from "./sandbox.repository.ts";
+import type { SandboxRepository } from "./sandbox.repository.ts";
 
 const log = createChildLogger("sandbox-builder");
 
@@ -46,6 +46,7 @@ interface BuilderDependencies {
   getWorkspace: WorkspaceGetter;
   getGitSource: GitSourceGetter;
   getConfigFiles: ConfigFilesGetter;
+  agentClient: AgentClient;
 }
 
 export class SandboxBuilder {
@@ -60,17 +61,22 @@ export class SandboxBuilder {
   private client?: FirecrackerClient;
   private usedPrebuild = false;
 
-  private constructor(options: CreateSandboxBody, deps: BuilderDependencies) {
+  private constructor(
+    private readonly sandboxRepository: SandboxRepository,
+    options: CreateSandboxBody,
+    deps: BuilderDependencies,
+  ) {
     this.sandboxId = nanoid(12);
     this.options = options;
     this.deps = deps;
   }
 
   static create(
+    sandboxRepository: SandboxRepository,
     options: CreateSandboxBody,
     deps: BuilderDependencies,
   ): SandboxBuilder {
-    return new SandboxBuilder(options, deps);
+    return new SandboxBuilder(sandboxRepository, options, deps);
   }
 
   async build(): Promise<Sandbox> {
@@ -178,7 +184,7 @@ export class SandboxBuilder {
       updatedAt: new Date().toISOString(),
     };
 
-    SandboxRepository.create(this.sandbox);
+    this.sandboxRepository.create(this.sandbox);
     log.info({ sandboxId: this.sandboxId }, "Sandbox initialized");
   }
 
@@ -194,7 +200,7 @@ export class SandboxBuilder {
     this.sandbox.status = "running";
     this.sandbox.runtime.pid = Math.floor(Math.random() * 100000);
 
-    SandboxRepository.update(this.sandboxId, this.sandbox);
+    this.sandboxRepository.update(this.sandboxId, this.sandbox);
     log.info({ sandboxId: this.sandboxId }, "Mock sandbox created");
     return this.sandbox;
   }
@@ -317,9 +323,12 @@ export class SandboxBuilder {
   }
 
   private async waitForAgentAndSetup(): Promise<void> {
-    const agentReady = await AgentClient.waitForAgent(this.sandboxId, {
-      timeout: 60000,
-    });
+    const agentReady = await this.deps.agentClient.waitForAgent(
+      this.sandboxId,
+      {
+        timeout: 60000,
+      },
+    );
 
     if (!agentReady) {
       log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
@@ -357,9 +366,9 @@ export class SandboxBuilder {
       "Cloning repository in sandbox",
     );
 
-    await AgentClient.exec(this.sandboxId, `rm -rf ${clonePath}`);
+    await this.deps.agentClient.exec(this.sandboxId, `rm -rf ${clonePath}`);
 
-    const result = await AgentClient.exec(
+    const result = await this.deps.agentClient.exec(
       this.sandboxId,
       `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
       { timeout: 120000 },
@@ -373,8 +382,11 @@ export class SandboxBuilder {
       throw new Error(`Git clone failed: ${result.stderr}`);
     }
 
-    await AgentClient.exec(this.sandboxId, `chown -R dev:dev ${clonePath}`);
-    await AgentClient.exec(
+    await this.deps.agentClient.exec(
+      this.sandboxId,
+      `chown -R dev:dev ${clonePath}`,
+    );
+    await this.deps.agentClient.exec(
       this.sandboxId,
       `su - dev -c 'git config --global --add safe.directory ${clonePath}'`,
     );
@@ -434,7 +446,7 @@ export class SandboxBuilder {
     this.sandbox.status = "running";
     this.sandbox.runtime.pid = this.pid;
 
-    SandboxRepository.update(this.sandboxId, this.sandbox);
+    this.sandboxRepository.update(this.sandboxId, this.sandbox);
     log.info(
       { sandboxId: this.sandboxId, pid: this.pid, useLvm: this.paths?.useLvm },
       "Sandbox created successfully",
@@ -470,7 +482,11 @@ export class SandboxBuilder {
     await CaddyService.removeRoutes(this.sandboxId);
 
     try {
-      SandboxRepository.updateStatus(this.sandboxId, "error", "Build failed");
+      this.sandboxRepository.updateStatus(
+        this.sandboxId,
+        "error",
+        "Build failed",
+      );
     } catch {}
   }
 }

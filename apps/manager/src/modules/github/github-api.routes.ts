@@ -1,18 +1,18 @@
 import { Elysia } from "elysia";
+import { gitSourceService } from "../../container.ts";
 import {
   GitHubReposQuerySchema,
   GitHubReposResponseSchema,
   type GitHubSourceConfig,
 } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { GitSourceService } from "../git-source/index.ts";
 
 const log = createChildLogger("github-api");
 
 const GITHUB_SOURCE_TYPE = "github";
 
 function getGitHubAccessToken(): string | null {
-  const sources = GitSourceService.getAll();
+  const sources = gitSourceService.getAll();
   const githubSource = sources.find((s) => s.type === GITHUB_SOURCE_TYPE);
 
   if (!githubSource) return null;

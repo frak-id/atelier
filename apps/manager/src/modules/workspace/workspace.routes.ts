@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { prebuildService, workspaceService } from "../../container.ts";
 import {
   CreateWorkspaceBodySchema,
   IdParamSchema,
@@ -9,8 +10,6 @@ import {
 } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { PrebuildService } from "../prebuild/index.ts";
-import { WorkspaceService } from "./workspace.service.ts";
 
 const log = createChildLogger("workspace-routes");
 
@@ -18,7 +17,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
   .get(
     "/",
     () => {
-      return WorkspaceService.getAll();
+      return workspaceService.getAll();
     },
     {
       response: WorkspaceListResponseSchema,
@@ -28,7 +27,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
     "/",
     async ({ body, set }) => {
       log.info({ name: body.name }, "Creating workspace");
-      const workspace = WorkspaceService.create(body.name, body.config);
+      const workspace = workspaceService.create(body.name, body.config);
       set.status = 201;
       return workspace;
     },
@@ -40,7 +39,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
   .get(
     "/:id",
     ({ params }) => {
-      const workspace = WorkspaceService.getById(params.id);
+      const workspace = workspaceService.getById(params.id);
       if (!workspace) {
         throw new NotFoundError("Workspace", params.id);
       }
@@ -55,7 +54,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
     "/:id",
     ({ params, body }) => {
       log.info({ workspaceId: params.id }, "Updating workspace");
-      return WorkspaceService.update(params.id, {
+      return workspaceService.update(params.id, {
         name: body.name,
         config: body.config,
       });
@@ -70,7 +69,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
     "/:id",
     async ({ params, set }) => {
       log.info({ workspaceId: params.id }, "Deleting workspace");
-      await WorkspaceService.delete(params.id);
+      await workspaceService.delete(params.id);
       set.status = 204;
       return null;
     },
@@ -81,7 +80,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
   .post(
     "/:id/prebuild",
     async ({ params, set }) => {
-      const workspace = WorkspaceService.getById(params.id);
+      const workspace = workspaceService.getById(params.id);
       if (!workspace) {
         throw new NotFoundError("Workspace", params.id);
       }
@@ -95,7 +94,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       }
 
       log.info({ workspaceId: params.id }, "Triggering prebuild");
-      PrebuildService.createInBackground(params.id);
+      prebuildService.createInBackground(params.id);
 
       set.status = 202;
       return {
@@ -112,13 +111,13 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
   .delete(
     "/:id/prebuild",
     async ({ params, set }) => {
-      const workspace = WorkspaceService.getById(params.id);
+      const workspace = workspaceService.getById(params.id);
       if (!workspace) {
         throw new NotFoundError("Workspace", params.id);
       }
 
       log.info({ workspaceId: params.id }, "Deleting prebuild");
-      await PrebuildService.delete(params.id);
+      await prebuildService.delete(params.id);
 
       set.status = 204;
       return null;
