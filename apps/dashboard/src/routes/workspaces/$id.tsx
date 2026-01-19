@@ -473,7 +473,7 @@ function ConfigFileDialog({
               id="path"
               value={path}
               onChange={(e) => setPath(e.target.value)}
-              placeholder="/home/coder/.config/opencode/config.json"
+              placeholder="~/.config/opencode/opencode.json"
               disabled={!!config}
               required
             />

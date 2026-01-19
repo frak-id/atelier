@@ -6,16 +6,24 @@ export const LOG_DIR = "/var/log/sandbox";
 export const VSCODE_SETTINGS_PATH =
   "/home/dev/.local/share/code-server/User/settings.json";
 export const VSCODE_EXTENSIONS_PATH = "/etc/sandbox/vscode-extensions.json";
-export const OPENCODE_AUTH_PATH = "/home/dev/.config/opencode/auth.json";
-export const OPENCODE_CONFIG_PATH = "/home/dev/.config/opencode/config.json";
+export const OPENCODE_AUTH_PATH = "/home/dev/.local/share/opencode/auth.json";
+export const OPENCODE_CONFIG_PATH = "/home/dev/.config/opencode/opencode.json";
 
 export const KNOWN_CONFIG_PATHS = [
   {
-    path: "/home/dev/.config/opencode/auth.json",
+    path: "/home/dev/.local/share/opencode/auth.json",
     category: "opencode" as const,
   },
   {
-    path: "/home/dev/.config/opencode/config.json",
+    path: "/home/dev/.config/opencode/opencode.json",
+    category: "opencode" as const,
+  },
+  {
+    path: "/home/dev/.config/opencode/oh-my-opencode.json",
+    category: "opencode" as const,
+  },
+  {
+    path: "/home/dev/.config/opencode/antigravity-accounts.json",
     category: "opencode" as const,
   },
   {
@@ -25,8 +33,13 @@ export const KNOWN_CONFIG_PATHS = [
 ];
 
 export const CONFIG_DIRECTORIES = [
+  { dir: "/home/dev/.local/share/opencode", category: "opencode" as const },
   { dir: "/home/dev/.config/opencode", category: "opencode" as const },
-  { dir: "/home/dev/.opencode", category: "opencode" as const },
+  { dir: "/home/dev/.config/opencode/plugins", category: "opencode" as const },
+  {
+    dir: "/home/dev/.config/opencode/providers",
+    category: "opencode" as const,
+  },
 ];
 
 export const DEFAULT_EXEC_TIMEOUT = 30000;

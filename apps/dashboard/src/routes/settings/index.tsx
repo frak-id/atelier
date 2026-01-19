@@ -218,7 +218,7 @@ function AddConfigFileDialog({
           <Input
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            placeholder="~/.config/opencode/auth.json"
+            placeholder="~/.local/share/opencode/auth.json"
           />
           <p className="text-xs text-muted-foreground">
             Use ~ for home directory (/home/dev)
