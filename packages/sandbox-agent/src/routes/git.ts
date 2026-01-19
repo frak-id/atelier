@@ -3,6 +3,10 @@ import type { GitRepoStatus } from "../types";
 import { loadConfig } from "../utils/config";
 import { exec } from "../utils/exec";
 
+function gitCmd(repoPath: string, cmd: string): string {
+  return `su - dev -c 'git -C "${repoPath}" ${cmd}'`;
+}
+
 export const gitRoutes = new Elysia().get("/git/status", async () => {
   const config = await loadConfig();
   const repos = config?.repos ?? [];
@@ -10,10 +14,10 @@ export const gitRoutes = new Elysia().get("/git/status", async () => {
   const results: GitRepoStatus[] = [];
 
   for (const repo of repos) {
-    const repoPath = `/home/dev/workspace${repo.clonePath}`;
+    const repoPath = `/home/dev${repo.clonePath}`;
     try {
       const { stdout: isGit } = await exec(
-        `git -C "${repoPath}" rev-parse --git-dir 2>/dev/null || echo "not-git"`,
+        `${gitCmd(repoPath, "rev-parse --git-dir")} 2>/dev/null || echo "not-git"`,
       );
       if (isGit.trim() === "not-git") {
         results.push({
@@ -29,11 +33,11 @@ export const gitRoutes = new Elysia().get("/git/status", async () => {
       }
 
       const { stdout: branch } = await exec(
-        `git -C "${repoPath}" branch --show-current 2>/dev/null || echo ""`,
+        `${gitCmd(repoPath, "branch --show-current")} 2>/dev/null || echo ""`,
       );
 
       const { stdout: status } = await exec(
-        `git -C "${repoPath}" status --porcelain 2>/dev/null || echo ""`,
+        `${gitCmd(repoPath, "status --porcelain")} 2>/dev/null || echo ""`,
       );
       const dirty = status.trim().length > 0;
 
@@ -41,7 +45,7 @@ export const gitRoutes = new Elysia().get("/git/status", async () => {
       let behind = 0;
       try {
         const { stdout: counts } = await exec(
-          `git -C "${repoPath}" rev-list --left-right --count HEAD...@{upstream} 2>/dev/null || echo "0 0"`,
+          `${gitCmd(repoPath, "rev-list --left-right --count HEAD...@{upstream}")} 2>/dev/null || echo "0 0"`,
         );
         const [a, b] = counts.trim().split(/\s+/);
         ahead = parseInt(a || "0", 10);
@@ -51,7 +55,7 @@ export const gitRoutes = new Elysia().get("/git/status", async () => {
       }
 
       const { stdout: lastCommit } = await exec(
-        `git -C "${repoPath}" log -1 --format="%h %s" 2>/dev/null || echo ""`,
+        `${gitCmd(repoPath, 'log -1 --format="%h %s"')} 2>/dev/null || echo ""`,
       );
 
       results.push({

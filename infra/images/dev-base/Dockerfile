@@ -38,8 +38,10 @@ ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
 
-# Create dev user with sudo access
-RUN useradd -m -s /bin/bash -G sudo dev \
+# Create dev user with sudo access (UID 1000 for consistency with typical host systems)
+# Remove ubuntu user first if it exists (has UID 1000 in Ubuntu 24.04)
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && useradd -m -s /bin/bash -G sudo -u 1000 dev \
     && echo "dev ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/dev \
     && chmod 0440 /etc/sudoers.d/dev
 
@@ -71,11 +73,13 @@ RUN mkdir -p /var/run/sshd \
     && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config \
     && echo "dev:sandbox" | chpasswd
 
-# Create sandbox directories
+# Create sandbox directories (including opencode data dir)
 RUN mkdir -p /etc/sandbox/secrets \
     && mkdir -p /var/log/sandbox \
     && mkdir -p /home/dev/workspace \
     && mkdir -p /home/dev/.local/share/code-server/User \
+    && mkdir -p /home/dev/.local/share/opencode \
+    && mkdir -p /home/dev/.config \
     && chown -R dev:dev /home/dev \
     && chown -R dev:dev /var/log/sandbox
 

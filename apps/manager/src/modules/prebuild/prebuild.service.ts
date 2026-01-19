@@ -154,7 +154,9 @@ export const PrebuildService = {
     for (const repo of repos) {
       const cloneUrl = "url" in repo ? repo.url : repo.repo;
       const branch = repo.branch;
-      const clonePath = repo.clonePath || WORKSPACE_DIR;
+      // clonePath from config is like "/workspace/repo-name"
+      // Full path is /home/dev + clonePath = /home/dev/workspace/repo-name
+      const clonePath = `/home/dev${repo.clonePath || "/workspace"}`;
 
       log.info(
         { sandboxId, cloneUrl, branch, clonePath },

@@ -35,9 +35,7 @@ const TERMINAL_PORT = 7681;
 type GitSourceGetter = (
   id: string,
 ) => { type: string; config: unknown } | undefined;
-type ConfigFilesGetter = (
-  workspaceId?: string,
-) => {
+type ConfigFilesGetter = (workspaceId?: string) => {
   path: string;
   content: string;
   contentType: "json" | "text" | "binary";
@@ -350,7 +348,7 @@ export class SandboxBuilder {
   }
 
   private async cloneRepository(repo: RepoConfig): Promise<void> {
-    const clonePath = `/home/dev/workspace/${repo.clonePath}`;
+    const clonePath = `/home/dev${repo.clonePath}`;
     const gitUrl = "url" in repo ? repo.url : await this.resolveSourceUrl(repo);
     const branch = repo.branch;
 
