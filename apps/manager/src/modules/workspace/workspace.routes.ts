@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
-import { prebuildService, workspaceService } from "../../container.ts";
+import { prebuildRunner, workspaceService } from "../../container.ts";
+import { StorageService } from "../../infrastructure/storage/index.ts";
 import {
   CreateWorkspaceBodySchema,
   IdParamSchema,
@@ -28,6 +29,13 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
     async ({ body, set }) => {
       log.info({ name: body.name }, "Creating workspace");
       const workspace = workspaceService.create(body.name, body.config);
+
+      const hasRepos = body.config?.repos && body.config.repos.length > 0;
+      if (hasRepos) {
+        log.info({ workspaceId: workspace.id }, "Triggering initial prebuild");
+        prebuildRunner.runInBackground(workspace.id);
+      }
+
       set.status = 201;
       return workspace;
     },
@@ -68,8 +76,15 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
   .delete(
     "/:id",
     async ({ params, set }) => {
+      const workspace = workspaceService.getById(params.id);
+      if (!workspace) {
+        throw new NotFoundError("Workspace", params.id);
+      }
+
       log.info({ workspaceId: params.id }, "Deleting workspace");
-      await workspaceService.delete(params.id);
+      await StorageService.deletePrebuild(params.id);
+      workspaceService.delete(params.id);
+
       set.status = 204;
       return null;
     },
@@ -94,7 +109,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       }
 
       log.info({ workspaceId: params.id }, "Triggering prebuild");
-      prebuildService.createInBackground(params.id);
+      prebuildRunner.runInBackground(params.id);
 
       set.status = 202;
       return {
@@ -117,7 +132,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       }
 
       log.info({ workspaceId: params.id }, "Deleting prebuild");
-      await prebuildService.delete(params.id);
+      await prebuildRunner.delete(params.id);
 
       set.status = 204;
       return null;

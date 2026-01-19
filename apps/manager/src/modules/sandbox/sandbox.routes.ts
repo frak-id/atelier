@@ -2,7 +2,10 @@ import { Elysia } from "elysia";
 import {
   agentClient,
   configFileService,
+  sandboxDestroyer,
+  sandboxLifecycle,
   sandboxService,
+  sandboxSpawner,
 } from "../../container.ts";
 import { QueueService } from "../../infrastructure/queue/index.ts";
 import {
@@ -70,7 +73,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
       log.info({ body }, "Creating sandbox");
 
-      const sandbox = await sandboxService.spawn(body);
+      const sandbox = await sandboxSpawner.spawn(body);
       set.status = 201;
       return sandbox;
     },
@@ -82,7 +85,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/:id",
     async ({ params }) => {
-      const sandbox = await sandboxService.getStatus(params.id);
+      const sandbox = sandboxService.getById(params.id);
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
@@ -102,7 +105,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       }
 
       log.info({ sandboxId: params.id }, "Deleting sandbox");
-      await sandboxService.destroy(params.id);
+      await sandboxDestroyer.destroy(params.id);
 
       set.status = 204;
       return null;
@@ -120,7 +123,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       }
 
       log.info({ sandboxId: params.id }, "Stopping sandbox");
-      return sandboxService.stop(params.id);
+      return sandboxLifecycle.stop(params.id);
     },
     {
       params: IdParamSchema,
@@ -136,7 +139,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       }
 
       log.info({ sandboxId: params.id }, "Starting sandbox");
-      return sandboxService.start(params.id);
+      return sandboxLifecycle.start(params.id);
     },
     {
       params: IdParamSchema,
@@ -164,7 +167,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.health(params.id);
+      return agentClient.health(sandbox.runtime.ipAddress);
     },
     {
       params: IdParamSchema,
@@ -178,7 +181,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.metrics(params.id);
+      return agentClient.metrics(sandbox.runtime.ipAddress);
     },
     {
       params: IdParamSchema,
@@ -192,7 +195,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.getApps(params.id);
+      return agentClient.getApps(sandbox.runtime.ipAddress);
     },
     {
       params: IdParamSchema,
@@ -206,7 +209,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.registerApp(params.id, body.port, body.name);
+      return agentClient.registerApp(
+        sandbox.runtime.ipAddress,
+        body.port,
+        body.name,
+      );
     },
     {
       params: IdParamSchema,
@@ -221,7 +228,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.exec(params.id, body.command, {
+      return agentClient.exec(sandbox.runtime.ipAddress, body.command, {
         timeout: body.timeout,
       });
     },
@@ -239,7 +246,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         throw new NotFoundError("Sandbox", params.id);
       }
       const lines = query.lines ? Number.parseInt(query.lines, 10) : 100;
-      const result = await agentClient.logs(params.id, params.service, lines);
+      const result = await agentClient.logs(
+        sandbox.runtime.ipAddress,
+        params.service,
+        lines,
+      );
       return { logs: result.content };
     },
     {
@@ -255,7 +266,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.services(params.id);
+      return agentClient.services(sandbox.runtime.ipAddress);
     },
     {
       params: IdParamSchema,
@@ -269,7 +280,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.gitStatus(params.id);
+      return agentClient.gitStatus(sandbox.runtime.ipAddress);
     },
     {
       params: IdParamSchema,
@@ -283,7 +294,9 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      const configs = await agentClient.discoverConfigs(params.id);
+      const configs = await agentClient.discoverConfigs(
+        sandbox.runtime.ipAddress,
+      );
       return { configs };
     },
     {
@@ -300,7 +313,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       }
 
       const fileContent = await agentClient.readConfigFile(
-        params.id,
+        sandbox.runtime.ipAddress,
         body.path,
       );
       if (!fileContent) {

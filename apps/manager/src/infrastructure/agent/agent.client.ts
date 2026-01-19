@@ -5,7 +5,7 @@ const log = createChildLogger("agent");
 const AGENT_PORT = 9999;
 const DEFAULT_TIMEOUT = 10000;
 
-interface AgentHealth {
+export interface AgentHealth {
   status: string;
   sandboxId?: string;
   services: {
@@ -16,32 +16,32 @@ interface AgentHealth {
   uptime: number;
 }
 
-interface AgentMetrics {
+export interface AgentMetrics {
   cpu: number;
   memory: { total: number; used: number; free: number };
   disk: { total: number; used: number; free: number };
   timestamp: string;
 }
 
-interface AppPort {
+export interface AppPort {
   port: number;
   name: string;
   registeredAt: string;
 }
 
-interface ServiceStatus {
+export interface ServiceStatus {
   name: string;
   running: boolean;
   pid?: number;
 }
 
-interface ExecResult {
+export interface ExecResult {
   exitCode: number;
   stdout: string;
   stderr: string;
 }
 
-interface EditorConfig {
+export interface EditorConfig {
   vscode: {
     settings: Record<string, unknown>;
     extensions: string[];
@@ -52,7 +52,7 @@ interface EditorConfig {
   };
 }
 
-interface GitStatus {
+export interface GitStatus {
   repos: {
     path: string;
     branch: string | null;
@@ -64,7 +64,7 @@ interface GitStatus {
   }[];
 }
 
-interface DiscoveredConfig {
+export interface DiscoveredConfig {
   path: string;
   displayPath: string;
   category: "opencode" | "vscode" | "other";
@@ -72,7 +72,7 @@ interface DiscoveredConfig {
   size?: number;
 }
 
-interface ConfigFileContent {
+export interface ConfigFileContent {
   path: string;
   displayPath: string;
   content: string;
@@ -80,26 +80,13 @@ interface ConfigFileContent {
   size: number;
 }
 
-type SandboxGetter = (
-  id: string,
-) => { runtime: { ipAddress: string } } | undefined;
-
 export class AgentClient {
-  constructor(private readonly getSandbox: SandboxGetter) {}
-
-  getAgentUrl(sandboxId: string): string {
-    const sandbox = this.getSandbox(sandboxId);
-    if (!sandbox) {
-      throw new Error(`Sandbox '${sandboxId}' not found`);
-    }
-    if (!sandbox.runtime.ipAddress) {
-      throw new Error(`Sandbox '${sandboxId}' has no IP address`);
-    }
-    return `http://${sandbox.runtime.ipAddress}:${AGENT_PORT}`;
+  private getAgentUrl(ipAddress: string): string {
+    return `http://${ipAddress}:${AGENT_PORT}`;
   }
 
-  async request<T>(
-    sandboxId: string,
+  private async request<T>(
+    ipAddress: string,
     path: string,
     options: {
       method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -107,7 +94,7 @@ export class AgentClient {
       timeout?: number;
     } = {},
   ): Promise<T> {
-    const baseUrl = this.getAgentUrl(sandboxId);
+    const baseUrl = this.getAgentUrl(ipAddress);
     const url = `${baseUrl}${path}`;
     const timeout = options.timeout ?? DEFAULT_TIMEOUT;
 
@@ -141,12 +128,12 @@ export class AgentClient {
     }
   }
 
-  async health(sandboxId: string): Promise<AgentHealth> {
-    return this.request<AgentHealth>(sandboxId, "/health");
+  async health(ipAddress: string): Promise<AgentHealth> {
+    return this.request<AgentHealth>(ipAddress, "/health");
   }
 
   async waitForAgent(
-    sandboxId: string,
+    ipAddress: string,
     options: { timeout?: number; interval?: number } = {},
   ): Promise<boolean> {
     const timeout = options.timeout ?? 60000;
@@ -155,59 +142,59 @@ export class AgentClient {
 
     while (Date.now() < deadline) {
       try {
-        const health = await this.health(sandboxId);
+        const health = await this.health(ipAddress);
         if (health.status === "healthy") {
-          log.info({ sandboxId }, "Agent is healthy");
+          log.info({ ipAddress }, "Agent is healthy");
           return true;
         }
       } catch (error) {
-        log.debug({ sandboxId, error }, "Agent not ready yet");
+        log.debug({ ipAddress, error }, "Agent not ready yet");
       }
       await Bun.sleep(interval);
     }
 
-    log.warn({ sandboxId, timeout }, "Agent did not become healthy in time");
+    log.warn({ ipAddress, timeout }, "Agent did not become healthy in time");
     return false;
   }
 
-  async metrics(sandboxId: string): Promise<AgentMetrics> {
-    return this.request<AgentMetrics>(sandboxId, "/metrics");
+  async metrics(ipAddress: string): Promise<AgentMetrics> {
+    return this.request<AgentMetrics>(ipAddress, "/metrics");
   }
 
-  async config(sandboxId: string): Promise<Record<string, unknown>> {
-    return this.request<Record<string, unknown>>(sandboxId, "/config");
+  async config(ipAddress: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(ipAddress, "/config");
   }
 
-  async getApps(sandboxId: string): Promise<AppPort[]> {
-    return this.request<AppPort[]>(sandboxId, "/apps");
+  async getApps(ipAddress: string): Promise<AppPort[]> {
+    return this.request<AppPort[]>(ipAddress, "/apps");
   }
 
   async registerApp(
-    sandboxId: string,
+    ipAddress: string,
     port: number,
     name: string,
   ): Promise<AppPort> {
-    return this.request<AppPort>(sandboxId, "/apps", {
+    return this.request<AppPort>(ipAddress, "/apps", {
       method: "POST",
       body: { port, name },
     });
   }
 
   async unregisterApp(
-    sandboxId: string,
+    ipAddress: string,
     port: number,
   ): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(sandboxId, `/apps/${port}`, {
+    return this.request<{ success: boolean }>(ipAddress, `/apps/${port}`, {
       method: "DELETE",
     });
   }
 
   async exec(
-    sandboxId: string,
+    ipAddress: string,
     command: string,
     options: { timeout?: number } = {},
   ): Promise<ExecResult> {
-    return this.request<ExecResult>(sandboxId, "/exec", {
+    return this.request<ExecResult>(ipAddress, "/exec", {
       method: "POST",
       body: { command, timeout: options.timeout },
       timeout: (options.timeout ?? 30000) + 5000,
@@ -215,32 +202,32 @@ export class AgentClient {
   }
 
   async logs(
-    sandboxId: string,
+    ipAddress: string,
     service: string,
     lines: number = 100,
   ): Promise<{ service: string; content: string }> {
     return this.request<{ service: string; content: string }>(
-      sandboxId,
+      ipAddress,
       `/logs/${service}?lines=${lines}`,
     );
   }
 
-  async services(sandboxId: string): Promise<{ services: ServiceStatus[] }> {
-    return this.request<{ services: ServiceStatus[] }>(sandboxId, "/services");
+  async services(ipAddress: string): Promise<{ services: ServiceStatus[] }> {
+    return this.request<{ services: ServiceStatus[] }>(ipAddress, "/services");
   }
 
   async batchHealth(
-    sandboxIds: string[],
+    ipAddresses: string[],
   ): Promise<Map<string, AgentHealth | { error: string }>> {
     const results = new Map<string, AgentHealth | { error: string }>();
 
     await Promise.all(
-      sandboxIds.map(async (id) => {
+      ipAddresses.map(async (ip) => {
         try {
-          const health = await this.health(id);
-          results.set(id, health);
+          const health = await this.health(ip);
+          results.set(ip, health);
         } catch (error) {
-          results.set(id, {
+          results.set(ip, {
             error: error instanceof Error ? error.message : String(error),
           });
         }
@@ -250,43 +237,43 @@ export class AgentClient {
     return results;
   }
 
-  async getEditorConfig(sandboxId: string): Promise<EditorConfig | null> {
+  async getEditorConfig(ipAddress: string): Promise<EditorConfig | null> {
     try {
-      return await this.request<EditorConfig>(sandboxId, "/editor-config");
+      return await this.request<EditorConfig>(ipAddress, "/editor-config");
     } catch (error) {
-      log.error({ sandboxId, error }, "Failed to get editor config");
+      log.error({ ipAddress, error }, "Failed to get editor config");
       return null;
     }
   }
 
-  async getInstalledExtensions(sandboxId: string): Promise<string[]> {
+  async getInstalledExtensions(ipAddress: string): Promise<string[]> {
     try {
       const result = await this.request<{ extensions: string[] }>(
-        sandboxId,
+        ipAddress,
         "/vscode/extensions/installed",
       );
       return result.extensions;
     } catch (error) {
-      log.error({ sandboxId, error }, "Failed to get installed extensions");
+      log.error({ ipAddress, error }, "Failed to get installed extensions");
       return [];
     }
   }
 
   async installExtensions(
-    sandboxId: string,
+    ipAddress: string,
     extensions: string[],
   ): Promise<{ extension: string; success: boolean; error?: string }[]> {
     try {
       const result = await this.request<{
         results: { extension: string; success: boolean; error?: string }[];
-      }>(sandboxId, "/vscode/extensions/install", {
+      }>(ipAddress, "/vscode/extensions/install", {
         method: "POST",
         body: { extensions },
         timeout: 300000,
       });
       return result.results;
     } catch (error) {
-      log.error({ sandboxId, error }, "Failed to install extensions");
+      log.error({ ipAddress, error }, "Failed to install extensions");
       return extensions.map((ext) => ({
         extension: ext,
         success: false,
@@ -295,35 +282,35 @@ export class AgentClient {
     }
   }
 
-  async discoverConfigs(sandboxId: string): Promise<DiscoveredConfig[]> {
+  async discoverConfigs(ipAddress: string): Promise<DiscoveredConfig[]> {
     try {
       const result = await this.request<{ configs: DiscoveredConfig[] }>(
-        sandboxId,
+        ipAddress,
         "/config/discover",
       );
       return result.configs;
     } catch (error) {
-      log.error({ sandboxId, error }, "Failed to discover configs");
+      log.error({ ipAddress, error }, "Failed to discover configs");
       return [];
     }
   }
 
   async readConfigFile(
-    sandboxId: string,
+    ipAddress: string,
     path: string,
   ): Promise<ConfigFileContent | null> {
     try {
       return await this.request<ConfigFileContent>(
-        sandboxId,
+        ipAddress,
         `/config/read?path=${encodeURIComponent(path)}`,
       );
     } catch (error) {
-      log.error({ sandboxId, path, error }, "Failed to read config file");
+      log.error({ ipAddress, path, error }, "Failed to read config file");
       return null;
     }
   }
 
-  async gitStatus(sandboxId: string): Promise<GitStatus> {
-    return this.request<GitStatus>(sandboxId, "/git/status");
+  async gitStatus(ipAddress: string): Promise<GitStatus> {
+    return this.request<GitStatus>(ipAddress, "/git/status");
   }
 }

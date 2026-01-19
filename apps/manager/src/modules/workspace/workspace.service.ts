@@ -1,5 +1,4 @@
 import { nanoid } from "nanoid";
-import { StorageService } from "../../infrastructure/storage/index.ts";
 import type { Workspace, WorkspaceConfig } from "../../schemas/index.ts";
 import { DEFAULT_WORKSPACE_CONFIG } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
@@ -9,10 +8,7 @@ import type { WorkspaceRepository } from "./workspace.repository.ts";
 const log = createChildLogger("workspace-service");
 
 export class WorkspaceService {
-  constructor(
-    private readonly workspaceRepository: WorkspaceRepository,
-    private readonly prebuildCreator?: (workspaceId: string) => void,
-  ) {}
+  constructor(private readonly workspaceRepository: WorkspaceRepository) {}
 
   getAll(): Workspace[] {
     return this.workspaceRepository.getAll();
@@ -32,7 +28,7 @@ export class WorkspaceService {
 
   create(name: string, partialConfig?: Partial<WorkspaceConfig>): Workspace {
     const now = new Date().toISOString();
-    const config: WorkspaceConfig = {
+    const workspaceConfig: WorkspaceConfig = {
       ...DEFAULT_WORKSPACE_CONFIG,
       ...partialConfig,
     };
@@ -40,7 +36,7 @@ export class WorkspaceService {
     const workspace: Workspace = {
       id: nanoid(12),
       name,
-      config,
+      config: workspaceConfig,
       createdAt: now,
       updatedAt: now,
     };
@@ -50,11 +46,6 @@ export class WorkspaceService {
       "Creating workspace",
     );
     this.workspaceRepository.create(workspace);
-
-    if (config.repos && config.repos.length > 0 && this.prebuildCreator) {
-      log.info({ workspaceId: workspace.id }, "Triggering initial prebuild");
-      this.prebuildCreator(workspace.id);
-    }
 
     return workspace;
   }
@@ -81,11 +72,9 @@ export class WorkspaceService {
     return this.workspaceRepository.update(id, workspaceUpdates);
   }
 
-  async delete(id: string): Promise<void> {
+  delete(id: string): void {
     this.getByIdOrThrow(id);
-
     log.info({ workspaceId: id }, "Deleting workspace");
-    await StorageService.deletePrebuild(id);
     this.workspaceRepository.delete(id);
   }
 

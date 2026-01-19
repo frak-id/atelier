@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { sandboxService } from "../../container.ts";
+import { FirecrackerClient } from "../../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../../infrastructure/network/index.ts";
 import { CaddyService } from "../../infrastructure/proxy/index.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
@@ -20,7 +20,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
     async (): Promise<HealthStatus> => {
       const [firecracker, caddy, network, storageDir, lvmAvailable] =
         await Promise.all([
-          sandboxService.isHealthy(),
+          FirecrackerClient.isHealthy(),
           CaddyService.isHealthy(),
           NetworkService.getBridgeStatus().then((s) => s.exists),
           dirExists(config.paths.SANDBOX_DIR),
@@ -53,7 +53,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
   .get(
     "/ready",
     async ({ set }) => {
-      const firecracker = await sandboxService.isHealthy();
+      const firecracker = await FirecrackerClient.isHealthy();
       if (!firecracker) {
         set.status = 503;
         return {

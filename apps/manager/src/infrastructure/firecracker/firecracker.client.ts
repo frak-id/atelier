@@ -1,3 +1,8 @@
+import { FIRECRACKER } from "@frak-sandbox/shared/constants";
+import { $ } from "bun";
+import { config } from "../../shared/lib/config.ts";
+import { fileExists } from "../../shared/lib/shell.ts";
+
 type RequestOptions = {
   method?: "GET" | "PUT" | "PATCH";
   body?: unknown;
@@ -5,6 +10,20 @@ type RequestOptions = {
 
 export class FirecrackerClient {
   constructor(private socketPath: string) {}
+
+  static async isHealthy(): Promise<boolean> {
+    if (config.isMock()) {
+      return true;
+    }
+
+    const exists = await fileExists(FIRECRACKER.BINARY_PATH);
+    if (!exists) return false;
+
+    const kvmOk = await $`test -r /dev/kvm && test -w /dev/kvm`
+      .quiet()
+      .nothrow();
+    return kvmOk.exitCode === 0;
+  }
 
   private async request<T = unknown>(
     path: string,

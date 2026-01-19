@@ -7,107 +7,75 @@ import {
   GitSourceRepository,
   GitSourceService,
 } from "./modules/git-source/index.ts";
-import { PrebuildService } from "./modules/prebuild/index.ts";
 import { SandboxRepository, SandboxService } from "./modules/sandbox/index.ts";
 import {
   WorkspaceRepository,
   WorkspaceService,
 } from "./modules/workspace/index.ts";
+import {
+  PrebuildRunner,
+  SandboxDestroyer,
+  SandboxLifecycle,
+  SandboxSpawner,
+} from "./orchestrators/index.ts";
 
-// Repositories
+/* -------------------------------------------------------------------------- */
+/*                                Repositories                                */
+/* -------------------------------------------------------------------------- */
+
 const configFileRepository = new ConfigFileRepository();
 const gitSourceRepository = new GitSourceRepository();
 const workspaceRepository = new WorkspaceRepository();
 const sandboxRepository = new SandboxRepository();
 
-// Services (simple, no cross-dependencies)
+/* -------------------------------------------------------------------------- */
+/*                                  Services                                  */
+/* -------------------------------------------------------------------------- */
+
 const configFileService = new ConfigFileService(configFileRepository);
 const gitSourceService = new GitSourceService(gitSourceRepository);
+const workspaceService = new WorkspaceService(workspaceRepository);
+const sandboxService = new SandboxService(sandboxRepository);
 
-// Late-bound reference to break circular dependency
-let _sandboxService: SandboxService | undefined;
+const agentClient = new AgentClient();
 
-// AgentClient uses lazy getter - sandboxService will be assigned before any actual usage
-const agentClient: AgentClient = new AgentClient((id) => {
-  if (!_sandboxService) {
-    throw new Error("SandboxService not initialized");
-  }
-  return _sandboxService.getById(id);
-});
+/* -------------------------------------------------------------------------- */
+/*                                Orchestrators                               */
+/* -------------------------------------------------------------------------- */
 
-// Late-bound reference for workspace/prebuild cycle
-let _workspaceService: WorkspaceService | undefined;
-
-const sandboxService: SandboxService = new SandboxService(sandboxRepository, {
-  getWorkspace: (id) => {
-    if (!_workspaceService) {
-      throw new Error("WorkspaceService not initialized");
-    }
-    return _workspaceService.getById(id);
-  },
-  getGitSource: (id) => gitSourceService.getById(id),
-  getConfigFiles: (workspaceId) =>
-    configFileService.getMergedForSandbox(workspaceId),
+const sandboxSpawner = new SandboxSpawner({
+  sandboxService,
+  workspaceService,
+  gitSourceService,
+  configFileService,
   agentClient,
 });
 
-// Now assign the late-bound reference
-_sandboxService = sandboxService;
+const sandboxDestroyer = new SandboxDestroyer({
+  sandboxService,
+});
 
-const prebuildService: PrebuildService = new PrebuildService({
-  getWorkspace: (id) => {
-    if (!_workspaceService) {
-      throw new Error("WorkspaceService not initialized");
-    }
-    return _workspaceService.getById(id);
-  },
-  updateWorkspace: (id, updates) => {
-    if (!_workspaceService) {
-      throw new Error("WorkspaceService not initialized");
-    }
-    try {
-      return _workspaceService.update(id, updates);
-    } catch {
-      return undefined;
-    }
-  },
-  spawnSandbox: (options) => sandboxService.spawn(options),
-  destroySandbox: (id) => sandboxService.destroy(id),
+const sandboxLifecycle = new SandboxLifecycle({
+  sandboxService,
+});
+
+const prebuildRunner = new PrebuildRunner({
+  sandboxSpawner,
+  sandboxDestroyer,
+  sandboxService,
+  workspaceService,
   agentClient,
 });
 
-const workspaceService: WorkspaceService = new WorkspaceService(
-  workspaceRepository,
-  (workspaceId) => prebuildService.createInBackground(workspaceId),
-);
-
-// Complete the initialization
-_workspaceService = workspaceService;
-
-export const container = {
-  repositories: {
-    configFile: configFileRepository,
-    gitSource: gitSourceRepository,
-    workspace: workspaceRepository,
-    sandbox: sandboxRepository,
-  },
-  services: {
-    configFile: configFileService,
-    gitSource: gitSourceService,
-    workspace: workspaceService,
-    sandbox: sandboxService,
-    prebuild: prebuildService,
-  },
-  clients: {
-    agent: agentClient,
-  },
-};
 
 export {
   agentClient,
   configFileService,
   gitSourceService,
-  prebuildService,
+  prebuildRunner,
+  sandboxDestroyer,
+  sandboxLifecycle,
   sandboxService,
+  sandboxSpawner,
   workspaceService,
 };
