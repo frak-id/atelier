@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
+    "@frak-sandbox/manager": "workspace:*",
     "@frak-sandbox/shared": "workspace:*"
   },
   "devDependencies": {

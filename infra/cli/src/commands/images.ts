@@ -3,7 +3,7 @@ import {
   BASE_IMAGES,
   type BaseImageId,
   getAvailableImages,
-} from "@frak-sandbox/shared/types";
+} from "@frak-sandbox/manager/types";
 import { LVM, PATHS } from "../lib/context";
 import { commandExists, exec } from "../lib/shell";
 

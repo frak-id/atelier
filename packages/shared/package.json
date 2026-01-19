@@ -5,8 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./constants": "./src/constants.ts",
-    "./types": "./src/types/index.ts"
+    "./constants": "./src/constants.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

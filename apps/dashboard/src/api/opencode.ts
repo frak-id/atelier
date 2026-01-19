@@ -28,3 +28,51 @@ export async function deleteOpenCodeSession(
     return false;
   }
 }
+
+export async function createOpenCodeSession(
+  baseUrl: string,
+  directory: string,
+): Promise<{ sessionId: string } | { error: string }> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const { data, error } = await client.session.create({ directory });
+    if (error || !data?.id) {
+      return { error: "Failed to create session" };
+    }
+    return { sessionId: data.id };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Unknown error" };
+  }
+}
+
+export async function sendOpenCodeMessage(
+  baseUrl: string,
+  sessionId: string,
+  directory: string,
+  message: string,
+): Promise<{ success: true } | { error: string }> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const result = await client.session.promptAsync({
+      sessionID: sessionId,
+      directory,
+      parts: [{ type: "text", text: message }],
+    });
+    if (result.error) {
+      return { error: "Failed to send message" };
+    }
+    return { success: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Unknown error" };
+  }
+}
+
+export async function checkOpenCodeHealth(baseUrl: string): Promise<boolean> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const { data } = await client.global.health();
+    return data?.healthy ?? false;
+  } catch {
+    return false;
+  }
+}
