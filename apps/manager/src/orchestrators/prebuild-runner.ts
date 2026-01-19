@@ -72,7 +72,6 @@ export class PrebuildRunner {
         throw new Error("Agent failed to become ready");
       }
 
-      await this.cloneRepositories(ipAddress, workspace);
       await this.runInitCommands(ipAddress, workspace);
       await this.deps.agentClient.exec(ipAddress, "sync");
       await StorageService.createPrebuild(workspaceId, sandbox.id);
@@ -145,65 +144,6 @@ export class PrebuildRunner {
     this.deps.workspaceService.update(workspaceId, {
       config: { ...workspace.config, prebuild },
     });
-  }
-
-  private async cloneRepositories(
-    ipAddress: string,
-    workspace: Workspace,
-  ): Promise<void> {
-    const repos = workspace.config.repos;
-    if (!repos || repos.length === 0) {
-      log.info({ workspaceId: workspace.id }, "No repositories to clone");
-      return;
-    }
-
-    for (const repo of repos) {
-      const cloneUrl = "url" in repo ? repo.url : repo.repo;
-      const branch = repo.branch;
-      const clonePath = `/home/dev${repo.clonePath || "/workspace"}`;
-
-      log.info(
-        { workspaceId: workspace.id, cloneUrl, branch, clonePath },
-        "Cloning repository in prebuild sandbox",
-      );
-
-      await this.deps.agentClient.exec(ipAddress, `rm -rf ${clonePath}`);
-      await this.deps.agentClient.exec(
-        ipAddress,
-        `mkdir -p $(dirname ${clonePath})`,
-      );
-
-      const cloneCmd = `git clone --depth 1 -b ${branch} ${cloneUrl} ${clonePath}`;
-      const result = await this.deps.agentClient.exec(ipAddress, cloneCmd, {
-        timeout: COMMAND_TIMEOUT,
-      });
-
-      if (result.exitCode !== 0) {
-        log.error(
-          {
-            workspaceId: workspace.id,
-            exitCode: result.exitCode,
-            stderr: result.stderr,
-          },
-          "Git clone failed",
-        );
-        throw new Error(`Git clone failed: ${result.stderr}`);
-      }
-
-      await this.deps.agentClient.exec(
-        ipAddress,
-        `chown -R dev:dev ${clonePath}`,
-      );
-      await this.deps.agentClient.exec(
-        ipAddress,
-        `su - dev -c 'git config --global --add safe.directory ${clonePath}'`,
-      );
-
-      log.info(
-        { workspaceId: workspace.id, clonePath },
-        "Repository cloned successfully",
-      );
-    }
   }
 
   private async runInitCommands(

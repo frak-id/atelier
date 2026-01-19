@@ -7,15 +7,17 @@ import {
 import {
   Box,
   Boxes,
+  ChevronDown,
   FolderGit2,
   HardDrive,
-  LayoutDashboard,
+  Home,
   Menu,
+  Server,
   Settings,
-  Sliders,
 } from "lucide-react";
 import { Suspense, useState } from "react";
 import { GitHubStatus } from "@/components/github-status";
+import { SystemStatusFooter } from "@/components/system-status-footer";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -33,6 +35,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [adminExpanded, setAdminExpanded] = useState(false);
 
   return (
     <TooltipProvider>
@@ -45,24 +48,41 @@ function RootLayout() {
             </Link>
           </div>
           <nav className="flex-1 p-4 space-y-1">
-            <NavLink to="/" icon={LayoutDashboard}>
-              Dashboard
-            </NavLink>
-            <NavLink to="/sandboxes" icon={Boxes}>
-              Sandboxes
+            <NavLink to="/" icon={Home}>
+              Home
             </NavLink>
             <NavLink to="/workspaces" icon={FolderGit2}>
               Workspaces
             </NavLink>
-            <NavLink to="/images" icon={HardDrive}>
-              Images
+            <NavLink to="/sandboxes" icon={Boxes}>
+              Sandboxes
             </NavLink>
-            <NavLink to="/system" icon={Settings}>
-              System
-            </NavLink>
-            <NavLink to="/settings" icon={Sliders}>
-              Settings
-            </NavLink>
+
+            <div className="pt-4">
+              <button
+                type="button"
+                onClick={() => setAdminExpanded(!adminExpanded)}
+                className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span>Admin</span>
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${adminExpanded ? "rotate-180" : ""}`}
+                />
+              </button>
+              {adminExpanded && (
+                <div className="mt-1 space-y-1 pl-2">
+                  <NavLink to="/images" icon={HardDrive}>
+                    Images
+                  </NavLink>
+                  <NavLink to="/system" icon={Server}>
+                    System
+                  </NavLink>
+                  <NavLink to="/settings" icon={Settings}>
+                    Settings
+                  </NavLink>
+                </div>
+              )}
+            </div>
           </nav>
           <div className="p-4 border-t space-y-3">
             <Suspense fallback={null}>
@@ -83,24 +103,41 @@ function RootLayout() {
               </SheetTitle>
             </SheetHeader>
             <nav className="flex-1 p-4 space-y-1">
-              <NavLink to="/" icon={LayoutDashboard}>
-                Dashboard
-              </NavLink>
-              <NavLink to="/sandboxes" icon={Boxes}>
-                Sandboxes
+              <NavLink to="/" icon={Home}>
+                Home
               </NavLink>
               <NavLink to="/workspaces" icon={FolderGit2}>
                 Workspaces
               </NavLink>
-              <NavLink to="/images" icon={HardDrive}>
-                Images
+              <NavLink to="/sandboxes" icon={Boxes}>
+                Sandboxes
               </NavLink>
-              <NavLink to="/system" icon={Settings}>
-                System
-              </NavLink>
-              <NavLink to="/settings" icon={Sliders}>
-                Settings
-              </NavLink>
+
+              <div className="pt-4">
+                <button
+                  type="button"
+                  onClick={() => setAdminExpanded(!adminExpanded)}
+                  className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <span>Admin</span>
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${adminExpanded ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {adminExpanded && (
+                  <div className="mt-1 space-y-1 pl-2">
+                    <NavLink to="/images" icon={HardDrive}>
+                      Images
+                    </NavLink>
+                    <NavLink to="/system" icon={Server}>
+                      System
+                    </NavLink>
+                    <NavLink to="/settings" icon={Settings}>
+                      Settings
+                    </NavLink>
+                  </div>
+                )}
+              </div>
             </nav>
             <div className="p-4 border-t space-y-3">
               <Suspense fallback={null}>
@@ -130,6 +167,10 @@ function RootLayout() {
           <main className="flex-1 overflow-auto">
             <Outlet />
           </main>
+
+          <Suspense fallback={null}>
+            <SystemStatusFooter />
+          </Suspense>
         </div>
       </div>
     </TooltipProvider>

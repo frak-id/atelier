@@ -21,6 +21,7 @@ interface RepositoryPickerProps {
     cloneUrl: string;
     defaultBranch: string;
     name: string;
+    fullName: string;
   }) => void;
 }
 
@@ -122,6 +123,7 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
                       cloneUrl: repo.cloneUrl,
                       defaultBranch: repo.defaultBranch,
                       name: repo.name,
+                      fullName: repo.fullName,
                     });
                     setOpen(false);
                   }}

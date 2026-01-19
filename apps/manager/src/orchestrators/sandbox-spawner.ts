@@ -23,7 +23,6 @@ import { SandboxProvisioner } from "../modules/sandbox/sandbox.provisioner.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   CreateSandboxBody,
-  GitHubSourceConfig,
   RepoConfig,
   Sandbox,
   Workspace,
@@ -365,12 +364,13 @@ class SpawnContext {
     if (!this.network) throw new Error("Network not allocated");
 
     const clonePath = `/home/dev${repo.clonePath}`;
-    const gitUrl = "url" in repo ? repo.url : await this.resolveSourceUrl(repo);
+    const gitUrl =
+      "url" in repo ? repo.url : await this.buildAuthenticatedUrl(repo);
     const branch = repo.branch;
 
     log.info(
-      { sandboxId: this.sandboxId, gitUrl, branch, clonePath },
-      "Cloning repository in sandbox",
+      { sandboxId: this.sandboxId, branch, clonePath },
+      "Cloning repository",
     );
 
     await this.deps.agentClient.exec(
@@ -406,23 +406,18 @@ class SpawnContext {
     );
   }
 
-  private async resolveSourceUrl(repo: {
+  private async buildAuthenticatedUrl(repo: {
     sourceId: string;
     repo: string;
-    branch: string;
-    clonePath: string;
   }): Promise<string> {
     const source = this.deps.gitSourceService.getById(repo.sourceId);
     if (!source) {
-      log.warn(
-        { sourceId: repo.sourceId },
-        "Git source not found, using public URL",
-      );
+      log.warn({ sourceId: repo.sourceId }, "Git source not found");
       return `https://github.com/${repo.repo}.git`;
     }
 
     if (source.type === "github") {
-      const ghConfig = source.config as GitHubSourceConfig;
+      const ghConfig = source.config as { accessToken?: string };
       if (ghConfig.accessToken) {
         return `https://x-access-token:${ghConfig.accessToken}@github.com/${repo.repo}.git`;
       }

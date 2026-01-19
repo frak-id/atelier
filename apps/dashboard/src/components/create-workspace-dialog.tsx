@@ -1,6 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { api } from "@/api/client";
 import {
   githubStatusQuery,
   imageListQuery,
@@ -28,7 +29,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 interface RepoEntry {
-  url: string;
+  url?: string;
+  sourceId?: string;
+  repo?: string;
   branch: string;
   clonePath: string;
 }
@@ -44,6 +47,14 @@ export function CreateWorkspaceDialog({
 }: CreateWorkspaceDialogProps) {
   const { data: images } = useSuspenseQuery(imageListQuery());
   const { data: githubStatus } = useQuery(githubStatusQuery);
+  const { data: gitSources } = useQuery({
+    queryKey: ["git-sources"],
+    queryFn: async () => {
+      const result = await api.api.sources.get();
+      if (result.error) throw result.error;
+      return result.data;
+    },
+  });
   const createMutation = useCreateWorkspace();
 
   const [showManualUrl, setShowManualUrl] = useState(false);
@@ -65,7 +76,7 @@ export function CreateWorkspaceDialog({
   const isGitHubConnected = githubStatus?.connected === true;
 
   const addRepo = () => {
-    if (newRepo.url) {
+    if (newRepo.url || newRepo.repo) {
       setRepos([...repos, newRepo]);
       setNewRepo({ url: "", branch: "main", clonePath: "/workspace" });
     }
@@ -90,11 +101,21 @@ export function CreateWorkspaceDialog({
           startCommands: formData.startCommands
             .split("\n")
             .filter((cmd) => cmd.trim()),
-          repos: repos.map((r) => ({
-            url: r.url,
-            branch: r.branch,
-            clonePath: r.clonePath,
-          })),
+          repos: repos.map((r) => {
+            if (r.sourceId && r.repo) {
+              return {
+                sourceId: r.sourceId,
+                repo: r.repo,
+                branch: r.branch,
+                clonePath: r.clonePath,
+              };
+            }
+            return {
+              url: r.url!,
+              branch: r.branch,
+              clonePath: r.clonePath,
+            };
+          }),
           secrets: {},
           exposedPorts: [],
         },
@@ -149,7 +170,7 @@ export function CreateWorkspaceDialog({
                       className="flex items-center gap-2 p-2 bg-muted rounded text-sm min-w-0"
                     >
                       <span className="flex-1 font-mono truncate min-w-0">
-                        {repo.url}
+                        {repo.url || repo.repo}
                       </span>
                       <span className="text-muted-foreground truncate shrink-0 max-w-[40%]">
                         → {repo.clonePath}
@@ -173,11 +194,23 @@ export function CreateWorkspaceDialog({
                   <RepositoryPicker
                     value={newRepo.url}
                     onSelect={(repo) => {
-                      setNewRepo({
-                        url: repo.cloneUrl,
-                        branch: repo.defaultBranch,
-                        clonePath: `/workspace/${repo.name}`,
-                      });
+                      const githubSource = gitSources?.find(
+                        (s) => s.type === "github",
+                      );
+                      if (githubSource) {
+                        setNewRepo({
+                          sourceId: githubSource.id,
+                          repo: repo.fullName,
+                          branch: repo.defaultBranch,
+                          clonePath: `/workspace/${repo.name}`,
+                        });
+                      } else {
+                        setNewRepo({
+                          url: repo.cloneUrl,
+                          branch: repo.defaultBranch,
+                          clonePath: `/workspace/${repo.name}`,
+                        });
+                      }
                       if (!formData.name) {
                         setFormData({ ...formData, name: repo.name });
                       }
@@ -194,7 +227,7 @@ export function CreateWorkspaceDialog({
                     <Button
                       type="button"
                       onClick={addRepo}
-                      disabled={!newRepo.url}
+                      disabled={!newRepo.url && !newRepo.repo}
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
@@ -237,7 +270,7 @@ export function CreateWorkspaceDialog({
                     <Button
                       type="button"
                       onClick={addRepo}
-                      disabled={!newRepo.url}
+                      disabled={!newRepo.url && !newRepo.repo}
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
