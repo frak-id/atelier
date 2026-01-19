@@ -33,7 +33,7 @@ export function formatDate(date: string | Date | number): string {
   return new Date(date).toLocaleString();
 }
 
-export function formatRelativeTime(date: string | Date): string {
+export function formatRelativeTime(date: string | Date | number): string {
   const now = Date.now();
   const then = new Date(date).getTime();
   const diff = now - then;

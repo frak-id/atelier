@@ -52,7 +52,8 @@ export const githubApiRoutes = new Elysia({ prefix: "/github" }).get(
 
     const page = query.page ? Number.parseInt(query.page, 10) : 1;
     const perPage = query.perPage ? Number.parseInt(query.perPage, 10) : 30;
-    const affiliation = query.affiliation || "owner,collaborator";
+    const affiliation =
+      query.affiliation || "owner,collaborator,organization_member";
     const sort = query.sort || "updated";
 
     const params = new URLSearchParams({

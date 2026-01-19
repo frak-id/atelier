@@ -416,3 +416,14 @@ export function useGitHubLogout() {
     },
   });
 }
+
+export function useGitHubReauthorize() {
+  return useMutation({
+    mutationFn: async () => {
+      const API_BASE = import.meta.env.PROD
+        ? "https://sandbox-api.nivelais.com"
+        : "";
+      window.location.href = `${API_BASE}/auth/github/reauthorize`;
+    },
+  });
+}

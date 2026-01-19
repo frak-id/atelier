@@ -99,7 +99,7 @@ export const githubAuthRoutes = new Elysia({ prefix: "/github" })
     const params = new URLSearchParams({
       client_id: config.github.clientId,
       redirect_uri: config.github.callbackUrl,
-      scope: "repo read:user",
+      scope: "repo read:user read:org",
       state: nanoid(16),
     });
 
@@ -169,5 +169,31 @@ export const githubAuthRoutes = new Elysia({ prefix: "/github" })
       log.info("GitHub disconnected");
     }
 
-    return { success: true };
+    return {
+      success: true,
+      message:
+        "Disconnected. To revoke access on GitHub: https://github.com/settings/applications",
+    };
+  })
+  .post("/reauthorize", ({ redirect }) => {
+    const source = getGitHubSource();
+
+    if (source) {
+      gitSourceService.delete(source.id);
+      log.info("GitHub connection deleted for reauthorization");
+    }
+
+    if (!config.github.clientId) {
+      throw new Error("GitHub OAuth not configured");
+    }
+
+    const params = new URLSearchParams({
+      client_id: config.github.clientId,
+      redirect_uri: config.github.callbackUrl,
+      scope: "repo read:user read:org",
+      state: nanoid(16),
+      prompt: "consent",
+    });
+
+    return redirect(`${GITHUB_AUTHORIZE_URL}?${params.toString()}`);
   });

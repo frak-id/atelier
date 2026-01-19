@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Github, LogOut } from "lucide-react";
-import { githubStatusQuery, useGitHubLogout } from "@/api/queries";
+import { Github, LogOut, RefreshCw } from "lucide-react";
+import {
+  githubStatusQuery,
+  useGitHubLogout,
+  useGitHubReauthorize,
+} from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -13,6 +17,7 @@ const API_BASE = import.meta.env.PROD ? "https://sandbox-api.nivelais.com" : "";
 export function GitHubStatus() {
   const { data: status, isLoading } = useQuery(githubStatusQuery);
   const logoutMutation = useGitHubLogout();
+  const reauthorizeMutation = useGitHubReauthorize();
 
   if (isLoading) {
     return (
@@ -54,6 +59,21 @@ export function GitHubStatus() {
         </span>
         <Github className="h-4 w-4 text-muted-foreground sm:hidden" />
       </div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => reauthorizeMutation.mutate()}
+            disabled={reauthorizeMutation.isPending}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span className="sr-only">Reauthorize GitHub</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Reauthorize GitHub (grant org access)</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
