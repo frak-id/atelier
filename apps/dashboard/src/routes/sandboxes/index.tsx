@@ -1,6 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
+  Check,
+  Copy,
   ExternalLink,
   Eye,
   Loader2,
@@ -10,7 +12,7 @@ import {
   RotateCcw,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { Sandbox } from "@/api/client";
 import {
   sandboxListQuery,
@@ -31,12 +33,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { formatRelativeTime } from "@/lib/utils";
+
+function useCopyToClipboard() {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copy = useCallback((text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  }, []);
+
+  return { copy, isCopied: (key: string) => copiedKey === key };
+}
 
 export const Route = createFileRoute("/sandboxes/")({
   component: SandboxesPage,
@@ -191,12 +200,17 @@ function SandboxCard({
   isStopping?: boolean;
   isStarting?: boolean;
 }) {
+  const { copy, isCopied } = useCopyToClipboard();
+
   const statusVariant = {
     running: "success",
     creating: "warning",
     stopped: "secondary",
     error: "error",
   } as const;
+
+  const opencodeAttachCmd = `opencode attach ${sandbox.runtime.urls.opencode}`;
+  const vscodeRemoteCmd = `code --remote ssh-remote+root@${sandbox.runtime.ipAddress} /workspace`;
 
   return (
     <Card>
@@ -215,51 +229,20 @@ function SandboxCard({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {sandbox.status === "running" && (
-            <>
-              <Button variant="outline" size="sm" asChild>
-                <a
-                  href={sandbox.runtime.urls.vscode}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="h-4 w-4 mr-1" />
-                  VSCode
-                </a>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <a
-                  href={sandbox.runtime.urls.opencode}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink className="h-4 w-4 mr-1" />
-                  OpenCode
-                </a>
-              </Button>
-              {onStop && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={onStop}
-                      disabled={isStopping}
-                    >
-                      {isStopping ? (
-                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      ) : (
-                        <Pause className="h-4 w-4 mr-1" />
-                      )}
-                      Stop
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Pause the sandbox VM</p>
-                  </TooltipContent>
-                </Tooltip>
+          {sandbox.status === "running" && onStop && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onStop}
+              disabled={isStopping}
+            >
+              {isStopping ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Pause className="h-4 w-4 mr-1" />
               )}
-            </>
+              Stop
+            </Button>
           )}
           {sandbox.status === "creating" && (
             <Button variant="outline" size="sm" disabled>
@@ -268,48 +251,34 @@ function SandboxCard({
             </Button>
           )}
           {sandbox.status === "stopped" && onStart && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onStart}
-                  disabled={isStarting}
-                >
-                  {isStarting ? (
-                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4 mr-1" />
-                  )}
-                  Start
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Resume the sandbox VM</p>
-              </TooltipContent>
-            </Tooltip>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onStart}
+              disabled={isStarting}
+            >
+              {isStarting ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-1" />
+              )}
+              Start
+            </Button>
           )}
           {sandbox.status === "error" && sandbox.workspaceId && onRecreate && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onRecreate}
-                  disabled={isRecreating}
-                >
-                  {isRecreating ? (
-                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                  ) : (
-                    <RotateCcw className="h-4 w-4 mr-1" />
-                  )}
-                  Recreate
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Delete and create a new sandbox from the same project</p>
-              </TooltipContent>
-            </Tooltip>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRecreate}
+              disabled={isRecreating}
+            >
+              {isRecreating ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <RotateCcw className="h-4 w-4 mr-1" />
+              )}
+              Recreate
+            </Button>
           )}
           <Button variant="outline" size="sm" asChild>
             <Link to="/sandboxes/$id" params={{ id: sandbox.id }}>
@@ -317,19 +286,73 @@ function SandboxCard({
               Details
             </Link>
           </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={onDelete}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Delete sandbox</p>
-            </TooltipContent>
-          </Tooltip>
+          <Button variant="ghost" size="icon" onClick={onDelete}>
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        {sandbox.status === "running" && (
+          <div className="space-y-2">
+            <span className="text-sm text-muted-foreground">Quick Connect</span>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 group">
+                <code className="flex-1 text-xs bg-muted px-2 py-1.5 rounded font-mono truncate">
+                  {opencodeAttachCmd}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => copy(opencodeAttachCmd, "opencode")}
+                >
+                  {isCopied("opencode") ? (
+                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2 group">
+                <code className="flex-1 text-xs bg-muted px-2 py-1.5 rounded font-mono truncate">
+                  {vscodeRemoteCmd}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => copy(vscodeRemoteCmd, "vscode")}
+                >
+                  {isCopied("vscode") ? (
+                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <a
+                href={sandbox.runtime.urls.opencode}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" />
+                OpenCode Web
+              </a>
+              <a
+                href={sandbox.runtime.urls.vscode}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+              >
+                <ExternalLink className="h-3 w-3" />
+                VSCode Web
+              </a>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-muted-foreground">IP Address</span>
@@ -353,12 +376,12 @@ function SandboxCard({
           )}
         </div>
         {sandbox.runtime.error && (
-          <div className="mt-3 p-2 bg-destructive/10 rounded text-sm text-destructive">
+          <div className="p-2 bg-destructive/10 rounded text-sm text-destructive">
             {sandbox.runtime.error}
           </div>
         )}
         {sandbox.status === "stopped" && !sandbox.workspaceId && (
-          <div className="mt-3 p-2 bg-muted rounded text-sm text-muted-foreground">
+          <div className="p-2 bg-muted rounded text-sm text-muted-foreground">
             This sandbox is stopped and cannot be restarted. You can delete it
             or create a new one.
           </div>
