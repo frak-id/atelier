@@ -47,6 +47,13 @@ function useCopyToClipboard() {
   return { copy, isCopied: (key: string) => copiedKey === key };
 }
 
+function sshCommandToVscodeRemote(sshCmd: string): string {
+  const withoutSsh = sshCmd.replace(/^ssh\s+/, "");
+  const [userHost, port] = withoutSsh.split(/\s+-p\s+/);
+  const remoteHost = port ? `${userHost}:${port}` : userHost;
+  return `code --remote ssh-remote+${remoteHost} /workspace`;
+}
+
 export const Route = createFileRoute("/sandboxes/")({
   component: SandboxesPage,
   loader: ({ context }) => {
@@ -210,7 +217,7 @@ function SandboxCard({
   } as const;
 
   const opencodeAttachCmd = `opencode attach ${sandbox.runtime.urls.opencode}`;
-  const vscodeRemoteCmd = `code --remote ssh-remote+root@${sandbox.runtime.ipAddress} /workspace`;
+  const vscodeRemoteCmd = sshCommandToVscodeRemote(sandbox.runtime.urls.ssh);
 
   return (
     <Card>

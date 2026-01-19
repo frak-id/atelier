@@ -3,6 +3,7 @@ import {
   DEFAULTS,
   NETWORK,
   PATHS,
+  SSH_PROXY,
 } from "@frak-sandbox/shared/constants";
 
 type Mode = "production" | "mock";
@@ -23,6 +24,11 @@ export const config = {
   caddy: {
     adminApi: process.env.CADDY_ADMIN_API || CADDY.ADMIN_API,
     domainSuffix: process.env.SANDBOX_DOMAIN || CADDY.DOMAIN_SUFFIX,
+  },
+  sshProxy: {
+    pipesFile: process.env.SSH_PROXY_PIPES_FILE || SSH_PROXY.PIPES_FILE,
+    domain: process.env.SSH_PROXY_DOMAIN || SSH_PROXY.DOMAIN,
+    port: Number(process.env.SSH_PROXY_PORT) || SSH_PROXY.LISTEN_PORT,
   },
   defaults: DEFAULTS,
 

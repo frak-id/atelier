@@ -3,7 +3,7 @@ import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
 import { sandboxService } from "./container.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
-import { CaddyService } from "./infrastructure/proxy/index.ts";
+import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { configFileRoutes } from "./modules/config-file/index.ts";
 import { gitSourceRoutes } from "./modules/git-source/index.ts";
 import { githubApiRoutes, githubAuthRoutes } from "./modules/github/index.ts";
@@ -36,10 +36,14 @@ const app = new Elysia()
             terminal: 7681,
           },
         );
+        await SshPiperService.registerRoute(
+          sandbox.id,
+          sandbox.runtime.ipAddress,
+        );
       } catch (err) {
         logger.error(
           { sandboxId: sandbox.id, error: err },
-          "Failed to re-register Caddy routes on startup",
+          "Failed to re-register routes on startup",
         );
       }
     }
@@ -47,7 +51,7 @@ const app = new Elysia()
     if (sandboxes.length > 0) {
       logger.info(
         { count: sandboxes.length },
-        "Startup reconciliation: Caddy routes re-registered",
+        "Startup reconciliation: Caddy and SSH routes re-registered",
       );
     }
   })

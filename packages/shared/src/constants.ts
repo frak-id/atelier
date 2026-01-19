@@ -75,6 +75,23 @@ export const CADDY = {
   DOMAIN_SUFFIX: "nivelais.com",
 } as const;
 
+export const SSH_PROXY = {
+  /** sshpiper version */
+  VERSION: "1.5.1",
+  /** sshpiper binary path */
+  BINARY_PATH: "/usr/local/bin/sshpiper",
+  /** sshpiper configuration directory */
+  CONFIG_DIR: "/var/lib/sandbox/sshpiper",
+  /** sshpiper pipes configuration file */
+  PIPES_FILE: "/var/lib/sandbox/sshpiper/pipes.yaml",
+  /** sshpiper host key */
+  HOST_KEY: "/var/lib/sandbox/sshpiper/host_key",
+  /** SSH proxy listen port */
+  LISTEN_PORT: 2222,
+  /** SSH proxy domain (for external access) */
+  DOMAIN: "ssh.nivelais.com",
+} as const;
+
 export const DEFAULTS = {
   /** Default vCPU count for sandboxes */
   VCPUS: 2,

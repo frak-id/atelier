@@ -1,7 +1,10 @@
 import { $ } from "bun";
 import { getSocketPath } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
-import { CaddyService } from "../infrastructure/proxy/index.ts";
+import {
+  CaddyService,
+  SshPiperService,
+} from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
@@ -53,6 +56,7 @@ export class SandboxDestroyer {
 
       NetworkService.release(sandbox.runtime.ipAddress);
       await CaddyService.removeRoutes(sandboxId);
+      await SshPiperService.removeRoute(sandboxId);
     }
 
     this.deps.sandboxService.delete(sandboxId);

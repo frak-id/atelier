@@ -4,6 +4,7 @@ import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
 import { installFirecracker } from "./commands/install-firecracker";
 import { setupNetwork } from "./commands/setup-network";
+import { setupSshProxy } from "./commands/setup-ssh-proxy";
 import { setupStorage } from "./commands/setup-storage";
 import { testVm } from "./commands/test-vm";
 import { isRoot } from "./lib/shell";
@@ -34,6 +35,11 @@ const COMMANDS = {
     label: "Setup Storage",
     description: "Configure LVM thin provisioning",
     handler: setupStorage,
+  },
+  "ssh-proxy": {
+    label: "Setup SSH Proxy",
+    description: "Install and configure sshpiper for sandbox SSH access",
+    handler: setupSshProxy,
   },
   manager: {
     label: "Manager API",
@@ -118,6 +124,7 @@ Commands:
   firecracker     Download Firecracker, kernel, and rootfs
   network         Configure persistent bridge for VM networking
   storage         Configure LVM thin provisioning
+  ssh-proxy       Install and configure sshpiper for sandbox SSH access
   manager         Manage the sandbox manager API service
   images          Build and manage base images
   vm              Start/stop/manage test VM

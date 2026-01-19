@@ -11,7 +11,10 @@ import {
   type NetworkAllocation,
   NetworkService,
 } from "../infrastructure/network/index.ts";
-import { CaddyService } from "../infrastructure/proxy/index.ts";
+import {
+  CaddyService,
+  SshPiperService,
+} from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
@@ -77,7 +80,7 @@ class SpawnContext {
       await this.initializeSandbox();
 
       if (config.isMock()) {
-        return this.finalizeMock();
+        return await this.finalizeMock();
       }
 
       await this.createTapDevice();
@@ -180,14 +183,20 @@ class SpawnContext {
     log.info({ sandboxId: this.sandboxId }, "Sandbox initialized");
   }
 
-  private finalizeMock(): Sandbox {
+  private async finalizeMock(): Promise<Sandbox> {
     if (!this.sandbox) throw new Error("Sandbox not initialized");
+    if (!this.network) throw new Error("Network not allocated");
+
+    const sshCmd = await SshPiperService.registerRoute(
+      this.sandboxId,
+      this.network.ipAddress,
+    );
 
     this.sandbox.runtime.urls = {
       vscode: `https://sandbox-${this.sandboxId}.${config.caddy.domainSuffix}`,
       opencode: `https://opencode-${this.sandboxId}.${config.caddy.domainSuffix}`,
       terminal: `https://terminal-${this.sandboxId}.${config.caddy.domainSuffix}`,
-      ssh: `ssh root@${this.network?.ipAddress}`,
+      ssh: sshCmd,
     };
     this.sandbox.status = "running";
     this.sandbox.runtime.pid = Math.floor(Math.random() * 100000);
@@ -436,9 +445,14 @@ class SpawnContext {
       },
     );
 
+    const sshCmd = await SshPiperService.registerRoute(
+      this.sandboxId,
+      this.network.ipAddress,
+    );
+
     this.sandbox.runtime.urls = {
       ...urls,
-      ssh: `ssh root@${this.network?.ipAddress}`,
+      ssh: sshCmd,
     };
   }
 
@@ -481,6 +495,7 @@ class SpawnContext {
     }
 
     await CaddyService.removeRoutes(this.sandboxId);
+    await SshPiperService.removeRoute(this.sandboxId);
 
     try {
       this.deps.sandboxService.updateStatus(
