@@ -5,7 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build --target=node src/index.ts --outfile dist/sandbox-agent.mjs",
+    "build": "bun build --bundle --target=node src/index.ts --outfile dist/sandbox-agent.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
