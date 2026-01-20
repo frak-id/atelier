@@ -14,6 +14,7 @@ import { sandboxRoutes } from "./modules/sandbox/index.ts";
 import { systemRoutes } from "./modules/system/index.ts";
 import { workspaceRoutes } from "./modules/workspace/index.ts";
 import { SandboxError } from "./shared/errors.ts";
+import { authMiddleware } from "./shared/lib/auth.ts";
 import { config } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
@@ -137,9 +138,10 @@ const app = new Elysia()
     }
   })
   .use(healthRoutes)
-  .group("/auth", (app) => app.use(githubAuthRoutes))
+  .group("/auth", (app) => app.use(authMiddleware).use(githubAuthRoutes))
   .group("/api", (app) =>
     app
+      .use(authMiddleware)
       .use(sandboxRoutes)
       .use(workspaceRoutes)
       .use(gitSourceRoutes)

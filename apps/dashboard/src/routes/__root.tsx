@@ -11,12 +11,15 @@ import {
   FolderGit2,
   HardDrive,
   Home,
+  LogOut,
   Menu,
   Server,
   Settings,
 } from "lucide-react";
 import { Suspense, useState } from "react";
+import { clearAuthToken, getAuthToken } from "@/api/client";
 import { GitHubStatus } from "@/components/github-status";
+import { LoginPage } from "@/components/login-page";
 import { SystemStatusFooter } from "@/components/system-status-footer";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +39,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [adminExpanded, setAdminExpanded] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () => !!getAuthToken(),
+  );
+
+  const handleLogout = () => {
+    clearAuthToken();
+    setIsAuthenticated(false);
+  };
+
+  if (!isAuthenticated) {
+    return <LoginPage onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
 
   return (
     <TooltipProvider>
@@ -88,6 +103,14 @@ function RootLayout() {
             <Suspense fallback={null}>
               <GitHubStatus />
             </Suspense>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent"
+            >
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </button>
             <div className="text-xs text-muted-foreground">v0.1.0</div>
           </div>
         </aside>
@@ -143,6 +166,14 @@ function RootLayout() {
               <Suspense fallback={null}>
                 <GitHubStatus />
               </Suspense>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
               <div className="text-xs text-muted-foreground">v0.1.0</div>
             </div>
           </SheetContent>
