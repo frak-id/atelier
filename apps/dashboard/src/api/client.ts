@@ -30,6 +30,7 @@ export const api = treaty<ManagerApp>(API_HOST, {
 export type {
   ConfigFile,
   ConfigFileContentType,
+  FileSecret,
   Sandbox,
   Workspace,
 } from "@frak-sandbox/manager/types";

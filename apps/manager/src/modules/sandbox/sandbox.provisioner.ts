@@ -3,6 +3,7 @@ import type { SandboxPaths } from "../../infrastructure/firecracker/index.ts";
 import type { NetworkAllocation } from "../../infrastructure/network/index.ts";
 import { SecretsService } from "../../infrastructure/secrets/index.ts";
 import type {
+  FileSecret,
   GitHubSourceConfig,
   MergedConfigFile,
   RepoConfig,
@@ -10,7 +11,7 @@ import type {
 } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { ensureDir } from "../../shared/lib/shell.ts";
+import { ensureDir, injectFile } from "../../shared/lib/shell.ts";
 
 const log = createChildLogger("sandbox-provisioner");
 
@@ -44,6 +45,7 @@ export const SandboxProvisioner = {
       await this.injectNetworkConfig(mountPoint, ctx.network);
       await this.injectSandboxConfig(mountPoint, ctx);
       await this.injectSecrets(mountPoint, ctx.workspace);
+      await this.injectFileSecrets(mountPoint, ctx);
       await this.injectGitCredentials(mountPoint, ctx);
       await this.injectStartScript(mountPoint, ctx.workspace);
       await this.injectEditorConfigs(mountPoint, ctx);
@@ -112,6 +114,29 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
     );
     const envFile = SecretsService.generateEnvFile(decryptedSecrets);
     await Bun.write(`${mountPoint}/etc/sandbox/secrets/.env`, envFile);
+  },
+
+  async injectFileSecrets(
+    mountPoint: string,
+    ctx: ProvisionContext,
+  ): Promise<void> {
+    const fileSecrets = ctx.workspace?.config.fileSecrets;
+    if (!fileSecrets || fileSecrets.length === 0) return;
+
+    for (const secret of fileSecrets) {
+      const decryptedContent = await SecretsService.decrypt(secret.content);
+      await injectFile({
+        mountPoint,
+        path: secret.path,
+        content: decryptedContent,
+        mode: secret.mode || "0600",
+      });
+    }
+
+    log.debug(
+      { sandboxId: ctx.sandboxId, fileSecretCount: fileSecrets.length },
+      "File secrets injected",
+    );
   },
 
   async injectGitCredentials(
@@ -191,18 +216,12 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
     const configs = ctx.getConfigFiles(ctx.workspace?.id);
 
     for (const configFile of configs) {
-      const targetPath = configFile.path.replace(/^~/, "/home/dev");
-      const fullPath = `${mountPoint}${targetPath}`;
-      const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
-
-      await ensureDir(dir);
-
-      if (configFile.contentType === "binary") {
-        const buffer = Buffer.from(configFile.content, "base64");
-        await Bun.write(fullPath, buffer);
-      } else {
-        await Bun.write(fullPath, configFile.content);
-      }
+      await injectFile({
+        mountPoint,
+        path: configFile.path,
+        content: configFile.content,
+        contentType: configFile.contentType === "binary" ? "binary" : "text",
+      });
     }
 
     await $`chown -R 1000:1000 ${mountPoint}/home/dev/.local`.quiet().nothrow();
@@ -235,6 +254,10 @@ ${ctx.workspace.config.repos.map((r) => `- ${this.getRepoDisplayName(r)}`).join(
 `
       : "";
 
+    const fileSecretsSection = this.generateFileSecretsSection(
+      ctx.workspace?.config.fileSecrets,
+    );
+
     return `# Sandbox Environment: ${ctx.sandboxId}
 
 ${workspaceSection}## Available Services
@@ -260,11 +283,12 @@ sudo systemctl restart code-server
 sudo systemctl restart opencode
 \`\`\`
 
-## Environment Variables
+## Secrets
 
-Secrets are available in \`/etc/sandbox/secrets/.env\`
+### Environment Variables
+Available in \`/etc/sandbox/secrets/.env\`
 Source with: \`source /etc/sandbox/secrets/.env\`
-
+${fileSecretsSection}
 ## Workspace
 
 Your code is located in \`/home/dev/workspace\`
@@ -275,6 +299,20 @@ Your code is located in \`/home/dev/workspace\`
 - Network issues? Run \`ping 172.16.0.1\`
 - Need help? Check the project documentation
 `;
+  },
+
+  generateFileSecretsSection(fileSecrets?: FileSecret[]): string {
+    if (!fileSecrets || fileSecrets.length === 0) return "";
+
+    const lines = fileSecrets.map(
+      (s) => `| ${s.name} | \`${s.path.replace(/^~/, "/home/dev")}\` |`,
+    );
+
+    return `
+### File Secrets
+| Name | Path |
+|------|------|
+${lines.join("\n")}`;
   },
 
   getRepoDisplayName(repo: RepoConfig): string {

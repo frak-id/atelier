@@ -34,6 +34,14 @@ export const PrebuildInfoSchema = t.Object({
   builtAt: t.Optional(t.String()),
 });
 
+export const FileSecretSchema = t.Object({
+  name: t.String({ minLength: 1 }),
+  path: t.String({ minLength: 1 }),
+  content: t.String(),
+  mode: t.Optional(t.String()),
+});
+export type FileSecret = Static<typeof FileSecretSchema>;
+
 export const WorkspaceConfigSchema = t.Object({
   baseImage: t.String({ default: "dev-base" }),
   vcpus: t.Number({ minimum: 1, maximum: 8, default: 2 }),
@@ -41,6 +49,7 @@ export const WorkspaceConfigSchema = t.Object({
   initCommands: t.Array(t.String(), { default: [] }),
   startCommands: t.Array(t.String(), { default: [] }),
   secrets: t.Record(t.String(), t.String(), { default: {} }),
+  fileSecrets: t.Optional(t.Array(FileSecretSchema, { default: [] })),
   repos: t.Array(RepoConfigSchema, { default: [] }),
   exposedPorts: t.Array(t.Number(), { default: [] }),
   prebuild: t.Optional(PrebuildInfoSchema),
@@ -87,6 +96,7 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
   initCommands: [],
   startCommands: [],
   secrets: {},
+  fileSecrets: [],
   repos: [],
   exposedPorts: [],
 };

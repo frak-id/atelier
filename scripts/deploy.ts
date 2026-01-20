@@ -72,6 +72,7 @@ async function main() {
   const dirs = [
     "opt/frak-sandbox/drizzle",
     "opt/frak-sandbox/infra/images/dev-base",
+    "opt/frak-sandbox/infra/images/dev-cloud",
     "opt/frak-sandbox/apps/dashboard",
     "usr/local/bin",
     "etc/systemd/system",
@@ -110,6 +111,11 @@ async function main() {
   cpSync(
     resolve(IMAGES_DIR, "dev-base"),
     resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/dev-base"),
+    { recursive: true },
+  );
+  cpSync(
+    resolve(IMAGES_DIR, "dev-cloud"),
+    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/dev-cloud"),
     { recursive: true },
   );
 
@@ -167,6 +173,7 @@ cp -r "$DEPLOY_TMP/opt/frak-sandbox/drizzle/." /opt/frak-sandbox/drizzle/
 cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/sandbox-agent.mjs" /opt/frak-sandbox/infra/images/sandbox-agent.mjs
 cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/build-image.sh" /opt/frak-sandbox/infra/images/build-image.sh
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-base/." /opt/frak-sandbox/infra/images/dev-base/
+cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-cloud/." /opt/frak-sandbox/infra/images/dev-cloud/
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/apps/dashboard/dist/." /opt/frak-sandbox/apps/dashboard/dist/
 cp "$DEPLOY_TMP/etc/systemd/system/frak-sandbox-manager.service" /etc/systemd/system/frak-sandbox-manager.service
 cp "$DEPLOY_TMP/etc/systemd/system/frak-sandbox-network.service" /etc/systemd/system/frak-sandbox-network.service

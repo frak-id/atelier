@@ -11,6 +11,11 @@ function unwrap<T>(result: { data: T; error: unknown }): T {
 
 const queryKeys = {
   health: ["health"] as const,
+  sharedStorage: {
+    all: ["sharedStorage"] as const,
+    binaries: ["sharedStorage", "binaries"] as const,
+    cache: ["sharedStorage", "cache"] as const,
+  },
   sandboxes: {
     all: ["sandboxes"] as const,
     list: (filters?: { status?: string; workspaceId?: string }) =>
@@ -421,6 +426,42 @@ export function useGitHubReauthorize() {
         ? "https://sandbox-api.nivelais.com"
         : "";
       window.location.href = `${API_BASE}/auth/github/reauthorize`;
+    },
+  });
+}
+
+export const sharedStorageQuery = queryOptions({
+  queryKey: queryKeys.sharedStorage.all,
+  queryFn: async () => unwrap(await api.api.storage.get()),
+  refetchInterval: 30000,
+});
+
+export function useInstallBinary() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.storage.binaries({ id }).install.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
+    },
+  });
+}
+
+export function useRemoveBinary() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.storage.binaries({ id }).delete()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
+    },
+  });
+}
+
+export function usePurgeCache() {
+  return useMutation({
+    mutationFn: async (folder: string) =>
+      unwrap(await api.api.storage.cache({ folder }).delete()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
     },
   });
 }

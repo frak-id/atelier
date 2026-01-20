@@ -3,10 +3,7 @@ import { t } from "elysia";
 
 export const BaseImageIdSchema = t.Union([
   t.Literal("dev-base"),
-  t.Literal("dev-node"),
-  t.Literal("dev-rust"),
-  t.Literal("dev-python"),
-  t.Literal("dev-go"),
+  t.Literal("dev-cloud"),
 ]);
 export type BaseImageId = Static<typeof BaseImageIdSchema>;
 
@@ -49,41 +46,25 @@ export const BASE_IMAGES: Record<BaseImageId, BaseImage> = {
     volumeName: "image-dev-base",
     available: true,
   },
-  "dev-node": {
-    id: "dev-node",
-    name: "Node.js Development",
-    description: "Node.js + pnpm + Bun for JavaScript/TypeScript projects",
-    volumeSize: 5,
-    tools: ["code-server", "opencode", "node", "pnpm", "bun", "git"],
-    volumeName: "image-dev-node",
-    available: false,
-  },
-  "dev-rust": {
-    id: "dev-rust",
-    name: "Rust Development",
-    description: "Rust toolchain with cargo and common tools",
-    volumeSize: 6,
-    tools: ["code-server", "opencode", "rustup", "cargo", "git"],
-    volumeName: "image-dev-rust",
-    available: false,
-  },
-  "dev-python": {
-    id: "dev-python",
-    name: "Python Development",
-    description: "Python with pip, poetry, and virtual environments",
-    volumeSize: 5,
-    tools: ["code-server", "opencode", "python3", "pip", "poetry", "git"],
-    volumeName: "image-dev-python",
-    available: false,
-  },
-  "dev-go": {
-    id: "dev-go",
-    name: "Go Development",
-    description: "Go toolchain with common tools",
-    volumeSize: 5,
-    tools: ["code-server", "opencode", "go", "git"],
-    volumeName: "image-dev-go",
-    available: false,
+  "dev-cloud": {
+    id: "dev-cloud",
+    name: "Cloud Development",
+    description:
+      "Extended dev environment with AWS CLI, Google Cloud SDK, kubectl, and Pulumi for cloud deployments",
+    volumeSize: 7,
+    tools: [
+      "code-server",
+      "opencode",
+      "bun",
+      "node",
+      "git",
+      "aws",
+      "gcloud",
+      "kubectl",
+      "pulumi",
+    ],
+    volumeName: "image-dev-cloud",
+    available: true,
   },
 };
 

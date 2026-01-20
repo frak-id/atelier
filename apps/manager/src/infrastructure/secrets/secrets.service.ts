@@ -1,3 +1,4 @@
+import type { FileSecret } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
@@ -28,6 +29,24 @@ export const SecretsService = {
     }
 
     return decrypted;
+  },
+
+  async encryptFileSecrets(fileSecrets: FileSecret[]): Promise<FileSecret[]> {
+    return Promise.all(
+      fileSecrets.map(async (secret) => ({
+        ...secret,
+        content: await this.encrypt(secret.content),
+      })),
+    );
+  },
+
+  async decryptFileSecrets(fileSecrets: FileSecret[]): Promise<FileSecret[]> {
+    return Promise.all(
+      fileSecrets.map(async (secret) => ({
+        ...secret,
+        content: await this.decrypt(secret.content),
+      })),
+    );
   },
 
   async encrypt(value: string): Promise<string> {

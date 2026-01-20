@@ -1,10 +1,22 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertCircle, Database, RefreshCw, Server, Trash2 } from "lucide-react";
 import {
+  AlertCircle,
+  Database,
+  Download,
+  HardDrive,
+  RefreshCw,
+  Server,
+  Trash2,
+} from "lucide-react";
+import {
+  sharedStorageQuery,
   systemQueueQuery,
   systemStatsQuery,
   systemStorageQuery,
+  useInstallBinary,
+  usePurgeCache,
+  useRemoveBinary,
   useSystemCleanup,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +31,7 @@ export const Route = createFileRoute("/system/")({
     context.queryClient.ensureQueryData(systemStatsQuery);
     context.queryClient.ensureQueryData(systemStorageQuery);
     context.queryClient.ensureQueryData(systemQueueQuery);
+    context.queryClient.ensureQueryData(sharedStorageQuery);
   },
   pendingComponent: () => (
     <div className="p-6 space-y-6">
@@ -36,9 +49,13 @@ function SystemPage() {
   const { data: stats } = useSuspenseQuery(systemStatsQuery);
   const { data: storage } = useSuspenseQuery(systemStorageQuery);
   const { data: queue } = useSuspenseQuery(systemQueueQuery);
+  const { data: sharedStorage } = useSuspenseQuery(sharedStorageQuery);
   const cleanupMutation = useSystemCleanup();
+  const installBinary = useInstallBinary();
+  const removeBinary = useRemoveBinary();
+  const purgeCache = usePurgeCache();
 
-  if (!stats || !storage || !queue) {
+  if (!stats || !storage || !queue || !sharedStorage) {
     return (
       <div className="p-6">
         <p className="text-muted-foreground">Loading system data...</p>
@@ -230,6 +247,142 @@ function SystemPage() {
                 </div>
               </>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <HardDrive className="h-5 w-5" />
+              NFS Shared Storage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-muted-foreground text-sm">NFS Server</span>
+              <Badge
+                variant={
+                  sharedStorage.nfs.nfsServerRunning ? "success" : "error"
+                }
+              >
+                {sharedStorage.nfs.nfsServerRunning ? "Running" : "Stopped"}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="text-sm font-medium mb-3">Shared Binaries</h4>
+                <div className="space-y-2">
+                  {sharedStorage.binaries.map((binary) => (
+                    <div
+                      key={binary.id}
+                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{binary.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          v{binary.version}
+                          {binary.installed && binary.sizeBytes && (
+                            <> · {formatBytes(binary.sizeBytes)}</>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={binary.installed ? "success" : "secondary"}
+                        >
+                          {binary.installed ? "Installed" : "Not Installed"}
+                        </Badge>
+                        {binary.installed ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => removeBinary.mutate(binary.id)}
+                            disabled={removeBinary.isPending}
+                          >
+                            {removeBinary.isPending &&
+                            removeBinary.variables === binary.id ? (
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3 w-3" />
+                            )}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            onClick={() => installBinary.mutate(binary.id)}
+                            disabled={installBinary.isPending}
+                          >
+                            {installBinary.isPending &&
+                            installBinary.variables === binary.id ? (
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Download className="h-3 w-3" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium mb-3">
+                  Package Cache
+                  {sharedStorage.cache.totalSizeBytes > 0 && (
+                    <span className="text-muted-foreground font-normal ml-2">
+                      ({formatBytes(sharedStorage.cache.totalSizeBytes)} total)
+                    </span>
+                  )}
+                </h4>
+                <div className="space-y-2">
+                  {sharedStorage.cache.folders
+                    .filter((folder) => folder.sizeBytes > 0)
+                    .map((folder) => (
+                      <div
+                        key={folder.name}
+                        className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium">{folder.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {formatBytes(folder.sizeBytes)} · {folder.fileCount}{" "}
+                            files
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `Purge ${folder.name} cache? This will free ${formatBytes(folder.sizeBytes)}.`,
+                              )
+                            ) {
+                              purgeCache.mutate(folder.name);
+                            }
+                          }}
+                          disabled={purgeCache.isPending}
+                        >
+                          {purgeCache.isPending &&
+                          purgeCache.variables === folder.name ? (
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+                  {sharedStorage.cache.folders.filter((f) => f.sizeBytes > 0)
+                    .length === 0 && (
+                    <div className="text-sm text-muted-foreground p-3">
+                      No cache data
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
