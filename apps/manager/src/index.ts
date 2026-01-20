@@ -3,6 +3,7 @@ import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
 import { sandboxService } from "./container.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
+import { NetworkService } from "./infrastructure/network/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { configFileRoutes } from "./modules/config-file/index.ts";
 import { gitSourceRoutes } from "./modules/git-source/index.ts";
@@ -24,6 +25,21 @@ logger.info({ dbPath: appPaths.database }, "Database ready");
 const app = new Elysia()
   .on("start", async () => {
     const sandboxes = sandboxService.getByStatus("running");
+
+    // Rehydrate IP allocations from running sandboxes to prevent collisions
+    for (const sandbox of sandboxes) {
+      NetworkService.markAllocated(sandbox.runtime.ipAddress);
+    }
+
+    if (sandboxes.length > 0) {
+      logger.info(
+        {
+          count: sandboxes.length,
+          allocatedIps: NetworkService.getAllocatedCount(),
+        },
+        "Startup reconciliation: IP allocations rehydrated",
+      );
+    }
 
     for (const sandbox of sandboxes) {
       try {

@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import { Elysia } from "elysia";
 import { sandboxService } from "../../container.ts";
+import { NetworkService } from "../../infrastructure/network/index.ts";
 import { QueueService } from "../../infrastructure/queue/index.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
 import {
@@ -71,6 +72,7 @@ async function performCleanup(): Promise<CleanupResult> {
   let socketsRemoved = 0;
   let overlaysRemoved = 0;
   let tapDevicesRemoved = 0;
+  let lvmVolumesRemoved = 0;
   const spaceFreed = 0;
 
   if (!config.isMock()) {
@@ -98,21 +100,43 @@ async function performCleanup(): Promise<CleanupResult> {
       10,
     );
 
-    const tapResult =
-      await $`ip link show | grep -c "tap-sandbox" 2>/dev/null || echo 0`
-        .quiet()
-        .nothrow();
-    tapDevicesRemoved = Number.parseInt(
-      tapResult.stdout.toString().trim() || "0",
-      10,
-    );
+    const knownSandboxIds = new Set(sandboxService.getAll().map((s) => s.id));
+
+    const tapDevices = await NetworkService.listTapDevices();
+    for (const tap of tapDevices) {
+      const sandboxId = tap.replace("tap-", "");
+      const matchingSandbox = sandboxService
+        .getAll()
+        .find((s) => s.id.startsWith(sandboxId));
+      if (!matchingSandbox) {
+        await NetworkService.deleteTap(tap);
+        tapDevicesRemoved++;
+      }
+    }
+
+    if (await StorageService.isAvailable()) {
+      const lvmVolumes = await StorageService.listSandboxVolumes();
+      for (const vol of lvmVolumes) {
+        if (!knownSandboxIds.has(vol.name)) {
+          log.info({ volumeName: vol.name }, "Removing orphaned LVM volume");
+          await StorageService.deleteSandboxVolume(vol.name);
+          lvmVolumesRemoved++;
+        }
+      }
+    }
   }
 
   const ONE_HOUR_MS = 3600000;
   const jobsRemoved = QueueService.cleanup(ONE_HOUR_MS);
 
   log.info(
-    { socketsRemoved, overlaysRemoved, tapDevicesRemoved, jobsRemoved },
+    {
+      socketsRemoved,
+      overlaysRemoved,
+      tapDevicesRemoved,
+      lvmVolumesRemoved,
+      jobsRemoved,
+    },
     "Cleanup completed",
   );
 
@@ -120,6 +144,7 @@ async function performCleanup(): Promise<CleanupResult> {
     socketsRemoved,
     overlaysRemoved,
     tapDevicesRemoved,
+    lvmVolumesRemoved,
     spaceFreed,
   };
 }

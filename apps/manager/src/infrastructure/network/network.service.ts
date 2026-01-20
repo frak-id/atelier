@@ -75,6 +75,22 @@ export const NetworkService = {
     log.debug({ ipAddress }, "IP address released");
   },
 
+  markAllocated(ipAddress: string): void {
+    const parts = ipAddress.split(".");
+    const octet = Number.parseInt(parts[3] ?? "0", 10);
+    if (octet > 0 && octet < 255) {
+      allocatedIps.add(octet);
+      if (octet >= nextIpOctet) {
+        nextIpOctet = octet + 1;
+      }
+      log.debug({ ipAddress, octet }, "IP address marked as allocated");
+    }
+  },
+
+  getAllocatedCount(): number {
+    return allocatedIps.size;
+  },
+
   async getBridgeStatus(): Promise<{
     exists: boolean;
     ip: string | null;
