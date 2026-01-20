@@ -75,6 +75,18 @@ export const CADDY = {
   DOMAIN_SUFFIX: "nivelais.com",
 } as const;
 
+export const OPENCODE = {
+  /** OpenCode version */
+  VERSION: "1.1.27",
+} as const;
+
+export const CODE_SERVER = {
+  /** code-server version */
+  VERSION: "4.100.3",
+  /** GitHub releases URL */
+  RELEASE_URL: "https://github.com/coder/code-server/releases/download",
+} as const;
+
 export const SSH_PROXY = {
   /** sshpiper version */
   VERSION: "1.5.1",

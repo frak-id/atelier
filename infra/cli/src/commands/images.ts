@@ -4,7 +4,7 @@ import {
   type BaseImageId,
   getAvailableImages,
 } from "@frak-sandbox/manager/types";
-import { LVM, PATHS } from "../lib/context";
+import { CODE_SERVER, LVM, OPENCODE, PATHS } from "../lib/context";
 import { commandExists, exec } from "../lib/shell";
 
 const IMAGES_DIR = "/opt/frak-sandbox/infra/images";
@@ -138,7 +138,13 @@ async function buildImage(args: string[]) {
 
   spinner.start(`Building Docker image: frak-sandbox/${imageName}`);
   try {
-    await exec(`docker build -t frak-sandbox/${imageName} ${imageDir}`);
+    const buildArgs = [
+      `--build-arg OPENCODE_VERSION=${OPENCODE.VERSION}`,
+      `--build-arg CODE_SERVER_VERSION=${CODE_SERVER.VERSION}`,
+    ].join(" ");
+    await exec(
+      `docker build --no-cache ${buildArgs} -t frak-sandbox/${imageName} ${imageDir}`,
+    );
   } finally {
     await exec(`rm -f ${imageDir}/sandbox-agent.mjs`, { throws: false });
   }
