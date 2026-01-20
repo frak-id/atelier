@@ -32,14 +32,14 @@ export async function deleteOpenCodeSession(
 export async function createOpenCodeSession(
   baseUrl: string,
   directory?: string,
-): Promise<{ sessionId: string } | { error: string }> {
+): Promise<{ sessionId: string; directory: string } | { error: string }> {
   try {
     const client = createOpencodeClient({ baseUrl });
     const { data, error } = await client.session.create({ directory });
-    if (error || !data?.id) {
+    if (error || !data?.id || !data?.directory) {
       return { error: "Failed to create session" };
     }
-    return { sessionId: data.id };
+    return { sessionId: data.id, directory: data.directory };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Unknown error" };
   }

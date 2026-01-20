@@ -6,7 +6,7 @@ import {
   type SessionWithSandbox,
   useAllOpenCodeSessions,
 } from "@/hooks/use-all-opencode-sessions";
-import { formatRelativeTime } from "@/lib/utils";
+import { buildOpenCodeSessionUrl, formatRelativeTime } from "@/lib/utils";
 
 export function RecentSessionsCard() {
   const { sessions, isLoading, runningSandboxes } = useAllOpenCodeSessions();
@@ -102,7 +102,11 @@ export function RecentSessionsCard() {
 }
 
 function SessionRow({ session }: { session: SessionWithSandbox }) {
-  const sessionUrl = `${session.sandbox.opencodeUrl}/sessions/${session.id}`;
+  const sessionUrl = buildOpenCodeSessionUrl(
+    session.sandbox.opencodeUrl,
+    session.directory,
+    session.id,
+  );
   const timeString = session.time.updated || session.time.created;
 
   return (

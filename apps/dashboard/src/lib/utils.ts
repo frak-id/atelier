@@ -48,3 +48,15 @@ export function formatRelativeTime(date: string | Date | number): string {
   if (minutes > 0) return `${minutes}m ago`;
   return "just now";
 }
+
+export function base64UrlEncode(str: string): string {
+  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function buildOpenCodeSessionUrl(
+  baseUrl: string,
+  directory: string,
+  sessionId: string,
+): string {
+  return `${baseUrl}/${base64UrlEncode(directory)}/session/${sessionId}`;
+}

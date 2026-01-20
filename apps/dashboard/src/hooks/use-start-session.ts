@@ -6,6 +6,7 @@ import {
   createOpenCodeSession,
   sendOpenCodeMessage,
 } from "@/api/opencode";
+import { buildOpenCodeSessionUrl } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 1000;
 const MAX_SANDBOX_POLL_ATTEMPTS = 60;
@@ -68,14 +69,14 @@ async function startSession({
   const sessionResult = await createOpenCodeSession(opencodeUrl);
   if ("error" in sessionResult) throw new Error(sessionResult.error);
 
-  const sessionId = sessionResult.sessionId;
+  const { sessionId, directory } = sessionResult;
 
   await new Promise((resolve) => setTimeout(resolve, 50));
 
   const sendResult = await sendOpenCodeMessage(opencodeUrl, sessionId, message);
   if ("error" in sendResult) throw new Error(sendResult.error);
 
-  const sessionUrl = `${opencodeUrl}/sessions/${sessionId}`;
+  const sessionUrl = buildOpenCodeSessionUrl(opencodeUrl, directory, sessionId);
   window.open(sessionUrl, "_blank");
 
   return { sandboxId, sessionId, sessionUrl };

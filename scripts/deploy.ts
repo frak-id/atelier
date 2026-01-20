@@ -25,6 +25,8 @@ const {
   DASHBOARD_URL,
 } = process.env;
 
+const REBUILD_IMAGE = process.argv.includes("--rebuild-image");
+
 async function main() {
   if (!SSH_KEY_PATH || !SSH_USER || !SSH_HOST) {
     console.error("Missing env: SSH_KEY_PATH, SSH_USER, SSH_HOST");
@@ -153,6 +155,12 @@ mkdir -p "$DEPLOY_TMP"
 tar -xzf /tmp/${TARBALL_NAME} -C "$DEPLOY_TMP"
 
 mkdir -p /opt/frak-sandbox/infra/images /opt/frak-sandbox/apps/dashboard /opt/frak-sandbox/drizzle
+
+# Stop service and kill any CLI processes before overwriting binary (Text file busy fix)
+systemctl stop frak-sandbox-manager || true
+pkill -9 frak-sandbox || true
+sleep 1
+
 cp "$DEPLOY_TMP/usr/local/bin/frak-sandbox" /usr/local/bin/frak-sandbox
 cp "$DEPLOY_TMP/opt/frak-sandbox/server.js" /opt/frak-sandbox/server.js
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/drizzle/." /opt/frak-sandbox/drizzle/
@@ -190,8 +198,19 @@ curl -sf http://localhost:4000/health/live > /dev/null && echo "HEALTH_OK" || ec
   rmSync(STAGING_DIR, { recursive: true, force: true });
   rmSync(tarballPath, { force: true });
 
-  console.log("\n📋 Post-deploy:");
-  console.log("   Build base image: frak-sandbox images build dev-base");
+  if (REBUILD_IMAGE) {
+    console.log("\n🐳 Rebuilding base image (this takes a few minutes)...");
+    try {
+      await $`ssh -i ${SSH_KEY_PATH} ${target} "frak-sandbox images build dev-base"`;
+      console.log("   ✓ Base image rebuilt");
+    } catch (err) {
+      console.error("   ✗ Image rebuild failed:", err);
+      process.exit(1);
+    }
+  } else {
+    console.log("\n📋 Post-deploy:");
+    console.log("   Build base image: bun run deploy -- --rebuild-image");
+  }
 
   console.log("\n✅ Done!");
 }
