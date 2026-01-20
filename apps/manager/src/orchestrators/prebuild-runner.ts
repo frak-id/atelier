@@ -16,6 +16,8 @@ const log = createChildLogger("prebuild-runner");
 const WORKSPACE_DIR = "/home/dev/workspace";
 const AGENT_READY_TIMEOUT = 60000;
 const COMMAND_TIMEOUT = 300000;
+const OPENCODE_HEALTH_TIMEOUT = 120000;
+const OPENCODE_PORT = 3000;
 
 interface PrebuildRunnerDependencies {
   sandboxSpawner: SandboxSpawner;
@@ -73,6 +75,7 @@ export class PrebuildRunner {
       }
 
       await this.runInitCommands(ipAddress, workspace);
+      await this.warmupOpencode(ipAddress, workspace.id);
       await this.deps.agentClient.exec(ipAddress, "sync");
       await StorageService.createPrebuild(workspaceId, sandbox.id);
 
@@ -200,5 +203,66 @@ export class PrebuildRunner {
       `chown -R dev:dev ${WORKSPACE_DIR}`,
       { timeout: COMMAND_TIMEOUT },
     );
+  }
+
+  /**
+   * Opencode installs plugin dependencies (like jose via @openauthjs/openauth) on first boot.
+   * We start it briefly here so those packages are cached in the prebuild snapshot.
+   */
+  private async warmupOpencode(
+    ipAddress: string,
+    workspaceId: string,
+  ): Promise<void> {
+    log.info({ workspaceId }, "Warming up opencode server");
+
+    const startResult = await this.deps.agentClient.exec(
+      ipAddress,
+      `su dev -c 'cd ${WORKSPACE_DIR} && nohup opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT} > /tmp/opencode-warmup.log 2>&1 &'`,
+      { timeout: 10000 },
+    );
+
+    if (startResult.exitCode !== 0) {
+      log.warn(
+        { workspaceId, stderr: startResult.stderr },
+        "Failed to start opencode for warmup, continuing anyway",
+      );
+      return;
+    }
+
+    const startTime = Date.now();
+    let healthy = false;
+
+    while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
+      try {
+        const response = await fetch(
+          `http://${ipAddress}:${OPENCODE_PORT}/global/health`,
+          { signal: AbortSignal.timeout(5000) },
+        );
+
+        if (response.ok) {
+          const data = (await response.json()) as { healthy?: boolean };
+          if (data.healthy) {
+            healthy = true;
+            log.info({ workspaceId }, "Opencode server is healthy");
+            break;
+          }
+        }
+      } catch {}
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    if (!healthy) {
+      log.warn(
+        { workspaceId },
+        "Opencode did not become healthy within timeout, continuing anyway",
+      );
+    }
+
+    await this.deps.agentClient.exec(ipAddress, "pkill -f 'opencode serve'", {
+      timeout: 5000,
+    });
+
+    log.info({ workspaceId }, "Opencode warmup completed");
   }
 }
