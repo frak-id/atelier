@@ -5,4 +5,5 @@ export {
   NETWORK,
   OPENCODE,
   PATHS,
+  TTYD,
 } from "@frak-sandbox/shared/constants";
