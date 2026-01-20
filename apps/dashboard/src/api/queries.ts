@@ -1,8 +1,4 @@
-import {
-  queryOptions,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { queryOptions, useMutation } from "@tanstack/react-query";
 import { api } from "./client";
 import { deleteOpenCodeSession, fetchOpenCodeSessions } from "./opencode";
 
@@ -153,7 +149,6 @@ export const systemQueueQuery = queryOptions({
 });
 
 export function useCreateSandbox() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: {
       workspaceId?: string;
@@ -161,7 +156,7 @@ export function useCreateSandbox() {
       vcpus?: number;
       memoryMb?: number;
     }) => unwrap(await api.api.sandboxes.post(data)),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.queue });
@@ -170,11 +165,10 @@ export function useCreateSandbox() {
 }
 
 export function useDeleteSandbox() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).delete()),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
     },
@@ -182,11 +176,10 @@ export function useDeleteSandbox() {
 }
 
 export function useStopSandbox() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).stop.post()),
-    onSuccess: (_data, id) => {
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(id),
@@ -196,11 +189,10 @@ export function useStopSandbox() {
 }
 
 export function useStartSandbox() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).start.post()),
-    onSuccess: (_data, id) => {
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(id),
@@ -217,20 +209,18 @@ export function useExecCommand(sandboxId: string) {
 }
 
 export function useCreateWorkspace() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: {
       name: string;
       config?: Record<string, unknown>;
     }) => unwrap(await api.api.workspaces.post(data)),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
     },
   });
 }
 
 export function useUpdateWorkspace() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
       id,
@@ -239,7 +229,7 @@ export function useUpdateWorkspace() {
       id: string;
       data: { name?: string; config?: Record<string, unknown> };
     }) => unwrap(await api.api.workspaces({ id }).put(data)),
-    onSuccess: (_data, variables) => {
+    onSuccess: (_data, variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.detail(variables.id),
@@ -249,32 +239,29 @@ export function useUpdateWorkspace() {
 }
 
 export function useDeleteWorkspace() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
       unwrap(await api.api.workspaces({ id }).delete()),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
     },
   });
 }
 
 export function useTriggerPrebuild() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
       unwrap(await api.api.workspaces({ id }).prebuild.post()),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
     },
   });
 }
 
 export function useSystemCleanup() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => unwrap(await api.api.system.cleanup.post()),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.storage });
     },
@@ -290,11 +277,10 @@ export const opencodeSessionsQuery = (baseUrl: string) =>
   });
 
 export function useDeleteOpenCodeSession(baseUrl: string) {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (sessionId: string) =>
       deleteOpenCodeSession(baseUrl, sessionId),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.opencode.sessions(baseUrl),
       });
@@ -317,7 +303,6 @@ export const configFilesListQuery = (params?: {
   });
 
 export function useCreateConfigFile() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: {
       path: string;
@@ -326,14 +311,13 @@ export function useCreateConfigFile() {
       scope: "global" | "workspace";
       workspaceId?: string;
     }) => unwrap(await api.api["config-files"].post(data)),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
   });
 }
 
 export function useUpdateConfigFile() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
       id,
@@ -342,18 +326,17 @@ export function useUpdateConfigFile() {
       id: string;
       data: { content?: string; contentType?: "json" | "text" | "binary" };
     }) => unwrap(await api.api["config-files"]({ id }).put(data)),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
   });
 }
 
 export function useDeleteConfigFile() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
       unwrap(await api.api["config-files"]({ id }).delete()),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
   });
@@ -368,7 +351,6 @@ export const sandboxDiscoverConfigsQuery = (id: string) =>
   });
 
 export function useExtractConfig(sandboxId: string) {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (path: string) =>
       unwrap(
@@ -376,7 +358,7 @@ export function useExtractConfig(sandboxId: string) {
           path,
         }),
       ),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
   });
@@ -408,10 +390,9 @@ export const githubReposQuery = (params?: {
   });
 
 export function useGitHubLogout() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => unwrap(await api.auth.github.logout.post()),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.github.status });
     },
   });
