@@ -18,8 +18,9 @@ export async function setupNfs(_args: string[] = []) {
   for (const subdir of Object.values(NFS.CACHE_DIRS)) {
     await exec(`mkdir -p ${NFS.CACHE_EXPORT_DIR}/${subdir}`);
   }
+  await exec(`chown -R 1000:1000 ${NFS.CACHE_EXPORT_DIR}`);
   await exec(`chmod -R 777 ${NFS.CACHE_EXPORT_DIR}`);
-  spinner.stop("Cache directories created");
+  spinner.stop("Cache directories created (owned by UID 1000)");
 
   spinner.start("Creating shared binaries directory");
   await exec(`mkdir -p ${NFS.BINARIES_EXPORT_DIR}/bin`);
@@ -27,7 +28,7 @@ export async function setupNfs(_args: string[] = []) {
   spinner.stop("Binaries directory created");
 
   spinner.start("Configuring NFS exports");
-  const cacheExportLine = `${NFS.CACHE_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(rw,sync,no_subtree_check,no_root_squash,insecure)`;
+  const cacheExportLine = `${NFS.CACHE_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,insecure)`;
   const binariesExportLine = `${NFS.BINARIES_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
 
   const exportsFile = "/etc/exports";
