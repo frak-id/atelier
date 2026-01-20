@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     iputils-ping \
     locales \
+    nfs-common \
     && locale-gen en_US.UTF-8 \
     && usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \

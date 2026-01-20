@@ -29,6 +29,11 @@ mount -t tmpfs tmpfs /dev/shm 2>&1 | tee -a "$LOG_DIR/init.log"
 mount -t tmpfs tmpfs /run 2>&1 | tee -a "$LOG_DIR/init.log"
 mount -t tmpfs tmpfs /tmp 2>&1 | tee -a "$LOG_DIR/init.log"
 
+# NFS shared cache configuration
+NFS_HOST="172.16.0.1"
+NFS_EXPORT="/var/lib/sandbox/shared-cache"
+NFS_MOUNT="/mnt/cache"
+
 log "Creating device nodes..."
 [ -e /dev/null ] || mknod -m 666 /dev/null c 1 3
 [ -e /dev/zero ] || mknod -m 666 /dev/zero c 1 5
@@ -59,6 +64,40 @@ if [ -f /etc/network-setup.sh ]; then
     log "Network configured"
 else
     log "WARNING: No network-setup.sh found"
+fi
+
+log "Mounting NFS shared cache..."
+mkdir -p "$NFS_MOUNT"
+if timeout 5 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_EXPORT" "$NFS_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
+    log "NFS mounted at $NFS_MOUNT"
+    
+    mkdir -p /home/dev/.bun/install
+    mkdir -p /home/dev/.npm
+    mkdir -p /home/dev/.cache/pip
+    
+    if [ ! -L /home/dev/.bun/install/cache ]; then
+        rm -rf /home/dev/.bun/install/cache 2>/dev/null
+        ln -sf "$NFS_MOUNT/bun" /home/dev/.bun/install/cache
+        log "Linked bun cache -> $NFS_MOUNT/bun"
+    fi
+    
+    if [ ! -L /home/dev/.npm/_cacache ]; then
+        mkdir -p /home/dev/.npm
+        rm -rf /home/dev/.npm/_cacache 2>/dev/null
+        ln -sf "$NFS_MOUNT/npm" /home/dev/.npm/_cacache
+        log "Linked npm cache -> $NFS_MOUNT/npm"
+    fi
+    
+    if [ ! -L /home/dev/.cache/pip ]; then
+        mkdir -p /home/dev/.cache
+        rm -rf /home/dev/.cache/pip 2>/dev/null
+        ln -sf "$NFS_MOUNT/pip" /home/dev/.cache/pip
+        log "Linked pip cache -> $NFS_MOUNT/pip"
+    fi
+    
+    chown -R dev:dev /home/dev/.bun /home/dev/.npm /home/dev/.cache 2>/dev/null
+else
+    log "WARNING: Failed to mount NFS, package caching disabled"
 fi
 
 if [ -f "$SECRETS_FILE" ]; then

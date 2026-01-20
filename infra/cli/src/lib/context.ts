@@ -3,6 +3,7 @@ export {
   FIRECRACKER,
   LVM,
   NETWORK,
+  NFS,
   OPENCODE,
   PATHS,
   TTYD,

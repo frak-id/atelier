@@ -119,6 +119,23 @@ export const DEFAULTS = {
   MAX_SANDBOXES: 20,
   /** Sandbox boot timeout in ms */
   BOOT_TIMEOUT_MS: 30000,
-  /** Default sandbox volume size in GB (auto-resize on boot) */
-  VOLUME_SIZE_GB: 12,
+  /** Default sandbox volume size in GB (sparse - only uses space as written) */
+  VOLUME_SIZE_GB: 50,
+} as const;
+
+export const NFS = {
+  /** NFS export directory on host */
+  EXPORT_DIR: "/var/lib/sandbox/shared-cache",
+  /** NFS mount point inside VMs */
+  GUEST_MOUNT: "/mnt/cache",
+  /** Host IP for NFS (bridge IP) */
+  HOST_IP: "172.16.0.1",
+  /** Subdirectories for different package managers */
+  CACHE_DIRS: {
+    BUN: "bun",
+    NPM: "npm",
+    PNPM: "pnpm",
+    YARN: "yarn",
+    PIP: "pip",
+  },
 } as const;

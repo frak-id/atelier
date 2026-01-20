@@ -5,6 +5,7 @@ import { images } from "./commands/images";
 import { installFirecracker } from "./commands/install-firecracker";
 import { sandbox } from "./commands/sandbox";
 import { setupNetwork } from "./commands/setup-network";
+import { setupNfs } from "./commands/setup-nfs";
 import { setupSshProxy } from "./commands/setup-ssh-proxy";
 import { setupStorage } from "./commands/setup-storage";
 import { testVm } from "./commands/test-vm";
@@ -36,6 +37,11 @@ const COMMANDS = {
     label: "Setup Storage",
     description: "Configure LVM thin provisioning",
     handler: setupStorage,
+  },
+  nfs: {
+    label: "Setup NFS",
+    description: "Configure NFS server for shared package cache",
+    handler: setupNfs,
   },
   "ssh-proxy": {
     label: "Setup SSH Proxy",
@@ -90,12 +96,29 @@ async function runFullSetup() {
     p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
   }
 
+  const setupNfsNow = await p.confirm({
+    message: "Setup NFS server for shared package cache?",
+    initialValue: true,
+  });
+
+  if (p.isCancel(setupNfsNow)) {
+    p.cancel("Setup cancelled");
+    process.exit(0);
+  }
+
+  if (setupNfsNow) {
+    await setupNfs();
+  } else {
+    p.log.info("Skipping NFS setup. Run 'frak-sandbox nfs' later.");
+  }
+
   p.log.success("Server setup complete!");
   p.note(
     `Server is ready. Next:
   1. From dev machine: bun run deploy
-  2. Test VM: frak-sandbox vm start
-  3. API status: frak-sandbox manager status`,
+  2. Build base image: frak-sandbox images build dev-base
+  3. Test VM: frak-sandbox vm start
+  4. API status: frak-sandbox manager status`,
     "Setup Complete",
   );
 }
@@ -130,6 +153,7 @@ Commands:
   firecracker     Download Firecracker, kernel, and rootfs
   network         Configure persistent bridge for VM networking
   storage         Configure LVM thin provisioning
+  nfs             Configure NFS server for shared package cache
   ssh-proxy       Install and configure sshpiper for sandbox SSH access
   manager         Manage the sandbox manager API service
   images          Build and manage base images
