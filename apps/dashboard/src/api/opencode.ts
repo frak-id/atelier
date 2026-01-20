@@ -31,7 +31,7 @@ export async function deleteOpenCodeSession(
 
 export async function createOpenCodeSession(
   baseUrl: string,
-  directory: string,
+  directory?: string,
 ): Promise<{ sessionId: string } | { error: string }> {
   try {
     const client = createOpencodeClient({ baseUrl });
@@ -48,8 +48,8 @@ export async function createOpenCodeSession(
 export async function sendOpenCodeMessage(
   baseUrl: string,
   sessionId: string,
-  directory: string,
   message: string,
+  directory?: string,
 ): Promise<{ success: true } | { error: string }> {
   try {
     const client = createOpencodeClient({ baseUrl });

@@ -1,16 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  Check,
-  Code2,
-  ExternalLink,
-  Loader2,
-  Server,
-  Terminal,
-} from "lucide-react";
-import { useCallback, useState } from "react";
+import { Code2, ExternalLink, Loader2, Server, Trash2 } from "lucide-react";
+import { useMemo } from "react";
 import type { Sandbox } from "@/api/client";
-import { sandboxListQuery } from "@/api/queries";
+import {
+  opencodeSessionsQuery,
+  sandboxListQuery,
+  useDeleteSandbox,
+  workspaceListQuery,
+} from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,25 +18,43 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-function useCopyToClipboard() {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  const copy = useCallback((text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  }, []);
-
-  return { copy, isCopied: (key: string) => copiedKey === key };
-}
-
 export function RunningSandboxesCard() {
-  const { data: sandboxes, isLoading } = useQuery(sandboxListQuery());
+  const { data: sandboxes, isLoading: sandboxesLoading } = useQuery(
+    sandboxListQuery(),
+  );
+  const { data: workspaces, isLoading: workspacesLoading } = useQuery(
+    workspaceListQuery(),
+  );
 
   const runningSandboxes =
     sandboxes?.filter((s) => s.status === "running") ?? [];
 
-  if (isLoading) {
+  const workspaceMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (workspaces) {
+      for (const w of workspaces) {
+        map.set(w.id, w.name);
+      }
+    }
+    return map;
+  }, [workspaces]);
+
+  const sessionQueries = useQueries({
+    queries: runningSandboxes.map((sandbox) =>
+      opencodeSessionsQuery(sandbox.runtime.urls.opencode),
+    ),
+  });
+
+  const sessionCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    runningSandboxes.forEach((sandbox, index) => {
+      const sessions = sessionQueries[index]?.data ?? [];
+      map.set(sandbox.id, sessions.length);
+    });
+    return map;
+  }, [runningSandboxes, sessionQueries]);
+
+  if (sandboxesLoading || workspacesLoading) {
     return (
       <Card>
         <CardHeader className="pb-3">
@@ -90,17 +106,40 @@ export function RunningSandboxesCard() {
       </CardHeader>
       <CardContent className="space-y-2">
         {runningSandboxes.map((sandbox) => (
-          <SandboxRow key={sandbox.id} sandbox={sandbox} />
+          <SandboxRow
+            key={sandbox.id}
+            sandbox={sandbox}
+            workspaceName={
+              sandbox.workspaceId
+                ? workspaceMap.get(sandbox.workspaceId)
+                : undefined
+            }
+            sessionCount={sessionCountMap.get(sandbox.id) ?? 0}
+          />
         ))}
       </CardContent>
     </Card>
   );
 }
 
-function SandboxRow({ sandbox }: { sandbox: Sandbox }) {
-  const { copy, isCopied } = useCopyToClipboard();
+function SandboxRow({
+  sandbox,
+  workspaceName,
+  sessionCount,
+}: {
+  sandbox: Sandbox;
+  workspaceName?: string;
+  sessionCount: number;
+}) {
+  const deleteMutation = useDeleteSandbox();
 
-  const sshCommand = sandbox.runtime.urls.ssh;
+  const handleDelete = () => {
+    if (confirm(`Delete sandbox ${sandbox.id}?`)) {
+      deleteMutation.mutate(sandbox.id);
+    }
+  };
+
+  const displayName = workspaceName || sandbox.id;
 
   return (
     <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
@@ -109,16 +148,16 @@ function SandboxRow({ sandbox }: { sandbox: Sandbox }) {
           <Link
             to="/sandboxes/$id"
             params={{ id: sandbox.id }}
-            className="font-mono text-sm hover:underline truncate block"
+            className="font-semibold text-base hover:underline truncate block"
           >
-            {sandbox.id}
+            {displayName}
           </Link>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {sandbox.workspaceId && (
-              <span className="truncate">{sandbox.workspaceId}</span>
-            )}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+            <span className="font-mono">{sandbox.id}</span>
             <span>•</span>
-            <span>{sandbox.runtime.ipAddress}</span>
+            <span>
+              {sessionCount} session{sessionCount !== 1 ? "s" : ""}
+            </span>
           </div>
         </div>
       </div>
@@ -160,18 +199,13 @@ function SandboxRow({ sandbox }: { sandbox: Sandbox }) {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => copy(sshCommand, `ssh-${sandbox.id}`)}
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
             >
-              {isCopied(`ssh-${sandbox.id}`) ? (
-                <Check className="h-4 w-4 text-green-500" />
-              ) : (
-                <Terminal className="h-4 w-4" />
-              )}
+              <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            {isCopied(`ssh-${sandbox.id}`) ? "Copied!" : "Copy SSH command"}
-          </TooltipContent>
+          <TooltipContent>Delete sandbox</TooltipContent>
         </Tooltip>
       </div>
     </div>

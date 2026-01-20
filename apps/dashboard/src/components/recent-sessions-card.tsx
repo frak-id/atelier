@@ -102,7 +102,7 @@ export function RecentSessionsCard() {
 }
 
 function SessionRow({ session }: { session: SessionWithSandbox }) {
-  const sessionUrl = `${session.sandbox.opencodeUrl}?session=${session.id}`;
+  const sessionUrl = `${session.sandbox.opencodeUrl}/sessions/${session.id}`;
   const timeString = session.time.updated || session.time.created;
 
   return (

@@ -65,22 +65,17 @@ async function startSession({
   const opencodeUrl = await waitForSandboxReady(sandboxId);
   await waitForOpenCodeReady(opencodeUrl);
 
-  const directory = workspace.config.repos[0]?.clonePath ?? "/workspace";
-
-  const sessionResult = await createOpenCodeSession(opencodeUrl, directory);
+  const sessionResult = await createOpenCodeSession(opencodeUrl);
   if ("error" in sessionResult) throw new Error(sessionResult.error);
 
   const sessionId = sessionResult.sessionId;
 
-  const sendResult = await sendOpenCodeMessage(
-    opencodeUrl,
-    sessionId,
-    directory,
-    message,
-  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  const sendResult = await sendOpenCodeMessage(opencodeUrl, sessionId, message);
   if ("error" in sendResult) throw new Error(sendResult.error);
 
-  const sessionUrl = `${opencodeUrl}?session=${sessionId}`;
+  const sessionUrl = `${opencodeUrl}/sessions/${sessionId}`;
   window.open(sessionUrl, "_blank");
 
   return { sandboxId, sessionId, sessionUrl };
