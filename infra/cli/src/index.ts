@@ -1,14 +1,13 @@
 import * as p from "@clack/prompts";
 import { baseSetup } from "./commands/base-setup";
+import { debugVm } from "./commands/debug-vm";
 import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
 import { installFirecracker } from "./commands/install-firecracker";
-import { sandbox } from "./commands/sandbox";
 import { setupNetwork } from "./commands/setup-network";
 import { setupNfs } from "./commands/setup-nfs";
 import { setupSshProxy } from "./commands/setup-ssh-proxy";
 import { setupStorage } from "./commands/setup-storage";
-import { testVm } from "./commands/test-vm";
 import { isRoot } from "./lib/shell";
 
 const COMMANDS = {
@@ -55,18 +54,13 @@ const COMMANDS = {
   },
   images: {
     label: "Images",
-    description: "Build and manage base images",
+    description: "Build base images (Docker → ext4 → LVM)",
     handler: images,
   },
-  sandbox: {
-    label: "Sandbox",
-    description: "Manage sandbox volumes (resize, list)",
-    handler: sandbox,
-  },
-  vm: {
-    label: "Test VM",
-    description: "Start/stop/manage test VM",
-    handler: testVm,
+  "debug-vm": {
+    label: "Debug VM",
+    description: "Start/stop/manage debug VM (isolated from Manager)",
+    handler: debugVm,
   },
 } as const;
 
@@ -147,7 +141,7 @@ frak-sandbox - Firecracker sandbox management CLI
 
 Usage: frak-sandbox [command] [subcommand]
 
-Commands:
+PROVISIONING (one-time setup):
   setup           Run complete server setup (new servers)
   base            Install base packages, Bun, Docker, Caddy, verify KVM
   firecracker     Download Firecracker, kernel, and rootfs
@@ -155,10 +149,15 @@ Commands:
   storage         Configure LVM thin provisioning
   nfs             Configure NFS server for shared package cache
   ssh-proxy       Install and configure sshpiper for sandbox SSH access
+
+SERVICE CONTROL:
   manager         Manage the sandbox manager API service
-  images          Build and manage base images
-  sandbox         Manage sandbox volumes (resize, list)
-  vm              Start/stop/manage test VM
+
+IMAGE BUILDING:
+  images          Build base images (Docker -> ext4 -> LVM)
+
+DEBUGGING:
+  debug-vm        Start/stop/manage debug VM (isolated from Manager)
 
 Manager Subcommands:
   manager start   Start the manager service
@@ -167,31 +166,27 @@ Manager Subcommands:
   manager status  Show service status and health
   manager logs    View manager logs (follows)
 
-Images Subcommands:
-  images build    Build a base image (interactive or: images build dev-base)
-  images list     List available base images
-  images status   Check which images are built
+Images:
+  images [image-id]   Build a base image (interactive or: images dev-base)
 
-Sandbox Subcommands:
-  sandbox resize  Resize a sandbox volume (interactive or: sandbox resize <id> <size-gb>)
-  sandbox list    List all sandbox volumes
-
-VM Subcommands:
-  vm start        Start test VM
-  vm stop         Stop test VM
-  vm status       Show VM status
-  vm ssh          SSH into VM
+Debug VM Subcommands:
+  debug-vm start      Start debug VM
+  debug-vm stop       Stop debug VM
+  debug-vm status     Show VM status
+  debug-vm ssh        SSH into VM
 
 Options:
   --help, -h      Show this help message
 
 Examples:
-  frak-sandbox setup            Prepare server (run once)
-  frak-sandbox manager status   Check API health
-  frak-sandbox manager logs     Follow API logs
-  frak-sandbox images build     Build base image
-  frak-sandbox sandbox resize   Resize sandbox storage
-  frak-sandbox vm start         Start test VM
+  frak-sandbox setup              Prepare server (run once)
+  frak-sandbox manager status     Check API health
+  frak-sandbox images dev-base    Build dev-base image
+  frak-sandbox debug-vm start     Start debug VM
+
+For runtime operations (sandbox list, resize, etc), use Manager API:
+  curl http://localhost:4000/sandboxes
+  curl http://localhost:4000/images
 `);
 }
 

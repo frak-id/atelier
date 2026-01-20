@@ -24,14 +24,18 @@ function getPaths(): VmPaths {
   };
 }
 
-export async function testVm(args: string[] = []) {
+export async function debugVm(args: string[] = []) {
   const subcommand = args[0];
 
   if (!subcommand) {
     const action = await p.select({
-      message: "VM action:",
+      message: "Debug VM action:",
       options: [
-        { value: "start", label: "Start VM", hint: "Boot a test VM" },
+        {
+          value: "start",
+          label: "Start VM",
+          hint: "Boot a debug VM (isolated from Manager)",
+        },
         { value: "stop", label: "Stop VM", hint: "Shutdown and cleanup" },
         { value: "status", label: "Status", hint: "Show VM status" },
         { value: "ssh", label: "SSH", hint: "Connect to VM" },
@@ -160,9 +164,9 @@ async function startVm() {
   p.log.success(`VM started (PID: ${proc.pid})`);
   p.note(
     `Guest IP: ${NETWORK.TEST_VM_IP}
-SSH: frak-sandbox vm ssh
-Stop: frak-sandbox vm stop`,
-    "Test VM",
+SSH: frak-sandbox debug-vm ssh
+Stop: frak-sandbox debug-vm stop`,
+    "Debug VM",
   );
 }
 

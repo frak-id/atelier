@@ -22,17 +22,50 @@ bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/frak-sand
 frak-sandbox [command] [subcommand]
 ```
 
+### Provisioning (one-time setup)
+
+| Command | Purpose |
+|---------|---------|
+| `setup` | Full server setup (new servers) |
+| `base` | Install Bun, Docker, Caddy, verify KVM |
+| `firecracker` | Download Firecracker, kernel, rootfs |
+| `network` | Configure persistent br0 bridge |
+| `storage` | Configure LVM thin provisioning |
+| `nfs` | Configure NFS server for shared package cache |
+| `ssh-proxy` | Install sshpiper for sandbox SSH |
+
+### Service Control
+
 | Command | Subcommands | Purpose |
 |---------|-------------|---------|
-| `setup` | - | Full server setup (new servers) |
-| `base` | - | Install Bun, Docker, Caddy, verify KVM |
-| `firecracker` | - | Download Firecracker, kernel, rootfs |
-| `network` | - | Configure persistent br0 bridge |
-| `storage` | - | Configure LVM thin provisioning |
-| `ssh-proxy` | - | Install sshpiper for sandbox SSH |
 | `manager` | start, stop, restart, status, logs | Manage API service |
-| `images` | build, list, status | Manage base images |
-| `vm` | start, stop, status, ssh | Test VM operations |
+
+### Image Building
+
+| Command | Purpose |
+|---------|---------|
+| `images [image-id]` | Build base image (Docker → ext4 → LVM) |
+
+### Debugging
+
+| Command | Subcommands | Purpose |
+|---------|-------------|---------|
+| `debug-vm` | start, stop, status, ssh | Debug VM (isolated from Manager) |
+
+## Runtime Operations
+
+For runtime operations, use the Manager API instead of CLI:
+
+```bash
+# List sandboxes
+curl http://localhost:4000/sandboxes
+
+# List images with availability
+curl http://localhost:4000/images
+
+# System stats
+curl http://localhost:4000/system/stats
+```
 
 ## Conventions
 
@@ -52,6 +85,7 @@ frak-sandbox [command] [subcommand]
 | LVM setup | `src/commands/setup-storage.ts` |
 | Manager deployment | `src/commands/deploy-manager.ts` |
 | Image building | `src/commands/images.ts` |
+| Debug VM | `src/commands/debug-vm.ts` |
 
 ## See Also
 
