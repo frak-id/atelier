@@ -122,7 +122,7 @@ echo "Sandbox network configured"
   const serviceContent = `[Unit]
 Description=Sandbox Network Bridge
 After=network.target
-Before=sandbox-manager.service
+Before=frak-sandbox-manager.service
 
 [Service]
 Type=oneshot

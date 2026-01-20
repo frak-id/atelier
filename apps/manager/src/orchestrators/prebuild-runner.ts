@@ -193,5 +193,12 @@ export class PrebuildRunner {
     }
 
     log.info({ workspaceId: workspace.id }, "All init commands completed");
+
+    log.info({ workspaceId: workspace.id }, "Fixing workspace ownership");
+    await this.deps.agentClient.exec(
+      ipAddress,
+      `chown -R dev:dev ${WORKSPACE_DIR}`,
+      { timeout: COMMAND_TIMEOUT },
+    );
   }
 }

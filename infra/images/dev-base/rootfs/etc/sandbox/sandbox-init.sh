@@ -83,6 +83,14 @@ if timeout 5 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "
         log "Linked bun cache -> $NFS_CACHE_MOUNT/bun"
     fi
     
+    # Configure bun to use copyfile backend (hardlinks don't work across NFS)
+    mkdir -p /home/dev/.bunfig
+    cat > /home/dev/.bunfig.toml << 'BUNFIG'
+[install]
+backend = "copyfile"
+BUNFIG
+    chown dev:dev /home/dev/.bunfig.toml
+    
     if [ ! -L /home/dev/.npm/_cacache ]; then
         mkdir -p /home/dev/.npm
         rm -rf /home/dev/.npm/_cacache 2>/dev/null
