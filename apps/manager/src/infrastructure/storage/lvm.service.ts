@@ -264,4 +264,68 @@ export const StorageService = {
       origin: origin || undefined,
     };
   },
+
+  async getVolumeSizeBytes(sandboxId: string): Promise<number> {
+    if (config.isMock()) return 5 * 1024 * 1024 * 1024;
+
+    const volumeName = `${sandboxPrefix}${sandboxId}`;
+    const result =
+      await $`${LVS} ${vg}/${volumeName} -o lv_size --noheadings --units b --nosuffix`
+        .quiet()
+        .nothrow();
+
+    if (result.exitCode !== 0) return 0;
+    return parseInt(result.stdout.toString().trim(), 10);
+  },
+
+  async resizeSandboxVolume(
+    sandboxId: string,
+    newSizeGb: number,
+  ): Promise<{
+    success: boolean;
+    previousSize: number;
+    newSize: number;
+    error?: string;
+  }> {
+    const volumeName = `${sandboxPrefix}${sandboxId}`;
+    const volumePath = `${vg}/${volumeName}`;
+
+    if (config.isMock()) {
+      log.debug({ sandboxId, newSizeGb }, "Mock: sandbox volume resize");
+      return {
+        success: true,
+        previousSize: 5 * 1024 * 1024 * 1024,
+        newSize: newSizeGb * 1024 * 1024 * 1024,
+      };
+    }
+
+    const previousSize = await this.getVolumeSizeBytes(sandboxId);
+    const newSizeBytes = newSizeGb * 1024 * 1024 * 1024;
+
+    if (newSizeBytes <= previousSize) {
+      return {
+        success: false,
+        previousSize,
+        newSize: previousSize,
+        error: `New size (${newSizeGb}GB) must be larger than current size (${Math.round(previousSize / 1024 / 1024 / 1024)}GB)`,
+      };
+    }
+
+    log.info({ sandboxId, previousSize, newSizeGb }, "Resizing sandbox volume");
+
+    const result = await $`/usr/sbin/lvextend -L ${newSizeGb}G ${volumePath}`
+      .quiet()
+      .nothrow();
+
+    if (result.exitCode !== 0) {
+      const error = result.stderr.toString().trim();
+      log.error({ sandboxId, error }, "Failed to resize volume");
+      return { success: false, previousSize, newSize: previousSize, error };
+    }
+
+    const newSize = await this.getVolumeSizeBytes(sandboxId);
+    log.info({ sandboxId, previousSize, newSize }, "Sandbox volume resized");
+
+    return { success: true, previousSize, newSize };
+  },
 };

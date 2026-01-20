@@ -8,6 +8,7 @@ import {
   sandboxSpawner,
 } from "../../container.ts";
 import { QueueService } from "../../infrastructure/queue/index.ts";
+import { StorageService } from "../../infrastructure/storage/index.ts";
 import {
   AgentHealthSchema,
   AgentMetricsSchema,
@@ -25,6 +26,8 @@ import {
   LogsQuerySchema,
   LogsResponseSchema,
   RegisterAppBodySchema,
+  ResizeStorageBodySchema,
+  ResizeStorageResponseSchema,
   SandboxListQuerySchema,
   SandboxListResponseSchema,
   SandboxSchema,
@@ -333,5 +336,59 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       params: IdParamSchema,
       body: ExtractConfigBodySchema,
       response: ExtractConfigResponseSchema,
+    },
+  )
+  .post(
+    "/:id/storage/resize",
+    async ({ params, body }) => {
+      const sandbox = sandboxService.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      if (sandbox.status !== "running") {
+        return {
+          success: false,
+          previousSize: 0,
+          newSize: 0,
+          error: "Sandbox must be running to resize storage",
+        };
+      }
+
+      log.info(
+        { sandboxId: params.id, sizeGb: body.sizeGb },
+        "Resizing sandbox storage",
+      );
+
+      const lvResult = await StorageService.resizeSandboxVolume(
+        params.id,
+        body.sizeGb,
+      );
+
+      if (!lvResult.success) {
+        return lvResult;
+      }
+
+      const agentResult = await agentClient.resizeStorage(
+        sandbox.runtime.ipAddress,
+      );
+
+      if (!agentResult.success) {
+        return {
+          ...lvResult,
+          success: false,
+          error: `Volume extended but filesystem resize failed: ${agentResult.error}`,
+        };
+      }
+
+      return {
+        ...lvResult,
+        disk: agentResult.disk,
+      };
+    },
+    {
+      params: IdParamSchema,
+      body: ResizeStorageBodySchema,
+      response: ResizeStorageResponseSchema,
     },
   );

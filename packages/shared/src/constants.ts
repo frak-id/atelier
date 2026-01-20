@@ -119,4 +119,6 @@ export const DEFAULTS = {
   MAX_SANDBOXES: 20,
   /** Sandbox boot timeout in ms */
   BOOT_TIMEOUT_MS: 30000,
+  /** Default sandbox volume size in GB (auto-resize on boot) */
+  VOLUME_SIZE_GB: 12,
 } as const;

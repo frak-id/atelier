@@ -6,6 +6,7 @@ import {
   ExternalLink,
   FileCode,
   GitBranch,
+  HardDrive,
   Loader2,
   MessageSquare,
   Pause,
@@ -26,6 +27,7 @@ import {
   useDeleteSandbox,
   useExecCommand,
   useExtractConfig,
+  useResizeStorage,
   useStartSandbox,
   useStopSandbox,
 } from "@/api/queries";
@@ -232,59 +234,7 @@ function SandboxDetailPage() {
         </Card>
 
         {sandbox.status === "running" && metrics && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Resources</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>CPU</span>
-                  <span>{metrics.cpu.toFixed(1)}%</span>
-                </div>
-                <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all"
-                    style={{ width: `${Math.min(metrics.cpu, 100)}%` }}
-                  />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Memory</span>
-                  <span>
-                    {formatBytes(metrics.memory.used)} /{" "}
-                    {formatBytes(metrics.memory.total)}
-                  </span>
-                </div>
-                <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all"
-                    style={{
-                      width: `${(metrics.memory.used / metrics.memory.total) * 100}%`,
-                    }}
-                  />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Disk</span>
-                  <span>
-                    {formatBytes(metrics.disk.used)} /{" "}
-                    {formatBytes(metrics.disk.total)}
-                  </span>
-                </div>
-                <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all"
-                    style={{
-                      width: `${(metrics.disk.used / metrics.disk.total) * 100}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <ResourcesCard sandboxId={id} metrics={metrics} />
         )}
       </div>
 
@@ -686,6 +636,148 @@ function RepositoriesTab({ sandboxId }: { sandboxId: string }) {
             ))}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ResourcesCard({
+  sandboxId,
+  metrics,
+}: {
+  sandboxId: string;
+  metrics: {
+    cpu: number;
+    memory: { total: number; used: number };
+    disk: { total: number; used: number };
+  };
+}) {
+  const [showResize, setShowResize] = useState(false);
+  const [newSizeGb, setNewSizeGb] = useState("");
+  const resizeMutation = useResizeStorage(sandboxId);
+
+  const currentSizeGb = Math.round(metrics.disk.total / 1024 / 1024 / 1024);
+  const diskUsagePercent = (metrics.disk.used / metrics.disk.total) * 100;
+
+  const handleResize = () => {
+    const size = parseInt(newSizeGb, 10);
+    if (size > currentSizeGb && size <= 100) {
+      resizeMutation.mutate(size, {
+        onSuccess: () => {
+          setShowResize(false);
+          setNewSizeGb("");
+        },
+      });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Resources</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span>CPU</span>
+            <span>{metrics.cpu.toFixed(1)}%</span>
+          </div>
+          <div className="h-2 bg-secondary rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all"
+              style={{ width: `${Math.min(metrics.cpu, 100)}%` }}
+            />
+          </div>
+        </div>
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span>Memory</span>
+            <span>
+              {formatBytes(metrics.memory.used)} /{" "}
+              {formatBytes(metrics.memory.total)}
+            </span>
+          </div>
+          <div className="h-2 bg-secondary rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all"
+              style={{
+                width: `${(metrics.memory.used / metrics.memory.total) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <div className="flex items-center gap-2">
+              <span>Disk</span>
+              {!showResize && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 px-2 text-xs"
+                  onClick={() => setShowResize(true)}
+                >
+                  <HardDrive className="h-3 w-3 mr-1" />
+                  Resize
+                </Button>
+              )}
+            </div>
+            <span>
+              {formatBytes(metrics.disk.used)} /{" "}
+              {formatBytes(metrics.disk.total)}
+            </span>
+          </div>
+          <div className="h-2 bg-secondary rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all ${diskUsagePercent > 90 ? "bg-destructive" : diskUsagePercent > 70 ? "bg-yellow-500" : "bg-primary"}`}
+              style={{ width: `${diskUsagePercent}%` }}
+            />
+          </div>
+          {showResize && (
+            <div className="mt-3 flex items-center gap-2">
+              <Input
+                type="number"
+                placeholder={`New size (>${currentSizeGb}GB)`}
+                value={newSizeGb}
+                onChange={(e) => setNewSizeGb(e.target.value)}
+                className="w-32 h-8"
+                min={currentSizeGb + 1}
+                max={100}
+              />
+              <span className="text-sm text-muted-foreground">GB</span>
+              <Button
+                size="sm"
+                onClick={handleResize}
+                disabled={
+                  resizeMutation.isPending ||
+                  !newSizeGb ||
+                  parseInt(newSizeGb, 10) <= currentSizeGb
+                }
+              >
+                {resizeMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  "Apply"
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setShowResize(false);
+                  setNewSizeGb("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+          {resizeMutation.isError && (
+            <p className="text-sm text-destructive mt-2">
+              Resize failed: {String(resizeMutation.error)}
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

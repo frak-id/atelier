@@ -313,4 +313,30 @@ export class AgentClient {
   async gitStatus(ipAddress: string): Promise<GitStatus> {
     return this.request<GitStatus>(ipAddress, "/git/status");
   }
+
+  async resizeStorage(ipAddress: string): Promise<{
+    success: boolean;
+    disk?: { total: number; used: number; free: number };
+    error?: string;
+  }> {
+    return this.request<{
+      success: boolean;
+      disk?: { total: number; used: number; free: number };
+      error?: string;
+    }>(ipAddress, "/storage/resize", { method: "POST", timeout: 60000 });
+  }
+
+  async getStorageInfo(ipAddress: string): Promise<{
+    filesystem: { total: number; used: number; free: number };
+    blockDevice: number;
+    canResize: boolean;
+    error?: string;
+  }> {
+    return this.request<{
+      filesystem: { total: number; used: number; free: number };
+      blockDevice: number;
+      canResize: boolean;
+      error?: string;
+    }>(ipAddress, "/storage/info");
+  }
 }

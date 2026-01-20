@@ -208,6 +208,22 @@ export function useExecCommand(sandboxId: string) {
   });
 }
 
+export function useResizeStorage(sandboxId: string) {
+  return useMutation({
+    mutationFn: async (sizeGb: number) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).storage.resize.post({
+          sizeGb,
+        }),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.metrics(sandboxId),
+      });
+    },
+  });
+}
+
 export function useCreateWorkspace() {
   return useMutation({
     mutationFn: async (data: {

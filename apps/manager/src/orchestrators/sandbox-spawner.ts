@@ -1,4 +1,4 @@
-import { FIRECRACKER } from "@frak-sandbox/shared/constants";
+import { DEFAULTS, FIRECRACKER } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import { nanoid } from "nanoid";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
@@ -76,6 +76,7 @@ class SpawnContext {
       await this.loadWorkspace();
       await this.allocateNetwork();
       await this.createVolume();
+      await this.resizeVolumeBeforeBoot();
       await this.initializeSandbox();
 
       if (config.isMock()) {
@@ -148,6 +149,58 @@ class SpawnContext {
       },
       "Volume created",
     );
+  }
+
+  private async resizeVolumeBeforeBoot(): Promise<void> {
+    if (!this.paths?.useLvm) return;
+
+    const targetSizeGb = DEFAULTS.VOLUME_SIZE_GB;
+
+    try {
+      const currentSize = await StorageService.getVolumeSizeBytes(
+        this.sandboxId,
+      );
+      const targetSizeBytes = targetSizeGb * 1024 * 1024 * 1024;
+
+      if (currentSize >= targetSizeBytes) {
+        log.debug(
+          {
+            sandboxId: this.sandboxId,
+            currentSizeGb: Math.round(currentSize / 1024 / 1024 / 1024),
+          },
+          "Volume already at target size",
+        );
+        return;
+      }
+
+      const result = await StorageService.resizeSandboxVolume(
+        this.sandboxId,
+        targetSizeGb,
+      );
+
+      if (result.success) {
+        log.info(
+          {
+            sandboxId: this.sandboxId,
+            previousSizeGb: Math.round(
+              result.previousSize / 1024 / 1024 / 1024,
+            ),
+            newSizeGb: targetSizeGb,
+          },
+          "Volume resized before boot",
+        );
+      } else {
+        log.warn(
+          { sandboxId: this.sandboxId, error: result.error },
+          "Failed to resize volume before boot",
+        );
+      }
+    } catch (error) {
+      log.warn(
+        { sandboxId: this.sandboxId, error },
+        "Volume resize failed, continuing with original size",
+      );
+    }
   }
 
   private async initializeSandbox(): Promise<void> {
@@ -339,8 +392,37 @@ class SpawnContext {
       return;
     }
 
+    await this.expandFilesystem();
+
     if (this.needsRepoClone()) {
       await this.cloneRepositories();
+    }
+  }
+
+  private async expandFilesystem(): Promise<void> {
+    if (!this.network || !this.paths?.useLvm) return;
+
+    try {
+      const agentResult = await this.deps.agentClient.resizeStorage(
+        this.network.ipAddress,
+      );
+
+      if (agentResult.success) {
+        log.info(
+          { sandboxId: this.sandboxId, disk: agentResult.disk },
+          "Filesystem expanded successfully",
+        );
+      } else {
+        log.warn(
+          { sandboxId: this.sandboxId, error: agentResult.error },
+          "Failed to expand filesystem inside VM",
+        );
+      }
+    } catch (error) {
+      log.warn(
+        { sandboxId: this.sandboxId, error },
+        "Filesystem expansion failed",
+      );
     }
   }
 

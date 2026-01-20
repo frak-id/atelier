@@ -7,6 +7,7 @@ import { execRoutes } from "./routes/exec";
 import { gitRoutes } from "./routes/git";
 import { healthRoutes } from "./routes/health";
 import { servicesRoutes } from "./routes/services";
+import { storageRoutes } from "./routes/storage";
 import { vscodeRoutes } from "./routes/vscode";
 
 const app = new Elysia({ adapter: node() })
@@ -15,6 +16,7 @@ const app = new Elysia({ adapter: node() })
   .use(appsRoutes)
   .use(execRoutes)
   .use(servicesRoutes)
+  .use(storageRoutes)
   .use(gitRoutes)
   .use(vscodeRoutes)
   .listen(AGENT_PORT, () => {

@@ -3,6 +3,7 @@ import { baseSetup } from "./commands/base-setup";
 import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
 import { installFirecracker } from "./commands/install-firecracker";
+import { sandbox } from "./commands/sandbox";
 import { setupNetwork } from "./commands/setup-network";
 import { setupSshProxy } from "./commands/setup-ssh-proxy";
 import { setupStorage } from "./commands/setup-storage";
@@ -50,6 +51,11 @@ const COMMANDS = {
     label: "Images",
     description: "Build and manage base images",
     handler: images,
+  },
+  sandbox: {
+    label: "Sandbox",
+    description: "Manage sandbox volumes (resize, list)",
+    handler: sandbox,
   },
   vm: {
     label: "Test VM",
@@ -127,6 +133,7 @@ Commands:
   ssh-proxy       Install and configure sshpiper for sandbox SSH access
   manager         Manage the sandbox manager API service
   images          Build and manage base images
+  sandbox         Manage sandbox volumes (resize, list)
   vm              Start/stop/manage test VM
 
 Manager Subcommands:
@@ -140,6 +147,10 @@ Images Subcommands:
   images build    Build a base image (interactive or: images build dev-base)
   images list     List available base images
   images status   Check which images are built
+
+Sandbox Subcommands:
+  sandbox resize  Resize a sandbox volume (interactive or: sandbox resize <id> <size-gb>)
+  sandbox list    List all sandbox volumes
 
 VM Subcommands:
   vm start        Start test VM
@@ -155,6 +166,7 @@ Examples:
   frak-sandbox manager status   Check API health
   frak-sandbox manager logs     Follow API logs
   frak-sandbox images build     Build base image
+  frak-sandbox sandbox resize   Resize sandbox storage
   frak-sandbox vm start         Start test VM
 `);
 }
