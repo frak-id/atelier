@@ -23,6 +23,7 @@ import {
   workspaceDetailQuery,
 } from "@/api/queries";
 import { EditWorkspaceDialog } from "@/components/edit-workspace-dialog";
+import { SandboxRow } from "@/components/sandbox-row";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -344,30 +345,11 @@ function WorkspaceDetailPage() {
             ) : (
               <div className="space-y-2">
                 {workspaceSandboxes.map((sandbox) => (
-                  <Link
+                  <SandboxRow
                     key={sandbox.id}
-                    to="/sandboxes/$id"
-                    params={{ id: sandbox.id }}
-                    className="flex items-center justify-between p-3 rounded-lg hover:bg-muted transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono">{sandbox.id}</span>
-                      <Badge
-                        variant={
-                          sandbox.status === "running"
-                            ? "success"
-                            : sandbox.status === "creating"
-                              ? "warning"
-                              : "secondary"
-                        }
-                      >
-                        {sandbox.status}
-                      </Badge>
-                    </div>
-                    <span className="text-muted-foreground text-sm">
-                      {sandbox.runtime.ipAddress}
-                    </span>
-                  </Link>
+                    sandbox={sandbox}
+                    workspaceName={workspace.name}
+                  />
                 ))}
               </div>
             )}

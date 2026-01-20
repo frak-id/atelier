@@ -1,12 +1,8 @@
-import { ExternalLink, Loader2, MessageSquare } from "lucide-react";
+import { Loader2, MessageSquare } from "lucide-react";
+import { SessionRow } from "@/components/session-row";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  type SessionWithSandbox,
-  useAllOpenCodeSessions,
-} from "@/hooks/use-all-opencode-sessions";
-import { buildOpenCodeSessionUrl, formatRelativeTime } from "@/lib/utils";
+import { useAllOpenCodeSessions } from "@/hooks/use-all-opencode-sessions";
 
 export function RecentSessionsCard() {
   const { sessions, isLoading, runningSandboxes } = useAllOpenCodeSessions();
@@ -89,7 +85,7 @@ export function RecentSessionsCard() {
       </CardHeader>
       <CardContent className="space-y-2">
         {sessions.slice(0, 5).map((session) => (
-          <SessionRow key={session.id} session={session} />
+          <SessionRow key={session.id} session={session} showSandboxInfo />
         ))}
         {sessions.length > 5 && (
           <p className="text-xs text-muted-foreground text-center pt-2">
@@ -98,48 +94,5 @@ export function RecentSessionsCard() {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function SessionRow({ session }: { session: SessionWithSandbox }) {
-  const sessionUrl = buildOpenCodeSessionUrl(
-    session.sandbox.opencodeUrl,
-    session.directory,
-    session.id,
-  );
-  const timeString = session.time.updated || session.time.created;
-
-  return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors group">
-      <div className="flex-1 min-w-0">
-        <div className="font-medium truncate">
-          {session.title || `Session ${session.id.slice(0, 8)}`}
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {session.sandbox.workspaceId && (
-            <span className="truncate">{session.sandbox.workspaceId}</span>
-          )}
-          {!session.sandbox.workspaceId && (
-            <span className="truncate">{session.sandbox.id}</span>
-          )}
-          {timeString && (
-            <>
-              <span>•</span>
-              <span>{formatRelativeTime(timeString)}</span>
-            </>
-          )}
-        </div>
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="opacity-0 group-hover:opacity-100 transition-opacity"
-        asChild
-      >
-        <a href={sessionUrl} target="_blank" rel="noopener noreferrer">
-          <ExternalLink className="h-4 w-4" />
-        </a>
-      </Button>
-    </div>
   );
 }

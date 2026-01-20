@@ -30,6 +30,7 @@ import {
   useStopSandbox,
 } from "@/api/queries";
 
+import { SessionRow } from "@/components/session-row";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -341,7 +342,11 @@ function SandboxDetailPage() {
           </TabsContent>
 
           <TabsContent value="opencode">
-            <OpenCodeSessions opencodeUrl={sandbox.runtime.urls.opencode} />
+            <OpenCodeSessions
+              sandboxId={sandbox.id}
+              workspaceId={sandbox.workspaceId}
+              opencodeUrl={sandbox.runtime.urls.opencode}
+            />
           </TabsContent>
 
           <TabsContent value="exec">
@@ -420,7 +425,15 @@ function SandboxDetailPage() {
   );
 }
 
-function OpenCodeSessions({ opencodeUrl }: { opencodeUrl: string }) {
+function OpenCodeSessions({
+  sandboxId,
+  workspaceId,
+  opencodeUrl,
+}: {
+  sandboxId: string;
+  workspaceId: string | undefined;
+  opencodeUrl: string;
+}) {
   const { data: sessions, isLoading } = useQuery(
     opencodeSessionsQuery(opencodeUrl),
   );
@@ -457,48 +470,16 @@ function OpenCodeSessions({ opencodeUrl }: { opencodeUrl: string }) {
         {sessions && sessions.length > 0 ? (
           <div className="space-y-2">
             {sessions.map((session) => (
-              <div
+              <SessionRow
                 key={session.id}
-                className="flex items-center justify-between py-3 px-4 border rounded-lg"
-              >
-                <div className="flex-1">
-                  <div className="font-medium">
-                    {session.title || `Session ${session.id.slice(0, 8)}`}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    ID: {session.id}
-                  </div>
-                  {session.time.created && (
-                    <div className="text-xs text-muted-foreground">
-                      Created: {formatDate(session.time.created)}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" asChild>
-                    <a
-                      href={`${opencodeUrl}?session=${session.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <ExternalLink className="h-4 w-4 mr-1" />
-                      Open
-                    </a>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (confirm("Delete this session?")) {
-                        deleteMutation.mutate(session.id);
-                      }
-                    }}
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              </div>
+                session={{
+                  ...session,
+                  sandbox: { id: sandboxId, workspaceId, opencodeUrl },
+                }}
+                showDelete
+                onDelete={(id) => deleteMutation.mutate(id)}
+                isDeleting={deleteMutation.isPending}
+              />
             ))}
           </div>
         ) : (
