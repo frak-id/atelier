@@ -1,13 +1,12 @@
 # Frak Sandbox - dev-base image
-# Minimal development environment with code-server, OpenCode, Bun, and Git
+# Minimal development environment with Bun, Git, and ttyd
+# code-server and opencode are served via NFS from /opt/shared/bin
 #
 # Build: docker build -t frak-sandbox/dev-base .
 # Export: docker export $(docker create frak-sandbox/dev-base) | tar -C ./rootfs -xf -
 
 FROM node:22-slim
 
-ARG OPENCODE_VERSION=1.1.27
-ARG CODE_SERVER_VERSION=4.100.3
 ARG TTYD_VERSION=1.7.7
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -62,19 +61,6 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
     && chown -R dev:dev /home/dev/.bun \
     && echo 'export BUN_INSTALL="/home/dev/.bun"' > /etc/profile.d/bun.sh \
     && echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> /etc/profile.d/bun.sh
-
-# Install code-server
-RUN curl -fsSL -o /tmp/code-server.deb \
-    "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server_${CODE_SERVER_VERSION}_amd64.deb" \
-    && dpkg -i /tmp/code-server.deb \
-    && rm /tmp/code-server.deb
-
-# Install OpenCode from pre-built binary (48MB vs 567MB npm)
-RUN curl -fsSL -o /tmp/opencode.tar.gz \
-    "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-x64-baseline.tar.gz" \
-    && tar -xzf /tmp/opencode.tar.gz -C /usr/local/bin \
-    && chmod +x /usr/local/bin/opencode \
-    && rm /tmp/opencode.tar.gz
 
 # Create sandbox directories
 RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \

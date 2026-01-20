@@ -11,6 +11,7 @@ import { githubApiRoutes, githubAuthRoutes } from "./modules/github/index.ts";
 import { healthRoutes } from "./modules/health/index.ts";
 import { imageRoutes } from "./modules/image/index.ts";
 import { sandboxRoutes } from "./modules/sandbox/index.ts";
+import { sharedStorageRoutes } from "./modules/shared-storage/index.ts";
 import { systemRoutes } from "./modules/system/index.ts";
 import { workspaceRoutes } from "./modules/workspace/index.ts";
 import { SandboxError } from "./shared/errors.ts";
@@ -90,6 +91,10 @@ const app = new Elysia()
           { name: "sources", description: "Git source connections" },
           { name: "config", description: "Config file management" },
           { name: "system", description: "System monitoring and management" },
+          {
+            name: "storage",
+            description: "Shared storage management (NFS, binaries, cache)",
+          },
           { name: "images", description: "Base image management" },
           { name: "github", description: "GitHub integration" },
         ],
@@ -147,6 +152,7 @@ const app = new Elysia()
       .use(gitSourceRoutes)
       .use(configFileRoutes)
       .use(systemRoutes)
+      .use(sharedStorageRoutes)
       .use(imageRoutes)
       .use(githubApiRoutes),
   )

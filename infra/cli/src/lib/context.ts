@@ -6,5 +6,6 @@ export {
   NFS,
   OPENCODE,
   PATHS,
+  SHARED_BINARIES,
   TTYD,
 } from "@frak-sandbox/shared/constants";

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sandbox init script - runs as PID 1 in Firecracker VM
 
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/dev/.bun/bin
+export PATH=/opt/shared/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/dev/.bun/bin
 export HOME=/root
 export BUN_INSTALL=/home/dev/.bun
 
@@ -29,10 +29,12 @@ mount -t tmpfs tmpfs /dev/shm 2>&1 | tee -a "$LOG_DIR/init.log"
 mount -t tmpfs tmpfs /run 2>&1 | tee -a "$LOG_DIR/init.log"
 mount -t tmpfs tmpfs /tmp 2>&1 | tee -a "$LOG_DIR/init.log"
 
-# NFS shared cache configuration
+# NFS shared storage configuration
 NFS_HOST="172.16.0.1"
-NFS_EXPORT="/var/lib/sandbox/shared-cache"
-NFS_MOUNT="/mnt/cache"
+NFS_CACHE_EXPORT="/var/lib/sandbox/shared-cache"
+NFS_CACHE_MOUNT="/mnt/cache"
+NFS_BINARIES_EXPORT="/var/lib/sandbox/shared-binaries"
+NFS_BINARIES_MOUNT="/opt/shared"
 
 log "Creating device nodes..."
 [ -e /dev/null ] || mknod -m 666 /dev/null c 1 3
@@ -67,9 +69,9 @@ else
 fi
 
 log "Mounting NFS shared cache..."
-mkdir -p "$NFS_MOUNT"
-if timeout 5 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_EXPORT" "$NFS_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
-    log "NFS mounted at $NFS_MOUNT"
+mkdir -p "$NFS_CACHE_MOUNT"
+if timeout 5 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_CACHE_EXPORT" "$NFS_CACHE_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
+    log "NFS cache mounted at $NFS_CACHE_MOUNT"
     
     mkdir -p /home/dev/.bun/install
     mkdir -p /home/dev/.npm
@@ -77,27 +79,38 @@ if timeout 5 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "
     
     if [ ! -L /home/dev/.bun/install/cache ]; then
         rm -rf /home/dev/.bun/install/cache 2>/dev/null
-        ln -sf "$NFS_MOUNT/bun" /home/dev/.bun/install/cache
-        log "Linked bun cache -> $NFS_MOUNT/bun"
+        ln -sf "$NFS_CACHE_MOUNT/bun" /home/dev/.bun/install/cache
+        log "Linked bun cache -> $NFS_CACHE_MOUNT/bun"
     fi
     
     if [ ! -L /home/dev/.npm/_cacache ]; then
         mkdir -p /home/dev/.npm
         rm -rf /home/dev/.npm/_cacache 2>/dev/null
-        ln -sf "$NFS_MOUNT/npm" /home/dev/.npm/_cacache
-        log "Linked npm cache -> $NFS_MOUNT/npm"
+        ln -sf "$NFS_CACHE_MOUNT/npm" /home/dev/.npm/_cacache
+        log "Linked npm cache -> $NFS_CACHE_MOUNT/npm"
     fi
     
     if [ ! -L /home/dev/.cache/pip ]; then
         mkdir -p /home/dev/.cache
         rm -rf /home/dev/.cache/pip 2>/dev/null
-        ln -sf "$NFS_MOUNT/pip" /home/dev/.cache/pip
-        log "Linked pip cache -> $NFS_MOUNT/pip"
+        ln -sf "$NFS_CACHE_MOUNT/pip" /home/dev/.cache/pip
+        log "Linked pip cache -> $NFS_CACHE_MOUNT/pip"
     fi
     
     chown -R dev:dev /home/dev/.bun /home/dev/.npm /home/dev/.cache 2>/dev/null
 else
-    log "WARNING: Failed to mount NFS, package caching disabled"
+    log "WARNING: Failed to mount NFS cache, package caching disabled"
+fi
+
+log "Mounting NFS shared binaries..."
+mkdir -p "$NFS_BINARIES_MOUNT"
+if timeout 5 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_BINARIES_EXPORT" "$NFS_BINARIES_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
+    log "NFS binaries mounted at $NFS_BINARIES_MOUNT (read-only)"
+    export PATH="$NFS_BINARIES_MOUNT/bin:$PATH"
+    echo "export PATH=$NFS_BINARIES_MOUNT/bin:\$PATH" >> /home/dev/.profile
+    log "Added $NFS_BINARIES_MOUNT/bin to PATH"
+else
+    log "WARNING: Failed to mount NFS binaries"
 fi
 
 if [ -f "$SECRETS_FILE" ]; then

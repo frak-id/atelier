@@ -124,13 +124,11 @@ export const DEFAULTS = {
 } as const;
 
 export const NFS = {
-  /** NFS export directory on host */
-  EXPORT_DIR: "/var/lib/sandbox/shared-cache",
-  /** NFS mount point inside VMs */
-  GUEST_MOUNT: "/mnt/cache",
-  /** Host IP for NFS (bridge IP) */
+  CACHE_EXPORT_DIR: "/var/lib/sandbox/shared-cache",
+  BINARIES_EXPORT_DIR: "/var/lib/sandbox/shared-binaries",
+  CACHE_GUEST_MOUNT: "/mnt/cache",
+  BINARIES_GUEST_MOUNT: "/opt/shared",
   HOST_IP: "172.16.0.1",
-  /** Subdirectories for different package managers */
   CACHE_DIRS: {
     BUN: "bun",
     NPM: "npm",
@@ -139,3 +137,24 @@ export const NFS = {
     PIP: "pip",
   },
 } as const;
+
+export const SHARED_BINARIES = {
+  opencode: {
+    name: "opencode",
+    version: OPENCODE.VERSION,
+    url: `${OPENCODE.RELEASE_URL}/v${OPENCODE.VERSION}/${OPENCODE.BINARY}`,
+    extractCommand: "tar -xzf",
+    binaryPath: "opencode",
+    estimatedSizeMb: 100,
+  },
+  "code-server": {
+    name: "code-server",
+    version: CODE_SERVER.VERSION,
+    url: `${CODE_SERVER.RELEASE_URL}/v${CODE_SERVER.VERSION}/code-server-${CODE_SERVER.VERSION}-linux-amd64.tar.gz`,
+    extractCommand: "tar -xzf",
+    binaryPath: `code-server-${CODE_SERVER.VERSION}-linux-amd64`,
+    estimatedSizeMb: 500,
+  },
+} as const;
+
+export type SharedBinaryId = keyof typeof SHARED_BINARIES;

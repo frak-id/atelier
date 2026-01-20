@@ -3,7 +3,7 @@ import { NETWORK, NFS } from "../lib/context";
 import { exec, fileExists } from "../lib/shell";
 
 export async function setupNfs(_args: string[] = []) {
-  p.log.step("Setting up NFS Server for Shared Cache");
+  p.log.step("Setting up NFS Server for Shared Storage");
 
   const spinner = p.spinner();
 
@@ -14,26 +14,42 @@ export async function setupNfs(_args: string[] = []) {
   spinner.stop("NFS packages installed");
 
   spinner.start("Creating shared cache directories");
-  await exec(`mkdir -p ${NFS.EXPORT_DIR}`);
+  await exec(`mkdir -p ${NFS.CACHE_EXPORT_DIR}`);
   for (const subdir of Object.values(NFS.CACHE_DIRS)) {
-    await exec(`mkdir -p ${NFS.EXPORT_DIR}/${subdir}`);
+    await exec(`mkdir -p ${NFS.CACHE_EXPORT_DIR}/${subdir}`);
   }
-  await exec(`chmod -R 777 ${NFS.EXPORT_DIR}`);
+  await exec(`chmod -R 777 ${NFS.CACHE_EXPORT_DIR}`);
   spinner.stop("Cache directories created");
 
+  spinner.start("Creating shared binaries directory");
+  await exec(`mkdir -p ${NFS.BINARIES_EXPORT_DIR}/bin`);
+  await exec(`chmod -R 755 ${NFS.BINARIES_EXPORT_DIR}`);
+  spinner.stop("Binaries directory created");
+
   spinner.start("Configuring NFS exports");
-  const exportLine = `${NFS.EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(rw,sync,no_subtree_check,no_root_squash,insecure)`;
+  const cacheExportLine = `${NFS.CACHE_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(rw,sync,no_subtree_check,no_root_squash,insecure)`;
+  const binariesExportLine = `${NFS.BINARIES_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
 
   const exportsFile = "/etc/exports";
-  const currentExports = (await fileExists(exportsFile))
+  let currentExports = (await fileExists(exportsFile))
     ? await Bun.file(exportsFile).text()
     : "";
 
-  if (!currentExports.includes(NFS.EXPORT_DIR)) {
-    await Bun.write(exportsFile, `${currentExports}\n${exportLine}\n`);
-    p.log.info(`Added export: ${exportLine}`);
+  let modified = false;
+  if (!currentExports.includes(NFS.CACHE_EXPORT_DIR)) {
+    currentExports = `${currentExports}\n${cacheExportLine}`;
+    p.log.info(`Added cache export: ${cacheExportLine}`);
+    modified = true;
+  }
+  if (!currentExports.includes(NFS.BINARIES_EXPORT_DIR)) {
+    currentExports = `${currentExports}\n${binariesExportLine}`;
+    p.log.info(`Added binaries export (read-only): ${binariesExportLine}`);
+    modified = true;
+  }
+  if (modified) {
+    await Bun.write(exportsFile, currentExports.trim() + "\n");
   } else {
-    p.log.info("Export already configured");
+    p.log.info("Exports already configured");
   }
   spinner.stop("NFS exports configured");
 
@@ -69,15 +85,24 @@ export async function setupNfs(_args: string[] = []) {
   p.log.success("NFS server setup complete");
 
   p.note(
-    `NFS Export: ${NFS.EXPORT_DIR}
+    `Cache Export (rw): ${NFS.CACHE_EXPORT_DIR}
+Binaries Export (ro): ${NFS.BINARIES_EXPORT_DIR}
 Accessible from: ${NETWORK.BRIDGE_CIDR}
-Guest mount: mount -t nfs ${NFS.HOST_IP}:${NFS.EXPORT_DIR} ${NFS.GUEST_MOUNT}
+
+Guest mounts:
+  mount -t nfs ${NFS.HOST_IP}:${NFS.CACHE_EXPORT_DIR} ${NFS.CACHE_GUEST_MOUNT}
+  mount -t nfs -o ro ${NFS.HOST_IP}:${NFS.BINARIES_EXPORT_DIR} ${NFS.BINARIES_GUEST_MOUNT}
 
 Cache directories:
-  - ${NFS.EXPORT_DIR}/${NFS.CACHE_DIRS.BUN} (Bun cache)
-  - ${NFS.EXPORT_DIR}/${NFS.CACHE_DIRS.NPM} (npm cache)
-  - ${NFS.EXPORT_DIR}/${NFS.CACHE_DIRS.PNPM} (pnpm cache)
-  - ${NFS.EXPORT_DIR}/${NFS.CACHE_DIRS.PIP} (pip cache)`,
+  - ${NFS.CACHE_EXPORT_DIR}/${NFS.CACHE_DIRS.BUN} (Bun cache)
+  - ${NFS.CACHE_EXPORT_DIR}/${NFS.CACHE_DIRS.NPM} (npm cache)
+  - ${NFS.CACHE_EXPORT_DIR}/${NFS.CACHE_DIRS.PNPM} (pnpm cache)
+  - ${NFS.CACHE_EXPORT_DIR}/${NFS.CACHE_DIRS.PIP} (pip cache)
+
+Binaries directory:
+  - ${NFS.BINARIES_EXPORT_DIR}/bin (add to PATH)
+  
+Install binaries via Manager API: POST /api/storage/binaries/:name/install`,
     "NFS Configuration",
   );
 }
