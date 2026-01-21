@@ -11,6 +11,7 @@ import { gitSourceRoutes } from "./modules/git-source/index.ts";
 import { githubApiRoutes, githubAuthRoutes } from "./modules/github/index.ts";
 import { healthRoutes } from "./modules/health/index.ts";
 import { imageRoutes } from "./modules/image/index.ts";
+import { internalRoutes } from "./modules/internal/index.ts";
 import { sandboxRoutes } from "./modules/sandbox/index.ts";
 import { sharedStorageRoutes } from "./modules/shared-storage/index.ts";
 import { systemRoutes } from "./modules/system/index.ts";
@@ -18,6 +19,7 @@ import { workspaceRoutes } from "./modules/workspace/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config } from "./shared/lib/config.ts";
+import { internalGuard } from "./shared/lib/internal-guard.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 
@@ -145,6 +147,7 @@ const app = new Elysia()
   })
   .use(healthRoutes)
   .use(authRoutes)
+  .guard({ beforeHandle: internalGuard }, (app) => app.use(internalRoutes))
   .group("/auth", (app) =>
     app.guard({ beforeHandle: authGuard }, (app) => app.use(githubAuthRoutes)),
   )

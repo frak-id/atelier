@@ -1,5 +1,5 @@
-import { Elysia } from "elysia";
-import { configFileService } from "../../container.ts";
+import { Elysia, t } from "elysia";
+import { configFileService, internalService } from "../../container.ts";
 import {
   ConfigFileListQuerySchema,
   ConfigFileListResponseSchema,
@@ -110,5 +110,20 @@ export const configFileRoutes = new Elysia({ prefix: "/config-files" })
     {
       query: MergedConfigQuerySchema,
       response: MergedConfigResponseSchema,
+    },
+  )
+  .post(
+    "/sync-to-nfs",
+    async () => {
+      return internalService.syncConfigsToNfs();
+    },
+    {
+      response: t.Object({
+        synced: t.Number(),
+      }),
+      detail: {
+        tags: ["config"],
+        summary: "Sync all config files to NFS shared storage",
+      },
     },
   );

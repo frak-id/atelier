@@ -9,6 +9,7 @@ import { healthRoutes } from "./routes/health";
 import { servicesRoutes } from "./routes/services";
 import { storageRoutes } from "./routes/storage";
 import { vscodeRoutes } from "./routes/vscode";
+import { authSyncService } from "./services/auth-sync";
 
 const app = new Elysia({ adapter: node() })
   .use(healthRoutes)
@@ -21,6 +22,9 @@ const app = new Elysia({ adapter: node() })
   .use(vscodeRoutes)
   .listen(AGENT_PORT, () => {
     console.log(`Sandbox agent running at http://0.0.0.0:${AGENT_PORT}`);
+    authSyncService.start().catch((err) => {
+      console.error("Failed to start auth sync service:", err);
+    });
   });
 
 export type App = typeof app;

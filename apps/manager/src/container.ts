@@ -7,6 +7,10 @@ import {
   GitSourceRepository,
   GitSourceService,
 } from "./modules/git-source/index.ts";
+import {
+  InternalService,
+  SharedAuthRepository,
+} from "./modules/internal/index.ts";
 import { SandboxRepository, SandboxService } from "./modules/sandbox/index.ts";
 import {
   WorkspaceRepository,
@@ -27,6 +31,7 @@ const configFileRepository = new ConfigFileRepository();
 const gitSourceRepository = new GitSourceRepository();
 const workspaceRepository = new WorkspaceRepository();
 const sandboxRepository = new SandboxRepository();
+const sharedAuthRepository = new SharedAuthRepository();
 
 /* -------------------------------------------------------------------------- */
 /*                                  Services                                  */
@@ -36,6 +41,7 @@ const configFileService = new ConfigFileService(configFileRepository);
 const gitSourceService = new GitSourceService(gitSourceRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = new SandboxService(sandboxRepository);
+const internalService = new InternalService(sharedAuthRepository);
 
 const agentClient = new AgentClient();
 
@@ -71,6 +77,7 @@ export {
   agentClient,
   configFileService,
   gitSourceService,
+  internalService,
   prebuildRunner,
   sandboxDestroyer,
   sandboxLifecycle,

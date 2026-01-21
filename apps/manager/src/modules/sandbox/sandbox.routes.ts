@@ -149,6 +149,23 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       response: SandboxSchema,
     },
   )
+  .post(
+    "/:id/restart",
+    async ({ params }) => {
+      const sandbox = sandboxService.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      log.info({ sandboxId: params.id }, "Restarting sandbox");
+      await sandboxLifecycle.stop(params.id);
+      return sandboxLifecycle.start(params.id);
+    },
+    {
+      params: IdParamSchema,
+      response: SandboxSchema,
+    },
+  )
   .get(
     "/job/:id",
     ({ params }) => {

@@ -1,17 +1,36 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Download, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useRef, useState } from "react";
-import type { ConfigFile, ConfigFileContentType } from "@/api/client";
+import type { ConfigFile, ConfigFileContentType, Sandbox } from "@/api/client";
 import {
   configFilesListQuery,
+  sandboxListQuery,
   useCreateConfigFile,
   useDeleteConfigFile,
+  useRestartSandbox,
+  useSyncConfigsToNfs,
   useUpdateConfigFile,
   workspaceListQuery,
 } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -29,6 +48,8 @@ export const Route = createFileRoute("/settings/")({
 
 function SettingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
+  const [selectedSandboxes, setSelectedSandboxes] = useState<string[]>([]);
 
   const { data: globalConfigs, isLoading: loadingGlobal } = useQuery(
     configFilesListQuery({ scope: "global" }),
@@ -40,9 +61,34 @@ function SettingsPage() {
     configFilesListQuery({ scope: "workspace" }),
   );
 
+  const { data: sandboxes } = useQuery(sandboxListQuery({ status: "running" }));
+
   const createMutation = useCreateConfigFile();
   const updateMutation = useUpdateConfigFile();
   const deleteMutation = useDeleteConfigFile();
+  const syncMutation = useSyncConfigsToNfs();
+  const restartMutation = useRestartSandbox();
+
+  const runningSandboxes = sandboxes ?? [];
+
+  const handleConfigChange = () => {
+    syncMutation.mutate(undefined, {
+      onSuccess: () => {
+        if (runningSandboxes.length > 0) {
+          setSelectedSandboxes(runningSandboxes.map((s) => s.id));
+          setShowRestartDialog(true);
+        }
+      },
+    });
+  };
+
+  const handleRestartSelected = async () => {
+    for (const id of selectedSandboxes) {
+      await restartMutation.mutateAsync(id);
+    }
+    setShowRestartDialog(false);
+    setSelectedSandboxes([]);
+  };
 
   const workspaceConfigCounts = new Map<string, number>();
   allWorkspaceConfigs?.forEach((c: ConfigFile) => {
@@ -67,18 +113,45 @@ function SettingsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Global Config Files</h1>
-        <p className="text-muted-foreground">
-          Configuration files injected into all sandboxes
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Global Config Files</h1>
+          <p className="text-muted-foreground">
+            Configuration files injected into all sandboxes
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending}
+        >
+          {syncMutation.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          Sync to NFS
+        </Button>
       </div>
 
       <AddConfigFileDialog
         onAdd={(data) =>
-          createMutation.mutate({ ...data, scope: "global" as const })
+          createMutation.mutate(
+            { ...data, scope: "global" as const },
+            { onSuccess: handleConfigChange },
+          )
         }
         isPending={createMutation.isPending}
+      />
+
+      <RestartSandboxesDialog
+        open={showRestartDialog}
+        onOpenChange={setShowRestartDialog}
+        sandboxes={runningSandboxes}
+        selectedIds={selectedSandboxes}
+        onSelectedChange={setSelectedSandboxes}
+        onConfirm={handleRestartSelected}
+        isRestarting={restartMutation.isPending}
       />
 
       <div className="space-y-4">
@@ -98,13 +171,20 @@ function SettingsPage() {
               onSave={(content) =>
                 updateMutation.mutate(
                   { id: config.id, data: { content } },
-                  { onSuccess: () => setEditingId(null) },
+                  {
+                    onSuccess: () => {
+                      setEditingId(null);
+                      handleConfigChange();
+                    },
+                  },
                 )
               }
               onCancel={() => setEditingId(null)}
               onDelete={() => {
                 if (confirm(`Delete config file ${config.path}?`)) {
-                  deleteMutation.mutate(config.id);
+                  deleteMutation.mutate(config.id, {
+                    onSuccess: handleConfigChange,
+                  });
                 }
               }}
               isSaving={updateMutation.isPending}
@@ -285,6 +365,96 @@ function AddConfigFileDialog({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function RestartSandboxesDialog({
+  open,
+  onOpenChange,
+  sandboxes,
+  selectedIds,
+  onSelectedChange,
+  onConfirm,
+  isRestarting,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sandboxes: Sandbox[];
+  selectedIds: string[];
+  onSelectedChange: (ids: string[]) => void;
+  onConfirm: () => void;
+  isRestarting: boolean;
+}) {
+  const toggleSandbox = (id: string) => {
+    if (selectedIds.includes(id)) {
+      onSelectedChange(selectedIds.filter((s) => s !== id));
+    } else {
+      onSelectedChange([...selectedIds, id]);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Config Updated - Restart Sandboxes?</DialogTitle>
+          <DialogDescription>
+            Config files have been synced to NFS. Running sandboxes need to be
+            restarted to pick up the changes.
+          </DialogDescription>
+        </DialogHeader>
+
+        {sandboxes.length > 0 && (
+          <div className="space-y-2 max-h-48 overflow-auto">
+            {sandboxes.map((sandbox) => (
+              <div key={sandbox.id} className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id={sandbox.id}
+                  checked={selectedIds.includes(sandbox.id)}
+                  onChange={() => toggleSandbox(sandbox.id)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <label
+                  htmlFor={sandbox.id}
+                  className="text-sm font-medium leading-none cursor-pointer"
+                >
+                  {sandbox.id}
+                  {sandbox.workspaceId && (
+                    <span className="text-muted-foreground ml-2">
+                      (workspace)
+                    </span>
+                  )}
+                </label>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Skip
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={isRestarting || selectedIds.length === 0}
+          >
+            {isRestarting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Restarting...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Restart {selectedIds.length} Sandbox
+                {selectedIds.length !== 1 ? "es" : ""}
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
