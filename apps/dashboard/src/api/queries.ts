@@ -410,6 +410,19 @@ export const githubReposQuery = (params?: {
       ),
   });
 
+export const githubBranchesQuery = (owner: string, repo: string) =>
+  queryOptions({
+    queryKey: ["github", "branches", owner, repo] as const,
+    queryFn: async () =>
+      unwrap(
+        await api.api.github.branches.get({
+          query: { owner, repo },
+        }),
+      ),
+    enabled: !!owner && !!repo,
+    staleTime: 60000,
+  });
+
 export function useGitHubLogout() {
   return useMutation({
     mutationFn: async () => unwrap(await api.auth.github.logout.post()),
