@@ -22,7 +22,11 @@ const {
   GITHUB_CLIENT_ID,
   GITHUB_CLIENT_SECRET,
   GITHUB_CALLBACK_URL,
+  GITHUB_LOGIN_CALLBACK_URL,
   DASHBOARD_URL,
+  JWT_SECRET,
+  AUTH_ALLOWED_ORG,
+  AUTH_ALLOWED_USERS,
 } = process.env;
 
 const REBUILD_IMAGE = process.argv.includes("--rebuild-image");
@@ -38,10 +42,12 @@ async function main() {
     !GITHUB_CLIENT_ID ||
     !GITHUB_CLIENT_SECRET ||
     !GITHUB_CALLBACK_URL ||
-    !DASHBOARD_URL
+    !GITHUB_LOGIN_CALLBACK_URL ||
+    !DASHBOARD_URL ||
+    !JWT_SECRET
   ) {
     console.error(
-      "Missing GitHub OAuth env: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_CALLBACK_URL, DASHBOARD_URL",
+      "Missing required env vars: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_CALLBACK_URL, GITHUB_LOGIN_CALLBACK_URL, DASHBOARD_URL, JWT_SECRET",
     );
     console.error("Set in .env or export them");
     process.exit(1);
@@ -126,7 +132,14 @@ async function main() {
     .replace("{{GITHUB_CLIENT_ID}}", GITHUB_CLIENT_ID || "")
     .replace("{{GITHUB_CLIENT_SECRET}}", GITHUB_CLIENT_SECRET || "")
     .replace("{{GITHUB_CALLBACK_URL}}", GITHUB_CALLBACK_URL || "")
-    .replace("{{DASHBOARD_URL}}", DASHBOARD_URL || "");
+    .replace("{{GITHUB_LOGIN_CALLBACK_URL}}", GITHUB_LOGIN_CALLBACK_URL || "")
+    .replace("{{DASHBOARD_URL}}", DASHBOARD_URL || "")
+    .replace("{{JWT_SECRET}}", JWT_SECRET || "")
+    .replace("{{AUTH_ALLOWED_ORG}}", AUTH_ALLOWED_ORG || "frak-id")
+    .replace(
+      "{{AUTH_ALLOWED_USERS}}",
+      AUTH_ALLOWED_USERS || "srod,konfeature,mviala",
+    );
   await Bun.write(
     resolve(STAGING_DIR, "etc/systemd/system/frak-sandbox-manager.service"),
     managerService,
