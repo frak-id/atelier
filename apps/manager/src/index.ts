@@ -5,6 +5,7 @@ import { sandboxService } from "./container.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
+import { authRoutes } from "./modules/auth/index.ts";
 import { configFileRoutes } from "./modules/config-file/index.ts";
 import { gitSourceRoutes } from "./modules/git-source/index.ts";
 import { githubApiRoutes, githubAuthRoutes } from "./modules/github/index.ts";
@@ -143,6 +144,7 @@ const app = new Elysia()
     }
   })
   .use(healthRoutes)
+  .use(authRoutes)
   .group("/auth", (app) =>
     app.guard({ beforeHandle: authGuard }, (app) => app.use(githubAuthRoutes)),
   )

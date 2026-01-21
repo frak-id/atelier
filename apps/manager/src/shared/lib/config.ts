@@ -38,6 +38,19 @@ export const config = {
     callbackUrl:
       process.env.GITHUB_CALLBACK_URL ||
       "http://localhost:4000/auth/github/callback",
+    loginCallbackUrl:
+      process.env.GITHUB_LOGIN_CALLBACK_URL ||
+      "http://localhost:4000/auth/login/callback",
+  },
+
+  auth: {
+    jwtSecret: process.env.JWT_SECRET || "dev-secret-change-in-production",
+    // Allowed GitHub org or specific usernames as fallback
+    allowedOrg: process.env.AUTH_ALLOWED_ORG || "frak-id",
+    allowedUsers: (process.env.AUTH_ALLOWED_USERS || "srod,konfeature,mviala")
+      .split(",")
+      .map((u) => u.trim())
+      .filter(Boolean),
   },
 
   dashboardUrl: process.env.DASHBOARD_URL || "http://localhost:5173",
