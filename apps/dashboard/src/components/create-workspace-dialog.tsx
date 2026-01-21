@@ -1,5 +1,5 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, GitBranch, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import {
@@ -7,6 +7,7 @@ import {
   imageListQuery,
   useCreateWorkspace,
 } from "@/api/queries";
+import { BranchPicker } from "@/components/branch-picker";
 import { RepositoryPicker } from "@/components/repository-picker";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+
+function parseRepoFullName(fullName: string): { owner: string; repo: string } {
+  const parts = fullName.split("/");
+  return { owner: parts[0] || "", repo: parts[1] || "" };
+}
 
 interface RepoEntry {
   url?: string;
@@ -111,7 +117,7 @@ export function CreateWorkspaceDialog({
               };
             }
             return {
-              url: r.url!,
+              url: r.url ?? "",
               branch: r.branch,
               clonePath: r.clonePath,
             };
@@ -163,29 +169,89 @@ export function CreateWorkspaceDialog({
             <div className="space-y-2">
               <Label>Repositories</Label>
               {repos.length > 0 && (
-                <div className="space-y-2 mb-2">
-                  {repos.map((repo, idx) => (
-                    <div
-                      key={`repo-${idx}`}
-                      className="flex items-center gap-2 p-2 bg-muted rounded text-sm min-w-0"
-                    >
-                      <span className="flex-1 font-mono truncate min-w-0">
-                        {repo.url || repo.repo}
-                      </span>
-                      <span className="text-muted-foreground truncate shrink-0 max-w-[40%]">
-                        → {repo.clonePath}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="shrink-0"
-                        onClick={() => removeRepo(idx)}
+                <div className="space-y-3 mb-2">
+                  {repos.map((repo, idx) => {
+                    const repoInfo = repo.repo
+                      ? parseRepoFullName(repo.repo)
+                      : null;
+                    return (
+                      <div
+                        key={`repo-${idx}`}
+                        className="p-3 bg-muted rounded-lg space-y-2"
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="flex-1 font-mono text-sm truncate min-w-0">
+                            {repo.url || repo.repo}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0 h-7 w-7 p-0"
+                            onClick={() => removeRepo(idx)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">
+                              Branch
+                            </Label>
+                            {repoInfo ? (
+                              <BranchPicker
+                                owner={repoInfo.owner}
+                                repo={repoInfo.repo}
+                                value={repo.branch}
+                                onChange={(branch) => {
+                                  setRepos((prev) =>
+                                    prev.map((r, i) =>
+                                      i === idx ? { ...r, branch } : r,
+                                    ),
+                                  );
+                                }}
+                              />
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <GitBranch className="h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  value={repo.branch}
+                                  onChange={(e) => {
+                                    setRepos((prev) =>
+                                      prev.map((r, i) =>
+                                        i === idx
+                                          ? { ...r, branch: e.target.value }
+                                          : r,
+                                      ),
+                                    );
+                                  }}
+                                  className="h-8"
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">
+                              Clone Path
+                            </Label>
+                            <Input
+                              value={repo.clonePath}
+                              onChange={(e) => {
+                                setRepos((prev) =>
+                                  prev.map((r, i) =>
+                                    i === idx
+                                      ? { ...r, clonePath: e.target.value }
+                                      : r,
+                                  ),
+                                );
+                              }}
+                              className="h-8"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -216,20 +282,55 @@ export function CreateWorkspaceDialog({
                       }
                     }}
                   />
+                  {newRepo.repo && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">
+                          Branch
+                        </Label>
+                        <BranchPicker
+                          owner={parseRepoFullName(newRepo.repo).owner}
+                          repo={parseRepoFullName(newRepo.repo).repo}
+                          value={newRepo.branch}
+                          onChange={(branch) =>
+                            setNewRepo({ ...newRepo, branch })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">
+                          Clone Path
+                        </Label>
+                        <Input
+                          value={newRepo.clonePath}
+                          onChange={(e) =>
+                            setNewRepo({
+                              ...newRepo,
+                              clonePath: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
                   <div className="flex gap-2">
-                    <Input
-                      placeholder="Clone path"
-                      value={newRepo.clonePath}
-                      onChange={(e) =>
-                        setNewRepo({ ...newRepo, clonePath: e.target.value })
-                      }
-                    />
+                    {!newRepo.repo && (
+                      <Input
+                        placeholder="Clone path"
+                        value={newRepo.clonePath}
+                        onChange={(e) =>
+                          setNewRepo({ ...newRepo, clonePath: e.target.value })
+                        }
+                      />
+                    )}
                     <Button
                       type="button"
                       onClick={addRepo}
                       disabled={!newRepo.url && !newRepo.repo}
+                      className={newRepo.repo ? "w-full" : ""}
                     >
-                      <Plus className="h-4 w-4" />
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Repository
                     </Button>
                   </div>
                   <button

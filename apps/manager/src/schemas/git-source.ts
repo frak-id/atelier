@@ -127,3 +127,24 @@ export type SourceRepo = Static<typeof SourceRepoSchema>;
 
 export const SourceReposResponseSchema = t.Array(SourceRepoSchema);
 export type SourceReposResponse = Static<typeof SourceReposResponseSchema>;
+
+export const GitHubBranchSchema = t.Object({
+  name: t.String(),
+  isDefault: t.Boolean(),
+  lastCommitDate: t.Union([t.String(), t.Null()]),
+});
+export type GitHubBranch = Static<typeof GitHubBranchSchema>;
+
+export const GitHubBranchesResponseSchema = t.Object({
+  branches: t.Array(GitHubBranchSchema),
+  defaultBranch: t.String(),
+});
+export type GitHubBranchesResponse = Static<
+  typeof GitHubBranchesResponseSchema
+>;
+
+export const GitHubBranchesQuerySchema = t.Object({
+  owner: t.String(),
+  repo: t.String(),
+});
+export type GitHubBranchesQuery = Static<typeof GitHubBranchesQuerySchema>;
