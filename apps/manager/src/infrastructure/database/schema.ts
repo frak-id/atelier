@@ -63,3 +63,19 @@ export const sharedAuth = sqliteTable("shared_auth", {
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by"),
 });
+
+const sshKeyTypeValues = ["generated", "uploaded"] as const;
+export type SshKeyType = (typeof sshKeyTypeValues)[number];
+
+export const sshKeys = sqliteTable("ssh_keys", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  username: text("username").notNull(),
+  publicKey: text("public_key").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  name: text("name").notNull(),
+  type: text("type", { enum: sshKeyTypeValues }).notNull(),
+  expiresAt: text("expires_at"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

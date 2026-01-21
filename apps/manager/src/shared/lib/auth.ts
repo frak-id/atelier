@@ -28,9 +28,11 @@ async function verifyJwt(token: string): Promise<AuthUser | null> {
 export async function authGuard({
   headers,
   set,
+  store,
 }: {
   headers: Record<string, string | undefined>;
   set: { status?: number | string };
+  store: { user?: AuthUser };
 }): Promise<{ error: string; message: string } | undefined> {
   const authHeader = headers.authorization;
   if (!authHeader) {
@@ -58,4 +60,6 @@ export async function authGuard({
       message: "Invalid or expired token",
     };
   }
+
+  store.user = user;
 }

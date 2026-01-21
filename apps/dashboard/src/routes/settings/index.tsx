@@ -23,6 +23,7 @@ import {
   useUpdateSharedAuth,
   workspaceListQuery,
 } from "@/api/queries";
+import { SshKeysSection } from "@/components/ssh-keys-section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -115,25 +116,29 @@ function SettingsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Global Config Files</h1>
-          <p className="text-muted-foreground">
-            Configuration files injected into all sandboxes
-          </p>
+      <SshKeysSection />
+
+      <div className="border-t pt-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Global Config Files</h1>
+            <p className="text-muted-foreground">
+              Configuration files injected into all sandboxes
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+          >
+            {syncMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Sync to NFS
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-        >
-          {syncMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
-          )}
-          Sync to NFS
-        </Button>
       </div>
 
       <AddConfigFileDialog

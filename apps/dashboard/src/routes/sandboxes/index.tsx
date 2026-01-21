@@ -1,6 +1,7 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   Check,
   Copy,
   ExternalLink,
@@ -16,6 +17,7 @@ import { useCallback, useState } from "react";
 import type { Sandbox } from "@/api/client";
 import {
   sandboxListQuery,
+  sshKeysHasKeysQuery,
   useCreateSandbox,
   useDeleteSandbox,
   useStartSandbox,
@@ -76,6 +78,7 @@ function SandboxesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [recreatingId, setRecreatingId] = useState<string | null>(null);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
+  const { data: hasKeysData } = useQuery(sshKeysHasKeysQuery);
   const deleteMutation = useDeleteSandbox();
   const createMutation = useCreateSandbox();
   const stopMutation = useStopSandbox();
@@ -130,6 +133,24 @@ function SandboxesPage() {
           New Sandbox
         </Button>
       </div>
+
+      {hasKeysData?.hasKeys === false && (
+        <Card className="border-amber-500/50 bg-amber-500/10">
+          <CardContent className="flex items-center gap-3 py-4">
+            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">SSH keys not configured</p>
+              <p className="text-sm text-muted-foreground">
+                You won't be able to SSH into sandboxes until you configure your
+                SSH keys.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/settings">Configure SSH Keys</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-wrap items-center gap-4">
         <Select value={statusFilter} onValueChange={setStatusFilter}>

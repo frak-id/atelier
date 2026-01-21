@@ -7,6 +7,7 @@ const log = createChildLogger("sshpiper");
 interface SshPipeFrom {
   username: string;
   username_regex_match?: boolean;
+  authorized_keys_data?: string;
 }
 
 interface SshPipe {
@@ -22,6 +23,22 @@ interface SshPipe {
 interface PipesConfig {
   version: string;
   pipes: SshPipe[];
+}
+
+let sshKeyProvider: () => Array<{ publicKey: string }> = () => [];
+
+export function setSshKeyProvider(
+  provider: () => Array<{ publicKey: string }>,
+): void {
+  sshKeyProvider = provider;
+}
+
+function buildAuthorizedKeysData(): string | undefined {
+  const keys = sshKeyProvider();
+  if (keys.length === 0) return undefined;
+
+  const authorizedKeys = keys.map((k) => k.publicKey.trim()).join("\n");
+  return Buffer.from(authorizedKeys).toString("base64");
 }
 
 async function readPipesConfig(): Promise<PipesConfig> {
@@ -46,6 +63,7 @@ export const SshPiperService = {
     }
 
     const pipesConfig = await readPipesConfig();
+    const authorizedKeysData = buildAuthorizedKeysData();
 
     const existingIndex = pipesConfig.pipes.findIndex((p) =>
       p.from.some((f) => f.username === sandboxId),
@@ -54,8 +72,13 @@ export const SshPiperService = {
       pipesConfig.pipes.splice(existingIndex, 1);
     }
 
+    const fromEntry: SshPipeFrom = { username: sandboxId };
+    if (authorizedKeysData) {
+      fromEntry.authorized_keys_data = authorizedKeysData;
+    }
+
     pipesConfig.pipes.push({
-      from: [{ username: sandboxId }],
+      from: [fromEntry],
       to: {
         host: `${ipAddress}:22`,
         username: "root",
@@ -124,5 +147,31 @@ export const SshPiperService = {
         ? `${sandboxId}@${config.sshProxy.domain}`
         : `${sandboxId}@${config.sshProxy.domain}:${config.sshProxy.port}`;
     return `code --remote ssh-remote+${sshHost} /workspace`;
+  },
+
+  async regenerateAllRoutes(): Promise<void> {
+    if (config.isMock()) {
+      log.debug("Mock: Regenerating all SSH routes");
+      return;
+    }
+
+    const pipesConfig = await readPipesConfig();
+    const authorizedKeysData = buildAuthorizedKeysData();
+
+    for (const pipe of pipesConfig.pipes) {
+      for (const from of pipe.from) {
+        if (authorizedKeysData) {
+          from.authorized_keys_data = authorizedKeysData;
+        } else {
+          delete from.authorized_keys_data;
+        }
+      }
+    }
+
+    await writePipesConfig(pipesConfig);
+    log.info(
+      { pipeCount: pipesConfig.pipes.length },
+      "All SSH routes regenerated",
+    );
   },
 };
