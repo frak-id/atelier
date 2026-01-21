@@ -220,3 +220,12 @@ export const ResizeStorageResponseSchema = t.Object({
   error: t.Optional(t.String()),
 });
 export type ResizeStorageResponse = Static<typeof ResizeStorageResponseSchema>;
+
+export const PromoteToPrebuildResponseSchema = t.Object({
+  success: t.Boolean(),
+  message: t.String(),
+  workspaceId: t.String(),
+});
+export type PromoteToPrebuildResponse = Static<
+  typeof PromoteToPrebuildResponseSchema
+>;

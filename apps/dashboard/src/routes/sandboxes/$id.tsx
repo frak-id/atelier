@@ -1,6 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
   ExternalLink,
@@ -12,6 +13,7 @@ import {
   Pause,
   Play,
   RefreshCw,
+  Save,
   Terminal,
   Trash2,
 } from "lucide-react";
@@ -28,14 +30,24 @@ import {
   useExecCommand,
   useExtractConfig,
   useResizeStorage,
+  useSaveAsPrebuild,
   useStartSandbox,
   useStopSandbox,
+  workspaceDetailQuery,
 } from "@/api/queries";
 
 import { HierarchicalSessionList } from "@/components/hierarchical-session-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -62,12 +74,15 @@ function SandboxDetailPage() {
   const deleteMutation = useDeleteSandbox();
   const stopMutation = useStopSandbox();
   const startMutation = useStartSandbox();
+  const saveAsPrebuildMutation = useSaveAsPrebuild();
   const [command, setCommand] = useState("");
   const [execOutput, setExecOutput] = useState<{
     stdout: string;
     stderr: string;
     exitCode: number;
   } | null>(null);
+  const [showSaveAsPrebuildDialog, setShowSaveAsPrebuildDialog] =
+    useState(false);
   const execMutation = useExecCommand(id);
 
   const { data: metrics } = useQuery({
@@ -77,6 +92,10 @@ function SandboxDetailPage() {
   const { data: services } = useQuery({
     ...sandboxServicesQuery(id),
     enabled: sandbox?.status === "running",
+  });
+  const { data: workspace } = useQuery({
+    ...workspaceDetailQuery(sandbox?.workspaceId ?? ""),
+    enabled: !!sandbox?.workspaceId,
   });
 
   if (!sandbox) {
@@ -169,6 +188,20 @@ function SandboxDetailPage() {
                 )}
                 Stop
               </Button>
+              {sandbox.workspaceId && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowSaveAsPrebuildDialog(true)}
+                  disabled={saveAsPrebuildMutation.isPending}
+                >
+                  {saveAsPrebuildMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  Save as Prebuild
+                </Button>
+              )}
             </>
           )}
           {sandbox.status === "stopped" && (
@@ -371,6 +404,59 @@ function SandboxDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={showSaveAsPrebuildDialog}
+        onOpenChange={setShowSaveAsPrebuildDialog}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              Save as Prebuild
+            </DialogTitle>
+            <DialogDescription>
+              This will save the current state of this sandbox as the prebuild
+              for workspace{" "}
+              <span className="font-semibold">
+                {workspace?.name ?? sandbox.workspaceId}
+              </span>
+              .
+              {workspace?.config.prebuild?.status === "ready" && (
+                <span className="block mt-2 text-yellow-600">
+                  This will replace the existing prebuild image.
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground">
+            <p>The sandbox will be temporarily stopped during the snapshot.</p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowSaveAsPrebuildDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                saveAsPrebuildMutation.mutate(id, {
+                  onSuccess: () => setShowSaveAsPrebuildDialog(false),
+                });
+              }}
+              disabled={saveAsPrebuildMutation.isPending}
+            >
+              {saveAsPrebuildMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Save as Prebuild
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

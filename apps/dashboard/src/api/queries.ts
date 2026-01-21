@@ -279,6 +279,17 @@ export function useTriggerPrebuild() {
   });
 }
 
+export function useSaveAsPrebuild() {
+  return useMutation({
+    mutationFn: async (sandboxId: string) =>
+      unwrap(await api.api.sandboxes({ id: sandboxId }).promote.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+    },
+  });
+}
+
 export function useSystemCleanup() {
   return useMutation({
     mutationFn: async () => unwrap(await api.api.system.cleanup.post()),

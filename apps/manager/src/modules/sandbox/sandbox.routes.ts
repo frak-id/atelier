@@ -6,6 +6,7 @@ import {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
+  workspaceService,
 } from "../../container.ts";
 import { QueueService } from "../../infrastructure/queue/index.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
@@ -25,6 +26,7 @@ import {
   LogsParamsSchema,
   LogsQuerySchema,
   LogsResponseSchema,
+  PromoteToPrebuildResponseSchema,
   RegisterAppBodySchema,
   ResizeStorageBodySchema,
   ResizeStorageResponseSchema,
@@ -390,5 +392,65 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       params: IdParamSchema,
       body: ResizeStorageBodySchema,
       response: ResizeStorageResponseSchema,
+    },
+  )
+  .post(
+    "/:id/promote",
+    async ({ params }) => {
+      const sandbox = sandboxService.getById(params.id);
+      if (!sandbox) {
+        throw new NotFoundError("Sandbox", params.id);
+      }
+
+      if (sandbox.status !== "running") {
+        throw new Error("Sandbox must be running to save as prebuild");
+      }
+
+      if (!sandbox.workspaceId) {
+        throw new Error(
+          "Sandbox must belong to a workspace to save as prebuild",
+        );
+      }
+
+      const workspace = workspaceService.getById(sandbox.workspaceId);
+      if (!workspace) {
+        throw new NotFoundError("Workspace", sandbox.workspaceId);
+      }
+
+      log.info(
+        { sandboxId: params.id, workspaceId: sandbox.workspaceId },
+        "Promoting sandbox to prebuild",
+      );
+
+      await agentClient.exec(sandbox.runtime.ipAddress, "sync");
+      await sandboxLifecycle.stop(params.id);
+      await StorageService.createPrebuild(sandbox.workspaceId, params.id);
+      await sandboxLifecycle.start(params.id);
+
+      workspaceService.update(sandbox.workspaceId, {
+        config: {
+          ...workspace.config,
+          prebuild: {
+            status: "ready",
+            latestId: params.id,
+            builtAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      log.info(
+        { sandboxId: params.id, workspaceId: sandbox.workspaceId },
+        "Sandbox promoted to prebuild successfully",
+      );
+
+      return {
+        success: true,
+        message: "Sandbox saved as prebuild successfully",
+        workspaceId: sandbox.workspaceId,
+      };
+    },
+    {
+      params: IdParamSchema,
+      response: PromoteToPrebuildResponseSchema,
     },
   );
