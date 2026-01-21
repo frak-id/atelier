@@ -1,5 +1,4 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, GitBranch, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import {
@@ -7,8 +6,6 @@ import {
   imageListQuery,
   useCreateWorkspace,
 } from "@/api/queries";
-import { BranchPicker } from "@/components/branch-picker";
-import { RepositoryPicker } from "@/components/repository-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,29 +15,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-
-function parseRepoFullName(fullName: string): { owner: string; repo: string } {
-  const parts = fullName.split("/");
-  return { owner: parts[0] || "", repo: parts[1] || "" };
-}
-
-interface RepoEntry {
-  url?: string;
-  sourceId?: string;
-  repo?: string;
-  branch: string;
-  clonePath: string;
-}
+  CommandsForm,
+  GeneralForm,
+  type GitSourceInfo,
+  RepoAddForm,
+  type RepoEntry,
+  RepoItem,
+  serializeRepos,
+} from "@/components/workspace-form";
 
 interface CreateWorkspaceDialogProps {
   open: boolean;
@@ -58,12 +42,11 @@ export function CreateWorkspaceDialog({
     queryFn: async () => {
       const result = await api.api.sources.get();
       if (result.error) throw result.error;
-      return result.data;
+      return result.data as GitSourceInfo[];
     },
   });
   const createMutation = useCreateWorkspace();
 
-  const [showManualUrl, setShowManualUrl] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     baseImage: "dev-base",
@@ -73,24 +56,8 @@ export function CreateWorkspaceDialog({
     startCommands: "",
   });
   const [repos, setRepos] = useState<RepoEntry[]>([]);
-  const [newRepo, setNewRepo] = useState<RepoEntry>({
-    url: "",
-    branch: "main",
-    clonePath: "/workspace",
-  });
 
   const isGitHubConnected = githubStatus?.connected === true;
-
-  const addRepo = () => {
-    if (newRepo.url || newRepo.repo) {
-      setRepos([...repos, newRepo]);
-      setNewRepo({ url: "", branch: "main", clonePath: "/workspace" });
-    }
-  };
-
-  const removeRepo = (index: number) => {
-    setRepos(repos.filter((_, i) => i !== index));
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,21 +74,7 @@ export function CreateWorkspaceDialog({
           startCommands: formData.startCommands
             .split("\n")
             .filter((cmd) => cmd.trim()),
-          repos: repos.map((r) => {
-            if (r.sourceId && r.repo) {
-              return {
-                sourceId: r.sourceId,
-                repo: r.repo,
-                branch: r.branch,
-                clonePath: r.clonePath,
-              };
-            }
-            return {
-              url: r.url ?? "",
-              branch: r.branch,
-              clonePath: r.clonePath,
-            };
-          }),
+          repos: serializeRepos(repos),
           secrets: {},
           exposedPorts: [],
         },
@@ -154,332 +107,67 @@ export function CreateWorkspaceDialog({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Workspace Name</Label>
-              <Input
-                id="name"
-                required
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-              />
-            </div>
+            <GeneralForm
+              name={formData.name}
+              baseImage={formData.baseImage}
+              vcpus={formData.vcpus}
+              memoryMb={formData.memoryMb}
+              images={images ?? []}
+              onNameChange={(name) => setFormData({ ...formData, name })}
+              onBaseImageChange={(baseImage) =>
+                setFormData({ ...formData, baseImage })
+              }
+              onVcpusChange={(vcpus) => setFormData({ ...formData, vcpus })}
+              onMemoryMbChange={(memoryMb) =>
+                setFormData({ ...formData, memoryMb })
+              }
+            />
 
             <div className="space-y-2">
               <Label>Repositories</Label>
               {repos.length > 0 && (
                 <div className="space-y-3 mb-2">
-                  {repos.map((repo, idx) => {
-                    const repoInfo = repo.repo
-                      ? parseRepoFullName(repo.repo)
-                      : null;
-                    return (
-                      <div
-                        key={`repo-${idx}`}
-                        className="p-3 bg-muted rounded-lg space-y-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="flex-1 font-mono text-sm truncate min-w-0">
-                            {repo.url || repo.repo}
-                          </span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="shrink-0 h-7 w-7 p-0"
-                            onClick={() => removeRepo(idx)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">
-                              Branch
-                            </Label>
-                            {repoInfo ? (
-                              <BranchPicker
-                                owner={repoInfo.owner}
-                                repo={repoInfo.repo}
-                                value={repo.branch}
-                                onChange={(branch) => {
-                                  setRepos((prev) =>
-                                    prev.map((r, i) =>
-                                      i === idx ? { ...r, branch } : r,
-                                    ),
-                                  );
-                                }}
-                              />
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <GitBranch className="h-4 w-4 text-muted-foreground" />
-                                <Input
-                                  value={repo.branch}
-                                  onChange={(e) => {
-                                    setRepos((prev) =>
-                                      prev.map((r, i) =>
-                                        i === idx
-                                          ? { ...r, branch: e.target.value }
-                                          : r,
-                                      ),
-                                    );
-                                  }}
-                                  className="h-8"
-                                />
-                              </div>
-                            )}
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">
-                              Clone Path
-                            </Label>
-                            <Input
-                              value={repo.clonePath}
-                              onChange={(e) => {
-                                setRepos((prev) =>
-                                  prev.map((r, i) =>
-                                    i === idx
-                                      ? { ...r, clonePath: e.target.value }
-                                      : r,
-                                  ),
-                                );
-                              }}
-                              className="h-8"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {isGitHubConnected && !showManualUrl ? (
-                <div className="space-y-2">
-                  <RepositoryPicker
-                    value={newRepo.url}
-                    onSelect={(repo) => {
-                      const githubSource = gitSources?.find(
-                        (s) => s.type === "github",
-                      );
-                      if (githubSource) {
-                        setNewRepo({
-                          sourceId: githubSource.id,
-                          repo: repo.fullName,
-                          branch: repo.defaultBranch,
-                          clonePath: `/workspace/${repo.name}`,
-                        });
-                      } else {
-                        setNewRepo({
-                          url: repo.cloneUrl,
-                          branch: repo.defaultBranch,
-                          clonePath: `/workspace/${repo.name}`,
-                        });
+                  {repos.map((repo, idx) => (
+                    <RepoItem
+                      key={`repo-${idx}`}
+                      repo={repo}
+                      variant="muted"
+                      onUpdate={(updates) =>
+                        setRepos((prev) =>
+                          prev.map((r, i) =>
+                            i === idx ? { ...r, ...updates } : r,
+                          ),
+                        )
                       }
-                      if (!formData.name) {
-                        setFormData({ ...formData, name: repo.name });
-                      }
-                    }}
-                  />
-                  {newRepo.repo && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">
-                          Branch
-                        </Label>
-                        <BranchPicker
-                          owner={parseRepoFullName(newRepo.repo).owner}
-                          repo={parseRepoFullName(newRepo.repo).repo}
-                          value={newRepo.branch}
-                          onChange={(branch) =>
-                            setNewRepo({ ...newRepo, branch })
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">
-                          Clone Path
-                        </Label>
-                        <Input
-                          value={newRepo.clonePath}
-                          onChange={(e) =>
-                            setNewRepo({
-                              ...newRepo,
-                              clonePath: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    {!newRepo.repo && (
-                      <Input
-                        placeholder="Clone path"
-                        value={newRepo.clonePath}
-                        onChange={(e) =>
-                          setNewRepo({ ...newRepo, clonePath: e.target.value })
-                        }
-                      />
-                    )}
-                    <Button
-                      type="button"
-                      onClick={addRepo}
-                      disabled={!newRepo.url && !newRepo.repo}
-                      className={newRepo.repo ? "w-full" : ""}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Repository
-                    </Button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowManualUrl(true)}
-                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                    Or enter URL manually
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="https://github.com/org/repo.git"
-                      value={newRepo.url}
-                      onChange={(e) =>
-                        setNewRepo({ ...newRepo, url: e.target.value })
+                      onRemove={() =>
+                        setRepos((prev) => prev.filter((_, i) => i !== idx))
                       }
                     />
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Branch"
-                      value={newRepo.branch}
-                      onChange={(e) =>
-                        setNewRepo({ ...newRepo, branch: e.target.value })
-                      }
-                    />
-                    <Input
-                      placeholder="Clone path"
-                      value={newRepo.clonePath}
-                      onChange={(e) =>
-                        setNewRepo({ ...newRepo, clonePath: e.target.value })
-                      }
-                    />
-                    <Button
-                      type="button"
-                      onClick={addRepo}
-                      disabled={!newRepo.url && !newRepo.repo}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  {isGitHubConnected && (
-                    <button
-                      type="button"
-                      onClick={() => setShowManualUrl(false)}
-                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-                    >
-                      <ChevronUp className="h-3 w-3" />
-                      Select from GitHub
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="image">Base Image</Label>
-              <Select
-                value={formData.baseImage}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, baseImage: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {images?.map((image) => (
-                    <SelectItem key={image.id} value={image.id}>
-                      {image.name}
-                    </SelectItem>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="vcpus">vCPUs</Label>
-                <Select
-                  value={String(formData.vcpus)}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, vcpus: parseInt(value, 10) })
+                </div>
+              )}
+              <RepoAddForm
+                isGitHubConnected={isGitHubConnected}
+                gitSources={gitSources}
+                onAdd={(repo) => setRepos([...repos, repo])}
+                onRepoSelected={(repoName) => {
+                  if (!formData.name) {
+                    setFormData({ ...formData, name: repoName });
                   }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 vCPU</SelectItem>
-                    <SelectItem value="2">2 vCPUs</SelectItem>
-                    <SelectItem value="4">4 vCPUs</SelectItem>
-                    <SelectItem value="8">8 vCPUs</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="memory">Memory</Label>
-                <Select
-                  value={String(formData.memoryMb)}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, memoryMb: parseInt(value, 10) })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1024">1 GB</SelectItem>
-                    <SelectItem value="2048">2 GB</SelectItem>
-                    <SelectItem value="4096">4 GB</SelectItem>
-                    <SelectItem value="8192">8 GB</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="initCommands">Init Commands (one per line)</Label>
-              <Textarea
-                id="initCommands"
-                placeholder="bun install&#10;bun run build"
-                rows={3}
-                value={formData.initCommands}
-                onChange={(e) =>
-                  setFormData({ ...formData, initCommands: e.target.value })
-                }
+                }}
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="startCommands">
-                Start Commands (one per line)
-              </Label>
-              <Textarea
-                id="startCommands"
-                placeholder="bun run dev &"
-                rows={2}
-                value={formData.startCommands}
-                onChange={(e) =>
-                  setFormData({ ...formData, startCommands: e.target.value })
-                }
-              />
-            </div>
+            <CommandsForm
+              initCommands={formData.initCommands}
+              startCommands={formData.startCommands}
+              onInitCommandsChange={(initCommands) =>
+                setFormData({ ...formData, initCommands })
+              }
+              onStartCommandsChange={(startCommands) =>
+                setFormData({ ...formData, startCommands })
+              }
+            />
           </div>
           <DialogFooter>
             <Button
