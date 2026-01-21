@@ -1,5 +1,5 @@
 import { Loader2, MessageSquare } from "lucide-react";
-import { SessionRow } from "@/components/session-row";
+import { HierarchicalSessionList } from "@/components/hierarchical-session-list";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAllOpenCodeSessions } from "@/hooks/use-all-opencode-sessions";
@@ -83,15 +83,12 @@ export function RecentSessionsCard() {
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
-        {sessions.slice(0, 5).map((session) => (
-          <SessionRow key={session.id} session={session} showSandboxInfo />
-        ))}
-        {sessions.length > 5 && (
-          <p className="text-xs text-muted-foreground text-center pt-2">
-            +{sessions.length - 5} more sessions
-          </p>
-        )}
+      <CardContent>
+        <HierarchicalSessionList
+          sessions={sessions}
+          showSandboxInfo
+          limit={5}
+        />
       </CardContent>
     </Card>
   );

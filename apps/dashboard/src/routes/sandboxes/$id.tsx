@@ -32,7 +32,7 @@ import {
   useStopSandbox,
 } from "@/api/queries";
 
-import { SessionRow } from "@/components/session-row";
+import { HierarchicalSessionList } from "@/components/hierarchical-session-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -418,20 +418,15 @@ function OpenCodeSessions({
       </CardHeader>
       <CardContent>
         {sessions && sessions.length > 0 ? (
-          <div className="space-y-2">
-            {sessions.map((session) => (
-              <SessionRow
-                key={session.id}
-                session={{
-                  ...session,
-                  sandbox: { id: sandboxId, workspaceId, opencodeUrl },
-                }}
-                showDelete
-                onDelete={(id) => deleteMutation.mutate(id)}
-                isDeleting={deleteMutation.isPending}
-              />
-            ))}
-          </div>
+          <HierarchicalSessionList
+            sessions={sessions.map((session) => ({
+              ...session,
+              sandbox: { id: sandboxId, workspaceId, opencodeUrl },
+            }))}
+            showDelete
+            onDelete={(sessionId) => deleteMutation.mutate(sessionId)}
+            isDeleting={deleteMutation.isPending}
+          />
         ) : (
           <div className="text-center py-8 text-muted-foreground">
             <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
