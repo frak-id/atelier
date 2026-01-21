@@ -1,32 +1,28 @@
-/**
- * Pre-computed SHA-256 hashes of base64-encoded credentials.
- * To add a user: echo -n "$(echo -n 'username:password' | base64)" | shasum -a 256
- */
-const VALID_TOKEN_HASHES = new Set([
-  // srod
-  "f6d4789a7283759a5fe41e0ccd2915b3c69ff30250d7e39122c1f3909b462187",
-  // konfeature
-  "abea2dc18ef66ab4c07b7c224edf0be2902eb5378ee69473fa03d10588376249",
-  // matt
-  "072fd3599d6b7ba686727b29733c181013ce52a3b794717500b246128ac4494e",
-]);
+import * as jose from "jose";
+import { config } from "./config.ts";
 
-async function hashToken(token: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(token);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+const JWT_SECRET = new TextEncoder().encode(config.auth.jwtSecret);
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  avatarUrl: string;
 }
 
-async function validateToken(authHeader: string | null): Promise<boolean> {
-  if (!authHeader) return false;
-
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match?.[1]) return false;
-
-  const tokenHash = await hashToken(match[1]);
-  return VALID_TOKEN_HASHES.has(tokenHash);
+async function verifyJwt(token: string): Promise<AuthUser | null> {
+  try {
+    const { payload } = await jose.jwtVerify(token, JWT_SECRET);
+    if (!payload.sub || !payload.username) {
+      return null;
+    }
+    return {
+      id: payload.sub,
+      username: payload.username as string,
+      avatarUrl: (payload.avatarUrl as string) || "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function authGuard({
@@ -36,13 +32,30 @@ export async function authGuard({
   headers: Record<string, string | undefined>;
   set: { status?: number | string };
 }): Promise<{ error: string; message: string } | void> {
-  const isValid = await validateToken(headers.authorization ?? null);
-
-  if (!isValid) {
+  const authHeader = headers.authorization;
+  if (!authHeader) {
     set.status = 401;
     return {
       error: "UNAUTHORIZED",
-      message: "Invalid or missing authentication token",
+      message: "Missing authorization header",
+    };
+  }
+
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match?.[1]) {
+    set.status = 401;
+    return {
+      error: "UNAUTHORIZED",
+      message: "Invalid authorization format",
+    };
+  }
+
+  const user = await verifyJwt(match[1]);
+  if (!user) {
+    set.status = 401;
+    return {
+      error: "UNAUTHORIZED",
+      message: "Invalid or expired token",
     };
   }
 }

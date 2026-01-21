@@ -424,7 +424,7 @@ export function useGitHubReauthorize() {
     mutationFn: async () => {
       const API_BASE = import.meta.env.PROD
         ? "https://sandbox-api.nivelais.com"
-        : "";
+        : "http://localhost:4000";
       window.location.href = `${API_BASE}/auth/github/reauthorize`;
     },
   });

@@ -54,11 +54,13 @@
       "version": "0.1.0",
       "dependencies": {
         "@elysiajs/cors": "^1.4.1",
+        "@elysiajs/jwt": "^1.4.0",
         "@elysiajs/swagger": "^1.3.1",
         "@frak-sandbox/shared": "workspace:*",
         "drizzle-orm": "^0.45.1",
         "elysia": "^1.4.22",
         "env-paths": "^3.0.0",
+        "jose": "^6.1.3",
         "nanoid": "^5.1.6",
         "pino": "^10.2.0",
         "pino-pretty": "^13.1.3",
@@ -175,6 +177,8 @@
     "@elysiajs/cors": ["@elysiajs/cors@1.4.1", "", { "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-lQfad+F3r4mNwsxRKbXyJB8Jg43oAOXjRwn7sKUL6bcOW3KjUqUimTS+woNpO97efpzjtDE0tEjGk9DTw8lqTQ=="],
 
     "@elysiajs/eden": ["@elysiajs/eden@1.4.6", "", { "peerDependencies": { "elysia": ">=1.4.19" } }, "sha512-Tsa4NwXEWg/u73vWiYZQ3L5/ecgZSxqiEjYwpS+4qBKXeTZqZKl2hcgHJSVBL+InEDMi35Xugct7qyAXE5oM4Q=="],
+
+    "@elysiajs/jwt": ["@elysiajs/jwt@1.4.0", "", { "dependencies": { "jose": "^6.0.11" }, "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-Z0PvZhQxdDeKZ8HslXzDoXXD83NKExNPmoiAPki3nI2Xvh5wtUrBH+zWOD17yP14IbRo8fxGj3L25MRCAPsgPA=="],
 
     "@elysiajs/node": ["@elysiajs/node@1.4.3", "", { "dependencies": { "crossws": "^0.4.1", "srvx": "^0.10.0" }, "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-Qw2SGfiVB7R+L8iU3fjGDGHdTPP/lUkQyi15dfvvsMPcmVEDweKW+FSt6ae6SSvQc5Di111g44vTV9FHwUPdvA=="],
 
@@ -649,6 +653,8 @@
     "isbot": ["isbot@5.1.32", "", {}, "sha512-VNfjM73zz2IBZmdShMfAUg10prm6t7HFUQmNAEOAVS4YH92ZrZcvkMcGX6cIgBJAzWDzPent/EeAtYEHNPNPBQ=="],
 
     "jiti": ["jiti@2.6.1", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ=="],
+
+    "jose": ["jose@6.1.3", "", {}, "sha512-0TpaTfihd4QMNwrz/ob2Bp7X04yuxJkjRGi4aKmOqwhov54i6u79oCv7T+C7lo70MKH6BesI3vscD1yb/yzKXQ=="],
 
     "joycon": ["joycon@3.1.1", "", {}, "sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw=="],
 

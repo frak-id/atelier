@@ -1,11 +1,11 @@
 import { treaty } from "@elysiajs/eden";
 import type { App as ManagerApp } from "@frak-sandbox/manager";
 
-const API_HOST = import.meta.env.PROD
+export const API_HOST = import.meta.env.PROD
   ? "https://sandbox-api.nivelais.com"
   : "http://localhost:4000";
 
-export const AUTH_TOKEN_KEY = "frak_sandbox_token";
+export const AUTH_TOKEN_KEY = "frak_sandbox_jwt";
 
 export function getAuthToken(): string | null {
   return localStorage.getItem(AUTH_TOKEN_KEY);
@@ -35,7 +35,6 @@ export type {
   Workspace,
 } from "@frak-sandbox/manager/types";
 
-// Infer GitHub repository type from API response
 type GitHubReposResponse = Awaited<
   ReturnType<typeof api.api.github.repos.get>
 >["data"];

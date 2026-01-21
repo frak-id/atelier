@@ -1,34 +1,39 @@
-import { Box, Loader2 } from "lucide-react";
-import { useState } from "react";
-import { setAuthToken } from "@/api/client";
+import { Box, Github, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { API_HOST, setAuthToken } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
 }
 
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const loginToken = params.get("login_token");
+    const loginError = params.get("login_error");
 
-    try {
-      const token = btoa(`${username}:${password}`);
-      setAuthToken(token);
+    if (loginToken) {
+      setAuthToken(loginToken);
+      window.history.replaceState({}, "", window.location.pathname);
       onLoginSuccess();
-    } catch {
-      setError("Failed to create authentication token");
-      setIsLoading(false);
+      return;
     }
+
+    if (loginError) {
+      setError(getErrorMessage(loginError));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [onLoginSuccess]);
+
+  const handleGitHubLogin = () => {
+    setIsLoading(true);
+    setError(null);
+    window.location.href = `${API_HOST}/login/github`;
   };
 
   return (
@@ -39,48 +44,51 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
             <Box className="h-10 w-10 text-primary" />
           </div>
           <CardTitle className="text-xl">Frak Sandbox</CardTitle>
-          <p className="text-sm text-muted-foreground">Sign in to continue</p>
+          <p className="text-sm text-muted-foreground">
+            Sign in with GitHub to continue
+          </p>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
-                required
-                disabled={isLoading}
-              />
+        <CardContent className="space-y-4">
+          {error && (
+            <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
+              {error}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-                disabled={isLoading}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                "Sign in"
-              )}
-            </Button>
-          </form>
+          )}
+          <Button
+            onClick={handleGitHubLogin}
+            className="w-full"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Redirecting...
+              </>
+            ) : (
+              <>
+                <Github className="mr-2 h-4 w-4" />
+                Sign in with GitHub
+              </>
+            )}
+          </Button>
+          <p className="text-xs text-center text-muted-foreground">
+            Access restricted to frak-id organization members
+          </p>
         </CardContent>
       </Card>
     </div>
   );
+}
+
+function getErrorMessage(errorCode: string): string {
+  switch (errorCode) {
+    case "unauthorized":
+      return "You are not authorized to access this application. Only frak-id organization members can sign in.";
+    case "no_code":
+      return "GitHub authentication failed. Please try again.";
+    case "callback_failed":
+      return "Authentication failed. Please try again.";
+    default:
+      return `Authentication error: ${errorCode}`;
+  }
 }
