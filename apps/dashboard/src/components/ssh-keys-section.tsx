@@ -1,5 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Copy, Download, Key, Plus, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  Download,
+  Key,
+  Plus,
+  Terminal,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import type { SshKey } from "@/api/client";
 import {
@@ -22,6 +31,9 @@ import {
   generateEd25519Keypair,
   isWebCryptoEd25519Supported,
 } from "@/lib/ssh-keygen";
+
+/** Standard path for oc-sandbox SSH key on user's local machine */
+export const SSH_KEY_PATH = "~/.config/oc-sandbox/sandbox_key";
 
 export function SshKeysSection() {
   const { data: keys, isLoading } = useQuery(sshKeysListQuery);
@@ -112,6 +124,64 @@ export function SshKeysSection() {
         onSuccess={() => setAddDialogOpen(false)}
       />
     </div>
+  );
+}
+
+function useCopyWithFeedback() {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  return { copy, isCopied: (key: string) => copiedKey === key };
+}
+
+function SetupInstructions({ privateKey }: { privateKey: string }) {
+  const { copy, isCopied } = useCopyWithFeedback();
+
+  const setupCommand = `mkdir -p ~/.config/oc-sandbox && cat > ${SSH_KEY_PATH} << 'EOF'
+${privateKey}
+EOF
+chmod 600 ${SSH_KEY_PATH}`;
+
+  return (
+    <Card className="border-blue-500/30 bg-blue-500/5">
+      <CardContent className="py-3 space-y-3">
+        <div className="flex items-center gap-2">
+          <Terminal className="h-4 w-4 text-blue-500" />
+          <p className="text-sm font-medium text-blue-500">Quick Setup</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Run this command in your terminal to save the key to the standard
+          path:
+        </p>
+        <div className="relative">
+          <pre className="text-xs font-mono bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+            {setupCommand}
+          </pre>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-1 right-1 h-7 w-7"
+            onClick={() => copy(setupCommand, "setup")}
+          >
+            {isCopied("setup") ? (
+              <Check className="h-3.5 w-3.5 text-green-500" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Then use <code className="bg-muted px-1 rounded">{SSH_KEY_PATH}</code>{" "}
+          in your SSH commands with{" "}
+          <code className="bg-muted px-1 rounded">-i</code> flag.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -259,8 +329,8 @@ function AddSshKeyDialog({
                         Private Key Generated
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Download and save your private key now. It will not be
-                        shown again. This key expires in 24 hours.
+                        Save your private key now. It will not be shown again.
+                        This key expires in 24 hours.
                       </p>
                     </CardContent>
                   </Card>
@@ -282,6 +352,9 @@ function AddSshKeyDialog({
                       <Copy className="h-4 w-4" />
                     </Button>
                   </div>
+
+                  <SetupInstructions privateKey={generatedPrivateKey} />
+
                   <div className="space-y-2">
                     <Label>Public Key (will be saved)</Label>
                     <Textarea
