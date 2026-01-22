@@ -50,11 +50,17 @@ function useCopyToClipboard() {
   return { copy, isCopied: (key: string) => copiedKey === key };
 }
 
+import { SSH_KEY_PATH } from "@/components/ssh-keys-section";
+
 function sshCommandToVscodeRemote(sshCmd: string): string {
   const withoutSsh = sshCmd.replace(/^ssh\s+/, "");
   const [userHost, port] = withoutSsh.split(/\s+-p\s+/);
   const remoteHost = port ? `${userHost}:${port}` : userHost;
   return `code --remote ssh-remote+${remoteHost} /workspace`;
+}
+
+function getSshCommand(sshCmd: string): string {
+  return `${sshCmd} -i ${SSH_KEY_PATH}`;
 }
 
 export const Route = createFileRoute("/sandboxes/")({
@@ -247,6 +253,7 @@ function SandboxCard({
   } as const;
 
   const opencodeAttachCmd = `opencode attach ${sandbox.runtime.urls.opencode}`;
+  const sshCmd = getSshCommand(sandbox.runtime.urls.ssh);
   const vscodeRemoteCmd = sshCommandToVscodeRemote(sandbox.runtime.urls.ssh);
 
   return (
@@ -346,6 +353,23 @@ function SandboxCard({
                   onClick={() => copy(opencodeAttachCmd, "opencode")}
                 >
                   {isCopied("opencode") ? (
+                    <Check className="h-3.5 w-3.5 text-green-500" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2 group">
+                <code className="flex-1 text-xs bg-muted px-2 py-1.5 rounded font-mono truncate">
+                  {sshCmd}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={() => copy(sshCmd, "ssh")}
+                >
+                  {isCopied("ssh") ? (
                     <Check className="h-3.5 w-3.5 text-green-500" />
                   ) : (
                     <Copy className="h-3.5 w-3.5" />
