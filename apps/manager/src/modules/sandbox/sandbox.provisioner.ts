@@ -63,6 +63,8 @@ export const SandboxProvisioner = {
     network: NetworkAllocation,
   ): Promise<void> {
     const networkScript = `#!/bin/bash
+ip addr add 127.0.0.1/8 dev lo
+ip link set lo up
 ip addr add ${network.ipAddress}/24 dev eth0
 ip link set eth0 up
 ip route add default via ${network.gateway} dev eth0

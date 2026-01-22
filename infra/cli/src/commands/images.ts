@@ -136,8 +136,16 @@ async function buildImage(args: string[]) {
     await exec(`mkdir -p ${mountPoint}`);
     await exec(`mount -o loop ${outputFile} ${mountPoint}`);
     await exec(`tar -xf ${tempDir}/rootfs.tar -C ${mountPoint}`);
+
+    // Inject VM SSH key for sshpiper authentication
+    const sshKeyPath = `${PATHS.ROOTFS_DIR}/vm-ssh-key`;
+    await exec(`mkdir -p ${mountPoint}/root/.ssh`);
+    await exec(`cp ${sshKeyPath}.pub ${mountPoint}/root/.ssh/authorized_keys`);
+    await exec(`chmod 700 ${mountPoint}/root/.ssh`);
+    await exec(`chmod 600 ${mountPoint}/root/.ssh/authorized_keys`);
+
     await exec(`umount ${mountPoint}`);
-    spinner.stop("Rootfs extracted");
+    spinner.stop("Rootfs extracted with SSH key");
 
     // Create LVM snapshot for thin provisioning
     spinner.start("Creating LVM image volume");

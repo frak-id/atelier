@@ -34,11 +34,18 @@ import {
 
 /** Standard path for oc-sandbox SSH key on user's local machine */
 export const SSH_KEY_PATH = "~/.config/oc-sandbox/sandbox_key";
+/** SSH host alias for ~/.ssh/config */
+export const SSH_HOST_ALIAS = "frak-sandbox";
+/** SSH proxy hostname */
+export const SSH_HOSTNAME = "ssh.nivelais.com";
+/** SSH proxy port */
+export const SSH_PORT = 2222;
 
 export function SshKeysSection() {
   const { data: keys, isLoading } = useQuery(sshKeysListQuery);
   const deleteMutation = useDeleteSshKey();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [setupDialogKey, setSetupDialogKey] = useState<SshKey | null>(null);
 
   if (isLoading) {
     return <div className="animate-pulse h-32 bg-muted rounded" />;
@@ -78,7 +85,11 @@ export function SshKeysSection() {
 
       <div className="space-y-3">
         {keys?.map((key: SshKey) => (
-          <Card key={key.id}>
+          <Card
+            key={key.id}
+            className="cursor-pointer hover:border-primary/50 transition-colors"
+            onClick={() => setSetupDialogKey(key)}
+          >
             <CardHeader className="flex flex-row items-center justify-between py-3">
               <div className="flex items-center gap-3">
                 <Key className="h-4 w-4 text-muted-foreground" />
@@ -103,7 +114,8 @@ export function SshKeysSection() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     if (window.confirm(`Delete SSH key "${key.name}"?`)) {
                       deleteMutation.mutate(key.id);
                     }
@@ -123,6 +135,11 @@ export function SshKeysSection() {
         onOpenChange={setAddDialogOpen}
         onSuccess={() => setAddDialogOpen(false)}
       />
+
+      <SshKeySetupDialog
+        sshKey={setupDialogKey}
+        onOpenChange={(open) => !open && setSetupDialogKey(null)}
+      />
     </div>
   );
 }
@@ -139,34 +156,66 @@ function useCopyWithFeedback() {
   return { copy, isCopied: (key: string) => copiedKey === key };
 }
 
-function SetupInstructions({ privateKey }: { privateKey: string }) {
+const SSH_CONFIG_SNIPPET = `
+Host ${SSH_HOST_ALIAS}
+    HostName ${SSH_HOSTNAME}
+    Port ${SSH_PORT}
+    IdentityFile ${SSH_KEY_PATH}
+    StrictHostKeyChecking no`;
+
+function SetupInstructions({
+  privateKey,
+  showPrivateKeySetup = true,
+}: {
+  privateKey?: string;
+  showPrivateKeySetup?: boolean;
+}) {
   const { copy, isCopied } = useCopyWithFeedback();
 
-  const setupCommand = `mkdir -p ~/.config/oc-sandbox && cat > ${SSH_KEY_PATH} << 'EOF'
+  const keySetupCommand = privateKey
+    ? `mkdir -p ~/.config/oc-sandbox && cat > ${SSH_KEY_PATH} << 'EOF'
 ${privateKey}
 EOF
-chmod 600 ${SSH_KEY_PATH}`;
+chmod 600 ${SSH_KEY_PATH}`
+    : null;
+
+  const sshConfigCommand = `grep -q "Host ${SSH_HOST_ALIAS}" ~/.ssh/config 2>/dev/null || cat >> ~/.ssh/config << 'EOF'
+${SSH_CONFIG_SNIPPET}
+EOF`;
+
+  const fullSetupCommand =
+    keySetupCommand && showPrivateKeySetup
+      ? `${keySetupCommand}
+
+# Add SSH config for VSCode Remote
+${sshConfigCommand}`
+      : sshConfigCommand;
 
   return (
     <Card className="border-blue-500/30 bg-blue-500/5">
       <CardContent className="py-3 space-y-3">
         <div className="flex items-center gap-2">
           <Terminal className="h-4 w-4 text-blue-500" />
-          <p className="text-sm font-medium text-blue-500">Quick Setup</p>
+          <p className="text-sm font-medium text-blue-500">
+            {showPrivateKeySetup && privateKey
+              ? "Quick Setup"
+              : "SSH Config Setup"}
+          </p>
         </div>
         <p className="text-xs text-muted-foreground">
-          Run this command in your terminal to save the key to the standard
-          path:
+          {showPrivateKeySetup && privateKey
+            ? "Run this command to save your key and configure SSH:"
+            : "Run this command to add SSH config for VSCode Remote:"}
         </p>
         <div className="relative">
           <pre className="text-xs font-mono bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
-            {setupCommand}
+            {fullSetupCommand}
           </pre>
           <Button
             variant="ghost"
             size="icon"
             className="absolute top-1 right-1 h-7 w-7"
-            onClick={() => copy(setupCommand, "setup")}
+            onClick={() => copy(fullSetupCommand, "setup")}
           >
             {isCopied("setup") ? (
               <Check className="h-3.5 w-3.5 text-green-500" />
@@ -175,13 +224,58 @@ chmod 600 ${SSH_KEY_PATH}`;
             )}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Then use <code className="bg-muted px-1 rounded">{SSH_KEY_PATH}</code>{" "}
-          in your SSH commands with{" "}
-          <code className="bg-muted px-1 rounded">-i</code> flag.
-        </p>
+        <div className="text-xs text-muted-foreground space-y-1">
+          <p>After setup, connect with:</p>
+          <code className="block bg-muted px-2 py-1 rounded">
+            ssh &lt;sandbox-id&gt;@{SSH_HOST_ALIAS}
+          </code>
+          <code className="block bg-muted px-2 py-1 rounded">
+            code --remote ssh-remote+&lt;sandbox-id&gt;@{SSH_HOST_ALIAS}{" "}
+            /workspace
+          </code>
+        </div>
       </CardContent>
     </Card>
+  );
+}
+
+function SshKeySetupDialog({
+  sshKey,
+  onOpenChange,
+}: {
+  sshKey: SshKey | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={!!sshKey} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Key className="h-4 w-4" />
+            {sshKey?.name}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="text-sm text-muted-foreground">
+            <p>
+              <span className="font-medium">Fingerprint:</span>{" "}
+              <code className="bg-muted px-1 rounded">
+                {sshKey?.fingerprint}
+              </code>
+            </p>
+            {sshKey?.expiresAt && (
+              <p className="mt-1">
+                <span className="font-medium">Expires:</span>{" "}
+                {new Date(sshKey.expiresAt).toLocaleString()}
+              </p>
+            )}
+          </div>
+
+          <SetupInstructions showPrivateKeySetup={false} />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

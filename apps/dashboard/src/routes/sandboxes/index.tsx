@@ -14,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useState } from "react";
-import type { Sandbox } from "@/api/client";
+import type { Sandbox, Workspace } from "@/api/client";
 import {
   sandboxListQuery,
   sshKeysHasKeysQuery,
@@ -22,7 +22,7 @@ import {
   useDeleteSandbox,
   useStartSandbox,
   useStopSandbox,
-  useWorkspaceMap,
+  useWorkspaceDataMap,
 } from "@/api/queries";
 import { CreateSandboxDialog } from "@/components/create-sandbox-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -50,17 +50,36 @@ function useCopyToClipboard() {
   return { copy, isCopied: (key: string) => copiedKey === key };
 }
 
-import { SSH_KEY_PATH } from "@/components/ssh-keys-section";
+import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
 
-function sshCommandToVscodeRemote(sshCmd: string): string {
-  const withoutSsh = sshCmd.replace(/^ssh\s+/, "");
-  const [userHost, port] = withoutSsh.split(/\s+-p\s+/);
-  const remoteHost = port ? `${userHost}:${port}` : userHost;
-  return `code --remote ssh-remote+${remoteHost} /workspace`;
+function extractSandboxId(sshCmd: string): string {
+  const match = sshCmd.match(/ssh\s+(\S+)@/);
+  return match?.[1] ?? "";
+}
+
+function getWorkspacePath(workspace?: Workspace): string {
+  const repos = workspace?.config.repos ?? [];
+  if (repos.length === 1 && repos[0]?.clonePath) {
+    const clonePath = repos[0].clonePath;
+    return clonePath.startsWith("/workspace")
+      ? `/home/dev${clonePath}`
+      : `/home/dev/workspace${clonePath}`;
+  }
+  return "/home/dev/workspace";
+}
+
+function sshCommandToVscodeRemote(
+  sshCmd: string,
+  workspace?: Workspace,
+): string {
+  const sandboxId = extractSandboxId(sshCmd);
+  const workspacePath = getWorkspacePath(workspace);
+  return `code --remote ssh-remote+${sandboxId}@${SSH_HOST_ALIAS} ${workspacePath}`;
 }
 
 function getSshCommand(sshCmd: string): string {
-  return `${sshCmd} -i ${SSH_KEY_PATH}`;
+  const sandboxId = extractSandboxId(sshCmd);
+  return `ssh ${sandboxId}@${SSH_HOST_ALIAS}`;
 }
 
 export const Route = createFileRoute("/sandboxes/")({
@@ -86,7 +105,8 @@ function SandboxesPage() {
   const [recreatingId, setRecreatingId] = useState<string | null>(null);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
   const { data: hasKeysData } = useQuery(sshKeysHasKeysQuery);
-  const workspaceMap = useWorkspaceMap();
+  const workspaceDataMap = useWorkspaceDataMap();
+  const hasKeys = hasKeysData?.hasKeys ?? false;
   const deleteMutation = useDeleteSandbox();
   const createMutation = useCreateSandbox();
   const stopMutation = useStopSandbox();
@@ -191,29 +211,32 @@ function SandboxesPage() {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {filteredSandboxes.map((sandbox) => (
-            <SandboxCard
-              key={sandbox.id}
-              sandbox={sandbox}
-              workspaceName={
-                sandbox.workspaceId
-                  ? workspaceMap.get(sandbox.workspaceId)
-                  : undefined
-              }
-              onDelete={() => handleDelete(sandbox.id)}
-              onRecreate={() => handleRecreate(sandbox)}
-              isRecreating={recreatingId === sandbox.id}
-              onStop={() => stopMutation.mutate(sandbox.id)}
-              onStart={() => startMutation.mutate(sandbox.id)}
-              isStopping={
-                stopMutation.isPending && stopMutation.variables === sandbox.id
-              }
-              isStarting={
-                startMutation.isPending &&
-                startMutation.variables === sandbox.id
-              }
-            />
-          ))}
+          {filteredSandboxes.map((sandbox) => {
+            const workspace = sandbox.workspaceId
+              ? workspaceDataMap.get(sandbox.workspaceId)
+              : undefined;
+            return (
+              <SandboxCard
+                key={sandbox.id}
+                sandbox={sandbox}
+                workspace={workspace}
+                hasKeys={hasKeys}
+                onDelete={() => handleDelete(sandbox.id)}
+                onRecreate={() => handleRecreate(sandbox)}
+                isRecreating={recreatingId === sandbox.id}
+                onStop={() => stopMutation.mutate(sandbox.id)}
+                onStart={() => startMutation.mutate(sandbox.id)}
+                isStopping={
+                  stopMutation.isPending &&
+                  stopMutation.variables === sandbox.id
+                }
+                isStarting={
+                  startMutation.isPending &&
+                  startMutation.variables === sandbox.id
+                }
+              />
+            );
+          })}
         </div>
       )}
 
@@ -224,7 +247,8 @@ function SandboxesPage() {
 
 function SandboxCard({
   sandbox,
-  workspaceName,
+  workspace,
+  hasKeys,
   onDelete,
   onRecreate,
   isRecreating,
@@ -234,7 +258,8 @@ function SandboxCard({
   isStarting,
 }: {
   sandbox: Sandbox;
-  workspaceName?: string;
+  workspace?: Workspace;
+  hasKeys: boolean;
   onDelete: () => void;
   onRecreate?: () => void;
   isRecreating?: boolean;
@@ -254,7 +279,10 @@ function SandboxCard({
 
   const opencodeAttachCmd = `opencode attach ${sandbox.runtime.urls.opencode}`;
   const sshCmd = getSshCommand(sandbox.runtime.urls.ssh);
-  const vscodeRemoteCmd = sshCommandToVscodeRemote(sandbox.runtime.urls.ssh);
+  const vscodeRemoteCmd = sshCommandToVscodeRemote(
+    sandbox.runtime.urls.ssh,
+    workspace,
+  );
 
   return (
     <Card>
@@ -270,7 +298,7 @@ function SandboxCard({
           </Badge>
           {sandbox.workspaceId && (
             <Badge variant="outline">
-              {workspaceName ?? sandbox.workspaceId}
+              {workspace?.name ?? sandbox.workspaceId}
             </Badge>
           )}
         </div>
@@ -360,14 +388,17 @@ function SandboxCard({
                 </Button>
               </div>
               <div className="flex items-center gap-2 group">
-                <code className="flex-1 text-xs bg-muted px-2 py-1.5 rounded font-mono truncate">
-                  {sshCmd}
+                <code
+                  className={`flex-1 text-xs px-2 py-1.5 rounded font-mono truncate ${hasKeys ? "bg-muted" : "bg-yellow-500/10 text-yellow-600"}`}
+                >
+                  {hasKeys ? sshCmd : "No SSH keys configured"}
                 </code>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 shrink-0"
                   onClick={() => copy(sshCmd, "ssh")}
+                  disabled={!hasKeys}
                 >
                   {isCopied("ssh") ? (
                     <Check className="h-3.5 w-3.5 text-green-500" />
@@ -377,14 +408,17 @@ function SandboxCard({
                 </Button>
               </div>
               <div className="flex items-center gap-2 group">
-                <code className="flex-1 text-xs bg-muted px-2 py-1.5 rounded font-mono truncate">
-                  {vscodeRemoteCmd}
+                <code
+                  className={`flex-1 text-xs px-2 py-1.5 rounded font-mono truncate ${hasKeys ? "bg-muted" : "bg-yellow-500/10 text-yellow-600"}`}
+                >
+                  {hasKeys ? vscodeRemoteCmd : "No SSH keys configured"}
                 </code>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 shrink-0"
                   onClick={() => copy(vscodeRemoteCmd, "vscode")}
+                  disabled={!hasKeys}
                 >
                   {isCopied("vscode") ? (
                     <Check className="h-3.5 w-3.5 text-green-500" />
@@ -393,6 +427,17 @@ function SandboxCard({
                   )}
                 </Button>
               </div>
+              {!hasKeys && (
+                <p className="text-xs text-yellow-600">
+                  <Link
+                    to="/settings"
+                    className="underline hover:text-yellow-700"
+                  >
+                    Add an SSH key in settings
+                  </Link>{" "}
+                  to enable SSH and VSCode Remote access
+                </p>
+              )}
             </div>
             <div className="flex gap-2 pt-1">
               <a
@@ -434,7 +479,7 @@ function SandboxCard({
           {sandbox.workspaceId && (
             <div>
               <span className="text-muted-foreground">Workspace</span>
-              <p>{workspaceName ?? sandbox.workspaceId}</p>
+              <p>{workspace?.name ?? sandbox.workspaceId}</p>
             </div>
           )}
         </div>
