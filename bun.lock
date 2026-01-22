@@ -88,6 +88,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@elysiajs/node": "^1.4.3",
+        "@frak-sandbox/shared": "workspace:*",
         "elysia": "^1.4.22",
       },
       "devDependencies": {

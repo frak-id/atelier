@@ -41,7 +41,10 @@ const configFileService = new ConfigFileService(configFileRepository);
 const gitSourceService = new GitSourceService(gitSourceRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = new SandboxService(sandboxRepository);
-const internalService = new InternalService(sharedAuthRepository);
+const internalService = new InternalService(
+  sharedAuthRepository,
+  configFileService,
+);
 
 const agentClient = new AgentClient();
 

@@ -152,6 +152,22 @@ export const MANAGER_INTERNAL = {
   BASE_URL: "http://172.16.0.1:4000/internal",
 } as const;
 
+/** Known auth providers that sync between sandboxes via shared_auth */
+export const AUTH_PROVIDERS = [
+  {
+    name: "opencode",
+    path: "/home/dev/.local/share/opencode/auth.json",
+    description: "OpenCode authentication (Anthropic, XAI, OpenCode API keys)",
+  },
+  {
+    name: "antigravity",
+    path: "/home/dev/.config/opencode/antigravity-accounts.json",
+    description: "Google Antigravity plugin accounts",
+  },
+] as const;
+
+export type AuthProviderName = (typeof AUTH_PROVIDERS)[number]["name"];
+
 export const SHARED_BINARIES = {
   opencode: {
     name: "opencode",

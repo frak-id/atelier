@@ -4,29 +4,11 @@ import type {
   ConfigFileScope,
   MergedConfigFile,
 } from "../../schemas/index.ts";
-import { NotFoundError, ValidationError } from "../../shared/errors.ts";
+import { NotFoundError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileRepository } from "./config-file.repository.ts";
 
 const log = createChildLogger("config-file-service");
-
-const SHARED_AUTH_PATHS = [
-  "/home/dev/.local/share/opencode/auth.json",
-  "~/.local/share/opencode/auth.json",
-  "/home/dev/.config/opencode/antigravity-accounts.json",
-  "~/.config/opencode/antigravity-accounts.json",
-] as const;
-
-function normalizePath(path: string): string {
-  return path.replace(/^~/, "/home/dev");
-}
-
-function isSharedAuthPath(path: string): boolean {
-  const normalized = normalizePath(path);
-  return SHARED_AUTH_PATHS.some(
-    (authPath) => normalizePath(authPath) === normalized,
-  );
-}
 
 interface CreateOptions {
   path: string;
@@ -69,12 +51,6 @@ export class ConfigFileService {
   }
 
   create(options: CreateOptions): ConfigFile {
-    if (isSharedAuthPath(options.path)) {
-      throw new ValidationError(
-        `Path '${options.path}' is managed by Shared Auth. Use the Shared Auth section to manage this file.`,
-      );
-    }
-
     const existing = this.configFileRepository.getByPath(
       options.path,
       options.scope,

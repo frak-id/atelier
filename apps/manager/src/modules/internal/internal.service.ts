@@ -1,21 +1,9 @@
-import { NFS } from "@frak-sandbox/shared/constants";
+import { AUTH_PROVIDERS, NFS } from "@frak-sandbox/shared/constants";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SharedAuthRepository } from "./internal.repository.ts";
 
 const log = createChildLogger("internal-service");
-
-export const KNOWN_AUTH_PROVIDERS = [
-  {
-    name: "opencode",
-    path: "/home/dev/.local/share/opencode/auth.json",
-    description: "OpenCode authentication (Anthropic, XAI, OpenCode API keys)",
-  },
-  {
-    name: "antigravity",
-    path: "/home/dev/.config/opencode/antigravity-accounts.json",
-    description: "Google Antigravity plugin accounts",
-  },
-] as const;
 
 export interface AuthContent {
   content: string;
@@ -41,13 +29,16 @@ export interface SharedAuthInfo {
 export class InternalService {
   private readonly authLocks = new Map<string, Promise<AuthSyncResult>>();
 
-  constructor(private readonly sharedAuthRepository: SharedAuthRepository) {}
+  constructor(
+    private readonly sharedAuthRepository: SharedAuthRepository,
+    private readonly configFileService: ConfigFileService,
+  ) {}
 
   listAuth(): SharedAuthInfo[] {
     const storedAuth = this.sharedAuthRepository.list();
     const storedByProvider = new Map(storedAuth.map((a) => [a.provider, a]));
 
-    return KNOWN_AUTH_PROVIDERS.map((provider) => {
+    return AUTH_PROVIDERS.map((provider) => {
       const stored = storedByProvider.get(provider.name);
       return {
         provider: provider.name,
@@ -72,7 +63,7 @@ export class InternalService {
   }
 
   updateAuth(provider: string, content: string): SharedAuthInfo {
-    const providerInfo = KNOWN_AUTH_PROVIDERS.find((p) => p.name === provider);
+    const providerInfo = AUTH_PROVIDERS.find((p) => p.name === provider);
     if (!providerInfo) {
       throw new Error(`Unknown auth provider: ${provider}`);
     }
@@ -163,17 +154,7 @@ export class InternalService {
   }
 
   async syncConfigsToNfs(): Promise<{ synced: number }> {
-    const { ConfigFileService } = await import(
-      "../config-file/config-file.service.ts"
-    );
-    const { ConfigFileRepository } = await import(
-      "../config-file/config-file.repository.ts"
-    );
-
-    const configFileRepository = new ConfigFileRepository();
-    const configFileService = new ConfigFileService(configFileRepository);
-
-    const globalConfigs = configFileService.list({ scope: "global" });
+    const globalConfigs = this.configFileService.list({ scope: "global" });
 
     let synced = 0;
 
@@ -198,7 +179,9 @@ export class InternalService {
       }
     }
 
-    const workspaceConfigs = configFileService.list({ scope: "workspace" });
+    const workspaceConfigs = this.configFileService.list({
+      scope: "workspace",
+    });
     const byWorkspace = new Map<string, typeof workspaceConfigs>();
 
     for (const config of workspaceConfigs) {
