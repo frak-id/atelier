@@ -48,6 +48,14 @@ export class PrebuildRunner {
       "Starting prebuild",
     );
 
+    if (await StorageService.hasPrebuild(workspaceId)) {
+      await StorageService.deletePrebuild(workspaceId);
+      log.info(
+        { workspaceId },
+        "Deleted existing prebuild before regeneration",
+      );
+    }
+
     let sandboxId: string | undefined;
 
     try {

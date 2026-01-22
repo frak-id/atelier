@@ -17,6 +17,7 @@ import {
   useCreateConfigFile,
   useCreateSandbox,
   useDeleteConfigFile,
+  useDeletePrebuild,
   useDeleteWorkspace,
   useTriggerPrebuild,
   useUpdateConfigFile,
@@ -79,6 +80,7 @@ function WorkspaceDetailPage() {
   const deleteMutation = useDeleteWorkspace();
   const createSandboxMutation = useCreateSandbox();
   const prebuildMutation = useTriggerPrebuild();
+  const deletePrebuildMutation = useDeletePrebuild();
   const createConfigMutation = useCreateConfigFile();
   const updateConfigMutation = useUpdateConfigFile();
   const deleteConfigMutation = useDeleteConfigFile();
@@ -138,14 +140,35 @@ function WorkspaceDetailPage() {
               size="sm"
               onClick={() => prebuildMutation.mutate(id)}
               disabled={
-                prebuildMutation.isPending || prebuildStatus === "building"
+                prebuildMutation.isPending ||
+                deletePrebuildMutation.isPending ||
+                prebuildStatus === "building"
               }
-              title="Rebuild prebuild"
+              title="Rebuild prebuild (deletes existing and creates fresh from base image)"
             >
               <RefreshCw
                 className={`h-4 w-4 ${prebuildMutation.isPending || prebuildStatus === "building" ? "animate-spin" : ""}`}
               />
             </Button>
+            {prebuildStatus === "ready" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (confirm("Delete the prebuild snapshot?")) {
+                    deletePrebuildMutation.mutate(id);
+                  }
+                }}
+                disabled={
+                  deletePrebuildMutation.isPending || prebuildMutation.isPending
+                }
+                title="Delete prebuild"
+              >
+                <Trash2
+                  className={`h-4 w-4 text-destructive ${deletePrebuildMutation.isPending ? "animate-pulse" : ""}`}
+                />
+              </Button>
+            )}
           </div>
           <p className="text-muted-foreground text-sm">
             {workspace.config.repos.length} repository(ies) configured
