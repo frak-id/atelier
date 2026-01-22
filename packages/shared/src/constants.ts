@@ -76,7 +76,7 @@ export const CADDY = {
 } as const;
 
 export const OPENCODE = {
-  VERSION: "1.1.27",
+  VERSION: "1.1.31",
   RELEASE_URL: "https://github.com/anomalyco/opencode/releases/download",
   BINARY: "opencode-linux-x64-baseline.tar.gz",
 } as const;
@@ -88,7 +88,7 @@ export const TTYD = {
 
 export const CODE_SERVER = {
   /** code-server version */
-  VERSION: "4.100.3",
+  VERSION: "4.108.1",
   /** GitHub releases URL */
   RELEASE_URL: "https://github.com/coder/code-server/releases/download",
 } as const;
