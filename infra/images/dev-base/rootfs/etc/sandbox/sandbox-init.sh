@@ -222,6 +222,18 @@ else
     log "ERROR: code-server not found"
 fi
 
+# Pre-install OpenCode plugin SDK (required for external plugins with standalone binary)
+if command -v opencode >/dev/null 2>&1; then
+    OPENCODE_PLUGIN_DIR="/home/dev/.cache/opencode"
+    if [ ! -d "$OPENCODE_PLUGIN_DIR/node_modules/@opencode-ai/plugin" ]; then
+        log "Installing OpenCode plugin SDK..."
+        mkdir -p "$OPENCODE_PLUGIN_DIR"
+        chown dev:dev "$OPENCODE_PLUGIN_DIR"
+        su - dev -c "cd $OPENCODE_PLUGIN_DIR && bun add @opencode-ai/plugin 2>&1" | tee -a "$LOG_DIR/init.log"
+        log "OpenCode plugin SDK installed"
+    fi
+fi
+
 log "Starting OpenCode server..."
 OPENCODE_CORS="--cors https://sandbox-dash.nivelais.com"
 if [ -x /usr/bin/opencode ] || command -v opencode >/dev/null 2>&1; then
