@@ -22,3 +22,10 @@ export class ResourceExhaustedError extends SandboxError {
     this.name = "ResourceExhaustedError";
   }
 }
+
+export class ValidationError extends SandboxError {
+  constructor(message: string) {
+    super(message, "VALIDATION_ERROR", 400);
+    this.name = "ValidationError";
+  }
+}

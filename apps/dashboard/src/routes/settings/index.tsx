@@ -1,17 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Download, ExternalLink, Plus, Trash2, Upload } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useRef, useState } from "react";
-import type { ConfigFile, ConfigFileContentType } from "@/api/client";
+import type { ConfigFile, ConfigFileContentType, Sandbox } from "@/api/client";
 import {
   configFilesListQuery,
+  sandboxListQuery,
+  sharedAuthListQuery,
   useCreateConfigFile,
   useDeleteConfigFile,
+  useRestartSandbox,
+  useSyncConfigsToNfs,
   useUpdateConfigFile,
+  useUpdateSharedAuth,
   workspaceListQuery,
 } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -29,6 +50,8 @@ export const Route = createFileRoute("/settings/")({
 
 function SettingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
+  const [selectedSandboxes, setSelectedSandboxes] = useState<string[]>([]);
 
   const { data: globalConfigs, isLoading: loadingGlobal } = useQuery(
     configFilesListQuery({ scope: "global" }),
@@ -40,9 +63,34 @@ function SettingsPage() {
     configFilesListQuery({ scope: "workspace" }),
   );
 
+  const { data: sandboxes } = useQuery(sandboxListQuery({ status: "running" }));
+
   const createMutation = useCreateConfigFile();
   const updateMutation = useUpdateConfigFile();
   const deleteMutation = useDeleteConfigFile();
+  const syncMutation = useSyncConfigsToNfs();
+  const restartMutation = useRestartSandbox();
+
+  const runningSandboxes = sandboxes ?? [];
+
+  const handleConfigChange = () => {
+    syncMutation.mutate(undefined, {
+      onSuccess: () => {
+        if (runningSandboxes.length > 0) {
+          setSelectedSandboxes(runningSandboxes.map((s) => s.id));
+          setShowRestartDialog(true);
+        }
+      },
+    });
+  };
+
+  const handleRestartSelected = async () => {
+    for (const id of selectedSandboxes) {
+      await restartMutation.mutateAsync(id);
+    }
+    setShowRestartDialog(false);
+    setSelectedSandboxes([]);
+  };
 
   const workspaceConfigCounts = new Map<string, number>();
   allWorkspaceConfigs?.forEach((c: ConfigFile) => {
@@ -67,18 +115,45 @@ function SettingsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Global Config Files</h1>
-        <p className="text-muted-foreground">
-          Configuration files injected into all sandboxes
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Global Config Files</h1>
+          <p className="text-muted-foreground">
+            Configuration files injected into all sandboxes
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending}
+        >
+          {syncMutation.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          Sync to NFS
+        </Button>
       </div>
 
       <AddConfigFileDialog
         onAdd={(data) =>
-          createMutation.mutate({ ...data, scope: "global" as const })
+          createMutation.mutate(
+            { ...data, scope: "global" as const },
+            { onSuccess: handleConfigChange },
+          )
         }
         isPending={createMutation.isPending}
+      />
+
+      <RestartSandboxesDialog
+        open={showRestartDialog}
+        onOpenChange={setShowRestartDialog}
+        sandboxes={runningSandboxes}
+        selectedIds={selectedSandboxes}
+        onSelectedChange={setSelectedSandboxes}
+        onConfirm={handleRestartSelected}
+        isRestarting={restartMutation.isPending}
       />
 
       <div className="space-y-4">
@@ -98,13 +173,20 @@ function SettingsPage() {
               onSave={(content) =>
                 updateMutation.mutate(
                   { id: config.id, data: { content } },
-                  { onSuccess: () => setEditingId(null) },
+                  {
+                    onSuccess: () => {
+                      setEditingId(null);
+                      handleConfigChange();
+                    },
+                  },
                 )
               }
               onCancel={() => setEditingId(null)}
               onDelete={() => {
                 if (confirm(`Delete config file ${config.path}?`)) {
-                  deleteMutation.mutate(config.id);
+                  deleteMutation.mutate(config.id, {
+                    onSuccess: handleConfigChange,
+                  });
                 }
               }}
               isSaving={updateMutation.isPending}
@@ -146,6 +228,8 @@ function SettingsPage() {
           </div>
         )}
       </div>
+
+      <SharedAuthSection />
     </div>
   );
 }
@@ -285,6 +369,96 @@ function AddConfigFileDialog({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function RestartSandboxesDialog({
+  open,
+  onOpenChange,
+  sandboxes,
+  selectedIds,
+  onSelectedChange,
+  onConfirm,
+  isRestarting,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sandboxes: Sandbox[];
+  selectedIds: string[];
+  onSelectedChange: (ids: string[]) => void;
+  onConfirm: () => void;
+  isRestarting: boolean;
+}) {
+  const toggleSandbox = (id: string) => {
+    if (selectedIds.includes(id)) {
+      onSelectedChange(selectedIds.filter((s) => s !== id));
+    } else {
+      onSelectedChange([...selectedIds, id]);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Config Updated - Restart Sandboxes?</DialogTitle>
+          <DialogDescription>
+            Config files have been synced to NFS. Running sandboxes need to be
+            restarted to pick up the changes.
+          </DialogDescription>
+        </DialogHeader>
+
+        {sandboxes.length > 0 && (
+          <div className="space-y-2 max-h-48 overflow-auto">
+            {sandboxes.map((sandbox) => (
+              <div key={sandbox.id} className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id={sandbox.id}
+                  checked={selectedIds.includes(sandbox.id)}
+                  onChange={() => toggleSandbox(sandbox.id)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <label
+                  htmlFor={sandbox.id}
+                  className="text-sm font-medium leading-none cursor-pointer"
+                >
+                  {sandbox.id}
+                  {sandbox.workspaceId && (
+                    <span className="text-muted-foreground ml-2">
+                      (workspace)
+                    </span>
+                  )}
+                </label>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Skip
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={isRestarting || selectedIds.length === 0}
+          >
+            {isRestarting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Restarting...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Restart {selectedIds.length} Sandbox
+                {selectedIds.length !== 1 ? "es" : ""}
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -432,5 +606,118 @@ function ConfigFileCard({
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+function SharedAuthSection() {
+  const { data: authProviders, isLoading } = useQuery(sharedAuthListQuery);
+  const updateMutation = useUpdateSharedAuth();
+  const [editingProvider, setEditingProvider] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+
+  if (isLoading) {
+    return (
+      <div className="border-t pt-6">
+        <h2 className="text-xl font-bold mb-4">Shared Auth</h2>
+        <div className="animate-pulse h-32 bg-muted rounded" />
+      </div>
+    );
+  }
+
+  const startEdit = (provider: string, content: string | null) => {
+    setEditingProvider(provider);
+    setEditContent(content ?? "");
+  };
+
+  const saveEdit = () => {
+    if (!editingProvider) return;
+    updateMutation.mutate(
+      { provider: editingProvider, content: editContent },
+      { onSuccess: () => setEditingProvider(null) },
+    );
+  };
+
+  return (
+    <div className="border-t pt-6">
+      <div className="mb-4">
+        <h2 className="text-xl font-bold">Shared Auth</h2>
+        <p className="text-muted-foreground text-sm">
+          Authentication files synced across all sandboxes. Changes here
+          propagate to running sandboxes within seconds.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {authProviders?.map((auth) => (
+          <Card key={auth.provider}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center justify-between">
+                <div>
+                  <span className="font-mono">{auth.provider}</span>
+                  <p className="text-xs text-muted-foreground font-normal mt-1">
+                    {auth.path}
+                  </p>
+                </div>
+                {auth.updatedAt && (
+                  <span className="text-xs text-muted-foreground font-normal">
+                    Updated {new Date(auth.updatedAt).toLocaleString()}
+                    {auth.updatedBy && ` by ${auth.updatedBy}`}
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-3">
+                {auth.description}
+              </p>
+
+              {editingProvider === auth.provider ? (
+                <div className="space-y-4">
+                  <Textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="font-mono text-sm min-h-[200px]"
+                    placeholder="{}"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={saveEdit}
+                      disabled={updateMutation.isPending}
+                      size="sm"
+                    >
+                      {updateMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setEditingProvider(null)}
+                      size="sm"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => startEdit(auth.provider, auth.content)}
+                  className="w-full text-left cursor-pointer hover:bg-muted/50 rounded p-2 -m-2"
+                >
+                  {auth.content ? (
+                    <pre className="text-sm font-mono whitespace-pre-wrap max-h-[150px] overflow-auto">
+                      {auth.content.slice(0, 500)}
+                      {auth.content.length > 500 && "..."}
+                    </pre>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">
+                      No auth configured yet. Click to add.
+                    </p>
+                  )}
+                </button>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
   );
 }

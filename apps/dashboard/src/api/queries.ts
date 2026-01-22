@@ -206,6 +206,19 @@ export function useStartSandbox() {
   });
 }
 
+export function useRestartSandbox() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).restart.post()),
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(id),
+      });
+    },
+  });
+}
+
 export function useExecCommand(sandboxId: string) {
   return useMutation({
     mutationFn: async (data: { command: string; timeout?: number }) =>
@@ -370,6 +383,33 @@ export function useDeleteConfigFile() {
       unwrap(await api.api["config-files"]({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
+    },
+  });
+}
+
+export function useSyncConfigsToNfs() {
+  return useMutation({
+    mutationFn: async () =>
+      unwrap(await api.api["config-files"]["sync-to-nfs"].post()),
+  });
+}
+
+export const sharedAuthListQuery = queryOptions({
+  queryKey: ["sharedAuth", "list"] as const,
+  queryFn: async () => unwrap(await api.api["shared-auth"].get()),
+});
+
+export function useUpdateSharedAuth() {
+  return useMutation({
+    mutationFn: async ({
+      provider,
+      content,
+    }: {
+      provider: string;
+      content: string;
+    }) => unwrap(await api.api["shared-auth"]({ provider }).put({ content })),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: ["sharedAuth"] });
     },
   });
 }

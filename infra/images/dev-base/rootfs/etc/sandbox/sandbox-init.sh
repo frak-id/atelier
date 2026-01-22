@@ -35,6 +35,8 @@ NFS_CACHE_EXPORT="/var/lib/sandbox/shared-cache"
 NFS_CACHE_MOUNT="/mnt/cache"
 NFS_BINARIES_EXPORT="/var/lib/sandbox/shared-binaries"
 NFS_BINARIES_MOUNT="/opt/shared"
+NFS_CONFIGS_EXPORT="/var/lib/sandbox/shared-configs"
+NFS_CONFIGS_MOUNT="/mnt/configs"
 
 log "Creating device nodes..."
 [ -e /dev/null ] || mknod -m 666 /dev/null c 1 3
@@ -119,6 +121,47 @@ if timeout 5 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=
     log "Added $NFS_BINARIES_MOUNT/bin to PATH"
 else
     log "WARNING: Failed to mount NFS binaries"
+fi
+
+log "Mounting NFS shared configs..."
+mkdir -p "$NFS_CONFIGS_MOUNT"
+if timeout 5 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_CONFIGS_EXPORT" "$NFS_CONFIGS_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
+    log "NFS configs mounted at $NFS_CONFIGS_MOUNT (read-only)"
+    
+    WORKSPACE_ID=""
+    if [ -f "$CONFIG_FILE" ]; then
+        WORKSPACE_ID=$(cat "$CONFIG_FILE" | grep -o '"workspaceId"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
+    fi
+    
+    mkdir -p /home/dev/.config/opencode
+    mkdir -p /home/dev/.local/share/code-server/User
+    
+    link_config() {
+        local src="$1"
+        local dest="$2"
+        if [ -f "$src" ]; then
+            rm -f "$dest" 2>/dev/null
+            ln -sf "$src" "$dest"
+            log "Linked $dest -> $src"
+        fi
+    }
+    
+    link_config "$NFS_CONFIGS_MOUNT/global/home/dev/.config/opencode/opencode.json" "/home/dev/.config/opencode/opencode.json"
+    link_config "$NFS_CONFIGS_MOUNT/global/home/dev/.local/share/code-server/User/settings.json" "/home/dev/.local/share/code-server/User/settings.json"
+    
+    if [ -n "$WORKSPACE_ID" ]; then
+        WS_CONFIG_DIR="$NFS_CONFIGS_MOUNT/workspaces/$WORKSPACE_ID"
+        if [ -d "$WS_CONFIG_DIR" ]; then
+            log "Found workspace configs at $WS_CONFIG_DIR"
+            if [ -f "$WS_CONFIG_DIR/home/dev/.config/opencode/opencode.json" ]; then
+                link_config "$WS_CONFIG_DIR/home/dev/.config/opencode/opencode.json" "/home/dev/.config/opencode/opencode.json"
+            fi
+        fi
+    fi
+    
+    chown -R dev:dev /home/dev/.config /home/dev/.local 2>/dev/null
+else
+    log "WARNING: Failed to mount NFS configs"
 fi
 
 if [ -f "$SECRETS_FILE" ]; then

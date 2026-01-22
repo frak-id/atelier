@@ -44,3 +44,8 @@ export const CONFIG_DIRECTORIES = [
 
 export const DEFAULT_EXEC_TIMEOUT = 30000;
 export const MAX_EXEC_BUFFER = 10 * 1024 * 1024;
+
+export const MANAGER_INTERNAL_URL = "http://172.16.0.1:4000/internal";
+export const AUTH_SYNC_INTERVAL_MS = 10000;
+
+export { AUTH_PROVIDERS } from "@frak-sandbox/shared/constants";

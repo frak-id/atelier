@@ -126,8 +126,10 @@ export const DEFAULTS = {
 export const NFS = {
   CACHE_EXPORT_DIR: "/var/lib/sandbox/shared-cache",
   BINARIES_EXPORT_DIR: "/var/lib/sandbox/shared-binaries",
+  CONFIGS_EXPORT_DIR: "/var/lib/sandbox/shared-configs",
   CACHE_GUEST_MOUNT: "/mnt/cache",
   BINARIES_GUEST_MOUNT: "/opt/shared",
+  CONFIGS_GUEST_MOUNT: "/mnt/configs",
   HOST_IP: "172.16.0.1",
   CACHE_DIRS: {
     BUN: "bun",
@@ -136,7 +138,35 @@ export const NFS = {
     YARN: "yarn",
     PIP: "pip",
   },
+  /** Config directories structure on NFS */
+  CONFIG_DIRS: {
+    GLOBAL: "global",
+    WORKSPACES: "workspaces",
+  },
 } as const;
+
+/** Manager internal API for sandbox communication */
+export const MANAGER_INTERNAL = {
+  HOST: "172.16.0.1",
+  PORT: 4000,
+  BASE_URL: "http://172.16.0.1:4000/internal",
+} as const;
+
+/** Known auth providers that sync between sandboxes via shared_auth */
+export const AUTH_PROVIDERS = [
+  {
+    name: "opencode",
+    path: "/home/dev/.local/share/opencode/auth.json",
+    description: "OpenCode authentication (Anthropic, XAI, OpenCode API keys)",
+  },
+  {
+    name: "antigravity",
+    path: "/home/dev/.config/opencode/antigravity-accounts.json",
+    description: "Google Antigravity plugin accounts",
+  },
+] as const;
+
+export type AuthProviderName = (typeof AUTH_PROVIDERS)[number]["name"];
 
 export const SHARED_BINARIES = {
   opencode: {

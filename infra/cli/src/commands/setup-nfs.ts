@@ -27,9 +27,19 @@ export async function setupNfs(_args: string[] = []) {
   await exec(`chmod -R 755 ${NFS.BINARIES_EXPORT_DIR}`);
   spinner.stop("Binaries directory created");
 
+  spinner.start("Creating shared configs directory");
+  await exec(`mkdir -p ${NFS.CONFIGS_EXPORT_DIR}/${NFS.CONFIG_DIRS.GLOBAL}`);
+  await exec(
+    `mkdir -p ${NFS.CONFIGS_EXPORT_DIR}/${NFS.CONFIG_DIRS.WORKSPACES}`,
+  );
+  await exec(`chown -R 1000:1000 ${NFS.CONFIGS_EXPORT_DIR}`);
+  await exec(`chmod -R 755 ${NFS.CONFIGS_EXPORT_DIR}`);
+  spinner.stop("Configs directory created");
+
   spinner.start("Configuring NFS exports");
   const cacheExportLine = `${NFS.CACHE_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,insecure)`;
   const binariesExportLine = `${NFS.BINARIES_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
+  const configsExportLine = `${NFS.CONFIGS_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
 
   const exportsFile = "/etc/exports";
   let currentExports = (await fileExists(exportsFile))
@@ -45,6 +55,11 @@ export async function setupNfs(_args: string[] = []) {
   if (!currentExports.includes(NFS.BINARIES_EXPORT_DIR)) {
     currentExports = `${currentExports}\n${binariesExportLine}`;
     p.log.info(`Added binaries export (read-only): ${binariesExportLine}`);
+    modified = true;
+  }
+  if (!currentExports.includes(NFS.CONFIGS_EXPORT_DIR)) {
+    currentExports = `${currentExports}\n${configsExportLine}`;
+    p.log.info(`Added configs export (read-only): ${configsExportLine}`);
     modified = true;
   }
   if (modified) {
@@ -88,11 +103,13 @@ export async function setupNfs(_args: string[] = []) {
   p.note(
     `Cache Export (rw): ${NFS.CACHE_EXPORT_DIR}
 Binaries Export (ro): ${NFS.BINARIES_EXPORT_DIR}
+Configs Export (ro): ${NFS.CONFIGS_EXPORT_DIR}
 Accessible from: ${NETWORK.BRIDGE_CIDR}
 
 Guest mounts:
   mount -t nfs ${NFS.HOST_IP}:${NFS.CACHE_EXPORT_DIR} ${NFS.CACHE_GUEST_MOUNT}
   mount -t nfs -o ro ${NFS.HOST_IP}:${NFS.BINARIES_EXPORT_DIR} ${NFS.BINARIES_GUEST_MOUNT}
+  mount -t nfs -o ro ${NFS.HOST_IP}:${NFS.CONFIGS_EXPORT_DIR} ${NFS.CONFIGS_GUEST_MOUNT}
 
 Cache directories:
   - ${NFS.CACHE_EXPORT_DIR}/${NFS.CACHE_DIRS.BUN} (Bun cache)
@@ -102,8 +119,13 @@ Cache directories:
 
 Binaries directory:
   - ${NFS.BINARIES_EXPORT_DIR}/bin (add to PATH)
+
+Configs directories:
+  - ${NFS.CONFIGS_EXPORT_DIR}/${NFS.CONFIG_DIRS.GLOBAL} (global configs)
+  - ${NFS.CONFIGS_EXPORT_DIR}/${NFS.CONFIG_DIRS.WORKSPACES}/<id> (workspace configs)
   
-Install binaries via Manager API: POST /api/storage/binaries/:name/install`,
+Install binaries via Manager API: POST /api/storage/binaries/:name/install
+Configs synced automatically by Manager on update`,
     "NFS Configuration",
   );
 }

@@ -55,3 +55,11 @@ export const configFiles = sqliteTable("config_files", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const sharedAuth = sqliteTable("shared_auth", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  content: text("content").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
