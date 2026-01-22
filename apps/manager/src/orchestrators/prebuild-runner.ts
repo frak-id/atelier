@@ -83,6 +83,7 @@ export class PrebuildRunner {
       }
 
       await this.runInitCommands(ipAddress, workspace);
+      const commitHashes = await this.captureCommitHashes(ipAddress, workspace);
       await this.warmupOpencode(ipAddress, workspace.id);
       await this.deps.agentClient.exec(ipAddress, "sync");
       await StorageService.createPrebuild(workspaceId, sandbox.id);
@@ -94,7 +95,13 @@ export class PrebuildRunner {
 
       await this.deps.sandboxDestroyer.destroy(sandbox.id);
 
-      this.updatePrebuildStatus(workspaceId, workspace, "ready", sandbox.id);
+      this.updatePrebuildStatus(
+        workspaceId,
+        workspace,
+        "ready",
+        sandbox.id,
+        commitHashes,
+      );
       log.info({ workspaceId }, "Prebuild completed successfully");
     } catch (error) {
       const errorMessage =
@@ -145,16 +152,68 @@ export class PrebuildRunner {
     workspace: Workspace,
     status: PrebuildStatus,
     latestId?: string,
+    commitHashes?: Record<string, string>,
   ): void {
+    const now = new Date().toISOString();
     const prebuild: WorkspaceConfig["prebuild"] = {
       status,
       latestId: latestId ?? workspace.config.prebuild?.latestId,
-      builtAt: status === "ready" ? new Date().toISOString() : undefined,
+      builtAt: status === "ready" ? now : undefined,
+      commitHashes: status === "ready" ? commitHashes : undefined,
+      lastCheckedAt: status === "ready" ? now : undefined,
+      stale: status === "ready" ? false : undefined,
     };
 
     this.deps.workspaceService.update(workspaceId, {
       config: { ...workspace.config, prebuild },
     });
+  }
+
+  private async captureCommitHashes(
+    ipAddress: string,
+    workspace: Workspace,
+  ): Promise<Record<string, string>> {
+    const hashes: Record<string, string> = {};
+
+    if (!workspace.config.repos?.length) {
+      return hashes;
+    }
+
+    for (const repo of workspace.config.repos) {
+      const clonePath = repo.clonePath.startsWith("/")
+        ? repo.clonePath
+        : `/${repo.clonePath}`;
+      const fullPath = `/home/dev${clonePath}`;
+
+      const result = await this.deps.agentClient.exec(
+        ipAddress,
+        `git -C ${fullPath} rev-parse HEAD`,
+        { timeout: 10000 },
+      );
+
+      if (result.exitCode === 0 && result.stdout.trim()) {
+        hashes[repo.clonePath] = result.stdout.trim();
+        log.debug(
+          {
+            workspaceId: workspace.id,
+            clonePath: repo.clonePath,
+            hash: hashes[repo.clonePath],
+          },
+          "Captured commit hash",
+        );
+      } else {
+        log.warn(
+          {
+            workspaceId: workspace.id,
+            clonePath: repo.clonePath,
+            exitCode: result.exitCode,
+          },
+          "Failed to capture commit hash",
+        );
+      }
+    }
+
+    return hashes;
   }
 
   private async runInitCommands(

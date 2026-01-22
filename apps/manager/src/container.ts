@@ -19,6 +19,7 @@ import {
   WorkspaceService,
 } from "./modules/workspace/index.ts";
 import {
+  PrebuildChecker,
   PrebuildRunner,
   SandboxDestroyer,
   SandboxLifecycle,
@@ -96,11 +97,18 @@ const taskSpawner = new TaskSpawner({
   sessionMonitor,
 });
 
+const prebuildChecker = new PrebuildChecker({
+  workspaceService,
+  gitSourceService,
+  prebuildRunner,
+});
+
 export {
   agentClient,
   configFileService,
   gitSourceService,
   internalService,
+  prebuildChecker,
   prebuildRunner,
   sandboxDestroyer,
   sandboxLifecycle,

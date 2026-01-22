@@ -32,6 +32,10 @@ export const PrebuildInfoSchema = t.Object({
   status: PrebuildStatusSchema,
   latestId: t.Optional(t.String()),
   builtAt: t.Optional(t.String()),
+  // Key = clonePath (unique per repo), Value = commit hash at build time
+  commitHashes: t.Optional(t.Record(t.String(), t.String())),
+  lastCheckedAt: t.Optional(t.String()),
+  stale: t.Optional(t.Boolean()),
 });
 
 export const FileSecretSchema = t.Object({

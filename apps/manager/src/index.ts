@@ -1,7 +1,8 @@
 import { cors } from "@elysiajs/cors";
+import { cron } from "@elysiajs/cron";
 import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
-import { sandboxService, sshKeyService } from "./container.ts";
+import { prebuildChecker, sandboxService, sshKeyService } from "./container.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
@@ -89,6 +90,18 @@ const app = new Elysia()
     }
   })
   .use(cors())
+  .use(
+    cron({
+      name: "prebuild-freshness-check",
+      pattern: "*/30 * * * *",
+      run: () => {
+        logger.info("Running scheduled prebuild freshness check");
+        prebuildChecker.checkAllAndRebuildStale().catch((err) => {
+          logger.error({ error: err }, "Prebuild freshness check failed");
+        });
+      },
+    }),
+  )
   .use(
     swagger({
       path: "/swagger",
