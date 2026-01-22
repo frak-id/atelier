@@ -60,6 +60,7 @@ const sandboxSpawner = new SandboxSpawner({
   workspaceService,
   gitSourceService,
   configFileService,
+  sshKeyService,
   agentClient,
 });
 

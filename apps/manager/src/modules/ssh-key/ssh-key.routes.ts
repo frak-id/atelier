@@ -50,7 +50,8 @@ export const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
         expiresAt: body.expiresAt,
       });
 
-      await SshPiperService.regenerateAllRoutes();
+      const allKeys = sshKeyService.getAllValidKeys().map((k) => k.publicKey);
+      await SshPiperService.updateAuthorizedKeys(allKeys);
 
       return sshKey;
     },
@@ -65,7 +66,10 @@ export const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
       const user = getUser(store as { user?: AuthUser });
       try {
         sshKeyService.delete(params.id, user.id);
-        await SshPiperService.regenerateAllRoutes();
+
+        const allKeys = sshKeyService.getAllValidKeys().map((k) => k.publicKey);
+        await SshPiperService.updateAuthorizedKeys(allKeys);
+
         set.status = 204;
         return null;
       } catch (error) {

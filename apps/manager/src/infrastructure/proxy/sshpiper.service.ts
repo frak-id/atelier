@@ -25,19 +25,9 @@ interface PipesConfig {
   pipes: SshPipe[];
 }
 
-let sshKeyProvider: () => Array<{ publicKey: string }> = () => [];
-
-export function setSshKeyProvider(
-  provider: () => Array<{ publicKey: string }>,
-): void {
-  sshKeyProvider = provider;
-}
-
-function buildAuthorizedKeysData(): string | undefined {
-  const keys = sshKeyProvider();
-  if (keys.length === 0) return undefined;
-
-  const authorizedKeys = keys.map((k) => k.publicKey.trim()).join("\n");
+function encodeAuthorizedKeys(publicKeys: string[]): string | undefined {
+  if (publicKeys.length === 0) return undefined;
+  const authorizedKeys = publicKeys.map((k) => k.trim()).join("\n");
   return Buffer.from(authorizedKeys).toString("base64");
 }
 
@@ -56,14 +46,18 @@ async function writePipesConfig(pipesConfig: PipesConfig): Promise<void> {
 }
 
 export const SshPiperService = {
-  async registerRoute(sandboxId: string, ipAddress: string): Promise<string> {
+  async registerRoute(
+    sandboxId: string,
+    ipAddress: string,
+    publicKeys: string[] = [],
+  ): Promise<string> {
     if (config.isMock()) {
       log.debug({ sandboxId, ipAddress }, "Mock: SSH route registered");
       return `ssh ${sandboxId}@${config.sshProxy.domain} -p ${config.sshProxy.port}`;
     }
 
     const pipesConfig = await readPipesConfig();
-    const authorizedKeysData = buildAuthorizedKeysData();
+    const authorizedKeysData = encodeAuthorizedKeys(publicKeys);
 
     const existingIndex = pipesConfig.pipes.findIndex((p) =>
       p.from.some((f) => f.username === sandboxId),
@@ -149,14 +143,17 @@ export const SshPiperService = {
     return `code --remote ssh-remote+${sshHost} /workspace`;
   },
 
-  async regenerateAllRoutes(): Promise<void> {
+  async updateAuthorizedKeys(publicKeys: string[]): Promise<void> {
     if (config.isMock()) {
-      log.debug("Mock: Regenerating all SSH routes");
+      log.debug(
+        { keyCount: publicKeys.length },
+        "Mock: Updating authorized keys",
+      );
       return;
     }
 
     const pipesConfig = await readPipesConfig();
-    const authorizedKeysData = buildAuthorizedKeysData();
+    const authorizedKeysData = encodeAuthorizedKeys(publicKeys);
 
     for (const pipe of pipesConfig.pipes) {
       for (const from of pipe.from) {
@@ -170,8 +167,8 @@ export const SshPiperService = {
 
     await writePipesConfig(pipesConfig);
     log.info(
-      { pipeCount: pipesConfig.pipes.length },
-      "All SSH routes regenerated",
+      { pipeCount: pipesConfig.pipes.length, keyCount: publicKeys.length },
+      "SSH authorized keys updated",
     );
   },
 };
