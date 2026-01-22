@@ -26,6 +26,10 @@ export class SshKeyService {
       .filter((key) => !key.expiresAt || key.expiresAt > now);
   }
 
+  getValidPublicKeys(): string[] {
+    return this.getAllValidKeys().map((k) => k.publicKey);
+  }
+
   getById(id: string): SshKey | undefined {
     return this.sshKeyRepository.getById(id);
   }

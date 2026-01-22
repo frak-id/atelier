@@ -106,43 +106,6 @@ export const SshPiperService = {
     }
   },
 
-  async getRoutes(): Promise<SshPipe[]> {
-    if (config.isMock()) {
-      return [];
-    }
-
-    const pipesConfig = await readPipesConfig();
-    return pipesConfig.pipes;
-  },
-
-  async isHealthy(): Promise<boolean> {
-    if (config.isMock()) {
-      return true;
-    }
-
-    try {
-      await Bun.file(config.sshProxy.pipesFile).text();
-      return true;
-    } catch {
-      return false;
-    }
-  },
-
-  getSshCommand(sandboxId: string): string {
-    if (config.sshProxy.port === 22) {
-      return `ssh ${sandboxId}@${config.sshProxy.domain}`;
-    }
-    return `ssh ${sandboxId}@${config.sshProxy.domain} -p ${config.sshProxy.port}`;
-  },
-
-  getVscodeCommand(sandboxId: string): string {
-    const sshHost =
-      config.sshProxy.port === 22
-        ? `${sandboxId}@${config.sshProxy.domain}`
-        : `${sandboxId}@${config.sshProxy.domain}:${config.sshProxy.port}`;
-    return `code --remote ssh-remote+${sshHost} /workspace`;
-  },
-
   async updateAuthorizedKeys(publicKeys: string[]): Promise<void> {
     if (config.isMock()) {
       log.debug(

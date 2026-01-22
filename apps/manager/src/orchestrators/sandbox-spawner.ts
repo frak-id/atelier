@@ -241,13 +241,10 @@ class SpawnContext {
     if (!this.sandbox) throw new Error("Sandbox not initialized");
     if (!this.network) throw new Error("Network not allocated");
 
-    const validKeys = this.deps.sshKeyService
-      .getAllValidKeys()
-      .map((k) => k.publicKey);
     const sshCmd = await SshPiperService.registerRoute(
       this.sandboxId,
       this.network.ipAddress,
-      validKeys,
+      this.deps.sshKeyService.getValidPublicKeys(),
     );
 
     this.sandbox.runtime.urls = {
@@ -528,13 +525,10 @@ class SpawnContext {
       },
     );
 
-    const validKeys = this.deps.sshKeyService
-      .getAllValidKeys()
-      .map((k) => k.publicKey);
     const sshCmd = await SshPiperService.registerRoute(
       this.sandboxId,
       this.network.ipAddress,
-      validKeys,
+      this.deps.sshKeyService.getValidPublicKeys(),
     );
 
     this.sandbox.runtime.urls = {
