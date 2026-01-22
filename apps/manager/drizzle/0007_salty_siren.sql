@@ -11,4 +11,4 @@ CREATE TABLE `ssh_keys` (
 	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `ssh_keys_user_id_idx` ON `ssh_keys` (`user_id`);
+CREATE INDEX `idx_ssh_keys_user_id` ON `ssh_keys` (`user_id`);

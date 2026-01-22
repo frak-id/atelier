@@ -1,4 +1,4 @@
-import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type {
   GitSourceConfig,
   SandboxRuntime,
@@ -78,4 +78,4 @@ export const sshKeys = sqliteTable("ssh_keys", {
   expiresAt: text("expires_at"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
-});
+}, (t) => [index("idx_ssh_keys_user_id").on(t.userId)]);
