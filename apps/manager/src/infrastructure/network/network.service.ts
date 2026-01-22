@@ -4,7 +4,6 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("network");
 
-let nextIpOctet = config.network.GUEST_IP_START;
 const allocatedIps = new Set<number>();
 
 function generateMac(ipOctet: number): string {
@@ -21,17 +20,16 @@ export interface NetworkAllocation {
 
 export const NetworkService = {
   async allocate(sandboxId: string): Promise<NetworkAllocation> {
-    while (allocatedIps.has(nextIpOctet) && nextIpOctet < 255) {
-      nextIpOctet++;
+    let ipOctet = config.network.GUEST_IP_START;
+    while (allocatedIps.has(ipOctet) && ipOctet < 255) {
+      ipOctet++;
     }
 
-    if (nextIpOctet >= 255) {
+    if (ipOctet >= 255) {
       throw new Error("No available IP addresses in subnet");
     }
 
-    const ipOctet = nextIpOctet;
     allocatedIps.add(ipOctet);
-    nextIpOctet++;
 
     const allocation: NetworkAllocation = {
       ipAddress: `${config.network.GUEST_SUBNET}.${ipOctet}`,
@@ -80,9 +78,6 @@ export const NetworkService = {
     const octet = Number.parseInt(parts[3] ?? "0", 10);
     if (octet > 0 && octet < 255) {
       allocatedIps.add(octet);
-      if (octet >= nextIpOctet) {
-        nextIpOctet = octet + 1;
-      }
       log.debug({ ipAddress, octet }, "IP address marked as allocated");
     }
   },

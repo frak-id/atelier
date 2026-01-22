@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Server } from "lucide-react";
-import { useMemo } from "react";
-import { sandboxListQuery, workspaceListQuery } from "@/api/queries";
+import { sandboxListQuery, useWorkspaceMap } from "@/api/queries";
 import { SandboxRow } from "@/components/sandbox-row";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,24 +9,12 @@ export function RunningSandboxesCard() {
   const { data: sandboxes, isLoading: sandboxesLoading } = useQuery(
     sandboxListQuery(),
   );
-  const { data: workspaces, isLoading: workspacesLoading } = useQuery(
-    workspaceListQuery(),
-  );
+  const workspaceMap = useWorkspaceMap();
 
   const runningSandboxes =
     sandboxes?.filter((s) => s.status === "running") ?? [];
 
-  const workspaceMap = useMemo(() => {
-    const map = new Map<string, string>();
-    if (workspaces) {
-      for (const w of workspaces) {
-        map.set(w.id, w.name);
-      }
-    }
-    return map;
-  }, [workspaces]);
-
-  if (sandboxesLoading || workspacesLoading) {
+  if (sandboxesLoading) {
     return (
       <Card>
         <CardHeader className="pb-3">

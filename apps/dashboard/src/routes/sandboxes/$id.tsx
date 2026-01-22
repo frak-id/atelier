@@ -4,11 +4,15 @@ import {
   AlertTriangle,
   ArrowLeft,
   Check,
+  ChevronDown,
+  Copy,
+  Cpu,
   ExternalLink,
   FileCode,
   GitBranch,
   HardDrive,
   Loader2,
+  MemoryStick,
   MessageSquare,
   Pause,
   Play,
@@ -17,7 +21,7 @@ import {
   Terminal,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   opencodeSessionsQuery,
   sandboxDetailQuery,
@@ -230,28 +234,39 @@ function SandboxDetailPage() {
           <CardHeader>
             <CardTitle>Details</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <DetailRow label="ID" value={sandbox.id} mono />
-            <DetailRow
-              label="IP Address"
-              value={sandbox.runtime.ipAddress}
-              mono
-            />
-            <DetailRow
-              label="MAC Address"
-              value={sandbox.runtime.macAddress}
-              mono
-            />
-            <DetailRow
-              label="Resources"
-              value={`${sandbox.runtime.vcpus} vCPU / ${sandbox.runtime.memoryMb}MB`}
-            />
+          <CardContent className="space-y-4">
             {sandbox.workspaceId && (
-              <DetailRow label="Workspace" value={sandbox.workspaceId} />
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Workspace</span>
+                <Link
+                  to="/workspaces/$id"
+                  params={{ id: sandbox.workspaceId }}
+                  className="text-primary hover:underline font-medium"
+                >
+                  {workspace?.name ?? sandbox.workspaceId}
+                </Link>
+              </div>
             )}
-            {sandbox.runtime.pid && (
-              <DetailRow label="PID" value={String(sandbox.runtime.pid)} />
-            )}
+            <CopyableRow label="ID" value={sandbox.id} />
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Resources</span>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
+                  {sandbox.runtime.vcpus} vCPU
+                </span>
+                <span className="flex items-center gap-1">
+                  <MemoryStick className="h-3.5 w-3.5 text-muted-foreground" />
+                  {sandbox.runtime.memoryMb}MB
+                </span>
+              </div>
+            </div>
+
+            <TechnicalDetails
+              ipAddress={sandbox.runtime.ipAddress}
+              macAddress={sandbox.runtime.macAddress}
+              pid={sandbox.runtime.pid}
+            />
           </CardContent>
         </Card>
 
@@ -864,19 +879,78 @@ function ResourcesCard({
   );
 }
 
-function DetailRow({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
+function CopyableRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [value]);
+
   return (
-    <div className="flex justify-between">
+    <div className="flex justify-between items-center">
       <span className="text-muted-foreground">{label}</span>
-      <span className={mono ? "font-mono" : ""}>{value}</span>
+      <div className="flex items-center gap-1.5">
+        <code className="font-mono text-sm">{value}</code>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <Check className="h-3 w-3 text-green-500" />
+          ) : (
+            <Copy className="h-3 w-3 text-muted-foreground" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function TechnicalDetails({
+  ipAddress,
+  macAddress,
+  pid,
+}: {
+  ipAddress: string;
+  macAddress: string;
+  pid?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="border-t pt-3 mt-1">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors w-full"
+      >
+        <ChevronDown
+          className={`h-4 w-4 transition-transform ${expanded ? "rotate-0" : "-rotate-90"}`}
+        />
+        Technical Details
+      </button>
+      {expanded && (
+        <div className="mt-3 space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">IP Address</span>
+            <code className="font-mono">{ipAddress}</code>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">MAC Address</span>
+            <code className="font-mono">{macAddress}</code>
+          </div>
+          {pid && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">PID</span>
+              <code className="font-mono">{pid}</code>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

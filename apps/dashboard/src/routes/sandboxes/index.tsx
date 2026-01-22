@@ -22,6 +22,7 @@ import {
   useDeleteSandbox,
   useStartSandbox,
   useStopSandbox,
+  useWorkspaceMap,
 } from "@/api/queries";
 import { CreateSandboxDialog } from "@/components/create-sandbox-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +80,7 @@ function SandboxesPage() {
   const [recreatingId, setRecreatingId] = useState<string | null>(null);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
   const { data: hasKeysData } = useQuery(sshKeysHasKeysQuery);
+  const workspaceMap = useWorkspaceMap();
   const deleteMutation = useDeleteSandbox();
   const createMutation = useCreateSandbox();
   const stopMutation = useStopSandbox();
@@ -187,6 +189,11 @@ function SandboxesPage() {
             <SandboxCard
               key={sandbox.id}
               sandbox={sandbox}
+              workspaceName={
+                sandbox.workspaceId
+                  ? workspaceMap.get(sandbox.workspaceId)
+                  : undefined
+              }
               onDelete={() => handleDelete(sandbox.id)}
               onRecreate={() => handleRecreate(sandbox)}
               isRecreating={recreatingId === sandbox.id}
@@ -211,6 +218,7 @@ function SandboxesPage() {
 
 function SandboxCard({
   sandbox,
+  workspaceName,
   onDelete,
   onRecreate,
   isRecreating,
@@ -220,6 +228,7 @@ function SandboxCard({
   isStarting,
 }: {
   sandbox: Sandbox;
+  workspaceName?: string;
   onDelete: () => void;
   onRecreate?: () => void;
   isRecreating?: boolean;
@@ -253,7 +262,9 @@ function SandboxCard({
             {sandbox.status}
           </Badge>
           {sandbox.workspaceId && (
-            <Badge variant="outline">{sandbox.workspaceId}</Badge>
+            <Badge variant="outline">
+              {workspaceName ?? sandbox.workspaceId}
+            </Badge>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -399,7 +410,7 @@ function SandboxCard({
           {sandbox.workspaceId && (
             <div>
               <span className="text-muted-foreground">Workspace</span>
-              <p className="font-mono">{sandbox.workspaceId}</p>
+              <p>{workspaceName ?? sandbox.workspaceId}</p>
             </div>
           )}
         </div>

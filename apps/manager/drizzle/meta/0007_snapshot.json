@@ -296,9 +296,7 @@
       "indexes": {
         "idx_ssh_keys_user_id": {
           "name": "idx_ssh_keys_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },

@@ -36,22 +36,23 @@ const app = new Elysia()
       logger.info({ expiredCount }, "Startup: expired SSH keys cleaned up");
     }
 
-    const sandboxes = sandboxService.getByStatus("running");
-    for (const sandbox of sandboxes) {
+    const allSandboxes = sandboxService.getAll();
+    for (const sandbox of allSandboxes) {
       NetworkService.markAllocated(sandbox.runtime.ipAddress);
     }
 
-    if (sandboxes.length > 0) {
+    if (allSandboxes.length > 0) {
       logger.info(
         {
-          count: sandboxes.length,
+          count: allSandboxes.length,
           allocatedIps: NetworkService.getAllocatedCount(),
         },
         "Startup: IP allocations rehydrated",
       );
     }
 
-    for (const sandbox of sandboxes) {
+    const runningSandboxes = allSandboxes.filter((s) => s.status === "running");
+    for (const sandbox of runningSandboxes) {
       try {
         await CaddyService.registerRoutes(
           sandbox.id,
@@ -79,8 +80,11 @@ const app = new Elysia()
       await SshPiperService.updateAuthorizedKeys(validKeys);
     }
 
-    if (sandboxes.length > 0) {
-      logger.info({ count: sandboxes.length }, "Startup: routes re-registered");
+    if (runningSandboxes.length > 0) {
+      logger.info(
+        { count: runningSandboxes.length },
+        "Startup: routes re-registered",
+      );
     }
   })
   .use(cors())

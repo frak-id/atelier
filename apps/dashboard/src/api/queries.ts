@@ -1,4 +1,5 @@
-import { queryOptions, useMutation } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { api } from "./client";
 import { deleteOpenCodeSession, fetchOpenCodeSessions } from "./opencode";
 
@@ -126,6 +127,20 @@ export const workspaceListQuery = () =>
     queryKey: queryKeys.workspaces.list(),
     queryFn: async () => unwrap(await api.api.workspaces.get()),
   });
+
+export function useWorkspaceMap() {
+  const { data: workspaces } = useQuery(workspaceListQuery());
+
+  return useMemo(() => {
+    const map = new Map<string, string>();
+    if (workspaces) {
+      for (const w of workspaces) {
+        map.set(w.id, w.name);
+      }
+    }
+    return map;
+  }, [workspaces]);
+}
 
 export const workspaceDetailQuery = (id: string) =>
   queryOptions({
