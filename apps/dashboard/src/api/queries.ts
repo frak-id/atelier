@@ -383,6 +383,26 @@ export function useSyncConfigsToNfs() {
   });
 }
 
+export const sharedAuthListQuery = queryOptions({
+  queryKey: ["sharedAuth", "list"] as const,
+  queryFn: async () => unwrap(await api.api["shared-auth"].get()),
+});
+
+export function useUpdateSharedAuth() {
+  return useMutation({
+    mutationFn: async ({
+      provider,
+      content,
+    }: {
+      provider: string;
+      content: string;
+    }) => unwrap(await api.api["shared-auth"]({ provider }).put({ content })),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: ["sharedAuth"] });
+    },
+  });
+}
+
 export const sandboxDiscoverConfigsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.discoverConfigs(id),

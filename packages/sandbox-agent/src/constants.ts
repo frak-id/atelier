@@ -53,4 +53,8 @@ export const AUTH_PROVIDERS = [
     name: "opencode",
     path: "/home/dev/.local/share/opencode/auth.json",
   },
+  {
+    name: "antigravity",
+    path: "/home/dev/.config/opencode/antigravity-accounts.json",
+  },
 ] as const;

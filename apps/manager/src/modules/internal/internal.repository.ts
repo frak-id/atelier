@@ -25,6 +25,12 @@ function rowToSharedAuth(
 }
 
 export class SharedAuthRepository {
+  list(): SharedAuthRecord[] {
+    const db = getDatabase();
+    const rows = db.select().from(sharedAuth).all();
+    return rows.map(rowToSharedAuth);
+  }
+
   getByProvider(provider: string): SharedAuthRecord | undefined {
     const db = getDatabase();
     const row = db

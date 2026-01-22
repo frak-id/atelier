@@ -4,6 +4,19 @@ import type { SharedAuthRepository } from "./internal.repository.ts";
 
 const log = createChildLogger("internal-service");
 
+export const KNOWN_AUTH_PROVIDERS = [
+  {
+    name: "opencode",
+    path: "/home/dev/.local/share/opencode/auth.json",
+    description: "OpenCode authentication (Anthropic, XAI, OpenCode API keys)",
+  },
+  {
+    name: "antigravity",
+    path: "/home/dev/.config/opencode/antigravity-accounts.json",
+    description: "Google Antigravity plugin accounts",
+  },
+] as const;
+
 export interface AuthContent {
   content: string;
   updatedAt: string;
@@ -16,16 +29,66 @@ export interface AuthSyncResult {
   updatedAt: string;
 }
 
+export interface SharedAuthInfo {
+  provider: string;
+  path: string;
+  description: string;
+  content: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
 export class InternalService {
   private readonly authLocks = new Map<string, Promise<AuthSyncResult>>();
 
   constructor(private readonly sharedAuthRepository: SharedAuthRepository) {}
+
+  listAuth(): SharedAuthInfo[] {
+    const storedAuth = this.sharedAuthRepository.list();
+    const storedByProvider = new Map(storedAuth.map((a) => [a.provider, a]));
+
+    return KNOWN_AUTH_PROVIDERS.map((provider) => {
+      const stored = storedByProvider.get(provider.name);
+      return {
+        provider: provider.name,
+        path: provider.path,
+        description: provider.description,
+        content: stored?.content ?? null,
+        updatedAt: stored?.updatedAt ?? null,
+        updatedBy: stored?.updatedBy ?? null,
+      };
+    });
+  }
 
   async getAuth(provider: string): Promise<AuthContent | null> {
     const record = this.sharedAuthRepository.getByProvider(provider);
     if (!record) return null;
 
     return {
+      content: record.content,
+      updatedAt: record.updatedAt,
+      updatedBy: record.updatedBy,
+    };
+  }
+
+  updateAuth(provider: string, content: string): SharedAuthInfo {
+    const providerInfo = KNOWN_AUTH_PROVIDERS.find((p) => p.name === provider);
+    if (!providerInfo) {
+      throw new Error(`Unknown auth provider: ${provider}`);
+    }
+
+    const record = this.sharedAuthRepository.upsert(
+      provider,
+      content,
+      "dashboard",
+    );
+
+    log.info({ provider }, "Auth updated from dashboard");
+
+    return {
+      provider: record.provider,
+      path: providerInfo.path,
+      description: providerInfo.description,
       content: record.content,
       updatedAt: record.updatedAt,
       updatedBy: record.updatedBy,
