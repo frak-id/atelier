@@ -306,8 +306,24 @@ export function useTriggerPrebuild() {
   return useMutation({
     mutationFn: async (id: string) =>
       unwrap(await api.api.workspaces({ id }).prebuild.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.detail(id),
+      });
+    },
+  });
+}
+
+export function useDeletePrebuild() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.workspaces({ id }).prebuild.delete()),
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.detail(id),
+      });
     },
   });
 }
