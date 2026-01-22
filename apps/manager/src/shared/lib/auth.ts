@@ -31,7 +31,7 @@ export async function authGuard({
 }: {
   headers: Record<string, string | undefined>;
   set: { status?: number | string };
-}): Promise<{ error: string; message: string } | void> {
+}): Promise<{ error: string; message: string } | undefined> {
   const authHeader = headers.authorization;
   if (!authHeader) {
     set.status = 401;

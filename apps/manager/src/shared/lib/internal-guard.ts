@@ -1,14 +1,11 @@
 import { NETWORK } from "@frak-sandbox/shared/constants";
+import type { Server } from "bun";
 
 const ALLOWED_SUBNET = NETWORK.GUEST_SUBNET;
 
-interface ServerWithRequestIP {
-  requestIP(request: Request): { address: string; port: number } | null;
-}
-
 function getClientIp(
   request: Request,
-  server: ServerWithRequestIP | null,
+  server: Server<unknown> | null,
 ): string | null {
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
@@ -36,9 +33,9 @@ export async function internalGuard({
   set,
 }: {
   request: Request;
-  server: ServerWithRequestIP | null;
+  server: Server<unknown> | null;
   set: { status?: number | string };
-}): Promise<{ error: string; message: string } | void> {
+}): Promise<{ error: string; message: string } | undefined> {
   const clientIp = getClientIp(request, server);
 
   if (!clientIp) {
