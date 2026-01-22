@@ -156,7 +156,11 @@ async function main() {
 
   console.log("\n📦 Creating tarball...");
   const tarballPath = resolve(ROOT, TARBALL_NAME);
-  await $`tar -czf ${tarballPath} -C ${STAGING_DIR} .`;
+  // COPYFILE_DISABLE=1 prevents macOS from including AppleDouble (._*) files
+  await $`tar -czf ${tarballPath} -C ${STAGING_DIR} .`.env({
+    ...process.env,
+    COPYFILE_DISABLE: "1",
+  });
   const tarballSize = (await Bun.file(tarballPath).size) / 1024 / 1024;
   console.log(`   ✓ Created ${TARBALL_NAME} (${tarballSize.toFixed(2)} MB)`);
 
