@@ -1,7 +1,7 @@
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
-import { sandboxService } from "./container.ts";
+import { sandboxService, sshKeyService } from "./container.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
@@ -15,6 +15,7 @@ import { internalRoutes } from "./modules/internal/index.ts";
 import { sandboxRoutes } from "./modules/sandbox/index.ts";
 import { sharedAuthRoutes } from "./modules/shared-auth/index.ts";
 import { sharedStorageRoutes } from "./modules/shared-storage/index.ts";
+import { sshKeyRoutes } from "./modules/ssh-key/index.ts";
 import { systemRoutes } from "./modules/system/index.ts";
 import { workspaceRoutes } from "./modules/workspace/index.ts";
 import { SandboxError } from "./shared/errors.ts";
@@ -30,9 +31,12 @@ logger.info({ dbPath: appPaths.database }, "Database ready");
 
 const app = new Elysia()
   .on("start", async () => {
-    const sandboxes = sandboxService.getByStatus("running");
+    const expiredCount = sshKeyService.cleanupExpired();
+    if (expiredCount > 0) {
+      logger.info({ expiredCount }, "Startup: expired SSH keys cleaned up");
+    }
 
-    // Rehydrate IP allocations from running sandboxes to prevent collisions
+    const sandboxes = sandboxService.getByStatus("running");
     for (const sandbox of sandboxes) {
       NetworkService.markAllocated(sandbox.runtime.ipAddress);
     }
@@ -43,7 +47,7 @@ const app = new Elysia()
           count: sandboxes.length,
           allocatedIps: NetworkService.getAllocatedCount(),
         },
-        "Startup reconciliation: IP allocations rehydrated",
+        "Startup: IP allocations rehydrated",
       );
     }
 
@@ -65,16 +69,18 @@ const app = new Elysia()
       } catch (err) {
         logger.error(
           { sandboxId: sandbox.id, error: err },
-          "Failed to re-register routes on startup",
+          "Failed to re-register routes",
         );
       }
     }
 
+    const validKeys = sshKeyService.getValidPublicKeys();
+    if (validKeys.length > 0) {
+      await SshPiperService.updateAuthorizedKeys(validKeys);
+    }
+
     if (sandboxes.length > 0) {
-      logger.info(
-        { count: sandboxes.length },
-        "Startup reconciliation: Caddy and SSH routes re-registered",
-      );
+      logger.info({ count: sandboxes.length }, "Startup: routes re-registered");
     }
   })
   .use(cors())
@@ -160,6 +166,7 @@ const app = new Elysia()
         .use(gitSourceRoutes)
         .use(configFileRoutes)
         .use(sharedAuthRoutes)
+        .use(sshKeyRoutes)
         .use(systemRoutes)
         .use(sharedStorageRoutes)
         .use(imageRoutes)

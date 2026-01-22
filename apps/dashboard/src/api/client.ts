@@ -32,6 +32,7 @@ export type {
   ConfigFileContentType,
   FileSecret,
   Sandbox,
+  SshKey,
   Workspace,
 } from "@frak-sandbox/manager/types";
 

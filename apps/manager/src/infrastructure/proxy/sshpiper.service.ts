@@ -7,6 +7,7 @@ const log = createChildLogger("sshpiper");
 interface SshPipeFrom {
   username: string;
   username_regex_match?: boolean;
+  authorized_keys_data?: string;
 }
 
 interface SshPipe {
@@ -24,6 +25,12 @@ interface PipesConfig {
   pipes: SshPipe[];
 }
 
+function encodeAuthorizedKeys(publicKeys: string[]): string | undefined {
+  if (publicKeys.length === 0) return undefined;
+  const authorizedKeys = publicKeys.map((k) => k.trim()).join("\n");
+  return Buffer.from(authorizedKeys).toString("base64");
+}
+
 async function readPipesConfig(): Promise<PipesConfig> {
   try {
     const content = await Bun.file(config.sshProxy.pipesFile).text();
@@ -39,13 +46,18 @@ async function writePipesConfig(pipesConfig: PipesConfig): Promise<void> {
 }
 
 export const SshPiperService = {
-  async registerRoute(sandboxId: string, ipAddress: string): Promise<string> {
+  async registerRoute(
+    sandboxId: string,
+    ipAddress: string,
+    publicKeys: string[] = [],
+  ): Promise<string> {
     if (config.isMock()) {
       log.debug({ sandboxId, ipAddress }, "Mock: SSH route registered");
       return `ssh ${sandboxId}@${config.sshProxy.domain} -p ${config.sshProxy.port}`;
     }
 
     const pipesConfig = await readPipesConfig();
+    const authorizedKeysData = encodeAuthorizedKeys(publicKeys);
 
     const existingIndex = pipesConfig.pipes.findIndex((p) =>
       p.from.some((f) => f.username === sandboxId),
@@ -54,8 +66,13 @@ export const SshPiperService = {
       pipesConfig.pipes.splice(existingIndex, 1);
     }
 
+    const fromEntry: SshPipeFrom = { username: sandboxId };
+    if (authorizedKeysData) {
+      fromEntry.authorized_keys_data = authorizedKeysData;
+    }
+
     pipesConfig.pipes.push({
-      from: [{ username: sandboxId }],
+      from: [fromEntry],
       to: {
         host: `${ipAddress}:22`,
         username: "root",
@@ -89,40 +106,32 @@ export const SshPiperService = {
     }
   },
 
-  async getRoutes(): Promise<SshPipe[]> {
+  async updateAuthorizedKeys(publicKeys: string[]): Promise<void> {
     if (config.isMock()) {
-      return [];
+      log.debug(
+        { keyCount: publicKeys.length },
+        "Mock: Updating authorized keys",
+      );
+      return;
     }
 
     const pipesConfig = await readPipesConfig();
-    return pipesConfig.pipes;
-  },
+    const authorizedKeysData = encodeAuthorizedKeys(publicKeys);
 
-  async isHealthy(): Promise<boolean> {
-    if (config.isMock()) {
-      return true;
+    for (const pipe of pipesConfig.pipes) {
+      for (const from of pipe.from) {
+        if (authorizedKeysData) {
+          from.authorized_keys_data = authorizedKeysData;
+        } else {
+          delete from.authorized_keys_data;
+        }
+      }
     }
 
-    try {
-      await Bun.file(config.sshProxy.pipesFile).text();
-      return true;
-    } catch {
-      return false;
-    }
-  },
-
-  getSshCommand(sandboxId: string): string {
-    if (config.sshProxy.port === 22) {
-      return `ssh ${sandboxId}@${config.sshProxy.domain}`;
-    }
-    return `ssh ${sandboxId}@${config.sshProxy.domain} -p ${config.sshProxy.port}`;
-  },
-
-  getVscodeCommand(sandboxId: string): string {
-    const sshHost =
-      config.sshProxy.port === 22
-        ? `${sandboxId}@${config.sshProxy.domain}`
-        : `${sandboxId}@${config.sshProxy.domain}:${config.sshProxy.port}`;
-    return `code --remote ssh-remote+${sshHost} /workspace`;
+    await writePipesConfig(pipesConfig);
+    log.info(
+      { pipeCount: pipesConfig.pipes.length, keyCount: publicKeys.length },
+      "SSH authorized keys updated",
+    );
   },
 };

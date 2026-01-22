@@ -12,6 +12,7 @@ import {
   SharedAuthRepository,
 } from "./modules/internal/index.ts";
 import { SandboxRepository, SandboxService } from "./modules/sandbox/index.ts";
+import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import {
   WorkspaceRepository,
   WorkspaceService,
@@ -29,6 +30,7 @@ import {
 
 const configFileRepository = new ConfigFileRepository();
 const gitSourceRepository = new GitSourceRepository();
+const sshKeyRepository = new SshKeyRepository();
 const workspaceRepository = new WorkspaceRepository();
 const sandboxRepository = new SandboxRepository();
 const sharedAuthRepository = new SharedAuthRepository();
@@ -39,6 +41,7 @@ const sharedAuthRepository = new SharedAuthRepository();
 
 const configFileService = new ConfigFileService(configFileRepository);
 const gitSourceService = new GitSourceService(gitSourceRepository);
+const sshKeyService = new SshKeyService(sshKeyRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = new SandboxService(sandboxRepository);
 const internalService = new InternalService(
@@ -57,6 +60,7 @@ const sandboxSpawner = new SandboxSpawner({
   workspaceService,
   gitSourceService,
   configFileService,
+  sshKeyService,
   agentClient,
 });
 
@@ -86,5 +90,6 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
+  sshKeyService,
   workspaceService,
 };

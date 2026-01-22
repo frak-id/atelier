@@ -64,6 +64,11 @@ const queryKeys = {
     repos: (params?: { page?: number; perPage?: number }) =>
       ["github", "repos", params] as const,
   },
+  sshKeys: {
+    all: ["sshKeys"] as const,
+    list: () => ["sshKeys", "list"] as const,
+    hasKeys: () => ["sshKeys", "hasKeys"] as const,
+  },
 };
 
 export const healthQuery = queryOptions({
@@ -526,6 +531,41 @@ export function usePurgeCache() {
       unwrap(await api.api.storage.cache({ folder }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
+    },
+  });
+}
+
+export const sshKeysListQuery = queryOptions({
+  queryKey: queryKeys.sshKeys.list(),
+  queryFn: async () => unwrap(await api.api["ssh-keys"].get()),
+});
+
+export const sshKeysHasKeysQuery = queryOptions({
+  queryKey: queryKeys.sshKeys.hasKeys(),
+  queryFn: async () => unwrap(await api.api["ssh-keys"]["has-keys"].get()),
+  staleTime: 60000,
+});
+
+export function useCreateSshKey() {
+  return useMutation({
+    mutationFn: async (data: {
+      publicKey: string;
+      name: string;
+      type: "generated" | "uploaded";
+      expiresAt?: string;
+    }) => unwrap(await api.api["ssh-keys"].post(data)),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sshKeys.all });
+    },
+  });
+}
+
+export function useDeleteSshKey() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api["ssh-keys"]({ id }).delete()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sshKeys.all });
     },
   });
 }

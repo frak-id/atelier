@@ -20,6 +20,7 @@ import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import { SandboxProvisioner } from "../modules/sandbox/sandbox.provisioner.ts";
+import type { SshKeyService } from "../modules/ssh-key/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   CreateSandboxBody,
@@ -42,6 +43,7 @@ interface SandboxSpawnerDependencies {
   workspaceService: WorkspaceService;
   gitSourceService: GitSourceService;
   configFileService: ConfigFileService;
+  sshKeyService: SshKeyService;
   agentClient: AgentClient;
 }
 
@@ -242,6 +244,7 @@ class SpawnContext {
     const sshCmd = await SshPiperService.registerRoute(
       this.sandboxId,
       this.network.ipAddress,
+      this.deps.sshKeyService.getValidPublicKeys(),
     );
 
     this.sandbox.runtime.urls = {
@@ -525,6 +528,7 @@ class SpawnContext {
     const sshCmd = await SshPiperService.registerRoute(
       this.sandboxId,
       this.network.ipAddress,
+      this.deps.sshKeyService.getValidPublicKeys(),
     );
 
     this.sandbox.runtime.urls = {
