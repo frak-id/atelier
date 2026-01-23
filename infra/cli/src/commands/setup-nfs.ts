@@ -63,7 +63,7 @@ export async function setupNfs(_args: string[] = []) {
     modified = true;
   }
   if (modified) {
-    await Bun.write(exportsFile, currentExports.trim() + "\n");
+    await Bun.write(exportsFile, `${currentExports.trim()}\n`);
   } else {
     p.log.info("Exports already configured");
   }

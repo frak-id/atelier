@@ -92,6 +92,7 @@ export const Route = createFileRoute("/sandboxes/")({
       <Skeleton className="h-9 w-48" />
       <div className="grid gap-4">
         {[...Array(3)].map((_, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: Static skeleton placeholders never reorder
           <Skeleton key={i} className="h-32" />
         ))}
       </div>

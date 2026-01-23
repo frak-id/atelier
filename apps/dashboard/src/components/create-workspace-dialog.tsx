@@ -129,7 +129,12 @@ export function CreateWorkspaceDialog({
                 <div className="space-y-3 mb-2">
                   {repos.map((repo, idx) => (
                     <RepoItem
-                      key={`repo-${idx}`}
+                      key={
+                        repo.url ||
+                        (repo.sourceId && repo.repo
+                          ? `${repo.sourceId}:${repo.repo}`
+                          : `new-${idx}`)
+                      }
                       repo={repo}
                       variant="muted"
                       onUpdate={(updates) =>
