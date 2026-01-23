@@ -20,6 +20,9 @@ export const TaskDataSchema = t.Object({
   startedAt: t.Optional(t.String()),
   completedAt: t.Optional(t.String()),
   order: t.Number({ default: 0 }),
+  baseBranch: t.Optional(t.String()),
+  branchName: t.Optional(t.String()),
+  targetRepoIndices: t.Optional(t.Array(t.Number())),
 });
 export type TaskData = Static<typeof TaskDataSchema>;
 
@@ -39,6 +42,8 @@ export const CreateTaskBodySchema = t.Object({
   title: t.String({ minLength: 1, maxLength: 200 }),
   description: t.String({ minLength: 1 }),
   context: t.Optional(t.String()),
+  baseBranch: t.Optional(t.String()),
+  targetRepoIndices: t.Optional(t.Array(t.Number())),
 });
 export type CreateTaskBody = Static<typeof CreateTaskBodySchema>;
 

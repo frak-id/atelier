@@ -1,8 +1,15 @@
-import type { Task } from "@frak-sandbox/manager/types";
+import type { RepoConfig, Task } from "@frak-sandbox/manager/types";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useCreateTask, useUpdateTask } from "@/api/queries";
+import { useEffect, useMemo, useState } from "react";
+import {
+  githubBranchesQuery,
+  useCreateTask,
+  useUpdateTask,
+  workspaceDetailQuery,
+} from "@/api/queries";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +20,34 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+
+function parseGitHubRepo(
+  repo: RepoConfig,
+): { owner: string; repo: string } | null {
+  if ("repo" in repo) {
+    const parts = repo.repo.split("/");
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      return { owner: parts[0], repo: parts[1] };
+    }
+  }
+
+  if ("url" in repo) {
+    const match = repo.url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+    if (match?.[1] && match[2]) {
+      return { owner: match[1], repo: match[2] };
+    }
+  }
+
+  return null;
+}
 
 type TaskFormDialogProps = {
   open: boolean;
@@ -31,12 +65,35 @@ export function TaskFormDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [context, setContext] = useState("");
+  const [selectedRepoIndices, setSelectedRepoIndices] = useState<number[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string>("");
 
+  const { data: workspace } = useQuery(workspaceDetailQuery(workspaceId));
   const createMutation = useCreateTask();
   const updateMutation = useUpdateTask();
 
   const isEditing = !!task;
   const isPending = createMutation.isPending || updateMutation.isPending;
+
+  const repos = workspace?.config.repos ?? [];
+  const hasMultipleRepos = repos.length > 1;
+
+  const effectiveTargetRepos = useMemo(() => {
+    if (repos.length === 0) return [];
+    if (repos.length === 1) return [repos[0]];
+    if (selectedRepoIndices.length === 0) return repos;
+    return selectedRepoIndices.map((i) => repos[i]).filter(Boolean);
+  }, [repos, selectedRepoIndices]);
+
+  const singleTargetRepo =
+    effectiveTargetRepos.length === 1 ? effectiveTargetRepos[0] : null;
+  const gitHubInfo = singleTargetRepo
+    ? parseGitHubRepo(singleTargetRepo)
+    : null;
+
+  const { data: branchesData } = useQuery(
+    githubBranchesQuery(gitHubInfo?.owner ?? "", gitHubInfo?.repo ?? ""),
+  );
 
   useEffect(() => {
     if (open) {
@@ -44,10 +101,14 @@ export function TaskFormDialog({
         setTitle(task.title);
         setDescription(task.data.description ?? "");
         setContext(task.data.context ?? "");
+        setSelectedRepoIndices(task.data.targetRepoIndices ?? []);
+        setSelectedBranch(task.data.baseBranch ?? "");
       } else {
         setTitle("");
         setDescription("");
         setContext("");
+        setSelectedRepoIndices([]);
+        setSelectedBranch("");
       }
     }
   }, [open, task]);
@@ -72,10 +133,19 @@ export function TaskFormDialog({
         title: title.trim(),
         description: description.trim(),
         context: context.trim() || undefined,
+        baseBranch: selectedBranch || undefined,
+        targetRepoIndices:
+          selectedRepoIndices.length > 0 ? selectedRepoIndices : undefined,
       });
     }
 
     onOpenChange(false);
+  };
+
+  const toggleRepoSelection = (index: number) => {
+    setSelectedRepoIndices((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
+    );
   };
 
   return (
@@ -127,6 +197,72 @@ export function TaskFormDialog({
                 rows={3}
               />
             </div>
+
+            {!isEditing && hasMultipleRepos && (
+              <div className="space-y-2">
+                <Label>
+                  Target Repositories{" "}
+                  <span className="text-muted-foreground">
+                    (optional, defaults to all)
+                  </span>
+                </Label>
+                <div className="space-y-2 rounded-md border p-3">
+                  {repos.map((repo, index) => (
+                    <div
+                      key={repo.clonePath}
+                      className="flex items-center gap-2"
+                    >
+                      <Checkbox
+                        id={`repo-${index}`}
+                        checked={selectedRepoIndices.includes(index)}
+                        onChange={() => toggleRepoSelection(index)}
+                      />
+                      <label
+                        htmlFor={`repo-${index}`}
+                        className="text-sm font-mono cursor-pointer"
+                      >
+                        {repo.clonePath}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!isEditing && singleTargetRepo && gitHubInfo && (
+              <div className="space-y-2">
+                <Label>
+                  Base Branch{" "}
+                  <span className="text-muted-foreground">(optional)</span>
+                </Label>
+                <Select
+                  value={selectedBranch}
+                  onValueChange={setSelectedBranch}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        branchesData?.defaultBranch
+                          ? `Default: ${branchesData.defaultBranch}`
+                          : "Select branch..."
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branchesData?.branches.map((branch) => (
+                      <SelectItem key={branch.name} value={branch.name}>
+                        {branch.name}
+                        {branch.isDefault && (
+                          <span className="text-muted-foreground ml-2">
+                            (default)
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

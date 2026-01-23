@@ -616,6 +616,8 @@ export function useCreateTask() {
       title: string;
       description: string;
       context?: string;
+      baseBranch?: string;
+      targetRepoIndices?: number[];
     }) => unwrap(await api.api.tasks.post(data)),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });

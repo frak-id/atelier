@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Code,
   ExternalLink,
+  GitBranch,
   GripVertical,
   MoreHorizontal,
   Terminal,
@@ -97,6 +98,15 @@ export function TaskCard({
           <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
             {task.data.description}
           </p>
+
+          {task.data.branchName && (
+            <div className="flex items-center gap-1 mt-2">
+              <GitBranch className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs font-mono text-muted-foreground truncate">
+                {task.data.branchName}
+              </span>
+            </div>
+          )}
 
           {showConnectionInfo && sandbox && (
             <div className="flex items-center gap-1 mt-2">

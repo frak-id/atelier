@@ -3,7 +3,7 @@ import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import type { TaskService } from "../modules/task/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
-import type { Task } from "../schemas/index.ts";
+import type { RepoConfig, Task, Workspace } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 import type { SessionMonitor } from "./session-monitor.ts";
@@ -13,6 +13,7 @@ const log = createChildLogger("task-spawner");
 const AGENT_READY_TIMEOUT = 60000;
 const OPENCODE_HEALTH_TIMEOUT = 120000;
 const OPENCODE_PORT = 3000;
+const WORKSPACE_DIR = "/home/dev/workspace";
 
 interface TaskSpawnerDependencies {
   sandboxSpawner: SandboxSpawner;
@@ -79,14 +80,42 @@ export class TaskSpawner {
 
       await this.waitForOpencode(ipAddress);
 
-      const sessionResult = await this.createSession(opencodeUrl, task.title);
+      const targetRepos = this.getTargetRepos(task, workspace);
+      let branchName: string | undefined;
+      let opencodeDirectory: string | undefined;
+
+      if (targetRepos.length === 1 && targetRepos[0]) {
+        const repo = targetRepos[0];
+        const clonePath = repo.clonePath.startsWith("/")
+          ? repo.clonePath
+          : `/${repo.clonePath}`;
+        opencodeDirectory = `${WORKSPACE_DIR}${clonePath}`;
+
+        const baseBranch = task.data.baseBranch || repo.branch;
+        branchName = await this.createBranch(
+          ipAddress,
+          opencodeDirectory,
+          baseBranch,
+          task.id,
+        );
+
+        if (branchName) {
+          log.info({ taskId, branchName, baseBranch }, "Created task branch");
+        }
+      }
+
+      const sessionResult = await this.createSession(
+        opencodeUrl,
+        task.title,
+        opencodeDirectory,
+      );
       if ("error" in sessionResult) {
         throw new Error(
           `Failed to create OpenCode session: ${sessionResult.error}`,
         );
       }
 
-      const prompt = this.buildPrompt(task);
+      const prompt = this.buildPrompt(task, targetRepos, branchName);
       const promptResult = await this.sendPrompt(
         opencodeUrl,
         sessionResult.sessionId,
@@ -100,6 +129,7 @@ export class TaskSpawner {
         taskId,
         sandbox.id,
         sessionResult.sessionId,
+        branchName,
       );
 
       log.info(
@@ -145,11 +175,98 @@ export class TaskSpawner {
     });
   }
 
-  private buildPrompt(task: Task): string {
-    let prompt = `# Task: ${task.title}\n\n${task.data.description}`;
+  private getTargetRepos(task: Task, workspace: Workspace): RepoConfig[] {
+    const allRepos = workspace.config.repos;
+    if (allRepos.length === 0) return [];
+
+    const indices = task.data.targetRepoIndices;
+    if (!indices || indices.length === 0) {
+      return allRepos;
+    }
+
+    return indices
+      .filter((i) => i >= 0 && i < allRepos.length)
+      .map((i) => allRepos[i])
+      .filter((repo): repo is RepoConfig => repo !== undefined);
+  }
+
+  private async createBranch(
+    ipAddress: string,
+    repoPath: string,
+    baseBranch: string,
+    taskId: string,
+  ): Promise<string | undefined> {
+    const baseBranchName = `task/${taskId}`;
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const branchName =
+        attempt === 0 ? baseBranchName : `${baseBranchName}_v${attempt + 1}`;
+
+      const checkoutBase = await this.deps.agentClient.exec(
+        ipAddress,
+        `cd ${repoPath} && git fetch origin && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
+        { timeout: 30000 },
+      );
+
+      if (checkoutBase.exitCode !== 0) {
+        log.warn(
+          { repoPath, baseBranch, stderr: checkoutBase.stderr },
+          "Failed to checkout base branch",
+        );
+        return undefined;
+      }
+
+      const createBranch = await this.deps.agentClient.exec(
+        ipAddress,
+        `cd ${repoPath} && git checkout -b ${branchName}`,
+        { timeout: 10000 },
+      );
+
+      if (createBranch.exitCode === 0) {
+        return branchName;
+      }
+
+      if (!createBranch.stderr.includes("already exists")) {
+        log.warn(
+          { branchName, stderr: createBranch.stderr },
+          "Failed to create branch",
+        );
+        return undefined;
+      }
+
+      log.debug({ branchName }, "Branch exists, trying next suffix");
+    }
+
+    log.warn({ taskId }, "Exhausted branch name attempts");
+    return undefined;
+  }
+
+  private buildPrompt(
+    task: Task,
+    targetRepos: RepoConfig[],
+    branchName?: string,
+  ): string {
+    let prompt = `# Task: ${task.title}\n\n`;
+
+    const firstRepo = targetRepos[0];
+    if (branchName && targetRepos.length === 1 && firstRepo) {
+      const baseBranch = task.data.baseBranch || firstRepo.branch;
+      prompt += `**Working branch:** \`${branchName}\` (based on \`${baseBranch}\`)\n`;
+      prompt += `**Directory:** \`${WORKSPACE_DIR}${firstRepo.clonePath}\`\n\n`;
+    } else if (targetRepos.length > 1) {
+      prompt += "**Working directories:**\n";
+      for (const repo of targetRepos) {
+        prompt += `- \`${WORKSPACE_DIR}${repo.clonePath}\`\n`;
+      }
+      prompt += "\n";
+    }
+
+    prompt += task.data.description;
+
     if (task.data.context) {
       prompt += `\n\n## Additional Context\n${task.data.context}`;
     }
+
     return prompt;
   }
 
@@ -175,11 +292,13 @@ export class TaskSpawner {
   private async createSession(
     baseUrl: string,
     title: string,
+    directory?: string,
   ): Promise<{ sessionId: string } | { error: string }> {
     try {
       const client = createOpencodeClient({ baseUrl });
       const { data, error } = await client.session.create({
         title: `Task: ${title}`,
+        ...(directory && { directory }),
       });
       if (error || !data?.id) {
         return { error: "Failed to create session" };

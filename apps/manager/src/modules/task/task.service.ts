@@ -48,6 +48,8 @@ export class TaskService {
         description: body.description,
         context: body.context,
         order,
+        baseBranch: body.baseBranch,
+        targetRepoIndices: body.targetRepoIndices,
       },
       createdAt: now,
       updatedAt: now,
@@ -110,7 +112,12 @@ export class TaskService {
     return updated;
   }
 
-  moveToInProgress(id: string, sandboxId: string, sessionId: string): Task {
+  moveToInProgress(
+    id: string,
+    sandboxId: string,
+    sessionId: string,
+    branchName?: string,
+  ): Task {
     const task = this.getByIdOrThrow(id);
 
     if (task.status !== "queue") {
@@ -126,6 +133,7 @@ export class TaskService {
         opencodeSessionId: sessionId,
         startedAt: new Date().toISOString(),
         order,
+        ...(branchName && { branchName }),
       },
     });
   }
@@ -184,6 +192,8 @@ export class TaskService {
         description: task.data.description,
         context: task.data.context,
         order,
+        baseBranch: task.data.baseBranch,
+        targetRepoIndices: task.data.targetRepoIndices,
       },
     });
   }
