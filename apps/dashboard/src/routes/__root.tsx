@@ -4,22 +4,11 @@ import {
   Link,
   Outlet,
 } from "@tanstack/react-router";
-import {
-  Box,
-  Boxes,
-  ChevronDown,
-  FolderGit2,
-  HardDrive,
-  Home,
-  Kanban,
-  LogOut,
-  Menu,
-  Server,
-  Settings,
-} from "lucide-react";
+import { Box, Menu } from "lucide-react";
 import { Suspense, useState } from "react";
 import { clearAuthToken, getAuthToken } from "@/api/client";
-import { GitHubStatus } from "@/components/github-status";
+import { MobileSidebar } from "@/components/layout/mobile-sidebar";
+import { Sidebar } from "@/components/layout/sidebar";
 import { LoginPage } from "@/components/login-page";
 import { SystemStatusFooter } from "@/components/system-status-footer";
 import { Button } from "@/components/ui/button";
@@ -30,6 +19,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useSidebarState } from "@/hooks/use-sidebar-state";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -39,7 +29,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [adminExpanded, setAdminExpanded] = useState(false);
+  const { collapsed, toggle } = useSidebarState();
   const [isAuthenticated, setIsAuthenticated] = useState(
     () => !!getAuthToken(),
   );
@@ -56,68 +46,12 @@ function RootLayout() {
   return (
     <TooltipProvider>
       <div className="flex h-screen bg-background">
-        <aside className="hidden md:flex w-64 border-r bg-card flex-col">
-          <div className="p-6 border-b">
-            <Link to="/" className="flex items-center gap-2">
-              <Box className="h-6 w-6 text-primary" />
-              <span className="font-bold text-lg">Frak Sandbox</span>
-            </Link>
-          </div>
-          <nav className="flex-1 p-4 space-y-1">
-            <NavLink to="/" icon={Home}>
-              Home
-            </NavLink>
-            <NavLink to="/tasks" icon={Kanban}>
-              Tasks
-            </NavLink>
-            <NavLink to="/workspaces" icon={FolderGit2}>
-              Workspaces
-            </NavLink>
-            <NavLink to="/sandboxes" icon={Boxes}>
-              Sandboxes
-            </NavLink>
-
-            <div className="pt-4">
-              <button
-                type="button"
-                onClick={() => setAdminExpanded(!adminExpanded)}
-                className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <span>Admin</span>
-                <ChevronDown
-                  className={`h-4 w-4 transition-transform ${adminExpanded ? "rotate-180" : ""}`}
-                />
-              </button>
-              {adminExpanded && (
-                <div className="mt-1 space-y-1 pl-2">
-                  <NavLink to="/images" icon={HardDrive}>
-                    Images
-                  </NavLink>
-                  <NavLink to="/system" icon={Server}>
-                    System
-                  </NavLink>
-                  <NavLink to="/settings" icon={Settings}>
-                    Settings
-                  </NavLink>
-                </div>
-              )}
-            </div>
-          </nav>
-          <div className="p-4 border-t space-y-3">
-            <Suspense fallback={null}>
-              <GitHubStatus />
-            </Suspense>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-            <div className="text-xs text-muted-foreground">v0.1.0</div>
-          </div>
-        </aside>
+        <Sidebar
+          collapsed={collapsed}
+          onToggle={toggle}
+          onLogout={handleLogout}
+          attentionCount={0}
+        />
 
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetContent side="left" className="w-64 p-0">
@@ -129,60 +63,10 @@ function RootLayout() {
                 </Link>
               </SheetTitle>
             </SheetHeader>
-            <nav className="flex-1 p-4 space-y-1">
-              <NavLink to="/" icon={Home}>
-                Home
-              </NavLink>
-              <NavLink to="/tasks" icon={Kanban}>
-                Tasks
-              </NavLink>
-              <NavLink to="/workspaces" icon={FolderGit2}>
-                Workspaces
-              </NavLink>
-              <NavLink to="/sandboxes" icon={Boxes}>
-                Sandboxes
-              </NavLink>
-
-              <div className="pt-4">
-                <button
-                  type="button"
-                  onClick={() => setAdminExpanded(!adminExpanded)}
-                  className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <span>Admin</span>
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform ${adminExpanded ? "rotate-180" : ""}`}
-                  />
-                </button>
-                {adminExpanded && (
-                  <div className="mt-1 space-y-1 pl-2">
-                    <NavLink to="/images" icon={HardDrive}>
-                      Images
-                    </NavLink>
-                    <NavLink to="/system" icon={Server}>
-                      System
-                    </NavLink>
-                    <NavLink to="/settings" icon={Settings}>
-                      Settings
-                    </NavLink>
-                  </div>
-                )}
-              </div>
-            </nav>
-            <div className="p-4 border-t space-y-3">
-              <Suspense fallback={null}>
-                <GitHubStatus />
-              </Suspense>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent"
-              >
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </button>
-              <div className="text-xs text-muted-foreground">v0.1.0</div>
-            </div>
+            <MobileSidebar
+              onLogout={handleLogout}
+              onClose={() => setMobileMenuOpen(false)}
+            />
           </SheetContent>
         </Sheet>
 
@@ -212,26 +96,5 @@ function RootLayout() {
         </div>
       </div>
     </TooltipProvider>
-  );
-}
-
-function NavLink({
-  to,
-  icon: Icon,
-  children,
-}: {
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      to={to}
-      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors [&.active]:bg-accent [&.active]:text-foreground"
-      activeProps={{ className: "active" }}
-    >
-      <Icon className="h-4 w-4" />
-      {children}
-    </Link>
   );
 }

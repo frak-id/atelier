@@ -9,16 +9,26 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root";
+import { Route as AdminConfigRouteImport } from "./routes/admin/config";
+import { Route as AdminImagesRouteImport } from "./routes/admin/images";
+import { Route as AdminSystemRouteImport } from "./routes/admin/system";
 import { Route as ImagesIndexRouteImport } from "./routes/images/index";
 import { Route as IndexRouteImport } from "./routes/index";
+import { Route as ProfileRouteImport } from "./routes/profile";
 import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id";
 import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index";
+import { Route as SessionsIndexRouteImport } from "./routes/sessions/index";
 import { Route as SettingsIndexRouteImport } from "./routes/settings/index";
 import { Route as SystemIndexRouteImport } from "./routes/system/index";
 import { Route as TasksIndexRouteImport } from "./routes/tasks/index";
 import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id";
 import { Route as WorkspacesIndexRouteImport } from "./routes/workspaces/index";
 
+const ProfileRoute = ProfileRouteImport.update({
+  id: "/profile",
+  path: "/profile",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
@@ -44,6 +54,11 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   path: "/settings/",
   getParentRoute: () => rootRouteImport,
 } as any);
+const SessionsIndexRoute = SessionsIndexRouteImport.update({
+  id: "/sessions/",
+  path: "/sessions/",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const SandboxesIndexRoute = SandboxesIndexRouteImport.update({
   id: "/sandboxes/",
   path: "/sandboxes/",
@@ -64,24 +79,49 @@ const SandboxesIdRoute = SandboxesIdRouteImport.update({
   path: "/sandboxes/$id",
   getParentRoute: () => rootRouteImport,
 } as any);
+const AdminSystemRoute = AdminSystemRouteImport.update({
+  id: "/admin/system",
+  path: "/admin/system",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AdminImagesRoute = AdminImagesRouteImport.update({
+  id: "/admin/images",
+  path: "/admin/images",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AdminConfigRoute = AdminConfigRouteImport.update({
+  id: "/admin/config",
+  path: "/admin/config",
+  getParentRoute: () => rootRouteImport,
+} as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/profile": typeof ProfileRoute;
+  "/admin/config": typeof AdminConfigRoute;
+  "/admin/images": typeof AdminImagesRoute;
+  "/admin/system": typeof AdminSystemRoute;
   "/sandboxes/$id": typeof SandboxesIdRoute;
   "/workspaces/$id": typeof WorkspacesIdRoute;
-  "/images": typeof ImagesIndexRoute;
-  "/sandboxes": typeof SandboxesIndexRoute;
-  "/settings": typeof SettingsIndexRoute;
-  "/system": typeof SystemIndexRoute;
-  "/tasks": typeof TasksIndexRoute;
-  "/workspaces": typeof WorkspacesIndexRoute;
+  "/images/": typeof ImagesIndexRoute;
+  "/sandboxes/": typeof SandboxesIndexRoute;
+  "/sessions/": typeof SessionsIndexRoute;
+  "/settings/": typeof SettingsIndexRoute;
+  "/system/": typeof SystemIndexRoute;
+  "/tasks/": typeof TasksIndexRoute;
+  "/workspaces/": typeof WorkspacesIndexRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/profile": typeof ProfileRoute;
+  "/admin/config": typeof AdminConfigRoute;
+  "/admin/images": typeof AdminImagesRoute;
+  "/admin/system": typeof AdminSystemRoute;
   "/sandboxes/$id": typeof SandboxesIdRoute;
   "/workspaces/$id": typeof WorkspacesIdRoute;
   "/images": typeof ImagesIndexRoute;
   "/sandboxes": typeof SandboxesIndexRoute;
+  "/sessions": typeof SessionsIndexRoute;
   "/settings": typeof SettingsIndexRoute;
   "/system": typeof SystemIndexRoute;
   "/tasks": typeof TasksIndexRoute;
@@ -90,10 +130,15 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
+  "/profile": typeof ProfileRoute;
+  "/admin/config": typeof AdminConfigRoute;
+  "/admin/images": typeof AdminImagesRoute;
+  "/admin/system": typeof AdminSystemRoute;
   "/sandboxes/$id": typeof SandboxesIdRoute;
   "/workspaces/$id": typeof WorkspacesIdRoute;
   "/images/": typeof ImagesIndexRoute;
   "/sandboxes/": typeof SandboxesIndexRoute;
+  "/sessions/": typeof SessionsIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/system/": typeof SystemIndexRoute;
   "/tasks/": typeof TasksIndexRoute;
@@ -103,21 +148,31 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/profile"
+    | "/admin/config"
+    | "/admin/images"
+    | "/admin/system"
     | "/sandboxes/$id"
     | "/workspaces/$id"
-    | "/images"
-    | "/sandboxes"
-    | "/settings"
-    | "/system"
-    | "/tasks"
-    | "/workspaces";
+    | "/images/"
+    | "/sandboxes/"
+    | "/sessions/"
+    | "/settings/"
+    | "/system/"
+    | "/tasks/"
+    | "/workspaces/";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/profile"
+    | "/admin/config"
+    | "/admin/images"
+    | "/admin/system"
     | "/sandboxes/$id"
     | "/workspaces/$id"
     | "/images"
     | "/sandboxes"
+    | "/sessions"
     | "/settings"
     | "/system"
     | "/tasks"
@@ -125,10 +180,15 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/profile"
+    | "/admin/config"
+    | "/admin/images"
+    | "/admin/system"
     | "/sandboxes/$id"
     | "/workspaces/$id"
     | "/images/"
     | "/sandboxes/"
+    | "/sessions/"
     | "/settings/"
     | "/system/"
     | "/tasks/"
@@ -137,10 +197,15 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
+  ProfileRoute: typeof ProfileRoute;
+  AdminConfigRoute: typeof AdminConfigRoute;
+  AdminImagesRoute: typeof AdminImagesRoute;
+  AdminSystemRoute: typeof AdminSystemRoute;
   SandboxesIdRoute: typeof SandboxesIdRoute;
   WorkspacesIdRoute: typeof WorkspacesIdRoute;
   ImagesIndexRoute: typeof ImagesIndexRoute;
   SandboxesIndexRoute: typeof SandboxesIndexRoute;
+  SessionsIndexRoute: typeof SessionsIndexRoute;
   SettingsIndexRoute: typeof SettingsIndexRoute;
   SystemIndexRoute: typeof SystemIndexRoute;
   TasksIndexRoute: typeof TasksIndexRoute;
@@ -149,6 +214,13 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
+    "/profile": {
+      id: "/profile";
+      path: "/profile";
+      fullPath: "/profile";
+      preLoaderRoute: typeof ProfileRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/": {
       id: "/";
       path: "/";
@@ -159,42 +231,49 @@ declare module "@tanstack/react-router" {
     "/workspaces/": {
       id: "/workspaces/";
       path: "/workspaces";
-      fullPath: "/workspaces";
+      fullPath: "/workspaces/";
       preLoaderRoute: typeof WorkspacesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/tasks/": {
       id: "/tasks/";
       path: "/tasks";
-      fullPath: "/tasks";
+      fullPath: "/tasks/";
       preLoaderRoute: typeof TasksIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/system/": {
       id: "/system/";
       path: "/system";
-      fullPath: "/system";
+      fullPath: "/system/";
       preLoaderRoute: typeof SystemIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/settings/": {
       id: "/settings/";
       path: "/settings";
-      fullPath: "/settings";
+      fullPath: "/settings/";
       preLoaderRoute: typeof SettingsIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/sessions/": {
+      id: "/sessions/";
+      path: "/sessions";
+      fullPath: "/sessions/";
+      preLoaderRoute: typeof SessionsIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/sandboxes/": {
       id: "/sandboxes/";
       path: "/sandboxes";
-      fullPath: "/sandboxes";
+      fullPath: "/sandboxes/";
       preLoaderRoute: typeof SandboxesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/images/": {
       id: "/images/";
       path: "/images";
-      fullPath: "/images";
+      fullPath: "/images/";
       preLoaderRoute: typeof ImagesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
@@ -212,15 +291,41 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SandboxesIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/admin/system": {
+      id: "/admin/system";
+      path: "/admin/system";
+      fullPath: "/admin/system";
+      preLoaderRoute: typeof AdminSystemRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/admin/images": {
+      id: "/admin/images";
+      path: "/admin/images";
+      fullPath: "/admin/images";
+      preLoaderRoute: typeof AdminImagesRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/admin/config": {
+      id: "/admin/config";
+      path: "/admin/config";
+      fullPath: "/admin/config";
+      preLoaderRoute: typeof AdminConfigRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ProfileRoute: ProfileRoute,
+  AdminConfigRoute: AdminConfigRoute,
+  AdminImagesRoute: AdminImagesRoute,
+  AdminSystemRoute: AdminSystemRoute,
   SandboxesIdRoute: SandboxesIdRoute,
   WorkspacesIdRoute: WorkspacesIdRoute,
   ImagesIndexRoute: ImagesIndexRoute,
   SandboxesIndexRoute: SandboxesIndexRoute,
+  SessionsIndexRoute: SessionsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   SystemIndexRoute: SystemIndexRoute,
   TasksIndexRoute: TasksIndexRoute,
