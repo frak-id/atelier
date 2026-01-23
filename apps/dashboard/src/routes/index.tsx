@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { sandboxListQuery, workspaceListQuery } from "@/api/queries";
 import { RecentSessionsCard } from "@/components/recent-sessions-card";
 import { RunningSandboxesCard } from "@/components/running-sandboxes-card";
-import { StartSessionCard } from "@/components/start-session-card";
+import { StartWorkingCard } from "@/components/start-working-card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/")({
@@ -26,7 +26,7 @@ function HomePage() {
       </div>
 
       <Suspense fallback={<Skeleton className="h-[200px]" />}>
-        <StartSessionCard />
+        <StartWorkingCard />
       </Suspense>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
