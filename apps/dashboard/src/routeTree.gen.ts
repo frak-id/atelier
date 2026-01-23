@@ -20,6 +20,7 @@ import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index";
 import { Route as SessionsIndexRouteImport } from "./routes/sessions/index";
 import { Route as SettingsIndexRouteImport } from "./routes/settings/index";
 import { Route as SystemIndexRouteImport } from "./routes/system/index";
+import { Route as TasksIdRouteImport } from "./routes/tasks/$id";
 import { Route as TasksIndexRouteImport } from "./routes/tasks/index";
 import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id";
 import { Route as WorkspacesIndexRouteImport } from "./routes/workspaces/index";
@@ -74,6 +75,11 @@ const WorkspacesIdRoute = WorkspacesIdRouteImport.update({
   path: "/workspaces/$id",
   getParentRoute: () => rootRouteImport,
 } as any);
+const TasksIdRoute = TasksIdRouteImport.update({
+  id: "/tasks/$id",
+  path: "/tasks/$id",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const SandboxesIdRoute = SandboxesIdRouteImport.update({
   id: "/sandboxes/$id",
   path: "/sandboxes/$id",
@@ -102,14 +108,15 @@ export interface FileRoutesByFullPath {
   "/admin/images": typeof AdminImagesRoute;
   "/admin/system": typeof AdminSystemRoute;
   "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/tasks/$id": typeof TasksIdRoute;
   "/workspaces/$id": typeof WorkspacesIdRoute;
-  "/images/": typeof ImagesIndexRoute;
-  "/sandboxes/": typeof SandboxesIndexRoute;
-  "/sessions/": typeof SessionsIndexRoute;
-  "/settings/": typeof SettingsIndexRoute;
-  "/system/": typeof SystemIndexRoute;
-  "/tasks/": typeof TasksIndexRoute;
-  "/workspaces/": typeof WorkspacesIndexRoute;
+  "/images": typeof ImagesIndexRoute;
+  "/sandboxes": typeof SandboxesIndexRoute;
+  "/sessions": typeof SessionsIndexRoute;
+  "/settings": typeof SettingsIndexRoute;
+  "/system": typeof SystemIndexRoute;
+  "/tasks": typeof TasksIndexRoute;
+  "/workspaces": typeof WorkspacesIndexRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   "/admin/images": typeof AdminImagesRoute;
   "/admin/system": typeof AdminSystemRoute;
   "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/tasks/$id": typeof TasksIdRoute;
   "/workspaces/$id": typeof WorkspacesIdRoute;
   "/images": typeof ImagesIndexRoute;
   "/sandboxes": typeof SandboxesIndexRoute;
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   "/admin/images": typeof AdminImagesRoute;
   "/admin/system": typeof AdminSystemRoute;
   "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/tasks/$id": typeof TasksIdRoute;
   "/workspaces/$id": typeof WorkspacesIdRoute;
   "/images/": typeof ImagesIndexRoute;
   "/sandboxes/": typeof SandboxesIndexRoute;
@@ -153,14 +162,15 @@ export interface FileRouteTypes {
     | "/admin/images"
     | "/admin/system"
     | "/sandboxes/$id"
+    | "/tasks/$id"
     | "/workspaces/$id"
-    | "/images/"
-    | "/sandboxes/"
-    | "/sessions/"
-    | "/settings/"
-    | "/system/"
-    | "/tasks/"
-    | "/workspaces/";
+    | "/images"
+    | "/sandboxes"
+    | "/sessions"
+    | "/settings"
+    | "/system"
+    | "/tasks"
+    | "/workspaces";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | "/admin/images"
     | "/admin/system"
     | "/sandboxes/$id"
+    | "/tasks/$id"
     | "/workspaces/$id"
     | "/images"
     | "/sandboxes"
@@ -185,6 +196,7 @@ export interface FileRouteTypes {
     | "/admin/images"
     | "/admin/system"
     | "/sandboxes/$id"
+    | "/tasks/$id"
     | "/workspaces/$id"
     | "/images/"
     | "/sandboxes/"
@@ -202,6 +214,7 @@ export interface RootRouteChildren {
   AdminImagesRoute: typeof AdminImagesRoute;
   AdminSystemRoute: typeof AdminSystemRoute;
   SandboxesIdRoute: typeof SandboxesIdRoute;
+  TasksIdRoute: typeof TasksIdRoute;
   WorkspacesIdRoute: typeof WorkspacesIdRoute;
   ImagesIndexRoute: typeof ImagesIndexRoute;
   SandboxesIndexRoute: typeof SandboxesIndexRoute;
@@ -231,49 +244,49 @@ declare module "@tanstack/react-router" {
     "/workspaces/": {
       id: "/workspaces/";
       path: "/workspaces";
-      fullPath: "/workspaces/";
+      fullPath: "/workspaces";
       preLoaderRoute: typeof WorkspacesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/tasks/": {
       id: "/tasks/";
       path: "/tasks";
-      fullPath: "/tasks/";
+      fullPath: "/tasks";
       preLoaderRoute: typeof TasksIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/system/": {
       id: "/system/";
       path: "/system";
-      fullPath: "/system/";
+      fullPath: "/system";
       preLoaderRoute: typeof SystemIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/settings/": {
       id: "/settings/";
       path: "/settings";
-      fullPath: "/settings/";
+      fullPath: "/settings";
       preLoaderRoute: typeof SettingsIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/sessions/": {
       id: "/sessions/";
       path: "/sessions";
-      fullPath: "/sessions/";
+      fullPath: "/sessions";
       preLoaderRoute: typeof SessionsIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/sandboxes/": {
       id: "/sandboxes/";
       path: "/sandboxes";
-      fullPath: "/sandboxes/";
+      fullPath: "/sandboxes";
       preLoaderRoute: typeof SandboxesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/images/": {
       id: "/images/";
       path: "/images";
-      fullPath: "/images/";
+      fullPath: "/images";
       preLoaderRoute: typeof ImagesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
@@ -282,6 +295,13 @@ declare module "@tanstack/react-router" {
       path: "/workspaces/$id";
       fullPath: "/workspaces/$id";
       preLoaderRoute: typeof WorkspacesIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/tasks/$id": {
+      id: "/tasks/$id";
+      path: "/tasks/$id";
+      fullPath: "/tasks/$id";
+      preLoaderRoute: typeof TasksIdRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/sandboxes/$id": {
@@ -322,6 +342,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminImagesRoute: AdminImagesRoute,
   AdminSystemRoute: AdminSystemRoute,
   SandboxesIdRoute: SandboxesIdRoute,
+  TasksIdRoute: TasksIdRoute,
   WorkspacesIdRoute: WorkspacesIdRoute,
   ImagesIndexRoute: ImagesIndexRoute,
   SandboxesIndexRoute: SandboxesIndexRoute,
