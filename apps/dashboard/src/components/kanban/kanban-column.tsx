@@ -38,6 +38,7 @@ type KanbanColumnProps = {
   status: TaskStatus;
   tasks: Task[];
   onCreateTask?: () => void;
+  onViewTask?: (task: Task) => void;
   onEditTask?: (task: Task) => void;
   onDeleteTask?: (task: Task) => void;
   onStartTask?: (taskId: string) => void;
@@ -51,6 +52,7 @@ export function KanbanColumn({
   status,
   tasks,
   onCreateTask,
+  onViewTask,
   onEditTask,
   onDeleteTask,
   onStartTask,
@@ -104,6 +106,7 @@ export function KanbanColumn({
               <TaskCard
                 key={task.id}
                 task={task}
+                onClick={() => onViewTask?.(task)}
                 onEdit={() => onEditTask?.(task)}
                 onDelete={() => onDeleteTask?.(task)}
                 onStart={() => onStartTask?.(task.id)}

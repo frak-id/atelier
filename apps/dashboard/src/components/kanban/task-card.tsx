@@ -10,7 +10,7 @@ import {
   MoreHorizontal,
   Terminal,
 } from "lucide-react";
-import { sandboxDetailQuery } from "@/api/queries";
+import { opencodeSessionsQuery, sandboxDetailQuery } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,9 +18,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Progress } from "@/components/ui/progress";
+import { useSubSessionProgress } from "./task-detail-dialog";
 
 type TaskCardProps = {
   task: Task;
+  onClick?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   onStart?: () => void;
@@ -32,6 +35,7 @@ type TaskCardProps = {
 
 export function TaskCard({
   task,
+  onClick,
   onEdit,
   onDelete,
   onStart,
@@ -60,6 +64,20 @@ export function TaskCard({
     enabled: !!task.data.sandboxId,
   });
 
+  const opencodeUrl = sandbox?.runtime?.urls?.opencode
+    ? new URL(sandbox.runtime.urls.opencode).origin
+    : null;
+
+  const { data: sessions } = useQuery({
+    ...opencodeSessionsQuery(opencodeUrl ?? ""),
+    enabled: !!opencodeUrl,
+  });
+
+  const { totalCount, progressPercent, completedCount } = useSubSessionProgress(
+    sessions,
+    task.data.opencodeSessionId,
+  );
+
   const showConnectionInfo =
     (task.status === "in_progress" || task.status === "pending_review") &&
     sandbox?.status === "running";
@@ -82,7 +100,13 @@ export function TaskCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-medium text-sm truncate">{task.title}</h3>
+            <button
+              type="button"
+              onClick={onClick}
+              className="font-medium text-sm truncate text-left hover:underline"
+            >
+              {task.title}
+            </button>
             <TaskMenu
               task={task}
               onEdit={onEdit}
@@ -104,6 +128,15 @@ export function TaskCard({
               <GitBranch className="h-3 w-3 text-muted-foreground" />
               <span className="text-xs font-mono text-muted-foreground truncate">
                 {task.data.branchName}
+              </span>
+            </div>
+          )}
+
+          {totalCount > 0 && (
+            <div className="flex items-center gap-2 mt-2">
+              <Progress value={progressPercent} className="flex-1 h-1.5" />
+              <span className="text-xs text-muted-foreground min-w-[40px] text-right">
+                {completedCount}/{totalCount}
               </span>
             </div>
           )}
