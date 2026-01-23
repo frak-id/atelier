@@ -47,6 +47,7 @@ export class TaskService {
       data: {
         description: body.description,
         context: body.context,
+        effort: body.effort,
         order,
         baseBranch: body.baseBranch,
         targetRepoIndices: body.targetRepoIndices,
@@ -67,13 +68,18 @@ export class TaskService {
 
     const updates: Partial<Task> = {};
     if (body.title !== undefined) updates.title = body.title;
-    if (body.description !== undefined || body.context !== undefined) {
+    if (
+      body.description !== undefined ||
+      body.context !== undefined ||
+      body.effort !== undefined
+    ) {
       updates.data = {
         ...task.data,
         ...(body.description !== undefined && {
           description: body.description,
         }),
         ...(body.context !== undefined && { context: body.context }),
+        ...(body.effort !== undefined && { effort: body.effort }),
       };
     }
 
@@ -191,6 +197,7 @@ export class TaskService {
       data: {
         description: task.data.description,
         context: task.data.context,
+        effort: task.data.effort,
         order,
         baseBranch: task.data.baseBranch,
         targetRepoIndices: task.data.targetRepoIndices,

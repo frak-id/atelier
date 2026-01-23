@@ -1,4 +1,4 @@
-import type { RepoConfig, Task } from "@frak-sandbox/manager/types";
+import type { RepoConfig, Task, TaskEffort } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -65,6 +65,7 @@ export function TaskFormDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [context, setContext] = useState("");
+  const [selectedEffort, setSelectedEffort] = useState<TaskEffort>("low");
   const [selectedRepoIndices, setSelectedRepoIndices] = useState<number[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
 
@@ -101,12 +102,14 @@ export function TaskFormDialog({
         setTitle(task.title);
         setDescription(task.data.description ?? "");
         setContext(task.data.context ?? "");
+        setSelectedEffort(task.data.effort ?? "low");
         setSelectedRepoIndices(task.data.targetRepoIndices ?? []);
         setSelectedBranch(task.data.baseBranch ?? "");
       } else {
         setTitle("");
         setDescription("");
         setContext("");
+        setSelectedEffort("low");
         setSelectedRepoIndices([]);
         setSelectedBranch("");
       }
@@ -125,6 +128,7 @@ export function TaskFormDialog({
           title: title.trim(),
           description: description.trim(),
           context: context.trim() || undefined,
+          effort: selectedEffort,
         },
       });
     } else {
@@ -133,6 +137,7 @@ export function TaskFormDialog({
         title: title.trim(),
         description: description.trim(),
         context: context.trim() || undefined,
+        effort: selectedEffort,
         baseBranch: selectedBranch || undefined,
         targetRepoIndices:
           selectedRepoIndices.length > 0 ? selectedRepoIndices : undefined,
@@ -196,6 +201,26 @@ export function TaskFormDialog({
                 placeholder="Documentation links, API references, or any other helpful context."
                 rows={3}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Effort Level</Label>
+              <Select
+                value={selectedEffort}
+                onValueChange={(v) => setSelectedEffort(v as TaskEffort)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low (Sonnet, High)</SelectItem>
+                  <SelectItem value="medium">Medium (Opus, High)</SelectItem>
+                  <SelectItem value="high">High (Opus, Max)</SelectItem>
+                  <SelectItem value="maximum">
+                    Maximum (Opus, Max + Planner)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {!isEditing && hasMultipleRepos && (

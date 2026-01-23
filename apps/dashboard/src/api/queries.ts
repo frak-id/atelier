@@ -1,3 +1,4 @@
+import type { TaskEffort } from "@frak-sandbox/manager/types";
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api, type Workspace } from "./client";
@@ -646,6 +647,7 @@ export function useCreateTask() {
       title: string;
       description: string;
       context?: string;
+      effort?: TaskEffort;
       baseBranch?: string;
       targetRepoIndices?: number[];
     }) => unwrap(await api.api.tasks.post(data)),
@@ -662,7 +664,12 @@ export function useUpdateTask() {
       data,
     }: {
       id: string;
-      data: { title?: string; description?: string; context?: string };
+      data: {
+        title?: string;
+        description?: string;
+        context?: string;
+        effort?: TaskEffort;
+      };
     }) => unwrap(await api.api.tasks({ id }).put(data)),
     onSuccess: (_data, variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
