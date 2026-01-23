@@ -1,3 +1,7 @@
+import {
+  TASK_EFFORT_VALUES,
+  type TaskEffort,
+} from "@frak-sandbox/shared/constants";
 import type { Static } from "elysia";
 import { t } from "elysia";
 
@@ -11,9 +15,9 @@ export const TaskStatusValues = [
 
 export type TaskStatus = (typeof TaskStatusValues)[number];
 
-export const TaskEffortValues = ["low", "medium", "high", "maximum"] as const;
+export const TaskEffortValues = TASK_EFFORT_VALUES;
 
-export type TaskEffort = (typeof TaskEffortValues)[number];
+export type { TaskEffort };
 
 const TaskEffortSchema = t.Union([
   t.Literal("low"),

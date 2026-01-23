@@ -1,3 +1,4 @@
+import { EFFORT_CONFIG, type TaskEffort } from "@frak-sandbox/shared/constants";
 import { createOpencodeClient, type Session } from "@opencode-ai/sdk/v2";
 
 export type SessionStatus =
@@ -54,14 +55,21 @@ export async function sendOpenCodeMessage(
   baseUrl: string,
   sessionId: string,
   message: string,
-  directory?: string,
+  options?: { directory?: string; effort?: TaskEffort },
 ): Promise<{ success: true } | { error: string }> {
   try {
     const client = createOpencodeClient({ baseUrl });
+    const config = options?.effort ? EFFORT_CONFIG[options.effort] : undefined;
+
     const result = await client.session.promptAsync({
       sessionID: sessionId,
-      directory,
+      directory: options?.directory,
       parts: [{ type: "text", text: message }],
+      ...(config && {
+        model: config.model,
+        variant: config.variant,
+        agent: config.agent,
+      }),
     });
     if (result.error) {
       return { error: "Failed to send message" };

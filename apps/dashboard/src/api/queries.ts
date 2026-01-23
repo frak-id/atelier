@@ -1,4 +1,4 @@
-import type { TaskEffort } from "@frak-sandbox/manager/types";
+import type { TaskEffort } from "@frak-sandbox/shared/constants";
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api, type Workspace } from "./client";

@@ -1,14 +1,10 @@
+import { EFFORT_CONFIG, type TaskEffort } from "@frak-sandbox/shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import type { TaskService } from "../modules/task/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
-import type {
-  RepoConfig,
-  Task,
-  TaskEffort,
-  Workspace,
-} from "../schemas/index.ts";
+import type { RepoConfig, Task, Workspace } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 import type { SessionMonitor } from "./session-monitor.ts";
@@ -19,36 +15,6 @@ const AGENT_READY_TIMEOUT = 60000;
 const OPENCODE_HEALTH_TIMEOUT = 120000;
 const OPENCODE_PORT = 3000;
 const WORKSPACE_DIR = "/home/dev";
-
-const EFFORT_CONFIG: Record<
-  TaskEffort,
-  {
-    model: { providerID: string; modelID: string };
-    variant: string;
-    agent: string;
-  }
-> = {
-  low: {
-    model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
-    variant: "high",
-    agent: "Sisyphus",
-  },
-  medium: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "high",
-    agent: "Sisyphus",
-  },
-  high: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "max",
-    agent: "Sisyphus",
-  },
-  maximum: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "max",
-    agent: "Planner-Sisyphus",
-  },
-};
 
 interface TaskSpawnerDependencies {
   sandboxSpawner: SandboxSpawner;
