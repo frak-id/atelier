@@ -6,10 +6,10 @@ import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type { Task } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
+import type { SessionMonitor } from "./session-monitor.ts";
 
 const log = createChildLogger("task-spawner");
 
-const WORKSPACE_DIR = "/home/dev/workspace";
 const AGENT_READY_TIMEOUT = 60000;
 const OPENCODE_HEALTH_TIMEOUT = 120000;
 const OPENCODE_PORT = 3000;
@@ -20,6 +20,7 @@ interface TaskSpawnerDependencies {
   taskService: TaskService;
   workspaceService: WorkspaceService;
   agentClient: AgentClient;
+  sessionMonitor: SessionMonitor;
 }
 
 export class TaskSpawner {
@@ -78,7 +79,7 @@ export class TaskSpawner {
 
       await this.waitForOpencode(ipAddress);
 
-      const sessionResult = await this.createSession(opencodeUrl);
+      const sessionResult = await this.createSession(opencodeUrl, task.title);
       if ("error" in sessionResult) {
         throw new Error(
           `Failed to create OpenCode session: ${sessionResult.error}`,
@@ -106,9 +107,11 @@ export class TaskSpawner {
         "Task moved to in_progress",
       );
 
-      // TODO: Subscribe to OpenCode SSE for real-time session status updates
-      // EventSessionStatus: { type: "session.status", properties: { sessionID, status } }
-      // When session becomes "idle", auto-transition to pending_review
+      this.deps.sessionMonitor.startMonitoring(
+        taskId,
+        sessionResult.sessionId,
+        ipAddress,
+      );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -171,16 +174,17 @@ export class TaskSpawner {
 
   private async createSession(
     baseUrl: string,
-  ): Promise<{ sessionId: string; directory: string } | { error: string }> {
+    title: string,
+  ): Promise<{ sessionId: string } | { error: string }> {
     try {
       const client = createOpencodeClient({ baseUrl });
       const { data, error } = await client.session.create({
-        directory: WORKSPACE_DIR,
+        title: `Task: ${title}`,
       });
-      if (error || !data?.id || !data?.directory) {
+      if (error || !data?.id) {
         return { error: "Failed to create session" };
       }
-      return { sessionId: data.id, directory: data.directory };
+      return { sessionId: data.id };
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Unknown error" };
     }
@@ -195,7 +199,6 @@ export class TaskSpawner {
       const client = createOpencodeClient({ baseUrl });
       const result = await client.session.promptAsync({
         sessionID: sessionId,
-        directory: WORKSPACE_DIR,
         parts: [{ type: "text", text: message }],
       });
       if (result.error) {

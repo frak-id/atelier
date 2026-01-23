@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { taskService, taskSpawner } from "../../container.ts";
+import { sessionMonitor, taskService, taskSpawner } from "../../container.ts";
 import {
   CreateTaskBodySchema,
   DeleteTaskQuerySchema,
@@ -109,6 +109,7 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     "/:id/reset",
     ({ params }) => {
       log.info({ taskId: params.id }, "Resetting task to draft");
+      sessionMonitor.stopMonitoringTask(params.id);
       return taskService.resetToDraft(params.id);
     },
     {
@@ -134,6 +135,8 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
       const keepSandbox = query.keepSandbox === "true";
 
       log.info({ taskId: params.id, keepSandbox }, "Deleting task");
+
+      sessionMonitor.stopMonitoringTask(params.id);
 
       if (task.data.sandboxId) {
         const { sandboxDestroyer, sandboxLifecycle } = await import(
