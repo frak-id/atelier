@@ -73,9 +73,11 @@ export function TaskCard({
     enabled: !!opencodeUrl,
   });
 
+  const isTaskInProgress = task.status === "in_progress";
   const { totalCount, progressPercent, completedCount } = useSubSessionProgress(
     sessions,
     task.data.opencodeSessionId,
+    isTaskInProgress,
   );
 
   const showConnectionInfo =
