@@ -1,42 +1,65 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
-import { sandboxListQuery, workspaceListQuery } from "@/api/queries";
-import { RecentSessionsCard } from "@/components/recent-sessions-card";
-import { RunningSandboxesCard } from "@/components/running-sandboxes-card";
-import { StartWorkingCard } from "@/components/start-working-card";
+import {
+  sandboxListQuery,
+  taskListQuery,
+  workspaceListQuery,
+} from "@/api/queries";
+import { AttentionList } from "@/components/dashboard/attention-list";
+import { QuickStart } from "@/components/dashboard/quick-start";
+import { RunningSessions } from "@/components/dashboard/running-sessions";
+import { StatusOverview } from "@/components/dashboard/status-overview";
+import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  useAttentionTasks,
+  useRunningSessions,
+  useStatusCounts,
+} from "@/hooks/use-attention-tasks";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
   loader: ({ context }) => {
     context.queryClient.ensureQueryData(workspaceListQuery());
     context.queryClient.ensureQueryData(sandboxListQuery());
+    context.queryClient.ensureQueryData(taskListQuery());
   },
   pendingComponent: HomeSkeleton,
 });
 
 function HomePage() {
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold sm:text-3xl">Welcome back</h1>
-        <p className="text-muted-foreground">
-          Start a new session or continue where you left off
-        </p>
-      </div>
+    <div className="p-6 space-y-6">
+      <PageHeader
+        title="Dashboard"
+        description="Overview of your dev environments and tasks"
+      />
 
-      <Suspense fallback={<Skeleton className="h-[200px]" />}>
-        <StartWorkingCard />
+      <Suspense fallback={<Skeleton className="h-24" />}>
+        <DashboardContent />
       </Suspense>
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Suspense fallback={<Skeleton className="h-[300px]" />}>
-          <RecentSessionsCard />
-        </Suspense>
+function DashboardContent() {
+  const statusCounts = useStatusCounts();
+  const { items: attentionItems } = useAttentionTasks();
+  const runningSessions = useRunningSessions();
 
-        <Suspense fallback={<Skeleton className="h-[300px]" />}>
-          <RunningSandboxesCard />
-        </Suspense>
+  return (
+    <div className="space-y-6">
+      <StatusOverview counts={statusCounts} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <AttentionList items={attentionItems} />
+          <RunningSessions sessions={runningSessions} maxItems={5} />
+        </div>
+
+        <div>
+          <QuickStart />
+        </div>
       </div>
     </div>
   );
@@ -44,15 +67,22 @@ function HomePage() {
 
 function HomeSkeleton() {
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="p-6 space-y-6">
       <div>
         <Skeleton className="h-9 w-48" />
         <Skeleton className="h-4 w-64 mt-2" />
       </div>
-      <Skeleton className="h-[200px]" />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Skeleton className="h-[300px]" />
-        <Skeleton className="h-[300px]" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-24" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <Skeleton className="h-[200px]" />
+          <Skeleton className="h-[300px]" />
+        </div>
+        <Skeleton className="h-[350px]" />
       </div>
     </div>
   );
