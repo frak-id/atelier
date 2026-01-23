@@ -2,6 +2,7 @@ import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type {
   GitSourceConfig,
   SandboxRuntime,
+  TaskData,
   WorkspaceConfig,
 } from "../../schemas/index.ts";
 
@@ -82,4 +83,19 @@ export const sshKeys = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (t) => [index("idx_ssh_keys_user_id").on(t.userId)],
+);
+
+// Task status is plain text (not enum) to avoid DB migrations when adding new statuses
+export const tasks = sqliteTable(
+  "tasks",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    title: text("title").notNull(),
+    status: text("status").notNull().default("draft"),
+    data: text("data", { mode: "json" }).notNull().$type<TaskData>(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("idx_tasks_workspace_id").on(t.workspaceId)],
 );

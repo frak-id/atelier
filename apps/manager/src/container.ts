@@ -13,6 +13,7 @@ import {
 } from "./modules/internal/index.ts";
 import { SandboxRepository, SandboxService } from "./modules/sandbox/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
+import { TaskRepository, TaskService } from "./modules/task/index.ts";
 import {
   WorkspaceRepository,
   WorkspaceService,
@@ -22,6 +23,7 @@ import {
   SandboxDestroyer,
   SandboxLifecycle,
   SandboxSpawner,
+  TaskSpawner,
 } from "./orchestrators/index.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -31,6 +33,7 @@ import {
 const configFileRepository = new ConfigFileRepository();
 const gitSourceRepository = new GitSourceRepository();
 const sshKeyRepository = new SshKeyRepository();
+const taskRepository = new TaskRepository();
 const workspaceRepository = new WorkspaceRepository();
 const sandboxRepository = new SandboxRepository();
 const sharedAuthRepository = new SharedAuthRepository();
@@ -42,6 +45,7 @@ const sharedAuthRepository = new SharedAuthRepository();
 const configFileService = new ConfigFileService(configFileRepository);
 const gitSourceService = new GitSourceService(gitSourceRepository);
 const sshKeyService = new SshKeyService(sshKeyRepository);
+const taskService = new TaskService(taskRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = new SandboxService(sandboxRepository);
 const internalService = new InternalService(
@@ -80,6 +84,14 @@ const prebuildRunner = new PrebuildRunner({
   agentClient,
 });
 
+const taskSpawner = new TaskSpawner({
+  sandboxSpawner,
+  sandboxService,
+  taskService,
+  workspaceService,
+  agentClient,
+});
+
 export {
   agentClient,
   configFileService,
@@ -91,5 +103,7 @@ export {
   sandboxService,
   sandboxSpawner,
   sshKeyService,
+  taskService,
+  taskSpawner,
   workspaceService,
 };

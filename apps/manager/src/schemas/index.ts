@@ -6,4 +6,5 @@ export * from "./sandbox.ts";
 export * from "./shared-storage.ts";
 export * from "./ssh-key.ts";
 export * from "./system.ts";
+export * from "./task.ts";
 export * from "./workspace.ts";
