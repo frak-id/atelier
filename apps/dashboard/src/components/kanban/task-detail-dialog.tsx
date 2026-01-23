@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { buildOpenCodeSessionUrl } from "@/lib/utils";
 
 type TaskDetailDialogProps = {
   open: boolean;
@@ -63,8 +64,13 @@ function TaskDetailContent({ task }: { task: Task }) {
     enabled: !!opencodeUrl,
   });
 
+  const isTaskInProgress = task.status === "in_progress";
   const { subSessions, completedCount, totalCount, progressPercent } =
-    useSubSessionProgress(sessions, task.data.opencodeSessionId);
+    useSubSessionProgress(
+      sessions,
+      task.data.opencodeSessionId,
+      isTaskInProgress,
+    );
 
   return (
     <div className="space-y-6">
@@ -192,9 +198,11 @@ function TaskDetailContent({ task }: { task: Task }) {
           {task.data.opencodeSessionId && (
             <>
               <div className="text-muted-foreground">OpenCode Session</div>
-              <code className="font-mono bg-muted px-1.5 py-0.5 rounded truncate">
-                {task.data.opencodeSessionId}
-              </code>
+              <MasterSessionLink
+                sessionId={task.data.opencodeSessionId}
+                sessions={sessions}
+                opencodeUrl={opencodeUrl}
+              />
             </>
           )}
 
@@ -223,10 +231,50 @@ function TaskDetailContent({ task }: { task: Task }) {
   );
 }
 
+function MasterSessionLink({
+  sessionId,
+  sessions,
+  opencodeUrl,
+}: {
+  sessionId: string;
+  sessions: Session[] | undefined;
+  opencodeUrl: string | null;
+}) {
+  const masterSession = sessions?.find((s) => s.id === sessionId);
+
+  if (!masterSession || !opencodeUrl) {
+    return (
+      <code className="font-mono bg-muted px-1.5 py-0.5 rounded truncate">
+        {sessionId}
+      </code>
+    );
+  }
+
+  const sessionUrl = buildOpenCodeSessionUrl(
+    opencodeUrl,
+    masterSession.directory,
+    sessionId,
+  );
+
+  return (
+    <a
+      href={sessionUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-mono bg-muted px-1.5 py-0.5 rounded truncate text-blue-500 hover:underline"
+    >
+      {sessionId}
+    </a>
+  );
+}
+
 function SubSessionRow({ session }: { session: Session }) {
   const isCompleted = !session.parentID
     ? false
     : session.time.updated !== session.time.created;
+
+  const displayTitle = session.title || `Session ${session.id.slice(0, 8)}`;
+  const shortId = session.id.slice(0, 8);
 
   return (
     <div className="flex items-center gap-2 text-xs py-1 px-2 bg-muted/50 rounded">
@@ -237,7 +285,10 @@ function SubSessionRow({ session }: { session: Session }) {
       ) : (
         <Loader2 className="h-3.5 w-3.5 text-blue-500 shrink-0 animate-spin" />
       )}
-      <span className="font-mono truncate flex-1">{session.id}</span>
+      <span className="truncate flex-1">
+        {displayTitle}{" "}
+        <span className="font-mono text-muted-foreground">({shortId})</span>
+      </span>
       <span className="text-muted-foreground shrink-0">
         {session.time.created
           ? new Date(session.time.created * 1000).toLocaleTimeString()
@@ -250,6 +301,7 @@ function SubSessionRow({ session }: { session: Session }) {
 function useSubSessionProgress(
   sessions: Session[] | undefined,
   parentSessionId: string | undefined,
+  isTaskInProgress = false,
 ) {
   return useMemo(() => {
     if (!sessions || !parentSessionId) {
@@ -267,7 +319,11 @@ function useSubSessionProgress(
       (s) => s.time.updated !== s.time.created,
     ).length;
 
-    const totalCount = subSessions.length;
+    // When task is in progress, add +1 to total to account for the master session
+    // that is still running and not yet completed
+    const totalCount = isTaskInProgress
+      ? subSessions.length + 1
+      : subSessions.length;
     const progressPercent =
       totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
@@ -277,7 +333,7 @@ function useSubSessionProgress(
       totalCount,
       progressPercent,
     };
-  }, [sessions, parentSessionId]);
+  }, [sessions, parentSessionId, isTaskInProgress]);
 }
 
 export { useSubSessionProgress };
