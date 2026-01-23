@@ -11,9 +11,21 @@ export const TaskStatusValues = [
 
 export type TaskStatus = (typeof TaskStatusValues)[number];
 
+export const TaskEffortValues = ["low", "medium", "high", "maximum"] as const;
+
+export type TaskEffort = (typeof TaskEffortValues)[number];
+
+const TaskEffortSchema = t.Union([
+  t.Literal("low"),
+  t.Literal("medium"),
+  t.Literal("high"),
+  t.Literal("maximum"),
+]);
+
 export const TaskDataSchema = t.Object({
   description: t.String(),
   context: t.Optional(t.String()),
+  effort: t.Optional(TaskEffortSchema),
   sandboxId: t.Optional(t.String()),
   opencodeSessionId: t.Optional(t.String()),
   createdBy: t.Optional(t.String()),
@@ -42,6 +54,7 @@ export const CreateTaskBodySchema = t.Object({
   title: t.String({ minLength: 1, maxLength: 200 }),
   description: t.String({ minLength: 1 }),
   context: t.Optional(t.String()),
+  effort: t.Optional(TaskEffortSchema),
   baseBranch: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
 });
@@ -51,6 +64,7 @@ export const UpdateTaskBodySchema = t.Object({
   title: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
   description: t.Optional(t.String({ minLength: 1 })),
   context: t.Optional(t.String()),
+  effort: t.Optional(TaskEffortSchema),
 });
 export type UpdateTaskBody = Static<typeof UpdateTaskBodySchema>;
 
