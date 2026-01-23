@@ -13,7 +13,7 @@ const log = createChildLogger("task-spawner");
 const AGENT_READY_TIMEOUT = 60000;
 const OPENCODE_HEALTH_TIMEOUT = 120000;
 const OPENCODE_PORT = 3000;
-const WORKSPACE_DIR = "/home/dev/workspace";
+const WORKSPACE_DIR = "/home/dev";
 
 interface TaskSpawnerDependencies {
   sandboxSpawner: SandboxSpawner;
