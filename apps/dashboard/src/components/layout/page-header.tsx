@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
-interface PageHeaderProps {
+export interface PageHeaderProps {
   title: string;
   description?: string;
   actions?: ReactNode;
@@ -8,6 +9,7 @@ interface PageHeaderProps {
     to: string;
     label: string;
   };
+  className?: string;
 }
 
 export function PageHeader({
@@ -15,9 +17,15 @@ export function PageHeader({
   description,
   actions,
   backLink,
+  className,
 }: PageHeaderProps) {
   return (
-    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={cn(
+        "flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between",
+        className,
+      )}
+    >
       <div>
         {backLink && (
           <a

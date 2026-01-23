@@ -2,15 +2,15 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Code,
-  ExternalLink,
-  GitBranch,
-  GripVertical,
-  MoreHorizontal,
-  Terminal,
-} from "lucide-react";
+import { GitBranch, GripVertical, MoreHorizontal } from "lucide-react";
+import { memo } from "react";
 import { opencodeSessionsQuery, sandboxDetailQuery } from "@/api/queries";
+import { QuickActions } from "@/components/shared/quick-actions";
+import {
+  type IndicatorStatus,
+  StatusIndicator,
+} from "@/components/shared/status-indicator";
+import { TimeAgo } from "@/components/shared/time-ago";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +33,24 @@ type TaskCardProps = {
   isActionPending?: boolean;
 };
 
-export function TaskCard({
+function getTaskStatusIndicator(task: Task): IndicatorStatus {
+  switch (task.status) {
+    case "draft":
+      return "draft";
+    case "queue":
+      return "queued";
+    case "in_progress":
+      return "running";
+    case "pending_review":
+      return "review";
+    case "completed":
+      return "complete";
+    default:
+      return "idle";
+  }
+}
+
+export const TaskCard = memo(function TaskCard({
   task,
   onClick,
   onEdit,
@@ -84,11 +101,16 @@ export function TaskCard({
     (task.status === "in_progress" || task.status === "pending_review") &&
     sandbox?.status === "running";
 
+  const statusIndicator = getTaskStatusIndicator(task);
+  const needsAttention = task.status === "pending_review";
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="bg-card border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow group"
+      className={`bg-card border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow group ${
+        needsAttention ? "border-amber-500/50" : ""
+      }`}
     >
       <div className="flex items-start gap-2">
         <button
@@ -102,13 +124,20 @@ export function TaskCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <button
-              type="button"
-              onClick={onClick}
-              className="font-medium text-sm truncate text-left hover:underline"
-            >
-              {task.title}
-            </button>
+            <div className="flex items-center gap-2 min-w-0">
+              <StatusIndicator
+                status={statusIndicator}
+                size="sm"
+                pulse={task.status === "in_progress"}
+              />
+              <button
+                type="button"
+                onClick={onClick}
+                className="font-medium text-sm truncate text-left hover:underline"
+              >
+                {task.title}
+              </button>
+            </div>
             <TaskMenu
               task={task}
               onEdit={onEdit}
@@ -125,14 +154,17 @@ export function TaskCard({
             {task.data.description}
           </p>
 
-          {task.data.branchName && (
-            <div className="flex items-center gap-1 mt-2">
-              <GitBranch className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs font-mono text-muted-foreground truncate">
-                {task.data.branchName}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+            {task.data.branchName && (
+              <div className="flex items-center gap-1">
+                <GitBranch className="h-3 w-3" />
+                <span className="font-mono truncate max-w-[100px]">
+                  {task.data.branchName}
+                </span>
+              </div>
+            )}
+            <TimeAgo date={task.updatedAt} className="ml-auto" />
+          </div>
 
           {totalCount > 0 && (
             <div className="flex items-center gap-2 mt-2">
@@ -144,38 +176,13 @@ export function TaskCard({
           )}
 
           {showConnectionInfo && sandbox && (
-            <div className="flex items-center gap-1 mt-2">
-              <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
-                <a
-                  href={sandbox.runtime.urls.vscode}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open VSCode"
-                >
-                  <Code className="h-3.5 w-3.5" />
-                </a>
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
-                <a
-                  href={sandbox.runtime.urls.opencode}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open OpenCode"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
-                <a
-                  href={sandbox.runtime.urls.terminal}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open Terminal"
-                >
-                  <Terminal className="h-3.5 w-3.5" />
-                </a>
-              </Button>
-              <CopySshButton ssh={sandbox.runtime.urls.ssh} />
+            <div className="mt-2">
+              <QuickActions
+                vscodeUrl={sandbox.runtime.urls.vscode}
+                terminalUrl={sandbox.runtime.urls.terminal}
+                opencodeUrl={sandbox.runtime.urls.opencode}
+                sshCommand={sandbox.runtime.urls.ssh}
+              />
             </div>
           )}
 
@@ -188,7 +195,7 @@ export function TaskCard({
       </div>
     </div>
   );
-}
+});
 
 function TaskMenu({
   task,
@@ -271,23 +278,5 @@ function MenuButton({
     >
       {children}
     </button>
-  );
-}
-
-function CopySshButton({ ssh }: { ssh: string }) {
-  const handleCopy = () => {
-    navigator.clipboard.writeText(ssh);
-  };
-
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-7 px-2 text-xs"
-      onClick={handleCopy}
-      title="Copy SSH command"
-    >
-      SSH
-    </Button>
   );
 }

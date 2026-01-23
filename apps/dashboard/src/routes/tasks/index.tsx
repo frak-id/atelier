@@ -9,6 +9,9 @@ import {
   TaskDetailDialog,
   TaskFormDialog,
 } from "@/components/kanban";
+import { PageHeader } from "@/components/layout/page-header";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -65,41 +68,48 @@ function TasksPage() {
   if (workspaceList.length === 0) {
     return (
       <div className="p-6">
-        <div className="text-center py-12">
-          <h2 className="text-lg font-semibold mb-2">No Workspaces</h2>
-          <p className="text-muted-foreground">
-            Create a workspace first to start managing tasks.
-          </p>
-        </div>
+        <PageHeader
+          title="Tasks"
+          description="Manage AI coding tasks with a kanban board"
+        />
+        <EmptyState
+          title="No Workspaces"
+          description="Create a workspace first to start managing tasks."
+          className="mt-12"
+        />
       </div>
     );
   }
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold sm:text-3xl">Tasks</h1>
-          <p className="text-muted-foreground">
-            Manage AI coding tasks with a kanban board
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <PageHeader
+          title="Tasks"
+          description="Manage AI coding tasks with a kanban board"
+          className="flex-1"
+        />
 
-        <Select
-          value={selectedWorkspaceId}
-          onValueChange={setSelectedWorkspaceId}
-        >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Select workspace" />
-          </SelectTrigger>
-          <SelectContent>
-            {workspaceList.map((workspace) => (
-              <SelectItem key={workspace.id} value={workspace.id}>
-                {workspace.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="workspace-filter" className="text-sm sr-only">
+            Workspace
+          </Label>
+          <Select
+            value={selectedWorkspaceId}
+            onValueChange={setSelectedWorkspaceId}
+          >
+            <SelectTrigger id="workspace-filter" className="w-[200px]">
+              <SelectValue placeholder="Select workspace" />
+            </SelectTrigger>
+            <SelectContent>
+              {workspaceList.map((workspace) => (
+                <SelectItem key={workspace.id} value={workspace.id}>
+                  {workspace.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <Suspense fallback={<KanbanSkeleton />}>
