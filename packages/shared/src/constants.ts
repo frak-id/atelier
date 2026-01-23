@@ -188,3 +188,36 @@ export const SHARED_BINARIES = {
 } as const;
 
 export type SharedBinaryId = keyof typeof SHARED_BINARIES;
+
+export const TASK_EFFORT_VALUES = ["low", "medium", "high", "maximum"] as const;
+export type TaskEffort = (typeof TASK_EFFORT_VALUES)[number];
+
+export const EFFORT_CONFIG: Record<
+  TaskEffort,
+  {
+    model: { providerID: string; modelID: string };
+    variant: string;
+    agent: string;
+  }
+> = {
+  low: {
+    model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+    variant: "high",
+    agent: "Sisyphus",
+  },
+  medium: {
+    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
+    variant: "high",
+    agent: "Sisyphus",
+  },
+  high: {
+    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
+    variant: "max",
+    agent: "Sisyphus",
+  },
+  maximum: {
+    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
+    variant: "max",
+    agent: "Planner-Sisyphus",
+  },
+};

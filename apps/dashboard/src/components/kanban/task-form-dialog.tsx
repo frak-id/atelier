@@ -1,4 +1,5 @@
-import type { RepoConfig, Task, TaskEffort } from "@frak-sandbox/manager/types";
+import type { RepoConfig, Task } from "@frak-sandbox/manager/types";
+import type { TaskEffort } from "@frak-sandbox/shared/constants";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";

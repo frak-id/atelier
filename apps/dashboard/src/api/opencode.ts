@@ -1,35 +1,5 @@
-import type { TaskEffort } from "@frak-sandbox/manager/types";
+import { EFFORT_CONFIG, type TaskEffort } from "@frak-sandbox/shared/constants";
 import { createOpencodeClient, type Session } from "@opencode-ai/sdk/v2";
-
-const EFFORT_CONFIG: Record<
-  TaskEffort,
-  {
-    model: { providerID: string; modelID: string };
-    variant: string;
-    agent: string;
-  }
-> = {
-  low: {
-    model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
-    variant: "high",
-    agent: "Sisyphus",
-  },
-  medium: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "high",
-    agent: "Sisyphus",
-  },
-  high: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "max",
-    agent: "Sisyphus",
-  },
-  maximum: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "max",
-    agent: "Planner-Sisyphus",
-  },
-};
 
 export type SessionStatus =
   | { type: "idle" }

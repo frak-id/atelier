@@ -1,4 +1,4 @@
-import type { TaskEffort } from "@frak-sandbox/manager/types";
+import type { TaskEffort } from "@frak-sandbox/shared/constants";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { AlertCircle, Loader2, Play } from "lucide-react";
 import { useState } from "react";
