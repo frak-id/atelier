@@ -296,9 +296,7 @@
       "indexes": {
         "idx_ssh_keys_user_id": {
           "name": "idx_ssh_keys_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -364,9 +362,7 @@
       "indexes": {
         "idx_tasks_workspace_id": {
           "name": "idx_tasks_workspace_id",
-          "columns": [
-            "workspace_id"
-          ],
+          "columns": ["workspace_id"],
           "isUnique": false
         }
       },

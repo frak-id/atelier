@@ -11,6 +11,7 @@ import {
   FolderGit2,
   HardDrive,
   Home,
+  Kanban,
   LogOut,
   Menu,
   Server,
@@ -65,6 +66,9 @@ function RootLayout() {
           <nav className="flex-1 p-4 space-y-1">
             <NavLink to="/" icon={Home}>
               Home
+            </NavLink>
+            <NavLink to="/tasks" icon={Kanban}>
+              Tasks
             </NavLink>
             <NavLink to="/workspaces" icon={FolderGit2}>
               Workspaces
@@ -128,6 +132,9 @@ function RootLayout() {
             <nav className="flex-1 p-4 space-y-1">
               <NavLink to="/" icon={Home}>
                 Home
+              </NavLink>
+              <NavLink to="/tasks" icon={Kanban}>
+                Tasks
               </NavLink>
               <NavLink to="/workspaces" icon={FolderGit2}>
                 Workspaces

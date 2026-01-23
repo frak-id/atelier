@@ -15,6 +15,7 @@ import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id";
 import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index";
 import { Route as SettingsIndexRouteImport } from "./routes/settings/index";
 import { Route as SystemIndexRouteImport } from "./routes/system/index";
+import { Route as TasksIndexRouteImport } from "./routes/tasks/index";
 import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id";
 import { Route as WorkspacesIndexRouteImport } from "./routes/workspaces/index";
 
@@ -26,6 +27,11 @@ const IndexRoute = IndexRouteImport.update({
 const WorkspacesIndexRoute = WorkspacesIndexRouteImport.update({
   id: "/workspaces/",
   path: "/workspaces/",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const TasksIndexRoute = TasksIndexRouteImport.update({
+  id: "/tasks/",
+  path: "/tasks/",
   getParentRoute: () => rootRouteImport,
 } as any);
 const SystemIndexRoute = SystemIndexRouteImport.update({
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   "/sandboxes": typeof SandboxesIndexRoute;
   "/settings": typeof SettingsIndexRoute;
   "/system": typeof SystemIndexRoute;
+  "/tasks": typeof TasksIndexRoute;
   "/workspaces": typeof WorkspacesIndexRoute;
 }
 export interface FileRoutesByTo {
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   "/sandboxes": typeof SandboxesIndexRoute;
   "/settings": typeof SettingsIndexRoute;
   "/system": typeof SystemIndexRoute;
+  "/tasks": typeof TasksIndexRoute;
   "/workspaces": typeof WorkspacesIndexRoute;
 }
 export interface FileRoutesById {
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   "/sandboxes/": typeof SandboxesIndexRoute;
   "/settings/": typeof SettingsIndexRoute;
   "/system/": typeof SystemIndexRoute;
+  "/tasks/": typeof TasksIndexRoute;
   "/workspaces/": typeof WorkspacesIndexRoute;
 }
 export interface FileRouteTypes {
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | "/sandboxes"
     | "/settings"
     | "/system"
+    | "/tasks"
     | "/workspaces";
   fileRoutesByTo: FileRoutesByTo;
   to:
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | "/sandboxes"
     | "/settings"
     | "/system"
+    | "/tasks"
     | "/workspaces";
   id:
     | "__root__"
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | "/sandboxes/"
     | "/settings/"
     | "/system/"
+    | "/tasks/"
     | "/workspaces/";
   fileRoutesById: FileRoutesById;
 }
@@ -131,6 +143,7 @@ export interface RootRouteChildren {
   SandboxesIndexRoute: typeof SandboxesIndexRoute;
   SettingsIndexRoute: typeof SettingsIndexRoute;
   SystemIndexRoute: typeof SystemIndexRoute;
+  TasksIndexRoute: typeof TasksIndexRoute;
   WorkspacesIndexRoute: typeof WorkspacesIndexRoute;
 }
 
@@ -148,6 +161,13 @@ declare module "@tanstack/react-router" {
       path: "/workspaces";
       fullPath: "/workspaces";
       preLoaderRoute: typeof WorkspacesIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/tasks/": {
+      id: "/tasks/";
+      path: "/tasks";
+      fullPath: "/tasks";
+      preLoaderRoute: typeof TasksIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/system/": {
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   SandboxesIndexRoute: SandboxesIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   SystemIndexRoute: SystemIndexRoute,
+  TasksIndexRoute: TasksIndexRoute,
   WorkspacesIndexRoute: WorkspacesIndexRoute,
 };
 export const routeTree = rootRouteImport
