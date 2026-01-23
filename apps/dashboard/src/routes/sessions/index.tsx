@@ -1,13 +1,52 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MessageSquare } from "lucide-react";
+import { useMemo } from "react";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent } from "@/components/ui/card";
+import { SessionList } from "@/components/sessions/session-list";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  groupSessionsByAttention,
+  useAllSessions,
+} from "@/hooks/use-all-sessions";
+import { useOpencodeEvents } from "@/hooks/use-opencode-events";
 
 export const Route = createFileRoute("/sessions/")({
   component: SessionsPage,
 });
 
 function SessionsPage() {
+  useOpencodeEvents();
+
+  const { sessions, isLoading } = useAllSessions();
+
+  const groupedSessions = useMemo(() => {
+    const sessionsWithAttention = sessions.map((session) => ({
+      ...session,
+      attentionState: "none" as const,
+    }));
+
+    const grouped = groupSessionsByAttention(sessionsWithAttention);
+
+    return [
+      { title: "Needs Attention", sessions: grouped.attention },
+      { title: "Running", sessions: grouped.running },
+      { title: "Idle", sessions: grouped.idle },
+    ];
+  }, [sessions]);
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <Skeleton className="h-9 w-48" />
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: Static skeleton placeholders
+            <Skeleton key={i} className="h-40" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       <PageHeader
@@ -15,19 +54,16 @@ function SessionsPage() {
         description="All active OpenCode sessions across sandboxes"
       />
 
-      <Card>
-        <CardContent className="py-12 text-center">
-          <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">
-            Sessions View Coming Soon
-          </h3>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            This view will show all active sessions with real-time status
-            updates, grouped by attention state. Check back after Phase 2 is
-            complete.
-          </p>
-        </CardContent>
-      </Card>
+      <SessionList
+        groups={groupedSessions}
+        getAttentionState={(session) => {
+          const s = session as typeof session & { attentionState?: string };
+          return (
+            (s.attentionState as "none" | "waiting" | "retry" | "review") ??
+            "none"
+          );
+        }}
+      />
     </div>
   );
 }
