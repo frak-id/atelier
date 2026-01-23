@@ -31,6 +31,42 @@ import {
   generateEd25519Keypair,
   isWebCryptoEd25519Supported,
 } from "@/lib/ssh-keygen";
+import { getSshKeyExpirationStatus } from "@/lib/utils";
+
+function ExpirationBadge({ expiresAt }: { expiresAt: string | null }) {
+  if (!expiresAt) {
+    return null;
+  }
+
+  const status = getSshKeyExpirationStatus(expiresAt);
+
+  if (status.status === "expired") {
+    return (
+      <span className="text-xs text-destructive px-2 py-1 bg-destructive/10 rounded">
+        Expired
+      </span>
+    );
+  }
+
+  if (status.status === "expiring_soon") {
+    const dayText = status.daysRemaining === 1 ? "day" : "days";
+    return (
+      <span className="text-xs text-amber-500 px-2 py-1 bg-amber-500/10 rounded">
+        Expires in {status.daysRemaining} {dayText}
+      </span>
+    );
+  }
+
+  if (status.status === "valid") {
+    return (
+      <span className="text-xs text-muted-foreground">
+        Expires in {status.daysRemaining} days
+      </span>
+    );
+  }
+
+  return null;
+}
 
 /** Standard path for oc-sandbox SSH key on user's local machine */
 export const SSH_KEY_PATH = "~/.config/oc-sandbox/sandbox_key";
@@ -106,11 +142,7 @@ export function SshKeysSection() {
                 <span className="text-xs text-muted-foreground px-2 py-1 bg-muted rounded">
                   {key.type === "generated" ? "Generated" : "Uploaded"}
                 </span>
-                {key.expiresAt && (
-                  <span className="text-xs text-orange-500">
-                    Expires: {new Date(key.expiresAt).toLocaleDateString()}
-                  </span>
-                )}
+                <ExpirationBadge expiresAt={key.expiresAt} />
                 <Button
                   variant="ghost"
                   size="icon"
@@ -326,7 +358,7 @@ function AddSshKeyDialog({
 
     const expiresAt =
       mode === "generate"
-        ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         : undefined;
 
     await createMutation.mutateAsync({
@@ -423,8 +455,8 @@ function AddSshKeyDialog({
                         Private Key Generated
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Save your private key now. It will not be shown again.
-                        This key expires in 24 hours.
+                        Download and save your private key now. It will not be
+                        shown again. This key expires in 30 days.
                       </p>
                     </CardContent>
                   </Card>
