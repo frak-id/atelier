@@ -1,5 +1,10 @@
 import { createOpencodeClient, type Session } from "@opencode-ai/sdk/v2";
 
+export type SessionStatus =
+  | { type: "idle" }
+  | { type: "retry"; attempt: number; message: string; next: number }
+  | { type: "busy" };
+
 export async function fetchOpenCodeSessions(
   baseUrl: string,
 ): Promise<Session[]> {
@@ -74,5 +79,17 @@ export async function checkOpenCodeHealth(baseUrl: string): Promise<boolean> {
     return data?.healthy ?? false;
   } catch {
     return false;
+  }
+}
+
+export async function getOpenCodeSessionStatuses(
+  baseUrl: string,
+): Promise<Record<string, SessionStatus>> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const { data } = await client.session.status();
+    return (data as Record<string, SessionStatus>) ?? {};
+  } catch {
+    return {};
   }
 }

@@ -57,6 +57,13 @@
       "when": 1769098436399,
       "tag": "0007_salty_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1769170934576,
+      "tag": "0008_clean_landau",
+      "breakpoints": true
     }
   ]
 }

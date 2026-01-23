@@ -17,6 +17,7 @@ import { sharedAuthRoutes } from "./modules/shared-auth/index.ts";
 import { sharedStorageRoutes } from "./modules/shared-storage/index.ts";
 import { sshKeyRoutes } from "./modules/ssh-key/index.ts";
 import { systemRoutes } from "./modules/system/index.ts";
+import { taskRoutes } from "./modules/task/index.ts";
 import { workspaceRoutes } from "./modules/workspace/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
@@ -167,6 +168,7 @@ const app = new Elysia()
       app
         .use(sandboxRoutes)
         .use(workspaceRoutes)
+        .use(taskRoutes)
         .use(gitSourceRoutes)
         .use(configFileRoutes)
         .use(sharedAuthRoutes)

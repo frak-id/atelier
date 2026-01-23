@@ -17,6 +17,11 @@ const queryKeys = {
     binaries: ["sharedStorage", "binaries"] as const,
     cache: ["sharedStorage", "cache"] as const,
   },
+  tasks: {
+    all: ["tasks"] as const,
+    list: (workspaceId?: string) => ["tasks", "list", workspaceId] as const,
+    detail: (id: string) => ["tasks", "detail", id] as const,
+  },
   sandboxes: {
     all: ["sandboxes"] as const,
     list: (filters?: { status?: string; workspaceId?: string }) =>
@@ -611,6 +616,131 @@ export function useDeleteSshKey() {
       unwrap(await api.api["ssh-keys"]({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sshKeys.all });
+    },
+  });
+}
+
+export const taskListQuery = (workspaceId?: string) =>
+  queryOptions({
+    queryKey: queryKeys.tasks.list(workspaceId),
+    queryFn: async () =>
+      unwrap(
+        await api.api.tasks.get({
+          query: workspaceId ? { workspaceId } : {},
+        }),
+      ),
+    refetchInterval: 5000,
+  });
+
+export const taskDetailQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.tasks.detail(id),
+    queryFn: async () => unwrap(await api.api.tasks({ id }).get()),
+    refetchInterval: 5000,
+  });
+
+export function useCreateTask() {
+  return useMutation({
+    mutationFn: async (data: {
+      workspaceId: string;
+      title: string;
+      description: string;
+      context?: string;
+      baseBranch?: string;
+      targetRepoIndices?: number[];
+    }) => unwrap(await api.api.tasks.post(data)),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+    },
+  });
+}
+
+export function useUpdateTask() {
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: { title?: string; description?: string; context?: string };
+    }) => unwrap(await api.api.tasks({ id }).put(data)),
+    onSuccess: (_data, variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tasks.detail(variables.id),
+      });
+    },
+  });
+}
+
+export function useStartTask() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.tasks({ id }).start.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+    },
+  });
+}
+
+export function useMoveTaskToReview() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.tasks({ id }).review.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+    },
+  });
+}
+
+export function useCompleteTask() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.tasks({ id }).complete.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+    },
+  });
+}
+
+export function useResetTask() {
+  return useMutation({
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.tasks({ id }).reset.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+    },
+  });
+}
+
+export function useReorderTask() {
+  return useMutation({
+    mutationFn: async ({ id, order }: { id: string; order: number }) =>
+      unwrap(await api.api.tasks({ id }).order.put({ order })),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+    },
+  });
+}
+
+export function useDeleteTask() {
+  return useMutation({
+    mutationFn: async ({
+      id,
+      keepSandbox,
+    }: {
+      id: string;
+      keepSandbox: boolean;
+    }) =>
+      unwrap(
+        await api.api.tasks({ id }).delete({
+          query: { keepSandbox: keepSandbox ? "true" : undefined },
+        }),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
     },
   });
 }
