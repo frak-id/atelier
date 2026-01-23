@@ -98,3 +98,12 @@ export const ReadyStatusSchema = t.Union([
   t.Object({ status: t.Literal("not ready"), reason: t.String() }),
 ]);
 export type ReadyStatus = Static<typeof ReadyStatusSchema>;
+
+export const CronJobInfoSchema = t.Object({
+  name: t.String(),
+  pattern: t.String(),
+  running: t.Boolean(),
+  lastRun: t.Nullable(t.String()),
+  nextRun: t.Nullable(t.String()),
+});
+export type CronJobInfo = Static<typeof CronJobInfoSchema>;

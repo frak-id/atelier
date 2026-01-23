@@ -1,3 +1,4 @@
+export { PrebuildChecker } from "./prebuild-checker.ts";
 export { PrebuildRunner } from "./prebuild-runner.ts";
 export { SandboxDestroyer } from "./sandbox-destroyer.ts";
 export { SandboxLifecycle } from "./sandbox-lifecycle.ts";

@@ -1,7 +1,9 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   ArrowLeft,
+  Clock,
   Edit,
   FileCode,
   Play,
@@ -170,9 +172,33 @@ function WorkspaceDetailPage() {
               </Button>
             )}
           </div>
-          <p className="text-muted-foreground text-sm">
-            {workspace.config.repos.length} repository(ies) configured
-          </p>
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <span>
+              {workspace.config.repos.length} repository(ies) configured
+            </span>
+            {prebuildStatus === "ready" && (
+              <>
+                {workspace.config.prebuild?.stale && (
+                  <span className="flex items-center gap-1 text-yellow-400">
+                    <AlertTriangle className="h-3 w-3" />
+                    Stale
+                  </span>
+                )}
+                {workspace.config.prebuild?.builtAt && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Built: {formatDate(workspace.config.prebuild.builtAt)}
+                  </span>
+                )}
+                {workspace.config.prebuild?.lastCheckedAt && (
+                  <span className="flex items-center gap-1">
+                    Checked:{" "}
+                    {formatDate(workspace.config.prebuild.lastCheckedAt)}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button

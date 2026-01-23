@@ -32,7 +32,7 @@ export async function authGuard({
 }: {
   headers: Record<string, string | undefined>;
   set: { status?: number | string };
-  store: { user?: AuthUser };
+  store: { user?: AuthUser } & Record<string, unknown>;
 }): Promise<{ error: string; message: string } | undefined> {
   const authHeader = headers.authorization;
   if (!authHeader) {

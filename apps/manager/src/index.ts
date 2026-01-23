@@ -1,7 +1,8 @@
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
-import { sandboxService, sshKeyService } from "./container.ts";
+import { prebuildChecker, sandboxService, sshKeyService } from "./container.ts";
+import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
@@ -32,6 +33,11 @@ logger.info({ dbPath: appPaths.database }, "Database ready");
 
 const app = new Elysia()
   .on("start", async () => {
+    CronService.add("prebuildStaleness", {
+      name: "Prebuild Staleness Check",
+      pattern: "*/30 * * * *",
+      handler: () => prebuildChecker.checkAllAndRebuildStale(),
+    });
     const expiredCount = sshKeyService.cleanupExpired();
     if (expiredCount > 0) {
       logger.info({ expiredCount }, "Startup: expired SSH keys cleaned up");
