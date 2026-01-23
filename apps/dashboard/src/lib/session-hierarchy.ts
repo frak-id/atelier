@@ -1,20 +1,23 @@
-import type { SessionWithSandboxInfo } from "@/components/session-row";
+import type { SessionWithSandbox } from "@/hooks/use-all-sessions";
 
-export type SessionNode = {
-  session: SessionWithSandboxInfo;
-  children: SessionNode[];
+export type SessionNode<T extends { id: string; parentID?: string | null }> = {
+  session: T;
+  children: SessionNode<T>[];
 };
 
-export function buildSessionHierarchy(
-  sessions: SessionWithSandboxInfo[],
-): SessionNode[] {
-  const sessionMap = new Map<string, SessionNode>();
-
+export function buildSessionHierarchy<
+  T extends {
+    id: string;
+    parentID?: string | null;
+    time: { updated?: number; created?: number };
+  },
+>(sessions: T[]): SessionNode<T>[] {
+  const sessionMap = new Map<string, SessionNode<T>>();
   for (const session of sessions) {
     sessionMap.set(session.id, { session, children: [] });
   }
 
-  const rootNodes: SessionNode[] = [];
+  const rootNodes: SessionNode<T>[] = [];
 
   for (const session of sessions) {
     const node = sessionMap.get(session.id);
@@ -32,7 +35,7 @@ export function buildSessionHierarchy(
     }
   }
 
-  const sortByTime = (nodes: SessionNode[]) => {
+  const sortByTime = (nodes: SessionNode<T>[]) => {
     nodes.sort((a, b) => {
       const aTime = a.session.time.updated || a.session.time.created;
       const bTime = b.session.time.updated || b.session.time.created;
@@ -51,10 +54,14 @@ export function buildSessionHierarchy(
   return rootNodes;
 }
 
-export function countSubSessions(node: SessionNode): number {
+export function countSubSessions<T extends { id: string }>(
+  node: SessionNode<T>,
+): number {
   let count = node.children.length;
   for (const child of node.children) {
     count += countSubSessions(child);
   }
   return count;
 }
+
+export type SessionWithSandboxNode = SessionNode<SessionWithSandbox>;

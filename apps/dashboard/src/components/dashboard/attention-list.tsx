@@ -64,7 +64,8 @@ export function AttentionList({ items, onReply }: AttentionListProps) {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <Link
-                    to={item.type === "task" ? "/tasks" : "/sessions"}
+                    to={item.type === "task" ? "/tasks/$id" : "/sessions"}
+                    params={item.type === "task" ? { id: item.id } : undefined}
                     className="font-medium hover:underline truncate block"
                   >
                     {item.title}
@@ -102,7 +103,8 @@ export function AttentionList({ items, onReply }: AttentionListProps) {
                   opencodeUrl={item.opencodeUrl}
                 />
                 <Link
-                  to={item.type === "task" ? "/tasks" : "/sessions"}
+                  to={item.type === "task" ? "/tasks/$id" : "/sessions"}
+                  params={item.type === "task" ? { id: item.id } : undefined}
                   className="ml-auto"
                 >
                   <Button variant="ghost" size="sm">

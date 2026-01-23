@@ -12,7 +12,7 @@ import {
 } from "@/lib/session-hierarchy";
 
 type SessionNodeItemProps = {
-  node: SessionNode;
+  node: SessionNode<SessionWithSandboxInfo>;
   depth: number;
   showSandboxInfo?: boolean;
   showDelete?: boolean;

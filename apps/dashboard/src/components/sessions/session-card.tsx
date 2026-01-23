@@ -16,6 +16,7 @@ interface SessionCardProps {
   lastMessage?: string;
   onReply?: () => void;
   className?: string;
+  childCount?: number;
 }
 
 export const SessionCard = memo(function SessionCard({
@@ -25,6 +26,7 @@ export const SessionCard = memo(function SessionCard({
   lastMessage,
   onReply,
   className,
+  childCount = 0,
 }: SessionCardProps) {
   const opencodeUrl = buildOpenCodeSessionUrl(
     session.sandbox.opencodeUrl,
@@ -48,11 +50,18 @@ export const SessionCard = memo(function SessionCard({
             <CardTitle className="text-base truncate">
               {session.title || session.id}
             </CardTitle>
-            {session.sandbox.workspaceId && (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {session.sandbox.workspaceId}
-              </p>
-            )}
+            <div className="flex items-center gap-2 mt-0.5">
+              {session.sandbox.workspaceId && (
+                <p className="text-xs text-muted-foreground">
+                  {session.sandbox.workspaceId}
+                </p>
+              )}
+              {childCount > 0 && (
+                <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                  {childCount} sub-session{childCount > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
           </div>
           <SessionStatusBadge status={status} attentionState={attentionState} />
         </div>

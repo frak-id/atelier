@@ -1,8 +1,11 @@
+import type { TaskEffort } from "@frak-sandbox/shared/constants";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Suspense } from "react";
+import { Suspense, useCallback } from "react";
 import {
   sandboxListQuery,
   taskListQuery,
+  useCreateTask,
   workspaceListQuery,
 } from "@/api/queries";
 import { AttentionList } from "@/components/dashboard/attention-list";
@@ -16,6 +19,7 @@ import {
   useRunningSessions,
   useStatusCounts,
 } from "@/hooks/use-attention-tasks";
+import { useStartSession } from "@/hooks/use-start-session";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -47,6 +51,42 @@ function DashboardContent() {
   const { items: attentionItems } = useAttentionTasks();
   const runningSessions = useRunningSessions();
 
+  const { data: workspaces } = useQuery(workspaceListQuery());
+  const createTaskMutation = useCreateTask();
+  const startSessionMutation = useStartSession();
+
+  const handleCreateTask = useCallback(
+    (
+      workspaceId: string,
+      title: string,
+      description: string,
+      effort: TaskEffort,
+    ) => {
+      createTaskMutation.mutate({
+        workspaceId,
+        title,
+        description,
+        effort,
+      });
+    },
+    [createTaskMutation],
+  );
+
+  const handleStartChat = useCallback(
+    (workspaceId: string, effort: TaskEffort) => {
+      const workspace = workspaces?.find((w) => w.id === workspaceId);
+      if (!workspace) return;
+
+      startSessionMutation.mutate({
+        workspace,
+        message:
+          "Hello! I'm starting a new chat session. What would you like to work on?",
+        effort,
+      });
+    },
+    [workspaces, startSessionMutation],
+  );
+
   return (
     <div className="space-y-6">
       <StatusOverview counts={statusCounts} />
@@ -58,7 +98,13 @@ function DashboardContent() {
         </div>
 
         <div>
-          <QuickStart />
+          <QuickStart
+            onCreateTask={handleCreateTask}
+            onStartChat={handleStartChat}
+            isCreating={
+              createTaskMutation.isPending || startSessionMutation.isPending
+            }
+          />
         </div>
       </div>
     </div>

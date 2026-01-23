@@ -180,15 +180,19 @@ export function useRunningSessions(): RunningSession[] {
       const updatedAt = session.time.updated || session.time.created;
       return {
         id: session.id,
+        parentID: session.parentID,
         title: session.title || `Session ${session.id.slice(0, 8)}`,
         workspaceName,
         progress: undefined,
         status: "idle" as const,
         updatedAt:
-          typeof updatedAt === "string" ? updatedAt : new Date().toISOString(),
+          typeof updatedAt === "number"
+            ? new Date(updatedAt * 1000).toISOString()
+            : new Date().toISOString(),
         vscodeUrl: sandbox?.vscodeUrl,
         sshCommand: sandbox?.sshCommand,
         opencodeUrl: session.sandbox.opencodeUrl,
+        time: session.time,
       };
     });
   }, [sessions, workspaceMap, sandboxMap]);

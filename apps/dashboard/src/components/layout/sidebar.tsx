@@ -48,7 +48,12 @@ export function Sidebar({
         collapsed ? "w-16" : "w-64",
       )}
     >
-      <div className={cn("border-b", collapsed ? "p-3" : "p-4")}>
+      <div
+        className={cn(
+          "border-b flex items-center justify-between",
+          collapsed ? "p-3" : "p-4",
+        )}
+      >
         <Link to="/" className="flex items-center gap-2">
           <Box
             className={cn(
@@ -60,6 +65,30 @@ export function Sidebar({
             <span className="font-bold text-lg">Frak Sandbox</span>
           )}
         </Link>
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onToggle}
+                className="h-7 w-7 p-0"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Expand sidebar</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggle}
+            className="h-7 w-7 p-0"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto p-2">
@@ -136,34 +165,6 @@ export function Sidebar({
       )}
 
       <SidebarFooter collapsed={collapsed} onLogout={onLogout} />
-
-      <div className="p-2 border-t">
-        {collapsed ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onToggle}
-                className="w-full"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Expand sidebar</TooltipContent>
-          </Tooltip>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggle}
-            className="w-full justify-start gap-2"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            <span>Collapse</span>
-          </Button>
-        )}
-      </div>
     </aside>
   );
 }
