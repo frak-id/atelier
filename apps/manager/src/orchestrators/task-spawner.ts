@@ -198,14 +198,20 @@ export class TaskSpawner {
   ): Promise<string | undefined> {
     const baseBranchName = `task/${taskId}`;
 
+    // Helper to run git commands as dev user (repo owner)
+    const gitExec = (cmd: string, timeout = 30000) =>
+      this.deps.agentClient.exec(
+        ipAddress,
+        `su - dev -c 'cd ${repoPath} && ${cmd}'`,
+        { timeout },
+      );
+
     for (let attempt = 0; attempt < 10; attempt++) {
       const branchName =
         attempt === 0 ? baseBranchName : `${baseBranchName}_v${attempt + 1}`;
 
-      const checkoutBase = await this.deps.agentClient.exec(
-        ipAddress,
-        `cd ${repoPath} && git fetch origin && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
-        { timeout: 30000 },
+      const checkoutBase = await gitExec(
+        `git fetch origin && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
       );
 
       if (checkoutBase.exitCode !== 0) {
@@ -216,10 +222,9 @@ export class TaskSpawner {
         return undefined;
       }
 
-      const createBranch = await this.deps.agentClient.exec(
-        ipAddress,
-        `cd ${repoPath} && git checkout -b ${branchName}`,
-        { timeout: 10000 },
+      const createBranch = await gitExec(
+        `git checkout -b ${branchName}`,
+        10000,
       );
 
       if (createBranch.exitCode === 0) {
