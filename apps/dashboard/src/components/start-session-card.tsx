@@ -1,3 +1,4 @@
+import type { TaskEffort } from "@frak-sandbox/manager/types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { AlertCircle, Loader2, Play } from "lucide-react";
 import { useState } from "react";
@@ -18,6 +19,7 @@ export function StartSessionCard() {
   const { data: workspaces } = useSuspenseQuery(workspaceListQuery());
   const [message, setMessage] = useState("");
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
+  const [selectedEffort, setSelectedEffort] = useState<TaskEffort>("low");
 
   const { mutate, isPending, isSuccess, isError, error, reset } =
     useStartSession();
@@ -30,12 +32,17 @@ export function StartSessionCard() {
 
   const handleStartSession = () => {
     if (!selectedWorkspace || !message.trim()) return;
-    mutate({ workspace: selectedWorkspace, message: message.trim() });
+    mutate({
+      workspace: selectedWorkspace,
+      message: message.trim(),
+      effort: selectedEffort,
+    });
   };
 
   const handleReset = () => {
     reset();
     setMessage("");
+    setSelectedEffort("low");
   };
 
   return (
@@ -129,6 +136,22 @@ export function StartSessionCard() {
                   </SelectItem>
                 ))
               )}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={selectedEffort}
+            onValueChange={(v) => setSelectedEffort(v as TaskEffort)}
+            disabled={isPending}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="maximum">Maximum</SelectItem>
             </SelectContent>
           </Select>
 
