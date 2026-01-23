@@ -195,7 +195,12 @@ export function EditWorkspaceDialog({
                   <div className="space-y-3">
                     {repos.map((repo, idx) => (
                       <RepoItem
-                        key={`repo-${idx}`}
+                        key={
+                          repo.url ||
+                          (repo.sourceId && repo.repo
+                            ? `${repo.sourceId}:${repo.repo}`
+                            : `new-${idx}`)
+                        }
                         repo={repo}
                         variant="card"
                         onUpdate={(updates) =>

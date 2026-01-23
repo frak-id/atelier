@@ -20,7 +20,8 @@ export const Route = createFileRoute("/workspaces/")({
       <Skeleton className="h-9 w-48" />
       <div className="grid gap-4">
         {[...Array(3)].map((_, i) => (
-          <Skeleton key={`skeleton-${i}`} className="h-40" />
+          // biome-ignore lint/suspicious/noArrayIndexKey: Static skeleton placeholders never reorder
+          <Skeleton key={i} className="h-40" />
         ))}
       </div>
     </div>

@@ -268,9 +268,11 @@ function WorkspaceDetailPage() {
               </p>
             ) : (
               <div className="space-y-2">
-                {workspace.config.repos.map((repo, idx) => (
+                {workspace.config.repos.map((repo) => (
                   <div
-                    key={`repo-${idx}`}
+                    key={
+                      "url" in repo ? repo.url : `${repo.sourceId}:${repo.repo}`
+                    }
                     className="p-2 bg-muted rounded text-sm font-mono"
                   >
                     {"url" in repo

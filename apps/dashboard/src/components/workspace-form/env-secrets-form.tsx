@@ -65,7 +65,8 @@ export function EnvSecretsForm({ secrets, onChange }: EnvSecretsFormProps) {
       ) : (
         <div className="space-y-2">
           {secrets.map((secret, index) => (
-            <div key={`env-${index}`} className="flex gap-2">
+            // biome-ignore lint/suspicious/noArrayIndexKey: Form array items lack stable IDs
+            <div key={index} className="flex gap-2">
               <Input
                 placeholder="KEY"
                 value={secret.key}
