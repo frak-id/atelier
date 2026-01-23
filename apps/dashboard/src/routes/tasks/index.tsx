@@ -6,6 +6,7 @@ import { taskListQuery, workspaceListQuery } from "@/api/queries";
 import {
   KanbanBoard,
   TaskDeleteDialog,
+  TaskDetailDialog,
   TaskFormDialog,
 } from "@/components/kanban";
 import {
@@ -35,6 +36,7 @@ function TasksPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
+  const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
   const { data: tasks } = useQuery({
     ...taskListQuery(selectedWorkspaceId),
@@ -54,6 +56,10 @@ function TasksPage() {
 
   const handleDeleteTask = (task: Task) => {
     setDeletingTask(task);
+  };
+
+  const handleViewTask = (task: Task) => {
+    setViewingTask(task);
   };
 
   if (workspaceList.length === 0) {
@@ -100,6 +106,7 @@ function TasksPage() {
         <KanbanBoard
           tasks={taskList}
           onCreateTask={handleCreateTask}
+          onViewTask={handleViewTask}
           onEditTask={handleEditTask}
           onDeleteTask={handleDeleteTask}
         />
@@ -116,6 +123,12 @@ function TasksPage() {
         open={!!deletingTask}
         onOpenChange={(open) => !open && setDeletingTask(null)}
         task={deletingTask}
+      />
+
+      <TaskDetailDialog
+        open={!!viewingTask}
+        onOpenChange={(open) => !open && setViewingTask(null)}
+        task={viewingTask}
       />
     </div>
   );
