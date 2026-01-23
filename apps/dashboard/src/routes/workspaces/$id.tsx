@@ -179,7 +179,7 @@ function WorkspaceDetailPage() {
             {prebuildStatus === "ready" && (
               <>
                 {workspace.config.prebuild?.stale && (
-                  <span className="flex items-center gap-1 text-warning">
+                  <span className="flex items-center gap-1 text-yellow-400">
                     <AlertTriangle className="h-3 w-3" />
                     Stale
                   </span>

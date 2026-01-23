@@ -1,9 +1,11 @@
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
+import { CronService } from "../../infrastructure/cron/index.ts";
 import { FirecrackerClient } from "../../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../../infrastructure/network/index.ts";
 import { CaddyService } from "../../infrastructure/proxy/index.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
 import {
+  CronJobInfoSchema,
   type HealthStatus,
   HealthStatusSchema,
   LiveStatusSchema,
@@ -66,4 +68,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
     {
       response: ReadyStatusSchema,
     },
-  );
+  )
+  .get("/cron", () => CronService.getStatus(), {
+    response: t.Record(t.String(), CronJobInfoSchema),
+  });
