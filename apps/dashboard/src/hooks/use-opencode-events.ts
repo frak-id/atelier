@@ -17,6 +17,8 @@ export function useOpencodeEvents() {
     [sandboxes],
   );
 
+  const prevSandboxIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!managerRef.current) {
       managerRef.current = new OpenCodeEventManager();
@@ -35,18 +37,13 @@ export function useOpencodeEvents() {
       }
     }
 
-    const subscribedIds = new Set<string>();
-    for (const sandbox of runningSandboxes) {
-      subscribedIds.add(sandbox.id);
+    for (const sandboxId of prevSandboxIdsRef.current) {
+      if (!currentSandboxIds.has(sandboxId)) {
+        manager.unsubscribe(sandboxId);
+      }
     }
 
-    return () => {
-      for (const sandboxId of subscribedIds) {
-        if (!currentSandboxIds.has(sandboxId)) {
-          manager.unsubscribe(sandboxId);
-        }
-      }
-    };
+    prevSandboxIdsRef.current = currentSandboxIds;
   }, [runningSandboxes, queryClient]);
 
   useEffect(() => {
@@ -65,6 +62,7 @@ function handleEvent(
     case "session.idle":
     case "session.status":
     case "session.created":
+    case "message.updated":
       queryClient.invalidateQueries({
         queryKey: queryKeys.opencode.sessions(baseUrl),
       });

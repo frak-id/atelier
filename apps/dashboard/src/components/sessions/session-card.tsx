@@ -1,4 +1,5 @@
 import { ExternalLink } from "lucide-react";
+import { memo } from "react";
 import type { SessionStatus } from "@/api/opencode";
 import { QuickActions } from "@/components/shared/quick-actions";
 import { TimeAgo } from "@/components/shared/time-ago";
@@ -17,7 +18,7 @@ interface SessionCardProps {
   className?: string;
 }
 
-export function SessionCard({
+export const SessionCard = memo(function SessionCard({
   session,
   status,
   attentionState = "none",
@@ -92,4 +93,4 @@ export function SessionCard({
       </CardContent>
     </Card>
   );
-}
+});

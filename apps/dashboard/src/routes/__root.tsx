@@ -10,6 +10,7 @@ import { clearAuthToken, getAuthToken } from "@/api/client";
 import { MobileSidebar } from "@/components/layout/mobile-sidebar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { LoginPage } from "@/components/login-page";
+import { RouteError } from "@/components/shared/error-boundary";
 import { SystemStatusFooter } from "@/components/system-status-footer";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import { useSidebarState } from "@/hooks/use-sidebar-state";
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
     component: RootLayout,
+    errorComponent: ({ error }) => <RouteError error={error} />,
   },
 );
 

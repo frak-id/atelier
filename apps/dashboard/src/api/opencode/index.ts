@@ -12,6 +12,5 @@ export {
 export {
   type OpenCodeEvent,
   OpenCodeEventManager,
-  type SessionStatusType,
   subscribeToOpenCodeEvents,
 } from "./events";

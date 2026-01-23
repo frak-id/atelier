@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageHeader } from "@/components/layout/page-header";
-import { SshKeysSection } from "@/components/ssh-keys-section";
+import { SshKeysSection } from "@/components/profile/ssh-keys-section";
 
 export const Route = createFileRoute("/profile")({
   component: ProfilePage,

@@ -50,7 +50,7 @@ function useCopyToClipboard() {
   return { copy, isCopied: (key: string) => copiedKey === key };
 }
 
-import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
+import { SSH_HOST_ALIAS } from "@/components/profile/ssh-keys-section";
 
 function extractSandboxId(sshCmd: string): string {
   const match = sshCmd.match(/ssh\s+(\S+)@/);

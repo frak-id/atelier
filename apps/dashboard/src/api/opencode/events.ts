@@ -1,22 +1,21 @@
-import {
-  createOpencodeClient,
-  type Event,
-  type EventSessionIdle,
-  type EventSessionStatus,
-} from "@opencode-ai/sdk/v2";
+import { createOpencodeClient, type Event } from "@opencode-ai/sdk/v2";
+
+export type { Event };
+
+const TRACKED_EVENTS = new Set([
+  "session.idle",
+  "session.status",
+  "session.created",
+  "message.updated",
+] as const);
+
+type TrackedEventType = typeof TRACKED_EVENTS extends Set<infer T> ? T : never;
 
 export type OpenCodeEvent =
-  | { type: "session.idle"; sessionId: string }
-  | { type: "session.status"; sessionId: string; status: SessionStatusType }
-  | { type: "session.created"; sessionId: string }
+  | (Event & { type: TrackedEventType })
   | { type: "error"; error: string }
   | { type: "connected" }
   | { type: "disconnected" };
-
-export type SessionStatusType =
-  | { type: "idle" }
-  | { type: "retry"; attempt: number; message: string; next: number }
-  | { type: "busy" };
 
 interface SubscribeOptions {
   signal?: AbortSignal;
@@ -42,15 +41,11 @@ export async function subscribeToOpenCodeEvents(
 
     onEvent({ type: "connected" });
 
-    for await (const rawEvent of result.stream) {
-      if (signal?.aborted) {
-        break;
-      }
+    for await (const event of result.stream) {
+      if (signal?.aborted) break;
 
-      const event = rawEvent as Event;
-      const mappedEvent = mapEvent(event);
-      if (mappedEvent) {
-        onEvent(mappedEvent);
+      if (TRACKED_EVENTS.has(event.type as TrackedEventType)) {
+        onEvent(event as OpenCodeEvent);
       }
     }
   } catch (error) {
@@ -63,40 +58,6 @@ export async function subscribeToOpenCodeEvents(
     onError?.(error instanceof Error ? error : new Error(String(error)));
   } finally {
     onEvent({ type: "disconnected" });
-  }
-}
-
-function mapEvent(event: Event): OpenCodeEvent | null {
-  switch (event.type) {
-    case "session.idle": {
-      const idleEvent = event as EventSessionIdle;
-      return {
-        type: "session.idle",
-        sessionId: idleEvent.properties.sessionID,
-      };
-    }
-
-    case "session.status": {
-      const statusEvent = event as EventSessionStatus;
-      return {
-        type: "session.status",
-        sessionId: statusEvent.properties.sessionID,
-        status: statusEvent.properties.status as SessionStatusType,
-      };
-    }
-
-    case "session.created": {
-      const props = (
-        event as unknown as { properties: { info: { id: string } } }
-      ).properties;
-      return {
-        type: "session.created",
-        sessionId: props.info.id,
-      };
-    }
-
-    default:
-      return null;
   }
 }
 
