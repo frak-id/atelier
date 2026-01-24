@@ -1,7 +1,3 @@
-import {
-  TASK_EFFORT_VALUES,
-  type TaskEffort,
-} from "@frak-sandbox/shared/constants";
 import type { Static } from "elysia";
 import { t } from "elysia";
 
@@ -15,21 +11,11 @@ export const TaskStatusValues = [
 
 export type TaskStatus = (typeof TaskStatusValues)[number];
 
-export const TaskEffortValues = TASK_EFFORT_VALUES;
-
-export type { TaskEffort };
-
-const TaskEffortSchema = t.Union([
-  t.Literal("low"),
-  t.Literal("medium"),
-  t.Literal("high"),
-  t.Literal("maximum"),
-]);
-
 export const TaskDataSchema = t.Object({
   description: t.String(),
   context: t.Optional(t.String()),
-  effort: t.Optional(TaskEffortSchema),
+  templateId: t.Optional(t.String()),
+  variantIndex: t.Optional(t.Number({ minimum: 0 })),
   sandboxId: t.Optional(t.String()),
   opencodeSessionId: t.Optional(t.String()),
   createdBy: t.Optional(t.String()),
@@ -58,7 +44,8 @@ export const CreateTaskBodySchema = t.Object({
   title: t.String({ minLength: 1, maxLength: 200 }),
   description: t.String({ minLength: 1 }),
   context: t.Optional(t.String()),
-  effort: t.Optional(TaskEffortSchema),
+  templateId: t.Optional(t.String()),
+  variantIndex: t.Optional(t.Number({ minimum: 0 })),
   baseBranch: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
 });
@@ -68,7 +55,8 @@ export const UpdateTaskBodySchema = t.Object({
   title: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
   description: t.Optional(t.String({ minLength: 1 })),
   context: t.Optional(t.String()),
-  effort: t.Optional(TaskEffortSchema),
+  templateId: t.Optional(t.String()),
+  variantIndex: t.Optional(t.Number({ minimum: 0 })),
 });
 export type UpdateTaskBody = Static<typeof UpdateTaskBodySchema>;
 

@@ -1,4 +1,3 @@
-import type { TaskEffort } from "@frak-sandbox/shared/constants";
 import { useMutation } from "@tanstack/react-query";
 import type { Workspace } from "@/api/client";
 import { api } from "@/api/client";
@@ -6,6 +5,7 @@ import {
   checkOpenCodeHealth,
   createOpenCodeSession,
   sendOpenCodeMessage,
+  type TemplateConfig,
 } from "@/api/opencode";
 import { buildOpenCodeSessionUrl } from "@/lib/utils";
 
@@ -46,7 +46,7 @@ async function waitForOpenCodeReady(opencodeUrl: string): Promise<void> {
 interface StartSessionParams {
   workspace: Workspace;
   message: string;
-  effort?: TaskEffort;
+  templateConfig?: TemplateConfig;
 }
 
 interface StartSessionResult {
@@ -58,7 +58,7 @@ interface StartSessionResult {
 async function startSession({
   workspace,
   message,
-  effort,
+  templateConfig,
 }: StartSessionParams): Promise<StartSessionResult> {
   const { data, error } = await api.api.sandboxes.post({
     workspaceId: workspace.id,
@@ -81,7 +81,7 @@ async function startSession({
     sessionId,
     message,
     {
-      effort,
+      templateConfig,
     },
   );
   if ("error" in sendResult) throw new Error(sendResult.error);

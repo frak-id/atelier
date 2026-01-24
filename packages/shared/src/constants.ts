@@ -189,35 +189,55 @@ export const SHARED_BINARIES = {
 
 export type SharedBinaryId = keyof typeof SHARED_BINARIES;
 
-export const TASK_EFFORT_VALUES = ["low", "medium", "high", "maximum"] as const;
-export type TaskEffort = (typeof TASK_EFFORT_VALUES)[number];
+export interface TaskTemplateVariant {
+  name: string;
+  model: { providerID: string; modelID: string };
+  variant?: string;
+  agent?: string;
+}
 
-export const EFFORT_CONFIG: Record<
-  TaskEffort,
+export interface TaskTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  promptTemplate?: string;
+  variants: TaskTemplateVariant[];
+  defaultVariantIndex?: number;
+}
+
+export const DEFAULT_TASK_TEMPLATES: TaskTemplate[] = [
   {
-    model: { providerID: string; modelID: string };
-    variant: string;
-    agent: string;
-  }
-> = {
-  low: {
-    model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
-    variant: "high",
-    agent: "Sisyphus",
+    id: "implement",
+    name: "Implementation",
+    description: "Main development work",
+    variants: [
+      {
+        name: "Low Effort",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+        variant: "high",
+        agent: "Sisyphus",
+      },
+      {
+        name: "Medium Effort",
+        model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
+        variant: "high",
+        agent: "Sisyphus",
+      },
+      {
+        name: "High Effort",
+        model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
+        variant: "max",
+        agent: "Sisyphus",
+      },
+      {
+        name: "Maximum Effort",
+        model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
+        variant: "max",
+        agent: "Planner-Sisyphus",
+      },
+    ],
+    defaultVariantIndex: 1,
   },
-  medium: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "high",
-    agent: "Sisyphus",
-  },
-  high: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "max",
-    agent: "Sisyphus",
-  },
-  maximum: {
-    model: { providerID: "anthropic", modelID: "claude-opus-4-5" },
-    variant: "max",
-    agent: "Planner-Sisyphus",
-  },
-};
+];
+
+export const TASK_TEMPLATES_CONFIG_PATH = "/.frak-sandbox/task-templates.json";

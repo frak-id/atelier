@@ -1,9 +1,13 @@
+import type { TaskTemplate } from "@frak-sandbox/shared/constants";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
+  ChevronDown,
+  ChevronRight,
   Download,
   ExternalLink,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Trash2,
@@ -13,6 +17,7 @@ import { useRef, useState } from "react";
 import type { ConfigFile, ConfigFileContentType, Sandbox } from "@/api/client";
 import {
   configFilesListQuery,
+  globalTaskTemplatesQuery,
   sandboxListQuery,
   sharedAuthListQuery,
   useCreateConfigFile,
@@ -20,6 +25,7 @@ import {
   useRestartSandbox,
   useSyncConfigsToNfs,
   useUpdateConfigFile,
+  useUpdateGlobalTaskTemplates,
   useUpdateSharedAuth,
   workspaceListQuery,
 } from "@/api/queries";
@@ -235,6 +241,8 @@ function SettingsPage() {
       </div>
 
       <SharedAuthSection />
+
+      <TaskTemplatesSection />
     </div>
   );
 }
@@ -724,5 +732,466 @@ function SharedAuthSection() {
         ))}
       </div>
     </div>
+  );
+}
+
+function TaskTemplatesSection() {
+  const { data, isLoading } = useQuery(globalTaskTemplatesQuery);
+  const updateMutation = useUpdateGlobalTaskTemplates();
+  const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(
+    null,
+  );
+  const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(
+    new Set(),
+  );
+
+  if (isLoading) {
+    return (
+      <div className="border-t pt-6">
+        <h2 className="text-xl font-bold mb-4">Task Templates</h2>
+        <div className="animate-pulse h-32 bg-muted rounded" />
+      </div>
+    );
+  }
+
+  const templates = data?.templates ?? [];
+
+  const toggleExpanded = (id: string) => {
+    setExpandedTemplates((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSaveTemplate = (updated: TaskTemplate) => {
+    const newTemplates = templates.map((t) =>
+      t.id === updated.id ? updated : t,
+    );
+    updateMutation.mutate(newTemplates, {
+      onSuccess: () => setEditingTemplate(null),
+    });
+  };
+
+  const handleDeleteTemplate = (id: string) => {
+    if (!confirm("Delete this template?")) return;
+    const newTemplates = templates.filter((t) => t.id !== id);
+    updateMutation.mutate(newTemplates);
+  };
+
+  const handleAddTemplate = () => {
+    const newTemplate: TaskTemplate = {
+      id: `template-${Date.now()}`,
+      name: "New Template",
+      description: "",
+      variants: [
+        {
+          name: "Default",
+          model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+          variant: "high",
+          agent: "Sisyphus",
+        },
+      ],
+      defaultVariantIndex: 0,
+    };
+    setEditingTemplate(newTemplate);
+  };
+
+  return (
+    <div className="border-t pt-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-bold">Task Templates</h2>
+          <p className="text-muted-foreground text-sm">
+            Configure AI model and agent settings for tasks
+          </p>
+        </div>
+        <Button onClick={handleAddTemplate}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Template
+        </Button>
+      </div>
+
+      {templates.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            No task templates configured. Using system defaults.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {templates.map((template) => {
+            const isExpanded = expandedTemplates.has(template.id);
+            return (
+              <Card key={template.id}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(template.id)}
+                      className="flex items-center gap-2 text-left"
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                      <CardTitle className="text-base">
+                        {template.name}
+                      </CardTitle>
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setEditingTemplate(template)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteTemplate(template.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                  {template.description && (
+                    <p className="text-sm text-muted-foreground ml-6">
+                      {template.description}
+                    </p>
+                  )}
+                </CardHeader>
+                {isExpanded && (
+                  <CardContent>
+                    <div className="space-y-2">
+                      {template.variants.map((variant, idx) => (
+                        <div
+                          key={variant.name}
+                          className={`p-3 rounded-md border ${
+                            idx === (template.defaultVariantIndex ?? 0)
+                              ? "border-primary bg-primary/5"
+                              : "border-border"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{variant.name}</span>
+                            {idx === (template.defaultVariantIndex ?? 0) && (
+                              <span className="text-xs text-primary">
+                                Default
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground mt-1 space-y-0.5">
+                            <p>
+                              Model: {variant.model.providerID}/
+                              {variant.model.modelID}
+                            </p>
+                            {variant.variant && (
+                              <p>Variant: {variant.variant}</p>
+                            )}
+                            {variant.agent && <p>Agent: {variant.agent}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <TaskTemplateEditDialog
+        template={editingTemplate}
+        onClose={() => setEditingTemplate(null)}
+        onSave={handleSaveTemplate}
+        isNew={
+          editingTemplate
+            ? !templates.some((t) => t.id === editingTemplate.id)
+            : false
+        }
+        isSaving={updateMutation.isPending}
+        existingTemplates={templates}
+        onSaveNew={(newTemplate) => {
+          updateMutation.mutate([...templates, newTemplate], {
+            onSuccess: () => setEditingTemplate(null),
+          });
+        }}
+      />
+    </div>
+  );
+}
+
+function TaskTemplateEditDialog({
+  template,
+  onClose,
+  onSave,
+  isNew,
+  isSaving,
+  onSaveNew,
+}: {
+  template: TaskTemplate | null;
+  onClose: () => void;
+  onSave: (template: TaskTemplate) => void;
+  isNew: boolean;
+  isSaving: boolean;
+  existingTemplates: TaskTemplate[];
+  onSaveNew: (template: TaskTemplate) => void;
+}) {
+  const [editData, setEditData] = useState<TaskTemplate | null>(null);
+
+  const data = editData ?? template;
+
+  if (!template) return null;
+
+  const handleOpen = () => {
+    setEditData({ ...template });
+  };
+
+  const handleSave = () => {
+    if (!data) return;
+    if (isNew) {
+      onSaveNew(data);
+    } else {
+      onSave(data);
+    }
+  };
+
+  const updateVariant = (
+    idx: number,
+    field: keyof TaskTemplate["variants"][number],
+    value: string | { providerID: string; modelID: string },
+  ) => {
+    if (!data) return;
+    const newVariants = data.variants.map((v, i) =>
+      i === idx ? { ...v, [field]: value } : v,
+    );
+    setEditData({ ...data, variants: newVariants });
+  };
+
+  const addVariant = () => {
+    if (!data) return;
+    setEditData({
+      ...data,
+      variants: [
+        ...data.variants,
+        {
+          name: `Variant ${data.variants.length + 1}`,
+          model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+          variant: "high",
+          agent: "Sisyphus",
+        },
+      ],
+    });
+  };
+
+  const removeVariant = (idx: number) => {
+    if (!data || data.variants.length <= 1) return;
+    const newVariants = data.variants.filter((_, i) => i !== idx);
+    const newDefault =
+      data.defaultVariantIndex === idx
+        ? 0
+        : (data.defaultVariantIndex ?? 0) > idx
+          ? (data.defaultVariantIndex ?? 0) - 1
+          : data.defaultVariantIndex;
+    setEditData({
+      ...data,
+      variants: newVariants,
+      defaultVariantIndex: newDefault,
+    });
+  };
+
+  return (
+    <Dialog
+      open={!!template}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+        else handleOpen();
+      }}
+    >
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {isNew ? "Create Template" : "Edit Template"}
+          </DialogTitle>
+          <DialogDescription>
+            Configure the template name and variants
+          </DialogDescription>
+        </DialogHeader>
+
+        {data && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Template ID</Label>
+                <Input
+                  value={data.id}
+                  onChange={(e) => setEditData({ ...data, id: e.target.value })}
+                  disabled={!isNew}
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input
+                  value={data.name}
+                  onChange={(e) =>
+                    setEditData({ ...data, name: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Input
+                value={data.description ?? ""}
+                onChange={(e) =>
+                  setEditData({ ...data, description: e.target.value })
+                }
+                placeholder="Optional description"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Variants</Label>
+                <Button variant="outline" size="sm" onClick={addVariant}>
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Variant
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {data.variants.map((variant, idx) => (
+                  <div key={idx} className="p-3 border rounded-md space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={variant.name}
+                          onChange={(e) =>
+                            updateVariant(idx, "name", e.target.value)
+                          }
+                          className="w-40"
+                          placeholder="Variant name"
+                        />
+                        <label className="flex items-center gap-1.5 text-sm">
+                          <input
+                            type="radio"
+                            name="defaultVariant"
+                            checked={idx === (data.defaultVariantIndex ?? 0)}
+                            onChange={() =>
+                              setEditData({
+                                ...data,
+                                defaultVariantIndex: idx,
+                              })
+                            }
+                            className="h-4 w-4"
+                          />
+                          Default
+                        </label>
+                      </div>
+                      {data.variants.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeVariant(idx)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Provider ID</Label>
+                        <Input
+                          value={variant.model.providerID}
+                          onChange={(e) =>
+                            updateVariant(idx, "model", {
+                              ...variant.model,
+                              providerID: e.target.value,
+                            })
+                          }
+                          placeholder="anthropic"
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Model ID</Label>
+                        <Input
+                          value={variant.model.modelID}
+                          onChange={(e) =>
+                            updateVariant(idx, "model", {
+                              ...variant.model,
+                              modelID: e.target.value,
+                            })
+                          }
+                          placeholder="claude-sonnet-4-5"
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Variant</Label>
+                        <Select
+                          value={variant.variant ?? ""}
+                          onValueChange={(v) =>
+                            updateVariant(idx, "variant", v)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select variant" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="standard">Standard</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="max">Max</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Agent</Label>
+                        <Input
+                          value={variant.agent ?? ""}
+                          onChange={(e) =>
+                            updateVariant(idx, "agent", e.target.value)
+                          }
+                          placeholder="Sisyphus"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={isSaving}>
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : isNew ? (
+              "Create"
+            ) : (
+              "Save"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

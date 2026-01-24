@@ -1,5 +1,5 @@
 import type { RepoConfig, Task } from "@frak-sandbox/manager/types";
-import type { TaskEffort } from "@frak-sandbox/shared/constants";
+import { DEFAULT_TASK_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -66,9 +66,19 @@ export function TaskFormDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [context, setContext] = useState("");
-  const [selectedEffort, setSelectedEffort] = useState<TaskEffort>("low");
   const [selectedRepoIndices, setSelectedRepoIndices] = useState<number[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
+
+  const templates = DEFAULT_TASK_TEMPLATES;
+  const defaultTemplate = templates[0];
+  const [selectedTemplateId, setSelectedTemplateId] = useState(
+    defaultTemplate?.id ?? "",
+  );
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(
+    defaultTemplate?.defaultVariantIndex ?? 0,
+  );
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
   const { data: workspace } = useQuery(workspaceDetailQuery(workspaceId));
   const createMutation = useCreateTask();
@@ -103,19 +113,25 @@ export function TaskFormDialog({
         setTitle(task.title);
         setDescription(task.data.description ?? "");
         setContext(task.data.context ?? "");
-        setSelectedEffort(task.data.effort ?? "low");
+        setSelectedTemplateId(
+          task.data.templateId ?? defaultTemplate?.id ?? "",
+        );
+        setSelectedVariantIndex(
+          task.data.variantIndex ?? defaultTemplate?.defaultVariantIndex ?? 0,
+        );
         setSelectedRepoIndices(task.data.targetRepoIndices ?? []);
         setSelectedBranch(task.data.baseBranch ?? "");
       } else {
         setTitle("");
         setDescription("");
         setContext("");
-        setSelectedEffort("low");
+        setSelectedTemplateId(defaultTemplate?.id ?? "");
+        setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
         setSelectedRepoIndices([]);
         setSelectedBranch("");
       }
     }
-  }, [open, task]);
+  }, [open, task, defaultTemplate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +145,8 @@ export function TaskFormDialog({
           title: title.trim(),
           description: description.trim(),
           context: context.trim() || undefined,
-          effort: selectedEffort,
+          templateId: selectedTemplateId || undefined,
+          variantIndex: selectedVariantIndex,
         },
       });
     } else {
@@ -138,7 +155,8 @@ export function TaskFormDialog({
         title: title.trim(),
         description: description.trim(),
         context: context.trim() || undefined,
-        effort: selectedEffort,
+        templateId: selectedTemplateId || undefined,
+        variantIndex: selectedVariantIndex,
         baseBranch: selectedBranch || undefined,
         targetRepoIndices:
           selectedRepoIndices.length > 0 ? selectedRepoIndices : undefined,
@@ -152,6 +170,12 @@ export function TaskFormDialog({
     setSelectedRepoIndices((prev) =>
       prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
     );
+  };
+
+  const handleTemplateChange = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    const template = templates.find((t) => t.id === templateId);
+    setSelectedVariantIndex(template?.defaultVariantIndex ?? 0);
   };
 
   return (
@@ -205,23 +229,44 @@ export function TaskFormDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Effort Level</Label>
-              <Select
-                value={selectedEffort}
-                onValueChange={(v) => setSelectedEffort(v as TaskEffort)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Low (Sonnet, High)</SelectItem>
-                  <SelectItem value="medium">Medium (Opus, High)</SelectItem>
-                  <SelectItem value="high">High (Opus, Max)</SelectItem>
-                  <SelectItem value="maximum">
-                    Maximum (Opus, Max + Planner)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>Configuration</Label>
+              <div className="flex gap-2">
+                {templates.length > 1 && (
+                  <Select
+                    value={selectedTemplateId}
+                    onValueChange={handleTemplateChange}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {selectedTemplate && selectedTemplate.variants.length > 0 && (
+                  <Select
+                    value={String(selectedVariantIndex)}
+                    onValueChange={(v) => setSelectedVariantIndex(Number(v))}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Effort" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedTemplate.variants.map((variant, idx) => (
+                        <SelectItem key={idx} value={String(idx)}>
+                          {variant.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
 
             {!isEditing && hasMultipleRepos && (

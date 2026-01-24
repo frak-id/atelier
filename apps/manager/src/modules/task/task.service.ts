@@ -47,7 +47,8 @@ export class TaskService {
       data: {
         description: body.description,
         context: body.context,
-        effort: body.effort,
+        templateId: body.templateId,
+        variantIndex: body.variantIndex,
         order,
         baseBranch: body.baseBranch,
         targetRepoIndices: body.targetRepoIndices,
@@ -71,7 +72,8 @@ export class TaskService {
     if (
       body.description !== undefined ||
       body.context !== undefined ||
-      body.effort !== undefined
+      body.templateId !== undefined ||
+      body.variantIndex !== undefined
     ) {
       updates.data = {
         ...task.data,
@@ -79,7 +81,10 @@ export class TaskService {
           description: body.description,
         }),
         ...(body.context !== undefined && { context: body.context }),
-        ...(body.effort !== undefined && { effort: body.effort }),
+        ...(body.templateId !== undefined && { templateId: body.templateId }),
+        ...(body.variantIndex !== undefined && {
+          variantIndex: body.variantIndex,
+        }),
       };
     }
 
@@ -197,7 +202,8 @@ export class TaskService {
       data: {
         description: task.data.description,
         context: task.data.context,
-        effort: task.data.effort,
+        templateId: task.data.templateId,
+        variantIndex: task.data.variantIndex,
         order,
         baseBranch: task.data.baseBranch,
         targetRepoIndices: task.data.targetRepoIndices,

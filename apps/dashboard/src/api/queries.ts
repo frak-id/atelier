@@ -1,4 +1,3 @@
-import type { TaskEffort } from "@frak-sandbox/shared/constants";
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api, type Workspace } from "./client";
@@ -75,6 +74,12 @@ const queryKeys = {
     all: ["sshKeys"] as const,
     list: () => ["sshKeys", "list"] as const,
     hasKeys: () => ["sshKeys", "hasKeys"] as const,
+  },
+  taskTemplates: {
+    all: ["taskTemplates"] as const,
+    global: ["taskTemplates", "global"] as const,
+    workspace: (workspaceId: string) =>
+      ["taskTemplates", "workspace", workspaceId] as const,
   },
 };
 
@@ -214,8 +219,44 @@ export function useDeleteSandbox() {
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
+    },
+  });
+}
+
+export const globalTaskTemplatesQuery = queryOptions({
+  queryKey: queryKeys.taskTemplates.global,
+  queryFn: async () => unwrap(await api.api["task-templates"].global.get()),
+});
+
+export const workspaceTaskTemplatesQuery = (workspaceId: string) =>
+  queryOptions({
+    queryKey: queryKeys.taskTemplates.workspace(workspaceId),
+    queryFn: async () =>
+      unwrap(await api.api["task-templates"].workspace({ workspaceId }).get()),
+    enabled: !!workspaceId,
+  });
+
+export function useUpdateGlobalTaskTemplates() {
+  return useMutation({
+    mutationFn: async (
+      templates: Array<{
+        id: string;
+        name: string;
+        description?: string;
+        promptTemplate?: string;
+        variants: Array<{
+          name: string;
+          model: { providerID: string; modelID: string };
+          variant?: string;
+          agent?: string;
+        }>;
+        defaultVariantIndex?: number;
+      }>,
+    ) => unwrap(await api.api["task-templates"].global.put({ templates })),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates.all });
     },
   });
 }
@@ -647,7 +688,8 @@ export function useCreateTask() {
       title: string;
       description: string;
       context?: string;
-      effort?: TaskEffort;
+      templateId?: string;
+      variantIndex?: number;
       baseBranch?: string;
       targetRepoIndices?: number[];
     }) => unwrap(await api.api.tasks.post(data)),
@@ -668,7 +710,8 @@ export function useUpdateTask() {
         title?: string;
         description?: string;
         context?: string;
-        effort?: TaskEffort;
+        templateId?: string;
+        variantIndex?: number;
       };
     }) => unwrap(await api.api.tasks({ id }).put(data)),
     onSuccess: (_data, variables, _context, { client: queryClient }) => {

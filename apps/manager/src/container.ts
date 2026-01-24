@@ -14,6 +14,7 @@ import {
 import { SandboxRepository, SandboxService } from "./modules/sandbox/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
+import { TaskTemplateService } from "./modules/task-template/index.ts";
 import {
   WorkspaceRepository,
   WorkspaceService,
@@ -57,6 +58,12 @@ const internalService = new InternalService(
 
 const agentClient = new AgentClient();
 
+const taskTemplateService = new TaskTemplateService(
+  configFileService,
+  workspaceService,
+  sandboxService,
+);
+
 /* -------------------------------------------------------------------------- */
 /*                                Orchestrators                               */
 /* -------------------------------------------------------------------------- */
@@ -93,6 +100,7 @@ const taskSpawner = new TaskSpawner({
   sandboxService,
   taskService,
   workspaceService,
+  taskTemplateService,
   agentClient,
   sessionMonitor,
 });
@@ -118,5 +126,6 @@ export {
   sshKeyService,
   taskService,
   taskSpawner,
+  taskTemplateService,
   workspaceService,
 };

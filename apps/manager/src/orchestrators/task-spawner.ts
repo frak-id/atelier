@@ -1,10 +1,16 @@
-import { EFFORT_CONFIG, type TaskEffort } from "@frak-sandbox/shared/constants";
+import { DEFAULT_TASK_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import type { TaskService } from "../modules/task/index.ts";
+import type { TaskTemplateService } from "../modules/task-template/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
-import type { RepoConfig, Task, Workspace } from "../schemas/index.ts";
+import type {
+  RepoConfig,
+  Task,
+  TaskTemplateVariables,
+  Workspace,
+} from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 import type { SessionMonitor } from "./session-monitor.ts";
@@ -21,6 +27,7 @@ interface TaskSpawnerDependencies {
   sandboxService: SandboxService;
   taskService: TaskService;
   workspaceService: WorkspaceService;
+  taskTemplateService: TaskTemplateService;
   agentClient: AgentClient;
   sessionMonitor: SessionMonitor;
 }
@@ -116,12 +123,22 @@ export class TaskSpawner {
         );
       }
 
-      const prompt = this.buildPrompt(task, targetRepos, branchName);
+      const templateConfig = this.resolveTemplateConfig(task, workspace);
+      const prompt = this.buildPrompt(
+        task,
+        workspace,
+        targetRepos,
+        branchName,
+        sandboxId,
+        ipAddress,
+        templateConfig.promptTemplate,
+      );
+
       const promptResult = await this.sendPrompt(
         opencodeUrl,
         sessionResult.sessionId,
         prompt,
-        task.data.effort,
+        templateConfig,
       );
       if ("error" in promptResult) {
         throw new Error(`Failed to send prompt: ${promptResult.error}`);
@@ -177,6 +194,55 @@ export class TaskSpawner {
     });
   }
 
+  private resolveTemplateConfig(
+    task: Task,
+    workspace: Workspace,
+  ): {
+    model?: { providerID: string; modelID: string };
+    variant?: string;
+    agent?: string;
+    promptTemplate?: string;
+  } {
+    const templateId = task.data.templateId ?? "implement";
+    const variantIndex = task.data.variantIndex ?? 1;
+
+    const template = this.deps.taskTemplateService.getTemplateById(
+      templateId,
+      workspace.id,
+    );
+
+    if (!template) {
+      const defaultTemplate = DEFAULT_TASK_TEMPLATES[0];
+      if (!defaultTemplate) {
+        return {};
+      }
+      const variant =
+        defaultTemplate.variants[variantIndex] ?? defaultTemplate.variants[0];
+      return variant
+        ? {
+            model: variant.model,
+            variant: variant.variant,
+            agent: variant.agent,
+            promptTemplate: defaultTemplate.promptTemplate,
+          }
+        : {};
+    }
+
+    const variant =
+      template.variants[variantIndex] ??
+      template.variants[template.defaultVariantIndex ?? 0] ??
+      template.variants[0];
+
+    return variant
+      ? {
+          model: variant.model,
+          variant: variant.variant,
+          agent: variant.agent,
+          promptTemplate: template.promptTemplate,
+        }
+      : { promptTemplate: template.promptTemplate };
+  }
+
   private getTargetRepos(task: Task, workspace: Workspace): RepoConfig[] {
     const allRepos = workspace.config.repos;
     if (allRepos.length === 0) return [];
@@ -200,7 +266,6 @@ export class TaskSpawner {
   ): Promise<string | undefined> {
     const baseBranchName = `task/${taskId}`;
 
-    // Helper to run git commands as dev user (repo owner)
     const gitExec = (cmd: string, timeout = 30000) =>
       this.deps.agentClient.exec(
         ipAddress,
@@ -250,9 +315,41 @@ export class TaskSpawner {
 
   private buildPrompt(
     task: Task,
+    workspace: Workspace,
     targetRepos: RepoConfig[],
-    branchName?: string,
+    branchName: string | undefined,
+    sandboxId: string,
+    ipAddress: string,
+    promptTemplate?: string,
   ): string {
+    if (promptTemplate) {
+      const variables: TaskTemplateVariables = {
+        task: {
+          title: task.title,
+          description: task.data.description,
+          context: task.data.context,
+          branch: branchName,
+        },
+        workspace: {
+          name: workspace.name,
+          reposName: targetRepos.map((r) => {
+            if ("url" in r) return r.url.split("/").pop() ?? r.url;
+            return r.repo;
+          }),
+        },
+        sandbox: {
+          id: sandboxId,
+          ip: ipAddress,
+          url: `http://${ipAddress}:${OPENCODE_PORT}`,
+        },
+      };
+
+      return this.deps.taskTemplateService.renderPromptTemplate(
+        { id: "", name: "", variants: [], promptTemplate },
+        variables,
+      );
+    }
+
     let prompt = `# Task: ${task.title}\n\n`;
 
     const firstRepo = targetRepos[0];
@@ -320,20 +417,21 @@ export class TaskSpawner {
     baseUrl: string,
     sessionId: string,
     message: string,
-    effort?: TaskEffort,
+    config?: {
+      model?: { providerID: string; modelID: string };
+      variant?: string;
+      agent?: string;
+    },
   ): Promise<{ success: true } | { error: string }> {
     try {
       const client = createOpencodeClient({ baseUrl });
-      const config = effort ? EFFORT_CONFIG[effort] : undefined;
 
       const result = await client.session.promptAsync({
         sessionID: sessionId,
         parts: [{ type: "text", text: message }],
-        ...(config && {
-          model: config.model,
-          variant: config.variant,
-          agent: config.agent,
-        }),
+        ...(config?.model && { model: config.model }),
+        ...(config?.variant && { variant: config.variant }),
+        ...(config?.agent && { agent: config.agent }),
       });
       if (result.error) {
         return { error: "Failed to send message" };
