@@ -1,5 +1,10 @@
 import { Elysia, t } from "elysia";
-import { sessionMonitor, taskService, taskSpawner } from "../../container.ts";
+import {
+  sessionMonitor,
+  taskService,
+  taskSpawner,
+  taskTemplateService,
+} from "../../container.ts";
 import {
   CreateTaskBodySchema,
   DeleteTaskQuerySchema,
@@ -9,6 +14,7 @@ import {
   TaskSchema,
   UpdateTaskBodySchema,
 } from "../../schemas/index.ts";
+import { ValidationError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("task-routes");
@@ -46,6 +52,19 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
         { title: body.title, workspaceId: body.workspaceId },
         "Creating task",
       );
+
+      if (body.variantIndex !== undefined && body.templateId) {
+        const template = taskTemplateService.getTemplateById(
+          body.templateId,
+          body.workspaceId,
+        );
+        if (template && body.variantIndex >= template.variants.length) {
+          throw new ValidationError(
+            `Variant index ${body.variantIndex} out of range (max: ${template.variants.length - 1})`,
+          );
+        }
+      }
+
       const task = taskService.create(body);
       set.status = 201;
       return task;
@@ -59,6 +78,23 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     "/:id",
     ({ params, body }) => {
       log.info({ taskId: params.id }, "Updating task");
+
+      if (body.variantIndex !== undefined) {
+        const task = taskService.getByIdOrThrow(params.id);
+        const templateId = body.templateId ?? task.data.templateId;
+        if (templateId) {
+          const template = taskTemplateService.getTemplateById(
+            templateId,
+            task.workspaceId,
+          );
+          if (template && body.variantIndex >= template.variants.length) {
+            throw new ValidationError(
+              `Variant index ${body.variantIndex} out of range (max: ${template.variants.length - 1})`,
+            );
+          }
+        }
+      }
+
       return taskService.update(params.id, body);
     },
     {

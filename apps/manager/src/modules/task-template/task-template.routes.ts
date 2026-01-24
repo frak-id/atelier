@@ -11,8 +11,11 @@ export const taskTemplateRoutes = new Elysia({ prefix: "/task-templates" })
   .get(
     "/global",
     () => {
-      const templates = taskTemplateService.getGlobalTemplates();
-      return { templates, source: "global" as const };
+      const { templates, isDefault } = taskTemplateService.getGlobalTemplates();
+      return {
+        templates,
+        source: isDefault ? ("default" as const) : ("global" as const),
+      };
     },
     {
       detail: {
@@ -26,7 +29,7 @@ export const taskTemplateRoutes = new Elysia({ prefix: "/task-templates" })
     "/global",
     ({ body }) => {
       taskTemplateService.setGlobalTemplates(body.templates);
-      const templates = taskTemplateService.getGlobalTemplates();
+      const { templates } = taskTemplateService.getGlobalTemplates();
       return { templates, source: "global" as const };
     },
     {

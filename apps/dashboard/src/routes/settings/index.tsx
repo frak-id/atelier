@@ -918,7 +918,6 @@ function TaskTemplatesSection() {
             : false
         }
         isSaving={updateMutation.isPending}
-        existingTemplates={templates}
         onSaveNew={(newTemplate) => {
           updateMutation.mutate([...templates, newTemplate], {
             onSuccess: () => setEditingTemplate(null),
@@ -942,7 +941,6 @@ function TaskTemplateEditDialog({
   onSave: (template: TaskTemplate) => void;
   isNew: boolean;
   isSaving: boolean;
-  existingTemplates: TaskTemplate[];
   onSaveNew: (template: TaskTemplate) => void;
 }) {
   const [editData, setEditData] = useState<TaskTemplate | null>(null);

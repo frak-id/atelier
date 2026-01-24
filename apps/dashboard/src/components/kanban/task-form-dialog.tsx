@@ -8,6 +8,7 @@ import {
   useCreateTask,
   useUpdateTask,
   workspaceDetailQuery,
+  workspaceTaskTemplatesQuery,
 } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -69,7 +70,11 @@ export function TaskFormDialog({
   const [selectedRepoIndices, setSelectedRepoIndices] = useState<number[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
 
-  const templates = DEFAULT_TASK_TEMPLATES;
+  const { data: workspace } = useQuery(workspaceDetailQuery(workspaceId));
+  const { data: templateData } = useQuery(
+    workspaceTaskTemplatesQuery(workspaceId),
+  );
+  const templates = templateData?.templates ?? DEFAULT_TASK_TEMPLATES;
   const defaultTemplate = templates[0];
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     defaultTemplate?.id ?? "",
@@ -79,8 +84,6 @@ export function TaskFormDialog({
   );
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
-
-  const { data: workspace } = useQuery(workspaceDetailQuery(workspaceId));
   const createMutation = useCreateTask();
   const updateMutation = useUpdateTask();
 

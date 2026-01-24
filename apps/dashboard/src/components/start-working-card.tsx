@@ -1,4 +1,5 @@
 import type { Task } from "@frak-sandbox/manager/types";
+import type { TaskTemplate } from "@frak-sandbox/shared/constants";
 import { DEFAULT_TASK_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import {
@@ -15,6 +16,7 @@ import {
   taskListQuery,
   useCreateTask,
   workspaceListQuery,
+  workspaceTaskTemplatesQuery,
 } from "@/api/queries";
 import { useStartSession } from "@/hooks/use-start-session";
 import { Badge } from "./ui/badge";
@@ -39,6 +41,12 @@ export function StartWorkingCard() {
   const selectedWorkspace = workspaces?.find(
     (w) => w.id === selectedWorkspaceId,
   );
+
+  const { data: templateData } = useQuery({
+    ...workspaceTaskTemplatesQuery(selectedWorkspaceId),
+    enabled: !!selectedWorkspaceId,
+  });
+  const templates = templateData?.templates ?? DEFAULT_TASK_TEMPLATES;
 
   return (
     <Card>
@@ -98,6 +106,7 @@ export function StartWorkingCard() {
             <ChatTab
               workspace={selectedWorkspace}
               workspaceId={selectedWorkspaceId}
+              templates={templates}
             />
           </TabsContent>
 
@@ -105,6 +114,7 @@ export function StartWorkingCard() {
             <TaskTab
               workspaceId={selectedWorkspaceId}
               hasWorkspace={!!selectedWorkspace}
+              templates={templates}
             />
           </TabsContent>
         </Tabs>
@@ -116,12 +126,11 @@ export function StartWorkingCard() {
 type ChatTabProps = {
   workspace: Workspace | undefined;
   workspaceId: string;
+  templates: TaskTemplate[];
 };
 
-function ChatTab({ workspace, workspaceId }: ChatTabProps) {
+function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
   const [message, setMessage] = useState("");
-  // For now, use the first template and first variant as defaults
-  const templates = DEFAULT_TASK_TEMPLATES;
   const defaultTemplate = templates[0];
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     defaultTemplate?.id ?? "",
@@ -282,13 +291,13 @@ function ChatTab({ workspace, workspaceId }: ChatTabProps) {
 type TaskTabProps = {
   workspaceId: string;
   hasWorkspace: boolean;
+  templates: TaskTemplate[];
 };
 
-function TaskTab({ workspaceId, hasWorkspace }: TaskTabProps) {
+function TaskTab({ workspaceId, hasWorkspace, templates }: TaskTabProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
-  const templates = DEFAULT_TASK_TEMPLATES;
   const defaultTemplate = templates[0];
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     defaultTemplate?.id ?? "",
@@ -467,7 +476,7 @@ function TaskTab({ workspaceId, hasWorkspace }: TaskTabProps) {
           </div>
           <div className="space-y-1.5">
             {draftTasks.slice(0, 3).map((task) => (
-              <DraftTaskItem key={task.id} task={task} />
+              <DraftTaskItem key={task.id} task={task} templates={templates} />
             ))}
             {draftTasks.length > 3 && (
               <a
@@ -484,8 +493,13 @@ function TaskTab({ workspaceId, hasWorkspace }: TaskTabProps) {
   );
 }
 
-function DraftTaskItem({ task }: { task: Task }) {
-  const templates = DEFAULT_TASK_TEMPLATES;
+function DraftTaskItem({
+  task,
+  templates,
+}: {
+  task: Task;
+  templates: TaskTemplate[];
+}) {
   const template = templates.find((t) => t.id === task.data.templateId);
   const variant = template?.variants[task.data.variantIndex ?? 0];
 

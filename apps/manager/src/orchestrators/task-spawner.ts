@@ -204,7 +204,6 @@ export class TaskSpawner {
     promptTemplate?: string;
   } {
     const templateId = task.data.templateId ?? "implement";
-    const variantIndex = task.data.variantIndex ?? 1;
 
     const template = this.deps.taskTemplateService.getTemplateById(
       templateId,
@@ -216,8 +215,11 @@ export class TaskSpawner {
       if (!defaultTemplate) {
         return {};
       }
+      const effectiveVariantIndex =
+        task.data.variantIndex ?? defaultTemplate.defaultVariantIndex ?? 0;
       const variant =
-        defaultTemplate.variants[variantIndex] ?? defaultTemplate.variants[0];
+        defaultTemplate.variants[effectiveVariantIndex] ??
+        defaultTemplate.variants[0];
       return variant
         ? {
             model: variant.model,
@@ -228,10 +230,10 @@ export class TaskSpawner {
         : {};
     }
 
+    const effectiveVariantIndex =
+      task.data.variantIndex ?? template.defaultVariantIndex ?? 0;
     const variant =
-      template.variants[variantIndex] ??
-      template.variants[template.defaultVariantIndex ?? 0] ??
-      template.variants[0];
+      template.variants[effectiveVariantIndex] ?? template.variants[0];
 
     return variant
       ? {

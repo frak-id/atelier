@@ -22,25 +22,28 @@ export class TaskTemplateService {
     private readonly sandboxService: SandboxService,
   ) {}
 
-  getGlobalTemplates(): TaskTemplates {
+  getGlobalTemplates(): { templates: TaskTemplates; isDefault: boolean } {
     const configFile = this.configFileService.getByPath(
       TASK_TEMPLATES_CONFIG_PATH,
       "global",
     );
 
     if (!configFile) {
-      return DEFAULT_TASK_TEMPLATES;
+      return { templates: DEFAULT_TASK_TEMPLATES, isDefault: true };
     }
 
     try {
       const templates = JSON.parse(configFile.content) as TaskTemplates;
-      return templates.length > 0 ? templates : DEFAULT_TASK_TEMPLATES;
+      if (templates.length > 0) {
+        return { templates, isDefault: false };
+      }
+      return { templates: DEFAULT_TASK_TEMPLATES, isDefault: true };
     } catch (error) {
       log.warn(
         { error },
         "Failed to parse global task templates, using defaults",
       );
-      return DEFAULT_TASK_TEMPLATES;
+      return { templates: DEFAULT_TASK_TEMPLATES, isDefault: true };
     }
   }
 
@@ -63,8 +66,7 @@ export class TaskTemplateService {
     templates: TaskTemplates;
     source: "default" | "global" | "workspace" | "merged";
   } {
-    const globalTemplates = this.getGlobalTemplates();
-    const isDefault = globalTemplates === DEFAULT_TASK_TEMPLATES;
+    const { templates: globalTemplates, isDefault } = this.getGlobalTemplates();
 
     if (!workspaceId) {
       return {
