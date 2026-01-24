@@ -1,5 +1,5 @@
 import type { RepoConfig, Task } from "@frak-sandbox/manager/types";
-import { DEFAULT_TASK_TEMPLATES } from "@frak-sandbox/shared/constants";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -8,7 +8,7 @@ import {
   useCreateTask,
   useUpdateTask,
   workspaceDetailQuery,
-  workspaceTaskTemplatesQuery,
+  workspaceSessionTemplatesQuery,
 } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -72,9 +72,9 @@ export function TaskFormDialog({
 
   const { data: workspace } = useQuery(workspaceDetailQuery(workspaceId));
   const { data: templateData } = useQuery(
-    workspaceTaskTemplatesQuery(workspaceId),
+    workspaceSessionTemplatesQuery(workspaceId),
   );
-  const templates = templateData?.templates ?? DEFAULT_TASK_TEMPLATES;
+  const templates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
   const defaultTemplate = templates[0];
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     defaultTemplate?.id ?? "",
@@ -117,11 +117,9 @@ export function TaskFormDialog({
         setDescription(task.data.description ?? "");
         setContext(task.data.context ?? "");
         setSelectedTemplateId(
-          task.data.templateId ?? defaultTemplate?.id ?? "",
+          task.data.workflowId ?? defaultTemplate?.id ?? "",
         );
-        setSelectedVariantIndex(
-          task.data.variantIndex ?? defaultTemplate?.defaultVariantIndex ?? 0,
-        );
+        setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
         setSelectedRepoIndices(task.data.targetRepoIndices ?? []);
         setSelectedBranch(task.data.baseBranch ?? "");
       } else {
@@ -148,9 +146,8 @@ export function TaskFormDialog({
           title: title.trim(),
           description: description.trim(),
           context: context.trim() || undefined,
-          templateId: selectedTemplateId || undefined,
-          variantIndex: selectedVariantIndex,
-        },
+          workflowId: selectedTemplateId || undefined,
+        } as Parameters<typeof updateMutation.mutateAsync>[0]["data"],
       });
     } else {
       await createMutation.mutateAsync({
@@ -158,12 +155,11 @@ export function TaskFormDialog({
         title: title.trim(),
         description: description.trim(),
         context: context.trim() || undefined,
-        templateId: selectedTemplateId || undefined,
-        variantIndex: selectedVariantIndex,
+        workflowId: selectedTemplateId || undefined,
         baseBranch: selectedBranch || undefined,
         targetRepoIndices:
           selectedRepoIndices.length > 0 ? selectedRepoIndices : undefined,
-      });
+      } as Parameters<typeof createMutation.mutateAsync>[0]);
     }
 
     onOpenChange(false);

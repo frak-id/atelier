@@ -1,17 +1,20 @@
 import { Elysia, t } from "elysia";
-import { taskTemplateService } from "../../container.ts";
+import { sessionTemplateService } from "../../container.ts";
 import {
-  MergedTaskTemplatesResponseSchema,
+  MergedSessionTemplatesResponseSchema,
   OpenCodeConfigResponseSchema,
-  TaskTemplatesSchema,
-  UpdateTaskTemplatesBodySchema,
+  SessionTemplatesSchema,
+  UpdateSessionTemplatesBodySchema,
 } from "../../schemas/index.ts";
 
-export const taskTemplateRoutes = new Elysia({ prefix: "/task-templates" })
+export const sessionTemplateRoutes = new Elysia({
+  prefix: "/session-templates",
+})
   .get(
     "/global",
     () => {
-      const { templates, isDefault } = taskTemplateService.getGlobalTemplates();
+      const { templates, isDefault } =
+        sessionTemplateService.getGlobalTemplates();
       return {
         templates,
         source: isDefault ? ("default" as const) : ("global" as const),
@@ -19,72 +22,74 @@ export const taskTemplateRoutes = new Elysia({ prefix: "/task-templates" })
     },
     {
       detail: {
-        tags: ["task-templates"],
+        tags: ["session-templates"],
         summary: "Get global task templates",
       },
-      response: MergedTaskTemplatesResponseSchema,
+      response: MergedSessionTemplatesResponseSchema,
     },
   )
   .put(
     "/global",
     ({ body }) => {
-      taskTemplateService.setGlobalTemplates(body.templates);
-      const { templates } = taskTemplateService.getGlobalTemplates();
+      sessionTemplateService.setGlobalTemplates(body.templates);
+      const { templates } = sessionTemplateService.getGlobalTemplates();
       return { templates, source: "global" as const };
     },
     {
       detail: {
-        tags: ["task-templates"],
+        tags: ["session-templates"],
         summary: "Set global task templates",
       },
-      body: UpdateTaskTemplatesBodySchema,
-      response: MergedTaskTemplatesResponseSchema,
+      body: UpdateSessionTemplatesBodySchema,
+      response: MergedSessionTemplatesResponseSchema,
     },
   )
   .get(
     "/workspace/:workspaceId",
     ({ params }) => {
-      const result = taskTemplateService.getMergedTemplates(params.workspaceId);
+      const result = sessionTemplateService.getMergedTemplates(
+        params.workspaceId,
+      );
       return result;
     },
     {
       detail: {
-        tags: ["task-templates"],
+        tags: ["session-templates"],
         summary: "Get merged task templates for a workspace",
       },
       params: t.Object({
         workspaceId: t.String(),
       }),
-      response: MergedTaskTemplatesResponseSchema,
+      response: MergedSessionTemplatesResponseSchema,
     },
   )
   .get(
     "/workspace/:workspaceId/override",
     ({ params }) => {
-      const templates = taskTemplateService.getWorkspaceTemplates(
+      const templates = sessionTemplateService.getWorkspaceTemplates(
         params.workspaceId,
       );
       return { templates: templates ?? [] };
     },
     {
       detail: {
-        tags: ["task-templates"],
+        tags: ["session-templates"],
         summary: "Get workspace-specific template overrides",
       },
       params: t.Object({
         workspaceId: t.String(),
       }),
-      response: t.Object({ templates: TaskTemplatesSchema }),
+      response: t.Object({ templates: SessionTemplatesSchema }),
     },
   )
   .get(
     "/workspace/:workspaceId/opencode-config",
     async ({ params }) => {
-      return taskTemplateService.getOpenCodeConfig(params.workspaceId);
+      return sessionTemplateService.getOpenCodeConfig(params.workspaceId);
     },
     {
       detail: {
-        tags: ["task-templates"],
+        tags: ["session-templates"],
         summary:
           "Get OpenCode configuration (providers, agents) from a running sandbox",
       },

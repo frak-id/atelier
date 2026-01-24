@@ -1,4 +1,4 @@
-import type { TaskTemplate } from "@frak-sandbox/shared/constants";
+import type { SessionTemplate } from "@frak-sandbox/shared/constants";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -17,7 +17,7 @@ import { useRef, useState } from "react";
 import type { ConfigFile, ConfigFileContentType, Sandbox } from "@/api/client";
 import {
   configFilesListQuery,
-  globalTaskTemplatesQuery,
+  globalSessionTemplatesQuery,
   sandboxListQuery,
   sharedAuthListQuery,
   useCreateConfigFile,
@@ -25,7 +25,7 @@ import {
   useRestartSandbox,
   useSyncConfigsToNfs,
   useUpdateConfigFile,
-  useUpdateGlobalTaskTemplates,
+  useUpdateGlobalSessionTemplates,
   useUpdateSharedAuth,
   workspaceListQuery,
 } from "@/api/queries";
@@ -242,7 +242,7 @@ function SettingsPage() {
 
       <SharedAuthSection />
 
-      <TaskTemplatesSection />
+      <SessionTemplatesSection />
     </div>
   );
 }
@@ -735,12 +735,11 @@ function SharedAuthSection() {
   );
 }
 
-function TaskTemplatesSection() {
-  const { data, isLoading } = useQuery(globalTaskTemplatesQuery);
-  const updateMutation = useUpdateGlobalTaskTemplates();
-  const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(
-    null,
-  );
+function SessionTemplatesSection() {
+  const { data, isLoading } = useQuery(globalSessionTemplatesQuery);
+  const updateMutation = useUpdateGlobalSessionTemplates();
+  const [editingTemplate, setEditingTemplate] =
+    useState<SessionTemplate | null>(null);
   const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(
     new Set(),
   );
@@ -768,7 +767,7 @@ function TaskTemplatesSection() {
     });
   };
 
-  const handleSaveTemplate = (updated: TaskTemplate) => {
+  const handleSaveTemplate = (updated: SessionTemplate) => {
     const newTemplates = templates.map((t) =>
       t.id === updated.id ? updated : t,
     );
@@ -784,9 +783,10 @@ function TaskTemplatesSection() {
   };
 
   const handleAddTemplate = () => {
-    const newTemplate: TaskTemplate = {
+    const newTemplate: SessionTemplate = {
       id: `template-${Date.now()}`,
       name: "New Template",
+      category: "primary",
       description: "",
       variants: [
         {
@@ -908,7 +908,7 @@ function TaskTemplatesSection() {
         </div>
       )}
 
-      <TaskTemplateEditDialog
+      <SessionTemplateEditDialog
         template={editingTemplate}
         onClose={() => setEditingTemplate(null)}
         onSave={handleSaveTemplate}
@@ -928,7 +928,7 @@ function TaskTemplatesSection() {
   );
 }
 
-function TaskTemplateEditDialog({
+function SessionTemplateEditDialog({
   template,
   onClose,
   onSave,
@@ -936,14 +936,14 @@ function TaskTemplateEditDialog({
   isSaving,
   onSaveNew,
 }: {
-  template: TaskTemplate | null;
+  template: SessionTemplate | null;
   onClose: () => void;
-  onSave: (template: TaskTemplate) => void;
+  onSave: (template: SessionTemplate) => void;
   isNew: boolean;
   isSaving: boolean;
-  onSaveNew: (template: TaskTemplate) => void;
+  onSaveNew: (template: SessionTemplate) => void;
 }) {
-  const [editData, setEditData] = useState<TaskTemplate | null>(null);
+  const [editData, setEditData] = useState<SessionTemplate | null>(null);
 
   const data = editData ?? template;
 
@@ -964,7 +964,7 @@ function TaskTemplateEditDialog({
 
   const updateVariant = (
     idx: number,
-    field: keyof TaskTemplate["variants"][number],
+    field: keyof SessionTemplate["variants"][number],
     value: string | { providerID: string; modelID: string },
   ) => {
     if (!data) return;

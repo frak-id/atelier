@@ -3,14 +3,25 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import {
+  AlertCircle,
+  CheckCircle2,
   Code,
   ExternalLink,
   GitBranch,
   GripVertical,
+  Loader2,
   MoreHorizontal,
+  Shield,
+  Sparkles,
   Terminal,
+  Zap,
 } from "lucide-react";
-import { opencodeSessionsQuery, sandboxDetailQuery } from "@/api/queries";
+import {
+  globalSessionTemplatesQuery,
+  sandboxDetailQuery,
+  useAddTaskSessions,
+  useTaskInteractionState,
+} from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +30,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
-import { useSubSessionProgress } from "./task-detail-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type TaskCardProps = {
   task: Task;
@@ -27,7 +42,6 @@ type TaskCardProps = {
   onEdit?: () => void;
   onDelete?: () => void;
   onStart?: () => void;
-  onReview?: () => void;
   onComplete?: () => void;
   onReset?: () => void;
   isActionPending?: boolean;
@@ -39,7 +53,6 @@ export function TaskCard({
   onEdit,
   onDelete,
   onStart,
-  onReview,
   onComplete,
   onReset,
   isActionPending,
@@ -64,25 +77,32 @@ export function TaskCard({
     enabled: !!task.data.sandboxId,
   });
 
-  const opencodeUrl = sandbox?.runtime?.urls?.opencode
-    ? new URL(sandbox.runtime.urls.opencode).origin
-    : null;
-
-  const { data: sessions } = useQuery({
-    ...opencodeSessionsQuery(opencodeUrl ?? ""),
-    enabled: !!opencodeUrl,
-  });
-
-  const isTaskInProgress = task.status === "in_progress";
-  const { totalCount, progressPercent, completedCount } = useSubSessionProgress(
-    sessions,
-    task.data.opencodeSessionId,
-    isTaskInProgress,
+  const { data: interactionState } = useTaskInteractionState(
+    task.id,
+    task.status === "active",
   );
+  const needsAttention = interactionState?.needsAttention ?? false;
+
+  const { data: templatesData } = useQuery({
+    ...globalSessionTemplatesQuery,
+    enabled: task.status === "active",
+  });
+  const secondaryTemplates =
+    templatesData?.templates.filter((t) => t.category === "secondary") ?? [];
+
+  const addSessionsMutation = useAddTaskSessions();
+
+  const sessions = task.data.sessions ?? [];
+  const completedSessions = sessions.filter((s) => s.status === "completed");
+  const runningSessions = sessions.filter((s) => s.status === "running");
+  const totalCount = sessions.length;
+  const progressPercent =
+    totalCount > 0
+      ? Math.round((completedSessions.length / totalCount) * 100)
+      : 0;
 
   const showConnectionInfo =
-    (task.status === "in_progress" || task.status === "pending_review") &&
-    sandbox?.status === "running";
+    task.status === "active" && sandbox?.status === "running";
 
   return (
     <div
@@ -102,19 +122,32 @@ export function TaskCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <button
-              type="button"
-              onClick={onClick}
-              className="font-medium text-sm truncate text-left hover:underline"
-            >
-              {task.title}
-            </button>
+            <div className="flex items-center gap-1.5 min-w-0">
+              {needsAttention && interactionState && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <NeedsAttentionTooltip
+                      interactionState={interactionState}
+                    />
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <button
+                type="button"
+                onClick={onClick}
+                className="font-medium text-sm truncate text-left hover:underline"
+              >
+                {task.title}
+              </button>
+            </div>
             <TaskMenu
               task={task}
               onEdit={onEdit}
               onDelete={onDelete}
               onStart={onStart}
-              onReview={onReview}
               onComplete={onComplete}
               onReset={onReset}
               isActionPending={isActionPending}
@@ -138,10 +171,37 @@ export function TaskCard({
             <div className="flex items-center gap-2 mt-2">
               <Progress value={progressPercent} className="flex-1 h-1.5" />
               <span className="text-xs text-muted-foreground min-w-[40px] text-right">
-                {completedCount}/{totalCount}
+                {completedSessions.length}/{totalCount}
               </span>
             </div>
           )}
+
+          {runningSessions.length > 0 && (
+            <Badge variant="secondary" className="mt-2 text-xs">
+              {runningSessions.length} session
+              {runningSessions.length > 1 ? "s" : ""} running
+            </Badge>
+          )}
+
+          {task.status === "active" &&
+            sessions.length > 0 &&
+            secondaryTemplates.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {secondaryTemplates.map((template) => (
+                  <SecondaryTemplateButton
+                    key={template.id}
+                    template={template}
+                    isPending={addSessionsMutation.isPending}
+                    onSpawn={() =>
+                      addSessionsMutation.mutate({
+                        id: task.id,
+                        sessionTemplateIds: [template.id],
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            )}
 
           {showConnectionInfo && sandbox && (
             <div className="flex items-center gap-1 mt-2">
@@ -178,12 +238,6 @@ export function TaskCard({
               <CopySshButton ssh={sandbox.runtime.urls.ssh} />
             </div>
           )}
-
-          {task.status === "queue" && (
-            <Badge variant="secondary" className="mt-2 text-xs">
-              Waiting to start...
-            </Badge>
-          )}
         </div>
       </div>
     </div>
@@ -195,7 +249,6 @@ function TaskMenu({
   onEdit,
   onDelete,
   onStart,
-  onReview,
   onComplete,
   onReset,
   isActionPending,
@@ -222,19 +275,12 @@ function TaskMenu({
             </MenuButton>
           </>
         )}
-        {task.status === "in_progress" && (
-          <MenuButton onClick={onReview} disabled={isActionPending}>
-            Move to Review
-          </MenuButton>
-        )}
-        {task.status === "pending_review" && (
+        {task.status === "active" && (
           <MenuButton onClick={onComplete} disabled={isActionPending}>
             Mark Complete
           </MenuButton>
         )}
-        {(task.status === "in_progress" ||
-          task.status === "pending_review" ||
-          task.status === "completed") && (
+        {(task.status === "active" || task.status === "done") && (
           <MenuButton onClick={onReset} disabled={isActionPending}>
             Reset to Draft
           </MenuButton>
@@ -289,5 +335,87 @@ function CopySshButton({ ssh }: { ssh: string }) {
     >
       SSH
     </Button>
+  );
+}
+
+type InteractionState = {
+  sessions: Array<{
+    sessionId: string;
+    pendingPermissions: Array<{ permission: string }>;
+    pendingQuestions: Array<{ question: string }>;
+  }>;
+};
+
+function NeedsAttentionTooltip({
+  interactionState,
+}: {
+  interactionState: InteractionState;
+}) {
+  const permissionCount = interactionState.sessions.reduce(
+    (acc, s) => acc + s.pendingPermissions.length,
+    0,
+  );
+  const questionCount = interactionState.sessions.reduce(
+    (acc, s) => acc + s.pendingQuestions.length,
+    0,
+  );
+
+  const items: string[] = [];
+  if (permissionCount > 0) {
+    items.push(
+      `${permissionCount} permission${permissionCount > 1 ? "s" : ""} pending`,
+    );
+  }
+  if (questionCount > 0) {
+    items.push(
+      `${questionCount} question${questionCount > 1 ? "s" : ""} pending`,
+    );
+  }
+
+  return <span>{items.join(", ") || "Needs attention"}</span>;
+}
+
+type SecondaryTemplate = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
+const TEMPLATE_ICONS: Record<string, React.ReactNode> = {
+  "best-practices": <CheckCircle2 className="h-3 w-3" />,
+  "security-review": <Shield className="h-3 w-3" />,
+  simplification: <Zap className="h-3 w-3" />,
+};
+
+function SecondaryTemplateButton({
+  template,
+  isPending,
+  onSpawn,
+}: {
+  template: SecondaryTemplate;
+  isPending: boolean;
+  onSpawn: () => void;
+}) {
+  const icon = TEMPLATE_ICONS[template.id] ?? <Sparkles className="h-3 w-3" />;
+  const shortName = template.name.replace(" Review", "").replace("ation", "");
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2 text-xs gap-1"
+          onClick={onSpawn}
+          disabled={isPending}
+        >
+          {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : icon}
+          {shortName}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <span>{template.description ?? template.name}</span>
+      </TooltipContent>
+    </Tooltip>
   );
 }

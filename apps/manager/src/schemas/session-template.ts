@@ -1,42 +1,49 @@
 import type { Static } from "elysia";
 import { t } from "elysia";
 
-export const TaskTemplateModelSchema = t.Object({
+export const SessionTemplateModelSchema = t.Object({
   providerID: t.String(),
   modelID: t.String(),
 });
-export type TaskTemplateModel = Static<typeof TaskTemplateModelSchema>;
+export type SessionTemplateModel = Static<typeof SessionTemplateModelSchema>;
 
-export const TaskTemplateVariantSchema = t.Object({
+export const SessionTemplateVariantSchema = t.Object({
   name: t.String({ minLength: 1 }),
-  model: TaskTemplateModelSchema,
+  model: SessionTemplateModelSchema,
   variant: t.Optional(t.String()),
   agent: t.Optional(t.String()),
 });
-export type TaskTemplateVariant = Static<typeof TaskTemplateVariantSchema>;
-
-export const TaskTemplateSchema = t.Object({
-  id: t.String({ minLength: 1 }),
-  name: t.String({ minLength: 1 }),
-  description: t.Optional(t.String()),
-  promptTemplate: t.Optional(t.String()),
-  variants: t.Array(TaskTemplateVariantSchema, { minItems: 1 }),
-  defaultVariantIndex: t.Optional(t.Number({ minimum: 0, default: 0 })),
-});
-export type TaskTemplate = Static<typeof TaskTemplateSchema>;
-
-export const TaskTemplatesSchema = t.Array(TaskTemplateSchema);
-export type TaskTemplates = Static<typeof TaskTemplatesSchema>;
-
-export const UpdateTaskTemplatesBodySchema = t.Object({
-  templates: TaskTemplatesSchema,
-});
-export type UpdateTaskTemplatesBody = Static<
-  typeof UpdateTaskTemplatesBodySchema
+export type SessionTemplateVariant = Static<
+  typeof SessionTemplateVariantSchema
 >;
 
-export const MergedTaskTemplatesResponseSchema = t.Object({
-  templates: TaskTemplatesSchema,
+export const SessionTemplateCategoryValues = ["primary", "secondary"] as const;
+export type SessionTemplateCategory =
+  (typeof SessionTemplateCategoryValues)[number];
+
+export const SessionTemplateSchema = t.Object({
+  id: t.String({ minLength: 1 }),
+  name: t.String({ minLength: 1 }),
+  category: t.Union([t.Literal("primary"), t.Literal("secondary")]),
+  description: t.Optional(t.String()),
+  promptTemplate: t.Optional(t.String()),
+  variants: t.Array(SessionTemplateVariantSchema, { minItems: 1 }),
+  defaultVariantIndex: t.Optional(t.Number({ minimum: 0, default: 0 })),
+});
+export type SessionTemplate = Static<typeof SessionTemplateSchema>;
+
+export const SessionTemplatesSchema = t.Array(SessionTemplateSchema);
+export type SessionTemplates = Static<typeof SessionTemplatesSchema>;
+
+export const UpdateSessionTemplatesBodySchema = t.Object({
+  templates: SessionTemplatesSchema,
+});
+export type UpdateSessionTemplatesBody = Static<
+  typeof UpdateSessionTemplatesBodySchema
+>;
+
+export const MergedSessionTemplatesResponseSchema = t.Object({
+  templates: SessionTemplatesSchema,
   source: t.Union([
     t.Literal("default"),
     t.Literal("global"),
@@ -44,8 +51,8 @@ export const MergedTaskTemplatesResponseSchema = t.Object({
     t.Literal("merged"),
   ]),
 });
-export type MergedTaskTemplatesResponse = Static<
-  typeof MergedTaskTemplatesResponseSchema
+export type MergedSessionTemplatesResponse = Static<
+  typeof MergedSessionTemplatesResponseSchema
 >;
 
 export const OpenCodeModelInfoSchema = t.Object({
@@ -79,7 +86,7 @@ export type OpenCodeConfigResponse = Static<
   typeof OpenCodeConfigResponseSchema
 >;
 
-export interface TaskTemplateVariables {
+export interface SessionTemplateVariables {
   task: {
     title: string;
     description: string;

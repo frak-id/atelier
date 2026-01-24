@@ -21,6 +21,8 @@ const queryKeys = {
     all: ["tasks"] as const,
     list: (workspaceId?: string) => ["tasks", "list", workspaceId] as const,
     detail: (id: string) => ["tasks", "detail", id] as const,
+    interactionState: (id: string) =>
+      ["tasks", "interactionState", id] as const,
   },
   sandboxes: {
     all: ["sandboxes"] as const,
@@ -75,11 +77,11 @@ const queryKeys = {
     list: () => ["sshKeys", "list"] as const,
     hasKeys: () => ["sshKeys", "hasKeys"] as const,
   },
-  taskTemplates: {
-    all: ["taskTemplates"] as const,
-    global: ["taskTemplates", "global"] as const,
+  sessionTemplates: {
+    all: ["sessionTemplates"] as const,
+    global: ["sessionTemplates", "global"] as const,
     workspace: (workspaceId: string) =>
-      ["taskTemplates", "workspace", workspaceId] as const,
+      ["sessionTemplates", "workspace", workspaceId] as const,
   },
 };
 
@@ -225,25 +227,28 @@ export function useDeleteSandbox() {
   });
 }
 
-export const globalTaskTemplatesQuery = queryOptions({
-  queryKey: queryKeys.taskTemplates.global,
-  queryFn: async () => unwrap(await api.api["task-templates"].global.get()),
+export const globalSessionTemplatesQuery = queryOptions({
+  queryKey: queryKeys.sessionTemplates.global,
+  queryFn: async () => unwrap(await api.api["session-templates"].global.get()),
 });
 
-export const workspaceTaskTemplatesQuery = (workspaceId: string) =>
+export const workspaceSessionTemplatesQuery = (workspaceId: string) =>
   queryOptions({
-    queryKey: queryKeys.taskTemplates.workspace(workspaceId),
+    queryKey: queryKeys.sessionTemplates.workspace(workspaceId),
     queryFn: async () =>
-      unwrap(await api.api["task-templates"].workspace({ workspaceId }).get()),
+      unwrap(
+        await api.api["session-templates"].workspace({ workspaceId }).get(),
+      ),
     enabled: !!workspaceId,
   });
 
-export function useUpdateGlobalTaskTemplates() {
+export function useUpdateGlobalSessionTemplates() {
   return useMutation({
     mutationFn: async (
       templates: Array<{
         id: string;
         name: string;
+        category: "primary" | "secondary";
         description?: string;
         promptTemplate?: string;
         variants: Array<{
@@ -254,9 +259,11 @@ export function useUpdateGlobalTaskTemplates() {
         }>;
         defaultVariantIndex?: number;
       }>,
-    ) => unwrap(await api.api["task-templates"].global.put({ templates })),
+    ) => unwrap(await api.api["session-templates"].global.put({ templates })),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sessionTemplates.all,
+      });
     },
   });
 }
@@ -681,6 +688,19 @@ export const taskDetailQuery = (id: string) =>
     refetchInterval: 5000,
   });
 
+export const taskInteractionStateQuery = (id: string, enabled = true) =>
+  queryOptions({
+    queryKey: queryKeys.tasks.interactionState(id),
+    queryFn: async () =>
+      unwrap(await api.api.tasks({ id })["interaction-state"].get()),
+    refetchInterval: 10000,
+    enabled,
+  });
+
+export function useTaskInteractionState(taskId: string, enabled = true) {
+  return useQuery(taskInteractionStateQuery(taskId, enabled));
+}
+
 export function useCreateTask() {
   return useMutation({
     mutationFn: async (data: {
@@ -734,10 +754,16 @@ export function useStartTask() {
   });
 }
 
-export function useMoveTaskToReview() {
+export function useAddTaskSessions() {
   return useMutation({
-    mutationFn: async (id: string) =>
-      unwrap(await api.api.tasks({ id }).review.post()),
+    mutationFn: async ({
+      id,
+      sessionTemplateIds,
+    }: {
+      id: string;
+      sessionTemplateIds: string[];
+    }) =>
+      unwrap(await api.api.tasks({ id }).sessions.post({ sessionTemplateIds })),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
     },

@@ -1,6 +1,6 @@
 import type { Task } from "@frak-sandbox/manager/types";
-import type { TaskTemplate } from "@frak-sandbox/shared/constants";
-import { DEFAULT_TASK_TEMPLATES } from "@frak-sandbox/shared/constants";
+import type { SessionTemplate } from "@frak-sandbox/shared/constants";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -16,7 +16,7 @@ import {
   taskListQuery,
   useCreateTask,
   workspaceListQuery,
-  workspaceTaskTemplatesQuery,
+  workspaceSessionTemplatesQuery,
 } from "@/api/queries";
 import { useStartSession } from "@/hooks/use-start-session";
 import { Badge } from "./ui/badge";
@@ -43,10 +43,10 @@ export function StartWorkingCard() {
   );
 
   const { data: templateData } = useQuery({
-    ...workspaceTaskTemplatesQuery(selectedWorkspaceId),
+    ...workspaceSessionTemplatesQuery(selectedWorkspaceId),
     enabled: !!selectedWorkspaceId,
   });
-  const templates = templateData?.templates ?? DEFAULT_TASK_TEMPLATES;
+  const templates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
 
   return (
     <Card>
@@ -126,7 +126,7 @@ export function StartWorkingCard() {
 type ChatTabProps = {
   workspace: Workspace | undefined;
   workspaceId: string;
-  templates: TaskTemplate[];
+  templates: SessionTemplate[];
 };
 
 function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
@@ -291,7 +291,7 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
 type TaskTabProps = {
   workspaceId: string;
   hasWorkspace: boolean;
-  templates: TaskTemplate[];
+  templates: SessionTemplate[];
 };
 
 function TaskTab({ workspaceId, hasWorkspace, templates }: TaskTabProps) {
@@ -498,10 +498,10 @@ function DraftTaskItem({
   templates,
 }: {
   task: Task;
-  templates: TaskTemplate[];
+  templates: SessionTemplate[];
 }) {
-  const template = templates.find((t) => t.id === task.data.templateId);
-  const variant = template?.variants[task.data.variantIndex ?? 0];
+  const template = templates.find((t) => t.id === task.data.workflowId);
+  const variant = template?.variants[0];
 
   return (
     <a
@@ -511,7 +511,7 @@ function DraftTaskItem({
       <div className="h-2 w-2 rounded-full bg-muted-foreground/30" />
       <span className="text-sm truncate flex-1">{task.title}</span>
       <Badge variant="outline" className="text-xs shrink-0">
-        {variant?.name ?? "Low Effort"}
+        {variant?.name ?? template?.name ?? "Default"}
       </Badge>
     </a>
   );

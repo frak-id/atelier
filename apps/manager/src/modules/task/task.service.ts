@@ -2,7 +2,7 @@ import { nanoid } from "nanoid";
 import type {
   CreateTaskBody,
   Task,
-  TaskStatus,
+  TaskSession,
   UpdateTaskBody,
 } from "../../schemas/index.ts";
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
@@ -12,7 +12,6 @@ import type { TaskRepository } from "./task.repository.ts";
 const log = createChildLogger("task-service");
 
 const MAX_ACTIVE_TASKS = 3;
-const ACTIVE_STATUSES: TaskStatus[] = ["in_progress", "pending_review"];
 
 export class TaskService {
   constructor(private readonly repository: TaskRepository) {}
@@ -47,11 +46,11 @@ export class TaskService {
       data: {
         description: body.description,
         context: body.context,
-        templateId: body.templateId,
-        variantIndex: body.variantIndex,
+        workflowId: body.workflowId,
         order,
         baseBranch: body.baseBranch,
         targetRepoIndices: body.targetRepoIndices,
+        sessions: [],
       },
       createdAt: now,
       updatedAt: now,
@@ -72,8 +71,7 @@ export class TaskService {
     if (
       body.description !== undefined ||
       body.context !== undefined ||
-      body.templateId !== undefined ||
-      body.variantIndex !== undefined
+      body.workflowId !== undefined
     ) {
       updates.data = {
         ...task.data,
@@ -81,10 +79,7 @@ export class TaskService {
           description: body.description,
         }),
         ...(body.context !== undefined && { context: body.context }),
-        ...(body.templateId !== undefined && { templateId: body.templateId }),
-        ...(body.variantIndex !== undefined && {
-          variantIndex: body.variantIndex,
-        }),
+        ...(body.workflowId !== undefined && { workflowId: body.workflowId }),
       };
     }
 
@@ -102,82 +97,121 @@ export class TaskService {
       throw new ValidationError("Task must have a title and description");
     }
 
-    const activeCount = this.repository.countByStatuses(
-      task.workspaceId,
-      ACTIVE_STATUSES,
-    );
+    const activeCount = this.repository.countByStatuses(task.workspaceId, [
+      "active",
+    ]);
     if (activeCount >= MAX_ACTIVE_TASKS) {
       throw new ValidationError(
-        `Maximum ${MAX_ACTIVE_TASKS} active tasks (in progress + pending review). Complete or cancel existing tasks first.`,
+        `Maximum ${MAX_ACTIVE_TASKS} active tasks. Complete or cancel existing tasks first.`,
       );
     }
 
-    const order = this.repository.getNextOrder(task.workspaceId, "queue");
+    const order = this.repository.getNextOrder(task.workspaceId, "active");
     const updated = this.repository.update(id, {
-      status: "queue",
-      data: { ...task.data, order },
+      status: "active",
+      data: { ...task.data, order, startedAt: new Date().toISOString() },
     });
 
-    log.info({ taskId: id, title: task.title }, "Task queued for execution");
+    log.info({ taskId: id, title: task.title }, "Task started");
 
     return updated;
   }
 
-  moveToInProgress(
-    id: string,
-    sandboxId: string,
-    sessionId: string,
-    branchName?: string,
-  ): Task {
+  attachSandbox(id: string, sandboxId: string, branchName?: string): Task {
     const task = this.getByIdOrThrow(id);
 
-    if (task.status !== "queue") {
-      throw new ValidationError("Task must be in queue to move to in_progress");
+    if (task.status !== "active") {
+      throw new ValidationError("Task must be active to attach sandbox");
     }
 
-    const order = this.repository.getNextOrder(task.workspaceId, "in_progress");
     return this.repository.update(id, {
-      status: "in_progress",
       data: {
         ...task.data,
         sandboxId,
-        opencodeSessionId: sessionId,
-        startedAt: new Date().toISOString(),
-        order,
         ...(branchName && { branchName }),
       },
     });
   }
 
-  moveToReview(id: string): Task {
+  addSession(
+    id: string,
+    sessionId: string,
+    sessionTemplateId: string,
+  ): { task: Task; session: TaskSession } {
     const task = this.getByIdOrThrow(id);
 
-    if (task.status !== "in_progress") {
-      throw new ValidationError("Can only move in_progress tasks to review");
+    if (task.status !== "active") {
+      throw new ValidationError("Task must be active to add sessions");
     }
 
-    const order = this.repository.getNextOrder(
-      task.workspaceId,
-      "pending_review",
-    );
-    return this.repository.update(id, {
-      status: "pending_review",
-      data: { ...task.data, order },
+    const sessions = task.data.sessions ?? [];
+    const nextOrder = sessions.length;
+
+    const newSession: TaskSession = {
+      id: sessionId,
+      templateId: sessionTemplateId,
+      order: nextOrder,
+      status: "running",
+      startedAt: new Date().toISOString(),
+    };
+
+    const updatedTask = this.repository.update(id, {
+      data: {
+        ...task.data,
+        sessions: [...sessions, newSession],
+      },
     });
+
+    log.info(
+      { taskId: id, sessionId, templateId: sessionTemplateId },
+      "Session added to task",
+    );
+
+    return { task: updatedTask, session: newSession };
+  }
+
+  updateSessionStatus(
+    id: string,
+    sessionId: string,
+    status: TaskSession["status"],
+  ): Task {
+    const task = this.getByIdOrThrow(id);
+    const sessions = task.data.sessions ?? [];
+    const sessionIndex = sessions.findIndex((s) => s.id === sessionId);
+
+    if (sessionIndex === -1) {
+      throw new NotFoundError("Session", sessionId);
+    }
+
+    const updatedSessions = [...sessions];
+    updatedSessions[sessionIndex] = {
+      ...sessions[sessionIndex]!,
+      status,
+      ...(status === "completed" && { completedAt: new Date().toISOString() }),
+    };
+
+    return this.repository.update(id, {
+      data: { ...task.data, sessions: updatedSessions },
+    });
+  }
+
+  getActiveSessionIds(id: string): string[] {
+    const task = this.getByIdOrThrow(id);
+    return (task.data.sessions ?? [])
+      .filter((s) => s.status === "running")
+      .map((s) => s.id);
   }
 
   complete(id: string): Task {
     const task = this.getByIdOrThrow(id);
 
-    if (task.status !== "pending_review") {
-      throw new ValidationError(
-        "Can only complete tasks in pending_review status",
-      );
+    if (task.status !== "active") {
+      throw new ValidationError("Can only complete active tasks");
     }
 
-    const order = this.repository.getNextOrder(task.workspaceId, "completed");
+    const order = this.repository.getNextOrder(task.workspaceId, "done");
     return this.repository.update(id, {
-      status: "completed",
+      status: "done",
       data: {
         ...task.data,
         completedAt: new Date().toISOString(),
@@ -202,11 +236,11 @@ export class TaskService {
       data: {
         description: task.data.description,
         context: task.data.context,
-        templateId: task.data.templateId,
-        variantIndex: task.data.variantIndex,
+        workflowId: task.data.workflowId,
         order,
         baseBranch: task.data.baseBranch,
         targetRepoIndices: task.data.targetRepoIndices,
+        sessions: [],
       },
     });
   }

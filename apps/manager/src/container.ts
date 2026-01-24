@@ -12,9 +12,9 @@ import {
   SharedAuthRepository,
 } from "./modules/internal/index.ts";
 import { SandboxRepository, SandboxService } from "./modules/sandbox/index.ts";
+import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
-import { TaskTemplateService } from "./modules/task-template/index.ts";
 import {
   WorkspaceRepository,
   WorkspaceService,
@@ -58,7 +58,7 @@ const internalService = new InternalService(
 
 const agentClient = new AgentClient();
 
-const taskTemplateService = new TaskTemplateService(
+const sessionTemplateService = new SessionTemplateService(
   configFileService,
   workspaceService,
   sandboxService,
@@ -100,7 +100,7 @@ const taskSpawner = new TaskSpawner({
   sandboxService,
   taskService,
   workspaceService,
-  taskTemplateService,
+  sessionTemplateService,
   agentClient,
   sessionMonitor,
 });
@@ -126,6 +126,6 @@ export {
   sshKeyService,
   taskService,
   taskSpawner,
-  taskTemplateService,
+  sessionTemplateService,
   workspaceService,
 };

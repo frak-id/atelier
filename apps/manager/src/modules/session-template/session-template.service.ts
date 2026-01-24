@@ -1,69 +1,85 @@
 import {
-  DEFAULT_TASK_TEMPLATES,
-  TASK_TEMPLATES_CONFIG_PATH,
+  DEFAULT_SESSION_TEMPLATES,
+  SESSION_TEMPLATES_CONFIG_PATH,
 } from "@frak-sandbox/shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type {
-  TaskTemplate,
-  TaskTemplates,
-  TaskTemplateVariables,
+  SessionTemplate,
+  SessionTemplates,
+  SessionTemplateVariables,
 } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/index.ts";
 import type { SandboxService } from "../sandbox/index.ts";
 import type { WorkspaceService } from "../workspace/index.ts";
 
-const log = createChildLogger("task-template-service");
+const log = createChildLogger("session-template-service");
 
-export class TaskTemplateService {
+export interface ResolvedSessionConfig {
+  model: { providerID: string; modelID: string };
+  variant?: string;
+  agent?: string;
+  promptTemplate?: string;
+}
+
+export class SessionTemplateService {
   constructor(
     private readonly configFileService: ConfigFileService,
     private readonly workspaceService: WorkspaceService,
     private readonly sandboxService: SandboxService,
   ) {}
 
-  getGlobalTemplates(): { templates: TaskTemplates; isDefault: boolean } {
+  getGlobalTemplates(): { templates: SessionTemplates; isDefault: boolean } {
     const configFile = this.configFileService.getByPath(
-      TASK_TEMPLATES_CONFIG_PATH,
+      SESSION_TEMPLATES_CONFIG_PATH,
       "global",
     );
 
     if (!configFile) {
-      return { templates: DEFAULT_TASK_TEMPLATES, isDefault: true };
+      return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
     }
 
     try {
-      const templates = JSON.parse(configFile.content) as TaskTemplates;
-      if (templates.length > 0) {
+      const parsed = JSON.parse(configFile.content) as SessionTemplates;
+      if (parsed.length > 0) {
+        const templates = this.migrateTemplates(parsed);
         return { templates, isDefault: false };
       }
-      return { templates: DEFAULT_TASK_TEMPLATES, isDefault: true };
+      return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
     } catch (error) {
       log.warn(
         { error },
         "Failed to parse global task templates, using defaults",
       );
-      return { templates: DEFAULT_TASK_TEMPLATES, isDefault: true };
+      return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
     }
   }
 
-  setGlobalTemplates(templates: TaskTemplates): void {
+  private migrateTemplates(templates: SessionTemplates): SessionTemplates {
+    return templates.map((t) => ({
+      ...t,
+      category: t.category ?? "primary",
+    }));
+  }
+
+  setGlobalTemplates(templates: SessionTemplates): void {
     const content = JSON.stringify(templates, null, 2);
     this.configFileService.extractFromSandbox(
       undefined,
-      TASK_TEMPLATES_CONFIG_PATH,
+      SESSION_TEMPLATES_CONFIG_PATH,
       content,
       "json",
     );
   }
 
-  getWorkspaceTemplates(workspaceId: string): TaskTemplates | undefined {
+  getWorkspaceTemplates(workspaceId: string): SessionTemplates | undefined {
     const workspace = this.workspaceService.getById(workspaceId);
-    return workspace?.config.taskTemplates;
+    const templates = workspace?.config.sessionTemplates;
+    return templates ? this.migrateTemplates(templates) : undefined;
   }
 
   getMergedTemplates(workspaceId?: string): {
-    templates: TaskTemplates;
+    templates: SessionTemplates;
     source: "default" | "global" | "workspace" | "merged";
   } {
     const { templates: globalTemplates, isDefault } = this.getGlobalTemplates();
@@ -90,19 +106,55 @@ export class TaskTemplateService {
   getTemplateById(
     templateId: string,
     workspaceId?: string,
-  ): TaskTemplate | undefined {
+  ): SessionTemplate | undefined {
     const { templates } = this.getMergedTemplates(workspaceId);
     return templates.find((t) => t.id === templateId);
   }
 
-  getDefaultTemplate(workspaceId?: string): TaskTemplate {
+  getDefaultTemplate(workspaceId?: string): SessionTemplate {
     const { templates } = this.getMergedTemplates(workspaceId);
-    return templates[0] ?? DEFAULT_TASK_TEMPLATES[0]!;
+    return templates[0] ?? DEFAULT_SESSION_TEMPLATES[0]!;
+  }
+
+  getTemplatesByCategory(
+    category: "primary" | "secondary",
+    workspaceId?: string,
+  ): SessionTemplate[] {
+    const { templates } = this.getMergedTemplates(workspaceId);
+    return templates.filter((t) => t.category === category);
+  }
+
+  resolveSessionConfig(
+    templateId: string,
+    workspaceId?: string,
+  ): ResolvedSessionConfig | undefined {
+    const template = this.getTemplateById(templateId, workspaceId);
+    if (!template) {
+      const defaultTemplate = DEFAULT_SESSION_TEMPLATES[0];
+      if (!defaultTemplate?.variants?.[0]) return undefined;
+      return {
+        model: defaultTemplate.variants[0].model,
+        variant: defaultTemplate.variants[0].variant,
+        agent: defaultTemplate.variants[0].agent,
+        promptTemplate: defaultTemplate.promptTemplate,
+      };
+    }
+
+    const variantIndex = template.defaultVariantIndex ?? 0;
+    const variant = template.variants[variantIndex];
+    if (!variant) return undefined;
+
+    return {
+      model: variant.model,
+      variant: variant.variant,
+      agent: variant.agent,
+      promptTemplate: template.promptTemplate,
+    };
   }
 
   renderPromptTemplate(
-    template: TaskTemplate,
-    variables: TaskTemplateVariables,
+    template: SessionTemplate,
+    variables: SessionTemplateVariables,
   ): string {
     if (!template.promptTemplate) {
       return this.buildDefaultPrompt(variables);
@@ -121,7 +173,7 @@ export class TaskTemplateService {
     });
   }
 
-  private buildDefaultPrompt(variables: TaskTemplateVariables): string {
+  private buildDefaultPrompt(variables: SessionTemplateVariables): string {
     let prompt = `# Task: ${variables.task.title}\n\n`;
 
     if (variables.task.branch) {
@@ -156,10 +208,10 @@ export class TaskTemplateService {
   }
 
   private deepMergeTemplates(
-    base: TaskTemplates,
-    override: TaskTemplates,
-  ): TaskTemplates {
-    const result = new Map<string, TaskTemplate>();
+    base: SessionTemplates,
+    override: SessionTemplates,
+  ): SessionTemplates {
+    const result = new Map<string, SessionTemplate>();
 
     for (const template of base) {
       result.set(template.id, { ...template });

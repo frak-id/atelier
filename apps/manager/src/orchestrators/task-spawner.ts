@@ -1,14 +1,14 @@
-import { DEFAULT_TASK_TEMPLATES } from "@frak-sandbox/shared/constants";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
+import type { SessionTemplateService } from "../modules/session-template/index.ts";
 import type { TaskService } from "../modules/task/index.ts";
-import type { TaskTemplateService } from "../modules/task-template/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   RepoConfig,
+  SessionTemplateVariables,
   Task,
-  TaskTemplateVariables,
   Workspace,
 } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -27,9 +27,16 @@ interface TaskSpawnerDependencies {
   sandboxService: SandboxService;
   taskService: TaskService;
   workspaceService: WorkspaceService;
-  taskTemplateService: TaskTemplateService;
+  sessionTemplateService: SessionTemplateService;
   agentClient: AgentClient;
   sessionMonitor: SessionMonitor;
+}
+
+interface SessionConfig {
+  model?: { providerID: string; modelID: string };
+  variant?: string;
+  agent?: string;
+  promptTemplate?: string;
 }
 
 export class TaskSpawner {
@@ -41,11 +48,16 @@ export class TaskSpawner {
       throw new Error(`Task '${taskId}' not found`);
     }
 
-    if (task.status !== "queue") {
+    if (task.status !== "active") {
       log.warn(
         { taskId, status: task.status },
-        "Task not in queue status, skipping",
+        "Task not in active status, skipping",
       );
+      return;
+    }
+
+    if (task.data.sandboxId) {
+      log.warn({ taskId }, "Task already has sandbox, skipping initial spawn");
       return;
     }
 
@@ -71,7 +83,6 @@ export class TaskSpawner {
 
       sandboxId = sandbox.id;
       const ipAddress = sandbox.runtime.ipAddress;
-      const opencodeUrl = `http://${ipAddress}:${OPENCODE_PORT}`;
 
       log.info(
         { taskId, sandboxId, ip: ipAddress },
@@ -112,55 +123,17 @@ export class TaskSpawner {
         }
       }
 
-      const sessionResult = await this.createSession(
-        opencodeUrl,
-        task.title,
+      this.deps.taskService.attachSandbox(taskId, sandbox.id, branchName);
+
+      const sessionTemplateId = this.getFirstSessionTemplateId(task, workspace);
+      await this.spawnSession(
+        taskId,
+        sessionTemplateId,
+        ipAddress,
         opencodeDirectory,
       );
-      if ("error" in sessionResult) {
-        throw new Error(
-          `Failed to create OpenCode session: ${sessionResult.error}`,
-        );
-      }
 
-      const templateConfig = this.resolveTemplateConfig(task, workspace);
-      const prompt = this.buildPrompt(
-        task,
-        workspace,
-        targetRepos,
-        branchName,
-        sandboxId,
-        ipAddress,
-        templateConfig.promptTemplate,
-      );
-
-      const promptResult = await this.sendPrompt(
-        opencodeUrl,
-        sessionResult.sessionId,
-        prompt,
-        templateConfig,
-      );
-      if ("error" in promptResult) {
-        throw new Error(`Failed to send prompt: ${promptResult.error}`);
-      }
-
-      this.deps.taskService.moveToInProgress(
-        taskId,
-        sandbox.id,
-        sessionResult.sessionId,
-        branchName,
-      );
-
-      log.info(
-        { taskId, sandboxId, sessionId: sessionResult.sessionId },
-        "Task moved to in_progress",
-      );
-
-      this.deps.sessionMonitor.startMonitoring(
-        taskId,
-        sessionResult.sessionId,
-        ipAddress,
-      );
+      log.info({ taskId, sandboxId }, "Task initial session started");
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -194,46 +167,200 @@ export class TaskSpawner {
     });
   }
 
-  private resolveTemplateConfig(
-    task: Task,
-    workspace: Workspace,
-  ): {
-    model?: { providerID: string; modelID: string };
-    variant?: string;
-    agent?: string;
-    promptTemplate?: string;
-  } {
-    const templateId = task.data.templateId ?? "implement";
+  async spawnSessions(
+    taskId: string,
+    sessionTemplateIds: string[],
+  ): Promise<void> {
+    const task = this.deps.taskService.getById(taskId);
+    if (!task) {
+      throw new Error(`Task '${taskId}' not found`);
+    }
 
-    const template = this.deps.taskTemplateService.getTemplateById(
-      templateId,
+    if (task.status !== "active") {
+      throw new Error("Task must be active to spawn sessions");
+    }
+
+    if (!task.data.sandboxId) {
+      throw new Error("Task has no sandbox - start task first");
+    }
+
+    const sandbox = this.deps.sandboxService.getById(task.data.sandboxId);
+    if (!sandbox?.runtime?.ipAddress) {
+      throw new Error("Sandbox not running");
+    }
+
+    const workspace = this.deps.workspaceService.getById(task.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace '${task.workspaceId}' not found`);
+    }
+
+    const targetRepos = this.getTargetRepos(task, workspace);
+    let opencodeDirectory: string | undefined;
+    if (targetRepos.length === 1 && targetRepos[0]) {
+      const repo = targetRepos[0];
+      const clonePath = repo.clonePath.startsWith("/")
+        ? repo.clonePath
+        : `/${repo.clonePath}`;
+      opencodeDirectory = `${WORKSPACE_DIR}${clonePath}`;
+    }
+
+    const results = await Promise.allSettled(
+      sessionTemplateIds.map((templateId) =>
+        this.spawnSession(
+          taskId,
+          templateId,
+          sandbox.runtime!.ipAddress,
+          opencodeDirectory,
+        ),
+      ),
+    );
+
+    const failures = results.filter(
+      (r): r is PromiseRejectedResult => r.status === "rejected",
+    );
+    if (failures.length > 0) {
+      log.error(
+        { taskId, failures: failures.map((f) => f.reason) },
+        "Some sessions failed to spawn",
+      );
+    }
+
+    log.info(
+      {
+        taskId,
+        spawned: results.filter((r) => r.status === "fulfilled").length,
+        failed: failures.length,
+      },
+      "Sessions spawn complete",
+    );
+  }
+
+  spawnSessionsInBackground(
+    taskId: string,
+    sessionTemplateIds: string[],
+  ): void {
+    setImmediate(() => {
+      this.spawnSessions(taskId, sessionTemplateIds).catch((error) => {
+        log.error(
+          { taskId, sessionTemplateIds, error },
+          "Background sessions spawn failed",
+        );
+      });
+    });
+  }
+
+  private async spawnSession(
+    taskId: string,
+    sessionTemplateId: string,
+    ipAddress: string,
+    opencodeDirectory?: string,
+  ): Promise<void> {
+    const task = this.deps.taskService.getById(taskId);
+    if (!task) {
+      throw new Error(`Task '${taskId}' not found`);
+    }
+
+    const workspace = this.deps.workspaceService.getById(task.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace '${task.workspaceId}' not found`);
+    }
+
+    const opencodeUrl = `http://${ipAddress}:${OPENCODE_PORT}`;
+    const sessionConfig = this.resolveSessionConfig(
+      sessionTemplateId,
       workspace.id,
     );
 
-    if (!template) {
-      const defaultTemplate = DEFAULT_TASK_TEMPLATES[0];
-      if (!defaultTemplate) {
-        return {};
-      }
-      const effectiveVariantIndex =
-        task.data.variantIndex ?? defaultTemplate.defaultVariantIndex ?? 0;
-      const variant =
-        defaultTemplate.variants[effectiveVariantIndex] ??
-        defaultTemplate.variants[0];
-      return variant
-        ? {
-            model: variant.model,
-            variant: variant.variant,
-            agent: variant.agent,
-            promptTemplate: defaultTemplate.promptTemplate,
-          }
-        : {};
+    const sessionResult = await this.createOpencodeSession(
+      opencodeUrl,
+      `${task.title} - ${sessionTemplateId}`,
+      opencodeDirectory,
+    );
+
+    if ("error" in sessionResult) {
+      throw new Error(`Failed to create session: ${sessionResult.error}`);
     }
 
-    const effectiveVariantIndex =
-      task.data.variantIndex ?? template.defaultVariantIndex ?? 0;
+    const { session } = this.deps.taskService.addSession(
+      taskId,
+      sessionResult.sessionId,
+      sessionTemplateId,
+    );
+
+    const prompt = this.buildPrompt(
+      task,
+      workspace,
+      this.getTargetRepos(task, workspace),
+      task.data.branchName,
+      task.data.sandboxId!,
+      ipAddress,
+      sessionConfig.promptTemplate,
+    );
+
+    const promptResult = await this.sendPrompt(
+      opencodeUrl,
+      session.id,
+      prompt,
+      sessionConfig,
+    );
+
+    if ("error" in promptResult) {
+      this.deps.taskService.updateSessionStatus(
+        taskId,
+        session.id,
+        "completed",
+      );
+      throw new Error(`Failed to send prompt: ${promptResult.error}`);
+    }
+
+    this.deps.sessionMonitor.startMonitoring(taskId, session.id, ipAddress);
+
+    log.info(
+      { taskId, sessionId: session.id, templateId: sessionTemplateId },
+      "Session spawned",
+    );
+  }
+
+  private getFirstSessionTemplateId(task: Task, workspace: Workspace): string {
+    const workflowId = task.data.workflowId ?? "implement";
+    const workflow = this.deps.sessionTemplateService.getTemplateById(
+      workflowId,
+      workspace.id,
+    );
+
+    if (workflow?.variants?.[0]) {
+      return workflowId;
+    }
+
+    return "implement";
+  }
+
+  private resolveSessionConfig(
+    sessionTemplateId: string,
+    workspaceId: string,
+  ): SessionConfig {
+    const template = this.deps.sessionTemplateService.getTemplateById(
+      sessionTemplateId,
+      workspaceId,
+    );
+
+    if (!template) {
+      const defaultTemplate = DEFAULT_SESSION_TEMPLATES[0];
+      if (!defaultTemplate?.variants?.[0]) {
+        return {};
+      }
+      const variant = defaultTemplate.variants[0];
+      return {
+        model: variant.model,
+        variant: variant.variant,
+        agent: variant.agent,
+        promptTemplate: defaultTemplate.promptTemplate,
+      };
+    }
+
     const variant =
-      template.variants[effectiveVariantIndex] ?? template.variants[0];
+      template.variants[template.defaultVariantIndex ?? 0] ??
+      template.variants[0];
 
     return variant
       ? {
@@ -325,7 +452,7 @@ export class TaskSpawner {
     promptTemplate?: string,
   ): string {
     if (promptTemplate) {
-      const variables: TaskTemplateVariables = {
+      const variables: SessionTemplateVariables = {
         task: {
           title: task.title,
           description: task.data.description,
@@ -346,8 +473,8 @@ export class TaskSpawner {
         },
       };
 
-      return this.deps.taskTemplateService.renderPromptTemplate(
-        { id: "", name: "", variants: [], promptTemplate },
+      return this.deps.sessionTemplateService.renderPromptTemplate(
+        { id: "", name: "", category: "primary", variants: [], promptTemplate },
         variables,
       );
     }
@@ -395,7 +522,7 @@ export class TaskSpawner {
     throw new Error("OpenCode server did not become healthy within timeout");
   }
 
-  private async createSession(
+  private async createOpencodeSession(
     baseUrl: string,
     title: string,
     directory?: string,
@@ -403,7 +530,7 @@ export class TaskSpawner {
     try {
       const client = createOpencodeClient({ baseUrl });
       const { data, error } = await client.session.create({
-        title: `Task: ${title}`,
+        title,
         ...(directory && { directory }),
       });
       if (error || !data?.id) {
@@ -419,11 +546,7 @@ export class TaskSpawner {
     baseUrl: string,
     sessionId: string,
     message: string,
-    config?: {
-      model?: { providerID: string; modelID: string };
-      variant?: string;
-      agent?: string;
-    },
+    config?: SessionConfig,
   ): Promise<{ success: true } | { error: string }> {
     try {
       const client = createOpencodeClient({ baseUrl });

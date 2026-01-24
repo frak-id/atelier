@@ -128,9 +128,9 @@ export class SessionMonitor {
       if (idleEvent.properties.sessionID === sessionId) {
         log.info(
           { taskId, sessionId },
-          "Session became idle, moving to review",
+          "Session became idle, marking as completed",
         );
-        this.transitionToReview(taskId);
+        this.handleSessionComplete(taskId, sessionId);
       }
       return;
     }
@@ -147,41 +147,41 @@ export class SessionMonitor {
         if (status.type === "idle") {
           log.info(
             { taskId, sessionId },
-            "Session status is idle, moving to review",
+            "Session status is idle, marking as completed",
           );
-          this.transitionToReview(taskId);
+          this.handleSessionComplete(taskId, sessionId);
         }
       }
     }
   }
 
-  private transitionToReview(taskId: string): void {
+  private handleSessionComplete(taskId: string, sessionId: string): void {
     try {
       const task = this.taskService.getById(taskId);
       if (!task) {
-        log.warn({ taskId }, "Task not found for transition");
+        log.warn({ taskId }, "Task not found for session completion");
         return;
       }
 
-      if (task.status !== "in_progress") {
+      if (task.status !== "active") {
         log.debug(
           { taskId, status: task.status },
-          "Task not in_progress, skipping transition",
+          "Task not active, skipping session completion",
         );
         return;
       }
 
-      this.taskService.moveToReview(taskId);
+      this.taskService.updateSessionStatus(taskId, sessionId, "completed");
       log.info(
-        { taskId, title: task.title },
-        "Task auto-transitioned to pending_review",
+        { taskId, sessionId, title: task.title },
+        "Session marked as completed",
       );
 
-      this.stopMonitoringTask(taskId);
+      this.stopMonitoring(taskId, sessionId);
     } catch (error) {
       log.error(
-        { taskId, error: String(error) },
-        "Failed to transition task to review",
+        { taskId, sessionId, error: String(error) },
+        "Failed to complete session",
       );
     }
   }

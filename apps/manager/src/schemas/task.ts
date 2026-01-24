@@ -1,23 +1,30 @@
 import type { Static } from "elysia";
 import { t } from "elysia";
 
-export const TaskStatusValues = [
-  "draft",
-  "queue",
-  "in_progress",
-  "pending_review",
-  "completed",
-] as const;
+export const TaskStatusValues = ["draft", "active", "done"] as const;
 
 export type TaskStatus = (typeof TaskStatusValues)[number];
+
+export const TaskSessionSchema = t.Object({
+  id: t.String(),
+  templateId: t.String(),
+  order: t.Number(),
+  status: t.Union([
+    t.Literal("pending"),
+    t.Literal("running"),
+    t.Literal("completed"),
+  ]),
+  startedAt: t.Optional(t.String()),
+  completedAt: t.Optional(t.String()),
+});
+export type TaskSession = Static<typeof TaskSessionSchema>;
 
 export const TaskDataSchema = t.Object({
   description: t.String(),
   context: t.Optional(t.String()),
-  templateId: t.Optional(t.String()),
-  variantIndex: t.Optional(t.Number({ minimum: 0 })),
+  workflowId: t.Optional(t.String()),
   sandboxId: t.Optional(t.String()),
-  opencodeSessionId: t.Optional(t.String()),
+  sessions: t.Optional(t.Array(TaskSessionSchema)),
   createdBy: t.Optional(t.String()),
   startedAt: t.Optional(t.String()),
   completedAt: t.Optional(t.String()),
@@ -44,8 +51,7 @@ export const CreateTaskBodySchema = t.Object({
   title: t.String({ minLength: 1, maxLength: 200 }),
   description: t.String({ minLength: 1 }),
   context: t.Optional(t.String()),
-  templateId: t.Optional(t.String()),
-  variantIndex: t.Optional(t.Number({ minimum: 0 })),
+  workflowId: t.Optional(t.String()),
   baseBranch: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
 });
@@ -55,8 +61,7 @@ export const UpdateTaskBodySchema = t.Object({
   title: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
   description: t.Optional(t.String({ minLength: 1 })),
   context: t.Optional(t.String()),
-  templateId: t.Optional(t.String()),
-  variantIndex: t.Optional(t.Number({ minimum: 0 })),
+  workflowId: t.Optional(t.String()),
 });
 export type UpdateTaskBody = Static<typeof UpdateTaskBodySchema>;
 
@@ -65,6 +70,16 @@ export const ReorderTaskBodySchema = t.Object({
 });
 export type ReorderTaskBody = Static<typeof ReorderTaskBodySchema>;
 
+export const AddSessionBodySchema = t.Object({
+  sessionTemplateId: t.String({ minLength: 1 }),
+});
+export type AddSessionBody = Static<typeof AddSessionBodySchema>;
+
+export const AddSessionsBodySchema = t.Object({
+  sessionTemplateIds: t.Array(t.String({ minLength: 1 }), { minItems: 1 }),
+});
+export type AddSessionsBody = Static<typeof AddSessionsBodySchema>;
+
 export const DeleteTaskQuerySchema = t.Object({
   keepSandbox: t.Optional(t.String()),
 });
@@ -72,3 +87,42 @@ export type DeleteTaskQuery = Static<typeof DeleteTaskQuerySchema>;
 
 export const TaskListResponseSchema = t.Array(TaskSchema);
 export type TaskListResponse = Static<typeof TaskListResponseSchema>;
+
+// Interaction state schema - computed on-demand from OpenCode
+export const PendingPermissionSchema = t.Object({
+  id: t.String(),
+  sessionId: t.String(),
+  permission: t.String(),
+  patterns: t.Array(t.String()),
+  metadata: t.Optional(t.Record(t.String(), t.Unknown())),
+});
+export type PendingPermission = Static<typeof PendingPermissionSchema>;
+
+export const PendingQuestionSchema = t.Object({
+  id: t.String(),
+  sessionId: t.String(),
+  question: t.String(),
+  options: t.Optional(t.Array(t.String())),
+});
+export type PendingQuestion = Static<typeof PendingQuestionSchema>;
+
+export const SessionInteractionSchema = t.Object({
+  sessionId: t.String(),
+  status: t.Union([
+    t.Literal("idle"),
+    t.Literal("busy"),
+    t.Literal("waiting"),
+    t.Literal("unknown"),
+  ]),
+  pendingPermissions: t.Array(PendingPermissionSchema),
+  pendingQuestions: t.Array(PendingQuestionSchema),
+});
+export type SessionInteraction = Static<typeof SessionInteractionSchema>;
+
+export const TaskInteractionStateSchema = t.Object({
+  taskId: t.String(),
+  available: t.Boolean(),
+  needsAttention: t.Boolean(),
+  sessions: t.Array(SessionInteractionSchema),
+});
+export type TaskInteractionState = Static<typeof TaskInteractionStateSchema>;

@@ -12,27 +12,15 @@ import type { Task } from "@frak-sandbox/manager/types";
 import { useMemo, useState } from "react";
 import {
   useCompleteTask,
-  useMoveTaskToReview,
   useReorderTask,
   useResetTask,
   useStartTask,
 } from "@/api/queries";
 import { KanbanColumn } from "./kanban-column";
 
-type TaskStatus =
-  | "draft"
-  | "queue"
-  | "in_progress"
-  | "pending_review"
-  | "completed";
+type TaskStatus = "draft" | "active" | "done";
 
-const STATUSES: TaskStatus[] = [
-  "draft",
-  "queue",
-  "in_progress",
-  "pending_review",
-  "completed",
-];
+const STATUSES: TaskStatus[] = ["draft", "active", "done"];
 
 type KanbanBoardProps = {
   tasks: Task[];
@@ -52,7 +40,6 @@ export function KanbanBoard({
   const [isActionPending, setIsActionPending] = useState(false);
 
   const startMutation = useStartTask();
-  const reviewMutation = useMoveTaskToReview();
   const completeMutation = useCompleteTask();
   const resetMutation = useResetTask();
   const reorderMutation = useReorderTask();
@@ -71,10 +58,8 @@ export function KanbanBoard({
   const tasksByStatus = useMemo(() => {
     const grouped: Record<TaskStatus, Task[]> = {
       draft: [],
-      queue: [],
-      in_progress: [],
-      pending_review: [],
-      completed: [],
+      active: [],
+      done: [],
     };
 
     for (const task of tasks) {
@@ -115,11 +100,9 @@ export function KanbanBoard({
     fromStatus: TaskStatus,
     toStatus: TaskStatus,
   ) => {
-    if (fromStatus === "draft" && toStatus === "queue") {
+    if (fromStatus === "draft" && toStatus === "active") {
       handleStartTask(taskId);
-    } else if (fromStatus === "in_progress" && toStatus === "pending_review") {
-      handleReviewTask(taskId);
-    } else if (fromStatus === "pending_review" && toStatus === "completed") {
+    } else if (fromStatus === "active" && toStatus === "done") {
       handleCompleteTask(taskId);
     } else if (toStatus === "draft") {
       handleResetTask(taskId);
@@ -130,15 +113,6 @@ export function KanbanBoard({
     setIsActionPending(true);
     try {
       await startMutation.mutateAsync(taskId);
-    } finally {
-      setIsActionPending(false);
-    }
-  };
-
-  const handleReviewTask = async (taskId: string) => {
-    setIsActionPending(true);
-    try {
-      await reviewMutation.mutateAsync(taskId);
     } finally {
       setIsActionPending(false);
     }
@@ -179,7 +153,6 @@ export function KanbanBoard({
             onEditTask={onEditTask}
             onDeleteTask={onDeleteTask}
             onStartTask={handleStartTask}
-            onReviewTask={handleReviewTask}
             onCompleteTask={handleCompleteTask}
             onResetTask={handleResetTask}
             isActionPending={isActionPending}
