@@ -24,6 +24,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Progress } from "@/components/ui/progress";
 import {
   type AggregatedInteractionState,
   useTaskSessionProgress,
@@ -73,6 +74,8 @@ export function TaskCard({
   const {
     totalCount,
     subsessionCount,
+    completedSubsessionCount,
+    progressPercent,
     aggregatedInteraction,
     needsAttention,
     hasBusySessions,
@@ -146,16 +149,10 @@ export function TaskCard({
 
           {totalCount > 0 && (
             <div className="flex items-center gap-2 mt-2">
-              <div className="flex flex-col items-end gap-0.5">
-                <span className="text-xs text-muted-foreground">
-                  {totalCount} session{totalCount !== 1 ? "s" : ""}
-                </span>
-                {subsessionCount > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    (+{subsessionCount} sub)
-                  </span>
-                )}
-              </div>
+              <Progress value={progressPercent} className="flex-1 h-1.5" />
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                {completedSubsessionCount}/{totalCount + subsessionCount}
+              </span>
             </div>
           )}
 
