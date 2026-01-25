@@ -4,16 +4,11 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type { Task } from "@frak-sandbox/manager/types";
-import { CheckCircle, Clock, Edit3, Eye, Loader2, Plus } from "lucide-react";
+import { CheckCircle, Edit3, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TaskCard } from "./task-card";
 
-type TaskStatus =
-  | "draft"
-  | "queue"
-  | "in_progress"
-  | "pending_review"
-  | "completed";
+type TaskStatus = "draft" | "active" | "done";
 
 const statusConfig: Record<
   TaskStatus,
@@ -24,14 +19,8 @@ const statusConfig: Record<
   }
 > = {
   draft: { label: "Draft", icon: Edit3, color: "text-muted-foreground" },
-  queue: { label: "Queue", icon: Clock, color: "text-yellow-500" },
-  in_progress: { label: "In Progress", icon: Loader2, color: "text-blue-500" },
-  pending_review: {
-    label: "Pending Review",
-    icon: Eye,
-    color: "text-purple-500",
-  },
-  completed: { label: "Completed", icon: CheckCircle, color: "text-green-500" },
+  active: { label: "Active", icon: Loader2, color: "text-blue-500" },
+  done: { label: "Done", icon: CheckCircle, color: "text-green-500" },
 };
 
 type KanbanColumnProps = {
@@ -42,7 +31,6 @@ type KanbanColumnProps = {
   onEditTask?: (task: Task) => void;
   onDeleteTask?: (task: Task) => void;
   onStartTask?: (taskId: string) => void;
-  onReviewTask?: (taskId: string) => void;
   onCompleteTask?: (taskId: string) => void;
   onResetTask?: (taskId: string) => void;
   isActionPending?: boolean;
@@ -56,7 +44,6 @@ export function KanbanColumn({
   onEditTask,
   onDeleteTask,
   onStartTask,
-  onReviewTask,
   onCompleteTask,
   onResetTask,
   isActionPending,
@@ -110,7 +97,6 @@ export function KanbanColumn({
                 onEdit={() => onEditTask?.(task)}
                 onDelete={() => onDeleteTask?.(task)}
                 onStart={() => onStartTask?.(task.id)}
-                onReview={() => onReviewTask?.(task.id)}
                 onComplete={() => onCompleteTask?.(task.id)}
                 onReset={() => onResetTask?.(task.id)}
                 isActionPending={isActionPending}

@@ -1,10 +1,12 @@
 import { Elysia, t } from "elysia";
-import { sessionMonitor, taskService, taskSpawner } from "../../container.ts";
+import { taskService, taskSpawner } from "../../container.ts";
 import {
+  AddSessionsBodySchema,
   CreateTaskBodySchema,
   DeleteTaskQuerySchema,
   IdParamSchema,
   ReorderTaskBodySchema,
+  SpawnSessionsResponseSchema,
   TaskListResponseSchema,
   TaskSchema,
   UpdateTaskBodySchema,
@@ -46,6 +48,7 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
         { title: body.title, workspaceId: body.workspaceId },
         "Creating task",
       );
+
       const task = taskService.create(body);
       set.status = 201;
       return task;
@@ -84,14 +87,27 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     },
   )
   .post(
-    "/:id/review",
-    ({ params }) => {
-      log.info({ taskId: params.id }, "Moving task to review");
-      return taskService.moveToReview(params.id);
+    "/:id/sessions",
+    async ({ params, body, set }) => {
+      log.info(
+        { taskId: params.id, templateIds: body.sessionTemplateIds },
+        "Adding sessions to task",
+      );
+
+      taskSpawner.spawnSessionsInBackground(params.id, body.sessionTemplateIds);
+
+      set.status = 202;
+      return {
+        status: "spawning" as const,
+        taskId: params.id,
+        requestedTemplates: body.sessionTemplateIds,
+        message: `Spawning ${body.sessionTemplateIds.length} session(s) in background`,
+      };
     },
     {
       params: IdParamSchema,
-      response: TaskSchema,
+      body: AddSessionsBodySchema,
+      response: SpawnSessionsResponseSchema,
     },
   )
   .post(
@@ -109,7 +125,6 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     "/:id/reset",
     ({ params }) => {
       log.info({ taskId: params.id }, "Resetting task to draft");
-      sessionMonitor.stopMonitoringTask(params.id);
       return taskService.resetToDraft(params.id);
     },
     {
@@ -135,8 +150,6 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
       const keepSandbox = query.keepSandbox === "true";
 
       log.info({ taskId: params.id, keepSandbox }, "Deleting task");
-
-      sessionMonitor.stopMonitoringTask(params.id);
 
       if (task.data.sandboxId) {
         const { sandboxDestroyer, sandboxLifecycle } = await import(

@@ -1,5 +1,4 @@
 import type { Task } from "@frak-sandbox/manager/types";
-import type { Session } from "@opencode-ai/sdk/v2";
 import { useQuery } from "@tanstack/react-query";
 import {
   CheckCircle,
@@ -10,8 +9,7 @@ import {
   Loader2,
   Terminal,
 } from "lucide-react";
-import { useMemo } from "react";
-import { opencodeSessionsQuery, sandboxDetailQuery } from "@/api/queries";
+import { sandboxDetailQuery } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { buildOpenCodeSessionUrl } from "@/lib/utils";
+import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 
 type TaskDetailDialogProps = {
   open: boolean;
@@ -55,22 +53,14 @@ function TaskDetailContent({ task }: { task: Task }) {
     enabled: !!task.data.sandboxId,
   });
 
-  const opencodeUrl = sandbox?.runtime?.urls?.opencode
-    ? new URL(sandbox.runtime.urls.opencode).origin
-    : null;
-
-  const { data: sessions } = useQuery({
-    ...opencodeSessionsQuery(opencodeUrl ?? ""),
-    enabled: !!opencodeUrl,
-  });
-
-  const isTaskInProgress = task.status === "in_progress";
-  const { subSessions, completedCount, totalCount, progressPercent } =
-    useSubSessionProgress(
-      sessions,
-      task.data.opencodeSessionId,
-      isTaskInProgress,
-    );
+  const {
+    sessions,
+    totalCount,
+    completedCount,
+    runningCount,
+    progressPercent,
+    hasRunningSessions,
+  } = useTaskSessionProgress(task);
 
   return (
     <div className="space-y-6">
@@ -104,7 +94,7 @@ function TaskDetailContent({ task }: { task: Task }) {
       {totalCount > 0 && (
         <div>
           <h3 className="text-sm font-medium text-muted-foreground mb-2">
-            Sub-sessions Progress
+            Sessions Progress
           </h3>
           <div className="space-y-3">
             <div className="flex items-center gap-3">
@@ -114,12 +104,18 @@ function TaskDetailContent({ task }: { task: Task }) {
               </span>
             </div>
             <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {subSessions.map((session) => (
-                <SubSessionRow key={session.id} session={session} />
+              {sessions.map((session) => (
+                <SessionRow key={session.id} session={session} />
               ))}
             </div>
           </div>
         </div>
+      )}
+
+      {hasRunningSessions && (
+        <Badge variant="secondary">
+          {runningCount} session{runningCount > 1 ? "s" : ""} running
+        </Badge>
       )}
 
       {sandbox?.status === "running" && sandbox.runtime?.urls && (
@@ -195,14 +191,10 @@ function TaskDetailContent({ task }: { task: Task }) {
             </>
           )}
 
-          {task.data.opencodeSessionId && (
+          {sessions.length > 0 && (
             <>
-              <div className="text-muted-foreground">OpenCode Session</div>
-              <MasterSessionLink
-                sessionId={task.data.opencodeSessionId}
-                sessions={sessions}
-                opencodeUrl={opencodeUrl}
-              />
+              <div className="text-muted-foreground">Sessions</div>
+              <span>{sessions.length} total</span>
             </>
           )}
 
@@ -231,109 +223,36 @@ function TaskDetailContent({ task }: { task: Task }) {
   );
 }
 
-function MasterSessionLink({
-  sessionId,
-  sessions,
-  opencodeUrl,
-}: {
-  sessionId: string;
-  sessions: Session[] | undefined;
-  opencodeUrl: string | null;
-}) {
-  const masterSession = sessions?.find((s) => s.id === sessionId);
-
-  if (!masterSession || !opencodeUrl) {
-    return (
-      <code className="font-mono bg-muted px-1.5 py-0.5 rounded truncate">
-        {sessionId}
-      </code>
-    );
-  }
-
-  const sessionUrl = buildOpenCodeSessionUrl(
-    opencodeUrl,
-    masterSession.directory,
-    sessionId,
-  );
-
-  return (
-    <a
-      href={sessionUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="font-mono bg-muted px-1.5 py-0.5 rounded truncate text-blue-500 hover:underline"
-    >
-      {sessionId}
-    </a>
-  );
+interface TaskSession {
+  id: string;
+  templateId: string;
+  order: number;
+  status: "pending" | "running" | "completed";
+  startedAt?: string;
+  completedAt?: string;
 }
 
-function SubSessionRow({ session }: { session: Session }) {
-  const isCompleted = !session.parentID
-    ? false
-    : session.time.updated !== session.time.created;
-
-  const displayTitle = session.title || `Session ${session.id.slice(0, 8)}`;
+function SessionRow({ session }: { session: TaskSession }) {
   const shortId = session.id.slice(0, 8);
 
   return (
     <div className="flex items-center gap-2 text-xs py-1 px-2 bg-muted/50 rounded">
-      {isCompleted ? (
+      {session.status === "completed" ? (
         <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
-      ) : session.time.updated === session.time.created ? (
+      ) : session.status === "pending" ? (
         <Clock className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
       ) : (
         <Loader2 className="h-3.5 w-3.5 text-blue-500 shrink-0 animate-spin" />
       )}
       <span className="truncate flex-1">
-        {displayTitle}{" "}
+        {session.templateId}{" "}
         <span className="font-mono text-muted-foreground">({shortId})</span>
       </span>
       <span className="text-muted-foreground shrink-0">
-        {session.time.created
-          ? new Date(session.time.created * 1000).toLocaleTimeString()
+        {session.startedAt
+          ? new Date(session.startedAt).toLocaleTimeString()
           : ""}
       </span>
     </div>
   );
 }
-
-function useSubSessionProgress(
-  sessions: Session[] | undefined,
-  parentSessionId: string | undefined,
-  isTaskInProgress = false,
-) {
-  return useMemo(() => {
-    if (!sessions || !parentSessionId) {
-      return {
-        subSessions: [],
-        completedCount: 0,
-        totalCount: 0,
-        progressPercent: 0,
-      };
-    }
-
-    const subSessions = sessions.filter((s) => s.parentID === parentSessionId);
-
-    const completedCount = subSessions.filter(
-      (s) => s.time.updated !== s.time.created,
-    ).length;
-
-    // When task is in progress, add +1 to total to account for the master session
-    // that is still running and not yet completed
-    const totalCount = isTaskInProgress
-      ? subSessions.length + 1
-      : subSessions.length;
-    const progressPercent =
-      totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
-    return {
-      subSessions,
-      completedCount,
-      totalCount,
-      progressPercent,
-    };
-  }, [sessions, parentSessionId, isTaskInProgress]);
-}
-
-export { useSubSessionProgress };

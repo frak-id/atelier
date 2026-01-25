@@ -1,8 +1,13 @@
-import type { TaskEffort } from "@frak-sandbox/shared/constants";
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api, type Workspace } from "./client";
-import { deleteOpenCodeSession, fetchOpenCodeSessions } from "./opencode";
+import {
+  deleteOpenCodeSession,
+  fetchOpenCodePermissions,
+  fetchOpenCodeQuestions,
+  fetchOpenCodeSessions,
+  getOpenCodeSessionStatuses,
+} from "./opencode";
 
 function unwrap<T>(result: { data: T; error: unknown }): T {
   if (result.error) {
@@ -11,7 +16,7 @@ function unwrap<T>(result: { data: T; error: unknown }): T {
   return result.data;
 }
 
-const queryKeys = {
+export const queryKeys = {
   health: ["health"] as const,
   sharedStorage: {
     all: ["sharedStorage"] as const,
@@ -42,6 +47,11 @@ const queryKeys = {
     sessions: (baseUrl: string) => ["opencode", baseUrl, "sessions"] as const,
     messages: (baseUrl: string, sessionId: string) =>
       ["opencode", baseUrl, "messages", sessionId] as const,
+    permissions: (baseUrl: string) =>
+      ["opencode", baseUrl, "permissions"] as const,
+    questions: (baseUrl: string) => ["opencode", baseUrl, "questions"] as const,
+    sessionStatuses: (baseUrl: string) =>
+      ["opencode", baseUrl, "sessionStatuses"] as const,
   },
   workspaces: {
     all: ["workspaces"] as const,
@@ -75,6 +85,12 @@ const queryKeys = {
     all: ["sshKeys"] as const,
     list: () => ["sshKeys", "list"] as const,
     hasKeys: () => ["sshKeys", "hasKeys"] as const,
+  },
+  sessionTemplates: {
+    all: ["sessionTemplates"] as const,
+    global: ["sessionTemplates", "global"] as const,
+    workspace: (workspaceId: string) =>
+      ["sessionTemplates", "workspace", workspaceId] as const,
   },
 };
 
@@ -214,8 +230,49 @@ export function useDeleteSandbox() {
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
+    },
+  });
+}
+
+export const globalSessionTemplatesQuery = queryOptions({
+  queryKey: queryKeys.sessionTemplates.global,
+  queryFn: async () => unwrap(await api.api["session-templates"].global.get()),
+});
+
+export const workspaceSessionTemplatesQuery = (workspaceId: string) =>
+  queryOptions({
+    queryKey: queryKeys.sessionTemplates.workspace(workspaceId),
+    queryFn: async () =>
+      unwrap(
+        await api.api["session-templates"].workspace({ workspaceId }).get(),
+      ),
+    enabled: !!workspaceId,
+  });
+
+export function useUpdateGlobalSessionTemplates() {
+  return useMutation({
+    mutationFn: async (
+      templates: Array<{
+        id: string;
+        name: string;
+        category: "primary" | "secondary";
+        description?: string;
+        promptTemplate?: string;
+        variants: Array<{
+          name: string;
+          model: { providerID: string; modelID: string };
+          variant?: string;
+          agent?: string;
+        }>;
+        defaultVariantIndex?: number;
+      }>,
+    ) => unwrap(await api.api["session-templates"].global.put({ templates })),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sessionTemplates.all,
+      });
     },
   });
 }
@@ -375,6 +432,30 @@ export const opencodeSessionsQuery = (baseUrl: string) =>
     queryFn: () => fetchOpenCodeSessions(baseUrl),
     refetchInterval: 10000,
     enabled: !!baseUrl,
+  });
+
+export const opencodePermissionsQuery = (baseUrl: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.permissions(baseUrl),
+    queryFn: () => fetchOpenCodePermissions(baseUrl),
+    enabled: !!baseUrl,
+    staleTime: 5000,
+  });
+
+export const opencodeQuestionsQuery = (baseUrl: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.questions(baseUrl),
+    queryFn: () => fetchOpenCodeQuestions(baseUrl),
+    enabled: !!baseUrl,
+    staleTime: 5000,
+  });
+
+export const opencodeSessionStatusesQuery = (baseUrl: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.sessionStatuses(baseUrl),
+    queryFn: () => getOpenCodeSessionStatuses(baseUrl),
+    enabled: !!baseUrl,
+    staleTime: 5000,
   });
 
 export function useDeleteOpenCodeSession(baseUrl: string) {
@@ -647,7 +728,8 @@ export function useCreateTask() {
       title: string;
       description: string;
       context?: string;
-      effort?: TaskEffort;
+      templateId?: string;
+      variantIndex?: number;
       baseBranch?: string;
       targetRepoIndices?: number[];
     }) => unwrap(await api.api.tasks.post(data)),
@@ -668,7 +750,8 @@ export function useUpdateTask() {
         title?: string;
         description?: string;
         context?: string;
-        effort?: TaskEffort;
+        templateId?: string;
+        variantIndex?: number;
       };
     }) => unwrap(await api.api.tasks({ id }).put(data)),
     onSuccess: (_data, variables, _context, { client: queryClient }) => {
@@ -691,12 +774,21 @@ export function useStartTask() {
   });
 }
 
-export function useMoveTaskToReview() {
+export function useAddTaskSessions() {
   return useMutation({
-    mutationFn: async (id: string) =>
-      unwrap(await api.api.tasks({ id }).review.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+    mutationFn: async ({
+      id,
+      sessionTemplateIds,
+    }: {
+      id: string;
+      sessionTemplateIds: string[];
+    }) =>
+      unwrap(await api.api.tasks({ id }).sessions.post({ sessionTemplateIds })),
+    onSuccess: (_data, variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tasks.detail(variables.id),
+      });
     },
   });
 }

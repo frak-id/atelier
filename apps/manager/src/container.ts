@@ -12,6 +12,7 @@ import {
   SharedAuthRepository,
 } from "./modules/internal/index.ts";
 import { SandboxRepository, SandboxService } from "./modules/sandbox/index.ts";
+import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
 import {
@@ -24,7 +25,6 @@ import {
   SandboxDestroyer,
   SandboxLifecycle,
   SandboxSpawner,
-  SessionMonitor,
   TaskSpawner,
 } from "./orchestrators/index.ts";
 
@@ -57,6 +57,12 @@ const internalService = new InternalService(
 
 const agentClient = new AgentClient();
 
+const sessionTemplateService = new SessionTemplateService(
+  configFileService,
+  workspaceService,
+  sandboxService,
+);
+
 /* -------------------------------------------------------------------------- */
 /*                                Orchestrators                               */
 /* -------------------------------------------------------------------------- */
@@ -86,15 +92,13 @@ const prebuildRunner = new PrebuildRunner({
   agentClient,
 });
 
-const sessionMonitor = new SessionMonitor(taskService);
-
 const taskSpawner = new TaskSpawner({
   sandboxSpawner,
   sandboxService,
   taskService,
   workspaceService,
+  sessionTemplateService,
   agentClient,
-  sessionMonitor,
 });
 
 const prebuildChecker = new PrebuildChecker({
@@ -114,9 +118,9 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
-  sessionMonitor,
   sshKeyService,
   taskService,
   taskSpawner,
+  sessionTemplateService,
   workspaceService,
 };

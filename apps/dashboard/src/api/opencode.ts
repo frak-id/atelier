@@ -1,5 +1,9 @@
-import { EFFORT_CONFIG, type TaskEffort } from "@frak-sandbox/shared/constants";
-import { createOpencodeClient, type Session } from "@opencode-ai/sdk/v2";
+import {
+  createOpencodeClient,
+  type PermissionRequest,
+  type QuestionRequest,
+  type Session,
+} from "@opencode-ai/sdk/v2";
 
 export type SessionStatus =
   | { type: "idle" }
@@ -51,24 +55,29 @@ export async function createOpenCodeSession(
   }
 }
 
+export interface TemplateConfig {
+  model?: { providerID: string; modelID: string };
+  variant?: string;
+  agent?: string;
+}
+
 export async function sendOpenCodeMessage(
   baseUrl: string,
   sessionId: string,
   message: string,
-  options?: { directory?: string; effort?: TaskEffort },
+  options?: { directory?: string; templateConfig?: TemplateConfig },
 ): Promise<{ success: true } | { error: string }> {
   try {
     const client = createOpencodeClient({ baseUrl });
-    const config = options?.effort ? EFFORT_CONFIG[options.effort] : undefined;
 
     const result = await client.session.promptAsync({
       sessionID: sessionId,
       directory: options?.directory,
       parts: [{ type: "text", text: message }],
-      ...(config && {
-        model: config.model,
-        variant: config.variant,
-        agent: config.agent,
+      ...(options?.templateConfig && {
+        model: options.templateConfig.model,
+        variant: options.templateConfig.variant,
+        agent: options.templateConfig.agent,
       }),
     });
     if (result.error) {
@@ -101,3 +110,29 @@ export async function getOpenCodeSessionStatuses(
     return {};
   }
 }
+
+export async function fetchOpenCodePermissions(
+  baseUrl: string,
+): Promise<PermissionRequest[]> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const { data } = await client.permission.list();
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchOpenCodeQuestions(
+  baseUrl: string,
+): Promise<QuestionRequest[]> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const { data } = await client.question.list();
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type { PermissionRequest, QuestionRequest };

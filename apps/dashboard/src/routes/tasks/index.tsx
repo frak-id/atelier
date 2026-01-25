@@ -149,13 +149,7 @@ function TasksSkeleton() {
   );
 }
 
-const SKELETON_COLUMNS = [
-  "draft",
-  "queue",
-  "in_progress",
-  "pending_review",
-  "completed",
-];
+const SKELETON_COLUMNS = ["draft", "active", "done"];
 
 function KanbanSkeleton() {
   return (

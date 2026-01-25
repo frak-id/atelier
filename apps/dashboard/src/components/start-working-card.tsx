@@ -1,5 +1,6 @@
 import type { Task } from "@frak-sandbox/manager/types";
-import type { TaskEffort } from "@frak-sandbox/shared/constants";
+import type { SessionTemplate } from "@frak-sandbox/shared/constants";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -15,6 +16,7 @@ import {
   taskListQuery,
   useCreateTask,
   workspaceListQuery,
+  workspaceSessionTemplatesQuery,
 } from "@/api/queries";
 import { useStartSession } from "@/hooks/use-start-session";
 import { Badge } from "./ui/badge";
@@ -39,6 +41,12 @@ export function StartWorkingCard() {
   const selectedWorkspace = workspaces?.find(
     (w) => w.id === selectedWorkspaceId,
   );
+
+  const { data: templateData } = useQuery({
+    ...workspaceSessionTemplatesQuery(selectedWorkspaceId),
+    enabled: !!selectedWorkspaceId,
+  });
+  const templates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
 
   return (
     <Card>
@@ -98,6 +106,7 @@ export function StartWorkingCard() {
             <ChatTab
               workspace={selectedWorkspace}
               workspaceId={selectedWorkspaceId}
+              templates={templates}
             />
           </TabsContent>
 
@@ -105,6 +114,7 @@ export function StartWorkingCard() {
             <TaskTab
               workspaceId={selectedWorkspaceId}
               hasWorkspace={!!selectedWorkspace}
+              templates={templates}
             />
           </TabsContent>
         </Tabs>
@@ -116,11 +126,21 @@ export function StartWorkingCard() {
 type ChatTabProps = {
   workspace: Workspace | undefined;
   workspaceId: string;
+  templates: SessionTemplate[];
 };
 
-function ChatTab({ workspace, workspaceId }: ChatTabProps) {
+function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
   const [message, setMessage] = useState("");
-  const [selectedEffort, setSelectedEffort] = useState<TaskEffort>("low");
+  const defaultTemplate = templates[0];
+  const [selectedTemplateId, setSelectedTemplateId] = useState(
+    defaultTemplate?.id ?? "",
+  );
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(
+    defaultTemplate?.defaultVariantIndex ?? 0,
+  );
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
+  const selectedVariant = selectedTemplate?.variants[selectedVariantIndex];
 
   const { mutate, isPending, isSuccess, isError, error, reset } =
     useStartSession();
@@ -132,14 +152,27 @@ function ChatTab({ workspace, workspaceId }: ChatTabProps) {
     mutate({
       workspace,
       message: message.trim(),
-      effort: selectedEffort,
+      templateConfig: selectedVariant
+        ? {
+            model: selectedVariant.model,
+            variant: selectedVariant.variant,
+            agent: selectedVariant.agent,
+          }
+        : undefined,
     });
   };
 
   const handleReset = () => {
     reset();
     setMessage("");
-    setSelectedEffort("low");
+    setSelectedTemplateId(defaultTemplate?.id ?? "");
+    setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
+  };
+
+  const handleTemplateChange = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    const template = templates.find((t) => t.id === templateId);
+    setSelectedVariantIndex(template?.defaultVariantIndex ?? 0);
   };
 
   return (
@@ -195,21 +228,43 @@ function ChatTab({ workspace, workspaceId }: ChatTabProps) {
       />
 
       <div className="flex gap-3">
-        <Select
-          value={selectedEffort}
-          onValueChange={(v) => setSelectedEffort(v as TaskEffort)}
-          disabled={isPending}
-        >
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="low">Low</SelectItem>
-            <SelectItem value="medium">Medium</SelectItem>
-            <SelectItem value="high">High</SelectItem>
-            <SelectItem value="maximum">Maximum</SelectItem>
-          </SelectContent>
-        </Select>
+        {templates.length > 1 && (
+          <Select
+            value={selectedTemplateId}
+            onValueChange={handleTemplateChange}
+            disabled={isPending}
+          >
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Template" />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((template) => (
+                <SelectItem key={template.id} value={template.id}>
+                  {template.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {selectedTemplate && selectedTemplate.variants.length > 0 && (
+          <Select
+            value={String(selectedVariantIndex)}
+            onValueChange={(v) => setSelectedVariantIndex(Number(v))}
+            disabled={isPending}
+          >
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Effort" />
+            </SelectTrigger>
+            <SelectContent>
+              {selectedTemplate.variants.map((variant, idx) => (
+                <SelectItem key={idx} value={String(idx)}>
+                  {variant.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Button
           onClick={handleStartSession}
@@ -236,12 +291,22 @@ function ChatTab({ workspace, workspaceId }: ChatTabProps) {
 type TaskTabProps = {
   workspaceId: string;
   hasWorkspace: boolean;
+  templates: SessionTemplate[];
 };
 
-function TaskTab({ workspaceId, hasWorkspace }: TaskTabProps) {
+function TaskTab({ workspaceId, hasWorkspace, templates }: TaskTabProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [selectedEffort, setSelectedEffort] = useState<TaskEffort>("low");
+
+  const defaultTemplate = templates[0];
+  const [selectedTemplateId, setSelectedTemplateId] = useState(
+    defaultTemplate?.id ?? "",
+  );
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(
+    defaultTemplate?.defaultVariantIndex ?? 0,
+  );
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
   const createMutation = useCreateTask();
 
@@ -264,12 +329,20 @@ function TaskTab({ workspaceId, hasWorkspace }: TaskTabProps) {
       workspaceId,
       title: title.trim(),
       description: description.trim(),
-      effort: selectedEffort,
+      templateId: selectedTemplateId || undefined,
+      variantIndex: selectedVariantIndex,
     });
 
     setTitle("");
     setDescription("");
-    setSelectedEffort("low");
+    setSelectedTemplateId(defaultTemplate?.id ?? "");
+    setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
+  };
+
+  const handleTemplateChange = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    const template = templates.find((t) => t.id === templateId);
+    setSelectedVariantIndex(template?.defaultVariantIndex ?? 0);
   };
 
   return (
@@ -336,21 +409,43 @@ function TaskTab({ workspaceId, hasWorkspace }: TaskTabProps) {
         </div>
 
         <div className="flex gap-3">
-          <Select
-            value={selectedEffort}
-            onValueChange={(v) => setSelectedEffort(v as TaskEffort)}
-            disabled={createMutation.isPending}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="maximum">Maximum</SelectItem>
-            </SelectContent>
-          </Select>
+          {templates.length > 1 && (
+            <Select
+              value={selectedTemplateId}
+              onValueChange={handleTemplateChange}
+              disabled={createMutation.isPending}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Template" />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {selectedTemplate && selectedTemplate.variants.length > 0 && (
+            <Select
+              value={String(selectedVariantIndex)}
+              onValueChange={(v) => setSelectedVariantIndex(Number(v))}
+              disabled={createMutation.isPending}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Effort" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectedTemplate.variants.map((variant, idx) => (
+                  <SelectItem key={idx} value={String(idx)}>
+                    {variant.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Button
             onClick={handleCreateTask}
@@ -381,7 +476,7 @@ function TaskTab({ workspaceId, hasWorkspace }: TaskTabProps) {
           </div>
           <div className="space-y-1.5">
             {draftTasks.slice(0, 3).map((task) => (
-              <DraftTaskItem key={task.id} task={task} />
+              <DraftTaskItem key={task.id} task={task} templates={templates} />
             ))}
             {draftTasks.length > 3 && (
               <a
@@ -398,7 +493,16 @@ function TaskTab({ workspaceId, hasWorkspace }: TaskTabProps) {
   );
 }
 
-function DraftTaskItem({ task }: { task: Task }) {
+function DraftTaskItem({
+  task,
+  templates,
+}: {
+  task: Task;
+  templates: SessionTemplate[];
+}) {
+  const template = templates.find((t) => t.id === task.data.workflowId);
+  const variant = template?.variants[0];
+
   return (
     <a
       href="/tasks"
@@ -407,7 +511,7 @@ function DraftTaskItem({ task }: { task: Task }) {
       <div className="h-2 w-2 rounded-full bg-muted-foreground/30" />
       <span className="text-sm truncate flex-1">{task.title}</span>
       <Badge variant="outline" className="text-xs shrink-0">
-        {task.data.effort ?? "low"}
+        {variant?.name ?? template?.name ?? "Default"}
       </Badge>
     </a>
   );

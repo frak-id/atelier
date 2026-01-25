@@ -18,6 +18,7 @@ import {
   Settings,
 } from "lucide-react";
 import { Suspense, useState } from "react";
+import { Toaster } from "sonner";
 import { clearAuthToken, getAuthToken } from "@/api/client";
 import { GitHubStatus } from "@/components/github-status";
 import { LoginPage } from "@/components/login-page";
@@ -55,6 +56,7 @@ function RootLayout() {
 
   return (
     <TooltipProvider>
+      <Toaster position="bottom-right" richColors />
       <div className="flex h-screen bg-background">
         <aside className="hidden md:flex w-64 border-r bg-card flex-col">
           <div className="p-6 border-b">

@@ -1,13 +1,18 @@
-import { EFFORT_CONFIG, type TaskEffort } from "@frak-sandbox/shared/constants";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
+import type { SessionTemplateService } from "../modules/session-template/index.ts";
 import type { TaskService } from "../modules/task/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
-import type { RepoConfig, Task, Workspace } from "../schemas/index.ts";
+import type {
+  RepoConfig,
+  SessionTemplateVariables,
+  Task,
+  Workspace,
+} from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
-import type { SessionMonitor } from "./session-monitor.ts";
 
 const log = createChildLogger("task-spawner");
 
@@ -21,11 +26,20 @@ interface TaskSpawnerDependencies {
   sandboxService: SandboxService;
   taskService: TaskService;
   workspaceService: WorkspaceService;
+  sessionTemplateService: SessionTemplateService;
   agentClient: AgentClient;
-  sessionMonitor: SessionMonitor;
+}
+
+interface SessionConfig {
+  model?: { providerID: string; modelID: string };
+  variant?: string;
+  agent?: string;
+  promptTemplate?: string;
 }
 
 export class TaskSpawner {
+  private readonly spawningLocks = new Set<string>();
+
   constructor(private readonly deps: TaskSpawnerDependencies) {}
 
   async run(taskId: string): Promise<void> {
@@ -34,11 +48,16 @@ export class TaskSpawner {
       throw new Error(`Task '${taskId}' not found`);
     }
 
-    if (task.status !== "queue") {
+    if (task.status !== "active") {
       log.warn(
         { taskId, status: task.status },
-        "Task not in queue status, skipping",
+        "Task not in active status, skipping",
       );
+      return;
+    }
+
+    if (task.data.sandboxId) {
+      log.warn({ taskId }, "Task already has sandbox, skipping initial spawn");
       return;
     }
 
@@ -64,7 +83,6 @@ export class TaskSpawner {
 
       sandboxId = sandbox.id;
       const ipAddress = sandbox.runtime.ipAddress;
-      const opencodeUrl = `http://${ipAddress}:${OPENCODE_PORT}`;
 
       log.info(
         { taskId, sandboxId, ip: ipAddress },
@@ -105,45 +123,17 @@ export class TaskSpawner {
         }
       }
 
-      const sessionResult = await this.createSession(
-        opencodeUrl,
-        task.title,
+      this.deps.taskService.attachSandbox(taskId, sandbox.id, branchName);
+
+      const sessionTemplateId = this.getFirstSessionTemplateId(task, workspace);
+      await this.spawnSession(
+        taskId,
+        sessionTemplateId,
+        ipAddress,
         opencodeDirectory,
       );
-      if ("error" in sessionResult) {
-        throw new Error(
-          `Failed to create OpenCode session: ${sessionResult.error}`,
-        );
-      }
 
-      const prompt = this.buildPrompt(task, targetRepos, branchName);
-      const promptResult = await this.sendPrompt(
-        opencodeUrl,
-        sessionResult.sessionId,
-        prompt,
-        task.data.effort,
-      );
-      if ("error" in promptResult) {
-        throw new Error(`Failed to send prompt: ${promptResult.error}`);
-      }
-
-      this.deps.taskService.moveToInProgress(
-        taskId,
-        sandbox.id,
-        sessionResult.sessionId,
-        branchName,
-      );
-
-      log.info(
-        { taskId, sandboxId, sessionId: sessionResult.sessionId },
-        "Task moved to in_progress",
-      );
-
-      this.deps.sessionMonitor.startMonitoring(
-        taskId,
-        sessionResult.sessionId,
-        ipAddress,
-      );
+      log.info({ taskId, sandboxId }, "Task initial session started");
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -177,6 +167,246 @@ export class TaskSpawner {
     });
   }
 
+  async spawnSessions(
+    taskId: string,
+    sessionTemplateIds: string[],
+  ): Promise<{ spawned: number; failed: number; skipped: number }> {
+    const task = this.deps.taskService.getById(taskId);
+    if (!task) {
+      throw new Error(`Task '${taskId}' not found`);
+    }
+
+    if (task.status !== "active") {
+      throw new Error("Task must be active to spawn sessions");
+    }
+
+    if (!task.data.sandboxId) {
+      throw new Error("Task has no sandbox - start task first");
+    }
+
+    const sandbox = this.deps.sandboxService.getById(task.data.sandboxId);
+    if (!sandbox?.runtime?.ipAddress) {
+      throw new Error("Sandbox not running");
+    }
+
+    const workspace = this.deps.workspaceService.getById(task.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace '${task.workspaceId}' not found`);
+    }
+
+    // Filter out templates that are already being spawned (race condition prevention)
+    const templatesToSpawn: string[] = [];
+    const skippedTemplates: string[] = [];
+
+    for (const templateId of sessionTemplateIds) {
+      const lockKey = `${taskId}:${templateId}`;
+      if (this.spawningLocks.has(lockKey)) {
+        log.warn(
+          { taskId, templateId },
+          "Session spawn already in progress, skipping",
+        );
+        skippedTemplates.push(templateId);
+      } else {
+        this.spawningLocks.add(lockKey);
+        templatesToSpawn.push(templateId);
+      }
+    }
+
+    if (templatesToSpawn.length === 0) {
+      return { spawned: 0, failed: 0, skipped: skippedTemplates.length };
+    }
+
+    const targetRepos = this.getTargetRepos(task, workspace);
+    let opencodeDirectory: string | undefined;
+    if (targetRepos.length === 1 && targetRepos[0]) {
+      const repo = targetRepos[0];
+      const clonePath = repo.clonePath.startsWith("/")
+        ? repo.clonePath
+        : `/${repo.clonePath}`;
+      opencodeDirectory = `${WORKSPACE_DIR}${clonePath}`;
+    }
+
+    const ipAddress = sandbox.runtime.ipAddress;
+
+    try {
+      const results = await Promise.allSettled(
+        templatesToSpawn.map((templateId) =>
+          this.spawnSession(taskId, templateId, ipAddress, opencodeDirectory),
+        ),
+      );
+
+      const failures = results.filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected",
+      );
+      if (failures.length > 0) {
+        log.error(
+          { taskId, failures: failures.map((f) => f.reason) },
+          "Some sessions failed to spawn",
+        );
+      }
+
+      const spawnedCount = results.filter(
+        (r) => r.status === "fulfilled",
+      ).length;
+
+      log.info(
+        {
+          taskId,
+          spawned: spawnedCount,
+          failed: failures.length,
+          skipped: skippedTemplates.length,
+        },
+        "Sessions spawn complete",
+      );
+
+      return {
+        spawned: spawnedCount,
+        failed: failures.length,
+        skipped: skippedTemplates.length,
+      };
+    } finally {
+      // Release locks for all templates we tried to spawn
+      for (const templateId of templatesToSpawn) {
+        this.spawningLocks.delete(`${taskId}:${templateId}`);
+      }
+    }
+  }
+
+  spawnSessionsInBackground(
+    taskId: string,
+    sessionTemplateIds: string[],
+  ): void {
+    setImmediate(() => {
+      this.spawnSessions(taskId, sessionTemplateIds).catch((error) => {
+        log.error(
+          { taskId, sessionTemplateIds, error },
+          "Background sessions spawn failed",
+        );
+      });
+    });
+  }
+
+  private async spawnSession(
+    taskId: string,
+    sessionTemplateId: string,
+    ipAddress: string,
+    opencodeDirectory?: string,
+  ): Promise<void> {
+    const task = this.deps.taskService.getById(taskId);
+    if (!task) {
+      throw new Error(`Task '${taskId}' not found`);
+    }
+
+    const workspace = this.deps.workspaceService.getById(task.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace '${task.workspaceId}' not found`);
+    }
+
+    const opencodeUrl = `http://${ipAddress}:${OPENCODE_PORT}`;
+    const sessionConfig = this.resolveSessionConfig(
+      sessionTemplateId,
+      workspace.id,
+    );
+
+    const sessionResult = await this.createOpencodeSession(
+      opencodeUrl,
+      `${task.title} - ${sessionTemplateId}`,
+      opencodeDirectory,
+    );
+
+    if ("error" in sessionResult) {
+      throw new Error(`Failed to create session: ${sessionResult.error}`);
+    }
+
+    const { session } = this.deps.taskService.addSession(
+      taskId,
+      sessionResult.sessionId,
+      sessionTemplateId,
+    );
+
+    const prompt = this.buildPrompt(
+      task,
+      workspace,
+      this.getTargetRepos(task, workspace),
+      task.data.branchName,
+      task.data.sandboxId!,
+      ipAddress,
+      sessionConfig.promptTemplate,
+    );
+
+    const promptResult = await this.sendPrompt(
+      opencodeUrl,
+      session.id,
+      prompt,
+      sessionConfig,
+    );
+
+    if ("error" in promptResult) {
+      this.deps.taskService.updateSessionStatus(
+        taskId,
+        session.id,
+        "completed",
+      );
+      throw new Error(`Failed to send prompt: ${promptResult.error}`);
+    }
+
+    log.info(
+      { taskId, sessionId: session.id, templateId: sessionTemplateId },
+      "Session spawned",
+    );
+  }
+
+  private getFirstSessionTemplateId(task: Task, workspace: Workspace): string {
+    const workflowId = task.data.workflowId ?? "implement";
+    const workflow = this.deps.sessionTemplateService.getTemplateById(
+      workflowId,
+      workspace.id,
+    );
+
+    if (workflow?.variants?.[0]) {
+      return workflowId;
+    }
+
+    return "implement";
+  }
+
+  private resolveSessionConfig(
+    sessionTemplateId: string,
+    workspaceId: string,
+  ): SessionConfig {
+    const template = this.deps.sessionTemplateService.getTemplateById(
+      sessionTemplateId,
+      workspaceId,
+    );
+
+    if (!template) {
+      const defaultTemplate = DEFAULT_SESSION_TEMPLATES[0];
+      if (!defaultTemplate?.variants?.[0]) {
+        return {};
+      }
+      const variant = defaultTemplate.variants[0];
+      return {
+        model: variant.model,
+        variant: variant.variant,
+        agent: variant.agent,
+        promptTemplate: defaultTemplate.promptTemplate,
+      };
+    }
+
+    const variant =
+      template.variants[template.defaultVariantIndex ?? 0] ??
+      template.variants[0];
+
+    return variant
+      ? {
+          model: variant.model,
+          variant: variant.variant,
+          agent: variant.agent,
+          promptTemplate: template.promptTemplate,
+        }
+      : { promptTemplate: template.promptTemplate };
+  }
+
   private getTargetRepos(task: Task, workspace: Workspace): RepoConfig[] {
     const allRepos = workspace.config.repos;
     if (allRepos.length === 0) return [];
@@ -200,7 +430,6 @@ export class TaskSpawner {
   ): Promise<string | undefined> {
     const baseBranchName = `task/${taskId}`;
 
-    // Helper to run git commands as dev user (repo owner)
     const gitExec = (cmd: string, timeout = 30000) =>
       this.deps.agentClient.exec(
         ipAddress,
@@ -250,9 +479,41 @@ export class TaskSpawner {
 
   private buildPrompt(
     task: Task,
+    workspace: Workspace,
     targetRepos: RepoConfig[],
-    branchName?: string,
+    branchName: string | undefined,
+    sandboxId: string,
+    ipAddress: string,
+    promptTemplate?: string,
   ): string {
+    if (promptTemplate) {
+      const variables: SessionTemplateVariables = {
+        task: {
+          title: task.title,
+          description: task.data.description,
+          context: task.data.context,
+          branch: branchName,
+        },
+        workspace: {
+          name: workspace.name,
+          reposName: targetRepos.map((r) => {
+            if ("url" in r) return r.url.split("/").pop() ?? r.url;
+            return r.repo;
+          }),
+        },
+        sandbox: {
+          id: sandboxId,
+          ip: ipAddress,
+          url: `http://${ipAddress}:${OPENCODE_PORT}`,
+        },
+      };
+
+      return this.deps.sessionTemplateService.renderPromptTemplate(
+        { id: "", name: "", category: "primary", variants: [], promptTemplate },
+        variables,
+      );
+    }
+
     let prompt = `# Task: ${task.title}\n\n`;
 
     const firstRepo = targetRepos[0];
@@ -296,7 +557,7 @@ export class TaskSpawner {
     throw new Error("OpenCode server did not become healthy within timeout");
   }
 
-  private async createSession(
+  private async createOpencodeSession(
     baseUrl: string,
     title: string,
     directory?: string,
@@ -304,7 +565,7 @@ export class TaskSpawner {
     try {
       const client = createOpencodeClient({ baseUrl });
       const { data, error } = await client.session.create({
-        title: `Task: ${title}`,
+        title,
         ...(directory && { directory }),
       });
       if (error || !data?.id) {
@@ -320,20 +581,17 @@ export class TaskSpawner {
     baseUrl: string,
     sessionId: string,
     message: string,
-    effort?: TaskEffort,
+    config?: SessionConfig,
   ): Promise<{ success: true } | { error: string }> {
     try {
       const client = createOpencodeClient({ baseUrl });
-      const config = effort ? EFFORT_CONFIG[effort] : undefined;
 
       const result = await client.session.promptAsync({
         sessionID: sessionId,
         parts: [{ type: "text", text: message }],
-        ...(config && {
-          model: config.model,
-          variant: config.variant,
-          agent: config.agent,
-        }),
+        ...(config?.model && { model: config.model }),
+        ...(config?.variant && { variant: config.variant }),
+        ...(config?.agent && { agent: config.agent }),
       });
       if (result.error) {
         return { error: "Failed to send message" };

@@ -1,5 +1,6 @@
 import type { Static } from "elysia";
 import { t } from "elysia";
+import { SessionTemplatesSchema } from "./session-template.ts";
 
 export const PrebuildStatusSchema = t.Union([
   t.Literal("none"),
@@ -57,6 +58,7 @@ export const WorkspaceConfigSchema = t.Object({
   repos: t.Array(RepoConfigSchema, { default: [] }),
   exposedPorts: t.Array(t.Number(), { default: [] }),
   prebuild: t.Optional(PrebuildInfoSchema),
+  sessionTemplates: t.Optional(SessionTemplatesSchema),
 });
 export type WorkspaceConfig = Static<typeof WorkspaceConfigSchema>;
 

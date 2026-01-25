@@ -14,6 +14,7 @@ import { healthRoutes } from "./modules/health/index.ts";
 import { imageRoutes } from "./modules/image/index.ts";
 import { internalRoutes } from "./modules/internal/index.ts";
 import { sandboxRoutes } from "./modules/sandbox/index.ts";
+import { sessionTemplateRoutes } from "./modules/session-template/index.ts";
 import { sharedAuthRoutes } from "./modules/shared-auth/index.ts";
 import { sharedStorageRoutes } from "./modules/shared-storage/index.ts";
 import { sshKeyRoutes } from "./modules/ssh-key/index.ts";
@@ -175,6 +176,7 @@ const app = new Elysia()
         .use(sandboxRoutes)
         .use(workspaceRoutes)
         .use(taskRoutes)
+        .use(sessionTemplateRoutes)
         .use(gitSourceRoutes)
         .use(configFileRoutes)
         .use(sharedAuthRoutes)
