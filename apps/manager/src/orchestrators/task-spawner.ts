@@ -342,11 +342,6 @@ export class TaskSpawner {
     );
 
     if ("error" in promptResult) {
-      this.deps.taskService.updateSessionStatus(
-        taskId,
-        session.id,
-        "completed",
-      );
       throw new Error(`Failed to send prompt: ${promptResult.error}`);
     }
 
