@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Copy,
+  Globe,
   Loader2,
   Pencil,
   Plus,
@@ -11,6 +13,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import {
+  globalSessionTemplatesQuery,
   type SessionTemplateInput,
   useUpdateWorkspaceSessionTemplates,
   workspaceOpenCodeConfigQuery,
@@ -30,6 +33,9 @@ export function WorkspaceSessionTemplatesSection({
   const { data: templatesData, isLoading: templatesLoading } = useQuery(
     workspaceSessionTemplatesOverrideQuery(workspaceId),
   );
+  const { data: globalData, isLoading: globalLoading } = useQuery(
+    globalSessionTemplatesQuery,
+  );
   const { data: openCodeConfig, isLoading: configLoading } = useQuery(
     workspaceOpenCodeConfigQuery(workspaceId),
   );
@@ -42,7 +48,12 @@ export function WorkspaceSessionTemplatesSection({
   );
 
   const templates = templatesData?.templates ?? [];
-  const isLoading = templatesLoading || configLoading;
+  const globalTemplates = globalData?.templates ?? [];
+  const overriddenIds = new Set(templates.map((t) => t.id));
+  const nonOverriddenGlobalTemplates = globalTemplates.filter(
+    (t) => !overriddenIds.has(t.id),
+  );
+  const isLoading = templatesLoading || configLoading || globalLoading;
   const hasSandbox = openCodeConfig?.available === true;
 
   const toggleExpanded = (id: string) => {
@@ -99,6 +110,14 @@ export function WorkspaceSessionTemplatesSection({
     setEditingTemplate(newTemplate);
   };
 
+  const handleOverrideGlobal = (globalTemplate: SessionTemplate) => {
+    const overrideTemplate: SessionTemplate = {
+      ...globalTemplate,
+      variants: globalTemplate.variants.map((v) => ({ ...v })),
+    };
+    setEditingTemplate(overrideTemplate);
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -146,11 +165,11 @@ export function WorkspaceSessionTemplatesSection({
           </div>
         )}
 
-        {templates.length === 0 ? (
+        {templates.length === 0 && nonOverriddenGlobalTemplates.length === 0 ? (
           <p className="text-muted-foreground text-sm py-4 text-center">
-            No workspace-specific templates. Global templates will be used.
+            No templates configured.
           </p>
-        ) : (
+        ) : templates.length === 0 ? null : (
           <div className="space-y-3">
             {templates.map((template) => {
               const isExpanded = expandedTemplates.has(template.id);
@@ -209,6 +228,88 @@ export function WorkspaceSessionTemplatesSection({
                             <span className="font-medium">{variant.name}</span>
                             {idx === (template.defaultVariantIndex ?? 0) && (
                               <span className="text-xs text-primary">
+                                Default
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground mt-1 space-y-0.5">
+                            <p>
+                              Model: {variant.model.providerID}/
+                              {variant.model.modelID}
+                            </p>
+                            {variant.variant && (
+                              <p>Variant: {variant.variant}</p>
+                            )}
+                            {variant.agent && <p>Agent: {variant.agent}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {nonOverriddenGlobalTemplates.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Globe className="h-4 w-4" />
+              <span>Global Templates</span>
+            </div>
+            {nonOverriddenGlobalTemplates.map((template) => {
+              const isExpanded = expandedTemplates.has(`global-${template.id}`);
+              return (
+                <div
+                  key={template.id}
+                  className="border rounded-lg border-dashed opacity-60 hover:opacity-100 transition-opacity"
+                >
+                  <div className="p-3 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(`global-${template.id}`)}
+                      className="flex items-center gap-2 text-left flex-1"
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                      <div>
+                        <span className="font-medium">{template.name}</span>
+                        {template.description && (
+                          <p className="text-sm text-muted-foreground">
+                            {template.description}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleOverrideGlobal(template)}
+                      disabled={!hasSandbox}
+                    >
+                      <Copy className="h-3 w-3 mr-1.5" />
+                      Override
+                    </Button>
+                  </div>
+                  {isExpanded && (
+                    <div className="px-3 pb-3 space-y-2">
+                      {template.variants.map((variant, idx) => (
+                        <div
+                          key={`global-${template.id}-${idx}`}
+                          className={`p-3 rounded-md border ${
+                            idx === (template.defaultVariantIndex ?? 0)
+                              ? "border-primary/50 bg-primary/5"
+                              : "border-border"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{variant.name}</span>
+                            {idx === (template.defaultVariantIndex ?? 0) && (
+                              <span className="text-xs text-primary/70">
                                 Default
                               </span>
                             )}
