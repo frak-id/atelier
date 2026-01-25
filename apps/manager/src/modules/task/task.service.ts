@@ -151,7 +151,6 @@ export class TaskService {
       id: sessionId,
       templateId: sessionTemplateId,
       order: nextOrder,
-      status: "running",
       startedAt: new Date().toISOString(),
     };
 
@@ -168,38 +167,6 @@ export class TaskService {
     );
 
     return { task: updatedTask, session: newSession };
-  }
-
-  updateSessionStatus(
-    id: string,
-    sessionId: string,
-    status: TaskSession["status"],
-  ): Task {
-    const task = this.getByIdOrThrow(id);
-    const sessions = task.data.sessions ?? [];
-    const sessionIndex = sessions.findIndex((s) => s.id === sessionId);
-
-    if (sessionIndex === -1) {
-      throw new NotFoundError("Session", sessionId);
-    }
-
-    const updatedSessions = [...sessions];
-    updatedSessions[sessionIndex] = {
-      ...sessions[sessionIndex]!,
-      status,
-      ...(status === "completed" && { completedAt: new Date().toISOString() }),
-    };
-
-    return this.repository.update(id, {
-      data: { ...task.data, sessions: updatedSessions },
-    });
-  }
-
-  getActiveSessionIds(id: string): string[] {
-    const task = this.getByIdOrThrow(id);
-    return (task.data.sessions ?? [])
-      .filter((s) => s.status === "running")
-      .map((s) => s.id);
   }
 
   complete(id: string): Task {

@@ -9,8 +9,8 @@ import {
   Loader2,
   Terminal,
 } from "lucide-react";
-import { useMemo } from "react";
 import { sandboxDetailQuery } from "@/api/queries";
+import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
 import {
-  type SessionInteraction,
-  useOpencodeInteraction,
-} from "@/hooks/use-opencode-interaction";
-import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
+  type SessionInteractionState,
+  useTaskSessionProgress,
+} from "@/hooks/use-task-session-progress";
 import { buildOpenCodeSessionUrl } from "@/lib/utils";
 
 type TaskDetailDialogProps = {
@@ -61,19 +59,21 @@ function TaskDetailContent({ task }: { task: Task }) {
   });
 
   const {
-    sessions,
+    allSessions,
     totalCount,
-    completedCount,
-    runningCount,
-    progressPercent,
-    hasRunningSessions,
-  } = useTaskSessionProgress(task);
-
-  const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
-
-  const interactionState = useOpencodeInteraction(
+    sessionInteractions,
+    aggregatedInteraction,
+    needsAttention,
+    hasBusySessions,
+  } = useTaskSessionProgress(
+    task,
     sandbox?.runtime?.urls?.opencode,
-    sessionIds,
+    sandbox
+      ? {
+          id: sandbox.id,
+          workspaceId: sandbox.workspaceId,
+        }
+      : undefined,
     task.status === "active" && !!sandbox?.runtime?.urls?.opencode,
   );
 
@@ -109,39 +109,41 @@ function TaskDetailContent({ task }: { task: Task }) {
       {totalCount > 0 && (
         <div>
           <h3 className="text-sm font-medium text-muted-foreground mb-2">
-            Sessions Progress
+            Sessions
           </h3>
           <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <Progress value={progressPercent} className="flex-1" />
-              <span className="text-sm font-medium min-w-[60px] text-right">
-                {completedCount}/{totalCount}
-              </span>
-            </div>
+            {hasBusySessions && <Badge variant="secondary">Working</Badge>}
+
+            {needsAttention && (
+              <ExpandableInterventions
+                permissions={aggregatedInteraction.pendingPermissions}
+                questions={aggregatedInteraction.pendingQuestions}
+                compact={true}
+              />
+            )}
+
             <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {sessions.map((session) => {
-                const sessionInteraction = interactionState.sessions.find(
+              {allSessions.map((session) => {
+                const sessionInteraction = sessionInteractions.find(
                   (s) => s.sessionId === session.id,
+                );
+                const taskSession = task.data.sessions?.find(
+                  (ts) => ts.id === session.id,
                 );
                 return (
                   <TaskSessionRow
                     key={session.id}
-                    session={session}
+                    sessionId={session.id}
+                    templateId={taskSession?.templateId}
                     interaction={sessionInteraction}
                     opencodeUrl={sandbox?.runtime?.urls?.opencode}
-                    directory={sandbox?.workspaceId ?? "/home/dev/workspace"}
+                    directory={session.directory}
                   />
                 );
               })}
             </div>
           </div>
         </div>
-      )}
-
-      {hasRunningSessions && (
-        <Badge variant="secondary">
-          {runningCount} session{runningCount > 1 ? "s" : ""} running
-        </Badge>
       )}
 
       {sandbox?.status === "running" && sandbox.runtime?.urls && (
@@ -217,10 +219,10 @@ function TaskDetailContent({ task }: { task: Task }) {
             </>
           )}
 
-          {sessions.length > 0 && (
+          {allSessions.length > 0 && (
             <>
               <div className="text-muted-foreground">Sessions</div>
-              <span>{sessions.length} total</span>
+              <span>{allSessions.length} total</span>
             </>
           )}
 
@@ -249,27 +251,21 @@ function TaskDetailContent({ task }: { task: Task }) {
   );
 }
 
-interface TaskSession {
-  id: string;
-  templateId: string;
-  order: number;
-  status: "pending" | "running" | "completed";
-  startedAt?: string;
-  completedAt?: string;
-}
-
 function TaskSessionRow({
-  session,
+  sessionId,
+  templateId,
   interaction,
   opencodeUrl,
   directory,
 }: {
-  session: TaskSession;
-  interaction: SessionInteraction | undefined;
+  sessionId: string;
+  templateId: string | undefined;
+  interaction: SessionInteractionState | undefined;
   opencodeUrl: string | undefined;
   directory: string;
 }) {
-  const shortId = session.id.slice(0, 8);
+  const shortId = sessionId.slice(0, 8);
+  const status = interaction?.status ?? "unknown";
 
   const needsAttention =
     interaction &&
@@ -278,24 +274,24 @@ function TaskSessionRow({
 
   const sessionUrl =
     opencodeUrl && directory
-      ? buildOpenCodeSessionUrl(opencodeUrl, directory, session.id)
+      ? buildOpenCodeSessionUrl(opencodeUrl, directory, sessionId)
       : undefined;
 
   return (
     <div className="flex items-center gap-2 text-xs py-1.5 px-2 bg-muted/50 rounded">
-      {session.status === "completed" ? (
-        <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
-      ) : session.status === "pending" ? (
-        <Clock className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
-      ) : (
+      {status === "idle" ? (
+        <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+      ) : status === "busy" ? (
         <Loader2 className="h-3.5 w-3.5 text-blue-500 shrink-0 animate-spin" />
+      ) : (
+        <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
       )}
       <span className="truncate flex-1">
-        {session.templateId}{" "}
+        {templateId ?? "Session"}{" "}
         <span className="font-mono text-muted-foreground">({shortId})</span>
       </span>
 
-      {interaction && session.status === "running" && (
+      {interaction && (
         <SessionStatusIndicator
           interaction={{
             status: interaction.status,
@@ -327,12 +323,6 @@ function TaskSessionRow({
           </a>
         </Button>
       )}
-
-      <span className="text-muted-foreground shrink-0">
-        {session.startedAt
-          ? new Date(session.startedAt).toLocaleTimeString()
-          : ""}
-      </span>
     </div>
   );
 }

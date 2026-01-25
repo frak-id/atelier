@@ -1,72 +1,165 @@
 import type { Task } from "@frak-sandbox/manager/types";
+import type { Session } from "@opencode-ai/sdk/v2";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { opencodeSessionsQuery } from "@/api/queries";
+import type { SessionWithSandboxInfo } from "@/components/session-row";
+import {
+  type AggregatedInteractionState,
+  aggregateInteractions,
+  type MappedSessionStatus,
+  type SessionInteractionInfo,
+} from "@/lib/opencode-helpers";
+import {
+  buildSessionHierarchy,
+  type SessionNode,
+} from "@/lib/session-hierarchy";
+import { useOpencodeData } from "./use-opencode-data";
 
-export interface TaskSessionProgress {
-  sessions: NonNullable<Task["data"]["sessions"]>;
-  completedSessions: NonNullable<Task["data"]["sessions"]>;
-  runningSessions: NonNullable<Task["data"]["sessions"]>;
-  pendingSessions: NonNullable<Task["data"]["sessions"]>;
+export type { AggregatedInteractionState, MappedSessionStatus };
+
+export interface SessionInteractionState {
+  sessionId: string;
+  status: MappedSessionStatus;
+  pendingPermissions: SessionInteractionInfo["pendingPermissions"];
+  pendingQuestions: SessionInteractionInfo["pendingQuestions"];
+}
+
+export interface TaskSessionProgressResult {
+  hierarchy: SessionNode[];
+  allSessions: SessionWithSandboxInfo[];
+  rootSessions: SessionWithSandboxInfo[];
+
   totalCount: number;
-  completedCount: number;
-  runningCount: number;
-  progressPercent: number;
-  hasSessions: boolean;
-  hasActiveOrCompletedSession: boolean;
-  hasRunningSessions: boolean;
-  subsessionCount?: number;
-  totalWithSubsessions?: number;
+  subsessionCount: number;
+
+  sessionInteractions: SessionInteractionState[];
+
+  aggregatedInteraction: AggregatedInteractionState;
+  needsAttention: boolean;
+  hasIdleSessions: boolean;
+  hasBusySessions: boolean;
+
+  isLoading: boolean;
+  isSessionsLoading: boolean;
+  isInteractionsLoading: boolean;
 }
 
 export function useTaskSessionProgress(
   task: Task,
-  options?: {
-    includeSubsessions?: boolean;
-    allSessions?: NonNullable<Task["data"]["sessions"]>;
+  opencodeUrl: string | undefined,
+  sandboxInfo?: {
+    id: string;
+    workspaceId: string | undefined;
   },
-): TaskSessionProgress {
+  enabled = true,
+): TaskSessionProgressResult {
+  const { data: sessions, isLoading: isSessionsLoading } = useQuery({
+    ...opencodeSessionsQuery(opencodeUrl ?? ""),
+    enabled: enabled && !!opencodeUrl,
+  });
+
+  const {
+    permissions,
+    questions,
+    sessionStatuses,
+    isLoading: isInteractionsLoading,
+  } = useOpencodeData(opencodeUrl, enabled);
+
+  const isLoading = isSessionsLoading || isInteractionsLoading;
+
   return useMemo(() => {
-    const sessions =
-      options?.includeSubsessions && options?.allSessions
-        ? options.allSessions
-        : (task.data.sessions ?? []);
-
-    const completedSessions = sessions.filter((s) => s.status === "completed");
-    const runningSessions = sessions.filter((s) => s.status === "running");
-    const pendingSessions = sessions.filter((s) => s.status === "pending");
-    const totalCount = sessions.length;
-    const completedCount = completedSessions.length;
-    const runningCount = runningSessions.length;
-    const progressPercent =
-      totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
-    const hasActiveOrCompletedSession = sessions.some(
-      (s) => s.status === "running" || s.status === "completed",
+    const taskSessionIds = new Set(
+      task.data.sessions?.map((s: { id: string }) => s.id) ?? [],
     );
 
-    const subsessionCount =
-      options?.includeSubsessions && options?.allSessions
-        ? options.allSessions.length - (task.data.sessions?.length ?? 0)
-        : undefined;
+    const sessionsWithSandbox: SessionWithSandboxInfo[] = (sessions ?? []).map(
+      (session: Session) => ({
+        ...session,
+        sandbox: {
+          id: sandboxInfo?.id ?? "",
+          workspaceId: sandboxInfo?.workspaceId,
+          opencodeUrl: opencodeUrl ?? "",
+        },
+      }),
+    );
 
-    const totalWithSubsessions =
-      options?.includeSubsessions && options?.allSessions
-        ? options.allSessions.length
-        : undefined;
+    const hierarchy = buildSessionHierarchy(sessionsWithSandbox);
+    const filteredRoots = hierarchy.filter((node) =>
+      taskSessionIds.has(node.session.id),
+    );
+
+    const flattenHierarchy = (
+      nodes: SessionNode[],
+    ): SessionWithSandboxInfo[] => {
+      const result: SessionWithSandboxInfo[] = [];
+      for (const node of nodes) {
+        result.push(node.session);
+        if (node.children.length > 0) {
+          result.push(...flattenHierarchy(node.children));
+        }
+      }
+      return result;
+    };
+
+    const allSessions = flattenHierarchy(filteredRoots);
+    const rootSessions = filteredRoots.map((node) => node.session);
+
+    const {
+      interactions,
+      aggregated,
+      needsAttention,
+      hasIdleSessions,
+      hasBusySessions,
+    } = aggregateInteractions(
+      allSessions.map((s) => s.id),
+      sessionStatuses,
+      permissions,
+      questions,
+    );
+
+    const sessionInteractions: SessionInteractionState[] = allSessions.map(
+      (session) => {
+        const interaction = interactions.get(session.id);
+        return {
+          sessionId: session.id,
+          status: interaction?.status ?? "unknown",
+          pendingPermissions: interaction?.pendingPermissions ?? [],
+          pendingQuestions: interaction?.pendingQuestions ?? [],
+        };
+      },
+    );
 
     return {
-      sessions,
-      completedSessions,
-      runningSessions,
-      pendingSessions,
-      totalCount,
-      completedCount,
-      runningCount,
-      progressPercent,
-      hasSessions: sessions.length > 0,
-      hasActiveOrCompletedSession,
-      hasRunningSessions: runningCount > 0,
-      subsessionCount,
-      totalWithSubsessions,
+      hierarchy: filteredRoots,
+      allSessions,
+      rootSessions,
+
+      totalCount: rootSessions.length,
+      subsessionCount: allSessions.length - rootSessions.length,
+
+      sessionInteractions,
+
+      aggregatedInteraction: aggregated,
+      needsAttention,
+      hasIdleSessions,
+      hasBusySessions,
+
+      isLoading,
+      isSessionsLoading,
+      isInteractionsLoading,
     };
-  }, [task.data.sessions, options?.includeSubsessions, options?.allSessions]);
+  }, [
+    task.data.sessions,
+    sessions,
+    sessionStatuses,
+    permissions,
+    questions,
+    opencodeUrl,
+    sandboxInfo?.id,
+    sandboxInfo?.workspaceId,
+    isLoading,
+    isSessionsLoading,
+    isInteractionsLoading,
+  ]);
 }

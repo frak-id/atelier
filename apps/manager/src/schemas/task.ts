@@ -9,13 +9,7 @@ export const TaskSessionSchema = t.Object({
   id: t.String(),
   templateId: t.String(),
   order: t.Number(),
-  status: t.Union([
-    t.Literal("pending"),
-    t.Literal("running"),
-    t.Literal("completed"),
-  ]),
   startedAt: t.Optional(t.String()),
-  completedAt: t.Optional(t.String()),
 });
 export type TaskSession = Static<typeof TaskSessionSchema>;
 

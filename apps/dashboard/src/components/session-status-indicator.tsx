@@ -1,4 +1,3 @@
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
 import {
   Circle,
   Loader2,
@@ -12,14 +11,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { MappedSessionStatus } from "@/hooks/use-opencode-interaction";
+import type {
+  MappedSessionStatus,
+  SessionInteractionInfo,
+} from "@/lib/opencode-helpers";
 import { cn } from "@/lib/utils";
 
-export type SessionInteractionInfo = {
-  status: MappedSessionStatus;
-  pendingPermissions: PermissionRequest[];
-  pendingQuestions: QuestionRequest[];
-};
+export type { SessionInteractionInfo };
 
 type SessionStatusIndicatorProps = {
   interaction: SessionInteractionInfo | null;
