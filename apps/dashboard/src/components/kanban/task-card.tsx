@@ -3,7 +3,6 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertCircle,
   Check,
   CheckCircle2,
   Code,
@@ -25,6 +24,7 @@ import {
   sandboxDetailQuery,
   useAddTaskSessions,
 } from "@/api/queries";
+import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -135,18 +135,6 @@ export function TaskCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
-              {needsAttention && interactionState && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <NeedsAttentionTooltip
-                      interactionState={interactionState}
-                    />
-                  </TooltipContent>
-                </Tooltip>
-              )}
               <button
                 type="button"
                 onClick={onClick}
@@ -189,11 +177,28 @@ export function TaskCard({
           )}
 
           {hasRunningSessions && (
-            <Badge variant="secondary" className="mt-2 text-xs">
-              {runningCount} session
-              {runningCount > 1 ? "s" : ""} running
-            </Badge>
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <Badge variant="secondary" className="text-xs">
+                {runningCount} session
+                {runningCount > 1 ? "s" : ""} running
+              </Badge>
+              <TaskSessionsStatus
+                interactionState={interactionState}
+                opencodeUrl={sandbox?.runtime?.urls?.opencode}
+              />
+            </div>
           )}
+
+          {!hasRunningSessions &&
+            needsAttention &&
+            sandbox?.runtime?.urls?.opencode && (
+              <div className="mt-2">
+                <TaskSessionsStatus
+                  interactionState={interactionState}
+                  opencodeUrl={sandbox.runtime.urls.opencode}
+                />
+              </div>
+            )}
 
           {task.status === "active" &&
             hasActiveOrCompletedSession &&
@@ -360,33 +365,65 @@ function CopySshButton({ ssh }: { ssh: string }) {
   );
 }
 
-function NeedsAttentionTooltip({
+function TaskSessionsStatus({
   interactionState,
+  opencodeUrl,
 }: {
   interactionState: OpencodeInteractionState;
+  opencodeUrl: string | undefined;
 }) {
-  const permissionCount = interactionState.sessions.reduce(
-    (acc, s) => acc + s.pendingPermissions.length,
-    0,
-  );
-  const questionCount = interactionState.sessions.reduce(
-    (acc, s) => acc + s.pendingQuestions.length,
-    0,
-  );
-
-  const items: string[] = [];
-  if (permissionCount > 0) {
-    items.push(
-      `${permissionCount} permission${permissionCount > 1 ? "s" : ""} pending`,
-    );
-  }
-  if (questionCount > 0) {
-    items.push(
-      `${questionCount} question${questionCount > 1 ? "s" : ""} pending`,
-    );
+  if (!interactionState.available || interactionState.isLoading) {
+    return null;
   }
 
-  return <span>{items.join(", ") || "Needs attention"}</span>;
+  const allPermissions = interactionState.sessions.flatMap((s) =>
+    s.pendingPermissions.map((p) => ({ ...p, sessionId: s.sessionId })),
+  );
+  const allQuestions = interactionState.sessions.flatMap((s) =>
+    s.pendingQuestions.map((q) => ({ ...q, sessionId: s.sessionId })),
+  );
+
+  const hasIdleSessions = interactionState.sessions.some(
+    (s) => s.status === "idle",
+  );
+  const hasBusySessions = interactionState.sessions.some(
+    (s) => s.status === "busy",
+  );
+
+  const needsAttention = allPermissions.length > 0 || allQuestions.length > 0;
+
+  if (!needsAttention && !hasIdleSessions && !hasBusySessions) {
+    return null;
+  }
+
+  const aggregatedInteraction = {
+    status: hasBusySessions
+      ? ("busy" as const)
+      : hasIdleSessions
+        ? ("idle" as const)
+        : ("unknown" as const),
+    pendingPermissions: allPermissions,
+    pendingQuestions: allQuestions,
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <SessionStatusIndicator interaction={aggregatedInteraction} compact />
+      {needsAttention && opencodeUrl && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 text-xs gap-1"
+          asChild
+        >
+          <a href={opencodeUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="h-3 w-3" />
+            Respond
+          </a>
+        </Button>
+      )}
+    </div>
+  );
 }
 
 type SecondaryTemplate = {
