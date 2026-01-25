@@ -12,6 +12,7 @@ import {
 } from "@/lib/opencode-helpers";
 import {
   buildSessionHierarchy,
+  flattenHierarchy,
   type SessionNode,
 } from "@/lib/session-hierarchy";
 import { useOpencodeData } from "./use-opencode-data";
@@ -79,7 +80,7 @@ export function useTaskSessionProgress(
     isLoading: isInteractionsLoading,
   } = useOpencodeData(opencodeUrl, enabled);
 
-  const allSessionIds = useMemo(() => {
+  const hierarchyData = useMemo(() => {
     const taskSessionIds = new Set(
       task.data.sessions?.map((s: { id: string }) => s.id) ?? [],
     );
@@ -100,20 +101,16 @@ export function useTaskSessionProgress(
       taskSessionIds.has(node.session.id),
     );
 
-    const flattenHierarchy = (
-      nodes: SessionNode[],
-    ): SessionWithSandboxInfo[] => {
-      const result: SessionWithSandboxInfo[] = [];
-      for (const node of nodes) {
-        result.push(node.session);
-        if (node.children.length > 0) {
-          result.push(...flattenHierarchy(node.children));
-        }
-      }
-      return result;
-    };
+    const allSessions = flattenHierarchy(filteredRoots);
 
-    return flattenHierarchy(filteredRoots).map((s) => s.id);
+    return {
+      taskSessionIds,
+      sessionsWithSandbox,
+      hierarchy,
+      filteredRoots,
+      allSessions,
+      allSessionIds: allSessions.map((s) => s.id),
+    };
   }, [
     task.data.sessions,
     sessions,
@@ -123,7 +120,7 @@ export function useTaskSessionProgress(
   ]);
 
   const todosResults = useQueries({
-    queries: allSessionIds.map((sessionId) => ({
+    queries: hierarchyData.allSessionIds.map((sessionId) => ({
       ...opencodeTodosQuery(opencodeUrl ?? "", sessionId),
       enabled: enabled && !!opencodeUrl && !!sessionId,
     })),
@@ -133,15 +130,15 @@ export function useTaskSessionProgress(
 
   const todosBySession = useMemo(() => {
     const map = new Map<string, Todo[]>();
-    for (let i = 0; i < allSessionIds.length; i++) {
-      const sessionId = allSessionIds[i];
+    for (let i = 0; i < hierarchyData.allSessionIds.length; i++) {
+      const sessionId = hierarchyData.allSessionIds[i];
       if (sessionId) {
         const result = todosResults[i];
         map.set(sessionId, (result?.data ?? []) as Todo[]);
       }
     }
     return map;
-  }, [allSessionIds, todosResults]);
+  }, [hierarchyData.allSessionIds, todosResults]);
 
   const isLoading =
     isSessionsLoading || isInteractionsLoading || isTodosLoading;

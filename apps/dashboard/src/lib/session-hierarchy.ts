@@ -58,3 +58,16 @@ export function countSubSessions(node: SessionNode): number {
   }
   return count;
 }
+
+export function flattenHierarchy(
+  nodes: SessionNode[],
+): SessionWithSandboxInfo[] {
+  const result: SessionWithSandboxInfo[] = [];
+  for (const node of nodes) {
+    result.push(node.session);
+    if (node.children.length > 0) {
+      result.push(...flattenHierarchy(node.children));
+    }
+  }
+  return result;
+}
