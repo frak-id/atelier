@@ -114,6 +114,14 @@ async function subscribeToEvents(
           queryKey: queryKeys.opencode.questions(opencodeUrl),
         });
         break;
+      case "todo.updated":
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.opencode.todos(
+            opencodeUrl,
+            event.properties.sessionID,
+          ),
+        });
+        break;
     }
   };
 
