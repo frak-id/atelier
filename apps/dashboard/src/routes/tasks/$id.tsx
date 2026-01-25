@@ -71,7 +71,7 @@ function TaskDetailPage() {
 
   const {
     hierarchy,
-    allSessions,
+    allCount,
     totalCount,
     subsessionCount,
     completedSubsessionCount,
@@ -281,7 +281,7 @@ function TaskDetailPage() {
             <div className="flex items-center gap-3">
               <Progress value={progressPercent} className="flex-1 h-2" />
               <span className="text-sm text-muted-foreground whitespace-nowrap">
-                {completedSubsessionCount}/{totalCount + subsessionCount}
+                {completedSubsessionCount}/{allCount}
               </span>
               {hasBusySessions && <Badge variant="secondary">Working</Badge>}
             </div>
@@ -359,10 +359,10 @@ function TaskDetailPage() {
               </>
             )}
 
-            {allSessions.length > 0 && (
+            {allCount > 0 && (
               <>
                 <div className="text-muted-foreground">Sessions</div>
-                <span>{allSessions.length} total</span>
+                <span>{allCount} total</span>
               </>
             )}
 
