@@ -32,7 +32,6 @@ export function SessionRow({
   showDelete = false,
   onDelete,
   isDeleting,
-  interaction: providedInteraction,
   showStatus = true,
 }: SessionRowProps) {
   const sessionUrl = buildOpenCodeSessionUrl(
@@ -42,16 +41,11 @@ export function SessionRow({
   );
   const timeString = session.time.updated || session.time.created;
 
-  const { interaction: fetchedInteraction, isLoading } = useSessionInteraction(
+  const { interaction, isLoading } = useSessionInteraction(
     session.sandbox.opencodeUrl,
     session.id,
-    showStatus && providedInteraction === undefined,
+    showStatus,
   );
-
-  const interaction =
-    providedInteraction !== undefined
-      ? providedInteraction
-      : fetchedInteraction;
 
   const needsAttention =
     interaction &&
@@ -68,7 +62,7 @@ export function SessionRow({
           {showStatus && (
             <SessionStatusIndicator
               interaction={interaction}
-              isLoading={isLoading && providedInteraction === undefined}
+              isLoading={isLoading}
               compact
             />
           )}
