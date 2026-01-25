@@ -33,6 +33,9 @@ export interface TaskSessionProgressResult {
   totalCount: number;
   subsessionCount: number;
 
+  completedSubsessionCount: number;
+  progressPercent: number;
+
   sessionInteractions: SessionInteractionState[];
 
   aggregatedInteraction: AggregatedInteractionState;
@@ -118,6 +121,7 @@ export function useTaskSessionProgress(
       questions,
     );
 
+    const rootSessionIds = new Set(rootSessions.map((s) => s.id));
     const sessionInteractions: SessionInteractionState[] = allSessions.map(
       (session) => {
         const interaction = interactions.get(session.id);
@@ -130,6 +134,16 @@ export function useTaskSessionProgress(
       },
     );
 
+    const completedSubsessionCount = sessionInteractions.filter(
+      (s) => s.status === "idle" && !rootSessionIds.has(s.sessionId),
+    ).length;
+
+    const totalSessionCount = allSessions.length;
+    const progressPercent =
+      totalSessionCount > 0
+        ? Math.round((completedSubsessionCount / totalSessionCount) * 100)
+        : 0;
+
     return {
       hierarchy: filteredRoots,
       allSessions,
@@ -137,6 +151,9 @@ export function useTaskSessionProgress(
 
       totalCount: rootSessions.length,
       subsessionCount: allSessions.length - rootSessions.length,
+
+      completedSubsessionCount,
+      progressPercent,
 
       sessionInteractions,
 
