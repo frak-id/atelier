@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { sandboxDetailQuery } from "@/api/queries";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
+import { SessionTodoInfo } from "@/components/session-todo-info";
+import { TodoProgressBar } from "@/components/todo-progress-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,6 +82,9 @@ export function TaskCard({
     needsAttention,
     hasBusySessions,
     isLoading: isProgressLoading,
+    sessionInteractions,
+    todoProgress,
+    currentTask,
   } = useTaskSessionProgress(
     task,
     sandbox?.runtime?.urls?.opencode,
@@ -95,6 +100,7 @@ export function TaskCard({
   const hasActiveSessions = totalCount > 0;
   const showConnectionInfo =
     task.status === "active" && sandbox?.status === "running";
+  const allTodos = sessionInteractions.flatMap((s) => s.todos);
 
   return (
     <div
@@ -148,11 +154,24 @@ export function TaskCard({
           )}
 
           {totalCount > 0 && (
-            <div className="flex items-center gap-2 mt-2">
-              <Progress value={progressPercent} className="flex-1 h-1.5" />
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {completedSubsessionCount}/{totalCount + subsessionCount}
-              </span>
+            <div className="mt-2 space-y-1">
+              {todoProgress.total > 0 ? (
+                <>
+                  <TodoProgressBar
+                    todos={allTodos}
+                    compact
+                    className="flex-1"
+                  />
+                  {currentTask && <SessionTodoInfo todos={allTodos} compact />}
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Progress value={progressPercent} className="flex-1 h-1.5" />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {completedSubsessionCount}/{totalCount + subsessionCount}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
