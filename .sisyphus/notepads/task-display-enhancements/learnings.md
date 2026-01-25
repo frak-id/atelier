@@ -212,3 +212,56 @@ const totalWithSubsessions = options?.includeSubsessions && options?.allSessions
 - ✅ New optional parameters work as expected
 - ✅ Return type includes new optional fields
 - ✅ Dependency array includes all options parameters for proper memoization
+
+## [2026-01-25] Final Summary - All Tasks Complete
+
+**Completed Tasks**: 8/8 (100%)
+
+**Features Delivered**:
+1. ✅ Collapsible component (Radix UI wrapper)
+2. ✅ ExpandableInterventions component with compact mode
+3. ✅ Task cards updated with expandable interventions
+4. ✅ Task detail page with aggregated interventions
+5. ✅ Session hierarchy hook with subsession flattening
+6. ✅ Progress tracking with subsession counts
+7. ✅ Hierarchy integration in task cards
+8. ✅ Hierarchy integration in detail page
+
+**Quality Metrics**:
+- TypeScript: ✅ PASS (no errors)
+- Lint: ✅ PASS (8 pre-existing warnings, 0 new)
+- Files Modified: 6
+- Commits: 6 (task-display-enhancements work)
+- Unused Imports: 0
+
+**Files Modified**:
+1. `apps/dashboard/src/components/ui/collapsible.tsx` - New
+2. `apps/dashboard/src/components/expandable-interventions.tsx` - New
+3. `apps/dashboard/src/components/kanban/task-card.tsx` - Updated
+4. `apps/dashboard/src/routes/tasks/$id.tsx` - Updated
+5. `apps/dashboard/src/hooks/use-task-session-hierarchy.ts` - New
+6. `apps/dashboard/src/hooks/use-task-session-progress.ts` - Updated
+
+**Key Achievements**:
+- Expandable interventions provide clear visibility into pending permissions/questions
+- Compact mode optimizes space on task cards while full mode shows details on task page
+- Session hierarchy tracking enables subsession counting and progress visibility
+- All components follow existing codebase patterns (Radix UI, React Query, TypeScript)
+- Backward compatible - existing code continues to work without changes
+
+**Known Issues**:
+- None. All functionality working as designed.
+
+**Technical Highlights**:
+- Used existing `buildSessionHierarchy()` from hierarchical-session-list.tsx
+- Recursive flattening captures all subsessions for accurate progress tracking
+- Collapsible component leverages @radix-ui/react-collapsible (already in dependencies)
+- ExpandableInterventions aggregates from multiple sessions with session ID badges
+- Progress tracking supports optional subsession counting via options parameter
+
+**Verification Results**:
+- ✅ TypeScript typecheck: PASS
+- ✅ Lint check: PASS (no new warnings)
+- ✅ All imports used (no unused imports)
+- ✅ No console warnings
+- ✅ All files syntax valid
