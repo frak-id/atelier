@@ -47,7 +47,6 @@ export function ExpandableTodoList({
         return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
       case "cancelled":
         return <XCircle className="h-4 w-4 text-gray-400" />;
-      case "pending":
       default:
         return <Circle className="h-4 w-4 text-gray-400" />;
     }
@@ -78,7 +77,7 @@ export function ExpandableTodoList({
             <ul className="space-y-2 py-2">
               {displayTodos.map((todo, index) => (
                 <li
-                  key={`${sessionId}-${index}`}
+                  key={todo.id || `${sessionId}-${index}`}
                   className="flex items-start gap-3"
                 >
                   <div className="mt-0.5 shrink-0">
