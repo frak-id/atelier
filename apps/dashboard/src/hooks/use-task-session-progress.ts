@@ -13,11 +13,23 @@ export interface TaskSessionProgress {
   hasSessions: boolean;
   hasActiveOrCompletedSession: boolean;
   hasRunningSessions: boolean;
+  subsessionCount?: number;
+  totalWithSubsessions?: number;
 }
 
-export function useTaskSessionProgress(task: Task): TaskSessionProgress {
+export function useTaskSessionProgress(
+  task: Task,
+  options?: {
+    includeSubsessions?: boolean;
+    allSessions?: NonNullable<Task["data"]["sessions"]>;
+  },
+): TaskSessionProgress {
   return useMemo(() => {
-    const sessions = task.data.sessions ?? [];
+    const sessions =
+      options?.includeSubsessions && options?.allSessions
+        ? options.allSessions
+        : (task.data.sessions ?? []);
+
     const completedSessions = sessions.filter((s) => s.status === "completed");
     const runningSessions = sessions.filter((s) => s.status === "running");
     const pendingSessions = sessions.filter((s) => s.status === "pending");
@@ -31,6 +43,16 @@ export function useTaskSessionProgress(task: Task): TaskSessionProgress {
       (s) => s.status === "running" || s.status === "completed",
     );
 
+    const subsessionCount =
+      options?.includeSubsessions && options?.allSessions
+        ? options.allSessions.length - (task.data.sessions?.length ?? 0)
+        : undefined;
+
+    const totalWithSubsessions =
+      options?.includeSubsessions && options?.allSessions
+        ? options.allSessions.length
+        : undefined;
+
     return {
       sessions,
       completedSessions,
@@ -43,6 +65,8 @@ export function useTaskSessionProgress(task: Task): TaskSessionProgress {
       hasSessions: sessions.length > 0,
       hasActiveOrCompletedSession,
       hasRunningSessions: runningCount > 0,
+      subsessionCount,
+      totalWithSubsessions,
     };
-  }, [task.data.sessions]);
+  }, [task.data.sessions, options?.includeSubsessions, options?.allSessions]);
 }

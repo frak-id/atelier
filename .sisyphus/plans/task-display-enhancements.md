@@ -398,7 +398,7 @@ Task 1 (Collapsible) → Task 2 (Interventions Component) → Task 3 (Card Updat
 
 ---
 
-- [ ] 6. Update Progress Tracking with Session Hierarchy
+- [x] 6. Update Progress Tracking with Session Hierarchy
 
   **What to do**:
   - Update `apps/dashboard/src/hooks/use-task-session-progress.ts`

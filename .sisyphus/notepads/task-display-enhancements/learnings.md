@@ -157,3 +157,58 @@ export function useTaskSessionHierarchy(
 - ✅ All imports resolve correctly
 - ✅ Hook follows React Query patterns from codebase
 - ✅ Matches required signature from task specification
+
+## useTaskSessionProgress Hook Enhancement - Subsession Support
+
+### Implementation Complete
+- ✅ File: `apps/dashboard/src/hooks/use-task-session-progress.ts`
+- ✅ Added optional `options` parameter with `includeSubsessions` and `allSessions` fields
+- ✅ Added `subsessionCount` and `totalWithSubsessions` to return type
+- ✅ TypeScript compilation passes (no errors)
+- ✅ Backward compatible (existing usage still works)
+
+### Key Implementation Details
+
+**Function Signature**:
+```typescript
+export function useTaskSessionProgress(
+  task: Task,
+  options?: {
+    includeSubsessions?: boolean;
+    allSessions?: NonNullable<Task["data"]["sessions"]>;
+  },
+): TaskSessionProgress
+```
+
+**Type Handling**:
+- `allSessions` parameter uses `NonNullable<Task["data"]["sessions"]>` (TaskSession[])
+- NOT `Session` from OpenCode SDK (different type structure)
+- TaskSession has `status` field; OpenCode Session does not
+- Maintains type safety and consistency with existing codebase
+
+**Calculation Logic**:
+```typescript
+const sessions = options?.includeSubsessions && options?.allSessions
+  ? options.allSessions
+  : task.data.sessions ?? [];
+
+const subsessionCount = options?.includeSubsessions && options?.allSessions
+  ? options.allSessions.length - (task.data.sessions?.length ?? 0)
+  : undefined;
+
+const totalWithSubsessions = options?.includeSubsessions && options?.allSessions
+  ? options.allSessions.length
+  : undefined;
+```
+
+**Return Type Enhancement**:
+- Added optional fields: `subsessionCount?: number` and `totalWithSubsessions?: number`
+- All existing fields preserved
+- Backward compatible - new fields only populated when subsessions enabled
+
+### Verification
+- ✅ TypeScript typecheck passes
+- ✅ No breaking changes to existing usage
+- ✅ New optional parameters work as expected
+- ✅ Return type includes new optional fields
+- ✅ Dependency array includes all options parameters for proper memoization
