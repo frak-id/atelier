@@ -1,9 +1,13 @@
 import type { Session } from "@opencode-ai/sdk/v2";
+import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Trash2 } from "lucide-react";
+import { opencodeTodosQuery } from "@/api/queries";
 import {
   type SessionInteractionInfo,
   SessionStatusIndicator,
 } from "@/components/session-status-indicator";
+import { SessionTodoInfo } from "@/components/session-todo-info";
+import { TodoProgressBar } from "@/components/todo-progress-bar";
 import { Button } from "@/components/ui/button";
 import { useSessionInteraction } from "@/hooks/use-session-interaction";
 import { buildOpenCodeSessionUrl, formatRelativeTime } from "@/lib/utils";
@@ -47,6 +51,11 @@ export function SessionRow({
     showStatus,
   );
 
+  const { data: todos } = useQuery({
+    ...opencodeTodosQuery(session.sandbox.opencodeUrl, session.id),
+    enabled: showStatus,
+  });
+
   const needsAttention =
     interaction &&
     (interaction.pendingPermissions.length > 0 ||
@@ -60,11 +69,20 @@ export function SessionRow({
             {session.title || `Session ${session.id.slice(0, 8)}`}
           </span>
           {showStatus && (
-            <SessionStatusIndicator
-              interaction={interaction}
-              isLoading={isLoading}
-              compact
-            />
+            <>
+              {todos && todos.length > 0 ? (
+                <div className="space-y-0.5">
+                  <TodoProgressBar todos={todos} compact />
+                  <SessionTodoInfo todos={todos} compact />
+                </div>
+              ) : (
+                <SessionStatusIndicator
+                  interaction={interaction}
+                  isLoading={isLoading}
+                  compact
+                />
+              )}
+            </>
           )}
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
