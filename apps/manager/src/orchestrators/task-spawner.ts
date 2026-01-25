@@ -306,6 +306,7 @@ export class TaskSpawner {
     const sessionConfig = this.resolveSessionConfig(
       sessionTemplateId,
       workspace.id,
+      task.data.variantIndex,
     );
 
     const sessionResult = await this.createOpencodeSession(
@@ -368,6 +369,7 @@ export class TaskSpawner {
   private resolveSessionConfig(
     sessionTemplateId: string,
     workspaceId: string,
+    taskVariantIndex?: number,
   ): SessionConfig {
     const template = this.deps.sessionTemplateService.getTemplateById(
       sessionTemplateId,
@@ -379,7 +381,10 @@ export class TaskSpawner {
       if (!defaultTemplate?.variants?.[0]) {
         return {};
       }
-      const variant = defaultTemplate.variants[0];
+      const variantIdx = taskVariantIndex ?? 0;
+      const variant =
+        defaultTemplate.variants[variantIdx] ?? defaultTemplate.variants[0];
+      if (!variant) return {};
       return {
         model: variant.model,
         variant: variant.variant,
@@ -388,9 +393,8 @@ export class TaskSpawner {
       };
     }
 
-    const variant =
-      template.variants[template.defaultVariantIndex ?? 0] ??
-      template.variants[0];
+    const variantIdx = taskVariantIndex ?? template.defaultVariantIndex ?? 0;
+    const variant = template.variants[variantIdx] ?? template.variants[0];
 
     return variant
       ? {

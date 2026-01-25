@@ -17,6 +17,7 @@ export const TaskDataSchema = t.Object({
   description: t.String(),
   context: t.Optional(t.String()),
   workflowId: t.Optional(t.String()),
+  variantIndex: t.Optional(t.Number()),
   sandboxId: t.Optional(t.String()),
   sessions: t.Optional(t.Array(TaskSessionSchema)),
   createdBy: t.Optional(t.String()),
@@ -46,6 +47,7 @@ export const CreateTaskBodySchema = t.Object({
   description: t.String({ minLength: 1 }),
   context: t.Optional(t.String()),
   workflowId: t.Optional(t.String()),
+  variantIndex: t.Optional(t.Number()),
   baseBranch: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
 });
@@ -56,6 +58,7 @@ export const UpdateTaskBodySchema = t.Object({
   description: t.Optional(t.String({ minLength: 1 })),
   context: t.Optional(t.String()),
   workflowId: t.Optional(t.String()),
+  variantIndex: t.Optional(t.Number()),
 });
 export type UpdateTaskBody = Static<typeof UpdateTaskBodySchema>;
 

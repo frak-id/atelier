@@ -74,7 +74,8 @@ export function TaskFormDialog({
   const { data: templateData } = useQuery(
     workspaceSessionTemplatesQuery(workspaceId),
   );
-  const templates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
+  const allTemplates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
+  const templates = allTemplates.filter((t) => t.category === "primary");
   const defaultTemplate = templates[0];
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     defaultTemplate?.id ?? "",
@@ -119,7 +120,9 @@ export function TaskFormDialog({
         setSelectedTemplateId(
           task.data.workflowId ?? defaultTemplate?.id ?? "",
         );
-        setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
+        setSelectedVariantIndex(
+          task.data.variantIndex ?? defaultTemplate?.defaultVariantIndex ?? 0,
+        );
         setSelectedRepoIndices(task.data.targetRepoIndices ?? []);
         setSelectedBranch(task.data.baseBranch ?? "");
       } else {
@@ -147,6 +150,7 @@ export function TaskFormDialog({
           description: description.trim(),
           context: context.trim() || undefined,
           workflowId: selectedTemplateId || undefined,
+          variantIndex: selectedVariantIndex,
         } as Parameters<typeof updateMutation.mutateAsync>[0]["data"],
       });
     } else {
@@ -156,6 +160,7 @@ export function TaskFormDialog({
         description: description.trim(),
         context: context.trim() || undefined,
         workflowId: selectedTemplateId || undefined,
+        variantIndex: selectedVariantIndex,
         baseBranch: selectedBranch || undefined,
         targetRepoIndices:
           selectedRepoIndices.length > 0 ? selectedRepoIndices : undefined,
