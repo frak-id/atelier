@@ -17,6 +17,7 @@ import { useRef, useState } from "react";
 import type { ConfigFile, ConfigFileContentType, Sandbox } from "@/api/client";
 import {
   configFilesListQuery,
+  globalOpenCodeConfigQuery,
   globalSessionTemplatesQuery,
   sandboxListQuery,
   sharedAuthListQuery,
@@ -29,6 +30,7 @@ import {
   useUpdateSharedAuth,
   workspaceListQuery,
 } from "@/api/queries";
+import { SessionTemplateEditDialog } from "@/components/session-template-edit-dialog";
 import { SshKeysSection } from "@/components/ssh-keys-section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -737,6 +739,7 @@ function SharedAuthSection() {
 
 function SessionTemplatesSection() {
   const { data, isLoading } = useQuery(globalSessionTemplatesQuery);
+  const { data: openCodeConfig } = useQuery(globalOpenCodeConfigQuery);
   const updateMutation = useUpdateGlobalSessionTemplates();
   const [editingTemplate, setEditingTemplate] =
     useState<SessionTemplate | null>(null);
@@ -754,6 +757,9 @@ function SessionTemplatesSection() {
   }
 
   const templates = data?.templates ?? [];
+  const isNew = editingTemplate
+    ? !templates.some((t) => t.id === editingTemplate.id)
+    : false;
 
   const toggleExpanded = (id: string) => {
     setExpandedTemplates((prev) => {
@@ -768,9 +774,9 @@ function SessionTemplatesSection() {
   };
 
   const handleSaveTemplate = (updated: SessionTemplate) => {
-    const newTemplates = templates.map((t) =>
-      t.id === updated.id ? updated : t,
-    );
+    const newTemplates = isNew
+      ? [...templates, updated]
+      : templates.map((t) => (t.id === updated.id ? updated : t));
     updateMutation.mutate(newTemplates, {
       onSuccess: () => setEditingTemplate(null),
     });
@@ -910,286 +916,12 @@ function SessionTemplatesSection() {
 
       <SessionTemplateEditDialog
         template={editingTemplate}
+        openCodeConfig={openCodeConfig ?? undefined}
         onClose={() => setEditingTemplate(null)}
         onSave={handleSaveTemplate}
-        isNew={
-          editingTemplate
-            ? !templates.some((t) => t.id === editingTemplate.id)
-            : false
-        }
+        isNew={isNew}
         isSaving={updateMutation.isPending}
-        onSaveNew={(newTemplate) => {
-          updateMutation.mutate([...templates, newTemplate], {
-            onSuccess: () => setEditingTemplate(null),
-          });
-        }}
       />
     </div>
-  );
-}
-
-function SessionTemplateEditDialog({
-  template,
-  onClose,
-  onSave,
-  isNew,
-  isSaving,
-  onSaveNew,
-}: {
-  template: SessionTemplate | null;
-  onClose: () => void;
-  onSave: (template: SessionTemplate) => void;
-  isNew: boolean;
-  isSaving: boolean;
-  onSaveNew: (template: SessionTemplate) => void;
-}) {
-  const [editData, setEditData] = useState<SessionTemplate | null>(null);
-
-  const data = editData ?? template;
-
-  if (!template) return null;
-
-  const handleOpen = () => {
-    setEditData({ ...template });
-  };
-
-  const handleSave = () => {
-    if (!data) return;
-    if (isNew) {
-      onSaveNew(data);
-    } else {
-      onSave(data);
-    }
-  };
-
-  const updateVariant = (
-    idx: number,
-    field: keyof SessionTemplate["variants"][number],
-    value: string | { providerID: string; modelID: string },
-  ) => {
-    if (!data) return;
-    const newVariants = data.variants.map((v, i) =>
-      i === idx ? { ...v, [field]: value } : v,
-    );
-    setEditData({ ...data, variants: newVariants });
-  };
-
-  const addVariant = () => {
-    if (!data) return;
-    setEditData({
-      ...data,
-      variants: [
-        ...data.variants,
-        {
-          name: `Variant ${data.variants.length + 1}`,
-          model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
-          variant: "high",
-          agent: "Sisyphus",
-        },
-      ],
-    });
-  };
-
-  const removeVariant = (idx: number) => {
-    if (!data || data.variants.length <= 1) return;
-    const newVariants = data.variants.filter((_, i) => i !== idx);
-    const newDefault =
-      data.defaultVariantIndex === idx
-        ? 0
-        : (data.defaultVariantIndex ?? 0) > idx
-          ? (data.defaultVariantIndex ?? 0) - 1
-          : data.defaultVariantIndex;
-    setEditData({
-      ...data,
-      variants: newVariants,
-      defaultVariantIndex: newDefault,
-    });
-  };
-
-  return (
-    <Dialog
-      open={!!template}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-        else handleOpen();
-      }}
-    >
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {isNew ? "Create Template" : "Edit Template"}
-          </DialogTitle>
-          <DialogDescription>
-            Configure the template name and variants
-          </DialogDescription>
-        </DialogHeader>
-
-        {data && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Template ID</Label>
-                <Input
-                  value={data.id}
-                  onChange={(e) => setEditData({ ...data, id: e.target.value })}
-                  disabled={!isNew}
-                  className="font-mono"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Name</Label>
-                <Input
-                  value={data.name}
-                  onChange={(e) =>
-                    setEditData({ ...data, name: e.target.value })
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Input
-                value={data.description ?? ""}
-                onChange={(e) =>
-                  setEditData({ ...data, description: e.target.value })
-                }
-                placeholder="Optional description"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Variants</Label>
-                <Button variant="outline" size="sm" onClick={addVariant}>
-                  <Plus className="h-3 w-3 mr-1" />
-                  Add Variant
-                </Button>
-              </div>
-
-              <div className="space-y-3">
-                {data.variants.map((variant, idx) => (
-                  <div key={idx} className="p-3 border rounded-md space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          value={variant.name}
-                          onChange={(e) =>
-                            updateVariant(idx, "name", e.target.value)
-                          }
-                          className="w-40"
-                          placeholder="Variant name"
-                        />
-                        <label className="flex items-center gap-1.5 text-sm">
-                          <input
-                            type="radio"
-                            name="defaultVariant"
-                            checked={idx === (data.defaultVariantIndex ?? 0)}
-                            onChange={() =>
-                              setEditData({
-                                ...data,
-                                defaultVariantIndex: idx,
-                              })
-                            }
-                            className="h-4 w-4"
-                          />
-                          Default
-                        </label>
-                      </div>
-                      {data.variants.length > 1 && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeVariant(idx)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Provider ID</Label>
-                        <Input
-                          value={variant.model.providerID}
-                          onChange={(e) =>
-                            updateVariant(idx, "model", {
-                              ...variant.model,
-                              providerID: e.target.value,
-                            })
-                          }
-                          placeholder="anthropic"
-                          className="font-mono text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Model ID</Label>
-                        <Input
-                          value={variant.model.modelID}
-                          onChange={(e) =>
-                            updateVariant(idx, "model", {
-                              ...variant.model,
-                              modelID: e.target.value,
-                            })
-                          }
-                          placeholder="claude-sonnet-4-5"
-                          className="font-mono text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Variant</Label>
-                        <Select
-                          value={variant.variant ?? ""}
-                          onValueChange={(v) =>
-                            updateVariant(idx, "variant", v)
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select variant" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="standard">Standard</SelectItem>
-                            <SelectItem value="high">High</SelectItem>
-                            <SelectItem value="max">Max</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Agent</Label>
-                        <Input
-                          value={variant.agent ?? ""}
-                          onChange={(e) =>
-                            updateVariant(idx, "agent", e.target.value)
-                          }
-                          placeholder="Sisyphus"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : isNew ? (
-              "Create"
-            ) : (
-              "Save"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

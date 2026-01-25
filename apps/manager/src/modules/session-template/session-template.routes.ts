@@ -91,11 +91,25 @@ export const sessionTemplateRoutes = new Elysia({
       detail: {
         tags: ["session-templates"],
         summary:
-          "Get OpenCode configuration (providers, agents) from a running sandbox",
+          "Get OpenCode configuration (providers, agents) from a running workspace sandbox",
       },
       params: t.Object({
         workspaceId: t.String(),
       }),
+      response: OpenCodeConfigResponseSchema,
+    },
+  )
+  .get(
+    "/opencode-config",
+    async () => {
+      return sessionTemplateService.getOpenCodeConfigFromAnySandbox();
+    },
+    {
+      detail: {
+        tags: ["session-templates"],
+        summary:
+          "Get OpenCode configuration (providers, agents) from any running sandbox",
+      },
       response: OpenCodeConfigResponseSchema,
     },
   );
