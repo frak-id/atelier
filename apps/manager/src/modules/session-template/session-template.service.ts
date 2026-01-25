@@ -40,9 +40,8 @@ export class SessionTemplateService {
     }
 
     try {
-      const parsed = JSON.parse(configFile.content) as SessionTemplates;
-      if (parsed.length > 0) {
-        const templates = this.migrateTemplates(parsed);
+      const templates = JSON.parse(configFile.content) as SessionTemplates;
+      if (templates.length > 0) {
         return { templates, isDefault: false };
       }
       return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
@@ -53,13 +52,6 @@ export class SessionTemplateService {
       );
       return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
     }
-  }
-
-  private migrateTemplates(templates: SessionTemplates): SessionTemplates {
-    return templates.map((t) => ({
-      ...t,
-      category: t.category ?? "primary",
-    }));
   }
 
   setGlobalTemplates(templates: SessionTemplates): void {
@@ -74,8 +66,7 @@ export class SessionTemplateService {
 
   getWorkspaceTemplates(workspaceId: string): SessionTemplates | undefined {
     const workspace = this.workspaceService.getById(workspaceId);
-    const templates = workspace?.config.sessionTemplates;
-    return templates ? this.migrateTemplates(templates) : undefined;
+    return workspace?.config.sessionTemplates;
   }
 
   getMergedTemplates(workspaceId?: string): {
