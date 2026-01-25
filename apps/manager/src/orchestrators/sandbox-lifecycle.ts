@@ -1,19 +1,25 @@
+import { FIRECRACKER, LVM } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
+import type { AgentClient } from "../infrastructure/agent/index.ts";
 import {
   FirecrackerClient,
+  getSandboxPaths,
   getSocketPath,
 } from "../infrastructure/firecracker/index.ts";
+import { NetworkService } from "../infrastructure/network/index.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import type { Sandbox } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { fileExists } from "../shared/lib/shell.ts";
+import { ensureDir } from "../shared/lib/shell.ts";
 
 const log = createChildLogger("sandbox-lifecycle");
 
 interface SandboxLifecycleDependencies {
   sandboxService: SandboxService;
+  agentClient: AgentClient;
 }
 
 export class SandboxLifecycle {
@@ -34,13 +40,19 @@ export class SandboxLifecycle {
     log.info({ sandboxId }, "Stopping sandbox");
 
     if (!config.isMock()) {
-      const socketPath = getSocketPath(sandboxId);
-      if (!(await fileExists(socketPath))) {
-        throw new Error(`Socket not found for sandbox '${sandboxId}'`);
+      if (sandbox.runtime.pid) {
+        await $`kill ${sandbox.runtime.pid} 2>/dev/null || true`
+          .quiet()
+          .nothrow();
+        await Bun.sleep(500);
+        await $`kill -9 ${sandbox.runtime.pid} 2>/dev/null || true`
+          .quiet()
+          .nothrow();
       }
 
-      const client = new FirecrackerClient(socketPath);
-      await client.pause();
+      const socketPath = getSocketPath(sandboxId);
+      const pidPath = `${config.paths.SOCKET_DIR}/${sandboxId}.pid`;
+      await $`rm -f ${socketPath} ${pidPath}`.quiet().nothrow();
     }
 
     this.deps.sandboxService.updateStatus(sandboxId, "stopped");
@@ -67,36 +79,125 @@ export class SandboxLifecycle {
 
     log.info({ sandboxId }, "Starting sandbox");
 
-    if (!config.isMock()) {
-      const socketPath = getSocketPath(sandboxId);
-      if (!(await fileExists(socketPath))) {
-        throw new Error(
-          `Socket not found for sandbox '${sandboxId}' - VM may have crashed`,
-        );
-      }
-
-      const processAlive = sandbox.runtime.pid
-        ? await $`kill -0 ${sandbox.runtime.pid}`.quiet().nothrow()
-        : { exitCode: 1 };
-
-      if (processAlive.exitCode !== 0) {
-        throw new Error(
-          `Sandbox '${sandboxId}' process is not running - cannot resume`,
-        );
-      }
-
-      const client = new FirecrackerClient(socketPath);
-      await client.resume();
+    if (config.isMock()) {
+      this.deps.sandboxService.updateStatus(sandboxId, "running");
+      const updated = this.deps.sandboxService.getById(sandboxId);
+      if (!updated)
+        throw new Error(`Sandbox not found after start: ${sandboxId}`);
+      return updated;
     }
 
-    this.deps.sandboxService.updateStatus(sandboxId, "running");
-    log.info({ sandboxId }, "Sandbox started");
-
-    const updated = this.deps.sandboxService.getById(sandboxId);
-    if (!updated) {
-      throw new Error(`Sandbox not found after start: ${sandboxId}`);
+    const volumeInfo = await StorageService.getVolumeInfo(sandboxId);
+    if (!volumeInfo) {
+      throw new Error(
+        `Cannot start sandbox '${sandboxId}': LVM volume not found.`,
+      );
     }
-    return updated;
+
+    const volumePath = `/dev/${LVM.VG_NAME}/${LVM.SANDBOX_PREFIX}${sandboxId}`;
+    const paths = getSandboxPaths(sandboxId, volumePath);
+    const { ipAddress, macAddress } = sandbox.runtime;
+    const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
+
+    const tapExists =
+      (await $`ip link show ${tapDevice}`.quiet().nothrow()).exitCode === 0;
+    if (!tapExists) {
+      log.warn({ sandboxId, tapDevice }, "TAP device missing, recreating");
+      await NetworkService.createTap(tapDevice);
+    }
+
+    await ensureDir(config.paths.SOCKET_DIR);
+    await ensureDir(config.paths.LOG_DIR);
+    await $`rm -f ${paths.socket}`.quiet().nothrow();
+    await $`touch ${paths.log}`.quiet();
+
+    const proc = Bun.spawn(
+      [
+        FIRECRACKER.BINARY_PATH,
+        "--api-sock",
+        paths.socket,
+        "--log-path",
+        paths.log,
+        "--level",
+        "Warning",
+      ],
+      { stdout: "ignore", stderr: "ignore", stdin: "ignore" },
+    );
+
+    await Bun.write(paths.pid, String(proc.pid));
+    await Bun.sleep(50);
+
+    const alive = await $`kill -0 ${proc.pid}`.quiet().nothrow();
+    if (alive.exitCode !== 0) {
+      const logContent = await Bun.file(paths.log)
+        .text()
+        .catch(() => "");
+      log.error({ sandboxId, log: logContent }, "Firecracker failed to start");
+      throw new Error("Firecracker process died on startup");
+    }
+
+    log.debug({ sandboxId, pid: proc.pid }, "Firecracker process started");
+
+    const client = new FirecrackerClient(paths.socket);
+    const bootArgs =
+      "console=ttyS0 reboot=k panic=1 pci=off init=/etc/sandbox/sandbox-init.sh";
+
+    await client.setBootSource(paths.kernel, bootArgs);
+    await client.setDrive("rootfs", paths.overlay, true);
+    await client.setNetworkInterface("eth0", macAddress, tapDevice);
+
+    const cpuTemplatePath = `${config.paths.SANDBOX_DIR}/cpu-template-no-avx.json`;
+    await client.setCpuConfig(cpuTemplatePath);
+
+    await client.setMachineConfig(
+      sandbox.runtime.vcpus,
+      sandbox.runtime.memoryMb,
+    );
+
+    log.debug({ sandboxId }, "VM configured");
+
+    await client.start();
+    await this.waitForBoot(client);
+    log.debug({ sandboxId }, "VM booted");
+
+    const agentReady = await this.deps.agentClient.waitForAgent(ipAddress, {
+      timeout: 60000,
+    });
+
+    if (!agentReady) {
+      log.warn({ sandboxId }, "Agent did not become ready after restart");
+    }
+
+    const updatedSandbox: Sandbox = {
+      ...sandbox,
+      status: "running",
+      runtime: {
+        ...sandbox.runtime,
+        pid: proc.pid,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.deps.sandboxService.update(sandboxId, updatedSandbox);
+    log.info({ sandboxId, pid: proc.pid }, "Sandbox started");
+
+    return updatedSandbox;
+  }
+
+  private async waitForBoot(
+    client: FirecrackerClient,
+    timeoutMs = 30000,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      try {
+        if (await client.isRunning()) return;
+      } catch {}
+      await Bun.sleep(200);
+    }
+
+    throw new Error(`VM boot timeout after ${timeoutMs}ms`);
   }
 
   async getStatus(sandboxId: string): Promise<Sandbox | undefined> {
@@ -109,26 +210,28 @@ export class SandboxLifecycle {
       return sandbox;
     }
 
+    if (sandbox.status === "stopped") {
+      return sandbox;
+    }
+
     const socketPath = getSocketPath(sandboxId);
     const processAlive = await $`kill -0 ${sandbox.runtime.pid}`
       .quiet()
       .nothrow();
-    const socketExists = await fileExists(socketPath);
+    const socketExists = await Bun.file(socketPath).exists();
 
     if (processAlive.exitCode !== 0 || !socketExists) {
-      if (sandbox.status !== "stopped") {
-        log.warn(
-          {
-            sandboxId,
-            pid: sandbox.runtime.pid,
-            processAlive: processAlive.exitCode === 0,
-            socketPath,
-            socketExists,
-          },
-          "Sandbox liveness check failed, marking as error",
-        );
-        this.deps.sandboxService.updateStatus(sandboxId, "error");
-      }
+      log.warn(
+        {
+          sandboxId,
+          pid: sandbox.runtime.pid,
+          processAlive: processAlive.exitCode === 0,
+          socketPath,
+          socketExists,
+        },
+        "Sandbox liveness check failed, marking as error",
+      );
+      this.deps.sandboxService.updateStatus(sandboxId, "error");
     }
 
     return this.deps.sandboxService.getById(sandboxId) ?? sandbox;
@@ -140,7 +243,7 @@ export class SandboxLifecycle {
     }
 
     const socketPath = getSocketPath(sandboxId);
-    if (!(await fileExists(socketPath))) {
+    if (!(await Bun.file(socketPath).exists())) {
       return { error: "Socket not found", sandboxId };
     }
 

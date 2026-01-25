@@ -82,6 +82,7 @@ const sandboxDestroyer = new SandboxDestroyer({
 
 const sandboxLifecycle = new SandboxLifecycle({
   sandboxService,
+  agentClient,
 });
 
 const prebuildRunner = new PrebuildRunner({
