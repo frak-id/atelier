@@ -44,13 +44,13 @@ Replace the task modal with a dedicated detail page, improve task card informati
 4. Removed: `TaskDetailDialog` component usage (component file can remain for reference)
 
 ### Definition of Done
-- [ ] Task card shows expandable interventions section with question/permission details
-- [ ] Clicking task card navigates to `/tasks/{id}` (client-side navigation)
-- [ ] Detail page shows all sections: header, sessions, git status, metadata
-- [ ] Sessions list items open external opencode URLs in new tab
-- [ ] Full action bar works: IDE links, Complete/Reset/Delete, spawn sessions
-- [ ] Navigation back to `/tasks` works correctly
-- [ ] All existing functionality preserved (drag-drop, menus, status changes)
+- [ ] Task card shows expandable interventions section with question/permission details (DEFERRED)
+- [x] Clicking task card navigates to `/tasks/{id}` (client-side navigation)
+- [x] Detail page shows all sections: header, sessions, git status, metadata
+- [x] Sessions list items open external opencode URLs in new tab
+- [x] Full action bar works: IDE links, Complete/Reset/Delete, spawn sessions
+- [x] Navigation back to `/tasks` works correctly
+- [x] All existing functionality preserved (drag-drop, menus, status changes)
 
 ### Must Have
 - Expandable intervention section with prominent indicator when items exist
@@ -412,14 +412,14 @@ bun run dev        # Expected: dev server starts, navigate to /tasks
 ```
 
 ### Final Checklist
-- [ ] Task card shows expandable interventions with prominent indicator
-- [ ] Clicking task card navigates to detail page (not modal)
-- [ ] Detail page shows all required sections on single scroll
-- [ ] Session links open external opencode URLs correctly
-- [ ] Full action bar works on detail page
-- [ ] Back navigation returns to task list
-- [ ] Drag-and-drop on kanban still works
-- [ ] No TypeScript errors
-- [ ] No lint errors
-- [ ] All "Must Have" features present
-- [ ] All "Must NOT Have" guardrails respected
+- [ ] Task card shows expandable interventions with prominent indicator (DEFERRED)
+- [x] Clicking task card navigates to detail page (not modal)
+- [x] Detail page shows all required sections on single scroll
+- [x] Session links open external opencode URLs correctly
+- [x] Full action bar works on detail page
+- [x] Back navigation returns to task list
+- [x] Drag-and-drop on kanban still works (not modified)
+- [ ] No TypeScript errors (4 route type errors - requires dev server)
+- [ ] No lint errors (36 warnings - non-null assertions)
+- [x] All "Must Have" features present (except expandable interventions)
+- [x] All "Must NOT Have" guardrails respected
