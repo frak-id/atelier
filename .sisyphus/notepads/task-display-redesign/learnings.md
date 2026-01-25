@@ -92,3 +92,33 @@
 - [x] All existing functionality preserved
 - [x] Code compiles (with expected route type warnings)
 - [x] Commits made for each task
+
+## [2026-01-25 Final] Lint Cleanup - Non-Null Assertion Consolidation
+
+**Problem**: 36 lint warnings from scattered non-null assertions throughout task detail page
+- Pattern: `task!.property`, `task!.data.sessions`, etc.
+- Biome flags each `!` as style violation
+
+**Solution**: Consolidate to single assertion point
+```typescript
+// Before (30+ warnings):
+const { data: task } = useSuspenseQuery(taskDetailQuery(id));
+// ... then throughout file:
+task!.title, task!.data.sessions, task!.status, etc.
+
+// After (1 warning):
+const { data: taskData } = useSuspenseQuery(taskDetailQuery(id));
+const task = taskData!;  // Single assertion point
+// ... then throughout file:
+task.title, task.data.sessions, task.status  // No more !
+```
+
+**Result**: 
+- Warnings reduced from 36 to 8 project-wide (only 1 in our file)
+- TypeScript still satisfied (knows task is non-null)
+- Cleaner code, easier to read
+
+**Pattern for future**: When dealing with `useSuspenseQuery` or similar hooks that have conservative null types:
+1. Rename destructured variable: `data: taskData`
+2. Single assertion: `const task = taskData!;`
+3. Use clean variable throughout: `task.property`
