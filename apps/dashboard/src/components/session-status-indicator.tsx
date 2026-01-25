@@ -11,6 +11,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  getQuestionDisplayText,
+  INTERVENTION_STYLES,
+} from "@/lib/intervention-helpers";
 import type {
   MappedSessionStatus,
   SessionInteractionInfo,
@@ -97,7 +101,7 @@ export function SessionStatusIndicator({
                 variant="outline"
                 className={cn(
                   "gap-1 text-xs cursor-help",
-                  "bg-purple-100 dark:bg-purple-950 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300",
+                  INTERVENTION_STYLES.permission.badge,
                 )}
               >
                 <Shield className="h-3 w-3" />
@@ -136,7 +140,7 @@ export function SessionStatusIndicator({
                 variant="outline"
                 className={cn(
                   "gap-1 text-xs cursor-help",
-                  "bg-cyan-100 dark:bg-cyan-950 border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300",
+                  INTERVENTION_STYLES.question.badge,
                 )}
               >
                 <MessageCircleQuestion className="h-3 w-3" />
@@ -155,9 +159,7 @@ export function SessionStatusIndicator({
                 <ul className="text-xs space-y-0.5">
                   {pendingQuestions.slice(0, 3).map((q) => (
                     <li key={q.id} className="truncate">
-                      {q.questions[0]?.header ??
-                        q.questions[0]?.question ??
-                        "Question"}
+                      {getQuestionDisplayText(q)}
                     </li>
                   ))}
                   {pendingQuestions.length > 3 && (
