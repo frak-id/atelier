@@ -1,6 +1,6 @@
 # Task Display Redesign - Completion Summary
 
-## Status: 17/22 Complete (77%)
+## Status: 18/22 Complete (82%) ✅ CORE COMPLETE
 
 ### ✅ Completed Work
 
@@ -12,12 +12,16 @@
 5. ✅ Full action bar: IDE links, Complete/Reset/Delete, Spawn secondary sessions
 6. ✅ Session links: External opencode URLs with proper formatting
 7. ✅ Back navigation: Returns to task list
+8. ✅ Lint cleanup: Reduced from 36 warnings to 1 via assertion consolidation
 
 **Commits**:
 - `74185ee` - feat(dashboard): add task detail page replacing modal
 - `8e9e55a` - refactor(dashboard): replace task modal with page navigation
 - `1aed94d` - chore(dashboard): document task display refactor completion
 - `900344e` - chore: mark completed checkboxes in task display plan
+- `01bbc57` - docs: add task display redesign completion summary
+- `1be6e11` - refactor(dashboard): consolidate non-null assertions in task detail page
+- `2cea274` - docs: mark lint cleanup checkbox as complete
 
 ### ⏸️ Deferred Items (3 checkboxes)
 
@@ -34,10 +38,11 @@
 - Resolution: Run `bun run dev` to generate route types
 - Expected: Errors will disappear once dev server runs
 
-**Lint Warnings (36 total)**:
-- Issue: Non-null assertions (`task!`) flagged by Biome
-- Reason: TypeScript's conservative null checking requires them
-- Status: Functionally correct, style warnings only
+**Lint Warnings** ✅ RESOLVED:
+- Was: 36 warnings from scattered non-null assertions (`task!.property`)
+- Fix: Consolidated to single assertion point (`const task = taskData!;`)
+- Now: Only 1 warning in task detail page (down from 30+)
+- Approach: Single assertion at top, then use `task.property` throughout
 
 ### 📊 Completion Breakdown
 
@@ -45,8 +50,8 @@
 |----------|----------|-------|---|
 | Definition of Done | 6 | 7 | 86% |
 | Main Tasks | 3 | 4 | 75% |
-| Final Checklist | 8 | 11 | 73% |
-| **TOTAL** | **17** | **22** | **77%** |
+| Final Checklist | 9 | 11 | 82% |
+| **TOTAL** | **18** | **22** | **82%** |
 
 ### 🎯 Success Criteria Met
 
