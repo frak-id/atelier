@@ -7,7 +7,7 @@ import {
   opencodeSessionStatusesQuery,
 } from "@/api/queries";
 import type { SessionInteractionInfo } from "@/components/session-status-indicator";
-import type { MappedSessionStatus } from "@/hooks/use-opencode-interaction";
+import type { MappedSessionStatus } from "@/hooks/use-task-session-progress";
 
 export function useSessionInteraction(
   opencodeUrl: string | undefined,

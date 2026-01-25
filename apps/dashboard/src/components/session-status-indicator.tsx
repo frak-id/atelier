@@ -12,7 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { MappedSessionStatus } from "@/hooks/use-opencode-interaction";
+import type { MappedSessionStatus } from "@/hooks/use-task-session-progress";
 import { cn } from "@/lib/utils";
 
 export type SessionInteractionInfo = {
