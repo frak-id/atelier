@@ -90,7 +90,7 @@ export function TaskFormDialog({
   const isEditing = !!task;
   const isPending = createMutation.isPending || updateMutation.isPending;
 
-  const repos = workspace?.config.repos ?? [];
+  const repos = workspace?.config?.repos ?? [];
   const hasMultipleRepos = repos.length > 1;
 
   const effectiveTargetRepos = useMemo(() => {
