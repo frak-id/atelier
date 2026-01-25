@@ -7,6 +7,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  formatSessionId,
+  getQuestionDisplayText,
+  truncateText,
+} from "@/lib/intervention-helpers";
 import { cn } from "@/lib/utils";
 
 type ExpandableInterventionsProps = {
@@ -14,11 +19,6 @@ type ExpandableInterventionsProps = {
   questions: Array<QuestionRequest & { sessionId: string }>;
   compact?: boolean;
 };
-
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}...`;
-}
 
 export function ExpandableInterventions({
   permissions,
@@ -103,7 +103,7 @@ export function ExpandableInterventions({
                         variant="outline"
                         className="shrink-0 text-xs bg-white"
                       >
-                        {p.sessionID.slice(0, 8)}
+                        {formatSessionId(p.sessionID)}
                       </Badge>
                       <div className="flex-1 min-w-0">
                         <span className="font-medium">{p.permission}</span>
@@ -137,13 +137,11 @@ export function ExpandableInterventions({
                         variant="outline"
                         className="shrink-0 text-xs bg-white"
                       >
-                        {q.sessionID.slice(0, 8)}
+                        {formatSessionId(q.sessionID)}
                       </Badge>
                       <div className="flex-1 min-w-0 break-words">
-                        {truncate(
-                          q.questions[0]?.header ??
-                            q.questions[0]?.question ??
-                            "Question",
+                        {truncateText(
+                          getQuestionDisplayText(q),
                           compact ? 120 : 200,
                         )}
                       </div>
