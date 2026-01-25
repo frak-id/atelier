@@ -1,12 +1,11 @@
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Suspense, useState } from "react";
 import { taskListQuery, workspaceListQuery } from "@/api/queries";
 import {
   KanbanBoard,
   TaskDeleteDialog,
-  TaskDetailDialog,
   TaskFormDialog,
 } from "@/components/kanban";
 import {
@@ -27,6 +26,7 @@ export const Route = createFileRoute("/tasks/")({
 });
 
 function TasksPage() {
+  const navigate = useNavigate();
   const { data: workspaces } = useSuspenseQuery(workspaceListQuery());
   const workspaceList = workspaces ?? [];
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>(
@@ -36,7 +36,6 @@ function TasksPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
-  const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
   const { data: tasks } = useQuery({
     ...taskListQuery(selectedWorkspaceId),
@@ -59,7 +58,7 @@ function TasksPage() {
   };
 
   const handleViewTask = (task: Task) => {
-    setViewingTask(task);
+    navigate({ to: "/tasks/$id", params: { id: task.id } });
   };
 
   if (workspaceList.length === 0) {
@@ -123,12 +122,6 @@ function TasksPage() {
         open={!!deletingTask}
         onOpenChange={(open) => !open && setDeletingTask(null)}
         task={deletingTask}
-      />
-
-      <TaskDetailDialog
-        open={!!viewingTask}
-        onOpenChange={(open) => !open && setViewingTask(null)}
-        task={viewingTask}
       />
     </div>
   );
