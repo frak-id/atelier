@@ -3,6 +3,7 @@ import {
   type PermissionRequest,
   type QuestionRequest,
   type Session,
+  type Todo,
 } from "@opencode-ai/sdk/v2";
 
 export type SessionStatus =
@@ -135,4 +136,17 @@ export async function fetchOpenCodeQuestions(
   }
 }
 
-export type { PermissionRequest, QuestionRequest };
+export async function fetchOpenCodeTodos(
+  baseUrl: string,
+  sessionId: string,
+): Promise<Todo[]> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const { data } = await client.session.todo({ sessionID: sessionId });
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type { PermissionRequest, QuestionRequest, Todo };
