@@ -110,6 +110,7 @@ export const healthQuery = queryOptions({
   queryKey: queryKeys.health,
   queryFn: async () => unwrap(await api.health.get()),
   refetchInterval: 30000,
+  refetchIntervalInBackground: false,
 });
 
 export const sandboxListQuery = (filters?: {
@@ -125,6 +126,7 @@ export const sandboxListQuery = (filters?: {
         }),
       ),
     refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   });
 
 export const sandboxDetailQuery = (id: string) =>
@@ -132,6 +134,7 @@ export const sandboxDetailQuery = (id: string) =>
     queryKey: queryKeys.sandboxes.detail(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).get()),
     refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   });
 
 export const sandboxMetricsQuery = (id: string) =>
@@ -139,6 +142,7 @@ export const sandboxMetricsQuery = (id: string) =>
     queryKey: queryKeys.sandboxes.metrics(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).metrics.get()),
     refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   });
 
 export const sandboxServicesQuery = (id: string) =>
@@ -146,6 +150,7 @@ export const sandboxServicesQuery = (id: string) =>
     queryKey: queryKeys.sandboxes.services(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).services.get()),
     refetchInterval: 10000,
+    refetchIntervalInBackground: false,
   });
 
 export const sandboxGitStatusQuery = (id: string) =>
@@ -154,6 +159,7 @@ export const sandboxGitStatusQuery = (id: string) =>
     queryFn: async () =>
       unwrap(await api.api.sandboxes({ id }).git.status.get()),
     refetchInterval: 10000,
+    refetchIntervalInBackground: false,
   });
 
 export const workspaceListQuery = () =>
@@ -207,22 +213,26 @@ export const systemStatsQuery = queryOptions({
   queryKey: queryKeys.system.stats,
   queryFn: async () => unwrap(await api.api.system.stats.get()),
   refetchInterval: 5000,
+  refetchIntervalInBackground: false,
 });
 
 export const systemStorageQuery = queryOptions({
   queryKey: queryKeys.system.storage,
   queryFn: async () => unwrap(await api.api.system.storage.get()),
   refetchInterval: 30000,
+  refetchIntervalInBackground: false,
 });
 
 export const systemQueueQuery = queryOptions({
   queryKey: queryKeys.system.queue,
   queryFn: async () => unwrap(await api.api.system.queue.get()),
   refetchInterval: 2000,
+  refetchIntervalInBackground: false,
 });
 
 export function useCreateSandbox() {
   return useMutation({
+    mutationKey: ["sandboxes", "create"],
     mutationFn: async (data: {
       workspaceId?: string;
       baseImage?: string;
@@ -239,6 +249,7 @@ export function useCreateSandbox() {
 
 export function useDeleteSandbox() {
   return useMutation({
+    mutationKey: ["sandboxes", "delete"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -280,6 +291,7 @@ export type SessionTemplateInput = {
 
 export function useUpdateGlobalSessionTemplates() {
   return useMutation({
+    mutationKey: ["sessionTemplates", "updateGlobal"],
     mutationFn: async (templates: SessionTemplateInput[]) =>
       unwrap(await api.api["session-templates"].global.put({ templates })),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -324,6 +336,7 @@ export const globalOpenCodeConfigQuery = queryOptions({
 
 export function useUpdateWorkspaceSessionTemplates() {
   return useMutation({
+    mutationKey: ["sessionTemplates", "updateWorkspace"],
     mutationFn: async ({
       workspaceId,
       templates,
@@ -349,6 +362,7 @@ export function useUpdateWorkspaceSessionTemplates() {
 
 export function useStopSandbox() {
   return useMutation({
+    mutationKey: ["sandboxes", "stop"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).stop.post()),
     onSuccess: (_data, id, _context, { client: queryClient }) => {
@@ -362,6 +376,7 @@ export function useStopSandbox() {
 
 export function useStartSandbox() {
   return useMutation({
+    mutationKey: ["sandboxes", "start"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).start.post()),
     onSuccess: (_data, id, _context, { client: queryClient }) => {
@@ -375,6 +390,7 @@ export function useStartSandbox() {
 
 export function useRestartSandbox() {
   return useMutation({
+    mutationKey: ["sandboxes", "restart"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).restart.post()),
     onSuccess: (_data, id, _context, { client: queryClient }) => {
@@ -388,6 +404,7 @@ export function useRestartSandbox() {
 
 export function useExecCommand(sandboxId: string) {
   return useMutation({
+    mutationKey: ["sandboxes", "exec", sandboxId],
     mutationFn: async (data: { command: string; timeout?: number }) =>
       unwrap(await api.api.sandboxes({ id: sandboxId }).exec.post(data)),
   });
@@ -395,6 +412,7 @@ export function useExecCommand(sandboxId: string) {
 
 export function useResizeStorage(sandboxId: string) {
   return useMutation({
+    mutationKey: ["sandboxes", "resizeStorage", sandboxId],
     mutationFn: async (sizeGb: number) =>
       unwrap(
         await api.api.sandboxes({ id: sandboxId }).storage.resize.post({
@@ -411,6 +429,7 @@ export function useResizeStorage(sandboxId: string) {
 
 export function useCreateWorkspace() {
   return useMutation({
+    mutationKey: ["workspaces", "create"],
     mutationFn: async (data: {
       name: string;
       config?: Record<string, unknown>;
@@ -423,6 +442,7 @@ export function useCreateWorkspace() {
 
 export function useUpdateWorkspace() {
   return useMutation({
+    mutationKey: ["workspaces", "update"],
     mutationFn: async ({
       id,
       data,
@@ -441,6 +461,7 @@ export function useUpdateWorkspace() {
 
 export function useDeleteWorkspace() {
   return useMutation({
+    mutationKey: ["workspaces", "delete"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.workspaces({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -451,6 +472,7 @@ export function useDeleteWorkspace() {
 
 export function useTriggerPrebuild() {
   return useMutation({
+    mutationKey: ["workspaces", "triggerPrebuild"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.workspaces({ id }).prebuild.post()),
     onSuccess: (_data, id, _context, { client: queryClient }) => {
@@ -464,6 +486,7 @@ export function useTriggerPrebuild() {
 
 export function useDeletePrebuild() {
   return useMutation({
+    mutationKey: ["workspaces", "deletePrebuild"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.workspaces({ id }).prebuild.delete()),
     onSuccess: (_data, id, _context, { client: queryClient }) => {
@@ -477,6 +500,7 @@ export function useDeletePrebuild() {
 
 export function useSaveAsPrebuild() {
   return useMutation({
+    mutationKey: ["sandboxes", "saveAsPrebuild"],
     mutationFn: async (sandboxId: string) =>
       unwrap(await api.api.sandboxes({ id: sandboxId }).promote.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -488,6 +512,7 @@ export function useSaveAsPrebuild() {
 
 export function useSystemCleanup() {
   return useMutation({
+    mutationKey: ["system", "cleanup"],
     mutationFn: async () => unwrap(await api.api.system.cleanup.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
@@ -501,6 +526,7 @@ export const opencodeSessionsQuery = (baseUrl: string) =>
     queryKey: queryKeys.opencode.sessions(baseUrl),
     queryFn: () => fetchOpenCodeSessions(baseUrl),
     refetchInterval: 10000,
+    refetchIntervalInBackground: false,
     enabled: !!baseUrl,
   });
 
@@ -509,7 +535,6 @@ export const opencodePermissionsQuery = (baseUrl: string) =>
     queryKey: queryKeys.opencode.permissions(baseUrl),
     queryFn: () => fetchOpenCodePermissions(baseUrl),
     enabled: !!baseUrl,
-    staleTime: 5000,
   });
 
 export const opencodeQuestionsQuery = (baseUrl: string) =>
@@ -517,7 +542,6 @@ export const opencodeQuestionsQuery = (baseUrl: string) =>
     queryKey: queryKeys.opencode.questions(baseUrl),
     queryFn: () => fetchOpenCodeQuestions(baseUrl),
     enabled: !!baseUrl,
-    staleTime: 5000,
   });
 
 export const opencodeSessionStatusesQuery = (baseUrl: string) =>
@@ -525,7 +549,6 @@ export const opencodeSessionStatusesQuery = (baseUrl: string) =>
     queryKey: queryKeys.opencode.sessionStatuses(baseUrl),
     queryFn: () => getOpenCodeSessionStatuses(baseUrl),
     enabled: !!baseUrl,
-    staleTime: 5000,
   });
 
 export const opencodeTodosQuery = (baseUrl: string, sessionId: string) =>
@@ -533,11 +556,11 @@ export const opencodeTodosQuery = (baseUrl: string, sessionId: string) =>
     queryKey: queryKeys.opencode.todos(baseUrl, sessionId),
     queryFn: () => fetchOpenCodeTodos(baseUrl, sessionId),
     enabled: !!baseUrl && !!sessionId,
-    staleTime: 5000,
   });
 
 export function useDeleteOpenCodeSession(baseUrl: string) {
   return useMutation({
+    mutationKey: ["opencode", "deleteSession", baseUrl],
     mutationFn: (sessionId: string) =>
       deleteOpenCodeSession(baseUrl, sessionId),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -564,6 +587,7 @@ export const configFilesListQuery = (params?: {
 
 export function useCreateConfigFile() {
   return useMutation({
+    mutationKey: ["configFiles", "create"],
     mutationFn: async (data: {
       path: string;
       content: string;
@@ -579,6 +603,7 @@ export function useCreateConfigFile() {
 
 export function useUpdateConfigFile() {
   return useMutation({
+    mutationKey: ["configFiles", "update"],
     mutationFn: async ({
       id,
       data,
@@ -594,6 +619,7 @@ export function useUpdateConfigFile() {
 
 export function useDeleteConfigFile() {
   return useMutation({
+    mutationKey: ["configFiles", "delete"],
     mutationFn: async (id: string) =>
       unwrap(await api.api["config-files"]({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -604,8 +630,12 @@ export function useDeleteConfigFile() {
 
 export function useSyncConfigsToNfs() {
   return useMutation({
+    mutationKey: ["configFiles", "syncToNfs"],
     mutationFn: async () =>
       unwrap(await api.api["config-files"]["sync-to-nfs"].post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
+    },
   });
 }
 
@@ -616,6 +646,7 @@ export const sharedAuthListQuery = queryOptions({
 
 export function useUpdateSharedAuth() {
   return useMutation({
+    mutationKey: ["sharedAuth", "update"],
     mutationFn: async ({
       provider,
       content,
@@ -639,6 +670,7 @@ export const sandboxDiscoverConfigsQuery = (id: string) =>
 
 export function useExtractConfig(sandboxId: string) {
   return useMutation({
+    mutationKey: ["sandboxes", "extractConfig", sandboxId],
     mutationFn: async (path: string) =>
       unwrap(
         await api.api.sandboxes({ id: sandboxId }).config.extract.post({
@@ -691,6 +723,7 @@ export const githubBranchesQuery = (owner: string, repo: string) =>
 
 export function useGitHubLogout() {
   return useMutation({
+    mutationKey: ["github", "logout"],
     mutationFn: async () => unwrap(await api.auth.github.logout.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.github.status });
@@ -700,6 +733,7 @@ export function useGitHubLogout() {
 
 export function useGitHubReauthorize() {
   return useMutation({
+    mutationKey: ["github", "reauthorize"],
     mutationFn: async () => {
       const API_BASE = import.meta.env.PROD
         ? "https://sandbox-api.nivelais.com"
@@ -713,10 +747,12 @@ export const sharedStorageQuery = queryOptions({
   queryKey: queryKeys.sharedStorage.all,
   queryFn: async () => unwrap(await api.api.storage.get()),
   refetchInterval: 30000,
+  refetchIntervalInBackground: false,
 });
 
 export function useInstallBinary() {
   return useMutation({
+    mutationKey: ["sharedStorage", "installBinary"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.storage.binaries({ id }).install.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -727,6 +763,7 @@ export function useInstallBinary() {
 
 export function useRemoveBinary() {
   return useMutation({
+    mutationKey: ["sharedStorage", "removeBinary"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.storage.binaries({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -737,6 +774,7 @@ export function useRemoveBinary() {
 
 export function usePurgeCache() {
   return useMutation({
+    mutationKey: ["sharedStorage", "purgeCache"],
     mutationFn: async (folder: string) =>
       unwrap(await api.api.storage.cache({ folder }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -758,6 +796,7 @@ export const sshKeysHasKeysQuery = queryOptions({
 
 export function useCreateSshKey() {
   return useMutation({
+    mutationKey: ["sshKeys", "create"],
     mutationFn: async (data: {
       publicKey: string;
       name: string;
@@ -772,6 +811,7 @@ export function useCreateSshKey() {
 
 export function useDeleteSshKey() {
   return useMutation({
+    mutationKey: ["sshKeys", "delete"],
     mutationFn: async (id: string) =>
       unwrap(await api.api["ssh-keys"]({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -790,6 +830,7 @@ export const taskListQuery = (workspaceId?: string) =>
         }),
       ),
     refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   });
 
 export const taskDetailQuery = (id: string) =>
@@ -797,10 +838,12 @@ export const taskDetailQuery = (id: string) =>
     queryKey: queryKeys.tasks.detail(id),
     queryFn: async () => unwrap(await api.api.tasks({ id }).get()),
     refetchInterval: 5000,
+    refetchIntervalInBackground: false,
   });
 
 export function useCreateTask() {
   return useMutation({
+    mutationKey: ["tasks", "create"],
     mutationFn: async (data: {
       workspaceId: string;
       title: string;
@@ -819,6 +862,7 @@ export function useCreateTask() {
 
 export function useUpdateTask() {
   return useMutation({
+    mutationKey: ["tasks", "update"],
     mutationFn: async ({
       id,
       data,
@@ -843,6 +887,7 @@ export function useUpdateTask() {
 
 export function useStartTask() {
   return useMutation({
+    mutationKey: ["tasks", "start"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.tasks({ id }).start.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -854,6 +899,7 @@ export function useStartTask() {
 
 export function useAddTaskSessions() {
   return useMutation({
+    mutationKey: ["tasks", "addSessions"],
     mutationFn: async ({
       id,
       sessionTemplateIds,
@@ -873,6 +919,7 @@ export function useAddTaskSessions() {
 
 export function useCompleteTask() {
   return useMutation({
+    mutationKey: ["tasks", "complete"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.tasks({ id }).complete.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -883,6 +930,7 @@ export function useCompleteTask() {
 
 export function useResetTask() {
   return useMutation({
+    mutationKey: ["tasks", "reset"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.tasks({ id }).reset.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -893,6 +941,7 @@ export function useResetTask() {
 
 export function useReorderTask() {
   return useMutation({
+    mutationKey: ["tasks", "reorder"],
     mutationFn: async ({ id, order }: { id: string; order: number }) =>
       unwrap(await api.api.tasks({ id }).order.put({ order })),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
@@ -903,6 +952,7 @@ export function useReorderTask() {
 
 export function useDeleteTask() {
   return useMutation({
+    mutationKey: ["tasks", "delete"],
     mutationFn: async ({
       id,
       keepSandbox,

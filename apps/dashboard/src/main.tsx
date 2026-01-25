@@ -9,9 +9,14 @@ import { routeTree } from "./routeTree.gen";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 30,
+      staleTime: 5000,
       refetchOnWindowFocus: true,
       retry: 1,
+    },
+    mutations: {
+      onError: (error) => {
+        console.error("[Mutation Error]", error);
+      },
     },
   },
 });

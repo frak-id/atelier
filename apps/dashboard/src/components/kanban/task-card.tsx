@@ -12,7 +12,7 @@ import {
   MoreHorizontal,
   Terminal,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { sandboxDetailQuery } from "@/api/queries";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
@@ -310,18 +310,24 @@ function MenuButton({
 function CopySshButton({ ssh }: { ssh: string }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = async () => {
+  // Cleanup timeout on unmount to prevent memory leak
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(ssh);
       setCopied(true);
       toast.success("SSH command copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error("Failed to copy SSH command", {
         description: "Your browser may not support clipboard access",
       });
     }
-  };
+  }, [ssh]);
 
   return (
     <Button

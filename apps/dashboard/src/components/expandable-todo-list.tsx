@@ -7,7 +7,7 @@ import {
   Loader2,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -21,7 +21,7 @@ type ExpandableTodoListProps = {
   defaultExpanded?: boolean;
 };
 
-export function ExpandableTodoList({
+export const ExpandableTodoList = memo(function ExpandableTodoList({
   todos,
   sessionId,
   defaultExpanded = false,
@@ -29,17 +29,18 @@ export function ExpandableTodoList({
   const [isOpen, setIsOpen] = useState(defaultExpanded);
   const [showAll, setShowAll] = useState(false);
 
-  const completedCount = todos.filter((t) => t.status === "completed").length;
-  const totalCount = todos.length;
+  const { completedCount, totalCount, displayTodos, remainingCount } =
+    useMemo(() => {
+      const completed = todos.filter((t) => t.status === "completed").length;
+      return {
+        completedCount: completed,
+        totalCount: todos.length,
+        displayTodos: showAll ? todos : todos.slice(0, 20),
+        remainingCount: todos.length - 20,
+      };
+    }, [todos, showAll]);
 
-  const displayTodos = showAll ? todos : todos.slice(0, 20);
-  const remainingCount = todos.length - 20;
-
-  if (totalCount === 0) {
-    return null;
-  }
-
-  const getStatusIcon = (status: Todo["status"]) => {
+  const getStatusIcon = useCallback((status: Todo["status"]) => {
     switch (status) {
       case "completed":
         return <CheckCircle className="h-4 w-4 text-green-500" />;
@@ -50,7 +51,13 @@ export function ExpandableTodoList({
       default:
         return <Circle className="h-4 w-4 text-gray-400" />;
     }
-  };
+  }, []);
+
+  const handleShowAll = useCallback(() => setShowAll(true), []);
+
+  if (totalCount === 0) {
+    return null;
+  }
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
@@ -75,9 +82,9 @@ export function ExpandableTodoList({
         <CollapsibleContent>
           <div className="border-t px-4 py-2">
             <ul className="space-y-2 py-2">
-              {displayTodos.map((todo, index) => (
+              {displayTodos.map((todo) => (
                 <li
-                  key={todo.id || `${sessionId}-${index}`}
+                  key={todo.id || `${sessionId}-${todo.content.slice(0, 50)}`}
                   className="flex items-start gap-3"
                 >
                   <div className="mt-0.5 shrink-0">
@@ -98,7 +105,7 @@ export function ExpandableTodoList({
             {!showAll && remainingCount > 0 && (
               <button
                 type="button"
-                onClick={() => setShowAll(true)}
+                onClick={handleShowAll}
                 className="mt-2 w-full text-center text-sm text-muted-foreground hover:text-foreground hover:underline py-2"
               >
                 Show {remainingCount} more
@@ -109,4 +116,4 @@ export function ExpandableTodoList({
       </div>
     </Collapsible>
   );
-}
+});

@@ -1,6 +1,7 @@
 import type { Session } from "@opencode-ai/sdk/v2";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Trash2 } from "lucide-react";
+import { memo, useCallback } from "react";
 import { opencodeTodosQuery } from "@/api/queries";
 import {
   type SessionInteractionInfo,
@@ -30,7 +31,7 @@ type SessionRowProps = {
   showStatus?: boolean;
 };
 
-export function SessionRow({
+export const SessionRow = memo(function SessionRow({
   session,
   showSandboxInfo = false,
   showDelete = false,
@@ -38,6 +39,12 @@ export function SessionRow({
   isDeleting,
   showStatus = true,
 }: SessionRowProps) {
+  const handleDelete = useCallback(() => {
+    if (confirm("Delete this session?")) {
+      onDelete?.(session.id);
+    }
+  }, [onDelete, session.id]);
+
   const sessionUrl = buildOpenCodeSessionUrl(
     session.sandbox.opencodeUrl,
     session.directory,
@@ -137,11 +144,7 @@ export function SessionRow({
             variant="ghost"
             size="sm"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
-            onClick={() => {
-              if (confirm("Delete this session?")) {
-                onDelete(session.id);
-              }
-            }}
+            onClick={handleDelete}
             disabled={isDeleting}
           >
             <Trash2 className="h-4 w-4 text-destructive" />
@@ -150,4 +153,4 @@ export function SessionRow({
       </div>
     </div>
   );
-}
+});

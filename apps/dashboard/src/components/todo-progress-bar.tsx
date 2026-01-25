@@ -1,4 +1,5 @@
 import type { Todo } from "@opencode-ai/sdk/v2";
+import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 type TodoProgressBarProps = {
@@ -7,15 +8,22 @@ type TodoProgressBarProps = {
   className?: string;
 };
 
-export function TodoProgressBar({
+export const TodoProgressBar = memo(function TodoProgressBar({
   todos,
   compact = false,
   className,
 }: TodoProgressBarProps) {
-  const completed = todos.filter((t) => t.status === "completed").length;
-  const inProgress = todos.filter((t) => t.status === "in_progress").length;
-  const pending = todos.filter((t) => t.status === "pending").length;
-  const total = completed + inProgress + pending;
+  const { completed, inProgress, pending, total } = useMemo(() => {
+    let c = 0;
+    let ip = 0;
+    let p = 0;
+    for (const t of todos) {
+      if (t.status === "completed") c++;
+      else if (t.status === "in_progress") ip++;
+      else if (t.status === "pending") p++;
+    }
+    return { completed: c, inProgress: ip, pending: p, total: c + ip + p };
+  }, [todos]);
 
   if (total === 0) {
     return null;
@@ -57,4 +65,4 @@ export function TodoProgressBar({
       </div>
     </div>
   );
-}
+});

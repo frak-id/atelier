@@ -87,7 +87,6 @@ async function startSession({
   if ("error" in sendResult) throw new Error(sendResult.error);
 
   const sessionUrl = buildOpenCodeSessionUrl(opencodeUrl, directory, sessionId);
-  window.open(sessionUrl, "_blank");
 
   return { sandboxId, sessionId, sessionUrl };
 }
@@ -95,5 +94,8 @@ async function startSession({
 export function useStartSession() {
   return useMutation({
     mutationFn: startSession,
+    onSuccess: (result) => {
+      window.open(result.sessionUrl, "_blank");
+    },
   });
 }

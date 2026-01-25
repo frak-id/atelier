@@ -1,4 +1,5 @@
 import type { Todo } from "@opencode-ai/sdk/v2";
+import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 type SessionTodoInfoProps = {
@@ -7,22 +8,27 @@ type SessionTodoInfoProps = {
   className?: string;
 };
 
-export function SessionTodoInfo({
+export const SessionTodoInfo = memo(function SessionTodoInfo({
   todos,
   compact = false,
   className,
 }: SessionTodoInfoProps) {
-  const currentTodo = todos.find((t) => t.status === "in_progress");
+  const currentTodo = useMemo(
+    () => todos.find((t) => t.status === "in_progress"),
+    [todos],
+  );
+
+  const displayContent = useMemo(() => {
+    if (!currentTodo) return null;
+    const maxLength = compact ? 50 : 100;
+    return currentTodo.content.length > maxLength
+      ? `${currentTodo.content.slice(0, maxLength)}...`
+      : currentTodo.content;
+  }, [currentTodo, compact]);
 
   if (!currentTodo) {
     return null;
   }
-
-  const maxLength = compact ? 50 : 100;
-  const displayContent =
-    currentTodo.content.length > maxLength
-      ? `${currentTodo.content.slice(0, maxLength)}...`
-      : currentTodo.content;
 
   return (
     <div
@@ -35,4 +41,4 @@ export function SessionTodoInfo({
       Working on: {displayContent}
     </div>
   );
-}
+});
