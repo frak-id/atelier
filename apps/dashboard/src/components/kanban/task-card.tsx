@@ -24,6 +24,7 @@ import {
   sandboxDetailQuery,
   useAddTaskSessions,
 } from "@/api/queries";
+import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -407,21 +408,28 @@ function TaskSessionsStatus({
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <SessionStatusIndicator interaction={aggregatedInteraction} compact />
-      {needsAttention && opencodeUrl && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-6 text-xs gap-1"
-          asChild
-        >
-          <a href={opencodeUrl} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="h-3 w-3" />
-            Respond
-          </a>
-        </Button>
-      )}
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <SessionStatusIndicator interaction={aggregatedInteraction} compact />
+        {needsAttention && opencodeUrl && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 text-xs gap-1"
+            asChild
+          >
+            <a href={opencodeUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-3 w-3" />
+              Respond
+            </a>
+          </Button>
+        )}
+      </div>
+      <ExpandableInterventions
+        permissions={allPermissions}
+        questions={allQuestions}
+        compact={true}
+      />
     </div>
   );
 }

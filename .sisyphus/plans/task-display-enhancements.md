@@ -227,7 +227,7 @@ Task 1 (Collapsible) → Task 2 (Interventions Component) → Task 3 (Card Updat
 
 ---
 
-- [ ] 3. Update Task Card with Expandable Interventions
+- [x] 3. Update Task Card with Expandable Interventions
 
   **What to do**:
   - Update `apps/dashboard/src/components/kanban/task-card.tsx`
