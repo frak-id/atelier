@@ -281,7 +281,7 @@ Task 1 (Collapsible) → Task 2 (Interventions Component) → Task 3 (Card Updat
 
 ---
 
-- [ ] 4. Update Task Detail Page with Expandable Interventions
+- [x] 4. Update Task Detail Page with Expandable Interventions
 
   **What to do**:
   - Update `apps/dashboard/src/routes/tasks/$id.tsx`
@@ -338,7 +338,7 @@ Task 1 (Collapsible) → Task 2 (Interventions Component) → Task 3 (Card Updat
 
 ---
 
-- [ ] 5. Create Task Session Hierarchy Hook
+- [x] 5. Create Task Session Hierarchy Hook
 
   **What to do**:
   - Create new file: `apps/dashboard/src/hooks/use-task-session-hierarchy.ts`

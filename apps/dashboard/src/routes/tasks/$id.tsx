@@ -27,6 +27,7 @@ import {
   useDeleteTask,
   useResetTask,
 } from "@/api/queries";
+import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,6 +98,14 @@ function TaskDetailPage() {
   });
   const secondaryTemplates =
     templatesData?.templates.filter((t) => t.category === "secondary") ?? [];
+
+  // Aggregate permissions and questions from all sessions
+  const allPermissions = interactionState.sessions.flatMap((s) =>
+    s.pendingPermissions.map((p) => ({ ...p, sessionId: s.sessionId })),
+  );
+  const allQuestions = interactionState.sessions.flatMap((s) =>
+    s.pendingQuestions.map((q) => ({ ...q, sessionId: s.sessionId })),
+  );
 
   const handleDelete = () => {
     if (confirm(`Delete task "${task.title}"?`)) {
@@ -281,6 +290,12 @@ function TaskDetailPage() {
                 {runningCount} session{runningCount > 1 ? "s" : ""} running
               </Badge>
             )}
+
+            <ExpandableInterventions
+              permissions={allPermissions}
+              questions={allQuestions}
+              compact={false}
+            />
 
             <div className="space-y-2">
               {sessions.map((session) => {
