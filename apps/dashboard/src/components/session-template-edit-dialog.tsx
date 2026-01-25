@@ -249,7 +249,7 @@ export function SessionTemplateEditDialog({
 
                   return (
                     <div
-                      key={`variant-${idx}-${variant.name}`}
+                      key={`variant-${idx}`}
                       className="p-3 border rounded-md space-y-3"
                     >
                       <div className="flex items-center justify-between">
