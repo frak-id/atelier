@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkspaceSessionTemplatesSection } from "@/components/workspace-session-templates";
 import { formatDate } from "@/lib/utils";
 
 export const Route = createFileRoute("/workspaces/$id")({
@@ -406,6 +407,10 @@ function WorkspaceDetailPage() {
             )}
           </CardContent>
         </Card>
+
+        <div className="lg:col-span-2">
+          <WorkspaceSessionTemplatesSection workspaceId={id} />
+        </div>
       </div>
 
       <EditWorkspaceDialog

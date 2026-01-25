@@ -91,6 +91,10 @@ export const queryKeys = {
     global: ["sessionTemplates", "global"] as const,
     workspace: (workspaceId: string) =>
       ["sessionTemplates", "workspace", workspaceId] as const,
+    workspaceOverride: (workspaceId: string) =>
+      ["sessionTemplates", "workspaceOverride", workspaceId] as const,
+    opencodeConfig: (workspaceId: string) =>
+      ["sessionTemplates", "opencodeConfig", workspaceId] as const,
   },
 };
 
@@ -251,27 +255,78 @@ export const workspaceSessionTemplatesQuery = (workspaceId: string) =>
     enabled: !!workspaceId,
   });
 
+export type SessionTemplateInput = {
+  id: string;
+  name: string;
+  category: "primary" | "secondary";
+  description?: string;
+  promptTemplate?: string;
+  variants: Array<{
+    name: string;
+    model: { providerID: string; modelID: string };
+    variant?: string;
+    agent?: string;
+  }>;
+  defaultVariantIndex?: number;
+};
+
 export function useUpdateGlobalSessionTemplates() {
   return useMutation({
-    mutationFn: async (
-      templates: Array<{
-        id: string;
-        name: string;
-        category: "primary" | "secondary";
-        description?: string;
-        promptTemplate?: string;
-        variants: Array<{
-          name: string;
-          model: { providerID: string; modelID: string };
-          variant?: string;
-          agent?: string;
-        }>;
-        defaultVariantIndex?: number;
-      }>,
-    ) => unwrap(await api.api["session-templates"].global.put({ templates })),
+    mutationFn: async (templates: SessionTemplateInput[]) =>
+      unwrap(await api.api["session-templates"].global.put({ templates })),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sessionTemplates.all,
+      });
+    },
+  });
+}
+
+export const workspaceSessionTemplatesOverrideQuery = (workspaceId: string) =>
+  queryOptions({
+    queryKey: queryKeys.sessionTemplates.workspaceOverride(workspaceId),
+    queryFn: async () =>
+      unwrap(
+        await api.api["session-templates"]
+          .workspace({ workspaceId })
+          .override.get(),
+      ),
+    enabled: !!workspaceId,
+  });
+
+export const workspaceOpenCodeConfigQuery = (workspaceId: string) =>
+  queryOptions({
+    queryKey: queryKeys.sessionTemplates.opencodeConfig(workspaceId),
+    queryFn: async () =>
+      unwrap(
+        await api.api["session-templates"]
+          .workspace({ workspaceId })
+          ["opencode-config"].get(),
+      ),
+    enabled: !!workspaceId,
+    staleTime: 30000,
+  });
+
+export function useUpdateWorkspaceSessionTemplates() {
+  return useMutation({
+    mutationFn: async ({
+      workspaceId,
+      templates,
+    }: {
+      workspaceId: string;
+      templates: SessionTemplateInput[];
+    }) =>
+      unwrap(
+        await api.api.workspaces({ id: workspaceId }).put({
+          config: { sessionTemplates: templates },
+        }),
+      ),
+    onSuccess: (_data, variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sessionTemplates.all,
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.detail(variables.workspaceId),
       });
     },
   });
