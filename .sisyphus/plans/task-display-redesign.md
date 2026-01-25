@@ -420,6 +420,6 @@ bun run dev        # Expected: dev server starts, navigate to /tasks
 - [x] Back navigation returns to task list
 - [x] Drag-and-drop on kanban still works (not modified)
 - [ ] No TypeScript errors (4 route type errors - requires dev server)
-- [ ] No lint errors (36 warnings - non-null assertions)
+- [x] No lint errors (reduced from 36 to 1 warning via assertion consolidation)
 - [x] All "Must Have" features present (except expandable interventions)
 - [x] All "Must NOT Have" guardrails respected
