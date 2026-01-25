@@ -27,10 +27,9 @@ export interface SessionInteractionState {
 
 export interface TaskSessionProgressResult {
   hierarchy: SessionNode[];
-  allSessions: SessionWithSandboxInfo[];
-  rootSessions: SessionWithSandboxInfo[];
 
   totalCount: number;
+  allCount: number;
   subsessionCount: number;
 
   completedSubsessionCount: number;
@@ -40,7 +39,6 @@ export interface TaskSessionProgressResult {
 
   aggregatedInteraction: AggregatedInteractionState;
   needsAttention: boolean;
-  hasIdleSessions: boolean;
   hasBusySessions: boolean;
 
   isLoading: boolean;
@@ -106,22 +104,15 @@ export function useTaskSessionProgress(
     };
 
     const allSessions = flattenHierarchy(filteredRoots);
-    const rootSessions = filteredRoots.map((node) => node.session);
 
-    const {
-      interactions,
-      aggregated,
-      needsAttention,
-      hasIdleSessions,
-      hasBusySessions,
-    } = aggregateInteractions(
-      allSessions.map((s) => s.id),
-      sessionStatuses,
-      permissions,
-      questions,
-    );
+    const { interactions, aggregated, needsAttention, hasBusySessions } =
+      aggregateInteractions(
+        allSessions.map((s) => s.id),
+        sessionStatuses,
+        permissions,
+        questions,
+      );
 
-    const rootSessionIds = new Set(rootSessions.map((s) => s.id));
     const sessionInteractions: SessionInteractionState[] = allSessions.map(
       (session) => {
         const interaction = interactions.get(session.id);
@@ -135,7 +126,7 @@ export function useTaskSessionProgress(
     );
 
     const completedSubsessionCount = sessionInteractions.filter(
-      (s) => s.status === "idle" && !rootSessionIds.has(s.sessionId),
+      (s) => s.status === "idle" && !taskSessionIds.has(s.sessionId),
     ).length;
 
     const totalSessionCount = allSessions.length;
@@ -146,11 +137,10 @@ export function useTaskSessionProgress(
 
     return {
       hierarchy: filteredRoots,
-      allSessions,
-      rootSessions,
 
-      totalCount: rootSessions.length,
-      subsessionCount: allSessions.length - rootSessions.length,
+      allCount: allSessions.length,
+      totalCount: filteredRoots.length,
+      subsessionCount: allSessions.length - filteredRoots.length,
 
       completedSubsessionCount,
       progressPercent,
@@ -159,7 +149,6 @@ export function useTaskSessionProgress(
 
       aggregatedInteraction: aggregated,
       needsAttention,
-      hasIdleSessions,
       hasBusySessions,
 
       isLoading,

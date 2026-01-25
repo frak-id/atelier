@@ -18,7 +18,7 @@ export interface AggregatedInteractionState {
 export function mapSessionStatus(
   statusInfo: SessionStatus | undefined,
 ): MappedSessionStatus {
-  if (!statusInfo) return "unknown";
+  if (!statusInfo) return "idle";
   if (statusInfo.type === "idle") return "idle";
   if (statusInfo.type === "busy") return "busy";
   if (statusInfo.type === "retry") return "waiting";
@@ -47,7 +47,6 @@ export function aggregateInteractions(
   interactions: Map<string, SessionInteractionInfo>;
   aggregated: AggregatedInteractionState;
   needsAttention: boolean;
-  hasIdleSessions: boolean;
   hasBusySessions: boolean;
 } {
   const interactions = new Map<string, SessionInteractionInfo>();
@@ -91,7 +90,6 @@ export function aggregateInteractions(
       pendingQuestions: aggregatedQuestions,
     },
     needsAttention,
-    hasIdleSessions,
     hasBusySessions,
   };
 }

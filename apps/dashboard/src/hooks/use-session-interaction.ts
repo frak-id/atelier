@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import {
-  aggregateInteractions,
   getSessionInteraction,
   type SessionInteractionInfo,
 } from "@/lib/opencode-helpers";
@@ -35,38 +34,4 @@ export function useSessionInteraction(
   ]);
 
   return { interaction, isLoading };
-}
-
-export function useMultipleSessionInteractions(
-  opencodeUrl: string | undefined,
-  sessionIds: string[],
-  enabled = true,
-): {
-  interactions: Map<string, SessionInteractionInfo>;
-  isLoading: boolean;
-} {
-  const { permissions, questions, sessionStatuses, isLoading } =
-    useOpencodeData(opencodeUrl, enabled);
-
-  const interactions = useMemo(() => {
-    if (!opencodeUrl || !enabled) {
-      return new Map<string, SessionInteractionInfo>();
-    }
-
-    return aggregateInteractions(
-      sessionIds,
-      sessionStatuses,
-      permissions,
-      questions,
-    ).interactions;
-  }, [
-    opencodeUrl,
-    enabled,
-    sessionIds,
-    sessionStatuses,
-    permissions,
-    questions,
-  ]);
-
-  return { interactions, isLoading };
 }
