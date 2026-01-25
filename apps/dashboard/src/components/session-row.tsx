@@ -68,22 +68,19 @@ export function SessionRow({
           <span className="font-medium truncate">
             {session.title || `Session ${session.id.slice(0, 8)}`}
           </span>
-          {showStatus && (
-            <>
-              {todos && todos.length > 0 ? (
-                <div className="space-y-0.5">
-                  <TodoProgressBar todos={todos} compact />
-                  <SessionTodoInfo todos={todos} compact />
-                </div>
-              ) : (
-                <SessionStatusIndicator
-                  interaction={interaction}
-                  isLoading={isLoading}
-                  compact
-                />
-              )}
-            </>
-          )}
+          {showStatus &&
+            (todos && todos.length > 0 ? (
+              <div className="space-y-0.5">
+                <TodoProgressBar todos={todos} compact />
+                <SessionTodoInfo todos={todos} compact />
+              </div>
+            ) : (
+              <SessionStatusIndicator
+                interaction={interaction}
+                isLoading={isLoading}
+                compact
+              />
+            ))}
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {showSandboxInfo && (
