@@ -9,7 +9,9 @@ import {
   Loader2,
   Terminal,
 } from "lucide-react";
+import { useMemo } from "react";
 import { sandboxDetailQuery } from "@/api/queries";
+import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +21,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import {
+  type SessionInteraction,
+  useOpencodeInteraction,
+} from "@/hooks/use-opencode-interaction";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
+import { buildOpenCodeSessionUrl } from "@/lib/utils";
 
 type TaskDetailDialogProps = {
   open: boolean;
@@ -61,6 +68,14 @@ function TaskDetailContent({ task }: { task: Task }) {
     progressPercent,
     hasRunningSessions,
   } = useTaskSessionProgress(task);
+
+  const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
+
+  const interactionState = useOpencodeInteraction(
+    sandbox?.runtime?.urls?.opencode,
+    sessionIds,
+    task.status === "active" && !!sandbox?.runtime?.urls?.opencode,
+  );
 
   return (
     <div className="space-y-6">
@@ -104,9 +119,20 @@ function TaskDetailContent({ task }: { task: Task }) {
               </span>
             </div>
             <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {sessions.map((session) => (
-                <SessionRow key={session.id} session={session} />
-              ))}
+              {sessions.map((session) => {
+                const sessionInteraction = interactionState.sessions.find(
+                  (s) => s.sessionId === session.id,
+                );
+                return (
+                  <TaskSessionRow
+                    key={session.id}
+                    session={session}
+                    interaction={sessionInteraction}
+                    opencodeUrl={sandbox?.runtime?.urls?.opencode}
+                    directory={sandbox?.workspaceId ?? "/home/dev/workspace"}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
@@ -232,11 +258,31 @@ interface TaskSession {
   completedAt?: string;
 }
 
-function SessionRow({ session }: { session: TaskSession }) {
+function TaskSessionRow({
+  session,
+  interaction,
+  opencodeUrl,
+  directory,
+}: {
+  session: TaskSession;
+  interaction: SessionInteraction | undefined;
+  opencodeUrl: string | undefined;
+  directory: string;
+}) {
   const shortId = session.id.slice(0, 8);
 
+  const needsAttention =
+    interaction &&
+    (interaction.pendingPermissions.length > 0 ||
+      interaction.pendingQuestions.length > 0);
+
+  const sessionUrl =
+    opencodeUrl && directory
+      ? buildOpenCodeSessionUrl(opencodeUrl, directory, session.id)
+      : undefined;
+
   return (
-    <div className="flex items-center gap-2 text-xs py-1 px-2 bg-muted/50 rounded">
+    <div className="flex items-center gap-2 text-xs py-1.5 px-2 bg-muted/50 rounded">
       {session.status === "completed" ? (
         <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
       ) : session.status === "pending" ? (
@@ -248,6 +294,40 @@ function SessionRow({ session }: { session: TaskSession }) {
         {session.templateId}{" "}
         <span className="font-mono text-muted-foreground">({shortId})</span>
       </span>
+
+      {interaction && session.status === "running" && (
+        <SessionStatusIndicator
+          interaction={{
+            status: interaction.status,
+            pendingPermissions: interaction.pendingPermissions,
+            pendingQuestions: interaction.pendingQuestions,
+          }}
+          compact
+        />
+      )}
+
+      {needsAttention && sessionUrl && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-5 text-[10px] px-1.5 gap-0.5"
+          asChild
+        >
+          <a href={sessionUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="h-2.5 w-2.5" />
+            Respond
+          </a>
+        </Button>
+      )}
+
+      {!needsAttention && sessionUrl && (
+        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" asChild>
+          <a href={sessionUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </Button>
+      )}
+
       <span className="text-muted-foreground shrink-0">
         {session.startedAt
           ? new Date(session.startedAt).toLocaleTimeString()

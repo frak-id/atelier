@@ -1,4 +1,9 @@
-import { createOpencodeClient, type Event } from "@opencode-ai/sdk/v2";
+import {
+  createOpencodeClient,
+  type Event,
+  type PermissionRequest,
+  type QuestionRequest,
+} from "@opencode-ai/sdk/v2";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import type { SessionStatus } from "@/api/opencode";
@@ -9,10 +14,6 @@ import {
   queryKeys,
 } from "@/api/queries";
 
-/**
- * Hook that subscribes to OpenCode SSE events and invalidates
- * the relevant queries when events occur.
- */
 export function useOpencodeEventSubscription(
   opencodeUrl: string | undefined,
   enabled = true,
@@ -91,8 +92,8 @@ export type MappedSessionStatus = "idle" | "busy" | "waiting" | "unknown";
 export interface SessionInteraction {
   sessionId: string;
   status: MappedSessionStatus;
-  pendingPermissions: Array<{ id: string; permission: string }>;
-  pendingQuestions: Array<{ id: string; question: string }>;
+  pendingPermissions: PermissionRequest[];
+  pendingQuestions: QuestionRequest[];
 }
 
 export interface OpencodeInteractionState {
@@ -102,10 +103,6 @@ export interface OpencodeInteractionState {
   isLoading: boolean;
 }
 
-/**
- * Hook that combines permissions, questions, and session status queries
- * into a unified interaction state for a set of session IDs.
- */
 export function useOpencodeInteraction(
   opencodeUrl: string | undefined,
   sessionIds: string[],
@@ -156,16 +153,12 @@ export function useOpencodeInteraction(
       else if (statusInfo.type === "retry") status = "waiting";
     }
 
-    const pendingPermissions = allPermissions
-      .filter((p) => p.sessionID === sessionId)
-      .map((p) => ({ id: p.id, permission: p.permission }));
-
-    const pendingQuestions = allQuestions
-      .filter((q) => q.sessionID === sessionId)
-      .map((q) => ({
-        id: q.id,
-        question: q.questions?.[0]?.question ?? "",
-      }));
+    const pendingPermissions = allPermissions.filter(
+      (p) => p.sessionID === sessionId,
+    );
+    const pendingQuestions = allQuestions.filter(
+      (q) => q.sessionID === sessionId,
+    );
 
     return {
       sessionId,
