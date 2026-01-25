@@ -156,7 +156,7 @@ Task 1 (Collapsible) → Task 2 (Interventions Component) → Task 3 (Card Updat
 
 ---
 
-- [ ] 2. Create ExpandableInterventions Component
+- [x] 2. Create ExpandableInterventions Component
 
   **What to do**:
   - Create new file: `apps/dashboard/src/components/expandable-interventions.tsx`
