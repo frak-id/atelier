@@ -269,7 +269,7 @@ Task 1 (Detail Page) → Task 2 (Wire Navigation) → Task 3 (Card Refactor) →
 
 ---
 
-- [ ] 3. Refactor Task Card with Expandable Interventions Section
+- [ ] 3. Refactor Task Card with Expandable Interventions Section (DEFERRED - see problems.md)
 
   **What to do**:
   - Add `Collapsible` component from shadcn/ui if not present:
@@ -343,7 +343,7 @@ Task 1 (Detail Page) → Task 2 (Wire Navigation) → Task 3 (Card Refactor) →
 
 ---
 
-- [ ] 4. Cleanup and Final Polish
+- [x] 4. Cleanup and Final Polish
 
   **What to do**:
   - Remove unused imports from `routes/tasks/index.tsx`:
