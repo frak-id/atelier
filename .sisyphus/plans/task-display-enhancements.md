@@ -39,15 +39,15 @@ Add expandable intervention displays and include session hierarchy (with all sub
 7. Updated: Components using session progress to display subsession counts
 
 ### Definition of Done
-- [ ] Collapsible component available
-- [ ] Task cards show expandable interventions section when items exist
-- [ ] Task detail page shows expandable interventions section when items exist
-- [ ] Expandable sections show permission details (tool name, arguments preview)
-- [ ] Expandable sections show question headlines (truncated if long)
-- [ ] Progress tracking includes all subsessions recursively
-- [ ] Progress indicators show accurate counts with subsessions
-- [ ] Session hierarchy correctly filters to task-relevant root sessions
-- [ ] All existing functionality preserved
+- [x] Collapsible component available
+- [x] Task cards show expandable interventions section when items exist
+- [x] Task detail page shows expandable interventions section when items exist
+- [x] Expandable sections show permission details (tool name, arguments preview)
+- [x] Expandable sections show question headlines (truncated if long)
+- [x] Progress tracking includes all subsessions recursively
+- [x] Progress indicators show accurate counts with subsessions
+- [x] Session hierarchy correctly filters to task-relevant root sessions
+- [x] All existing functionality preserved
 
 ### Must Have
 - Collapsible interventions section (collapsed by default)
@@ -576,17 +576,17 @@ bun run dev        # Expected: dev server starts, navigate to /tasks
 ```
 
 ### Final Checklist
-- [ ] Collapsible component available
-- [ ] Task cards show expandable interventions when items exist
-- [ ] Task detail page shows expandable interventions when items exist
-- [ ] Interventions show permission + question details
-- [ ] Progress tracking includes subsessions
-- [ ] Subsession counts displayed accurately
-- [ ] Session hierarchy correctly filters to task-relevant sessions
-- [ ] No TypeScript errors
-- [ ] No lint errors (or minimal acceptable warnings)
-- [ ] All existing functionality preserved (drag-and-drop, menus, etc.)
-- [ ] No console errors
+- [x] Collapsible component available
+- [x] Task cards show expandable interventions when items exist
+- [x] Task detail page shows expandable interventions when items exist
+- [x] Interventions show permission + question details
+- [x] Progress tracking includes subsessions
+- [x] Subsession counts displayed accurately
+- [x] Session hierarchy correctly filters to task-relevant sessions
+- [x] No TypeScript errors
+- [x] No lint errors (8 pre-existing warnings, 0 new)
+- [x] All existing functionality preserved (drag-and-drop, menus, etc.)
+- [x] No console errors (verified via static analysis)
 
 ---
 
