@@ -10,7 +10,7 @@ import {
 import { useState } from "react";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Button } from "@/components/ui/button";
-import type { SessionInteraction } from "@/hooks/use-opencode-interaction";
+import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
 import { countSubSessions, type SessionNode } from "@/lib/session-hierarchy";
 import { buildOpenCodeSessionUrl } from "@/lib/utils";
 
@@ -20,7 +20,7 @@ type TaskSessionNodeProps = {
   node: SessionNode;
   depth: number;
   taskSessions: TaskSession[];
-  interactions: SessionInteraction[];
+  interactions: SessionInteractionState[];
   opencodeUrl: string | undefined;
   directory: string;
 };
@@ -43,8 +43,8 @@ function TaskSessionNode({
 
   const shortId = session.id.slice(0, 8);
   const templateId = taskSession?.templateId;
-  const status = taskSession?.status ?? "running";
   const startedAt = taskSession?.startedAt;
+  const realStatus = interaction?.status ?? "unknown";
 
   const needsAttention =
     interaction &&
@@ -79,12 +79,12 @@ function TaskSessionNode({
           <div className="w-6 shrink-0" />
         )}
 
-        {status === "completed" ? (
-          <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-        ) : status === "pending" ? (
-          <Clock className="h-4 w-4 text-yellow-500 shrink-0" />
-        ) : (
+        {realStatus === "busy" ? (
           <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
+        ) : realStatus === "idle" ? (
+          <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+        ) : (
+          <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
         )}
 
         <span className="truncate flex-1">
@@ -99,7 +99,7 @@ function TaskSessionNode({
           <span className="font-mono text-muted-foreground">({shortId})</span>
         </span>
 
-        {interaction && status === "running" && (
+        {interaction && (realStatus === "busy" || realStatus === "idle") && (
           <SessionStatusIndicator
             interaction={{
               status: interaction.status,
@@ -171,7 +171,7 @@ function TaskSessionNode({
 type TaskSessionHierarchyProps = {
   hierarchy: SessionNode[];
   taskSessions: TaskSession[];
-  interactions: SessionInteraction[];
+  interactions: SessionInteractionState[];
   opencodeUrl: string | undefined;
   directory: string;
 };

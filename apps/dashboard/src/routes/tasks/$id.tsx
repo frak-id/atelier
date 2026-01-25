@@ -15,7 +15,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   globalSessionTemplatesQuery,
@@ -31,15 +31,12 @@ import { TaskSessionHierarchy } from "@/components/task-session-hierarchy";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useOpencodeInteraction } from "@/hooks/use-opencode-interaction";
-import { useTaskSessionHierarchy } from "@/hooks/use-task-session-hierarchy";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 
 export const Route = createFileRoute("/tasks/$id")({
@@ -71,31 +68,24 @@ function TaskDetailPage() {
     enabled: !!task.data.sandboxId,
   });
 
-  const { hierarchy, allSessions } = useTaskSessionHierarchy(
+  const {
+    hierarchy,
+    allSessions,
+    totalCount,
+    subsessionCount,
+    sessionInteractions,
+    aggregatedInteraction,
+    needsAttention,
+    hasBusySessions,
+  } = useTaskSessionProgress(
     task,
-    sandbox?.runtime.urls.opencode,
+    sandbox?.runtime?.urls?.opencode,
     sandbox
       ? {
           id: sandbox.id,
           workspaceId: sandbox.workspaceId,
         }
       : undefined,
-  );
-
-  const {
-    sessions,
-    totalCount,
-    completedCount,
-    runningCount,
-    progressPercent,
-    hasRunningSessions,
-  } = useTaskSessionProgress(task);
-
-  const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
-
-  const interactionState = useOpencodeInteraction(
-    sandbox?.runtime?.urls?.opencode,
-    sessionIds,
     task.status === "active" && !!sandbox?.runtime?.urls?.opencode,
   );
 
@@ -105,14 +95,6 @@ function TaskDetailPage() {
   });
   const secondaryTemplates =
     templatesData?.templates.filter((t) => t.category === "secondary") ?? [];
-
-  // Aggregate permissions and questions from all sessions
-  const allPermissions = interactionState.sessions.flatMap((s) =>
-    s.pendingPermissions.map((p) => ({ ...p, sessionId: s.sessionId })),
-  );
-  const allQuestions = interactionState.sessions.flatMap((s) =>
-    s.pendingQuestions.map((q) => ({ ...q, sessionId: s.sessionId })),
-  );
 
   const handleDelete = () => {
     if (confirm(`Delete task "${task.title}"?`)) {
@@ -284,38 +266,29 @@ function TaskDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>
-              Sessions Progress
-              {allSessions.length > totalCount && (
+              Sessions
+              {subsessionCount > 0 && (
                 <span className="text-sm font-normal text-muted-foreground ml-2">
-                  ({allSessions.length} with subsessions)
+                  ({totalCount} root, {subsessionCount} sub-sessions)
                 </span>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Progress value={progressPercent} className="flex-1" />
-              <span className="text-sm font-medium min-w-[60px] text-right">
-                {completedCount}/{totalCount}
-              </span>
-            </div>
+            {hasBusySessions && <Badge variant="secondary">Working</Badge>}
 
-            {hasRunningSessions && (
-              <Badge variant="secondary">
-                {runningCount} session{runningCount > 1 ? "s" : ""} running
-              </Badge>
+            {needsAttention && (
+              <ExpandableInterventions
+                permissions={aggregatedInteraction.pendingPermissions}
+                questions={aggregatedInteraction.pendingQuestions}
+                compact={false}
+              />
             )}
-
-            <ExpandableInterventions
-              permissions={allPermissions}
-              questions={allQuestions}
-              compact={false}
-            />
 
             <TaskSessionHierarchy
               hierarchy={hierarchy}
-              taskSessions={sessions}
-              interactions={interactionState.sessions}
+              taskSessions={task.data.sessions ?? []}
+              interactions={sessionInteractions}
               opencodeUrl={sandbox?.runtime?.urls?.opencode}
               directory={sandbox?.workspaceId ?? "/home/dev/workspace"}
             />
@@ -377,10 +350,10 @@ function TaskDetailPage() {
               </>
             )}
 
-            {sessions.length > 0 && (
+            {allSessions.length > 0 && (
               <>
                 <div className="text-muted-foreground">Sessions</div>
-                <span>{sessions.length} total</span>
+                <span>{allSessions.length} total</span>
               </>
             )}
 

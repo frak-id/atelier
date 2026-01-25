@@ -17,7 +17,7 @@ import {
   Terminal,
   Zap,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   globalSessionTemplatesQuery,
@@ -33,18 +33,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Progress } from "@/components/ui/progress";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  type OpencodeInteractionState,
-  useOpencodeInteraction,
-} from "@/hooks/use-opencode-interaction";
-import { useTaskSessionHierarchy } from "@/hooks/use-task-session-hierarchy";
-import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
+  type AggregatedInteractionState,
+  useTaskSessionProgress,
+} from "@/hooks/use-task-session-progress";
 
 type TaskCardProps = {
   task: Task;
@@ -87,17 +84,24 @@ export function TaskCard({
     enabled: !!task.data.sandboxId,
   });
 
-  const sessionIds = useMemo(
-    () => (task.data.sessions ?? []).map((s) => s.id),
-    [task.data.sessions],
-  );
-
-  const interactionState = useOpencodeInteraction(
+  const {
+    totalCount,
+    subsessionCount,
+    aggregatedInteraction,
+    needsAttention,
+    hasBusySessions,
+    isLoading: isProgressLoading,
+  } = useTaskSessionProgress(
+    task,
     sandbox?.runtime?.urls?.opencode,
-    sessionIds,
+    sandbox
+      ? {
+          id: sandbox.id,
+          workspaceId: sandbox.workspaceId,
+        }
+      : undefined,
     task.status === "active" && !!sandbox?.runtime?.urls?.opencode,
   );
-  const needsAttention = interactionState.needsAttention;
 
   const { data: templatesData } = useQuery({
     ...globalSessionTemplatesQuery,
@@ -106,33 +110,7 @@ export function TaskCard({
   const secondaryTemplates =
     templatesData?.templates.filter((t) => t.category === "secondary") ?? [];
 
-  const { allSessions } = useTaskSessionHierarchy(
-    task,
-    sandbox?.runtime.urls.opencode,
-    sandbox
-      ? {
-          id: sandbox.id,
-          workspaceId: sandbox.workspaceId,
-        }
-      : undefined,
-  );
-
-  const {
-    totalCount,
-    completedCount,
-    runningCount,
-    progressPercent,
-    hasActiveOrCompletedSession,
-    hasRunningSessions,
-    totalWithSubsessions,
-    subsessionCount,
-  } = useTaskSessionProgress(task, {
-    includeSubsessions: true,
-    allSessions: allSessions as unknown as NonNullable<
-      typeof task.data.sessions
-    >,
-  });
-
+  const hasActiveSessions = totalCount > 0;
   const showConnectionInfo =
     task.status === "active" && sandbox?.status === "running";
 
@@ -189,48 +167,36 @@ export function TaskCard({
 
           {totalCount > 0 && (
             <div className="flex items-center gap-2 mt-2">
-              <Progress value={progressPercent} className="flex-1 h-1.5" />
               <div className="flex flex-col items-end gap-0.5">
                 <span className="text-xs text-muted-foreground">
-                  {completedCount}/{totalCount}
+                  {totalCount} session{totalCount !== 1 ? "s" : ""}
                 </span>
-                {totalWithSubsessions &&
-                  subsessionCount &&
-                  subsessionCount > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      ({totalWithSubsessions} total)
-                    </span>
-                  )}
+                {subsessionCount > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    (+{subsessionCount} sub)
+                  </span>
+                )}
               </div>
             </div>
           )}
 
-          {hasRunningSessions && (
+          {hasActiveSessions && !isProgressLoading && (
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <Badge variant="secondary" className="text-xs">
-                {runningCount} session
-                {runningCount > 1 ? "s" : ""} running
-              </Badge>
+              {hasBusySessions && (
+                <Badge variant="secondary" className="text-xs">
+                  Working
+                </Badge>
+              )}
               <TaskSessionsStatus
-                interactionState={interactionState}
+                aggregatedInteraction={aggregatedInteraction}
+                needsAttention={needsAttention}
                 opencodeUrl={sandbox?.runtime?.urls?.opencode}
               />
             </div>
           )}
 
-          {!hasRunningSessions &&
-            needsAttention &&
-            sandbox?.runtime?.urls?.opencode && (
-              <div className="mt-2">
-                <TaskSessionsStatus
-                  interactionState={interactionState}
-                  opencodeUrl={sandbox.runtime.urls.opencode}
-                />
-              </div>
-            )}
-
           {task.status === "active" &&
-            hasActiveOrCompletedSession &&
+            hasActiveSessions &&
             secondaryTemplates.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {secondaryTemplates.map((template) => (
@@ -395,45 +361,22 @@ function CopySshButton({ ssh }: { ssh: string }) {
 }
 
 function TaskSessionsStatus({
-  interactionState,
+  aggregatedInteraction,
+  needsAttention,
   opencodeUrl,
 }: {
-  interactionState: OpencodeInteractionState;
+  aggregatedInteraction: AggregatedInteractionState;
+  needsAttention: boolean;
   opencodeUrl: string | undefined;
 }) {
-  if (!interactionState.available || interactionState.isLoading) {
+  const showStatus =
+    needsAttention ||
+    aggregatedInteraction.status === "idle" ||
+    aggregatedInteraction.status === "busy";
+
+  if (!showStatus) {
     return null;
   }
-
-  const allPermissions = interactionState.sessions.flatMap((s) =>
-    s.pendingPermissions.map((p) => ({ ...p, sessionId: s.sessionId })),
-  );
-  const allQuestions = interactionState.sessions.flatMap((s) =>
-    s.pendingQuestions.map((q) => ({ ...q, sessionId: s.sessionId })),
-  );
-
-  const hasIdleSessions = interactionState.sessions.some(
-    (s) => s.status === "idle",
-  );
-  const hasBusySessions = interactionState.sessions.some(
-    (s) => s.status === "busy",
-  );
-
-  const needsAttention = allPermissions.length > 0 || allQuestions.length > 0;
-
-  if (!needsAttention && !hasIdleSessions && !hasBusySessions) {
-    return null;
-  }
-
-  const aggregatedInteraction = {
-    status: hasBusySessions
-      ? ("busy" as const)
-      : hasIdleSessions
-        ? ("idle" as const)
-        : ("unknown" as const),
-    pendingPermissions: allPermissions,
-    pendingQuestions: allQuestions,
-  };
 
   return (
     <div className="space-y-2">
@@ -454,8 +397,8 @@ function TaskSessionsStatus({
         )}
       </div>
       <ExpandableInterventions
-        permissions={allPermissions}
-        questions={allQuestions}
+        permissions={aggregatedInteraction.pendingPermissions}
+        questions={aggregatedInteraction.pendingQuestions}
         compact={true}
       />
     </div>
