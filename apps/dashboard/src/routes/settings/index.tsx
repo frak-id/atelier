@@ -799,7 +799,7 @@ function SessionTemplatesSection() {
           name: "Default",
           model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
           variant: "high",
-          agent: "Sisyphus",
+          agent: "build",
         },
       ],
       defaultVariantIndex: 0,

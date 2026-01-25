@@ -317,7 +317,11 @@ export class SessionTemplateService {
         client.app.agents(),
       ]);
 
-      const providers = providersResult.data?.all ?? [];
+      const connectedProviders = providersResult.data?.connected ?? [];
+      const providers =
+        providersResult.data?.all?.filter((p) =>
+          connectedProviders.includes(p.id),
+        ) ?? [];
       const agents = agentsResult.data ?? [];
 
       return {
