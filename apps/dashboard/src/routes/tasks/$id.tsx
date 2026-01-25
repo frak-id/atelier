@@ -31,6 +31,7 @@ import { TaskSessionHierarchy } from "@/components/task-session-hierarchy";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -73,6 +74,8 @@ function TaskDetailPage() {
     allSessions,
     totalCount,
     subsessionCount,
+    completedSubsessionCount,
+    progressPercent,
     sessionInteractions,
     aggregatedInteraction,
     needsAttention,
@@ -275,7 +278,13 @@ function TaskDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {hasBusySessions && <Badge variant="secondary">Working</Badge>}
+            <div className="flex items-center gap-3">
+              <Progress value={progressPercent} className="flex-1 h-2" />
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                {completedSubsessionCount}/{totalCount + subsessionCount}
+              </span>
+              {hasBusySessions && <Badge variant="secondary">Working</Badge>}
+            </div>
 
             {needsAttention && (
               <ExpandableInterventions
