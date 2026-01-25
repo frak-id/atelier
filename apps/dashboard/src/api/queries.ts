@@ -1,7 +1,13 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api, type Workspace } from "./client";
-import { deleteOpenCodeSession, fetchOpenCodeSessions } from "./opencode";
+import {
+  deleteOpenCodeSession,
+  fetchOpenCodePermissions,
+  fetchOpenCodeQuestions,
+  fetchOpenCodeSessions,
+  getOpenCodeSessionStatuses,
+} from "./opencode";
 
 function unwrap<T>(result: { data: T; error: unknown }): T {
   if (result.error) {
@@ -10,7 +16,7 @@ function unwrap<T>(result: { data: T; error: unknown }): T {
   return result.data;
 }
 
-const queryKeys = {
+export const queryKeys = {
   health: ["health"] as const,
   sharedStorage: {
     all: ["sharedStorage"] as const,
@@ -21,8 +27,6 @@ const queryKeys = {
     all: ["tasks"] as const,
     list: (workspaceId?: string) => ["tasks", "list", workspaceId] as const,
     detail: (id: string) => ["tasks", "detail", id] as const,
-    interactionState: (id: string) =>
-      ["tasks", "interactionState", id] as const,
   },
   sandboxes: {
     all: ["sandboxes"] as const,
@@ -43,6 +47,11 @@ const queryKeys = {
     sessions: (baseUrl: string) => ["opencode", baseUrl, "sessions"] as const,
     messages: (baseUrl: string, sessionId: string) =>
       ["opencode", baseUrl, "messages", sessionId] as const,
+    permissions: (baseUrl: string) =>
+      ["opencode", baseUrl, "permissions"] as const,
+    questions: (baseUrl: string) => ["opencode", baseUrl, "questions"] as const,
+    sessionStatuses: (baseUrl: string) =>
+      ["opencode", baseUrl, "sessionStatuses"] as const,
   },
   workspaces: {
     all: ["workspaces"] as const,
@@ -425,6 +434,30 @@ export const opencodeSessionsQuery = (baseUrl: string) =>
     enabled: !!baseUrl,
   });
 
+export const opencodePermissionsQuery = (baseUrl: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.permissions(baseUrl),
+    queryFn: () => fetchOpenCodePermissions(baseUrl),
+    enabled: !!baseUrl,
+    staleTime: 5000,
+  });
+
+export const opencodeQuestionsQuery = (baseUrl: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.questions(baseUrl),
+    queryFn: () => fetchOpenCodeQuestions(baseUrl),
+    enabled: !!baseUrl,
+    staleTime: 5000,
+  });
+
+export const opencodeSessionStatusesQuery = (baseUrl: string) =>
+  queryOptions({
+    queryKey: queryKeys.opencode.sessionStatuses(baseUrl),
+    queryFn: () => getOpenCodeSessionStatuses(baseUrl),
+    enabled: !!baseUrl,
+    staleTime: 5000,
+  });
+
 export function useDeleteOpenCodeSession(baseUrl: string) {
   return useMutation({
     mutationFn: (sessionId: string) =>
@@ -687,19 +720,6 @@ export const taskDetailQuery = (id: string) =>
     queryFn: async () => unwrap(await api.api.tasks({ id }).get()),
     refetchInterval: 5000,
   });
-
-export const taskInteractionStateQuery = (id: string, enabled = true) =>
-  queryOptions({
-    queryKey: queryKeys.tasks.interactionState(id),
-    queryFn: async () =>
-      unwrap(await api.api.tasks({ id })["interaction-state"].get()),
-    refetchInterval: 10000,
-    enabled,
-  });
-
-export function useTaskInteractionState(taskId: string, enabled = true) {
-  return useQuery(taskInteractionStateQuery(taskId, enabled));
-}
 
 export function useCreateTask() {
   return useMutation({

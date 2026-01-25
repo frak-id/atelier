@@ -1,4 +1,9 @@
-import { createOpencodeClient, type Session } from "@opencode-ai/sdk/v2";
+import {
+  createOpencodeClient,
+  type PermissionRequest,
+  type QuestionRequest,
+  type Session,
+} from "@opencode-ai/sdk/v2";
 
 export type SessionStatus =
   | { type: "idle" }
@@ -105,3 +110,29 @@ export async function getOpenCodeSessionStatuses(
     return {};
   }
 }
+
+export async function fetchOpenCodePermissions(
+  baseUrl: string,
+): Promise<PermissionRequest[]> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const { data } = await client.permission.list();
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchOpenCodeQuestions(
+  baseUrl: string,
+): Promise<QuestionRequest[]> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const { data } = await client.question.list();
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export type { PermissionRequest, QuestionRequest };

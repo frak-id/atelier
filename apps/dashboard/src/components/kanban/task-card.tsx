@@ -18,13 +18,12 @@ import {
   Terminal,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   globalSessionTemplatesQuery,
   sandboxDetailQuery,
   useAddTaskSessions,
-  useTaskInteractionState,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +38,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  type OpencodeInteractionState,
+  useOpencodeInteraction,
+} from "@/hooks/use-opencode-interaction";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 
 type TaskCardProps = {
@@ -82,11 +85,17 @@ export function TaskCard({
     enabled: !!task.data.sandboxId,
   });
 
-  const { data: interactionState } = useTaskInteractionState(
-    task.id,
-    task.status === "active",
+  const sessionIds = useMemo(
+    () => (task.data.sessions ?? []).map((s) => s.id),
+    [task.data.sessions],
   );
-  const needsAttention = interactionState?.needsAttention ?? false;
+
+  const interactionState = useOpencodeInteraction(
+    sandbox?.runtime?.urls?.opencode,
+    sessionIds,
+    task.status === "active" && !!sandbox?.runtime?.urls?.opencode,
+  );
+  const needsAttention = interactionState.needsAttention;
 
   const { data: templatesData } = useQuery({
     ...globalSessionTemplatesQuery,
@@ -351,18 +360,10 @@ function CopySshButton({ ssh }: { ssh: string }) {
   );
 }
 
-type InteractionState = {
-  sessions: Array<{
-    sessionId: string;
-    pendingPermissions: Array<{ permission: string }>;
-    pendingQuestions: Array<{ question: string }>;
-  }>;
-};
-
 function NeedsAttentionTooltip({
   interactionState,
 }: {
-  interactionState: InteractionState;
+  interactionState: OpencodeInteractionState;
 }) {
   const permissionCount = interactionState.sessions.reduce(
     (acc, s) => acc + s.pendingPermissions.length,

@@ -25,7 +25,6 @@ import {
   SandboxDestroyer,
   SandboxLifecycle,
   SandboxSpawner,
-  SessionMonitor,
   TaskSpawner,
 } from "./orchestrators/index.ts";
 
@@ -93,8 +92,6 @@ const prebuildRunner = new PrebuildRunner({
   agentClient,
 });
 
-const sessionMonitor = new SessionMonitor(taskService);
-
 const taskSpawner = new TaskSpawner({
   sandboxSpawner,
   sandboxService,
@@ -102,7 +99,6 @@ const taskSpawner = new TaskSpawner({
   workspaceService,
   sessionTemplateService,
   agentClient,
-  sessionMonitor,
 });
 
 const prebuildChecker = new PrebuildChecker({
@@ -122,7 +118,6 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
-  sessionMonitor,
   sshKeyService,
   taskService,
   taskSpawner,

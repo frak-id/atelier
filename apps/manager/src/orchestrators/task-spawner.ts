@@ -13,7 +13,6 @@ import type {
 } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
-import type { SessionMonitor } from "./session-monitor.ts";
 
 const log = createChildLogger("task-spawner");
 
@@ -29,7 +28,6 @@ interface TaskSpawnerDependencies {
   workspaceService: WorkspaceService;
   sessionTemplateService: SessionTemplateService;
   agentClient: AgentClient;
-  sessionMonitor: SessionMonitor;
 }
 
 interface SessionConfig {
@@ -351,8 +349,6 @@ export class TaskSpawner {
       );
       throw new Error(`Failed to send prompt: ${promptResult.error}`);
     }
-
-    this.deps.sessionMonitor.startMonitoring(taskId, session.id, ipAddress);
 
     log.info(
       { taskId, sessionId: session.id, templateId: sessionTemplateId },
