@@ -115,7 +115,7 @@ Task 1 (Collapsible) → Task 2 (Interventions Component) → Task 3 (Card Updat
 
 ## TODOs
 
-- [ ] 1. Add Collapsible UI Component
+- [x] 1. Add Collapsible UI Component
 
   **What to do**:
   - Check if shadcn/ui Collapsible component is available
