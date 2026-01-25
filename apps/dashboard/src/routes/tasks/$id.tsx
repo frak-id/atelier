@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Check,
   CheckCircle,
-  Clock,
   Code,
   Copy,
   ExternalLink,
@@ -28,7 +27,7 @@ import {
   useResetTask,
 } from "@/api/queries";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
-import { SessionStatusIndicator } from "@/components/session-status-indicator";
+import { TaskSessionHierarchy } from "@/components/task-session-hierarchy";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,13 +38,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  type SessionInteraction,
-  useOpencodeInteraction,
-} from "@/hooks/use-opencode-interaction";
+import { useOpencodeInteraction } from "@/hooks/use-opencode-interaction";
 import { useTaskSessionHierarchy } from "@/hooks/use-task-session-hierarchy";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
-import { buildOpenCodeSessionUrl } from "@/lib/utils";
 
 export const Route = createFileRoute("/tasks/$id")({
   component: TaskDetailPage,
@@ -76,7 +71,7 @@ function TaskDetailPage() {
     enabled: !!task.data.sandboxId,
   });
 
-  const { allSessions } = useTaskSessionHierarchy(
+  const { hierarchy, allSessions } = useTaskSessionHierarchy(
     task,
     sandbox?.runtime.urls.opencode,
     sandbox
@@ -317,22 +312,13 @@ function TaskDetailPage() {
               compact={false}
             />
 
-            <div className="space-y-2">
-              {sessions.map((session) => {
-                const sessionInteraction = interactionState.sessions.find(
-                  (s) => s.sessionId === session.id,
-                );
-                return (
-                  <TaskSessionRow
-                    key={session.id}
-                    session={session}
-                    interaction={sessionInteraction}
-                    opencodeUrl={sandbox?.runtime?.urls?.opencode}
-                    directory={sandbox?.workspaceId ?? "/home/dev/workspace"}
-                  />
-                );
-              })}
-            </div>
+            <TaskSessionHierarchy
+              hierarchy={hierarchy}
+              taskSessions={sessions}
+              interactions={interactionState.sessions}
+              opencodeUrl={sandbox?.runtime?.urls?.opencode}
+              directory={sandbox?.workspaceId ?? "/home/dev/workspace"}
+            />
           </CardContent>
         </Card>
       )}
@@ -420,95 +406,6 @@ function TaskDetailPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-interface TaskSession {
-  id: string;
-  templateId: string;
-  order: number;
-  status: "pending" | "running" | "completed";
-  startedAt?: string;
-  completedAt?: string;
-}
-
-function TaskSessionRow({
-  session,
-  interaction,
-  opencodeUrl,
-  directory,
-}: {
-  session: TaskSession;
-  interaction: SessionInteraction | undefined;
-  opencodeUrl: string | undefined;
-  directory: string;
-}) {
-  const shortId = session.id.slice(0, 8);
-
-  const needsAttention =
-    interaction &&
-    (interaction.pendingPermissions.length > 0 ||
-      interaction.pendingQuestions.length > 0);
-
-  const sessionUrl =
-    opencodeUrl && directory
-      ? buildOpenCodeSessionUrl(opencodeUrl, directory, session.id)
-      : undefined;
-
-  return (
-    <div className="flex items-center gap-2 text-sm py-2 px-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors">
-      {session.status === "completed" ? (
-        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-      ) : session.status === "pending" ? (
-        <Clock className="h-4 w-4 text-yellow-500 shrink-0" />
-      ) : (
-        <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
-      )}
-
-      <span className="truncate flex-1">
-        {session.templateId}{" "}
-        <span className="font-mono text-muted-foreground">({shortId})</span>
-      </span>
-
-      {interaction && session.status === "running" && (
-        <SessionStatusIndicator
-          interaction={{
-            status: interaction.status,
-            pendingPermissions: interaction.pendingPermissions,
-            pendingQuestions: interaction.pendingQuestions,
-          }}
-          compact
-        />
-      )}
-
-      {needsAttention && sessionUrl && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs px-2 gap-1"
-          asChild
-        >
-          <a href={sessionUrl} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="h-3 w-3" />
-            Respond
-          </a>
-        </Button>
-      )}
-
-      {!needsAttention && sessionUrl && (
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" asChild>
-          <a href={sessionUrl} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        </Button>
-      )}
-
-      {session.startedAt && (
-        <span className="text-muted-foreground text-xs shrink-0">
-          {new Date(session.startedAt).toLocaleTimeString()}
-        </span>
-      )}
     </div>
   );
 }

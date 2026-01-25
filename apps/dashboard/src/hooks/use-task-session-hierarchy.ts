@@ -57,6 +57,7 @@ export function useTaskSessionHierarchy(
   const rootSessions = filteredRoots.map((node) => node.session);
 
   return {
+    hierarchy: filteredRoots,
     allSessions,
     rootSessions,
     isLoading,
