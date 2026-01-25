@@ -1,6 +1,6 @@
 import type { SessionTemplate } from "@frak-sandbox/shared/constants";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -53,6 +53,14 @@ export function SessionTemplateEditDialog({
 }: SessionTemplateEditDialogProps) {
   const [editData, setEditData] = useState<SessionTemplate | null>(null);
 
+  useEffect(() => {
+    if (template) {
+      setEditData({ ...template });
+    } else {
+      setEditData(null);
+    }
+  }, [template]);
+
   const data = editData ?? template;
   const providers = openCodeConfig?.providers ?? [];
   const agents = openCodeConfig?.agents ?? [];
@@ -88,10 +96,6 @@ export function SessionTemplateEditDialog({
   );
 
   if (!template) return null;
-
-  const handleOpen = () => {
-    setEditData({ ...template });
-  };
 
   const handleSave = () => {
     if (!data) return;
@@ -154,7 +158,6 @@ export function SessionTemplateEditDialog({
       open={!!template}
       onOpenChange={(open) => {
         if (!open) onClose();
-        else handleOpen();
       }}
     >
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
