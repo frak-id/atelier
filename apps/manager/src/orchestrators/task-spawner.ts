@@ -329,7 +329,7 @@ export class TaskSpawner {
       workspace,
       this.getTargetRepos(task, workspace),
       task.data.branchName,
-      task.data.sandboxId!,
+      task.data.sandboxId,
       ipAddress,
       sessionConfig.promptTemplate,
     );
@@ -477,7 +477,7 @@ export class TaskSpawner {
     workspace: Workspace,
     targetRepos: RepoConfig[],
     branchName: string | undefined,
-    sandboxId: string,
+    sandboxId: string | undefined,
     ipAddress: string,
     promptTemplate?: string,
   ): string {
@@ -497,7 +497,7 @@ export class TaskSpawner {
           }),
         },
         sandbox: {
-          id: sandboxId,
+          id: sandboxId ?? "undefined",
           ip: ipAddress,
           url: `http://${ipAddress}:${OPENCODE_PORT}`,
         },

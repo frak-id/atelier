@@ -113,7 +113,11 @@ export class SessionTemplateService {
 
   getDefaultTemplate(workspaceId?: string): SessionTemplate {
     const { templates } = this.getMergedTemplates(workspaceId);
-    return templates[0] ?? DEFAULT_SESSION_TEMPLATES[0]!;
+    const final = templates[0] ?? DEFAULT_SESSION_TEMPLATES[0];
+    if (!final) {
+      throw new Error("No default session template available");
+    }
+    return final;
   }
 
   getTemplatesByCategory(

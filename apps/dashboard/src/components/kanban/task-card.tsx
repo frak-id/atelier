@@ -4,26 +4,17 @@ import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import {
   Check,
-  CheckCircle2,
   Code,
   Copy,
   ExternalLink,
   GitBranch,
   GripVertical,
-  Loader2,
   MoreHorizontal,
-  Shield,
-  Sparkles,
   Terminal,
-  Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  globalSessionTemplatesQuery,
-  sandboxDetailQuery,
-  useAddTaskSessions,
-} from "@/api/queries";
+import { sandboxDetailQuery } from "@/api/queries";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Badge } from "@/components/ui/badge";
@@ -33,11 +24,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   type AggregatedInteractionState,
   useTaskSessionProgress,
@@ -102,13 +88,6 @@ export function TaskCard({
       : undefined,
     task.status === "active" && !!sandbox?.runtime?.urls?.opencode,
   );
-
-  const { data: templatesData } = useQuery({
-    ...globalSessionTemplatesQuery,
-    enabled: task.status === "active",
-  });
-  const secondaryTemplates =
-    templatesData?.templates.filter((t) => t.category === "secondary") ?? [];
 
   const hasActiveSessions = totalCount > 0;
   const showConnectionInfo =
@@ -194,20 +173,6 @@ export function TaskCard({
               />
             </div>
           )}
-
-          {task.status === "active" &&
-            hasActiveSessions &&
-            secondaryTemplates.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {secondaryTemplates.map((template) => (
-                  <SecondaryTemplateButton
-                    key={template.id}
-                    template={template}
-                    taskId={task.id}
-                  />
-                ))}
-              </div>
-            )}
 
           {showConnectionInfo && sandbox && (
             <div className="flex items-center gap-1 mt-2">
@@ -402,70 +367,5 @@ function TaskSessionsStatus({
         compact={true}
       />
     </div>
-  );
-}
-
-type SecondaryTemplate = {
-  id: string;
-  name: string;
-  description?: string;
-};
-
-const TEMPLATE_ICONS: Record<string, React.ReactNode> = {
-  "best-practices": <CheckCircle2 className="h-3 w-3" />,
-  "security-review": <Shield className="h-3 w-3" />,
-  simplification: <Zap className="h-3 w-3" />,
-};
-
-function SecondaryTemplateButton({
-  template,
-  taskId,
-}: {
-  template: SecondaryTemplate;
-  taskId: string;
-}) {
-  const addSessionsMutation = useAddTaskSessions();
-  const icon = TEMPLATE_ICONS[template.id] ?? <Sparkles className="h-3 w-3" />;
-  const shortName = template.name.replace(" Review", "").replace("ation", "");
-
-  const handleSpawn = () => {
-    addSessionsMutation.mutate(
-      { id: taskId, sessionTemplateIds: [template.id] },
-      {
-        onSuccess: () => {
-          toast.success(`${template.name} session started`);
-        },
-        onError: (error) => {
-          toast.error(`Failed to start ${template.name}`, {
-            description:
-              error instanceof Error ? error.message : "Unknown error",
-          });
-        },
-      },
-    );
-  };
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-6 px-2 text-xs gap-1"
-          onClick={handleSpawn}
-          disabled={addSessionsMutation.isPending}
-        >
-          {addSessionsMutation.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            icon
-          )}
-          {shortName}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <span>{template.description ?? template.name}</span>
-      </TooltipContent>
-    </Tooltip>
   );
 }
