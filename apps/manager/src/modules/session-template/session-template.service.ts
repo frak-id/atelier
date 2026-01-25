@@ -256,7 +256,49 @@ export class SessionTemplateService {
       return { available: false };
     }
 
-    const ipAddress = runningSandbox.runtime?.ipAddress;
+    return this.fetchOpenCodeConfigFromSandbox(runningSandbox);
+  }
+
+  async getOpenCodeConfigFromAnySandbox(): Promise<{
+    available: boolean;
+    sandboxId?: string;
+    providers?: Array<{
+      id: string;
+      name: string;
+      models: Record<
+        string,
+        { id: string; name: string; variants?: Record<string, unknown> }
+      >;
+    }>;
+    agents?: Array<{ name: string; description?: string; mode: string }>;
+  }> {
+    const allSandboxes = this.sandboxService.getAll();
+    const runningSandbox = allSandboxes.find((s) => s.status === "running");
+
+    if (!runningSandbox) {
+      return { available: false };
+    }
+
+    return this.fetchOpenCodeConfigFromSandbox(runningSandbox);
+  }
+
+  private async fetchOpenCodeConfigFromSandbox(sandbox: {
+    id: string;
+    runtime?: { ipAddress?: string };
+  }): Promise<{
+    available: boolean;
+    sandboxId?: string;
+    providers?: Array<{
+      id: string;
+      name: string;
+      models: Record<
+        string,
+        { id: string; name: string; variants?: Record<string, unknown> }
+      >;
+    }>;
+    agents?: Array<{ name: string; description?: string; mode: string }>;
+  }> {
+    const ipAddress = sandbox.runtime?.ipAddress;
     if (!ipAddress) {
       return { available: false };
     }
@@ -276,7 +318,7 @@ export class SessionTemplateService {
 
       return {
         available: true,
-        sandboxId: runningSandbox.id,
+        sandboxId: sandbox.id,
         providers: providers.map((p) => ({
           id: p.id,
           name: p.name,
@@ -299,10 +341,10 @@ export class SessionTemplateService {
       };
     } catch (error) {
       log.warn(
-        { workspaceId, sandboxId: runningSandbox.id, error: String(error) },
+        { sandboxId: sandbox.id, error: String(error) },
         "Failed to fetch OpenCode config",
       );
-      return { available: false, sandboxId: runningSandbox.id };
+      return { available: false, sandboxId: sandbox.id };
     }
   }
 }

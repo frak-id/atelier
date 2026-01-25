@@ -95,6 +95,11 @@ export const queryKeys = {
       ["sessionTemplates", "workspaceOverride", workspaceId] as const,
     opencodeConfig: (workspaceId: string) =>
       ["sessionTemplates", "opencodeConfig", workspaceId] as const,
+    opencodeConfigGlobal: [
+      "sessionTemplates",
+      "opencodeConfig",
+      "global",
+    ] as const,
   },
 };
 
@@ -306,6 +311,13 @@ export const workspaceOpenCodeConfigQuery = (workspaceId: string) =>
     enabled: !!workspaceId,
     staleTime: 30000,
   });
+
+export const globalOpenCodeConfigQuery = queryOptions({
+  queryKey: queryKeys.sessionTemplates.opencodeConfigGlobal,
+  queryFn: async () =>
+    unwrap(await api.api["session-templates"]["opencode-config"].get()),
+  staleTime: 30000,
+});
 
 export function useUpdateWorkspaceSessionTemplates() {
   return useMutation({
