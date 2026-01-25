@@ -764,8 +764,11 @@ export function useAddTaskSessions() {
       sessionTemplateIds: string[];
     }) =>
       unwrap(await api.api.tasks({ id }).sessions.post({ sessionTemplateIds })),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+    onSuccess: (_data, variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.tasks.detail(variables.id),
+      });
     },
   });
 }

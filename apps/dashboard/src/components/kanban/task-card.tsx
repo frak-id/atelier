@@ -4,8 +4,10 @@ import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   Code,
+  Copy,
   ExternalLink,
   GitBranch,
   GripVertical,
@@ -16,6 +18,8 @@ import {
   Terminal,
   Zap,
 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 import {
   globalSessionTemplatesQuery,
   sandboxDetailQuery,
@@ -35,6 +39,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 
 type TaskCardProps = {
   task: Task;
@@ -90,16 +95,14 @@ export function TaskCard({
   const secondaryTemplates =
     templatesData?.templates.filter((t) => t.category === "secondary") ?? [];
 
-  const addSessionsMutation = useAddTaskSessions();
-
-  const sessions = task.data.sessions ?? [];
-  const completedSessions = sessions.filter((s) => s.status === "completed");
-  const runningSessions = sessions.filter((s) => s.status === "running");
-  const totalCount = sessions.length;
-  const progressPercent =
-    totalCount > 0
-      ? Math.round((completedSessions.length / totalCount) * 100)
-      : 0;
+  const {
+    totalCount,
+    completedCount,
+    runningCount,
+    progressPercent,
+    hasActiveOrCompletedSession,
+    hasRunningSessions,
+  } = useTaskSessionProgress(task);
 
   const showConnectionInfo =
     task.status === "active" && sandbox?.status === "running";
@@ -171,33 +174,27 @@ export function TaskCard({
             <div className="flex items-center gap-2 mt-2">
               <Progress value={progressPercent} className="flex-1 h-1.5" />
               <span className="text-xs text-muted-foreground min-w-[40px] text-right">
-                {completedSessions.length}/{totalCount}
+                {completedCount}/{totalCount}
               </span>
             </div>
           )}
 
-          {runningSessions.length > 0 && (
+          {hasRunningSessions && (
             <Badge variant="secondary" className="mt-2 text-xs">
-              {runningSessions.length} session
-              {runningSessions.length > 1 ? "s" : ""} running
+              {runningCount} session
+              {runningCount > 1 ? "s" : ""} running
             </Badge>
           )}
 
           {task.status === "active" &&
-            sessions.length > 0 &&
+            hasActiveOrCompletedSession &&
             secondaryTemplates.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {secondaryTemplates.map((template) => (
                   <SecondaryTemplateButton
                     key={template.id}
                     template={template}
-                    isPending={addSessionsMutation.isPending}
-                    onSpawn={() =>
-                      addSessionsMutation.mutate({
-                        id: task.id,
-                        sessionTemplateIds: [template.id],
-                      })
-                    }
+                    taskId={task.id}
                   />
                 ))}
               </div>
@@ -321,18 +318,34 @@ function MenuButton({
 }
 
 function CopySshButton({ ssh }: { ssh: string }) {
-  const handleCopy = () => {
-    navigator.clipboard.writeText(ssh);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(ssh);
+      setCopied(true);
+      toast.success("SSH command copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy SSH command", {
+        description: "Your browser may not support clipboard access",
+      });
+    }
   };
 
   return (
     <Button
       variant="ghost"
       size="sm"
-      className="h-7 px-2 text-xs"
+      className="h-7 px-2 text-xs gap-1"
       onClick={handleCopy}
       title="Copy SSH command"
     >
+      {copied ? (
+        <Check className="h-3 w-3 text-green-500" />
+      ) : (
+        <Copy className="h-3 w-3" />
+      )}
       SSH
     </Button>
   );
@@ -389,15 +402,31 @@ const TEMPLATE_ICONS: Record<string, React.ReactNode> = {
 
 function SecondaryTemplateButton({
   template,
-  isPending,
-  onSpawn,
+  taskId,
 }: {
   template: SecondaryTemplate;
-  isPending: boolean;
-  onSpawn: () => void;
+  taskId: string;
 }) {
+  const addSessionsMutation = useAddTaskSessions();
   const icon = TEMPLATE_ICONS[template.id] ?? <Sparkles className="h-3 w-3" />;
   const shortName = template.name.replace(" Review", "").replace("ation", "");
+
+  const handleSpawn = () => {
+    addSessionsMutation.mutate(
+      { id: taskId, sessionTemplateIds: [template.id] },
+      {
+        onSuccess: () => {
+          toast.success(`${template.name} session started`);
+        },
+        onError: (error) => {
+          toast.error(`Failed to start ${template.name}`, {
+            description:
+              error instanceof Error ? error.message : "Unknown error",
+          });
+        },
+      },
+    );
+  };
 
   return (
     <Tooltip>
@@ -406,10 +435,14 @@ function SecondaryTemplateButton({
           variant="outline"
           size="sm"
           className="h-6 px-2 text-xs gap-1"
-          onClick={onSpawn}
-          disabled={isPending}
+          onClick={handleSpawn}
+          disabled={addSessionsMutation.isPending}
         >
-          {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : icon}
+          {addSessionsMutation.isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            icon
+          )}
           {shortName}
         </Button>
       </TooltipTrigger>

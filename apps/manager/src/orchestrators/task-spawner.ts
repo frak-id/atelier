@@ -40,6 +40,8 @@ interface SessionConfig {
 }
 
 export class TaskSpawner {
+  private readonly spawningLocks = new Set<string>();
+
   constructor(private readonly deps: TaskSpawnerDependencies) {}
 
   async run(taskId: string): Promise<void> {
@@ -170,7 +172,7 @@ export class TaskSpawner {
   async spawnSessions(
     taskId: string,
     sessionTemplateIds: string[],
-  ): Promise<void> {
+  ): Promise<{ spawned: number; failed: number; skipped: number }> {
     const task = this.deps.taskService.getById(taskId);
     if (!task) {
       throw new Error(`Task '${taskId}' not found`);
@@ -194,6 +196,28 @@ export class TaskSpawner {
       throw new Error(`Workspace '${task.workspaceId}' not found`);
     }
 
+    // Filter out templates that are already being spawned (race condition prevention)
+    const templatesToSpawn: string[] = [];
+    const skippedTemplates: string[] = [];
+
+    for (const templateId of sessionTemplateIds) {
+      const lockKey = `${taskId}:${templateId}`;
+      if (this.spawningLocks.has(lockKey)) {
+        log.warn(
+          { taskId, templateId },
+          "Session spawn already in progress, skipping",
+        );
+        skippedTemplates.push(templateId);
+      } else {
+        this.spawningLocks.add(lockKey);
+        templatesToSpawn.push(templateId);
+      }
+    }
+
+    if (templatesToSpawn.length === 0) {
+      return { spawned: 0, failed: 0, skipped: skippedTemplates.length };
+    }
+
     const targetRepos = this.getTargetRepos(task, workspace);
     let opencodeDirectory: string | undefined;
     if (targetRepos.length === 1 && targetRepos[0]) {
@@ -204,35 +228,50 @@ export class TaskSpawner {
       opencodeDirectory = `${WORKSPACE_DIR}${clonePath}`;
     }
 
-    const results = await Promise.allSettled(
-      sessionTemplateIds.map((templateId) =>
-        this.spawnSession(
-          taskId,
-          templateId,
-          sandbox.runtime!.ipAddress,
-          opencodeDirectory,
+    const ipAddress = sandbox.runtime.ipAddress;
+
+    try {
+      const results = await Promise.allSettled(
+        templatesToSpawn.map((templateId) =>
+          this.spawnSession(taskId, templateId, ipAddress, opencodeDirectory),
         ),
-      ),
-    );
-
-    const failures = results.filter(
-      (r): r is PromiseRejectedResult => r.status === "rejected",
-    );
-    if (failures.length > 0) {
-      log.error(
-        { taskId, failures: failures.map((f) => f.reason) },
-        "Some sessions failed to spawn",
       );
-    }
 
-    log.info(
-      {
-        taskId,
-        spawned: results.filter((r) => r.status === "fulfilled").length,
+      const failures = results.filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected",
+      );
+      if (failures.length > 0) {
+        log.error(
+          { taskId, failures: failures.map((f) => f.reason) },
+          "Some sessions failed to spawn",
+        );
+      }
+
+      const spawnedCount = results.filter(
+        (r) => r.status === "fulfilled",
+      ).length;
+
+      log.info(
+        {
+          taskId,
+          spawned: spawnedCount,
+          failed: failures.length,
+          skipped: skippedTemplates.length,
+        },
+        "Sessions spawn complete",
+      );
+
+      return {
+        spawned: spawnedCount,
         failed: failures.length,
-      },
-      "Sessions spawn complete",
-    );
+        skipped: skippedTemplates.length,
+      };
+    } finally {
+      // Release locks for all templates we tried to spawn
+      for (const templateId of templatesToSpawn) {
+        this.spawningLocks.delete(`${taskId}:${templateId}`);
+      }
+    }
   }
 
   spawnSessionsInBackground(

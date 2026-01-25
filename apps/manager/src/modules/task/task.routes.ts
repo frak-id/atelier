@@ -13,6 +13,7 @@ import {
   IdParamSchema,
   ReorderTaskBodySchema,
   type SessionInteraction,
+  SpawnSessionsResponseSchema,
   type TaskInteractionState,
   TaskInteractionStateSchema,
   TaskListResponseSchema,
@@ -105,12 +106,17 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
       taskSpawner.spawnSessionsInBackground(params.id, body.sessionTemplateIds);
 
       set.status = 202;
-      return taskService.getByIdOrThrow(params.id);
+      return {
+        status: "spawning" as const,
+        taskId: params.id,
+        requestedTemplates: body.sessionTemplateIds,
+        message: `Spawning ${body.sessionTemplateIds.length} session(s) in background`,
+      };
     },
     {
       params: IdParamSchema,
       body: AddSessionsBodySchema,
-      response: TaskSchema,
+      response: SpawnSessionsResponseSchema,
     },
   )
   .post(

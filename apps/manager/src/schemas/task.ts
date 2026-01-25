@@ -80,6 +80,14 @@ export const AddSessionsBodySchema = t.Object({
 });
 export type AddSessionsBody = Static<typeof AddSessionsBodySchema>;
 
+export const SpawnSessionsResponseSchema = t.Object({
+  status: t.Literal("spawning"),
+  taskId: t.String(),
+  requestedTemplates: t.Array(t.String()),
+  message: t.String(),
+});
+export type SpawnSessionsResponse = Static<typeof SpawnSessionsResponseSchema>;
+
 export const DeleteTaskQuerySchema = t.Object({
   keepSandbox: t.Optional(t.String()),
 });

@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 
 type TaskDetailDialogProps = {
   open: boolean;
@@ -52,14 +53,14 @@ function TaskDetailContent({ task }: { task: Task }) {
     enabled: !!task.data.sandboxId,
   });
 
-  const sessions = task.data.sessions ?? [];
-  const completedSessions = sessions.filter((s) => s.status === "completed");
-  const runningSessions = sessions.filter((s) => s.status === "running");
-  const totalCount = sessions.length;
-  const progressPercent =
-    totalCount > 0
-      ? Math.round((completedSessions.length / totalCount) * 100)
-      : 0;
+  const {
+    sessions,
+    totalCount,
+    completedCount,
+    runningCount,
+    progressPercent,
+    hasRunningSessions,
+  } = useTaskSessionProgress(task);
 
   return (
     <div className="space-y-6">
@@ -99,7 +100,7 @@ function TaskDetailContent({ task }: { task: Task }) {
             <div className="flex items-center gap-3">
               <Progress value={progressPercent} className="flex-1" />
               <span className="text-sm font-medium min-w-[60px] text-right">
-                {completedSessions.length}/{totalCount}
+                {completedCount}/{totalCount}
               </span>
             </div>
             <div className="space-y-1 max-h-[200px] overflow-y-auto">
@@ -111,10 +112,9 @@ function TaskDetailContent({ task }: { task: Task }) {
         </div>
       )}
 
-      {runningSessions.length > 0 && (
+      {hasRunningSessions && (
         <Badge variant="secondary">
-          {runningSessions.length} session
-          {runningSessions.length > 1 ? "s" : ""} running
+          {runningCount} session{runningCount > 1 ? "s" : ""} running
         </Badge>
       )}
 

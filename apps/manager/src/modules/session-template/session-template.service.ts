@@ -49,7 +49,7 @@ export class SessionTemplateService {
     } catch (error) {
       log.warn(
         { error },
-        "Failed to parse global task templates, using defaults",
+        "Failed to parse global session templates, using defaults",
       );
       return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
     }
