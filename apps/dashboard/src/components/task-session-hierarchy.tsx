@@ -8,6 +8,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useState } from "react";
+import { ExpandableTodoList } from "@/components/expandable-todo-list";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Button } from "@/components/ui/button";
 import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
@@ -50,6 +51,8 @@ function TaskSessionNode({
     interaction &&
     (interaction.pendingPermissions.length > 0 ||
       interaction.pendingQuestions.length > 0);
+
+  const todos = interaction?.todos ?? [];
 
   const sessionUrl =
     opencodeUrl && directory
@@ -148,6 +151,12 @@ function TaskSessionNode({
           </span>
         )}
       </div>
+
+      {todos.length > 0 && (
+        <div className="mt-1" style={{ marginLeft: depth * 24 + 28 }}>
+          <ExpandableTodoList todos={todos} sessionId={session.id} />
+        </div>
+      )}
 
       {hasChildren && isExpanded && (
         <div className="mt-1 space-y-1">

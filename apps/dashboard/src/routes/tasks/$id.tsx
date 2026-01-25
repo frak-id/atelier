@@ -80,6 +80,7 @@ function TaskDetailPage() {
     aggregatedInteraction,
     needsAttention,
     hasBusySessions,
+    todoProgress,
   } = useTaskSessionProgress(
     task,
     sandbox?.runtime?.urls?.opencode,
@@ -273,6 +274,8 @@ function TaskDetailPage() {
               {subsessionCount > 0 && (
                 <span className="text-sm font-normal text-muted-foreground ml-2">
                   ({totalCount} root, {subsessionCount} sub-sessions)
+                  {todoProgress.total > 0 &&
+                    ` • ${todoProgress.completed}/${todoProgress.total} tasks`}
                 </span>
               )}
             </CardTitle>

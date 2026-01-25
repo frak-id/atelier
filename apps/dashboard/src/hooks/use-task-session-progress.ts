@@ -1,8 +1,8 @@
 import type { Task } from "@frak-sandbox/manager/types";
-import type { Session } from "@opencode-ai/sdk/v2";
-import { useQuery } from "@tanstack/react-query";
+import type { Session, Todo } from "@opencode-ai/sdk/v2";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { opencodeSessionsQuery } from "@/api/queries";
+import { opencodeSessionsQuery, opencodeTodosQuery } from "@/api/queries";
 import type { SessionWithSandboxInfo } from "@/components/session-row";
 import {
   type AggregatedInteractionState,
@@ -23,6 +23,14 @@ export interface SessionInteractionState {
   status: MappedSessionStatus;
   pendingPermissions: SessionInteractionInfo["pendingPermissions"];
   pendingQuestions: SessionInteractionInfo["pendingQuestions"];
+  todos: Todo[];
+}
+
+export interface TodoProgress {
+  completed: number;
+  inProgress: number;
+  pending: number;
+  total: number;
 }
 
 export interface TaskSessionProgressResult {
@@ -41,9 +49,13 @@ export interface TaskSessionProgressResult {
   needsAttention: boolean;
   hasBusySessions: boolean;
 
+  todoProgress: TodoProgress;
+  currentTask: string | null;
+
   isLoading: boolean;
   isSessionsLoading: boolean;
   isInteractionsLoading: boolean;
+  isTodosLoading: boolean;
 }
 
 export function useTaskSessionProgress(
@@ -67,7 +79,72 @@ export function useTaskSessionProgress(
     isLoading: isInteractionsLoading,
   } = useOpencodeData(opencodeUrl, enabled);
 
-  const isLoading = isSessionsLoading || isInteractionsLoading;
+  const allSessionIds = useMemo(() => {
+    const taskSessionIds = new Set(
+      task.data.sessions?.map((s: { id: string }) => s.id) ?? [],
+    );
+
+    const sessionsWithSandbox: SessionWithSandboxInfo[] = (sessions ?? []).map(
+      (session: Session) => ({
+        ...session,
+        sandbox: {
+          id: sandboxInfo?.id ?? "",
+          workspaceId: sandboxInfo?.workspaceId,
+          opencodeUrl: opencodeUrl ?? "",
+        },
+      }),
+    );
+
+    const hierarchy = buildSessionHierarchy(sessionsWithSandbox);
+    const filteredRoots = hierarchy.filter((node) =>
+      taskSessionIds.has(node.session.id),
+    );
+
+    const flattenHierarchy = (
+      nodes: SessionNode[],
+    ): SessionWithSandboxInfo[] => {
+      const result: SessionWithSandboxInfo[] = [];
+      for (const node of nodes) {
+        result.push(node.session);
+        if (node.children.length > 0) {
+          result.push(...flattenHierarchy(node.children));
+        }
+      }
+      return result;
+    };
+
+    return flattenHierarchy(filteredRoots).map((s) => s.id);
+  }, [
+    task.data.sessions,
+    sessions,
+    sandboxInfo?.id,
+    sandboxInfo?.workspaceId,
+    opencodeUrl,
+  ]);
+
+  const todosResults = useQueries({
+    queries: allSessionIds.map((sessionId) => ({
+      ...opencodeTodosQuery(opencodeUrl ?? "", sessionId),
+      enabled: enabled && !!opencodeUrl && !!sessionId,
+    })),
+  });
+
+  const isTodosLoading = todosResults.some((r) => r.isLoading);
+
+  const todosBySession = useMemo(() => {
+    const map = new Map<string, Todo[]>();
+    for (let i = 0; i < allSessionIds.length; i++) {
+      const sessionId = allSessionIds[i];
+      if (sessionId) {
+        const result = todosResults[i];
+        map.set(sessionId, (result?.data ?? []) as Todo[]);
+      }
+    }
+    return map;
+  }, [allSessionIds, todosResults]);
+
+  const isLoading =
+    isSessionsLoading || isInteractionsLoading || isTodosLoading;
 
   return useMemo(() => {
     const taskSessionIds = new Set(
@@ -121,6 +198,7 @@ export function useTaskSessionProgress(
           status: interaction?.status ?? "unknown",
           pendingPermissions: interaction?.pendingPermissions ?? [],
           pendingQuestions: interaction?.pendingQuestions ?? [],
+          todos: todosBySession.get(session.id) ?? [],
         };
       },
     );
@@ -134,6 +212,17 @@ export function useTaskSessionProgress(
       totalSessionCount > 0
         ? Math.round((completedSubsessionCount / totalSessionCount) * 100)
         : 0;
+
+    const allTodos = sessionInteractions.flatMap((s) => s.todos);
+    const todoProgress: TodoProgress = {
+      completed: allTodos.filter((t) => t.status === "completed").length,
+      inProgress: allTodos.filter((t) => t.status === "in_progress").length,
+      pending: allTodos.filter((t) => t.status === "pending").length,
+      total: allTodos.filter((t) => t.status !== "cancelled").length,
+    };
+
+    const currentTask =
+      allTodos.find((t) => t.status === "in_progress")?.content ?? null;
 
     return {
       hierarchy: filteredRoots,
@@ -151,9 +240,13 @@ export function useTaskSessionProgress(
       needsAttention,
       hasBusySessions,
 
+      todoProgress,
+      currentTask,
+
       isLoading,
       isSessionsLoading,
       isInteractionsLoading,
+      isTodosLoading,
     };
   }, [
     task.data.sessions,
@@ -164,8 +257,10 @@ export function useTaskSessionProgress(
     opencodeUrl,
     sandboxInfo?.id,
     sandboxInfo?.workspaceId,
+    todosBySession,
     isLoading,
     isSessionsLoading,
     isInteractionsLoading,
+    isTodosLoading,
   ]);
 }
