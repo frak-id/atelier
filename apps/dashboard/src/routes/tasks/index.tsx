@@ -10,7 +10,6 @@ import {
   TaskFormDialog,
 } from "@/components/kanban";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type TasksSearch = {
@@ -29,7 +28,6 @@ export const Route = createFileRoute("/tasks/")({
 });
 
 function TasksPage() {
-  const navigate = useNavigate();
   const { data: workspaces } = useSuspenseQuery(workspaceListQuery());
   const workspaceList = workspaces ?? [];
   const { expanded } = Route.useSearch();
@@ -98,36 +96,30 @@ function TasksPage() {
         </p>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-8">
         {workspaceList.map((workspace) => {
           const isExpanded = expandedIds.includes(workspace.id);
 
           return (
-            <Card key={workspace.id}>
-              <CardHeader className="py-3 px-4">
-                <button
-                  type="button"
-                  onClick={() => toggleExpanded(workspace.id)}
-                  className="flex items-center justify-between w-full text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    {isExpanded ? (
-                      <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                    )}
-                    <span className="font-semibold text-lg">
-                      {workspace.name}
-                    </span>
-                  </div>
-                  {!isExpanded && (
-                    <WorkspaceTaskCount workspaceId={workspace.id} />
+            <section key={workspace.id}>
+              <button
+                type="button"
+                onClick={() => toggleExpanded(workspace.id)}
+                className="flex items-center justify-between w-full text-left pb-3 border-b"
+              >
+                <div className="flex items-center gap-2">
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   )}
-                </button>
-              </CardHeader>
+                  <h2 className="font-semibold">{workspace.name}</h2>
+                </div>
+                <WorkspaceTaskCount workspaceId={workspace.id} />
+              </button>
 
               {isExpanded && (
-                <CardContent className="pt-0 pb-4">
+                <div className="pt-4">
                   <Suspense fallback={<KanbanSkeleton />}>
                     <WorkspaceKanban
                       workspaceId={workspace.id}
@@ -137,9 +129,9 @@ function TasksPage() {
                       onDeleteTask={handleDeleteTask}
                     />
                   </Suspense>
-                </CardContent>
+                </div>
               )}
-            </Card>
+            </section>
           );
         })}
       </div>
@@ -172,24 +164,16 @@ function WorkspaceTaskCount({ workspaceId }: WorkspaceTaskCountProps) {
   const taskCount = tasks?.length ?? 0;
   const activeCount = tasks?.filter((t) => t.status === "active").length ?? 0;
 
-  if (taskCount === 0) {
-    return (
-      <Badge variant="secondary" className="text-xs">
-        No tasks
-      </Badge>
-    );
-  }
-
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
       {activeCount > 0 && (
         <Badge variant="default" className="text-xs">
           {activeCount} active
         </Badge>
       )}
-      <Badge variant="secondary" className="text-xs">
-        {taskCount} total
-      </Badge>
+      <span>
+        {taskCount} task{taskCount !== 1 ? "s" : ""}
+      </span>
     </div>
   );
 }
