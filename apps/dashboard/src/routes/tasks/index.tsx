@@ -1,6 +1,7 @@
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Suspense, useState } from "react";
 import { taskListQuery, workspaceListQuery } from "@/api/queries";
 import {
@@ -8,17 +9,19 @@ import {
   TaskDeleteDialog,
   TaskFormDialog,
 } from "@/components/kanban";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+
+type TasksSearch = {
+  expanded?: string;
+};
 
 export const Route = createFileRoute("/tasks/")({
   component: TasksPage,
+  validateSearch: (search: Record<string, unknown>): TasksSearch => ({
+    expanded: typeof search.expanded === "string" ? search.expanded : undefined,
+  }),
   loader: ({ context }) => {
     context.queryClient.ensureQueryData(workspaceListQuery());
   },
@@ -29,26 +32,38 @@ function TasksPage() {
   const navigate = useNavigate();
   const { data: workspaces } = useSuspenseQuery(workspaceListQuery());
   const workspaceList = workspaces ?? [];
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>(
-    workspaceList[0]?.id ?? "",
-  );
+  const { expanded } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+
+  const expandedIds = expanded ? expanded.split(",").filter(Boolean) : [];
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>();
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
 
-  const { data: tasks } = useQuery({
-    ...taskListQuery(selectedWorkspaceId),
-    enabled: !!selectedWorkspaceId,
-  });
-  const taskList = tasks ?? [];
+  const toggleExpanded = (workspaceId: string) => {
+    const isCurrentlyExpanded = expandedIds.includes(workspaceId);
 
-  const handleCreateTask = () => {
+    const newExpanded = isCurrentlyExpanded
+      ? expandedIds.filter((id) => id !== workspaceId)
+      : [...expandedIds, workspaceId];
+
+    navigate({
+      search: {
+        expanded: newExpanded.length > 0 ? newExpanded.join(",") : undefined,
+      },
+    });
+  };
+
+  const handleCreateTask = (workspaceId: string) => {
+    setActiveWorkspaceId(workspaceId);
     setEditingTask(undefined);
     setIsFormOpen(true);
   };
 
-  const handleEditTask = (task: Task) => {
+  const handleEditTask = (task: Task, workspaceId: string) => {
+    setActiveWorkspaceId(workspaceId);
     setEditingTask(task);
     setIsFormOpen(true);
   };
@@ -76,45 +91,63 @@ function TasksPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold sm:text-3xl">Tasks</h1>
-          <p className="text-muted-foreground">
-            Manage AI coding tasks with a kanban board
-          </p>
-        </div>
-
-        <Select
-          value={selectedWorkspaceId}
-          onValueChange={setSelectedWorkspaceId}
-        >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Select workspace" />
-          </SelectTrigger>
-          <SelectContent>
-            {workspaceList.map((workspace) => (
-              <SelectItem key={workspace.id} value={workspace.id}>
-                {workspace.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div>
+        <h1 className="text-2xl font-bold sm:text-3xl">Tasks</h1>
+        <p className="text-muted-foreground">
+          Manage AI coding tasks with kanban boards per workspace
+        </p>
       </div>
 
-      <Suspense fallback={<KanbanSkeleton />}>
-        <KanbanBoard
-          tasks={taskList}
-          onCreateTask={handleCreateTask}
-          onViewTask={handleViewTask}
-          onEditTask={handleEditTask}
-          onDeleteTask={handleDeleteTask}
-        />
-      </Suspense>
+      <div className="space-y-4">
+        {workspaceList.map((workspace) => {
+          const isExpanded = expandedIds.includes(workspace.id);
+
+          return (
+            <Card key={workspace.id}>
+              <CardHeader className="py-3 px-4">
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(workspace.id)}
+                  className="flex items-center justify-between w-full text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    {isExpanded ? (
+                      <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                    )}
+                    <span className="font-semibold text-lg">
+                      {workspace.name}
+                    </span>
+                  </div>
+                  {!isExpanded && (
+                    <WorkspaceTaskCount workspaceId={workspace.id} />
+                  )}
+                </button>
+              </CardHeader>
+
+              {isExpanded && (
+                <CardContent className="pt-0 pb-4">
+                  <Suspense fallback={<KanbanSkeleton />}>
+                    <WorkspaceKanban
+                      workspaceId={workspace.id}
+                      onCreateTask={() => handleCreateTask(workspace.id)}
+                      onViewTask={handleViewTask}
+                      onEditTask={(task) => handleEditTask(task, workspace.id)}
+                      onDeleteTask={handleDeleteTask}
+                    />
+                  </Suspense>
+                </CardContent>
+              )}
+            </Card>
+          );
+        })}
+      </div>
 
       <TaskFormDialog
         open={isFormOpen}
         onOpenChange={setIsFormOpen}
-        workspaceId={selectedWorkspaceId}
+        workspaceId={activeWorkspaceId}
         task={editingTask}
       />
 
@@ -127,27 +160,89 @@ function TasksPage() {
   );
 }
 
-function TasksSkeleton() {
+interface WorkspaceTaskCountProps {
+  workspaceId: string;
+}
+
+function WorkspaceTaskCount({ workspaceId }: WorkspaceTaskCountProps) {
+  const { data: tasks } = useQuery({
+    ...taskListQuery(workspaceId),
+  });
+
+  const taskCount = tasks?.length ?? 0;
+  const activeCount = tasks?.filter((t) => t.status === "active").length ?? 0;
+
+  if (taskCount === 0) {
+    return (
+      <Badge variant="secondary" className="text-xs">
+        No tasks
+      </Badge>
+    );
+  }
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <Skeleton className="h-9 w-32" />
-          <Skeleton className="h-4 w-64 mt-2" />
-        </div>
-        <Skeleton className="h-10 w-[200px]" />
-      </div>
-      <KanbanSkeleton />
+    <div className="flex items-center gap-2">
+      {activeCount > 0 && (
+        <Badge variant="default" className="text-xs">
+          {activeCount} active
+        </Badge>
+      )}
+      <Badge variant="secondary" className="text-xs">
+        {taskCount} total
+      </Badge>
     </div>
   );
 }
 
-const SKELETON_COLUMNS = ["draft", "active", "done"];
+interface WorkspaceKanbanProps {
+  workspaceId: string;
+  onCreateTask: () => void;
+  onViewTask: (task: Task) => void;
+  onEditTask: (task: Task) => void;
+  onDeleteTask: (task: Task) => void;
+}
+
+function WorkspaceKanban({
+  workspaceId,
+  onCreateTask,
+  onViewTask,
+  onEditTask,
+  onDeleteTask,
+}: WorkspaceKanbanProps) {
+  const { data: tasks } = useSuspenseQuery(taskListQuery(workspaceId));
+  const taskList = tasks ?? [];
+
+  return (
+    <KanbanBoard
+      tasks={taskList}
+      onCreateTask={onCreateTask}
+      onViewTask={onViewTask}
+      onEditTask={onEditTask}
+      onDeleteTask={onDeleteTask}
+    />
+  );
+}
+
+function TasksSkeleton() {
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <Skeleton className="h-9 w-32" />
+        <Skeleton className="h-4 w-64 mt-2" />
+      </div>
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-16 rounded-lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function KanbanSkeleton() {
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
-      {SKELETON_COLUMNS.map((status) => (
+      {["draft", "active", "done"].map((status) => (
         <div key={status} className="w-72 shrink-0">
           <Skeleton className="h-6 w-24 mb-3" />
           <Skeleton className="h-[200px] rounded-lg" />
