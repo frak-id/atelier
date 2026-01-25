@@ -146,13 +146,13 @@ function TaskDetailPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link to="/tasks">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div className="flex-1">
+      <div className="space-y-4">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link to="/tasks">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold">{task.title}</h1>
             <Badge
@@ -161,12 +161,13 @@ function TaskDetailPage() {
               {task.status}
             </Badge>
           </div>
-          <p className="text-muted-foreground mt-1">
-            Created {new Date(task.createdAt).toLocaleString()}
-          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <p className="text-muted-foreground">
+          Created {new Date(task.createdAt).toLocaleString()}
+        </p>
+
+        <div className="flex items-center gap-2 flex-wrap">
           {sandbox?.status === "running" && sandbox.runtime?.urls && (
             <>
               <Button variant="outline" size="sm" asChild>

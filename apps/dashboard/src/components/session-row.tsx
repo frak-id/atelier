@@ -58,45 +58,34 @@ export function SessionRow({
     (interaction.pendingPermissions.length > 0 ||
       interaction.pendingQuestions.length > 0);
 
+  const shortId = session.id.slice(0, 8);
+
   return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors group">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium truncate">
-            {session.title || `Session ${session.id.slice(0, 8)}`}
+    <div className="flex items-center gap-2 text-sm py-2 px-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors group">
+      <span className="truncate flex-1">
+        {session.title || "Session"}{" "}
+        <span className="font-mono text-muted-foreground">({shortId})</span>
+        {showSandboxInfo && session.sandbox.workspaceId && (
+          <span className="text-muted-foreground text-xs ml-2">
+            {session.sandbox.workspaceId}
           </span>
-          {showStatus && (
-            <SessionStatusIndicator
-              interaction={interaction}
-              isLoading={isLoading && providedInteraction === undefined}
-              compact
-            />
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {showSandboxInfo && (
-            <>
-              {session.sandbox.workspaceId && (
-                <span className="truncate">{session.sandbox.workspaceId}</span>
-              )}
-              {!session.sandbox.workspaceId && (
-                <span className="truncate">{session.sandbox.id}</span>
-              )}
-            </>
-          )}
-          {!showSandboxInfo && (
-            <span className="font-mono truncate">
-              {session.id.slice(0, 12)}
-            </span>
-          )}
-          {timeString && (
-            <>
-              <span>•</span>
-              <span>{formatRelativeTime(timeString)}</span>
-            </>
-          )}
-        </div>
-      </div>
+        )}
+      </span>
+
+      {showStatus && (
+        <SessionStatusIndicator
+          interaction={interaction}
+          isLoading={isLoading && providedInteraction === undefined}
+          compact
+        />
+      )}
+
+      {timeString && (
+        <span className="text-muted-foreground text-xs shrink-0">
+          {formatRelativeTime(timeString)}
+        </span>
+      )}
+
       <div className="flex items-center gap-1">
         {needsAttention && (
           <Button
