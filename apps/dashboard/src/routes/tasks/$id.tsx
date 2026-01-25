@@ -61,15 +61,17 @@ export const Route = createFileRoute("/tasks/$id")({
 function TaskDetailPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const { data: task } = useSuspenseQuery(taskDetailQuery(id));
+  const { data: taskData } = useSuspenseQuery(taskDetailQuery(id));
+
+  const task = taskData!;
 
   const deleteMutation = useDeleteTask();
   const completeMutation = useCompleteTask();
   const resetMutation = useResetTask();
 
   const { data: sandbox } = useQuery({
-    ...sandboxDetailQuery(task?.data.sandboxId ?? ""),
-    enabled: !!task?.data.sandboxId,
+    ...sandboxDetailQuery(task.data.sandboxId ?? ""),
+    enabled: !!task.data.sandboxId,
   });
 
   const {
@@ -79,25 +81,25 @@ function TaskDetailPage() {
     runningCount,
     progressPercent,
     hasRunningSessions,
-  } = useTaskSessionProgress(task!);
+  } = useTaskSessionProgress(task);
 
   const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
 
   const interactionState = useOpencodeInteraction(
     sandbox?.runtime?.urls?.opencode,
     sessionIds,
-    task?.status === "active" && !!sandbox?.runtime?.urls?.opencode,
+    task.status === "active" && !!sandbox?.runtime?.urls?.opencode,
   );
 
   const { data: templatesData } = useQuery({
     ...globalSessionTemplatesQuery,
-    enabled: task?.status === "active",
+    enabled: task.status === "active",
   });
   const secondaryTemplates =
     templatesData?.templates.filter((t) => t.category === "secondary") ?? [];
 
   const handleDelete = () => {
-    if (confirm(`Delete task "${task!.title}"?`)) {
+    if (confirm(`Delete task "${task.title}"?`)) {
       deleteMutation.mutate(
         { id, keepSandbox: false },
         {
@@ -131,17 +133,15 @@ function TaskDetailPage() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">{task!.title}</h1>
+            <h1 className="text-3xl font-bold">{task.title}</h1>
             <Badge
-              variant={
-                statusVariant[task!.status as keyof typeof statusVariant]
-              }
+              variant={statusVariant[task.status as keyof typeof statusVariant]}
             >
-              {task!.status}
+              {task.status}
             </Badge>
           </div>
           <p className="text-muted-foreground mt-1">
-            Created {new Date(task!.createdAt).toLocaleString()}
+            Created {new Date(task.createdAt).toLocaleString()}
           </p>
         </div>
 
@@ -182,7 +182,7 @@ function TaskDetailPage() {
             </>
           )}
 
-          {task!.status === "active" && (
+          {task.status === "active" && (
             <Button
               variant="outline"
               onClick={handleComplete}
@@ -197,7 +197,7 @@ function TaskDetailPage() {
             </Button>
           )}
 
-          {(task!.status === "active" || task!.status === "done") && (
+          {(task.status === "active" || task.status === "done") && (
             <Button
               variant="outline"
               onClick={handleReset}
@@ -231,23 +231,21 @@ function TaskDetailPage() {
           <CardTitle>Description</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm whitespace-pre-wrap">
-            {task!.data.description}
-          </p>
-          {task!.data.context && (
+          <p className="text-sm whitespace-pre-wrap">{task.data.description}</p>
+          {task.data.context && (
             <div className="mt-4 pt-4 border-t">
               <h4 className="text-sm font-medium text-muted-foreground mb-2">
                 Additional Context
               </h4>
               <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-                {task!.data.context}
+                {task.data.context}
               </p>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {task!.data.branchName && (
+      {task.data.branchName && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -258,7 +256,7 @@ function TaskDetailPage() {
           <CardContent>
             <div className="flex items-center gap-2">
               <code className="text-sm bg-muted px-2 py-1 rounded">
-                {task!.data.branchName}
+                {task.data.branchName}
               </code>
             </div>
           </CardContent>
@@ -304,7 +302,7 @@ function TaskDetailPage() {
         </Card>
       )}
 
-      {task!.status === "active" && secondaryTemplates.length > 0 && (
+      {task.status === "active" && secondaryTemplates.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Additional Reviews</CardTitle>
@@ -315,7 +313,7 @@ function TaskDetailPage() {
                 <SecondaryTemplateButton
                   key={template.id}
                   template={template}
-                  taskId={task!.id}
+                  taskId={task.id}
                 />
               ))}
             </div>
@@ -331,28 +329,28 @@ function TaskDetailPage() {
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="text-muted-foreground">Task ID</div>
             <code className="font-mono bg-muted px-2 py-1 rounded truncate">
-              {task!.id}
+              {task.id}
             </code>
 
             <div className="text-muted-foreground">Status</div>
             <Badge variant="outline" className="w-fit">
-              {task!.status}
+              {task.status}
             </Badge>
 
-            {task!.data.sandboxId && (
+            {task.data.sandboxId && (
               <>
                 <div className="text-muted-foreground">Sandbox ID</div>
                 {sandbox ? (
                   <Link
                     to="/sandboxes/$id"
-                    params={{ id: task!.data.sandboxId! }}
+                    params={{ id: task.data.sandboxId }}
                     className="font-mono bg-muted px-2 py-1 rounded truncate text-blue-500 hover:underline"
                   >
-                    {task!.data.sandboxId}
+                    {task.data.sandboxId}
                   </Link>
                 ) : (
                   <code className="font-mono bg-muted px-2 py-1 rounded truncate">
-                    {task!.data.sandboxId}
+                    {task.data.sandboxId}
                   </code>
                 )}
               </>
@@ -365,25 +363,25 @@ function TaskDetailPage() {
               </>
             )}
 
-            {task!.data.startedAt && (
+            {task.data.startedAt && (
               <>
                 <div className="text-muted-foreground">Started</div>
-                <span>{new Date(task!.data.startedAt).toLocaleString()}</span>
+                <span>{new Date(task.data.startedAt).toLocaleString()}</span>
               </>
             )}
 
-            {task!.data.completedAt && (
+            {task.data.completedAt && (
               <>
                 <div className="text-muted-foreground">Completed</div>
-                <span>{new Date(task!.data.completedAt).toLocaleString()}</span>
+                <span>{new Date(task.data.completedAt).toLocaleString()}</span>
               </>
             )}
 
             <div className="text-muted-foreground">Created</div>
-            <span>{new Date(task!.createdAt).toLocaleString()}</span>
+            <span>{new Date(task.createdAt).toLocaleString()}</span>
 
             <div className="text-muted-foreground">Updated</div>
-            <span>{new Date(task!.updatedAt).toLocaleString()}</span>
+            <span>{new Date(task.updatedAt).toLocaleString()}</span>
           </div>
         </CardContent>
       </Card>
