@@ -458,7 +458,7 @@ Task 1 (Collapsible) → Task 2 (Interventions Component) → Task 3 (Card Updat
 
 ---
 
-- [ ] 7. Update Components to Use Session Hierarchy
+- [x] 7. Update Components to Use Session Hierarchy
 
   **What to do**:
   - Update `apps/dashboard/src/components/kanban/task-card.tsx`:

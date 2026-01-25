@@ -43,6 +43,7 @@ import {
   type SessionInteraction,
   useOpencodeInteraction,
 } from "@/hooks/use-opencode-interaction";
+import { useTaskSessionHierarchy } from "@/hooks/use-task-session-hierarchy";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 import { buildOpenCodeSessionUrl } from "@/lib/utils";
 
@@ -74,6 +75,17 @@ function TaskDetailPage() {
     ...sandboxDetailQuery(task.data.sandboxId ?? ""),
     enabled: !!task.data.sandboxId,
   });
+
+  const { allSessions } = useTaskSessionHierarchy(
+    task,
+    sandbox?.runtime.urls.opencode,
+    sandbox
+      ? {
+          id: sandbox.id,
+          workspaceId: sandbox.workspaceId,
+        }
+      : undefined,
+  );
 
   const {
     sessions,
@@ -275,7 +287,14 @@ function TaskDetailPage() {
       {totalCount > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Sessions Progress</CardTitle>
+            <CardTitle>
+              Sessions Progress
+              {allSessions.length > totalCount && (
+                <span className="text-sm font-normal text-muted-foreground ml-2">
+                  ({allSessions.length} with subsessions)
+                </span>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-3">
