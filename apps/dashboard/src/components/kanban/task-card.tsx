@@ -24,6 +24,7 @@ import {
   sandboxDetailQuery,
   useAddTaskSessions,
 } from "@/api/queries";
+import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ import {
   type OpencodeInteractionState,
   useOpencodeInteraction,
 } from "@/hooks/use-opencode-interaction";
+import { useTaskSessionHierarchy } from "@/hooks/use-task-session-hierarchy";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 
 type TaskCardProps = {
@@ -104,6 +106,17 @@ export function TaskCard({
   const secondaryTemplates =
     templatesData?.templates.filter((t) => t.category === "secondary") ?? [];
 
+  const { allSessions } = useTaskSessionHierarchy(
+    task,
+    sandbox?.runtime.urls.opencode,
+    sandbox
+      ? {
+          id: sandbox.id,
+          workspaceId: sandbox.workspaceId,
+        }
+      : undefined,
+  );
+
   const {
     totalCount,
     completedCount,
@@ -111,7 +124,14 @@ export function TaskCard({
     progressPercent,
     hasActiveOrCompletedSession,
     hasRunningSessions,
-  } = useTaskSessionProgress(task);
+    totalWithSubsessions,
+    subsessionCount,
+  } = useTaskSessionProgress(task, {
+    includeSubsessions: true,
+    allSessions: allSessions as unknown as NonNullable<
+      typeof task.data.sessions
+    >,
+  });
 
   const showConnectionInfo =
     task.status === "active" && sandbox?.status === "running";
@@ -170,9 +190,18 @@ export function TaskCard({
           {totalCount > 0 && (
             <div className="flex items-center gap-2 mt-2">
               <Progress value={progressPercent} className="flex-1 h-1.5" />
-              <span className="text-xs text-muted-foreground min-w-[40px] text-right">
-                {completedCount}/{totalCount}
-              </span>
+              <div className="flex flex-col items-end gap-0.5">
+                <span className="text-xs text-muted-foreground">
+                  {completedCount}/{totalCount}
+                </span>
+                {totalWithSubsessions &&
+                  subsessionCount &&
+                  subsessionCount > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      ({totalWithSubsessions} total)
+                    </span>
+                  )}
+              </div>
             </div>
           )}
 
@@ -407,21 +436,28 @@ function TaskSessionsStatus({
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <SessionStatusIndicator interaction={aggregatedInteraction} compact />
-      {needsAttention && opencodeUrl && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-6 text-xs gap-1"
-          asChild
-        >
-          <a href={opencodeUrl} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="h-3 w-3" />
-            Respond
-          </a>
-        </Button>
-      )}
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <SessionStatusIndicator interaction={aggregatedInteraction} compact />
+        {needsAttention && opencodeUrl && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 text-xs gap-1"
+            asChild
+          >
+            <a href={opencodeUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-3 w-3" />
+              Respond
+            </a>
+          </Button>
+        )}
+      </div>
+      <ExpandableInterventions
+        permissions={allPermissions}
+        questions={allQuestions}
+        compact={true}
+      />
     </div>
   );
 }
