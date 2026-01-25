@@ -140,55 +140,17 @@ export function useTaskSessionProgress(
     return map;
   }, [hierarchyData.allSessionIds, todosResults]);
 
-  const isLoading =
-    isSessionsLoading || isInteractionsLoading || isTodosLoading;
-
   return useMemo(() => {
-    const taskSessionIds = new Set(
-      task.data.sessions?.map((s: { id: string }) => s.id) ?? [],
-    );
-
-    const sessionsWithSandbox: SessionWithSandboxInfo[] = (sessions ?? []).map(
-      (session: Session) => ({
-        ...session,
-        sandbox: {
-          id: sandboxInfo?.id ?? "",
-          workspaceId: sandboxInfo?.workspaceId,
-          opencodeUrl: opencodeUrl ?? "",
-        },
-      }),
-    );
-
-    const hierarchy = buildSessionHierarchy(sessionsWithSandbox);
-    const filteredRoots = hierarchy.filter((node) =>
-      taskSessionIds.has(node.session.id),
-    );
-
-    const flattenHierarchy = (
-      nodes: SessionNode[],
-    ): SessionWithSandboxInfo[] => {
-      const result: SessionWithSandboxInfo[] = [];
-      for (const node of nodes) {
-        result.push(node.session);
-        if (node.children.length > 0) {
-          result.push(...flattenHierarchy(node.children));
-        }
-      }
-      return result;
-    };
-
-    const allSessions = flattenHierarchy(filteredRoots);
-
     const { interactions, aggregated, needsAttention, hasBusySessions } =
       aggregateInteractions(
-        allSessions.map((s) => s.id),
+        hierarchyData.allSessions.map((s) => s.id),
         sessionStatuses,
         permissions,
         questions,
       );
 
-    const sessionInteractions: SessionInteractionState[] = allSessions.map(
-      (session) => {
+    const sessionInteractions: SessionInteractionState[] =
+      hierarchyData.allSessions.map((session) => {
         const interaction = interactions.get(session.id);
         return {
           sessionId: session.id,
@@ -197,14 +159,14 @@ export function useTaskSessionProgress(
           pendingQuestions: interaction?.pendingQuestions ?? [],
           todos: todosBySession.get(session.id) ?? [],
         };
-      },
-    );
+      });
 
     const completedSubsessionCount = sessionInteractions.filter(
-      (s) => s.status === "idle" && !taskSessionIds.has(s.sessionId),
+      (s) =>
+        s.status === "idle" && !hierarchyData.taskSessionIds.has(s.sessionId),
     ).length;
 
-    const totalSessionCount = allSessions.length;
+    const totalSessionCount = hierarchyData.allSessions.length;
     const progressPercent =
       totalSessionCount > 0
         ? Math.round((completedSubsessionCount / totalSessionCount) * 100)
@@ -221,12 +183,16 @@ export function useTaskSessionProgress(
     const currentTask =
       allTodos.find((t) => t.status === "in_progress")?.content ?? null;
 
-    return {
-      hierarchy: filteredRoots,
+    const isLoading =
+      isSessionsLoading || isInteractionsLoading || isTodosLoading;
 
-      allCount: allSessions.length,
-      totalCount: filteredRoots.length,
-      subsessionCount: allSessions.length - filteredRoots.length,
+    return {
+      hierarchy: hierarchyData.filteredRoots,
+
+      allCount: hierarchyData.allSessions.length,
+      totalCount: hierarchyData.filteredRoots.length,
+      subsessionCount:
+        hierarchyData.allSessions.length - hierarchyData.filteredRoots.length,
 
       completedSubsessionCount,
       progressPercent,
@@ -246,16 +212,11 @@ export function useTaskSessionProgress(
       isTodosLoading,
     };
   }, [
-    task.data.sessions,
-    sessions,
+    hierarchyData,
     sessionStatuses,
     permissions,
     questions,
-    opencodeUrl,
-    sandboxInfo?.id,
-    sandboxInfo?.workspaceId,
     todosBySession,
-    isLoading,
     isSessionsLoading,
     isInteractionsLoading,
     isTodosLoading,
