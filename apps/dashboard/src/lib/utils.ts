@@ -65,7 +65,7 @@ export function buildOpenCodeSessionUrl(
  * Calculate days until a given expiration date
  * Returns negative value if already expired
  */
-export function getDaysUntilExpiration(expiresAt: string): number {
+function getDaysUntilExpiration(expiresAt: string): number {
   const now = Date.now();
   const expires = new Date(expiresAt).getTime();
   return Math.ceil((expires - now) / (1000 * 60 * 60 * 24));

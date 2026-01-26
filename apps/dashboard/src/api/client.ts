@@ -5,7 +5,7 @@ export const API_HOST = import.meta.env.PROD
   ? "https://sandbox-api.nivelais.com"
   : "http://localhost:4000";
 
-export const AUTH_TOKEN_KEY = "frak_sandbox_jwt";
+const AUTH_TOKEN_KEY = "frak_sandbox_jwt";
 
 export function getAuthToken(): string | null {
   return localStorage.getItem(AUTH_TOKEN_KEY);

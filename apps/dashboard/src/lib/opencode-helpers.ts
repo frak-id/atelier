@@ -15,7 +15,7 @@ export interface AggregatedInteractionState {
   pendingQuestions: Array<QuestionRequest & { sessionId: string }>;
 }
 
-export function mapSessionStatus(
+function mapSessionStatus(
   statusInfo: SessionStatus | undefined,
 ): MappedSessionStatus {
   if (!statusInfo) return "idle";

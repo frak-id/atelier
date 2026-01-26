@@ -1,13 +1,7 @@
 import type { Event as OpencodeEvent } from "@opencode-ai/sdk/v2";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useRef,
-} from "react";
+import { createContext, type ReactNode, useEffect, useRef } from "react";
 import { queryKeys, sandboxListQuery } from "@/api/queries";
 
 interface OpencodeEventsContextValue {
@@ -17,10 +11,6 @@ interface OpencodeEventsContextValue {
 const OpencodeEventsContext = createContext<OpencodeEventsContextValue>({
   connectedUrls: [],
 });
-
-export function useOpencodeEvents() {
-  return useContext(OpencodeEventsContext);
-}
 
 interface OpencodeEventsProviderProps {
   children: ReactNode;
