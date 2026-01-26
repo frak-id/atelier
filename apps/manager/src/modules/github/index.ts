@@ -1,2 +1,2 @@
-export { githubApiRoutes } from "./github-api.routes.ts";
-export { githubAuthRoutes } from "./github-auth.routes.ts";
+// GitHub module - routes moved to api/
+// This module has no services/repositories, only routes

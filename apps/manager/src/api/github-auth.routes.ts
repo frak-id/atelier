@@ -1,14 +1,14 @@
 import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
-import { gitSourceService } from "../../container.ts";
+import { gitSourceService } from "../container.ts";
 import type {
   GitHubSourceConfig,
   GitHubStatusResponse,
   GitSource,
   GitSourceConfig,
-} from "../../schemas/index.ts";
-import { config } from "../../shared/lib/config.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+} from "../schemas/index.ts";
+import { config } from "../shared/lib/config.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("github-auth");
 

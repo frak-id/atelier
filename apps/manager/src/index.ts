@@ -1,26 +1,29 @@
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import { Elysia } from "elysia";
+import {
+  authRoutes,
+  configFileRoutes,
+  githubApiRoutes,
+  githubAuthRoutes,
+  gitSourceRoutes,
+  healthRoutes,
+  imageRoutes,
+  internalRoutes,
+  sandboxRoutes,
+  sessionTemplateRoutes,
+  sharedAuthRoutes,
+  sharedStorageRoutes,
+  sshKeyRoutes,
+  systemRoutes,
+  taskRoutes,
+  workspaceRoutes,
+} from "./api/index.ts";
 import { prebuildChecker, sandboxService, sshKeyService } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
-import { authRoutes } from "./modules/auth/index.ts";
-import { configFileRoutes } from "./modules/config-file/index.ts";
-import { gitSourceRoutes } from "./modules/git-source/index.ts";
-import { githubApiRoutes, githubAuthRoutes } from "./modules/github/index.ts";
-import { healthRoutes } from "./modules/health/index.ts";
-import { imageRoutes } from "./modules/image/index.ts";
-import { internalRoutes } from "./modules/internal/index.ts";
-import { sandboxRoutes } from "./modules/sandbox/index.ts";
-import { sessionTemplateRoutes } from "./modules/session-template/index.ts";
-import { sharedAuthRoutes } from "./modules/shared-auth/index.ts";
-import { sharedStorageRoutes } from "./modules/shared-storage/index.ts";
-import { sshKeyRoutes } from "./modules/ssh-key/index.ts";
-import { systemRoutes } from "./modules/system/index.ts";
-import { taskRoutes } from "./modules/task/index.ts";
-import { workspaceRoutes } from "./modules/workspace/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config } from "./shared/lib/config.ts";

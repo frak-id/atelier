@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
-import { gitSourceService } from "../../container.ts";
-import type { GitSourceConfig, GitSourceType } from "../../schemas/index.ts";
+import { gitSourceService } from "../container.ts";
+import type { GitSourceConfig, GitSourceType } from "../schemas/index.ts";
 import {
   CreateGitSourceBodySchema,
   GitSourceListResponseSchema,
@@ -8,8 +8,8 @@ import {
   IdParamSchema,
   SourceReposResponseSchema,
   UpdateGitSourceBodySchema,
-} from "../../schemas/index.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+} from "../schemas/index.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("git-source-routes");
 

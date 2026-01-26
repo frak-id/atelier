@@ -1,1 +1,1 @@
-export { imageRoutes } from "./image.routes.ts";
+// Image module - routes moved to api/

@@ -1,13 +1,13 @@
 import { Elysia } from "elysia";
-import { gitSourceService } from "../../container.ts";
+import { gitSourceService } from "../container.ts";
 import {
   GitHubBranchesQuerySchema,
   GitHubBranchesResponseSchema,
   GitHubReposQuerySchema,
   GitHubReposResponseSchema,
   type GitHubSourceConfig,
-} from "../../schemas/index.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+} from "../schemas/index.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("github-api");
 

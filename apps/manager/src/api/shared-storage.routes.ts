@@ -3,7 +3,7 @@ import {
   type SharedBinaryId,
 } from "@frak-sandbox/shared/constants";
 import { Elysia } from "elysia";
-import { SharedStorageService } from "../../infrastructure/storage/index.ts";
+import { SharedStorageService } from "../infrastructure/storage/index.ts";
 import {
   BinaryIdParamSchema,
   BinaryInfoSchema,
@@ -14,8 +14,8 @@ import {
   CachePurgeResultSchema,
   NfsStatusSchema,
   SharedStorageStatusSchema,
-} from "../../schemas/index.ts";
-import { NotFoundError } from "../../shared/errors.ts";
+} from "../schemas/index.ts";
+import { NotFoundError } from "../shared/errors.ts";
 
 function isValidBinaryId(id: string): id is SharedBinaryId {
   return id in SHARED_BINARIES;

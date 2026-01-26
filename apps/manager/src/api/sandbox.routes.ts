@@ -7,9 +7,9 @@ import {
   sandboxService,
   sandboxSpawner,
   workspaceService,
-} from "../../container.ts";
-import { QueueService } from "../../infrastructure/queue/index.ts";
-import { StorageService } from "../../infrastructure/storage/index.ts";
+} from "../container.ts";
+import { QueueService } from "../infrastructure/queue/index.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   AgentHealthSchema,
   AgentMetricsSchema,
@@ -35,10 +35,10 @@ import {
   SandboxSchema,
   ServicesResponseSchema,
   SpawnJobSchema,
-} from "../../schemas/index.ts";
-import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
-import { config } from "../../shared/lib/config.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+} from "../schemas/index.ts";
+import { NotFoundError, ResourceExhaustedError } from "../shared/errors.ts";
+import { config } from "../shared/lib/config.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("sandbox-routes");
 

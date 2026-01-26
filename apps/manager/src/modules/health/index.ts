@@ -1,1 +1,1 @@
-export { healthRoutes } from "./health.routes.ts";
+// Health module - routes moved to api/

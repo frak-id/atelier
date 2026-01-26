@@ -1,11 +1,11 @@
 import { Elysia, t } from "elysia";
-import { sessionTemplateService } from "../../container.ts";
+import { sessionTemplateService } from "../container.ts";
 import {
   MergedSessionTemplatesResponseSchema,
   OpenCodeConfigResponseSchema,
   SessionTemplatesSchema,
   UpdateSessionTemplatesBodySchema,
-} from "../../schemas/index.ts";
+} from "../schemas/index.ts";
 
 export const sessionTemplateRoutes = new Elysia({
   prefix: "/session-templates",

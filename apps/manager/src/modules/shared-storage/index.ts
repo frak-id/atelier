@@ -1,1 +1,1 @@
-export { sharedStorageRoutes } from "./shared-storage.routes.ts";
+// Shared storage module - routes moved to api/

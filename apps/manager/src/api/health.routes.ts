@@ -1,18 +1,18 @@
 import { Elysia, t } from "elysia";
-import { CronService } from "../../infrastructure/cron/index.ts";
-import { FirecrackerClient } from "../../infrastructure/firecracker/index.ts";
-import { NetworkService } from "../../infrastructure/network/index.ts";
-import { CaddyService } from "../../infrastructure/proxy/index.ts";
-import { StorageService } from "../../infrastructure/storage/index.ts";
+import { CronService } from "../infrastructure/cron/index.ts";
+import { FirecrackerClient } from "../infrastructure/firecracker/index.ts";
+import { NetworkService } from "../infrastructure/network/index.ts";
+import { CaddyService } from "../infrastructure/proxy/index.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   CronJobInfoSchema,
   type HealthStatus,
   HealthStatusSchema,
   LiveStatusSchema,
   ReadyStatusSchema,
-} from "../../schemas/index.ts";
-import { config } from "../../shared/lib/config.ts";
-import { dirExists } from "../../shared/lib/shell.ts";
+} from "../schemas/index.ts";
+import { config } from "../shared/lib/config.ts";
+import { dirExists } from "../shared/lib/shell.ts";
 
 const startTime = Date.now();
 

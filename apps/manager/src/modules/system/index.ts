@@ -1,1 +1,1 @@
-export { systemRoutes } from "./system.routes.ts";
+// System module - routes moved to api/

@@ -1,1 +1,1 @@
-export { sharedAuthRoutes } from "./shared-auth.routes.ts";
+// Shared auth module - routes moved to api/

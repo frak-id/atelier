@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { internalService } from "../../container.ts";
+import { internalService } from "../container.ts";
 
 const SharedAuthInfoSchema = t.Object({
   provider: t.String(),
