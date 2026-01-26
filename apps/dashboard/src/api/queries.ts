@@ -41,6 +41,9 @@ export const queryKeys = {
     services: (id: string) => ["sandboxes", id, "services"] as const,
     discoverConfigs: (id: string) =>
       ["sandboxes", id, "discoverConfigs"] as const,
+    devCommands: (id: string) => ["sandboxes", id, "devCommands"] as const,
+    devCommandLogs: (id: string, name: string, offset: number) =>
+      ["sandboxes", id, "devCommandLogs", name, offset] as const,
     gitStatus: (id: string) => ["sandboxes", id, "gitStatus"] as const,
   },
   opencode: {
@@ -150,6 +153,33 @@ export const sandboxServicesQuery = (id: string) =>
     queryKey: queryKeys.sandboxes.services(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).services.get()),
     refetchInterval: 10000,
+    refetchIntervalInBackground: false,
+  });
+
+export const sandboxDevCommandsQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.devCommands(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).dev.get()),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+  });
+
+export const sandboxDevCommandLogsQuery = (
+  id: string,
+  name: string,
+  offset: number,
+) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.devCommandLogs(id, name, offset),
+    queryFn: async () =>
+      unwrap(
+        await api.api
+          .sandboxes({ id })
+          .dev({ name })
+          .logs.get({ query: { offset: offset.toString(), limit: "10000" } }),
+      ),
+    enabled: !!name,
+    refetchInterval: 2000,
     refetchIntervalInBackground: false,
   });
 
@@ -407,6 +437,36 @@ export function useExecCommand(sandboxId: string) {
     mutationKey: ["sandboxes", "exec", sandboxId],
     mutationFn: async (data: { command: string; timeout?: number }) =>
       unwrap(await api.api.sandboxes({ id: sandboxId }).exec.post(data)),
+  });
+}
+
+export function useStartDevCommand(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "dev", "start", sandboxId],
+    mutationFn: async (name: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).dev({ name }).start.post(),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.devCommands(sandboxId),
+      });
+    },
+  });
+}
+
+export function useStopDevCommand(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "dev", "stop", sandboxId],
+    mutationFn: async (name: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).dev({ name }).stop.post(),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.devCommands(sandboxId),
+      });
+    },
   });
 }
 
