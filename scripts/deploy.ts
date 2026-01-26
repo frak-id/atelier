@@ -4,10 +4,10 @@ import { resolve } from "node:path";
 import { $ } from "bun";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const CLI_DIR = resolve(ROOT, "infra/cli");
+const CLI_DIR = resolve(ROOT, "apps/cli");
 const MANAGER_DIR = resolve(ROOT, "apps/manager");
 const DASHBOARD_DIR = resolve(ROOT, "apps/dashboard");
-const AGENT_DIR = resolve(ROOT, "packages/sandbox-agent");
+const AGENT_DIR = resolve(ROOT, "apps/agent");
 const INFRA_DIR = resolve(ROOT, "infra");
 const IMAGES_DIR = resolve(ROOT, "infra/images");
 

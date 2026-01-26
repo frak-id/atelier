@@ -74,7 +74,7 @@ async function buildImage(args: string[]) {
     throw new Error(
       `sandbox-agent.mjs not found at: ${agentScript}\n` +
         `Deploy with 'bun run deploy' first, or build manually on dev machine:\n` +
-        `  cd packages/sandbox-agent && bun run build`,
+        `  cd apps/agent && bun run build`,
     );
   }
 

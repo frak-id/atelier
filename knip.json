@@ -27,10 +27,10 @@
     "packages/shared": {
       "project": ["src/**/*.ts"]
     },
-    "packages/sandbox-agent": {
+    "apps/agent": {
       "project": ["src/**/*.ts"]
     },
-    "infra/cli": {
+    "apps/cli": {
       "project": ["src/**/*.ts"]
     }
   }

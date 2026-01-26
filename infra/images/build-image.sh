@@ -29,7 +29,7 @@ AGENT_SCRIPT="$SCRIPT_DIR/sandbox-agent.mjs"
 if [ ! -f "$AGENT_SCRIPT" ]; then
     echo "Error: sandbox-agent.mjs not found at: $AGENT_SCRIPT"
     echo "Deploy with 'bun run deploy' first, or build manually:"
-    echo "  cd packages/sandbox-agent && bun run build"
+    echo "  cd apps/agent && bun run build"
     exit 1
 fi
 

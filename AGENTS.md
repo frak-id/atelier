@@ -33,12 +33,12 @@ bun build --bundle --target=node --outfile=dist/agent.mjs src/index.ts
 oc-sandbox/
 ├── apps/
 │   ├── manager/           # Elysia API (Bun, port 4000)
-│   └── dashboard/         # React + Vite (TanStack Router/Query)
+│   ├── dashboard/         # React + Vite (TanStack Router/Query)
+│   ├── agent/             # In-VM agent (Node.js only, port 9999)
+│   └── cli/               # Provisioning CLI (compiles to Linux binary)
 ├── packages/
-│   ├── shared/            # Constants, types (PATHS, NETWORK, LVM)
-│   └── sandbox-agent/     # In-VM agent (Node.js only, port 9999)
+│   └── shared/            # Constants, types (PATHS, NETWORK, LVM)
 ├── infra/
-│   ├── cli/               # Provisioning CLI (compiles to Linux binary)
 │   ├── images/            # Dockerfiles + build scripts
 │   ├── caddy/             # Reverse proxy config
 │   └── systemd/           # Service files
@@ -49,8 +49,8 @@ oc-sandbox/
 
 - **[Manager API](apps/manager/AGENTS.md)** - Backend orchestration (Elysia, Bun)
 - **[Dashboard](apps/dashboard/AGENTS.md)** - React web interface (TanStack Router/Query)
-- **[CLI](infra/cli/AGENTS.md)** - Server provisioning (runs as root)
-- **[Sandbox Agent](packages/sandbox-agent/AGENTS.md)** - In-VM agent (Node.js only)
+- **[CLI](apps/cli/AGENTS.md)** - Server provisioning (runs as root)
+- **[Sandbox Agent](apps/agent/AGENTS.md)** - In-VM agent (Node.js only)
 
 ## Deep Dives
 

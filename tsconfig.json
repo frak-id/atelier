@@ -29,9 +29,9 @@
   "references": [
     { "path": "./apps/manager" },
     { "path": "./apps/dashboard" },
-    { "path": "./packages/shared" },
-    { "path": "./packages/sandbox-agent" },
-    { "path": "./infra/cli" }
+    { "path": "./apps/agent" },
+    { "path": "./apps/cli" },
+    { "path": "./packages/shared" }
   ],
   "files": []
 }
