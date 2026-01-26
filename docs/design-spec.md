@@ -8,12 +8,12 @@
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| **CLI** (`infra/cli`) | ✅ Complete | Full provisioning CLI with interactive prompts |
+| **CLI** (`apps/cli`) | ✅ Complete | Full provisioning CLI with interactive prompts |
 | **Manager API** (`apps/manager`) | ✅ Complete | Sandbox CRUD, projects, images, system stats, stop/start lifecycle |
 | **Shared Types** (`packages/shared`) | ✅ Complete | Types for sandbox, project, system |
 | **Deployment** (`scripts/deploy.ts`) | ✅ Complete | SSH-based deployment with systemd |
 | **Dashboard** (`apps/dashboard`) | ✅ Complete | React + TanStack Router/Query, full sandbox/project management |
-| **Sandbox Agent** (`packages/sandbox-agent`) | ✅ Complete | Health, metrics, exec, services, apps (Node.js for FC compatibility) |
+| **Sandbox Agent** (`apps/agent`) | ✅ Complete | Health, metrics, exec, services, apps (Node.js for FC compatibility) |
 | **Projects** | ✅ Complete | Project CRUD with init/start commands, secrets, prebuilds |
 | **Prebuilds** | ✅ Complete | LVM snapshot-based prebuilds with trigger API |
 | **LVM Storage** | ✅ Complete | StorageService with auto-fallback to file copy |
@@ -281,33 +281,34 @@ oc-sandbox/
 │   │   │   └── index.ts
 │   │   └── package.json
 │   │
-│   └── sandbox-agent/             # ✅ In-VM agent (Node.js - Bun crashes in FC)
+│   ├── agent/                     # ✅ In-VM agent (Node.js - Bun crashes in FC)
+│   │   ├── src/
+│   │   │   ├── index.ts           # Elysia server on :9999
+│   │   │   └── routes/
+│   │   │       ├── health.ts      # /health - service status
+│   │   │       ├── metrics.ts     # /metrics - CPU/memory/disk
+│   │   │       ├── exec.ts        # /exec - run commands
+│   │   │       ├── services.ts    # /services - systemd status
+│   │   │       └── apps.ts        # /apps - port registration
+│   │   ├── dist/
+│   │   │   └── sandbox-agent.mjs  # Built with --target=node
+│   │   └── package.json
+│   │
+│   └── cli/                       # ✅ Server provisioning CLI
 │       ├── src/
-│       │   ├── index.ts           # Elysia server on :9999
-│       │   └── routes/
-│       │       ├── health.ts      # /health - service status
-│       │       ├── metrics.ts     # /metrics - CPU/memory/disk
-│       │       ├── exec.ts        # /exec - run commands
-│       │       ├── services.ts    # /services - systemd status
-│       │       └── apps.ts        # /apps - port registration
+│       │   ├── index.ts           # Entry point with @clack/prompts
+│       │   └── commands/
+│       │       ├── base-setup.ts
+│       │       ├── install-firecracker.ts
+│       │       ├── setup-network.ts
+│       │       ├── setup-storage.ts
+│       │       ├── deploy-manager.ts
+│       │       └── test-vm.ts
 │       ├── dist/
-│       │   └── sandbox-agent.mjs  # Built with --target=node
+│       │   └── frak-sandbox-linux-x64
 │       └── package.json
 │
 ├── infra/
-│   ├── cli/                       # ✅ Server provisioning CLI
-│   │   ├── src/
-│   │   │   ├── index.ts           # Entry point with @clack/prompts
-│   │   │   └── commands/
-│   │   │       ├── base-setup.ts
-│   │   │       ├── install-firecracker.ts
-│   │   │       ├── setup-network.ts
-│   │   │       ├── setup-storage.ts
-│   │   │       ├── deploy-manager.ts
-│   │   │       └── test-vm.ts
-│   │   ├── dist/
-│   │   │   └── frak-sandbox-linux-x64
-│   │   └── package.json
 │   ├── caddy/
 │   │   └── Caddyfile              # ✅ Static routes (API + dashboard)
 │   ├── images/                    # ✅ Rootfs Dockerfiles
@@ -601,7 +602,7 @@ A lightweight binary that runs inside each sandbox VM, providing:
 ### Agent API
 
 ```typescript
-// packages/sandbox-agent/src/index.ts
+// apps/agent/src/index.ts
 
 // Runs inside the VM, exposed on port 9999
 
@@ -827,7 +828,7 @@ const walletProject: Project = {
 
 ## Package Specifications
 
-### `infra/cli` ✅ IMPLEMENTED
+### `apps/cli` ✅ IMPLEMENTED
 
 **Purpose**: Server provisioning and management CLI. Interactive prompts via `@clack/prompts`.
 
@@ -1071,7 +1072,7 @@ export const DEFAULTS = {
 
 ---
 
-### `packages/sandbox-agent` ✅ IMPLEMENTED
+### `apps/agent` ✅ IMPLEMENTED
 
 **Purpose**: Lightweight binary running inside each VM for health reporting, metrics, and app registration.
 
@@ -1329,7 +1330,7 @@ WantedBy=multi-user.target
   - [x] OpenCode CLI
   - [x] Node.js, Bun, Git
   - [x] Sandbox agent binary
-- [x] Implement sandbox-agent (`packages/sandbox-agent`)
+- [x] Implement sandbox-agent (`apps/agent`)
   - [x] Health endpoint with service checks
   - [x] Metrics endpoint (CPU, memory, disk)
   - [x] Exec endpoint for running commands
@@ -1499,7 +1500,7 @@ journalctl -u frak-sandbox-manager -f
 | `/opt/frak-sandbox` | Application root |
 | `/opt/frak-sandbox/apps/manager/server.js` | Manager API bundle |
 | `/opt/frak-sandbox/apps/dashboard/dist/` | Dashboard static files |
-| `/opt/frak-sandbox/packages/sandbox-agent/sandbox-agent.mjs` | Agent bundle (copied to VMs) |
+| `/opt/frak-sandbox/infra/images/sandbox-agent.mjs` | Agent bundle (copied to VMs) |
 | `/usr/local/bin/frak-sandbox` | CLI binary |
 | `/usr/local/bin/firecracker` | Firecracker binary |
 | `/var/lib/sandbox/firecracker/kernels` | Kernel images |
