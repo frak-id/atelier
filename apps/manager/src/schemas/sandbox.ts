@@ -257,6 +257,8 @@ export const DevCommandStartResponseSchema = t.Object({
   port: t.Optional(t.Number()),
   logFile: t.Optional(t.String()),
   startedAt: t.Optional(t.String()),
+  devUrl: t.Optional(t.String()),
+  defaultDevUrl: t.Optional(t.String()),
 });
 export type DevCommandStartResponse = Static<
   typeof DevCommandStartResponseSchema

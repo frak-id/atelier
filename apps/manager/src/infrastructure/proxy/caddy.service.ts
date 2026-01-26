@@ -103,6 +103,77 @@ export const CaddyService = {
     await this.addRoutes([{ domain, upstream }]);
   },
 
+  async registerDevRoute(
+    sandboxId: string,
+    ipAddress: string,
+    name: string,
+    port: number,
+    isDefault: boolean,
+  ): Promise<{ namedUrl: string; defaultUrl?: string }> {
+    const namedDomain = `dev-${name}-${sandboxId}.${config.caddy.domainSuffix}`;
+
+    if (config.isMock()) {
+      const defaultUrl = isDefault
+        ? `https://dev-${sandboxId}.${config.caddy.domainSuffix}`
+        : undefined;
+      log.debug(
+        {
+          sandboxId,
+          name,
+          namedDomain,
+          defaultDomain: isDefault
+            ? `dev-${sandboxId}.${config.caddy.domainSuffix}`
+            : undefined,
+        },
+        "Mock: Dev route registered",
+      );
+      return { namedUrl: `https://${namedDomain}`, defaultUrl };
+    }
+
+    await this.addRoute(namedDomain, `${ipAddress}:${port}`);
+
+    let defaultUrl: string | undefined;
+    if (isDefault) {
+      const defaultDomain = `dev-${sandboxId}.${config.caddy.domainSuffix}`;
+      await this.addRoute(defaultDomain, `${ipAddress}:${port}`);
+      defaultUrl = `https://${defaultDomain}`;
+    }
+
+    log.info(
+      {
+        sandboxId,
+        name,
+        namedDomain,
+        defaultDomain: isDefault
+          ? `dev-${sandboxId}.${config.caddy.domainSuffix}`
+          : undefined,
+      },
+      "Dev route registered",
+    );
+
+    return { namedUrl: `https://${namedDomain}`, defaultUrl };
+  },
+
+  async removeDevRoute(
+    sandboxId: string,
+    name: string,
+    isDefault: boolean,
+  ): Promise<void> {
+    if (config.isMock()) {
+      log.debug({ sandboxId, name }, "Mock: Dev route removed");
+      return;
+    }
+
+    await this.removeRoute(
+      `dev-${name}-${sandboxId}.${config.caddy.domainSuffix}`,
+    );
+    if (isDefault) {
+      await this.removeRoute(`dev-${sandboxId}.${config.caddy.domainSuffix}`);
+    }
+
+    log.info({ sandboxId, name }, "Dev route removed");
+  },
+
   async findWildcardRouteIndex(): Promise<number> {
     try {
       const routes = await this.getRoutes();

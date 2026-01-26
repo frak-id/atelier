@@ -8,6 +8,7 @@ import {
   sandboxSpawner,
   workspaceService,
 } from "../container.ts";
+import { CaddyService } from "../infrastructure/proxy/caddy.service.ts";
 import { QueueService } from "../infrastructure/queue/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
@@ -526,11 +527,39 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       );
       if (!devCommand) throw new NotFoundError("DevCommand", params.name);
 
-      return agentClient.devStart(
+      const result = await agentClient.devStart(
         sandbox.runtime.ipAddress,
         params.name,
         devCommand,
       );
+
+      // Register Caddy route if port defined
+      let devUrl: string | undefined;
+      let defaultDevUrl: string | undefined;
+      if (devCommand.port) {
+        try {
+          const urls = await CaddyService.registerDevRoute(
+            sandbox.id,
+            sandbox.runtime.ipAddress,
+            params.name,
+            devCommand.port,
+            devCommand.isDefault ?? false,
+          );
+          devUrl = urls.namedUrl;
+          defaultDevUrl = urls.defaultUrl;
+        } catch (err) {
+          log.warn(
+            { sandboxId: sandbox.id, name: params.name, error: err },
+            "Failed to register dev route",
+          );
+        }
+      }
+
+      return {
+        ...result,
+        devUrl,
+        defaultDevUrl,
+      };
     },
     {
       params: DevCommandNameParamsSchema,
@@ -543,7 +572,34 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       const sandbox = sandboxService.getById(params.id);
       if (!sandbox) throw new NotFoundError("Sandbox", params.id);
 
-      return agentClient.devStop(sandbox.runtime.ipAddress, params.name);
+      const workspace = sandbox.workspaceId
+        ? workspaceService.getById(sandbox.workspaceId)
+        : undefined;
+      const devCommand = workspace?.config.devCommands?.find(
+        (c) => c.name === params.name,
+      );
+
+      const result = await agentClient.devStop(
+        sandbox.runtime.ipAddress,
+        params.name,
+      );
+
+      if (devCommand?.port) {
+        try {
+          await CaddyService.removeDevRoute(
+            sandbox.id,
+            params.name,
+            devCommand.isDefault ?? false,
+          );
+        } catch (err) {
+          log.warn(
+            { sandboxId: sandbox.id, name: params.name, error: err },
+            "Failed to remove dev route",
+          );
+        }
+      }
+
+      return result;
     },
     {
       params: DevCommandNameParamsSchema,
