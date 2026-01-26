@@ -766,7 +766,9 @@ interface Project {
   
   // Prebuild configuration
   initCommands: string[];        // Run during prebuild
-  startCommands: string[];       // Run on every sandbox start
+  
+  // Dev commands (user-triggered processes)
+  devCommands?: DevCommand[];    // Interactive dev processes (start/stop via dashboard)
   
   // Resource defaults
   defaultVcpus: number;
@@ -782,6 +784,15 @@ interface Project {
   updatedAt: string;
 }
 
+interface DevCommand {
+  name: string;                  // URL-safe identifier (e.g. "dev-server")
+  command: string;               // Command to run (e.g. "bun run dev")
+  port?: number;                 // Port to expose via Caddy
+  workdir?: string;              // Working directory
+  env?: Record<string, string>;  // Additional env vars
+  isDefault?: boolean;           // Default command gets simplified URL
+}
+
 // Example project
 const walletProject: Project = {
   id: "wallet",
@@ -793,8 +804,8 @@ const walletProject: Project = {
     "cd /home/dev/workspace && bun install",
     "cd /home/dev/workspace && bun run build",
   ],
-  startCommands: [
-    "cd /home/dev/workspace && bun run dev &",
+  devCommands: [
+    { name: "dev-server", command: "bun run dev", port: 3000, isDefault: true },
   ],
   
   defaultVcpus: 2,

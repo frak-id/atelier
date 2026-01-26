@@ -47,7 +47,6 @@ export const SandboxProvisioner = {
       await this.injectSecrets(mountPoint, ctx.workspace);
       await this.injectFileSecrets(mountPoint, ctx);
       await this.injectGitCredentials(mountPoint, ctx);
-      await this.injectStartScript(mountPoint, ctx.workspace);
       await this.injectEditorConfigs(mountPoint, ctx);
       await this.injectSandboxMd(mountPoint, ctx);
     } finally {
@@ -193,22 +192,6 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
       { sandboxId: ctx.sandboxId, sourceCount: credentials.length },
       "Git credentials injected",
     );
-  },
-
-  async injectStartScript(
-    mountPoint: string,
-    workspace?: Workspace,
-  ): Promise<void> {
-    if (
-      !workspace?.config.startCommands ||
-      workspace.config.startCommands.length === 0
-    ) {
-      return;
-    }
-
-    const startScript = `#!/bin/bash\nset -e\n${workspace.config.startCommands.join("\n")}\n`;
-    await Bun.write(`${mountPoint}/etc/sandbox/start.sh`, startScript);
-    await $`chmod +x ${mountPoint}/etc/sandbox/start.sh`.quiet();
   },
 
   async injectEditorConfigs(

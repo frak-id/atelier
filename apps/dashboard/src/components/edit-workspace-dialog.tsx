@@ -91,7 +91,6 @@ export function EditWorkspaceDialog({
     vcpus: workspace.config.vcpus,
     memoryMb: workspace.config.memoryMb,
     initCommands: workspace.config.initCommands.join("\n"),
-    startCommands: workspace.config.startCommands.join("\n"),
   });
 
   const [repos, setRepos] = useState<RepoEntry[]>(() =>
@@ -126,14 +125,11 @@ export function EditWorkspaceDialog({
             memoryMb: formData.memoryMb,
             initCommands: formData.initCommands
               .split("\n")
-              .filter((cmd) => cmd.trim()),
-            startCommands: formData.startCommands
-              .split("\n")
-              .filter((cmd) => cmd.trim()),
+              .filter((cmd: string) => cmd.trim()),
             repos: serializeRepos(repos),
             secrets: serializeEnvSecrets(envSecrets),
             fileSecrets: serializeFileSecrets(fileSecrets),
-            devCommands,
+            devCommands: devCommands.map(({ id, ...cmd }) => cmd),
           },
         },
       },
@@ -249,12 +245,8 @@ export function EditWorkspaceDialog({
             <TabsContent value="commands" className="pt-4">
               <CommandsForm
                 initCommands={formData.initCommands}
-                startCommands={formData.startCommands}
                 onInitCommandsChange={(initCommands) =>
                   setFormData({ ...formData, initCommands })
-                }
-                onStartCommandsChange={(startCommands) =>
-                  setFormData({ ...formData, startCommands })
                 }
               />
             </TabsContent>

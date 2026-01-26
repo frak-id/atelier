@@ -304,21 +304,6 @@ function WorkspaceDetailPage() {
           </Card>
         )}
 
-        {workspace.config.startCommands.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Start Commands</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-muted rounded p-3 font-mono text-sm space-y-1">
-                {workspace.config.startCommands.map((cmd) => (
-                  <div key={cmd}>$ {cmd}</div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">

@@ -19,6 +19,7 @@ import {
 
 // Replicated from apps/manager/src/schemas/workspace.ts - Defined here to avoid direct dependency on manager source
 export interface DevCommand {
+  id?: string; // Client-side only, for stable keys
   name: string;
   command: string;
   port?: number;
@@ -38,12 +39,18 @@ export function DevCommandsForm({
   devCommands,
   onChange,
 }: DevCommandsFormProps) {
-  const [expandedEnvs, setExpandedEnvs] = useState<Record<number, boolean>>({});
+  const [expandedEnvs, setExpandedEnvs] = useState<Record<string, boolean>>({});
 
   const handleAdd = () => {
     onChange([
       ...devCommands,
-      { name: "", command: "", env: {}, isDefault: false },
+      {
+        id: crypto.randomUUID(),
+        name: "",
+        command: "",
+        env: {},
+        isDefault: false,
+      },
     ]);
   };
 
@@ -51,12 +58,14 @@ export function DevCommandsForm({
     onChange(devCommands.filter((_, i) => i !== index));
   };
 
-  const handleChange = (index: number, field: keyof DevCommand, value: any) => {
+  const handleChange = <K extends keyof DevCommand>(
+    index: number,
+    field: K,
+    value: DevCommand[K],
+  ) => {
     const updated = [...devCommands];
-    // Cast is necessary because TypeScript infers partial type when spreading with dynamic key
     updated[index] = { ...updated[index], [field]: value } as DevCommand;
 
-    // If setting isDefault to true, unset it for all others
     if (field === "isDefault" && value === true) {
       updated.forEach((cmd, i) => {
         if (i !== index && cmd.isDefault) {
@@ -77,15 +86,16 @@ export function DevCommandsForm({
     onChange(updated);
   };
 
-  const toggleEnvExpanded = (index: number) => {
+  const toggleEnvExpanded = (id: string) => {
     setExpandedEnvs((prev) => ({
       ...prev,
-      [index]: !prev[index],
+      [id]: !prev[id],
     }));
   };
 
   const isForbiddenPort = (port: number) => FORBIDDEN_DEV_PORTS.includes(port);
-  const isValidName = (name: string) => /^[a-z0-9-]{0,20}$/.test(name);
+  const isValidNameInput = (name: string) => /^[a-z0-9-]{0,20}$/.test(name);
+  const isValidName = (name: string) => /^[a-z0-9-]{1,20}$/.test(name);
 
   return (
     <div className="space-y-4">
@@ -104,18 +114,18 @@ export function DevCommandsForm({
       ) : (
         <div className="space-y-4">
           {devCommands.map((cmd, index) => {
+            const cmdId = cmd.id || `fallback-${index}`;
             const portError =
               cmd.port && isForbiddenPort(cmd.port)
                 ? `Port ${cmd.port} is reserved for system services`
                 : null;
 
-            const nameError =
-              cmd.name && !/^[a-z0-9-]{1,20}$/.test(cmd.name)
-                ? "Name must be 1-20 lowercase alphanumeric chars or dashes"
-                : null;
+            const nameError = !isValidName(cmd.name)
+              ? "Name required: 1-20 lowercase alphanumeric chars or dashes"
+              : null;
 
             return (
-              <Card key={index}>
+              <Card key={cmdId}>
                 <CardContent className="pt-6 space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -123,15 +133,23 @@ export function DevCommandsForm({
                       <Input
                         value={cmd.name}
                         onChange={(e) => {
-                          if (isValidName(e.target.value)) {
+                          if (isValidNameInput(e.target.value)) {
                             handleChange(index, "name", e.target.value);
                           }
                         }}
                         placeholder="e.g. dev-server"
                         className={nameError ? "border-destructive" : ""}
+                        aria-invalid={!!nameError}
+                        aria-describedby={
+                          nameError ? `name-error-${cmdId}` : undefined
+                        }
                       />
                       {nameError && (
-                        <p className="text-[10px] text-destructive">
+                        <p
+                          id={`name-error-${cmdId}`}
+                          className="text-[10px] text-destructive"
+                          role="alert"
+                        >
                           {nameError}
                         </p>
                       )}
@@ -155,14 +173,26 @@ export function DevCommandsForm({
                         type="number"
                         value={cmd.port || ""}
                         onChange={(e) => {
-                          const val = e.target.value
-                            ? parseInt(e.target.value)
-                            : undefined;
-                          handleChange(index, "port", val);
+                          if (!e.target.value) {
+                            handleChange(index, "port", undefined);
+                            return;
+                          }
+                          const parsed = parseInt(e.target.value, 10);
+                          if (
+                            !Number.isNaN(parsed) &&
+                            parsed >= 1024 &&
+                            parsed <= 65535
+                          ) {
+                            handleChange(index, "port", parsed);
+                          }
                         }}
                         placeholder="3000"
                         min={1024}
                         max={65535}
+                        aria-invalid={!!portError}
+                        aria-describedby={
+                          portError ? `port-error-${cmdId}` : undefined
+                        }
                       />
                     </div>
                     <div className="space-y-2">
@@ -178,7 +208,11 @@ export function DevCommandsForm({
                   </div>
 
                   {portError && (
-                    <div className="flex items-center gap-2 p-2 border border-destructive/50 rounded-md bg-destructive/10 text-destructive text-xs">
+                    <div
+                      id={`port-error-${cmdId}`}
+                      className="flex items-center gap-2 p-2 border border-destructive/50 rounded-md bg-destructive/10 text-destructive text-xs"
+                      role="alert"
+                    >
                       <AlertCircle className="h-4 w-4" />
                       <span>{portError}</span>
                     </div>
@@ -186,14 +220,18 @@ export function DevCommandsForm({
 
                   <div className="flex items-center space-x-2">
                     <Checkbox
-                      id={`default-${index}`}
+                      id={`default-${cmdId}`}
                       checked={cmd.isDefault || false}
                       onChange={(e) =>
-                        handleChange(index, "isDefault", e.target.checked)
+                        handleChange(
+                          index,
+                          "isDefault",
+                          (e.target as HTMLInputElement).checked,
+                        )
                       }
                     />
                     <Label
-                      htmlFor={`default-${index}`}
+                      htmlFor={`default-${cmdId}`}
                       className="text-sm font-normal cursor-pointer"
                     >
                       Set as default command
@@ -201,8 +239,8 @@ export function DevCommandsForm({
                   </div>
 
                   <Collapsible
-                    open={expandedEnvs[index]}
-                    onOpenChange={() => toggleEnvExpanded(index)}
+                    open={expandedEnvs[cmdId]}
+                    onOpenChange={() => toggleEnvExpanded(cmdId)}
                     className="border rounded-md p-2"
                   >
                     <div className="flex items-center justify-between">
@@ -218,7 +256,7 @@ export function DevCommandsForm({
                         >
                           <Plus
                             className={`h-3 w-3 transition-transform ${
-                              expandedEnvs[index] ? "rotate-45" : ""
+                              expandedEnvs[cmdId] ? "rotate-45" : ""
                             }`}
                           />
                         </Button>
