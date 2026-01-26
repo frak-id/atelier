@@ -25,6 +25,7 @@ import { useCallback, useState } from "react";
 import {
   opencodeSessionsQuery,
   sandboxDetailQuery,
+  sandboxDevCommandsQuery,
   sandboxDiscoverConfigsQuery,
   sandboxGitStatusQuery,
   sandboxMetricsQuery,
@@ -101,6 +102,10 @@ function SandboxDetailPage() {
   const { data: workspace } = useQuery({
     ...workspaceDetailQuery(sandbox?.workspaceId ?? ""),
     enabled: !!sandbox?.workspaceId,
+  });
+  const { data: devCommands } = useQuery({
+    ...sandboxDevCommandsQuery(id),
+    enabled: sandbox?.status === "running",
   });
 
   if (!sandbox) {
@@ -279,6 +284,18 @@ function SandboxDetailPage() {
             <UrlRow label="VSCode" url={sandbox.runtime.urls.vscode} />
             <UrlRow label="OpenCode" url={sandbox.runtime.urls.opencode} />
             <UrlRow label="Terminal" url={sandbox.runtime.urls.terminal} />
+            {devCommands?.commands
+              .filter(
+                (cmd): cmd is typeof cmd & { devUrl: string } =>
+                  cmd.status === "running" && !!cmd.devUrl,
+              )
+              .map((cmd) => (
+                <UrlRow
+                  key={cmd.name}
+                  label={`Dev: ${cmd.name}`}
+                  url={cmd.devUrl}
+                />
+              ))}
           </CardContent>
         </Card>
 

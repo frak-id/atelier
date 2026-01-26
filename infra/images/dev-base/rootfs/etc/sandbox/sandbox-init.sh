@@ -51,7 +51,7 @@ ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null
 ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null
 ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null
 
-log "Setting up hostname..."
+log "Setting up hostname and hosts file..."
 if [ -f "$CONFIG_FILE" ]; then
     SANDBOX_ID=$(cat "$CONFIG_FILE" | grep -o '"sandboxId"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
     if [ -n "$SANDBOX_ID" ]; then
@@ -60,6 +60,13 @@ if [ -f "$CONFIG_FILE" ]; then
         log "Hostname set to sandbox-$SANDBOX_ID"
     fi
 fi
+
+# Create /etc/hosts (not included in Docker export)
+cat > /etc/hosts << 'EOF'
+127.0.0.1	localhost
+::1		localhost ip6-localhost ip6-loopback
+EOF
+log "Created /etc/hosts"
 
 log "Configuring network..."
 if [ -f /etc/network-setup.sh ]; then

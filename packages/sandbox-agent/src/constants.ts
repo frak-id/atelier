@@ -2,6 +2,7 @@ export const AGENT_PORT = 9999;
 
 export const CONFIG_PATH = "/etc/sandbox/config.json";
 export const LOG_DIR = "/var/log/sandbox";
+export const WORKSPACE_DIR = "/home/dev/workspace";
 
 export const VSCODE_SETTINGS_PATH =
   "/home/dev/.local/share/code-server/User/settings.json";

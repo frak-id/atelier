@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { Elysia, t } from "elysia";
-import { LOG_DIR } from "../constants";
+import { LOG_DIR, WORKSPACE_DIR } from "../constants";
 
 interface DevProcess {
   pid: number;
@@ -93,8 +93,8 @@ export const devRoutes = new Elysia({ prefix: "/dev" })
       const logFile = `${LOG_DIR}/dev-${name}.log`;
       const logStream = createWriteStream(logFile, { flags: "a" });
 
-      const proc = spawn("sh", ["-c", command], {
-        cwd: workdir || "/workspace",
+      const proc = spawn("/bin/sh", ["-c", command], {
+        cwd: workdir || WORKSPACE_DIR,
         env: { ...process.env, ...env },
         detached: false,
       });

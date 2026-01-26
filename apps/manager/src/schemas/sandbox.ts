@@ -243,6 +243,8 @@ export const DevCommandListResponseSchema = t.Object({
       pid: t.Optional(t.Number()),
       startedAt: t.Optional(t.String()),
       exitCode: t.Optional(t.Number()),
+      devUrl: t.Optional(t.String()),
+      defaultDevUrl: t.Optional(t.String()),
     }),
   ),
 });

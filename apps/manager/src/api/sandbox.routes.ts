@@ -498,12 +498,25 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           const runtime = runtimeStatus.commands.find(
             (r) => r.name === cmd.name,
           );
+          const isRunning = runtime?.status === "running";
+
+          let devUrl: string | undefined;
+          let defaultDevUrl: string | undefined;
+          if (isRunning && cmd.port) {
+            devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.caddy.domainSuffix}`;
+            if (cmd.isDefault) {
+              defaultDevUrl = `https://dev-${sandbox.id}.${config.caddy.domainSuffix}`;
+            }
+          }
+
           return {
             ...cmd,
             status: runtime?.status ?? "stopped",
             pid: runtime?.pid,
             startedAt: runtime?.startedAt,
             exitCode: runtime?.exitCode,
+            devUrl,
+            defaultDevUrl,
           };
         }),
       };

@@ -116,9 +116,11 @@ export function DevCommandsForm({
           {devCommands.map((cmd, index) => {
             const cmdId = cmd.id || `fallback-${index}`;
             const portError =
-              cmd.port && isForbiddenPort(cmd.port)
-                ? `Port ${cmd.port} is reserved for system services`
-                : null;
+              cmd.port !== undefined && cmd.port > 0 && cmd.port < 1024
+                ? "Port must be 1024 or higher"
+                : cmd.port && isForbiddenPort(cmd.port)
+                  ? `Port ${cmd.port} is reserved for system services`
+                  : null;
 
             const nameError = !isValidName(cmd.name)
               ? "Name required: 1-20 lowercase alphanumeric chars or dashes"
@@ -178,12 +180,19 @@ export function DevCommandsForm({
                             return;
                           }
                           const parsed = parseInt(e.target.value, 10);
+                          // Allow any valid number while typing, validate range on blur
                           if (
                             !Number.isNaN(parsed) &&
-                            parsed >= 1024 &&
+                            parsed >= 0 &&
                             parsed <= 65535
                           ) {
                             handleChange(index, "port", parsed);
+                          }
+                        }}
+                        onBlur={() => {
+                          // Clear invalid ports on blur
+                          if (cmd.port !== undefined && cmd.port < 1024) {
+                            handleChange(index, "port", undefined);
                           }
                         }}
                         placeholder="3000"
