@@ -36,6 +36,11 @@ import {
   serializeRepos,
 } from "@/components/workspace-form";
 
+import {
+  type DevCommand,
+  DevCommandsForm,
+} from "@/components/workspace-form/dev-commands-form";
+
 interface EditWorkspaceDialogProps {
   workspace: Workspace;
   open: boolean;
@@ -101,6 +106,10 @@ export function EditWorkspaceDialog({
     parseFileSecrets(workspace.config.fileSecrets),
   );
 
+  const [devCommands, setDevCommands] = useState<DevCommand[]>(
+    () => (workspace.config.devCommands || []) as DevCommand[],
+  );
+
   const isGitHubConnected = githubStatus?.connected === true;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -124,6 +133,7 @@ export function EditWorkspaceDialog({
             repos: serializeRepos(repos),
             secrets: serializeEnvSecrets(envSecrets),
             fileSecrets: serializeFileSecrets(fileSecrets),
+            devCommands,
           },
         },
       },
@@ -145,10 +155,11 @@ export function EditWorkspaceDialog({
           </DialogHeader>
 
           <Tabs defaultValue="general" className="mt-4">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="repos">Repos</TabsTrigger>
               <TabsTrigger value="commands">Commands</TabsTrigger>
+              <TabsTrigger value="dev-commands">Dev Commands</TabsTrigger>
               <TabsTrigger value="secrets">Secrets</TabsTrigger>
             </TabsList>
 
@@ -245,6 +256,13 @@ export function EditWorkspaceDialog({
                 onStartCommandsChange={(startCommands) =>
                   setFormData({ ...formData, startCommands })
                 }
+              />
+            </TabsContent>
+
+            <TabsContent value="dev-commands" className="pt-4">
+              <DevCommandsForm
+                devCommands={devCommands}
+                onChange={setDevCommands}
               />
             </TabsContent>
 
