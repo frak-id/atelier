@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { configFileService, internalService } from "../../container.ts";
+import { configFileService, internalService } from "../container.ts";
 import {
   ConfigFileListQuerySchema,
   ConfigFileListResponseSchema,
@@ -8,7 +8,7 @@ import {
   MergedConfigQuerySchema,
   MergedConfigResponseSchema,
   UpdateConfigFileBodySchema,
-} from "../../schemas/index.ts";
+} from "../schemas/index.ts";
 
 export const configFileRoutes = new Elysia({ prefix: "/config-files" })
   .get(

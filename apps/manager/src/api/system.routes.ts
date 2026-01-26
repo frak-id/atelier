@@ -1,9 +1,9 @@
 import { $ } from "bun";
 import { Elysia } from "elysia";
-import { sandboxService } from "../../container.ts";
-import { NetworkService } from "../../infrastructure/network/index.ts";
-import { QueueService } from "../../infrastructure/queue/index.ts";
-import { StorageService } from "../../infrastructure/storage/index.ts";
+import { sandboxService } from "../container.ts";
+import { NetworkService } from "../infrastructure/network/index.ts";
+import { QueueService } from "../infrastructure/queue/index.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   type CleanupResult,
   CleanupResultSchema,
@@ -11,9 +11,9 @@ import {
   StorageStatusSchema,
   type SystemStats,
   SystemStatsSchema,
-} from "../../schemas/index.ts";
-import { config } from "../../shared/lib/config.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+} from "../schemas/index.ts";
+import { config } from "../shared/lib/config.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("system-routes");
 const startTime = Date.now();

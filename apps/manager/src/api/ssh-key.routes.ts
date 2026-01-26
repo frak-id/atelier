@@ -1,14 +1,14 @@
 import { Elysia } from "elysia";
-import { sshKeyService } from "../../container.ts";
-import { SshPiperService } from "../../infrastructure/proxy/index.ts";
+import { sshKeyService } from "../container.ts";
+import { SshPiperService } from "../infrastructure/proxy/index.ts";
 import {
   CreateSshKeyBodySchema,
   HasSshKeysResponseSchema,
   IdParamSchema,
   SshKeyListResponseSchema,
   SshKeySchema,
-} from "../../schemas/index.ts";
-import type { AuthUser } from "../../shared/lib/auth.ts";
+} from "../schemas/index.ts";
+import type { AuthUser } from "../shared/lib/auth.ts";
 
 function getUser(store: { user?: AuthUser }): AuthUser {
   if (!store.user) throw new Error("User not authenticated");

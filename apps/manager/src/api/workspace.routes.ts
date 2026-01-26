@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
-import { prebuildRunner, workspaceService } from "../../container.ts";
-import { StorageService } from "../../infrastructure/storage/index.ts";
+import { prebuildRunner, workspaceService } from "../container.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   CreateWorkspaceBodySchema,
   IdParamSchema,
@@ -8,9 +8,9 @@ import {
   UpdateWorkspaceBodySchema,
   WorkspaceListResponseSchema,
   WorkspaceSchema,
-} from "../../schemas/index.ts";
-import { NotFoundError } from "../../shared/errors.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+} from "../schemas/index.ts";
+import { NotFoundError } from "../shared/errors.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("workspace-routes");
 

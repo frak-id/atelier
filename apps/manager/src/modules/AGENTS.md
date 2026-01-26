@@ -1,61 +1,104 @@
 # Modules
 
-Business logic layer following `routes → service → repository` pattern.
+Service and Repository classes for business logic. **Routes are NOT here** - they live in `src/api/`.
 
-## Standard Module
+## Module Structure
 
 ```
 {module}/
-├── index.ts              # Barrel: export routes + service
-├── {module}.routes.ts    # Elysia route definitions
-├── {module}.service.ts   # Business logic
-└── {module}.repository.ts # Data access (Drizzle)
+├── index.ts              # Barrel: export Service + Repository
+├── {module}.service.ts   # Business logic class
+└── {module}.repository.ts # Data access (Drizzle ORM)
 ```
 
-## Deviations
+## Modules
 
-| Module | Pattern | Notes |
-|--------|---------|-------|
-| `sandbox` | Extended | + `builder.ts`, `provisioner.ts` |
-| `github` | Split routes | `github-api.routes.ts`, `github-auth.routes.ts` |
-| `prebuild` | Service-only | No routes, internal use by workspace |
-| `health`, `image`, `system` | Routes-only | No service layer |
+| Module | Has Service | Has Repository | Notes |
+|--------|-------------|----------------|-------|
+| `sandbox` | Yes | Yes | + `sandbox.provisioner.ts` for rootfs injection |
+| `workspace` | Yes | Yes | |
+| `task` | Yes | Yes | |
+| `config-file` | Yes | Yes | |
+| `git-source` | Yes | Yes | |
+| `ssh-key` | Yes | Yes | |
+| `session-template` | Yes | No | Uses other services |
+| `internal` | Yes | No | Uses SharedAuthRepository |
+| `shared-auth` | No | Yes | Repository only, used by internal |
+| `auth` | No | No | Just exports, wiring only |
+| `health` | No | No | Routes-only (in src/api/) |
+| `image` | No | No | Routes-only (in src/api/) |
+| `system` | No | No | Routes-only (in src/api/) |
+| `github` | No | No | Routes-only (in src/api/) |
+| `shared-storage` | No | No | Routes-only (in src/api/) |
+
+## Service Pattern
+
+Services receive repositories via constructor:
+
+```typescript
+export class WorkspaceService {
+  constructor(private readonly repository: WorkspaceRepository) {}
+  
+  getAll(): Workspace[] {
+    return this.repository.getAll();
+  }
+  
+  getByIdOrThrow(id: string): Workspace {
+    const workspace = this.repository.getById(id);
+    if (!workspace) throw new NotFoundError("Workspace", id);
+    return workspace;
+  }
+}
+```
+
+## Repository Pattern
+
+Repositories handle Drizzle ORM queries:
+
+```typescript
+export class WorkspaceRepository {
+  getAll(): Workspace[] {
+    return db.select().from(workspaces).all().map(rowToWorkspace);
+  }
+  
+  getById(id: string): Workspace | undefined {
+    const row = db.select().from(workspaces).where(eq(workspaces.id, id)).get();
+    return row ? rowToWorkspace(row) : undefined;
+  }
+}
+```
+
+## Wiring
+
+All services are instantiated in `src/container.ts`:
+
+```typescript
+const workspaceRepository = new WorkspaceRepository();
+const workspaceService = new WorkspaceService(workspaceRepository);
+export { workspaceService };
+```
+
+Routes import from container (NOT directly from modules):
+
+```typescript
+// src/api/workspace.routes.ts
+import { workspaceService } from "../container.ts";
+```
 
 ## Where to Look
 
 | Task | File |
 |------|------|
-| VM creation orchestration | `sandbox/sandbox.builder.ts` |
-| RootFS file injection | `sandbox/sandbox.provisioner.ts` |
 | Workspace CRUD | `workspace/workspace.service.ts` |
-| Pre-build snapshots | `prebuild/prebuild.service.ts` |
-| GitHub OAuth flow | `github/github-auth.routes.ts` |
-
-## Cross-Module Dependencies
-
-```
-health.routes → SandboxService
-system.routes → SandboxService
-github-*.routes → GitSourceService
-workspace.routes → PrebuildService
-sandbox.service → ConfigFileService (via DI)
-```
-
-## Sandbox Module (Complex)
-
-**Builder flow:**
-1. Validate workspace/image exists
-2. Allocate IP + create TAP device
-3. Clone LVM volume from base/prebuild
-4. Mount volume, inject configs (`provisioner.ts`)
-5. Spawn Firecracker process
-6. Configure VM via socket API
-7. Wait for agent health
-8. Register Caddy routes
-
-**Rollback on failure** (`sandbox.builder.ts:rollback()`):
-Kill process → Remove socket → Delete LVM → Delete TAP → Release IP
+| Sandbox state | `sandbox/sandbox.service.ts` |
+| RootFS file injection | `sandbox/sandbox.provisioner.ts` |
+| Task management | `task/task.service.ts` |
+| Config file merging | `config-file/config-file.service.ts` |
+| Git source management | `git-source/git-source.service.ts` |
+| SSH key CRUD | `ssh-key/ssh-key.service.ts` |
+| Session templates | `session-template/session-template.service.ts` |
 
 ## See Also
 
-- [Patterns](../../../../docs/patterns.md) - Service pattern, DI, error handling
+- **[../orchestrators/AGENTS.md](../orchestrators/AGENTS.md)** - Complex multi-step workflows
+- **[../../../../docs/patterns.md](../../../../docs/patterns.md)** - DI and error handling patterns

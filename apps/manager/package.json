@@ -9,7 +9,8 @@
     "build": "bun build src/index.ts --target=bun --outfile=dist/server.js --minify",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "check:circular": "npx madge --circular --extensions ts src/"
   },
   "exports": {
     ".": "./src/index.ts",

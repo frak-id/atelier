@@ -1,9 +1,9 @@
 import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
-import { config } from "../../shared/lib/config.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
-import { isUserAuthorized } from "./auth.service.ts";
+import { isUserAuthorized } from "../modules/auth/auth.service.ts";
+import { config } from "../shared/lib/config.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("auth-routes");
 

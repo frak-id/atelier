@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { StorageService } from "../../infrastructure/storage/index.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   type BaseImageId,
   BaseImageSchema,
@@ -9,8 +9,8 @@ import {
   IdParamSchema,
   ImageListQuerySchema,
   ImageListResponseSchema,
-} from "../../schemas/index.ts";
-import { NotFoundError } from "../../shared/errors.ts";
+} from "../schemas/index.ts";
+import { NotFoundError } from "../shared/errors.ts";
 
 export const imageRoutes = new Elysia({ prefix: "/images" })
   .get(

@@ -1,5 +1,10 @@
 import { Elysia, t } from "elysia";
-import { taskService, taskSpawner } from "../../container.ts";
+import {
+  sandboxDestroyer,
+  sandboxLifecycle,
+  taskService,
+  taskSpawner,
+} from "../container.ts";
 import {
   AddSessionsBodySchema,
   CreateTaskBodySchema,
@@ -10,8 +15,8 @@ import {
   TaskListResponseSchema,
   TaskSchema,
   UpdateTaskBodySchema,
-} from "../../schemas/index.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+} from "../schemas/index.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("task-routes");
 
@@ -152,10 +157,6 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
       log.info({ taskId: params.id, keepSandbox }, "Deleting task");
 
       if (task.data.sandboxId) {
-        const { sandboxDestroyer, sandboxLifecycle } = await import(
-          "../../container.ts"
-        );
-
         if (keepSandbox) {
           await sandboxLifecycle.stop(task.data.sandboxId);
         } else {
