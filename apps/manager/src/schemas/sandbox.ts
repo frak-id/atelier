@@ -229,3 +229,67 @@ export const PromoteToPrebuildResponseSchema = t.Object({
 export type PromoteToPrebuildResponse = Static<
   typeof PromoteToPrebuildResponseSchema
 >;
+
+export const DevCommandListResponseSchema = t.Object({
+  commands: t.Array(
+    t.Object({
+      name: t.String(),
+      command: t.String(),
+      port: t.Optional(t.Number()),
+      workdir: t.Optional(t.String()),
+      env: t.Optional(t.Record(t.String(), t.String())),
+      isDefault: t.Optional(t.Boolean()),
+      status: t.String(),
+      pid: t.Optional(t.Number()),
+      startedAt: t.Optional(t.String()),
+      exitCode: t.Optional(t.Number()),
+    }),
+  ),
+});
+export type DevCommandListResponse = Static<
+  typeof DevCommandListResponseSchema
+>;
+
+export const DevCommandStartResponseSchema = t.Object({
+  status: t.String(),
+  pid: t.Optional(t.Number()),
+  name: t.String(),
+  port: t.Optional(t.Number()),
+  logFile: t.Optional(t.String()),
+  startedAt: t.Optional(t.String()),
+});
+export type DevCommandStartResponse = Static<
+  typeof DevCommandStartResponseSchema
+>;
+
+export const DevCommandStopResponseSchema = t.Object({
+  status: t.String(),
+  name: t.String(),
+  pid: t.Optional(t.Number()),
+  message: t.Optional(t.String()),
+  exitCode: t.Optional(t.Number()),
+});
+export type DevCommandStopResponse = Static<
+  typeof DevCommandStopResponseSchema
+>;
+
+export const DevCommandLogsResponseSchema = t.Object({
+  name: t.String(),
+  content: t.String(),
+  nextOffset: t.Number(),
+});
+export type DevCommandLogsResponse = Static<
+  typeof DevCommandLogsResponseSchema
+>;
+
+export const DevCommandNameParamsSchema = t.Object({
+  id: t.String(),
+  name: t.String(),
+});
+export type DevCommandNameParams = Static<typeof DevCommandNameParamsSchema>;
+
+export const DevCommandLogsQuerySchema = t.Object({
+  offset: t.Optional(t.String()),
+  limit: t.Optional(t.String()),
+});
+export type DevCommandLogsQuery = Static<typeof DevCommandLogsQuerySchema>;

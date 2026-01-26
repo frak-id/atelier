@@ -339,4 +339,77 @@ export class AgentClient {
       error?: string;
     }>(ipAddress, "/storage/info");
   }
+
+  async devList(ipAddress: string): Promise<{
+    commands: Array<{
+      name: string;
+      status: string;
+      pid?: number;
+      port?: number;
+      startedAt?: string;
+      exitCode?: number;
+    }>;
+  }> {
+    return this.request<{
+      commands: Array<{
+        name: string;
+        status: string;
+        pid?: number;
+        port?: number;
+        startedAt?: string;
+        exitCode?: number;
+      }>;
+    }>(ipAddress, "/dev");
+  }
+
+  async devStart(
+    ipAddress: string,
+    name: string,
+    devCommand: {
+      command: string;
+      workdir?: string;
+      env?: Record<string, string>;
+      port?: number;
+    },
+  ): Promise<{
+    status: string;
+    pid?: number;
+    name: string;
+    port?: number;
+    logFile?: string;
+    startedAt?: string;
+  }> {
+    return this.request(ipAddress, `/dev/${name}/start`, {
+      method: "POST",
+      body: devCommand,
+      timeout: 30000,
+    });
+  }
+
+  async devStop(
+    ipAddress: string,
+    name: string,
+  ): Promise<{
+    status: string;
+    name: string;
+    pid?: number;
+    message?: string;
+    exitCode?: number;
+  }> {
+    return this.request(ipAddress, `/dev/${name}/stop`, {
+      method: "POST",
+    });
+  }
+
+  async devLogs(
+    ipAddress: string,
+    name: string,
+    offset: number,
+    limit: number,
+  ): Promise<{ name: string; content: string; nextOffset: number }> {
+    return this.request(
+      ipAddress,
+      `/dev/${name}/logs?offset=${offset}&limit=${limit}`,
+    );
+  }
 }
