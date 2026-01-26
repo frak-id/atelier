@@ -3,6 +3,7 @@ import { Elysia } from "elysia";
 import { AGENT_PORT } from "./constants";
 import { appsRoutes } from "./routes/apps";
 import { configRoutes } from "./routes/config";
+import { devRoutes } from "./routes/dev";
 import { execRoutes } from "./routes/exec";
 import { gitRoutes } from "./routes/git";
 import { healthRoutes } from "./routes/health";
@@ -15,6 +16,7 @@ const app = new Elysia({ adapter: node() })
   .use(healthRoutes)
   .use(configRoutes)
   .use(appsRoutes)
+  .use(devRoutes)
   .use(execRoutes)
   .use(servicesRoutes)
   .use(storageRoutes)

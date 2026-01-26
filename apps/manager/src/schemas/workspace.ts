@@ -47,18 +47,31 @@ export const FileSecretSchema = t.Object({
 });
 export type FileSecret = Static<typeof FileSecretSchema>;
 
+// Forbidden ports for dev commands (reserved for system services)
+export const FORBIDDEN_DEV_PORTS = [8080, 9999, 22, 7681, 4000] as const;
+
+export const DevCommandSchema = t.Object({
+  name: t.String({ pattern: "^[a-z0-9-]{1,20}$" }),
+  command: t.String({ minLength: 1 }),
+  port: t.Optional(t.Number({ minimum: 1024, maximum: 65535 })),
+  workdir: t.Optional(t.String()),
+  env: t.Optional(t.Record(t.String(), t.String())),
+  isDefault: t.Optional(t.Boolean()),
+});
+export type DevCommand = Static<typeof DevCommandSchema>;
+
 export const WorkspaceConfigSchema = t.Object({
   baseImage: t.String({ default: "dev-base" }),
   vcpus: t.Number({ minimum: 1, maximum: 8, default: 2 }),
   memoryMb: t.Number({ minimum: 512, maximum: 16384, default: 2048 }),
   initCommands: t.Array(t.String(), { default: [] }),
-  startCommands: t.Array(t.String(), { default: [] }),
   secrets: t.Record(t.String(), t.String(), { default: {} }),
   fileSecrets: t.Optional(t.Array(FileSecretSchema, { default: [] })),
   repos: t.Array(RepoConfigSchema, { default: [] }),
   exposedPorts: t.Array(t.Number(), { default: [] }),
   prebuild: t.Optional(PrebuildInfoSchema),
   sessionTemplates: t.Optional(SessionTemplatesSchema),
+  devCommands: t.Optional(t.Array(DevCommandSchema, { default: [] })),
 });
 export type WorkspaceConfig = Static<typeof WorkspaceConfigSchema>;
 
@@ -100,7 +113,6 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
   vcpus: 2,
   memoryMb: 2048,
   initCommands: [],
-  startCommands: [],
   secrets: {},
   fileSecrets: [],
   repos: [],

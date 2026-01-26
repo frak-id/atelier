@@ -8,6 +8,7 @@ import {
   sandboxSpawner,
   workspaceService,
 } from "../container.ts";
+import { CaddyService } from "../infrastructure/proxy/caddy.service.ts";
 import { QueueService } from "../infrastructure/queue/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
@@ -16,6 +17,12 @@ import {
   AppPortListResponseSchema,
   AppPortSchema,
   CreateSandboxBodySchema,
+  DevCommandListResponseSchema,
+  DevCommandLogsQuerySchema,
+  DevCommandLogsResponseSchema,
+  DevCommandNameParamsSchema,
+  DevCommandStartResponseSchema,
+  DevCommandStopResponseSchema,
   DiscoverConfigsResponseSchema,
   ExecBodySchema,
   ExecResponseSchema,
@@ -469,5 +476,155 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       params: IdParamSchema,
       response: PromoteToPrebuildResponseSchema,
+    },
+  )
+  .get(
+    "/:id/dev",
+    async ({ params }) => {
+      const sandbox = sandboxService.getById(params.id);
+      if (!sandbox) throw new NotFoundError("Sandbox", params.id);
+
+      const workspace = sandbox.workspaceId
+        ? workspaceService.getById(sandbox.workspaceId)
+        : undefined;
+      const configuredCommands = workspace?.config.devCommands ?? [];
+
+      const runtimeStatus = await agentClient.devList(
+        sandbox.runtime.ipAddress,
+      );
+
+      return {
+        commands: configuredCommands.map((cmd) => {
+          const runtime = runtimeStatus.commands.find(
+            (r) => r.name === cmd.name,
+          );
+          return {
+            ...cmd,
+            status: runtime?.status ?? "stopped",
+            pid: runtime?.pid,
+            startedAt: runtime?.startedAt,
+            exitCode: runtime?.exitCode,
+          };
+        }),
+      };
+    },
+    {
+      params: IdParamSchema,
+      response: DevCommandListResponseSchema,
+    },
+  )
+  .post(
+    "/:id/dev/:name/start",
+    async ({ params }) => {
+      const sandbox = sandboxService.getById(params.id);
+      if (!sandbox) throw new NotFoundError("Sandbox", params.id);
+
+      const workspace = sandbox.workspaceId
+        ? workspaceService.getById(sandbox.workspaceId)
+        : undefined;
+      const devCommand = workspace?.config.devCommands?.find(
+        (c) => c.name === params.name,
+      );
+      if (!devCommand) throw new NotFoundError("DevCommand", params.name);
+
+      const result = await agentClient.devStart(
+        sandbox.runtime.ipAddress,
+        params.name,
+        devCommand,
+      );
+
+      // Register Caddy route if port defined
+      let devUrl: string | undefined;
+      let defaultDevUrl: string | undefined;
+      if (devCommand.port) {
+        try {
+          const urls = await CaddyService.registerDevRoute(
+            sandbox.id,
+            sandbox.runtime.ipAddress,
+            params.name,
+            devCommand.port,
+            devCommand.isDefault ?? false,
+          );
+          devUrl = urls.namedUrl;
+          defaultDevUrl = urls.defaultUrl;
+        } catch (err) {
+          log.warn(
+            { sandboxId: sandbox.id, name: params.name, error: err },
+            "Failed to register dev route",
+          );
+        }
+      }
+
+      return {
+        ...result,
+        devUrl,
+        defaultDevUrl,
+      };
+    },
+    {
+      params: DevCommandNameParamsSchema,
+      response: DevCommandStartResponseSchema,
+    },
+  )
+  .post(
+    "/:id/dev/:name/stop",
+    async ({ params }) => {
+      const sandbox = sandboxService.getById(params.id);
+      if (!sandbox) throw new NotFoundError("Sandbox", params.id);
+
+      const workspace = sandbox.workspaceId
+        ? workspaceService.getById(sandbox.workspaceId)
+        : undefined;
+      const devCommand = workspace?.config.devCommands?.find(
+        (c) => c.name === params.name,
+      );
+
+      const result = await agentClient.devStop(
+        sandbox.runtime.ipAddress,
+        params.name,
+      );
+
+      if (devCommand?.port) {
+        try {
+          await CaddyService.removeDevRoute(
+            sandbox.id,
+            params.name,
+            devCommand.isDefault ?? false,
+          );
+        } catch (err) {
+          log.warn(
+            { sandboxId: sandbox.id, name: params.name, error: err },
+            "Failed to remove dev route",
+          );
+        }
+      }
+
+      return result;
+    },
+    {
+      params: DevCommandNameParamsSchema,
+      response: DevCommandStopResponseSchema,
+    },
+  )
+  .get(
+    "/:id/dev/:name/logs",
+    async ({ params, query }) => {
+      const sandbox = sandboxService.getById(params.id);
+      if (!sandbox) throw new NotFoundError("Sandbox", params.id);
+
+      const offset = query.offset ? Number.parseInt(query.offset, 10) : 0;
+      const limit = query.limit ? Number.parseInt(query.limit, 10) : 10000;
+
+      return agentClient.devLogs(
+        sandbox.runtime.ipAddress,
+        params.name,
+        offset,
+        limit,
+      );
+    },
+    {
+      params: DevCommandNameParamsSchema,
+      query: DevCommandLogsQuerySchema,
+      response: DevCommandLogsResponseSchema,
     },
   );

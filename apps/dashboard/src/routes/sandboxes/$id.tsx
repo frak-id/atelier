@@ -40,6 +40,7 @@ import {
   workspaceDetailQuery,
 } from "@/api/queries";
 
+import { DevCommandsPanel } from "@/components/dev-commands-panel";
 import { HierarchicalSessionList } from "@/components/hierarchical-session-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -291,6 +292,7 @@ function SandboxDetailPage() {
           <TabsList>
             <TabsTrigger value="repos">Repositories</TabsTrigger>
             <TabsTrigger value="services">Services</TabsTrigger>
+            <TabsTrigger value="dev">Dev Commands</TabsTrigger>
             <TabsTrigger value="opencode">OpenCode Sessions</TabsTrigger>
 
             <TabsTrigger value="exec">Exec</TabsTrigger>
@@ -337,6 +339,10 @@ function SandboxDetailPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="dev">
+            <DevCommandsPanel sandboxId={id} />
           </TabsContent>
 
           <TabsContent value="opencode">

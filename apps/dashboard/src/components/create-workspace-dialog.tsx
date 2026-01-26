@@ -53,7 +53,6 @@ export function CreateWorkspaceDialog({
     vcpus: 2,
     memoryMb: 2048,
     initCommands: "",
-    startCommands: "",
   });
   const [repos, setRepos] = useState<RepoEntry[]>([]);
 
@@ -70,10 +69,7 @@ export function CreateWorkspaceDialog({
           memoryMb: formData.memoryMb,
           initCommands: formData.initCommands
             .split("\n")
-            .filter((cmd) => cmd.trim()),
-          startCommands: formData.startCommands
-            .split("\n")
-            .filter((cmd) => cmd.trim()),
+            .filter((cmd: string) => cmd.trim()),
           repos: serializeRepos(repos),
           secrets: {},
           exposedPorts: [],
@@ -88,7 +84,6 @@ export function CreateWorkspaceDialog({
             vcpus: 2,
             memoryMb: 2048,
             initCommands: "",
-            startCommands: "",
           });
           setRepos([]);
         },
@@ -165,12 +160,8 @@ export function CreateWorkspaceDialog({
 
             <CommandsForm
               initCommands={formData.initCommands}
-              startCommands={formData.startCommands}
               onInitCommandsChange={(initCommands) =>
                 setFormData({ ...formData, initCommands })
-              }
-              onStartCommandsChange={(startCommands) =>
-                setFormData({ ...formData, startCommands })
               }
             />
           </div>

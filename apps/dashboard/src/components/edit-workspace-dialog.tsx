@@ -36,6 +36,11 @@ import {
   serializeRepos,
 } from "@/components/workspace-form";
 
+import {
+  type DevCommand,
+  DevCommandsForm,
+} from "@/components/workspace-form/dev-commands-form";
+
 interface EditWorkspaceDialogProps {
   workspace: Workspace;
   open: boolean;
@@ -86,7 +91,6 @@ export function EditWorkspaceDialog({
     vcpus: workspace.config.vcpus,
     memoryMb: workspace.config.memoryMb,
     initCommands: workspace.config.initCommands.join("\n"),
-    startCommands: workspace.config.startCommands.join("\n"),
   });
 
   const [repos, setRepos] = useState<RepoEntry[]>(() =>
@@ -99,6 +103,10 @@ export function EditWorkspaceDialog({
   );
   const [fileSecrets, setFileSecrets] = useState<FileSecretInput[]>(() =>
     parseFileSecrets(workspace.config.fileSecrets),
+  );
+
+  const [devCommands, setDevCommands] = useState<DevCommand[]>(
+    () => (workspace.config.devCommands || []) as DevCommand[],
   );
 
   const isGitHubConnected = githubStatus?.connected === true;
@@ -117,13 +125,11 @@ export function EditWorkspaceDialog({
             memoryMb: formData.memoryMb,
             initCommands: formData.initCommands
               .split("\n")
-              .filter((cmd) => cmd.trim()),
-            startCommands: formData.startCommands
-              .split("\n")
-              .filter((cmd) => cmd.trim()),
+              .filter((cmd: string) => cmd.trim()),
             repos: serializeRepos(repos),
             secrets: serializeEnvSecrets(envSecrets),
             fileSecrets: serializeFileSecrets(fileSecrets),
+            devCommands: devCommands.map(({ id, ...cmd }) => cmd),
           },
         },
       },
@@ -145,10 +151,11 @@ export function EditWorkspaceDialog({
           </DialogHeader>
 
           <Tabs defaultValue="general" className="mt-4">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="repos">Repos</TabsTrigger>
               <TabsTrigger value="commands">Commands</TabsTrigger>
+              <TabsTrigger value="dev-commands">Dev Commands</TabsTrigger>
               <TabsTrigger value="secrets">Secrets</TabsTrigger>
             </TabsList>
 
@@ -238,13 +245,16 @@ export function EditWorkspaceDialog({
             <TabsContent value="commands" className="pt-4">
               <CommandsForm
                 initCommands={formData.initCommands}
-                startCommands={formData.startCommands}
                 onInitCommandsChange={(initCommands) =>
                   setFormData({ ...formData, initCommands })
                 }
-                onStartCommandsChange={(startCommands) =>
-                  setFormData({ ...formData, startCommands })
-                }
+              />
+            </TabsContent>
+
+            <TabsContent value="dev-commands" className="pt-4">
+              <DevCommandsForm
+                devCommands={devCommands}
+                onChange={setDevCommands}
               />
             </TabsContent>
 
