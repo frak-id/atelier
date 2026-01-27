@@ -100,16 +100,22 @@ export const TlsConfigSchema = Type.Object({
 export type TlsConfig = Static<typeof TlsConfigSchema>;
 
 const ServiceEntrySchema = (defaultPort: number) =>
-  Type.Object({
-    port: Type.Number({ default: defaultPort }),
-  });
+  Type.Object(
+    {
+      port: Type.Number({ default: defaultPort }),
+    },
+    { default: {} },
+  );
 
-export const ServicesConfigSchema = Type.Object({
-  vscode: ServiceEntrySchema(8080),
-  opencode: ServiceEntrySchema(3000),
-  terminal: ServiceEntrySchema(7681),
-  agent: ServiceEntrySchema(9999),
-});
+export const ServicesConfigSchema = Type.Object(
+  {
+    vscode: ServiceEntrySchema(8080),
+    opencode: ServiceEntrySchema(3000),
+    terminal: ServiceEntrySchema(7681),
+    agent: ServiceEntrySchema(9999),
+  },
+  { default: {} },
+);
 
 export type ServicesConfig = Static<typeof ServicesConfigSchema>;
 

@@ -22,9 +22,10 @@ export interface SharedAuthInfo {
   updatedBy: string | null;
 }
 
+const AUTH_POLL_INTERVAL_MS = 5_000;
+
 export class InternalService {
-  private readonly authWatchers = new Map<string, fs.FSWatcher>();
-  private readonly authDebounceTimers = new Map<string, Timer>();
+  private authPollTimer: Timer | null = null;
 
   constructor(
     private readonly sharedAuthRepository: SharedAuthRepository,
@@ -42,68 +43,42 @@ export class InternalService {
       return;
     }
 
-    for (const provider of AUTH_PROVIDERS) {
-      const filename = `${provider.name}.json`;
-      const filePath = path.join(dir, filename);
+    this.authPollTimer = setInterval(() => {
+      this.pollAuthFromNfs();
+    }, AUTH_POLL_INTERVAL_MS);
 
-      try {
-        const watcher = fs.watch(dir, (eventType, changedFilename) => {
-          if (changedFilename === filename && eventType === "change") {
-            this.debouncedSyncFromNfs(provider.name, filePath);
-          }
-        });
-
-        this.authWatchers.set(provider.name, watcher);
-        log.info(
-          { provider: provider.name, filePath },
-          "Watching auth NFS file",
-        );
-      } catch (error) {
-        log.error(
-          { provider: provider.name, error },
-          "Failed to watch auth NFS file",
-        );
-      }
-    }
-  }
-
-  stopAuthNfsWatcher(): void {
-    for (const timer of this.authDebounceTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.authDebounceTimers.clear();
-
-    for (const watcher of this.authWatchers.values()) {
-      watcher.close();
-    }
-    this.authWatchers.clear();
-  }
-
-  private debouncedSyncFromNfs(provider: string, filePath: string): void {
-    const existing = this.authDebounceTimers.get(provider);
-    if (existing) clearTimeout(existing);
-
-    this.authDebounceTimers.set(
-      provider,
-      setTimeout(() => {
-        this.authDebounceTimers.delete(provider);
-        this.syncAuthFromNfs(provider, filePath);
-      }, 500),
+    log.info(
+      { dir, intervalMs: AUTH_POLL_INTERVAL_MS },
+      "Auth NFS polling started",
     );
   }
 
-  private syncAuthFromNfs(provider: string, filePath: string): void {
-    try {
-      if (!fs.existsSync(filePath)) return;
-      const content = fs.readFileSync(filePath, "utf-8");
+  stopAuthNfsWatcher(): void {
+    if (this.authPollTimer) {
+      clearInterval(this.authPollTimer);
+      this.authPollTimer = null;
+    }
+  }
 
-      const existing = this.sharedAuthRepository.getByProvider(provider);
-      if (existing?.content === content) return;
+  private pollAuthFromNfs(): void {
+    for (const provider of AUTH_PROVIDERS) {
+      const filePath = path.join(NFS.AUTH_EXPORT_DIR, `${provider.name}.json`);
 
-      this.sharedAuthRepository.upsert(provider, content, "nfs");
-      log.info({ provider }, "Auth synced from NFS to DB");
-    } catch (error) {
-      log.error({ provider, error }, "Failed to sync auth from NFS");
+      try {
+        if (!fs.existsSync(filePath)) continue;
+        const content = fs.readFileSync(filePath, "utf-8");
+
+        const existing = this.sharedAuthRepository.getByProvider(provider.name);
+        if (existing?.content === content) continue;
+
+        this.sharedAuthRepository.upsert(provider.name, content, "nfs");
+        log.info({ provider: provider.name }, "Auth synced from NFS to DB");
+      } catch (error) {
+        log.error(
+          { provider: provider.name, error },
+          "Failed to sync auth from NFS",
+        );
+      }
     }
   }
 
@@ -171,7 +146,10 @@ export class InternalService {
       const nfsPath = `${NFS.AUTH_EXPORT_DIR}/${auth.provider}.json`;
 
       try {
-        await Bun.write(nfsPath, auth.content);
+        const tmpPath = `${nfsPath}.tmp`;
+        await Bun.write(tmpPath, auth.content);
+        await Bun.$`chown 1000:1000 ${tmpPath}`.quiet();
+        await Bun.$`mv ${tmpPath} ${nfsPath}`.quiet();
         synced++;
         log.debug({ provider: auth.provider, nfsPath }, "Auth synced to NFS");
       } catch (error) {

@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+import { $ } from "bun";
 import {
   CONFIG_FILE_NAME,
   loadConfig,
-} from "@frak-sandbox/shared/config-loader";
-import { $ } from "bun";
+} from "../packages/shared/src/config.loader.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const CLI_DIR = resolve(ROOT, "apps/cli");
@@ -153,11 +153,12 @@ async function main() {
 
   console.log("\n📦 Creating tarball...");
   const tarballPath = resolve(ROOT, TARBALL_NAME);
-  // COPYFILE_DISABLE=1 prevents macOS from including AppleDouble (._*) files
-  await $`tar -czf ${tarballPath} -C ${STAGING_DIR} .`.env({
-    ...process.env,
-    COPYFILE_DISABLE: "1",
-  });
+  await $`tar --no-xattrs --no-mac-metadata -czf ${tarballPath} -C ${STAGING_DIR} .`.env(
+    {
+      ...process.env,
+      COPYFILE_DISABLE: "1",
+    },
+  );
   const tarballSize = (await Bun.file(tarballPath).size) / 1024 / 1024;
   console.log(`   ✓ Created ${TARBALL_NAME} (${tarballSize.toFixed(2)} MB)`);
 

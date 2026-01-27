@@ -64,6 +64,7 @@ const app = new Elysia()
       logger.info({ expiredCount }, "Startup: expired SSH keys cleaned up");
     }
 
+    internalService.syncAuthToNfs().catch(() => {});
     internalService.startAuthNfsWatcher();
 
     const allSandboxes = sandboxService.getAll();
