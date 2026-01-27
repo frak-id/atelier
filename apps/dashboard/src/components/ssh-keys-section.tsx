@@ -68,14 +68,10 @@ function ExpirationBadge({ expiresAt }: { expiresAt: string | null }) {
   return null;
 }
 
-/** Standard path for oc-sandbox SSH key on user's local machine */
+import { SSH_HOSTNAME, SSH_PORT } from "@/config";
+
 export const SSH_KEY_PATH = "~/.config/oc-sandbox/sandbox_key";
-/** SSH host alias for ~/.ssh/config */
 export const SSH_HOST_ALIAS = "frak-sandbox";
-/** SSH proxy hostname */
-export const SSH_HOSTNAME = "ssh.nivelais.com";
-/** SSH proxy port */
-export const SSH_PORT = 2222;
 
 export function SshKeysSection() {
   const { data: keys, isLoading } = useQuery(sshKeysListQuery);

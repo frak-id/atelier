@@ -1,0 +1,25 @@
+{
+	admin localhost:2019
+	email {{SSL_EMAIL}}
+}
+
+(tls_config) {
+	tls {{TLS_CERT_PATH}} {{TLS_KEY_PATH}}
+}
+
+{{API_DOMAIN}} {
+	import tls_config
+	reverse_proxy localhost:4000
+}
+
+{{DASHBOARD_DOMAIN}} {
+	import tls_config
+	root * /opt/frak-sandbox/apps/dashboard/dist
+	file_server
+	try_files {path} /index.html
+}
+
+*.{{DOMAIN_SUFFIX}} {
+	import tls_config
+	respond "Sandbox not found or not running" 502
+}

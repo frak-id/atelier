@@ -1,5 +1,6 @@
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
+import { validateConfig } from "@frak-sandbox/shared";
 import { Elysia } from "elysia";
 import {
   authRoutes,
@@ -30,6 +31,19 @@ import { config } from "./shared/lib/config.ts";
 import { internalGuard } from "./shared/lib/internal-guard.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
+
+const configErrors = validateConfig(config.raw);
+if (configErrors.length > 0 && config.isProduction()) {
+  for (const err of configErrors) {
+    logger.error({ field: err.field }, err.message);
+  }
+  logger.fatal("Configuration validation failed. Exiting.");
+  process.exit(1);
+} else if (configErrors.length > 0) {
+  for (const err of configErrors) {
+    logger.warn({ field: err.field }, `Config warning: ${err.message}`);
+  }
+}
 
 logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();

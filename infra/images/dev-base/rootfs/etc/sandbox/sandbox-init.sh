@@ -29,8 +29,13 @@ mount -t tmpfs tmpfs /dev/shm 2>&1 | tee -a "$LOG_DIR/init.log"
 mount -t tmpfs tmpfs /run 2>&1 | tee -a "$LOG_DIR/init.log"
 mount -t tmpfs tmpfs /tmp 2>&1 | tee -a "$LOG_DIR/init.log"
 
-# NFS shared storage configuration
-NFS_HOST="172.16.0.1"
+# NFS shared storage configuration - read from config with fallback
+if [ -f "$CONFIG_FILE" ]; then
+    NFS_HOST=$(cat "$CONFIG_FILE" | grep -o '"nfsHost"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
+    DASHBOARD_DOMAIN=$(cat "$CONFIG_FILE" | grep -o '"dashboardDomain"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
+fi
+NFS_HOST="${NFS_HOST:-172.16.0.1}"
+DASHBOARD_DOMAIN="${DASHBOARD_DOMAIN:-sandbox-dash.localhost}"
 NFS_CACHE_EXPORT="/var/lib/sandbox/shared-cache"
 NFS_CACHE_MOUNT="/mnt/cache"
 NFS_BINARIES_EXPORT="/var/lib/sandbox/shared-binaries"
@@ -242,7 +247,7 @@ if command -v opencode >/dev/null 2>&1; then
 fi
 
 log "Starting OpenCode server..."
-OPENCODE_CORS="--cors https://sandbox-dash.nivelais.com"
+OPENCODE_CORS="--cors https://${DASHBOARD_DOMAIN}"
 if [ -x /usr/bin/opencode ] || command -v opencode >/dev/null 2>&1; then
     su - dev -c "cd $WORKSPACE_DIR && opencode serve --hostname 0.0.0.0 --port 3000 $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
     log "OpenCode started (PID $!) in $WORKSPACE_DIR with CORS enabled"

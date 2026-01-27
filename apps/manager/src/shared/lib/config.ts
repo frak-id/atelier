@@ -1,60 +1,63 @@
+import { type FrakConfig, loadConfig } from "@frak-sandbox/shared";
 import {
   CADDY,
   DEFAULTS,
   NETWORK,
   PATHS,
-  SSH_PROXY,
 } from "@frak-sandbox/shared/constants";
+
+const frakConfig = loadConfig();
 
 type Mode = "production" | "mock";
 
 function getMode(): Mode {
-  const mode = process.env.SANDBOX_MODE;
-  if (mode === "mock" || mode === "production") return mode;
+  if (
+    frakConfig.runtime.mode === "production" ||
+    frakConfig.runtime.mode === "mock"
+  ) {
+    return frakConfig.runtime.mode;
+  }
   return process.env.NODE_ENV === "production" ? "production" : "mock";
 }
 
 export const config = {
   mode: getMode(),
-  port: Number(process.env.PORT) || 4000,
-  host: process.env.HOST || "0.0.0.0",
+  port: frakConfig.runtime.port,
+  host: frakConfig.runtime.host,
 
   paths: PATHS,
-  network: NETWORK,
+  network: {
+    ...NETWORK,
+    dnsServers: frakConfig.network.dnsServers,
+  },
   caddy: {
     adminApi: process.env.CADDY_ADMIN_API || CADDY.ADMIN_API,
-    domainSuffix: process.env.SANDBOX_DOMAIN || CADDY.DOMAIN_SUFFIX,
+    domainSuffix: frakConfig.domains.sandboxSuffix,
   },
-  sshProxy: {
-    pipesFile: process.env.SSH_PROXY_PIPES_FILE || SSH_PROXY.PIPES_FILE,
-    domain: process.env.SSH_PROXY_DOMAIN || SSH_PROXY.DOMAIN,
-    port: Number(process.env.SSH_PROXY_PORT) || SSH_PROXY.LISTEN_PORT,
-  },
+  domains: frakConfig.domains,
+  sshProxy: frakConfig.sshProxy,
   defaults: DEFAULTS,
 
   github: {
-    clientId: process.env.GITHUB_CLIENT_ID || "",
-    clientSecret: process.env.GITHUB_CLIENT_SECRET || "",
-    callbackUrl:
-      process.env.GITHUB_CALLBACK_URL ||
-      "http://localhost:4000/auth/github/callback",
-    loginCallbackUrl:
-      process.env.GITHUB_LOGIN_CALLBACK_URL ||
-      "http://localhost:4000/auth/login/callback",
+    clientId: frakConfig.auth.githubClientId,
+    clientSecret: frakConfig.auth.githubClientSecret,
+    callbackUrl: frakConfig.auth.githubCallbackUrl,
+    loginCallbackUrl: frakConfig.auth.githubLoginCallbackUrl,
   },
 
   auth: {
-    jwtSecret: process.env.JWT_SECRET || "dev-secret-change-in-production",
-    // Allowed GitHub org or specific usernames as fallback
-    allowedOrg: process.env.AUTH_ALLOWED_ORG || "frak-id",
-    allowedUsers: (process.env.AUTH_ALLOWED_USERS || "srod,konfeature,mviala")
-      .split(",")
-      .map((u) => u.trim())
-      .filter(Boolean),
+    jwtSecret: frakConfig.auth.jwtSecret,
+    allowedOrg: frakConfig.auth.allowedOrg,
+    allowedUsers: frakConfig.auth.allowedUsers,
   },
 
-  dashboardUrl: process.env.DASHBOARD_URL || "http://localhost:5173",
+  dashboardUrl:
+    process.env.DASHBOARD_URL || `https://${frakConfig.domains.dashboard}`,
 
   isMock: () => config.mode === "mock",
   isProduction: () => config.mode === "production",
+
+  raw: frakConfig,
 } as const;
+
+export type { FrakConfig };

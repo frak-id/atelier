@@ -61,13 +61,17 @@ export const SandboxProvisioner = {
     mountPoint: string,
     network: NetworkAllocation,
   ): Promise<void> {
+    const dnsLines = config.network.dnsServers
+      .map((dns) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
+      .join("\n");
     const networkScript = `#!/bin/bash
 ip addr add 127.0.0.1/8 dev lo
 ip link set lo up
 ip addr add ${network.ipAddress}/24 dev eth0
 ip link set eth0 up
 ip route add default via ${network.gateway} dev eth0
-echo 'nameserver 8.8.8.8' > /etc/resolv.conf
+> /etc/resolv.conf
+${dnsLines}
 `;
     await Bun.write(`${mountPoint}/etc/network-setup.sh`, networkScript);
     await $`chmod +x ${mountPoint}/etc/network-setup.sh`.quiet();
@@ -86,6 +90,10 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
       workspaceName: ctx.workspace?.name,
       repos,
       createdAt: new Date().toISOString(),
+      network: {
+        nfsHost: config.network.BRIDGE_IP,
+        dashboardDomain: config.domains.dashboard,
+      },
     };
     await Bun.write(
       `${mountPoint}/etc/sandbox/config.json`,

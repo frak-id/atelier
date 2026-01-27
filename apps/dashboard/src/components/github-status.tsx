@@ -11,8 +11,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-const API_BASE = import.meta.env.PROD ? "https://sandbox-api.nivelais.com" : "";
+import { API_URL } from "@/config";
 
 export function GitHubStatus() {
   const { data: status, isLoading } = useQuery(githubStatusQuery);
@@ -35,7 +34,7 @@ export function GitHubStatus() {
         size="sm"
         className="gap-2"
         onClick={() => {
-          window.location.href = `${API_BASE}/auth/github/login`;
+          window.location.href = `${API_URL}/auth/github/login`;
         }}
       >
         <Github className="h-4 w-4" />

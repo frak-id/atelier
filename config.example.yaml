@@ -1,0 +1,65 @@
+# FRAK Sandbox Configuration
+# Copy to /etc/frak-sandbox/config.yaml or set FRAK_CONFIG env var to override location
+# All values can also be set via environment variables (see ENV_VAR_MAPPING in config.schema.ts)
+
+domains:
+  # API domain for manager service
+  api: sandbox-api.example.com
+  # Dashboard domain for web UI
+  dashboard: sandbox-dash.example.com
+  # Suffix for sandbox subdomains (sandbox-{id}.example.com)
+  sandboxSuffix: example.com
+  # SSH proxy domain
+  ssh: ssh.example.com
+
+network:
+  # Bridge device name
+  bridgeName: br0
+  # Bridge IP address (host-side gateway for VMs)
+  bridgeIp: 172.16.0.1
+  # Bridge network CIDR
+  bridgeCidr: 172.16.0.0/24
+  # Bridge netmask (without slash)
+  bridgeNetmask: "24"
+  # Guest subnet prefix (VMs get IPs like 172.16.0.10, 172.16.0.11, ...)
+  guestSubnet: 172.16.0
+  # First guest IP last octet
+  guestIpStart: 10
+  # DNS servers for guest VMs
+  dnsServers:
+    - 8.8.8.8
+    - 8.8.4.4
+
+auth:
+  # GitHub OAuth client ID (create at https://github.com/settings/developers)
+  githubClientId: ""
+  # GitHub OAuth client secret
+  githubClientSecret: ""
+  # GitHub OAuth callback URL
+  githubCallbackUrl: https://sandbox-api.example.com/auth/github/callback
+  # GitHub login callback URL
+  githubLoginCallbackUrl: https://sandbox-api.example.com/auth/login/callback
+  # JWT signing secret (REQUIRED for production - use a random 32+ char string)
+  jwtSecret: ""
+  # GitHub organization for access control (optional)
+  allowedOrg: your-org
+  # Allowed GitHub usernames (fallback if org check fails)
+  allowedUsers:
+    - username1
+    - username2
+
+sshProxy:
+  # SSH proxy listen port
+  port: 2222
+  # SSH proxy domain
+  domain: ssh.example.com
+  # Path to sshpiper pipes configuration
+  pipesFile: /var/lib/sandbox/sshpiper/pipes.yaml
+
+runtime:
+  # Runtime mode: production (real VMs) or mock (local dev)
+  mode: production
+  # Manager API port
+  port: 4000
+  # Manager API bind host
+  host: 0.0.0.0

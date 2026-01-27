@@ -27,6 +27,12 @@ const {
   JWT_SECRET,
   AUTH_ALLOWED_ORG,
   AUTH_ALLOWED_USERS,
+  FRAK_API_DOMAIN,
+  FRAK_DASHBOARD_DOMAIN,
+  FRAK_SANDBOX_DOMAIN_SUFFIX,
+  SSL_EMAIL,
+  TLS_CERT_PATH,
+  TLS_KEY_PATH,
 } = process.env;
 
 const REBUILD_IMAGE = process.argv.includes("--rebuild-image");
@@ -148,10 +154,26 @@ async function main() {
     resolve(INFRA_DIR, "systemd/frak-sandbox-network.service"),
     resolve(STAGING_DIR, "etc/systemd/system/frak-sandbox-network.service"),
   );
-  cpSync(
-    resolve(INFRA_DIR, "caddy/Caddyfile"),
-    resolve(STAGING_DIR, "etc/caddy/Caddyfile"),
-  );
+  const domainSuffix = FRAK_SANDBOX_DOMAIN_SUFFIX || "nivelais.com";
+  const apiDomain = FRAK_API_DOMAIN || `sandbox-api.${domainSuffix}`;
+  const dashboardDomain =
+    FRAK_DASHBOARD_DOMAIN || `sandbox-dash.${domainSuffix}`;
+  const sslEmail = SSL_EMAIL || "ssl@frak.id";
+  const tlsCertPath =
+    TLS_CERT_PATH || `/etc/ssl/cloudflare/${domainSuffix}.pem`;
+  const tlsKeyPath = TLS_KEY_PATH || `/etc/ssl/cloudflare/${domainSuffix}.key`;
+
+  const caddyfileTemplate = await Bun.file(
+    resolve(INFRA_DIR, "caddy/Caddyfile.template"),
+  ).text();
+  const caddyfile = caddyfileTemplate
+    .replace(/\{\{SSL_EMAIL\}\}/g, sslEmail)
+    .replace(/\{\{TLS_CERT_PATH\}\}/g, tlsCertPath)
+    .replace(/\{\{TLS_KEY_PATH\}\}/g, tlsKeyPath)
+    .replace(/\{\{API_DOMAIN\}\}/g, apiDomain)
+    .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, dashboardDomain)
+    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, domainSuffix);
+  await Bun.write(resolve(STAGING_DIR, "etc/caddy/Caddyfile"), caddyfile);
   console.log("   ✓ Staged all artifacts");
 
   console.log("\n📦 Creating tarball...");
