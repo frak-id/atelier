@@ -1,0 +1,42 @@
+{
+  "$schema": "./packages/shared/src/config.schema.ts",
+  "domains": {
+    "api": "sandbox-api.example.com",
+    "dashboard": "sandbox-dash.example.com",
+    "sandboxSuffix": "example.com",
+    "ssh": "ssh.example.com"
+  },
+  "network": {
+    "bridgeName": "br0",
+    "bridgeIp": "172.16.0.1",
+    "bridgeCidr": "172.16.0.0/24",
+    "bridgeNetmask": "24",
+    "guestSubnet": "172.16.0",
+    "guestIpStart": 10,
+    "dnsServers": ["8.8.8.8", "8.8.4.4"]
+  },
+  "auth": {
+    "allowedOrg": "your-org",
+    "allowedUsers": ["username1", "username2"],
+    "githubClientId": "githubClientId",
+    "githubClientSecret": "githubClientSecret",
+    "githubCallbackUrl": "https://sandbox-api.example.com/auth/github/callback",
+    "githubLoginCallbackUrl": "https://sandbox-api.example.com/login/callback",
+    "jwtSecret": "jwt_secret"
+  },
+  "sshProxy": {
+    "port": 2222,
+    "domain": "ssh.example.com",
+    "pipesFile": "/var/lib/sandbox/sshpiper/pipes.yaml"
+  },
+  "runtime": {
+    "mode": "production",
+    "port": 4000,
+    "host": "0.0.0.0"
+  },
+  "tls": {
+    "email": "ssl@example.com",
+    "certPath": "/etc/ssl/cloudflare/example.com.pem",
+    "keyPath": "/etc/ssl/cloudflare/example.com.key"
+  }
+}

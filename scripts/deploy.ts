@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  CONFIG_FILE_NAME,
+  loadConfig,
+} from "@frak-sandbox/shared/config-loader";
 import { $ } from "bun";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -13,27 +17,9 @@ const IMAGES_DIR = resolve(ROOT, "infra/images");
 
 const STAGING_DIR = resolve(ROOT, ".deploy-staging");
 const TARBALL_NAME = "frak-sandbox-deploy.tar.gz";
+const CONFIG_FILE = resolve(ROOT, CONFIG_FILE_NAME);
 
-const {
-  SSH_KEY_PATH,
-  SSH_USER,
-  SSH_HOST,
-  SSH_KEY_PASSPHRASE,
-  GITHUB_CLIENT_ID,
-  GITHUB_CLIENT_SECRET,
-  GITHUB_CALLBACK_URL,
-  GITHUB_LOGIN_CALLBACK_URL,
-  DASHBOARD_URL,
-  JWT_SECRET,
-  AUTH_ALLOWED_ORG,
-  AUTH_ALLOWED_USERS,
-  FRAK_API_DOMAIN,
-  FRAK_DASHBOARD_DOMAIN,
-  FRAK_SANDBOX_DOMAIN_SUFFIX,
-  SSL_EMAIL,
-  TLS_CERT_PATH,
-  TLS_KEY_PATH,
-} = process.env;
+const { SSH_KEY_PATH, SSH_USER, SSH_HOST, SSH_KEY_PASSPHRASE } = process.env;
 
 const REBUILD_IMAGE = process.argv.includes("--rebuild-image");
 
@@ -44,18 +30,24 @@ async function main() {
     process.exit(1);
   }
 
+  if (!existsSync(CONFIG_FILE)) {
+    console.error(
+      `Config file not found: ${CONFIG_FILE}\nCopy sandbox.config.example.json to sandbox.config.json and fill in your values.`,
+    );
+    process.exit(1);
+  }
+
+  const frakConfig = loadConfig({ configFile: CONFIG_FILE });
+
   if (
-    !GITHUB_CLIENT_ID ||
-    !GITHUB_CLIENT_SECRET ||
-    !GITHUB_CALLBACK_URL ||
-    !GITHUB_LOGIN_CALLBACK_URL ||
-    !DASHBOARD_URL ||
-    !JWT_SECRET
+    !frakConfig.auth.githubClientId ||
+    !frakConfig.auth.githubClientSecret ||
+    !frakConfig.auth.jwtSecret
   ) {
     console.error(
-      "Missing required env vars: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_CALLBACK_URL, GITHUB_LOGIN_CALLBACK_URL, DASHBOARD_URL, JWT_SECRET",
+      "Missing required secrets: githubClientId, githubClientSecret, jwtSecret",
     );
-    console.error("Set in .env or export them");
+    console.error("Set them in sandbox.config.json (auth section)");
     process.exit(1);
   }
 
@@ -89,6 +81,7 @@ async function main() {
     "usr/local/bin",
     "etc/systemd/system",
     "etc/caddy",
+    "etc/frak-sandbox",
   ];
   for (const dir of dirs) {
     mkdirSync(resolve(STAGING_DIR, dir), { recursive: true });
@@ -131,48 +124,30 @@ async function main() {
     { recursive: true },
   );
 
-  const managerServiceTemplate = await Bun.file(
+  cpSync(
+    CONFIG_FILE,
+    resolve(STAGING_DIR, `etc/frak-sandbox/${CONFIG_FILE_NAME}`),
+  );
+
+  cpSync(
     resolve(INFRA_DIR, "systemd/frak-sandbox-manager.service"),
-  ).text();
-  const managerService = managerServiceTemplate
-    .replace("{{GITHUB_CLIENT_ID}}", GITHUB_CLIENT_ID || "")
-    .replace("{{GITHUB_CLIENT_SECRET}}", GITHUB_CLIENT_SECRET || "")
-    .replace("{{GITHUB_CALLBACK_URL}}", GITHUB_CALLBACK_URL || "")
-    .replace("{{GITHUB_LOGIN_CALLBACK_URL}}", GITHUB_LOGIN_CALLBACK_URL || "")
-    .replace("{{DASHBOARD_URL}}", DASHBOARD_URL || "")
-    .replace("{{JWT_SECRET}}", JWT_SECRET || "")
-    .replace("{{AUTH_ALLOWED_ORG}}", AUTH_ALLOWED_ORG || "frak-id")
-    .replace(
-      "{{AUTH_ALLOWED_USERS}}",
-      AUTH_ALLOWED_USERS || "srod,konfeature,mviala",
-    );
-  await Bun.write(
     resolve(STAGING_DIR, "etc/systemd/system/frak-sandbox-manager.service"),
-    managerService,
   );
   cpSync(
     resolve(INFRA_DIR, "systemd/frak-sandbox-network.service"),
     resolve(STAGING_DIR, "etc/systemd/system/frak-sandbox-network.service"),
   );
-  const domainSuffix = FRAK_SANDBOX_DOMAIN_SUFFIX || "nivelais.com";
-  const apiDomain = FRAK_API_DOMAIN || `sandbox-api.${domainSuffix}`;
-  const dashboardDomain =
-    FRAK_DASHBOARD_DOMAIN || `sandbox-dash.${domainSuffix}`;
-  const sslEmail = SSL_EMAIL || "ssl@frak.id";
-  const tlsCertPath =
-    TLS_CERT_PATH || `/etc/ssl/cloudflare/${domainSuffix}.pem`;
-  const tlsKeyPath = TLS_KEY_PATH || `/etc/ssl/cloudflare/${domainSuffix}.key`;
 
   const caddyfileTemplate = await Bun.file(
     resolve(INFRA_DIR, "caddy/Caddyfile.template"),
   ).text();
   const caddyfile = caddyfileTemplate
-    .replace(/\{\{SSL_EMAIL\}\}/g, sslEmail)
-    .replace(/\{\{TLS_CERT_PATH\}\}/g, tlsCertPath)
-    .replace(/\{\{TLS_KEY_PATH\}\}/g, tlsKeyPath)
-    .replace(/\{\{API_DOMAIN\}\}/g, apiDomain)
-    .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, dashboardDomain)
-    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, domainSuffix);
+    .replace(/\{\{SSL_EMAIL\}\}/g, frakConfig.tls.email)
+    .replace(/\{\{TLS_CERT_PATH\}\}/g, frakConfig.tls.certPath)
+    .replace(/\{\{TLS_KEY_PATH\}\}/g, frakConfig.tls.keyPath)
+    .replace(/\{\{API_DOMAIN\}\}/g, frakConfig.domains.api)
+    .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, frakConfig.domains.dashboard)
+    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, frakConfig.domains.sandboxSuffix);
   await Bun.write(resolve(STAGING_DIR, "etc/caddy/Caddyfile"), caddyfile);
   console.log("   ✓ Staged all artifacts");
 
@@ -199,7 +174,7 @@ DEPLOY_TMP="/tmp/frak-deploy-$$"
 mkdir -p "$DEPLOY_TMP"
 tar -xzf /tmp/${TARBALL_NAME} -C "$DEPLOY_TMP"
 
-mkdir -p /opt/frak-sandbox/infra/images /opt/frak-sandbox/apps/dashboard /opt/frak-sandbox/drizzle
+mkdir -p /opt/frak-sandbox/infra/images /opt/frak-sandbox/apps/dashboard /opt/frak-sandbox/drizzle /etc/frak-sandbox
 
 # Stop service and kill any CLI processes before overwriting binary (Text file busy fix)
 systemctl stop frak-sandbox-manager || true
@@ -214,6 +189,7 @@ cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/build-image.sh" /opt/frak-sandbox/
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-base/." /opt/frak-sandbox/infra/images/dev-base/
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-cloud/." /opt/frak-sandbox/infra/images/dev-cloud/
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/apps/dashboard/dist/." /opt/frak-sandbox/apps/dashboard/dist/
+cp "$DEPLOY_TMP/etc/frak-sandbox/${CONFIG_FILE_NAME}" /etc/frak-sandbox/${CONFIG_FILE_NAME}
 cp "$DEPLOY_TMP/etc/systemd/system/frak-sandbox-manager.service" /etc/systemd/system/frak-sandbox-manager.service
 cp "$DEPLOY_TMP/etc/systemd/system/frak-sandbox-network.service" /etc/systemd/system/frak-sandbox-network.service
 cp "$DEPLOY_TMP/etc/caddy/Caddyfile" /etc/caddy/Caddyfile

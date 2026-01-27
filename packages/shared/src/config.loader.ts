@@ -54,18 +54,7 @@ function loadFromFile(filePath: string): Record<string, unknown> {
 
   try {
     const content = readFileSync(filePath, "utf-8");
-    const ext = filePath.split(".").pop()?.toLowerCase();
-
-    if (ext === "json") {
-      return JSON.parse(content);
-    }
-
-    if (ext === "yaml" || ext === "yml") {
-      const yaml = require("yaml");
-      return yaml.parse(content);
-    }
-
-    return {};
+    return JSON.parse(content);
   } catch {
     return {};
   }
@@ -106,6 +95,8 @@ function deepMerge(
   return result;
 }
 
+export const CONFIG_FILE_NAME = "sandbox.config.json";
+
 export interface LoadConfigOptions {
   configFile?: string;
   skipEnv?: boolean;
@@ -116,7 +107,7 @@ export function loadConfig(options: LoadConfigOptions = {}): FrakConfig {
   const configFile =
     options.configFile ||
     process.env.FRAK_CONFIG ||
-    "/etc/frak-sandbox/config.yaml";
+    `/etc/frak-sandbox/${CONFIG_FILE_NAME}`;
 
   const fileConfig = options.skipFile ? {} : loadFromFile(configFile);
   const envConfig = options.skipEnv ? {} : loadFromEnv();

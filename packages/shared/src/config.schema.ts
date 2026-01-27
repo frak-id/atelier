@@ -88,12 +88,24 @@ export const RuntimeConfigSchema = Type.Object({
 
 export type RuntimeConfig = Static<typeof RuntimeConfigSchema>;
 
+export const TlsConfigSchema = Type.Object({
+  /** Email for TLS certificate (e.g., ACME / Let's Encrypt) */
+  email: Type.String({ default: "" }),
+  /** Path to TLS certificate PEM file */
+  certPath: Type.String({ default: "" }),
+  /** Path to TLS private key file */
+  keyPath: Type.String({ default: "" }),
+});
+
+export type TlsConfig = Static<typeof TlsConfigSchema>;
+
 export const FrakConfigSchema = Type.Object({
   domains: DomainsConfigSchema,
   network: NetworkConfigSchema,
   auth: AuthConfigSchema,
   sshProxy: SshProxyConfigSchema,
   runtime: RuntimeConfigSchema,
+  tls: TlsConfigSchema,
 });
 
 export type FrakConfig = Static<typeof FrakConfigSchema>;
@@ -103,7 +115,6 @@ export const ENV_VAR_MAPPING = {
   FRAK_API_DOMAIN: "domains.api",
   FRAK_DASHBOARD_DOMAIN: "domains.dashboard",
   FRAK_SANDBOX_DOMAIN_SUFFIX: "domains.sandboxSuffix",
-  SANDBOX_DOMAIN: "domains.sandboxSuffix", // legacy alias
   FRAK_SSH_DOMAIN: "domains.ssh",
 
   FRAK_BRIDGE_NAME: "network.bridgeName",
@@ -128,6 +139,10 @@ export const ENV_VAR_MAPPING = {
   SANDBOX_MODE: "runtime.mode",
   PORT: "runtime.port",
   HOST: "runtime.host",
+
+  TLS_EMAIL: "tls.email",
+  TLS_CERT_PATH: "tls.certPath",
+  TLS_KEY_PATH: "tls.keyPath",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;
@@ -166,6 +181,11 @@ export const DEFAULT_CONFIG: FrakConfig = {
     mode: "mock",
     port: 4000,
     host: "0.0.0.0",
+  },
+  tls: {
+    email: "",
+    certPath: "",
+    keyPath: "",
   },
 };
 

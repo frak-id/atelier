@@ -1,7 +1,7 @@
-import { NETWORK } from "@frak-sandbox/shared/constants";
 import type { Server } from "bun";
+import { config } from "./config.ts";
 
-const ALLOWED_SUBNET = NETWORK.GUEST_SUBNET;
+const ALLOWED_SUBNET = config.network.guestSubnet;
 
 function getClientIp(
   request: Request,

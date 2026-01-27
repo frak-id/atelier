@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { NETWORK, PATHS } from "../lib/context";
+import { frakConfig, PATHS } from "../lib/context";
 import { exec } from "../lib/shell";
 
 const SYSTEMD_SERVICE_PATH = "/etc/systemd/system/sandbox-network.service";
@@ -8,12 +8,15 @@ const NETWORK_SCRIPT_PATH = `${PATHS.APP_DIR}/infra/scripts/configure-network.sh
 export async function setupNetwork(_args: string[] = []) {
   p.log.step("Network Setup: Persistent Bridge");
 
-  const bridgeExists = await exec(`ip link show ${NETWORK.BRIDGE_NAME}`, {
-    throws: false,
-  });
+  const bridgeExists = await exec(
+    `ip link show ${frakConfig.network.bridgeName}`,
+    {
+      throws: false,
+    },
+  );
 
   if (bridgeExists.success) {
-    p.log.warn(`Bridge '${NETWORK.BRIDGE_NAME}' already exists`);
+    p.log.warn(`Bridge '${frakConfig.network.bridgeName}' already exists`);
     await showNetworkStatus();
 
     const action = await p.select({
@@ -41,7 +44,7 @@ export async function setupNetwork(_args: string[] = []) {
 
   spinner.start("Creating bridge interface");
   await createBridge();
-  spinner.stop(`Bridge ${NETWORK.BRIDGE_NAME} created`);
+  spinner.stop(`Bridge ${frakConfig.network.bridgeName} created`);
 
   spinner.start("Configuring NAT");
   await configureNat();
@@ -56,11 +59,11 @@ export async function setupNetwork(_args: string[] = []) {
 }
 
 async function createBridge() {
-  await exec(`ip link add name ${NETWORK.BRIDGE_NAME} type bridge`);
+  await exec(`ip link add name ${frakConfig.network.bridgeName} type bridge`);
   await exec(
-    `ip addr add ${NETWORK.BRIDGE_IP}/${NETWORK.BRIDGE_NETMASK} dev ${NETWORK.BRIDGE_NAME}`,
+    `ip addr add ${frakConfig.network.bridgeIp}/${frakConfig.network.bridgeNetmask} dev ${frakConfig.network.bridgeName}`,
   );
-  await exec(`ip link set dev ${NETWORK.BRIDGE_NAME} up`);
+  await exec(`ip link set dev ${frakConfig.network.bridgeName} up`);
 }
 
 async function configureNat() {
@@ -75,17 +78,17 @@ async function configureNat() {
   );
 
   await exec(
-    `iptables -t nat -C POSTROUTING -s ${NETWORK.BRIDGE_CIDR} -o ${hostIface} -j MASQUERADE 2>/dev/null || \
-     iptables -t nat -A POSTROUTING -s ${NETWORK.BRIDGE_CIDR} -o ${hostIface} -j MASQUERADE`,
+    `iptables -t nat -C POSTROUTING -s ${frakConfig.network.bridgeCidr} -o ${hostIface} -j MASQUERADE 2>/dev/null || \
+     iptables -t nat -A POSTROUTING -s ${frakConfig.network.bridgeCidr} -o ${hostIface} -j MASQUERADE`,
   );
 
   await exec(
-    `iptables -C FORWARD -i ${NETWORK.BRIDGE_NAME} -o ${hostIface} -j ACCEPT 2>/dev/null || \
-     iptables -A FORWARD -i ${NETWORK.BRIDGE_NAME} -o ${hostIface} -j ACCEPT`,
+    `iptables -C FORWARD -i ${frakConfig.network.bridgeName} -o ${hostIface} -j ACCEPT 2>/dev/null || \
+     iptables -A FORWARD -i ${frakConfig.network.bridgeName} -o ${hostIface} -j ACCEPT`,
   );
   await exec(
-    `iptables -C FORWARD -i ${hostIface} -o ${NETWORK.BRIDGE_NAME} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-     iptables -A FORWARD -i ${hostIface} -o ${NETWORK.BRIDGE_NAME} -m state --state RELATED,ESTABLISHED -j ACCEPT`,
+    `iptables -C FORWARD -i ${hostIface} -o ${frakConfig.network.bridgeName} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+     iptables -A FORWARD -i ${hostIface} -o ${frakConfig.network.bridgeName} -m state --state RELATED,ESTABLISHED -j ACCEPT`,
   );
 }
 
@@ -93,13 +96,13 @@ async function installSystemdService() {
   const scriptContent = `#!/bin/bash
 set -e
 
-BRIDGE="${NETWORK.BRIDGE_NAME}"
-BRIDGE_IP="${NETWORK.BRIDGE_IP}"
-BRIDGE_CIDR="${NETWORK.BRIDGE_CIDR}"
+BRIDGE="${frakConfig.network.bridgeName}"
+BRIDGE_IP="${frakConfig.network.bridgeIp}"
+BRIDGE_CIDR="${frakConfig.network.bridgeCidr}"
 
 if ! ip link show "$BRIDGE" &>/dev/null; then
   ip link add name "$BRIDGE" type bridge
-  ip addr add "$BRIDGE_IP/${NETWORK.BRIDGE_NETMASK}" dev "$BRIDGE"
+  ip addr add "$BRIDGE_IP/${frakConfig.network.bridgeNetmask}" dev "$BRIDGE"
   ip link set dev "$BRIDGE" up
 fi
 
@@ -149,7 +152,7 @@ async function destroyBridge() {
   spinner.start("Destroying existing bridge");
 
   const { stdout: taps } = await exec(
-    `ip link show master ${NETWORK.BRIDGE_NAME} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || true`,
+    `ip link show master ${frakConfig.network.bridgeName} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || true`,
     { throws: false },
   );
 
@@ -157,7 +160,7 @@ async function destroyBridge() {
     await exec(`ip link del ${tap}`, { throws: false });
   }
 
-  await exec(`ip link del ${NETWORK.BRIDGE_NAME}`, { throws: false });
+  await exec(`ip link del ${frakConfig.network.bridgeName}`, { throws: false });
 
   spinner.stop("Bridge destroyed");
 }
@@ -165,9 +168,12 @@ async function destroyBridge() {
 async function showNetworkStatus() {
   p.log.info("Network Status:");
 
-  const bridgeInfo = await exec(`ip addr show ${NETWORK.BRIDGE_NAME}`, {
-    throws: false,
-  });
+  const bridgeInfo = await exec(
+    `ip addr show ${frakConfig.network.bridgeName}`,
+    {
+      throws: false,
+    },
+  );
   if (bridgeInfo.success) {
     console.log(bridgeInfo.stdout);
   }
@@ -175,7 +181,7 @@ async function showNetworkStatus() {
   console.log("");
 
   const { stdout: attachedTaps } = await exec(
-    `ip link show master ${NETWORK.BRIDGE_NAME} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || echo "None"`,
+    `ip link show master ${frakConfig.network.bridgeName} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || echo "None"`,
     { throws: false },
   );
   console.log(
@@ -194,9 +200,9 @@ async function showNetworkStatus() {
 
   console.log("");
   p.note(
-    `Bridge: ${NETWORK.BRIDGE_NAME} (${NETWORK.BRIDGE_IP}/${NETWORK.BRIDGE_NETMASK})
-Guest IPs: ${NETWORK.GUEST_SUBNET}.${NETWORK.GUEST_IP_START}+
-Test VM IP: ${NETWORK.TEST_VM_IP}`,
+    `Bridge: ${frakConfig.network.bridgeName} (${frakConfig.network.bridgeIp}/${frakConfig.network.bridgeNetmask})
+Guest IPs: ${frakConfig.network.guestSubnet}.${frakConfig.network.guestIpStart}+
+Test VM IP: ${frakConfig.network.guestSubnet}.2`,
     "Network Info",
   );
 }

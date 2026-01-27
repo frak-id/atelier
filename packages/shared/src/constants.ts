@@ -31,48 +31,17 @@ export const FIRECRACKER = {
   BINARY_PATH: "/usr/local/bin/firecracker",
 } as const;
 
-export const NETWORK = {
-  /** Bridge device name */
-  BRIDGE_NAME: "br0",
-  /** Bridge IP address */
-  BRIDGE_IP: "172.16.0.1",
-  /** Bridge CIDR notation */
-  BRIDGE_CIDR: "172.16.0.0/24",
-  /** Bridge netmask */
-  BRIDGE_NETMASK: "24",
-  /** First guest IP (last octet) */
-  GUEST_IP_START: 10,
-  /** Guest subnet prefix */
-  GUEST_SUBNET: "172.16.0",
-  /** Test VM IP */
-  TEST_VM_IP: "172.16.0.2",
-  /** Test VM MAC address */
-  TEST_VM_MAC: "06:00:AC:10:00:02",
-  /** Test TAP device name */
-  TEST_TAP: "tap-test",
-} as const;
-
 export const LVM = {
   /** Volume group name */
   VG_NAME: "sandbox-vg",
   /** Thin pool name */
   THIN_POOL: "thin-pool",
-  /** Base volume name (legacy, use image volumes) */
-  BASE_VOLUME: "base-rootfs",
-  /** Base volume size (legacy) */
-  BASE_SIZE: "2G",
   /** Image volume prefix */
   IMAGE_PREFIX: "image-",
   /** Prebuild volume prefix */
   PREBUILD_PREFIX: "prebuild-",
   /** Sandbox volume prefix */
   SANDBOX_PREFIX: "sandbox-",
-} as const;
-
-export const CADDY = {
-  /** Caddy admin API endpoint */
-  ADMIN_API: "http://localhost:2019",
-  DOMAIN_SUFFIX: "nivelais.com",
 } as const;
 
 export const OPENCODE = {
@@ -104,10 +73,6 @@ export const SSH_PROXY = {
   PIPES_FILE: "/var/lib/sandbox/sshpiper/pipes.yaml",
   /** sshpiper host key */
   HOST_KEY: "/var/lib/sandbox/sshpiper/host_key",
-  /** SSH proxy listen port */
-  LISTEN_PORT: 2222,
-  /** SSH proxy domain (for external access) */
-  DOMAIN: "ssh.nivelais.com",
 } as const;
 
 export const DEFAULTS = {
@@ -130,7 +95,6 @@ export const NFS = {
   CACHE_GUEST_MOUNT: "/mnt/cache",
   BINARIES_GUEST_MOUNT: "/opt/shared",
   CONFIGS_GUEST_MOUNT: "/mnt/configs",
-  HOST_IP: "172.16.0.1",
   CACHE_DIRS: {
     BUN: "bun",
     NPM: "npm",
@@ -143,13 +107,6 @@ export const NFS = {
     GLOBAL: "global",
     WORKSPACES: "workspaces",
   },
-} as const;
-
-/** Manager internal API for sandbox communication */
-export const MANAGER_INTERNAL = {
-  HOST: "172.16.0.1",
-  PORT: 4000,
-  BASE_URL: "http://172.16.0.1:4000/internal",
 } as const;
 
 /** Known auth providers that sync between sandboxes via shared_auth */

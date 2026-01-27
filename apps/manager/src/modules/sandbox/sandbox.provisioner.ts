@@ -91,8 +91,9 @@ ${dnsLines}
       repos,
       createdAt: new Date().toISOString(),
       network: {
-        nfsHost: config.network.BRIDGE_IP,
+        nfsHost: config.network.bridgeIp,
         dashboardDomain: config.domains.dashboard,
+        managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
       },
     };
     await Bun.write(
@@ -289,7 +290,7 @@ Your code is located in \`/home/dev/workspace\`
 ## Troubleshooting
 
 - Services not responding? Check \`/var/log/sandbox/\`
-- Network issues? Run \`ping 172.16.0.1\`
+- Network issues? Run \`ping ${config.network.bridgeIp}\`
 - Need help? Check the project documentation
 `;
   },

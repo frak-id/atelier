@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { NETWORK, NFS } from "../lib/context";
+import { frakConfig, NFS } from "../lib/context";
 import { exec, fileExists } from "../lib/shell";
 
 export async function setupNfs(_args: string[] = []) {
@@ -37,9 +37,9 @@ export async function setupNfs(_args: string[] = []) {
   spinner.stop("Configs directory created");
 
   spinner.start("Configuring NFS exports");
-  const cacheExportLine = `${NFS.CACHE_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,insecure)`;
-  const binariesExportLine = `${NFS.BINARIES_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
-  const configsExportLine = `${NFS.CONFIGS_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
+  const cacheExportLine = `${NFS.CACHE_EXPORT_DIR} ${frakConfig.network.bridgeCidr}(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,insecure)`;
+  const binariesExportLine = `${NFS.BINARIES_EXPORT_DIR} ${frakConfig.network.bridgeCidr}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
+  const configsExportLine = `${NFS.CONFIGS_EXPORT_DIR} ${frakConfig.network.bridgeCidr}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
 
   const exportsFile = "/etc/exports";
   let currentExports = (await fileExists(exportsFile))
@@ -74,15 +74,15 @@ export async function setupNfs(_args: string[] = []) {
     throws: false,
   });
   await exec(
-    `ufw allow from ${NETWORK.BRIDGE_CIDR} to any port 111 proto tcp comment 'NFS portmapper'`,
+    `ufw allow from ${frakConfig.network.bridgeCidr} to any port 111 proto tcp comment 'NFS portmapper'`,
     { throws: false },
   );
   await exec(
-    `ufw allow from ${NETWORK.BRIDGE_CIDR} to any port 111 proto udp comment 'NFS portmapper UDP'`,
+    `ufw allow from ${frakConfig.network.bridgeCidr} to any port 111 proto udp comment 'NFS portmapper UDP'`,
     { throws: false },
   );
   await exec(
-    `ufw allow from ${NETWORK.BRIDGE_CIDR} to any port 2049 proto tcp comment 'NFS'`,
+    `ufw allow from ${frakConfig.network.bridgeCidr} to any port 2049 proto tcp comment 'NFS'`,
     { throws: false },
   );
   spinner.stop("Firewall configured for NFS");
@@ -104,12 +104,12 @@ export async function setupNfs(_args: string[] = []) {
     `Cache Export (rw): ${NFS.CACHE_EXPORT_DIR}
 Binaries Export (ro): ${NFS.BINARIES_EXPORT_DIR}
 Configs Export (ro): ${NFS.CONFIGS_EXPORT_DIR}
-Accessible from: ${NETWORK.BRIDGE_CIDR}
+Accessible from: ${frakConfig.network.bridgeCidr}
 
 Guest mounts:
-  mount -t nfs ${NFS.HOST_IP}:${NFS.CACHE_EXPORT_DIR} ${NFS.CACHE_GUEST_MOUNT}
-  mount -t nfs -o ro ${NFS.HOST_IP}:${NFS.BINARIES_EXPORT_DIR} ${NFS.BINARIES_GUEST_MOUNT}
-  mount -t nfs -o ro ${NFS.HOST_IP}:${NFS.CONFIGS_EXPORT_DIR} ${NFS.CONFIGS_GUEST_MOUNT}
+  mount -t nfs ${frakConfig.network.bridgeIp}:${NFS.CACHE_EXPORT_DIR} ${NFS.CACHE_GUEST_MOUNT}
+  mount -t nfs -o ro ${frakConfig.network.bridgeIp}:${NFS.BINARIES_EXPORT_DIR} ${NFS.BINARIES_GUEST_MOUNT}
+  mount -t nfs -o ro ${frakConfig.network.bridgeIp}:${NFS.CONFIGS_EXPORT_DIR} ${NFS.CONFIGS_GUEST_MOUNT}
 
 Cache directories:
   - ${NFS.CACHE_EXPORT_DIR}/${NFS.CACHE_DIRS.BUN} (Bun cache)

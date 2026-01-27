@@ -1,10 +1,5 @@
 import { type FrakConfig, loadConfig } from "@frak-sandbox/shared";
-import {
-  CADDY,
-  DEFAULTS,
-  NETWORK,
-  PATHS,
-} from "@frak-sandbox/shared/constants";
+import { DEFAULTS, PATHS } from "@frak-sandbox/shared/constants";
 
 const frakConfig = loadConfig();
 
@@ -26,12 +21,9 @@ export const config = {
   host: frakConfig.runtime.host,
 
   paths: PATHS,
-  network: {
-    ...NETWORK,
-    dnsServers: frakConfig.network.dnsServers,
-  },
+  network: frakConfig.network,
   caddy: {
-    adminApi: process.env.CADDY_ADMIN_API || CADDY.ADMIN_API,
+    adminApi: process.env.CADDY_ADMIN_API || "http://localhost:2019",
     domainSuffix: frakConfig.domains.sandboxSuffix,
   },
   domains: frakConfig.domains,
@@ -51,8 +43,7 @@ export const config = {
     allowedUsers: frakConfig.auth.allowedUsers,
   },
 
-  dashboardUrl:
-    process.env.DASHBOARD_URL || `https://${frakConfig.domains.dashboard}`,
+  dashboardUrl: `https://${frakConfig.domains.dashboard}`,
 
   isMock: () => config.mode === "mock",
   isProduction: () => config.mode === "production",

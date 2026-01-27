@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
 import { SSH_PROXY } from "@frak-sandbox/shared/constants";
+import { frakConfig } from "../lib/context";
 import { exec, fileExists, getArch } from "../lib/shell";
 
 export async function setupSshProxy(_args: string[] = []) {
@@ -88,7 +89,7 @@ Type=simple
 ExecStart=${SSH_PROXY.BINARY_PATH} \\
   -i ${SSH_PROXY.HOST_KEY} \\
   -l 0.0.0.0 \\
-  -p ${SSH_PROXY.LISTEN_PORT} \\
+  -p ${frakConfig.sshProxy.port} \\
   --log-level info \\
   yaml \\
   --config ${SSH_PROXY.PIPES_FILE}
@@ -130,16 +131,16 @@ WantedBy=multi-user.target
 
   p.log.success("SSH Proxy setup complete");
   p.note(
-    `sshpiper listening on port ${SSH_PROXY.LISTEN_PORT}
+    `sshpiper listening on port ${frakConfig.sshProxy.port}
 Config: ${SSH_PROXY.PIPES_FILE}
 Host key: ${SSH_PROXY.HOST_KEY}
 
 Users can connect with:
-  ssh <sandbox-id>@${SSH_PROXY.DOMAIN}
+  ssh <sandbox-id>@${frakConfig.sshProxy.domain}
 
 Make sure to:
-  1. Configure DNS: ${SSH_PROXY.DOMAIN} → this server
-  2. Open firewall port ${SSH_PROXY.LISTEN_PORT}`,
+  1. Configure DNS: ${frakConfig.sshProxy.domain} → this server
+  2. Open firewall port ${frakConfig.sshProxy.port}`,
     "Summary",
   );
 }

@@ -163,15 +163,15 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
   .get(
     "/storage",
     async () => {
-      const [available, hasBaseVolume, pool] = await Promise.all([
+      const [available, hasDefaultImage, pool] = await Promise.all([
         StorageService.isAvailable(),
-        StorageService.hasBaseVolume(),
+        StorageService.hasImageVolume("dev-base"),
         StorageService.getPoolStats(),
       ]);
 
       return {
         available,
-        hasBaseVolume,
+        hasDefaultImage,
         pool,
       };
     },
