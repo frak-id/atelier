@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
+import { sandboxConfig } from "../constants";
 import type { GitRepoStatus } from "../types";
-import { loadConfig } from "../utils/config";
 import { exec } from "../utils/exec";
 
 function gitCmd(repoPath: string, cmd: string): string {
@@ -8,8 +8,7 @@ function gitCmd(repoPath: string, cmd: string): string {
 }
 
 export const gitRoutes = new Elysia().get("/git/status", async () => {
-  const config = await loadConfig();
-  const repos = config?.repos ?? [];
+  const repos = sandboxConfig?.repos ?? [];
 
   const results: GitRepoStatus[] = [];
 

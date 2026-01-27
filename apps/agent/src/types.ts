@@ -1,13 +1,5 @@
+import type { DiscoverableConfigCategory } from "@frak-sandbox/shared/constants";
 import { t } from "elysia";
-
-export interface SandboxConfig {
-  sandboxId: string;
-  projectId?: string;
-  projectName?: string;
-  gitUrl?: string;
-  createdAt: string;
-  repos?: Array<{ clonePath: string }>;
-}
 
 export interface AppPort {
   port: number;
@@ -18,7 +10,7 @@ export interface AppPort {
 export interface DiscoveredConfig {
   path: string;
   displayPath: string;
-  category: "opencode" | "vscode" | "other";
+  category: DiscoverableConfigCategory | "other";
   exists: boolean;
   size?: number;
 }

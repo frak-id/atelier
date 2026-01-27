@@ -3,13 +3,9 @@ import * as path from "node:path";
 import {
   AUTH_PROVIDERS,
   AUTH_SYNC_INTERVAL_MS,
-  CONFIG_PATH,
   MANAGER_INTERNAL_URL,
+  sandboxConfig,
 } from "../constants";
-
-interface SandboxConfig {
-  sandboxId: string;
-}
 
 interface AuthState {
   content: string;
@@ -33,16 +29,6 @@ function computeHash(content: string): string {
   return hash.toString(16);
 }
 
-function getSandboxId(): string | null {
-  try {
-    const configContent = fs.readFileSync(CONFIG_PATH, "utf-8");
-    const config: SandboxConfig = JSON.parse(configContent);
-    return config.sandboxId;
-  } catch {
-    return null;
-  }
-}
-
 class AuthSyncService {
   private readonly states = new Map<string, AuthState>();
   private readonly watchers = new Map<string, fs.FSWatcher>();
@@ -50,7 +36,7 @@ class AuthSyncService {
   private sandboxId: string | null = null;
 
   async start(): Promise<void> {
-    this.sandboxId = getSandboxId();
+    this.sandboxId = sandboxConfig?.sandboxId ?? null;
     if (!this.sandboxId) {
       console.error("[auth-sync] No sandbox ID found, skipping auth sync");
       return;

@@ -12,6 +12,7 @@ import type {
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { ensureDir, injectFile } from "../../shared/lib/shell.ts";
+import type { SandboxConfig } from "@frak-sandbox/shared";
 
 const log = createChildLogger("sandbox-provisioner");
 
@@ -83,7 +84,10 @@ ${dnsLines}
   ): Promise<void> {
     await ensureDir(`${mountPoint}/etc/sandbox/secrets`);
 
-    const repos = ctx.workspace?.config.repos ?? [];
+    const repos = (ctx.workspace?.config.repos ?? []).map((r) => ({
+      clonePath: r.clonePath,
+      branch: r.branch,
+    }));
     const sandboxConfig = {
       sandboxId: ctx.sandboxId,
       workspaceId: ctx.workspace?.id,
@@ -101,7 +105,7 @@ ${dnsLines}
         terminal: { port: config.raw.services.terminal.port },
         agent: { port: config.raw.services.agent.port },
       },
-    };
+    } satisfies SandboxConfig;
     await Bun.write(
       `${mountPoint}/etc/sandbox/config.json`,
       JSON.stringify(sandboxConfig, null, 2),

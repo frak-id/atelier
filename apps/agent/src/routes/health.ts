@@ -1,21 +1,20 @@
 import { Elysia } from "elysia";
-import { SERVICE_PORTS } from "../constants";
-import { loadConfig } from "../utils/config";
+import { sandboxConfig } from "../constants";
 import { checkPort } from "../utils/service";
 import { getCpuUsage, getDiskUsage, getMemoryUsage } from "../utils/system";
 
 export const healthRoutes = new Elysia()
   .get("/health", async () => {
-    const config = await loadConfig();
+    const services = sandboxConfig?.services;
     const [vscode, opencode, sshd, ttyd] = await Promise.all([
-      checkPort(SERVICE_PORTS.vscodePort),
-      checkPort(SERVICE_PORTS.opencodePort),
+      checkPort(services?.vscode.port ?? 8080),
+      checkPort(services?.opencode.port ?? 3000),
       checkPort(22),
-      checkPort(SERVICE_PORTS.terminalPort),
+      checkPort(services?.terminal.port ?? 7681),
     ]);
     return {
       status: "healthy",
-      sandboxId: config?.sandboxId,
+      sandboxId: sandboxConfig?.sandboxId,
       services: { vscode, opencode, sshd, ttyd },
       uptime: process.uptime(),
     };

@@ -28,16 +28,6 @@ export interface DevCommand {
   isDefault?: boolean;
 }
 
-import { DEFAULT_CONFIG } from "@frak-sandbox/shared";
-
-const FORBIDDEN_DEV_PORTS = [
-  DEFAULT_CONFIG.services.vscode.port,
-  DEFAULT_CONFIG.services.agent.port,
-  22,
-  DEFAULT_CONFIG.services.terminal.port,
-  DEFAULT_CONFIG.runtime.port,
-];
-
 interface DevCommandsFormProps {
   devCommands: DevCommand[];
   onChange: (commands: DevCommand[]) => void;
@@ -101,7 +91,6 @@ export function DevCommandsForm({
     }));
   };
 
-  const isForbiddenPort = (port: number) => FORBIDDEN_DEV_PORTS.includes(port);
   const isValidNameInput = (name: string) => /^[a-z0-9-]{0,20}$/.test(name);
   const isValidName = (name: string) => /^[a-z0-9-]{1,20}$/.test(name);
 
@@ -126,10 +115,8 @@ export function DevCommandsForm({
             const portError =
               cmd.port !== undefined && cmd.port > 0 && cmd.port < 1024
                 ? "Port must be 1024 or higher"
-                : cmd.port && isForbiddenPort(cmd.port)
-                  ? `Port ${cmd.port} is reserved for system services`
-                  : null;
-
+                : null;
+                
             const nameError = !isValidName(cmd.name)
               ? "Name required: 1-20 lowercase alphanumeric chars or dashes"
               : null;

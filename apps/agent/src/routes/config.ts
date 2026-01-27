@@ -1,26 +1,20 @@
 import { readFile, stat } from "node:fs/promises";
 import { Elysia } from "elysia";
-import {
-  OPENCODE_AUTH_PATH,
-  OPENCODE_CONFIG_PATH,
-  VSCODE_EXTENSIONS_PATH,
-  VSCODE_SETTINGS_PATH,
-} from "../constants";
+import { sandboxConfig, VM_PATHS } from "../constants";
 import { ConfigReadQuerySchema } from "../types";
-import { discoverConfigFiles, loadConfig } from "../utils/config";
+import { discoverConfigFiles } from "../utils/config";
 
 export const configRoutes = new Elysia()
-  .get("/config", async () => {
-    const config = await loadConfig();
-    return config ?? { error: "Config not found" };
+  .get("/config", () => {
+    return sandboxConfig ?? { error: "Config not found" };
   })
   .get("/editor-config", async () => {
     const [vscodeSettings, vscodeExtensions, opencodeAuth, opencodeConfig] =
       await Promise.all([
-        readFile(VSCODE_SETTINGS_PATH, "utf-8").catch(() => "{}"),
-        readFile(VSCODE_EXTENSIONS_PATH, "utf-8").catch(() => "[]"),
-        readFile(OPENCODE_AUTH_PATH, "utf-8").catch(() => "{}"),
-        readFile(OPENCODE_CONFIG_PATH, "utf-8").catch(() => "{}"),
+        readFile(VM_PATHS.vscodeSettings, "utf-8").catch(() => "{}"),
+        readFile(VM_PATHS.vscodeExtensions, "utf-8").catch(() => "[]"),
+        readFile(VM_PATHS.opencodeAuth, "utf-8").catch(() => "{}"),
+        readFile(VM_PATHS.opencodeConfig, "utf-8").catch(() => "{}"),
       ]);
 
     return {

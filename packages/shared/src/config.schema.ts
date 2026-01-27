@@ -214,16 +214,3 @@ export const DEFAULT_CONFIG: FrakConfig = {
     agent: { port: 9999 },
   },
 };
-
-/** Builds common URLs from domain configuration */
-export function buildUrls(domains: DomainsConfig, https = true) {
-  const protocol = https ? "https" : "http";
-  return {
-    api: `${protocol}://${domains.api}`,
-    dashboard: `${protocol}://${domains.dashboard}`,
-    sandbox: (id: string, service: "vscode" | "opencode" | "terminal") => {
-      const prefix = service === "vscode" ? "sandbox" : service;
-      return `${protocol}://${prefix}-${id}.${domains.sandboxSuffix}`;
-    },
-  };
-}

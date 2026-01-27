@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./constants": "./src/constants.ts",
     "./config": "./src/config.schema.ts",
-    "./config-loader": "./src/config.loader.ts"
+    "./config-loader": "./src/config.loader.ts",
+    "./sandbox-config": "./src/sandbox-config.schema.ts",
+    "./sandbox-config-loader": "./src/sandbox-config.loader.ts"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.0"
