@@ -92,9 +92,11 @@ export const NFS = {
   CACHE_EXPORT_DIR: "/var/lib/sandbox/shared-cache",
   BINARIES_EXPORT_DIR: "/var/lib/sandbox/shared-binaries",
   CONFIGS_EXPORT_DIR: "/var/lib/sandbox/shared-configs",
+  AUTH_EXPORT_DIR: "/var/lib/sandbox/shared-auth",
   CACHE_GUEST_MOUNT: "/mnt/cache",
   BINARIES_GUEST_MOUNT: "/opt/shared",
   CONFIGS_GUEST_MOUNT: "/mnt/configs",
+  AUTH_GUEST_MOUNT: "/mnt/auth",
   CACHE_DIRS: {
     BUN: "bun",
     NPM: "npm",

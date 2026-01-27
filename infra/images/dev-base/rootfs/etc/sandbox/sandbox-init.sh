@@ -50,6 +50,8 @@ NFS_BINARIES_EXPORT="/var/lib/sandbox/shared-binaries"
 NFS_BINARIES_MOUNT="/opt/shared"
 NFS_CONFIGS_EXPORT="/var/lib/sandbox/shared-configs"
 NFS_CONFIGS_MOUNT="/mnt/configs"
+NFS_AUTH_EXPORT="/var/lib/sandbox/shared-auth"
+NFS_AUTH_MOUNT="/mnt/auth"
 
 log "Creating device nodes..."
 [ -e /dev/null ] || mknod -m 666 /dev/null c 1 3
@@ -182,6 +184,22 @@ if timeout 5 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=
     chown -R dev:dev /home/dev/.config /home/dev/.local 2>/dev/null
 else
     log "WARNING: Failed to mount NFS configs"
+fi
+
+log "Mounting NFS shared auth..."
+mkdir -p "$NFS_AUTH_MOUNT"
+if timeout 5 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_AUTH_EXPORT" "$NFS_AUTH_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
+    log "NFS auth mounted at $NFS_AUTH_MOUNT (read-write)"
+    
+    mkdir -p /home/dev/.local/share/opencode
+    mkdir -p /home/dev/.config/opencode
+    
+    link_config "$NFS_AUTH_MOUNT/opencode.json" "/home/dev/.local/share/opencode/auth.json"
+    link_config "$NFS_AUTH_MOUNT/antigravity.json" "/home/dev/.config/opencode/antigravity-accounts.json"
+    
+    chown -h dev:dev /home/dev/.local/share/opencode/auth.json /home/dev/.config/opencode/antigravity-accounts.json 2>/dev/null
+else
+    log "WARNING: Failed to mount NFS auth"
 fi
 
 if [ -f "$SECRETS_FILE" ]; then

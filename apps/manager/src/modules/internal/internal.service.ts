@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { AUTH_PROVIDERS, NFS } from "@frak-sandbox/shared/constants";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
@@ -11,12 +13,6 @@ export interface AuthContent {
   updatedBy: string | null;
 }
 
-export interface AuthSyncResult {
-  action: "updated" | "unchanged" | "conflict";
-  content: string;
-  updatedAt: string;
-}
-
 export interface SharedAuthInfo {
   provider: string;
   path: string;
@@ -27,12 +23,89 @@ export interface SharedAuthInfo {
 }
 
 export class InternalService {
-  private readonly authLocks = new Map<string, Promise<AuthSyncResult>>();
+  private readonly authWatchers = new Map<string, fs.FSWatcher>();
+  private readonly authDebounceTimers = new Map<string, Timer>();
 
   constructor(
     private readonly sharedAuthRepository: SharedAuthRepository,
     private readonly configFileService: ConfigFileService,
   ) {}
+
+  startAuthNfsWatcher(): void {
+    const dir = NFS.AUTH_EXPORT_DIR;
+
+    if (!fs.existsSync(dir)) {
+      log.warn(
+        { dir },
+        "Auth NFS export directory does not exist, skipping watcher",
+      );
+      return;
+    }
+
+    for (const provider of AUTH_PROVIDERS) {
+      const filename = `${provider.name}.json`;
+      const filePath = path.join(dir, filename);
+
+      try {
+        const watcher = fs.watch(dir, (eventType, changedFilename) => {
+          if (changedFilename === filename && eventType === "change") {
+            this.debouncedSyncFromNfs(provider.name, filePath);
+          }
+        });
+
+        this.authWatchers.set(provider.name, watcher);
+        log.info(
+          { provider: provider.name, filePath },
+          "Watching auth NFS file",
+        );
+      } catch (error) {
+        log.error(
+          { provider: provider.name, error },
+          "Failed to watch auth NFS file",
+        );
+      }
+    }
+  }
+
+  stopAuthNfsWatcher(): void {
+    for (const timer of this.authDebounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.authDebounceTimers.clear();
+
+    for (const watcher of this.authWatchers.values()) {
+      watcher.close();
+    }
+    this.authWatchers.clear();
+  }
+
+  private debouncedSyncFromNfs(provider: string, filePath: string): void {
+    const existing = this.authDebounceTimers.get(provider);
+    if (existing) clearTimeout(existing);
+
+    this.authDebounceTimers.set(
+      provider,
+      setTimeout(() => {
+        this.authDebounceTimers.delete(provider);
+        this.syncAuthFromNfs(provider, filePath);
+      }, 500),
+    );
+  }
+
+  private syncAuthFromNfs(provider: string, filePath: string): void {
+    try {
+      if (!fs.existsSync(filePath)) return;
+      const content = fs.readFileSync(filePath, "utf-8");
+
+      const existing = this.sharedAuthRepository.getByProvider(provider);
+      if (existing?.content === content) return;
+
+      this.sharedAuthRepository.upsert(provider, content, "nfs");
+      log.info({ provider }, "Auth synced from NFS to DB");
+    } catch (error) {
+      log.error({ provider, error }, "Failed to sync auth from NFS");
+    }
+  }
 
   listAuth(): SharedAuthInfo[] {
     const storedAuth = this.sharedAuthRepository.list();
@@ -76,6 +149,10 @@ export class InternalService {
 
     log.info({ provider }, "Auth updated from dashboard");
 
+    this.syncAuthToNfs().catch((error) => {
+      log.error({ error }, "Failed to sync auth to NFS after dashboard update");
+    });
+
     return {
       provider: record.provider,
       path: providerInfo.path,
@@ -86,71 +163,27 @@ export class InternalService {
     };
   }
 
-  async syncAuth(
-    provider: string,
-    content: string,
-    sandboxId: string,
-    clientUpdatedAt?: string,
-  ): Promise<AuthSyncResult> {
-    const existingLock = this.authLocks.get(provider);
-    if (existingLock) {
-      log.debug({ provider, sandboxId }, "Waiting for existing auth sync");
-      return existingLock;
-    }
+  async syncAuthToNfs(): Promise<{ synced: number }> {
+    const storedAuth = this.sharedAuthRepository.list();
+    let synced = 0;
 
-    const syncPromise = this.doSyncAuth(
-      provider,
-      content,
-      sandboxId,
-      clientUpdatedAt,
-    );
-    this.authLocks.set(provider, syncPromise);
+    for (const auth of storedAuth) {
+      const nfsPath = `${NFS.AUTH_EXPORT_DIR}/${auth.provider}.json`;
 
-    try {
-      return await syncPromise;
-    } finally {
-      this.authLocks.delete(provider);
-    }
-  }
-
-  private async doSyncAuth(
-    provider: string,
-    content: string,
-    sandboxId: string,
-    clientUpdatedAt?: string,
-  ): Promise<AuthSyncResult> {
-    const existing = this.sharedAuthRepository.getByProvider(provider);
-
-    if (existing && clientUpdatedAt) {
-      const serverTime = new Date(existing.updatedAt).getTime();
-      const clientTime = new Date(clientUpdatedAt).getTime();
-
-      if (serverTime > clientTime) {
-        log.debug(
-          { provider, sandboxId, serverTime, clientTime },
-          "Auth conflict - server has newer version",
+      try {
+        await Bun.write(nfsPath, auth.content);
+        synced++;
+        log.debug({ provider: auth.provider, nfsPath }, "Auth synced to NFS");
+      } catch (error) {
+        log.error(
+          { provider: auth.provider, error },
+          "Failed to sync auth to NFS",
         );
-        return {
-          action: "conflict",
-          content: existing.content,
-          updatedAt: existing.updatedAt,
-        };
       }
     }
 
-    const record = this.sharedAuthRepository.upsert(
-      provider,
-      content,
-      sandboxId,
-    );
-
-    log.info({ provider, sandboxId }, "Auth synced");
-
-    return {
-      action: existing ? "updated" : "updated",
-      content: record.content,
-      updatedAt: record.updatedAt,
-    };
+    log.info({ synced }, "Auth sync to NFS complete");
+    return { synced };
   }
 
   async syncConfigsToNfs(): Promise<{ synced: number }> {

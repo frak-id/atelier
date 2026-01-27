@@ -10,7 +10,6 @@ import {
   gitSourceRoutes,
   healthRoutes,
   imageRoutes,
-  internalRoutes,
   sandboxRoutes,
   sessionTemplateRoutes,
   sharedAuthRoutes,
@@ -20,7 +19,12 @@ import {
   taskRoutes,
   workspaceRoutes,
 } from "./api/index.ts";
-import { prebuildChecker, sandboxService, sshKeyService } from "./container.ts";
+import {
+  internalService,
+  prebuildChecker,
+  sandboxService,
+  sshKeyService,
+} from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
@@ -28,7 +32,6 @@ import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config } from "./shared/lib/config.ts";
-import { internalGuard } from "./shared/lib/internal-guard.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 
@@ -60,6 +63,8 @@ const app = new Elysia()
     if (expiredCount > 0) {
       logger.info({ expiredCount }, "Startup: expired SSH keys cleaned up");
     }
+
+    internalService.startAuthNfsWatcher();
 
     const allSandboxes = sandboxService.getAll();
     for (const sandbox of allSandboxes) {
@@ -183,7 +188,6 @@ const app = new Elysia()
   })
   .use(healthRoutes)
   .use(authRoutes)
-  .guard({ beforeHandle: internalGuard }, (app) => app.use(internalRoutes))
   .group("/auth", (app) =>
     app.guard({ beforeHandle: authGuard }, (app) => app.use(githubAuthRoutes)),
   )
