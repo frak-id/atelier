@@ -95,6 +95,12 @@ ${dnsLines}
         dashboardDomain: config.domains.dashboard,
         managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
       },
+      services: {
+        vscode: { port: config.raw.services.vscode.port },
+        opencode: { port: config.raw.services.opencode.port },
+        terminal: { port: config.raw.services.terminal.port },
+        agent: { port: config.raw.services.agent.port },
+      },
     };
     await Bun.write(
       `${mountPoint}/etc/sandbox/config.json`,
@@ -258,8 +264,8 @@ ${workspaceSection}## Available Services
 
 | Service | URL | Port |
 |---------|-----|------|
-| VSCode Server | http://localhost:8080 | 8080 |
-| OpenCode Server | http://localhost:3000 | 3000 |
+| VSCode Server | http://localhost:${config.raw.services.vscode.port} | ${config.raw.services.vscode.port} |
+| OpenCode Server | http://localhost:${config.raw.services.opencode.port} | ${config.raw.services.opencode.port} |
 | SSH | \`ssh dev@${ctx.network.ipAddress}\` | 22 |
 
 ## Quick Commands

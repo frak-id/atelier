@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { SERVICE_PORTS } from "../constants";
 import { loadConfig } from "../utils/config";
 import { checkPort } from "../utils/service";
 import { getCpuUsage, getDiskUsage, getMemoryUsage } from "../utils/system";
@@ -7,10 +8,10 @@ export const healthRoutes = new Elysia()
   .get("/health", async () => {
     const config = await loadConfig();
     const [vscode, opencode, sshd, ttyd] = await Promise.all([
-      checkPort(8080),
-      checkPort(3000),
+      checkPort(SERVICE_PORTS.vscodePort),
+      checkPort(SERVICE_PORTS.opencodePort),
       checkPort(22),
-      checkPort(7681),
+      checkPort(SERVICE_PORTS.terminalPort),
     ]);
     return {
       status: "healthy",

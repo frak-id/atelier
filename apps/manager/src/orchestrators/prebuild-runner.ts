@@ -7,6 +7,7 @@ import type {
   Workspace,
   WorkspaceConfig,
 } from "../schemas/index.ts";
+import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxDestroyer } from "./sandbox-destroyer.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
@@ -17,7 +18,6 @@ const WORKSPACE_DIR = "/home/dev/workspace";
 const AGENT_READY_TIMEOUT = 60000;
 const COMMAND_TIMEOUT = 300000;
 const OPENCODE_HEALTH_TIMEOUT = 120000;
-const OPENCODE_PORT = 3000;
 
 interface PrebuildRunnerDependencies {
   sandboxSpawner: SandboxSpawner;
@@ -284,7 +284,7 @@ export class PrebuildRunner {
 
     const startResult = await this.deps.agentClient.exec(
       ipAddress,
-      `su dev -c 'cd ${WORKSPACE_DIR} && nohup opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT} > /tmp/opencode-warmup.log 2>&1 &'`,
+      `su dev -c 'cd ${WORKSPACE_DIR} && nohup opencode serve --hostname 0.0.0.0 --port ${config.raw.services.opencode.port} > /tmp/opencode-warmup.log 2>&1 &'`,
       { timeout: 10000 },
     );
 
@@ -302,7 +302,7 @@ export class PrebuildRunner {
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
       try {
         const response = await fetch(
-          `http://${ipAddress}:${OPENCODE_PORT}/global/health`,
+          `http://${ipAddress}:${config.raw.services.opencode.port}/global/health`,
           { signal: AbortSignal.timeout(5000) },
         );
 

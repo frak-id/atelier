@@ -99,6 +99,20 @@ export const TlsConfigSchema = Type.Object({
 
 export type TlsConfig = Static<typeof TlsConfigSchema>;
 
+const ServiceEntrySchema = (defaultPort: number) =>
+  Type.Object({
+    port: Type.Number({ default: defaultPort }),
+  });
+
+export const ServicesConfigSchema = Type.Object({
+  vscode: ServiceEntrySchema(8080),
+  opencode: ServiceEntrySchema(3000),
+  terminal: ServiceEntrySchema(7681),
+  agent: ServiceEntrySchema(9999),
+});
+
+export type ServicesConfig = Static<typeof ServicesConfigSchema>;
+
 export const FrakConfigSchema = Type.Object({
   domains: DomainsConfigSchema,
   network: NetworkConfigSchema,
@@ -106,6 +120,7 @@ export const FrakConfigSchema = Type.Object({
   sshProxy: SshProxyConfigSchema,
   runtime: RuntimeConfigSchema,
   tls: TlsConfigSchema,
+  services: ServicesConfigSchema,
 });
 
 export type FrakConfig = Static<typeof FrakConfigSchema>;
@@ -143,6 +158,11 @@ export const ENV_VAR_MAPPING = {
   TLS_EMAIL: "tls.email",
   TLS_CERT_PATH: "tls.certPath",
   TLS_KEY_PATH: "tls.keyPath",
+
+  FRAK_VSCODE_PORT: "services.vscode.port",
+  FRAK_OPENCODE_PORT: "services.opencode.port",
+  FRAK_TERMINAL_PORT: "services.terminal.port",
+  FRAK_AGENT_PORT: "services.agent.port",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;
@@ -186,6 +206,12 @@ export const DEFAULT_CONFIG: FrakConfig = {
     email: "",
     certPath: "",
     keyPath: "",
+  },
+  services: {
+    vscode: { port: 8080 },
+    opencode: { port: 3000 },
+    terminal: { port: 7681 },
+    agent: { port: 9999 },
   },
 };
 

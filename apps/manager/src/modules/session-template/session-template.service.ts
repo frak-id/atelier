@@ -8,6 +8,7 @@ import type {
   SessionTemplates,
   SessionTemplateVariables,
 } from "../../schemas/index.ts";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/index.ts";
 import type { SandboxService } from "../sandbox/index.ts";
@@ -300,7 +301,7 @@ export class SessionTemplateService {
 
     try {
       const client = createOpencodeClient({
-        baseUrl: `http://${ipAddress}:3000`,
+        baseUrl: `http://${ipAddress}:${config.raw.services.opencode.port}`,
       });
 
       const [providersResult, agentsResult] = await Promise.all([

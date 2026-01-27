@@ -1,8 +1,8 @@
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("agent");
 
-const AGENT_PORT = 9999;
 const DEFAULT_TIMEOUT = 10000;
 
 export interface AgentHealth {
@@ -82,7 +82,7 @@ export interface ConfigFileContent {
 
 export class AgentClient {
   private getAgentUrl(ipAddress: string): string {
-    return `http://${ipAddress}:${AGENT_PORT}`;
+    return `http://${ipAddress}:${config.raw.services.agent.port}`;
   }
 
   private async request<T>(

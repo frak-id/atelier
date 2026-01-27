@@ -48,7 +48,14 @@ export const FileSecretSchema = t.Object({
 export type FileSecret = Static<typeof FileSecretSchema>;
 
 // Forbidden ports for dev commands (reserved for system services)
-export const FORBIDDEN_DEV_PORTS = [8080, 9999, 22, 7681, 4000] as const;
+import { config } from "../shared/lib/config.ts";
+export const FORBIDDEN_DEV_PORTS = [
+  config.raw.services.vscode.port,
+  config.raw.services.agent.port,
+  22,
+  config.raw.services.terminal.port,
+  config.port,
+] as const;
 
 export const DevCommandSchema = t.Object({
   name: t.String({ pattern: "^[a-z0-9-]{1,20}$" }),

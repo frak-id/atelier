@@ -28,7 +28,15 @@ export interface DevCommand {
   isDefault?: boolean;
 }
 
-const FORBIDDEN_DEV_PORTS = [8080, 9999, 22, 7681, 4000];
+import { DEFAULT_CONFIG } from "@frak-sandbox/shared";
+
+const FORBIDDEN_DEV_PORTS = [
+  DEFAULT_CONFIG.services.vscode.port,
+  DEFAULT_CONFIG.services.agent.port,
+  22,
+  DEFAULT_CONFIG.services.terminal.port,
+  DEFAULT_CONFIG.runtime.port,
+];
 
 interface DevCommandsFormProps {
   devCommands: DevCommand[];

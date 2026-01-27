@@ -1,6 +1,35 @@
 import * as fs from "node:fs";
 
-export const AGENT_PORT = 9999;
+function getServicePorts(): {
+  vscodePort: number;
+  opencodePort: number;
+  terminalPort: number;
+  agentPort: number;
+} {
+  try {
+    const configContent = fs.readFileSync(CONFIG_PATH, "utf-8");
+    const config = JSON.parse(configContent);
+    if (config.services) {
+      return {
+        vscodePort: config.services.vscode?.port ?? 8080,
+        opencodePort: config.services.opencode?.port ?? 3000,
+        terminalPort: config.services.terminal?.port ?? 7681,
+        agentPort: config.services.agent?.port ?? 9999,
+      };
+    }
+  } catch {
+    // Fall back to defaults
+  }
+  return {
+    vscodePort: 8080,
+    opencodePort: 3000,
+    terminalPort: 7681,
+    agentPort: 9999,
+  };
+}
+
+export const SERVICE_PORTS = getServicePorts();
+export const AGENT_PORT = SERVICE_PORTS.agentPort;
 
 export const CONFIG_PATH = "/etc/sandbox/config.json";
 export const LOG_DIR = "/var/log/sandbox";

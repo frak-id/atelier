@@ -70,9 +70,12 @@ export async function setupNfs(_args: string[] = []) {
   spinner.stop("NFS exports configured");
 
   spinner.start("Configuring firewall for NFS");
-  await exec("ufw allow in on br0 comment 'Allow VM traffic on bridge'", {
-    throws: false,
-  });
+  await exec(
+    `ufw allow in on ${frakConfig.network.bridgeName} comment 'Allow VM traffic on bridge'`,
+    {
+      throws: false,
+    },
+  );
   await exec(
     `ufw allow from ${frakConfig.network.bridgeCidr} to any port 111 proto tcp comment 'NFS portmapper'`,
     { throws: false },
