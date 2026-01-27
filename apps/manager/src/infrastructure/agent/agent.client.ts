@@ -1,84 +1,22 @@
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type {
+  AgentHealth,
+  AgentMetrics,
+  AppPort,
+  BatchExecResult,
+  ConfigFileContent,
+  DevCommandListResult,
+  DevLogsResult,
+  DevStartResult,
+  DevStopResult,
+  DiscoveredConfig,
+  ExecResult,
+} from "./agent.types.ts";
 
 const log = createChildLogger("agent");
 
 const DEFAULT_TIMEOUT = 10000;
-
-export interface AgentHealth {
-  status: string;
-  sandboxId?: string;
-  services: {
-    vscode: boolean;
-    opencode: boolean;
-    sshd: boolean;
-  };
-  uptime: number;
-}
-
-export interface AgentMetrics {
-  cpu: number;
-  memory: { total: number; used: number; free: number };
-  disk: { total: number; used: number; free: number };
-  timestamp: string;
-}
-
-export interface AppPort {
-  port: number;
-  name: string;
-  registeredAt: string;
-}
-
-export interface ServiceStatus {
-  name: string;
-  running: boolean;
-  pid?: number;
-}
-
-export interface ExecResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-export interface EditorConfig {
-  vscode: {
-    settings: Record<string, unknown>;
-    extensions: string[];
-  };
-  opencode: {
-    auth: Record<string, unknown>;
-    config: Record<string, unknown>;
-  };
-}
-
-export interface GitStatus {
-  repos: {
-    path: string;
-    branch: string | null;
-    dirty: boolean;
-    ahead: number;
-    behind: number;
-    lastCommit: string | null;
-    error?: string;
-  }[];
-}
-
-export interface DiscoveredConfig {
-  path: string;
-  displayPath: string;
-  category: "opencode" | "vscode" | "other";
-  exists: boolean;
-  size?: number;
-}
-
-export interface ConfigFileContent {
-  path: string;
-  displayPath: string;
-  content: string;
-  contentType: "json" | "text";
-  size: number;
-}
 
 export class AgentClient {
   private getAgentUrl(ipAddress: string): string {
@@ -165,6 +103,31 @@ export class AgentClient {
     return this.request<Record<string, unknown>>(ipAddress, "/config");
   }
 
+  async exec(
+    ipAddress: string,
+    command: string,
+    options: { timeout?: number } = {},
+  ): Promise<ExecResult> {
+    return this.request<ExecResult>(ipAddress, "/exec", {
+      method: "POST",
+      body: { command, timeout: options.timeout },
+      timeout: (options.timeout ?? 30000) + 5000,
+    });
+  }
+
+  async batchExec(
+    ipAddress: string,
+    commands: { id: string; command: string; timeout?: number }[],
+    options: { timeout?: number } = {},
+  ): Promise<BatchExecResult> {
+    const maxCmdTimeout = Math.max(...commands.map((c) => c.timeout ?? 30000));
+    return this.request<BatchExecResult>(ipAddress, "/exec/batch", {
+      method: "POST",
+      body: { commands },
+      timeout: options.timeout ?? maxCmdTimeout + 10000,
+    });
+  }
+
   async getApps(ipAddress: string): Promise<AppPort[]> {
     return this.request<AppPort[]>(ipAddress, "/apps");
   }
@@ -187,99 +150,6 @@ export class AgentClient {
     return this.request<{ success: boolean }>(ipAddress, `/apps/${port}`, {
       method: "DELETE",
     });
-  }
-
-  async exec(
-    ipAddress: string,
-    command: string,
-    options: { timeout?: number } = {},
-  ): Promise<ExecResult> {
-    return this.request<ExecResult>(ipAddress, "/exec", {
-      method: "POST",
-      body: { command, timeout: options.timeout },
-      timeout: (options.timeout ?? 30000) + 5000,
-    });
-  }
-
-  async logs(
-    ipAddress: string,
-    service: string,
-    lines: number = 100,
-  ): Promise<{ service: string; content: string }> {
-    return this.request<{ service: string; content: string }>(
-      ipAddress,
-      `/logs/${service}?lines=${lines}`,
-    );
-  }
-
-  async services(ipAddress: string): Promise<{ services: ServiceStatus[] }> {
-    return this.request<{ services: ServiceStatus[] }>(ipAddress, "/services");
-  }
-
-  async batchHealth(
-    ipAddresses: string[],
-  ): Promise<Map<string, AgentHealth | { error: string }>> {
-    const results = new Map<string, AgentHealth | { error: string }>();
-
-    await Promise.all(
-      ipAddresses.map(async (ip) => {
-        try {
-          const health = await this.health(ip);
-          results.set(ip, health);
-        } catch (error) {
-          results.set(ip, {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }),
-    );
-
-    return results;
-  }
-
-  async getEditorConfig(ipAddress: string): Promise<EditorConfig | null> {
-    try {
-      return await this.request<EditorConfig>(ipAddress, "/editor-config");
-    } catch (error) {
-      log.error({ ipAddress, error }, "Failed to get editor config");
-      return null;
-    }
-  }
-
-  async getInstalledExtensions(ipAddress: string): Promise<string[]> {
-    try {
-      const result = await this.request<{ extensions: string[] }>(
-        ipAddress,
-        "/vscode/extensions/installed",
-      );
-      return result.extensions;
-    } catch (error) {
-      log.error({ ipAddress, error }, "Failed to get installed extensions");
-      return [];
-    }
-  }
-
-  async installExtensions(
-    ipAddress: string,
-    extensions: string[],
-  ): Promise<{ extension: string; success: boolean; error?: string }[]> {
-    try {
-      const result = await this.request<{
-        results: { extension: string; success: boolean; error?: string }[];
-      }>(ipAddress, "/vscode/extensions/install", {
-        method: "POST",
-        body: { extensions },
-        timeout: 300000,
-      });
-      return result.results;
-    } catch (error) {
-      log.error({ ipAddress, error }, "Failed to install extensions");
-      return extensions.map((ext) => ({
-        extension: ext,
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }));
-    }
   }
 
   async discoverConfigs(ipAddress: string): Promise<DiscoveredConfig[]> {
@@ -310,56 +180,8 @@ export class AgentClient {
     }
   }
 
-  async gitStatus(ipAddress: string): Promise<GitStatus> {
-    return this.request<GitStatus>(ipAddress, "/git/status");
-  }
-
-  async resizeStorage(ipAddress: string): Promise<{
-    success: boolean;
-    disk?: { total: number; used: number; free: number };
-    error?: string;
-  }> {
-    return this.request<{
-      success: boolean;
-      disk?: { total: number; used: number; free: number };
-      error?: string;
-    }>(ipAddress, "/storage/resize", { method: "POST", timeout: 60000 });
-  }
-
-  async getStorageInfo(ipAddress: string): Promise<{
-    filesystem: { total: number; used: number; free: number };
-    blockDevice: number;
-    canResize: boolean;
-    error?: string;
-  }> {
-    return this.request<{
-      filesystem: { total: number; used: number; free: number };
-      blockDevice: number;
-      canResize: boolean;
-      error?: string;
-    }>(ipAddress, "/storage/info");
-  }
-
-  async devList(ipAddress: string): Promise<{
-    commands: Array<{
-      name: string;
-      status: string;
-      pid?: number;
-      port?: number;
-      startedAt?: string;
-      exitCode?: number;
-    }>;
-  }> {
-    return this.request<{
-      commands: Array<{
-        name: string;
-        status: string;
-        pid?: number;
-        port?: number;
-        startedAt?: string;
-        exitCode?: number;
-      }>;
-    }>(ipAddress, "/dev");
+  async devList(ipAddress: string): Promise<DevCommandListResult> {
+    return this.request<DevCommandListResult>(ipAddress, "/dev");
   }
 
   async devStart(
@@ -371,32 +193,16 @@ export class AgentClient {
       env?: Record<string, string>;
       port?: number;
     },
-  ): Promise<{
-    status: string;
-    pid?: number;
-    name: string;
-    port?: number;
-    logFile?: string;
-    startedAt?: string;
-  }> {
-    return this.request(ipAddress, `/dev/${name}/start`, {
+  ): Promise<DevStartResult> {
+    return this.request<DevStartResult>(ipAddress, `/dev/${name}/start`, {
       method: "POST",
       body: devCommand,
       timeout: 30000,
     });
   }
 
-  async devStop(
-    ipAddress: string,
-    name: string,
-  ): Promise<{
-    status: string;
-    name: string;
-    pid?: number;
-    message?: string;
-    exitCode?: number;
-  }> {
-    return this.request(ipAddress, `/dev/${name}/stop`, {
+  async devStop(ipAddress: string, name: string): Promise<DevStopResult> {
+    return this.request<DevStopResult>(ipAddress, `/dev/${name}/stop`, {
       method: "POST",
     });
   }
@@ -406,8 +212,8 @@ export class AgentClient {
     name: string,
     offset: number,
     limit: number,
-  ): Promise<{ name: string; content: string; nextOffset: number }> {
-    return this.request(
+  ): Promise<DevLogsResult> {
+    return this.request<DevLogsResult>(
       ipAddress,
       `/dev/${name}/logs?offset=${offset}&limit=${limit}`,
     );

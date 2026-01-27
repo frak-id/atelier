@@ -116,7 +116,7 @@ export function DevCommandsForm({
               cmd.port !== undefined && cmd.port > 0 && cmd.port < 1024
                 ? "Port must be 1024 or higher"
                 : null;
-                
+
             const nameError = !isValidName(cmd.name)
               ? "Name required: 1-20 lowercase alphanumeric chars or dashes"
               : null;

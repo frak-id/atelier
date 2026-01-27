@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import {
   agentClient,
+  agentOperations,
   configFileService,
   sandboxDestroyer,
   sandboxLifecycle,
@@ -275,7 +276,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         throw new NotFoundError("Sandbox", params.id);
       }
       const lines = query.lines ? Number.parseInt(query.lines, 10) : 100;
-      const result = await agentClient.logs(
+      const result = await agentOperations.logs(
         sandbox.runtime.ipAddress,
         params.service,
         lines,
@@ -295,7 +296,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.services(sandbox.runtime.ipAddress);
+      return agentOperations.services(sandbox.runtime.ipAddress);
     },
     {
       params: IdParamSchema,
@@ -309,7 +310,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.gitStatus(sandbox.runtime.ipAddress);
+      const workspace = sandbox.workspaceId
+        ? workspaceService.getById(sandbox.workspaceId)
+        : undefined;
+      const repos = workspace?.config.repos ?? [];
+      return agentOperations.gitStatus(sandbox.runtime.ipAddress, repos);
     },
     {
       params: IdParamSchema,
@@ -395,7 +400,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         return lvResult;
       }
 
-      const agentResult = await agentClient.resizeStorage(
+      const agentResult = await agentOperations.resizeStorage(
         sandbox.runtime.ipAddress,
       );
 

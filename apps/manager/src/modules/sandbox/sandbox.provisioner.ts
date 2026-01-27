@@ -1,3 +1,4 @@
+import type { SandboxConfig } from "@frak-sandbox/shared";
 import { $ } from "bun";
 import type { SandboxPaths } from "../../infrastructure/firecracker/index.ts";
 import type { NetworkAllocation } from "../../infrastructure/network/index.ts";
@@ -12,7 +13,6 @@ import type {
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { ensureDir, injectFile } from "../../shared/lib/shell.ts";
-import type { SandboxConfig } from "@frak-sandbox/shared";
 
 const log = createChildLogger("sandbox-provisioner");
 

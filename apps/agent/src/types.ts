@@ -15,40 +15,6 @@ export interface DiscoveredConfig {
   size?: number;
 }
 
-export interface ServiceStatus {
-  name: string;
-  running: boolean;
-  pid?: number;
-}
-
-export interface ResourceUsage {
-  total: number;
-  used: number;
-  free: number;
-}
-
-export interface ExecResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-export interface GitRepoStatus {
-  path: string;
-  branch: string | null;
-  dirty: boolean;
-  ahead: number;
-  behind: number;
-  lastCommit: string | null;
-  error?: string;
-}
-
-export interface ExtensionInstallResult {
-  extension: string;
-  success: boolean;
-  error?: string;
-}
-
 export const AppRegistrationSchema = t.Object({
   port: t.Number({ minimum: 1, maximum: 65535 }),
   name: t.String(),
@@ -61,8 +27,4 @@ export const ExecRequestSchema = t.Object({
 
 export const ConfigReadQuerySchema = t.Object({
   path: t.String(),
-});
-
-export const ExtensionsInstallSchema = t.Object({
-  extensions: t.Array(t.String()),
 });

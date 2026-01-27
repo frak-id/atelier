@@ -1,7 +1,10 @@
 import { DEFAULTS, FIRECRACKER } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import { nanoid } from "nanoid";
-import type { AgentClient } from "../infrastructure/agent/index.ts";
+import type {
+  AgentClient,
+  AgentOperations,
+} from "../infrastructure/agent/index.ts";
 import {
   FirecrackerClient,
   getSandboxPaths,
@@ -41,6 +44,7 @@ interface SandboxSpawnerDependencies {
   configFileService: ConfigFileService;
   sshKeyService: SshKeyService;
   agentClient: AgentClient;
+  agentOperations: AgentOperations;
 }
 
 export class SandboxSpawner {
@@ -402,7 +406,7 @@ class SpawnContext {
     if (!this.network || !this.paths?.useLvm) return;
 
     try {
-      const agentResult = await this.deps.agentClient.resizeStorage(
+      const agentResult = await this.deps.agentOperations.resizeStorage(
         this.network.ipAddress,
       );
 
