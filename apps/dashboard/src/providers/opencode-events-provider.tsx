@@ -1,7 +1,13 @@
 import type { Event as OpencodeEvent } from "@opencode-ai/sdk/v2";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, type ReactNode, useEffect, useRef } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { queryKeys, sandboxListQuery } from "@/api/queries";
 
 interface OpencodeEventsContextValue {
@@ -25,14 +31,26 @@ export function OpencodeEventsProvider({
 
   const { data: sandboxes } = useQuery(sandboxListQuery());
 
-  const runningSandboxUrls =
-    sandboxes
-      ?.filter((s) => s.status === "running")
-      .map((s) => s.runtime.urls.opencode) ?? [];
+  const runningSandboxUrls = useMemo(() => {
+    const urls =
+      sandboxes
+        ?.filter((s) => s.status === "running")
+        .map((s) => s.runtime.urls.opencode) ?? [];
+    return urls.sort();
+  }, [sandboxes]);
+
+  const stableUrlsRef = useRef<string[]>([]);
+  if (
+    runningSandboxUrls.length !== stableUrlsRef.current.length ||
+    runningSandboxUrls.some((url, i) => url !== stableUrlsRef.current[i])
+  ) {
+    stableUrlsRef.current = runningSandboxUrls;
+  }
+  const stableUrls = stableUrlsRef.current;
 
   useEffect(() => {
     const currentConnections = connectionsRef.current;
-    const activeUrls = new Set(runningSandboxUrls);
+    const activeUrls = new Set(stableUrls);
 
     for (const [url, controller] of currentConnections) {
       if (!activeUrls.has(url)) {
@@ -41,7 +59,7 @@ export function OpencodeEventsProvider({
       }
     }
 
-    for (const opencodeUrl of runningSandboxUrls) {
+    for (const opencodeUrl of stableUrls) {
       if (currentConnections.has(opencodeUrl)) continue;
 
       const abortController = new AbortController();
@@ -58,7 +76,7 @@ export function OpencodeEventsProvider({
       }
       currentConnections.clear();
     };
-  }, [runningSandboxUrls, queryClient]);
+  }, [stableUrls, queryClient]);
 
   return (
     <OpencodeEventsContext.Provider
