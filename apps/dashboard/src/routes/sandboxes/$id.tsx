@@ -508,9 +508,14 @@ function OpenCodeSessions({
   workspaceId: string | undefined;
   opencodeUrl: string;
 }) {
-  const { data: sessions, isLoading } = useQuery(
-    opencodeSessionsQuery(opencodeUrl),
-  );
+  const { data: sessions, isLoading } = useQuery({
+    ...opencodeSessionsQuery(opencodeUrl),
+    select: (sessions) =>
+      sessions.map((session) => ({
+        ...session,
+        sandbox: { id: sandboxId, workspaceId, opencodeUrl },
+      })),
+  });
   const deleteMutation = useDeleteOpenCodeSession(opencodeUrl);
 
   if (isLoading) {
@@ -543,10 +548,7 @@ function OpenCodeSessions({
       <CardContent>
         {sessions && sessions.length > 0 ? (
           <HierarchicalSessionList
-            sessions={sessions.map((session) => ({
-              ...session,
-              sandbox: { id: sandboxId, workspaceId, opencodeUrl },
-            }))}
+            sessions={sessions}
             showDelete
             onDelete={(sessionId) => deleteMutation.mutate(sessionId)}
             isDeleting={deleteMutation.isPending}

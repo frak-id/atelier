@@ -1,6 +1,6 @@
 import type { SessionTemplate } from "@frak-sandbox/shared/constants";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -65,10 +65,10 @@ export function SessionTemplateEditDialog({
   const providers = openCodeConfig?.providers ?? [];
   const agents = openCodeConfig?.agents ?? [];
 
-  const providerOptions = useMemo(
-    () => providers.map((p) => ({ value: p.id, label: p.name })),
-    [providers],
-  );
+  const providerOptions = providers.map((p) => ({
+    value: p.id,
+    label: p.name,
+  }));
 
   const getModelOptions = (providerID: string) => {
     const provider = providers.find((p) => p.id === providerID);
@@ -90,10 +90,7 @@ export function SessionTemplateEditDialog({
     return Object.keys(model.variants);
   };
 
-  const agentOptions = useMemo(
-    () => agents.map((a) => ({ value: a.name, label: a.name })),
-    [agents],
-  );
+  const agentOptions = agents.map((a) => ({ value: a.name, label: a.name }));
 
   if (!template) return null;
 

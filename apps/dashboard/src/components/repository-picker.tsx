@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Github, Lock, Unlock } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { GitHubRepository } from "@/api/client";
 import { githubReposQuery, githubStatusQuery } from "@/api/queries";
 import { Button } from "@/components/ui/button";
@@ -29,23 +29,22 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
   const [search, setSearch] = useState("");
 
   const { data: status } = useQuery(githubStatusQuery);
-  const { data: reposData, isLoading: isLoadingRepos } = useQuery({
+  const { data: repositories, isLoading: isLoadingRepos } = useQuery({
     ...githubReposQuery({ perPage: 100 }),
     enabled: status?.connected === true,
+    select: (data) => data?.repositories ?? [],
   });
 
-  const filteredRepos = useMemo(() => {
-    if (!reposData?.repositories) return [];
-    if (!search) return reposData.repositories;
-
-    const lowerSearch = search.toLowerCase();
-    return reposData.repositories.filter(
-      (repo) =>
-        repo.name.toLowerCase().includes(lowerSearch) ||
-        repo.fullName.toLowerCase().includes(lowerSearch) ||
-        repo.description?.toLowerCase().includes(lowerSearch),
-    );
-  }, [reposData?.repositories, search]);
+  const filteredRepos = search
+    ? (repositories ?? []).filter((repo) => {
+        const lowerSearch = search.toLowerCase();
+        return (
+          repo.name.toLowerCase().includes(lowerSearch) ||
+          repo.fullName.toLowerCase().includes(lowerSearch) ||
+          repo.description?.toLowerCase().includes(lowerSearch)
+        );
+      })
+    : (repositories ?? []);
 
   if (!status?.connected) {
     return (
@@ -62,9 +61,7 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
     );
   }
 
-  const selectedRepo = reposData?.repositories.find(
-    (r) => r.cloneUrl === value,
-  );
+  const selectedRepo = (repositories ?? []).find((r) => r.cloneUrl === value);
 
   return (
     <Popover open={open} onOpenChange={setOpen} modal={false}>

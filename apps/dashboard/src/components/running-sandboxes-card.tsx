@@ -6,13 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function RunningSandboxesCard() {
-  const { data: sandboxes, isLoading: sandboxesLoading } = useQuery(
-    sandboxListQuery(),
+  const { data: runningSandboxes = [], isLoading: sandboxesLoading } = useQuery(
+    {
+      ...sandboxListQuery(),
+      select: (sandboxes) =>
+        (sandboxes ?? []).filter((s) => s.status === "running"),
+    },
   );
   const workspaceMap = useWorkspaceMap();
-
-  const runningSandboxes =
-    sandboxes?.filter((s) => s.status === "running") ?? [];
 
   if (sandboxesLoading) {
     return (

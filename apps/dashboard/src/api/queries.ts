@@ -1,5 +1,4 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
 import { API_HOST, api, type Workspace } from "./client";
 import {
   deleteOpenCodeSession,
@@ -199,31 +198,31 @@ export const workspaceListQuery = () =>
   });
 
 export function useWorkspaceMap() {
-  const { data: workspaces } = useQuery(workspaceListQuery());
-
-  return useMemo(() => {
-    const map = new Map<string, string>();
-    if (workspaces) {
-      for (const w of workspaces) {
+  const { data } = useQuery({
+    ...workspaceListQuery(),
+    select: (workspaces) => {
+      const map = new Map<string, string>();
+      for (const w of workspaces ?? []) {
         map.set(w.id, w.name);
       }
-    }
-    return map;
-  }, [workspaces]);
+      return map;
+    },
+  });
+  return data ?? new Map<string, string>();
 }
 
 export function useWorkspaceDataMap() {
-  const { data: workspaces } = useQuery(workspaceListQuery());
-
-  return useMemo(() => {
-    const map = new Map<string, Workspace>();
-    if (workspaces) {
-      for (const w of workspaces) {
+  const { data } = useQuery({
+    ...workspaceListQuery(),
+    select: (workspaces) => {
+      const map = new Map<string, Workspace>();
+      for (const w of workspaces ?? []) {
         map.set(w.id, w);
       }
-    }
-    return map;
-  }, [workspaces]);
+      return map;
+    },
+  });
+  return data ?? new Map<string, Workspace>();
 }
 
 export const workspaceDetailQuery = (id: string) =>

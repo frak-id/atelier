@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, GitBranch, Loader2, Star } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { githubBranchesQuery } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,20 +31,17 @@ export function BranchPicker({
   const [search, setSearch] = useState("");
   const [manualInput, setManualInput] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data: branches, isLoading } = useQuery({
     ...githubBranchesQuery(owner, repo),
     enabled: !!owner && !!repo && open,
+    select: (data) => data?.branches ?? [],
   });
 
-  const filteredBranches = useMemo(() => {
-    if (!data?.branches) return [];
-    if (!search) return data.branches;
-
-    const lowerSearch = search.toLowerCase();
-    return data.branches.filter((branch) =>
-      branch.name.toLowerCase().includes(lowerSearch),
-    );
-  }, [data?.branches, search]);
+  const filteredBranches = search
+    ? (branches ?? []).filter((branch) =>
+        branch.name.toLowerCase().includes(search.toLowerCase()),
+      )
+    : (branches ?? []);
 
   const handleManualSubmit = () => {
     if (search.trim()) {

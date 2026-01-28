@@ -68,9 +68,18 @@ function SettingsPage() {
 
   const { data: workspaces } = useQuery(workspaceListQuery());
 
-  const { data: allWorkspaceConfigs } = useQuery(
-    configFilesListQuery({ scope: "workspace" }),
-  );
+  const { data: workspaceConfigCounts } = useQuery({
+    ...configFilesListQuery({ scope: "workspace" }),
+    select: (configs) => {
+      const counts = new Map<string, number>();
+      for (const c of configs ?? []) {
+        if (c.workspaceId) {
+          counts.set(c.workspaceId, (counts.get(c.workspaceId) ?? 0) + 1);
+        }
+      }
+      return counts;
+    },
+  });
 
   const { data: sandboxes } = useQuery(sandboxListQuery({ status: "running" }));
 
@@ -101,15 +110,7 @@ function SettingsPage() {
     setSelectedSandboxes([]);
   };
 
-  const workspaceConfigCounts = new Map<string, number>();
-  allWorkspaceConfigs?.forEach((c: ConfigFile) => {
-    if (c.workspaceId) {
-      workspaceConfigCounts.set(
-        c.workspaceId,
-        (workspaceConfigCounts.get(c.workspaceId) ?? 0) + 1,
-      );
-    }
-  });
+  const configCounts = workspaceConfigCounts ?? new Map<string, number>();
 
   if (loadingGlobal) {
     return (
@@ -215,7 +216,7 @@ function SettingsPage() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {workspaces.map((workspace) => {
-              const count = workspaceConfigCounts.get(workspace.id) ?? 0;
+              const count = configCounts.get(workspace.id) ?? 0;
               return (
                 <Card key={workspace.id}>
                   <CardHeader className="pb-2">
