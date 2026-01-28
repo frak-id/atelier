@@ -235,13 +235,40 @@ export const CaddyService = {
       return;
     }
 
+    const devRouteDomains = await this.findDevRoutesForSandbox(sandboxId);
+
     await Promise.all([
       this.removeRoute(vscodeDomain),
       this.removeRoute(opencodeDomain),
       this.removeRoute(terminalDomain),
+      ...devRouteDomains.map((domain) => this.removeRoute(domain)),
     ]);
 
-    log.info({ sandboxId }, "Caddy routes removed");
+    log.info(
+      { sandboxId, devRoutesRemoved: devRouteDomains.length },
+      "Caddy routes removed",
+    );
+  },
+
+  async findDevRoutesForSandbox(sandboxId: string): Promise<string[]> {
+    try {
+      const routes = await this.getRoutes();
+      const suffix = `${sandboxId}.${config.caddy.domainSuffix}`;
+      const domains: string[] = [];
+
+      for (const route of routes) {
+        const r = route as { "@id"?: string };
+        const id = r["@id"];
+        if (id?.startsWith("dev-") && id.endsWith(suffix)) {
+          domains.push(id);
+        }
+      }
+
+      return domains;
+    } catch {
+      log.warn({ sandboxId }, "Failed to find dev routes for cleanup");
+      return [];
+    }
   },
 
   async removeRoute(domain: string): Promise<void> {

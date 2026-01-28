@@ -399,29 +399,45 @@ class SpawnContext {
       !this.client ||
       !this.paths ||
       !this.network ||
-      !this.options.workspaceId
+      !this.options.workspaceId ||
+      !this.workspace
     ) {
       throw new Error("Snapshot restore prerequisites not initialized");
     }
 
     const snapshotPaths = getPrebuildSnapshotPaths(this.options.workspaceId);
+    const prebuildSandboxId = this.workspace.config.prebuild?.latestId;
+    if (!prebuildSandboxId) {
+      throw new Error("Prebuild has no latestId");
+    }
 
-    await this.client.setDrive("rootfs", this.paths.overlay, true);
-    await this.client.setNetworkInterface(
-      "eth0",
-      this.network.macAddress,
-      this.network.tapDevice,
+    // FC snapshot restore requires drive/vsock paths to match the original.
+    // The new sandbox has different paths, so we symlink the originals.
+    // Drive: original LVM path → new LVM volume (FC opens the original path)
+    // Vsock: new path → original UDS (FC creates UDS at original path, agent client reads new path)
+    const originalPaths = getSandboxPaths(
+      prebuildSandboxId,
+      `/dev/sandbox-vg/sandbox-${prebuildSandboxId}`,
     );
-
-    await this.client.setVsock(3, this.paths.vsock);
+    await $`ln -sf ${this.paths.overlay} ${originalPaths.overlay}`.quiet();
 
     log.info({ sandboxId: this.sandboxId }, "Restoring from VM snapshot");
     await this.client.loadSnapshot(
       snapshotPaths.snapshotFile,
       snapshotPaths.memFile,
+      {
+        networkOverrides: [
+          { iface_id: "eth0", host_dev_name: this.network.tapDevice },
+        ],
+      },
     );
 
     await this.waitForBoot();
+
+    // FC created vsock UDS at original path; symlink new path to it
+    await $`ln -sf ${originalPaths.vsock} ${this.paths.vsock}`.quiet();
+    await $`rm -f ${originalPaths.overlay}`.quiet().nothrow();
+
     log.info({ sandboxId: this.sandboxId }, "VM restored from snapshot");
   }
 
@@ -675,7 +691,9 @@ class SpawnContext {
     }
 
     if (this.paths) {
-      await $`rm -f ${this.paths.socket} ${this.paths.pid}`.quiet().nothrow();
+      await $`rm -f ${this.paths.socket} ${this.paths.vsock} ${this.paths.pid} ${this.paths.log}`
+        .quiet()
+        .nothrow();
 
       if (this.paths.useLvm) {
         await StorageService.deleteSandboxVolume(this.sandboxId);

@@ -106,6 +106,13 @@ export const SshPiperService = {
     }
   },
 
+  async listRouteSandboxIds(): Promise<string[]> {
+    if (config.isMock()) return [];
+
+    const pipesConfig = await readPipesConfig();
+    return pipesConfig.pipes.flatMap((p) => p.from.map((f) => f.username));
+  },
+
   async updateAuthorizedKeys(publicKeys: string[]): Promise<void> {
     if (config.isMock()) {
       log.debug(

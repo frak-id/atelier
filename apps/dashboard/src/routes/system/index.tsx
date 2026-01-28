@@ -115,6 +115,22 @@ function SystemPage() {
                 <p>{cleanupMutation.data.tapDevicesRemoved}</p>
               </div>
               <div>
+                <span className="text-muted-foreground">LVM Volumes</span>
+                <p>{cleanupMutation.data.lvmVolumesRemoved}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Logs</span>
+                <p>{cleanupMutation.data.logsRemoved}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Caddy Routes</span>
+                <p>{cleanupMutation.data.caddyRoutesRemoved}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">SSH Routes</span>
+                <p>{cleanupMutation.data.sshRoutesRemoved}</p>
+              </div>
+              <div>
                 <span className="text-muted-foreground">Space Freed</span>
                 <p>{formatBytes(cleanupMutation.data.spaceFreed)}</p>
               </div>

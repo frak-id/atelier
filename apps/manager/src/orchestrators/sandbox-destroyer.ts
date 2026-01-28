@@ -1,6 +1,9 @@
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/agent.client.ts";
-import { getSocketPath } from "../infrastructure/firecracker/index.ts";
+import {
+  getSocketPath,
+  getVsockPath,
+} from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import {
   CaddyService,
@@ -44,8 +47,12 @@ export class SandboxDestroyer {
       }
 
       const socketPath = getSocketPath(sandboxId);
+      const vsockPath = getVsockPath(sandboxId);
       const pidPath = `${config.paths.SOCKET_DIR}/${sandboxId}.pid`;
-      await $`rm -f ${socketPath} ${pidPath}`.quiet().nothrow();
+      const logPath = `${config.paths.LOG_DIR}/${sandboxId}.log`;
+      await $`rm -f ${socketPath} ${vsockPath} ${pidPath} ${logPath}`
+        .quiet()
+        .nothrow();
 
       const lvmAvailable = await StorageService.isAvailable();
       if (lvmAvailable) {

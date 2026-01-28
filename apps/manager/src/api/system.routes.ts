@@ -2,6 +2,10 @@ import { $ } from "bun";
 import { Elysia } from "elysia";
 import { sandboxService } from "../container.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
+import {
+  CaddyService,
+  SshPiperService,
+} from "../infrastructure/proxy/index.ts";
 import { QueueService } from "../infrastructure/queue/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
@@ -73,22 +77,48 @@ async function performCleanup(): Promise<CleanupResult> {
   let overlaysRemoved = 0;
   let tapDevicesRemoved = 0;
   let lvmVolumesRemoved = 0;
+  let logsRemoved = 0;
+  let caddyRoutesRemoved = 0;
+  let sshRoutesRemoved = 0;
   const spaceFreed = 0;
 
   if (!config.isMock()) {
-    const socketResult =
-      await $`find ${config.paths.SANDBOX_DIR} -name "*.socket" -type s 2>/dev/null | wc -l`
-        .quiet()
-        .nothrow();
-    socketsRemoved = Number.parseInt(
-      socketResult.stdout.toString().trim() || "0",
-      10,
-    );
+    const knownSandboxIds = new Set(sandboxService.getAll().map((s) => s.id));
 
-    if (socketsRemoved > 0) {
-      await $`find ${config.paths.SANDBOX_DIR} -name "*.socket" -type s -delete 2>/dev/null`
+    const orphanSocketResult =
+      await $`find ${config.paths.SOCKET_DIR} -maxdepth 1 \( -name "*.sock" -o -name "*.vsock" -o -name "*.pid" \) 2>/dev/null`
         .quiet()
         .nothrow();
+    const socketFiles = orphanSocketResult.stdout
+      .toString()
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    for (const file of socketFiles) {
+      const basename = file.split("/").pop() || "";
+      const sandboxId = basename.replace(/\.(sock|vsock|pid)$/, "");
+      if (!knownSandboxIds.has(sandboxId)) {
+        await $`rm -f ${file}`.quiet().nothrow();
+        socketsRemoved++;
+      }
+    }
+
+    const orphanLogResult =
+      await $`find ${config.paths.LOG_DIR} -maxdepth 1 -name "*.log" 2>/dev/null`
+        .quiet()
+        .nothrow();
+    const logFiles = orphanLogResult.stdout
+      .toString()
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    for (const file of logFiles) {
+      const basename = file.split("/").pop() || "";
+      const sandboxId = basename.replace(/\.log$/, "");
+      if (!knownSandboxIds.has(sandboxId)) {
+        await $`rm -f ${file}`.quiet().nothrow();
+        logsRemoved++;
+      }
     }
 
     const overlayResult =
@@ -99,8 +129,6 @@ async function performCleanup(): Promise<CleanupResult> {
       overlayResult.stdout.toString().trim() || "0",
       10,
     );
-
-    const knownSandboxIds = new Set(sandboxService.getAll().map((s) => s.id));
 
     const tapDevices = await NetworkService.listTapDevices();
     for (const tap of tapDevices) {
@@ -124,6 +152,32 @@ async function performCleanup(): Promise<CleanupResult> {
         }
       }
     }
+
+    const routes = await CaddyService.getRoutes();
+    for (const route of routes) {
+      const r = route as { "@id"?: string };
+      const id = r["@id"];
+      if (!id || id === "wildcard-fallback") continue;
+
+      const sandboxIdMatch = [...knownSandboxIds].find((sid: string) =>
+        id.endsWith(`${sid}.${config.caddy.domainSuffix}`),
+      );
+      if (!sandboxIdMatch) {
+        const domain = id;
+        if (domain.endsWith(`.${config.caddy.domainSuffix}`)) {
+          await CaddyService.removeRoute(domain);
+          caddyRoutesRemoved++;
+        }
+      }
+    }
+
+    const sshSandboxIds = await SshPiperService.listRouteSandboxIds();
+    for (const sshId of sshSandboxIds) {
+      if (!knownSandboxIds.has(sshId)) {
+        await SshPiperService.removeRoute(sshId);
+        sshRoutesRemoved++;
+      }
+    }
   }
 
   const ONE_HOUR_MS = 3600000;
@@ -135,6 +189,9 @@ async function performCleanup(): Promise<CleanupResult> {
       overlaysRemoved,
       tapDevicesRemoved,
       lvmVolumesRemoved,
+      logsRemoved,
+      caddyRoutesRemoved,
+      sshRoutesRemoved,
       jobsRemoved,
     },
     "Cleanup completed",
@@ -145,6 +202,9 @@ async function performCleanup(): Promise<CleanupResult> {
     overlaysRemoved,
     tapDevicesRemoved,
     lvmVolumesRemoved,
+    logsRemoved,
+    caddyRoutesRemoved,
+    sshRoutesRemoved,
     spaceFreed,
   };
 }

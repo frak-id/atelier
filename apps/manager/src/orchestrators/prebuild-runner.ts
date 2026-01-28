@@ -242,7 +242,7 @@ export class PrebuildRunner {
 
       const result = await this.deps.agentClient.exec(
         sandboxId,
-        `git -C ${fullPath} rev-parse HEAD`,
+        `su dev -c 'git -C ${fullPath} rev-parse HEAD'`,
         { timeout: 10000 },
       );
 

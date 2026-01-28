@@ -180,15 +180,22 @@ export class FirecrackerClient {
   async loadSnapshot(
     snapshotPath: string,
     memFilePath: string,
-    enableDiffSnapshots = false,
+    options?: {
+      enableDiffSnapshots?: boolean;
+      networkOverrides?: { iface_id: string; host_dev_name: string }[];
+    },
   ): Promise<void> {
     await this.request("/snapshot/load", {
       method: "PUT",
       body: {
         snapshot_path: snapshotPath,
-        mem_file_path: memFilePath,
-        enable_diff_snapshots: enableDiffSnapshots,
+        mem_backend: {
+          backend_path: memFilePath,
+          backend_type: "File",
+        },
+        enable_diff_snapshots: options?.enableDiffSnapshots ?? false,
         resume_vm: true,
+        network_overrides: options?.networkOverrides,
       },
     });
   }
