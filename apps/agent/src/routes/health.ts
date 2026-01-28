@@ -1,8 +1,7 @@
-import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { Elysia } from "elysia";
-import { sandboxConfig } from "../constants";
-import { exec } from "../utils/exec";
+import { sandboxConfig } from "../constants.ts";
+import { exec } from "../utils/exec.ts";
+
+const startTime = performance.now();
 
 async function checkPort(port: number): Promise<boolean> {
   try {
@@ -17,7 +16,7 @@ async function checkPort(port: number): Promise<boolean> {
 
 function getCpuUsage(): number {
   try {
-    const loadavg = readFileSync("/proc/loadavg", "utf-8");
+    const loadavg = Deno.readTextFileSync("/proc/loadavg");
     const [load1] = loadavg.split(" ");
     return parseFloat(load1 || "0");
   } catch {
@@ -27,7 +26,7 @@ function getCpuUsage(): number {
 
 function getMemoryUsage(): { total: number; used: number; free: number } {
   try {
-    const meminfo = readFileSync("/proc/meminfo", "utf-8");
+    const meminfo = Deno.readTextFileSync("/proc/meminfo");
     const lines = meminfo.split("\n");
     const values: Record<string, number> = {};
 
@@ -55,8 +54,14 @@ function getMemoryUsage(): { total: number; used: number; free: number } {
 
 function getDiskUsage(): { total: number; used: number; free: number } {
   try {
-    const output = execSync("df -B1 / | tail -1").toString();
-    const [, total, used, free] = output.split(/\s+/);
+    const cmd = new Deno.Command("sh", {
+      args: ["-c", "df -B1 / | tail -1"],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const output = cmd.outputSync();
+    const text = new TextDecoder().decode(output.stdout);
+    const [, total, used, free] = text.split(/\s+/);
     return {
       total: parseInt(total || "0", 10),
       used: parseInt(used || "0", 10),
@@ -67,25 +72,27 @@ function getDiskUsage(): { total: number; used: number; free: number } {
   }
 }
 
-export const healthRoutes = new Elysia()
-  .get("/health", async () => {
-    const services = sandboxConfig?.services;
-    const [vscode, opencode, sshd, ttyd] = await Promise.all([
-      checkPort(services?.vscode.port ?? 8080),
-      checkPort(services?.opencode.port ?? 3000),
-      checkPort(22),
-      checkPort(services?.terminal.port ?? 7681),
-    ]);
-    return {
-      status: "healthy",
-      sandboxId: sandboxConfig?.sandboxId,
-      services: { vscode, opencode, sshd, ttyd },
-      uptime: process.uptime(),
-    };
-  })
-  .get("/metrics", () => ({
+export async function handleHealth(): Promise<Response> {
+  const services = sandboxConfig?.services;
+  const [vscode, opencode, sshd, ttyd] = await Promise.all([
+    checkPort(services?.vscode.port ?? 8080),
+    checkPort(services?.opencode.port ?? 3000),
+    checkPort(22),
+    checkPort(services?.terminal.port ?? 7681),
+  ]);
+  return Response.json({
+    status: "healthy",
+    sandboxId: sandboxConfig?.sandboxId,
+    services: { vscode, opencode, sshd, ttyd },
+    uptime: (performance.now() - startTime) / 1000,
+  });
+}
+
+export function handleMetrics(): Response {
+  return Response.json({
     cpu: getCpuUsage(),
     memory: getMemoryUsage(),
     disk: getDiskUsage(),
     timestamp: new Date().toISOString(),
-  }));
+  });
+}

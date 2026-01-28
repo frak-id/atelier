@@ -1,20 +1,35 @@
-import { node } from "@elysiajs/node";
-import { Elysia } from "elysia";
-import { AGENT_PORT } from "./constants";
-import { appsRoutes } from "./routes/apps";
-import { configRoutes } from "./routes/config";
-import { devRoutes } from "./routes/dev";
-import { execRoutes } from "./routes/exec";
-import { healthRoutes } from "./routes/health";
+import { AGENT_PORT, VSOCK_PORT } from "./constants.ts";
+import { handler } from "./router.ts";
 
-const app = new Elysia({ adapter: node() })
-  .use(healthRoutes)
-  .use(configRoutes)
-  .use(appsRoutes)
-  .use(devRoutes)
-  .use(execRoutes)
-  .listen(AGENT_PORT, () => {
-    console.log(`Sandbox agent running at http://0.0.0.0:${AGENT_PORT}`);
-  });
+try {
+  Deno.serve(
+    {
+      transport: "vsock" as unknown as undefined,
+      cid: 4294967295,
+      port: VSOCK_PORT,
+      onListen() {
+        console.log(
+          `[vsock] Sandbox agent listening on vsock port ${VSOCK_PORT}`,
+        );
+      },
+    } as Parameters<typeof Deno.serve>[0],
+    handler,
+  );
+} catch (err) {
+  console.warn(
+    `[vsock] Failed to start vsock listener: ${err instanceof Error ? err.message : err}`,
+  );
+}
 
-export type App = typeof app;
+Deno.serve(
+  {
+    port: AGENT_PORT,
+    hostname: "0.0.0.0",
+    onListen() {
+      console.log(
+        `[tcp] Sandbox agent listening on http://0.0.0.0:${AGENT_PORT}`,
+      );
+    },
+  },
+  handler,
+);

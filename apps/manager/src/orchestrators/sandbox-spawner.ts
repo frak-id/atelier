@@ -383,6 +383,8 @@ class SpawnContext {
       this.sandbox.runtime.memoryMb,
     );
 
+    await this.client.setVsock(3, this.paths.vsock);
+
     log.debug({ sandboxId: this.sandboxId }, "VM configured");
   }
 
@@ -410,6 +412,8 @@ class SpawnContext {
       this.network.macAddress,
       this.network.tapDevice,
     );
+
+    await this.client.setVsock(3, this.paths.vsock);
 
     log.info({ sandboxId: this.sandboxId }, "Restoring from VM snapshot");
     await this.client.loadSnapshot(
@@ -453,7 +457,7 @@ class SpawnContext {
     if (!this.network) throw new Error("Network not allocated");
 
     const agentReady = await this.deps.agentClient.waitForAgent(
-      this.network.ipAddress,
+      this.sandboxId,
       { timeout: 60000 },
     );
 
@@ -483,7 +487,7 @@ class SpawnContext {
 
     try {
       const agentResult = await this.deps.agentOperations.resizeStorage(
-        this.network.ipAddress,
+        this.sandboxId,
       );
 
       if (agentResult.success) {
@@ -534,13 +538,10 @@ class SpawnContext {
       "Cloning repository",
     );
 
-    await this.deps.agentClient.exec(
-      this.network.ipAddress,
-      `rm -rf ${clonePath}`,
-    );
+    await this.deps.agentClient.exec(this.sandboxId, `rm -rf ${clonePath}`);
 
     const result = await this.deps.agentClient.exec(
-      this.network.ipAddress,
+      this.sandboxId,
       `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
       { timeout: 120000 },
     );
@@ -554,11 +555,11 @@ class SpawnContext {
     }
 
     await this.deps.agentClient.exec(
-      this.network.ipAddress,
+      this.sandboxId,
       `chown -R dev:dev ${clonePath}`,
     );
     await this.deps.agentClient.exec(
-      this.network.ipAddress,
+      this.sandboxId,
       `su - dev -c 'git config --global --add safe.directory ${clonePath}'`,
     );
     log.info(

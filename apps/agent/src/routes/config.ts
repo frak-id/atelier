@@ -1,84 +1,81 @@
-import { readFile, stat } from "node:fs/promises";
-import { Elysia } from "elysia";
-import { sandboxConfig, VM_PATHS } from "../constants";
-import { ConfigReadQuerySchema } from "../types";
-import { discoverConfigFiles } from "../utils/config";
+import { sandboxConfig, VM_PATHS } from "../constants.ts";
+import { discoverConfigFiles } from "../utils/config.ts";
 
-export const configRoutes = new Elysia()
-  .get("/config", () => {
-    return sandboxConfig ?? { error: "Config not found" };
-  })
-  .get("/editor-config", async () => {
-    const [vscodeSettings, vscodeExtensions, opencodeAuth, opencodeConfig] =
-      await Promise.all([
-        readFile(VM_PATHS.vscodeSettings, "utf-8").catch(() => "{}"),
-        readFile(VM_PATHS.vscodeExtensions, "utf-8").catch(() => "[]"),
-        readFile(VM_PATHS.opencodeAuth, "utf-8").catch(() => "{}"),
-        readFile(VM_PATHS.opencodeConfig, "utf-8").catch(() => "{}"),
-      ]);
+export function handleConfig(): Response {
+  return Response.json(sandboxConfig ?? { error: "Config not found" });
+}
 
-    return {
-      vscode: {
-        settings: JSON.parse(vscodeSettings),
-        extensions: JSON.parse(vscodeExtensions),
-      },
-      opencode: {
-        auth: JSON.parse(opencodeAuth),
-        config: JSON.parse(opencodeConfig),
-      },
-    };
-  })
-  .get("/config/discover", () => {
-    return { configs: discoverConfigFiles() };
-  })
-  .get(
-    "/config/read",
-    async ({ query, set }) => {
-      const path = query.path;
-      if (!path) {
-        set.status = 400;
-        return { error: "path query parameter required" };
-      }
+export async function handleEditorConfig(): Promise<Response> {
+  const [vscodeSettings, vscodeExtensions, opencodeAuth, opencodeConfig] =
+    await Promise.all([
+      Deno.readTextFile(VM_PATHS.vscodeSettings).catch(() => "{}"),
+      Deno.readTextFile(VM_PATHS.vscodeExtensions).catch(() => "[]"),
+      Deno.readTextFile(VM_PATHS.opencodeAuth).catch(() => "{}"),
+      Deno.readTextFile(VM_PATHS.opencodeConfig).catch(() => "{}"),
+    ]);
 
-      const normalizedPath = path.replace(/^~/, "/home/dev");
+  return Response.json({
+    vscode: {
+      settings: JSON.parse(vscodeSettings),
+      extensions: JSON.parse(vscodeExtensions),
+    },
+    opencode: {
+      auth: JSON.parse(opencodeAuth),
+      config: JSON.parse(opencodeConfig),
+    },
+  });
+}
 
-      if (
-        !normalizedPath.startsWith("/home/dev/") &&
-        !normalizedPath.startsWith("/etc/sandbox/")
-      ) {
-        set.status = 403;
-        return {
-          error: "Access denied - path must be under /home/dev or /etc/sandbox",
-        };
-      }
+export function handleConfigDiscover(): Response {
+  return Response.json({ configs: discoverConfigFiles() });
+}
 
+export async function handleConfigRead(url: URL): Promise<Response> {
+  const path = url.searchParams.get("path");
+  if (!path) {
+    return Response.json(
+      { error: "path query parameter required" },
+      { status: 400 },
+    );
+  }
+
+  const normalizedPath = path.replace(/^~/, "/home/dev");
+
+  if (
+    !normalizedPath.startsWith("/home/dev/") &&
+    !normalizedPath.startsWith("/etc/sandbox/")
+  ) {
+    return Response.json(
+      { error: "Access denied - path must be under /home/dev or /etc/sandbox" },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const content = await Deno.readTextFile(normalizedPath);
+    const stats = await Deno.stat(normalizedPath);
+
+    let contentType: "json" | "text" = "text";
+    if (normalizedPath.endsWith(".json")) {
       try {
-        const content = await readFile(normalizedPath, "utf-8");
-        const stats = await stat(normalizedPath);
-
-        let contentType: "json" | "text" = "text";
-        if (normalizedPath.endsWith(".json")) {
-          try {
-            JSON.parse(content);
-            contentType = "json";
-          } catch {
-            /* empty */
-          }
-        }
-
-        return {
-          path: normalizedPath,
-          displayPath: normalizedPath.replace("/home/dev", "~"),
-          content,
-          contentType,
-          size: stats.size,
-        };
+        JSON.parse(content);
+        contentType = "json";
       } catch {
-        set.status = 404;
-        return { error: "File not found or not readable" };
+        //
       }
-    },
-    {
-      query: ConfigReadQuerySchema,
-    },
-  );
+    }
+
+    return Response.json({
+      path: normalizedPath,
+      displayPath: normalizedPath.replace("/home/dev", "~"),
+      content,
+      contentType,
+      size: stats.size,
+    });
+  } catch {
+    return Response.json(
+      { error: "File not found or not readable" },
+      { status: 404 },
+    );
+  }
+}

@@ -25,11 +25,10 @@ if [ ! -d "$IMAGE_DIR" ]; then
     exit 1
 fi
 
-AGENT_SCRIPT="$SCRIPT_DIR/sandbox-agent.mjs"
-if [ ! -f "$AGENT_SCRIPT" ]; then
-    echo "Error: sandbox-agent.mjs not found at: $AGENT_SCRIPT"
-    echo "Deploy with 'bun run deploy' first, or build manually:"
-    echo "  cd apps/agent && bun run build"
+DEPLOY_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+AGENT_SRC="$DEPLOY_ROOT/apps/agent/src"
+if [ ! -f "$AGENT_SRC/index.ts" ]; then
+    echo "Error: sandbox-agent source not found at: $AGENT_SRC/index.ts"
     exit 1
 fi
 
@@ -39,13 +38,13 @@ echo "Output directory: $OUTPUT_DIR"
 
 echo ""
 echo "Step 1: Preparing build context..."
-cp "$AGENT_SCRIPT" "$IMAGE_DIR/sandbox-agent.mjs"
+cp -r "$AGENT_SRC" "$IMAGE_DIR/sandbox-agent/"
 
 echo ""
 echo "Step 2: Building Docker image..."
 docker build -t "frak-sandbox/$IMAGE_NAME" "$IMAGE_DIR"
 
-rm -f "$IMAGE_DIR/sandbox-agent.mjs"
+rm -rf "$IMAGE_DIR/sandbox-agent"
 
 echo ""
 echo "Step 3: Creating container..."

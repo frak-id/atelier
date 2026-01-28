@@ -1,13 +1,6 @@
-import { Elysia, t } from "elysia";
-import { DEFAULT_EXEC_TIMEOUT, MAX_EXEC_BUFFER } from "../constants";
-import { ExecRequestSchema } from "../types";
-import { exec } from "../utils/exec";
-
-export interface ExecResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
+import { DEFAULT_EXEC_TIMEOUT, MAX_EXEC_BUFFER } from "../constants.ts";
+import type { ExecResult } from "../types.ts";
+import { exec } from "../utils/exec.ts";
 
 async function runCommand(
   command: string,
@@ -34,31 +27,21 @@ async function runCommand(
   }
 }
 
-const BatchExecRequestSchema = t.Object({
-  commands: t.Array(
-    t.Object({
-      id: t.String(),
-      command: t.String(),
-      timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),
-    }),
-    { minItems: 1, maxItems: 20 },
-  ),
-});
+export async function handleExec(request: Request): Promise<Response> {
+  const body = await request.json();
+  const result = await runCommand(body.command, body.timeout);
+  return Response.json(result);
+}
 
-export const execRoutes = new Elysia()
-  .post("/exec", async ({ body }) => runCommand(body.command, body.timeout), {
-    body: ExecRequestSchema,
-  })
-  .post(
-    "/exec/batch",
-    async ({ body }) => {
-      const results = await Promise.all(
-        body.commands.map(async (cmd) => ({
-          id: cmd.id,
-          ...(await runCommand(cmd.command, cmd.timeout)),
-        })),
-      );
-      return { results };
-    },
-    { body: BatchExecRequestSchema },
+export async function handleExecBatch(request: Request): Promise<Response> {
+  const body = await request.json();
+  const results = await Promise.all(
+    body.commands.map(
+      async (cmd: { id: string; command: string; timeout?: number }) => ({
+        id: cmd.id,
+        ...(await runCommand(cmd.command, cmd.timeout)),
+      }),
+    ),
   );
+  return Response.json({ results });
+}

@@ -192,4 +192,11 @@ export class FirecrackerClient {
       },
     });
   }
+
+  async setVsock(guestCid: number, udsPath: string): Promise<void> {
+    await this.request("/vsock", {
+      method: "PUT",
+      body: { guest_cid: guestCid, uds_path: udsPath },
+    });
+  }
 }

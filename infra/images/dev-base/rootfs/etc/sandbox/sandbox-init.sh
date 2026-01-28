@@ -62,6 +62,7 @@ mknod -m 666 /dev/urandom c 1 9
 mknod -m 666 /dev/tty c 5 0
 mknod -m 600 /dev/console c 5 1
 mknod -m 666 /dev/ptmx c 5 2
+mknod -m 666 /dev/vsock c 10 123
 ln -sf /proc/self/fd /dev/fd 2>/dev/null
 ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null
 ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null
@@ -172,12 +173,12 @@ fi
 
 # Start sandbox-agent FIRST for fast boot detection by manager
 log "Starting sandbox-agent..."
-if [ -f /usr/local/lib/sandbox-agent.mjs ]; then
-    node /usr/local/lib/sandbox-agent.mjs > "$LOG_DIR/agent.log" 2>&1 &
+if [ -f /usr/local/lib/sandbox-agent/src/index.ts ]; then
+    deno run --allow-all --unstable-vsock /usr/local/lib/sandbox-agent/src/index.ts > "$LOG_DIR/agent.log" 2>&1 &
     log "sandbox-agent started (PID $!)"
 else
-    log "ERROR: sandbox-agent.mjs not found"
-    ls -la /usr/local/lib/ >> "$LOG_DIR/init.log" 2>&1
+    log "ERROR: sandbox-agent not found"
+    ls -la /usr/local/lib/sandbox-agent/ >> "$LOG_DIR/init.log" 2>&1
 fi
 
 log "Starting SSH daemon..."

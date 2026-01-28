@@ -1,10 +1,14 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
-import {
-  CONFIG_SCAN_DIRS,
-  DISCOVERABLE_CONFIGS,
-} from "@frak-sandbox/shared/constants";
-import type { DiscoveredConfig } from "../types";
+import { CONFIG_SCAN_DIRS, DISCOVERABLE_CONFIGS } from "../constants.ts";
+import type { DiscoveredConfig } from "../types.ts";
+
+function existsSync(path: string): boolean {
+  try {
+    Deno.statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function discoverConfigFiles(): DiscoveredConfig[] {
   const results: DiscoveredConfig[] = [];
@@ -18,9 +22,9 @@ export function discoverConfigFiles(): DiscoveredConfig[] {
     let size: number | undefined;
     if (exists) {
       try {
-        size = statSync(path).size;
+        size = Deno.statSync(path).size;
       } catch {
-        /* empty */
+        //
       }
     }
 
@@ -37,8 +41,8 @@ export function discoverConfigFiles(): DiscoveredConfig[] {
     if (!existsSync(dir)) continue;
 
     try {
-      const files = readdirSync(dir);
-      for (const file of files) {
+      for (const entry of Deno.readDirSync(dir)) {
+        const file = entry.name;
         if (
           !file.endsWith(".json") &&
           !file.endsWith(".js") &&
@@ -47,13 +51,13 @@ export function discoverConfigFiles(): DiscoveredConfig[] {
           continue;
         }
 
-        const fullPath = join(dir, file);
+        const fullPath = `${dir}/${file}`;
         if (seenPaths.has(fullPath)) continue;
         seenPaths.add(fullPath);
 
         try {
-          const stats = statSync(fullPath);
-          if (!stats.isFile()) continue;
+          const stats = Deno.statSync(fullPath);
+          if (!stats.isFile) continue;
 
           results.push({
             path: fullPath,
@@ -63,11 +67,11 @@ export function discoverConfigFiles(): DiscoveredConfig[] {
             size: stats.size,
           });
         } catch {
-          /* empty */
+          //
         }
       }
     } catch {
-      /* empty */
+      //
     }
   }
 

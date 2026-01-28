@@ -96,7 +96,7 @@ export class SandboxLifecycle {
 
     const volumePath = `/dev/${LVM.VG_NAME}/${LVM.SANDBOX_PREFIX}${sandboxId}`;
     const paths = getSandboxPaths(sandboxId, volumePath);
-    const { ipAddress, macAddress } = sandbox.runtime;
+    const { macAddress } = sandbox.runtime;
     const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
 
     const tapExists =
@@ -154,13 +154,15 @@ export class SandboxLifecycle {
       sandbox.runtime.memoryMb,
     );
 
+    await client.setVsock(3, paths.vsock);
+
     log.debug({ sandboxId }, "VM configured");
 
     await client.start();
     await this.waitForBoot(client);
     log.debug({ sandboxId }, "VM booted");
 
-    const agentReady = await this.deps.agentClient.waitForAgent(ipAddress, {
+    const agentReady = await this.deps.agentClient.waitForAgent(sandboxId, {
       timeout: 60000,
     });
 

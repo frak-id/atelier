@@ -82,7 +82,7 @@ export class PrebuildRunner {
         "Prebuild sandbox spawned",
       );
 
-      const agentReady = await this.deps.agentClient.waitForAgent(ipAddress, {
+      const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
         timeout: AGENT_READY_TIMEOUT,
       });
 
@@ -90,10 +90,13 @@ export class PrebuildRunner {
         throw new Error("Agent failed to become ready");
       }
 
-      await this.runInitCommands(ipAddress, workspace);
-      const commitHashes = await this.captureCommitHashes(ipAddress, workspace);
-      await this.warmupOpencode(ipAddress, workspace.id);
-      await this.deps.agentClient.exec(ipAddress, "sync");
+      await this.runInitCommands(sandbox.id, workspace);
+      const commitHashes = await this.captureCommitHashes(
+        sandbox.id,
+        workspace,
+      );
+      await this.warmupOpencode(sandbox.id, ipAddress, workspace.id);
+      await this.deps.agentClient.exec(sandbox.id, "sync");
 
       await this.createVmSnapshot(workspaceId, sandbox.id);
       await StorageService.createPrebuild(workspaceId, sandbox.id);
@@ -222,7 +225,7 @@ export class PrebuildRunner {
   }
 
   private async captureCommitHashes(
-    ipAddress: string,
+    sandboxId: string,
     workspace: Workspace,
   ): Promise<Record<string, string>> {
     const hashes: Record<string, string> = {};
@@ -238,7 +241,7 @@ export class PrebuildRunner {
       const fullPath = `/home/dev${clonePath}`;
 
       const result = await this.deps.agentClient.exec(
-        ipAddress,
+        sandboxId,
         `git -C ${fullPath} rev-parse HEAD`,
         { timeout: 10000 },
       );
@@ -269,7 +272,7 @@ export class PrebuildRunner {
   }
 
   private async runInitCommands(
-    ipAddress: string,
+    sandboxId: string,
     workspace: Workspace,
   ): Promise<void> {
     const initCommands = workspace.config.initCommands;
@@ -290,7 +293,7 @@ export class PrebuildRunner {
       );
 
       const result = await this.deps.agentClient.exec(
-        ipAddress,
+        sandboxId,
         `cd ${WORKSPACE_DIR} && su dev -c '${command.replace(/'/g, "'\\''")}'`,
         { timeout: COMMAND_TIMEOUT },
       );
@@ -318,7 +321,7 @@ export class PrebuildRunner {
 
     log.info({ workspaceId: workspace.id }, "Fixing workspace ownership");
     await this.deps.agentClient.exec(
-      ipAddress,
+      sandboxId,
       `chown -R dev:dev ${WORKSPACE_DIR}`,
       { timeout: COMMAND_TIMEOUT },
     );
@@ -329,13 +332,14 @@ export class PrebuildRunner {
    * We start it briefly here so those packages are cached in the prebuild snapshot.
    */
   private async warmupOpencode(
+    sandboxId: string,
     ipAddress: string,
     workspaceId: string,
   ): Promise<void> {
     log.info({ workspaceId }, "Warming up opencode server");
 
     const startResult = await this.deps.agentClient.exec(
-      ipAddress,
+      sandboxId,
       `su dev -c 'cd ${WORKSPACE_DIR} && nohup opencode serve --hostname 0.0.0.0 --port ${config.raw.services.opencode.port} > /tmp/opencode-warmup.log 2>&1 &'`,
       { timeout: 10000 },
     );
@@ -378,7 +382,7 @@ export class PrebuildRunner {
       );
     }
 
-    await this.deps.agentClient.exec(ipAddress, "pkill -f 'opencode serve'", {
+    await this.deps.agentClient.exec(sandboxId, "pkill -f 'opencode serve'", {
       timeout: 5000,
     });
 
