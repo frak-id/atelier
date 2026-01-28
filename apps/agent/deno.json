@@ -1,4 +1,10 @@
 {
+  "tasks": {
+    "dev": "deno run --allow-all --unstable-vsock src/index.ts",
+    "build": "deno compile --allow-all --unstable-vsock --output dist/sandbox-agent src/index.ts",
+    "build:linux": "deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output dist/sandbox-agent src/index.ts",
+    "typecheck": "deno check src/index.ts"
+  },
   "compilerOptions": {
     "strict": true
   },

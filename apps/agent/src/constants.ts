@@ -1,18 +1,49 @@
-import {
-  AUTH_PROVIDERS,
-  CONFIG_SCAN_DIRS,
-  DISCOVERABLE_CONFIGS,
-  type DiscoverableConfigCategory,
-  VM_PATHS,
-} from "../../../packages/shared/src/constants.ts";
+export const VM_PATHS = {
+  config: "/etc/sandbox/config.json",
+  secrets: "/etc/sandbox/secrets/.env",
+  vscodeSettings: "/home/dev/.local/share/code-server/User/settings.json",
+  vscodeExtensions: "/etc/sandbox/vscode-extensions.json",
+  opencodeAuth: "/home/dev/.local/share/opencode/auth.json",
+  opencodeConfig: "/home/dev/.config/opencode/opencode.json",
+  opencodeOhMy: "/home/dev/.config/opencode/oh-my-opencode.json",
+  antigravityAccounts: "/home/dev/.config/opencode/antigravity-accounts.json",
+} as const;
 
-export {
-  AUTH_PROVIDERS,
-  CONFIG_SCAN_DIRS,
-  type DiscoverableConfigCategory,
-  DISCOVERABLE_CONFIGS,
-  VM_PATHS,
-};
+export const AUTH_PROVIDERS = [
+  {
+    name: "opencode",
+    path: VM_PATHS.opencodeAuth,
+    description: "OpenCode authentication (Anthropic, XAI, OpenCode API keys)",
+  },
+  {
+    name: "antigravity",
+    path: VM_PATHS.antigravityAccounts,
+    description: "Google Antigravity plugin accounts",
+  },
+] as const;
+
+export type DiscoverableConfigCategory = "opencode" | "vscode";
+
+export const DISCOVERABLE_CONFIGS: ReadonlyArray<{
+  path: string;
+  category: DiscoverableConfigCategory;
+}> = [
+  { path: VM_PATHS.opencodeAuth, category: "opencode" },
+  { path: VM_PATHS.opencodeConfig, category: "opencode" },
+  { path: VM_PATHS.opencodeOhMy, category: "opencode" },
+  { path: VM_PATHS.antigravityAccounts, category: "opencode" },
+  { path: VM_PATHS.vscodeSettings, category: "vscode" },
+];
+
+export const CONFIG_SCAN_DIRS: ReadonlyArray<{
+  dir: string;
+  category: DiscoverableConfigCategory;
+}> = [
+  { dir: "/home/dev/.local/share/opencode", category: "opencode" },
+  { dir: "/home/dev/.config/opencode", category: "opencode" },
+  { dir: "/home/dev/.config/opencode/plugins", category: "opencode" },
+  { dir: "/home/dev/.config/opencode/providers", category: "opencode" },
+];
 
 export interface SandboxConfig {
   sandboxId: string;
