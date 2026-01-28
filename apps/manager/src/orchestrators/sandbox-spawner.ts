@@ -170,6 +170,15 @@ class SpawnContext {
   private async resizeVolumeBeforeBoot(): Promise<void> {
     if (!this.paths?.useLvm) return;
 
+    // Prebuild volumes are already at target size - skip resize
+    if (this.usedPrebuild) {
+      log.debug(
+        { sandboxId: this.sandboxId },
+        "Skipping volume resize (using prebuild)",
+      );
+      return;
+    }
+
     const targetSizeGb = DEFAULTS.VOLUME_SIZE_GB;
 
     try {
@@ -462,6 +471,15 @@ class SpawnContext {
 
   private async expandFilesystem(): Promise<void> {
     if (!this.network || !this.paths?.useLvm) return;
+
+    // Prebuild filesystems are already expanded - skip
+    if (this.usedPrebuild) {
+      log.debug(
+        { sandboxId: this.sandboxId },
+        "Skipping filesystem expansion (using prebuild)",
+      );
+      return;
+    }
 
     try {
       const agentResult = await this.deps.agentOperations.resizeStorage(
