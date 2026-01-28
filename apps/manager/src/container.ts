@@ -1,4 +1,4 @@
-import { AgentClient } from "./infrastructure/agent/index.ts";
+import { AgentClient, AgentOperations } from "./infrastructure/agent/index.ts";
 import {
   ConfigFileRepository,
   ConfigFileService,
@@ -56,6 +56,7 @@ const internalService = new InternalService(
 );
 
 const agentClient = new AgentClient();
+const agentOperations = new AgentOperations(agentClient);
 
 const sessionTemplateService = new SessionTemplateService(
   configFileService,
@@ -74,6 +75,7 @@ const sandboxSpawner = new SandboxSpawner({
   configFileService,
   sshKeyService,
   agentClient,
+  agentOperations,
 });
 
 const sandboxDestroyer = new SandboxDestroyer({
@@ -110,6 +112,7 @@ const prebuildChecker = new PrebuildChecker({
 
 export {
   agentClient,
+  agentOperations,
   configFileService,
   gitSourceService,
   internalService,

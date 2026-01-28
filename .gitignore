@@ -41,3 +41,6 @@ apps/manager/server.js
 
 *.tar.gz
 .deploy-staging/
+
+# Sandbox config (contains deployment-specific values)
+sandbox.config.json

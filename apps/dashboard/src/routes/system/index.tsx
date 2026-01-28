@@ -203,9 +203,9 @@ function SystemPage() {
               </Badge>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Base Volume</span>
-              <Badge variant={storage.hasBaseVolume ? "success" : "error"}>
-                {storage.hasBaseVolume ? "Ready" : "Missing"}
+              <span className="text-muted-foreground">Default Image</span>
+              <Badge variant={storage.hasDefaultImage ? "success" : "error"}>
+                {storage.hasDefaultImage ? "Ready" : "Missing"}
               </Badge>
             </div>
             {storage.pool.exists && (

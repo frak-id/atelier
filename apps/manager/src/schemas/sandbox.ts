@@ -139,6 +139,7 @@ export const AgentHealthSchema = t.Object({
     vscode: t.Boolean(),
     opencode: t.Boolean(),
     sshd: t.Boolean(),
+    ttyd: t.Boolean(),
   }),
   uptime: t.Number(),
 });

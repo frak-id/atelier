@@ -1,13 +1,5 @@
+import type { DiscoverableConfigCategory } from "@frak-sandbox/shared/constants";
 import { t } from "elysia";
-
-export interface SandboxConfig {
-  sandboxId: string;
-  projectId?: string;
-  projectName?: string;
-  gitUrl?: string;
-  createdAt: string;
-  repos?: Array<{ clonePath: string }>;
-}
 
 export interface AppPort {
   port: number;
@@ -18,43 +10,9 @@ export interface AppPort {
 export interface DiscoveredConfig {
   path: string;
   displayPath: string;
-  category: "opencode" | "vscode" | "other";
+  category: DiscoverableConfigCategory | "other";
   exists: boolean;
   size?: number;
-}
-
-export interface ServiceStatus {
-  name: string;
-  running: boolean;
-  pid?: number;
-}
-
-export interface ResourceUsage {
-  total: number;
-  used: number;
-  free: number;
-}
-
-export interface ExecResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-export interface GitRepoStatus {
-  path: string;
-  branch: string | null;
-  dirty: boolean;
-  ahead: number;
-  behind: number;
-  lastCommit: string | null;
-  error?: string;
-}
-
-export interface ExtensionInstallResult {
-  extension: string;
-  success: boolean;
-  error?: string;
 }
 
 export const AppRegistrationSchema = t.Object({
@@ -69,8 +27,4 @@ export const ExecRequestSchema = t.Object({
 
 export const ConfigReadQuerySchema = t.Object({
   path: t.String(),
-});
-
-export const ExtensionsInstallSchema = t.Object({
-  extensions: t.Array(t.String()),
 });

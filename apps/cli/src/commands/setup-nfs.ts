@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { NETWORK, NFS } from "../lib/context";
+import { frakConfig, NFS } from "../lib/context";
 import { exec, fileExists } from "../lib/shell";
 
 export async function setupNfs(_args: string[] = []) {
@@ -36,10 +36,17 @@ export async function setupNfs(_args: string[] = []) {
   await exec(`chmod -R 755 ${NFS.CONFIGS_EXPORT_DIR}`);
   spinner.stop("Configs directory created");
 
+  spinner.start("Creating shared auth directory");
+  await exec(`mkdir -p ${NFS.AUTH_EXPORT_DIR}`);
+  await exec(`chown -R 1000:1000 ${NFS.AUTH_EXPORT_DIR}`);
+  await exec(`chmod -R 770 ${NFS.AUTH_EXPORT_DIR}`);
+  spinner.stop("Auth directory created (read-write)");
+
   spinner.start("Configuring NFS exports");
-  const cacheExportLine = `${NFS.CACHE_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,insecure)`;
-  const binariesExportLine = `${NFS.BINARIES_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
-  const configsExportLine = `${NFS.CONFIGS_EXPORT_DIR} ${NETWORK.BRIDGE_CIDR}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
+  const cacheExportLine = `${NFS.CACHE_EXPORT_DIR} ${frakConfig.network.bridgeCidr}(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,insecure)`;
+  const binariesExportLine = `${NFS.BINARIES_EXPORT_DIR} ${frakConfig.network.bridgeCidr}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
+  const configsExportLine = `${NFS.CONFIGS_EXPORT_DIR} ${frakConfig.network.bridgeCidr}(ro,sync,no_subtree_check,no_root_squash,insecure)`;
+  const authExportLine = `${NFS.AUTH_EXPORT_DIR} ${frakConfig.network.bridgeCidr}(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,insecure)`;
 
   const exportsFile = "/etc/exports";
   let currentExports = (await fileExists(exportsFile))
@@ -62,6 +69,11 @@ export async function setupNfs(_args: string[] = []) {
     p.log.info(`Added configs export (read-only): ${configsExportLine}`);
     modified = true;
   }
+  if (!currentExports.includes(NFS.AUTH_EXPORT_DIR)) {
+    currentExports = `${currentExports}\n${authExportLine}`;
+    p.log.info(`Added auth export (read-write): ${authExportLine}`);
+    modified = true;
+  }
   if (modified) {
     await Bun.write(exportsFile, `${currentExports.trim()}\n`);
   } else {
@@ -70,19 +82,22 @@ export async function setupNfs(_args: string[] = []) {
   spinner.stop("NFS exports configured");
 
   spinner.start("Configuring firewall for NFS");
-  await exec("ufw allow in on br0 comment 'Allow VM traffic on bridge'", {
-    throws: false,
-  });
   await exec(
-    `ufw allow from ${NETWORK.BRIDGE_CIDR} to any port 111 proto tcp comment 'NFS portmapper'`,
+    `ufw allow in on ${frakConfig.network.bridgeName} comment 'Allow VM traffic on bridge'`,
+    {
+      throws: false,
+    },
+  );
+  await exec(
+    `ufw allow from ${frakConfig.network.bridgeCidr} to any port 111 proto tcp comment 'NFS portmapper'`,
     { throws: false },
   );
   await exec(
-    `ufw allow from ${NETWORK.BRIDGE_CIDR} to any port 111 proto udp comment 'NFS portmapper UDP'`,
+    `ufw allow from ${frakConfig.network.bridgeCidr} to any port 111 proto udp comment 'NFS portmapper UDP'`,
     { throws: false },
   );
   await exec(
-    `ufw allow from ${NETWORK.BRIDGE_CIDR} to any port 2049 proto tcp comment 'NFS'`,
+    `ufw allow from ${frakConfig.network.bridgeCidr} to any port 2049 proto tcp comment 'NFS'`,
     { throws: false },
   );
   spinner.stop("Firewall configured for NFS");
@@ -104,12 +119,14 @@ export async function setupNfs(_args: string[] = []) {
     `Cache Export (rw): ${NFS.CACHE_EXPORT_DIR}
 Binaries Export (ro): ${NFS.BINARIES_EXPORT_DIR}
 Configs Export (ro): ${NFS.CONFIGS_EXPORT_DIR}
-Accessible from: ${NETWORK.BRIDGE_CIDR}
+Auth Export (rw): ${NFS.AUTH_EXPORT_DIR}
+Accessible from: ${frakConfig.network.bridgeCidr}
 
 Guest mounts:
-  mount -t nfs ${NFS.HOST_IP}:${NFS.CACHE_EXPORT_DIR} ${NFS.CACHE_GUEST_MOUNT}
-  mount -t nfs -o ro ${NFS.HOST_IP}:${NFS.BINARIES_EXPORT_DIR} ${NFS.BINARIES_GUEST_MOUNT}
-  mount -t nfs -o ro ${NFS.HOST_IP}:${NFS.CONFIGS_EXPORT_DIR} ${NFS.CONFIGS_GUEST_MOUNT}
+  mount -t nfs ${frakConfig.network.bridgeIp}:${NFS.CACHE_EXPORT_DIR} ${NFS.CACHE_GUEST_MOUNT}
+  mount -t nfs -o ro ${frakConfig.network.bridgeIp}:${NFS.BINARIES_EXPORT_DIR} ${NFS.BINARIES_GUEST_MOUNT}
+  mount -t nfs -o ro ${frakConfig.network.bridgeIp}:${NFS.CONFIGS_EXPORT_DIR} ${NFS.CONFIGS_GUEST_MOUNT}
+  mount -t nfs ${frakConfig.network.bridgeIp}:${NFS.AUTH_EXPORT_DIR} ${NFS.AUTH_GUEST_MOUNT}
 
 Cache directories:
   - ${NFS.CACHE_EXPORT_DIR}/${NFS.CACHE_DIRS.BUN} (Bun cache)
@@ -123,6 +140,9 @@ Binaries directory:
 Configs directories:
   - ${NFS.CONFIGS_EXPORT_DIR}/${NFS.CONFIG_DIRS.GLOBAL} (global configs)
   - ${NFS.CONFIGS_EXPORT_DIR}/${NFS.CONFIG_DIRS.WORKSPACES}/<id> (workspace configs)
+
+Auth directory:
+  - ${NFS.AUTH_EXPORT_DIR}/<provider>.json (shared auth files, rw)
   
 Install binaries via Manager API: POST /api/storage/binaries/:name/install
 Configs synced automatically by Manager on update`,

@@ -1,7 +1,10 @@
 import { DEFAULTS, FIRECRACKER } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import { nanoid } from "nanoid";
-import type { AgentClient } from "../infrastructure/agent/index.ts";
+import type {
+  AgentClient,
+  AgentOperations,
+} from "../infrastructure/agent/index.ts";
 import {
   FirecrackerClient,
   getSandboxPaths,
@@ -34,10 +37,6 @@ import { ensureDir } from "../shared/lib/shell.ts";
 
 const log = createChildLogger("sandbox-spawner");
 
-const VSCODE_PORT = 8080;
-const OPENCODE_PORT = 3000;
-const TERMINAL_PORT = 7681;
-
 interface SandboxSpawnerDependencies {
   sandboxService: SandboxService;
   workspaceService: WorkspaceService;
@@ -45,6 +44,7 @@ interface SandboxSpawnerDependencies {
   configFileService: ConfigFileService;
   sshKeyService: SshKeyService;
   agentClient: AgentClient;
+  agentOperations: AgentOperations;
 }
 
 export class SandboxSpawner {
@@ -406,7 +406,7 @@ class SpawnContext {
     if (!this.network || !this.paths?.useLvm) return;
 
     try {
-      const agentResult = await this.deps.agentClient.resizeStorage(
+      const agentResult = await this.deps.agentOperations.resizeStorage(
         this.network.ipAddress,
       );
 
@@ -519,9 +519,9 @@ class SpawnContext {
       this.sandboxId,
       this.network.ipAddress,
       {
-        vscode: VSCODE_PORT,
-        opencode: OPENCODE_PORT,
-        terminal: TERMINAL_PORT,
+        vscode: config.raw.services.vscode.port,
+        opencode: config.raw.services.opencode.port,
+        terminal: config.raw.services.terminal.port,
       },
     );
 

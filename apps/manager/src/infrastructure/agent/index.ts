@@ -1,12 +1,19 @@
+export { AgentClient } from "./agent.client.ts";
+export { AgentOperations } from "./agent.operations.ts";
 export type {
   AgentHealth,
   AgentMetrics,
   AppPort,
+  BatchExecResult,
   ConfigFileContent,
+  DevCommandListResult,
+  DevCommandStatus,
+  DevLogsResult,
+  DevStartResult,
+  DevStopResult,
   DiscoveredConfig,
-  EditorConfig,
   ExecResult,
+  GitRepoStatus,
   GitStatus,
   ServiceStatus,
-} from "./agent.client.ts";
-export { AgentClient } from "./agent.client.ts";
+} from "./agent.types.ts";

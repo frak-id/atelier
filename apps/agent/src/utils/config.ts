@@ -1,27 +1,16 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  CONFIG_DIRECTORIES,
-  CONFIG_PATH,
-  KNOWN_CONFIG_PATHS,
-} from "../constants";
-import type { DiscoveredConfig, SandboxConfig } from "../types";
-
-export async function loadConfig(): Promise<SandboxConfig | null> {
-  try {
-    const content = await readFile(CONFIG_PATH, "utf-8");
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
-}
+  CONFIG_SCAN_DIRS,
+  DISCOVERABLE_CONFIGS,
+} from "@frak-sandbox/shared/constants";
+import type { DiscoveredConfig } from "../types";
 
 export function discoverConfigFiles(): DiscoveredConfig[] {
   const results: DiscoveredConfig[] = [];
   const seenPaths = new Set<string>();
 
-  for (const { path, category } of KNOWN_CONFIG_PATHS) {
+  for (const { path, category } of DISCOVERABLE_CONFIGS) {
     if (seenPaths.has(path)) continue;
     seenPaths.add(path);
 
@@ -44,7 +33,7 @@ export function discoverConfigFiles(): DiscoveredConfig[] {
     });
   }
 
-  for (const { dir, category } of CONFIG_DIRECTORIES) {
+  for (const { dir, category } of CONFIG_SCAN_DIRS) {
     if (!existsSync(dir)) continue;
 
     try {

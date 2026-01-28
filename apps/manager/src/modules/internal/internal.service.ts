@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { AUTH_PROVIDERS, NFS } from "@frak-sandbox/shared/constants";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
@@ -11,12 +13,6 @@ export interface AuthContent {
   updatedBy: string | null;
 }
 
-export interface AuthSyncResult {
-  action: "updated" | "unchanged" | "conflict";
-  content: string;
-  updatedAt: string;
-}
-
 export interface SharedAuthInfo {
   provider: string;
   path: string;
@@ -26,13 +22,65 @@ export interface SharedAuthInfo {
   updatedBy: string | null;
 }
 
+const AUTH_POLL_INTERVAL_MS = 5_000;
+
 export class InternalService {
-  private readonly authLocks = new Map<string, Promise<AuthSyncResult>>();
+  private authPollTimer: Timer | null = null;
 
   constructor(
     private readonly sharedAuthRepository: SharedAuthRepository,
     private readonly configFileService: ConfigFileService,
   ) {}
+
+  startAuthNfsWatcher(): void {
+    const dir = NFS.AUTH_EXPORT_DIR;
+
+    if (!fs.existsSync(dir)) {
+      log.warn(
+        { dir },
+        "Auth NFS export directory does not exist, skipping watcher",
+      );
+      return;
+    }
+
+    this.authPollTimer = setInterval(() => {
+      this.pollAuthFromNfs();
+    }, AUTH_POLL_INTERVAL_MS);
+
+    log.info(
+      { dir, intervalMs: AUTH_POLL_INTERVAL_MS },
+      "Auth NFS polling started",
+    );
+  }
+
+  stopAuthNfsWatcher(): void {
+    if (this.authPollTimer) {
+      clearInterval(this.authPollTimer);
+      this.authPollTimer = null;
+    }
+  }
+
+  private pollAuthFromNfs(): void {
+    for (const provider of AUTH_PROVIDERS) {
+      const filePath = path.join(NFS.AUTH_EXPORT_DIR, `${provider.name}.json`);
+
+      try {
+        if (!fs.existsSync(filePath)) continue;
+        const content = fs.readFileSync(filePath, "utf-8");
+
+        const existing = this.sharedAuthRepository.getByProvider(provider.name);
+        if (existing?.content === content) continue;
+
+        this.sharedAuthRepository.upsert(provider.name, content, "nfs");
+        log.info({ provider: provider.name }, "Auth synced from NFS to DB");
+      } catch (error) {
+        log.error(
+          { provider: provider.name, error },
+          "Failed to sync auth from NFS",
+        );
+      }
+    }
+  }
 
   listAuth(): SharedAuthInfo[] {
     const storedAuth = this.sharedAuthRepository.list();
@@ -76,6 +124,10 @@ export class InternalService {
 
     log.info({ provider }, "Auth updated from dashboard");
 
+    this.syncAuthToNfs().catch((error) => {
+      log.error({ error }, "Failed to sync auth to NFS after dashboard update");
+    });
+
     return {
       provider: record.provider,
       path: providerInfo.path,
@@ -86,71 +138,30 @@ export class InternalService {
     };
   }
 
-  async syncAuth(
-    provider: string,
-    content: string,
-    sandboxId: string,
-    clientUpdatedAt?: string,
-  ): Promise<AuthSyncResult> {
-    const existingLock = this.authLocks.get(provider);
-    if (existingLock) {
-      log.debug({ provider, sandboxId }, "Waiting for existing auth sync");
-      return existingLock;
-    }
+  async syncAuthToNfs(): Promise<{ synced: number }> {
+    const storedAuth = this.sharedAuthRepository.list();
+    let synced = 0;
 
-    const syncPromise = this.doSyncAuth(
-      provider,
-      content,
-      sandboxId,
-      clientUpdatedAt,
-    );
-    this.authLocks.set(provider, syncPromise);
+    for (const auth of storedAuth) {
+      const nfsPath = `${NFS.AUTH_EXPORT_DIR}/${auth.provider}.json`;
 
-    try {
-      return await syncPromise;
-    } finally {
-      this.authLocks.delete(provider);
-    }
-  }
-
-  private async doSyncAuth(
-    provider: string,
-    content: string,
-    sandboxId: string,
-    clientUpdatedAt?: string,
-  ): Promise<AuthSyncResult> {
-    const existing = this.sharedAuthRepository.getByProvider(provider);
-
-    if (existing && clientUpdatedAt) {
-      const serverTime = new Date(existing.updatedAt).getTime();
-      const clientTime = new Date(clientUpdatedAt).getTime();
-
-      if (serverTime > clientTime) {
-        log.debug(
-          { provider, sandboxId, serverTime, clientTime },
-          "Auth conflict - server has newer version",
+      try {
+        const tmpPath = `${nfsPath}.tmp`;
+        await Bun.write(tmpPath, auth.content);
+        await Bun.$`chown 1000:1000 ${tmpPath}`.quiet();
+        await Bun.$`mv ${tmpPath} ${nfsPath}`.quiet();
+        synced++;
+        log.debug({ provider: auth.provider, nfsPath }, "Auth synced to NFS");
+      } catch (error) {
+        log.error(
+          { provider: auth.provider, error },
+          "Failed to sync auth to NFS",
         );
-        return {
-          action: "conflict",
-          content: existing.content,
-          updatedAt: existing.updatedAt,
-        };
       }
     }
 
-    const record = this.sharedAuthRepository.upsert(
-      provider,
-      content,
-      sandboxId,
-    );
-
-    log.info({ provider, sandboxId }, "Auth synced");
-
-    return {
-      action: existing ? "updated" : "updated",
-      content: record.content,
-      updatedAt: record.updatedAt,
-    };
+    log.info({ synced }, "Auth sync to NFS complete");
+    return { synced };
   }
 
   async syncConfigsToNfs(): Promise<{ synced: number }> {

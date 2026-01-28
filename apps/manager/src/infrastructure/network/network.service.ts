@@ -20,7 +20,7 @@ export interface NetworkAllocation {
 
 export const NetworkService = {
   async allocate(sandboxId: string): Promise<NetworkAllocation> {
-    let ipOctet = config.network.GUEST_IP_START;
+    let ipOctet = config.network.guestIpStart;
     while (allocatedIps.has(ipOctet) && ipOctet < 255) {
       ipOctet++;
     }
@@ -32,10 +32,10 @@ export const NetworkService = {
     allocatedIps.add(ipOctet);
 
     const allocation: NetworkAllocation = {
-      ipAddress: `${config.network.GUEST_SUBNET}.${ipOctet}`,
+      ipAddress: `${config.network.guestSubnet}.${ipOctet}`,
       macAddress: generateMac(ipOctet),
       tapDevice: `tap-${sandboxId.slice(0, 8)}`,
-      gateway: config.network.BRIDGE_IP,
+      gateway: config.network.bridgeIp,
     };
 
     log.debug({ sandboxId, allocation }, "Network allocated");
@@ -50,7 +50,7 @@ export const NetworkService = {
 
     await $`ip link del ${tapDevice} 2>/dev/null || true`.quiet().nothrow();
     await $`ip tuntap add dev ${tapDevice} mode tap`.quiet();
-    await $`ip link set dev ${tapDevice} master ${config.network.BRIDGE_NAME}`.quiet();
+    await $`ip link set dev ${tapDevice} master ${config.network.bridgeName}`.quiet();
     await $`ip link set dev ${tapDevice} up`.quiet();
 
     log.info({ tapDevice }, "TAP device created");
@@ -92,10 +92,10 @@ export const NetworkService = {
     interfaces: string[];
   }> {
     if (config.isMock()) {
-      return { exists: true, ip: config.network.BRIDGE_IP, interfaces: [] };
+      return { exists: true, ip: config.network.bridgeIp, interfaces: [] };
     }
 
-    const bridgeName = config.network.BRIDGE_NAME;
+    const bridgeName = config.network.bridgeName;
     const bridgeCheck = await $`ip link show ${bridgeName}`.quiet().nothrow();
 
     if (bridgeCheck.exitCode !== 0) {

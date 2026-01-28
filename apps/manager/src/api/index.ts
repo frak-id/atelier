@@ -8,7 +8,6 @@ export { githubApiRoutes } from "./github-api.routes.ts";
 export { githubAuthRoutes } from "./github-auth.routes.ts";
 export { healthRoutes } from "./health.routes.ts";
 export { imageRoutes } from "./image.routes.ts";
-export { internalRoutes } from "./internal.routes.ts";
 export { sandboxRoutes } from "./sandbox.routes.ts";
 export { sessionTemplateRoutes } from "./session-template.routes.ts";
 export { sharedAuthRoutes } from "./shared-auth.routes.ts";

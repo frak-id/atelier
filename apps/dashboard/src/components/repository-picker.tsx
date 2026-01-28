@@ -11,9 +11,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { API_URL } from "@/config";
 import { cn } from "@/lib/utils";
-
-const API_BASE = import.meta.env.PROD ? "https://sandbox-api.nivelais.com" : "";
 
 interface RepositoryPickerProps {
   value?: string;
@@ -54,7 +53,7 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
         variant="outline"
         className="w-full justify-start gap-2 text-muted-foreground"
         onClick={() => {
-          window.location.href = `${API_BASE}/auth/github/login`;
+          window.location.href = `${API_URL}/auth/github/login`;
         }}
       >
         <Github className="h-4 w-4" />

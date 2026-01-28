@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { API_HOST, setAuthToken } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AUTH_ORG_NAME } from "@/config";
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -71,9 +72,11 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               </>
             )}
           </Button>
-          <p className="text-xs text-center text-muted-foreground">
-            Access restricted to frak-id organization members
-          </p>
+          {AUTH_ORG_NAME && (
+            <p className="text-xs text-center text-muted-foreground">
+              Access restricted to {AUTH_ORG_NAME} organization members
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -83,7 +86,9 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 function getErrorMessage(errorCode: string): string {
   switch (errorCode) {
     case "unauthorized":
-      return "You are not authorized to access this application. Only frak-id organization members can sign in.";
+      return AUTH_ORG_NAME
+        ? `You are not authorized. Only ${AUTH_ORG_NAME} organization members can sign in.`
+        : "You are not authorized to access this application.";
     case "no_code":
       return "GitHub authentication failed. Please try again.";
     case "callback_failed":

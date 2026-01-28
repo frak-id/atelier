@@ -1,3 +1,4 @@
+import type { SandboxConfig } from "@frak-sandbox/shared";
 import { $ } from "bun";
 import type { SandboxPaths } from "../../infrastructure/firecracker/index.ts";
 import type { NetworkAllocation } from "../../infrastructure/network/index.ts";
@@ -61,13 +62,17 @@ export const SandboxProvisioner = {
     mountPoint: string,
     network: NetworkAllocation,
   ): Promise<void> {
+    const dnsLines = config.network.dnsServers
+      .map((dns) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
+      .join("\n");
     const networkScript = `#!/bin/bash
 ip addr add 127.0.0.1/8 dev lo
 ip link set lo up
 ip addr add ${network.ipAddress}/24 dev eth0
 ip link set eth0 up
 ip route add default via ${network.gateway} dev eth0
-echo 'nameserver 8.8.8.8' > /etc/resolv.conf
+> /etc/resolv.conf
+${dnsLines}
 `;
     await Bun.write(`${mountPoint}/etc/network-setup.sh`, networkScript);
     await $`chmod +x ${mountPoint}/etc/network-setup.sh`.quiet();
@@ -79,14 +84,28 @@ echo 'nameserver 8.8.8.8' > /etc/resolv.conf
   ): Promise<void> {
     await ensureDir(`${mountPoint}/etc/sandbox/secrets`);
 
-    const repos = ctx.workspace?.config.repos ?? [];
+    const repos = (ctx.workspace?.config.repos ?? []).map((r) => ({
+      clonePath: r.clonePath,
+      branch: r.branch,
+    }));
     const sandboxConfig = {
       sandboxId: ctx.sandboxId,
       workspaceId: ctx.workspace?.id,
       workspaceName: ctx.workspace?.name,
       repos,
       createdAt: new Date().toISOString(),
-    };
+      network: {
+        nfsHost: config.network.bridgeIp,
+        dashboardDomain: config.domains.dashboard,
+        managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
+      },
+      services: {
+        vscode: { port: config.raw.services.vscode.port },
+        opencode: { port: config.raw.services.opencode.port },
+        terminal: { port: config.raw.services.terminal.port },
+        agent: { port: config.raw.services.agent.port },
+      },
+    } satisfies SandboxConfig;
     await Bun.write(
       `${mountPoint}/etc/sandbox/config.json`,
       JSON.stringify(sandboxConfig, null, 2),
@@ -249,8 +268,8 @@ ${workspaceSection}## Available Services
 
 | Service | URL | Port |
 |---------|-----|------|
-| VSCode Server | http://localhost:8080 | 8080 |
-| OpenCode Server | http://localhost:3000 | 3000 |
+| VSCode Server | http://localhost:${config.raw.services.vscode.port} | ${config.raw.services.vscode.port} |
+| OpenCode Server | http://localhost:${config.raw.services.opencode.port} | ${config.raw.services.opencode.port} |
 | SSH | \`ssh dev@${ctx.network.ipAddress}\` | 22 |
 
 ## Quick Commands
@@ -281,7 +300,7 @@ Your code is located in \`/home/dev/workspace\`
 ## Troubleshooting
 
 - Services not responding? Check \`/var/log/sandbox/\`
-- Network issues? Run \`ping 172.16.0.1\`
+- Network issues? Run \`ping ${config.network.bridgeIp}\`
 - Need help? Check the project documentation
 `;
   },

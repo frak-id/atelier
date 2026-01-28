@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { LVM, PATHS } from "../lib/context";
+import { LVM } from "../lib/context";
 import { exec, fileExists } from "../lib/shell";
 
 const LOOP_FILE = "/var/lib/sandbox/thin-pool.img";
@@ -71,9 +71,6 @@ export async function setupStorage(_args: string[] = []) {
   } else {
     await setupWithDevice(spinner);
   }
-
-  await createBaseVolume(spinner);
-  await testSnapshotPerformance(spinner);
 
   p.log.success("Storage setup complete");
   await showStorageStatus();
@@ -183,36 +180,6 @@ async function setupWithDevice(spinner: ReturnType<typeof p.spinner>) {
   spinner.stop("Thin pool created");
 }
 
-async function createBaseVolume(spinner: ReturnType<typeof p.spinner>) {
-  const baseExists = await exec(`lvs ${LVM.VG_NAME}/${LVM.BASE_VOLUME}`, {
-    throws: false,
-  });
-  if (baseExists.success) {
-    p.log.success("Base volume already exists");
-    return;
-  }
-
-  spinner.start(`Creating base rootfs volume (${LVM.BASE_SIZE})`);
-  await exec(
-    `lvcreate -V ${LVM.BASE_SIZE} -T ${LVM.VG_NAME}/${LVM.THIN_POOL} -n ${LVM.BASE_VOLUME}`,
-  );
-  spinner.stop("Base volume created");
-
-  const rootfsSource = `${PATHS.ROOTFS_DIR}/rootfs.ext4`;
-  if (await fileExists(rootfsSource)) {
-    spinner.start("Copying rootfs to base volume");
-    await exec(
-      `dd if=${rootfsSource} of=/dev/${LVM.VG_NAME}/${LVM.BASE_VOLUME} bs=4M status=none`,
-    );
-    spinner.stop("Rootfs copied to base volume");
-  } else {
-    p.log.warn(`Rootfs not found at ${rootfsSource}`);
-    p.log.info(
-      `Copy manually: dd if=/path/to/rootfs.ext4 of=/dev/${LVM.VG_NAME}/${LVM.BASE_VOLUME} bs=4M`,
-    );
-  }
-}
-
 async function destroyStorage() {
   const confirm = await p.confirm({
     message: "This will DELETE all sandbox volumes and data. Are you sure?",
@@ -275,7 +242,7 @@ async function showStorageStatus() {
 
   console.log("");
   p.note(
-    `Create snapshot:  lvcreate -s -n sandbox-{id} ${LVM.VG_NAME}/${LVM.BASE_VOLUME}
+    `Build image:      frak-sandbox images dev-base
 Delete snapshot:  lvremove -f ${LVM.VG_NAME}/sandbox-{id}
 List volumes:     lvs ${LVM.VG_NAME}`,
     "Usage",
@@ -309,7 +276,17 @@ async function testSnapshotPerformance(spinner: ReturnType<typeof p.spinner>) {
   const testSnap = `test-snapshot-${Date.now()}`;
   const startTime = performance.now();
 
-  await exec(`lvcreate -s -n ${testSnap} ${LVM.VG_NAME}/${LVM.BASE_VOLUME}`);
+  const sourceVolume = `${LVM.IMAGE_PREFIX}dev-base`;
+  const sourceExists = await exec(`lvs ${LVM.VG_NAME}/${sourceVolume}`, {
+    throws: false,
+  });
+  if (!sourceExists.success) {
+    spinner.stop(
+      "No image volume found — run 'frak-sandbox images dev-base' first",
+    );
+    return;
+  }
+  await exec(`lvcreate -s -n ${testSnap} ${LVM.VG_NAME}/${sourceVolume}`);
 
   const duration = Math.round(performance.now() - startTime);
 

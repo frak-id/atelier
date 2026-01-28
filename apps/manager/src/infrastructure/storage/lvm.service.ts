@@ -23,7 +23,6 @@ interface PoolStats {
 
 const vg = LVM.VG_NAME;
 const thinPool = LVM.THIN_POOL;
-const baseVolume = LVM.BASE_VOLUME;
 const sandboxPrefix = LVM.SANDBOX_PREFIX;
 
 const LVCREATE = "/usr/sbin/lvcreate";
@@ -115,11 +114,6 @@ export const StorageService = {
     };
   },
 
-  async hasBaseVolume(): Promise<boolean> {
-    if (config.isMock()) return true;
-    return lvExists(`${vg}/${baseVolume}`);
-  },
-
   async hasImageVolume(imageId: BaseImageId): Promise<boolean> {
     if (config.isMock()) return true;
 
@@ -157,12 +151,17 @@ export const StorageService = {
       sourceVolume = `${prebuildPrefix}${workspaceId}`;
     } else if (baseImageId && (await this.hasImageVolume(baseImageId))) {
       const image = getBaseImage(baseImageId);
-      sourceVolume = image?.volumeName ?? baseVolume;
+      if (!image) throw new Error(`Image not found: ${baseImageId}`);
+      sourceVolume = image.volumeName;
     } else if (await this.hasImageVolume(DEFAULT_BASE_IMAGE)) {
       const defaultImage = getBaseImage(DEFAULT_BASE_IMAGE);
-      sourceVolume = defaultImage?.volumeName ?? baseVolume;
+      if (!defaultImage)
+        throw new Error(`Default image not found: ${DEFAULT_BASE_IMAGE}`);
+      sourceVolume = defaultImage.volumeName;
     } else {
-      sourceVolume = baseVolume;
+      throw new Error(
+        `No base image volume found. Run 'frak-sandbox images ${DEFAULT_BASE_IMAGE}' first.`,
+      );
     }
 
     log.info({ sandboxId, sourceVolume, baseImage }, "Cloning volume");

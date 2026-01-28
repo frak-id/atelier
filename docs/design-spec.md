@@ -1261,7 +1261,7 @@ echo "Base volume: /dev/${VG_NAME}/base-rootfs"
 
 ### Systemd Services
 
-**sandbox-manager.service**:
+**frak-sandbox-manager.service**:
 ```ini
 [Unit]
 Description=Frak Sandbox Manager

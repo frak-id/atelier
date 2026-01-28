@@ -55,7 +55,7 @@ export type StoragePoolStats = Static<typeof StoragePoolStatsSchema>;
 
 export const StorageStatusSchema = t.Object({
   available: t.Boolean(),
-  hasBaseVolume: t.Boolean(),
+  hasDefaultImage: t.Boolean(),
   pool: StoragePoolStatsSchema,
 });
 export type StorageStatus = Static<typeof StorageStatusSchema>;
