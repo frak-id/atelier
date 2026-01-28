@@ -6,6 +6,9 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("queue");
 
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 500;
+
 type JobStatus = "queued" | "running" | "completed" | "failed";
 
 interface SpawnJob {
@@ -17,6 +20,7 @@ interface SpawnJob {
   queuedAt: string;
   startedAt?: string;
   completedAt?: string;
+  retryCount: number;
 }
 
 interface QueueStats {
@@ -51,6 +55,7 @@ class SpawnQueue {
       options,
       status: "queued",
       queuedAt: new Date().toISOString(),
+      retryCount: 0,
     };
 
     this.jobs.set(jobId, job);
@@ -128,20 +133,41 @@ class SpawnQueue {
   }
 
   private async executeJob(job: SpawnJob): Promise<void> {
-    try {
-      const result = await this.spawnHandler?.(job.options);
-      job.status = "completed";
-      job.result = result;
-      job.completedAt = new Date().toISOString();
+    let lastError: Error | null = null;
 
-      log.info({ jobId: job.id, sandboxId: result?.id }, "Job completed");
-    } catch (error) {
-      job.status = "failed";
-      job.error = error instanceof Error ? error.message : String(error);
-      job.completedAt = new Date().toISOString();
+    while (job.retryCount <= MAX_RETRIES) {
+      try {
+        const result = await this.spawnHandler?.(job.options);
+        job.status = "completed";
+        job.result = result;
+        job.completedAt = new Date().toISOString();
+        log.info({ jobId: job.id, sandboxId: result?.id }, "Job completed");
+        return;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        job.retryCount++;
 
-      log.error({ jobId: job.id, error: job.error }, "Job failed");
+        if (job.retryCount <= MAX_RETRIES) {
+          log.warn(
+            {
+              jobId: job.id,
+              attempt: job.retryCount,
+              error: lastError.message,
+            },
+            "Spawn failed, retrying",
+          );
+          await Bun.sleep(RETRY_DELAY_MS);
+        }
+      }
     }
+
+    job.status = "failed";
+    job.error = lastError?.message ?? "Unknown error";
+    job.completedAt = new Date().toISOString();
+    log.error(
+      { jobId: job.id, error: job.error, totalAttempts: job.retryCount },
+      "Job failed after retries",
+    );
   }
 
   getJob(jobId: string): SpawnJob | undefined {

@@ -416,6 +416,21 @@ class SpawnContext {
     const deadline = Date.now() + timeoutMs;
 
     while (Date.now() < deadline) {
+      if (this.pid) {
+        const alive = await $`kill -0 ${this.pid}`.quiet().nothrow();
+        if (alive.exitCode !== 0) {
+          const logContent = this.paths
+            ? await Bun.file(this.paths.log)
+                .text()
+                .catch(() => "")
+            : "";
+          const lastLines = logContent.split("\n").slice(-20).join("\n");
+          throw new Error(
+            `Firecracker process died during boot:\n${lastLines}`,
+          );
+        }
+      }
+
       try {
         if (await this.client?.isRunning()) return;
       } catch {}
