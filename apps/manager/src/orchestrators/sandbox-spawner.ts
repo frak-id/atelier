@@ -466,10 +466,47 @@ class SpawnContext {
       return;
     }
 
+    if (this.hasVmSnapshot) {
+      await this.reconfigureGuestNetwork();
+    }
+
     await this.expandFilesystem();
 
     if (this.needsRepoClone()) {
       await this.cloneRepositories();
+    }
+  }
+
+  private async reconfigureGuestNetwork(): Promise<void> {
+    if (!this.network) return;
+
+    const script = [
+      "ip addr flush dev eth0",
+      `ip addr add ${this.network.ipAddress}/24 dev eth0`,
+      "ip link set eth0 up",
+      `ip route replace default via ${this.network.gateway} dev eth0`,
+    ].join(" && ");
+
+    try {
+      const result = await this.deps.agentClient.exec(this.sandboxId, script, {
+        timeout: 10000,
+      });
+      if (result.exitCode !== 0) {
+        log.warn(
+          { sandboxId: this.sandboxId, stderr: result.stderr },
+          "Failed to reconfigure guest network",
+        );
+      } else {
+        log.info(
+          { sandboxId: this.sandboxId, ip: this.network.ipAddress },
+          "Guest network reconfigured after snapshot restore",
+        );
+      }
+    } catch (error) {
+      log.warn(
+        { sandboxId: this.sandboxId, error },
+        "Guest network reconfiguration failed",
+      );
     }
   }
 

@@ -80,6 +80,7 @@ const sandboxSpawner = new SandboxSpawner({
 
 const sandboxDestroyer = new SandboxDestroyer({
   sandboxService,
+  agentClient,
 });
 
 const sandboxLifecycle = new SandboxLifecycle({

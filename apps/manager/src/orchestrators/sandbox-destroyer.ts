@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import type { AgentClient } from "../infrastructure/agent/agent.client.ts";
 import { getSocketPath } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import {
@@ -15,6 +16,7 @@ const log = createChildLogger("sandbox-destroyer");
 
 interface SandboxDestroyerDependencies {
   sandboxService: SandboxService;
+  agentClient: AgentClient;
 }
 
 export class SandboxDestroyer {
@@ -27,6 +29,8 @@ export class SandboxDestroyer {
     }
 
     log.info({ sandboxId }, "Destroying sandbox");
+
+    this.deps.agentClient.disconnect(sandboxId);
 
     if (!config.isMock()) {
       if (sandbox.runtime.pid) {

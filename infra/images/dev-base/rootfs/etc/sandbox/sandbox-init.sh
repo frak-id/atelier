@@ -173,12 +173,12 @@ fi
 
 # Start sandbox-agent FIRST for fast boot detection by manager
 log "Starting sandbox-agent..."
-if [ -f /usr/local/lib/sandbox-agent/src/index.ts ]; then
-    deno run --allow-all --unstable-vsock /usr/local/lib/sandbox-agent/src/index.ts > "$LOG_DIR/agent.log" 2>&1 &
+if [ -x /usr/local/bin/sandbox-agent ]; then
+    /usr/local/bin/sandbox-agent > "$LOG_DIR/agent.log" 2>&1 &
     log "sandbox-agent started (PID $!)"
 else
-    log "ERROR: sandbox-agent not found"
-    ls -la /usr/local/lib/sandbox-agent/ >> "$LOG_DIR/init.log" 2>&1
+    log "ERROR: sandbox-agent binary not found"
+    ls -la /usr/local/bin/sandbox-agent >> "$LOG_DIR/init.log" 2>&1
 fi
 
 log "Starting SSH daemon..."

@@ -1,6 +1,5 @@
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { createConnection, type Socket } from "node:net";
-import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { getVsockPath } from "../firecracker/index.ts";
 import type {
@@ -30,8 +29,41 @@ interface RequestOptions {
 }
 
 export class AgentClient {
-  private getAgentUrl(sandboxId: string): string {
-    return `http://${sandboxId}:${config.raw.services.agent.port}`;
+  private sockets = new Map<string, Socket>();
+
+  private getSocket(sandboxId: string): Socket | undefined {
+    const socket = this.sockets.get(sandboxId);
+    if (socket && !socket.destroyed) {
+      return socket;
+    }
+    this.sockets.delete(sandboxId);
+    return undefined;
+  }
+
+  private async getOrCreateSocket(sandboxId: string): Promise<Socket> {
+    const existing = this.getSocket(sandboxId);
+    if (existing) return existing;
+
+    const vsockPath = getVsockPath(sandboxId);
+    const socket = await this.connectVsock(vsockPath, VSOCK_GUEST_PORT);
+
+    socket.on("close", () => {
+      this.sockets.delete(sandboxId);
+    });
+    socket.on("error", () => {
+      this.sockets.delete(sandboxId);
+    });
+
+    this.sockets.set(sandboxId, socket);
+    return socket;
+  }
+
+  disconnect(sandboxId: string): void {
+    const socket = this.sockets.get(sandboxId);
+    if (socket) {
+      socket.destroy();
+      this.sockets.delete(sandboxId);
+    }
   }
 
   private async request<T>(
@@ -39,63 +71,27 @@ export class AgentClient {
     path: string,
     options: RequestOptions = {},
   ): Promise<T> {
-    if (config.isMock()) {
-      return this.tcpRequest<T>(sandboxId, path, options);
-    }
-    return this.vsockRequest<T>(sandboxId, path, options);
-  }
-
-  private async tcpRequest<T>(
-    sandboxId: string,
-    path: string,
-    options: RequestOptions = {},
-  ): Promise<T> {
-    const baseUrl = this.getAgentUrl(sandboxId);
-    const url = `${baseUrl}${path}`;
     const timeout = options.timeout ?? DEFAULT_TIMEOUT;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(url, {
-        method: options.method ?? "GET",
-        headers: options.body
-          ? { "Content-Type": "application/json" }
-          : undefined,
-        body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          `Agent request failed: ${response.status} ${response.statusText}`,
-        );
-      }
-
-      return (await response.json()) as T;
+      const socket = await this.getOrCreateSocket(sandboxId);
+      return await this.httpOverSocket<T>(socket, path, options, timeout);
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`Agent request timed out after ${timeout}ms`);
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
+      // Connection may have gone stale — retry once with a fresh socket
+      this.disconnect(sandboxId);
+      const socket = await this.getOrCreateSocket(sandboxId);
+      return this.httpOverSocket<T>(socket, path, options, timeout);
     }
   }
 
-  private async vsockRequest<T>(
-    sandboxId: string,
+  private httpOverSocket<T>(
+    socket: Socket,
     path: string,
-    options: RequestOptions = {},
+    options: RequestOptions,
+    timeout: number,
   ): Promise<T> {
-    const vsockPath = getVsockPath(sandboxId);
-    const socket = await this.connectVsock(vsockPath, VSOCK_GUEST_PORT);
-    const timeout = options.timeout ?? DEFAULT_TIMEOUT;
-
     return new Promise<T>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        socket.destroy();
         reject(new Error(`Agent request timed out after ${timeout}ms`));
       }, timeout);
 
@@ -105,6 +101,7 @@ export class AgentClient {
           method: options.method ?? "GET",
           headers: {
             Host: "localhost",
+            Connection: "keep-alive",
             ...(options.body ? { "Content-Type": "application/json" } : {}),
           },
           createConnection: () => socket,
@@ -116,7 +113,6 @@ export class AgentClient {
           });
           res.on("end", () => {
             clearTimeout(timeoutId);
-            socket.destroy();
             if (
               !res.statusCode ||
               res.statusCode < 200 ||
@@ -144,7 +140,6 @@ export class AgentClient {
 
       req.on("error", (err) => {
         clearTimeout(timeoutId);
-        socket.destroy();
         reject(err);
       });
 

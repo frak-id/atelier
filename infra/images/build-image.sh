@@ -25,10 +25,10 @@ if [ ! -d "$IMAGE_DIR" ]; then
     exit 1
 fi
 
-DEPLOY_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-AGENT_SRC="$DEPLOY_ROOT/apps/agent/src"
-if [ ! -f "$AGENT_SRC/index.ts" ]; then
-    echo "Error: sandbox-agent source not found at: $AGENT_SRC/index.ts"
+AGENT_BINARY="$SCRIPT_DIR/sandbox-agent"
+if [ ! -f "$AGENT_BINARY" ]; then
+    echo "Error: sandbox-agent binary not found at: $AGENT_BINARY"
+    echo "Build with: cd apps/agent && deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output dist/sandbox-agent src/index.ts"
     exit 1
 fi
 
@@ -38,13 +38,13 @@ echo "Output directory: $OUTPUT_DIR"
 
 echo ""
 echo "Step 1: Preparing build context..."
-cp -r "$AGENT_SRC" "$IMAGE_DIR/sandbox-agent/"
+cp "$AGENT_BINARY" "$IMAGE_DIR/sandbox-agent"
 
 echo ""
 echo "Step 2: Building Docker image..."
 docker build -t "frak-sandbox/$IMAGE_NAME" "$IMAGE_DIR"
 
-rm -rf "$IMAGE_DIR/sandbox-agent"
+rm -f "$IMAGE_DIR/sandbox-agent"
 
 echo ""
 echo "Step 3: Creating container..."

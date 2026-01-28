@@ -8,14 +8,11 @@
 FROM node:22-slim
 
 ARG TTYD_VERSION=1.7.7
-ARG DENO_VERSION=2.6.6
-
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
 ENV USER=dev
 ENV SHELL=/bin/bash
 ENV BUN_INSTALL=/home/dev/.bun
-ENV DENO_DIR=/home/dev/.deno
 ENV PATH=$BUN_INSTALL/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
@@ -52,11 +49,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Install ttyd from GitHub release (not in Debian repos)
     && curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64 \
     && chmod +x /usr/local/bin/ttyd \
-    # Install Deno (for sandbox agent with vsock support)
-    && curl -fsSL https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip \
-    && unzip -o /tmp/deno.zip -d /usr/local/bin/ \
-    && chmod +x /usr/local/bin/deno \
-    && rm /tmp/deno.zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && rm -rf /usr/share/doc /usr/share/man /usr/share/info /usr/share/lintian \
@@ -81,7 +73,8 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 COPY rootfs/etc/sandbox/ /etc/sandbox/
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
-COPY --chown=root:root sandbox-agent/ /usr/local/lib/sandbox-agent/
+COPY --chown=root:root sandbox-agent /usr/local/bin/sandbox-agent
+RUN chmod +x /usr/local/bin/sandbox-agent
 
 WORKDIR /home/dev/workspace
 USER dev
