@@ -28,3 +28,18 @@ export function getSandboxPaths(
 export function getSocketPath(sandboxId: string): string {
   return `${config.paths.SOCKET_DIR}/${sandboxId}.sock`;
 }
+
+export interface PrebuildSnapshotPaths {
+  snapshotFile: string;
+  memFile: string;
+}
+
+export function getPrebuildSnapshotPaths(
+  workspaceId: string,
+): PrebuildSnapshotPaths {
+  const snapshotDir = `${config.paths.SANDBOX_DIR}/snapshots`;
+  return {
+    snapshotFile: `${snapshotDir}/prebuild-${workspaceId}.snap`,
+    memFile: `${snapshotDir}/prebuild-${workspaceId}.mem`,
+  };
+}

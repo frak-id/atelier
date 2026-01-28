@@ -7,6 +7,7 @@ import type {
 } from "../infrastructure/agent/index.ts";
 import {
   FirecrackerClient,
+  getPrebuildSnapshotPaths,
   getSandboxPaths,
   type SandboxPaths,
 } from "../infrastructure/firecracker/index.ts";
@@ -65,6 +66,7 @@ class SpawnContext {
   private pid?: number;
   private client?: FirecrackerClient;
   private usedPrebuild = false;
+  private hasVmSnapshot = false;
 
   constructor(
     private readonly deps: SandboxSpawnerDependencies,
@@ -76,8 +78,7 @@ class SpawnContext {
   async execute(): Promise<Sandbox> {
     try {
       await this.loadWorkspace();
-      await this.allocateNetwork();
-      await this.createVolume();
+      await Promise.all([this.allocateNetwork(), this.createVolume()]);
       await this.resizeVolumeBeforeBoot();
       await this.initializeSandbox();
 
@@ -85,11 +86,16 @@ class SpawnContext {
         return await this.finalizeMock();
       }
 
-      await this.createTapDevice();
-      await this.provisionFilesystem();
+      await Promise.all([this.createTapDevice(), this.provisionFilesystem()]);
       await this.launchFirecracker();
-      await this.configureVm();
-      await this.boot();
+
+      if (this.hasVmSnapshot && this.options.workspaceId) {
+        await this.restoreFromSnapshot();
+      } else {
+        await this.configureVm();
+        await this.boot();
+      }
+
       await this.waitForAgentAndSetup();
       await this.registerRoutes();
 
@@ -132,6 +138,14 @@ class SpawnContext {
       this.usedPrebuild = await StorageService.hasPrebuild(
         this.options.workspaceId,
       );
+      if (this.usedPrebuild) {
+        const snapshotPaths = getPrebuildSnapshotPaths(
+          this.options.workspaceId,
+        );
+        const snapExists = await Bun.file(snapshotPaths.snapshotFile).exists();
+        const memExists = await Bun.file(snapshotPaths.memFile).exists();
+        this.hasVmSnapshot = snapExists && memExists;
+      }
     }
 
     let lvmVolumePath: string | undefined;
@@ -336,7 +350,7 @@ class SpawnContext {
     }
 
     const bootArgs =
-      "console=ttyS0 reboot=k panic=1 pci=off init=/etc/sandbox/sandbox-init.sh";
+      "console=ttyS0 reboot=k panic=1 pci=off quiet loglevel=1 8250.nr_uarts=0 init=/etc/sandbox/sandbox-init.sh";
 
     await this.client.setBootSource(this.paths.kernel, bootArgs);
     await this.client.setDrive("rootfs", this.paths.overlay, true);
@@ -369,6 +383,35 @@ class SpawnContext {
     log.debug({ sandboxId: this.sandboxId }, "VM booted");
   }
 
+  private async restoreFromSnapshot(): Promise<void> {
+    if (
+      !this.client ||
+      !this.paths ||
+      !this.network ||
+      !this.options.workspaceId
+    ) {
+      throw new Error("Snapshot restore prerequisites not initialized");
+    }
+
+    const snapshotPaths = getPrebuildSnapshotPaths(this.options.workspaceId);
+
+    await this.client.setDrive("rootfs", this.paths.overlay, true);
+    await this.client.setNetworkInterface(
+      "eth0",
+      this.network.macAddress,
+      this.network.tapDevice,
+    );
+
+    log.info({ sandboxId: this.sandboxId }, "Restoring from VM snapshot");
+    await this.client.loadSnapshot(
+      snapshotPaths.snapshotFile,
+      snapshotPaths.memFile,
+    );
+
+    await this.waitForBoot();
+    log.info({ sandboxId: this.sandboxId }, "VM restored from snapshot");
+  }
+
   private async waitForBoot(timeoutMs = 30000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
 
@@ -376,7 +419,7 @@ class SpawnContext {
       try {
         if (await this.client?.isRunning()) return;
       } catch {}
-      await Bun.sleep(200);
+      await Bun.sleep(50);
     }
 
     throw new Error(`VM boot timeout after ${timeoutMs}ms`);

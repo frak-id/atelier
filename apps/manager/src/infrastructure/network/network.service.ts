@@ -48,10 +48,9 @@ export const NetworkService = {
       return;
     }
 
-    await $`ip link del ${tapDevice} 2>/dev/null || true`.quiet().nothrow();
-    await $`ip tuntap add dev ${tapDevice} mode tap`.quiet();
-    await $`ip link set dev ${tapDevice} master ${config.network.bridgeName}`.quiet();
-    await $`ip link set dev ${tapDevice} up`.quiet();
+    await $`ip link del ${tapDevice} 2>/dev/null || true && ip tuntap add dev ${tapDevice} mode tap && ip link set dev ${tapDevice} master ${config.network.bridgeName} up`
+      .quiet()
+      .nothrow();
 
     log.info({ tapDevice }, "TAP device created");
   },

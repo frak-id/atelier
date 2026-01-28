@@ -161,4 +161,35 @@ export class FirecrackerClient {
       return false;
     }
   }
+
+  async createSnapshot(
+    snapshotPath: string,
+    memFilePath: string,
+  ): Promise<void> {
+    await this.pause();
+    await this.request("/snapshot/create", {
+      method: "PUT",
+      body: {
+        snapshot_type: "Full",
+        snapshot_path: snapshotPath,
+        mem_file_path: memFilePath,
+      },
+    });
+  }
+
+  async loadSnapshot(
+    snapshotPath: string,
+    memFilePath: string,
+    enableDiffSnapshots = false,
+  ): Promise<void> {
+    await this.request("/snapshot/load", {
+      method: "PUT",
+      body: {
+        snapshot_path: snapshotPath,
+        mem_file_path: memFilePath,
+        enable_diff_snapshots: enableDiffSnapshots,
+        resume_vm: true,
+      },
+    });
+  }
 }

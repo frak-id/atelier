@@ -1,4 +1,10 @@
+import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
+import {
+  FirecrackerClient,
+  getPrebuildSnapshotPaths,
+  getSocketPath,
+} from "../infrastructure/firecracker/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
@@ -9,6 +15,7 @@ import type {
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { ensureDir } from "../shared/lib/shell.ts";
 import type { SandboxDestroyer } from "./sandbox-destroyer.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
@@ -50,6 +57,7 @@ export class PrebuildRunner {
 
     if (await StorageService.hasPrebuild(workspaceId)) {
       await StorageService.deletePrebuild(workspaceId);
+      await this.deleteVmSnapshot(workspaceId);
       log.info(
         { workspaceId },
         "Deleted existing prebuild before regeneration",
@@ -86,11 +94,13 @@ export class PrebuildRunner {
       const commitHashes = await this.captureCommitHashes(ipAddress, workspace);
       await this.warmupOpencode(ipAddress, workspace.id);
       await this.deps.agentClient.exec(ipAddress, "sync");
+
+      await this.createVmSnapshot(workspaceId, sandbox.id);
       await StorageService.createPrebuild(workspaceId, sandbox.id);
 
       log.info(
         { workspaceId, sandboxId: sandbox.id },
-        "Prebuild snapshot created",
+        "Prebuild snapshot created (LVM + VM state)",
       );
 
       await this.deps.sandboxDestroyer.destroy(sandbox.id);
@@ -139,8 +149,50 @@ export class PrebuildRunner {
     }
 
     await StorageService.deletePrebuild(workspaceId);
+    await this.deleteVmSnapshot(workspaceId);
     this.updatePrebuildStatus(workspaceId, workspace, "none");
     log.info({ workspaceId }, "Prebuild deleted");
+  }
+
+  private async createVmSnapshot(
+    workspaceId: string,
+    sandboxId: string,
+  ): Promise<void> {
+    if (config.isMock()) {
+      log.debug({ workspaceId }, "Mock: VM snapshot creation skipped");
+      return;
+    }
+
+    const snapshotPaths = getPrebuildSnapshotPaths(workspaceId);
+    const socketPath = getSocketPath(sandboxId);
+    const client = new FirecrackerClient(socketPath);
+
+    await ensureDir(`${config.paths.SANDBOX_DIR}/snapshots`);
+
+    log.info({ workspaceId, sandboxId }, "Creating VM snapshot");
+    await client.createSnapshot(
+      snapshotPaths.snapshotFile,
+      snapshotPaths.memFile,
+    );
+    log.info({ workspaceId }, "VM snapshot created");
+  }
+
+  private async deleteVmSnapshot(workspaceId: string): Promise<void> {
+    if (config.isMock()) return;
+
+    const snapshotPaths = getPrebuildSnapshotPaths(workspaceId);
+    await $`rm -f ${snapshotPaths.snapshotFile} ${snapshotPaths.memFile}`
+      .quiet()
+      .nothrow();
+  }
+
+  async hasVmSnapshot(workspaceId: string): Promise<boolean> {
+    if (config.isMock()) return false;
+
+    const snapshotPaths = getPrebuildSnapshotPaths(workspaceId);
+    const snapExists = await Bun.file(snapshotPaths.snapshotFile).exists();
+    const memExists = await Bun.file(snapshotPaths.memFile).exists();
+    return snapExists && memExists;
   }
 
   async hasPrebuild(workspaceId: string): Promise<boolean> {

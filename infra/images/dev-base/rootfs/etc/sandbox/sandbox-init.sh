@@ -13,21 +13,21 @@ LOG_DIR="/var/log/sandbox"
 mkdir -p "$LOG_DIR"
 
 log() {
-    echo "[init] $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOG_DIR/init.log"
+    echo "[init] $(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_DIR/init.log"
 }
 
 log "Starting sandbox init (PID $$)"
 log "PATH=$PATH"
 
 log "Mounting filesystems..."
-mount -t proc proc /proc 2>&1 | tee -a "$LOG_DIR/init.log"
-mount -t sysfs sys /sys 2>&1 | tee -a "$LOG_DIR/init.log"
+mount -t proc proc /proc >> "$LOG_DIR/init.log" 2>&1
+mount -t sysfs sys /sys >> "$LOG_DIR/init.log" 2>&1
 mount -t devtmpfs dev /dev 2>/dev/null || mount -t tmpfs dev /dev
 mkdir -p /dev/pts /dev/shm
-mount -t devpts devpts /dev/pts 2>&1 | tee -a "$LOG_DIR/init.log"
-mount -t tmpfs tmpfs /dev/shm 2>&1 | tee -a "$LOG_DIR/init.log"
-mount -t tmpfs tmpfs /run 2>&1 | tee -a "$LOG_DIR/init.log"
-mount -t tmpfs tmpfs /tmp 2>&1 | tee -a "$LOG_DIR/init.log"
+mount -t devpts devpts /dev/pts >> "$LOG_DIR/init.log" 2>&1
+mount -t tmpfs tmpfs /dev/shm >> "$LOG_DIR/init.log" 2>&1
+mount -t tmpfs tmpfs /run >> "$LOG_DIR/init.log" 2>&1
+mount -t tmpfs tmpfs /tmp >> "$LOG_DIR/init.log" 2>&1
 
 # Read config values using jq
 if [ -f "$CONFIG_FILE" ]; then
@@ -87,121 +87,81 @@ log "Created /etc/hosts"
 log "Configuring network..."
 if [ -f /etc/network-setup.sh ]; then
     chmod +x /etc/network-setup.sh
-    /etc/network-setup.sh 2>&1 | tee -a "$LOG_DIR/init.log"
+    /etc/network-setup.sh >> "$LOG_DIR/init.log" 2>&1
     log "Network configured"
 else
     log "WARNING: No network-setup.sh found"
 fi
 
-log "Mounting NFS shared cache..."
-mkdir -p "$NFS_CACHE_MOUNT"
-if timeout 5 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_CACHE_EXPORT" "$NFS_CACHE_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
-    log "NFS cache mounted at $NFS_CACHE_MOUNT"
-    
-    mkdir -p /home/dev/.bun/install
-    mkdir -p /home/dev/.npm
-    mkdir -p /home/dev/.cache/pip
-    
-    if [ ! -L /home/dev/.bun/install/cache ]; then
-        rm -rf /home/dev/.bun/install/cache 2>/dev/null
-        ln -sf "$NFS_CACHE_MOUNT/bun" /home/dev/.bun/install/cache
-        log "Linked bun cache -> $NFS_CACHE_MOUNT/bun"
+link_config() {
+    local src="$1"
+    local dest="$2"
+    if [ -f "$src" ]; then
+        rm -f "$dest" 2>/dev/null
+        ln -sf "$src" "$dest"
+        log "Linked $dest -> $src"
     fi
-    
-    # Configure bun to use copyfile backend (hardlinks don't work across NFS)
-    mkdir -p /home/dev/.bunfig
-    cat > /home/dev/.bunfig.toml << 'BUNFIG'
+}
+
+log "Mounting NFS shares in parallel..."
+mkdir -p "$NFS_CACHE_MOUNT" "$NFS_BINARIES_MOUNT" "$NFS_CONFIGS_MOUNT" "$NFS_AUTH_MOUNT"
+
+(timeout 3 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_CACHE_EXPORT" "$NFS_CACHE_MOUNT" >> "$LOG_DIR/init.log" 2>&1 && touch /tmp/.nfs_cache_ok) &
+(timeout 3 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_BINARIES_EXPORT" "$NFS_BINARIES_MOUNT" >> "$LOG_DIR/init.log" 2>&1 && touch /tmp/.nfs_binaries_ok) &
+(timeout 3 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_CONFIGS_EXPORT" "$NFS_CONFIGS_MOUNT" >> "$LOG_DIR/init.log" 2>&1 && touch /tmp/.nfs_configs_ok) &
+(timeout 3 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_AUTH_EXPORT" "$NFS_AUTH_MOUNT" >> "$LOG_DIR/init.log" 2>&1 && touch /tmp/.nfs_auth_ok) &
+wait
+
+if [ -f /tmp/.nfs_cache_ok ]; then
+    log "NFS cache mounted"
+    mkdir -p /home/dev/.bun/install /home/dev/.npm /home/dev/.cache/pip
+    [ ! -L /home/dev/.bun/install/cache ] && rm -rf /home/dev/.bun/install/cache 2>/dev/null && ln -sf "$NFS_CACHE_MOUNT/bun" /home/dev/.bun/install/cache
+    mkdir -p /home/dev/.bunfig && cat > /home/dev/.bunfig.toml << 'BUNFIG'
 [install]
 backend = "copyfile"
 BUNFIG
     chown dev:dev /home/dev/.bunfig.toml
-    
-    if [ ! -L /home/dev/.npm/_cacache ]; then
-        mkdir -p /home/dev/.npm
-        rm -rf /home/dev/.npm/_cacache 2>/dev/null
-        ln -sf "$NFS_CACHE_MOUNT/npm" /home/dev/.npm/_cacache
-        log "Linked npm cache -> $NFS_CACHE_MOUNT/npm"
-    fi
-    
-    if [ ! -L /home/dev/.cache/pip ]; then
-        mkdir -p /home/dev/.cache
-        rm -rf /home/dev/.cache/pip 2>/dev/null
-        ln -sf "$NFS_CACHE_MOUNT/pip" /home/dev/.cache/pip
-        log "Linked pip cache -> $NFS_CACHE_MOUNT/pip"
-    fi
-    
+    [ ! -L /home/dev/.npm/_cacache ] && mkdir -p /home/dev/.npm && rm -rf /home/dev/.npm/_cacache 2>/dev/null && ln -sf "$NFS_CACHE_MOUNT/npm" /home/dev/.npm/_cacache
+    [ ! -L /home/dev/.cache/pip ] && mkdir -p /home/dev/.cache && rm -rf /home/dev/.cache/pip 2>/dev/null && ln -sf "$NFS_CACHE_MOUNT/pip" /home/dev/.cache/pip
     chown -R dev:dev /home/dev/.bun /home/dev/.npm /home/dev/.cache 2>/dev/null
 else
-    log "WARNING: Failed to mount NFS cache, package caching disabled"
+    log "WARNING: Failed to mount NFS cache"
 fi
 
-log "Mounting NFS shared binaries..."
-mkdir -p "$NFS_BINARIES_MOUNT"
-if timeout 5 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_BINARIES_EXPORT" "$NFS_BINARIES_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
-    log "NFS binaries mounted at $NFS_BINARIES_MOUNT (read-only)"
+if [ -f /tmp/.nfs_binaries_ok ]; then
+    log "NFS binaries mounted"
     export PATH="$NFS_BINARIES_MOUNT/bin:$PATH"
     echo "export PATH=$NFS_BINARIES_MOUNT/bin:\$PATH" >> /home/dev/.profile
-    log "Added $NFS_BINARIES_MOUNT/bin to PATH"
 else
     log "WARNING: Failed to mount NFS binaries"
 fi
 
-log "Mounting NFS shared configs..."
-mkdir -p "$NFS_CONFIGS_MOUNT"
-if timeout 5 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_CONFIGS_EXPORT" "$NFS_CONFIGS_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
-    log "NFS configs mounted at $NFS_CONFIGS_MOUNT (read-only)"
-    
+if [ -f /tmp/.nfs_configs_ok ]; then
+    log "NFS configs mounted"
     WORKSPACE_ID=""
-    if [ -f "$CONFIG_FILE" ]; then
-        WORKSPACE_ID=$(jq -r '.workspaceId // empty' "$CONFIG_FILE" 2>/dev/null)
-    fi
-    
-    mkdir -p /home/dev/.config/opencode
-    mkdir -p /home/dev/.local/share/code-server/User
-    
-    link_config() {
-        local src="$1"
-        local dest="$2"
-        if [ -f "$src" ]; then
-            rm -f "$dest" 2>/dev/null
-            ln -sf "$src" "$dest"
-            log "Linked $dest -> $src"
-        fi
-    }
-    
+    [ -f "$CONFIG_FILE" ] && WORKSPACE_ID=$(jq -r '.workspaceId // empty' "$CONFIG_FILE" 2>/dev/null)
+    mkdir -p /home/dev/.config/opencode /home/dev/.local/share/code-server/User
     link_config "$NFS_CONFIGS_MOUNT/global/home/dev/.config/opencode/opencode.json" "/home/dev/.config/opencode/opencode.json"
     link_config "$NFS_CONFIGS_MOUNT/global/home/dev/.local/share/code-server/User/settings.json" "/home/dev/.local/share/code-server/User/settings.json"
-    
-    if [ -n "$WORKSPACE_ID" ]; then
-        WS_CONFIG_DIR="$NFS_CONFIGS_MOUNT/workspaces/$WORKSPACE_ID"
-        if [ -d "$WS_CONFIG_DIR" ]; then
-            log "Found workspace configs at $WS_CONFIG_DIR"
-            if [ -f "$WS_CONFIG_DIR/home/dev/.config/opencode/opencode.json" ]; then
-                link_config "$WS_CONFIG_DIR/home/dev/.config/opencode/opencode.json" "/home/dev/.config/opencode/opencode.json"
-            fi
-        fi
+    if [ -n "$WORKSPACE_ID" ] && [ -d "$NFS_CONFIGS_MOUNT/workspaces/$WORKSPACE_ID" ]; then
+        [ -f "$NFS_CONFIGS_MOUNT/workspaces/$WORKSPACE_ID/home/dev/.config/opencode/opencode.json" ] && link_config "$NFS_CONFIGS_MOUNT/workspaces/$WORKSPACE_ID/home/dev/.config/opencode/opencode.json" "/home/dev/.config/opencode/opencode.json"
     fi
-    
     chown -R dev:dev /home/dev/.config /home/dev/.local 2>/dev/null
 else
     log "WARNING: Failed to mount NFS configs"
 fi
 
-log "Mounting NFS shared auth..."
-mkdir -p "$NFS_AUTH_MOUNT"
-if timeout 5 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_AUTH_EXPORT" "$NFS_AUTH_MOUNT" 2>&1 | tee -a "$LOG_DIR/init.log"; then
-    log "NFS auth mounted at $NFS_AUTH_MOUNT (read-write)"
-    
-    mkdir -p /home/dev/.local/share/opencode
-    mkdir -p /home/dev/.config/opencode
-    
+if [ -f /tmp/.nfs_auth_ok ]; then
+    log "NFS auth mounted"
+    mkdir -p /home/dev/.local/share/opencode /home/dev/.config/opencode
     link_config "$NFS_AUTH_MOUNT/opencode.json" "/home/dev/.local/share/opencode/auth.json"
     link_config "$NFS_AUTH_MOUNT/antigravity.json" "/home/dev/.config/opencode/antigravity-accounts.json"
-    
     chown -h dev:dev /home/dev/.local/share/opencode/auth.json /home/dev/.config/opencode/antigravity-accounts.json 2>/dev/null
 else
     log "WARNING: Failed to mount NFS auth"
 fi
+
+rm -f /tmp/.nfs_*_ok 2>/dev/null
 
 if [ -f "$SECRETS_FILE" ]; then
     log "Loading secrets..."
@@ -217,7 +177,7 @@ if [ -f /usr/local/lib/sandbox-agent.mjs ]; then
     log "sandbox-agent started (PID $!)"
 else
     log "ERROR: sandbox-agent.mjs not found"
-    ls -la /usr/local/lib/ 2>&1 | tee -a "$LOG_DIR/init.log"
+    ls -la /usr/local/lib/ >> "$LOG_DIR/init.log" 2>&1
 fi
 
 log "Starting SSH daemon..."
@@ -268,7 +228,7 @@ if command -v opencode >/dev/null 2>&1; then
         log "Installing OpenCode plugin SDK..."
         mkdir -p "$OPENCODE_PLUGIN_DIR"
         chown dev:dev "$OPENCODE_PLUGIN_DIR"
-        su - dev -c "cd $OPENCODE_PLUGIN_DIR && bun add @opencode-ai/plugin 2>&1" | tee -a "$LOG_DIR/init.log"
+        su - dev -c "cd $OPENCODE_PLUGIN_DIR && bun add @opencode-ai/plugin" >> "$LOG_DIR/init.log" 2>&1
         log "OpenCode plugin SDK installed"
     fi
 fi
@@ -306,7 +266,7 @@ log "Services: SSH(22), code-server($VSCODE_PORT), opencode($OPENCODE_PORT), tty
 
 # List running processes
 log "Running processes:"
-ps aux 2>&1 | tee -a "$LOG_DIR/init.log"
+ps aux >> "$LOG_DIR/init.log" 2>&1
 
 # PID 1 must stay alive - reap zombies and wait
 while true; do

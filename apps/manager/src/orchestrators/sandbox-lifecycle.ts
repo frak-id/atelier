@@ -140,7 +140,7 @@ export class SandboxLifecycle {
 
     const client = new FirecrackerClient(paths.socket);
     const bootArgs =
-      "console=ttyS0 reboot=k panic=1 pci=off init=/etc/sandbox/sandbox-init.sh";
+      "console=ttyS0 reboot=k panic=1 pci=off quiet loglevel=1 8250.nr_uarts=0 init=/etc/sandbox/sandbox-init.sh";
 
     await client.setBootSource(paths.kernel, bootArgs);
     await client.setDrive("rootfs", paths.overlay, true);
@@ -194,7 +194,7 @@ export class SandboxLifecycle {
       try {
         if (await client.isRunning()) return;
       } catch {}
-      await Bun.sleep(200);
+      await Bun.sleep(50);
     }
 
     throw new Error(`VM boot timeout after ${timeoutMs}ms`);
