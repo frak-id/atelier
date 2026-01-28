@@ -68,18 +68,18 @@ async function buildImage(args: string[]) {
     throw new Error(`Image directory not found: ${imageDir}`);
   }
 
-  const agentScript = `${IMAGES_DIR}/sandbox-agent.mjs`;
-  const agentExists = await exec(`test -f ${agentScript}`, { throws: false });
+  const agentBinary = `${IMAGES_DIR}/sandbox-agent`;
+  const agentExists = await exec(`test -f ${agentBinary}`, { throws: false });
   if (!agentExists.success) {
     throw new Error(
-      `sandbox-agent.mjs not found at: ${agentScript}\n` +
+      `sandbox-agent binary not found at: ${agentBinary}\n` +
         `Deploy with 'bun run deploy' first, or build manually on dev machine:\n` +
-        `  cd apps/agent && bun run build`,
+        `  cd apps/agent && deno task build:linux`,
     );
   }
 
   spinner.start("Preparing build context");
-  await exec(`cp ${agentScript} ${imageDir}/sandbox-agent.mjs`);
+  await exec(`cp ${agentBinary} ${imageDir}/sandbox-agent`);
   spinner.stop("Build context ready");
 
   spinner.start(`Building Docker image: frak-sandbox/${imageName}`);
@@ -93,7 +93,7 @@ async function buildImage(args: string[]) {
       `docker build --no-cache ${buildArgs} -t frak-sandbox/${imageName} ${imageDir}`,
     );
   } finally {
-    await exec(`rm -f ${imageDir}/sandbox-agent.mjs`, { throws: false });
+    await exec(`rm -f ${imageDir}/sandbox-agent`, { throws: false });
   }
   spinner.stop("Docker image built");
 

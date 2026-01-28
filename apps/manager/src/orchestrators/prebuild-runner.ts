@@ -333,14 +333,18 @@ export class PrebuildRunner {
    */
   private async warmupOpencode(
     sandboxId: string,
-    ipAddress: string,
+    _ipAddress: string,
     workspaceId: string,
   ): Promise<void> {
     log.info({ workspaceId }, "Warming up opencode server");
 
+    const port = config.raw.services.opencode.port;
+    // Use nohup + setsid + explicit fd close to fully detach from the shell.
+    // Without closing fds 1&2 at the outer sh level, Deno.Command's piped
+    // stdout stays open until the background process exits → timeout.
     const startResult = await this.deps.agentClient.exec(
       sandboxId,
-      `su dev -c 'cd ${WORKSPACE_DIR} && nohup opencode serve --hostname 0.0.0.0 --port ${config.raw.services.opencode.port} > /tmp/opencode-warmup.log 2>&1 &'`,
+      `su dev -c 'cd ${WORKSPACE_DIR} && nohup setsid opencode serve --hostname 0.0.0.0 --port ${port} </dev/null >/tmp/opencode-warmup.log 2>&1 &' </dev/null >/dev/null 2>&1`,
       { timeout: 10000 },
     );
 
@@ -357,22 +361,19 @@ export class PrebuildRunner {
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
       try {
-        const response = await fetch(
-          `http://${ipAddress}:${config.raw.services.opencode.port}/global/health`,
-          { signal: AbortSignal.timeout(5000) },
+        const result = await this.deps.agentClient.exec(
+          sandboxId,
+          `curl -sf http://localhost:${port}/global/health`,
+          { timeout: 5000 },
         );
-
-        if (response.ok) {
-          const data = (await response.json()) as { healthy?: boolean };
-          if (data.healthy) {
-            healthy = true;
-            log.info({ workspaceId }, "Opencode server is healthy");
-            break;
-          }
+        if (result.exitCode === 0 && result.stdout.includes("healthy")) {
+          healthy = true;
+          log.info({ workspaceId }, "Opencode server is healthy");
+          break;
         }
       } catch {}
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await Bun.sleep(2000);
     }
 
     if (!healthy) {

@@ -7,11 +7,15 @@ async function runCommand(
   timeout?: number,
 ): Promise<ExecResult> {
   try {
-    const { stdout, stderr } = await exec(command, {
+    const result = await exec(command, {
       timeout: timeout ?? DEFAULT_EXEC_TIMEOUT,
       maxBuffer: MAX_EXEC_BUFFER,
     });
-    return { exitCode: 0, stdout, stderr };
+    return {
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
   } catch (error: unknown) {
     const err = error as {
       code?: number;

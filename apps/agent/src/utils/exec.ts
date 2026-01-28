@@ -1,7 +1,13 @@
+export interface ExecOutput {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
 export async function exec(
   command: string,
   options?: { timeout?: number; maxBuffer?: number },
-): Promise<{ stdout: string; stderr: string }> {
+): Promise<ExecOutput> {
   const cmd = new Deno.Command("sh", {
     args: ["-c", command],
     stdout: "piped",
@@ -11,6 +17,7 @@ export async function exec(
   const output = await cmd.output();
   const decoder = new TextDecoder();
   return {
+    exitCode: output.code,
     stdout: decoder.decode(output.stdout),
     stderr: decoder.decode(output.stderr),
   };

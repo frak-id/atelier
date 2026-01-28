@@ -1,4 +1,3 @@
-import { request as httpRequest, type IncomingMessage } from "node:http";
 import { createConnection, type Socket } from "node:net";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { getVsockPath } from "../firecracker/index.ts";
@@ -28,43 +27,16 @@ interface RequestOptions {
   timeout?: number;
 }
 
+/**
+ * Agent client using raw HTTP over Firecracker vsock.
+ *
+ * Each request opens a fresh vsock connection because Firecracker's vsock
+ * multiplexer assigns a unique host-side CID per connection. We do NOT use
+ * node:http because Bun's polyfill ignores the `createConnection` option and
+ * connects to localhost instead of the provided socket.
+ */
 export class AgentClient {
-  private sockets = new Map<string, Socket>();
-
-  private getSocket(sandboxId: string): Socket | undefined {
-    const socket = this.sockets.get(sandboxId);
-    if (socket && !socket.destroyed) {
-      return socket;
-    }
-    this.sockets.delete(sandboxId);
-    return undefined;
-  }
-
-  private async getOrCreateSocket(sandboxId: string): Promise<Socket> {
-    const existing = this.getSocket(sandboxId);
-    if (existing) return existing;
-
-    const vsockPath = getVsockPath(sandboxId);
-    const socket = await this.connectVsock(vsockPath, VSOCK_GUEST_PORT);
-
-    socket.on("close", () => {
-      this.sockets.delete(sandboxId);
-    });
-    socket.on("error", () => {
-      this.sockets.delete(sandboxId);
-    });
-
-    this.sockets.set(sandboxId, socket);
-    return socket;
-  }
-
-  disconnect(sandboxId: string): void {
-    const socket = this.sockets.get(sandboxId);
-    if (socket) {
-      socket.destroy();
-      this.sockets.delete(sandboxId);
-    }
-  }
+  disconnect(_sandboxId: string): void {}
 
   private async request<T>(
     sandboxId: string,
@@ -72,86 +44,90 @@ export class AgentClient {
     options: RequestOptions = {},
   ): Promise<T> {
     const timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    const vsockPath = getVsockPath(sandboxId);
+
+    const socket = await this.connectVsock(vsockPath, VSOCK_GUEST_PORT);
 
     try {
-      const socket = await this.getOrCreateSocket(sandboxId);
-      return await this.httpOverSocket<T>(socket, path, options, timeout);
-    } catch (error) {
-      // Connection may have gone stale — retry once with a fresh socket
-      this.disconnect(sandboxId);
-      const socket = await this.getOrCreateSocket(sandboxId);
-      return this.httpOverSocket<T>(socket, path, options, timeout);
+      return await this.rawHttp<T>(socket, path, options, timeout);
+    } finally {
+      socket.destroy();
     }
   }
 
-  private httpOverSocket<T>(
+  private rawHttp<T>(
     socket: Socket,
     path: string,
     options: RequestOptions,
     timeout: number,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        fn();
+      };
+
       const timeoutId = setTimeout(() => {
-        reject(new Error(`Agent request timed out after ${timeout}ms`));
+        settle(() =>
+          reject(new Error(`Agent request timed out after ${timeout}ms`)),
+        );
+        socket.destroy();
       }, timeout);
 
-      const req = httpRequest(
-        {
-          path,
-          method: options.method ?? "GET",
-          headers: {
-            Host: "localhost",
-            Connection: "keep-alive",
-            ...(options.body ? { "Content-Type": "application/json" } : {}),
-          },
-          createConnection: () => socket,
-        },
-        (res: IncomingMessage) => {
-          let body = "";
-          res.on("data", (chunk) => {
-            body += chunk;
-          });
-          res.on("end", () => {
-            clearTimeout(timeoutId);
-            if (
-              !res.statusCode ||
-              res.statusCode < 200 ||
-              res.statusCode >= 300
-            ) {
-              reject(
-                new Error(
-                  `Agent request failed: ${res.statusCode} ${res.statusMessage}`,
-                ),
-              );
-              return;
-            }
-            try {
-              resolve(JSON.parse(body) as T);
-            } catch {
-              reject(
-                new Error(
-                  `Failed to parse agent response: ${body.slice(0, 200)}`,
-                ),
-              );
-            }
-          });
-        },
-      );
+      const method = options.method ?? "GET";
+      const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
+      const headers: string[] = [
+        `${method} ${path} HTTP/1.1`,
+        "Host: localhost",
+        "Connection: close",
+      ];
+      if (bodyStr) {
+        headers.push("Content-Type: application/json");
+        headers.push(`Content-Length: ${Buffer.byteLength(bodyStr)}`);
+      }
+      headers.push("", "");
 
-      req.on("error", (err) => {
-        clearTimeout(timeoutId);
-        reject(err);
+      socket.write(headers.join("\r\n"));
+      if (bodyStr) {
+        socket.write(bodyStr);
+      }
+
+      const chunks: Buffer[] = [];
+      socket.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
       });
 
-      if (options.body) {
-        req.write(JSON.stringify(options.body));
-      }
-      req.end();
+      socket.on("end", () => {
+        settle(() => {
+          try {
+            const raw = Buffer.concat(chunks).toString();
+            const result = parseHttpResponse<T>(raw);
+            resolve(result);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+
+      socket.on("error", (err) => {
+        settle(() => reject(err));
+      });
     });
   }
 
   private connectVsock(vsockPath: string, guestPort: number): Promise<Socket> {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn();
+      };
+
       const socket = createConnection({ path: vsockPath }, () => {
         socket.write(`CONNECT ${guestPort}\n`);
       });
@@ -162,22 +138,26 @@ export class AgentClient {
         if (handshakeData.includes("\n")) {
           socket.removeListener("data", onData);
           if (handshakeData.startsWith("OK")) {
-            resolve(socket);
+            settle(() => resolve(socket));
           } else {
             socket.destroy();
-            reject(
-              new Error(`Vsock handshake failed: ${handshakeData.trim()}`),
+            settle(() =>
+              reject(
+                new Error(`Vsock handshake failed: ${handshakeData.trim()}`),
+              ),
             );
           }
         }
       };
 
       socket.on("data", onData);
-      socket.on("error", reject);
+      socket.on("error", (err) => {
+        settle(() => reject(err));
+      });
 
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         socket.destroy();
-        reject(new Error("Vsock connection timed out"));
+        settle(() => reject(new Error("Vsock connection timed out")));
       }, VSOCK_CONNECT_TIMEOUT);
     });
   }
@@ -191,7 +171,7 @@ export class AgentClient {
     options: { timeout?: number; interval?: number } = {},
   ): Promise<boolean> {
     const timeout = options.timeout ?? 60000;
-    const interval = options.interval ?? 50;
+    const interval = options.interval ?? 500;
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {
@@ -201,9 +181,7 @@ export class AgentClient {
           log.info({ sandboxId }, "Agent is healthy");
           return true;
         }
-      } catch (error) {
-        log.debug({ sandboxId, error }, "Agent not ready yet");
-      }
+      } catch {}
       await Bun.sleep(interval);
     }
 
@@ -334,4 +312,58 @@ export class AgentClient {
       `/dev/${name}/logs?offset=${offset}&limit=${limit}`,
     );
   }
+}
+
+function parseHttpResponse<T>(raw: string): T {
+  const headerEnd = raw.indexOf("\r\n\r\n");
+  if (headerEnd === -1) {
+    throw new Error(`Malformed HTTP response: no header boundary`);
+  }
+
+  const headerSection = raw.slice(0, headerEnd);
+  const bodyRaw = raw.slice(headerEnd + 4);
+
+  const statusLine = headerSection.split("\r\n")[0] ?? "";
+  const statusMatch = statusLine.match(/^HTTP\/\d\.\d (\d{3}) (.*)$/);
+  if (!statusMatch) {
+    throw new Error(`Malformed HTTP status line: ${statusLine}`);
+  }
+
+  const statusCode = parseInt(statusMatch[1]!, 10);
+  const statusMessage = statusMatch[2]!;
+
+  if (statusCode < 200 || statusCode >= 300) {
+    throw new Error(`Agent request failed: ${statusCode} ${statusMessage}`);
+  }
+
+  const isChunked = headerSection
+    .toLowerCase()
+    .includes("transfer-encoding: chunked");
+  const body = isChunked ? decodeChunked(bodyRaw) : bodyRaw;
+
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new Error(`Failed to parse agent response: ${body.slice(0, 200)}`);
+  }
+}
+
+function decodeChunked(raw: string): string {
+  let result = "";
+  let pos = 0;
+
+  while (pos < raw.length) {
+    const lineEnd = raw.indexOf("\r\n", pos);
+    if (lineEnd === -1) break;
+
+    const sizeStr = raw.slice(pos, lineEnd).trim();
+    const size = parseInt(sizeStr, 16);
+    if (size === 0) break;
+
+    const chunkStart = lineEnd + 2;
+    result += raw.slice(chunkStart, chunkStart + size);
+    pos = chunkStart + size + 2;
+  }
+
+  return result;
 }
