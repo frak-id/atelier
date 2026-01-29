@@ -88,6 +88,12 @@ export const DEFAULTS = {
   VOLUME_SIZE_GB: 50,
 } as const;
 
+export const REGISTRY = {
+  PORT: 4873,
+  STORAGE_DIR: "/var/lib/sandbox/registry/storage",
+  EVICTION_DAYS: 14,
+} as const;
+
 export const SHARED_STORAGE = {
   BINARIES_DIR: "/var/lib/sandbox/shared-binaries",
 } as const;

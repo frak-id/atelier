@@ -69,6 +69,7 @@ export const WorkspaceConfigSchema = t.Object({
   prebuild: t.Optional(PrebuildInfoSchema),
   sessionTemplates: t.Optional(SessionTemplatesSchema),
   devCommands: t.Optional(t.Array(DevCommandSchema, { default: [] })),
+  useRegistryCache: t.Optional(t.Boolean()),
 });
 export type WorkspaceConfig = Static<typeof WorkspaceConfigSchema>;
 

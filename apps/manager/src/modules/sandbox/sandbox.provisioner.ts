@@ -2,6 +2,7 @@ import type { SandboxConfig } from "@frak-sandbox/shared";
 import { $ } from "bun";
 import type { SandboxPaths } from "../../infrastructure/firecracker/index.ts";
 import type { NetworkAllocation } from "../../infrastructure/network/index.ts";
+import { RegistryService } from "../../infrastructure/registry/index.ts";
 import { SecretsService } from "../../infrastructure/secrets/index.ts";
 import type {
   FileSecret,
@@ -44,6 +45,7 @@ export const SandboxProvisioner = {
 
     try {
       await this.injectNetworkConfig(mountPoint, ctx.network);
+      await this.injectRegistryConfig(mountPoint, ctx);
       await this.injectSandboxConfig(mountPoint, ctx);
       await this.injectSecrets(mountPoint, ctx.workspace);
       await this.injectFileSecrets(mountPoint, ctx);
@@ -76,6 +78,45 @@ ${dnsLines}
 `;
     await Bun.write(`${mountPoint}/etc/network-setup.sh`, networkScript);
     await $`chmod +x ${mountPoint}/etc/network-setup.sh`.quiet();
+  },
+
+  async injectRegistryConfig(
+    mountPoint: string,
+    ctx: ProvisionContext,
+  ): Promise<void> {
+    const settings = RegistryService.getSettings();
+    if (!settings.enabled) {
+      log.debug("Registry disabled globally, skipping injection");
+      return;
+    }
+
+    if (ctx.workspace?.config.useRegistryCache === false) {
+      log.debug(
+        { workspaceId: ctx.workspace.id },
+        "Registry disabled for workspace, skipping injection",
+      );
+      return;
+    }
+
+    const registryUrl = RegistryService.getRegistryUrl();
+
+    await Bun.write(
+      `${mountPoint}/etc/profile.d/registry.sh`,
+      `export NPM_CONFIG_REGISTRY="${registryUrl}"\n`,
+    );
+    await $`chmod +r ${mountPoint}/etc/profile.d/registry.sh`.quiet();
+
+    await Bun.write(`${mountPoint}/etc/npmrc`, `registry=${registryUrl}\n`);
+
+    const bunfigToml = `[install]\nregistry = "${registryUrl}"\n`;
+    await Bun.write(`${mountPoint}/home/dev/.bunfig.toml`, bunfigToml);
+    await $`chown 1000:1000 ${mountPoint}/home/dev/.bunfig.toml`.quiet();
+
+    const yarnrcYml = `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${config.network.bridgeIp}"\n`;
+    await Bun.write(`${mountPoint}/home/dev/.yarnrc.yml`, yarnrcYml);
+    await $`chown 1000:1000 ${mountPoint}/home/dev/.yarnrc.yml`.quiet();
+
+    log.debug("Registry config injected");
   },
 
   async injectSandboxConfig(

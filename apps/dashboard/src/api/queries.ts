@@ -22,6 +22,9 @@ export const queryKeys = {
     all: ["sharedStorage"] as const,
     binaries: ["sharedStorage", "binaries"] as const,
   },
+  registry: {
+    status: ["registry", "status"] as const,
+  },
   tasks: {
     all: ["tasks"] as const,
     list: (workspaceId?: string) => ["tasks", "list", workspaceId] as const,
@@ -823,6 +826,66 @@ export function useRemoveBinary() {
       unwrap(await api.api.storage.binaries({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
+    },
+  });
+}
+
+export const registryStatusQuery = queryOptions({
+  queryKey: queryKeys.registry.status,
+  queryFn: async () => unwrap(await api.api.registry.get()),
+  refetchInterval: 30000,
+  refetchIntervalInBackground: false,
+});
+
+export function useEnableRegistry() {
+  return useMutation({
+    mutationKey: ["registry", "enable"],
+    mutationFn: async () => unwrap(await api.api.registry.enable.post({})),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
+    },
+  });
+}
+
+export function useDisableRegistry() {
+  return useMutation({
+    mutationKey: ["registry", "disable"],
+    mutationFn: async () => unwrap(await api.api.registry.disable.post({})),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
+    },
+  });
+}
+
+export function useUpdateRegistrySettings() {
+  return useMutation({
+    mutationKey: ["registry", "settings"],
+    mutationFn: async (data: { evictionDays?: number }) =>
+      unwrap(await api.api.registry.settings.put(data)),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
+    },
+  });
+}
+
+export function usePurgeRegistryCache() {
+  return useMutation({
+    mutationKey: ["registry", "purge"],
+    mutationFn: async () => unwrap(await api.api.registry.purge.post({})),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.system.storage });
+    },
+  });
+}
+
+export function useRunRegistryEviction() {
+  return useMutation({
+    mutationKey: ["registry", "evict"],
+    mutationFn: async () => unwrap(await api.api.registry.evict.post({})),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.system.storage });
     },
   });
 }

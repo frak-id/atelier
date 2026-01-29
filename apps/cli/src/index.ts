@@ -5,6 +5,7 @@ import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
 import { installFirecracker } from "./commands/install-firecracker";
 import { setupNetwork } from "./commands/setup-network";
+
 import { setupSshProxy } from "./commands/setup-ssh-proxy";
 import { setupStorage } from "./commands/setup-storage";
 import { isRoot } from "./lib/shell";

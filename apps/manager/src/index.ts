@@ -10,6 +10,7 @@ import {
   gitSourceRoutes,
   healthRoutes,
   imageRoutes,
+  registryRoutes,
   sandboxRoutes,
   sessionTemplateRoutes,
   sharedAuthRoutes,
@@ -29,6 +30,7 @@ import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
+import { RegistryService } from "./infrastructure/registry/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config } from "./shared/lib/config.ts";
@@ -117,6 +119,8 @@ const app = new Elysia()
         "Startup: routes re-registered",
       );
     }
+
+    await RegistryService.initialize();
   })
   .use(cors())
   .use(
@@ -205,6 +209,7 @@ const app = new Elysia()
         .use(sshKeyRoutes)
         .use(systemRoutes)
         .use(sharedStorageRoutes)
+        .use(registryRoutes)
         .use(imageRoutes)
         .use(githubApiRoutes),
     ),
