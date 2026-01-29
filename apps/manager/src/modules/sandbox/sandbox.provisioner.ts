@@ -1,8 +1,8 @@
 import type { SandboxConfig } from "@frak-sandbox/shared";
-import { REGISTRY } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import type { SandboxPaths } from "../../infrastructure/firecracker/index.ts";
 import type { NetworkAllocation } from "../../infrastructure/network/index.ts";
+import { RegistryService } from "../../infrastructure/registry/index.ts";
 import { SecretsService } from "../../infrastructure/secrets/index.ts";
 import type {
   FileSecret,
@@ -45,7 +45,7 @@ export const SandboxProvisioner = {
 
     try {
       await this.injectNetworkConfig(mountPoint, ctx.network);
-      await this.injectRegistryConfig(mountPoint);
+      await this.injectRegistryConfig(mountPoint, ctx);
       await this.injectSandboxConfig(mountPoint, ctx);
       await this.injectSecrets(mountPoint, ctx.workspace);
       await this.injectFileSecrets(mountPoint, ctx);
@@ -80,25 +80,38 @@ ${dnsLines}
     await $`chmod +x ${mountPoint}/etc/network-setup.sh`.quiet();
   },
 
-  async injectRegistryConfig(mountPoint: string): Promise<void> {
-    const registryUrl = `http://${config.network.bridgeIp}:${REGISTRY.PORT}`;
+  async injectRegistryConfig(
+    mountPoint: string,
+    ctx: ProvisionContext,
+  ): Promise<void> {
+    const settings = RegistryService.getSettings();
+    if (!settings.enabled) {
+      log.debug("Registry disabled globally, skipping injection");
+      return;
+    }
 
-    // NPM_CONFIG_REGISTRY env var — respected by npm, pnpm, deno, yarn 1.x
+    if (ctx.workspace?.config.useRegistryCache === false) {
+      log.debug(
+        { workspaceId: ctx.workspace.id },
+        "Registry disabled for workspace, skipping injection",
+      );
+      return;
+    }
+
+    const registryUrl = RegistryService.getRegistryUrl();
+
     await Bun.write(
       `${mountPoint}/etc/profile.d/registry.sh`,
       `export NPM_CONFIG_REGISTRY="${registryUrl}"\n`,
     );
     await $`chmod +r ${mountPoint}/etc/profile.d/registry.sh`.quiet();
 
-    // Global .npmrc — respected by npm, pnpm, deno, bun
     await Bun.write(`${mountPoint}/etc/npmrc`, `registry=${registryUrl}\n`);
 
-    // bunfig.toml — bun's native config
     const bunfigToml = `[install]\nregistry = "${registryUrl}"\n`;
     await Bun.write(`${mountPoint}/home/dev/.bunfig.toml`, bunfigToml);
     await $`chown 1000:1000 ${mountPoint}/home/dev/.bunfig.toml`.quiet();
 
-    // .yarnrc.yml — yarn 2+ (Berry)
     const yarnrcYml = `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${config.network.bridgeIp}"\n`;
     await Bun.write(`${mountPoint}/home/dev/.yarnrc.yml`, yarnrcYml);
     await $`chown 1000:1000 ${mountPoint}/home/dev/.yarnrc.yml`.quiet();

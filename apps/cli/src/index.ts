@@ -5,7 +5,7 @@ import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
 import { installFirecracker } from "./commands/install-firecracker";
 import { setupNetwork } from "./commands/setup-network";
-import { setupRegistry } from "./commands/setup-registry";
+
 import { setupSshProxy } from "./commands/setup-ssh-proxy";
 import { setupStorage } from "./commands/setup-storage";
 import { isRoot } from "./lib/shell";
@@ -36,11 +36,6 @@ const COMMANDS = {
     label: "Setup Storage",
     description: "Configure LVM thin provisioning",
     handler: setupStorage,
-  },
-  registry: {
-    label: "Setup Registry Cache",
-    description: "Install Verdaccio npm caching proxy for sandboxes",
-    handler: setupRegistry,
   },
   "ssh-proxy": {
     label: "Setup SSH Proxy",
@@ -131,7 +126,6 @@ PROVISIONING (one-time setup):
   firecracker     Download Firecracker, kernel, and rootfs
   network         Configure persistent bridge for VM networking
   storage         Configure LVM thin provisioning
-  registry        Install Verdaccio npm caching proxy for sandboxes
   ssh-proxy       Install and configure sshpiper for sandbox SSH access
 
 SERVICE CONTROL:

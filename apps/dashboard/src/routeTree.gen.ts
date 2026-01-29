@@ -76,12 +76,12 @@ export interface FileRoutesByFullPath {
   "/sandboxes/$id": typeof SandboxesIdRoute;
   "/tasks/$id": typeof TasksIdRoute;
   "/workspaces/$id": typeof WorkspacesIdRoute;
-  "/images": typeof ImagesIndexRoute;
-  "/sandboxes": typeof SandboxesIndexRoute;
-  "/settings": typeof SettingsIndexRoute;
-  "/system": typeof SystemIndexRoute;
-  "/tasks": typeof TasksIndexRoute;
-  "/workspaces": typeof WorkspacesIndexRoute;
+  "/images/": typeof ImagesIndexRoute;
+  "/sandboxes/": typeof SandboxesIndexRoute;
+  "/settings/": typeof SettingsIndexRoute;
+  "/system/": typeof SystemIndexRoute;
+  "/tasks/": typeof TasksIndexRoute;
+  "/workspaces/": typeof WorkspacesIndexRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
@@ -115,12 +115,12 @@ export interface FileRouteTypes {
     | "/sandboxes/$id"
     | "/tasks/$id"
     | "/workspaces/$id"
-    | "/images"
-    | "/sandboxes"
-    | "/settings"
-    | "/system"
-    | "/tasks"
-    | "/workspaces";
+    | "/images/"
+    | "/sandboxes/"
+    | "/settings/"
+    | "/system/"
+    | "/tasks/"
+    | "/workspaces/";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
@@ -172,42 +172,42 @@ declare module "@tanstack/react-router" {
     "/workspaces/": {
       id: "/workspaces/";
       path: "/workspaces";
-      fullPath: "/workspaces";
+      fullPath: "/workspaces/";
       preLoaderRoute: typeof WorkspacesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/tasks/": {
       id: "/tasks/";
       path: "/tasks";
-      fullPath: "/tasks";
+      fullPath: "/tasks/";
       preLoaderRoute: typeof TasksIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/system/": {
       id: "/system/";
       path: "/system";
-      fullPath: "/system";
+      fullPath: "/system/";
       preLoaderRoute: typeof SystemIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/settings/": {
       id: "/settings/";
       path: "/settings";
-      fullPath: "/settings";
+      fullPath: "/settings/";
       preLoaderRoute: typeof SettingsIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/sandboxes/": {
       id: "/sandboxes/";
       path: "/sandboxes";
-      fullPath: "/sandboxes";
+      fullPath: "/sandboxes/";
       preLoaderRoute: typeof SandboxesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/images/": {
       id: "/images/";
       path: "/images";
-      fullPath: "/images";
+      fullPath: "/images/";
       preLoaderRoute: typeof ImagesIndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };

@@ -1,3 +1,4 @@
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -23,6 +24,8 @@ interface GeneralFormProps {
   onBaseImageChange: (value: string) => void;
   onVcpusChange: (value: number) => void;
   onMemoryMbChange: (value: number) => void;
+  useRegistryCache?: boolean;
+  onUseRegistryCacheChange?: (value: boolean) => void;
   showName?: boolean;
 }
 
@@ -36,6 +39,8 @@ export function GeneralForm({
   onBaseImageChange,
   onVcpusChange,
   onMemoryMbChange,
+  useRegistryCache,
+  onUseRegistryCacheChange,
   showName = true,
 }: GeneralFormProps) {
   return (
@@ -107,6 +112,24 @@ export function GeneralForm({
           </Select>
         </div>
       </div>
+
+      {onUseRegistryCacheChange && (
+        <div className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+          <Checkbox
+            id="useRegistryCache"
+            checked={useRegistryCache ?? true}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              onUseRegistryCacheChange(e.target.checked)
+            }
+          />
+          <div className="space-y-1 leading-none">
+            <Label htmlFor="useRegistryCache">Use npm registry cache</Label>
+            <p className="text-sm text-muted-foreground">
+              Enable local caching for npm packages to speed up builds.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

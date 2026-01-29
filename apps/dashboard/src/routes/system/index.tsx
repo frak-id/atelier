@@ -6,23 +6,33 @@ import {
   Download,
   HardDrive,
   Package,
+  Play,
+  Power,
   RefreshCw,
+  Save,
   Server,
   Trash2,
 } from "lucide-react";
+import { useState } from "react";
 import {
   registryStatusQuery,
   sharedStorageQuery,
   systemQueueQuery,
   systemStatsQuery,
   systemStorageQuery,
+  useDisableRegistry,
+  useEnableRegistry,
   useInstallBinary,
+  usePurgeRegistryCache,
   useRemoveBinary,
+  useRunRegistryEviction,
   useSystemCleanup,
+  useUpdateRegistrySettings,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatBytes, formatDuration } from "@/lib/utils";
 
@@ -57,6 +67,16 @@ function SystemPage() {
   const cleanupMutation = useSystemCleanup();
   const installBinary = useInstallBinary();
   const removeBinary = useRemoveBinary();
+
+  const enableRegistry = useEnableRegistry();
+  const disableRegistry = useDisableRegistry();
+  const updateRegistrySettings = useUpdateRegistrySettings();
+  const purgeRegistryCache = usePurgeRegistryCache();
+  const runRegistryEviction = useRunRegistryEviction();
+
+  const [evictionDays, setEvictionDays] = useState<number | undefined>(
+    undefined,
+  );
 
   if (!stats || !storage || !queue || !sharedStorage) {
     return (
@@ -364,55 +384,159 @@ function SystemPage() {
             {registry ? (
               <>
                 <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Status</span>
-                  <Badge variant={registry.online ? "success" : "error"}>
-                    {registry.online ? "Online" : "Offline"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Status</span>
+                    <Badge
+                      variant={
+                        registry.enabled
+                          ? registry.online
+                            ? "success"
+                            : "warning"
+                          : "secondary"
+                      }
+                    >
+                      {registry.enabled
+                        ? registry.online
+                          ? "Online"
+                          : "Starting..."
+                        : "Disabled"}
+                    </Badge>
+                  </div>
+                  {registry.enabled ? (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={disableRegistry.isPending}
+                      onClick={() =>
+                        confirm("Disable registry cache?") &&
+                        disableRegistry.mutate()
+                      }
+                    >
+                      {disableRegistry.isPending ? (
+                        <RefreshCw className="h-3 w-3 animate-spin mr-2" />
+                      ) : (
+                        <Power className="h-3 w-3 mr-2" />
+                      )}
+                      Disable
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      disabled={enableRegistry.isPending}
+                      onClick={() => enableRegistry.mutate()}
+                    >
+                      {enableRegistry.isPending ? (
+                        <RefreshCw className="h-3 w-3 animate-spin mr-2" />
+                      ) : (
+                        <Power className="h-3 w-3 mr-2" />
+                      )}
+                      Enable
+                    </Button>
+                  )}
                 </div>
-                {!registry.online ? (
-                  <p className="text-sm text-muted-foreground">
-                    Registry cache is not running. Run{" "}
-                    <code className="text-xs bg-muted px-1 rounded">
-                      frak-sandbox registry
-                    </code>{" "}
-                    to set up.
-                  </p>
-                ) : (
+
+                {registry.enabled && (
                   <>
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Packages</span>
-                      <span className="text-sm">
-                        {registry.packageCount} packages cached
-                      </span>
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div>
+                        <div className="text-xs text-muted-foreground">
+                          Packages
+                        </div>
+                        <div className="text-xl font-bold">
+                          {registry.packageCount}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">
+                          Disk Usage
+                        </div>
+                        <div className="text-xl font-bold">
+                          {formatBytes(registry.disk.usedBytes)}
+                        </div>
+                        <div className="h-1 bg-secondary rounded-full overflow-hidden mt-1">
+                          <div
+                            className="h-full bg-primary"
+                            style={{ width: `${registry.disk.usedPercent}%` }}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>Cache Disk</span>
-                        <span>
-                          {formatBytes(registry.disk.usedBytes)} /{" "}
-                          {formatBytes(registry.disk.totalBytes)}
+
+                    <div className="flex items-end gap-2 pt-2 border-t">
+                      <div className="flex-1 space-y-2">
+                        <span className="text-xs font-medium">
+                          Eviction (Days)
                         </span>
+                        <div className="flex gap-2">
+                          <Input
+                            type="number"
+                            className="h-8"
+                            value={
+                              evictionDays ??
+                              registry.settings?.evictionDays ??
+                              14
+                            }
+                            onChange={(e) =>
+                              setEvictionDays(Number(e.target.value))
+                            }
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={
+                              updateRegistrySettings.isPending ||
+                              evictionDays === undefined
+                            }
+                            onClick={() => {
+                              if (evictionDays !== undefined) {
+                                updateRegistrySettings.mutate({ evictionDays });
+                                setEvictionDays(undefined);
+                              }
+                            }}
+                          >
+                            <Save className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary transition-all"
-                          style={{
-                            width: `${registry.disk.usedPercent}%`,
-                          }}
-                        />
-                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8"
+                        disabled={runRegistryEviction.isPending}
+                        onClick={() => runRegistryEviction.mutate()}
+                      >
+                        <Play className="h-3 w-3 mr-2" />
+                        Run Eviction
+                      </Button>
                     </div>
-                    <div className="flex justify-between items-center pt-2 border-t">
-                      <span className="text-muted-foreground">
-                        Uplink (npmjs.org)
-                      </span>
-                      <Badge
-                        variant={
-                          registry.uplink.healthy ? "success" : "warning"
+
+                    <div className="pt-2 border-t flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          Uplink:
+                        </span>
+                        <Badge
+                          variant={
+                            registry.uplink.healthy ? "success" : "warning"
+                          }
+                          className="text-[10px] px-1 py-0 h-5"
+                        >
+                          {registry.uplink.healthy ? "Healthy" : "Issues"}
+                        </Badge>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive h-8 px-2"
+                        disabled={purgeRegistryCache.isPending}
+                        onClick={() =>
+                          confirm("Purge all cached packages?") &&
+                          purgeRegistryCache.mutate()
                         }
                       >
-                        {registry.uplink.healthy ? "Healthy" : "Unhealthy"}
-                      </Badge>
+                        <Trash2 className="h-3 w-3 mr-2" />
+                        Purge Cache
+                      </Button>
                     </div>
                   </>
                 )}

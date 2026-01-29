@@ -91,6 +91,7 @@ export function EditWorkspaceDialog({
     vcpus: workspace.config.vcpus,
     memoryMb: workspace.config.memoryMb,
     initCommands: workspace.config.initCommands.join("\n"),
+    useRegistryCache: (workspace.config.useRegistryCache as boolean) ?? true,
   });
 
   const [repos, setRepos] = useState<RepoEntry[]>(() =>
@@ -123,6 +124,7 @@ export function EditWorkspaceDialog({
             baseImage: formData.baseImage,
             vcpus: formData.vcpus,
             memoryMb: formData.memoryMb,
+            useRegistryCache: formData.useRegistryCache,
             initCommands: formData.initCommands
               .split("\n")
               .filter((cmd: string) => cmd.trim()),
@@ -173,6 +175,10 @@ export function EditWorkspaceDialog({
                 onVcpusChange={(vcpus) => setFormData({ ...formData, vcpus })}
                 onMemoryMbChange={(memoryMb) =>
                   setFormData({ ...formData, memoryMb })
+                }
+                useRegistryCache={formData.useRegistryCache}
+                onUseRegistryCacheChange={(useRegistryCache) =>
+                  setFormData({ ...formData, useRegistryCache })
                 }
               />
             </TabsContent>

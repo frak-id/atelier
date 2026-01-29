@@ -1,13 +1,8 @@
-import { REGISTRY } from "@frak-sandbox/shared/constants";
-import { $ } from "bun";
 import { Elysia, t } from "elysia";
-import { createChildLogger } from "../shared/lib/logger.ts";
-
-const log = createChildLogger("registry-routes");
-
-const VERDACCIO_URL = `http://127.0.0.1:${REGISTRY.PORT}`;
+import { RegistryService } from "../infrastructure/registry/index.ts";
 
 const RegistryStatusSchema = t.Object({
+  enabled: t.Boolean(),
   online: t.Boolean(),
   packageCount: t.Number(),
   disk: t.Object({
@@ -19,91 +14,100 @@ const RegistryStatusSchema = t.Object({
     url: t.String(),
     healthy: t.Boolean(),
   }),
+  settings: t.Object({
+    evictionDays: t.Number(),
+    storagePath: t.String(),
+  }),
 });
 
-async function checkVerdaccioHealth(): Promise<boolean> {
-  try {
-    const res = await fetch(`${VERDACCIO_URL}/-/ping`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function getPackageCount(): Promise<number> {
-  try {
-    const res = await fetch(`${VERDACCIO_URL}/-/verdaccio/data/packages`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return 0;
-    const packages = (await res.json()) as unknown[];
-    return packages.length;
-  } catch {
-    return 0;
-  }
-}
-
-async function getDiskStats(): Promise<{
-  usedBytes: number;
-  totalBytes: number;
-  usedPercent: number;
-}> {
-  try {
-    const result =
-      await $`df -B1 ${REGISTRY.STORAGE_DIR} 2>/dev/null | tail -1 | awk '{print $3, $2, $5}'`
-        .quiet()
-        .nothrow();
-    const parts = result.stdout.toString().trim().split(/\s+/);
-    if (parts.length >= 3) {
-      const usedBytes = Number.parseInt(parts[0] ?? "0", 10);
-      const totalBytes = Number.parseInt(parts[1] ?? "0", 10);
-      const usedPercent = Number.parseFloat((parts[2] ?? "0").replace("%", ""));
-      return { usedBytes, totalBytes, usedPercent };
-    }
-  } catch (err) {
-    log.debug({ err }, "Failed to get disk stats");
-  }
-  return { usedBytes: 0, totalBytes: 0, usedPercent: 0 };
-}
-
-async function checkUplinkHealth(): Promise<boolean> {
-  try {
-    const res = await fetch("https://registry.npmjs.org/-/ping", {
-      signal: AbortSignal.timeout(5000),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-export const registryRoutes = new Elysia({ prefix: "/registry" }).get(
-  "/",
-  async () => {
-    const [online, packageCount, disk, uplinkHealthy] = await Promise.all([
-      checkVerdaccioHealth(),
-      getPackageCount(),
-      getDiskStats(),
-      checkUplinkHealth(),
-    ]);
-
-    return {
-      online,
-      packageCount,
-      disk,
-      uplink: {
-        url: "https://registry.npmjs.org",
-        healthy: uplinkHealthy,
-      },
-    };
-  },
-  {
+export const registryRoutes = new Elysia({ prefix: "/registry" })
+  .get("/", async () => RegistryService.getStatus(), {
     response: RegistryStatusSchema,
     detail: {
       tags: ["system"],
       summary: "Get registry cache status",
     },
-  },
-);
+  })
+  .post(
+    "/enable",
+    async () => {
+      await RegistryService.start();
+      return { message: "Registry cache enabled" };
+    },
+    {
+      response: t.Object({ message: t.String() }),
+      detail: {
+        tags: ["system"],
+        summary: "Enable and start the registry cache",
+      },
+    },
+  )
+  .post(
+    "/disable",
+    async () => {
+      await RegistryService.stop();
+      return { message: "Registry cache disabled" };
+    },
+    {
+      response: t.Object({ message: t.String() }),
+      detail: {
+        tags: ["system"],
+        summary: "Disable and stop the registry cache",
+      },
+    },
+  )
+  .put(
+    "/settings",
+    async ({ body }) => {
+      const settings = await RegistryService.updateSettings(body);
+      return settings;
+    },
+    {
+      body: t.Object({
+        evictionDays: t.Optional(t.Number({ minimum: 1, maximum: 365 })),
+      }),
+      response: t.Object({
+        enabled: t.Boolean(),
+        evictionDays: t.Number(),
+        storagePath: t.String(),
+      }),
+      detail: {
+        tags: ["system"],
+        summary: "Update registry cache settings",
+      },
+    },
+  )
+  .post(
+    "/purge",
+    async () => {
+      const result = await RegistryService.purgeCache();
+      return { message: "Cache purged", freedBytes: result.freedBytes };
+    },
+    {
+      response: t.Object({
+        message: t.String(),
+        freedBytes: t.Number(),
+      }),
+      detail: {
+        tags: ["system"],
+        summary: "Purge all cached packages",
+      },
+    },
+  )
+  .post(
+    "/evict",
+    async () => {
+      const deletedCount = await RegistryService.runEvictionNow();
+      return { message: "Eviction completed", deletedCount };
+    },
+    {
+      response: t.Object({
+        message: t.String(),
+        deletedCount: t.Number(),
+      }),
+      detail: {
+        tags: ["system"],
+        summary: "Run cache eviction now (removes stale packages)",
+      },
+    },
+  );
