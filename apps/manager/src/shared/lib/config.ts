@@ -1,4 +1,4 @@
-import { type FrakConfig, loadConfig } from "@frak-sandbox/shared";
+import { loadConfig } from "@frak-sandbox/shared";
 import { DEFAULTS, PATHS } from "@frak-sandbox/shared/constants";
 
 const frakConfig = loadConfig();
@@ -50,5 +50,3 @@ export const config = {
 
   raw: frakConfig,
 } as const;
-
-export type { FrakConfig };

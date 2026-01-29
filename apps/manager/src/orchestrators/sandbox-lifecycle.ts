@@ -1,31 +1,29 @@
-import { FIRECRACKER, LVM } from "@frak-sandbox/shared/constants";
+import { LVM } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import {
+  configureVm,
   FirecrackerClient,
   getSandboxPaths,
   getSocketPath,
   getVsockPath,
+  launchFirecracker,
 } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import { CaddyService } from "../infrastructure/proxy/index.ts";
-import {
-  BINARIES_IMAGE_PATH,
-  SharedStorageService,
-  StorageService,
-} from "../infrastructure/storage/index.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
-import type { SandboxService } from "../modules/sandbox/index.ts";
+import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import type { Sandbox } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { ensureDir } from "../shared/lib/shell.ts";
+import { cleanupSandboxFiles, killProcess } from "../shared/lib/shell.ts";
 
 const log = createChildLogger("sandbox-lifecycle");
 
 interface SandboxLifecycleDependencies {
-  sandboxService: SandboxService;
+  sandboxService: SandboxRepository;
   agentClient: AgentClient;
   internalService: InternalService;
 }
@@ -49,19 +47,10 @@ export class SandboxLifecycle {
 
     if (!config.isMock()) {
       if (sandbox.runtime.pid) {
-        await $`kill ${sandbox.runtime.pid} 2>/dev/null || true`
-          .quiet()
-          .nothrow();
-        await Bun.sleep(500);
-        await $`kill -9 ${sandbox.runtime.pid} 2>/dev/null || true`
-          .quiet()
-          .nothrow();
+        await killProcess(sandbox.runtime.pid);
       }
 
-      const socketPath = getSocketPath(sandboxId);
-      const vsockPath = getVsockPath(sandboxId);
-      const pidPath = `${config.paths.SOCKET_DIR}/${sandboxId}.pid`;
-      await $`rm -f ${socketPath} ${vsockPath} ${pidPath}`.quiet().nothrow();
+      await cleanupSandboxFiles(sandboxId);
 
       const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
       await NetworkService.deleteTap(tapDevice);
@@ -113,62 +102,16 @@ export class SandboxLifecycle {
     const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
     await NetworkService.createTap(tapDevice);
 
-    await ensureDir(config.paths.SOCKET_DIR);
-    await ensureDir(config.paths.LOG_DIR);
-    await $`rm -f ${paths.socket} ${paths.vsock}`.quiet().nothrow();
-    await $`touch ${paths.log}`.quiet();
+    const { pid: proc_pid, client } = await launchFirecracker(paths);
+    log.debug({ sandboxId, pid: proc_pid }, "Firecracker process started");
 
-    const proc = Bun.spawn(
-      [
-        FIRECRACKER.BINARY_PATH,
-        "--api-sock",
-        paths.socket,
-        "--log-path",
-        paths.log,
-        "--level",
-        "Warning",
-      ],
-      { stdout: "ignore", stderr: "ignore", stdin: "ignore" },
-    );
-
-    await Bun.write(paths.pid, String(proc.pid));
-    await Bun.sleep(50);
-
-    const alive = await $`kill -0 ${proc.pid}`.quiet().nothrow();
-    if (alive.exitCode !== 0) {
-      const logContent = await Bun.file(paths.log)
-        .text()
-        .catch(() => "");
-      log.error({ sandboxId, log: logContent }, "Firecracker failed to start");
-      throw new Error("Firecracker process died on startup");
-    }
-
-    log.debug({ sandboxId, pid: proc.pid }, "Firecracker process started");
-
-    const client = new FirecrackerClient(paths.socket);
-    const bootArgs =
-      "console=ttyS0 reboot=k panic=1 pci=off quiet loglevel=1 8250.nr_uarts=0 init=/etc/sandbox/sandbox-init.sh";
-
-    await client.setBootSource(paths.kernel, bootArgs);
-    await client.setDrive("rootfs", paths.overlay, true);
-
-    const imageInfo = await SharedStorageService.getBinariesImageInfo();
-    if (imageInfo.exists) {
-      await client.setDrive("shared", BINARIES_IMAGE_PATH, false, true);
-    }
-
-    await client.setNetworkInterface("eth0", macAddress, tapDevice);
-
-    const cpuTemplatePath = `${config.paths.SANDBOX_DIR}/cpu-template-no-avx.json`;
-    await client.setCpuConfig(cpuTemplatePath);
-
-    await client.setMachineConfig(
-      sandbox.runtime.vcpus,
-      sandbox.runtime.memoryMb,
-    );
-
-    await client.setVsock(3, paths.vsock);
-
+    await configureVm(client, {
+      paths,
+      macAddress,
+      tapDevice,
+      vcpus: sandbox.runtime.vcpus,
+      memoryMb: sandbox.runtime.memoryMb,
+    });
     log.debug({ sandboxId }, "VM configured");
 
     await client.start();
@@ -199,13 +142,13 @@ export class SandboxLifecycle {
       status: "running",
       runtime: {
         ...sandbox.runtime,
-        pid: proc.pid,
+        pid: proc_pid,
       },
       updatedAt: new Date().toISOString(),
     };
 
     this.deps.sandboxService.update(sandboxId, updatedSandbox);
-    log.info({ sandboxId, pid: proc.pid }, "Sandbox started");
+    log.info({ sandboxId, pid: proc_pid }, "Sandbox started");
 
     return updatedSandbox;
   }

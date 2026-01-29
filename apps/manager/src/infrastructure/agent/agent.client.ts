@@ -36,8 +36,6 @@ interface RequestOptions {
  * connects to localhost instead of the provided socket.
  */
 export class AgentClient {
-  disconnect(_sandboxId: string): void {}
-
   private async request<T>(
     sandboxId: string,
     path: string,

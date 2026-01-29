@@ -8,70 +8,20 @@ import type {
   GitSourceConfig,
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
+import {
+  buildOAuthRedirectUrl,
+  exchangeCodeForToken,
+  fetchGitHubUser,
+} from "../shared/lib/github.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("github-auth");
-
-const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
-const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
-const GITHUB_USER_URL = "https://api.github.com/user";
 
 const GITHUB_SOURCE_TYPE = "github";
 
 function getGitHubSource(): GitSource | undefined {
   const sources = gitSourceService.getAll();
   return sources.find((s) => s.type === GITHUB_SOURCE_TYPE);
-}
-
-async function exchangeCodeForToken(code: string): Promise<string> {
-  const response = await fetch(GITHUB_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      client_id: config.github.clientId,
-      client_secret: config.github.clientSecret,
-      code,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`GitHub token exchange failed: ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    access_token?: string;
-    error?: string;
-  };
-  if (data.error || !data.access_token) {
-    throw new Error(data.error || "No access token received");
-  }
-
-  return data.access_token;
-}
-
-interface GitHubUser {
-  id: number;
-  login: string;
-  avatar_url: string;
-}
-
-async function fetchGitHubUser(accessToken: string): Promise<GitHubUser> {
-  const response = await fetch(GITHUB_USER_URL, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`GitHub user fetch failed: ${response.status}`);
-  }
-
-  return response.json() as Promise<GitHubUser>;
 }
 
 export const githubAuthRoutes = new Elysia({ prefix: "/github" })
@@ -92,18 +42,12 @@ export const githubAuthRoutes = new Elysia({ prefix: "/github" })
     };
   })
   .get("/login", ({ redirect }) => {
-    if (!config.github.clientId) {
-      throw new Error("GitHub OAuth not configured");
-    }
-
-    const params = new URLSearchParams({
-      client_id: config.github.clientId,
-      redirect_uri: config.github.callbackUrl,
-      scope: "repo read:user read:org",
-      state: nanoid(16),
-    });
-
-    return redirect(`${GITHUB_AUTHORIZE_URL}?${params.toString()}`);
+    const url = buildOAuthRedirectUrl(
+      config.github.callbackUrl,
+      "repo read:user read:org",
+      { state: nanoid(16) },
+    );
+    return redirect(url);
   })
   .get(
     "/callback",
@@ -183,17 +127,10 @@ export const githubAuthRoutes = new Elysia({ prefix: "/github" })
       log.info("GitHub connection deleted for reauthorization");
     }
 
-    if (!config.github.clientId) {
-      throw new Error("GitHub OAuth not configured");
-    }
-
-    const params = new URLSearchParams({
-      client_id: config.github.clientId,
-      redirect_uri: config.github.callbackUrl,
-      scope: "repo read:user read:org",
-      state: nanoid(16),
-      prompt: "consent",
-    });
-
-    return redirect(`${GITHUB_AUTHORIZE_URL}?${params.toString()}`);
+    const url = buildOAuthRedirectUrl(
+      config.github.callbackUrl,
+      "repo read:user read:org",
+      { state: nanoid(16), prompt: "consent" },
+    );
+    return redirect(url);
   });

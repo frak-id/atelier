@@ -1,7 +1,7 @@
 import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
-import type { SandboxService } from "../modules/sandbox/index.ts";
+import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import type { SessionTemplateService } from "../modules/session-template/index.ts";
 import type { TaskService } from "../modules/task/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
@@ -24,7 +24,7 @@ const WORKSPACE_DIR = "/home/dev";
 
 interface TaskSpawnerDependencies {
   sandboxSpawner: SandboxSpawner;
-  sandboxService: SandboxService;
+  sandboxService: SandboxRepository;
   taskService: TaskService;
   workspaceService: WorkspaceService;
   sessionTemplateService: SessionTemplateService;

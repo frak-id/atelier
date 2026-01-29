@@ -1,5 +1,10 @@
 import { mkdir, stat } from "node:fs/promises";
 import { $ } from "bun";
+import {
+  getSocketPath,
+  getVsockPath,
+} from "../../infrastructure/firecracker/index.ts";
+import { config } from "./config.ts";
 
 export async function fileExists(path: string): Promise<boolean> {
   try {
@@ -60,4 +65,23 @@ export async function injectFile(options: InjectFileOptions): Promise<void> {
   }
 
   await $`chown ${owner} ${fullPath}`.quiet();
+}
+
+export async function killProcess(
+  pid: number,
+  gracePeriodMs = 500,
+): Promise<void> {
+  await $`kill ${pid} 2>/dev/null || true`.quiet().nothrow();
+  await Bun.sleep(gracePeriodMs);
+  await $`kill -9 ${pid} 2>/dev/null || true`.quiet().nothrow();
+}
+
+export async function cleanupSandboxFiles(sandboxId: string): Promise<void> {
+  const socketPath = getSocketPath(sandboxId);
+  const vsockPath = getVsockPath(sandboxId);
+  const pidPath = `${config.paths.SOCKET_DIR}/${sandboxId}.pid`;
+  const logPath = `${config.paths.LOG_DIR}/${sandboxId}.log`;
+  await $`rm -f ${socketPath} ${vsockPath} ${pidPath} ${logPath}`
+    .quiet()
+    .nothrow();
 }

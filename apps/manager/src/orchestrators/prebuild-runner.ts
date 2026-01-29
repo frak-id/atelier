@@ -6,7 +6,7 @@ import {
   getSocketPath,
 } from "../infrastructure/firecracker/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
-import type { SandboxService } from "../modules/sandbox/index.ts";
+import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   PrebuildStatus,
@@ -29,7 +29,7 @@ const OPENCODE_HEALTH_TIMEOUT = 120000;
 interface PrebuildRunnerDependencies {
   sandboxSpawner: SandboxSpawner;
   sandboxDestroyer: SandboxDestroyer;
-  sandboxService: SandboxService;
+  sandboxService: SandboxRepository;
   workspaceService: WorkspaceService;
   agentClient: AgentClient;
 }

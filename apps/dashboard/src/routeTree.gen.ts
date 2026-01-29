@@ -8,108 +8,108 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./routes/__root"
-import { Route as IndexRouteImport } from "./routes/index"
-import { Route as WorkspacesIndexRouteImport } from "./routes/workspaces/index"
-import { Route as TasksIndexRouteImport } from "./routes/tasks/index"
-import { Route as SystemIndexRouteImport } from "./routes/system/index"
-import { Route as SettingsIndexRouteImport } from "./routes/settings/index"
-import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index"
-import { Route as ImagesIndexRouteImport } from "./routes/images/index"
-import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id"
-import { Route as TasksIdRouteImport } from "./routes/tasks/$id"
-import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id"
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as ImagesIndexRouteImport } from "./routes/images/index";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id";
+import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index";
+import { Route as SettingsIndexRouteImport } from "./routes/settings/index";
+import { Route as SystemIndexRouteImport } from "./routes/system/index";
+import { Route as TasksIdRouteImport } from "./routes/tasks/$id";
+import { Route as TasksIndexRouteImport } from "./routes/tasks/index";
+import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id";
+import { Route as WorkspacesIndexRouteImport } from "./routes/workspaces/index";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const WorkspacesIndexRoute = WorkspacesIndexRouteImport.update({
   id: "/workspaces/",
   path: "/workspaces/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const TasksIndexRoute = TasksIndexRouteImport.update({
   id: "/tasks/",
   path: "/tasks/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SystemIndexRoute = SystemIndexRouteImport.update({
   id: "/system/",
   path: "/system/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: "/settings/",
   path: "/settings/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SandboxesIndexRoute = SandboxesIndexRouteImport.update({
   id: "/sandboxes/",
   path: "/sandboxes/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ImagesIndexRoute = ImagesIndexRouteImport.update({
   id: "/images/",
   path: "/images/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const WorkspacesIdRoute = WorkspacesIdRouteImport.update({
   id: "/workspaces/$id",
   path: "/workspaces/$id",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const TasksIdRoute = TasksIdRouteImport.update({
   id: "/tasks/$id",
   path: "/tasks/$id",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SandboxesIdRoute = SandboxesIdRouteImport.update({
   id: "/sandboxes/$id",
   path: "/sandboxes/$id",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/tasks/$id": typeof TasksIdRoute
-  "/workspaces/$id": typeof WorkspacesIdRoute
-  "/images/": typeof ImagesIndexRoute
-  "/sandboxes/": typeof SandboxesIndexRoute
-  "/settings/": typeof SettingsIndexRoute
-  "/system/": typeof SystemIndexRoute
-  "/tasks/": typeof TasksIndexRoute
-  "/workspaces/": typeof WorkspacesIndexRoute
+  "/": typeof IndexRoute;
+  "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/tasks/$id": typeof TasksIdRoute;
+  "/workspaces/$id": typeof WorkspacesIdRoute;
+  "/images/": typeof ImagesIndexRoute;
+  "/sandboxes/": typeof SandboxesIndexRoute;
+  "/settings/": typeof SettingsIndexRoute;
+  "/system/": typeof SystemIndexRoute;
+  "/tasks/": typeof TasksIndexRoute;
+  "/workspaces/": typeof WorkspacesIndexRoute;
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/tasks/$id": typeof TasksIdRoute
-  "/workspaces/$id": typeof WorkspacesIdRoute
-  "/images": typeof ImagesIndexRoute
-  "/sandboxes": typeof SandboxesIndexRoute
-  "/settings": typeof SettingsIndexRoute
-  "/system": typeof SystemIndexRoute
-  "/tasks": typeof TasksIndexRoute
-  "/workspaces": typeof WorkspacesIndexRoute
+  "/": typeof IndexRoute;
+  "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/tasks/$id": typeof TasksIdRoute;
+  "/workspaces/$id": typeof WorkspacesIdRoute;
+  "/images": typeof ImagesIndexRoute;
+  "/sandboxes": typeof SandboxesIndexRoute;
+  "/settings": typeof SettingsIndexRoute;
+  "/system": typeof SystemIndexRoute;
+  "/tasks": typeof TasksIndexRoute;
+  "/workspaces": typeof WorkspacesIndexRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  "/": typeof IndexRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/tasks/$id": typeof TasksIdRoute
-  "/workspaces/$id": typeof WorkspacesIdRoute
-  "/images/": typeof ImagesIndexRoute
-  "/sandboxes/": typeof SandboxesIndexRoute
-  "/settings/": typeof SettingsIndexRoute
-  "/system/": typeof SystemIndexRoute
-  "/tasks/": typeof TasksIndexRoute
-  "/workspaces/": typeof WorkspacesIndexRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/sandboxes/$id": typeof SandboxesIdRoute;
+  "/tasks/$id": typeof TasksIdRoute;
+  "/workspaces/$id": typeof WorkspacesIdRoute;
+  "/images/": typeof ImagesIndexRoute;
+  "/sandboxes/": typeof SandboxesIndexRoute;
+  "/settings/": typeof SettingsIndexRoute;
+  "/system/": typeof SystemIndexRoute;
+  "/tasks/": typeof TasksIndexRoute;
+  "/workspaces/": typeof WorkspacesIndexRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
+  fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
     | "/sandboxes/$id"
@@ -120,8 +120,8 @@ export interface FileRouteTypes {
     | "/settings/"
     | "/system/"
     | "/tasks/"
-    | "/workspaces/"
-  fileRoutesByTo: FileRoutesByTo
+    | "/workspaces/";
+  fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
     | "/sandboxes/$id"
@@ -132,7 +132,7 @@ export interface FileRouteTypes {
     | "/settings"
     | "/system"
     | "/tasks"
-    | "/workspaces"
+    | "/workspaces";
   id:
     | "__root__"
     | "/"
@@ -144,94 +144,94 @@ export interface FileRouteTypes {
     | "/settings/"
     | "/system/"
     | "/tasks/"
-    | "/workspaces/"
-  fileRoutesById: FileRoutesById
+    | "/workspaces/";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  SandboxesIdRoute: typeof SandboxesIdRoute
-  TasksIdRoute: typeof TasksIdRoute
-  WorkspacesIdRoute: typeof WorkspacesIdRoute
-  ImagesIndexRoute: typeof ImagesIndexRoute
-  SandboxesIndexRoute: typeof SandboxesIndexRoute
-  SettingsIndexRoute: typeof SettingsIndexRoute
-  SystemIndexRoute: typeof SystemIndexRoute
-  TasksIndexRoute: typeof TasksIndexRoute
-  WorkspacesIndexRoute: typeof WorkspacesIndexRoute
+  IndexRoute: typeof IndexRoute;
+  SandboxesIdRoute: typeof SandboxesIdRoute;
+  TasksIdRoute: typeof TasksIdRoute;
+  WorkspacesIdRoute: typeof WorkspacesIdRoute;
+  ImagesIndexRoute: typeof ImagesIndexRoute;
+  SandboxesIndexRoute: typeof SandboxesIndexRoute;
+  SettingsIndexRoute: typeof SettingsIndexRoute;
+  SystemIndexRoute: typeof SystemIndexRoute;
+  TasksIndexRoute: typeof TasksIndexRoute;
+  WorkspacesIndexRoute: typeof WorkspacesIndexRoute;
 }
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
     "/": {
-      id: "/"
-      path: "/"
-      fullPath: "/"
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/workspaces/": {
-      id: "/workspaces/"
-      path: "/workspaces"
-      fullPath: "/workspaces/"
-      preLoaderRoute: typeof WorkspacesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/workspaces/";
+      path: "/workspaces";
+      fullPath: "/workspaces/";
+      preLoaderRoute: typeof WorkspacesIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/tasks/": {
-      id: "/tasks/"
-      path: "/tasks"
-      fullPath: "/tasks/"
-      preLoaderRoute: typeof TasksIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/tasks/";
+      path: "/tasks";
+      fullPath: "/tasks/";
+      preLoaderRoute: typeof TasksIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/system/": {
-      id: "/system/"
-      path: "/system"
-      fullPath: "/system/"
-      preLoaderRoute: typeof SystemIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/system/";
+      path: "/system";
+      fullPath: "/system/";
+      preLoaderRoute: typeof SystemIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/settings/": {
-      id: "/settings/"
-      path: "/settings"
-      fullPath: "/settings/"
-      preLoaderRoute: typeof SettingsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/settings/";
+      path: "/settings";
+      fullPath: "/settings/";
+      preLoaderRoute: typeof SettingsIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/sandboxes/": {
-      id: "/sandboxes/"
-      path: "/sandboxes"
-      fullPath: "/sandboxes/"
-      preLoaderRoute: typeof SandboxesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/sandboxes/";
+      path: "/sandboxes";
+      fullPath: "/sandboxes/";
+      preLoaderRoute: typeof SandboxesIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/images/": {
-      id: "/images/"
-      path: "/images"
-      fullPath: "/images/"
-      preLoaderRoute: typeof ImagesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/images/";
+      path: "/images";
+      fullPath: "/images/";
+      preLoaderRoute: typeof ImagesIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/workspaces/$id": {
-      id: "/workspaces/$id"
-      path: "/workspaces/$id"
-      fullPath: "/workspaces/$id"
-      preLoaderRoute: typeof WorkspacesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/workspaces/$id";
+      path: "/workspaces/$id";
+      fullPath: "/workspaces/$id";
+      preLoaderRoute: typeof WorkspacesIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/tasks/$id": {
-      id: "/tasks/$id"
-      path: "/tasks/$id"
-      fullPath: "/tasks/$id"
-      preLoaderRoute: typeof TasksIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/tasks/$id";
+      path: "/tasks/$id";
+      fullPath: "/tasks/$id";
+      preLoaderRoute: typeof TasksIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/sandboxes/$id": {
-      id: "/sandboxes/$id"
-      path: "/sandboxes/$id"
-      fullPath: "/sandboxes/$id"
-      preLoaderRoute: typeof SandboxesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+      id: "/sandboxes/$id";
+      path: "/sandboxes/$id";
+      fullPath: "/sandboxes/$id";
+      preLoaderRoute: typeof SandboxesIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
@@ -246,7 +246,7 @@ const rootRouteChildren: RootRouteChildren = {
   SystemIndexRoute: SystemIndexRoute,
   TasksIndexRoute: TasksIndexRoute,
   WorkspacesIndexRoute: WorkspacesIndexRoute,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();

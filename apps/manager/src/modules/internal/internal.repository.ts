@@ -4,7 +4,7 @@ import {
   sharedAuth,
 } from "../../infrastructure/database/index.ts";
 
-export interface SharedAuthRecord {
+interface SharedAuthRecord {
   id: string;
   provider: string;
   content: string;

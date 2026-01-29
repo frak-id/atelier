@@ -3,66 +3,16 @@ import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
 import { isUserAuthorized } from "../modules/auth/auth.service.ts";
 import { config } from "../shared/lib/config.ts";
+import {
+  buildOAuthRedirectUrl,
+  exchangeCodeForToken,
+  fetchGitHubUser,
+} from "../shared/lib/github.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("auth-routes");
 
-const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
-const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
-const GITHUB_USER_URL = "https://api.github.com/user";
-
 const JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
-
-interface GitHubUser {
-  id: number;
-  login: string;
-  avatar_url: string;
-}
-
-async function exchangeCodeForToken(code: string): Promise<string> {
-  const response = await fetch(GITHUB_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      client_id: config.github.clientId,
-      client_secret: config.github.clientSecret,
-      code,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`GitHub token exchange failed: ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    access_token?: string;
-    error?: string;
-  };
-  if (data.error || !data.access_token) {
-    throw new Error(data.error || "No access token received");
-  }
-
-  return data.access_token;
-}
-
-async function fetchGitHubUser(accessToken: string): Promise<GitHubUser> {
-  const response = await fetch(GITHUB_USER_URL, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`GitHub user fetch failed: ${response.status}`);
-  }
-
-  return response.json() as Promise<GitHubUser>;
-}
 
 export const authRoutes = new Elysia({ prefix: "/login" })
   .use(
@@ -73,18 +23,12 @@ export const authRoutes = new Elysia({ prefix: "/login" })
     }),
   )
   .get("/github", ({ redirect }) => {
-    if (!config.github.clientId) {
-      throw new Error("GitHub OAuth not configured");
-    }
-
-    const params = new URLSearchParams({
-      client_id: config.github.clientId,
-      redirect_uri: config.github.loginCallbackUrl,
-      scope: "read:user read:org",
-      state: nanoid(16),
-    });
-
-    return redirect(`${GITHUB_AUTHORIZE_URL}?${params.toString()}`);
+    const url = buildOAuthRedirectUrl(
+      config.github.loginCallbackUrl,
+      "read:user read:org",
+      { state: nanoid(16) },
+    );
+    return redirect(url);
   })
   .get(
     "/callback",

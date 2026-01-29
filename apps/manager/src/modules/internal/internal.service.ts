@@ -4,7 +4,7 @@ import { RegistryService } from "../../infrastructure/registry/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
-import type { SandboxService } from "../sandbox/sandbox.service.ts";
+import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SharedAuthRepository } from "./internal.repository.ts";
 
 const log = createChildLogger("internal-service");
@@ -70,7 +70,7 @@ export class InternalService {
     private readonly sharedAuthRepository: SharedAuthRepository,
     private readonly configFileService: ConfigFileService,
     private readonly agentClient: AgentClient,
-    private readonly sandboxService: SandboxService,
+    private readonly sandboxService: SandboxRepository,
   ) {}
 
   startAuthWatcher(): void {
@@ -197,8 +197,15 @@ export class InternalService {
     }
     if (parsed.length === 0) return;
 
-    const bestAuth: AuthJson = {};
-    const allKeys = new Set(parsed.flatMap(({ auth }) => Object.keys(auth)));
+    // Seed from DB so keys not present in any sandbox are preserved
+    const existingRecord = this.sharedAuthRepository.getByProvider("opencode");
+    const bestAuth: AuthJson = existingRecord
+      ? (JSON.parse(existingRecord.content) as AuthJson)
+      : {};
+    const allKeys = new Set([
+      ...Object.keys(bestAuth),
+      ...parsed.flatMap(({ auth }) => Object.keys(auth)),
+    ]);
 
     for (const key of allKeys) {
       let bestEntry: AuthEntry | null = null;
@@ -251,9 +258,11 @@ export class InternalService {
     if (staleSandboxIds.size === 0) return;
 
     const staleSandboxIdList = [...staleSandboxIds];
-    await this.pushAuthFilesToSandboxes(staleSandboxIdList, [
-      { path: VM_PATHS.opencodeAuth, content: bestContent },
-    ]);
+    await this.pushFilesToSandboxes(
+      staleSandboxIdList,
+      [{ path: VM_PATHS.opencodeAuth, content: bestContent }],
+      "auth",
+    );
   }
 
   private async aggregateOpaqueAuth(
@@ -289,18 +298,22 @@ export class InternalService {
 
     if (staleSandboxIds.length === 0) return;
 
-    await this.pushAuthFilesToSandboxes(staleSandboxIds, [
-      { path: providerConfig.path, content: newest.content },
-    ]);
+    await this.pushFilesToSandboxes(
+      staleSandboxIds,
+      [{ path: providerConfig.path, content: newest.content }],
+      "auth",
+    );
   }
 
-  private async pushAuthFilesToSandboxes(
+  private async pushFilesToSandboxes(
     sandboxIds: string[],
     files: { path: string; content: string }[],
+    label: string,
   ): Promise<void> {
+    const eof = `${label.toUpperCase()}EOF`;
     const commands = files.map((file, i) => ({
-      id: `auth-${i}`,
-      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'AUTHEOF'\n${file.content}\nAUTHEOF\nmv '${file.path}.tmp' '${file.path}' && chown dev:dev '${file.path}' && chown dev:dev "$(dirname '${file.path}')"`,
+      id: `${label}-${i}`,
+      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << '${eof}'\n${file.content}\n${eof}\nmv '${file.path}.tmp' '${file.path}' && chown dev:dev '${file.path}' && chown dev:dev "$(dirname '${file.path}')"`,
       timeout: 5000,
     }));
 
@@ -313,13 +326,13 @@ export class InternalService {
     const failures = results.filter((r) => r.status === "rejected");
     if (failures.length > 0) {
       log.warn(
-        { failures: failures.length, total: results.length },
-        "Some auth pushes to sandboxes failed",
+        { label, failures: failures.length, total: results.length },
+        "Some file pushes to sandboxes failed",
       );
     } else {
       log.debug(
-        { sandboxes: sandboxIds.length, files: files.length },
-        "Auth pushed to sandboxes",
+        { label, sandboxes: sandboxIds.length, files: files.length },
+        "Files pushed to sandboxes",
       );
     }
   }
@@ -392,9 +405,10 @@ export class InternalService {
     const { files, synced } = this.getAuthFilesToPush();
     if (files.length === 0) return { synced: 0 };
 
-    await this.pushAuthFilesToSandboxes(
+    await this.pushFilesToSandboxes(
       runningSandboxes.map((s) => s.id),
       files,
+      "auth",
     );
 
     log.info(
@@ -412,7 +426,7 @@ export class InternalService {
     const { files, synced } = this.getAuthFilesToPush();
     if (files.length === 0) return { synced: 0 };
 
-    await this.pushAuthFilesToSandboxes([sandboxId], files);
+    await this.pushFilesToSandboxes([sandboxId], files, "auth");
     log.info({ synced, sandboxId }, "Auth pushed to sandbox");
     return { synced };
   }
@@ -446,9 +460,10 @@ export class InternalService {
     const files = this.getConfigFilesToPush();
     if (files.length === 0) return { synced: 0 };
 
-    await this.pushConfigFilesToSandboxes(
+    await this.pushFilesToSandboxes(
       runningSandboxes.map((s) => s.id),
       files,
+      "config",
     );
 
     log.info(
@@ -462,7 +477,7 @@ export class InternalService {
     const files = this.getConfigFilesToPush();
     if (files.length === 0) return { synced: 0 };
 
-    await this.pushConfigFilesToSandboxes([sandboxId], files);
+    await this.pushFilesToSandboxes([sandboxId], files, "config");
     log.info({ synced: files.length, sandboxId }, "Configs pushed to sandbox");
     return { synced: files.length };
   }
@@ -486,31 +501,6 @@ export class InternalService {
     }
 
     return files;
-  }
-
-  private async pushConfigFilesToSandboxes(
-    sandboxIds: string[],
-    files: { path: string; content: string }[],
-  ): Promise<void> {
-    const commands = files.map((file, i) => ({
-      id: `config-${i}`,
-      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'CONFIGEOF'\n${file.content}\nCONFIGEOF\nmv '${file.path}.tmp' '${file.path}' && chown dev:dev '${file.path}' && chown dev:dev "$(dirname '${file.path}')"`,
-      timeout: 5000,
-    }));
-
-    const results = await Promise.allSettled(
-      sandboxIds.map((sandboxId) =>
-        this.agentClient.batchExec(sandboxId, commands, { timeout: 10000 }),
-      ),
-    );
-
-    const failures = results.filter((r) => r.status === "rejected");
-    if (failures.length > 0) {
-      log.warn(
-        { failures: failures.length, total: results.length },
-        "Some config pushes to sandboxes failed",
-      );
-    }
   }
 
   async syncRegistryToSandboxes(enabled: boolean): Promise<{ synced: number }> {
@@ -544,7 +534,7 @@ export class InternalService {
         },
       ];
 
-      await this.pushRegistryFilesToSandboxes(sandboxIds, files);
+      await this.pushFilesToSandboxes(sandboxIds, files, "registry");
     } else {
       const commands = [
         {
@@ -575,36 +565,6 @@ export class InternalService {
       "Registry sync to sandboxes complete",
     );
     return { synced: sandboxIds.length };
-  }
-
-  private async pushRegistryFilesToSandboxes(
-    sandboxIds: string[],
-    files: { path: string; content: string }[],
-  ): Promise<void> {
-    const commands = files.map((file, i) => ({
-      id: `registry-${i}`,
-      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'REGISTRYEOF'\n${file.content}\nREGISTRYEOF\nmv '${file.path}.tmp' '${file.path}' && chown dev:dev '${file.path}' && chown dev:dev "$(dirname '${file.path}')"`,
-      timeout: 5000,
-    }));
-
-    const results = await Promise.allSettled(
-      sandboxIds.map((sandboxId) =>
-        this.agentClient.batchExec(sandboxId, commands, { timeout: 10000 }),
-      ),
-    );
-
-    const failures = results.filter((r) => r.status === "rejected");
-    if (failures.length > 0) {
-      log.warn(
-        { failures: failures.length, total: results.length },
-        "Some registry pushes to sandboxes failed",
-      );
-    } else {
-      log.debug(
-        { sandboxes: sandboxIds.length, files: files.length },
-        "Registry config pushed to sandboxes",
-      );
-    }
   }
 
   private getVmPathForConfig(configPath: string): string | null {

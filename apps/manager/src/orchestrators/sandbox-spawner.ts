@@ -1,15 +1,17 @@
-import { unlink } from "node:fs/promises";
-import { DEFAULTS, FIRECRACKER } from "@frak-sandbox/shared/constants";
+import { DEFAULTS } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
+
 import { nanoid } from "nanoid";
 import type {
   AgentClient,
   AgentOperations,
 } from "../infrastructure/agent/index.ts";
 import {
-  FirecrackerClient,
+  configureVm,
+  type FirecrackerClient,
   getPrebuildSnapshotPaths,
   getSandboxPaths,
+  launchFirecracker,
   type SandboxPaths,
 } from "../infrastructure/firecracker/index.ts";
 import {
@@ -21,14 +23,13 @@ import {
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import {
-  BINARIES_IMAGE_PATH,
   SharedStorageService,
   StorageService,
 } from "../infrastructure/storage/index.ts";
 import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
-import type { SandboxService } from "../modules/sandbox/index.ts";
+import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import { SandboxProvisioner } from "../modules/sandbox/sandbox.provisioner.ts";
 import type { SshKeyService } from "../modules/ssh-key/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
@@ -40,12 +41,12 @@ import type {
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { ensureDir } from "../shared/lib/shell.ts";
+import { killProcess } from "../shared/lib/shell.ts";
 
 const log = createChildLogger("sandbox-spawner");
 
 interface SandboxSpawnerDependencies {
-  sandboxService: SandboxService;
+  sandboxService: SandboxRepository;
   workspaceService: WorkspaceService;
   gitSourceService: GitSourceService;
   configFileService: ConfigFileService;
@@ -321,47 +322,12 @@ class SpawnContext {
   private async launchFirecracker(): Promise<void> {
     if (!this.paths) throw new Error("Sandbox paths not initialized");
 
-    await Promise.all([
-      ensureDir(config.paths.SOCKET_DIR),
-      ensureDir(config.paths.LOG_DIR),
-    ]);
+    const result = await launchFirecracker(this.paths);
+    this.pid = result.pid;
+    this.client = result.client;
 
-    await Promise.all([
-      unlink(this.paths.socket).catch(() => {}),
-      Bun.write(this.paths.log, ""),
-    ]);
-
-    const proc = Bun.spawn(
-      [
-        FIRECRACKER.BINARY_PATH,
-        "--api-sock",
-        this.paths.socket,
-        "--log-path",
-        this.paths.log,
-        "--level",
-        "Warning",
-      ],
-      { stdout: "ignore", stderr: "ignore", stdin: "ignore" },
-    );
-
-    this.pid = proc.pid;
-    await Bun.write(this.paths.pid, String(proc.pid));
-    await Bun.sleep(50);
-
-    if (!proc.pid || proc.exitCode !== null) {
-      const logContent = await Bun.file(this.paths.log)
-        .text()
-        .catch(() => "");
-      log.error(
-        { sandboxId: this.sandboxId, log: logContent },
-        "Firecracker failed to start",
-      );
-      throw new Error("Firecracker process died on startup");
-    }
-
-    this.client = new FirecrackerClient(this.paths.socket);
     log.debug(
-      { sandboxId: this.sandboxId, pid: proc.pid },
+      { sandboxId: this.sandboxId, pid: result.pid },
       "Firecracker process started",
     );
   }
@@ -371,47 +337,13 @@ class SpawnContext {
       throw new Error("VM prerequisites not initialized");
     }
 
-    const bootArgs =
-      "console=ttyS0 reboot=k panic=1 pci=off quiet loglevel=1 8250.nr_uarts=0 init=/etc/sandbox/sandbox-init.sh";
-
-    await this.client.setBootSource(this.paths.kernel, bootArgs);
-    await this.client.setDrive("rootfs", this.paths.overlay, true);
-
-    const imageInfo = await SharedStorageService.getBinariesImageInfo();
-    if (imageInfo.exists) {
-      await this.client.setDrive("shared", BINARIES_IMAGE_PATH, false, true);
-      log.debug(
-        { sandboxId: this.sandboxId },
-        "Shared binaries drive attached",
-      );
-    } else {
-      log.warn(
-        { sandboxId: this.sandboxId },
-        "Shared binaries image not found, skipping second drive",
-      );
-    }
-
-    await this.client.setNetworkInterface(
-      "eth0",
-      this.network.macAddress,
-      this.network.tapDevice,
-    );
-
-    const cpuTemplatePath = `${config.paths.SANDBOX_DIR}/cpu-template-no-avx.json`;
-    const cpuTemplateApplied = await this.client.setCpuConfig(cpuTemplatePath);
-    if (cpuTemplateApplied) {
-      log.info(
-        { sandboxId: this.sandboxId },
-        "CPU template applied (AVX disabled)",
-      );
-    }
-
-    await this.client.setMachineConfig(
-      this.sandbox.runtime.vcpus,
-      this.sandbox.runtime.memoryMb,
-    );
-
-    await this.client.setVsock(3, this.paths.vsock);
+    await configureVm(this.client, {
+      paths: this.paths,
+      macAddress: this.network.macAddress,
+      tapDevice: this.network.tapDevice,
+      vcpus: this.sandbox.runtime.vcpus,
+      memoryMb: this.sandbox.runtime.memoryMb,
+    });
 
     log.debug({ sandboxId: this.sandboxId }, "VM configured");
   }
@@ -789,9 +721,7 @@ class SpawnContext {
     log.warn({ sandboxId: this.sandboxId }, "Rolling back sandbox creation");
 
     if (this.pid) {
-      await $`kill ${this.pid} 2>/dev/null || true`.quiet().nothrow();
-      await Bun.sleep(100);
-      await $`kill -9 ${this.pid} 2>/dev/null || true`.quiet().nothrow();
+      await killProcess(this.pid);
     }
 
     if (this.paths) {

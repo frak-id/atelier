@@ -1,25 +1,20 @@
 import { $ } from "bun";
-import type { AgentClient } from "../infrastructure/agent/agent.client.ts";
-import {
-  getSocketPath,
-  getVsockPath,
-} from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import {
   CaddyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
-import type { SandboxService } from "../modules/sandbox/index.ts";
+import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { cleanupSandboxFiles, killProcess } from "../shared/lib/shell.ts";
 
 const log = createChildLogger("sandbox-destroyer");
 
 interface SandboxDestroyerDependencies {
-  sandboxService: SandboxService;
-  agentClient: AgentClient;
+  sandboxService: SandboxRepository;
 }
 
 export class SandboxDestroyer {
@@ -33,26 +28,12 @@ export class SandboxDestroyer {
 
     log.info({ sandboxId }, "Destroying sandbox");
 
-    this.deps.agentClient.disconnect(sandboxId);
-
     if (!config.isMock()) {
       if (sandbox.runtime.pid) {
-        await $`kill ${sandbox.runtime.pid} 2>/dev/null || true`
-          .quiet()
-          .nothrow();
-        await Bun.sleep(500);
-        await $`kill -9 ${sandbox.runtime.pid} 2>/dev/null || true`
-          .quiet()
-          .nothrow();
+        await killProcess(sandbox.runtime.pid);
       }
 
-      const socketPath = getSocketPath(sandboxId);
-      const vsockPath = getVsockPath(sandboxId);
-      const pidPath = `${config.paths.SOCKET_DIR}/${sandboxId}.pid`;
-      const logPath = `${config.paths.LOG_DIR}/${sandboxId}.log`;
-      await $`rm -f ${socketPath} ${vsockPath} ${pidPath} ${logPath}`
-        .quiet()
-        .nothrow();
+      await cleanupSandboxFiles(sandboxId);
 
       const lvmAvailable = await StorageService.isAvailable();
       if (lvmAvailable) {

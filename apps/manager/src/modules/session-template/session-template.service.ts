@@ -11,12 +11,12 @@ import type {
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/index.ts";
-import type { SandboxService } from "../sandbox/index.ts";
+import type { SandboxRepository } from "../sandbox/index.ts";
 import type { WorkspaceService } from "../workspace/index.ts";
 
 const log = createChildLogger("session-template-service");
 
-export interface ResolvedSessionConfig {
+interface ResolvedSessionConfig {
   model: { providerID: string; modelID: string };
   variant?: string;
   agent?: string;
@@ -27,7 +27,7 @@ export class SessionTemplateService {
   constructor(
     private readonly configFileService: ConfigFileService,
     private readonly workspaceService: WorkspaceService,
-    private readonly sandboxService: SandboxService,
+    private readonly sandboxService: SandboxRepository,
   ) {}
 
   getGlobalTemplates(): { templates: SessionTemplates; isDefault: boolean } {
