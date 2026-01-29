@@ -1,3 +1,4 @@
+import { unlink } from "node:fs/promises";
 import { DEFAULTS, FIRECRACKER } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import { nanoid } from "nanoid";
@@ -19,9 +20,14 @@ import {
   CaddyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
+import {
+  BINARIES_IMAGE_PATH,
+  SharedStorageService,
+  StorageService,
+} from "../infrastructure/storage/index.ts";
 import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
+import type { InternalService } from "../modules/internal/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import { SandboxProvisioner } from "../modules/sandbox/sandbox.provisioner.ts";
 import type { SshKeyService } from "../modules/ssh-key/index.ts";
@@ -44,6 +50,7 @@ interface SandboxSpawnerDependencies {
   gitSourceService: GitSourceService;
   configFileService: ConfigFileService;
   sshKeyService: SshKeyService;
+  internalService: InternalService;
   agentClient: AgentClient;
   agentOperations: AgentOperations;
 }
@@ -102,7 +109,10 @@ class SpawnContext {
       return this.finalize();
     } catch (error) {
       log.error(
-        { sandboxId: this.sandboxId, error },
+        {
+          sandboxId: this.sandboxId,
+          error: error instanceof Error ? error.message : error,
+        },
         "Failed to spawn sandbox",
       );
       await this.rollback();
@@ -311,11 +321,15 @@ class SpawnContext {
   private async launchFirecracker(): Promise<void> {
     if (!this.paths) throw new Error("Sandbox paths not initialized");
 
-    await ensureDir(config.paths.SOCKET_DIR);
-    await ensureDir(config.paths.LOG_DIR);
+    await Promise.all([
+      ensureDir(config.paths.SOCKET_DIR),
+      ensureDir(config.paths.LOG_DIR),
+    ]);
 
-    await $`rm -f ${this.paths.socket}`.quiet().nothrow();
-    await $`touch ${this.paths.log}`.quiet();
+    await Promise.all([
+      unlink(this.paths.socket).catch(() => {}),
+      Bun.write(this.paths.log, ""),
+    ]);
 
     const proc = Bun.spawn(
       [
@@ -334,8 +348,7 @@ class SpawnContext {
     await Bun.write(this.paths.pid, String(proc.pid));
     await Bun.sleep(50);
 
-    const alive = await $`kill -0 ${proc.pid}`.quiet().nothrow();
-    if (alive.exitCode !== 0) {
+    if (!proc.pid || proc.exitCode !== null) {
       const logContent = await Bun.file(this.paths.log)
         .text()
         .catch(() => "");
@@ -363,6 +376,21 @@ class SpawnContext {
 
     await this.client.setBootSource(this.paths.kernel, bootArgs);
     await this.client.setDrive("rootfs", this.paths.overlay, true);
+
+    const imageInfo = await SharedStorageService.getBinariesImageInfo();
+    if (imageInfo.exists) {
+      await this.client.setDrive("shared", BINARIES_IMAGE_PATH, false, true);
+      log.debug(
+        { sandboxId: this.sandboxId },
+        "Shared binaries drive attached",
+      );
+    } else {
+      log.warn(
+        { sandboxId: this.sandboxId },
+        "Shared binaries image not found, skipping second drive",
+      );
+    }
+
     await this.client.setNetworkInterface(
       "eth0",
       this.network.macAddress,
@@ -383,6 +411,8 @@ class SpawnContext {
       this.sandbox.runtime.memoryMb,
     );
 
+    await this.client.setVsock(3, this.paths.vsock);
+
     log.debug({ sandboxId: this.sandboxId }, "VM configured");
   }
 
@@ -397,28 +427,130 @@ class SpawnContext {
       !this.client ||
       !this.paths ||
       !this.network ||
-      !this.options.workspaceId
+      !this.options.workspaceId ||
+      !this.workspace
     ) {
       throw new Error("Snapshot restore prerequisites not initialized");
     }
 
     const snapshotPaths = getPrebuildSnapshotPaths(this.options.workspaceId);
+    const prebuildSandboxId = this.workspace.config.prebuild?.latestId;
+    if (!prebuildSandboxId) {
+      throw new Error("Prebuild has no latestId");
+    }
 
-    await this.client.setDrive("rootfs", this.paths.overlay, true);
-    await this.client.setNetworkInterface(
-      "eth0",
-      this.network.macAddress,
-      this.network.tapDevice,
+    // FC snapshot restore requires drive/vsock paths to match the original.
+    // Drive: symlink original LVM path → new LVM volume
+    // Vsock: FC recreates UDS at original path; we symlink new path to it after restore
+    const originalPaths = getSandboxPaths(
+      prebuildSandboxId,
+      `/dev/sandbox-vg/sandbox-${prebuildSandboxId}`,
     );
+    await $`ln -sf ${this.paths.overlay} ${originalPaths.overlay}`.quiet();
+    await $`rm -f ${originalPaths.vsock}`.quiet().nothrow();
 
     log.info({ sandboxId: this.sandboxId }, "Restoring from VM snapshot");
     await this.client.loadSnapshot(
       snapshotPaths.snapshotFile,
       snapshotPaths.memFile,
+      {
+        networkOverrides: [
+          { iface_id: "eth0", host_dev_name: this.network.tapDevice },
+        ],
+      },
     );
 
     await this.waitForBoot();
+
+    // FC creates vsock UDS at the original path after resume — poll until it exists
+    const vsockDeadline = Date.now() + 5000;
+    while (Date.now() < vsockDeadline) {
+      const check = await $`test -S ${originalPaths.vsock}`.quiet().nothrow();
+      if (check.exitCode === 0) break;
+      await Bun.sleep(100);
+    }
+
+    await $`ln -sf ${originalPaths.vsock} ${this.paths.vsock}`.quiet();
+    await $`rm -f ${originalPaths.overlay}`.quiet().nothrow();
+
+    log.info(
+      { sandboxId: this.sandboxId },
+      "Vsock symlink established after snapshot restore",
+    );
+
+    // Agent vsock listener survived the snapshot — connect and reconfigure guest
+    await this.reconfigureRestoredGuest();
+
     log.info({ sandboxId: this.sandboxId }, "VM restored from snapshot");
+  }
+
+  private async reconfigureRestoredGuest(): Promise<void> {
+    if (!this.network || !this.workspace) {
+      throw new Error("Network or workspace not initialized");
+    }
+
+    const newIp = this.network.ipAddress;
+    const gateway = this.network.gateway;
+
+    await this.deps.agentClient.exec(
+      this.sandboxId,
+      `ip addr flush dev eth0 && ip addr add ${newIp}/24 dev eth0 && ip link set eth0 up && ip route replace default via ${gateway} dev eth0`,
+      { timeout: 5000 },
+    );
+
+    log.info(
+      { sandboxId: this.sandboxId, newIp },
+      "Guest network reconfigured",
+    );
+
+    const imageInfo = await SharedStorageService.getBinariesImageInfo();
+    if (imageInfo.exists) {
+      const mountResult = await this.deps.agentClient.exec(
+        this.sandboxId,
+        `mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared`,
+        { timeout: 5000 },
+      );
+      if (mountResult.exitCode === 0) {
+        log.info(
+          { sandboxId: this.sandboxId },
+          "Shared binaries mounted in restored guest",
+        );
+      } else {
+        log.warn(
+          { sandboxId: this.sandboxId, stderr: mountResult.stderr },
+          "Failed to mount shared binaries in restored guest",
+        );
+      }
+    }
+
+    const workspaceDir = this.workspace.config.repos?.[0]?.clonePath
+      ? `/home/dev${this.workspace.config.repos[0].clonePath}`
+      : "/home/dev/workspace";
+    const dashboardDomain =
+      config.domains?.dashboard ?? "sandbox-dash.nivelais.com";
+    const opencodePort = config.raw.services.opencode.port;
+    const vscodePort = config.raw.services.vscode.port;
+    const terminalPort = config.raw.services.terminal.port;
+
+    const servicesCmd = [
+      `(setsid su - dev -c "/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vscodePort} --auth none --disable-telemetry ${workspaceDir} > /var/log/sandbox/code-server.log 2>&1" </dev/null &>/dev/null &)`,
+      `(setsid su - dev -c "cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${opencodePort} --cors https://${dashboardDomain} > /var/log/sandbox/opencode.log 2>&1" </dev/null &>/dev/null &)`,
+      `(setsid ttyd -p ${terminalPort} -W -t fontSize=14 -t fontFamily=monospace su - dev </dev/null > /var/log/sandbox/ttyd.log 2>&1 &)`,
+    ].join("\n");
+
+    // Fire-and-forget: don't block on service startup
+    this.deps.agentClient
+      .exec(this.sandboxId, servicesCmd, {
+        timeout: 10000,
+      })
+      .catch((err) => {
+        log.warn(
+          { sandboxId: this.sandboxId, error: String(err) },
+          "Service restart exec failed (non-blocking)",
+        );
+      });
+
+    log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
   }
 
   private async waitForBoot(timeoutMs = 30000): Promise<void> {
@@ -453,7 +585,7 @@ class SpawnContext {
     if (!this.network) throw new Error("Network not allocated");
 
     const agentReady = await this.deps.agentClient.waitForAgent(
-      this.network.ipAddress,
+      this.sandboxId,
       { timeout: 60000 },
     );
 
@@ -467,6 +599,35 @@ class SpawnContext {
     if (this.needsRepoClone()) {
       await this.cloneRepositories();
     }
+
+    this.pushAuthAndConfigs();
+  }
+
+  private pushAuthAndConfigs(): void {
+    Promise.allSettled([
+      this.deps.internalService.syncAuthToSandboxes(),
+      this.deps.internalService.syncConfigsToSandboxes(),
+    ])
+      .then(([authResult, configResult]) => {
+        if (authResult.status === "fulfilled") {
+          log.info(
+            { sandboxId: this.sandboxId, synced: authResult.value.synced },
+            "Auth pushed to sandboxes",
+          );
+        }
+        if (configResult.status === "fulfilled") {
+          log.info(
+            { sandboxId: this.sandboxId, synced: configResult.value.synced },
+            "Configs pushed to sandboxes",
+          );
+        }
+      })
+      .catch((error) => {
+        log.warn(
+          { sandboxId: this.sandboxId, error },
+          "Failed to push auth/configs to sandboxes",
+        );
+      });
   }
 
   private async expandFilesystem(): Promise<void> {
@@ -483,7 +644,7 @@ class SpawnContext {
 
     try {
       const agentResult = await this.deps.agentOperations.resizeStorage(
-        this.network.ipAddress,
+        this.sandboxId,
       );
 
       if (agentResult.success) {
@@ -534,13 +695,10 @@ class SpawnContext {
       "Cloning repository",
     );
 
-    await this.deps.agentClient.exec(
-      this.network.ipAddress,
-      `rm -rf ${clonePath}`,
-    );
+    await this.deps.agentClient.exec(this.sandboxId, `rm -rf ${clonePath}`);
 
     const result = await this.deps.agentClient.exec(
-      this.network.ipAddress,
+      this.sandboxId,
       `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
       { timeout: 120000 },
     );
@@ -554,11 +712,11 @@ class SpawnContext {
     }
 
     await this.deps.agentClient.exec(
-      this.network.ipAddress,
+      this.sandboxId,
       `chown -R dev:dev ${clonePath}`,
     );
     await this.deps.agentClient.exec(
-      this.network.ipAddress,
+      this.sandboxId,
       `su - dev -c 'git config --global --add safe.directory ${clonePath}'`,
     );
     log.info(
@@ -637,7 +795,9 @@ class SpawnContext {
     }
 
     if (this.paths) {
-      await $`rm -f ${this.paths.socket} ${this.paths.pid}`.quiet().nothrow();
+      await $`rm -f ${this.paths.socket} ${this.paths.vsock} ${this.paths.pid} ${this.paths.log}`
+        .quiet()
+        .nothrow();
 
       if (this.paths.useLvm) {
         await StorageService.deleteSandboxVolume(this.sandboxId);

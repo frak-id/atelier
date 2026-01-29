@@ -1,8 +1,13 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
-import { AUTH_PROVIDERS, NFS } from "@frak-sandbox/shared/constants";
+import {
+  AUTH_PROVIDERS,
+  SHARED_STORAGE,
+  VM_PATHS,
+} from "@frak-sandbox/shared/constants";
+import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
+import type { SandboxService } from "../sandbox/sandbox.service.ts";
 import type { SharedAuthRepository } from "./internal.repository.ts";
 
 const log = createChildLogger("internal-service");
@@ -30,56 +35,90 @@ export class InternalService {
   constructor(
     private readonly sharedAuthRepository: SharedAuthRepository,
     private readonly configFileService: ConfigFileService,
+    private readonly agentClient: AgentClient,
+    private readonly sandboxService: SandboxService,
   ) {}
 
-  startAuthNfsWatcher(): void {
-    const dir = NFS.AUTH_EXPORT_DIR;
+  startAuthWatcher(): void {
+    const dir = SHARED_STORAGE.AUTH_DIR;
 
     if (!fs.existsSync(dir)) {
-      log.warn(
-        { dir },
-        "Auth NFS export directory does not exist, skipping watcher",
-      );
+      log.warn({ dir }, "Auth directory does not exist, skipping watcher");
       return;
     }
 
     this.authPollTimer = setInterval(() => {
-      this.pollAuthFromNfs();
+      this.pollAuthFromSandboxes();
     }, AUTH_POLL_INTERVAL_MS);
 
     log.info(
       { dir, intervalMs: AUTH_POLL_INTERVAL_MS },
-      "Auth NFS polling started",
+      "Auth polling started",
     );
   }
 
-  stopAuthNfsWatcher(): void {
+  stopAuthWatcher(): void {
     if (this.authPollTimer) {
       clearInterval(this.authPollTimer);
       this.authPollTimer = null;
     }
   }
 
-  private pollAuthFromNfs(): void {
+  private async pollAuthFromSandboxes(): Promise<void> {
+    const runningSandboxes = this.sandboxService
+      .getAll()
+      .filter((s) => s.status === "running");
+    if (runningSandboxes.length === 0) return;
+
+    // Pick first running sandbox to read auth from (all should have same auth)
+    // biome-ignore lint/style/noNonNullAssertion: length check above guarantees non-null
+    const sandbox = runningSandboxes[0]!;
+
     for (const provider of AUTH_PROVIDERS) {
-      const filePath = path.join(NFS.AUTH_EXPORT_DIR, `${provider.name}.json`);
-
       try {
-        if (!fs.existsSync(filePath)) continue;
-        const content = fs.readFileSync(filePath, "utf-8");
+        const result = await this.agentClient.exec(
+          sandbox.id,
+          `cat ${provider.path} 2>/dev/null`,
+          { timeout: 5000 },
+        );
+        if (result.exitCode !== 0 || !result.stdout.trim()) continue;
 
+        const content = result.stdout.trim();
         const existing = this.sharedAuthRepository.getByProvider(provider.name);
         if (existing?.content === content) continue;
 
-        this.sharedAuthRepository.upsert(provider.name, content, "nfs");
-        log.info({ provider: provider.name }, "Auth synced from NFS to DB");
+        this.sharedAuthRepository.upsert(provider.name, content, "sandbox");
+        log.info({ provider: provider.name }, "Auth synced from sandbox to DB");
+
+        // Push updated auth to all OTHER sandboxes
+        await this.pushAuthToSandboxes(provider, content, sandbox.id);
       } catch (error) {
-        log.error(
+        log.debug(
           { provider: provider.name, error },
-          "Failed to sync auth from NFS",
+          "Failed to poll auth from sandbox",
         );
       }
     }
+  }
+
+  private async pushAuthToSandboxes(
+    provider: (typeof AUTH_PROVIDERS)[number],
+    content: string,
+    excludeSandboxId?: string,
+  ): Promise<void> {
+    const runningSandboxes = this.sandboxService
+      .getAll()
+      .filter((s) => s.status === "running" && s.id !== excludeSandboxId);
+
+    await Promise.allSettled(
+      runningSandboxes.map((sandbox) =>
+        this.agentClient.exec(
+          sandbox.id,
+          `mkdir -p "$(dirname '${provider.path}')" && cat > '${provider.path}' << 'AUTHEOF'\n${content}\nAUTHEOF`,
+          { timeout: 5000 },
+        ),
+      ),
+    );
   }
 
   listAuth(): SharedAuthInfo[] {
@@ -124,8 +163,11 @@ export class InternalService {
 
     log.info({ provider }, "Auth updated from dashboard");
 
-    this.syncAuthToNfs().catch((error) => {
-      log.error({ error }, "Failed to sync auth to NFS after dashboard update");
+    this.syncAuthToSandboxes().catch((error) => {
+      log.error(
+        { error },
+        "Failed to sync auth to sandboxes after dashboard update",
+      );
     });
 
     return {
@@ -138,55 +180,81 @@ export class InternalService {
     };
   }
 
-  async syncAuthToNfs(): Promise<{ synced: number }> {
+  async syncAuthToSandboxes(): Promise<{ synced: number }> {
     const storedAuth = this.sharedAuthRepository.list();
     let synced = 0;
 
+    // Write to host dir for persistence
     for (const auth of storedAuth) {
-      const nfsPath = `${NFS.AUTH_EXPORT_DIR}/${auth.provider}.json`;
-
+      const hostPath = `${SHARED_STORAGE.AUTH_DIR}/${auth.provider}.json`;
       try {
-        const tmpPath = `${nfsPath}.tmp`;
+        const tmpPath = `${hostPath}.tmp`;
         await Bun.write(tmpPath, auth.content);
         await Bun.$`chown 1000:1000 ${tmpPath}`.quiet();
-        await Bun.$`mv ${tmpPath} ${nfsPath}`.quiet();
-        synced++;
-        log.debug({ provider: auth.provider, nfsPath }, "Auth synced to NFS");
+        await Bun.$`mv ${tmpPath} ${hostPath}`.quiet();
       } catch (error) {
         log.error(
           { provider: auth.provider, error },
-          "Failed to sync auth to NFS",
+          "Failed to write auth to host dir",
         );
       }
     }
 
-    log.info({ synced }, "Auth sync to NFS complete");
+    // Push to all running sandboxes
+    const runningSandboxes = this.sandboxService
+      .getAll()
+      .filter((s) => s.status === "running");
+    for (const auth of storedAuth) {
+      const provider = AUTH_PROVIDERS.find((p) => p.name === auth.provider);
+      if (!provider) continue;
+
+      await Promise.allSettled(
+        runningSandboxes.map((sandbox) =>
+          this.agentClient.exec(
+            sandbox.id,
+            `mkdir -p "$(dirname '${provider.path}')" && cat > '${provider.path}' << 'AUTHEOF'\n${auth.content}\nAUTHEOF`,
+            { timeout: 5000 },
+          ),
+        ),
+      );
+      synced++;
+    }
+
+    log.info(
+      { synced, sandboxes: runningSandboxes.length },
+      "Auth sync complete",
+    );
     return { synced };
   }
 
-  async syncConfigsToNfs(): Promise<{ synced: number }> {
+  async syncConfigsToSandboxes(): Promise<{ synced: number }> {
     const globalConfigs = this.configFileService.list({ scope: "global" });
-
     let synced = 0;
 
+    // Write global configs to host dir for persistence
     for (const config of globalConfigs) {
-      const nfsPath = `${NFS.CONFIGS_EXPORT_DIR}/${NFS.CONFIG_DIRS.GLOBAL}${config.path}`;
-      const dir = nfsPath.substring(0, nfsPath.lastIndexOf("/"));
+      const hostPath = `${SHARED_STORAGE.CONFIGS_DIR}/${SHARED_STORAGE.CONFIG_DIRS.GLOBAL}${config.path}`;
+      const dir = hostPath.substring(0, hostPath.lastIndexOf("/"));
 
       try {
         await Bun.$`mkdir -p ${dir}`.quiet();
 
         if (config.contentType === "binary") {
           const buffer = Buffer.from(config.content, "base64");
-          await Bun.write(nfsPath, buffer);
+          await Bun.write(hostPath, buffer);
         } else {
-          await Bun.write(nfsPath, config.content);
+          await Bun.write(hostPath, config.content);
         }
 
-        synced++;
-        log.debug({ path: config.path, nfsPath }, "Config synced to NFS");
+        log.debug(
+          { path: config.path, hostPath },
+          "Config written to host dir",
+        );
       } catch (error) {
-        log.error({ path: config.path, error }, "Failed to sync config to NFS");
+        log.error(
+          { path: config.path, error },
+          "Failed to write config to host dir",
+        );
       }
     }
 
@@ -202,36 +270,78 @@ export class InternalService {
       byWorkspace.set(config.workspaceId, existing);
     }
 
+    // Write workspace configs to host dir for persistence
     for (const [workspaceId, configs] of byWorkspace) {
       for (const config of configs) {
-        const nfsPath = `${NFS.CONFIGS_EXPORT_DIR}/${NFS.CONFIG_DIRS.WORKSPACES}/${workspaceId}${config.path}`;
-        const dir = nfsPath.substring(0, nfsPath.lastIndexOf("/"));
+        const hostPath = `${SHARED_STORAGE.CONFIGS_DIR}/${SHARED_STORAGE.CONFIG_DIRS.WORKSPACES}/${workspaceId}${config.path}`;
+        const dir = hostPath.substring(0, hostPath.lastIndexOf("/"));
 
         try {
           await Bun.$`mkdir -p ${dir}`.quiet();
 
           if (config.contentType === "binary") {
             const buffer = Buffer.from(config.content, "base64");
-            await Bun.write(nfsPath, buffer);
+            await Bun.write(hostPath, buffer);
           } else {
-            await Bun.write(nfsPath, config.content);
+            await Bun.write(hostPath, config.content);
           }
 
-          synced++;
           log.debug(
-            { path: config.path, nfsPath, workspaceId },
-            "Workspace config synced to NFS",
+            { path: config.path, hostPath, workspaceId },
+            "Workspace config written to host dir",
           );
         } catch (error) {
           log.error(
             { path: config.path, workspaceId, error },
-            "Failed to sync workspace config to NFS",
+            "Failed to write workspace config to host dir",
           );
         }
       }
     }
 
-    log.info({ synced }, "Config sync to NFS complete");
+    // Push all configs to running sandboxes
+    const runningSandboxes = this.sandboxService
+      .getAll()
+      .filter((s) => s.status === "running");
+    const allConfigs = [...globalConfigs, ...workspaceConfigs];
+
+    for (const config of allConfigs) {
+      const vmPath = this.getVmPathForConfig(config.path);
+      if (!vmPath) {
+        log.debug({ path: config.path }, "No VM path mapping found for config");
+        continue;
+      }
+
+      await Promise.allSettled(
+        runningSandboxes.map((sandbox) =>
+          this.agentClient.exec(
+            sandbox.id,
+            `mkdir -p "$(dirname '${vmPath}')" && cat > '${vmPath}' << 'CONFIGEOF'\n${config.content}\nCONFIGEOF`,
+            { timeout: 5000 },
+          ),
+        ),
+      );
+      synced++;
+    }
+
+    log.info(
+      { synced, sandboxes: runningSandboxes.length },
+      "Config sync complete",
+    );
     return { synced };
+  }
+
+  private getVmPathForConfig(configPath: string): string | null {
+    // Map config paths to VM paths based on the config type
+    if (configPath.includes("opencode")) {
+      if (configPath.includes("opencode.json")) return VM_PATHS.opencodeConfig;
+      if (configPath.includes("oh-my-opencode")) return VM_PATHS.opencodeOhMy;
+      if (configPath.includes("antigravity"))
+        return VM_PATHS.antigravityAccounts;
+    }
+    if (configPath.includes("vscode") || configPath.includes("code-server")) {
+      return VM_PATHS.vscodeSettings;
+    }
+    return null;
   }
 }

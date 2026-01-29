@@ -1,5 +1,6 @@
-import { config } from "../../shared/lib/config.ts";
+import { createConnection, type Socket } from "node:net";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { getVsockPath } from "../firecracker/index.ts";
 import type {
   AgentHealth,
   AgentMetrics,
@@ -17,98 +18,191 @@ import type {
 const log = createChildLogger("agent");
 
 const DEFAULT_TIMEOUT = 10000;
+const VSOCK_GUEST_PORT = 9998;
+const VSOCK_CONNECT_TIMEOUT = 5000;
 
+interface RequestOptions {
+  method?: "GET" | "POST" | "PUT" | "DELETE";
+  body?: unknown;
+  timeout?: number;
+}
+
+/**
+ * Agent client using raw HTTP over Firecracker vsock.
+ *
+ * Each request opens a fresh vsock connection because Firecracker's vsock
+ * multiplexer assigns a unique host-side CID per connection. We do NOT use
+ * node:http because Bun's polyfill ignores the `createConnection` option and
+ * connects to localhost instead of the provided socket.
+ */
 export class AgentClient {
-  private getAgentUrl(ipAddress: string): string {
-    return `http://${ipAddress}:${config.raw.services.agent.port}`;
-  }
+  disconnect(_sandboxId: string): void {}
 
   private async request<T>(
-    ipAddress: string,
+    sandboxId: string,
     path: string,
-    options: {
-      method?: "GET" | "POST" | "PUT" | "DELETE";
-      body?: unknown;
-      timeout?: number;
-    } = {},
+    options: RequestOptions = {},
   ): Promise<T> {
-    const baseUrl = this.getAgentUrl(ipAddress);
-    const url = `${baseUrl}${path}`;
     const timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    const vsockPath = getVsockPath(sandboxId);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const socket = await this.connectVsock(vsockPath, VSOCK_GUEST_PORT);
 
     try {
-      const response = await fetch(url, {
-        method: options.method ?? "GET",
-        headers: options.body
-          ? { "Content-Type": "application/json" }
-          : undefined,
-        body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          `Agent request failed: ${response.status} ${response.statusText}`,
-        );
-      }
-
-      return (await response.json()) as T;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`Agent request timed out after ${timeout}ms`);
-      }
-      throw error;
+      return await this.rawHttp<T>(socket, path, options, timeout);
     } finally {
-      clearTimeout(timeoutId);
+      socket.destroy();
     }
   }
 
-  async health(ipAddress: string): Promise<AgentHealth> {
-    return this.request<AgentHealth>(ipAddress, "/health");
+  private rawHttp<T>(
+    socket: Socket,
+    path: string,
+    options: RequestOptions,
+    timeout: number,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        fn();
+      };
+
+      const timeoutId = setTimeout(() => {
+        settle(() =>
+          reject(new Error(`Agent request timed out after ${timeout}ms`)),
+        );
+        socket.destroy();
+      }, timeout);
+
+      const method = options.method ?? "GET";
+      const bodyStr = options.body ? JSON.stringify(options.body) : undefined;
+      const headers: string[] = [
+        `${method} ${path} HTTP/1.1`,
+        "Host: localhost",
+        "Connection: close",
+      ];
+      if (bodyStr) {
+        headers.push("Content-Type: application/json");
+        headers.push(`Content-Length: ${Buffer.byteLength(bodyStr)}`);
+      }
+      headers.push("", "");
+
+      socket.write(headers.join("\r\n"));
+      if (bodyStr) {
+        socket.write(bodyStr);
+      }
+
+      const chunks: Buffer[] = [];
+      socket.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+
+      socket.on("end", () => {
+        settle(() => {
+          try {
+            const raw = Buffer.concat(chunks).toString();
+            const result = parseHttpResponse<T>(raw);
+            resolve(result);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+
+      socket.on("error", (err) => {
+        settle(() => reject(err));
+      });
+    });
+  }
+
+  private connectVsock(vsockPath: string, guestPort: number): Promise<Socket> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn();
+      };
+
+      const socket = createConnection({ path: vsockPath }, () => {
+        socket.write(`CONNECT ${guestPort}\n`);
+      });
+
+      let handshakeData = "";
+      const onData = (data: Buffer) => {
+        handshakeData += data.toString();
+        if (handshakeData.includes("\n")) {
+          socket.removeListener("data", onData);
+          if (handshakeData.startsWith("OK")) {
+            settle(() => resolve(socket));
+          } else {
+            socket.destroy();
+            settle(() =>
+              reject(
+                new Error(`Vsock handshake failed: ${handshakeData.trim()}`),
+              ),
+            );
+          }
+        }
+      };
+
+      socket.on("data", onData);
+      socket.on("error", (err) => {
+        settle(() => reject(err));
+      });
+
+      const timer = setTimeout(() => {
+        socket.destroy();
+        settle(() => reject(new Error("Vsock connection timed out")));
+      }, VSOCK_CONNECT_TIMEOUT);
+    });
+  }
+
+  async health(sandboxId: string): Promise<AgentHealth> {
+    return this.request<AgentHealth>(sandboxId, "/health");
   }
 
   async waitForAgent(
-    ipAddress: string,
+    sandboxId: string,
     options: { timeout?: number; interval?: number } = {},
   ): Promise<boolean> {
     const timeout = options.timeout ?? 60000;
-    const interval = options.interval ?? 50;
+    const interval = options.interval ?? 500;
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {
       try {
-        const health = await this.health(ipAddress);
+        const health = await this.health(sandboxId);
         if (health.status === "healthy") {
-          log.info({ ipAddress }, "Agent is healthy");
+          log.info({ sandboxId }, "Agent is healthy");
           return true;
         }
-      } catch (error) {
-        log.debug({ ipAddress, error }, "Agent not ready yet");
-      }
+      } catch {}
       await Bun.sleep(interval);
     }
 
-    log.warn({ ipAddress, timeout }, "Agent did not become healthy in time");
+    log.warn({ sandboxId, timeout }, "Agent did not become healthy in time");
     return false;
   }
 
-  async metrics(ipAddress: string): Promise<AgentMetrics> {
-    return this.request<AgentMetrics>(ipAddress, "/metrics");
+  async metrics(sandboxId: string): Promise<AgentMetrics> {
+    return this.request<AgentMetrics>(sandboxId, "/metrics");
   }
 
-  async config(ipAddress: string): Promise<Record<string, unknown>> {
-    return this.request<Record<string, unknown>>(ipAddress, "/config");
+  async config(sandboxId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(sandboxId, "/config");
   }
 
   async exec(
-    ipAddress: string,
+    sandboxId: string,
     command: string,
     options: { timeout?: number } = {},
   ): Promise<ExecResult> {
-    return this.request<ExecResult>(ipAddress, "/exec", {
+    return this.request<ExecResult>(sandboxId, "/exec", {
       method: "POST",
       body: { command, timeout: options.timeout },
       timeout: (options.timeout ?? 30000) + 5000,
@@ -116,76 +210,76 @@ export class AgentClient {
   }
 
   async batchExec(
-    ipAddress: string,
+    sandboxId: string,
     commands: { id: string; command: string; timeout?: number }[],
     options: { timeout?: number } = {},
   ): Promise<BatchExecResult> {
     const maxCmdTimeout = Math.max(...commands.map((c) => c.timeout ?? 30000));
-    return this.request<BatchExecResult>(ipAddress, "/exec/batch", {
+    return this.request<BatchExecResult>(sandboxId, "/exec/batch", {
       method: "POST",
       body: { commands },
       timeout: options.timeout ?? maxCmdTimeout + 10000,
     });
   }
 
-  async getApps(ipAddress: string): Promise<AppPort[]> {
-    return this.request<AppPort[]>(ipAddress, "/apps");
+  async getApps(sandboxId: string): Promise<AppPort[]> {
+    return this.request<AppPort[]>(sandboxId, "/apps");
   }
 
   async registerApp(
-    ipAddress: string,
+    sandboxId: string,
     port: number,
     name: string,
   ): Promise<AppPort> {
-    return this.request<AppPort>(ipAddress, "/apps", {
+    return this.request<AppPort>(sandboxId, "/apps", {
       method: "POST",
       body: { port, name },
     });
   }
 
   async unregisterApp(
-    ipAddress: string,
+    sandboxId: string,
     port: number,
   ): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(ipAddress, `/apps/${port}`, {
+    return this.request<{ success: boolean }>(sandboxId, `/apps/${port}`, {
       method: "DELETE",
     });
   }
 
-  async discoverConfigs(ipAddress: string): Promise<DiscoveredConfig[]> {
+  async discoverConfigs(sandboxId: string): Promise<DiscoveredConfig[]> {
     try {
       const result = await this.request<{ configs: DiscoveredConfig[] }>(
-        ipAddress,
+        sandboxId,
         "/config/discover",
       );
       return result.configs;
     } catch (error) {
-      log.error({ ipAddress, error }, "Failed to discover configs");
+      log.error({ sandboxId, error }, "Failed to discover configs");
       return [];
     }
   }
 
   async readConfigFile(
-    ipAddress: string,
+    sandboxId: string,
     path: string,
   ): Promise<ConfigFileContent | null> {
     try {
       return await this.request<ConfigFileContent>(
-        ipAddress,
+        sandboxId,
         `/config/read?path=${encodeURIComponent(path)}`,
       );
     } catch (error) {
-      log.error({ ipAddress, path, error }, "Failed to read config file");
+      log.error({ sandboxId, path, error }, "Failed to read config file");
       return null;
     }
   }
 
-  async devList(ipAddress: string): Promise<DevCommandListResult> {
-    return this.request<DevCommandListResult>(ipAddress, "/dev");
+  async devList(sandboxId: string): Promise<DevCommandListResult> {
+    return this.request<DevCommandListResult>(sandboxId, "/dev");
   }
 
   async devStart(
-    ipAddress: string,
+    sandboxId: string,
     name: string,
     devCommand: {
       command: string;
@@ -194,28 +288,82 @@ export class AgentClient {
       port?: number;
     },
   ): Promise<DevStartResult> {
-    return this.request<DevStartResult>(ipAddress, `/dev/${name}/start`, {
+    return this.request<DevStartResult>(sandboxId, `/dev/${name}/start`, {
       method: "POST",
       body: devCommand,
       timeout: 30000,
     });
   }
 
-  async devStop(ipAddress: string, name: string): Promise<DevStopResult> {
-    return this.request<DevStopResult>(ipAddress, `/dev/${name}/stop`, {
+  async devStop(sandboxId: string, name: string): Promise<DevStopResult> {
+    return this.request<DevStopResult>(sandboxId, `/dev/${name}/stop`, {
       method: "POST",
     });
   }
 
   async devLogs(
-    ipAddress: string,
+    sandboxId: string,
     name: string,
     offset: number,
     limit: number,
   ): Promise<DevLogsResult> {
     return this.request<DevLogsResult>(
-      ipAddress,
+      sandboxId,
       `/dev/${name}/logs?offset=${offset}&limit=${limit}`,
     );
   }
+}
+
+function parseHttpResponse<T>(raw: string): T {
+  const headerEnd = raw.indexOf("\r\n\r\n");
+  if (headerEnd === -1) {
+    throw new Error(`Malformed HTTP response: no header boundary`);
+  }
+
+  const headerSection = raw.slice(0, headerEnd);
+  const bodyRaw = raw.slice(headerEnd + 4);
+
+  const statusLine = headerSection.split("\r\n")[0] ?? "";
+  const statusMatch = statusLine.match(/^HTTP\/\d\.\d (\d{3}) (.*)$/);
+  if (!statusMatch) {
+    throw new Error(`Malformed HTTP status line: ${statusLine}`);
+  }
+
+  const statusCode = parseInt(statusMatch[1]!, 10);
+  const statusMessage = statusMatch[2]!;
+
+  if (statusCode < 200 || statusCode >= 300) {
+    throw new Error(`Agent request failed: ${statusCode} ${statusMessage}`);
+  }
+
+  const isChunked = headerSection
+    .toLowerCase()
+    .includes("transfer-encoding: chunked");
+  const body = isChunked ? decodeChunked(bodyRaw) : bodyRaw;
+
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new Error(`Failed to parse agent response: ${body.slice(0, 200)}`);
+  }
+}
+
+function decodeChunked(raw: string): string {
+  let result = "";
+  let pos = 0;
+
+  while (pos < raw.length) {
+    const lineEnd = raw.indexOf("\r\n", pos);
+    if (lineEnd === -1) break;
+
+    const sizeStr = raw.slice(pos, lineEnd).trim();
+    const size = parseInt(sizeStr, 16);
+    if (size === 0) break;
+
+    const chunkStart = lineEnd + 2;
+    result += raw.slice(chunkStart, chunkStart + size);
+    pos = chunkStart + size + 2;
+  }
+
+  return result;
 }

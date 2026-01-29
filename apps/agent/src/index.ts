@@ -1,20 +1,28 @@
-import { node } from "@elysiajs/node";
-import { Elysia } from "elysia";
-import { AGENT_PORT } from "./constants";
-import { appsRoutes } from "./routes/apps";
-import { configRoutes } from "./routes/config";
-import { devRoutes } from "./routes/dev";
-import { execRoutes } from "./routes/exec";
-import { healthRoutes } from "./routes/health";
+import { VSOCK_PORT } from "./constants.ts";
+import { handler } from "./router.ts";
 
-const app = new Elysia({ adapter: node() })
-  .use(healthRoutes)
-  .use(configRoutes)
-  .use(appsRoutes)
-  .use(devRoutes)
-  .use(execRoutes)
-  .listen(AGENT_PORT, () => {
-    console.log(`Sandbox agent running at http://0.0.0.0:${AGENT_PORT}`);
-  });
+async function startServer(): Promise<void> {
+  while (true) {
+    try {
+      // deno-lint-ignore no-explicit-any
+      const server = Deno.serve(
+        {
+          transport: "vsock",
+          cid: 4294967295,
+          port: VSOCK_PORT,
+          onListen() {
+            console.log(`Sandbox agent listening on vsock port ${VSOCK_PORT}`);
+          },
+        } as any,
+        handler,
+      );
+      await server.finished;
+      console.log("Server closed unexpectedly, restarting...");
+    } catch (err) {
+      console.error("Server failed to start:", err);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
 
-export type App = typeof app;
+startServer();

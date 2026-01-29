@@ -29,7 +29,6 @@
   "references": [
     { "path": "./apps/manager" },
     { "path": "./apps/dashboard" },
-    { "path": "./apps/agent" },
     { "path": "./apps/cli" },
     { "path": "./packages/shared" }
   ],

@@ -8,7 +8,6 @@
 FROM node:22-slim
 
 ARG TTYD_VERSION=1.7.7
-
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
 ENV USER=dev
@@ -74,7 +73,8 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 COPY rootfs/etc/sandbox/ /etc/sandbox/
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
-COPY --chown=root:root sandbox-agent.mjs /usr/local/lib/sandbox-agent.mjs
+COPY --chown=root:root sandbox-agent /usr/local/bin/sandbox-agent
+RUN chmod +x /usr/local/bin/sandbox-agent
 
 WORKDIR /home/dev/workspace
 USER dev

@@ -20,7 +20,6 @@ export const SandboxConfigSchema = Type.Object({
   repos: Type.Array(RepoConfigSchema, { default: [] }),
   createdAt: Type.String(),
   network: Type.Object({
-    nfsHost: Type.String(),
     dashboardDomain: Type.String(),
     managerInternalUrl: Type.String(),
   }),

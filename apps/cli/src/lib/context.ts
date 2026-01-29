@@ -4,7 +4,6 @@ export {
   CODE_SERVER,
   FIRECRACKER,
   LVM,
-  NFS,
   OPENCODE,
   PATHS,
   SHARED_BINARIES,

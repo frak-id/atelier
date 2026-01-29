@@ -75,14 +75,10 @@ export class PrebuildRunner {
       });
 
       sandboxId = sandbox.id;
-      const ipAddress = sandbox.runtime.ipAddress;
 
-      log.info(
-        { prebuildSandboxId: sandbox.id, ip: ipAddress },
-        "Prebuild sandbox spawned",
-      );
+      log.info({ prebuildSandboxId: sandbox.id }, "Prebuild sandbox spawned");
 
-      const agentReady = await this.deps.agentClient.waitForAgent(ipAddress, {
+      const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
         timeout: AGENT_READY_TIMEOUT,
       });
 
@@ -90,11 +86,14 @@ export class PrebuildRunner {
         throw new Error("Agent failed to become ready");
       }
 
-      await this.runInitCommands(ipAddress, workspace);
-      const commitHashes = await this.captureCommitHashes(ipAddress, workspace);
-      await this.warmupOpencode(ipAddress, workspace.id);
-      await this.deps.agentClient.exec(ipAddress, "sync");
+      await this.runInitCommands(sandbox.id, workspace);
+      const commitHashes = await this.captureCommitHashes(
+        sandbox.id,
+        workspace,
+      );
+      await this.warmupOpencode(sandbox.id, workspace.id);
 
+      await this.prepareForSnapshot(sandbox.id);
       await this.createVmSnapshot(workspaceId, sandbox.id);
       await StorageService.createPrebuild(workspaceId, sandbox.id);
 
@@ -222,7 +221,7 @@ export class PrebuildRunner {
   }
 
   private async captureCommitHashes(
-    ipAddress: string,
+    sandboxId: string,
     workspace: Workspace,
   ): Promise<Record<string, string>> {
     const hashes: Record<string, string> = {};
@@ -238,8 +237,8 @@ export class PrebuildRunner {
       const fullPath = `/home/dev${clonePath}`;
 
       const result = await this.deps.agentClient.exec(
-        ipAddress,
-        `git -C ${fullPath} rev-parse HEAD`,
+        sandboxId,
+        `su dev -c 'git -C ${fullPath} rev-parse HEAD'`,
         { timeout: 10000 },
       );
 
@@ -269,7 +268,7 @@ export class PrebuildRunner {
   }
 
   private async runInitCommands(
-    ipAddress: string,
+    sandboxId: string,
     workspace: Workspace,
   ): Promise<void> {
     const initCommands = workspace.config.initCommands;
@@ -290,7 +289,7 @@ export class PrebuildRunner {
       );
 
       const result = await this.deps.agentClient.exec(
-        ipAddress,
+        sandboxId,
         `cd ${WORKSPACE_DIR} && su dev -c '${command.replace(/'/g, "'\\''")}'`,
         { timeout: COMMAND_TIMEOUT },
       );
@@ -318,7 +317,7 @@ export class PrebuildRunner {
 
     log.info({ workspaceId: workspace.id }, "Fixing workspace ownership");
     await this.deps.agentClient.exec(
-      ipAddress,
+      sandboxId,
       `chown -R dev:dev ${WORKSPACE_DIR}`,
       { timeout: COMMAND_TIMEOUT },
     );
@@ -328,15 +327,41 @@ export class PrebuildRunner {
    * Opencode installs plugin dependencies (like jose via @openauthjs/openauth) on first boot.
    * We start it briefly here so those packages are cached in the prebuild snapshot.
    */
+  /**
+   * Prepare VM for clean snapshot by stopping services.
+   * The agent survives the snapshot (vsock listener persists across FC snapshots).
+   * Services are restored post-restore by the spawner.
+   */
+  private async prepareForSnapshot(sandboxId: string): Promise<void> {
+    log.info({ sandboxId }, "Preparing VM for snapshot");
+
+    // Kill services that hold state (opencode, code-server, ttyd)
+    // Agent is NOT killed — its vsock listener survives snapshot restore
+    await this.deps.agentClient.exec(
+      sandboxId,
+      "pkill -f 'opencode serve'; pkill -f code-server; pkill -f ttyd",
+      { timeout: 5000 },
+    );
+
+    // Flush filesystem buffers
+    await this.deps.agentClient.exec(sandboxId, "sync", { timeout: 5000 });
+
+    log.info({ sandboxId }, "VM prepared for snapshot");
+  }
+
   private async warmupOpencode(
-    ipAddress: string,
+    sandboxId: string,
     workspaceId: string,
   ): Promise<void> {
     log.info({ workspaceId }, "Warming up opencode server");
 
+    const port = config.raw.services.opencode.port;
+    // Use nohup + setsid + explicit fd close to fully detach from the shell.
+    // Without closing fds 1&2 at the outer sh level, Deno.Command's piped
+    // stdout stays open until the background process exits → timeout.
     const startResult = await this.deps.agentClient.exec(
-      ipAddress,
-      `su dev -c 'cd ${WORKSPACE_DIR} && nohup opencode serve --hostname 0.0.0.0 --port ${config.raw.services.opencode.port} > /tmp/opencode-warmup.log 2>&1 &'`,
+      sandboxId,
+      `su dev -c 'cd ${WORKSPACE_DIR} && nohup setsid opencode serve --hostname 0.0.0.0 --port ${port} </dev/null >/tmp/opencode-warmup.log 2>&1 &' </dev/null >/dev/null 2>&1`,
       { timeout: 10000 },
     );
 
@@ -353,22 +378,19 @@ export class PrebuildRunner {
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
       try {
-        const response = await fetch(
-          `http://${ipAddress}:${config.raw.services.opencode.port}/global/health`,
-          { signal: AbortSignal.timeout(5000) },
+        const result = await this.deps.agentClient.exec(
+          sandboxId,
+          `curl -sf http://localhost:${port}/global/health`,
+          { timeout: 5000 },
         );
-
-        if (response.ok) {
-          const data = (await response.json()) as { healthy?: boolean };
-          if (data.healthy) {
-            healthy = true;
-            log.info({ workspaceId }, "Opencode server is healthy");
-            break;
-          }
+        if (result.exitCode === 0 && result.stdout.includes("healthy")) {
+          healthy = true;
+          log.info({ workspaceId }, "Opencode server is healthy");
+          break;
         }
       } catch {}
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await Bun.sleep(2000);
     }
 
     if (!healthy) {
@@ -378,7 +400,7 @@ export class PrebuildRunner {
       );
     }
 
-    await this.deps.agentClient.exec(ipAddress, "pkill -f 'opencode serve'", {
+    await this.deps.agentClient.exec(sandboxId, "pkill -f 'opencode serve'", {
       timeout: 5000,
     });
 

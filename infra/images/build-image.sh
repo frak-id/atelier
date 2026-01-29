@@ -25,11 +25,10 @@ if [ ! -d "$IMAGE_DIR" ]; then
     exit 1
 fi
 
-AGENT_SCRIPT="$SCRIPT_DIR/sandbox-agent.mjs"
-if [ ! -f "$AGENT_SCRIPT" ]; then
-    echo "Error: sandbox-agent.mjs not found at: $AGENT_SCRIPT"
-    echo "Deploy with 'bun run deploy' first, or build manually:"
-    echo "  cd apps/agent && bun run build"
+AGENT_BINARY="$SCRIPT_DIR/sandbox-agent"
+if [ ! -f "$AGENT_BINARY" ]; then
+    echo "Error: sandbox-agent binary not found at: $AGENT_BINARY"
+    echo "Build with: cd apps/agent && deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output dist/sandbox-agent src/index.ts"
     exit 1
 fi
 
@@ -39,13 +38,13 @@ echo "Output directory: $OUTPUT_DIR"
 
 echo ""
 echo "Step 1: Preparing build context..."
-cp "$AGENT_SCRIPT" "$IMAGE_DIR/sandbox-agent.mjs"
+cp "$AGENT_BINARY" "$IMAGE_DIR/sandbox-agent"
 
 echo ""
 echo "Step 2: Building Docker image..."
 docker build -t "frak-sandbox/$IMAGE_NAME" "$IMAGE_DIR"
 
-rm -f "$IMAGE_DIR/sandbox-agent.mjs"
+rm -f "$IMAGE_DIR/sandbox-agent"
 
 echo ""
 echo "Step 3: Creating container..."

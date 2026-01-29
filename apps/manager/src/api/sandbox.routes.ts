@@ -197,7 +197,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.health(sandbox.runtime.ipAddress);
+      return agentClient.health(sandbox.id);
     },
     {
       params: IdParamSchema,
@@ -211,7 +211,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.metrics(sandbox.runtime.ipAddress);
+      return agentClient.metrics(sandbox.id);
     },
     {
       params: IdParamSchema,
@@ -225,7 +225,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.getApps(sandbox.runtime.ipAddress);
+      return agentClient.getApps(sandbox.id);
     },
     {
       params: IdParamSchema,
@@ -239,11 +239,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.registerApp(
-        sandbox.runtime.ipAddress,
-        body.port,
-        body.name,
-      );
+      return agentClient.registerApp(sandbox.id, body.port, body.name);
     },
     {
       params: IdParamSchema,
@@ -258,7 +254,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentClient.exec(sandbox.runtime.ipAddress, body.command, {
+      return agentClient.exec(sandbox.id, body.command, {
         timeout: body.timeout,
       });
     },
@@ -277,7 +273,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       }
       const lines = query.lines ? Number.parseInt(query.lines, 10) : 100;
       const result = await agentOperations.logs(
-        sandbox.runtime.ipAddress,
+        sandbox.id,
         params.service,
         lines,
       );
@@ -296,7 +292,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      return agentOperations.services(sandbox.runtime.ipAddress);
+      return agentOperations.services(sandbox.id);
     },
     {
       params: IdParamSchema,
@@ -314,7 +310,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         ? workspaceService.getById(sandbox.workspaceId)
         : undefined;
       const repos = workspace?.config.repos ?? [];
-      return agentOperations.gitStatus(sandbox.runtime.ipAddress, repos);
+      return agentOperations.gitStatus(sandbox.id, repos);
     },
     {
       params: IdParamSchema,
@@ -328,9 +324,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!sandbox) {
         throw new NotFoundError("Sandbox", params.id);
       }
-      const configs = await agentClient.discoverConfigs(
-        sandbox.runtime.ipAddress,
-      );
+      const configs = await agentClient.discoverConfigs(sandbox.id);
       return { configs };
     },
     {
@@ -347,7 +341,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       }
 
       const fileContent = await agentClient.readConfigFile(
-        sandbox.runtime.ipAddress,
+        sandbox.id,
         body.path,
       );
       if (!fileContent) {
@@ -400,9 +394,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         return lvResult;
       }
 
-      const agentResult = await agentOperations.resizeStorage(
-        sandbox.runtime.ipAddress,
-      );
+      const agentResult = await agentOperations.resizeStorage(sandbox.id);
 
       if (!agentResult.success) {
         return {
@@ -451,7 +443,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         "Promoting sandbox to prebuild",
       );
 
-      await agentClient.exec(sandbox.runtime.ipAddress, "sync");
+      await agentClient.exec(sandbox.id, "sync");
       await sandboxLifecycle.stop(params.id);
       await StorageService.createPrebuild(sandbox.workspaceId, params.id);
       await sandboxLifecycle.start(params.id);
@@ -494,9 +486,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         : undefined;
       const configuredCommands = workspace?.config.devCommands ?? [];
 
-      const runtimeStatus = await agentClient.devList(
-        sandbox.runtime.ipAddress,
-      );
+      const runtimeStatus = await agentClient.devList(sandbox.id);
 
       return {
         commands: configuredCommands.map((cmd) => {
@@ -546,7 +536,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       if (!devCommand) throw new NotFoundError("DevCommand", params.name);
 
       const result = await agentClient.devStart(
-        sandbox.runtime.ipAddress,
+        sandbox.id,
         params.name,
         devCommand,
       );
@@ -597,10 +587,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         (c) => c.name === params.name,
       );
 
-      const result = await agentClient.devStop(
-        sandbox.runtime.ipAddress,
-        params.name,
-      );
+      const result = await agentClient.devStop(sandbox.id, params.name);
 
       if (devCommand?.port) {
         try {
@@ -633,12 +620,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       const offset = query.offset ? Number.parseInt(query.offset, 10) : 0;
       const limit = query.limit ? Number.parseInt(query.limit, 10) : 10000;
 
-      return agentClient.devLogs(
-        sandbox.runtime.ipAddress,
-        params.name,
-        offset,
-        limit,
-      );
+      return agentClient.devLogs(sandbox.id, params.name, offset, limit);
     },
     {
       params: DevCommandNameParamsSchema,

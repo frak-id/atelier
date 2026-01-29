@@ -31,27 +31,17 @@ mount -t tmpfs tmpfs /tmp >> "$LOG_DIR/init.log" 2>&1
 
 # Read config values using jq
 if [ -f "$CONFIG_FILE" ]; then
-    NFS_HOST=$(jq -r '.network.nfsHost // empty' "$CONFIG_FILE" 2>/dev/null)
     DASHBOARD_DOMAIN=$(jq -r '.network.dashboardDomain // empty' "$CONFIG_FILE" 2>/dev/null)
     VSCODE_PORT=$(jq -r '.services.vscode.port // empty' "$CONFIG_FILE" 2>/dev/null)
     OPENCODE_PORT=$(jq -r '.services.opencode.port // empty' "$CONFIG_FILE" 2>/dev/null)
     TERMINAL_PORT=$(jq -r '.services.terminal.port // empty' "$CONFIG_FILE" 2>/dev/null)
     AGENT_PORT=$(jq -r '.services.agent.port // empty' "$CONFIG_FILE" 2>/dev/null)
 fi
-NFS_HOST="${NFS_HOST:-172.16.0.1}"
 DASHBOARD_DOMAIN="${DASHBOARD_DOMAIN:-sandbox-dash.localhost}"
 VSCODE_PORT="${VSCODE_PORT:-8080}"
 OPENCODE_PORT="${OPENCODE_PORT:-3000}"
 TERMINAL_PORT="${TERMINAL_PORT:-7681}"
 AGENT_PORT="${AGENT_PORT:-9999}"
-NFS_CACHE_EXPORT="/var/lib/sandbox/shared-cache"
-NFS_CACHE_MOUNT="/mnt/cache"
-NFS_BINARIES_EXPORT="/var/lib/sandbox/shared-binaries"
-NFS_BINARIES_MOUNT="/opt/shared"
-NFS_CONFIGS_EXPORT="/var/lib/sandbox/shared-configs"
-NFS_CONFIGS_MOUNT="/mnt/configs"
-NFS_AUTH_EXPORT="/var/lib/sandbox/shared-auth"
-NFS_AUTH_MOUNT="/mnt/auth"
 
 log "Creating device nodes..."
 rm -f /dev/null /dev/zero /dev/random /dev/urandom /dev/tty /dev/console /dev/ptmx 2>/dev/null
@@ -62,10 +52,21 @@ mknod -m 666 /dev/urandom c 1 9
 mknod -m 666 /dev/tty c 5 0
 mknod -m 600 /dev/console c 5 1
 mknod -m 666 /dev/ptmx c 5 2
+mknod -m 666 /dev/vsock c 10 123
 ln -sf /proc/self/fd /dev/fd 2>/dev/null
 ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null
 ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null
 ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null
+
+mknod -m 444 /dev/vdb b 254 16 2>/dev/null
+if [ -b /dev/vdb ]; then
+    log "Mounting shared binaries drive..."
+    mkdir -p /opt/shared
+    mount -o ro /dev/vdb /opt/shared >> "$LOG_DIR/init.log" 2>&1
+    log "Shared binaries mounted at /opt/shared"
+else
+    log "No shared binaries drive found (/dev/vdb)"
+fi
 
 log "Setting up hostname and hosts file..."
 if [ -f "$CONFIG_FILE" ]; then
@@ -103,66 +104,6 @@ link_config() {
     fi
 }
 
-log "Mounting NFS shares in parallel..."
-mkdir -p "$NFS_CACHE_MOUNT" "$NFS_BINARIES_MOUNT" "$NFS_CONFIGS_MOUNT" "$NFS_AUTH_MOUNT"
-
-(timeout 3 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_CACHE_EXPORT" "$NFS_CACHE_MOUNT" >> "$LOG_DIR/init.log" 2>&1 && touch /tmp/.nfs_cache_ok) &
-(timeout 3 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_BINARIES_EXPORT" "$NFS_BINARIES_MOUNT" >> "$LOG_DIR/init.log" 2>&1 && touch /tmp/.nfs_binaries_ok) &
-(timeout 3 mount -t nfs -o vers=4,ro,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_CONFIGS_EXPORT" "$NFS_CONFIGS_MOUNT" >> "$LOG_DIR/init.log" 2>&1 && touch /tmp/.nfs_configs_ok) &
-(timeout 3 mount -t nfs -o vers=4,noatime,nodiratime,soft,timeo=10,retrans=1 "$NFS_HOST:$NFS_AUTH_EXPORT" "$NFS_AUTH_MOUNT" >> "$LOG_DIR/init.log" 2>&1 && touch /tmp/.nfs_auth_ok) &
-wait
-
-if [ -f /tmp/.nfs_cache_ok ]; then
-    log "NFS cache mounted"
-    mkdir -p /home/dev/.bun/install /home/dev/.npm /home/dev/.cache/pip
-    [ ! -L /home/dev/.bun/install/cache ] && rm -rf /home/dev/.bun/install/cache 2>/dev/null && ln -sf "$NFS_CACHE_MOUNT/bun" /home/dev/.bun/install/cache
-    mkdir -p /home/dev/.bunfig && cat > /home/dev/.bunfig.toml << 'BUNFIG'
-[install]
-backend = "copyfile"
-BUNFIG
-    chown dev:dev /home/dev/.bunfig.toml
-    [ ! -L /home/dev/.npm/_cacache ] && mkdir -p /home/dev/.npm && rm -rf /home/dev/.npm/_cacache 2>/dev/null && ln -sf "$NFS_CACHE_MOUNT/npm" /home/dev/.npm/_cacache
-    [ ! -L /home/dev/.cache/pip ] && mkdir -p /home/dev/.cache && rm -rf /home/dev/.cache/pip 2>/dev/null && ln -sf "$NFS_CACHE_MOUNT/pip" /home/dev/.cache/pip
-    chown -R dev:dev /home/dev/.bun /home/dev/.npm /home/dev/.cache 2>/dev/null
-else
-    log "WARNING: Failed to mount NFS cache"
-fi
-
-if [ -f /tmp/.nfs_binaries_ok ]; then
-    log "NFS binaries mounted"
-    export PATH="$NFS_BINARIES_MOUNT/bin:$PATH"
-    echo "export PATH=$NFS_BINARIES_MOUNT/bin:\$PATH" >> /home/dev/.profile
-else
-    log "WARNING: Failed to mount NFS binaries"
-fi
-
-if [ -f /tmp/.nfs_configs_ok ]; then
-    log "NFS configs mounted"
-    WORKSPACE_ID=""
-    [ -f "$CONFIG_FILE" ] && WORKSPACE_ID=$(jq -r '.workspaceId // empty' "$CONFIG_FILE" 2>/dev/null)
-    mkdir -p /home/dev/.config/opencode /home/dev/.local/share/code-server/User
-    link_config "$NFS_CONFIGS_MOUNT/global/home/dev/.config/opencode/opencode.json" "/home/dev/.config/opencode/opencode.json"
-    link_config "$NFS_CONFIGS_MOUNT/global/home/dev/.local/share/code-server/User/settings.json" "/home/dev/.local/share/code-server/User/settings.json"
-    if [ -n "$WORKSPACE_ID" ] && [ -d "$NFS_CONFIGS_MOUNT/workspaces/$WORKSPACE_ID" ]; then
-        [ -f "$NFS_CONFIGS_MOUNT/workspaces/$WORKSPACE_ID/home/dev/.config/opencode/opencode.json" ] && link_config "$NFS_CONFIGS_MOUNT/workspaces/$WORKSPACE_ID/home/dev/.config/opencode/opencode.json" "/home/dev/.config/opencode/opencode.json"
-    fi
-    chown -R dev:dev /home/dev/.config /home/dev/.local 2>/dev/null
-else
-    log "WARNING: Failed to mount NFS configs"
-fi
-
-if [ -f /tmp/.nfs_auth_ok ]; then
-    log "NFS auth mounted"
-    mkdir -p /home/dev/.local/share/opencode /home/dev/.config/opencode
-    link_config "$NFS_AUTH_MOUNT/opencode.json" "/home/dev/.local/share/opencode/auth.json"
-    link_config "$NFS_AUTH_MOUNT/antigravity.json" "/home/dev/.config/opencode/antigravity-accounts.json"
-    chown -h dev:dev /home/dev/.local/share/opencode/auth.json /home/dev/.config/opencode/antigravity-accounts.json 2>/dev/null
-else
-    log "WARNING: Failed to mount NFS auth"
-fi
-
-rm -f /tmp/.nfs_*_ok 2>/dev/null
-
 if [ -f "$SECRETS_FILE" ]; then
     log "Loading secrets..."
     set -a
@@ -172,12 +113,12 @@ fi
 
 # Start sandbox-agent FIRST for fast boot detection by manager
 log "Starting sandbox-agent..."
-if [ -f /usr/local/lib/sandbox-agent.mjs ]; then
-    node /usr/local/lib/sandbox-agent.mjs > "$LOG_DIR/agent.log" 2>&1 &
+if [ -x /usr/local/bin/sandbox-agent ]; then
+    /usr/local/bin/sandbox-agent > "$LOG_DIR/agent.log" 2>&1 &
     log "sandbox-agent started (PID $!)"
 else
-    log "ERROR: sandbox-agent.mjs not found"
-    ls -la /usr/local/lib/ >> "$LOG_DIR/init.log" 2>&1
+    log "ERROR: sandbox-agent binary not found"
+    ls -la /usr/local/bin/sandbox-agent >> "$LOG_DIR/init.log" 2>&1
 fi
 
 log "Starting SSH daemon..."

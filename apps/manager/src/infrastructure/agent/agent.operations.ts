@@ -10,17 +10,17 @@ export class AgentOperations {
   constructor(private readonly client: AgentClient) {}
 
   async batchHealth(
-    ipAddresses: string[],
+    sandboxIds: string[],
   ): Promise<Map<string, AgentHealth | { error: string }>> {
     const results = new Map<string, AgentHealth | { error: string }>();
 
     await Promise.all(
-      ipAddresses.map(async (ip) => {
+      sandboxIds.map(async (sandboxId) => {
         try {
-          const health = await this.client.health(ip);
-          results.set(ip, health);
+          const health = await this.client.health(sandboxId);
+          results.set(sandboxId, health);
         } catch (error) {
-          results.set(ip, {
+          results.set(sandboxId, {
             error: error instanceof Error ? error.message : String(error),
           });
         }
@@ -30,10 +30,10 @@ export class AgentOperations {
     return results;
   }
 
-  async services(ipAddress: string): Promise<{ services: ServiceStatus[] }> {
+  async services(sandboxId: string): Promise<{ services: ServiceStatus[] }> {
     const serviceNames = ["code-server", "opencode", "sshd", "ttyd"];
     const { results } = await this.client.batchExec(
-      ipAddress,
+      sandboxId,
       serviceNames.map((name) => ({
         id: name,
         command: `pgrep -f "${name}" 2>/dev/null || true`,
@@ -53,25 +53,25 @@ export class AgentOperations {
   }
 
   async logs(
-    ipAddress: string,
+    sandboxId: string,
     service: string,
     lines: number = 100,
   ): Promise<{ service: string; content: string }> {
     const result = await this.client.exec(
-      ipAddress,
+      sandboxId,
       `tail -n ${lines} /var/log/sandbox/${service}.log 2>/dev/null || echo ""`,
     );
     return { service, content: result.stdout };
   }
 
   async gitStatus(
-    ipAddress: string,
+    sandboxId: string,
     repos: { clonePath: string }[],
   ): Promise<GitStatus> {
     if (repos.length === 0) return { repos: [] };
 
     const { results } = await this.client.batchExec(
-      ipAddress,
+      sandboxId,
       repos.map((repo, i) => {
         const repoPath = `/home/dev${repo.clonePath}`;
         const script = [
@@ -145,14 +145,14 @@ export class AgentOperations {
     return { repos: repoStatuses };
   }
 
-  async resizeStorage(ipAddress: string): Promise<{
+  async resizeStorage(sandboxId: string): Promise<{
     success: boolean;
     disk?: { total: number; used: number; free: number };
     error?: string;
   }> {
     try {
       const result = await this.client.exec(
-        ipAddress,
+        sandboxId,
         [
           "test -e /dev/vda || mknod /dev/vda b 254 0",
           "resize2fs /dev/vda",
@@ -183,10 +183,10 @@ export class AgentOperations {
     }
   }
 
-  async getInstalledExtensions(ipAddress: string): Promise<string[]> {
+  async getInstalledExtensions(sandboxId: string): Promise<string[]> {
     try {
       const result = await this.client.exec(
-        ipAddress,
+        sandboxId,
         "code-server --list-extensions 2>/dev/null || true",
       );
       return result.stdout
@@ -199,11 +199,11 @@ export class AgentOperations {
   }
 
   async installExtensions(
-    ipAddress: string,
+    sandboxId: string,
     extensions: string[],
   ): Promise<{ extension: string; success: boolean; error?: string }[]> {
     const { results } = await this.client.batchExec(
-      ipAddress,
+      sandboxId,
       extensions.map((ext) => ({
         id: ext,
         command: `code-server --install-extension ${ext}`,

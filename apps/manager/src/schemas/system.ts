@@ -39,6 +39,9 @@ export const CleanupResultSchema = t.Object({
   overlaysRemoved: t.Number(),
   tapDevicesRemoved: t.Number(),
   lvmVolumesRemoved: t.Number(),
+  logsRemoved: t.Number(),
+  caddyRoutesRemoved: t.Number(),
+  sshRoutesRemoved: t.Number(),
   spaceFreed: t.Number(),
 });
 export type CleanupResult = Static<typeof CleanupResultSchema>;

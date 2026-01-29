@@ -1,5 +1,4 @@
-import type { DiscoverableConfigCategory } from "@frak-sandbox/shared/constants";
-import { t } from "elysia";
+import type { DiscoverableConfigCategory } from "./constants.ts";
 
 export interface AppPort {
   port: number;
@@ -15,16 +14,8 @@ export interface DiscoveredConfig {
   size?: number;
 }
 
-export const AppRegistrationSchema = t.Object({
-  port: t.Number({ minimum: 1, maximum: 65535 }),
-  name: t.String(),
-});
-
-export const ExecRequestSchema = t.Object({
-  command: t.String(),
-  timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),
-});
-
-export const ConfigReadQuerySchema = t.Object({
-  path: t.String(),
-});
+export interface ExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}

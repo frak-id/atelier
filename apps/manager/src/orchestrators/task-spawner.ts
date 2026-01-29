@@ -90,7 +90,7 @@ export class TaskSpawner {
         "Sandbox spawned for task",
       );
 
-      const agentReady = await this.deps.agentClient.waitForAgent(ipAddress, {
+      const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
         timeout: AGENT_READY_TIMEOUT,
       });
 
@@ -113,7 +113,7 @@ export class TaskSpawner {
 
         const baseBranch = task.data.baseBranch || repo.branch;
         branchName = await this.createBranch(
-          ipAddress,
+          sandbox.id,
           opencodeDirectory,
           baseBranch,
           task.id,
@@ -423,7 +423,7 @@ export class TaskSpawner {
   }
 
   private async createBranch(
-    ipAddress: string,
+    sandboxId: string,
     repoPath: string,
     baseBranch: string,
     taskId: string,
@@ -432,7 +432,7 @@ export class TaskSpawner {
 
     const gitExec = (cmd: string, timeout = 30000) =>
       this.deps.agentClient.exec(
-        ipAddress,
+        sandboxId,
         `su - dev -c 'cd ${repoPath} && ${cmd}'`,
         { timeout },
       );

@@ -66,7 +66,7 @@ async function main() {
   console.log("\n📦 Building...");
   await $`bun run --filter @frak-sandbox/cli build:linux`;
   await $`bun run --filter @frak-sandbox/manager build`;
-  await $`bun run --filter @frak-sandbox/agent build`;
+  await $`deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output ${resolve(AGENT_DIR, "dist/sandbox-agent")} ${resolve(AGENT_DIR, "src/index.ts")}`;
   await $`bun run --filter @frak-sandbox/dashboard build`;
 
   console.log("\n📁 Staging files...");
@@ -101,8 +101,8 @@ async function main() {
     { recursive: true },
   );
   cpSync(
-    resolve(AGENT_DIR, "dist/sandbox-agent.mjs"),
-    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/sandbox-agent.mjs"),
+    resolve(AGENT_DIR, "dist/sandbox-agent"),
+    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/sandbox-agent"),
   );
   cpSync(
     resolve(DASHBOARD_DIR, "dist"),
@@ -185,7 +185,7 @@ sleep 1
 cp "$DEPLOY_TMP/usr/local/bin/frak-sandbox" /usr/local/bin/frak-sandbox
 cp "$DEPLOY_TMP/opt/frak-sandbox/server.js" /opt/frak-sandbox/server.js
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/drizzle/." /opt/frak-sandbox/drizzle/
-cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/sandbox-agent.mjs" /opt/frak-sandbox/infra/images/sandbox-agent.mjs
+cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/sandbox-agent" /opt/frak-sandbox/infra/images/sandbox-agent
 cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/build-image.sh" /opt/frak-sandbox/infra/images/build-image.sh
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-base/." /opt/frak-sandbox/infra/images/dev-base/
 cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-cloud/." /opt/frak-sandbox/infra/images/dev-cloud/

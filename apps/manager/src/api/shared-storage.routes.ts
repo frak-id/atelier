@@ -9,50 +9,50 @@ import {
   BinaryInfoSchema,
   BinaryInstallResultSchema,
   BinaryListSchema,
-  CacheFolderParamSchema,
-  CacheInfoSchema,
-  CachePurgeResultSchema,
-  NfsStatusSchema,
   SharedStorageStatusSchema,
 } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
+
+const log = createChildLogger("shared-storage-routes");
 
 function isValidBinaryId(id: string): id is SharedBinaryId {
   return id in SHARED_BINARIES;
+}
+
+function rebuildImageInBackground(): void {
+  SharedStorageService.buildBinariesImage()
+    .then((result) => {
+      if (result.success) {
+        log.info({ sizeBytes: result.sizeBytes }, "Binaries image rebuilt");
+      } else {
+        log.error({ error: result.error }, "Failed to rebuild binaries image");
+      }
+    })
+    .catch((error) => {
+      log.error({ error }, "Binaries image rebuild crashed");
+    });
 }
 
 export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
   .get(
     "/",
     async () => {
-      const [nfs, binaries, cache] = await Promise.all([
-        SharedStorageService.getNfsStatus(),
+      const [binaries, image] = await Promise.all([
         SharedStorageService.listBinaries(),
-        SharedStorageService.getCacheInfo(),
+        SharedStorageService.getBinariesImageInfo(),
       ]);
-      return { nfs, binaries, cache };
+      return { binaries, image };
     },
     {
       response: SharedStorageStatusSchema,
       detail: {
         tags: ["storage"],
-        summary: "Get full shared storage status",
+        summary: "Get shared storage status",
       },
     },
   )
-  .get(
-    "/nfs",
-    async () => {
-      return SharedStorageService.getNfsStatus();
-    },
-    {
-      response: NfsStatusSchema,
-      detail: {
-        tags: ["storage"],
-        summary: "Get NFS server status",
-      },
-    },
-  )
+
   .get(
     "/binaries",
     async () => {
@@ -93,7 +93,9 @@ export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
       if (!isValidBinaryId(params.id)) {
         throw new NotFoundError("Binary", params.id);
       }
-      return SharedStorageService.installBinary(params.id);
+      const result = await SharedStorageService.installBinary(params.id);
+      if (result.success) rebuildImageInBackground();
+      return result;
     },
     {
       params: BinaryIdParamSchema,
@@ -110,7 +112,9 @@ export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
       if (!isValidBinaryId(params.id)) {
         throw new NotFoundError("Binary", params.id);
       }
-      return SharedStorageService.removeBinary(params.id);
+      const result = await SharedStorageService.removeBinary(params.id);
+      if (result.success) rebuildImageInBackground();
+      return result;
     },
     {
       params: BinaryIdParamSchema,
@@ -118,33 +122,6 @@ export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
       detail: {
         tags: ["storage"],
         summary: "Remove an installed shared binary",
-      },
-    },
-  )
-  .get(
-    "/cache",
-    async () => {
-      return SharedStorageService.getCacheInfo();
-    },
-    {
-      response: CacheInfoSchema,
-      detail: {
-        tags: ["storage"],
-        summary: "Get package cache information",
-      },
-    },
-  )
-  .delete(
-    "/cache/:folder",
-    async ({ params }) => {
-      return SharedStorageService.purgeCache(params.folder);
-    },
-    {
-      params: CacheFolderParamSchema,
-      response: CachePurgeResultSchema,
-      detail: {
-        tags: ["storage"],
-        summary: "Purge a specific cache folder",
       },
     },
   );

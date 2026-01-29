@@ -50,12 +50,16 @@ const sshKeyService = new SshKeyService(sshKeyRepository);
 const taskService = new TaskService(taskRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = new SandboxService(sandboxRepository);
+
+const agentClient = new AgentClient();
+
 const internalService = new InternalService(
   sharedAuthRepository,
   configFileService,
+  agentClient,
+  sandboxService,
 );
 
-const agentClient = new AgentClient();
 const agentOperations = new AgentOperations(agentClient);
 
 const sessionTemplateService = new SessionTemplateService(
@@ -74,17 +78,20 @@ const sandboxSpawner = new SandboxSpawner({
   gitSourceService,
   configFileService,
   sshKeyService,
+  internalService,
   agentClient,
   agentOperations,
 });
 
 const sandboxDestroyer = new SandboxDestroyer({
   sandboxService,
+  agentClient,
 });
 
 const sandboxLifecycle = new SandboxLifecycle({
   sandboxService,
   agentClient,
+  internalService,
 });
 
 const prebuildRunner = new PrebuildRunner({

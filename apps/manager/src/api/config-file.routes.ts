@@ -113,9 +113,9 @@ export const configFileRoutes = new Elysia({ prefix: "/config-files" })
     },
   )
   .post(
-    "/sync-to-nfs",
+    "/sync-to-sandboxes",
     async () => {
-      return internalService.syncConfigsToNfs();
+      return internalService.syncConfigsToSandboxes();
     },
     {
       response: t.Object({
@@ -123,7 +123,7 @@ export const configFileRoutes = new Elysia({ prefix: "/config-files" })
       }),
       detail: {
         tags: ["config"],
-        summary: "Sync all config files to NFS shared storage",
+        summary: "Push all config files to running sandboxes",
       },
     },
   );

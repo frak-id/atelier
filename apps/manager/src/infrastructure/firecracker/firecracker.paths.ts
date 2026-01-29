@@ -2,6 +2,7 @@ import { config } from "../../shared/lib/config.ts";
 
 export interface SandboxPaths {
   socket: string;
+  vsock: string;
   pid: string;
   log: string;
   overlay: string;
@@ -16,6 +17,7 @@ export function getSandboxPaths(
 ): SandboxPaths {
   return {
     socket: `${config.paths.SOCKET_DIR}/${sandboxId}.sock`,
+    vsock: `${config.paths.SOCKET_DIR}/${sandboxId}.vsock`,
     pid: `${config.paths.SOCKET_DIR}/${sandboxId}.pid`,
     log: `${config.paths.LOG_DIR}/${sandboxId}.log`,
     overlay: lvmVolumePath || `${config.paths.OVERLAY_DIR}/${sandboxId}.ext4`,
@@ -23,6 +25,10 @@ export function getSandboxPaths(
     rootfs: `${config.paths.ROOTFS_DIR}/rootfs.ext4`,
     useLvm: !!lvmVolumePath,
   };
+}
+
+export function getVsockPath(sandboxId: string): string {
+  return `${config.paths.SOCKET_DIR}/${sandboxId}.vsock`;
 }
 
 export function getSocketPath(sandboxId: string): string {
