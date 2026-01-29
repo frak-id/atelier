@@ -10,6 +10,7 @@ import {
   gitSourceRoutes,
   healthRoutes,
   imageRoutes,
+  registryRoutes,
   sandboxRoutes,
   sessionTemplateRoutes,
   sharedAuthRoutes,
@@ -205,6 +206,7 @@ const app = new Elysia()
         .use(sshKeyRoutes)
         .use(systemRoutes)
         .use(sharedStorageRoutes)
+        .use(registryRoutes)
         .use(imageRoutes)
         .use(githubApiRoutes),
     ),

@@ -6,6 +6,7 @@ export {
   LVM,
   OPENCODE,
   PATHS,
+  REGISTRY,
   SHARED_BINARIES,
   SSH_PROXY,
   TTYD,

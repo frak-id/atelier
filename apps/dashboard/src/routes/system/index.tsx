@@ -1,15 +1,17 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   AlertCircle,
   Database,
   Download,
   HardDrive,
+  Package,
   RefreshCw,
   Server,
   Trash2,
 } from "lucide-react";
 import {
+  registryStatusQuery,
   sharedStorageQuery,
   systemQueueQuery,
   systemStatsQuery,
@@ -31,6 +33,7 @@ export const Route = createFileRoute("/system/")({
     context.queryClient.ensureQueryData(systemStorageQuery);
     context.queryClient.ensureQueryData(systemQueueQuery);
     context.queryClient.ensureQueryData(sharedStorageQuery);
+    context.queryClient.ensureQueryData(registryStatusQuery);
   },
   pendingComponent: () => (
     <div className="p-6 space-y-6">
@@ -50,6 +53,7 @@ function SystemPage() {
   const { data: storage } = useSuspenseQuery(systemStorageQuery);
   const { data: queue } = useSuspenseQuery(systemQueueQuery);
   const { data: sharedStorage } = useSuspenseQuery(sharedStorageQuery);
+  const { data: registry } = useQuery(registryStatusQuery);
   const cleanupMutation = useSystemCleanup();
   const installBinary = useInstallBinary();
   const removeBinary = useRemoveBinary();
@@ -265,7 +269,7 @@ function SystemPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <HardDrive className="h-5 w-5" />
@@ -346,6 +350,80 @@ function SystemPage() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Registry Cache
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {registry ? (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Status</span>
+                  <Badge variant={registry.online ? "success" : "error"}>
+                    {registry.online ? "Online" : "Offline"}
+                  </Badge>
+                </div>
+                {!registry.online ? (
+                  <p className="text-sm text-muted-foreground">
+                    Registry cache is not running. Run{" "}
+                    <code className="text-xs bg-muted px-1 rounded">
+                      frak-sandbox registry
+                    </code>{" "}
+                    to set up.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Packages</span>
+                      <span className="text-sm">
+                        {registry.packageCount} packages cached
+                      </span>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>Cache Disk</span>
+                        <span>
+                          {formatBytes(registry.disk.usedBytes)} /{" "}
+                          {formatBytes(registry.disk.totalBytes)}
+                        </span>
+                      </div>
+                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all"
+                          style={{
+                            width: `${registry.disk.usedPercent}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t">
+                      <span className="text-muted-foreground">
+                        Uplink (npmjs.org)
+                      </span>
+                      <Badge
+                        variant={
+                          registry.uplink.healthy ? "success" : "warning"
+                        }
+                      >
+                        {registry.uplink.healthy ? "Healthy" : "Unhealthy"}
+                      </Badge>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-20 w-full" />
+              </div>
+            )}
           </CardContent>
         </Card>
 

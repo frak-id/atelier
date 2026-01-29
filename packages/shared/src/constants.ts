@@ -88,6 +88,23 @@ export const DEFAULTS = {
   VOLUME_SIZE_GB: 50,
 } as const;
 
+export const REGISTRY = {
+  /** Verdaccio listen port on host */
+  PORT: 4873,
+  /** Storage directory for cached packages */
+  STORAGE_DIR: "/var/lib/sandbox/registry/storage",
+  /** Verdaccio config file */
+  CONFIG_PATH: "/var/lib/sandbox/registry/config.yaml",
+  /** Systemd service name */
+  SERVICE_NAME: "frak-registry",
+  /** Max cache size in GB (filesystem quota) */
+  QUOTA_SIZE_GB: 60,
+  /** Cache eviction: delete packages not accessed in N days */
+  EVICTION_DAYS: 14,
+  /** Cron script path */
+  EVICTION_SCRIPT: "/var/lib/sandbox/registry/evict-cache.sh",
+} as const;
+
 export const SHARED_STORAGE = {
   BINARIES_DIR: "/var/lib/sandbox/shared-binaries",
 } as const;

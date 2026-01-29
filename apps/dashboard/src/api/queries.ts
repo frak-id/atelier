@@ -22,6 +22,9 @@ export const queryKeys = {
     all: ["sharedStorage"] as const,
     binaries: ["sharedStorage", "binaries"] as const,
   },
+  registry: {
+    status: ["registry", "status"] as const,
+  },
   tasks: {
     all: ["tasks"] as const,
     list: (workspaceId?: string) => ["tasks", "list", workspaceId] as const,
@@ -826,6 +829,13 @@ export function useRemoveBinary() {
     },
   });
 }
+
+export const registryStatusQuery = queryOptions({
+  queryKey: queryKeys.registry.status,
+  queryFn: async () => unwrap(await api.api.registry.get()),
+  refetchInterval: 30000,
+  refetchIntervalInBackground: false,
+});
 
 export const sshKeysListQuery = queryOptions({
   queryKey: queryKeys.sshKeys.list(),
