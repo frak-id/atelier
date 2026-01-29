@@ -1,8 +1,4 @@
-import {
-  AUTH_PROVIDERS,
-  SHARED_STORAGE,
-  VM_PATHS,
-} from "@frak-sandbox/shared/constants";
+import { AUTH_PROVIDERS, VM_PATHS } from "@frak-sandbox/shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
@@ -420,75 +416,17 @@ export class InternalService {
 
   async syncConfigsToSandboxes(): Promise<{ synced: number }> {
     const globalConfigs = this.configFileService.list({ scope: "global" });
-    let synced = 0;
-
-    for (const cfg of globalConfigs) {
-      const hostPath = `${SHARED_STORAGE.CONFIGS_DIR}/${SHARED_STORAGE.CONFIG_DIRS.GLOBAL}${cfg.path}`;
-      const dir = hostPath.substring(0, hostPath.lastIndexOf("/"));
-
-      try {
-        await Bun.$`mkdir -p ${dir}`.quiet();
-
-        if (cfg.contentType === "binary") {
-          const buffer = Buffer.from(cfg.content, "base64");
-          await Bun.write(hostPath, buffer);
-        } else {
-          await Bun.write(hostPath, cfg.content);
-        }
-
-        log.debug({ path: cfg.path, hostPath }, "Config written to host dir");
-      } catch (error) {
-        log.error(
-          { path: cfg.path, error },
-          "Failed to write config to host dir",
-        );
-      }
-    }
-
     const workspaceConfigs = this.configFileService.list({
       scope: "workspace",
     });
-    const byWorkspace = new Map<string, typeof workspaceConfigs>();
-
-    for (const cfg of workspaceConfigs) {
-      if (!cfg.workspaceId) continue;
-      const existing = byWorkspace.get(cfg.workspaceId) ?? [];
-      existing.push(cfg);
-      byWorkspace.set(cfg.workspaceId, existing);
-    }
-
-    for (const [workspaceId, configs] of byWorkspace) {
-      for (const cfg of configs) {
-        const hostPath = `${SHARED_STORAGE.CONFIGS_DIR}/${SHARED_STORAGE.CONFIG_DIRS.WORKSPACES}/${workspaceId}${cfg.path}`;
-        const dir = hostPath.substring(0, hostPath.lastIndexOf("/"));
-
-        try {
-          await Bun.$`mkdir -p ${dir}`.quiet();
-
-          if (cfg.contentType === "binary") {
-            const buffer = Buffer.from(cfg.content, "base64");
-            await Bun.write(hostPath, buffer);
-          } else {
-            await Bun.write(hostPath, cfg.content);
-          }
-
-          log.debug(
-            { path: cfg.path, hostPath, workspaceId },
-            "Workspace config written to host dir",
-          );
-        } catch (error) {
-          log.error(
-            { path: cfg.path, workspaceId, error },
-            "Failed to write workspace config to host dir",
-          );
-        }
-      }
-    }
 
     const runningSandboxes = this.sandboxService
       .getAll()
       .filter((s) => s.status === "running");
+    if (runningSandboxes.length === 0) return { synced: 0 };
+
     const allConfigs = [...globalConfigs, ...workspaceConfigs];
+    const filesToPush: { path: string; content: string }[] = [];
 
     for (const cfg of allConfigs) {
       const vmPath = this.getVmPathForConfig(cfg.path);
@@ -496,24 +434,46 @@ export class InternalService {
         log.debug({ path: cfg.path }, "No VM path mapping found for config");
         continue;
       }
-
-      await Promise.allSettled(
-        runningSandboxes.map((sandbox) =>
-          this.agentClient.exec(
-            sandbox.id,
-            `mkdir -p "$(dirname '${vmPath}')" && cat > '${vmPath}' << 'CONFIGEOF'\n${cfg.content}\nCONFIGEOF`,
-            { timeout: 5000 },
-          ),
-        ),
-      );
-      synced++;
+      filesToPush.push({ path: vmPath, content: cfg.content });
     }
 
+    if (filesToPush.length === 0) return { synced: 0 };
+
+    await this.pushConfigFilesToSandboxes(
+      runningSandboxes.map((s) => s.id),
+      filesToPush,
+    );
+
     log.info(
-      { synced, sandboxes: runningSandboxes.length },
+      { synced: filesToPush.length, sandboxes: runningSandboxes.length },
       "Config sync complete",
     );
-    return { synced };
+    return { synced: filesToPush.length };
+  }
+
+  private async pushConfigFilesToSandboxes(
+    sandboxIds: string[],
+    files: { path: string; content: string }[],
+  ): Promise<void> {
+    const commands = files.map((file, i) => ({
+      id: `config-${i}`,
+      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'CONFIGEOF'\n${file.content}\nCONFIGEOF\nmv '${file.path}.tmp' '${file.path}'`,
+      timeout: 5000,
+    }));
+
+    const results = await Promise.allSettled(
+      sandboxIds.map((sandboxId) =>
+        this.agentClient.batchExec(sandboxId, commands, { timeout: 10000 }),
+      ),
+    );
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      log.warn(
+        { failures: failures.length, total: results.length },
+        "Some config pushes to sandboxes failed",
+      );
+    }
   }
 
   private getVmPathForConfig(configPath: string): string | null {

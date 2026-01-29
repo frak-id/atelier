@@ -90,11 +90,6 @@ export const DEFAULTS = {
 
 export const SHARED_STORAGE = {
   BINARIES_DIR: "/var/lib/sandbox/shared-binaries",
-  CONFIGS_DIR: "/var/lib/sandbox/shared-configs",
-  CONFIG_DIRS: {
-    GLOBAL: "global",
-    WORKSPACES: "workspaces",
-  },
 } as const;
 
 export const VM_PATHS = {
