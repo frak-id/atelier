@@ -139,9 +139,11 @@ else
 fi
 log "Workspace directory: $WORKSPACE_DIR"
 
+SHARED_BIN="/opt/shared/bin"
+
 log "Starting code-server..."
-if command -v code-server >/dev/null 2>&1; then
-    su - dev -c "code-server --bind-addr 0.0.0.0:$VSCODE_PORT --auth none --disable-telemetry $WORKSPACE_DIR > $LOG_DIR/code-server.log 2>&1" &
+if [ -x "$SHARED_BIN/code-server" ]; then
+    su - dev -c "$SHARED_BIN/code-server --bind-addr 0.0.0.0:$VSCODE_PORT --auth none --disable-telemetry $WORKSPACE_DIR > $LOG_DIR/code-server.log 2>&1" &
     CODE_SERVER_PID=$!
     log "code-server started (PID $CODE_SERVER_PID) with workspace $WORKSPACE_DIR"
     
@@ -153,22 +155,22 @@ if command -v code-server >/dev/null 2>&1; then
             EXTENSIONS=$(cat "$EXTENSIONS_FILE" | tr -d '[]"' | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$')
             for ext in $EXTENSIONS; do
                 log "Installing extension: $ext"
-                su - dev -c "code-server --install-extension $ext" >> "$LOG_DIR/extensions.log" 2>&1 || true
+                su - dev -c "$SHARED_BIN/code-server --install-extension $ext" >> "$LOG_DIR/extensions.log" 2>&1 || true
             done
             log "Extension installation complete"
         ) &
     fi
 else
-    log "ERROR: code-server not found"
+    log "ERROR: code-server not found at $SHARED_BIN/code-server"
 fi
 
 # Pre-install OpenCode plugin SDK (required for external plugins with standalone binary)
-if command -v opencode >/dev/null 2>&1; then
+if [ -x "$SHARED_BIN/opencode" ]; then
     OPENCODE_PLUGIN_DIR="/home/dev/.cache/opencode"
     if [ ! -d "$OPENCODE_PLUGIN_DIR/node_modules/@opencode-ai/plugin" ]; then
         log "Installing OpenCode plugin SDK..."
         mkdir -p "$OPENCODE_PLUGIN_DIR"
-        chown dev:dev "$OPENCODE_PLUGIN_DIR"
+        chown -R dev:dev /home/dev/.cache
         su - dev -c "cd $OPENCODE_PLUGIN_DIR && bun add @opencode-ai/plugin" >> "$LOG_DIR/init.log" 2>&1
         log "OpenCode plugin SDK installed"
     fi
@@ -176,15 +178,11 @@ fi
 
 log "Starting OpenCode server..."
 OPENCODE_CORS="--cors https://${DASHBOARD_DOMAIN}"
-if [ -x /usr/bin/opencode ] || command -v opencode >/dev/null 2>&1; then
-    su - dev -c "cd $WORKSPACE_DIR && opencode serve --hostname 0.0.0.0 --port $OPENCODE_PORT $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
+if [ -x "$SHARED_BIN/opencode" ]; then
+    su - dev -c "cd $WORKSPACE_DIR && $SHARED_BIN/opencode serve --hostname 0.0.0.0 --port $OPENCODE_PORT $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
     log "OpenCode started (PID $!) in $WORKSPACE_DIR with CORS enabled"
 else
-    log "WARNING: opencode not found in PATH"
-    if [ -f /usr/lib/node_modules/opencode-ai/bin/opencode ]; then
-        log "Found opencode at /usr/lib/node_modules/opencode-ai/bin/opencode"
-        su - dev -c "cd $WORKSPACE_DIR && /usr/lib/node_modules/opencode-ai/bin/opencode serve --hostname 0.0.0.0 --port $OPENCODE_PORT $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
-    fi
+    log "WARNING: opencode not found at $SHARED_BIN/opencode"
 fi
 
 log "Starting ttyd terminal server..."

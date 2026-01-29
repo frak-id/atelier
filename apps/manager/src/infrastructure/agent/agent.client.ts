@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
+import { SandboxError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { getVsockPath } from "../firecracker/index.ts";
 import type {
@@ -45,6 +47,14 @@ export class AgentClient {
   ): Promise<T> {
     const timeout = options.timeout ?? DEFAULT_TIMEOUT;
     const vsockPath = getVsockPath(sandboxId);
+
+    if (!existsSync(vsockPath)) {
+      throw new SandboxError(
+        `Sandbox ${sandboxId} is not reachable (not running)`,
+        "SANDBOX_NOT_RUNNING",
+        503,
+      );
+    }
 
     const socket = await this.connectVsock(vsockPath, VSOCK_GUEST_PORT);
 

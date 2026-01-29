@@ -183,8 +183,8 @@ export class SandboxLifecycle {
       log.warn({ sandboxId }, "Agent did not become ready after restart");
     } else {
       await Promise.allSettled([
-        this.deps.internalService.syncAuthToSandboxes(),
-        this.deps.internalService.syncConfigsToSandboxes(),
+        this.deps.internalService.syncAuthToSandbox(sandboxId),
+        this.deps.internalService.syncConfigsToSandbox(sandboxId),
       ]);
     }
 

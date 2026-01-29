@@ -45,6 +45,7 @@ export const SandboxProvisioner = {
 
     try {
       await this.injectNetworkConfig(mountPoint, ctx.network);
+      await this.injectSharedBinariesPath(mountPoint);
       await this.injectRegistryConfig(mountPoint, ctx);
       await this.injectSandboxConfig(mountPoint, ctx);
       await this.injectSecrets(mountPoint, ctx.workspace);
@@ -58,6 +59,15 @@ export const SandboxProvisioner = {
     }
 
     log.debug({ sandboxId: ctx.sandboxId }, "Config injected");
+  },
+
+  async injectSharedBinariesPath(mountPoint: string): Promise<void> {
+    await ensureDir(`${mountPoint}/etc/profile.d`);
+    await Bun.write(
+      `${mountPoint}/etc/profile.d/shared-binaries.sh`,
+      'export PATH="/opt/shared/bin:$PATH"\n',
+    );
+    await $`chmod +r ${mountPoint}/etc/profile.d/shared-binaries.sh`.quiet();
   },
 
   async injectNetworkConfig(

@@ -605,14 +605,14 @@ class SpawnContext {
 
   private pushAuthAndConfigs(): void {
     Promise.allSettled([
-      this.deps.internalService.syncAuthToSandboxes(),
-      this.deps.internalService.syncConfigsToSandboxes(),
+      this.deps.internalService.syncAuthToSandbox(this.sandboxId),
+      this.deps.internalService.syncConfigsToSandbox(this.sandboxId),
     ])
       .then(([authResult, configResult]) => {
         if (authResult.status === "fulfilled") {
           log.info(
             { sandboxId: this.sandboxId, synced: authResult.value.synced },
-            "Auth pushed to sandboxes",
+            "Auth pushed to sandbox",
           );
         }
         if (configResult.status === "fulfilled") {

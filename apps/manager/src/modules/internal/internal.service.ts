@@ -300,7 +300,7 @@ export class InternalService {
   ): Promise<void> {
     const commands = files.map((file, i) => ({
       id: `auth-${i}`,
-      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'AUTHEOF'\n${file.content}\nAUTHEOF\nmv '${file.path}.tmp' '${file.path}'`,
+      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'AUTHEOF'\n${file.content}\nAUTHEOF\nmv '${file.path}.tmp' '${file.path}' && chown dev:dev '${file.path}' && chown dev:dev "$(dirname '${file.path}')"`,
       timeout: 5000,
     }));
 
@@ -384,30 +384,18 @@ export class InternalService {
   }
 
   async syncAuthToSandboxes(): Promise<{ synced: number }> {
-    const storedAuth = this.sharedAuthRepository.list();
-    let synced = 0;
-
     const runningSandboxes = this.sandboxService
       .getAll()
       .filter((s) => s.status === "running");
-    if (runningSandboxes.length === 0) return { synced };
+    if (runningSandboxes.length === 0) return { synced: 0 };
 
-    const filesToPush: { path: string; content: string }[] = [];
-    for (const auth of storedAuth) {
-      const providerConfig = AUTH_PROVIDERS.find(
-        (p) => p.name === auth.provider,
-      );
-      if (!providerConfig) continue;
-      filesToPush.push({ path: providerConfig.path, content: auth.content });
-      synced++;
-    }
+    const { files, synced } = this.getAuthFilesToPush();
+    if (files.length === 0) return { synced: 0 };
 
-    if (filesToPush.length > 0) {
-      await this.pushAuthFilesToSandboxes(
-        runningSandboxes.map((s) => s.id),
-        filesToPush,
-      );
-    }
+    await this.pushAuthFilesToSandboxes(
+      runningSandboxes.map((s) => s.id),
+      files,
+    );
 
     log.info(
       { synced, sandboxes: runningSandboxes.length },
@@ -416,19 +404,77 @@ export class InternalService {
     return { synced };
   }
 
-  async syncConfigsToSandboxes(): Promise<{ synced: number }> {
-    const globalConfigs = this.configFileService.list({ scope: "global" });
-    const workspaceConfigs = this.configFileService.list({
-      scope: "workspace",
-    });
+  /**
+   * Push stored auth directly to a specific sandbox by ID.
+   * Used at spawn time when the sandbox isn't yet marked "running".
+   */
+  async syncAuthToSandbox(sandboxId: string): Promise<{ synced: number }> {
+    const { files, synced } = this.getAuthFilesToPush();
+    if (files.length === 0) return { synced: 0 };
 
+    await this.pushAuthFilesToSandboxes([sandboxId], files);
+    log.info({ synced, sandboxId }, "Auth pushed to sandbox");
+    return { synced };
+  }
+
+  private getAuthFilesToPush(): {
+    files: { path: string; content: string }[];
+    synced: number;
+  } {
+    const storedAuth = this.sharedAuthRepository.list();
+    const files: { path: string; content: string }[] = [];
+    let synced = 0;
+
+    for (const auth of storedAuth) {
+      const providerConfig = AUTH_PROVIDERS.find(
+        (p) => p.name === auth.provider,
+      );
+      if (!providerConfig) continue;
+      files.push({ path: providerConfig.path, content: auth.content });
+      synced++;
+    }
+
+    return { files, synced };
+  }
+
+  async syncConfigsToSandboxes(): Promise<{ synced: number }> {
     const runningSandboxes = this.sandboxService
       .getAll()
       .filter((s) => s.status === "running");
     if (runningSandboxes.length === 0) return { synced: 0 };
 
+    const files = this.getConfigFilesToPush();
+    if (files.length === 0) return { synced: 0 };
+
+    await this.pushConfigFilesToSandboxes(
+      runningSandboxes.map((s) => s.id),
+      files,
+    );
+
+    log.info(
+      { synced: files.length, sandboxes: runningSandboxes.length },
+      "Config sync complete",
+    );
+    return { synced: files.length };
+  }
+
+  async syncConfigsToSandbox(sandboxId: string): Promise<{ synced: number }> {
+    const files = this.getConfigFilesToPush();
+    if (files.length === 0) return { synced: 0 };
+
+    await this.pushConfigFilesToSandboxes([sandboxId], files);
+    log.info({ synced: files.length, sandboxId }, "Configs pushed to sandbox");
+    return { synced: files.length };
+  }
+
+  private getConfigFilesToPush(): { path: string; content: string }[] {
+    const globalConfigs = this.configFileService.list({ scope: "global" });
+    const workspaceConfigs = this.configFileService.list({
+      scope: "workspace",
+    });
+
     const allConfigs = [...globalConfigs, ...workspaceConfigs];
-    const filesToPush: { path: string; content: string }[] = [];
+    const files: { path: string; content: string }[] = [];
 
     for (const cfg of allConfigs) {
       const vmPath = this.getVmPathForConfig(cfg.path);
@@ -436,21 +482,10 @@ export class InternalService {
         log.debug({ path: cfg.path }, "No VM path mapping found for config");
         continue;
       }
-      filesToPush.push({ path: vmPath, content: cfg.content });
+      files.push({ path: vmPath, content: cfg.content });
     }
 
-    if (filesToPush.length === 0) return { synced: 0 };
-
-    await this.pushConfigFilesToSandboxes(
-      runningSandboxes.map((s) => s.id),
-      filesToPush,
-    );
-
-    log.info(
-      { synced: filesToPush.length, sandboxes: runningSandboxes.length },
-      "Config sync complete",
-    );
-    return { synced: filesToPush.length };
+    return files;
   }
 
   private async pushConfigFilesToSandboxes(
@@ -459,7 +494,7 @@ export class InternalService {
   ): Promise<void> {
     const commands = files.map((file, i) => ({
       id: `config-${i}`,
-      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'CONFIGEOF'\n${file.content}\nCONFIGEOF\nmv '${file.path}.tmp' '${file.path}'`,
+      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'CONFIGEOF'\n${file.content}\nCONFIGEOF\nmv '${file.path}.tmp' '${file.path}' && chown dev:dev '${file.path}' && chown dev:dev "$(dirname '${file.path}')"`,
       timeout: 5000,
     }));
 
@@ -548,7 +583,7 @@ export class InternalService {
   ): Promise<void> {
     const commands = files.map((file, i) => ({
       id: `registry-${i}`,
-      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'REGISTRYEOF'\n${file.content}\nREGISTRYEOF\nmv '${file.path}.tmp' '${file.path}'`,
+      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'REGISTRYEOF'\n${file.content}\nREGISTRYEOF\nmv '${file.path}.tmp' '${file.path}' && chown dev:dev '${file.path}' && chown dev:dev "$(dirname '${file.path}')"`,
       timeout: 5000,
     }));
 
@@ -573,14 +608,11 @@ export class InternalService {
   }
 
   private getVmPathForConfig(configPath: string): string | null {
-    if (configPath.includes("opencode")) {
-      if (configPath.includes("opencode.json")) return VM_PATHS.opencodeConfig;
-      if (configPath.includes("oh-my-opencode")) return VM_PATHS.opencodeOhMy;
-      if (configPath.includes("antigravity"))
-        return VM_PATHS.antigravityAccounts;
+    if (configPath.startsWith("~/")) {
+      return `/home/dev/${configPath.slice(2)}`;
     }
-    if (configPath.includes("vscode") || configPath.includes("code-server")) {
-      return VM_PATHS.vscodeSettings;
+    if (configPath.startsWith("/")) {
+      return configPath;
     }
     return null;
   }
