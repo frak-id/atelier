@@ -1,5 +1,7 @@
 import { AUTH_PROVIDERS, VM_PATHS } from "@frak-sandbox/shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
+import { RegistryService } from "../../infrastructure/registry/index.ts";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxService } from "../sandbox/sandbox.service.ts";
@@ -472,6 +474,100 @@ export class InternalService {
       log.warn(
         { failures: failures.length, total: results.length },
         "Some config pushes to sandboxes failed",
+      );
+    }
+  }
+
+  async syncRegistryToSandboxes(enabled: boolean): Promise<{ synced: number }> {
+    const runningSandboxes = this.sandboxService
+      .getAll()
+      .filter((s) => s.status === "running");
+    if (runningSandboxes.length === 0) return { synced: 0 };
+
+    const sandboxIds = runningSandboxes.map((s) => s.id);
+
+    if (enabled) {
+      const registryUrl = RegistryService.getRegistryUrl();
+      const bridgeIp = config.network.bridgeIp;
+
+      const files = [
+        {
+          path: "/etc/profile.d/registry.sh",
+          content: `export NPM_CONFIG_REGISTRY="${registryUrl}"`,
+        },
+        {
+          path: "/etc/npmrc",
+          content: `registry=${registryUrl}`,
+        },
+        {
+          path: "/home/dev/.bunfig.toml",
+          content: `[install]\nregistry = "${registryUrl}"`,
+        },
+        {
+          path: "/home/dev/.yarnrc.yml",
+          content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${bridgeIp}"`,
+        },
+      ];
+
+      await this.pushRegistryFilesToSandboxes(sandboxIds, files);
+    } else {
+      const commands = [
+        {
+          id: "registry-remove",
+          command:
+            "rm -f /etc/profile.d/registry.sh /etc/npmrc /home/dev/.bunfig.toml /home/dev/.yarnrc.yml",
+          timeout: 5000,
+        },
+      ];
+
+      const results = await Promise.allSettled(
+        sandboxIds.map((sandboxId) =>
+          this.agentClient.batchExec(sandboxId, commands, { timeout: 10000 }),
+        ),
+      );
+
+      const failures = results.filter((r) => r.status === "rejected");
+      if (failures.length > 0) {
+        log.warn(
+          { failures: failures.length, total: results.length },
+          "Some registry config removals failed",
+        );
+      }
+    }
+
+    log.info(
+      { enabled, sandboxes: sandboxIds.length },
+      "Registry sync to sandboxes complete",
+    );
+    return { synced: sandboxIds.length };
+  }
+
+  private async pushRegistryFilesToSandboxes(
+    sandboxIds: string[],
+    files: { path: string; content: string }[],
+  ): Promise<void> {
+    const commands = files.map((file, i) => ({
+      id: `registry-${i}`,
+      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'REGISTRYEOF'\n${file.content}\nREGISTRYEOF\nmv '${file.path}.tmp' '${file.path}'`,
+      timeout: 5000,
+    }));
+
+    const results = await Promise.allSettled(
+      sandboxIds.map((sandboxId) =>
+        this.agentClient.batchExec(sandboxId, commands, { timeout: 10000 }),
+      ),
+    );
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      log.warn(
+        { failures: failures.length, total: results.length },
+        "Some registry pushes to sandboxes failed",
+      );
+    } else {
+      log.debug(
+        { sandboxes: sandboxIds.length, files: files.length },
+        "Registry config pushed to sandboxes",
       );
     }
   }

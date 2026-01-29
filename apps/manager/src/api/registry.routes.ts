@@ -1,5 +1,9 @@
 import { Elysia, t } from "elysia";
+import { internalService } from "../container.ts";
 import { RegistryService } from "../infrastructure/registry/index.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
+
+const log = createChildLogger("registry-routes");
 
 const RegistryStatusSchema = t.Object({
   enabled: t.Boolean(),
@@ -32,6 +36,9 @@ export const registryRoutes = new Elysia({ prefix: "/registry" })
     "/enable",
     async () => {
       await RegistryService.start();
+      internalService.syncRegistryToSandboxes(true).catch((error) => {
+        log.error({ error }, "Failed to sync registry to sandboxes on enable");
+      });
       return { message: "Registry cache enabled" };
     },
     {
@@ -46,6 +53,9 @@ export const registryRoutes = new Elysia({ prefix: "/registry" })
     "/disable",
     async () => {
       await RegistryService.stop();
+      internalService.syncRegistryToSandboxes(false).catch((error) => {
+        log.error({ error }, "Failed to sync registry to sandboxes on disable");
+      });
       return { message: "Registry cache disabled" };
     },
     {

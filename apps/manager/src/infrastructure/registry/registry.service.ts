@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import type { Server } from "node:http";
 import path from "node:path";
 import { REGISTRY } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
@@ -7,10 +8,15 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { appPaths } from "../../shared/lib/paths.ts";
 import { CronService } from "../cron/index.ts";
-import { installPackage, isPackageInstalled } from "./bun-install.ts";
 
 const log = createChildLogger("registry");
 
+/**
+ * Verdaccio must run unbundled — its plugins (htpasswd, audit, logger-prettify)
+ * are loaded via dynamic require() which breaks in Bun's bundled output.
+ * We install it in a dedicated directory and dynamically import runServer().
+ */
+const VERDACCIO_DIR = "/var/lib/sandbox/registry/packages";
 const VERDACCIO_PKG = "verdaccio";
 const VERDACCIO_VERSION = "6.2.4";
 
@@ -29,12 +35,12 @@ const DEFAULT_SETTINGS: RegistrySettings = {
 };
 
 interface RegistryState {
-  process: ReturnType<typeof Bun.spawn> | null;
+  server: Server | null;
   settings: RegistrySettings;
 }
 
 const state: RegistryState = {
-  process: null,
+  server: null,
   settings: { ...DEFAULT_SETTINGS },
 };
 
@@ -54,39 +60,86 @@ function saveSettings(settings: RegistrySettings): void {
   writeFileSync(filePath, JSON.stringify(settings, null, 2));
 }
 
-function generateVerdaccioConfig(settings: RegistrySettings): string {
-  return `storage: ${settings.storagePath}
+function buildVerdaccioConfig(settings: RegistrySettings) {
+  return {
+    storage: settings.storagePath,
+    self_path: path.dirname(settings.storagePath),
+    configPath: path.dirname(settings.storagePath),
+    auth: {
+      htpasswd: {
+        file: path.join(settings.storagePath, "htpasswd"),
+        max_users: 1000,
+      },
+    },
+    uplinks: {
+      npmjs: {
+        url: "https://registry.npmjs.org/",
+        cache: true,
+        maxage: "30m",
+        fail_timeout: "5m",
+        timeout: "30s",
+        strict_ssl: false,
+      },
+    },
+    packages: {
+      "@*/*": { access: "$all", proxy: "npmjs" },
+      "**": { access: "$all", proxy: "npmjs" },
+    },
+    server: { keepAliveTimeout: 60 },
+    security: {
+      api: { legacy: true },
+      web: { sign: {}, verify: {} },
+    },
+    middlewares: {
+      audit: { enabled: true },
+    },
+    log: { type: "stdout", format: "pretty", level: "warn" },
+    max_body_size: "500mb",
+  };
+}
 
-uplinks:
-  npmjs:
-    url: https://registry.npmjs.org/
-    cache: true
-    maxage: 30m
-    fail_timeout: 5m
-    timeout: 30s
+async function ensureVerdaccioInstalled(): Promise<void> {
+  const modulePath = path.join(VERDACCIO_DIR, "node_modules", VERDACCIO_PKG);
+  const pkgJsonPath = path.join(VERDACCIO_DIR, "package.json");
 
-packages:
-  '@*/*':
-    access: $all
-    proxy: npmjs
+  if (existsSync(modulePath)) {
+    try {
+      const deps = JSON.parse(readFileSync(pkgJsonPath, "utf-8")).dependencies;
+      if (deps?.[VERDACCIO_PKG] === VERDACCIO_VERSION) return;
+    } catch {}
+  }
 
-  '**':
-    access: $all
-    proxy: npmjs
+  await mkdir(VERDACCIO_DIR, { recursive: true });
+  if (!existsSync(pkgJsonPath)) {
+    writeFileSync(
+      pkgJsonPath,
+      JSON.stringify({ name: "frak-registry-cache", private: true }, null, 2),
+    );
+  }
 
-server:
-  keepAliveTimeout: 60
+  log.info(
+    { pkg: VERDACCIO_PKG, version: VERDACCIO_VERSION },
+    "Installing Verdaccio",
+  );
 
-middlewares:
-  audit:
-    enabled: true
+  const result =
+    await $`bun add --force --exact --cwd ${VERDACCIO_DIR} ${`${VERDACCIO_PKG}@${VERDACCIO_VERSION}`}`
+      .quiet()
+      .nothrow();
 
-log: { type: stdout, format: pretty, level: warn }
+  if (result.exitCode !== 0) {
+    throw new Error(`Failed to install verdaccio: ${result.stderr.toString()}`);
+  }
 
-max_body_size: 500mb
+  log.info("Verdaccio installed");
+}
 
-listen: 0.0.0.0:${REGISTRY.PORT}
-`;
+async function importRunServer(): Promise<
+  (config: unknown) => Promise<{ listen: Server["listen"] }>
+> {
+  const verdaccioPath = path.join(VERDACCIO_DIR, "node_modules", VERDACCIO_PKG);
+  const mod = await import(verdaccioPath);
+  return mod.runServer;
 }
 
 async function runEviction(settings: RegistrySettings): Promise<number> {
@@ -138,53 +191,36 @@ export const RegistryService = {
       return;
     }
 
-    if (state.process) {
+    if (state.server) {
       log.warn("Registry already running");
       return;
     }
 
-    if (!isPackageInstalled(VERDACCIO_PKG, VERDACCIO_VERSION)) {
-      log.info("Verdaccio not installed, installing...");
-      await installPackage(VERDACCIO_PKG, VERDACCIO_VERSION);
-    }
-
+    await ensureVerdaccioInstalled();
     await mkdir(state.settings.storagePath, { recursive: true });
 
-    const configYaml = generateVerdaccioConfig(state.settings);
-    await mkdir(path.dirname(REGISTRY.CONFIG_PATH), { recursive: true });
-    writeFileSync(REGISTRY.CONFIG_PATH, configYaml);
+    const verdaccioConfig = buildVerdaccioConfig(state.settings);
+    const runServer = await importRunServer();
 
-    const verdaccioBin = path.join(
-      "/var/lib/sandbox/registry/packages/node_modules",
-      VERDACCIO_PKG,
-      "bin",
-      "verdaccio",
+    log.info(
+      { port: REGISTRY.PORT },
+      "Starting Verdaccio via programmatic API",
     );
 
-    if (!existsSync(verdaccioBin)) {
-      throw new Error(
-        `Verdaccio binary not found at ${verdaccioBin}. Installation may have failed.`,
-      );
-    }
+    const app = await runServer(verdaccioConfig);
 
-    log.info({ bin: verdaccioBin, port: REGISTRY.PORT }, "Starting Verdaccio");
-
-    state.process = Bun.spawn(
-      ["bun", verdaccioBin, "--config", REGISTRY.CONFIG_PATH],
-      {
-        cwd: path.dirname(REGISTRY.CONFIG_PATH),
-        stdout: "pipe",
-        stderr: "pipe",
-        env: {
-          ...process.env,
-          VERDACCIO_APPDIR: path.dirname(REGISTRY.CONFIG_PATH),
-        },
-      },
-    );
-
-    state.process.exited.then((code) => {
-      log.warn({ exitCode: code }, "Verdaccio process exited");
-      state.process = null;
+    await new Promise<void>((resolve, reject) => {
+      const server = app.listen(REGISTRY.PORT, "0.0.0.0", () => {
+        log.info(
+          { port: REGISTRY.PORT, host: "0.0.0.0" },
+          "Verdaccio listening",
+        );
+        resolve();
+      });
+      server.on("error", (err: Error) => {
+        reject(err);
+      });
+      state.server = server;
     });
 
     const healthy = await this.waitForHealthy(10000);
@@ -218,9 +254,9 @@ export const RegistryService = {
   },
 
   kill(): void {
-    if (state.process) {
-      state.process.kill();
-      state.process = null;
+    if (state.server) {
+      state.server.close();
+      state.server = null;
     }
   },
 
@@ -239,7 +275,7 @@ export const RegistryService = {
   },
 
   isRunning(): boolean {
-    return state.process !== null;
+    return state.server !== null;
   },
 
   async checkHealth(): Promise<boolean> {
@@ -257,13 +293,13 @@ export const RegistryService = {
   async getPackageCount(): Promise<number> {
     if (config.isMock()) return state.settings.enabled ? 42 : 0;
     try {
-      const res = await fetch(
-        `http://127.0.0.1:${REGISTRY.PORT}/-/verdaccio/data/packages`,
-        { signal: AbortSignal.timeout(5000) },
-      );
-      if (!res.ok) return 0;
-      const packages = (await res.json()) as unknown[];
-      return packages.length;
+      const storagePath = state.settings.storagePath;
+      if (!existsSync(storagePath)) return 0;
+      const result =
+        await $`find ${storagePath} -maxdepth 2 -name "package.json" -not -path "*/node_modules/*" 2>/dev/null | wc -l`
+          .quiet()
+          .nothrow();
+      return Number.parseInt(result.stdout.toString().trim(), 10) || 0;
     } catch {
       return 0;
     }
@@ -297,8 +333,7 @@ export const RegistryService = {
         Number.parseInt(duResult.stdout.toString().trim(), 10) || 0;
       const totalBytes =
         Number.parseInt(dfResult.stdout.toString().trim(), 10) || 0;
-      const usedPercent =
-        totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
+      const usedPercent = totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
 
       return { usedBytes, totalBytes, usedPercent };
     } catch (err) {

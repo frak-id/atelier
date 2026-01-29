@@ -91,7 +91,6 @@ export const DEFAULTS = {
 export const REGISTRY = {
   PORT: 4873,
   STORAGE_DIR: "/var/lib/sandbox/registry/storage",
-  CONFIG_PATH: "/var/lib/sandbox/registry/config.yaml",
   EVICTION_DAYS: 14,
 } as const;
 
