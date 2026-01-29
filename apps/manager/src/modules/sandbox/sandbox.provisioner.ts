@@ -95,7 +95,6 @@ ${dnsLines}
       repos,
       createdAt: new Date().toISOString(),
       network: {
-        nfsHost: config.network.bridgeIp,
         dashboardDomain: config.domains.dashboard,
         managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
       },

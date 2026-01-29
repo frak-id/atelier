@@ -64,8 +64,8 @@ const app = new Elysia()
       logger.info({ expiredCount }, "Startup: expired SSH keys cleaned up");
     }
 
-    internalService.syncAuthToNfs().catch(() => {});
-    internalService.startAuthNfsWatcher();
+    internalService.syncAuthToSandboxes().catch(() => {});
+    internalService.startAuthWatcher();
 
     const allSandboxes = sandboxService.getAll();
     for (const sandbox of allSandboxes) {
@@ -138,7 +138,7 @@ const app = new Elysia()
           { name: "system", description: "System monitoring and management" },
           {
             name: "storage",
-            description: "Shared storage management (NFS, binaries, cache)",
+            description: "Shared storage management (binaries)",
           },
           { name: "images", description: "Base image management" },
           { name: "github", description: "GitHub integration" },

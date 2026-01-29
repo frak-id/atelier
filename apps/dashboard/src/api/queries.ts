@@ -21,7 +21,6 @@ export const queryKeys = {
   sharedStorage: {
     all: ["sharedStorage"] as const,
     binaries: ["sharedStorage", "binaries"] as const,
-    cache: ["sharedStorage", "cache"] as const,
   },
   tasks: {
     all: ["tasks"] as const,
@@ -687,11 +686,11 @@ export function useDeleteConfigFile() {
   });
 }
 
-export function useSyncConfigsToNfs() {
+export function useSyncConfigsToSandboxes() {
   return useMutation({
-    mutationKey: ["configFiles", "syncToNfs"],
+    mutationKey: ["configFiles", "syncToSandboxes"],
     mutationFn: async () =>
-      unwrap(await api.api["config-files"]["sync-to-nfs"].post()),
+      unwrap(await api.api["config-files"]["sync-to-sandboxes"].post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
@@ -822,17 +821,6 @@ export function useRemoveBinary() {
     mutationKey: ["sharedStorage", "removeBinary"],
     mutationFn: async (id: string) =>
       unwrap(await api.api.storage.binaries({ id }).delete()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
-    },
-  });
-}
-
-export function usePurgeCache() {
-  return useMutation({
-    mutationKey: ["sharedStorage", "purgeCache"],
-    mutationFn: async (folder: string) =>
-      unwrap(await api.api.storage.cache({ folder }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
     },

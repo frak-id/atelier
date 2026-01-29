@@ -24,7 +24,7 @@ import {
   useCreateConfigFile,
   useDeleteConfigFile,
   useRestartSandbox,
-  useSyncConfigsToNfs,
+  useSyncConfigsToSandboxes,
   useUpdateConfigFile,
   useUpdateGlobalSessionTemplates,
   useUpdateSharedAuth,
@@ -86,7 +86,7 @@ function SettingsPage() {
   const createMutation = useCreateConfigFile();
   const updateMutation = useUpdateConfigFile();
   const deleteMutation = useDeleteConfigFile();
-  const syncMutation = useSyncConfigsToNfs();
+  const syncMutation = useSyncConfigsToSandboxes();
   const restartMutation = useRestartSandbox();
 
   const runningSandboxes = sandboxes ?? [];
@@ -145,7 +145,7 @@ function SettingsPage() {
             ) : (
               <RefreshCw className="h-4 w-4 mr-2" />
             )}
-            Sync to NFS
+            Sync to Sandboxes
           </Button>
         </div>
       </div>
@@ -419,7 +419,7 @@ function RestartSandboxesDialog({
         <DialogHeader>
           <DialogTitle>Config Updated - Restart Sandboxes?</DialogTitle>
           <DialogDescription>
-            Config files have been synced to NFS. Running sandboxes need to be
+            Config files have been synced. Running sandboxes need to be
             restarted to pick up the changes.
           </DialogDescription>
         </DialogHeader>

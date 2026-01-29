@@ -50,12 +50,16 @@ const sshKeyService = new SshKeyService(sshKeyRepository);
 const taskService = new TaskService(taskRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = new SandboxService(sandboxRepository);
+
+const agentClient = new AgentClient();
+
 const internalService = new InternalService(
   sharedAuthRepository,
   configFileService,
+  agentClient,
+  sandboxService,
 );
 
-const agentClient = new AgentClient();
 const agentOperations = new AgentOperations(agentClient);
 
 const sessionTemplateService = new SessionTemplateService(

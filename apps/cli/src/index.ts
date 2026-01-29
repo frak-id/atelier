@@ -5,7 +5,6 @@ import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
 import { installFirecracker } from "./commands/install-firecracker";
 import { setupNetwork } from "./commands/setup-network";
-import { setupNfs } from "./commands/setup-nfs";
 import { setupSshProxy } from "./commands/setup-ssh-proxy";
 import { setupStorage } from "./commands/setup-storage";
 import { isRoot } from "./lib/shell";
@@ -36,11 +35,6 @@ const COMMANDS = {
     label: "Setup Storage",
     description: "Configure LVM thin provisioning",
     handler: setupStorage,
-  },
-  nfs: {
-    label: "Setup NFS",
-    description: "Configure NFS server for shared package cache",
-    handler: setupNfs,
   },
   "ssh-proxy": {
     label: "Setup SSH Proxy",
@@ -90,22 +84,6 @@ async function runFullSetup() {
     p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
   }
 
-  const setupNfsNow = await p.confirm({
-    message: "Setup NFS server for shared package cache?",
-    initialValue: true,
-  });
-
-  if (p.isCancel(setupNfsNow)) {
-    p.cancel("Setup cancelled");
-    process.exit(0);
-  }
-
-  if (setupNfsNow) {
-    await setupNfs();
-  } else {
-    p.log.info("Skipping NFS setup. Run 'frak-sandbox nfs' later.");
-  }
-
   p.log.success("Server setup complete!");
   p.note(
     `Server is ready. Next:
@@ -147,7 +125,6 @@ PROVISIONING (one-time setup):
   firecracker     Download Firecracker, kernel, and rootfs
   network         Configure persistent bridge for VM networking
   storage         Configure LVM thin provisioning
-  nfs             Configure NFS server for shared package cache
   ssh-proxy       Install and configure sshpiper for sandbox SSH access
 
 SERVICE CONTROL:

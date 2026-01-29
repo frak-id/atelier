@@ -52,7 +52,6 @@ export interface SandboxConfig {
   repos: Array<{ clonePath: string; branch: string }>;
   createdAt: string;
   network: {
-    nfsHost: string;
     dashboardDomain: string;
     managerInternalUrl: string;
   };

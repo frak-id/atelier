@@ -9,10 +9,6 @@ import {
   BinaryInfoSchema,
   BinaryInstallResultSchema,
   BinaryListSchema,
-  CacheFolderParamSchema,
-  CacheInfoSchema,
-  CachePurgeResultSchema,
-  NfsStatusSchema,
   SharedStorageStatusSchema,
 } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
@@ -25,34 +21,18 @@ export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
   .get(
     "/",
     async () => {
-      const [nfs, binaries, cache] = await Promise.all([
-        SharedStorageService.getNfsStatus(),
-        SharedStorageService.listBinaries(),
-        SharedStorageService.getCacheInfo(),
-      ]);
-      return { nfs, binaries, cache };
+      const binaries = await SharedStorageService.listBinaries();
+      return { binaries };
     },
     {
       response: SharedStorageStatusSchema,
       detail: {
         tags: ["storage"],
-        summary: "Get full shared storage status",
+        summary: "Get shared storage status",
       },
     },
   )
-  .get(
-    "/nfs",
-    async () => {
-      return SharedStorageService.getNfsStatus();
-    },
-    {
-      response: NfsStatusSchema,
-      detail: {
-        tags: ["storage"],
-        summary: "Get NFS server status",
-      },
-    },
-  )
+
   .get(
     "/binaries",
     async () => {
@@ -118,33 +98,6 @@ export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
       detail: {
         tags: ["storage"],
         summary: "Remove an installed shared binary",
-      },
-    },
-  )
-  .get(
-    "/cache",
-    async () => {
-      return SharedStorageService.getCacheInfo();
-    },
-    {
-      response: CacheInfoSchema,
-      detail: {
-        tags: ["storage"],
-        summary: "Get package cache information",
-      },
-    },
-  )
-  .delete(
-    "/cache/:folder",
-    async ({ params }) => {
-      return SharedStorageService.purgeCache(params.folder);
-    },
-    {
-      params: CacheFolderParamSchema,
-      response: CachePurgeResultSchema,
-      detail: {
-        tags: ["storage"],
-        summary: "Purge a specific cache folder",
       },
     },
   );

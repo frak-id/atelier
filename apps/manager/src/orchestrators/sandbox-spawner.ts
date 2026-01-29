@@ -1,3 +1,4 @@
+import { unlink } from "node:fs/promises";
 import { DEFAULTS, FIRECRACKER } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import { nanoid } from "nanoid";
@@ -311,11 +312,15 @@ class SpawnContext {
   private async launchFirecracker(): Promise<void> {
     if (!this.paths) throw new Error("Sandbox paths not initialized");
 
-    await ensureDir(config.paths.SOCKET_DIR);
-    await ensureDir(config.paths.LOG_DIR);
+    await Promise.all([
+      ensureDir(config.paths.SOCKET_DIR),
+      ensureDir(config.paths.LOG_DIR),
+    ]);
 
-    await $`rm -f ${this.paths.socket}`.quiet().nothrow();
-    await $`touch ${this.paths.log}`.quiet();
+    await Promise.all([
+      unlink(this.paths.socket).catch(() => {}),
+      Bun.write(this.paths.log, ""),
+    ]);
 
     const proc = Bun.spawn(
       [
@@ -334,8 +339,7 @@ class SpawnContext {
     await Bun.write(this.paths.pid, String(proc.pid));
     await Bun.sleep(50);
 
-    const alive = await $`kill -0 ${proc.pid}`.quiet().nothrow();
-    if (alive.exitCode !== 0) {
+    if (!proc.pid || proc.exitCode !== null) {
       const logContent = await Bun.file(this.paths.log)
         .text()
         .catch(() => "");
@@ -412,14 +416,14 @@ class SpawnContext {
     }
 
     // FC snapshot restore requires drive/vsock paths to match the original.
-    // The new sandbox has different paths, so we symlink the originals.
-    // Drive: original LVM path → new LVM volume (FC opens the original path)
-    // Vsock: new path → original UDS (FC creates UDS at original path, agent client reads new path)
+    // Drive: symlink original LVM path → new LVM volume
+    // Vsock: FC recreates UDS at original path; we symlink new path to it after restore
     const originalPaths = getSandboxPaths(
       prebuildSandboxId,
       `/dev/sandbox-vg/sandbox-${prebuildSandboxId}`,
     );
     await $`ln -sf ${this.paths.overlay} ${originalPaths.overlay}`.quiet();
+    await $`rm -f ${originalPaths.vsock}`.quiet().nothrow();
 
     log.info({ sandboxId: this.sandboxId }, "Restoring from VM snapshot");
     await this.client.loadSnapshot(
@@ -434,11 +438,67 @@ class SpawnContext {
 
     await this.waitForBoot();
 
-    // FC created vsock UDS at original path; symlink new path to it
+    // FC creates vsock UDS at the original path after resume — poll until it exists
+    const vsockDeadline = Date.now() + 5000;
+    while (Date.now() < vsockDeadline) {
+      const check = await $`test -S ${originalPaths.vsock}`.quiet().nothrow();
+      if (check.exitCode === 0) break;
+      await Bun.sleep(100);
+    }
+
     await $`ln -sf ${originalPaths.vsock} ${this.paths.vsock}`.quiet();
     await $`rm -f ${originalPaths.overlay}`.quiet().nothrow();
 
+    log.info(
+      { sandboxId: this.sandboxId },
+      "Vsock symlink established after snapshot restore",
+    );
+
+    // Agent vsock listener survived the snapshot — connect and reconfigure guest
+    await this.reconfigureRestoredGuest();
+
     log.info({ sandboxId: this.sandboxId }, "VM restored from snapshot");
+  }
+
+  private async reconfigureRestoredGuest(): Promise<void> {
+    if (!this.network || !this.workspace) {
+      throw new Error("Network or workspace not initialized");
+    }
+
+    const newIp = this.network.ipAddress;
+    const gateway = this.network.gateway;
+
+    await this.deps.agentClient.exec(
+      this.sandboxId,
+      `ip addr flush dev eth0 && ip addr add ${newIp}/24 dev eth0 && ip link set eth0 up && ip route replace default via ${gateway} dev eth0`,
+      { timeout: 5000 },
+    );
+
+    log.info(
+      { sandboxId: this.sandboxId, newIp },
+      "Guest network reconfigured",
+    );
+
+    const workspaceDir = this.workspace.config.repos?.[0]?.clonePath
+      ? `/home/dev${this.workspace.config.repos[0].clonePath}`
+      : "/home/dev/workspace";
+    const dashboardDomain =
+      config.domains?.dashboard ?? "sandbox-dash.nivelais.com";
+    const opencodePort = config.raw.services.opencode.port;
+    const vscodePort = config.raw.services.vscode.port;
+    const terminalPort = config.raw.services.terminal.port;
+
+    const servicesCmd = [
+      `setsid su - dev -c "code-server --bind-addr 0.0.0.0:${vscodePort} --auth none --disable-telemetry ${workspaceDir} > /var/log/sandbox/code-server.log 2>&1" </dev/null &>/dev/null &`,
+      `setsid su - dev -c "cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${opencodePort} --cors https://${dashboardDomain} > /var/log/sandbox/opencode.log 2>&1" </dev/null &>/dev/null &`,
+      `setsid ttyd -p ${terminalPort} -W -t fontSize=14 -t fontFamily=monospace su - dev </dev/null > /var/log/sandbox/ttyd.log 2>&1 &`,
+    ].join("\n");
+
+    await this.deps.agentClient.exec(this.sandboxId, servicesCmd, {
+      timeout: 5000,
+    });
+
+    log.info({ sandboxId: this.sandboxId }, "Post-restore setup complete");
   }
 
   private async waitForBoot(timeoutMs = 30000): Promise<void> {
@@ -482,47 +542,10 @@ class SpawnContext {
       return;
     }
 
-    if (this.hasVmSnapshot) {
-      await this.reconfigureGuestNetwork();
-    }
-
     await this.expandFilesystem();
 
     if (this.needsRepoClone()) {
       await this.cloneRepositories();
-    }
-  }
-
-  private async reconfigureGuestNetwork(): Promise<void> {
-    if (!this.network) return;
-
-    const script = [
-      "ip addr flush dev eth0",
-      `ip addr add ${this.network.ipAddress}/24 dev eth0`,
-      "ip link set eth0 up",
-      `ip route replace default via ${this.network.gateway} dev eth0`,
-    ].join(" && ");
-
-    try {
-      const result = await this.deps.agentClient.exec(this.sandboxId, script, {
-        timeout: 10000,
-      });
-      if (result.exitCode !== 0) {
-        log.warn(
-          { sandboxId: this.sandboxId, stderr: result.stderr },
-          "Failed to reconfigure guest network",
-        );
-      } else {
-        log.info(
-          { sandboxId: this.sandboxId, ip: this.network.ipAddress },
-          "Guest network reconfigured after snapshot restore",
-        );
-      }
-    } catch (error) {
-      log.warn(
-        { sandboxId: this.sandboxId, error },
-        "Guest network reconfiguration failed",
-      );
     }
   }
 

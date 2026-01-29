@@ -88,23 +88,10 @@ export const DEFAULTS = {
   VOLUME_SIZE_GB: 50,
 } as const;
 
-export const NFS = {
-  CACHE_EXPORT_DIR: "/var/lib/sandbox/shared-cache",
-  BINARIES_EXPORT_DIR: "/var/lib/sandbox/shared-binaries",
-  CONFIGS_EXPORT_DIR: "/var/lib/sandbox/shared-configs",
-  AUTH_EXPORT_DIR: "/var/lib/sandbox/shared-auth",
-  CACHE_GUEST_MOUNT: "/mnt/cache",
-  BINARIES_GUEST_MOUNT: "/opt/shared",
-  CONFIGS_GUEST_MOUNT: "/mnt/configs",
-  AUTH_GUEST_MOUNT: "/mnt/auth",
-  CACHE_DIRS: {
-    BUN: "bun",
-    NPM: "npm",
-    PNPM: "pnpm",
-    YARN: "yarn",
-    PIP: "pip",
-  },
-  /** Config directories structure on NFS */
+export const SHARED_STORAGE = {
+  BINARIES_DIR: "/var/lib/sandbox/shared-binaries",
+  AUTH_DIR: "/var/lib/sandbox/shared-auth",
+  CONFIGS_DIR: "/var/lib/sandbox/shared-configs",
   CONFIG_DIRS: {
     GLOBAL: "global",
     WORKSPACES: "workspaces",

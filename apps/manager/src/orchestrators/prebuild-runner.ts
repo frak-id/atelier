@@ -75,12 +75,8 @@ export class PrebuildRunner {
       });
 
       sandboxId = sandbox.id;
-      const ipAddress = sandbox.runtime.ipAddress;
 
-      log.info(
-        { prebuildSandboxId: sandbox.id, ip: ipAddress },
-        "Prebuild sandbox spawned",
-      );
+      log.info({ prebuildSandboxId: sandbox.id }, "Prebuild sandbox spawned");
 
       const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
         timeout: AGENT_READY_TIMEOUT,
@@ -95,9 +91,9 @@ export class PrebuildRunner {
         sandbox.id,
         workspace,
       );
-      await this.warmupOpencode(sandbox.id, ipAddress, workspace.id);
-      await this.deps.agentClient.exec(sandbox.id, "sync");
+      await this.warmupOpencode(sandbox.id, workspace.id);
 
+      await this.prepareForSnapshot(sandbox.id);
       await this.createVmSnapshot(workspaceId, sandbox.id);
       await StorageService.createPrebuild(workspaceId, sandbox.id);
 
@@ -331,9 +327,30 @@ export class PrebuildRunner {
    * Opencode installs plugin dependencies (like jose via @openauthjs/openauth) on first boot.
    * We start it briefly here so those packages are cached in the prebuild snapshot.
    */
+  /**
+   * Prepare VM for clean snapshot by stopping services.
+   * The agent survives the snapshot (vsock listener persists across FC snapshots).
+   * Services are restored post-restore by the spawner.
+   */
+  private async prepareForSnapshot(sandboxId: string): Promise<void> {
+    log.info({ sandboxId }, "Preparing VM for snapshot");
+
+    // Kill services that hold state (opencode, code-server, ttyd)
+    // Agent is NOT killed — its vsock listener survives snapshot restore
+    await this.deps.agentClient.exec(
+      sandboxId,
+      "pkill -f 'opencode serve'; pkill -f code-server; pkill -f ttyd",
+      { timeout: 5000 },
+    );
+
+    // Flush filesystem buffers
+    await this.deps.agentClient.exec(sandboxId, "sync", { timeout: 5000 });
+
+    log.info({ sandboxId }, "VM prepared for snapshot");
+  }
+
   private async warmupOpencode(
     sandboxId: string,
-    _ipAddress: string,
     workspaceId: string,
   ): Promise<void> {
     log.info({ workspaceId }, "Warming up opencode server");
