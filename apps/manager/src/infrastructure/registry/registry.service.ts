@@ -85,7 +85,7 @@ log: { type: stdout, format: pretty, level: warn }
 
 max_body_size: 500mb
 
-listen: 127.0.0.1:${REGISTRY.PORT}
+listen: 0.0.0.0:${REGISTRY.PORT}
 `;
 }
 
@@ -170,7 +170,7 @@ export const RegistryService = {
     log.info({ bin: verdaccioBin, port: REGISTRY.PORT }, "Starting Verdaccio");
 
     state.process = Bun.spawn(
-      ["node", verdaccioBin, "--config", REGISTRY.CONFIG_PATH],
+      ["bun", verdaccioBin, "--config", REGISTRY.CONFIG_PATH],
       {
         cwd: path.dirname(REGISTRY.CONFIG_PATH),
         stdout: "pipe",
@@ -284,19 +284,23 @@ export const RegistryService = {
         : { usedBytes: 0, totalBytes: 0, usedPercent: 0 };
     }
     try {
-      const result =
-        await $`df -B1 ${state.settings.storagePath} 2>/dev/null | tail -1 | awk '{print $3, $2, $5}'`
+      const [duResult, dfResult] = await Promise.all([
+        $`du -sb ${state.settings.storagePath} 2>/dev/null | cut -f1`
           .quiet()
-          .nothrow();
-      const parts = result.stdout.toString().trim().split(/\s+/);
-      if (parts.length >= 3) {
-        const usedBytes = Number.parseInt(parts[0] ?? "0", 10);
-        const totalBytes = Number.parseInt(parts[1] ?? "0", 10);
-        const usedPercent = Number.parseFloat(
-          (parts[2] ?? "0").replace("%", ""),
-        );
-        return { usedBytes, totalBytes, usedPercent };
-      }
+          .nothrow(),
+        $`df -B1 ${state.settings.storagePath} 2>/dev/null | tail -1 | awk '{print $2}'`
+          .quiet()
+          .nothrow(),
+      ]);
+
+      const usedBytes =
+        Number.parseInt(duResult.stdout.toString().trim(), 10) || 0;
+      const totalBytes =
+        Number.parseInt(dfResult.stdout.toString().trim(), 10) || 0;
+      const usedPercent =
+        totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
+
+      return { usedBytes, totalBytes, usedPercent };
     } catch (err) {
       log.debug({ err }, "Failed to get disk stats");
     }
