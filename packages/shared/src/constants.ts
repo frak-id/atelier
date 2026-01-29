@@ -90,7 +90,6 @@ export const DEFAULTS = {
 
 export const SHARED_STORAGE = {
   BINARIES_DIR: "/var/lib/sandbox/shared-binaries",
-  AUTH_DIR: "/var/lib/sandbox/shared-auth",
   CONFIGS_DIR: "/var/lib/sandbox/shared-configs",
   CONFIG_DIRS: {
     GLOBAL: "global",

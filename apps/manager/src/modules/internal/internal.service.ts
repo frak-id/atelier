@@ -1,4 +1,3 @@
-import * as fs from "node:fs";
 import {
   AUTH_PROVIDERS,
   SHARED_STORAGE,
@@ -77,21 +76,11 @@ export class InternalService {
   ) {}
 
   startAuthWatcher(): void {
-    const dir = SHARED_STORAGE.AUTH_DIR;
-
-    if (!fs.existsSync(dir)) {
-      log.warn({ dir }, "Auth directory does not exist, skipping watcher");
-      return;
-    }
-
     this.authPollTimer = setInterval(() => {
       this.pollAuthFromSandboxes();
     }, AUTH_POLL_INTERVAL_MS);
 
-    log.info(
-      { dir, intervalMs: AUTH_POLL_INTERVAL_MS },
-      "Auth polling started",
-    );
+    log.info({ intervalMs: AUTH_POLL_INTERVAL_MS }, "Auth polling started");
   }
 
   stopAuthWatcher(): void {
@@ -242,7 +231,6 @@ export class InternalService {
     if (existing?.content === bestContent) return;
 
     this.sharedAuthRepository.upsert("opencode", bestContent, "sandbox");
-    await this.persistAuthToHostDir("opencode", bestContent);
     log.info(
       { keys: [...allKeys] },
       "Auth aggregated from sandboxes and stored in DB",
@@ -289,7 +277,6 @@ export class InternalService {
       newest.content,
       "sandbox",
     );
-    await this.persistAuthToHostDir(providerConfig.name, newest.content);
     log.info(
       { provider: providerConfig.name, source: newest.sandboxId },
       "Auth synced from sandbox to DB (last edit wins)",
@@ -307,21 +294,6 @@ export class InternalService {
     await this.pushAuthFilesToSandboxes(staleSandboxIds, [
       { path: providerConfig.path, content: newest.content },
     ]);
-  }
-
-  private async persistAuthToHostDir(
-    provider: string,
-    content: string,
-  ): Promise<void> {
-    const hostPath = `${SHARED_STORAGE.AUTH_DIR}/${provider}.json`;
-    try {
-      const tmpPath = `${hostPath}.tmp`;
-      await Bun.write(tmpPath, content);
-      await Bun.$`chown 1000:1000 ${tmpPath}`.quiet();
-      await Bun.$`mv ${tmpPath} ${hostPath}`.quiet();
-    } catch (error) {
-      log.error({ provider, error }, "Failed to persist auth to host dir");
-    }
   }
 
   private async pushAuthFilesToSandboxes(
@@ -416,10 +388,6 @@ export class InternalService {
   async syncAuthToSandboxes(): Promise<{ synced: number }> {
     const storedAuth = this.sharedAuthRepository.list();
     let synced = 0;
-
-    for (const auth of storedAuth) {
-      await this.persistAuthToHostDir(auth.provider, auth.content);
-    }
 
     const runningSandboxes = this.sandboxService
       .getAll()
