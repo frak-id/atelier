@@ -161,31 +161,6 @@ export const AgentMetricsSchema = t.Object({
 });
 export type AgentMetrics = Static<typeof AgentMetricsSchema>;
 
-export const DiscoveredConfigSchema = t.Object({
-  path: t.String(),
-  displayPath: t.String(),
-  category: t.Union([
-    t.Literal("opencode"),
-    t.Literal("vscode"),
-    t.Literal("other"),
-  ]),
-  exists: t.Boolean(),
-  size: t.Optional(t.Number()),
-});
-export type DiscoveredConfig = Static<typeof DiscoveredConfigSchema>;
-
-export const DiscoverConfigsResponseSchema = t.Object({
-  configs: t.Array(DiscoveredConfigSchema),
-});
-export type DiscoverConfigsResponse = Static<
-  typeof DiscoverConfigsResponseSchema
->;
-
-export const ExtractConfigBodySchema = t.Object({
-  path: t.String({ minLength: 1 }),
-});
-export type ExtractConfigBody = Static<typeof ExtractConfigBodySchema>;
-
 export const RepoGitStatusSchema = t.Object({
   path: t.String(),
   branch: t.Union([t.String(), t.Null()]),

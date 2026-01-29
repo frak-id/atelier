@@ -40,8 +40,6 @@ export const queryKeys = {
     metrics: (id: string) => ["sandboxes", id, "metrics"] as const,
     apps: (id: string) => ["sandboxes", id, "apps"] as const,
     services: (id: string) => ["sandboxes", id, "services"] as const,
-    discoverConfigs: (id: string) =>
-      ["sandboxes", id, "discoverConfigs"] as const,
     devCommands: (id: string) => ["sandboxes", id, "devCommands"] as const,
     devCommandLogs: (id: string, name: string, offset: number) =>
       ["sandboxes", id, "devCommandLogs", name, offset] as const,
@@ -717,29 +715,6 @@ export function useUpdateSharedAuth() {
     }) => unwrap(await api.api["shared-auth"]({ provider }).put({ content })),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: ["sharedAuth"] });
-    },
-  });
-}
-
-export const sandboxDiscoverConfigsQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.discoverConfigs(id),
-    queryFn: async () =>
-      unwrap(await api.api.sandboxes({ id }).config.discover.get()),
-    enabled: !!id,
-  });
-
-export function useExtractConfig(sandboxId: string) {
-  return useMutation({
-    mutationKey: ["sandboxes", "extractConfig", sandboxId],
-    mutationFn: async (path: string) =>
-      unwrap(
-        await api.api.sandboxes({ id: sandboxId }).config.extract.post({
-          path,
-        }),
-      ),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.configFiles.all });
     },
   });
 }

@@ -8,12 +8,10 @@ import type {
   AgentMetrics,
   AppPort,
   BatchExecResult,
-  ConfigFileContent,
   DevCommandListResult,
   DevLogsResult,
   DevStartResult,
   DevStopResult,
-  DiscoveredConfig,
   ExecResult,
 } from "./agent.types.ts";
 
@@ -254,34 +252,6 @@ export class AgentClient {
     return this.request<{ success: boolean }>(sandboxId, `/apps/${port}`, {
       method: "DELETE",
     });
-  }
-
-  async discoverConfigs(sandboxId: string): Promise<DiscoveredConfig[]> {
-    try {
-      const result = await this.request<{ configs: DiscoveredConfig[] }>(
-        sandboxId,
-        "/config/discover",
-      );
-      return result.configs;
-    } catch (error) {
-      log.error({ sandboxId, error }, "Failed to discover configs");
-      return [];
-    }
-  }
-
-  async readConfigFile(
-    sandboxId: string,
-    path: string,
-  ): Promise<ConfigFileContent | null> {
-    try {
-      return await this.request<ConfigFileContent>(
-        sandboxId,
-        `/config/read?path=${encodeURIComponent(path)}`,
-      );
-    } catch (error) {
-      log.error({ sandboxId, path, error }, "Failed to read config file");
-      return null;
-    }
   }
 
   async devList(sandboxId: string): Promise<DevCommandListResult> {

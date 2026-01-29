@@ -57,7 +57,7 @@ export class SessionTemplateService {
 
   setGlobalTemplates(templates: SessionTemplates): void {
     const content = JSON.stringify(templates, null, 2);
-    this.configFileService.extractFromSandbox(
+    this.configFileService.upsert(
       undefined,
       SESSION_TEMPLATES_CONFIG_PATH,
       content,

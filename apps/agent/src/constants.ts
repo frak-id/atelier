@@ -9,42 +9,6 @@ export const VM_PATHS = {
   antigravityAccounts: "/home/dev/.config/opencode/antigravity-accounts.json",
 } as const;
 
-export const AUTH_PROVIDERS = [
-  {
-    name: "opencode",
-    path: VM_PATHS.opencodeAuth,
-    description: "OpenCode authentication (Anthropic, XAI, OpenCode API keys)",
-  },
-  {
-    name: "antigravity",
-    path: VM_PATHS.antigravityAccounts,
-    description: "Google Antigravity plugin accounts",
-  },
-] as const;
-
-export type DiscoverableConfigCategory = "opencode" | "vscode";
-
-export const DISCOVERABLE_CONFIGS: ReadonlyArray<{
-  path: string;
-  category: DiscoverableConfigCategory;
-}> = [
-  { path: VM_PATHS.opencodeAuth, category: "opencode" },
-  { path: VM_PATHS.opencodeConfig, category: "opencode" },
-  { path: VM_PATHS.opencodeOhMy, category: "opencode" },
-  { path: VM_PATHS.antigravityAccounts, category: "opencode" },
-  { path: VM_PATHS.vscodeSettings, category: "vscode" },
-];
-
-export const CONFIG_SCAN_DIRS: ReadonlyArray<{
-  dir: string;
-  category: DiscoverableConfigCategory;
-}> = [
-  { dir: "/home/dev/.local/share/opencode", category: "opencode" },
-  { dir: "/home/dev/.config/opencode", category: "opencode" },
-  { dir: "/home/dev/.config/opencode/plugins", category: "opencode" },
-  { dir: "/home/dev/.config/opencode/providers", category: "opencode" },
-];
-
 export interface SandboxConfig {
   sandboxId: string;
   workspaceId?: string;

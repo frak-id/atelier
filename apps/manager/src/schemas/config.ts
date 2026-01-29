@@ -66,9 +66,3 @@ export type MergedConfigQuery = Static<typeof MergedConfigQuerySchema>;
 
 export const MergedConfigResponseSchema = t.Array(MergedConfigFileSchema);
 export type MergedConfigResponse = Static<typeof MergedConfigResponseSchema>;
-
-export const ExtractConfigResponseSchema = t.Object({
-  action: t.Union([t.Literal("created"), t.Literal("updated")]),
-  configFile: ConfigFileSchema,
-});
-export type ExtractConfigResponse = Static<typeof ExtractConfigResponseSchema>;

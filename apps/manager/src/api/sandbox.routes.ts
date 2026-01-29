@@ -2,7 +2,6 @@ import { Elysia } from "elysia";
 import {
   agentClient,
   agentOperations,
-  configFileService,
   sandboxDestroyer,
   sandboxLifecycle,
   sandboxService,
@@ -24,11 +23,8 @@ import {
   DevCommandNameParamsSchema,
   DevCommandStartResponseSchema,
   DevCommandStopResponseSchema,
-  DiscoverConfigsResponseSchema,
   ExecBodySchema,
   ExecResponseSchema,
-  ExtractConfigBodySchema,
-  ExtractConfigResponseSchema,
   GitStatusResponseSchema,
   IdParamSchema,
   LogsParamsSchema,
@@ -315,52 +311,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       params: IdParamSchema,
       response: GitStatusResponseSchema,
-    },
-  )
-  .get(
-    "/:id/config/discover",
-    async ({ params }) => {
-      const sandbox = sandboxService.getById(params.id);
-      if (!sandbox) {
-        throw new NotFoundError("Sandbox", params.id);
-      }
-      const configs = await agentClient.discoverConfigs(sandbox.id);
-      return { configs };
-    },
-    {
-      params: IdParamSchema,
-      response: DiscoverConfigsResponseSchema,
-    },
-  )
-  .post(
-    "/:id/config/extract",
-    async ({ params, body }) => {
-      const sandbox = sandboxService.getById(params.id);
-      if (!sandbox) {
-        throw new NotFoundError("Sandbox", params.id);
-      }
-
-      const fileContent = await agentClient.readConfigFile(
-        sandbox.id,
-        body.path,
-      );
-      if (!fileContent) {
-        throw new NotFoundError("ConfigFile", body.path);
-      }
-
-      const result = configFileService.extractFromSandbox(
-        sandbox.workspaceId,
-        fileContent.path,
-        fileContent.content,
-        fileContent.contentType,
-      );
-
-      return result;
-    },
-    {
-      params: IdParamSchema,
-      body: ExtractConfigBodySchema,
-      response: ExtractConfigResponseSchema,
     },
   )
   .post(

@@ -88,7 +88,7 @@ export class ConfigFileService {
     log.info({ id, path: existing.path }, "Config file deleted");
   }
 
-  extractFromSandbox(
+  upsert(
     workspaceId: string | undefined,
     path: string,
     content: string,

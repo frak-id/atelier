@@ -3,12 +3,7 @@ import {
   handleGetApps,
   handlePostApps,
 } from "./routes/apps.ts";
-import {
-  handleConfig,
-  handleConfigDiscover,
-  handleConfigRead,
-  handleEditorConfig,
-} from "./routes/config.ts";
+import { handleConfig, handleEditorConfig } from "./routes/config.ts";
 import {
   handleDevLogs,
   handleDevStart,
@@ -51,13 +46,6 @@ export async function handler(request: Request): Promise<Response> {
   if (pathname === "/editor-config") {
     return method === "GET" ? handleEditorConfig() : json405();
   }
-  if (pathname === "/config/discover") {
-    return method === "GET" ? handleConfigDiscover() : json405();
-  }
-  if (pathname === "/config/read") {
-    return method === "GET" ? handleConfigRead(url) : json405();
-  }
-
   if (pathname === "/apps") {
     if (method === "GET") return handleGetApps();
     if (method === "POST") return handlePostApps(request);

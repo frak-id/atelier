@@ -29,8 +29,6 @@ Uses `Deno.serve()` with native vsock support. No npm dependencies.
 | POST | `/exec/batch` | Execute multiple commands |
 | GET | `/config` | Sandbox config |
 | GET | `/editor-config` | VSCode + OpenCode config |
-| GET | `/config/discover` | Discover config files |
-| GET | `/config/read` | Read a config file |
 | GET/POST | `/apps` | App port registration |
 | DELETE | `/apps/:port` | Unregister app |
 | GET | `/dev` | List dev commands |

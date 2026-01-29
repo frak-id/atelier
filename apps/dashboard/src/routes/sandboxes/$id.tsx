@@ -8,7 +8,6 @@ import {
   Copy,
   Cpu,
   ExternalLink,
-  FileCode,
   GitBranch,
   HardDrive,
   Loader2,
@@ -26,14 +25,12 @@ import {
   opencodeSessionsQuery,
   sandboxDetailQuery,
   sandboxDevCommandsQuery,
-  sandboxDiscoverConfigsQuery,
   sandboxGitStatusQuery,
   sandboxMetricsQuery,
   sandboxServicesQuery,
   useDeleteOpenCodeSession,
   useDeleteSandbox,
   useExecCommand,
-  useExtractConfig,
   useResizeStorage,
   useSaveAsPrebuild,
   useStartSandbox,
@@ -313,9 +310,6 @@ function SandboxDetailPage() {
             <TabsTrigger value="opencode">OpenCode Sessions</TabsTrigger>
 
             <TabsTrigger value="exec">Exec</TabsTrigger>
-            {sandbox.workspaceId && (
-              <TabsTrigger value="config">Extract Config</TabsTrigger>
-            )}
           </TabsList>
 
           <TabsContent value="repos">
@@ -418,15 +412,6 @@ function SandboxDetailPage() {
               </CardContent>
             </Card>
           </TabsContent>
-
-          {sandbox.workspaceId && (
-            <TabsContent value="config">
-              <ConfigExtractor
-                sandboxId={id}
-                workspaceId={sandbox.workspaceId}
-              />
-            </TabsContent>
-          )}
         </Tabs>
       )}
 
@@ -566,113 +551,6 @@ function OpenCodeSessions({
                 Open OpenCode
               </a>
             </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ConfigExtractor({
-  sandboxId,
-  workspaceId,
-}: {
-  sandboxId: string;
-  workspaceId: string;
-}) {
-  const { data, isLoading, refetch } = useQuery(
-    sandboxDiscoverConfigsQuery(sandboxId),
-  );
-  const extractMutation = useExtractConfig(sandboxId);
-  const [extractedPaths, setExtractedPaths] = useState<Set<string>>(new Set());
-
-  const configs = data?.configs ?? [];
-
-  const handleExtract = (path: string) => {
-    extractMutation.mutate(path, {
-      onSuccess: () => {
-        setExtractedPaths((prev) => new Set(prev).add(path));
-      },
-    });
-  };
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <FileCode className="h-5 w-5" />
-          Extract Config to Workspace
-        </CardTitle>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-1" />
-          Refresh
-        </Button>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground mb-4">
-          Extract config files from this sandbox to save as workspace-specific
-          configuration. These will be applied to new sandboxes created from{" "}
-          <Link
-            to="/workspaces/$id"
-            params={{ id: workspaceId }}
-            className="text-primary hover:underline"
-          >
-            this workspace
-          </Link>
-          .
-        </p>
-
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-muted-foreground py-8 justify-center">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Discovering config files...
-          </div>
-        ) : configs.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <FileCode className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>No config files found</p>
-            <p className="text-sm mt-1">
-              Create some configs in OpenCode or VSCode first
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {configs.map((config) => (
-              <div
-                key={config.path}
-                className={`flex items-center justify-between p-3 rounded-lg border ${
-                  config.exists ? "bg-muted/50" : "bg-muted/20 opacity-60"
-                }`}
-              >
-                <div className="flex-1">
-                  <div className="font-mono text-sm">{config.displayPath}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {config.category} • {config.exists ? "exists" : "not found"}
-                    {config.size !== undefined &&
-                      ` • ${(config.size / 1024).toFixed(1)} KB`}
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant={
-                    extractedPaths.has(config.path) ? "outline" : "default"
-                  }
-                  disabled={!config.exists || extractMutation.isPending}
-                  onClick={() => handleExtract(config.path)}
-                >
-                  {extractMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : extractedPaths.has(config.path) ? (
-                    <>
-                      <Check className="h-4 w-4 mr-1" />
-                      Saved
-                    </>
-                  ) : (
-                    "Extract"
-                  )}
-                </Button>
-              </div>
-            ))}
           </div>
         )}
       </CardContent>

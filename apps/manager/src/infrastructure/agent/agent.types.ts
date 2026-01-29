@@ -53,22 +53,6 @@ export interface GitStatus {
   repos: GitRepoStatus[];
 }
 
-export interface DiscoveredConfig {
-  path: string;
-  displayPath: string;
-  category: "opencode" | "vscode" | "other";
-  exists: boolean;
-  size?: number;
-}
-
-export interface ConfigFileContent {
-  path: string;
-  displayPath: string;
-  content: string;
-  contentType: "json" | "text";
-  size: number;
-}
-
 export interface DevCommandStatus {
   name: string;
   status: string;
