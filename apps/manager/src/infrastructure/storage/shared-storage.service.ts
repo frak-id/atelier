@@ -210,4 +210,97 @@ export const SharedStorageService = {
       return { success: false, error: message };
     }
   },
+
+  async buildBinariesImage(): Promise<{
+    success: boolean;
+    sizeBytes?: number;
+    error?: string;
+  }> {
+    if (config.isMock()) {
+      log.info("Mock: Building binaries ext4 image");
+      return { success: true, sizeBytes: 0 };
+    }
+
+    const srcDir = SHARED_STORAGE.BINARIES_DIR;
+    const imgPath = BINARIES_IMAGE_PATH;
+    const tmpPath = `${imgPath}.tmp`;
+
+    try {
+      if (!(await pathExists(srcDir))) {
+        return { success: false, error: "Binaries directory does not exist" };
+      }
+
+      const srcSize = await getDirSize(srcDir);
+      if (srcSize === 0) {
+        return {
+          success: false,
+          error: "Binaries directory is empty, nothing to build",
+        };
+      }
+
+      const imageSizeBytes = Math.max(
+        64 * 1024 * 1024,
+        Math.ceil(srcSize * 1.2),
+      );
+      const imageSizeMb = Math.ceil(imageSizeBytes / (1024 * 1024));
+
+      log.info(
+        { srcSize, imageSizeMb, imgPath },
+        "Building binaries ext4 image",
+      );
+
+      const result =
+        await $`/usr/sbin/mkfs.ext4 -d ${srcDir} -F -q -L shared-binaries ${tmpPath} ${imageSizeMb}M`
+          .quiet()
+          .nothrow();
+
+      if (result.exitCode !== 0) {
+        await $`rm -f ${tmpPath}`.quiet().nothrow();
+        return {
+          success: false,
+          error: `mkfs.ext4 failed: ${result.stderr.toString()}`,
+        };
+      }
+
+      await $`mv ${tmpPath} ${imgPath}`.quiet();
+
+      const finalSize = await getDirSize(imgPath);
+      log.info(
+        { imgPath, sizeBytes: finalSize },
+        "Binaries ext4 image built successfully",
+      );
+      return { success: true, sizeBytes: finalSize };
+    } catch (error) {
+      await $`rm -f ${tmpPath}`.quiet().nothrow();
+      const message = error instanceof Error ? error.message : String(error);
+      log.error({ error: message }, "Failed to build binaries ext4 image");
+      return { success: false, error: message };
+    }
+  },
+
+  async getBinariesImageInfo(): Promise<BinariesImageInfo> {
+    if (config.isMock()) {
+      return {
+        exists: true,
+        sizeBytes: 650 * 1024 * 1024,
+        builtAt: new Date().toISOString(),
+      };
+    }
+
+    const imgPath = BINARIES_IMAGE_PATH;
+    const exists = await pathExists(imgPath);
+    if (!exists) return { exists: false };
+
+    const sizeResult = await $`stat -c '%s' ${imgPath}`.quiet().nothrow();
+    const mtimeResult = await $`stat -c '%Y' ${imgPath}`.quiet().nothrow();
+    const sizeBytes =
+      Number.parseInt(sizeResult.stdout.toString().trim(), 10) || 0;
+    const mtimeSec =
+      Number.parseInt(mtimeResult.stdout.toString().trim(), 10) || 0;
+    return {
+      exists: true,
+      sizeBytes,
+      builtAt: new Date(mtimeSec * 1000).toISOString(),
+    };
+  },
 };

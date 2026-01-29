@@ -273,6 +273,28 @@ function SystemPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
+              <Badge
+                variant={sharedStorage.image.exists ? "success" : "warning"}
+              >
+                {sharedStorage.image.exists ? "Built" : "Not Built"}
+              </Badge>
+              {sharedStorage.image.exists && (
+                <>
+                  <span>·</span>
+                  <span>{formatBytes(sharedStorage.image.sizeBytes ?? 0)}</span>
+                  {sharedStorage.image.builtAt && (
+                    <>
+                      <span>·</span>
+                      <span>
+                        Built{" "}
+                        {new Date(sharedStorage.image.builtAt).toLocaleString()}
+                      </span>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
             <div className="space-y-2">
               {sharedStorage.binaries.map((binary) => (
                 <div

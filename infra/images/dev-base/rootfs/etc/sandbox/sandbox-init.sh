@@ -58,6 +58,16 @@ ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null
 ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null
 ln -sf /proc/self/fd/2 /dev/stderr 2>/dev/null
 
+mknod -m 444 /dev/vdb b 254 16 2>/dev/null
+if [ -b /dev/vdb ]; then
+    log "Mounting shared binaries drive..."
+    mkdir -p /opt/shared
+    mount -o ro /dev/vdb /opt/shared >> "$LOG_DIR/init.log" 2>&1
+    log "Shared binaries mounted at /opt/shared"
+else
+    log "No shared binaries drive found (/dev/vdb)"
+fi
+
 log "Setting up hostname and hosts file..."
 if [ -f "$CONFIG_FILE" ]; then
     SANDBOX_ID=$(jq -r '.sandboxId // empty' "$CONFIG_FILE" 2>/dev/null)

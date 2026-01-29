@@ -7,7 +7,12 @@ import {
   getSocketPath,
 } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
+import {
+  BINARIES_IMAGE_PATH,
+  SharedStorageService,
+  StorageService,
+} from "../infrastructure/storage/index.ts";
+import type { InternalService } from "../modules/internal/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import type { Sandbox } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
@@ -20,6 +25,7 @@ const log = createChildLogger("sandbox-lifecycle");
 interface SandboxLifecycleDependencies {
   sandboxService: SandboxService;
   agentClient: AgentClient;
+  internalService: InternalService;
 }
 
 export class SandboxLifecycle {
@@ -144,6 +150,12 @@ export class SandboxLifecycle {
 
     await client.setBootSource(paths.kernel, bootArgs);
     await client.setDrive("rootfs", paths.overlay, true);
+
+    const imageInfo = await SharedStorageService.getBinariesImageInfo();
+    if (imageInfo.exists) {
+      await client.setDrive("shared", BINARIES_IMAGE_PATH, false, true);
+    }
+
     await client.setNetworkInterface("eth0", macAddress, tapDevice);
 
     const cpuTemplatePath = `${config.paths.SANDBOX_DIR}/cpu-template-no-avx.json`;
@@ -168,6 +180,11 @@ export class SandboxLifecycle {
 
     if (!agentReady) {
       log.warn({ sandboxId }, "Agent did not become ready after restart");
+    } else {
+      await Promise.allSettled([
+        this.deps.internalService.syncAuthToSandboxes(),
+        this.deps.internalService.syncConfigsToSandboxes(),
+      ]);
     }
 
     const updatedSandbox: Sandbox = {

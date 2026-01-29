@@ -12,17 +12,37 @@ import {
   SharedStorageStatusSchema,
 } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
+
+const log = createChildLogger("shared-storage-routes");
 
 function isValidBinaryId(id: string): id is SharedBinaryId {
   return id in SHARED_BINARIES;
+}
+
+function rebuildImageInBackground(): void {
+  SharedStorageService.buildBinariesImage()
+    .then((result) => {
+      if (result.success) {
+        log.info({ sizeBytes: result.sizeBytes }, "Binaries image rebuilt");
+      } else {
+        log.error({ error: result.error }, "Failed to rebuild binaries image");
+      }
+    })
+    .catch((error) => {
+      log.error({ error }, "Binaries image rebuild crashed");
+    });
 }
 
 export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
   .get(
     "/",
     async () => {
-      const binaries = await SharedStorageService.listBinaries();
-      return { binaries };
+      const [binaries, image] = await Promise.all([
+        SharedStorageService.listBinaries(),
+        SharedStorageService.getBinariesImageInfo(),
+      ]);
+      return { binaries, image };
     },
     {
       response: SharedStorageStatusSchema,
@@ -73,7 +93,9 @@ export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
       if (!isValidBinaryId(params.id)) {
         throw new NotFoundError("Binary", params.id);
       }
-      return SharedStorageService.installBinary(params.id);
+      const result = await SharedStorageService.installBinary(params.id);
+      if (result.success) rebuildImageInBackground();
+      return result;
     },
     {
       params: BinaryIdParamSchema,
@@ -90,7 +112,9 @@ export const sharedStorageRoutes = new Elysia({ prefix: "/storage" })
       if (!isValidBinaryId(params.id)) {
         throw new NotFoundError("Binary", params.id);
       }
-      return SharedStorageService.removeBinary(params.id);
+      const result = await SharedStorageService.removeBinary(params.id);
+      if (result.success) rebuildImageInBackground();
+      return result;
     },
     {
       params: BinaryIdParamSchema,

@@ -78,6 +78,7 @@ const sandboxSpawner = new SandboxSpawner({
   gitSourceService,
   configFileService,
   sshKeyService,
+  internalService,
   agentClient,
   agentOperations,
 });
@@ -90,6 +91,7 @@ const sandboxDestroyer = new SandboxDestroyer({
 const sandboxLifecycle = new SandboxLifecycle({
   sandboxService,
   agentClient,
+  internalService,
 });
 
 const prebuildRunner = new PrebuildRunner({

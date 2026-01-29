@@ -20,9 +20,14 @@ import {
   CaddyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
+import {
+  BINARIES_IMAGE_PATH,
+  SharedStorageService,
+  StorageService,
+} from "../infrastructure/storage/index.ts";
 import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
+import type { InternalService } from "../modules/internal/index.ts";
 import type { SandboxService } from "../modules/sandbox/index.ts";
 import { SandboxProvisioner } from "../modules/sandbox/sandbox.provisioner.ts";
 import type { SshKeyService } from "../modules/ssh-key/index.ts";
@@ -45,6 +50,7 @@ interface SandboxSpawnerDependencies {
   gitSourceService: GitSourceService;
   configFileService: ConfigFileService;
   sshKeyService: SshKeyService;
+  internalService: InternalService;
   agentClient: AgentClient;
   agentOperations: AgentOperations;
 }
@@ -103,7 +109,10 @@ class SpawnContext {
       return this.finalize();
     } catch (error) {
       log.error(
-        { sandboxId: this.sandboxId, error },
+        {
+          sandboxId: this.sandboxId,
+          error: error instanceof Error ? error.message : error,
+        },
         "Failed to spawn sandbox",
       );
       await this.rollback();
@@ -367,6 +376,21 @@ class SpawnContext {
 
     await this.client.setBootSource(this.paths.kernel, bootArgs);
     await this.client.setDrive("rootfs", this.paths.overlay, true);
+
+    const imageInfo = await SharedStorageService.getBinariesImageInfo();
+    if (imageInfo.exists) {
+      await this.client.setDrive("shared", BINARIES_IMAGE_PATH, false, true);
+      log.debug(
+        { sandboxId: this.sandboxId },
+        "Shared binaries drive attached",
+      );
+    } else {
+      log.warn(
+        { sandboxId: this.sandboxId },
+        "Shared binaries image not found, skipping second drive",
+      );
+    }
+
     await this.client.setNetworkInterface(
       "eth0",
       this.network.macAddress,
@@ -479,6 +503,26 @@ class SpawnContext {
       "Guest network reconfigured",
     );
 
+    const imageInfo = await SharedStorageService.getBinariesImageInfo();
+    if (imageInfo.exists) {
+      const mountResult = await this.deps.agentClient.exec(
+        this.sandboxId,
+        `mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared`,
+        { timeout: 5000 },
+      );
+      if (mountResult.exitCode === 0) {
+        log.info(
+          { sandboxId: this.sandboxId },
+          "Shared binaries mounted in restored guest",
+        );
+      } else {
+        log.warn(
+          { sandboxId: this.sandboxId, stderr: mountResult.stderr },
+          "Failed to mount shared binaries in restored guest",
+        );
+      }
+    }
+
     const workspaceDir = this.workspace.config.repos?.[0]?.clonePath
       ? `/home/dev${this.workspace.config.repos[0].clonePath}`
       : "/home/dev/workspace";
@@ -489,16 +533,24 @@ class SpawnContext {
     const terminalPort = config.raw.services.terminal.port;
 
     const servicesCmd = [
-      `setsid su - dev -c "code-server --bind-addr 0.0.0.0:${vscodePort} --auth none --disable-telemetry ${workspaceDir} > /var/log/sandbox/code-server.log 2>&1" </dev/null &>/dev/null &`,
-      `setsid su - dev -c "cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${opencodePort} --cors https://${dashboardDomain} > /var/log/sandbox/opencode.log 2>&1" </dev/null &>/dev/null &`,
-      `setsid ttyd -p ${terminalPort} -W -t fontSize=14 -t fontFamily=monospace su - dev </dev/null > /var/log/sandbox/ttyd.log 2>&1 &`,
+      `(setsid su - dev -c "/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vscodePort} --auth none --disable-telemetry ${workspaceDir} > /var/log/sandbox/code-server.log 2>&1" </dev/null &>/dev/null &)`,
+      `(setsid su - dev -c "cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${opencodePort} --cors https://${dashboardDomain} > /var/log/sandbox/opencode.log 2>&1" </dev/null &>/dev/null &)`,
+      `(setsid ttyd -p ${terminalPort} -W -t fontSize=14 -t fontFamily=monospace su - dev </dev/null > /var/log/sandbox/ttyd.log 2>&1 &)`,
     ].join("\n");
 
-    await this.deps.agentClient.exec(this.sandboxId, servicesCmd, {
-      timeout: 5000,
-    });
+    // Fire-and-forget: don't block on service startup
+    this.deps.agentClient
+      .exec(this.sandboxId, servicesCmd, {
+        timeout: 10000,
+      })
+      .catch((err) => {
+        log.warn(
+          { sandboxId: this.sandboxId, error: String(err) },
+          "Service restart exec failed (non-blocking)",
+        );
+      });
 
-    log.info({ sandboxId: this.sandboxId }, "Post-restore setup complete");
+    log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
   }
 
   private async waitForBoot(timeoutMs = 30000): Promise<void> {
@@ -547,6 +599,35 @@ class SpawnContext {
     if (this.needsRepoClone()) {
       await this.cloneRepositories();
     }
+
+    this.pushAuthAndConfigs();
+  }
+
+  private pushAuthAndConfigs(): void {
+    Promise.allSettled([
+      this.deps.internalService.syncAuthToSandboxes(),
+      this.deps.internalService.syncConfigsToSandboxes(),
+    ])
+      .then(([authResult, configResult]) => {
+        if (authResult.status === "fulfilled") {
+          log.info(
+            { sandboxId: this.sandboxId, synced: authResult.value.synced },
+            "Auth pushed to sandboxes",
+          );
+        }
+        if (configResult.status === "fulfilled") {
+          log.info(
+            { sandboxId: this.sandboxId, synced: configResult.value.synced },
+            "Configs pushed to sandboxes",
+          );
+        }
+      })
+      .catch((error) => {
+        log.warn(
+          { sandboxId: this.sandboxId, error },
+          "Failed to push auth/configs to sandboxes",
+        );
+      });
   }
 
   private async expandFilesystem(): Promise<void> {
