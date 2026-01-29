@@ -27,6 +27,43 @@ export interface SharedAuthInfo {
   updatedBy: string | null;
 }
 
+/** OpenCode auth.json entry — mirrors the discriminated union from OpenCode's Auth.Info schema */
+interface OAuthEntry {
+  type: "oauth";
+  refresh: string;
+  access: string;
+  expires: number;
+  accountId?: string;
+  enterpriseUrl?: string;
+}
+
+interface ApiEntry {
+  type: "api";
+  key: string;
+}
+
+interface WellKnownEntry {
+  type: "wellknown";
+  key: string;
+  token: string;
+}
+
+type AuthEntry = OAuthEntry | ApiEntry | WellKnownEntry;
+
+/** OpenCode auth.json structure: provider ID (e.g. "anthropic") → auth entry */
+type AuthJson = Record<string, AuthEntry>;
+
+interface AuthFileRead {
+  provider: string;
+  content: string;
+  mtime: number;
+}
+
+interface SandboxAuthSnapshot {
+  sandboxId: string;
+  files: AuthFileRead[];
+}
+
 const AUTH_POLL_INTERVAL_MS = 5_000;
 
 export class InternalService {
@@ -70,55 +107,251 @@ export class InternalService {
       .filter((s) => s.status === "running");
     if (runningSandboxes.length === 0) return;
 
-    // Pick first running sandbox to read auth from (all should have same auth)
-    // biome-ignore lint/style/noNonNullAssertion: length check above guarantees non-null
-    const sandbox = runningSandboxes[0]!;
+    const snapshots = await this.readAllAuthFromSandboxes(
+      runningSandboxes.map((s) => s.id),
+    );
+    if (snapshots.length === 0) return;
 
-    for (const provider of AUTH_PROVIDERS) {
+    for (const providerConfig of AUTH_PROVIDERS) {
       try {
-        const result = await this.agentClient.exec(
-          sandbox.id,
-          `cat ${provider.path} 2>/dev/null`,
-          { timeout: 5000 },
-        );
-        if (result.exitCode !== 0 || !result.stdout.trim()) continue;
+        const perProvider = snapshots.flatMap((snap) => {
+          const file = snap.files.find(
+            (f) => f.provider === providerConfig.name,
+          );
+          return file ? [{ sandboxId: snap.sandboxId, ...file }] : [];
+        });
+        if (perProvider.length === 0) continue;
 
-        const content = result.stdout.trim();
-        const existing = this.sharedAuthRepository.getByProvider(provider.name);
-        if (existing?.content === content) continue;
-
-        this.sharedAuthRepository.upsert(provider.name, content, "sandbox");
-        log.info({ provider: provider.name }, "Auth synced from sandbox to DB");
-
-        // Push updated auth to all OTHER sandboxes
-        await this.pushAuthToSandboxes(provider, content, sandbox.id);
+        if (providerConfig.name === "opencode") {
+          await this.aggregateOpencodeAuth(perProvider, runningSandboxes);
+        } else {
+          await this.aggregateOpaqueAuth(
+            providerConfig,
+            perProvider,
+            runningSandboxes,
+          );
+        }
       } catch (error) {
         log.debug(
-          { provider: provider.name, error },
-          "Failed to poll auth from sandbox",
+          { provider: providerConfig.name, error },
+          "Failed to poll auth for provider",
         );
       }
     }
   }
 
-  private async pushAuthToSandboxes(
-    provider: (typeof AUTH_PROVIDERS)[number],
-    content: string,
-    excludeSandboxId?: string,
-  ): Promise<void> {
-    const runningSandboxes = this.sandboxService
-      .getAll()
-      .filter((s) => s.status === "running" && s.id !== excludeSandboxId);
+  /**
+   * Single batchExec per sandbox: reads mtime + content for every AUTH_PROVIDERS
+   * file in one round-trip. Output format per command: first line = epoch mtime,
+   * remaining lines = file content.
+   */
+  private async readAllAuthFromSandboxes(
+    sandboxIds: string[],
+  ): Promise<SandboxAuthSnapshot[]> {
+    const commands = AUTH_PROVIDERS.map((p) => ({
+      id: p.name,
+      command: `stat -c %Y '${p.path}' 2>/dev/null && cat '${p.path}' 2>/dev/null`,
+      timeout: 5000,
+    }));
 
-    await Promise.allSettled(
-      runningSandboxes.map((sandbox) =>
-        this.agentClient.exec(
-          sandbox.id,
-          `mkdir -p "$(dirname '${provider.path}')" && cat > '${provider.path}' << 'AUTHEOF'\n${content}\nAUTHEOF`,
-          { timeout: 5000 },
-        ),
+    const results = await Promise.allSettled(
+      sandboxIds.map(async (sandboxId) => {
+        const batch = await this.agentClient.batchExec(sandboxId, commands, {
+          timeout: 10000,
+        });
+
+        const files: AuthFileRead[] = [];
+        for (const result of batch.results) {
+          if (result.exitCode !== 0 || !result.stdout.trim()) continue;
+
+          const firstNewline = result.stdout.indexOf("\n");
+          if (firstNewline === -1) continue;
+
+          const mtime = Number.parseInt(
+            result.stdout.slice(0, firstNewline),
+            10,
+          );
+          const content = result.stdout.slice(firstNewline + 1).trim();
+          if (!content || Number.isNaN(mtime)) continue;
+
+          files.push({ provider: result.id, content, mtime });
+        }
+
+        return { sandboxId, files };
+      }),
+    );
+
+    const snapshots: SandboxAuthSnapshot[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value.files.length > 0) {
+        snapshots.push(result.value);
+      }
+    }
+    return snapshots;
+  }
+
+  /**
+   * For each key in auth.json (anthropic, openai, etc.), pick the entry
+   * with the furthest OAuth expiry across all sandboxes. Non-OAuth entries
+   * don't rotate, so any copy is equivalent.
+   */
+  private async aggregateOpencodeAuth(
+    sandboxAuths: { sandboxId: string; content: string; mtime: number }[],
+    runningSandboxes: { id: string }[],
+  ): Promise<void> {
+    const parsed: { sandboxId: string; auth: AuthJson }[] = [];
+    for (const { sandboxId, content } of sandboxAuths) {
+      try {
+        const auth = JSON.parse(content) as AuthJson;
+        parsed.push({ sandboxId, auth });
+      } catch {
+        log.debug({ sandboxId }, "Failed to parse auth.json from sandbox");
+      }
+    }
+    if (parsed.length === 0) return;
+
+    const bestAuth: AuthJson = {};
+    const allKeys = new Set(parsed.flatMap(({ auth }) => Object.keys(auth)));
+
+    for (const key of allKeys) {
+      let bestEntry: AuthEntry | null = null;
+      let bestExpiry = -1;
+
+      for (const { auth } of parsed) {
+        const entry = auth[key];
+        if (!entry) continue;
+
+        if (entry.type === "oauth") {
+          if (entry.expires > bestExpiry) {
+            bestExpiry = entry.expires;
+            bestEntry = entry;
+          }
+        } else if (!bestEntry) {
+          bestEntry = entry;
+        }
+      }
+
+      if (bestEntry) {
+        bestAuth[key] = bestEntry;
+      }
+    }
+
+    const bestContent = JSON.stringify(bestAuth, null, 2);
+
+    const existing = this.sharedAuthRepository.getByProvider("opencode");
+    if (existing?.content === bestContent) return;
+
+    this.sharedAuthRepository.upsert("opencode", bestContent, "sandbox");
+    await this.persistAuthToHostDir("opencode", bestContent);
+    log.info(
+      { keys: [...allKeys] },
+      "Auth aggregated from sandboxes and stored in DB",
+    );
+
+    const staleSandboxIds = new Set<string>();
+    const readSandboxIds = new Set(sandboxAuths.map((a) => a.sandboxId));
+
+    for (const { sandboxId, content } of sandboxAuths) {
+      if (content !== bestContent) {
+        staleSandboxIds.add(sandboxId);
+      }
+    }
+    for (const sandbox of runningSandboxes) {
+      if (!readSandboxIds.has(sandbox.id)) {
+        staleSandboxIds.add(sandbox.id);
+      }
+    }
+
+    if (staleSandboxIds.size === 0) return;
+
+    const staleSandboxIdList = [...staleSandboxIds];
+    await this.pushAuthFilesToSandboxes(staleSandboxIdList, [
+      { path: VM_PATHS.opencodeAuth, content: bestContent },
+    ]);
+  }
+
+  private async aggregateOpaqueAuth(
+    providerConfig: (typeof AUTH_PROVIDERS)[number],
+    sandboxAuths: { sandboxId: string; content: string; mtime: number }[],
+    runningSandboxes: { id: string }[],
+  ): Promise<void> {
+    const newest = sandboxAuths.reduce((best, current) =>
+      current.mtime > best.mtime ? current : best,
+    );
+
+    const existing = this.sharedAuthRepository.getByProvider(
+      providerConfig.name,
+    );
+    if (existing?.content === newest.content) return;
+
+    this.sharedAuthRepository.upsert(
+      providerConfig.name,
+      newest.content,
+      "sandbox",
+    );
+    await this.persistAuthToHostDir(providerConfig.name, newest.content);
+    log.info(
+      { provider: providerConfig.name, source: newest.sandboxId },
+      "Auth synced from sandbox to DB (last edit wins)",
+    );
+
+    const staleSandboxIds = runningSandboxes
+      .filter((sandbox) => {
+        const match = sandboxAuths.find((a) => a.sandboxId === sandbox.id);
+        return !match || match.content !== newest.content;
+      })
+      .map((s) => s.id);
+
+    if (staleSandboxIds.length === 0) return;
+
+    await this.pushAuthFilesToSandboxes(staleSandboxIds, [
+      { path: providerConfig.path, content: newest.content },
+    ]);
+  }
+
+  private async persistAuthToHostDir(
+    provider: string,
+    content: string,
+  ): Promise<void> {
+    const hostPath = `${SHARED_STORAGE.AUTH_DIR}/${provider}.json`;
+    try {
+      const tmpPath = `${hostPath}.tmp`;
+      await Bun.write(tmpPath, content);
+      await Bun.$`chown 1000:1000 ${tmpPath}`.quiet();
+      await Bun.$`mv ${tmpPath} ${hostPath}`.quiet();
+    } catch (error) {
+      log.error({ provider, error }, "Failed to persist auth to host dir");
+    }
+  }
+
+  private async pushAuthFilesToSandboxes(
+    sandboxIds: string[],
+    files: { path: string; content: string }[],
+  ): Promise<void> {
+    const commands = files.map((file, i) => ({
+      id: `auth-${i}`,
+      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << 'AUTHEOF'\n${file.content}\nAUTHEOF\nmv '${file.path}.tmp' '${file.path}'`,
+      timeout: 5000,
+    }));
+
+    const results = await Promise.allSettled(
+      sandboxIds.map((sandboxId) =>
+        this.agentClient.batchExec(sandboxId, commands, { timeout: 10000 }),
       ),
     );
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      log.warn(
+        { failures: failures.length, total: results.length },
+        "Some auth pushes to sandboxes failed",
+      );
+    } else {
+      log.debug(
+        { sandboxes: sandboxIds.length, files: files.length },
+        "Auth pushed to sandboxes",
+      );
+    }
   }
 
   listAuth(): SharedAuthInfo[] {
@@ -184,40 +417,30 @@ export class InternalService {
     const storedAuth = this.sharedAuthRepository.list();
     let synced = 0;
 
-    // Write to host dir for persistence
     for (const auth of storedAuth) {
-      const hostPath = `${SHARED_STORAGE.AUTH_DIR}/${auth.provider}.json`;
-      try {
-        const tmpPath = `${hostPath}.tmp`;
-        await Bun.write(tmpPath, auth.content);
-        await Bun.$`chown 1000:1000 ${tmpPath}`.quiet();
-        await Bun.$`mv ${tmpPath} ${hostPath}`.quiet();
-      } catch (error) {
-        log.error(
-          { provider: auth.provider, error },
-          "Failed to write auth to host dir",
-        );
-      }
+      await this.persistAuthToHostDir(auth.provider, auth.content);
     }
 
-    // Push to all running sandboxes
     const runningSandboxes = this.sandboxService
       .getAll()
       .filter((s) => s.status === "running");
-    for (const auth of storedAuth) {
-      const provider = AUTH_PROVIDERS.find((p) => p.name === auth.provider);
-      if (!provider) continue;
+    if (runningSandboxes.length === 0) return { synced };
 
-      await Promise.allSettled(
-        runningSandboxes.map((sandbox) =>
-          this.agentClient.exec(
-            sandbox.id,
-            `mkdir -p "$(dirname '${provider.path}')" && cat > '${provider.path}' << 'AUTHEOF'\n${auth.content}\nAUTHEOF`,
-            { timeout: 5000 },
-          ),
-        ),
+    const filesToPush: { path: string; content: string }[] = [];
+    for (const auth of storedAuth) {
+      const providerConfig = AUTH_PROVIDERS.find(
+        (p) => p.name === auth.provider,
       );
+      if (!providerConfig) continue;
+      filesToPush.push({ path: providerConfig.path, content: auth.content });
       synced++;
+    }
+
+    if (filesToPush.length > 0) {
+      await this.pushAuthFilesToSandboxes(
+        runningSandboxes.map((s) => s.id),
+        filesToPush,
+      );
     }
 
     log.info(
@@ -231,28 +454,24 @@ export class InternalService {
     const globalConfigs = this.configFileService.list({ scope: "global" });
     let synced = 0;
 
-    // Write global configs to host dir for persistence
-    for (const config of globalConfigs) {
-      const hostPath = `${SHARED_STORAGE.CONFIGS_DIR}/${SHARED_STORAGE.CONFIG_DIRS.GLOBAL}${config.path}`;
+    for (const cfg of globalConfigs) {
+      const hostPath = `${SHARED_STORAGE.CONFIGS_DIR}/${SHARED_STORAGE.CONFIG_DIRS.GLOBAL}${cfg.path}`;
       const dir = hostPath.substring(0, hostPath.lastIndexOf("/"));
 
       try {
         await Bun.$`mkdir -p ${dir}`.quiet();
 
-        if (config.contentType === "binary") {
-          const buffer = Buffer.from(config.content, "base64");
+        if (cfg.contentType === "binary") {
+          const buffer = Buffer.from(cfg.content, "base64");
           await Bun.write(hostPath, buffer);
         } else {
-          await Bun.write(hostPath, config.content);
+          await Bun.write(hostPath, cfg.content);
         }
 
-        log.debug(
-          { path: config.path, hostPath },
-          "Config written to host dir",
-        );
+        log.debug({ path: cfg.path, hostPath }, "Config written to host dir");
       } catch (error) {
         log.error(
-          { path: config.path, error },
+          { path: cfg.path, error },
           "Failed to write config to host dir",
         );
       }
@@ -263,52 +482,50 @@ export class InternalService {
     });
     const byWorkspace = new Map<string, typeof workspaceConfigs>();
 
-    for (const config of workspaceConfigs) {
-      if (!config.workspaceId) continue;
-      const existing = byWorkspace.get(config.workspaceId) ?? [];
-      existing.push(config);
-      byWorkspace.set(config.workspaceId, existing);
+    for (const cfg of workspaceConfigs) {
+      if (!cfg.workspaceId) continue;
+      const existing = byWorkspace.get(cfg.workspaceId) ?? [];
+      existing.push(cfg);
+      byWorkspace.set(cfg.workspaceId, existing);
     }
 
-    // Write workspace configs to host dir for persistence
     for (const [workspaceId, configs] of byWorkspace) {
-      for (const config of configs) {
-        const hostPath = `${SHARED_STORAGE.CONFIGS_DIR}/${SHARED_STORAGE.CONFIG_DIRS.WORKSPACES}/${workspaceId}${config.path}`;
+      for (const cfg of configs) {
+        const hostPath = `${SHARED_STORAGE.CONFIGS_DIR}/${SHARED_STORAGE.CONFIG_DIRS.WORKSPACES}/${workspaceId}${cfg.path}`;
         const dir = hostPath.substring(0, hostPath.lastIndexOf("/"));
 
         try {
           await Bun.$`mkdir -p ${dir}`.quiet();
 
-          if (config.contentType === "binary") {
-            const buffer = Buffer.from(config.content, "base64");
+          if (cfg.contentType === "binary") {
+            const buffer = Buffer.from(cfg.content, "base64");
             await Bun.write(hostPath, buffer);
           } else {
-            await Bun.write(hostPath, config.content);
+            await Bun.write(hostPath, cfg.content);
           }
 
           log.debug(
-            { path: config.path, hostPath, workspaceId },
+            { path: cfg.path, hostPath, workspaceId },
             "Workspace config written to host dir",
           );
         } catch (error) {
           log.error(
-            { path: config.path, workspaceId, error },
+            { path: cfg.path, workspaceId, error },
             "Failed to write workspace config to host dir",
           );
         }
       }
     }
 
-    // Push all configs to running sandboxes
     const runningSandboxes = this.sandboxService
       .getAll()
       .filter((s) => s.status === "running");
     const allConfigs = [...globalConfigs, ...workspaceConfigs];
 
-    for (const config of allConfigs) {
-      const vmPath = this.getVmPathForConfig(config.path);
+    for (const cfg of allConfigs) {
+      const vmPath = this.getVmPathForConfig(cfg.path);
       if (!vmPath) {
-        log.debug({ path: config.path }, "No VM path mapping found for config");
+        log.debug({ path: cfg.path }, "No VM path mapping found for config");
         continue;
       }
 
@@ -316,7 +533,7 @@ export class InternalService {
         runningSandboxes.map((sandbox) =>
           this.agentClient.exec(
             sandbox.id,
-            `mkdir -p "$(dirname '${vmPath}')" && cat > '${vmPath}' << 'CONFIGEOF'\n${config.content}\nCONFIGEOF`,
+            `mkdir -p "$(dirname '${vmPath}')" && cat > '${vmPath}' << 'CONFIGEOF'\n${cfg.content}\nCONFIGEOF`,
             { timeout: 5000 },
           ),
         ),
@@ -332,7 +549,6 @@ export class InternalService {
   }
 
   private getVmPathForConfig(configPath: string): string | null {
-    // Map config paths to VM paths based on the config type
     if (configPath.includes("opencode")) {
       if (configPath.includes("opencode.json")) return VM_PATHS.opencodeConfig;
       if (configPath.includes("oh-my-opencode")) return VM_PATHS.opencodeOhMy;
