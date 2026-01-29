@@ -5,8 +5,10 @@ import {
   FirecrackerClient,
   getSandboxPaths,
   getSocketPath,
+  getVsockPath,
 } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
+import { CaddyService } from "../infrastructure/proxy/index.ts";
 import {
   BINARIES_IMAGE_PATH,
   SharedStorageService,
@@ -57,8 +59,13 @@ export class SandboxLifecycle {
       }
 
       const socketPath = getSocketPath(sandboxId);
+      const vsockPath = getVsockPath(sandboxId);
       const pidPath = `${config.paths.SOCKET_DIR}/${sandboxId}.pid`;
-      await $`rm -f ${socketPath} ${pidPath}`.quiet().nothrow();
+      await $`rm -f ${socketPath} ${vsockPath} ${pidPath}`.quiet().nothrow();
+
+      const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
+      await NetworkService.deleteTap(tapDevice);
+      await CaddyService.removeRoutes(sandboxId);
     }
 
     this.deps.sandboxService.updateStatus(sandboxId, "stopped");
@@ -104,17 +111,11 @@ export class SandboxLifecycle {
     const paths = getSandboxPaths(sandboxId, volumePath);
     const { macAddress } = sandbox.runtime;
     const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
-
-    const tapExists =
-      (await $`ip link show ${tapDevice}`.quiet().nothrow()).exitCode === 0;
-    if (!tapExists) {
-      log.warn({ sandboxId, tapDevice }, "TAP device missing, recreating");
-      await NetworkService.createTap(tapDevice);
-    }
+    await NetworkService.createTap(tapDevice);
 
     await ensureDir(config.paths.SOCKET_DIR);
     await ensureDir(config.paths.LOG_DIR);
-    await $`rm -f ${paths.socket}`.quiet().nothrow();
+    await $`rm -f ${paths.socket} ${paths.vsock}`.quiet().nothrow();
     await $`touch ${paths.log}`.quiet();
 
     const proc = Bun.spawn(
@@ -186,6 +187,12 @@ export class SandboxLifecycle {
         this.deps.internalService.syncConfigsToSandboxes(),
       ]);
     }
+
+    await CaddyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
+      vscode: config.raw.services.vscode.port,
+      opencode: config.raw.services.opencode.port,
+      terminal: config.raw.services.terminal.port,
+    });
 
     const updatedSandbox: Sandbox = {
       ...sandbox,

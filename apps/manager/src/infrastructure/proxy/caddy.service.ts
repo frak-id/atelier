@@ -67,6 +67,8 @@ export const CaddyService = {
   },
 
   async addRouteDirect(route: RouteDefinition): Promise<void> {
+    await this.removeRoute(route.domain);
+
     const routeConfig = {
       "@id": route.domain,
       match: [{ host: [route.domain] }],
