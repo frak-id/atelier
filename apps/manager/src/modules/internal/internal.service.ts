@@ -178,55 +178,40 @@ export class InternalService {
   }
 
   /**
-   * For each key in auth.json (anthropic, openai, etc.), pick the entry
-   * with the furthest OAuth expiry across all sandboxes. Non-OAuth entries
-   * don't rotate, so any copy is equivalent.
+   * DB is truth — sandboxes can only update or add keys, never remove them.
+   * OAuth: freshest expiry wins. Non-OAuth: sandbox copy preferred.
    */
   private async aggregateOpencodeAuth(
     sandboxAuths: { sandboxId: string; content: string; mtime: number }[],
     runningSandboxes: { id: string }[],
   ): Promise<void> {
-    const parsed: { sandboxId: string; auth: AuthJson }[] = [];
+    const dbAuth: AuthJson = this.parseDbAuth();
+    const bestAuth: AuthJson = { ...dbAuth };
+
     for (const { sandboxId, content } of sandboxAuths) {
+      let auth: AuthJson;
       try {
-        const auth = JSON.parse(content) as AuthJson;
-        parsed.push({ sandboxId, auth });
+        const raw = JSON.parse(content);
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+        auth = raw as AuthJson;
       } catch {
         log.debug({ sandboxId }, "Failed to parse auth.json from sandbox");
+        continue;
       }
-    }
-    if (parsed.length === 0) return;
 
-    // Seed from DB so keys not present in any sandbox are preserved
-    const existingRecord = this.sharedAuthRepository.getByProvider("opencode");
-    const bestAuth: AuthJson = existingRecord
-      ? (JSON.parse(existingRecord.content) as AuthJson)
-      : {};
-    const allKeys = new Set([
-      ...Object.keys(bestAuth),
-      ...parsed.flatMap(({ auth }) => Object.keys(auth)),
-    ]);
-
-    for (const key of allKeys) {
-      let bestEntry: AuthEntry | null = null;
-      let bestExpiry = -1;
-
-      for (const { auth } of parsed) {
-        const entry = auth[key];
+      for (const [key, entry] of Object.entries(auth)) {
         if (!entry) continue;
+        const current = bestAuth[key];
 
-        if (entry.type === "oauth") {
-          if (entry.expires > bestExpiry) {
-            bestExpiry = entry.expires;
-            bestEntry = entry;
-          }
-        } else if (!bestEntry) {
-          bestEntry = entry;
+        if (
+          entry.type === "oauth" &&
+          current?.type === "oauth" &&
+          entry.expires <= current.expires
+        ) {
+          continue;
         }
-      }
 
-      if (bestEntry) {
-        bestAuth[key] = bestEntry;
+        bestAuth[key] = entry;
       }
     }
 
@@ -237,7 +222,7 @@ export class InternalService {
 
     this.sharedAuthRepository.upsert("opencode", bestContent, "sandbox");
     log.info(
-      { keys: [...allKeys] },
+      { keys: Object.keys(bestAuth) },
       "Auth aggregated from sandboxes and stored in DB",
     );
 
@@ -263,6 +248,20 @@ export class InternalService {
       [{ path: VM_PATHS.opencodeAuth, content: bestContent }],
       "auth",
     );
+  }
+
+  private parseDbAuth(): AuthJson {
+    const record = this.sharedAuthRepository.getByProvider("opencode");
+    if (!record) return {};
+    try {
+      const raw = JSON.parse(record.content);
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        return raw as AuthJson;
+      }
+    } catch {
+      log.warn("Failed to parse existing DB auth.json, starting fresh");
+    }
+    return {};
   }
 
   private async aggregateOpaqueAuth(
