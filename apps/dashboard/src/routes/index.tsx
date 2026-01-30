@@ -1,7 +1,14 @@
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bot, CheckCircle, ExternalLink, Kanban, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  Bot,
+  CheckCircle,
+  ExternalLink,
+  Kanban,
+  Loader2,
+} from "lucide-react";
 import { Component, type ReactNode, Suspense, useState } from "react";
 import {
   sandboxDevCommandsQuery,
