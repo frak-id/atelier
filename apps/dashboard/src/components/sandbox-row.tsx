@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { Code2, ExternalLink, Trash2 } from "lucide-react";
 import type { Sandbox } from "@/api/client";
 import { opencodeSessionsQuery, useDeleteSandbox } from "@/api/queries";
@@ -15,12 +14,14 @@ type SandboxRowProps = {
   sandbox: Sandbox;
   workspaceName?: string;
   showDelete?: boolean;
+  onSandboxClick?: (sandboxId: string) => void;
 };
 
 export function SandboxRow({
   sandbox,
   workspaceName,
   showDelete = true,
+  onSandboxClick,
 }: SandboxRowProps) {
   const deleteMutation = useDeleteSandbox();
 
@@ -42,13 +43,13 @@ export function SandboxRow({
     <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
       <div className="flex items-center gap-3 min-w-0">
         <div className="flex-1 min-w-0">
-          <Link
-            to="/sandboxes/$id"
-            params={{ id: sandbox.id }}
-            className="font-semibold text-base hover:underline truncate block"
+          <button
+            type="button"
+            onClick={() => onSandboxClick?.(sandbox.id)}
+            className="font-semibold text-base hover:underline truncate block text-left"
           >
             {displayName}
-          </Link>
+          </button>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
             <span className="font-mono">{sandbox.id}</span>
             <span>•</span>
