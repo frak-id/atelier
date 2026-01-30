@@ -1,9 +1,11 @@
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   Bot,
   ExternalLink,
   Loader2,
+  Maximize2,
   Monitor,
   Pause,
   Play,
@@ -154,6 +156,22 @@ export function SandboxCard({
               className="flex items-center gap-1 pt-1"
               onClick={(e) => e.stopPropagation()}
             >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    asChild
+                  >
+                    <Link to="/sandboxes/$id" params={{ id: sandbox.id }}>
+                      <Maximize2 className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Immerse</TooltipContent>
+              </Tooltip>
+
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

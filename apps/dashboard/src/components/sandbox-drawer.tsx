@@ -8,6 +8,7 @@ import {
   GitBranch,
   Key,
   Loader2,
+  Maximize2,
   Monitor,
   Play,
   RefreshCw,
@@ -166,6 +167,12 @@ export function SandboxDrawer({
                     <span>Created {formatDate(sandbox.createdAt)}</span>
                   </div>
                 </div>
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/sandboxes/$id" params={{ id: sandbox.id }}>
+                    <Maximize2 className="h-4 w-4 mr-2" />
+                    Immerse
+                  </Link>
+                </Button>
                 <Button
                   variant="destructive"
                   size="sm"
