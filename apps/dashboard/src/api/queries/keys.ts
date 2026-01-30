@@ -82,6 +82,12 @@ export const queryKeys = {
     list: () => ["sshKeys", "list"] as const,
     hasKeys: () => ["sshKeys", "hasKeys"] as const,
   },
+  slack: {
+    all: ["slack"] as const,
+    status: ["slack", "status"] as const,
+    config: ["slack", "config"] as const,
+    threads: ["slack", "threads"] as const,
+  },
   sessionTemplates: {
     all: ["sessionTemplates"] as const,
     global: ["sessionTemplates", "global"] as const,
