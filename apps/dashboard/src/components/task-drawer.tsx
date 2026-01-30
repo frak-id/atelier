@@ -399,19 +399,9 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
                           <div className="text-muted-foreground">
                             Sandbox ID
                           </div>
-                          {sandbox ? (
-                            <Link
-                              to="/sandboxes/$id"
-                              params={{ id: taskData.data.sandboxId }}
-                              className="font-mono bg-muted px-2 py-1 rounded truncate text-blue-500 hover:underline"
-                            >
-                              {taskData.data.sandboxId}
-                            </Link>
-                          ) : (
-                            <code className="font-mono bg-muted px-2 py-1 rounded truncate">
-                              {taskData.data.sandboxId}
-                            </code>
-                          )}
+                          <code className="font-mono bg-muted px-2 py-1 rounded truncate">
+                            {taskData.data.sandboxId}
+                          </code>
                         </>
                       )}
 
