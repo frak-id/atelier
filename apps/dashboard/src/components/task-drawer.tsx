@@ -87,7 +87,7 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
     hasBusySessions,
     todoProgress,
   } = useTaskSessionProgress(
-    taskData ?? ({} as any),
+    taskData ?? undefined,
     sandbox?.runtime?.urls?.opencode,
     sandbox
       ? {
@@ -347,7 +347,7 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
 
                       <TaskSessionHierarchy
                         hierarchy={hierarchy}
-                        taskSessions={taskData.data.sessions ?? []}
+                        taskSessions={taskData.data?.sessions ?? []}
                         interactions={sessionInteractions}
                         opencodeUrl={sandbox?.runtime?.urls?.opencode}
                         directory={

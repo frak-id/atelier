@@ -60,11 +60,11 @@ export interface TaskSessionProgressResult {
 }
 
 export function useTaskSessionProgress(
-  task: Task,
-  opencodeUrl: string | undefined,
+  task?: Task,
+  opencodeUrl?: string,
   sandboxInfo?: {
     id: string;
-    workspaceId: string | undefined;
+    workspaceId?: string;
   },
   enabled = true,
 ): TaskSessionProgressResult {
@@ -82,7 +82,7 @@ export function useTaskSessionProgress(
 
   const hierarchyData = useMemo(() => {
     const taskSessionIds = new Set(
-      task.data.sessions?.map((s: { id: string }) => s.id) ?? [],
+      task?.data.sessions?.map((s: { id: string }) => s.id) ?? [],
     );
 
     const sessionsWithSandbox: SessionWithSandboxInfo[] = (sessions ?? []).map(
@@ -112,7 +112,7 @@ export function useTaskSessionProgress(
       allSessionIds: allSessions.map((s) => s.id),
     };
   }, [
-    task.data.sessions,
+    task?.data?.sessions,
     sessions,
     sandboxInfo?.id,
     sandboxInfo?.workspaceId,
