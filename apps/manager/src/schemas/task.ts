@@ -85,8 +85,16 @@ export const SpawnSessionsResponseSchema = t.Object({
 });
 export type SpawnSessionsResponse = Static<typeof SpawnSessionsResponseSchema>;
 
+export const SandboxActionValues = ["detach", "stop", "destroy"] as const;
+export type SandboxAction = (typeof SandboxActionValues)[number];
+
+export const ResetTaskQuerySchema = t.Object({
+  sandboxAction: t.Optional(t.String()),
+});
+export type ResetTaskQuery = Static<typeof ResetTaskQuerySchema>;
+
 export const DeleteTaskQuerySchema = t.Object({
-  keepSandbox: t.Optional(t.String()),
+  sandboxAction: t.Optional(t.String()),
 });
 export type DeleteTaskQuery = Static<typeof DeleteTaskQuerySchema>;
 

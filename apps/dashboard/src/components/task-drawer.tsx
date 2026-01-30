@@ -23,12 +23,12 @@ import {
   useAddTaskSessions,
   useCompleteTask,
   useDeleteTask,
-  useResetTask,
   useStartTask,
   workspaceDetailQuery,
 } from "@/api/queries";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { TaskDeleteDialog } from "@/components/kanban/task-delete-dialog";
+import { TaskResetDialog } from "@/components/kanban/task-reset-dialog";
 import { TaskSessionHierarchy } from "@/components/task-session-hierarchy";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
 import { Badge } from "@/components/ui/badge";
@@ -80,9 +80,9 @@ export function TaskDrawer({
 
   const startMutation = useStartTask();
   const completeMutation = useCompleteTask();
-  const resetMutation = useResetTask();
   const deleteMutation = useDeleteTask();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
 
   const {
     hierarchy,
@@ -126,14 +126,14 @@ export function TaskDrawer({
   };
 
   const handleReset = () => {
-    if (taskId) resetMutation.mutate(taskId);
+    if (taskData) setShowResetDialog(true);
   };
 
   const handleDelete = () => {
     if (!taskData) return;
-    if (taskData.status === "draft") {
+    if (taskData.status === "draft" && !taskData.data.sandboxId) {
       deleteMutation.mutate(
-        { id: taskData.id, keepSandbox: false },
+        { id: taskData.id },
         { onSuccess: () => onClose() },
       );
     } else {
@@ -180,6 +180,18 @@ export function TaskDrawer({
                       >
                         {taskData.status}
                       </Badge>
+                      {taskData.status === "done" && sandbox && (
+                        <Badge
+                          variant={
+                            sandbox.status === "running"
+                              ? "default"
+                              : "secondary"
+                          }
+                          className="text-xs"
+                        >
+                          Sandbox {sandbox.status}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       {workspace && (
@@ -233,17 +245,8 @@ export function TaskDrawer({
 
                     {(taskData.status === "active" ||
                       taskData.status === "done") && (
-                      <Button
-                        variant="outline"
-                        onClick={handleReset}
-                        disabled={resetMutation.isPending}
-                        size="sm"
-                      >
-                        {resetMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          "Reset to Draft"
-                        )}
+                      <Button variant="outline" onClick={handleReset} size="sm">
+                        Reset to Draft
                       </Button>
                     )}
 
@@ -508,6 +511,12 @@ export function TaskDrawer({
       <TaskDeleteDialog
         open={showDeleteDialog}
         onOpenChange={(open) => setShowDeleteDialog(open)}
+        task={taskData ?? null}
+      />
+
+      <TaskResetDialog
+        open={showResetDialog}
+        onOpenChange={(open) => setShowResetDialog(open)}
         task={taskData ?? null}
       />
     </Sheet>

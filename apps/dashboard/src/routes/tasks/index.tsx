@@ -111,8 +111,8 @@ function TasksPage() {
   };
 
   const handleDeleteTask = (task: Task) => {
-    if (task.status === "draft") {
-      deleteMutation.mutate({ id: task.id, keepSandbox: false });
+    if (task.status === "draft" && !task.data.sandboxId) {
+      deleteMutation.mutate({ id: task.id });
     } else {
       setDeletingTask(task);
     }

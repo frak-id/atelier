@@ -1,0 +1,217 @@
+import { queryOptions, useMutation } from "@tanstack/react-query";
+import { api } from "../client";
+import { queryKeys, unwrap } from "./keys";
+
+export const sandboxListQuery = (filters?: {
+  status?: string;
+  workspaceId?: string;
+}) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.list(filters),
+    queryFn: async () =>
+      unwrap(
+        await api.api.sandboxes.get({
+          query: filters as Record<string, string>,
+        }),
+      ),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+  });
+
+export const sandboxDetailQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.detail(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).get()),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+  });
+
+export const sandboxMetricsQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.metrics(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).metrics.get()),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+  });
+
+export const sandboxServicesQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.services(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).services.get()),
+    refetchInterval: 10000,
+    refetchIntervalInBackground: false,
+  });
+
+export const sandboxDevCommandsQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.devCommands(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).dev.get()),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+  });
+
+export const sandboxDevCommandLogsQuery = (
+  id: string,
+  name: string,
+  offset: number,
+) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.devCommandLogs(id, name, offset),
+    queryFn: async () =>
+      unwrap(
+        await api.api
+          .sandboxes({ id })
+          .dev({ name })
+          .logs.get({ query: { offset: offset.toString(), limit: "10000" } }),
+      ),
+    enabled: !!name,
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+  });
+
+export const sandboxGitStatusQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.gitStatus(id),
+    queryFn: async () =>
+      unwrap(await api.api.sandboxes({ id }).git.status.get()),
+    refetchInterval: 10000,
+    refetchIntervalInBackground: false,
+  });
+
+export function useCreateSandbox() {
+  return useMutation({
+    mutationKey: ["sandboxes", "create"],
+    mutationFn: async (data: {
+      workspaceId?: string;
+      baseImage?: string;
+      vcpus?: number;
+      memoryMb?: number;
+    }) => unwrap(await api.api.sandboxes.post(data)),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
+      queryClient.invalidateQueries({ queryKey: queryKeys.system.queue });
+    },
+  });
+}
+
+export function useDeleteSandbox() {
+  return useMutation({
+    mutationKey: ["sandboxes", "delete"],
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).delete()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+    },
+  });
+}
+
+export function useStopSandbox() {
+  return useMutation({
+    mutationKey: ["sandboxes", "stop"],
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).stop.post()),
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(id),
+      });
+    },
+  });
+}
+
+export function useStartSandbox() {
+  return useMutation({
+    mutationKey: ["sandboxes", "start"],
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).start.post()),
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(id),
+      });
+    },
+  });
+}
+
+export function useRestartSandbox() {
+  return useMutation({
+    mutationKey: ["sandboxes", "restart"],
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).restart.post()),
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(id),
+      });
+    },
+  });
+}
+
+export function useExecCommand(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "exec", sandboxId],
+    mutationFn: async (data: { command: string; timeout?: number }) =>
+      unwrap(await api.api.sandboxes({ id: sandboxId }).exec.post(data)),
+  });
+}
+
+export function useStartDevCommand(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "dev", "start", sandboxId],
+    mutationFn: async (name: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).dev({ name }).start.post(),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.devCommands(sandboxId),
+      });
+    },
+  });
+}
+
+export function useStopDevCommand(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "dev", "stop", sandboxId],
+    mutationFn: async (name: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).dev({ name }).stop.post(),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.devCommands(sandboxId),
+      });
+    },
+  });
+}
+
+export function useResizeStorage(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "resizeStorage", sandboxId],
+    mutationFn: async (sizeGb: number) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).storage.resize.post({
+          sizeGb,
+        }),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.metrics(sandboxId),
+      });
+    },
+  });
+}
+
+export function useSaveAsPrebuild() {
+  return useMutation({
+    mutationKey: ["sandboxes", "saveAsPrebuild"],
+    mutationFn: async (sandboxId: string) =>
+      unwrap(await api.api.sandboxes({ id: sandboxId }).promote.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+    },
+  });
+}

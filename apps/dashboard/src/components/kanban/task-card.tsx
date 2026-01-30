@@ -153,6 +153,17 @@ export function TaskCard({
             </div>
           )}
 
+          {task.status === "done" && sandbox && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <Badge
+                variant={sandbox.status === "running" ? "default" : "secondary"}
+                className="text-[10px] h-5 px-1.5"
+              >
+                Sandbox {sandbox.status}
+              </Badge>
+            </div>
+          )}
+
           {totalCount > 0 && (
             <div className="mt-2 space-y-1">
               {todoProgress.total > 0 ? (
