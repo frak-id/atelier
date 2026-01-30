@@ -219,15 +219,6 @@ export class TaskService {
   }
 
   delete(id: string): boolean {
-    const task = this.repository.getById(id);
-    if (!task) return false;
-
-    if (task.status !== "draft" && task.status !== "done") {
-      throw new ValidationError(
-        "Can only delete tasks in draft or done status",
-      );
-    }
-
     return this.repository.delete(id);
   }
 }

@@ -250,8 +250,7 @@ export function TaskDrawer({
                       </Button>
                     )}
 
-                    {(taskData.status === "draft" ||
-                      taskData.status === "done") && (
+                    {taskData.status !== "active" && (
                       <Button
                         variant="outline"
                         onClick={handleDelete}

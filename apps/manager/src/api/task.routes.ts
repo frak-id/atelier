@@ -8,7 +8,6 @@ import {
 import {
   AddSessionsBodySchema,
   CreateTaskBodySchema,
-  DeleteTaskQuerySchema,
   IdParamSchema,
   ReorderTaskBodySchema,
   ResetTaskQuerySchema,
@@ -168,22 +167,8 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
   )
   .delete(
     "/:id",
-    async ({ params, query, set }) => {
-      const task = taskService.getByIdOrThrow(params.id);
-      const sandboxAction = (query.sandboxAction ?? "destroy") as
-        | "detach"
-        | "stop"
-        | "destroy";
-
-      log.info({ taskId: params.id, sandboxAction }, "Deleting task");
-
-      if (task.data.sandboxId) {
-        if (sandboxAction === "stop") {
-          await sandboxLifecycle.stop(task.data.sandboxId);
-        } else if (sandboxAction === "destroy") {
-          await sandboxDestroyer.destroy(task.data.sandboxId);
-        }
-      }
+    ({ params, set }) => {
+      log.info({ taskId: params.id }, "Deleting task");
 
       taskService.delete(params.id);
       set.status = 204;
@@ -191,6 +176,5 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     },
     {
       params: IdParamSchema,
-      query: DeleteTaskQuerySchema,
     },
   );
