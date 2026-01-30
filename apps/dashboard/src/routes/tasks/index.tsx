@@ -17,6 +17,7 @@ import {
   sandboxDetailQuery,
   taskListQuery,
   useCompleteTask,
+  useDeleteTask,
   useStartTask,
   useWorkspaceMap,
   workspaceListQuery,
@@ -75,6 +76,7 @@ function TasksPage() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
   const [filterWorkspaceId, setFilterWorkspaceId] = useState<string>("all");
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
+  const deleteMutation = useDeleteTask();
 
   useEffect(() => {
     localStorage.setItem("frak_task_view", view);
@@ -109,7 +111,11 @@ function TasksPage() {
   };
 
   const handleDeleteTask = (task: Task) => {
-    setDeletingTask(task);
+    if (task.status === "draft") {
+      deleteMutation.mutate({ id: task.id, keepSandbox: false });
+    } else {
+      setDeletingTask(task);
+    }
   };
 
   const handleTaskClick = (task: Task) => {

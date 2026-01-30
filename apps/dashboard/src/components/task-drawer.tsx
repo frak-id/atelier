@@ -11,6 +11,7 @@ import {
   Shield,
   Sparkles,
   Terminal,
+  Trash2,
   Zap,
 } from "lucide-react";
 import { useState } from "react";
@@ -21,11 +22,13 @@ import {
   taskDetailQuery,
   useAddTaskSessions,
   useCompleteTask,
+  useDeleteTask,
   useResetTask,
   useStartTask,
   workspaceDetailQuery,
 } from "@/api/queries";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
+import { TaskDeleteDialog } from "@/components/kanban/task-delete-dialog";
 import { TaskSessionHierarchy } from "@/components/task-session-hierarchy";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +81,8 @@ export function TaskDrawer({
   const startMutation = useStartTask();
   const completeMutation = useCompleteTask();
   const resetMutation = useResetTask();
+  const deleteMutation = useDeleteTask();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const {
     hierarchy,
@@ -122,6 +127,18 @@ export function TaskDrawer({
 
   const handleReset = () => {
     if (taskId) resetMutation.mutate(taskId);
+  };
+
+  const handleDelete = () => {
+    if (!taskData) return;
+    if (taskData.status === "draft") {
+      deleteMutation.mutate(
+        { id: taskData.id, keepSandbox: false },
+        { onSuccess: () => onClose() },
+      );
+    } else {
+      setShowDeleteDialog(true);
+    }
   };
 
   const allTodos = sessionInteractions.flatMap((s) => s.todos);
@@ -227,6 +244,24 @@ export function TaskDrawer({
                         ) : (
                           "Reset to Draft"
                         )}
+                      </Button>
+                    )}
+
+                    {(taskData.status === "draft" ||
+                      taskData.status === "done") && (
+                      <Button
+                        variant="outline"
+                        onClick={handleDelete}
+                        disabled={deleteMutation.isPending}
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        {deleteMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 mr-2" />
+                        )}
+                        Delete
                       </Button>
                     )}
                   </div>
@@ -469,6 +504,12 @@ export function TaskDrawer({
           </>
         )}
       </SheetContent>
+
+      <TaskDeleteDialog
+        open={showDeleteDialog}
+        onOpenChange={(open) => setShowDeleteDialog(open)}
+        task={taskData ?? null}
+      />
     </Sheet>
   );
 }

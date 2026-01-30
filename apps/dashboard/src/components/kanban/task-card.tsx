@@ -272,13 +272,15 @@ export function TaskMenu({
             Reset to Draft
           </MenuButton>
         )}
-        <MenuButton
-          onClick={onDelete}
-          disabled={isActionPending}
-          className="text-destructive hover:text-destructive"
-        >
-          Delete
-        </MenuButton>
+        {(task.status === "draft" || task.status === "done") && (
+          <MenuButton
+            onClick={onDelete}
+            disabled={isActionPending}
+            className="text-destructive hover:text-destructive"
+          >
+            Delete
+          </MenuButton>
+        )}
       </PopoverContent>
     </Popover>
   );
