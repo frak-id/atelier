@@ -15,6 +15,8 @@ import {
   Loader2,
   LogOut,
   Menu,
+  MessageSquare,
+  Plug,
   Server,
   Settings,
 } from "lucide-react";
@@ -87,6 +89,9 @@ function RootLayout() {
       <NavLink to="/tasks" icon={Kanban}>
         Tasks
       </NavLink>
+      <NavLink to="/threads" icon={MessageSquare}>
+        Threads
+      </NavLink>
       <NavLink to="/sandboxes" icon={Boxes}>
         Sandboxes
       </NavLink>
@@ -109,6 +114,9 @@ function RootLayout() {
             </NavLink>
             <NavLink to="/settings" icon={Settings}>
               Settings
+            </NavLink>
+            <NavLink to="/integrations" icon={Plug}>
+              Integrations
             </NavLink>
           </CollapsibleContent>
         </Collapsible>
