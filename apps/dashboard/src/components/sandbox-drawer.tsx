@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Bot,
+  Check,
+  Copy,
   GitBranch,
   Key,
   Loader2,
@@ -9,12 +11,15 @@ import {
   Play,
   RefreshCw,
   Terminal,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   sandboxDetailQuery,
   sandboxGitStatusQuery,
   sandboxServicesQuery,
+  useDeleteSandbox,
   useExecCommand,
   workspaceDetailQuery,
 } from "@/api/queries";
@@ -22,6 +27,14 @@ import { DevCommandsPanel } from "@/components/dev-commands-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -55,12 +68,34 @@ export function SandboxDrawer({ sandboxId, onClose }: SandboxDrawerProps) {
     enabled: sandbox?.status === "running",
   });
 
+  const deleteMutation = useDeleteSandbox();
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCommand(id);
+    toast.success("Copied to clipboard");
+    setTimeout(() => setCopiedCommand(null), 2000);
+  };
+
   const statusVariant = {
     running: "success",
     creating: "warning",
     stopped: "secondary",
     error: "error",
   } as const;
+
+  const handleDelete = () => {
+    if (!sandboxId) return;
+    deleteMutation.mutate(sandboxId, {
+      onSuccess: () => {
+        setIsDeleteDialogOpen(false);
+        onClose();
+        toast.success("Sandbox deleted");
+      },
+    });
+  };
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -102,6 +137,14 @@ export function SandboxDrawer({ sandboxId, onClose }: SandboxDrawerProps) {
                     <span>Created {formatDate(sandbox.createdAt)}</span>
                   </div>
                 </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
               </div>
 
               {sandbox.status === "running" && (
@@ -158,54 +201,156 @@ export function SandboxDrawer({ sandboxId, onClose }: SandboxDrawerProps) {
 
                     <Card>
                       <CardHeader>
-                        <CardTitle className="text-base">Services</CardTitle>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Key className="h-4 w-4" />
+                          Quick Connect
+                        </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        {services?.services && services.services.length > 0 ? (
-                          <div className="space-y-2">
-                            {services.services.map((service) => (
-                              <div
-                                key={service.name}
-                                className="flex items-center justify-between py-2 border-b last:border-0"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="font-medium">
-                                    {service.name}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {service.pid && (
-                                    <span className="text-xs text-muted-foreground font-mono">
-                                      PID: {service.pid}
-                                    </span>
-                                  )}
-                                  <Badge
-                                    variant={
-                                      service.running ? "success" : "secondary"
-                                    }
-                                    className="h-5 px-1.5"
-                                  >
-                                    {service.running ? "Running" : "Stopped"}
-                                  </Badge>
-                                </div>
-                              </div>
-                            ))}
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium">
+                            OpenCode CLI
                           </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            No services detected
-                          </p>
-                        )}
+                          <div className="relative">
+                            <code className="block bg-muted p-3 rounded-md font-mono text-sm pr-10 overflow-x-auto whitespace-nowrap">
+                              opencode attach {sandbox.runtime.urls.opencode}
+                            </code>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="absolute right-1 top-1 h-7 w-7"
+                              onClick={() =>
+                                copyToClipboard(
+                                  `opencode attach ${sandbox.runtime.urls.opencode}`,
+                                  "opencode",
+                                )
+                              }
+                            >
+                              {copiedCommand === "opencode" ? (
+                                <Check className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium">
+                            VSCode Remote
+                          </div>
+                          <div className="relative">
+                            <code className="block bg-muted p-3 rounded-md font-mono text-sm pr-10 overflow-x-auto whitespace-nowrap">
+                              code --remote ssh-remote+root@
+                              {sandbox.runtime.ipAddress} /workspace
+                            </code>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="absolute right-1 top-1 h-7 w-7"
+                              onClick={() =>
+                                copyToClipboard(
+                                  `code --remote ssh-remote+root@${sandbox.runtime.ipAddress} /workspace`,
+                                  "vscode",
+                                )
+                              }
+                            >
+                              {copiedCommand === "vscode" ? (
+                                <Check className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium">SSH</div>
+                          <div className="relative">
+                            <code className="block bg-muted p-3 rounded-md font-mono text-sm pr-10 overflow-x-auto whitespace-nowrap">
+                              ssh root@{sandbox.runtime.ipAddress}
+                            </code>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="absolute right-1 top-1 h-7 w-7"
+                              onClick={() =>
+                                copyToClipboard(
+                                  `ssh root@${sandbox.runtime.ipAddress}`,
+                                  "ssh",
+                                )
+                              }
+                            >
+                              {copiedCommand === "ssh" ? (
+                                <Check className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <Copy className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
 
                     <Tabs defaultValue="repos" className="w-full">
                       <TabsList className="w-full justify-start">
                         <TabsTrigger value="repos">Repositories</TabsTrigger>
+                        <TabsTrigger value="services">Services</TabsTrigger>
                         <TabsTrigger value="exec">Exec</TabsTrigger>
                       </TabsList>
                       <TabsContent value="repos" className="mt-4">
                         <RepositoriesTab sandboxId={sandbox.id} />
+                      </TabsContent>
+                      <TabsContent value="services" className="mt-4">
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-base">
+                              Services
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            {services?.services &&
+                            services.services.length > 0 ? (
+                              <div className="space-y-2">
+                                {services.services.map((service) => (
+                                  <div
+                                    key={service.name}
+                                    className="flex items-center justify-between py-2 border-b last:border-0"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div className="font-medium">
+                                        {service.name}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {service.pid && (
+                                        <span className="text-xs text-muted-foreground font-mono">
+                                          PID: {service.pid}
+                                        </span>
+                                      )}
+                                      <Badge
+                                        variant={
+                                          service.running
+                                            ? "success"
+                                            : "secondary"
+                                        }
+                                        className="h-5 px-1.5"
+                                      >
+                                        {service.running
+                                          ? "Running"
+                                          : "Stopped"}
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">
+                                No services detected
+                              </p>
+                            )}
+                          </CardContent>
+                        </Card>
                       </TabsContent>
                       <TabsContent value="exec" className="mt-4">
                         <ExecTab sandboxId={sandbox.id} />
@@ -233,6 +378,36 @@ export function SandboxDrawer({ sandboxId, onClose }: SandboxDrawerProps) {
           </>
         )}
       </SheetContent>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Sandbox</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this sandbox? This action cannot
+              be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              )}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
