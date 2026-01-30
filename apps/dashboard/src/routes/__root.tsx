@@ -20,7 +20,9 @@ import {
 import { Suspense, useState } from "react";
 import { Toaster } from "sonner";
 import { clearAuthToken } from "@/api/client";
+import { GitHubStatus } from "@/components/github-status";
 import { LoginPage } from "@/components/login-page";
+import { SystemStatusFooter } from "@/components/system-status-footer";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -110,7 +112,9 @@ function RootLayout() {
           </div>
           <SidebarContent />
           <div className="p-4 border-t space-y-3">
-            <Suspense fallback={null}>{/* GitHubStatus removed */}</Suspense>
+            <Suspense fallback={null}>
+              <GitHubStatus />
+            </Suspense>
             <button
               type="button"
               onClick={handleLogout}
@@ -135,7 +139,9 @@ function RootLayout() {
             </SheetHeader>
             <SidebarContent />
             <div className="p-4 border-t space-y-3">
-              <Suspense fallback={null}>{null}</Suspense>
+              <Suspense fallback={null}>
+                <GitHubStatus />
+              </Suspense>
               <button
                 type="button"
                 onClick={handleLogout}
@@ -169,7 +175,9 @@ function RootLayout() {
             <Outlet />
           </main>
 
-          <Suspense fallback={null}>{null}</Suspense>
+          <Suspense fallback={null}>
+            <SystemStatusFooter />
+          </Suspense>
         </div>
       </div>
     </TooltipProvider>
