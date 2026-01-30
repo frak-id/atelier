@@ -1,3 +1,4 @@
+import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bot,
@@ -31,6 +32,7 @@ import { formatRelativeTime } from "@/lib/utils";
 interface SandboxCardProps {
   sandbox: Sandbox;
   workspace?: Workspace;
+  task?: Task;
   onDelete: () => void;
   onRecreate?: () => void;
   isRecreating?: boolean;
@@ -39,11 +41,13 @@ interface SandboxCardProps {
   isStopping?: boolean;
   isStarting?: boolean;
   onShowDetails: () => void;
+  onShowTask?: () => void;
 }
 
 export function SandboxCard({
   sandbox,
   workspace,
+  task,
   onDelete,
   onRecreate,
   isRecreating,
@@ -52,6 +56,7 @@ export function SandboxCard({
   isStopping,
   isStarting,
   onShowDetails,
+  onShowTask,
 }: SandboxCardProps) {
   const statusVariant = {
     running: "success",
@@ -94,12 +99,30 @@ export function SandboxCard({
                   {sandbox.status}
                 </Badge>
               </div>
-              {sandbox.workspaceId && (
-                <p
-                  className="text-sm text-muted-foreground truncate"
-                  title={workspace?.name ?? sandbox.workspaceId}
-                >
-                  {workspace?.name ?? sandbox.workspaceId}
+              {(sandbox.workspaceId || task) && (
+                <p className="text-sm text-muted-foreground truncate flex items-center gap-1.5">
+                  {sandbox.workspaceId && (
+                    <span title={workspace?.name ?? sandbox.workspaceId}>
+                      {workspace?.name ?? sandbox.workspaceId}
+                    </span>
+                  )}
+                  {sandbox.workspaceId && task && (
+                    <span className="text-muted-foreground/50">•</span>
+                  )}
+                  {task && (
+                    // biome-ignore lint/a11y/noStaticElementInteractions: Stop propagation wrapper
+                    // biome-ignore lint/a11y/useKeyWithClickEvents: Stop propagation wrapper
+                    <span
+                      className="truncate hover:text-foreground transition-colors cursor-pointer"
+                      title={task.title}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onShowTask?.();
+                      }}
+                    >
+                      {task.title}
+                    </span>
+                  )}
                 </p>
               )}
             </div>

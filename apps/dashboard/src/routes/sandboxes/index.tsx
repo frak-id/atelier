@@ -6,6 +6,7 @@ import type { Sandbox } from "@/api/client";
 import {
   sandboxListQuery,
   sshKeysListQuery,
+  taskListQuery,
   useCreateSandbox,
   useDeleteSandbox,
   useStartSandbox,
@@ -16,6 +17,7 @@ import { CreateSandboxDialog } from "@/components/create-sandbox-dialog";
 import { SandboxCard } from "@/components/sandbox-card";
 import { SandboxDrawer } from "@/components/sandbox-drawer";
 import { SshKeyAlert } from "@/components/ssh-key-alert";
+import { TaskDrawer } from "@/components/task-drawer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -51,9 +53,11 @@ function SandboxesPage() {
   const [selectedSandboxId, setSelectedSandboxId] = useState<string | null>(
     null,
   );
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [recreatingId, setRecreatingId] = useState<string | null>(null);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
   const { data: sshKeys } = useQuery(sshKeysListQuery);
+  const { data: tasks } = useQuery(taskListQuery());
   const workspaceDataMap = useWorkspaceDataMap();
   const deleteMutation = useDeleteSandbox();
   const createMutation = useCreateSandbox();
@@ -147,11 +151,13 @@ function SandboxesPage() {
             const workspace = sandbox.workspaceId
               ? workspaceDataMap.get(sandbox.workspaceId)
               : undefined;
+            const task = tasks?.find((t) => t.data.sandboxId === sandbox.id);
             return (
               <SandboxCard
                 key={sandbox.id}
                 sandbox={sandbox}
                 workspace={workspace}
+                task={task}
                 onDelete={() => handleDelete(sandbox.id)}
                 onRecreate={() => handleRecreate(sandbox)}
                 isRecreating={recreatingId === sandbox.id}
@@ -166,6 +172,9 @@ function SandboxesPage() {
                   startMutation.variables === sandbox.id
                 }
                 onShowDetails={() => setSelectedSandboxId(sandbox.id)}
+                onShowTask={() => {
+                  if (task) setSelectedTaskId(task.id);
+                }}
               />
             );
           })}
@@ -176,6 +185,12 @@ function SandboxesPage() {
       <SandboxDrawer
         sandboxId={selectedSandboxId}
         onClose={() => setSelectedSandboxId(null)}
+        onOpenTask={setSelectedTaskId}
+      />
+      <TaskDrawer
+        taskId={selectedTaskId}
+        onClose={() => setSelectedTaskId(null)}
+        onOpenSandbox={setSelectedSandboxId}
       />
     </div>
   );

@@ -111,7 +111,10 @@ function MissionControlPage() {
 
         <SectionErrorBoundary>
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            <RunningSandboxesSection onSelectSandbox={setSelectedSandboxId} />
+            <RunningSandboxesSection
+              onSelectSandbox={setSelectedSandboxId}
+              onSelectTask={setSelectedTaskId}
+            />
           </Suspense>
         </SectionErrorBoundary>
 
@@ -125,6 +128,7 @@ function MissionControlPage() {
       <SandboxDrawer
         sandboxId={selectedSandboxId}
         onClose={() => setSelectedSandboxId(null)}
+        onOpenTask={setSelectedTaskId}
       />
 
       <TaskDrawer
@@ -330,10 +334,13 @@ function ActiveTaskCard({
 
 function RunningSandboxesSection({
   onSelectSandbox,
+  onSelectTask,
 }: {
   onSelectSandbox: (id: string) => void;
+  onSelectTask: (id: string) => void;
 }) {
   const { data: sandboxes } = useQuery(sandboxListQuery());
+  const { data: tasks } = useQuery(taskListQuery());
   const runningSandboxes =
     sandboxes?.filter((s) => s.status === "running") ?? [];
   const workspaceDataMap = useQuery({
@@ -367,25 +374,32 @@ function RunningSandboxesSection({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {runningSandboxes.map((sandbox) => (
-            <SandboxCard
-              key={sandbox.id}
-              sandbox={sandbox}
-              workspace={
-                sandbox.workspaceId
-                  ? workspaceDataMap?.get(sandbox.workspaceId)
-                  : undefined
-              }
-              onShowDetails={() => onSelectSandbox(sandbox.id)}
-              onDelete={() => deleteSandbox.mutate(sandbox.id)}
-              onStop={() => stopSandbox.mutate(sandbox.id)}
-              onStart={() => startSandbox.mutate(sandbox.id)}
-              onRecreate={() => restartSandbox.mutate(sandbox.id)}
-              isStopping={stopSandbox.isPending}
-              isStarting={startSandbox.isPending}
-              isRecreating={restartSandbox.isPending}
-            />
-          ))}
+          {runningSandboxes.map((sandbox) => {
+            const task = tasks?.find((t) => t.data.sandboxId === sandbox.id);
+            return (
+              <SandboxCard
+                key={sandbox.id}
+                sandbox={sandbox}
+                workspace={
+                  sandbox.workspaceId
+                    ? workspaceDataMap?.get(sandbox.workspaceId)
+                    : undefined
+                }
+                task={task}
+                onShowDetails={() => onSelectSandbox(sandbox.id)}
+                onDelete={() => deleteSandbox.mutate(sandbox.id)}
+                onStop={() => stopSandbox.mutate(sandbox.id)}
+                onStart={() => startSandbox.mutate(sandbox.id)}
+                onRecreate={() => restartSandbox.mutate(sandbox.id)}
+                isStopping={stopSandbox.isPending}
+                isStarting={startSandbox.isPending}
+                isRecreating={restartSandbox.isPending}
+                onShowTask={() => {
+                  if (task) onSelectTask(task.id);
+                }}
+              />
+            );
+          })}
         </div>
       )}
     </div>
