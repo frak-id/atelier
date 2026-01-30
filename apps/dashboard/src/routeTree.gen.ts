@@ -17,8 +17,6 @@ import { Route as SettingsIndexRouteImport } from "./routes/settings/index"
 import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index"
 import { Route as ImagesIndexRouteImport } from "./routes/images/index"
 import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id"
-import { Route as TasksIdRouteImport } from "./routes/tasks/$id"
-import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id"
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
@@ -60,21 +58,9 @@ const WorkspacesIdRoute = WorkspacesIdRouteImport.update({
   path: "/workspaces/$id",
   getParentRoute: () => rootRouteImport,
 } as any)
-const TasksIdRoute = TasksIdRouteImport.update({
-  id: "/tasks/$id",
-  path: "/tasks/$id",
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SandboxesIdRoute = SandboxesIdRouteImport.update({
-  id: "/sandboxes/$id",
-  path: "/sandboxes/$id",
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/tasks/$id": typeof TasksIdRoute
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images/": typeof ImagesIndexRoute
   "/sandboxes/": typeof SandboxesIndexRoute
@@ -85,8 +71,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/tasks/$id": typeof TasksIdRoute
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images": typeof ImagesIndexRoute
   "/sandboxes": typeof SandboxesIndexRoute
@@ -98,8 +82,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
-  "/sandboxes/$id": typeof SandboxesIdRoute
-  "/tasks/$id": typeof TasksIdRoute
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images/": typeof ImagesIndexRoute
   "/sandboxes/": typeof SandboxesIndexRoute
@@ -112,8 +94,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | "/"
-    | "/sandboxes/$id"
-    | "/tasks/$id"
     | "/workspaces/$id"
     | "/images/"
     | "/sandboxes/"
@@ -124,8 +104,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/"
-    | "/sandboxes/$id"
-    | "/tasks/$id"
     | "/workspaces/$id"
     | "/images"
     | "/sandboxes"
@@ -136,8 +114,6 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
-    | "/sandboxes/$id"
-    | "/tasks/$id"
     | "/workspaces/$id"
     | "/images/"
     | "/sandboxes/"
@@ -149,8 +125,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  SandboxesIdRoute: typeof SandboxesIdRoute
-  TasksIdRoute: typeof TasksIdRoute
   WorkspacesIdRoute: typeof WorkspacesIdRoute
   ImagesIndexRoute: typeof ImagesIndexRoute
   SandboxesIndexRoute: typeof SandboxesIndexRoute
@@ -218,27 +192,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof WorkspacesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/tasks/$id": {
-      id: "/tasks/$id"
-      path: "/tasks/$id"
-      fullPath: "/tasks/$id"
-      preLoaderRoute: typeof TasksIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    "/sandboxes/$id": {
-      id: "/sandboxes/$id"
-      path: "/sandboxes/$id"
-      fullPath: "/sandboxes/$id"
-      preLoaderRoute: typeof SandboxesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  SandboxesIdRoute: SandboxesIdRoute,
-  TasksIdRoute: TasksIdRoute,
   WorkspacesIdRoute: WorkspacesIdRoute,
   ImagesIndexRoute: ImagesIndexRoute,
   SandboxesIndexRoute: SandboxesIndexRoute,
