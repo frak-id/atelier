@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Bot,
   Columns2,
+  Globe,
   Loader2,
   Monitor,
   Pause,
@@ -15,8 +16,10 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Sandbox } from "@/api/client";
 import {
+  sandboxBrowserStatusQuery,
   sandboxDetailQuery,
   useRestartSandbox,
+  useStartBrowser,
   useStartSandbox,
   useStopSandbox,
   workspaceDetailQuery,
@@ -46,12 +49,13 @@ const statusVariant = {
   error: "error",
 } as const;
 
-type TabId = "opencode" | "vscode" | "terminal";
+type TabId = "opencode" | "vscode" | "terminal" | "web";
 
 const tabs: { id: TabId; label: string; icon: typeof Monitor }[] = [
   { id: "opencode", label: "OpenCode", icon: Bot },
   { id: "vscode", label: "VSCode", icon: Monitor },
   { id: "terminal", label: "Terminal", icon: Terminal },
+  { id: "web", label: "Web", icon: Globe },
 ];
 
 function useIsMobile() {
@@ -76,9 +80,21 @@ function SandboxImmersionPage() {
 
   const isMobile = useIsMobile();
 
+  const { data: browserStatus } = useQuery({
+    ...sandboxBrowserStatusQuery(id),
+    enabled: sandbox?.status === "running",
+  });
+  const startBrowserMutation = useStartBrowser(id);
+
+  const browserUrl = browserStatus?.url
+    ? `${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`
+    : undefined;
+
   const [activeTab, setActiveTab] = useState<TabId>("opencode");
   const [splitOpen, setSplitOpen] = useState(!isMobile);
-  const [rightTab, setRightTab] = useState<"vscode" | "terminal">("vscode");
+  const [rightTab, setRightTab] = useState<"vscode" | "terminal" | "web">(
+    "vscode",
+  );
 
   useEffect(() => {
     if (isMobile) setSplitOpen(false);
@@ -86,6 +102,10 @@ function SandboxImmersionPage() {
 
   const handleTabClick = useCallback(
     (tabId: TabId) => {
+      if (tabId === "web" && browserStatus?.status === "off") {
+        startBrowserMutation.mutate();
+      }
+
       if (isMobile) {
         setActiveTab(tabId);
         return;
@@ -115,14 +135,21 @@ function SandboxImmersionPage() {
         setActiveTab(tabId);
       }
     },
-    [isMobile, splitOpen, activeTab, rightTab],
+    [
+      isMobile,
+      splitOpen,
+      activeTab,
+      rightTab,
+      browserStatus?.status,
+      startBrowserMutation,
+    ],
   );
 
   const toggleLayout = useCallback(() => {
     if (isMobile) return;
     setSplitOpen((prev) => {
       if (!prev && activeTab !== "opencode") {
-        setRightTab(activeTab as "vscode" | "terminal");
+        setRightTab(activeTab as "vscode" | "terminal" | "web");
       }
       return !prev;
     });
@@ -282,6 +309,8 @@ function SandboxImmersionPage() {
           splitOpen={splitOpen}
           activeTab={activeTab}
           rightTab={rightTab}
+          browserUrl={browserUrl}
+          browserStarting={browserStatus?.status === "starting"}
         />
       ) : (
         <div className="flex-1 flex items-center justify-center">
@@ -363,35 +392,67 @@ function ImmersionContent({
   splitOpen,
   activeTab,
   rightTab,
+  browserUrl,
+  browserStarting,
 }: {
   sandbox: Sandbox;
   splitOpen: boolean;
   activeTab: TabId;
-  rightTab: "vscode" | "terminal";
+  rightTab: "vscode" | "terminal" | "web";
+  browserUrl?: string;
+  browserStarting?: boolean;
 }) {
   const { splitPercent, dividerRef, containerRef, onPointerDown } =
     useSplitResize();
 
-  const urlMap: Record<TabId, string> = {
+  const urlMap: Record<TabId, string | undefined> = {
     opencode: sandbox.runtime.urls.opencode,
     vscode: sandbox.runtime.urls.vscode,
     terminal: sandbox.runtime.urls.terminal,
+    web: browserUrl,
   };
 
   if (!splitOpen) {
     return (
       <div className="flex-1 relative">
-        {tabs.map((tab) => (
-          <iframe
-            key={tab.id}
-            src={urlMap[tab.id]}
-            className={cn(
-              "absolute inset-0 w-full h-full border-0",
-              tab.id !== activeTab && "hidden",
-            )}
-            title={tab.label}
-          />
-        ))}
+        {tabs.map((tab) => {
+          const url = urlMap[tab.id];
+          if (!url) {
+            return (
+              <div
+                key={tab.id}
+                className={cn(
+                  "absolute inset-0 flex items-center justify-center bg-muted/30",
+                  tab.id !== activeTab && "hidden",
+                )}
+              >
+                <div className="text-center space-y-3">
+                  <Globe className="h-8 w-8 mx-auto text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    {browserStarting
+                      ? "Browser is starting..."
+                      : "Click to start browser"}
+                  </p>
+                  {browserStarting && (
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+                  )}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <iframe
+              key={tab.id}
+              src={url}
+              className={cn(
+                "absolute inset-0 w-full h-full border-0",
+                tab.id !== activeTab && "hidden",
+              )}
+              title={tab.label}
+              allow={tab.id === "web" ? "clipboard-write" : undefined}
+            />
+          );
+        })}
       </div>
     );
   }
@@ -415,17 +476,50 @@ function ImmersionContent({
       </div>
 
       <div className="flex-1 min-w-0 relative">
-        {(["vscode", "terminal"] as const).map((tabId) => (
-          <iframe
-            key={tabId}
-            src={urlMap[tabId]}
-            className={cn(
-              "absolute inset-0 w-full h-full border-0",
-              rightTab !== tabId && "hidden",
-            )}
-            title={tabId === "vscode" ? "VSCode" : "Terminal"}
-          />
-        ))}
+        {(["vscode", "terminal", "web"] as const).map((tabId) => {
+          const url = urlMap[tabId];
+          if (!url) {
+            return (
+              <div
+                key={tabId}
+                className={cn(
+                  "absolute inset-0 flex items-center justify-center bg-muted/30",
+                  rightTab !== tabId && "hidden",
+                )}
+              >
+                <div className="text-center space-y-3">
+                  <Globe className="h-8 w-8 mx-auto text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    {browserStarting
+                      ? "Browser is starting..."
+                      : "Click to start browser"}
+                  </p>
+                  {browserStarting && (
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+                  )}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <iframe
+              key={tabId}
+              src={url}
+              className={cn(
+                "absolute inset-0 w-full h-full border-0",
+                rightTab !== tabId && "hidden",
+              )}
+              title={
+                tabId === "vscode"
+                  ? "VSCode"
+                  : tabId === "terminal"
+                    ? "Terminal"
+                    : "Web"
+              }
+              allow={tabId === "web" ? "clipboard-write" : undefined}
+            />
+          );
+        })}
       </div>
     </div>
   );

@@ -23,6 +23,7 @@ export interface SandboxConfig {
     vscode: { port: number; enabled?: boolean };
     opencode: { port: number; enabled?: boolean };
     terminal: { port: number; enabled?: boolean };
+    browser?: { port: number; enabled?: boolean };
     agent: { port: number; enabled?: boolean };
   };
 }

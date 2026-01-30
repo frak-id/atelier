@@ -204,6 +204,47 @@ export function useResizeStorage(sandboxId: string) {
   });
 }
 
+export const sandboxBrowserStatusQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.browserStatus(id),
+    queryFn: async () =>
+      unwrap(await api.api.sandboxes({ id }).browser.status.get()),
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+  });
+
+export function useStartBrowser(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "browser", "start", sandboxId],
+    mutationFn: async () =>
+      unwrap(await api.api.sandboxes({ id: sandboxId }).browser.start.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.browserStatus(sandboxId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(sandboxId),
+      });
+    },
+  });
+}
+
+export function useStopBrowser(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "browser", "stop", sandboxId],
+    mutationFn: async () =>
+      unwrap(await api.api.sandboxes({ id: sandboxId }).browser.stop.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.browserStatus(sandboxId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(sandboxId),
+      });
+    },
+  });
+}
+
 export function useSaveAsPrebuild() {
   return useMutation({
     mutationKey: ["sandboxes", "saveAsPrebuild"],

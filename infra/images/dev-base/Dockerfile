@@ -8,6 +8,7 @@
 FROM node:22-slim
 
 ARG TTYD_VERSION=1.7.7
+ARG NOVNC_VERSION=1.5.0
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
 ENV USER=dev
@@ -46,9 +47,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config \
     && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config \
     && echo "dev:sandbox" | chpasswd \
+    # Browser streaming: Xvfb + x11vnc + websockify (Chromium binary is on shared ext4 drive)
+    xvfb \
+    x11vnc \
+    python3-minimal \
+    python3-numpy \
+    # Chromium runtime dependencies (binary loaded from /opt/shared/bin)
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libxss1 \
+    libxtst6 \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    libdbus-1-3 \
+    libexpat1 \
+    fonts-liberation \
     # Install ttyd from GitHub release (not in Debian repos)
     && curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64 \
     && chmod +x /usr/local/bin/ttyd \
+    # Install websockify via pip
+    && python3 -m pip install --break-system-packages --no-cache-dir websockify \
+    # Install noVNC static files
+    && curl -fsSL -o /tmp/novnc.tar.gz https://github.com/novnc/noVNC/archive/refs/tags/v${NOVNC_VERSION}.tar.gz \
+    && mkdir -p /opt/novnc \
+    && tar -xzf /tmp/novnc.tar.gz -C /opt/novnc --strip-components=1 \
+    && rm -f /tmp/novnc.tar.gz \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && rm -rf /usr/share/doc /usr/share/man /usr/share/info /usr/share/lintian \

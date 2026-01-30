@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Copy,
   GitBranch,
+  Globe,
   Key,
   Loader2,
   Maximize2,
@@ -18,12 +19,14 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import {
+  sandboxBrowserStatusQuery,
   sandboxDetailQuery,
   sandboxGitStatusQuery,
   sandboxServicesQuery,
   taskListQuery,
   useDeleteSandbox,
   useExecCommand,
+  useStartBrowser,
   workspaceDetailQuery,
 } from "@/api/queries";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
@@ -79,6 +82,11 @@ export function SandboxDrawer({
 
   const { data: services } = useQuery({
     ...sandboxServicesQuery(sandboxId ?? ""),
+    enabled: sandbox?.status === "running",
+  });
+
+  const { data: browserStatus } = useQuery({
+    ...sandboxBrowserStatusQuery(sandboxId ?? ""),
     enabled: sandbox?.status === "running",
   });
 
@@ -225,6 +233,10 @@ export function SandboxDrawer({
                       SSH
                     </a>
                   </Button>
+                  <BrowserButton
+                    sandboxId={sandbox.id}
+                    browserStatus={browserStatus ?? undefined}
+                  />
                 </div>
               )}
             </SheetHeader>
@@ -579,6 +591,43 @@ function RepositoriesTab({ sandboxId }: { sandboxId: string }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function BrowserButton({
+  sandboxId,
+  browserStatus,
+}: {
+  sandboxId: string;
+  browserStatus?: { status: string; url?: string };
+}) {
+  const startBrowser = useStartBrowser(sandboxId);
+
+  if (browserStatus?.status === "running" && browserStatus.url) {
+    return (
+      <Button variant="outline" size="sm" asChild>
+        <a href={browserStatus.url} target="_blank" rel="noopener noreferrer">
+          <Globe className="h-4 w-4 mr-2" />
+          Browser
+        </a>
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => startBrowser.mutate()}
+      disabled={startBrowser.isPending || browserStatus?.status === "starting"}
+    >
+      {startBrowser.isPending || browserStatus?.status === "starting" ? (
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+      ) : (
+        <Globe className="h-4 w-4 mr-2" />
+      )}
+      {browserStatus?.status === "starting" ? "Starting..." : "Browser"}
+    </Button>
   );
 }
 

@@ -148,8 +148,6 @@ export const SharedStorageService = {
 
       await $`rm -f ${tempFile}`.quiet().nothrow();
 
-      // Create relative symlinks so they work from VM's /opt/shared/bin/
-      // (absolute paths would point to host filesystem, not guest)
       await $`mkdir -p ${SHARED_STORAGE.BINARIES_DIR}/bin`.quiet().nothrow();
       if (id === "code-server") {
         await $`ln -sf ../${binary.binaryPath}/bin/code-server ${SHARED_STORAGE.BINARIES_DIR}/bin/code-server`
@@ -157,6 +155,10 @@ export const SharedStorageService = {
           .nothrow();
       } else if (id === "opencode") {
         await $`ln -sf ../${binary.binaryPath} ${SHARED_STORAGE.BINARIES_DIR}/bin/opencode`
+          .quiet()
+          .nothrow();
+      } else if (id === "chromium") {
+        await $`ln -sf ../${binary.binaryPath}/chrome-headless-shell ${SHARED_STORAGE.BINARIES_DIR}/bin/chromium`
           .quiet()
           .nothrow();
       }
@@ -198,6 +200,10 @@ export const SharedStorageService = {
           .nothrow();
       } else if (id === "opencode") {
         await $`rm -f ${SHARED_STORAGE.BINARIES_DIR}/bin/opencode`
+          .quiet()
+          .nothrow();
+      } else if (id === "chromium") {
+        await $`rm -f ${SHARED_STORAGE.BINARIES_DIR}/bin/chromium`
           .quiet()
           .nothrow();
       }

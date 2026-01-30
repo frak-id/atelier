@@ -227,6 +227,37 @@ export const CaddyService = {
     );
   },
 
+  async registerBrowserRoute(
+    sandboxId: string,
+    ipAddress: string,
+    port: number,
+  ): Promise<string> {
+    const browserDomain = `browser-${sandboxId}.${config.caddy.domainSuffix}`;
+
+    if (config.isMock()) {
+      log.debug({ sandboxId, browserDomain }, "Mock: Browser route registered");
+      return `https://${browserDomain}`;
+    }
+
+    await this.addRoutes([
+      { domain: browserDomain, upstream: `${ipAddress}:${port}` },
+    ]);
+    log.info({ sandboxId, browserDomain }, "Browser route registered");
+    return `https://${browserDomain}`;
+  },
+
+  async removeBrowserRoute(sandboxId: string): Promise<void> {
+    const browserDomain = `browser-${sandboxId}.${config.caddy.domainSuffix}`;
+
+    if (config.isMock()) {
+      log.debug({ sandboxId }, "Mock: Browser route removed");
+      return;
+    }
+
+    await this.removeRoute(browserDomain);
+    log.info({ sandboxId }, "Browser route removed");
+  },
+
   async removeRoutes(sandboxId: string): Promise<void> {
     const vscodeDomain = `sandbox-${sandboxId}.${config.caddy.domainSuffix}`;
     const opencodeDomain = `opencode-${sandboxId}.${config.caddy.domainSuffix}`;
@@ -239,10 +270,13 @@ export const CaddyService = {
 
     const devRouteDomains = await this.findDevRoutesForSandbox(sandboxId);
 
+    const browserDomain = `browser-${sandboxId}.${config.caddy.domainSuffix}`;
+
     await Promise.all([
       this.removeRoute(vscodeDomain),
       this.removeRoute(opencodeDomain),
       this.removeRoute(terminalDomain),
+      this.removeRoute(browserDomain),
       ...devRouteDomains.map((domain) => this.removeRoute(domain)),
     ]);
 

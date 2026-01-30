@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import {
   Bot,
   ExternalLink,
+  Globe,
   Loader2,
   Maximize2,
   Monitor,
@@ -170,6 +171,22 @@ export function SandboxCard({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Immerse</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    asChild
+                  >
+                    <Link to="/sandboxes/$id" params={{ id: sandbox.id }}>
+                      <Globe className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Browser</TooltipContent>
               </Tooltip>
 
               <Tooltip>

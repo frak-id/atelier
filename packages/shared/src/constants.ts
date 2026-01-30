@@ -147,6 +147,16 @@ export const CONFIG_SCAN_DIRS: ReadonlyArray<{
   { dir: "/home/dev/.config/opencode/providers", category: "opencode" },
 ];
 
+export const CHROMIUM = {
+  /** Chromium version (Debian stable) */
+  VERSION: "131.0",
+  /** Download URL for headless-shell (smallest Chromium distribution) */
+  DOWNLOAD_URL:
+    "https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.264/linux64/chrome-headless-shell-linux64.zip",
+  /** Binary name inside the extracted directory */
+  BINARY: "chrome-headless-shell",
+} as const;
+
 export const SHARED_BINARIES = {
   opencode: {
     name: "opencode",
@@ -163,6 +173,14 @@ export const SHARED_BINARIES = {
     extractCommand: "tar -xzf",
     binaryPath: `code-server-${CODE_SERVER.VERSION}-linux-amd64`,
     estimatedSizeMb: 500,
+  },
+  chromium: {
+    name: "chromium",
+    version: CHROMIUM.VERSION,
+    url: CHROMIUM.DOWNLOAD_URL,
+    extractCommand: "unzip -o",
+    binaryPath: "chrome-headless-shell-linux64",
+    estimatedSizeMb: 170,
   },
 } as const;
 
