@@ -32,7 +32,7 @@ import {
   useTaskSessionProgress,
 } from "@/hooks/use-task-session-progress";
 
-type TaskCardProps = {
+export type TaskCardProps = {
   task: Task;
   onClick?: () => void;
   onEdit?: () => void;
@@ -231,7 +231,7 @@ export function TaskCard({
   );
 }
 
-function TaskMenu({
+export function TaskMenu({
   task,
   onEdit,
   onDelete,
@@ -347,7 +347,7 @@ function CopySshButton({ ssh }: { ssh: string }) {
   );
 }
 
-function TaskSessionsStatus({
+export function TaskSessionsStatus({
   aggregatedInteraction,
   needsAttention,
   opencodeUrl,

@@ -25,7 +25,7 @@ const STATUSES: TaskStatus[] = ["draft", "active", "done"];
 type KanbanBoardProps = {
   tasks: Task[];
   onCreateTask: () => void;
-  onViewTask: (task: Task) => void;
+  onTaskClick: (task: Task) => void;
   onEditTask: (task: Task) => void;
   onDeleteTask: (task: Task) => void;
 };
@@ -33,7 +33,7 @@ type KanbanBoardProps = {
 export function KanbanBoard({
   tasks,
   onCreateTask,
-  onViewTask,
+  onTaskClick,
   onEditTask,
   onDeleteTask,
 }: KanbanBoardProps) {
@@ -149,7 +149,7 @@ export function KanbanBoard({
             status={status}
             tasks={tasksByStatus[status]}
             onCreateTask={status === "draft" ? onCreateTask : undefined}
-            onViewTask={onViewTask}
+            onViewTask={onTaskClick}
             onEditTask={onEditTask}
             onDeleteTask={onDeleteTask}
             onStartTask={handleStartTask}
