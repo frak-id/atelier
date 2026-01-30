@@ -69,46 +69,45 @@ export function SandboxCard({
 
   return (
     <Card className="flex flex-col h-full overflow-hidden transition-all hover:shadow-md">
-      <CardHeader className="pb-3 space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex flex-col gap-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <CardTitle
-                className="text-base font-mono truncate"
-                title={sandbox.id}
-              >
-                {sandbox.id}
-              </CardTitle>
-              <Badge
-                variant={statusVariant[sandbox.status]}
-                className="capitalize"
-              >
-                {sandbox.status}
-              </Badge>
-            </div>
-            {sandbox.workspaceId && (
-              <p
-                className="text-sm text-muted-foreground truncate"
-                title={workspace?.name ?? sandbox.workspaceId}
-              >
-                {workspace?.name ?? sandbox.workspaceId}
-              </p>
-            )}
-          </div>
-          <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-            {formatRelativeTime(sandbox.createdAt)}
-          </span>
-        </div>
-      </CardHeader>
-
       {/* biome-ignore lint/a11y/useSemanticElements: Button cannot nest interactive elements */}
       <div
         role="button"
         tabIndex={0}
-        className="flex-1 cursor-pointer hover:bg-muted/50 transition-colors focus:outline-none focus:bg-muted/50"
+        className="flex-1 flex flex-col cursor-pointer hover:bg-muted/50 transition-colors focus:outline-none focus:bg-muted/50"
         onClick={onShowDetails}
         onKeyDown={handleKeyDown}
       >
+        <CardHeader className="pb-3 space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex flex-col gap-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <CardTitle
+                  className="text-base font-mono truncate"
+                  title={sandbox.id}
+                >
+                  {sandbox.id}
+                </CardTitle>
+                <Badge
+                  variant={statusVariant[sandbox.status]}
+                  className="capitalize"
+                >
+                  {sandbox.status}
+                </Badge>
+              </div>
+              {sandbox.workspaceId && (
+                <p
+                  className="text-sm text-muted-foreground truncate"
+                  title={workspace?.name ?? sandbox.workspaceId}
+                >
+                  {workspace?.name ?? sandbox.workspaceId}
+                </p>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+              {formatRelativeTime(sandbox.createdAt)}
+            </span>
+          </div>
+        </CardHeader>
         <CardContent className="py-3 space-y-4">
           <div className="text-sm text-muted-foreground flex gap-4">
             <div className="flex items-center gap-1.5">
