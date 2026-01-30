@@ -15,6 +15,7 @@ import {
   sessionTemplateRoutes,
   sharedAuthRoutes,
   sharedStorageRoutes,
+  slackRoutes,
   sshKeyRoutes,
   systemRoutes,
   taskRoutes,
@@ -150,6 +151,7 @@ const app = new Elysia()
             description: "Shared storage management (binaries)",
           },
           { name: "images", description: "Base image management" },
+          { name: "slack", description: "Slack integration" },
           { name: "github", description: "GitHub integration" },
         ],
       },
@@ -215,6 +217,7 @@ const app = new Elysia()
           .use(sharedStorageRoutes)
           .use(registryRoutes)
           .use(imageRoutes)
+          .use(slackRoutes)
           .use(githubApiRoutes),
       ),
   )

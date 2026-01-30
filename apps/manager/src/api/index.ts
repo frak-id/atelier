@@ -12,6 +12,7 @@ export { sandboxRoutes } from "./sandbox.routes.ts";
 export { sessionTemplateRoutes } from "./session-template.routes.ts";
 export { sharedAuthRoutes } from "./shared-auth.routes.ts";
 export { sharedStorageRoutes } from "./shared-storage.routes.ts";
+export { slackRoutes } from "./slack.routes.ts";
 export { sshKeyRoutes } from "./ssh-key.routes.ts";
 export { systemRoutes } from "./system.routes.ts";
 export { taskRoutes } from "./task.routes.ts";
