@@ -721,7 +721,7 @@ export function useUpdateSharedAuth() {
 
 export const githubStatusQuery = queryOptions({
   queryKey: queryKeys.github.status,
-  queryFn: async () => unwrap(await api.auth.github.status.get()),
+  queryFn: async () => unwrap(await api.api.github.status.get()),
   staleTime: 60000,
 });
 
@@ -760,7 +760,7 @@ export const githubBranchesQuery = (owner: string, repo: string) =>
 export function useGitHubLogout() {
   return useMutation({
     mutationKey: ["github", "logout"],
-    mutationFn: async () => unwrap(await api.auth.github.logout.post()),
+    mutationFn: async () => unwrap(await api.api.github.disconnect.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.github.status });
     },
@@ -771,7 +771,7 @@ export function useGitHubReauthorize() {
   return useMutation({
     mutationKey: ["github", "reauthorize"],
     mutationFn: async () => {
-      window.location.href = `${API_HOST}/auth/github/reauthorize`;
+      window.location.href = `${API_HOST}/api/github/reauthorize`;
     },
   });
 }

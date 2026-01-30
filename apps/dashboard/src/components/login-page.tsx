@@ -34,7 +34,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const handleGitHubLogin = () => {
     setIsLoading(true);
     setError(null);
-    window.location.href = `${API_HOST}/login/github`;
+    window.location.href = `${API_HOST}/auth/github`;
   };
 
   return (
