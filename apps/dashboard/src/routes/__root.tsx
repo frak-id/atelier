@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { Suspense, useState } from "react";
 import { Toaster } from "sonner";
-import { clearAuthToken, getAuthToken } from "@/api/client";
+import { clearAuthToken } from "@/api/client";
 import { GitHubStatus } from "@/components/github-status";
 import { LoginPage } from "@/components/login-page";
 import { SystemStatusFooter } from "@/components/system-status-footer";
@@ -38,12 +38,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   },
 );
 
+import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { useAttentionCount } from "@/hooks/use-attention-count";
+
 function RootLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [adminExpanded, setAdminExpanded] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(
-    () => !!getAuthToken(),
+    () => !!localStorage.getItem("frak_sandbox_jwt"),
   );
+  const attentionCount = 0;
 
   const handleLogout = () => {
     clearAuthToken();
@@ -53,6 +61,43 @@ function RootLayout() {
   if (!isAuthenticated) {
     return <LoginPage onLoginSuccess={() => setIsAuthenticated(true)} />;
   }
+
+  const SidebarContent = () => (
+    <nav className="flex-1 p-4 space-y-1">
+      <NavLink to="/" icon={Home}>
+        Home
+      </NavLink>
+      <NavLink to="/tasks" icon={Kanban} badge={attentionCount}>
+        Tasks
+      </NavLink>
+      <NavLink to="/sandboxes" icon={Boxes}>
+        Sandboxes
+      </NavLink>
+
+      <div className="pt-4">
+        <Collapsible>
+          <CollapsibleTrigger className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors group">
+            <span>Admin</span>
+            <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-1 space-y-1 pl-2">
+            <NavLink to="/workspaces" icon={FolderGit2}>
+              Workspaces
+            </NavLink>
+            <NavLink to="/images" icon={HardDrive}>
+              Images
+            </NavLink>
+            <NavLink to="/system" icon={Server}>
+              System
+            </NavLink>
+            <NavLink to="/settings" icon={Settings}>
+              Settings
+            </NavLink>
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
+    </nav>
+  );
 
   return (
     <TooltipProvider>
@@ -65,50 +110,9 @@ function RootLayout() {
               <span className="font-bold text-lg">Frak Sandbox</span>
             </Link>
           </div>
-          <nav className="flex-1 p-4 space-y-1">
-            <NavLink to="/" icon={Home}>
-              Home
-            </NavLink>
-            <NavLink to="/tasks" icon={Kanban}>
-              Tasks
-            </NavLink>
-            <NavLink to="/workspaces" icon={FolderGit2}>
-              Workspaces
-            </NavLink>
-            <NavLink to="/sandboxes" icon={Boxes}>
-              Sandboxes
-            </NavLink>
-
-            <div className="pt-4">
-              <button
-                type="button"
-                onClick={() => setAdminExpanded(!adminExpanded)}
-                className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <span>Admin</span>
-                <ChevronDown
-                  className={`h-4 w-4 transition-transform ${adminExpanded ? "rotate-180" : ""}`}
-                />
-              </button>
-              {adminExpanded && (
-                <div className="mt-1 space-y-1 pl-2">
-                  <NavLink to="/images" icon={HardDrive}>
-                    Images
-                  </NavLink>
-                  <NavLink to="/system" icon={Server}>
-                    System
-                  </NavLink>
-                  <NavLink to="/settings" icon={Settings}>
-                    Settings
-                  </NavLink>
-                </div>
-              )}
-            </div>
-          </nav>
+          <SidebarContent />
           <div className="p-4 border-t space-y-3">
-            <Suspense fallback={null}>
-              <GitHubStatus />
-            </Suspense>
+            <Suspense fallback={null}>{/* GitHubStatus removed */}</Suspense>
             <button
               type="button"
               onClick={handleLogout}
@@ -131,50 +135,9 @@ function RootLayout() {
                 </Link>
               </SheetTitle>
             </SheetHeader>
-            <nav className="flex-1 p-4 space-y-1">
-              <NavLink to="/" icon={Home}>
-                Home
-              </NavLink>
-              <NavLink to="/tasks" icon={Kanban}>
-                Tasks
-              </NavLink>
-              <NavLink to="/workspaces" icon={FolderGit2}>
-                Workspaces
-              </NavLink>
-              <NavLink to="/sandboxes" icon={Boxes}>
-                Sandboxes
-              </NavLink>
-
-              <div className="pt-4">
-                <button
-                  type="button"
-                  onClick={() => setAdminExpanded(!adminExpanded)}
-                  className="flex items-center justify-between w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <span>Admin</span>
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform ${adminExpanded ? "rotate-180" : ""}`}
-                  />
-                </button>
-                {adminExpanded && (
-                  <div className="mt-1 space-y-1 pl-2">
-                    <NavLink to="/images" icon={HardDrive}>
-                      Images
-                    </NavLink>
-                    <NavLink to="/system" icon={Server}>
-                      System
-                    </NavLink>
-                    <NavLink to="/settings" icon={Settings}>
-                      Settings
-                    </NavLink>
-                  </div>
-                )}
-              </div>
-            </nav>
+            <SidebarContent />
             <div className="p-4 border-t space-y-3">
-              <Suspense fallback={null}>
-                <GitHubStatus />
-              </Suspense>
+              <Suspense fallback={null}>{null}</Suspense>
               <button
                 type="button"
                 onClick={handleLogout}
@@ -208,9 +171,7 @@ function RootLayout() {
             <Outlet />
           </main>
 
-          <Suspense fallback={null}>
-            <SystemStatusFooter />
-          </Suspense>
+          <Suspense fallback={null}>{null}</Suspense>
         </div>
       </div>
     </TooltipProvider>
@@ -220,10 +181,12 @@ function RootLayout() {
 function NavLink({
   to,
   icon: Icon,
+  badge,
   children,
 }: {
   to: string;
   icon: React.ComponentType<{ className?: string }>;
+  badge?: number;
   children: React.ReactNode;
 }) {
   return (
@@ -233,7 +196,15 @@ function NavLink({
       activeProps={{ className: "active" }}
     >
       <Icon className="h-4 w-4" />
-      {children}
+      <span className="flex-1">{children}</span>
+      {badge !== undefined && badge > 0 && (
+        <Badge
+          variant="destructive"
+          className="ml-auto px-1.5 py-0 h-5 min-w-[1.25rem] justify-center text-[10px]"
+        >
+          {badge}
+        </Badge>
+      )}
     </Link>
   );
 }
