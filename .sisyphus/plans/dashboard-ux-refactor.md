@@ -74,15 +74,15 @@ Transform the dashboard from a page-navigation-heavy architecture into an action
 - All internal links updated from page navigation to drawer-open actions
 
 ### Definition of Done
-- [ ] Home page shows real-time attention items, running tasks, active sandboxes with tool buttons
-- [ ] Clicking a sandbox card anywhere opens the sandbox drawer (not a page navigation)
-- [ ] Clicking a task anywhere opens the task drawer (not a page navigation)
-- [ ] Tasks sidebar nav shows badge count when sessions need attention
-- [ ] Admin section (Workspaces, Settings, Images, System) is collapsed in sidebar
-- [ ] Task board has list/kanban toggle (default list)
-- [ ] No dead links to removed routes (`/sandboxes/$id`, `/tasks/$id`)
-- [ ] `bun run check` passes (Biome lint + format)
-- [ ] `bun run typecheck` passes (TypeScript)
+- [x] Home page shows real-time attention items, running tasks, active sandboxes with tool buttons
+- [x] Clicking a sandbox card anywhere opens the sandbox drawer (not a page navigation)
+- [x] Clicking a task anywhere opens the task drawer (not a page navigation)
+- [x] Tasks sidebar nav shows badge count when sessions need attention
+- [x] Admin section (Workspaces, Settings, Images, System) is collapsed in sidebar
+- [x] Task board has list/kanban toggle (default list)
+- [x] No dead links to removed routes (`/sandboxes/$id`, `/tasks/$id`)
+- [x] `bun run check` passes (Biome lint + format)
+- [x] `bun run typecheck` passes (TypeScript)
 
 ### Must Have
 - One-click tool access (VSCode, terminal, OpenCode) on every sandbox representation
@@ -167,7 +167,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ## TODOs
 
-- [ ] 1. Sidebar Restructure: Attention Badge + Collapsed Admin Section
+- [x] 1. Sidebar Restructure: Attention Badge + Collapsed Admin Section
 
   **What to do**:
   - Extend the `NavLink` component in `__root.tsx` to accept an optional `badge?: number` prop that renders a shadcn `Badge` (variant="destructive", small) next to the nav label
@@ -253,7 +253,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ---
 
-- [ ] 2. SandboxDrawer Component
+- [x] 2. SandboxDrawer Component
 
   **What to do**:
   - Create `apps/dashboard/src/components/sandbox-drawer.tsx` — a slide-out panel using shadcn `Sheet` (`side="right"`) that displays sandbox details
@@ -349,7 +349,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ---
 
-- [ ] 3. TaskDrawer Component
+- [x] 3. TaskDrawer Component
 
   **What to do**:
   - Create `apps/dashboard/src/components/task-drawer.tsx` — a slide-out panel using shadcn `Sheet` (`side="right"`) that displays task details
@@ -446,7 +446,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ---
 
-- [ ] 4. Sandbox Card Grid Page
+- [x] 4. Sandbox Card Grid Page
 
   **What to do**:
   - Rewrite `apps/dashboard/src/routes/sandboxes/index.tsx` to display sandboxes as a card grid instead of the current list/table
@@ -533,7 +533,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ---
 
-- [ ] 5. Mission Control Home Page
+- [x] 5. Mission Control Home Page
 
   **What to do**:
   - Rewrite `apps/dashboard/src/routes/index.tsx` to become the Mission Control
@@ -640,7 +640,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ---
 
-- [ ] 6. Task Board List/Kanban Toggle
+- [x] 6. Task Board List/Kanban Toggle
 
   **What to do**:
   - Modify `apps/dashboard/src/routes/tasks/index.tsx` to add a list view alongside the existing kanban board
@@ -730,7 +730,7 @@ Parallel Speedup: ~40% faster than sequential
 
 ---
 
-- [ ] 7. Route Cleanup: Delete Removed Pages + Update All References
+- [x] 7. Route Cleanup: Delete Removed Pages + Update All References
 
   **What to do**:
   - **Delete** `apps/dashboard/src/routes/sandboxes/$id.tsx` — sandbox detail page replaced by drawer
@@ -844,16 +844,16 @@ bun run check       # Expected: 0 errors — Biome lint + format
 ```
 
 ### Final Checklist
-- [ ] Home page is Mission Control with attention items, running tasks, active sandboxes
-- [ ] Clicking any sandbox anywhere opens a drawer (never navigates to /sandboxes/$id)
-- [ ] Clicking any task anywhere opens a drawer (never navigates to /tasks/$id)
-- [ ] Tasks sidebar nav shows attention badge count
-- [ ] Admin section collapsed with Workspaces, Images, System, Settings
-- [ ] Task board has list/kanban toggle, default list
-- [ ] Tool icon buttons (VSCode/Terminal/OpenCode) visible on every sandbox card
-- [ ] Dev commands visible on Mission Control with URLs
-- [ ] Attention items deep-link to OpenCode web UI (no inline response)
-- [ ] No dead links to `/sandboxes/$id` or `/tasks/$id`
-- [ ] `bun run typecheck` passes
-- [ ] `bun run check` passes
-- [ ] All "Must NOT Have" guardrails respected
+- [x] Home page is Mission Control with attention items, running tasks, active sandboxes
+- [x] Clicking any sandbox anywhere opens a drawer (never navigates to /sandboxes/$id)
+- [x] Clicking any task anywhere opens a drawer (never navigates to /tasks/$id)
+- [x] Tasks sidebar nav shows attention badge count
+- [x] Admin section collapsed with Workspaces, Images, System, Settings
+- [x] Task board has list/kanban toggle, default list
+- [x] Tool icon buttons (VSCode/Terminal/OpenCode) visible on every sandbox card
+- [x] Dev commands visible on Mission Control with URLs
+- [x] Attention items deep-link to OpenCode web UI (no inline response)
+- [x] No dead links to `/sandboxes/$id` or `/tasks/$id`
+- [x] `bun run typecheck` passes
+- [x] `bun run check` passes
+- [x] All "Must NOT Have" guardrails respected
