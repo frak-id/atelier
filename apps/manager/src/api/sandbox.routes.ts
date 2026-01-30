@@ -113,7 +113,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       )
       .delete(
         "/:id",
-        async ({ params, set, sandbox }) => {
+        async ({ params, set, sandbox: _sandbox }) => {
           log.info({ sandboxId: params.id }, "Deleting sandbox");
           await sandboxDestroyer.destroy(params.id);
 
@@ -126,7 +126,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       )
       .post(
         "/:id/stop",
-        async ({ params, sandbox }) => {
+        async ({ params, sandbox: _sandbox }) => {
           log.info({ sandboxId: params.id }, "Stopping sandbox");
           return sandboxLifecycle.stop(params.id);
         },
@@ -137,7 +137,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       )
       .post(
         "/:id/start",
-        async ({ params, sandbox }) => {
+        async ({ params, sandbox: _sandbox }) => {
           log.info({ sandboxId: params.id }, "Starting sandbox");
           return sandboxLifecycle.start(params.id);
         },
@@ -148,7 +148,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       )
       .post(
         "/:id/restart",
-        async ({ params, sandbox }) => {
+        async ({ params, sandbox: _sandbox }) => {
           log.info({ sandboxId: params.id }, "Restarting sandbox");
           await sandboxLifecycle.stop(params.id);
           return sandboxLifecycle.start(params.id);

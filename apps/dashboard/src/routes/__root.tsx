@@ -20,9 +20,7 @@ import {
 import { Suspense, useState } from "react";
 import { Toaster } from "sonner";
 import { clearAuthToken } from "@/api/client";
-import { GitHubStatus } from "@/components/github-status";
 import { LoginPage } from "@/components/login-page";
-import { SystemStatusFooter } from "@/components/system-status-footer";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -51,7 +49,7 @@ function RootLayout() {
   const [isAuthenticated, setIsAuthenticated] = useState(
     () => !!localStorage.getItem("frak_sandbox_jwt"),
   );
-  const attentionCount = 0;
+  const attentionCount = useAttentionCount();
 
   const handleLogout = () => {
     clearAuthToken();

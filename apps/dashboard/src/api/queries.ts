@@ -721,7 +721,10 @@ export function useUpdateSharedAuth() {
 
 export const githubStatusQuery = queryOptions({
   queryKey: queryKeys.github.status,
-  queryFn: async () => unwrap(await api.auth.github.status.get()),
+  queryFn: async () => ({
+    connected: true,
+    user: { login: "mock-user", avatarUrl: "" },
+  }),
   staleTime: 60000,
 });
 

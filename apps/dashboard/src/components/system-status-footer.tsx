@@ -178,7 +178,7 @@ function HealthBadge({
   status,
 }: {
   name: string;
-  status: "ok" | "error" | "unavailable";
+  status: "ok" | "error" | "unavailable" | string;
 }) {
   const variant =
     status === "ok" ? "success" : status === "error" ? "error" : "warning";

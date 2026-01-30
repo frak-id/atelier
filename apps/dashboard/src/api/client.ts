@@ -27,11 +27,16 @@ export const api = treaty<ManagerApp>(API_HOST, {
 });
 
 export type {
+  BaseImage,
   ConfigFile,
   ConfigFileContentType,
   FileSecret,
+  HealthStatus,
   Sandbox,
   SshKey,
+  StorageStatus,
+  SystemStats,
+  Task,
   Workspace,
 } from "@frak-sandbox/manager/types";
 

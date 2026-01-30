@@ -24,6 +24,7 @@ import {
   useWorkspaceDataMap,
 } from "@/api/queries";
 import { CreateSandboxDialog } from "@/components/create-sandbox-dialog";
+import { SandboxDrawer } from "@/components/sandbox-drawer";
 import { SshKeyAlert } from "@/components/ssh-key-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -103,6 +104,9 @@ export const Route = createFileRoute("/sandboxes/")({
 function SandboxesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedSandboxId, setSelectedSandboxId] = useState<string | null>(
+    null,
+  );
   const [recreatingId, setRecreatingId] = useState<string | null>(null);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
   const { data: sshKeys } = useQuery(sshKeysListQuery);
@@ -219,6 +223,7 @@ function SandboxesPage() {
                   startMutation.isPending &&
                   startMutation.variables === sandbox.id
                 }
+                onShowDetails={() => setSelectedSandboxId(sandbox.id)}
               />
             );
           })}
@@ -226,6 +231,10 @@ function SandboxesPage() {
       )}
 
       <CreateSandboxDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <SandboxDrawer
+        sandboxId={selectedSandboxId}
+        onClose={() => setSelectedSandboxId(null)}
+      />
     </div>
   );
 }
@@ -241,6 +250,7 @@ function SandboxCard({
   onStart,
   isStopping,
   isStarting,
+  onShowDetails,
 }: {
   sandbox: Sandbox;
   workspace?: Workspace;
@@ -252,6 +262,7 @@ function SandboxCard({
   onStart?: () => void;
   isStopping?: boolean;
   isStarting?: boolean;
+  onShowDetails: () => void;
 }) {
   const { copy, isCopied } = useCopyToClipboard();
 
@@ -273,11 +284,13 @@ function SandboxCard({
     <Card>
       <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <Link to="/sandboxes/$id" params={{ id: sandbox.id }}>
-            <CardTitle className="hover:underline cursor-pointer">
-              {sandbox.id}
-            </CardTitle>
-          </Link>
+          <Button
+            variant="link"
+            className="p-0 h-auto font-bold text-lg hover:underline"
+            onClick={onShowDetails}
+          >
+            <CardTitle className="cursor-pointer">{sandbox.id}</CardTitle>
+          </Button>
           <Badge variant={statusVariant[sandbox.status]}>
             {sandbox.status}
           </Badge>
@@ -339,11 +352,9 @@ function SandboxCard({
               Recreate
             </Button>
           )}
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/sandboxes/$id" params={{ id: sandbox.id }}>
-              <Eye className="h-4 w-4 mr-1" />
-              Details
-            </Link>
+          <Button variant="outline" size="sm" onClick={onShowDetails}>
+            <Eye className="h-4 w-4 mr-1" />
+            Details
           </Button>
           <Button variant="ghost" size="icon" onClick={onDelete}>
             <Trash2 className="h-4 w-4 text-destructive" />
