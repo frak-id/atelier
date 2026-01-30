@@ -8,6 +8,7 @@ import {
   useCreateTask,
   useUpdateTask,
   workspaceDetailQuery,
+  workspaceListQuery,
   workspaceSessionTemplatesQuery,
 } from "@/api/queries";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -51,29 +51,43 @@ function parseGitHubRepo(
   return null;
 }
 
-type TaskFormDialogProps = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  workspaceId: string;
+export type TaskFormProps = {
+  workspaceId?: string;
   task?: Task;
+  onSuccess?: () => void;
+  showWorkspaceSelector?: boolean;
 };
 
-export function TaskFormDialog({
-  open,
-  onOpenChange,
-  workspaceId,
+export function TaskForm({
+  workspaceId: fixedWorkspaceId,
   task,
-}: TaskFormDialogProps) {
+  onSuccess,
+  showWorkspaceSelector: forceShowWorkspaceSelector,
+}: TaskFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [context, setContext] = useState("");
   const [selectedRepoIndices, setSelectedRepoIndices] = useState<number[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
 
-  const { data: workspace } = useQuery(workspaceDetailQuery(workspaceId));
-  const { data: templateData } = useQuery(
-    workspaceSessionTemplatesQuery(workspaceId),
-  );
+  const showWorkspaceSelector =
+    forceShowWorkspaceSelector ?? (!fixedWorkspaceId && !task);
+  const workspaceId = fixedWorkspaceId || selectedWorkspaceId;
+
+  const { data: workspaces } = useQuery({
+    ...workspaceListQuery(),
+    enabled: showWorkspaceSelector,
+  });
+
+  const { data: workspace } = useQuery({
+    ...workspaceDetailQuery(workspaceId),
+    enabled: !!workspaceId,
+  });
+  const { data: templateData } = useQuery({
+    ...workspaceSessionTemplatesQuery(workspaceId),
+    enabled: !!workspaceId,
+  });
   const allTemplates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
   const templates = allTemplates.filter((t) => t.category === "primary");
   const defaultTemplate = templates[0];
@@ -111,36 +125,37 @@ export function TaskFormDialog({
     githubBranchesQuery(gitHubInfo?.owner ?? "", gitHubInfo?.repo ?? ""),
   );
 
+  const canSubmit =
+    !isPending && !!title.trim() && !!description.trim() && !!workspaceId;
+
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setContext("");
+    setSelectedTemplateId(defaultTemplate?.id ?? "");
+    setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
+    setSelectedRepoIndices([]);
+    setSelectedBranch("");
+    setSelectedWorkspaceId("");
+  };
+
   useEffect(() => {
-    if (open) {
-      if (task) {
-        setTitle(task.title);
-        setDescription(task.data.description ?? "");
-        setContext(task.data.context ?? "");
-        setSelectedTemplateId(
-          task.data.workflowId ?? defaultTemplate?.id ?? "",
-        );
-        setSelectedVariantIndex(
-          task.data.variantIndex ?? defaultTemplate?.defaultVariantIndex ?? 0,
-        );
-        setSelectedRepoIndices(task.data.targetRepoIndices ?? []);
-        setSelectedBranch(task.data.baseBranch ?? "");
-      } else {
-        setTitle("");
-        setDescription("");
-        setContext("");
-        setSelectedTemplateId(defaultTemplate?.id ?? "");
-        setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
-        setSelectedRepoIndices([]);
-        setSelectedBranch("");
-      }
+    if (task) {
+      setTitle(task.title);
+      setDescription(task.data.description ?? "");
+      setContext(task.data.context ?? "");
+      setSelectedTemplateId(task.data.workflowId ?? defaultTemplate?.id ?? "");
+      setSelectedVariantIndex(
+        task.data.variantIndex ?? defaultTemplate?.defaultVariantIndex ?? 0,
+      );
+      setSelectedRepoIndices(task.data.targetRepoIndices ?? []);
+      setSelectedBranch(task.data.baseBranch ?? "");
     }
-  }, [open, task, defaultTemplate]);
+  }, [task, defaultTemplate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!title.trim() || !description.trim()) return;
+    if (!canSubmit) return;
 
     if (isEditing && task) {
       await updateMutation.mutateAsync({
@@ -167,7 +182,8 @@ export function TaskFormDialog({
       } as Parameters<typeof createMutation.mutateAsync>[0]);
     }
 
-    onOpenChange(false);
+    resetForm();
+    onSuccess?.();
   };
 
   const toggleRepoSelection = (index: number) => {
@@ -183,180 +199,204 @@ export function TaskFormDialog({
   };
 
   return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {showWorkspaceSelector && (
+        <div className="space-y-2">
+          <Label>Workspace</Label>
+          <Select
+            value={selectedWorkspaceId}
+            onValueChange={setSelectedWorkspaceId}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select workspace..." />
+            </SelectTrigger>
+            <SelectContent>
+              {workspaces?.map((ws) => (
+                <SelectItem key={ws.id} value={ws.id}>
+                  {ws.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="title">Title</Label>
+        <Input
+          id="title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g., Implement user authentication"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Describe the task in detail. This will be sent to the AI as the initial prompt."
+          rows={5}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="context">
+          Additional Context{" "}
+          <span className="text-muted-foreground">(optional)</span>
+        </Label>
+        <Textarea
+          id="context"
+          value={context}
+          onChange={(e) => setContext(e.target.value)}
+          placeholder="Documentation links, API references, or any other helpful context."
+          rows={3}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Configuration</Label>
+        <div className="flex gap-2">
+          {templates.length > 1 && (
+            <Select
+              value={selectedTemplateId}
+              onValueChange={handleTemplateChange}
+            >
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Template" />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {selectedTemplate && selectedTemplate.variants.length > 0 && (
+            <Select
+              value={String(selectedVariantIndex)}
+              onValueChange={(v) => setSelectedVariantIndex(Number(v))}
+            >
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Effort" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectedTemplate.variants.map((variant, idx) => (
+                  <SelectItem key={idx} value={String(idx)}>
+                    {variant.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      </div>
+
+      {!isEditing && hasMultipleRepos && (
+        <div className="space-y-2">
+          <Label>
+            Target Repositories{" "}
+            <span className="text-muted-foreground">
+              (optional, defaults to all)
+            </span>
+          </Label>
+          <div className="space-y-2 rounded-md border p-3">
+            {repos.map((repo, index) => (
+              <div key={repo.clonePath} className="flex items-center gap-2">
+                <Checkbox
+                  id={`repo-${index}`}
+                  checked={selectedRepoIndices.includes(index)}
+                  onChange={() => toggleRepoSelection(index)}
+                />
+                <label
+                  htmlFor={`repo-${index}`}
+                  className="text-sm font-mono cursor-pointer"
+                >
+                  {repo.clonePath}
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!isEditing && singleTargetRepo && gitHubInfo && (
+        <div className="space-y-2">
+          <Label>
+            Base Branch{" "}
+            <span className="text-muted-foreground">(optional)</span>
+          </Label>
+          <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+            <SelectTrigger>
+              <SelectValue
+                placeholder={
+                  branchesData?.defaultBranch
+                    ? `Default: ${branchesData.defaultBranch}`
+                    : "Select branch..."
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {branchesData?.branches.map((branch) => (
+                <SelectItem key={branch.name} value={branch.name}>
+                  {branch.name}
+                  {branch.isDefault && (
+                    <span className="text-muted-foreground ml-2">
+                      (default)
+                    </span>
+                  )}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <Button type="submit" disabled={!canSubmit} className="w-full">
+        {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+        {isEditing ? "Save Changes" : "Create Task"}
+      </Button>
+    </form>
+  );
+}
+
+type TaskFormDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workspaceId?: string;
+  task?: Task;
+};
+
+export function TaskFormDialog({
+  open,
+  onOpenChange,
+  workspaceId,
+  task,
+}: TaskFormDialogProps) {
+  const isEditing = !!task;
+
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>{isEditing ? "Edit Task" : "Create Task"}</DialogTitle>
-            <DialogDescription>
-              {isEditing
-                ? "Update the task details below."
-                : "Describe what you want the AI to work on."}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{isEditing ? "Edit Task" : "Create Task"}</DialogTitle>
+          <DialogDescription>
+            {isEditing
+              ? "Update the task details below."
+              : "Describe what you want the AI to work on."}
+          </DialogDescription>
+        </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Implement user authentication"
-                autoFocus
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe the task in detail. This will be sent to the AI as the initial prompt."
-                rows={5}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="context">
-                Additional Context{" "}
-                <span className="text-muted-foreground">(optional)</span>
-              </Label>
-              <Textarea
-                id="context"
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                placeholder="Documentation links, API references, or any other helpful context."
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Configuration</Label>
-              <div className="flex gap-2">
-                {templates.length > 1 && (
-                  <Select
-                    value={selectedTemplateId}
-                    onValueChange={handleTemplateChange}
-                  >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {templates.map((template) => (
-                        <SelectItem key={template.id} value={template.id}>
-                          {template.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-
-                {selectedTemplate && selectedTemplate.variants.length > 0 && (
-                  <Select
-                    value={String(selectedVariantIndex)}
-                    onValueChange={(v) => setSelectedVariantIndex(Number(v))}
-                  >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Effort" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedTemplate.variants.map((variant, idx) => (
-                        <SelectItem key={idx} value={String(idx)}>
-                          {variant.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-            </div>
-
-            {!isEditing && hasMultipleRepos && (
-              <div className="space-y-2">
-                <Label>
-                  Target Repositories{" "}
-                  <span className="text-muted-foreground">
-                    (optional, defaults to all)
-                  </span>
-                </Label>
-                <div className="space-y-2 rounded-md border p-3">
-                  {repos.map((repo, index) => (
-                    <div
-                      key={repo.clonePath}
-                      className="flex items-center gap-2"
-                    >
-                      <Checkbox
-                        id={`repo-${index}`}
-                        checked={selectedRepoIndices.includes(index)}
-                        onChange={() => toggleRepoSelection(index)}
-                      />
-                      <label
-                        htmlFor={`repo-${index}`}
-                        className="text-sm font-mono cursor-pointer"
-                      >
-                        {repo.clonePath}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {!isEditing && singleTargetRepo && gitHubInfo && (
-              <div className="space-y-2">
-                <Label>
-                  Base Branch{" "}
-                  <span className="text-muted-foreground">(optional)</span>
-                </Label>
-                <Select
-                  value={selectedBranch}
-                  onValueChange={setSelectedBranch}
-                >
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        branchesData?.defaultBranch
-                          ? `Default: ${branchesData.defaultBranch}`
-                          : "Select branch..."
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {branchesData?.branches.map((branch) => (
-                      <SelectItem key={branch.name} value={branch.name}>
-                        {branch.name}
-                        {branch.isDefault && (
-                          <span className="text-muted-foreground ml-2">
-                            (default)
-                          </span>
-                        )}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isPending || !title.trim() || !description.trim()}
-            >
-              {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {isEditing ? "Save Changes" : "Create Task"}
-            </Button>
-          </DialogFooter>
-        </form>
+        <TaskForm
+          workspaceId={workspaceId}
+          task={task}
+          onSuccess={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );

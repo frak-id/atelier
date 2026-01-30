@@ -50,9 +50,14 @@ import { formatDate } from "@/lib/utils";
 interface TaskDrawerProps {
   taskId: string | null;
   onClose: () => void;
+  onOpenSandbox?: (sandboxId: string) => void;
 }
 
-export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
+export function TaskDrawer({
+  taskId,
+  onClose,
+  onOpenSandbox,
+}: TaskDrawerProps) {
   const isOpen = !!taskId;
 
   const { data: taskData } = useQuery({
@@ -178,9 +183,56 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {taskData.status === "draft" && (
+                      <Button
+                        onClick={handleStart}
+                        disabled={startMutation.isPending}
+                        size="sm"
+                      >
+                        {startMutation.isPending && (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        )}
+                        Start Task
+                      </Button>
+                    )}
+
+                    {taskData.status === "active" && (
+                      <Button
+                        variant="outline"
+                        onClick={handleComplete}
+                        disabled={completeMutation.isPending}
+                        size="sm"
+                      >
+                        {completeMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                        )}
+                        Complete
+                      </Button>
+                    )}
+
+                    {(taskData.status === "active" ||
+                      taskData.status === "done") && (
+                      <Button
+                        variant="outline"
+                        onClick={handleReset}
+                        disabled={resetMutation.isPending}
+                        size="sm"
+                      >
+                        {resetMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          "Reset to Draft"
+                        )}
+                      </Button>
+                    )}
+                  </div>
+
                   {sandbox?.status === "running" && sandbox.runtime?.urls && (
-                    <>
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Button variant="outline" size="sm" asChild>
                         <a
                           href={sandbox.runtime.urls.vscode}
@@ -212,52 +264,7 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
                         </a>
                       </Button>
                       <CopySshButton ssh={sandbox.runtime.urls.ssh} />
-                    </>
-                  )}
-
-                  {taskData.status === "draft" && (
-                    <Button
-                      onClick={handleStart}
-                      disabled={startMutation.isPending}
-                      size="sm"
-                    >
-                      {startMutation.isPending && (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      )}
-                      Start Task
-                    </Button>
-                  )}
-
-                  {taskData.status === "active" && (
-                    <Button
-                      variant="outline"
-                      onClick={handleComplete}
-                      disabled={completeMutation.isPending}
-                      size="sm"
-                    >
-                      {completeMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                      )}
-                      Complete
-                    </Button>
-                  )}
-
-                  {(taskData.status === "active" ||
-                    taskData.status === "done") && (
-                    <Button
-                      variant="outline"
-                      onClick={handleReset}
-                      disabled={resetMutation.isPending}
-                      size="sm"
-                    >
-                      {resetMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        "Reset to Draft"
-                      )}
-                    </Button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -399,9 +406,22 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
                           <div className="text-muted-foreground">
                             Sandbox ID
                           </div>
-                          <code className="font-mono bg-muted px-2 py-1 rounded truncate">
-                            {taskData.data.sandboxId}
-                          </code>
+                          {onOpenSandbox ? (
+                            <button
+                              type="button"
+                              className="font-mono bg-muted px-2 py-1 rounded truncate text-primary hover:underline cursor-pointer text-left w-fit"
+                              onClick={() => {
+                                onClose();
+                                onOpenSandbox(taskData.data.sandboxId ?? "");
+                              }}
+                            >
+                              {taskData.data.sandboxId}
+                            </button>
+                          ) : (
+                            <code className="font-mono bg-muted px-2 py-1 rounded truncate">
+                              {taskData.data.sandboxId}
+                            </code>
+                          )}
                         </>
                       )}
 

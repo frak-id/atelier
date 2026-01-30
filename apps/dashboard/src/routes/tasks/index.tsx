@@ -10,6 +10,7 @@ import {
   List as ListIcon,
   Loader2,
   Play,
+  Plus,
 } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import {
@@ -30,6 +31,13 @@ import { TaskDrawer } from "@/components/task-drawer";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
@@ -65,6 +73,7 @@ function TasksPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
+  const [filterWorkspaceId, setFilterWorkspaceId] = useState<string>("all");
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
 
   useEffect(() => {
@@ -85,8 +94,10 @@ function TasksPage() {
     });
   };
 
-  const handleCreateTask = (workspaceId: string) => {
-    setActiveWorkspaceId(workspaceId);
+  const handleCreateTask = (workspaceId?: string) => {
+    setActiveWorkspaceId(
+      workspaceId ?? (filterWorkspaceId !== "all" ? filterWorkspaceId : ""),
+    );
     setEditingTask(undefined);
     setIsFormOpen(true);
   };
@@ -127,22 +138,49 @@ function TasksPage() {
             Manage AI coding tasks with kanban boards per workspace
           </p>
         </div>
-        <Tabs value={view} onValueChange={setView}>
-          <TabsList>
-            <TabsTrigger value="list" className="gap-2">
-              <ListIcon className="h-4 w-4" />
-              List
-            </TabsTrigger>
-            <TabsTrigger value="board" className="gap-2">
-              <LayoutGrid className="h-4 w-4" />
-              Board
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex items-center gap-2">
+          <Select
+            value={filterWorkspaceId}
+            onValueChange={setFilterWorkspaceId}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="All Workspaces" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Workspaces</SelectItem>
+              {workspaceList.map((ws) => (
+                <SelectItem key={ws.id} value={ws.id}>
+                  {ws.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Button onClick={() => handleCreateTask()} className="gap-2">
+            <Plus className="h-4 w-4" />
+            New Task
+          </Button>
+
+          <Tabs value={view} onValueChange={setView}>
+            <TabsList>
+              <TabsTrigger value="list" className="gap-2">
+                <ListIcon className="h-4 w-4" />
+                List
+              </TabsTrigger>
+              <TabsTrigger value="board" className="gap-2">
+                <LayoutGrid className="h-4 w-4" />
+                Board
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
 
       {view === "list" ? (
         <TasksListView
+          workspaceId={
+            filterWorkspaceId === "all" ? undefined : filterWorkspaceId
+          }
           onTaskClick={handleTaskClick}
           onEditTask={handleEditTask}
           onDeleteTask={handleDeleteTask}
@@ -199,7 +237,7 @@ function TasksPage() {
       <TaskFormDialog
         open={isFormOpen}
         onOpenChange={setIsFormOpen}
-        workspaceId={activeWorkspaceId}
+        workspaceId={activeWorkspaceId || undefined}
         task={editingTask}
       />
 
@@ -299,20 +337,20 @@ function KanbanSkeleton() {
 // List View Components
 
 interface TasksListViewProps {
+  workspaceId?: string;
   onTaskClick: (task: Task) => void;
   onEditTask: (task: Task, workspaceId: string) => void;
   onDeleteTask: (task: Task) => void;
 }
 
 function TasksListView({
+  workspaceId,
   onTaskClick,
   onEditTask,
   onDeleteTask,
 }: TasksListViewProps) {
-  // We fetch all tasks for all workspaces to show a unified list
-  // In a real app with pagination, this might be different
   const { data: allTasks } = useQuery({
-    ...taskListQuery(),
+    ...taskListQuery(workspaceId),
   });
 
   const workspaceMap = useWorkspaceMap();

@@ -99,6 +99,12 @@ function MissionControlPage() {
 
         <SectionErrorBoundary>
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+            <StartWorkingCard />
+          </Suspense>
+        </SectionErrorBoundary>
+
+        <SectionErrorBoundary>
+          <Suspense fallback={<Skeleton className="h-64 w-full" />}>
             <ActiveTasksSection onSelectTask={setSelectedTaskId} />
           </Suspense>
         </SectionErrorBoundary>
@@ -124,6 +130,7 @@ function MissionControlPage() {
       <TaskDrawer
         taskId={selectedTaskId}
         onClose={() => setSelectedTaskId(null)}
+        onOpenSandbox={setSelectedSandboxId}
       />
     </div>
   );
