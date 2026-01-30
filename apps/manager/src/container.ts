@@ -13,6 +13,11 @@ import {
 } from "./modules/internal/index.ts";
 import { SandboxRepository } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
+import { SlackBotService } from "./modules/slack-bot/index.ts";
+import {
+  SlackThreadRepository,
+  SlackThreadService,
+} from "./modules/slack-thread/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
 import {
@@ -25,6 +30,7 @@ import {
   SandboxDestroyer,
   SandboxLifecycle,
   SandboxSpawner,
+  SlackThreadSpawner,
   TaskSpawner,
 } from "./orchestrators/index.ts";
 
@@ -39,6 +45,7 @@ const taskRepository = new TaskRepository();
 const workspaceRepository = new WorkspaceRepository();
 const sandboxRepository = new SandboxRepository();
 const sharedAuthRepository = new SharedAuthRepository();
+const slackThreadRepository = new SlackThreadRepository();
 
 /* -------------------------------------------------------------------------- */
 /*                                  Services                                  */
@@ -67,6 +74,14 @@ const sessionTemplateService = new SessionTemplateService(
   workspaceService,
   sandboxService,
 );
+
+const slackThreadService = new SlackThreadService(slackThreadRepository);
+
+const slackBotService = new SlackBotService({
+  slackThreadService,
+  workspaceService,
+  configFileService,
+});
 
 /* -------------------------------------------------------------------------- */
 /*                                Orchestrators                               */
@@ -111,6 +126,15 @@ const taskSpawner = new TaskSpawner({
   agentClient,
 });
 
+const slackThreadSpawner = new SlackThreadSpawner({
+  sandboxSpawner,
+  sandboxService,
+  slackThreadService,
+  workspaceService,
+  sessionTemplateService,
+  agentClient,
+});
+
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
   gitSourceService,
@@ -129,6 +153,9 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
+  slackBotService,
+  slackThreadService,
+  slackThreadSpawner,
   sshKeyService,
   taskService,
   taskSpawner,

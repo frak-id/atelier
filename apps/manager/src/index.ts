@@ -25,6 +25,7 @@ import {
   internalService,
   prebuildChecker,
   sandboxService,
+  slackBotService,
   sshKeyService,
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
@@ -69,6 +70,10 @@ const app = new Elysia()
 
     internalService.syncAuthToSandboxes().catch(() => {});
     internalService.startAuthWatcher();
+
+    slackBotService.start().catch((err) => {
+      logger.warn({ error: err }, "Slack bot failed to start (non-fatal)");
+    });
 
     const allSandboxes = sandboxService.getAll();
     for (const sandbox of allSandboxes) {

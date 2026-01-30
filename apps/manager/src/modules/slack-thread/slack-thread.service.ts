@@ -1,10 +1,7 @@
 import { nanoid } from "nanoid";
 import type { SlackThread } from "../../schemas/index.ts";
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SlackThreadRepository } from "./slack-thread.repository.ts";
-
-const log = createChildLogger("slack-thread-service");
 
 export class SlackThreadService {
   constructor(private readonly repository: SlackThreadRepository) {}

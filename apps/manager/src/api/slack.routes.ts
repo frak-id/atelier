@@ -1,16 +1,18 @@
-import { Elysia, t } from "elysia";
-import { configFileService } from "../container.ts";
+import { Elysia } from "elysia";
+import {
+  configFileService,
+  slackBotService,
+  slackThreadService,
+} from "../container.ts";
 import type {
   SlackConfig,
   SlackStatus,
-  SlackThread,
   SlackThreadListResponse,
 } from "../schemas/index.ts";
 import {
   SlackConfigSchema,
   SlackStatusSchema,
   SlackThreadListResponseSchema,
-  SlackThreadSchema,
 } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
@@ -28,8 +30,8 @@ export const slackRoutes = new Elysia({ prefix: "/slack" })
     "/status",
     (): SlackStatus => {
       return {
-        connected: false,
-        activeThreads: 0,
+        connected: slackBotService.isConnected(),
+        activeThreads: slackBotService.getActiveThreadCount(),
       };
     },
     {
@@ -77,7 +79,7 @@ export const slackRoutes = new Elysia({ prefix: "/slack" })
     "/config",
     ({ body, set }) => {
       log.info("Updating Slack configuration");
-      const result = configFileService.upsert(
+      configFileService.upsert(
         undefined,
         "slack-config",
         JSON.stringify(body),
@@ -121,7 +123,7 @@ export const slackRoutes = new Elysia({ prefix: "/slack" })
   .get(
     "/threads",
     (): SlackThreadListResponse => {
-      return [];
+      return slackThreadService.getAll();
     },
     {
       response: SlackThreadListResponseSchema,
@@ -130,12 +132,16 @@ export const slackRoutes = new Elysia({ prefix: "/slack" })
   )
   .get(
     "/threads/:id",
-    ({ set }) => {
-      set.status = 404;
-      return {
-        error: "NOT_FOUND",
-        message: "Thread not found",
-      };
+    ({ params, set }) => {
+      const thread = slackThreadService.getById(params.id);
+      if (!thread) {
+        set.status = 404;
+        return {
+          error: "NOT_FOUND",
+          message: "Thread not found",
+        };
+      }
+      return thread;
     },
     {
       detail: { tags: ["slack"] },
@@ -143,12 +149,18 @@ export const slackRoutes = new Elysia({ prefix: "/slack" })
   )
   .delete(
     "/threads/:id",
-    ({ set }) => {
-      set.status = 404;
-      return {
-        error: "NOT_FOUND",
-        message: "Thread not found",
-      };
+    ({ params, set }) => {
+      const thread = slackThreadService.getById(params.id);
+      if (!thread) {
+        set.status = 404;
+        return {
+          error: "NOT_FOUND",
+          message: "Thread not found",
+        };
+      }
+      slackThreadService.markEnded(params.id);
+      set.status = 204;
+      return null;
     },
     {
       detail: { tags: ["slack"] },
