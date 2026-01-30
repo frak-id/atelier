@@ -8,12 +8,15 @@ import {
   ExternalLink,
   Kanban,
   Loader2,
+  MessageSquare,
   Server,
 } from "lucide-react";
-import { Component, type ReactNode, Suspense } from "react";
+import { Component, type ReactNode, Suspense, useMemo } from "react";
 import {
   sandboxDevCommandsQuery,
   sandboxListQuery,
+  slackStatusQuery,
+  slackThreadListQuery,
   taskListQuery,
   useDeleteSandbox,
   useRestartSandbox,
@@ -38,7 +41,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAttentionData } from "@/hooks/use-attention-data";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatRelativeTime } from "@/lib/utils";
 import { useDrawer } from "@/providers/drawer-provider";
 
 class SectionErrorBoundary extends Component<
@@ -104,6 +107,12 @@ function MissionControlPage() {
         <SectionErrorBoundary>
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
             <ActiveTasksSection onSelectTask={openTask} />
+          </Suspense>
+        </SectionErrorBoundary>
+
+        <SectionErrorBoundary>
+          <Suspense fallback={<Skeleton className="h-32 w-full" />}>
+            <ActiveThreadsSection />
           </Suspense>
         </SectionErrorBoundary>
 
@@ -291,6 +300,77 @@ function ActiveTaskCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ActiveThreadsSection() {
+  const { data: status } = useQuery(slackStatusQuery);
+  const { data: threads } = useQuery(slackThreadListQuery);
+
+  const activeThreads = useMemo(
+    () => (threads ?? []).filter((t) => t.status === "active"),
+    [threads],
+  );
+
+  if (!status?.connected) return null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          Active Threads
+          {activeThreads.length > 0 && (
+            <Badge variant="outline">{activeThreads.length}</Badge>
+          )}
+        </h2>
+      </div>
+
+      {activeThreads.length === 0 ? (
+        <Card className="bg-muted/5 border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+            <MessageSquare className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <p className="font-medium text-muted-foreground">
+              No active Slack threads
+            </p>
+            <Button variant="link" size="sm" asChild>
+              <a href="/threads">View all threads</a>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {activeThreads.map((thread) => (
+            <Card key={thread.id}>
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-start gap-2">
+                  <CardTitle className="text-sm font-mono truncate">
+                    #{thread.channelId}
+                  </CardTitle>
+                  <Badge className="bg-green-500/10 text-green-600 border-green-500/20 shrink-0">
+                    Active
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {thread.branchName && (
+                  <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded truncate block max-w-full">
+                    {thread.branchName}
+                  </span>
+                )}
+                <div className="text-xs text-muted-foreground">
+                  {formatRelativeTime(thread.createdAt)}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          <Card className="border-dashed flex items-center justify-center min-h-[100px]">
+            <Button variant="link" size="sm" asChild>
+              <a href="/threads">View all threads</a>
+            </Button>
+          </Card>
+        </div>
+      )}
+    </div>
   );
 }
 
