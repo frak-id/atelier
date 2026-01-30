@@ -1,4 +1,5 @@
 import type { SandboxConfig } from "@frak-sandbox/shared";
+import { VM_PATHS } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import type { SandboxPaths } from "../../infrastructure/firecracker/index.ts";
 import type { NetworkAllocation } from "../../infrastructure/network/index.ts";
@@ -52,6 +53,7 @@ export const SandboxProvisioner = {
       await this.injectFileSecrets(mountPoint, ctx);
       await this.injectGitCredentials(mountPoint, ctx);
       await this.injectEditorConfigs(mountPoint, ctx);
+      await this.injectOhMyOpenCodeCache(mountPoint, ctx);
       await this.injectSandboxMd(mountPoint, ctx);
     } finally {
       await $`umount ${mountPoint}`.quiet();
@@ -288,6 +290,47 @@ ${dnsLines}
       { sandboxId: ctx.sandboxId, configCount: configs.length },
       "Config files injected",
     );
+  },
+
+  /**
+   * Seed oh-my-opencode's connected-providers cache to prevent a deadlock:
+   * oh-my-opencode's config hook calls fetchAvailableModels() which requests
+   * the /provider endpoint via the SDK client. But that endpoint is behind
+   * the instance middleware that blocks until bootstrap completes — and
+   * bootstrap is waiting for the config hook. Without the cache file,
+   * fetchAvailableModels falls through to the API call, causing a circular wait.
+   *
+   * @see https://github.com/code-yeongyu/oh-my-opencode (configHandler in plugin init)
+   */
+  async injectOhMyOpenCodeCache(
+    mountPoint: string,
+    ctx: ProvisionContext,
+  ): Promise<void> {
+    const cacheDir = `${mountPoint}/home/dev/.cache/oh-my-opencode`;
+    await ensureDir(cacheDir);
+
+    const configs = ctx.getConfigFiles(ctx.workspace?.id);
+    const authConfig = configs.find((c) => c.path === VM_PATHS.opencodeAuth);
+
+    let providers: string[] = [];
+    if (authConfig) {
+      try {
+        const authJson = JSON.parse(authConfig.content);
+        providers = Object.keys(authJson);
+      } catch {
+        log.warn("Failed to parse auth.json for oh-my-opencode cache seed");
+      }
+    }
+
+    const connectedProviders = {
+      connected: providers,
+      updatedAt: new Date().toISOString(),
+    };
+    await Bun.write(
+      `${cacheDir}/connected-providers.json`,
+      JSON.stringify(connectedProviders, null, 2),
+    );
+    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.cache/oh-my-opencode`.quiet();
   },
 
   async injectSandboxMd(
