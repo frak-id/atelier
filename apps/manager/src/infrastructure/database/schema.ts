@@ -2,6 +2,7 @@ import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type {
   GitSourceConfig,
   SandboxRuntime,
+  SlackThreadData,
   TaskData,
   WorkspaceConfig,
 } from "../../schemas/index.ts";
@@ -98,4 +99,29 @@ export const tasks = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (t) => [index("idx_tasks_workspace_id").on(t.workspaceId)],
+);
+
+// Slack threads status is plain text to avoid DB migrations when adding new statuses
+export const slackThreads = sqliteTable(
+  "slack_threads",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull(),
+    sandboxId: text("sandbox_id"),
+    sessionId: text("session_id"),
+    channelId: text("channel_id").notNull(),
+    threadTs: text("thread_ts").notNull(),
+    userId: text("user_id").notNull(),
+    userName: text("user_name"),
+    initialMessage: text("initial_message").notNull(),
+    branchName: text("branch_name"),
+    status: text("status").notNull().default("pending"),
+    data: text("data", { mode: "json" }).notNull().$type<SlackThreadData>(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [
+    index("idx_slack_threads_workspace").on(t.workspaceId),
+    index("idx_slack_threads_status").on(t.status),
+  ],
 );
