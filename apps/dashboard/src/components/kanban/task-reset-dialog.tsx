@@ -1,7 +1,7 @@
 import type { Task } from "@frak-sandbox/manager/types";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { Loader2, RotateCcw } from "lucide-react";
 import { useState } from "react";
-import { useDeleteTask } from "@/api/queries";
+import { useResetTask } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,26 +15,26 @@ import { Label } from "@/components/ui/label";
 
 type SandboxAction = "detach" | "stop" | "destroy";
 
-type TaskDeleteDialogProps = {
+type TaskResetDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   task: Task | null;
 };
 
-export function TaskDeleteDialog({
+export function TaskResetDialog({
   open,
   onOpenChange,
   task,
-}: TaskDeleteDialogProps) {
-  const [sandboxAction, setSandboxAction] = useState<SandboxAction>("destroy");
-  const deleteMutation = useDeleteTask();
+}: TaskResetDialogProps) {
+  const [sandboxAction, setSandboxAction] = useState<SandboxAction>("detach");
+  const resetMutation = useResetTask();
 
   const hasSandbox = !!task?.data.sandboxId;
 
-  const handleDelete = async () => {
+  const handleReset = async () => {
     if (!task) return;
 
-    await deleteMutation.mutateAsync({
+    await resetMutation.mutateAsync({
       id: task.id,
       sandboxAction: hasSandbox ? sandboxAction : undefined,
     });
@@ -49,15 +49,15 @@ export function TaskDeleteDialog({
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-            Delete Task
+            <RotateCcw className="h-5 w-5" />
+            Reset to Draft
           </DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete &quot;{task.title}&quot;?
+            Reset &quot;{task.title}&quot; back to draft status?
           </DialogDescription>
         </DialogHeader>
 
-        {hasSandbox && (
+        {hasSandbox ? (
           <div className="py-4">
             <p className="text-sm text-muted-foreground mb-3">
               This task has an associated sandbox. What would you like to do
@@ -117,11 +117,10 @@ export function TaskDeleteDialog({
               </label>
             </div>
           </div>
-        )}
-
-        {!hasSandbox && (
+        ) : (
           <p className="py-4 text-sm text-muted-foreground">
-            This action cannot be undone.
+            The task will be moved back to draft. Sessions and branch data will
+            be cleared.
           </p>
         )}
 
@@ -129,15 +128,11 @@ export function TaskDeleteDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            onClick={handleDelete}
-            disabled={deleteMutation.isPending}
-          >
-            {deleteMutation.isPending && (
+          <Button onClick={handleReset} disabled={resetMutation.isPending}>
+            {resetMutation.isPending && (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             )}
-            Delete Task
+            Reset to Draft
           </Button>
         </DialogFooter>
       </DialogContent>

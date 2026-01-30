@@ -43,11 +43,11 @@ export const AuthConfigSchema = Type.Object({
   githubClientSecret: Type.String({ default: "" }),
   /** GitHub OAuth callback URL */
   githubCallbackUrl: Type.String({
-    default: "http://localhost:4000/auth/github/callback",
+    default: "http://localhost:4000/api/github/callback",
   }),
   /** GitHub login callback URL */
   githubLoginCallbackUrl: Type.String({
-    default: "http://localhost:4000/auth/login/callback",
+    default: "http://localhost:4000/auth/callback",
   }),
   /** JWT signing secret */
   jwtSecret: Type.String({ default: "dev-secret-change-in-production" }),
@@ -192,8 +192,8 @@ export const DEFAULT_CONFIG: FrakConfig = {
   auth: {
     githubClientId: "",
     githubClientSecret: "",
-    githubCallbackUrl: "http://localhost:4000/auth/github/callback",
-    githubLoginCallbackUrl: "http://localhost:4000/auth/login/callback",
+    githubCallbackUrl: "http://localhost:4000/api/github/callback",
+    githubLoginCallbackUrl: "http://localhost:4000/auth/callback",
     jwtSecret: "dev-secret-change-in-production",
     allowedOrg: undefined,
     allowedUsers: [],

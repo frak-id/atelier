@@ -1,4 +1,3 @@
-import type { Task } from "@frak-sandbox/manager/types";
 import type { SessionTemplate } from "@frak-sandbox/shared/constants";
 import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
@@ -8,22 +7,17 @@ import {
   Loader2,
   MessageSquare,
   Play,
-  Plus,
 } from "lucide-react";
 import { useState } from "react";
 import type { Workspace } from "@/api/client";
 import {
-  taskListQuery,
-  useCreateTask,
   workspaceListQuery,
   workspaceSessionTemplatesQuery,
 } from "@/api/queries";
+import { TaskForm } from "@/components/kanban/task-form-dialog";
 import { useStartSession } from "@/hooks/use-start-session";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
 import {
   Select,
   SelectContent,
@@ -111,11 +105,7 @@ export function StartWorkingCard() {
           </TabsContent>
 
           <TabsContent value="task">
-            <TaskTab
-              workspaceId={selectedWorkspaceId}
-              hasWorkspace={!!selectedWorkspace}
-              templates={templates}
-            />
+            <TaskTab workspaceId={selectedWorkspaceId} />
           </TabsContent>
         </Tabs>
       </CardContent>
@@ -288,231 +278,16 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
   );
 }
 
-type TaskTabProps = {
-  workspaceId: string;
-  hasWorkspace: boolean;
-  templates: SessionTemplate[];
-};
-
-function TaskTab({ workspaceId, hasWorkspace, templates }: TaskTabProps) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-
-  const defaultTemplate = templates[0];
-  const [selectedTemplateId, setSelectedTemplateId] = useState(
-    defaultTemplate?.id ?? "",
-  );
-  const [selectedVariantIndex, setSelectedVariantIndex] = useState(
-    defaultTemplate?.defaultVariantIndex ?? 0,
-  );
-
-  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
-
-  const createMutation = useCreateTask();
-
-  const { data: tasks } = useQuery({
-    ...taskListQuery(workspaceId),
-    enabled: !!workspaceId,
-  });
-
-  const draftTasks = tasks?.filter((t) => t.status === "draft") ?? [];
-  const canSubmit =
-    hasWorkspace &&
-    title.trim().length > 0 &&
-    description.trim().length > 0 &&
-    !createMutation.isPending;
-
-  const handleCreateTask = async () => {
-    if (!canSubmit) return;
-
-    await createMutation.mutateAsync({
-      workspaceId,
-      title: title.trim(),
-      description: description.trim(),
-      templateId: selectedTemplateId || undefined,
-      variantIndex: selectedVariantIndex,
-    });
-
-    setTitle("");
-    setDescription("");
-    setSelectedTemplateId(defaultTemplate?.id ?? "");
-    setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
-  };
-
-  const handleTemplateChange = (templateId: string) => {
-    setSelectedTemplateId(templateId);
-    const template = templates.find((t) => t.id === templateId);
-    setSelectedVariantIndex(template?.defaultVariantIndex ?? 0);
-  };
-
+function TaskTab({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="space-y-4">
-      {createMutation.isSuccess && (
-        <div className="flex items-center justify-between p-3 bg-green-500/10 border border-green-500/20 rounded-md text-sm">
-          <p className="text-green-700 dark:text-green-400">
-            Task created! Find it in the Tasks board.
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => createMutation.reset()}
-            className="h-7 text-xs"
-          >
-            Dismiss
-          </Button>
-        </div>
-      )}
-
-      {createMutation.isError && (
-        <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm">
-          <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-          <div className="space-y-1">
-            <p className="text-destructive font-medium">
-              {createMutation.error instanceof Error
-                ? createMutation.error.message
-                : "Failed to create task"}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => createMutation.reset()}
-              className="h-7 text-xs"
-            >
-              Dismiss
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        <div className="space-y-1.5">
-          <Label htmlFor="task-title">Title</Label>
-          <Input
-            id="task-title"
-            placeholder="e.g., Add user authentication"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            disabled={!hasWorkspace || createMutation.isPending}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="task-description">Description</Label>
-          <Textarea
-            id="task-description"
-            placeholder="Describe what you want the AI to work on..."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="min-h-[80px] resize-none"
-            disabled={!hasWorkspace || createMutation.isPending}
-          />
-        </div>
-
-        <div className="flex gap-3">
-          {templates.length > 1 && (
-            <Select
-              value={selectedTemplateId}
-              onValueChange={handleTemplateChange}
-              disabled={createMutation.isPending}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Template" />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    {template.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          {selectedTemplate && selectedTemplate.variants.length > 0 && (
-            <Select
-              value={String(selectedVariantIndex)}
-              onValueChange={(v) => setSelectedVariantIndex(Number(v))}
-              disabled={createMutation.isPending}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Effort" />
-              </SelectTrigger>
-              <SelectContent>
-                {selectedTemplate.variants.map((variant, idx) => (
-                  <SelectItem key={idx} value={String(idx)}>
-                    {variant.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          <Button
-            onClick={handleCreateTask}
-            disabled={!canSubmit}
-            className="flex-1"
-          >
-            {createMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4 mr-2" />
-            )}
-            {createMutation.isPending ? "Creating..." : "Create Task"}
-          </Button>
-        </div>
-      </div>
-
+      <TaskForm
+        workspaceId={workspaceId || undefined}
+        showWorkspaceSelector={false}
+      />
       <p className="text-xs text-muted-foreground">
         Creates a draft task. Start it from the Tasks board when ready.
       </p>
-
-      {draftTasks.length > 0 && (
-        <div className="pt-2 border-t">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">Draft Tasks</span>
-            <Badge variant="secondary" className="text-xs">
-              {draftTasks.length}
-            </Badge>
-          </div>
-          <div className="space-y-1.5">
-            {draftTasks.slice(0, 3).map((task) => (
-              <DraftTaskItem key={task.id} task={task} templates={templates} />
-            ))}
-            {draftTasks.length > 3 && (
-              <a
-                href="/tasks"
-                className="block text-xs text-muted-foreground hover:text-foreground text-center pt-1"
-              >
-                +{draftTasks.length - 3} more in Tasks board
-              </a>
-            )}
-          </div>
-        </div>
-      )}
     </div>
-  );
-}
-
-function DraftTaskItem({
-  task,
-  templates,
-}: {
-  task: Task;
-  templates: SessionTemplate[];
-}) {
-  const template = templates.find((t) => t.id === task.data.workflowId);
-  const variant = template?.variants[0];
-
-  return (
-    <a
-      href="/tasks"
-      className="flex items-center gap-2 p-2 rounded-md hover:bg-accent transition-colors group"
-    >
-      <div className="h-2 w-2 rounded-full bg-muted-foreground/30" />
-      <span className="text-sm truncate flex-1">{task.title}</span>
-      <Badge variant="outline" className="text-xs shrink-0">
-        {variant?.name ?? template?.name ?? "Default"}
-      </Badge>
-    </a>
   );
 }

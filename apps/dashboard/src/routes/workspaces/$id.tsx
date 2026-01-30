@@ -26,6 +26,7 @@ import {
   workspaceDetailQuery,
 } from "@/api/queries";
 import { EditWorkspaceDialog } from "@/components/edit-workspace-dialog";
+import { SandboxDrawer } from "@/components/sandbox-drawer";
 import { SandboxRow } from "@/components/sandbox-row";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,9 @@ function WorkspaceDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ConfigFile | null>(null);
+  const [selectedSandboxId, setSelectedSandboxId] = useState<string | null>(
+    null,
+  );
 
   const deleteMutation = useDeleteWorkspace();
   const createSandboxMutation = useCreateSandbox();
@@ -106,7 +110,7 @@ function WorkspaceDetailPage() {
       {
         onSuccess: (result) => {
           if (result && "id" in result) {
-            navigate({ to: "/sandboxes/$id", params: { id: result.id } });
+            setSelectedSandboxId(result.id);
           }
         },
       },
@@ -386,6 +390,7 @@ function WorkspaceDetailPage() {
                     key={sandbox.id}
                     sandbox={sandbox}
                     workspaceName={workspace.name}
+                    onSandboxClick={setSelectedSandboxId}
                   />
                 ))}
               </div>
@@ -428,6 +433,11 @@ function WorkspaceDetailPage() {
         isPending={
           createConfigMutation.isPending || updateConfigMutation.isPending
         }
+      />
+
+      <SandboxDrawer
+        sandboxId={selectedSandboxId}
+        onClose={() => setSelectedSandboxId(null)}
       />
     </div>
   );

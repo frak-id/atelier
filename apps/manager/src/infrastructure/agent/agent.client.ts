@@ -307,8 +307,8 @@ function parseHttpResponse<T>(raw: string): T {
     throw new Error(`Malformed HTTP status line: ${statusLine}`);
   }
 
-  const statusCode = parseInt(statusMatch[1]!, 10);
-  const statusMessage = statusMatch[2]!;
+  const statusCode = parseInt(statusMatch[1] ?? "na", 10);
+  const statusMessage = statusMatch[2] ?? "undefined";
 
   if (statusCode < 200 || statusCode >= 300) {
     throw new Error(`Agent request failed: ${statusCode} ${statusMessage}`);

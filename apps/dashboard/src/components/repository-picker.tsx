@@ -52,7 +52,7 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
         variant="outline"
         className="w-full justify-start gap-2 text-muted-foreground"
         onClick={() => {
-          window.location.href = `${API_URL}/auth/github/login`;
+          window.location.href = `${API_URL}/api/github/connect`;
         }}
       >
         <Github className="h-4 w-4" />

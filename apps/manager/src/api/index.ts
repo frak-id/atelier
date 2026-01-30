@@ -4,8 +4,7 @@
 export { authRoutes } from "./auth.routes.ts";
 export { configFileRoutes } from "./config-file.routes.ts";
 export { gitSourceRoutes } from "./git-source.routes.ts";
-export { githubApiRoutes } from "./github-api.routes.ts";
-export { githubAuthRoutes } from "./github-auth.routes.ts";
+export { githubApiRoutes, githubOAuthRoutes } from "./github-api.routes.ts";
 export { healthRoutes } from "./health.routes.ts";
 export { imageRoutes } from "./image.routes.ts";
 export { registryRoutes } from "./registry.routes.ts";

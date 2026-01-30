@@ -14,7 +14,7 @@ const log = createChildLogger("auth-routes");
 
 const JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
 
-export const authRoutes = new Elysia({ prefix: "/login" })
+export const authRoutes = new Elysia({ prefix: "/auth" })
   .use(
     jwt({
       name: "jwt",

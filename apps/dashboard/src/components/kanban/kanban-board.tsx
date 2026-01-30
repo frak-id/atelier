@@ -10,13 +10,9 @@ import {
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { Task } from "@frak-sandbox/manager/types";
 import { useMemo, useState } from "react";
-import {
-  useCompleteTask,
-  useReorderTask,
-  useResetTask,
-  useStartTask,
-} from "@/api/queries";
+import { useCompleteTask, useReorderTask, useStartTask } from "@/api/queries";
 import { KanbanColumn } from "./kanban-column";
+import { TaskResetDialog } from "./task-reset-dialog";
 
 type TaskStatus = "draft" | "active" | "done";
 
@@ -25,7 +21,7 @@ const STATUSES: TaskStatus[] = ["draft", "active", "done"];
 type KanbanBoardProps = {
   tasks: Task[];
   onCreateTask: () => void;
-  onViewTask: (task: Task) => void;
+  onTaskClick: (task: Task) => void;
   onEditTask: (task: Task) => void;
   onDeleteTask: (task: Task) => void;
 };
@@ -33,15 +29,15 @@ type KanbanBoardProps = {
 export function KanbanBoard({
   tasks,
   onCreateTask,
-  onViewTask,
+  onTaskClick,
   onEditTask,
   onDeleteTask,
 }: KanbanBoardProps) {
   const [isActionPending, setIsActionPending] = useState(false);
+  const [resettingTask, setResettingTask] = useState<Task | null>(null);
 
   const startMutation = useStartTask();
   const completeMutation = useCompleteTask();
-  const resetMutation = useResetTask();
   const reorderMutation = useReorderTask();
 
   const sensors = useSensors(
@@ -127,38 +123,42 @@ export function KanbanBoard({
     }
   };
 
-  const handleResetTask = async (taskId: string) => {
-    setIsActionPending(true);
-    try {
-      await resetMutation.mutateAsync(taskId);
-    } finally {
-      setIsActionPending(false);
-    }
+  const handleResetTask = (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) setResettingTask(task);
   };
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCorners}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {STATUSES.map((status) => (
-          <KanbanColumn
-            key={status}
-            status={status}
-            tasks={tasksByStatus[status]}
-            onCreateTask={status === "draft" ? onCreateTask : undefined}
-            onViewTask={onViewTask}
-            onEditTask={onEditTask}
-            onDeleteTask={onDeleteTask}
-            onStartTask={handleStartTask}
-            onCompleteTask={handleCompleteTask}
-            onResetTask={handleResetTask}
-            isActionPending={isActionPending}
-          />
-        ))}
-      </div>
-    </DndContext>
+    <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {STATUSES.map((status) => (
+            <KanbanColumn
+              key={status}
+              status={status}
+              tasks={tasksByStatus[status]}
+              onCreateTask={status === "draft" ? onCreateTask : undefined}
+              onViewTask={onTaskClick}
+              onEditTask={onEditTask}
+              onDeleteTask={onDeleteTask}
+              onStartTask={handleStartTask}
+              onCompleteTask={handleCompleteTask}
+              onResetTask={handleResetTask}
+              isActionPending={isActionPending}
+            />
+          ))}
+        </div>
+      </DndContext>
+
+      <TaskResetDialog
+        open={!!resettingTask}
+        onOpenChange={(open) => !open && setResettingTask(null)}
+        task={resettingTask}
+      />
+    </>
   );
 }

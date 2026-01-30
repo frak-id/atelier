@@ -32,7 +32,7 @@ import {
   useTaskSessionProgress,
 } from "@/hooks/use-task-session-progress";
 
-type TaskCardProps = {
+export type TaskCardProps = {
   task: Task;
   onClick?: () => void;
   onEdit?: () => void;
@@ -153,6 +153,17 @@ export function TaskCard({
             </div>
           )}
 
+          {task.status === "done" && sandbox && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <Badge
+                variant={sandbox.status === "running" ? "default" : "secondary"}
+                className="text-[10px] h-5 px-1.5"
+              >
+                Sandbox {sandbox.status}
+              </Badge>
+            </div>
+          )}
+
           {totalCount > 0 && (
             <div className="mt-2 space-y-1">
               {todoProgress.total > 0 ? (
@@ -231,7 +242,7 @@ export function TaskCard({
   );
 }
 
-function TaskMenu({
+export function TaskMenu({
   task,
   onEdit,
   onDelete,
@@ -272,13 +283,15 @@ function TaskMenu({
             Reset to Draft
           </MenuButton>
         )}
-        <MenuButton
-          onClick={onDelete}
-          disabled={isActionPending}
-          className="text-destructive hover:text-destructive"
-        >
-          Delete
-        </MenuButton>
+        {(task.status === "draft" || task.status === "done") && (
+          <MenuButton
+            onClick={onDelete}
+            disabled={isActionPending}
+            className="text-destructive hover:text-destructive"
+          >
+            Delete
+          </MenuButton>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -347,7 +360,7 @@ function CopySshButton({ ssh }: { ssh: string }) {
   );
 }
 
-function TaskSessionsStatus({
+export function TaskSessionsStatus({
   aggregatedInteraction,
   needsAttention,
   opencodeUrl,

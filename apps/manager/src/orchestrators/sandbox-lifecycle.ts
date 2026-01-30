@@ -6,7 +6,6 @@ import {
   FirecrackerClient,
   getSandboxPaths,
   getSocketPath,
-  getVsockPath,
   launchFirecracker,
 } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";

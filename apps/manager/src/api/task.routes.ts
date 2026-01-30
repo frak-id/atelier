@@ -11,6 +11,7 @@ import {
   DeleteTaskQuerySchema,
   IdParamSchema,
   ReorderTaskBodySchema,
+  ResetTaskQuerySchema,
   SpawnSessionsResponseSchema,
   TaskListResponseSchema,
   TaskSchema,
@@ -128,12 +129,29 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
   )
   .post(
     "/:id/reset",
-    ({ params }) => {
-      log.info({ taskId: params.id }, "Resetting task to draft");
+    async ({ params, query }) => {
+      const task = taskService.getByIdOrThrow(params.id);
+      const sandboxAction = (query.sandboxAction ?? "detach") as
+        | "detach"
+        | "stop"
+        | "destroy";
+
+      log.info({ taskId: params.id, sandboxAction }, "Resetting task to draft");
+
+      if (task.data.sandboxId) {
+        if (sandboxAction === "stop") {
+          await sandboxLifecycle.stop(task.data.sandboxId);
+        } else if (sandboxAction === "destroy") {
+          await sandboxDestroyer.destroy(task.data.sandboxId);
+        }
+        // "detach" = do nothing, sandbox keeps running
+      }
+
       return taskService.resetToDraft(params.id);
     },
     {
       params: IdParamSchema,
+      query: ResetTaskQuerySchema,
       response: TaskSchema,
     },
   )
@@ -152,14 +170,17 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     "/:id",
     async ({ params, query, set }) => {
       const task = taskService.getByIdOrThrow(params.id);
-      const keepSandbox = query.keepSandbox === "true";
+      const sandboxAction = (query.sandboxAction ?? "destroy") as
+        | "detach"
+        | "stop"
+        | "destroy";
 
-      log.info({ taskId: params.id, keepSandbox }, "Deleting task");
+      log.info({ taskId: params.id, sandboxAction }, "Deleting task");
 
       if (task.data.sandboxId) {
-        if (keepSandbox) {
+        if (sandboxAction === "stop") {
           await sandboxLifecycle.stop(task.data.sandboxId);
-        } else {
+        } else if (sandboxAction === "destroy") {
           await sandboxDestroyer.destroy(task.data.sandboxId);
         }
       }

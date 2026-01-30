@@ -6,7 +6,7 @@ import {
   authRoutes,
   configFileRoutes,
   githubApiRoutes,
-  githubAuthRoutes,
+  githubOAuthRoutes,
   gitSourceRoutes,
   healthRoutes,
   imageRoutes,
@@ -193,26 +193,25 @@ const app = new Elysia()
   })
   .use(healthRoutes)
   .use(authRoutes)
-  .group("/auth", (app) =>
-    app.guard({ beforeHandle: authGuard }, (app) => app.use(githubAuthRoutes)),
-  )
   .group("/api", (app) =>
-    app.guard({ beforeHandle: authGuard }, (app) =>
-      app
-        .use(sandboxRoutes)
-        .use(workspaceRoutes)
-        .use(taskRoutes)
-        .use(sessionTemplateRoutes)
-        .use(gitSourceRoutes)
-        .use(configFileRoutes)
-        .use(sharedAuthRoutes)
-        .use(sshKeyRoutes)
-        .use(systemRoutes)
-        .use(sharedStorageRoutes)
-        .use(registryRoutes)
-        .use(imageRoutes)
-        .use(githubApiRoutes),
-    ),
+    app
+      .use(githubOAuthRoutes)
+      .guard({ beforeHandle: authGuard }, (app) =>
+        app
+          .use(sandboxRoutes)
+          .use(workspaceRoutes)
+          .use(taskRoutes)
+          .use(sessionTemplateRoutes)
+          .use(gitSourceRoutes)
+          .use(configFileRoutes)
+          .use(sharedAuthRoutes)
+          .use(sshKeyRoutes)
+          .use(systemRoutes)
+          .use(sharedStorageRoutes)
+          .use(registryRoutes)
+          .use(imageRoutes)
+          .use(githubApiRoutes),
+      ),
   )
   .get("/", () => ({
     name: "Frak Sandbox Manager",

@@ -246,7 +246,7 @@ function DevCommandLogs({
         scrollElement.scrollTop = scrollElement.scrollHeight;
       }
     }
-  }, [logs]);
+  });
 
   return (
     <div className="bg-black text-white font-mono text-xs p-0">
