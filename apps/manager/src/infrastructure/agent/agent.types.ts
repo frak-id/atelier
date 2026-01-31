@@ -53,6 +53,37 @@ export interface GitStatus {
   repos: GitRepoStatus[];
 }
 
+export interface GitDiffFile {
+  path: string;
+  added: number;
+  removed: number;
+}
+
+export interface GitDiffRepo {
+  path: string;
+  files: GitDiffFile[];
+  totalAdded: number;
+  totalRemoved: number;
+  error?: string;
+}
+
+export interface GitDiffResult {
+  repos: GitDiffRepo[];
+}
+
+export interface GitCommitResult {
+  path: string;
+  success: boolean;
+  hash?: string;
+  error?: string;
+}
+
+export interface GitPushResult {
+  path: string;
+  success: boolean;
+  error?: string;
+}
+
 export interface DevCommandStatus {
   name: string;
   status: string;
