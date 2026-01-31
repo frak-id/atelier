@@ -1,13 +1,15 @@
+import type { Todo } from "@opencode-ai/sdk/v2";
 import {
   AlertTriangle,
   CheckCircle,
   ChevronRight,
+  Circle,
   Clock,
   ExternalLink,
   Loader2,
+  XCircle,
 } from "lucide-react";
 import { memo, useMemo } from "react";
-import { ExpandableTodoList } from "@/components/expandable-todo-list";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -15,6 +17,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
 import type { SessionNode } from "@/lib/session-hierarchy";
 import { buildOpenCodeSessionUrl, cn } from "@/lib/utils";
@@ -80,6 +87,129 @@ function SessionStatusIcon({
   return <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />;
 }
 
+function TodoStatusIcon({ status }: { status: Todo["status"] }) {
+  switch (status) {
+    case "completed":
+      return <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />;
+    case "in_progress":
+      return (
+        <Loader2 className="h-3.5 w-3.5 text-blue-500 shrink-0 animate-spin" />
+      );
+    case "cancelled":
+      return <XCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />;
+    default:
+      return <Circle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />;
+  }
+}
+
+function TodoProgressBadge({ todos }: { todos: Todo[] }) {
+  const activeTodos = todos.filter((t) => t.status !== "cancelled");
+  const completed = activeTodos.filter((t) => t.status === "completed").length;
+  const total = activeTodos.length;
+
+  if (total === 0) return null;
+
+  const allDone = completed === total;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "text-xs px-1.5 h-5 rounded-md border font-mono shrink-0 tabular-nums",
+            "hover:bg-muted transition-colors",
+            allDone
+              ? "text-green-500 border-green-500/30"
+              : "text-muted-foreground border-border",
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {completed}/{total}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-0" collisionPadding={8}>
+        <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground">
+          Tasks — {completed}/{total} completed
+        </div>
+        <ul className="max-h-60 overflow-y-auto py-1">
+          {activeTodos.map((todo) => (
+            <li
+              key={todo.id || todo.content.slice(0, 50)}
+              className="flex items-start gap-2 px-3 py-1.5 text-xs"
+            >
+              <div className="mt-px shrink-0">
+                <TodoStatusIcon status={todo.status} />
+              </div>
+              <span
+                className={cn(
+                  "leading-tight",
+                  todo.status === "completed" &&
+                    "text-muted-foreground line-through",
+                )}
+              >
+                {todo.content}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function RootTodoList({ todos }: { todos: Todo[] }) {
+  const activeTodos = todos.filter((t) => t.status !== "cancelled");
+  if (activeTodos.length === 0) return null;
+
+  const completed = activeTodos.filter((t) => t.status === "completed").length;
+  const currentTodo = activeTodos.find((t) => t.status === "in_progress");
+
+  return (
+    <Collapsible className="group/todos">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 rounded transition-colors"
+        >
+          <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-data-[state=open]/todos:rotate-90" />
+          <span className="font-medium">
+            Tasks ({completed}/{activeTodos.length})
+          </span>
+          {currentTodo && (
+            <span className="truncate italic text-muted-foreground/70 flex-1 text-left">
+              — {currentTodo.content}
+            </span>
+          )}
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ul className="py-1 ml-5">
+          {activeTodos.map((todo) => (
+            <li
+              key={todo.id || todo.content.slice(0, 50)}
+              className="flex items-start gap-2 px-3 py-1 text-xs"
+            >
+              <div className="mt-px shrink-0">
+                <TodoStatusIcon status={todo.status} />
+              </div>
+              <span
+                className={cn(
+                  "leading-tight",
+                  todo.status === "completed" &&
+                    "text-muted-foreground line-through",
+                )}
+              >
+                {todo.content}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 const ChildSessionRow = memo(function ChildSessionRow({
   node,
   interactions,
@@ -104,7 +234,7 @@ const ChildSessionRow = memo(function ChildSessionRow({
       : undefined;
 
   return (
-    <div className="space-y-1">
+    <div>
       <div className="flex items-center gap-2 text-sm py-1.5 px-3 rounded-md hover:bg-muted/50 transition-colors">
         <SessionStatusIcon status={status} />
 
@@ -116,11 +246,13 @@ const ChildSessionRow = memo(function ChildSessionRow({
         </span>
 
         {currentTodo && (
-          <span className="truncate text-xs text-muted-foreground flex-1">
+          <span className="truncate text-xs text-muted-foreground italic flex-1 min-w-0">
             {currentTodo.content}
           </span>
         )}
         {!currentTodo && <span className="flex-1" />}
+
+        <TodoProgressBadge todos={todos} />
 
         {interaction && (status === "busy" || status === "idle") && (
           <SessionStatusIndicator
@@ -145,14 +277,8 @@ const ChildSessionRow = memo(function ChildSessionRow({
         )}
       </div>
 
-      {todos.length > 0 && (
-        <div className="ml-9">
-          <ExpandableTodoList todos={todos} sessionId={session.id} />
-        </div>
-      )}
-
       {node.children.length > 0 && (
-        <div className="ml-4 space-y-1">
+        <div className="ml-6 border-l border-border/50 space-y-0.5 mt-0.5">
           {node.children.map((child) => (
             <ChildSessionRow
               key={child.session.id}
@@ -286,17 +412,11 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div className="border-t px-4 py-2 space-y-2">
-            {todos.length > 0 && (
-              <ExpandableTodoList
-                todos={todos}
-                sessionId={session.id}
-                defaultExpanded
-              />
-            )}
+          <div className="border-t px-2 py-2 space-y-1">
+            {todos.length > 0 && <RootTodoList todos={todos} />}
 
             {hasChildren && (
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {node.children.map((child) => (
                   <ChildSessionRow
                     key={child.session.id}
