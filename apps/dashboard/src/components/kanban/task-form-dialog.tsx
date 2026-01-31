@@ -1,8 +1,9 @@
 import type { RepoConfig, Task } from "@frak-sandbox/manager/types";
 import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
+import { useForm, useStore } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   githubBranchesQuery,
   useCreateTask,
@@ -64,15 +65,81 @@ export function TaskForm({
   onSuccess,
   showWorkspaceSelector: forceShowWorkspaceSelector,
 }: TaskFormProps) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [context, setContext] = useState("");
-  const [selectedRepoIndices, setSelectedRepoIndices] = useState<number[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState<string>("");
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
-
+  const isEditing = !!task;
   const showWorkspaceSelector =
     forceShowWorkspaceSelector ?? (!fixedWorkspaceId && !task);
+
+  const createMutation = useCreateTask();
+  const updateMutation = useUpdateTask();
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  const form = useForm({
+    defaultValues: {
+      title: task?.title ?? "",
+      description: task?.data.description ?? "",
+      context: task?.data.context ?? "",
+      selectedRepoIndices: task?.data.targetRepoIndices ?? ([] as number[]),
+      selectedBranch: task?.data.baseBranch ?? "",
+      selectedWorkspaceId: "",
+      selectedTemplateId: task?.data.workflowId ?? "",
+      selectedVariantIndex: task?.data.variantIndex ?? 0,
+    },
+    onSubmit: async ({ value }) => {
+      const workspaceId = fixedWorkspaceId || value.selectedWorkspaceId;
+      if (!workspaceId) return;
+
+      if (isEditing && task) {
+        await updateMutation.mutateAsync({
+          id: task.id,
+          data: {
+            title: value.title.trim(),
+            description: value.description.trim(),
+            context: value.context.trim() || undefined,
+            workflowId: value.selectedTemplateId || undefined,
+            variantIndex: value.selectedVariantIndex,
+          } as Parameters<typeof updateMutation.mutateAsync>[0]["data"],
+        });
+      } else {
+        await createMutation.mutateAsync({
+          workspaceId,
+          title: value.title.trim(),
+          description: value.description.trim(),
+          context: value.context.trim() || undefined,
+          workflowId: value.selectedTemplateId || undefined,
+          variantIndex: value.selectedVariantIndex,
+          baseBranch: value.selectedBranch || undefined,
+          targetRepoIndices:
+            value.selectedRepoIndices.length > 0
+              ? value.selectedRepoIndices
+              : undefined,
+        } as Parameters<typeof createMutation.mutateAsync>[0]);
+      }
+
+      form.reset();
+      onSuccess?.();
+    },
+  });
+
+  const title = useStore(form.store, (s) => s.values.title);
+  const description = useStore(form.store, (s) => s.values.description);
+  const context = useStore(form.store, (s) => s.values.context);
+  const selectedRepoIndices = useStore(
+    form.store,
+    (s) => s.values.selectedRepoIndices,
+  );
+  const selectedBranch = useStore(form.store, (s) => s.values.selectedBranch);
+  const selectedWorkspaceId = useStore(
+    form.store,
+    (s) => s.values.selectedWorkspaceId,
+  );
+  const selectedTemplateId = useStore(
+    form.store,
+    (s) => s.values.selectedTemplateId,
+  );
+  const selectedVariantIndex = useStore(
+    form.store,
+    (s) => s.values.selectedVariantIndex,
+  );
   const workspaceId = fixedWorkspaceId || selectedWorkspaceId;
 
   const { data: workspaces } = useQuery({
@@ -90,20 +157,8 @@ export function TaskForm({
   });
   const allTemplates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
   const templates = allTemplates.filter((t) => t.category === "primary");
-  const defaultTemplate = templates[0];
-  const [selectedTemplateId, setSelectedTemplateId] = useState(
-    defaultTemplate?.id ?? "",
-  );
-  const [selectedVariantIndex, setSelectedVariantIndex] = useState(
-    defaultTemplate?.defaultVariantIndex ?? 0,
-  );
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
-  const createMutation = useCreateTask();
-  const updateMutation = useUpdateTask();
-
-  const isEditing = !!task;
-  const isPending = createMutation.isPending || updateMutation.isPending;
 
   const repos = workspace?.config?.repos ?? [];
   const hasMultipleRepos = repos.length > 1;
@@ -128,84 +183,39 @@ export function TaskForm({
   const canSubmit =
     !isPending && !!title.trim() && !!description.trim() && !!workspaceId;
 
-  const resetForm = () => {
-    setTitle("");
-    setDescription("");
-    setContext("");
-    setSelectedTemplateId(defaultTemplate?.id ?? "");
-    setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
-    setSelectedRepoIndices([]);
-    setSelectedBranch("");
-    setSelectedWorkspaceId("");
-  };
-
-  useEffect(() => {
-    if (task) {
-      setTitle(task.title);
-      setDescription(task.data.description ?? "");
-      setContext(task.data.context ?? "");
-      setSelectedTemplateId(task.data.workflowId ?? defaultTemplate?.id ?? "");
-      setSelectedVariantIndex(
-        task.data.variantIndex ?? defaultTemplate?.defaultVariantIndex ?? 0,
-      );
-      setSelectedRepoIndices(task.data.targetRepoIndices ?? []);
-      setSelectedBranch(task.data.baseBranch ?? "");
-    }
-  }, [task, defaultTemplate]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canSubmit) return;
-
-    if (isEditing && task) {
-      await updateMutation.mutateAsync({
-        id: task.id,
-        data: {
-          title: title.trim(),
-          description: description.trim(),
-          context: context.trim() || undefined,
-          workflowId: selectedTemplateId || undefined,
-          variantIndex: selectedVariantIndex,
-        } as Parameters<typeof updateMutation.mutateAsync>[0]["data"],
-      });
-    } else {
-      await createMutation.mutateAsync({
-        workspaceId,
-        title: title.trim(),
-        description: description.trim(),
-        context: context.trim() || undefined,
-        workflowId: selectedTemplateId || undefined,
-        variantIndex: selectedVariantIndex,
-        baseBranch: selectedBranch || undefined,
-        targetRepoIndices:
-          selectedRepoIndices.length > 0 ? selectedRepoIndices : undefined,
-      } as Parameters<typeof createMutation.mutateAsync>[0]);
-    }
-
-    resetForm();
-    onSuccess?.();
-  };
-
   const toggleRepoSelection = (index: number) => {
-    setSelectedRepoIndices((prev) =>
-      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
+    const prev = selectedRepoIndices;
+    form.setFieldValue(
+      "selectedRepoIndices",
+      prev.includes(index)
+        ? prev.filter((i: number) => i !== index)
+        : [...prev, index],
     );
   };
 
   const handleTemplateChange = (templateId: string) => {
-    setSelectedTemplateId(templateId);
+    form.setFieldValue("selectedTemplateId", templateId);
     const template = templates.find((t) => t.id === templateId);
-    setSelectedVariantIndex(template?.defaultVariantIndex ?? 0);
+    form.setFieldValue(
+      "selectedVariantIndex",
+      template?.defaultVariantIndex ?? 0,
+    );
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        form.handleSubmit();
+      }}
+      className="space-y-4"
+    >
       {showWorkspaceSelector && (
         <div className="space-y-2">
           <Label>Workspace</Label>
           <Select
             value={selectedWorkspaceId}
-            onValueChange={setSelectedWorkspaceId}
+            onValueChange={(v) => form.setFieldValue("selectedWorkspaceId", v)}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select workspace..." />
@@ -226,7 +236,7 @@ export function TaskForm({
         <Input
           id="title"
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => form.setFieldValue("title", e.target.value)}
           placeholder="e.g., Implement user authentication"
         />
       </div>
@@ -236,7 +246,7 @@ export function TaskForm({
         <Textarea
           id="description"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => form.setFieldValue("description", e.target.value)}
           placeholder="Describe the task in detail. This will be sent to the AI as the initial prompt."
           rows={5}
         />
@@ -250,7 +260,7 @@ export function TaskForm({
         <Textarea
           id="context"
           value={context}
-          onChange={(e) => setContext(e.target.value)}
+          onChange={(e) => form.setFieldValue("context", e.target.value)}
           placeholder="Documentation links, API references, or any other helpful context."
           rows={3}
         />
@@ -280,14 +290,16 @@ export function TaskForm({
           {selectedTemplate && selectedTemplate.variants.length > 0 && (
             <Select
               value={String(selectedVariantIndex)}
-              onValueChange={(v) => setSelectedVariantIndex(Number(v))}
+              onValueChange={(v) =>
+                form.setFieldValue("selectedVariantIndex", Number(v))
+              }
             >
               <SelectTrigger className="flex-1">
                 <SelectValue placeholder="Effort" />
               </SelectTrigger>
               <SelectContent>
                 {selectedTemplate.variants.map((variant, idx) => (
-                  <SelectItem key={idx} value={String(idx)}>
+                  <SelectItem key={variant.name} value={String(idx)}>
                     {variant.name}
                   </SelectItem>
                 ))}
@@ -331,7 +343,10 @@ export function TaskForm({
             Base Branch{" "}
             <span className="text-muted-foreground">(optional)</span>
           </Label>
-          <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+          <Select
+            value={selectedBranch}
+            onValueChange={(v) => form.setFieldValue("selectedBranch", v)}
+          >
             <SelectTrigger>
               <SelectValue
                 placeholder={
