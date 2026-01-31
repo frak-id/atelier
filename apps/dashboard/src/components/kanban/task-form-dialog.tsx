@@ -3,7 +3,7 @@ import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   githubBranchesQuery,
   useCreateTask,
@@ -157,6 +157,17 @@ export function TaskForm({
   });
   const allTemplates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
   const templates = allTemplates.filter((t) => t.category === "primary");
+
+  useEffect(() => {
+    if (templates.length > 0 && !selectedTemplateId) {
+      const defaultTemplate = templates[0];
+      form.setFieldValue("selectedTemplateId", defaultTemplate.id);
+      form.setFieldValue(
+        "selectedVariantIndex",
+        defaultTemplate.defaultVariantIndex ?? 0,
+      );
+    }
+  }, [templates, selectedTemplateId, form]);
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
