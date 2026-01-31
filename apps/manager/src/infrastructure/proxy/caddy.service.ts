@@ -151,28 +151,41 @@ export const CaddyService = {
     name: string,
     port: number,
     isDefault: boolean,
-  ): Promise<{ namedUrl: string; defaultUrl?: string }> {
+    extraPorts?: Array<{ port: number; alias: string }>,
+  ): Promise<{
+    namedUrl: string;
+    defaultUrl?: string;
+    extraDevUrls?: Array<{ alias: string; port: number; url: string }>;
+  }> {
     const namedDomain = `dev-${name}-${sandboxId}.${config.caddy.domainSuffix}`;
+
+    const extraDevUrls = (extraPorts ?? []).map((ep) => ({
+      alias: ep.alias,
+      port: ep.port,
+      url: `https://dev-${name}-${ep.alias}-${sandboxId}.${config.caddy.domainSuffix}`,
+    }));
 
     if (config.isMock()) {
       const defaultUrl = isDefault
         ? `https://dev-${sandboxId}.${config.caddy.domainSuffix}`
         : undefined;
       log.debug(
-        {
-          sandboxId,
-          name,
-          namedDomain,
-          defaultDomain: isDefault
-            ? `dev-${sandboxId}.${config.caddy.domainSuffix}`
-            : undefined,
-        },
+        { sandboxId, name, namedDomain, extraPorts: extraPorts?.length ?? 0 },
         "Mock: Dev route registered",
       );
-      return { namedUrl: `https://${namedDomain}`, defaultUrl };
+      return {
+        namedUrl: `https://${namedDomain}`,
+        defaultUrl,
+        extraDevUrls: extraDevUrls.length > 0 ? extraDevUrls : undefined,
+      };
     }
 
     await this.addRoute(namedDomain, `${ipAddress}:${port}`);
+
+    for (const ep of extraPorts ?? []) {
+      const epDomain = `dev-${name}-${ep.alias}-${sandboxId}.${config.caddy.domainSuffix}`;
+      await this.addRoute(epDomain, `${ipAddress}:${ep.port}`);
+    }
 
     let defaultUrl: string | undefined;
     if (isDefault) {
@@ -186,6 +199,7 @@ export const CaddyService = {
         sandboxId,
         name,
         namedDomain,
+        extraPorts: extraPorts?.length ?? 0,
         defaultDomain: isDefault
           ? `dev-${sandboxId}.${config.caddy.domainSuffix}`
           : undefined,
@@ -193,13 +207,18 @@ export const CaddyService = {
       "Dev route registered",
     );
 
-    return { namedUrl: `https://${namedDomain}`, defaultUrl };
+    return {
+      namedUrl: `https://${namedDomain}`,
+      defaultUrl,
+      extraDevUrls: extraDevUrls.length > 0 ? extraDevUrls : undefined,
+    };
   },
 
   async removeDevRoute(
     sandboxId: string,
     name: string,
     isDefault: boolean,
+    extraPorts?: Array<{ alias: string }>,
   ): Promise<void> {
     if (config.isMock()) {
       log.debug({ sandboxId, name }, "Mock: Dev route removed");
@@ -209,6 +228,13 @@ export const CaddyService = {
     await this.removeRoute(
       `dev-${name}-${sandboxId}.${config.caddy.domainSuffix}`,
     );
+
+    for (const ep of extraPorts ?? []) {
+      await this.removeRoute(
+        `dev-${name}-${ep.alias}-${sandboxId}.${config.caddy.domainSuffix}`,
+      );
+    }
+
     if (isDefault) {
       await this.removeRoute(`dev-${sandboxId}.${config.caddy.domainSuffix}`);
     }

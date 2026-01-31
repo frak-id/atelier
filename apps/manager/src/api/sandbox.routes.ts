@@ -377,11 +377,23 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
               let devUrl: string | undefined;
               let defaultDevUrl: string | undefined;
+              let extraDevUrls:
+                | Array<{ alias: string; port: number; url: string }>
+                | undefined;
+
               if (isRunning && cmd.port) {
                 devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.caddy.domainSuffix}`;
                 if (cmd.isDefault) {
                   defaultDevUrl = `https://dev-${sandbox.id}.${config.caddy.domainSuffix}`;
                 }
+              }
+
+              if (isRunning && cmd.extraPorts?.length) {
+                extraDevUrls = cmd.extraPorts.map((ep) => ({
+                  alias: ep.alias,
+                  port: ep.port,
+                  url: `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.caddy.domainSuffix}`,
+                }));
               }
 
               return {
@@ -392,6 +404,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
                 exitCode: runtime?.exitCode,
                 devUrl,
                 defaultDevUrl,
+                extraDevUrls,
               };
             }),
           };
@@ -420,6 +433,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
           let devUrl: string | undefined;
           let defaultDevUrl: string | undefined;
+          let extraDevUrls:
+            | Array<{ alias: string; port: number; url: string }>
+            | undefined;
+
           if (devCommand.port) {
             try {
               const urls = await CaddyService.registerDevRoute(
@@ -428,9 +445,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
                 params.name,
                 devCommand.port,
                 devCommand.isDefault ?? false,
+                devCommand.extraPorts,
               );
               devUrl = urls.namedUrl;
               defaultDevUrl = urls.defaultUrl;
+              extraDevUrls = urls.extraDevUrls;
             } catch (err) {
               log.warn(
                 { sandboxId: sandbox.id, name: params.name, error: err },
@@ -443,6 +462,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             ...result,
             devUrl,
             defaultDevUrl,
+            extraDevUrls,
           };
         },
         {
@@ -468,6 +488,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
                 sandbox.id,
                 params.name,
                 devCommand.isDefault ?? false,
+                devCommand.extraPorts,
               );
             } catch (err) {
               log.warn(

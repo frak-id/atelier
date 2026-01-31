@@ -18,11 +18,18 @@ import {
 } from "./env-secrets-form";
 
 // Replicated from apps/manager/src/schemas/workspace.ts - Defined here to avoid direct dependency on manager source
+export interface ExtraPort {
+  id?: string;
+  port: number | undefined;
+  alias: string;
+}
+
 export interface DevCommand {
-  id?: string; // Client-side only, for stable keys
+  id?: string;
   name: string;
   command: string;
   port?: number;
+  extraPorts?: ExtraPort[];
   workdir?: string;
   env?: Record<string, string>;
   isDefault?: boolean;
@@ -74,6 +81,60 @@ export function DevCommandsForm({
 
     onChange(updated);
   };
+
+  const handleAddExtraPort = (cmdIndex: number) => {
+    const updated = [...devCommands];
+    const cmd = updated[cmdIndex];
+    if (!cmd) return;
+    const currentExtra = cmd.extraPorts ?? [];
+    updated[cmdIndex] = {
+      ...cmd,
+      extraPorts: [
+        ...currentExtra,
+        { id: crypto.randomUUID(), port: undefined, alias: "" },
+      ],
+    };
+    onChange(updated);
+  };
+
+  const handleRemoveExtraPort = (cmdIndex: number, epIndex: number) => {
+    const updated = [...devCommands];
+    const cmd = updated[cmdIndex];
+    if (!cmd) return;
+    updated[cmdIndex] = {
+      ...cmd,
+      extraPorts: (cmd.extraPorts ?? []).filter((_, i) => i !== epIndex),
+    };
+    onChange(updated);
+  };
+
+  const handleExtraPortChange = (
+    cmdIndex: number,
+    epIndex: number,
+    field: "port" | "alias",
+    value: number | string | undefined,
+  ) => {
+    const updated = [...devCommands];
+    const cmd = updated[cmdIndex];
+    if (!cmd) return;
+    const extraPorts = [...(cmd.extraPorts ?? [])];
+    const existing = extraPorts[epIndex];
+    if (!existing) return;
+    extraPorts[epIndex] = { ...existing, [field]: value } as ExtraPort;
+    updated[cmdIndex] = { ...cmd, extraPorts };
+    onChange(updated);
+  };
+
+  const [expandedExtraPorts, setExpandedExtraPorts] = useState<
+    Record<string, boolean>
+  >({});
+
+  const toggleExtraPortsExpanded = (id: string) => {
+    setExpandedExtraPorts((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const isValidAlias = (alias: string) => /^[a-z0-9-]{1,20}$/.test(alias);
+  const isValidAliasInput = (alias: string) => /^[a-z0-9-]{0,20}$/.test(alias);
 
   const handleEnvChange = (index: number, envSecrets: EnvSecret[]) => {
     const updated = [...devCommands];
@@ -241,6 +302,117 @@ export function DevCommandsForm({
                       Set as default command
                     </Label>
                   </div>
+
+                  <Collapsible
+                    open={expandedExtraPorts[cmdId]}
+                    onOpenChange={() => toggleExtraPortsExpanded(cmdId)}
+                    className="border rounded-md p-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground">
+                        Extra Ports
+                      </Label>
+                      <CollapsibleTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                        >
+                          <Plus
+                            className={`h-3 w-3 transition-transform ${
+                              expandedExtraPorts[cmdId] ? "rotate-45" : ""
+                            }`}
+                          />
+                        </Button>
+                      </CollapsibleTrigger>
+                    </div>
+                    <CollapsibleContent className="pt-2 space-y-2">
+                      {(cmd.extraPorts ?? []).map((ep, epIdx) => {
+                        const epId = ep.id || `ep-fallback-${epIdx}`;
+                        const aliasError =
+                          ep.alias && !isValidAlias(ep.alias)
+                            ? "1-20 lowercase alphanumeric or dashes"
+                            : null;
+                        const epPortError =
+                          ep.port !== undefined && ep.port > 0 && ep.port < 1024
+                            ? "Port must be 1024 or higher"
+                            : null;
+                        return (
+                          <div key={epId} className="flex items-center gap-2">
+                            <Input
+                              value={ep.alias}
+                              onChange={(e) => {
+                                if (isValidAliasInput(e.target.value)) {
+                                  handleExtraPortChange(
+                                    index,
+                                    epIdx,
+                                    "alias",
+                                    e.target.value,
+                                  );
+                                }
+                              }}
+                              placeholder="alias"
+                              className={`flex-1 ${aliasError ? "border-destructive" : ""}`}
+                            />
+                            <Input
+                              type="number"
+                              value={ep.port ?? ""}
+                              onChange={(e) => {
+                                if (!e.target.value) {
+                                  handleExtraPortChange(
+                                    index,
+                                    epIdx,
+                                    "port",
+                                    undefined,
+                                  );
+                                  return;
+                                }
+                                const parsed = parseInt(e.target.value, 10);
+                                if (
+                                  !Number.isNaN(parsed) &&
+                                  parsed >= 0 &&
+                                  parsed <= 65535
+                                ) {
+                                  handleExtraPortChange(
+                                    index,
+                                    epIdx,
+                                    "port",
+                                    parsed,
+                                  );
+                                }
+                              }}
+                              placeholder="port"
+                              min={1024}
+                              max={65535}
+                              className={`w-24 ${epPortError ? "border-destructive" : ""}`}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                              onClick={() =>
+                                handleRemoveExtraPort(index, epIdx)
+                              }
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => handleAddExtraPort(index)}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Port
+                      </Button>
+                    </CollapsibleContent>
+                  </Collapsible>
 
                   <Collapsible
                     open={expandedEnvs[cmdId]}
