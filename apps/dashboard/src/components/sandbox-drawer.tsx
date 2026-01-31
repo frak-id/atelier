@@ -45,6 +45,7 @@ import {
   useStopSandbox,
   workspaceDetailQuery,
 } from "@/api/queries";
+import { AttentionBlock } from "@/components/attention-block";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
 import { SessionHierarchy } from "@/components/session-hierarchy";
 import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
@@ -405,6 +406,10 @@ export function SandboxDrawer({
 
                 {sandbox.status === "running" && (
                   <>
+                    <SandboxAttentionSection
+                      opencodeUrl={sandbox.runtime.urls.opencode}
+                    />
+
                     <DevCommandsPanel sandboxId={sandbox.id} />
 
                     <Card>
@@ -632,6 +637,31 @@ export function SandboxDrawer({
         </DialogContent>
       </Dialog>
     </Sheet>
+  );
+}
+
+function SandboxAttentionSection({ opencodeUrl }: { opencodeUrl: string }) {
+  const { permissions, questions } = useOpencodeData(opencodeUrl);
+
+  const enrichedPermissions = useMemo(
+    () => permissions.map((p) => ({ ...p, sessionId: p.sessionID })),
+    [permissions],
+  );
+  const enrichedQuestions = useMemo(
+    () => questions.map((q) => ({ ...q, sessionId: q.sessionID })),
+    [questions],
+  );
+
+  if (enrichedPermissions.length === 0 && enrichedQuestions.length === 0) {
+    return null;
+  }
+
+  return (
+    <AttentionBlock
+      permissions={enrichedPermissions}
+      questions={enrichedQuestions}
+      opencodeUrl={opencodeUrl}
+    />
   );
 }
 

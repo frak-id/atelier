@@ -7,6 +7,8 @@ import {
   Clock,
   ExternalLink,
   Loader2,
+  MessageCircleQuestion,
+  Shield,
   XCircle,
 } from "lucide-react";
 import { memo, useMemo } from "react";
@@ -23,6 +25,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
+import { getQuestionDisplayText } from "@/lib/intervention-helpers";
 import type { SessionNode } from "@/lib/session-hierarchy";
 import { buildOpenCodeSessionUrl, cn } from "@/lib/utils";
 
@@ -210,6 +213,40 @@ function RootTodoList({ todos }: { todos: Todo[] }) {
   );
 }
 
+function PendingInterventionLines({
+  interaction,
+}: {
+  interaction: SessionInteractionState | undefined;
+}) {
+  if (!interaction) return null;
+  const { pendingPermissions, pendingQuestions } = interaction;
+  if (pendingPermissions.length === 0 && pendingQuestions.length === 0)
+    return null;
+
+  return (
+    <div className="ml-9 space-y-0.5 py-0.5">
+      {pendingPermissions.map((p) => (
+        <div
+          key={p.id}
+          className="flex items-center gap-1.5 text-xs text-purple-400"
+        >
+          <Shield className="h-3 w-3 shrink-0" />
+          <span className="truncate">{p.permission}</span>
+        </div>
+      ))}
+      {pendingQuestions.map((q) => (
+        <div
+          key={q.id}
+          className="flex items-center gap-1.5 text-xs text-cyan-400"
+        >
+          <MessageCircleQuestion className="h-3 w-3 shrink-0" />
+          <span className="truncate">{getQuestionDisplayText(q)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const ChildSessionRow = memo(function ChildSessionRow({
   node,
   interactions,
@@ -276,6 +313,8 @@ const ChildSessionRow = memo(function ChildSessionRow({
           </a>
         )}
       </div>
+
+      <PendingInterventionLines interaction={interaction} />
 
       {node.children.length > 0 && (
         <div className="ml-6 border-l border-border/50 space-y-0.5 mt-0.5">
@@ -413,6 +452,8 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
 
         <CollapsibleContent>
           <div className="border-t px-2 py-2 space-y-1">
+            <PendingInterventionLines interaction={interaction} />
+
             {todos.length > 0 && <RootTodoList todos={todos} />}
 
             {hasChildren && (

@@ -11,7 +11,6 @@ import {
   Terminal,
 } from "lucide-react";
 import { sandboxDetailQuery, sandboxGitStatusQuery } from "@/api/queries";
-import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { SessionTodoInfo } from "@/components/session-todo-info";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
@@ -224,8 +223,6 @@ export function TaskCard({
               <TaskSessionsStatus
                 aggregatedInteraction={aggregatedInteraction}
                 needsAttention={needsAttention}
-                opencodeUrl={sandbox?.runtime?.urls?.opencode}
-                onQuestionClick={onClick}
               />
             </div>
           )}
@@ -351,13 +348,9 @@ function MenuButton({
 export function TaskSessionsStatus({
   aggregatedInteraction,
   needsAttention,
-  opencodeUrl,
-  onQuestionClick,
 }: {
   aggregatedInteraction: AggregatedInteractionState;
   needsAttention: boolean;
-  opencodeUrl: string | undefined;
-  onQuestionClick?: () => void;
 }) {
   const showStatus =
     needsAttention ||
@@ -368,32 +361,5 @@ export function TaskSessionsStatus({
     return null;
   }
 
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <SessionStatusIndicator interaction={aggregatedInteraction} compact />
-        {needsAttention && opencodeUrl && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 text-xs gap-1"
-            asChild
-          >
-            <a href={opencodeUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-3 w-3" />
-              Respond
-            </a>
-          </Button>
-        )}
-      </div>
-      <ExpandableInterventions
-        permissions={aggregatedInteraction.pendingPermissions}
-        questions={aggregatedInteraction.pendingQuestions}
-        compact={true}
-        opencodeUrl={opencodeUrl}
-        questionsAsLink={true}
-        onQuestionClick={onQuestionClick}
-      />
-    </div>
-  );
+  return <SessionStatusIndicator interaction={aggregatedInteraction} compact />;
 }

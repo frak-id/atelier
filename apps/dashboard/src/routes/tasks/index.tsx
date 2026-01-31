@@ -549,7 +549,6 @@ function TaskRow({
               <TaskSessionsStatus
                 aggregatedInteraction={aggregatedInteraction}
                 needsAttention={needsAttention}
-                opencodeUrl={sandbox?.runtime?.urls?.opencode}
               />
             </div>
           )}

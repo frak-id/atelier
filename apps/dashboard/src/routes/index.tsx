@@ -22,6 +22,7 @@ import {
   useWorkspaceMap,
   workspaceListQuery,
 } from "@/api/queries";
+import { AttentionBlock } from "@/components/attention-block";
 import { SandboxCard } from "@/components/sandbox-card";
 import { StartWorkingCard } from "@/components/start-working-card";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +38,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAttentionData } from "@/hooks/use-attention-data";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { useDrawer } from "@/providers/drawer-provider";
 
 class SectionErrorBoundary extends Component<
@@ -126,7 +127,8 @@ function MissionControlPage() {
 }
 
 function AttentionSection() {
-  const { items, isLoading, count } = useAttentionData();
+  const { groups, isLoading, count } = useAttentionData();
+  const { openSandbox } = useDrawer();
 
   if (isLoading) {
     return <Skeleton className="h-32 w-full" />;
@@ -141,7 +143,7 @@ function AttentionSection() {
         </h2>
       </div>
 
-      {items.length === 0 ? (
+      {groups.length === 0 ? (
         <Card className="bg-muted/5 border-dashed">
           <CardContent className="flex items-center gap-4 py-6">
             <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
@@ -156,42 +158,17 @@ function AttentionSection() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3">
-          {items.map((item) => (
-            <Card key={item.id} className="border-l-4 border-l-destructive">
-              <CardContent className="flex items-center justify-between p-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        item.type === "permission" ? "destructive" : "warning"
-                      }
-                      className="capitalize"
-                    >
-                      {item.type}
-                    </Badge>
-                    <span className="font-medium">{item.summary}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
-                      {item.sandboxId}
-                    </span>
-                    {item.workspaceName && <span>• {item.workspaceName}</span>}
-                    <span>• {formatRelativeTime(item.timestamp)}</span>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" asChild>
-                  <a
-                    href={item.opencodeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View in OpenCode
-                    <ExternalLink className="ml-2 h-3.5 w-3.5" />
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
+        <div className="space-y-3">
+          {groups.map((group) => (
+            <AttentionBlock
+              key={group.sandboxId}
+              permissions={group.permissions}
+              questions={group.questions}
+              opencodeUrl={group.opencodeUrl}
+              sandboxId={group.sandboxId}
+              workspaceName={group.workspaceName}
+              onOpenSandbox={openSandbox}
+            />
           ))}
         </div>
       )}
@@ -310,7 +287,7 @@ function ActiveTaskCard({
               {completedSubsessionCount}/{allCount} sessions
             </span>
           </div>
-          <div>{formatRelativeTime(task.data.startedAt || task.createdAt)}</div>
+          <div>{formatDate(task.data.startedAt || task.createdAt)}</div>
         </div>
       </CardContent>
     </Card>
