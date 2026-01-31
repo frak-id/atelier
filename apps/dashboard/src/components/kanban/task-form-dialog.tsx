@@ -120,8 +120,27 @@ export function TaskForm({
     },
   });
 
-  const values = useStore(form.store, (s) => s.values);
-  const workspaceId = fixedWorkspaceId || values.selectedWorkspaceId;
+  const title = useStore(form.store, (s) => s.values.title);
+  const description = useStore(form.store, (s) => s.values.description);
+  const context = useStore(form.store, (s) => s.values.context);
+  const selectedRepoIndices = useStore(
+    form.store,
+    (s) => s.values.selectedRepoIndices,
+  );
+  const selectedBranch = useStore(form.store, (s) => s.values.selectedBranch);
+  const selectedWorkspaceId = useStore(
+    form.store,
+    (s) => s.values.selectedWorkspaceId,
+  );
+  const selectedTemplateId = useStore(
+    form.store,
+    (s) => s.values.selectedTemplateId,
+  );
+  const selectedVariantIndex = useStore(
+    form.store,
+    (s) => s.values.selectedVariantIndex,
+  );
+  const workspaceId = fixedWorkspaceId || selectedWorkspaceId;
 
   const { data: workspaces } = useQuery({
     ...workspaceListQuery(),
@@ -139,9 +158,7 @@ export function TaskForm({
   const allTemplates = templateData?.templates ?? DEFAULT_SESSION_TEMPLATES;
   const templates = allTemplates.filter((t) => t.category === "primary");
 
-  const selectedTemplate = templates.find(
-    (t) => t.id === values.selectedTemplateId,
-  );
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
 
   const repos = workspace?.config?.repos ?? [];
   const hasMultipleRepos = repos.length > 1;
@@ -149,9 +166,9 @@ export function TaskForm({
   const effectiveTargetRepos = useMemo(() => {
     if (repos.length === 0) return [];
     if (repos.length === 1) return [repos[0]];
-    if (values.selectedRepoIndices.length === 0) return repos;
-    return values.selectedRepoIndices.map((i) => repos[i]).filter(Boolean);
-  }, [repos, values.selectedRepoIndices]);
+    if (selectedRepoIndices.length === 0) return repos;
+    return selectedRepoIndices.map((i) => repos[i]).filter(Boolean);
+  }, [repos, selectedRepoIndices]);
 
   const singleTargetRepo =
     effectiveTargetRepos.length === 1 ? effectiveTargetRepos[0] : null;
@@ -164,16 +181,15 @@ export function TaskForm({
   );
 
   const canSubmit =
-    !isPending &&
-    !!values.title.trim() &&
-    !!values.description.trim() &&
-    !!workspaceId;
+    !isPending && !!title.trim() && !!description.trim() && !!workspaceId;
 
   const toggleRepoSelection = (index: number) => {
-    const prev = values.selectedRepoIndices;
+    const prev = selectedRepoIndices;
     form.setFieldValue(
       "selectedRepoIndices",
-      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index],
+      prev.includes(index)
+        ? prev.filter((i: number) => i !== index)
+        : [...prev, index],
     );
   };
 
@@ -198,7 +214,7 @@ export function TaskForm({
         <div className="space-y-2">
           <Label>Workspace</Label>
           <Select
-            value={values.selectedWorkspaceId}
+            value={selectedWorkspaceId}
             onValueChange={(v) => form.setFieldValue("selectedWorkspaceId", v)}
           >
             <SelectTrigger>
@@ -219,7 +235,7 @@ export function TaskForm({
         <Label htmlFor="title">Title</Label>
         <Input
           id="title"
-          value={values.title}
+          value={title}
           onChange={(e) => form.setFieldValue("title", e.target.value)}
           placeholder="e.g., Implement user authentication"
         />
@@ -229,7 +245,7 @@ export function TaskForm({
         <Label htmlFor="description">Description</Label>
         <Textarea
           id="description"
-          value={values.description}
+          value={description}
           onChange={(e) => form.setFieldValue("description", e.target.value)}
           placeholder="Describe the task in detail. This will be sent to the AI as the initial prompt."
           rows={5}
@@ -243,7 +259,7 @@ export function TaskForm({
         </Label>
         <Textarea
           id="context"
-          value={values.context}
+          value={context}
           onChange={(e) => form.setFieldValue("context", e.target.value)}
           placeholder="Documentation links, API references, or any other helpful context."
           rows={3}
@@ -255,7 +271,7 @@ export function TaskForm({
         <div className="flex gap-2">
           {templates.length > 1 && (
             <Select
-              value={values.selectedTemplateId}
+              value={selectedTemplateId}
               onValueChange={handleTemplateChange}
             >
               <SelectTrigger className="flex-1">
@@ -273,7 +289,7 @@ export function TaskForm({
 
           {selectedTemplate && selectedTemplate.variants.length > 0 && (
             <Select
-              value={String(values.selectedVariantIndex)}
+              value={String(selectedVariantIndex)}
               onValueChange={(v) =>
                 form.setFieldValue("selectedVariantIndex", Number(v))
               }
@@ -306,7 +322,7 @@ export function TaskForm({
               <div key={repo.clonePath} className="flex items-center gap-2">
                 <Checkbox
                   id={`repo-${index}`}
-                  checked={values.selectedRepoIndices.includes(index)}
+                  checked={selectedRepoIndices.includes(index)}
                   onChange={() => toggleRepoSelection(index)}
                 />
                 <label
@@ -328,7 +344,7 @@ export function TaskForm({
             <span className="text-muted-foreground">(optional)</span>
           </Label>
           <Select
-            value={values.selectedBranch}
+            value={selectedBranch}
             onValueChange={(v) => form.setFieldValue("selectedBranch", v)}
           >
             <SelectTrigger>

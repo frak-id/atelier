@@ -83,7 +83,12 @@ export function CreateWorkspaceDialog({
   });
 
   const isGitHubConnected = githubStatus?.connected === true;
-  const values = useStore(form.store, (s) => s.values);
+  const name = useStore(form.store, (s) => s.values.name);
+  const baseImage = useStore(form.store, (s) => s.values.baseImage);
+  const vcpus = useStore(form.store, (s) => s.values.vcpus);
+  const memoryMb = useStore(form.store, (s) => s.values.memoryMb);
+  const initCommands = useStore(form.store, (s) => s.values.initCommands);
+  const repos = useStore(form.store, (s) => s.values.repos);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -102,10 +107,10 @@ export function CreateWorkspaceDialog({
           </DialogHeader>
           <div className="space-y-4 py-4">
             <GeneralForm
-              name={values.name}
-              baseImage={values.baseImage}
-              vcpus={values.vcpus}
-              memoryMb={values.memoryMb}
+              name={name}
+              baseImage={baseImage}
+              vcpus={vcpus}
+              memoryMb={memoryMb}
               images={images ?? []}
               onNameChange={(v) => form.setFieldValue("name", v)}
               onBaseImageChange={(v) => form.setFieldValue("baseImage", v)}
@@ -115,9 +120,9 @@ export function CreateWorkspaceDialog({
 
             <div className="space-y-2">
               <Label>Repositories</Label>
-              {values.repos.length > 0 && (
+              {repos.length > 0 && (
                 <div className="space-y-3 mb-2">
-                  {values.repos.map((repo, idx) => (
+                  {repos.map((repo, idx) => (
                     <RepoItem
                       key={
                         repo.url ||
@@ -130,7 +135,7 @@ export function CreateWorkspaceDialog({
                       onUpdate={(updates) =>
                         form.setFieldValue(
                           "repos",
-                          values.repos.map((r, i) =>
+                          repos.map((r, i) =>
                             i === idx
                               ? {
                                   ...r,
@@ -143,7 +148,7 @@ export function CreateWorkspaceDialog({
                       onRemove={() =>
                         form.setFieldValue(
                           "repos",
-                          values.repos.filter((_, i) => i !== idx),
+                          repos.filter((_, i) => i !== idx),
                         )
                       }
                     />
@@ -153,11 +158,9 @@ export function CreateWorkspaceDialog({
               <RepoAddForm
                 isGitHubConnected={isGitHubConnected}
                 gitSources={gitSources}
-                onAdd={(repo) =>
-                  form.setFieldValue("repos", [...values.repos, repo])
-                }
+                onAdd={(repo) => form.setFieldValue("repos", [...repos, repo])}
                 onRepoSelected={(repoName) => {
-                  if (!values.name) {
+                  if (!name) {
                     form.setFieldValue("name", repoName);
                   }
                 }}
@@ -165,7 +168,7 @@ export function CreateWorkspaceDialog({
             </div>
 
             <CommandsForm
-              initCommands={values.initCommands}
+              initCommands={initCommands}
               onInitCommandsChange={(v) =>
                 form.setFieldValue("initCommands", v)
               }

@@ -150,7 +150,19 @@ export function EditWorkspaceDialog({
 
   const isGitHubConnected = githubStatus?.connected === true;
 
-  const values = useStore(form.store, (s) => s.values);
+  const name = useStore(form.store, (s) => s.values.name);
+  const baseImage = useStore(form.store, (s) => s.values.baseImage);
+  const vcpus = useStore(form.store, (s) => s.values.vcpus);
+  const memoryMb = useStore(form.store, (s) => s.values.memoryMb);
+  const initCommands = useStore(form.store, (s) => s.values.initCommands);
+  const useRegistryCache = useStore(
+    form.store,
+    (s) => s.values.useRegistryCache,
+  );
+  const repos = useStore(form.store, (s) => s.values.repos);
+  const envSecrets = useStore(form.store, (s) => s.values.envSecrets);
+  const fileSecrets = useStore(form.store, (s) => s.values.fileSecrets);
+  const devCommands = useStore(form.store, (s) => s.values.devCommands);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -179,16 +191,16 @@ export function EditWorkspaceDialog({
 
             <TabsContent value="general" className="pt-4">
               <GeneralForm
-                name={values.name}
-                baseImage={values.baseImage}
-                vcpus={values.vcpus}
-                memoryMb={values.memoryMb}
+                name={name}
+                baseImage={baseImage}
+                vcpus={vcpus}
+                memoryMb={memoryMb}
                 images={images ?? []}
                 onNameChange={(v) => form.setFieldValue("name", v)}
                 onBaseImageChange={(v) => form.setFieldValue("baseImage", v)}
                 onVcpusChange={(v) => form.setFieldValue("vcpus", v)}
                 onMemoryMbChange={(v) => form.setFieldValue("memoryMb", v)}
-                useRegistryCache={values.useRegistryCache}
+                useRegistryCache={useRegistryCache}
                 onUseRegistryCacheChange={(v) =>
                   form.setFieldValue("useRegistryCache", v)
                 }
@@ -212,13 +224,13 @@ export function EditWorkspaceDialog({
                   )}
                 </div>
 
-                {values.repos.length === 0 && !showAddRepo ? (
+                {repos.length === 0 && !showAddRepo ? (
                   <p className="text-sm text-muted-foreground">
                     No repositories configured
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {values.repos.map((repo, idx) => (
+                    {repos.map((repo, idx) => (
                       <RepoItem
                         key={
                           repo.url ||
@@ -231,7 +243,7 @@ export function EditWorkspaceDialog({
                         onUpdate={(updates) =>
                           form.setFieldValue(
                             "repos",
-                            values.repos.map((r, i) =>
+                            repos.map((r, i) =>
                               i === idx
                                 ? {
                                     ...r,
@@ -244,7 +256,7 @@ export function EditWorkspaceDialog({
                         onRemove={() =>
                           form.setFieldValue(
                             "repos",
-                            values.repos.filter((_, i) => i !== idx),
+                            repos.filter((_, i) => i !== idx),
                           )
                         }
                       />
@@ -260,7 +272,7 @@ export function EditWorkspaceDialog({
                       showCancel
                       onCancel={() => setShowAddRepo(false)}
                       onAdd={(repo) => {
-                        form.setFieldValue("repos", [...values.repos, repo]);
+                        form.setFieldValue("repos", [...repos, repo]);
                         setShowAddRepo(false);
                       }}
                     />
@@ -271,7 +283,7 @@ export function EditWorkspaceDialog({
 
             <TabsContent value="commands" className="pt-4">
               <CommandsForm
-                initCommands={values.initCommands}
+                initCommands={initCommands}
                 onInitCommandsChange={(v) =>
                   form.setFieldValue("initCommands", v)
                 }
@@ -280,15 +292,15 @@ export function EditWorkspaceDialog({
 
             <TabsContent value="dev-commands" className="pt-4">
               <DevCommandsForm
-                devCommands={values.devCommands}
+                devCommands={devCommands}
                 onChange={(v) => form.setFieldValue("devCommands", v)}
               />
             </TabsContent>
 
             <TabsContent value="secrets" className="pt-4">
               <SecretsForm
-                envSecrets={values.envSecrets}
-                fileSecrets={values.fileSecrets}
+                envSecrets={envSecrets}
+                fileSecrets={fileSecrets}
                 onEnvSecretsChange={(v) => form.setFieldValue("envSecrets", v)}
                 onFileSecretsChange={(v) =>
                   form.setFieldValue("fileSecrets", v)
