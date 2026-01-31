@@ -1,6 +1,9 @@
 import { Elysia } from "elysia";
-import { prebuildRunner, workspaceService } from "../container.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
+import {
+  prebuildRunner,
+  sandboxService,
+  workspaceService,
+} from "../container.ts";
 import {
   CreateWorkspaceBodySchema,
   IdParamSchema,
@@ -81,8 +84,19 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
         throw new NotFoundError("Workspace", params.id);
       }
 
+      const activeSandboxes = sandboxService
+        .getByWorkspaceId(params.id)
+        .filter((s) => s.status === "running" || s.status === "creating");
+      if (activeSandboxes.length > 0) {
+        set.status = 409;
+        return {
+          error: "Workspace has active sandboxes",
+          activeSandboxIds: activeSandboxes.map((s) => s.id),
+        };
+      }
+
       log.info({ workspaceId: params.id }, "Deleting workspace");
-      await StorageService.deletePrebuild(params.id);
+      await prebuildRunner.cleanupStorage(params.id);
       workspaceService.delete(params.id);
 
       set.status = 204;

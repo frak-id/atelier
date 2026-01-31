@@ -2,6 +2,8 @@ import { eq, sql } from "drizzle-orm";
 import {
   configFiles,
   getDatabase,
+  sandboxes,
+  tasks,
   workspaces,
 } from "../../infrastructure/database/index.ts";
 import type { Workspace } from "../../schemas/index.ts";
@@ -82,7 +84,9 @@ export class WorkspaceRepository {
     if (!existing) return false;
 
     const db = getDatabase();
+    db.delete(tasks).where(eq(tasks.workspaceId, id)).run();
     db.delete(configFiles).where(eq(configFiles.workspaceId, id)).run();
+    db.delete(sandboxes).where(eq(sandboxes.workspaceId, id)).run();
     db.delete(workspaces).where(eq(workspaces.id, id)).run();
     log.info({ workspaceId: id }, "Workspace deleted");
     return true;

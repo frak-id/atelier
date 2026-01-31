@@ -150,10 +150,14 @@ export class PrebuildRunner {
       throw new Error(`Workspace '${workspaceId}' not found`);
     }
 
-    await StorageService.deletePrebuild(workspaceId);
-    await this.deleteVmSnapshot(workspaceId);
+    await this.cleanupStorage(workspaceId);
     this.updatePrebuildStatus(workspaceId, workspace, "none");
     log.info({ workspaceId }, "Prebuild deleted");
+  }
+
+  async cleanupStorage(workspaceId: string): Promise<void> {
+    await StorageService.deletePrebuild(workspaceId);
+    await this.deleteVmSnapshot(workspaceId);
   }
 
   private async createVmSnapshot(
