@@ -6,6 +6,7 @@ import {
   getSocketPath,
 } from "../infrastructure/firecracker/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
+import type { InternalService } from "../modules/internal/internal.service.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
@@ -32,6 +33,7 @@ interface PrebuildRunnerDependencies {
   sandboxService: SandboxRepository;
   workspaceService: WorkspaceService;
   agentClient: AgentClient;
+  internalService: InternalService;
 }
 
 export class PrebuildRunner {
@@ -93,6 +95,7 @@ export class PrebuildRunner {
       );
       await this.warmupOpencode(sandbox.id, workspace.id);
 
+      await this.pushLatestAuthAndConfigs(sandbox.id);
       await this.prepareForSnapshot(sandbox.id);
       await this.createVmSnapshot(workspaceId, sandbox.id);
       await StorageService.createPrebuild(workspaceId, sandbox.id);
@@ -332,6 +335,37 @@ export class PrebuildRunner {
    * The agent survives the snapshot (vsock listener persists across FC snapshots).
    * Services are restored post-restore by the spawner.
    */
+  private async pushLatestAuthAndConfigs(sandboxId: string): Promise<void> {
+    const [authResult, configResult] = await Promise.allSettled([
+      this.deps.internalService.syncAuthToSandbox(sandboxId),
+      this.deps.internalService.syncConfigsToSandbox(sandboxId),
+    ]);
+
+    if (authResult.status === "fulfilled") {
+      log.info(
+        { sandboxId, synced: authResult.value.synced },
+        "Auth baked into prebuild",
+      );
+    } else {
+      log.warn(
+        { sandboxId, error: authResult.reason },
+        "Failed to push auth before prebuild snapshot",
+      );
+    }
+
+    if (configResult.status === "fulfilled") {
+      log.info(
+        { sandboxId, synced: configResult.value.synced },
+        "Configs baked into prebuild",
+      );
+    } else {
+      log.warn(
+        { sandboxId, error: configResult.reason },
+        "Failed to push configs before prebuild snapshot",
+      );
+    }
+  }
+
   private async prepareForSnapshot(sandboxId: string): Promise<void> {
     log.info({ sandboxId }, "Preparing VM for snapshot");
 

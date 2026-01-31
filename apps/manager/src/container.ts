@@ -99,6 +99,7 @@ const prebuildRunner = new PrebuildRunner({
   sandboxService,
   workspaceService,
   agentClient,
+  internalService,
 });
 
 const taskSpawner = new TaskSpawner({

@@ -455,6 +455,10 @@ class SpawnContext {
       }
     }
 
+    // Push latest auth and configs BEFORE launching services so opencode
+    // reads up-to-date credentials instead of stale prebuild data.
+    await this.pushAuthAndConfigs();
+
     const workspaceDir = this.workspace.config.repos?.[0]?.clonePath
       ? `/home/dev${this.workspace.config.repos[0].clonePath}`
       : "/home/dev/workspace";
@@ -532,34 +536,38 @@ class SpawnContext {
       await this.cloneRepositories();
     }
 
-    this.pushAuthAndConfigs();
+    await this.pushAuthAndConfigs();
   }
 
-  private pushAuthAndConfigs(): void {
-    Promise.allSettled([
+  private async pushAuthAndConfigs(): Promise<void> {
+    const [authResult, configResult] = await Promise.allSettled([
       this.deps.internalService.syncAuthToSandbox(this.sandboxId),
       this.deps.internalService.syncConfigsToSandbox(this.sandboxId),
-    ])
-      .then(([authResult, configResult]) => {
-        if (authResult.status === "fulfilled") {
-          log.info(
-            { sandboxId: this.sandboxId, synced: authResult.value.synced },
-            "Auth pushed to sandbox",
-          );
-        }
-        if (configResult.status === "fulfilled") {
-          log.info(
-            { sandboxId: this.sandboxId, synced: configResult.value.synced },
-            "Configs pushed to sandboxes",
-          );
-        }
-      })
-      .catch((error) => {
-        log.warn(
-          { sandboxId: this.sandboxId, error },
-          "Failed to push auth/configs to sandboxes",
-        );
-      });
+    ]);
+
+    if (authResult.status === "fulfilled") {
+      log.info(
+        { sandboxId: this.sandboxId, synced: authResult.value.synced },
+        "Auth pushed to sandbox",
+      );
+    } else {
+      log.warn(
+        { sandboxId: this.sandboxId, error: authResult.reason },
+        "Failed to push auth to sandbox",
+      );
+    }
+
+    if (configResult.status === "fulfilled") {
+      log.info(
+        { sandboxId: this.sandboxId, synced: configResult.value.synced },
+        "Configs pushed to sandbox",
+      );
+    } else {
+      log.warn(
+        { sandboxId: this.sandboxId, error: configResult.reason },
+        "Failed to push configs to sandbox",
+      );
+    }
   }
 
   private async expandFilesystem(): Promise<void> {
