@@ -8,6 +8,7 @@
 FROM node:22-slim
 
 ARG TTYD_VERSION=1.7.7
+ARG NOVNC_VERSION=1.5.0
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
 ENV USER=dev
@@ -36,6 +37,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iputils-ping \
     locales \
     nfs-common \
+    xvfb \
+    x11vnc \
+    chromium \
+    python3-minimal \
+    python3-pip \
+    python3-numpy \
+    fonts-liberation \
     && locale-gen en_US.UTF-8 \
     && usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
@@ -46,9 +54,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config \
     && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config \
     && echo "dev:sandbox" | chpasswd \
-    # Install ttyd from GitHub release (not in Debian repos)
     && curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64 \
     && chmod +x /usr/local/bin/ttyd \
+    && python3 -m pip install --break-system-packages --no-cache-dir websockify \
+    && curl -fsSL -o /tmp/novnc.tar.gz https://github.com/novnc/noVNC/archive/refs/tags/v${NOVNC_VERSION}.tar.gz \
+    && mkdir -p /opt/novnc \
+    && tar -xzf /tmp/novnc.tar.gz -C /opt/novnc --strip-components=1 \
+    && rm -f /tmp/novnc.tar.gz \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && rm -rf /usr/share/doc /usr/share/man /usr/share/info /usr/share/lintian \

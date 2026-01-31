@@ -148,8 +148,6 @@ export const SharedStorageService = {
 
       await $`rm -f ${tempFile}`.quiet().nothrow();
 
-      // Create relative symlinks so they work from VM's /opt/shared/bin/
-      // (absolute paths would point to host filesystem, not guest)
       await $`mkdir -p ${SHARED_STORAGE.BINARIES_DIR}/bin`.quiet().nothrow();
       if (id === "code-server") {
         await $`ln -sf ../${binary.binaryPath}/bin/code-server ${SHARED_STORAGE.BINARIES_DIR}/bin/code-server`

@@ -74,16 +74,17 @@ function getDiskUsage(): { total: number; used: number; free: number } {
 
 export async function handleHealth(): Promise<Response> {
   const services = sandboxConfig?.services;
-  const [vscode, opencode, sshd, ttyd] = await Promise.all([
+  const [vscode, opencode, sshd, ttyd, browser] = await Promise.all([
     checkPort(services?.vscode.port ?? 8080),
     checkPort(services?.opencode.port ?? 3000),
     checkPort(22),
     checkPort(services?.terminal.port ?? 7681),
+    checkPort(services?.browser?.port ?? 6080),
   ]);
   return Response.json({
     status: "healthy",
     sandboxId: sandboxConfig?.sandboxId,
-    services: { vscode, opencode, sshd, ttyd },
+    services: { vscode, opencode, sshd, ttyd, browser },
     uptime: (performance.now() - startTime) / 1000,
   });
 }

@@ -14,6 +14,7 @@ export const SandboxUrlsSchema = t.Object({
   opencode: t.String(),
   terminal: t.String(),
   ssh: t.String(),
+  browser: t.Optional(t.String()),
 });
 export type SandboxUrls = Static<typeof SandboxUrlsSchema>;
 
@@ -140,6 +141,7 @@ export const AgentHealthSchema = t.Object({
     opencode: t.Boolean(),
     sshd: t.Boolean(),
     ttyd: t.Boolean(),
+    browser: t.Optional(t.Boolean()),
   }),
   uptime: t.Number(),
 });
@@ -273,3 +275,27 @@ export const DevCommandLogsQuerySchema = t.Object({
   limit: t.Optional(t.String()),
 });
 export type DevCommandLogsQuery = Static<typeof DevCommandLogsQuerySchema>;
+
+export const BrowserStatusSchema = t.Union([
+  t.Literal("off"),
+  t.Literal("starting"),
+  t.Literal("running"),
+]);
+export type BrowserStatus = Static<typeof BrowserStatusSchema>;
+
+export const BrowserStatusResponseSchema = t.Object({
+  status: BrowserStatusSchema,
+  url: t.Optional(t.String()),
+});
+export type BrowserStatusResponse = Static<typeof BrowserStatusResponseSchema>;
+
+export const BrowserStartResponseSchema = t.Object({
+  status: BrowserStatusSchema,
+  url: t.Optional(t.String()),
+});
+export type BrowserStartResponse = Static<typeof BrowserStartResponseSchema>;
+
+export const BrowserStopResponseSchema = t.Object({
+  status: BrowserStatusSchema,
+});
+export type BrowserStopResponse = Static<typeof BrowserStopResponseSchema>;

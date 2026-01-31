@@ -155,6 +155,7 @@ ${dnsLines}
         vscode: { port: config.raw.services.vscode.port },
         opencode: { port: config.raw.services.opencode.port },
         terminal: { port: config.raw.services.terminal.port },
+        browser: { port: config.raw.services.browser.port },
         agent: { port: config.raw.services.agent.port },
       },
     } satisfies SandboxConfig;
