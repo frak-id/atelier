@@ -12,14 +12,15 @@ import {
   HardDrive,
   Home,
   Kanban,
+  Loader2,
   LogOut,
   Menu,
   Server,
   Settings,
 } from "lucide-react";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Toaster } from "sonner";
-import { clearAuthToken } from "@/api/client";
+import { checkAuth, logout } from "@/api/client";
 import { GitHubStatus } from "@/components/github-status";
 import { LoginPage } from "@/components/login-page";
 import { SystemStatusFooter } from "@/components/system-status-footer";
@@ -48,15 +49,30 @@ import { useAttentionCount } from "@/hooks/use-attention-count";
 
 function RootLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => !!localStorage.getItem("frak_sandbox_jwt"),
-  );
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const attentionCount = useAttentionCount();
 
-  const handleLogout = () => {
-    clearAuthToken();
+  useEffect(() => {
+    checkAuth()
+      .then((user) => {
+        if (user) setIsAuthenticated(true);
+      })
+      .finally(() => setIsCheckingAuth(false));
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
     setIsAuthenticated(false);
   };
+
+  if (isCheckingAuth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LoginPage onLoginSuccess={() => setIsAuthenticated(true)} />;

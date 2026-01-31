@@ -2,6 +2,7 @@ import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
 import { isUserAuthorized } from "../modules/auth/auth.service.ts";
+import { verifyJwt } from "../shared/lib/auth.ts";
 import { config } from "../shared/lib/config.ts";
 import {
   buildOAuthRedirectUrl,
@@ -32,7 +33,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
   })
   .get(
     "/callback",
-    async ({ query, redirect, jwt }) => {
+    async ({ query, redirect, jwt, cookie }) => {
       if (query.error) {
         log.error({ error: query.error }, "GitHub OAuth error");
         return redirect(`${config.dashboardUrl}?login_error=${query.error}`);
@@ -61,9 +62,19 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
           avatarUrl: user.avatar_url,
         });
 
+        cookie.sandbox_token?.set({
+          value: token,
+          httpOnly: true,
+          secure: config.isProduction(),
+          sameSite: config.isProduction() ? "none" : "lax",
+          path: "/",
+          domain: `.${config.caddy.domainSuffix}`,
+          maxAge: JWT_EXPIRY_SECONDS,
+        });
+
         log.info({ username: user.login }, "User logged in successfully");
 
-        return redirect(`${config.dashboardUrl}?login_token=${token}`);
+        return redirect(config.dashboardUrl);
       } catch (error) {
         log.error({ error }, "GitHub login callback failed");
         return redirect(`${config.dashboardUrl}?login_error=callback_failed`);
@@ -77,20 +88,14 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       }),
     },
   )
-  .get("/me", async ({ headers, jwt, set }) => {
-    const authHeader = headers.authorization;
-    if (!authHeader) {
+  .get("/me", async ({ cookie, jwt, set }) => {
+    const token = cookie.sandbox_token?.value as string | undefined;
+    if (!token) {
       set.status = 401;
-      return { error: "UNAUTHORIZED", message: "Missing authorization header" };
+      return { error: "UNAUTHORIZED", message: "Missing authentication" };
     }
 
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (!match?.[1]) {
-      set.status = 401;
-      return { error: "UNAUTHORIZED", message: "Invalid authorization format" };
-    }
-
-    const payload = await jwt.verify(match[1]);
+    const payload = await jwt.verify(token);
     if (!payload) {
       set.status = 401;
       return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
@@ -101,4 +106,31 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       username: payload.username,
       avatarUrl: payload.avatarUrl,
     };
+  })
+  .get("/verify", async ({ cookie, set }) => {
+    const token = cookie.sandbox_token?.value as string | undefined;
+    if (!token) {
+      set.status = 401;
+      return { error: "UNAUTHORIZED", message: "No token provided" };
+    }
+
+    const user = await verifyJwt(token);
+    if (!user) {
+      set.status = 401;
+      return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
+    }
+
+    return { ok: true, user: user.username };
+  })
+  .post("/logout", ({ cookie }) => {
+    cookie.sandbox_token?.set({
+      value: "",
+      httpOnly: true,
+      secure: config.isProduction(),
+      sameSite: config.isProduction() ? "none" : "lax",
+      path: "/",
+      domain: `.${config.caddy.domainSuffix}`,
+      maxAge: 0,
+    });
+    return { ok: true };
   });

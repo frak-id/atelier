@@ -8,6 +8,40 @@ interface RouteDefinition {
   upstream: string;
 }
 
+function buildForwardAuthHandler(): object {
+  return {
+    handler: "reverse_proxy",
+    upstreams: [{ dial: `${config.host}:${config.port}` }],
+    rewrite: {
+      method: "GET",
+      uri: "/auth/verify",
+    },
+    headers: {
+      request: {
+        set: {
+          "X-Forwarded-Method": ["{http.request.method}"],
+          "X-Forwarded-Uri": ["{http.request.uri}"],
+        },
+      },
+    },
+    handle_response: [
+      {
+        match: { status_code: [2] },
+        routes: [
+          {
+            handle: [
+              {
+                handler: "headers",
+                request: { set: {} },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 export const CaddyService = {
   async registerRoutes(
     sandboxId: string,
@@ -69,20 +103,26 @@ export const CaddyService = {
   async addRouteDirect(route: RouteDefinition): Promise<void> {
     await this.removeRoute(route.domain);
 
+    const handlers: object[] = [];
+
+    if (!config.isMock()) {
+      handlers.push(buildForwardAuthHandler());
+    }
+
+    handlers.push({
+      handler: "reverse_proxy",
+      upstreams: [{ dial: route.upstream }],
+      transport: {
+        protocol: "http",
+        read_buffer_size: 4096,
+      },
+      flush_interval: -1,
+    });
+
     const routeConfig = {
       "@id": route.domain,
       match: [{ host: [route.domain] }],
-      handle: [
-        {
-          handler: "reverse_proxy",
-          upstreams: [{ dial: route.upstream }],
-          transport: {
-            protocol: "http",
-            read_buffer_size: 4096,
-          },
-          flush_interval: -1,
-        },
-      ],
+      handle: handlers,
       terminal: true,
     };
 

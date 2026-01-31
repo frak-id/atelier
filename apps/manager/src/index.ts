@@ -122,7 +122,12 @@ const app = new Elysia()
 
     await RegistryService.initialize();
   })
-  .use(cors())
+  .use(
+    cors({
+      origin: config.dashboardUrl,
+      credentials: true,
+    }),
+  )
   .use(
     swagger({
       path: "/swagger",

@@ -1,6 +1,6 @@
 import { Box, Github, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { API_HOST, setAuthToken } from "@/api/client";
+import { API_HOST, checkAuth } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AUTH_ORG_NAME } from "@/config";
@@ -15,20 +15,18 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const loginToken = params.get("login_token");
     const loginError = params.get("login_error");
-
-    if (loginToken) {
-      setAuthToken(loginToken);
-      window.history.replaceState({}, "", window.location.pathname);
-      onLoginSuccess();
-      return;
-    }
 
     if (loginError) {
       setError(getErrorMessage(loginError));
       window.history.replaceState({}, "", window.location.pathname);
+      return;
     }
+
+    // Check if already authenticated via cookie (e.g., after OAuth redirect)
+    checkAuth().then((user) => {
+      if (user) onLoginSuccess();
+    });
   }, [onLoginSuccess]);
 
   const handleGitHubLogin = () => {

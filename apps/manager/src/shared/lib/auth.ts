@@ -9,7 +9,7 @@ export interface AuthUser {
   avatarUrl: string;
 }
 
-async function verifyJwt(token: string): Promise<AuthUser | null> {
+export async function verifyJwt(token: string): Promise<AuthUser | null> {
   try {
     const { payload } = await jose.jwtVerify(token, JWT_SECRET);
     if (!payload.sub || !payload.username) {
@@ -26,33 +26,25 @@ async function verifyJwt(token: string): Promise<AuthUser | null> {
 }
 
 export async function authGuard({
-  headers,
+  cookie,
   set,
   store,
 }: {
-  headers: Record<string, string | undefined>;
+  // biome-ignore lint/suspicious/noExplicitAny: Elysia cookie type is Cookie<unknown>
+  cookie: Record<string, any>;
   set: { status?: number | string };
   store: { user?: AuthUser } & Record<string, unknown>;
 }): Promise<{ error: string; message: string } | undefined> {
-  const authHeader = headers.authorization;
-  if (!authHeader) {
+  const token = cookie.sandbox_token?.value as string | undefined;
+  if (!token || typeof token !== "string") {
     set.status = 401;
     return {
       error: "UNAUTHORIZED",
-      message: "Missing authorization header",
+      message: "Missing authentication",
     };
   }
 
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match?.[1]) {
-    set.status = 401;
-    return {
-      error: "UNAUTHORIZED",
-      message: "Invalid authorization format",
-    };
-  }
-
-  const user = await verifyJwt(match[1]);
+  const user = await verifyJwt(token);
   if (!user) {
     set.status = 401;
     return {
