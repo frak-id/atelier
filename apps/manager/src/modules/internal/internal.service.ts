@@ -456,24 +456,35 @@ export class InternalService {
       .filter((s) => s.status === "running");
     if (runningSandboxes.length === 0) return { synced: 0 };
 
-    const files = this.getConfigFilesToPush();
-    if (files.length === 0) return { synced: 0 };
+    // Group sandboxes by workspace so each gets the right config files
+    const byWorkspace = new Map<string | undefined, string[]>();
+    for (const sandbox of runningSandboxes) {
+      const key = sandbox.workspaceId ?? undefined;
+      const ids = byWorkspace.get(key) ?? [];
+      ids.push(sandbox.id);
+      byWorkspace.set(key, ids);
+    }
 
-    await this.pushFilesToSandboxes(
-      runningSandboxes.map((s) => s.id),
-      files,
-      "config",
-    );
+    let totalSynced = 0;
+    for (const [workspaceId, sandboxIds] of byWorkspace) {
+      const { files } = this.getConfigFilesToPush(workspaceId);
+      if (files.length === 0) continue;
+
+      await this.pushFilesToSandboxes(sandboxIds, files, "config");
+      totalSynced += files.length;
+    }
 
     log.info(
-      { synced: files.length, sandboxes: runningSandboxes.length },
+      { synced: totalSynced, sandboxes: runningSandboxes.length },
       "Config sync complete",
     );
-    return { synced: files.length };
+    return { synced: totalSynced };
   }
 
   async syncConfigsToSandbox(sandboxId: string): Promise<{ synced: number }> {
-    const files = this.getConfigFilesToPush();
+    const sandbox = this.sandboxService.getById(sandboxId);
+    const workspaceId = sandbox?.workspaceId ?? undefined;
+    const { files } = this.getConfigFilesToPush(workspaceId);
     if (files.length === 0) return { synced: 0 };
 
     await this.pushFilesToSandboxes([sandboxId], files, "config");
@@ -481,25 +492,32 @@ export class InternalService {
     return { synced: files.length };
   }
 
-  private getConfigFilesToPush(): { path: string; content: string }[] {
-    const globalConfigs = this.configFileService.list({ scope: "global" });
-    const workspaceConfigs = this.configFileService.list({
-      scope: "workspace",
-    });
+  private getConfigFilesToPush(workspaceId?: string): {
+    files: { path: string; content: string }[];
+  } {
+    // Paths managed by shared_auth must never be pushed via config files
+    const authManagedPaths = new Set<string>(AUTH_PROVIDERS.map((p) => p.path));
 
-    const allConfigs = [...globalConfigs, ...workspaceConfigs];
+    const merged = this.configFileService.getMergedForSandbox(workspaceId);
     const files: { path: string; content: string }[] = [];
 
-    for (const cfg of allConfigs) {
+    for (const cfg of merged) {
       const vmPath = this.getVmPathForConfig(cfg.path);
       if (!vmPath) {
         log.debug({ path: cfg.path }, "No VM path mapping found for config");
         continue;
       }
+      if (authManagedPaths.has(vmPath)) {
+        log.debug(
+          { path: vmPath },
+          "Skipping config file managed by shared_auth",
+        );
+        continue;
+      }
       files.push({ path: vmPath, content: cfg.content });
     }
 
-    return files;
+    return { files };
   }
 
   async syncRegistryToSandboxes(enabled: boolean): Promise<{ synced: number }> {
