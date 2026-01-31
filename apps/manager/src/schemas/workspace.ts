@@ -47,10 +47,17 @@ export const FileSecretSchema = t.Object({
 });
 export type FileSecret = Static<typeof FileSecretSchema>;
 
+export const ExtraPortSchema = t.Object({
+  port: t.Number({ minimum: 1024, maximum: 65535 }),
+  alias: t.String({ pattern: "^[a-z0-9-]{1,20}$" }),
+});
+export type ExtraPort = Static<typeof ExtraPortSchema>;
+
 export const DevCommandSchema = t.Object({
   name: t.String({ pattern: "^[a-z0-9-]{1,20}$" }),
   command: t.String({ minLength: 1 }),
   port: t.Optional(t.Number({ minimum: 1024, maximum: 65535 })),
+  extraPorts: t.Optional(t.Array(ExtraPortSchema, { default: [] })),
   workdir: t.Optional(t.String()),
   env: t.Optional(t.Record(t.String(), t.String())),
   isDefault: t.Optional(t.Boolean()),

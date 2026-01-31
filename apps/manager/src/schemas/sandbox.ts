@@ -253,12 +253,22 @@ export type PromoteToPrebuildResponse = Static<
   typeof PromoteToPrebuildResponseSchema
 >;
 
+export const ExtraDevUrlSchema = t.Object({
+  alias: t.String(),
+  port: t.Number(),
+  url: t.String(),
+});
+export type ExtraDevUrl = Static<typeof ExtraDevUrlSchema>;
+
 export const DevCommandListResponseSchema = t.Object({
   commands: t.Array(
     t.Object({
       name: t.String(),
       command: t.String(),
       port: t.Optional(t.Number()),
+      extraPorts: t.Optional(
+        t.Array(t.Object({ port: t.Number(), alias: t.String() })),
+      ),
       workdir: t.Optional(t.String()),
       env: t.Optional(t.Record(t.String(), t.String())),
       isDefault: t.Optional(t.Boolean()),
@@ -268,6 +278,7 @@ export const DevCommandListResponseSchema = t.Object({
       exitCode: t.Optional(t.Number()),
       devUrl: t.Optional(t.String()),
       defaultDevUrl: t.Optional(t.String()),
+      extraDevUrls: t.Optional(t.Array(ExtraDevUrlSchema)),
     }),
   ),
 });
@@ -284,6 +295,7 @@ export const DevCommandStartResponseSchema = t.Object({
   startedAt: t.Optional(t.String()),
   devUrl: t.Optional(t.String()),
   defaultDevUrl: t.Optional(t.String()),
+  extraDevUrls: t.Optional(t.Array(ExtraDevUrlSchema)),
 });
 export type DevCommandStartResponse = Static<
   typeof DevCommandStartResponseSchema

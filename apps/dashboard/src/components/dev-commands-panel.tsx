@@ -84,6 +84,7 @@ function DevCommandItem({
     exitCode?: number;
     devUrl?: string;
     defaultDevUrl?: string;
+    extraDevUrls?: Array<{ alias: string; port: number; url: string }>;
   };
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -135,6 +136,17 @@ function DevCommandItem({
         </div>
 
         <div className="flex items-center gap-2">
+          {command.extraDevUrls?.map((ep) =>
+            isRunning ? (
+              <Button key={ep.alias} variant="outline" size="sm" asChild>
+                <a href={ep.url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                  {ep.alias}
+                </a>
+              </Button>
+            ) : null,
+          )}
+
           {command.devUrl && isRunning && (
             <Button variant="outline" size="sm" asChild>
               <a

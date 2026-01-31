@@ -131,7 +131,12 @@ export function EditWorkspaceDialog({
             repos: serializeRepos(repos),
             secrets: serializeEnvSecrets(envSecrets),
             fileSecrets: serializeFileSecrets(fileSecrets),
-            devCommands: devCommands.map(({ id, ...cmd }) => cmd),
+            devCommands: devCommands.map(({ id, ...cmd }) => ({
+              ...cmd,
+              extraPorts: cmd.extraPorts
+                ?.map(({ id: _epId, ...ep }) => ep)
+                .filter((ep) => ep.alias && ep.port),
+            })),
           },
         },
       },
