@@ -3,17 +3,13 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Check,
   Code,
-  Copy,
   ExternalLink,
   GitBranch,
   GripVertical,
   MoreHorizontal,
   Terminal,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { sandboxDetailQuery } from "@/api/queries";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
@@ -233,7 +229,6 @@ export function TaskCard({
                   <Terminal className="h-3.5 w-3.5" />
                 </a>
               </Button>
-              <CopySshButton ssh={sandbox.runtime.urls.ssh} />
             </div>
           )}
         </div>
@@ -317,46 +312,6 @@ function MenuButton({
     >
       {children}
     </button>
-  );
-}
-
-function CopySshButton({ ssh }: { ssh: string }) {
-  const [copied, setCopied] = useState(false);
-
-  // Cleanup timeout on unmount to prevent memory leak
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2000);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(ssh);
-      setCopied(true);
-      toast.success("SSH command copied to clipboard");
-    } catch {
-      toast.error("Failed to copy SSH command", {
-        description: "Your browser may not support clipboard access",
-      });
-    }
-  }, [ssh]);
-
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-7 px-2 text-xs gap-1"
-      onClick={handleCopy}
-      title="Copy SSH command"
-    >
-      {copied ? (
-        <Check className="h-3 w-3 text-green-500" />
-      ) : (
-        <Copy className="h-3 w-3" />
-      )}
-      SSH
-    </Button>
   );
 }
 

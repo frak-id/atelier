@@ -31,6 +31,7 @@ import {
   workspaceDetailQuery,
 } from "@/api/queries";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
+import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -224,16 +225,7 @@ export function SandboxDrawer({
                       OpenCode
                     </a>
                   </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <a
-                      href={sandbox.runtime.urls.ssh}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Key className="h-4 w-4 mr-2" />
-                      SSH
-                    </a>
-                  </Button>
+
                   <BrowserButton
                     sandboxId={sandbox.id}
                     browserStatus={browserStatus ?? undefined}
@@ -323,8 +315,8 @@ export function SandboxDrawer({
                           </div>
                           <div className="relative">
                             <code className="block bg-muted p-3 rounded-md font-mono text-sm pr-10 overflow-x-auto whitespace-nowrap">
-                              code --remote ssh-remote+root@
-                              {sandbox.runtime.ipAddress} /workspace
+                              code --remote ssh-remote+{sandbox.id}@
+                              {SSH_HOST_ALIAS} /workspace
                             </code>
                             <Button
                               size="icon"
@@ -332,7 +324,7 @@ export function SandboxDrawer({
                               className="absolute right-1 top-1 h-7 w-7"
                               onClick={() =>
                                 copyToClipboard(
-                                  `code --remote ssh-remote+root@${sandbox.runtime.ipAddress} /workspace`,
+                                  `code --remote ssh-remote+${sandbox.id}@${SSH_HOST_ALIAS} /workspace`,
                                   "vscode",
                                 )
                               }
@@ -350,7 +342,7 @@ export function SandboxDrawer({
                           <div className="text-sm font-medium">SSH</div>
                           <div className="relative">
                             <code className="block bg-muted p-3 rounded-md font-mono text-sm pr-10 overflow-x-auto whitespace-nowrap">
-                              ssh root@{sandbox.runtime.ipAddress}
+                              ssh {sandbox.id}@{SSH_HOST_ALIAS}
                             </code>
                             <Button
                               size="icon"
@@ -358,7 +350,7 @@ export function SandboxDrawer({
                               className="absolute right-1 top-1 h-7 w-7"
                               onClick={() =>
                                 copyToClipboard(
-                                  `ssh root@${sandbox.runtime.ipAddress}`,
+                                  `ssh ${sandbox.id}@${SSH_HOST_ALIAS}`,
                                   "ssh",
                                 )
                               }
