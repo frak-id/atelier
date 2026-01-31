@@ -186,11 +186,13 @@ export const GitDiffResponseSchema = t.Object({
       files: t.Array(
         t.Object({
           path: t.String(),
-          status: t.String(),
-          additions: t.Optional(t.Number()),
-          deletions: t.Optional(t.Number()),
+          added: t.Number(),
+          removed: t.Number(),
         }),
       ),
+      totalAdded: t.Number(),
+      totalRemoved: t.Number(),
+      error: t.Optional(t.String()),
     }),
   ),
 });
@@ -203,8 +205,9 @@ export const GitCommitBodySchema = t.Object({
 export type GitCommitBody = Static<typeof GitCommitBodySchema>;
 
 export const GitCommitResponseSchema = t.Object({
+  path: t.String(),
   success: t.Boolean(),
-  commitHash: t.Optional(t.String()),
+  hash: t.Optional(t.String()),
   error: t.Optional(t.String()),
 });
 export type GitCommitResponse = Static<typeof GitCommitResponseSchema>;
@@ -215,8 +218,8 @@ export const GitPushBodySchema = t.Object({
 export type GitPushBody = Static<typeof GitPushBodySchema>;
 
 export const GitPushResponseSchema = t.Object({
+  path: t.String(),
   success: t.Boolean(),
-  output: t.Optional(t.String()),
   error: t.Optional(t.String()),
 });
 export type GitPushResponse = Static<typeof GitPushResponseSchema>;
