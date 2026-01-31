@@ -1,3 +1,4 @@
+import { useForm, useStore } from "@tanstack/react-form";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
@@ -68,6 +69,19 @@ function parseWorkspaceRepos(
   });
 }
 
+interface WorkspaceFormValues {
+  name: string;
+  baseImage: string;
+  vcpus: number;
+  memoryMb: number;
+  initCommands: string;
+  useRegistryCache: boolean;
+  repos: RepoEntry[];
+  envSecrets: EnvSecret[];
+  fileSecrets: FileSecretInput[];
+  devCommands: DevCommand[];
+}
+
 export function EditWorkspaceDialog({
   workspace,
   open,
@@ -85,71 +99,68 @@ export function EditWorkspaceDialog({
   });
   const updateMutation = useUpdateWorkspace();
 
-  const [formData, setFormData] = useState({
-    name: workspace.name,
-    baseImage: workspace.config.baseImage,
-    vcpus: workspace.config.vcpus,
-    memoryMb: workspace.config.memoryMb,
-    initCommands: workspace.config.initCommands.join("\n"),
-    useRegistryCache: (workspace.config.useRegistryCache as boolean) ?? true,
-  });
-
-  const [repos, setRepos] = useState<RepoEntry[]>(() =>
-    parseWorkspaceRepos(workspace.config.repos),
-  );
   const [showAddRepo, setShowAddRepo] = useState(false);
 
-  const [envSecrets, setEnvSecrets] = useState<EnvSecret[]>(() =>
-    parseEnvSecrets(workspace.config.secrets || {}),
-  );
-  const [fileSecrets, setFileSecrets] = useState<FileSecretInput[]>(() =>
-    parseFileSecrets(workspace.config.fileSecrets),
-  );
-
-  const [devCommands, setDevCommands] = useState<DevCommand[]>(
-    () => (workspace.config.devCommands || []) as DevCommand[],
-  );
+  const form = useForm({
+    defaultValues: {
+      name: workspace.name,
+      baseImage: workspace.config.baseImage,
+      vcpus: workspace.config.vcpus,
+      memoryMb: workspace.config.memoryMb,
+      initCommands: workspace.config.initCommands.join("\n"),
+      useRegistryCache: (workspace.config.useRegistryCache as boolean) ?? true,
+      repos: parseWorkspaceRepos(workspace.config.repos),
+      envSecrets: parseEnvSecrets(workspace.config.secrets || {}),
+      fileSecrets: parseFileSecrets(workspace.config.fileSecrets),
+      devCommands: (workspace.config.devCommands || []) as DevCommand[],
+    } satisfies WorkspaceFormValues,
+    onSubmit: async ({ value }) => {
+      updateMutation.mutate(
+        {
+          id: workspace.id,
+          data: {
+            name: value.name,
+            config: {
+              ...workspace.config,
+              baseImage: value.baseImage,
+              vcpus: value.vcpus,
+              memoryMb: value.memoryMb,
+              useRegistryCache: value.useRegistryCache,
+              initCommands: value.initCommands
+                .split("\n")
+                .filter((cmd: string) => cmd.trim()),
+              repos: serializeRepos(value.repos),
+              secrets: serializeEnvSecrets(value.envSecrets),
+              fileSecrets: serializeFileSecrets(value.fileSecrets),
+              devCommands: value.devCommands.map(({ id, ...cmd }) => ({
+                ...cmd,
+                extraPorts: cmd.extraPorts
+                  ?.map(({ id: _epId, ...ep }) => ep)
+                  .filter((ep) => ep.alias && ep.port),
+              })),
+            },
+          },
+        },
+        {
+          onSuccess: () => onOpenChange(false),
+        },
+      );
+    },
+  });
 
   const isGitHubConnected = githubStatus?.connected === true;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateMutation.mutate(
-      {
-        id: workspace.id,
-        data: {
-          name: formData.name,
-          config: {
-            ...workspace.config,
-            baseImage: formData.baseImage,
-            vcpus: formData.vcpus,
-            memoryMb: formData.memoryMb,
-            useRegistryCache: formData.useRegistryCache,
-            initCommands: formData.initCommands
-              .split("\n")
-              .filter((cmd: string) => cmd.trim()),
-            repos: serializeRepos(repos),
-            secrets: serializeEnvSecrets(envSecrets),
-            fileSecrets: serializeFileSecrets(fileSecrets),
-            devCommands: devCommands.map(({ id, ...cmd }) => ({
-              ...cmd,
-              extraPorts: cmd.extraPorts
-                ?.map(({ id: _epId, ...ep }) => ep)
-                .filter((ep) => ep.alias && ep.port),
-            })),
-          },
-        },
-      },
-      {
-        onSuccess: () => onOpenChange(false),
-      },
-    );
-  };
+  const values = useStore(form.store, (s) => s.values);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <form onSubmit={handleSubmit}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            form.handleSubmit();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Edit Workspace</DialogTitle>
             <DialogDescription>
@@ -168,22 +179,18 @@ export function EditWorkspaceDialog({
 
             <TabsContent value="general" className="pt-4">
               <GeneralForm
-                name={formData.name}
-                baseImage={formData.baseImage}
-                vcpus={formData.vcpus}
-                memoryMb={formData.memoryMb}
+                name={values.name}
+                baseImage={values.baseImage}
+                vcpus={values.vcpus}
+                memoryMb={values.memoryMb}
                 images={images ?? []}
-                onNameChange={(name) => setFormData({ ...formData, name })}
-                onBaseImageChange={(baseImage) =>
-                  setFormData({ ...formData, baseImage })
-                }
-                onVcpusChange={(vcpus) => setFormData({ ...formData, vcpus })}
-                onMemoryMbChange={(memoryMb) =>
-                  setFormData({ ...formData, memoryMb })
-                }
-                useRegistryCache={formData.useRegistryCache}
-                onUseRegistryCacheChange={(useRegistryCache) =>
-                  setFormData({ ...formData, useRegistryCache })
+                onNameChange={(v) => form.setFieldValue("name", v)}
+                onBaseImageChange={(v) => form.setFieldValue("baseImage", v)}
+                onVcpusChange={(v) => form.setFieldValue("vcpus", v)}
+                onMemoryMbChange={(v) => form.setFieldValue("memoryMb", v)}
+                useRegistryCache={values.useRegistryCache}
+                onUseRegistryCacheChange={(v) =>
+                  form.setFieldValue("useRegistryCache", v)
                 }
               />
             </TabsContent>
@@ -205,13 +212,13 @@ export function EditWorkspaceDialog({
                   )}
                 </div>
 
-                {repos.length === 0 && !showAddRepo ? (
+                {values.repos.length === 0 && !showAddRepo ? (
                   <p className="text-sm text-muted-foreground">
                     No repositories configured
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {repos.map((repo, idx) => (
+                    {values.repos.map((repo, idx) => (
                       <RepoItem
                         key={
                           repo.url ||
@@ -222,14 +229,23 @@ export function EditWorkspaceDialog({
                         repo={repo}
                         variant="card"
                         onUpdate={(updates) =>
-                          setRepos((prev) =>
-                            prev.map((r, i) =>
-                              i === idx ? { ...r, ...updates } : r,
+                          form.setFieldValue(
+                            "repos",
+                            values.repos.map((r, i) =>
+                              i === idx
+                                ? {
+                                    ...r,
+                                    ...updates,
+                                  }
+                                : r,
                             ),
                           )
                         }
                         onRemove={() =>
-                          setRepos((prev) => prev.filter((_, i) => i !== idx))
+                          form.setFieldValue(
+                            "repos",
+                            values.repos.filter((_, i) => i !== idx),
+                          )
                         }
                       />
                     ))}
@@ -244,7 +260,7 @@ export function EditWorkspaceDialog({
                       showCancel
                       onCancel={() => setShowAddRepo(false)}
                       onAdd={(repo) => {
-                        setRepos([...repos, repo]);
+                        form.setFieldValue("repos", [...values.repos, repo]);
                         setShowAddRepo(false);
                       }}
                     />
@@ -255,26 +271,28 @@ export function EditWorkspaceDialog({
 
             <TabsContent value="commands" className="pt-4">
               <CommandsForm
-                initCommands={formData.initCommands}
-                onInitCommandsChange={(initCommands) =>
-                  setFormData({ ...formData, initCommands })
+                initCommands={values.initCommands}
+                onInitCommandsChange={(v) =>
+                  form.setFieldValue("initCommands", v)
                 }
               />
             </TabsContent>
 
             <TabsContent value="dev-commands" className="pt-4">
               <DevCommandsForm
-                devCommands={devCommands}
-                onChange={setDevCommands}
+                devCommands={values.devCommands}
+                onChange={(v) => form.setFieldValue("devCommands", v)}
               />
             </TabsContent>
 
             <TabsContent value="secrets" className="pt-4">
               <SecretsForm
-                envSecrets={envSecrets}
-                fileSecrets={fileSecrets}
-                onEnvSecretsChange={setEnvSecrets}
-                onFileSecretsChange={setFileSecrets}
+                envSecrets={values.envSecrets}
+                fileSecrets={values.fileSecrets}
+                onEnvSecretsChange={(v) => form.setFieldValue("envSecrets", v)}
+                onFileSecretsChange={(v) =>
+                  form.setFieldValue("fileSecrets", v)
+                }
               />
             </TabsContent>
           </Tabs>
@@ -287,9 +305,18 @@ export function EditWorkspaceDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? "Saving..." : "Save"}
-            </Button>
+            <form.Subscribe selector={(state) => state.isSubmitting}>
+              {(isSubmitting) => (
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || updateMutation.isPending}
+                >
+                  {isSubmitting || updateMutation.isPending
+                    ? "Saving..."
+                    : "Save"}
+                </Button>
+              )}
+            </form.Subscribe>
           </DialogFooter>
         </form>
       </DialogContent>
