@@ -10,7 +10,28 @@ export interface GitHubUser {
   avatar_url: string;
 }
 
-export async function exchangeCodeForToken(code: string): Promise<string> {
+export function generateCodeVerifier(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+export async function generateCodeChallenge(verifier: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+export async function exchangeCodeForToken(
+  code: string,
+  codeVerifier?: string,
+): Promise<string> {
   const response = await fetch(GITHUB_TOKEN_URL, {
     method: "POST",
     headers: {
@@ -21,6 +42,7 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
       client_id: config.github.clientId,
       client_secret: config.github.clientSecret,
       code,
+      ...(codeVerifier && { code_verifier: codeVerifier }),
     }),
   });
 

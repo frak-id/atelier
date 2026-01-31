@@ -8,6 +8,8 @@ import {
   buildOAuthRedirectUrl,
   exchangeCodeForToken,
   fetchGitHubUser,
+  generateCodeChallenge,
+  generateCodeVerifier,
 } from "../shared/lib/github.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
@@ -23,11 +25,28 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       exp: `${JWT_EXPIRY_SECONDS}s`,
     }),
   )
-  .get("/github", ({ redirect }) => {
+  .get("/github", async ({ redirect, cookie }) => {
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+    cookie.oauth_code_verifier?.set({
+      value: codeVerifier,
+      httpOnly: true,
+      secure: config.isProduction(),
+      sameSite: config.isProduction() ? "none" : "lax",
+      path: "/",
+      domain: `.${config.caddy.domainSuffix}`,
+      maxAge: 600,
+    });
+
     const url = buildOAuthRedirectUrl(
       config.github.loginCallbackUrl,
       "read:user read:org",
-      { state: nanoid(16) },
+      {
+        state: nanoid(16),
+        code_challenge: codeChallenge,
+        code_challenge_method: "S256",
+      },
     );
     return redirect(url);
   })
@@ -44,7 +63,23 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       }
 
       try {
-        const accessToken = await exchangeCodeForToken(query.code);
+        const codeVerifier = cookie.oauth_code_verifier?.value as
+          | string
+          | undefined;
+        cookie.oauth_code_verifier?.set({
+          value: "",
+          httpOnly: true,
+          secure: config.isProduction(),
+          sameSite: config.isProduction() ? "none" : "lax",
+          path: "/",
+          domain: `.${config.caddy.domainSuffix}`,
+          maxAge: 0,
+        });
+
+        const accessToken = await exchangeCodeForToken(
+          query.code,
+          codeVerifier,
+        );
         const user = await fetchGitHubUser(accessToken);
 
         const isAuthorized = await isUserAuthorized(accessToken, user.login);

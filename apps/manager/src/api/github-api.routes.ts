@@ -16,6 +16,8 @@ import {
   buildOAuthRedirectUrl,
   exchangeCodeForToken,
   fetchGitHubUser,
+  generateCodeChallenge,
+  generateCodeVerifier,
 } from "../shared/lib/github.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
@@ -321,17 +323,34 @@ export const githubApiRoutes = new Elysia({ prefix: "/github" })
  * (window.location.href) where the JWT cannot be sent as a header.
  */
 export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
-  .get("/connect", ({ redirect }) => {
+  .get("/connect", async ({ redirect, cookie }) => {
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+    cookie.github_code_verifier?.set({
+      value: codeVerifier,
+      httpOnly: true,
+      secure: config.isProduction(),
+      sameSite: config.isProduction() ? "none" : "lax",
+      path: "/",
+      domain: `.${config.caddy.domainSuffix}`,
+      maxAge: 600,
+    });
+
     const url = buildOAuthRedirectUrl(
       config.github.callbackUrl,
       "repo read:user read:org",
-      { state: nanoid(16) },
+      {
+        state: nanoid(16),
+        code_challenge: codeChallenge,
+        code_challenge_method: "S256",
+      },
     );
     return redirect(url);
   })
   .get(
     "/callback",
-    async ({ query, redirect }) => {
+    async ({ query, redirect, cookie }) => {
       if (query.error) {
         log.error({ error: query.error }, "GitHub OAuth error");
         return redirect(`${config.dashboardUrl}?github_error=${query.error}`);
@@ -342,7 +361,23 @@ export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
       }
 
       try {
-        const accessToken = await exchangeCodeForToken(query.code);
+        const codeVerifier = cookie.github_code_verifier?.value as
+          | string
+          | undefined;
+        cookie.github_code_verifier?.set({
+          value: "",
+          httpOnly: true,
+          secure: config.isProduction(),
+          sameSite: config.isProduction() ? "none" : "lax",
+          path: "/",
+          domain: `.${config.caddy.domainSuffix}`,
+          maxAge: 0,
+        });
+
+        const accessToken = await exchangeCodeForToken(
+          query.code,
+          codeVerifier,
+        );
         const user = await fetchGitHubUser(accessToken);
 
         const existingSource = getGitHubSource();
@@ -385,7 +420,7 @@ export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
       }),
     },
   )
-  .post("/reauthorize", ({ redirect }) => {
+  .post("/reauthorize", async ({ redirect, cookie }) => {
     const source = getGitHubSource();
 
     if (source) {
@@ -393,10 +428,28 @@ export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
       log.info("GitHub connection deleted for reauthorization");
     }
 
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+    cookie.github_code_verifier?.set({
+      value: codeVerifier,
+      httpOnly: true,
+      secure: config.isProduction(),
+      sameSite: config.isProduction() ? "none" : "lax",
+      path: "/",
+      domain: `.${config.caddy.domainSuffix}`,
+      maxAge: 600,
+    });
+
     const url = buildOAuthRedirectUrl(
       config.github.callbackUrl,
       "repo read:user read:org",
-      { state: nanoid(16), prompt: "consent" },
+      {
+        state: nanoid(16),
+        prompt: "consent",
+        code_challenge: codeChallenge,
+        code_challenge_method: "S256",
+      },
     );
     return redirect(url);
   });
