@@ -606,7 +606,11 @@ function BrowserButton({
   if (browserStatus?.status === "running" && browserStatus.url) {
     return (
       <Button variant="outline" size="sm" asChild>
-        <a href={browserStatus.url} target="_blank" rel="noopener noreferrer">
+        <a
+          href={`${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           <Globe className="h-4 w-4 mr-2" />
           Browser
         </a>

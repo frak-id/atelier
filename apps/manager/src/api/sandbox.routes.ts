@@ -527,7 +527,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           const browserCmd = [
             `(setsid Xvfb :99 -screen 0 1280x900x24 > /var/log/sandbox/xvfb.log 2>&1 &)`,
             `sleep 0.3`,
-            `(setsid su - dev -c "DISPLAY=:99 /opt/shared/bin/chromium --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --window-size=1280,900 --start-maximized '${defaultUrl}'" > /var/log/sandbox/chromium.log 2>&1 &)`,
+            `(setsid su - dev -c "DISPLAY=:99 chromium --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --window-size=1280,900 --start-maximized '${defaultUrl}'" > /var/log/sandbox/chromium.log 2>&1 &)`,
             `sleep 0.5`,
             `(setsid x11vnc -display :99 -forever -shared -nopw -rfbport 5900 > /var/log/sandbox/x11vnc.log 2>&1 &)`,
             `sleep 0.2`,

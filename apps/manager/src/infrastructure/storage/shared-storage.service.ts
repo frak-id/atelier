@@ -157,10 +157,6 @@ export const SharedStorageService = {
         await $`ln -sf ../${binary.binaryPath} ${SHARED_STORAGE.BINARIES_DIR}/bin/opencode`
           .quiet()
           .nothrow();
-      } else if (id === "chromium") {
-        await $`ln -sf ../${binary.binaryPath}/chrome-headless-shell ${SHARED_STORAGE.BINARIES_DIR}/bin/chromium`
-          .quiet()
-          .nothrow();
       }
 
       log.info({ id, installPath }, "Binary installed successfully");
@@ -200,10 +196,6 @@ export const SharedStorageService = {
           .nothrow();
       } else if (id === "opencode") {
         await $`rm -f ${SHARED_STORAGE.BINARIES_DIR}/bin/opencode`
-          .quiet()
-          .nothrow();
-      } else if (id === "chromium") {
-        await $`rm -f ${SHARED_STORAGE.BINARIES_DIR}/bin/chromium`
           .quiet()
           .nothrow();
       }
