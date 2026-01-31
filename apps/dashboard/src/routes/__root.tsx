@@ -81,10 +81,10 @@ function RootLayout() {
 
   const SidebarContent = () => (
     <nav className="flex-1 p-4 space-y-1">
-      <NavLink to="/" icon={Home}>
+      <NavLink to="/" icon={Home} badge={attentionCount}>
         Home
       </NavLink>
-      <NavLink to="/tasks" icon={Kanban} badge={attentionCount}>
+      <NavLink to="/tasks" icon={Kanban}>
         Tasks
       </NavLink>
       <NavLink to="/sandboxes" icon={Boxes}>

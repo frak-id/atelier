@@ -28,6 +28,11 @@ import {
   DevCommandStopResponseSchema,
   ExecBodySchema,
   ExecResponseSchema,
+  GitCommitBodySchema,
+  GitCommitResponseSchema,
+  GitDiffResponseSchema,
+  GitPushBodySchema,
+  GitPushResponseSchema,
   GitStatusResponseSchema,
   IdParamSchema,
   LogsParamsSchema,
@@ -254,6 +259,70 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         {
           params: IdParamSchema,
           response: GitStatusResponseSchema,
+        },
+      )
+      .get(
+        "/:id/git/diff",
+        async ({ sandbox }) => {
+          const workspace = sandbox.workspaceId
+            ? workspaceService.getById(sandbox.workspaceId)
+            : undefined;
+          const repos = workspace?.config.repos ?? [];
+          return agentOperations.gitDiffStat(sandbox.id, repos);
+        },
+        {
+          params: IdParamSchema,
+          response: GitDiffResponseSchema,
+        },
+      )
+      .post(
+        "/:id/git/commit",
+        async ({ body, sandbox }) => {
+          const workspace = sandbox.workspaceId
+            ? workspaceService.getById(sandbox.workspaceId)
+            : undefined;
+          const repos = workspace?.config.repos ?? [];
+          const repoExists = repos.some((r) => r.clonePath === body.repoPath);
+          if (!repoExists) {
+            return {
+              path: body.repoPath,
+              success: false,
+              error: `Repository path not found in workspace: ${body.repoPath}`,
+            };
+          }
+          return agentOperations.gitCommit(
+            sandbox.id,
+            body.repoPath,
+            body.message,
+          );
+        },
+        {
+          params: IdParamSchema,
+          body: GitCommitBodySchema,
+          response: GitCommitResponseSchema,
+        },
+      )
+      .post(
+        "/:id/git/push",
+        async ({ body, sandbox }) => {
+          const workspace = sandbox.workspaceId
+            ? workspaceService.getById(sandbox.workspaceId)
+            : undefined;
+          const repos = workspace?.config.repos ?? [];
+          const repoExists = repos.some((r) => r.clonePath === body.repoPath);
+          if (!repoExists) {
+            return {
+              path: body.repoPath,
+              success: false,
+              error: `Repository path not found in workspace: ${body.repoPath}`,
+            };
+          }
+          return agentOperations.gitPush(sandbox.id, body.repoPath);
+        },
+        {
+          params: IdParamSchema,
+          body: GitPushBodySchema,
+          response: GitPushResponseSchema,
         },
       )
       .post(

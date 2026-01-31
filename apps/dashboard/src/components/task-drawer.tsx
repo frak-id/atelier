@@ -26,7 +26,7 @@ import {
   useStartTask,
   workspaceDetailQuery,
 } from "@/api/queries";
-import { ExpandableInterventions } from "@/components/expandable-interventions";
+import { AttentionBlock } from "@/components/attention-block";
 import { TaskDeleteDialog } from "@/components/kanban/task-delete-dialog";
 import { TaskResetDialog } from "@/components/kanban/task-reset-dialog";
 import { TaskSessionHierarchy } from "@/components/task-session-hierarchy";
@@ -381,11 +381,11 @@ export function TaskDrawer({
                         )}
                       </div>
 
-                      {needsAttention && (
-                        <ExpandableInterventions
+                      {needsAttention && sandbox?.runtime?.urls?.opencode && (
+                        <AttentionBlock
                           permissions={aggregatedInteraction.pendingPermissions}
                           questions={aggregatedInteraction.pendingQuestions}
-                          compact={false}
+                          opencodeUrl={sandbox.runtime.urls.opencode}
                         />
                       )}
 

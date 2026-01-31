@@ -10,8 +10,7 @@ import {
   MoreHorizontal,
   Terminal,
 } from "lucide-react";
-import { sandboxDetailQuery } from "@/api/queries";
-import { ExpandableInterventions } from "@/components/expandable-interventions";
+import { sandboxDetailQuery, sandboxGitStatusQuery } from "@/api/queries";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { SessionTodoInfo } from "@/components/session-todo-info";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
@@ -68,6 +67,22 @@ export function TaskCard({
     ...sandboxDetailQuery(task.data.sandboxId ?? ""),
     enabled: !!task.data.sandboxId,
   });
+
+  const { data: gitStatus } = useQuery({
+    ...sandboxGitStatusQuery(task.data.sandboxId ?? ""),
+    enabled:
+      !!task.data.sandboxId &&
+      !!sandbox?.status &&
+      sandbox.status === "running",
+  });
+
+  const isDirty =
+    gitStatus?.repos?.some((r: { dirty: boolean }) => r.dirty) ?? false;
+  const totalAhead =
+    gitStatus?.repos?.reduce(
+      (sum: number, r: { ahead: number }) => sum + r.ahead,
+      0,
+    ) ?? 0;
 
   const {
     totalCount,
@@ -146,6 +161,22 @@ export function TaskCard({
               <span className="text-xs font-mono text-muted-foreground truncate">
                 {task.data.branchName}
               </span>
+              {isDirty && (
+                <Badge
+                  variant="destructive"
+                  className="text-[9px] h-4 px-1 py-0 leading-none"
+                >
+                  dirty
+                </Badge>
+              )}
+              {totalAhead > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-[9px] h-4 px-1 py-0 leading-none font-mono"
+                >
+                  ↑{totalAhead}
+                </Badge>
+              )}
             </div>
           )}
 
@@ -192,7 +223,6 @@ export function TaskCard({
               <TaskSessionsStatus
                 aggregatedInteraction={aggregatedInteraction}
                 needsAttention={needsAttention}
-                opencodeUrl={sandbox?.runtime?.urls?.opencode}
               />
             </div>
           )}
@@ -318,11 +348,9 @@ function MenuButton({
 export function TaskSessionsStatus({
   aggregatedInteraction,
   needsAttention,
-  opencodeUrl,
 }: {
   aggregatedInteraction: AggregatedInteractionState;
   needsAttention: boolean;
-  opencodeUrl: string | undefined;
 }) {
   const showStatus =
     needsAttention ||
@@ -333,29 +361,5 @@ export function TaskSessionsStatus({
     return null;
   }
 
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <SessionStatusIndicator interaction={aggregatedInteraction} compact />
-        {needsAttention && opencodeUrl && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-6 text-xs gap-1"
-            asChild
-          >
-            <a href={opencodeUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-3 w-3" />
-              Respond
-            </a>
-          </Button>
-        )}
-      </div>
-      <ExpandableInterventions
-        permissions={aggregatedInteraction.pendingPermissions}
-        questions={aggregatedInteraction.pendingQuestions}
-        compact={true}
-      />
-    </div>
-  );
+  return <SessionStatusIndicator interaction={aggregatedInteraction} compact />;
 }

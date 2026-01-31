@@ -204,6 +204,47 @@ export function useResizeStorage(sandboxId: string) {
   });
 }
 
+export const sandboxGitDiffQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.gitDiff(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).git.diff.get()),
+    enabled: false,
+  });
+
+export function useGitCommit(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "git", "commit", sandboxId],
+    mutationFn: async (data: { repoPath: string; message: string }) =>
+      unwrap(await api.api.sandboxes({ id: sandboxId }).git.commit.post(data)),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.gitStatus(sandboxId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.gitDiff(sandboxId),
+      });
+    },
+  });
+}
+
+export function useGitPush(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "git", "push", sandboxId],
+    mutationFn: async (repoPath: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).git.push.post({ repoPath }),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.gitStatus(sandboxId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.gitDiff(sandboxId),
+      });
+    },
+  });
+}
+
 export const sandboxBrowserStatusQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.browserStatus(id),

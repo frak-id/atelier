@@ -179,6 +179,51 @@ export const GitStatusResponseSchema = t.Object({
 });
 export type GitStatusResponse = Static<typeof GitStatusResponseSchema>;
 
+export const GitDiffResponseSchema = t.Object({
+  repos: t.Array(
+    t.Object({
+      path: t.String(),
+      files: t.Array(
+        t.Object({
+          path: t.String(),
+          added: t.Number(),
+          removed: t.Number(),
+        }),
+      ),
+      totalAdded: t.Number(),
+      totalRemoved: t.Number(),
+      error: t.Optional(t.String()),
+    }),
+  ),
+});
+export type GitDiffResponse = Static<typeof GitDiffResponseSchema>;
+
+export const GitCommitBodySchema = t.Object({
+  repoPath: t.String({ minLength: 1 }),
+  message: t.String({ minLength: 1 }),
+});
+export type GitCommitBody = Static<typeof GitCommitBodySchema>;
+
+export const GitCommitResponseSchema = t.Object({
+  path: t.String(),
+  success: t.Boolean(),
+  hash: t.Optional(t.String()),
+  error: t.Optional(t.String()),
+});
+export type GitCommitResponse = Static<typeof GitCommitResponseSchema>;
+
+export const GitPushBodySchema = t.Object({
+  repoPath: t.String({ minLength: 1 }),
+});
+export type GitPushBody = Static<typeof GitPushBodySchema>;
+
+export const GitPushResponseSchema = t.Object({
+  path: t.String(),
+  success: t.Boolean(),
+  error: t.Optional(t.String()),
+});
+export type GitPushResponse = Static<typeof GitPushResponseSchema>;
+
 export const ResizeStorageBodySchema = t.Object({
   sizeGb: t.Number({ minimum: 1, maximum: 100 }),
 });
