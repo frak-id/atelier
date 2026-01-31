@@ -28,7 +28,6 @@ import {
   TaskFormDialog,
 } from "@/components/kanban";
 import { TaskMenu, TaskSessionsStatus } from "@/components/kanban/task-card";
-import { TaskDrawer } from "@/components/task-drawer";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +42,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 import { formatDate } from "@/lib/utils";
+import { useDrawer } from "@/providers/drawer-provider";
 
 type TasksSearch = {
   expanded?: string;
@@ -70,7 +70,7 @@ function TasksPage() {
   const [view, setView] = useState(
     () => localStorage.getItem("frak_task_view") || "list",
   );
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const { openTask } = useDrawer();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
@@ -119,7 +119,7 @@ function TasksPage() {
   };
 
   const handleTaskClick = (task: Task) => {
-    setSelectedTaskId(task.id);
+    openTask(task.id);
   };
 
   if (workspaceList.length === 0) {
@@ -234,11 +234,6 @@ function TasksPage() {
           })}
         </div>
       )}
-
-      <TaskDrawer
-        taskId={selectedTaskId}
-        onClose={() => setSelectedTaskId(null)}
-      />
 
       <TaskFormDialog
         open={isFormOpen}

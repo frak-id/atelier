@@ -15,9 +15,7 @@ import {
 } from "@/api/queries";
 import { CreateSandboxDialog } from "@/components/create-sandbox-dialog";
 import { SandboxCard } from "@/components/sandbox-card";
-import { SandboxDrawer } from "@/components/sandbox-drawer";
 import { SshKeyAlert } from "@/components/ssh-key-alert";
-import { TaskDrawer } from "@/components/task-drawer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -28,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useDrawer } from "@/providers/drawer-provider";
 
 export const Route = createFileRoute("/sandboxes/")({
   component: SandboxesPage,
@@ -50,10 +49,7 @@ export const Route = createFileRoute("/sandboxes/")({
 function SandboxesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [createOpen, setCreateOpen] = useState(false);
-  const [selectedSandboxId, setSelectedSandboxId] = useState<string | null>(
-    null,
-  );
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const { openSandbox, openTask } = useDrawer();
   const [recreatingId, setRecreatingId] = useState<string | null>(null);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
   const { data: sshKeys } = useQuery(sshKeysListQuery);
@@ -171,9 +167,9 @@ function SandboxesPage() {
                   startMutation.isPending &&
                   startMutation.variables === sandbox.id
                 }
-                onShowDetails={() => setSelectedSandboxId(sandbox.id)}
+                onShowDetails={() => openSandbox(sandbox.id)}
                 onShowTask={() => {
-                  if (task) setSelectedTaskId(task.id);
+                  if (task) openTask(task.id);
                 }}
               />
             );
@@ -182,16 +178,6 @@ function SandboxesPage() {
       )}
 
       <CreateSandboxDialog open={createOpen} onOpenChange={setCreateOpen} />
-      <SandboxDrawer
-        sandboxId={selectedSandboxId}
-        onClose={() => setSelectedSandboxId(null)}
-        onOpenTask={setSelectedTaskId}
-      />
-      <TaskDrawer
-        taskId={selectedTaskId}
-        onClose={() => setSelectedTaskId(null)}
-        onOpenSandbox={setSelectedSandboxId}
-      />
     </div>
   );
 }

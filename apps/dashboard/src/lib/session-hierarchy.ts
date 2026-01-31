@@ -1,4 +1,12 @@
-import type { SessionWithSandboxInfo } from "@/components/session-row";
+import type { Session } from "@opencode-ai/sdk/v2";
+
+export type SessionWithSandboxInfo = Session & {
+  sandbox: {
+    id: string;
+    workspaceId: string | undefined;
+    opencodeUrl: string;
+  };
+};
 
 export type SessionNode = {
   session: SessionWithSandboxInfo;

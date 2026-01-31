@@ -32,6 +32,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DrawerProvider } from "@/providers/drawer-provider";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -117,42 +118,16 @@ function RootLayout() {
 
   return (
     <TooltipProvider>
-      <Toaster position="bottom-right" richColors />
-      <div className="flex h-screen bg-background">
-        <aside className="hidden md:flex w-64 border-r bg-card flex-col">
-          <div className="p-6 border-b">
-            <Link to="/" className="flex items-center gap-2">
-              <Box className="h-6 w-6 text-primary" />
-              <span className="font-bold text-lg">Frak Sandbox</span>
-            </Link>
-          </div>
-          <SidebarContent />
-          <div className="p-4 border-t space-y-3">
-            <Suspense fallback={null}>
-              <GitHubStatus />
-            </Suspense>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-            <div className="text-xs text-muted-foreground">v0.1.0</div>
-          </div>
-        </aside>
-
-        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-          <SheetContent side="left" className="w-64 p-0">
-            <SheetHeader className="p-6 border-b">
-              <SheetTitle>
-                <Link to="/" className="flex items-center gap-2">
-                  <Box className="h-6 w-6 text-primary" />
-                  <span className="font-bold text-lg">Frak Sandbox</span>
-                </Link>
-              </SheetTitle>
-            </SheetHeader>
+      <DrawerProvider>
+        <Toaster position="bottom-right" richColors />
+        <div className="flex h-screen bg-background">
+          <aside className="hidden md:flex w-64 border-r bg-card flex-col">
+            <div className="p-6 border-b">
+              <Link to="/" className="flex items-center gap-2">
+                <Box className="h-6 w-6 text-primary" />
+                <span className="font-bold text-lg">Frak Sandbox</span>
+              </Link>
+            </div>
             <SidebarContent />
             <div className="p-4 border-t space-y-3">
               <Suspense fallback={null}>
@@ -168,34 +143,62 @@ function RootLayout() {
               </button>
               <div className="text-xs text-muted-foreground">v0.1.0</div>
             </div>
-          </SheetContent>
-        </Sheet>
+          </aside>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <header className="md:hidden flex items-center gap-4 p-4 border-b bg-card">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setMobileMenuOpen(true)}
-            >
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">Open menu</span>
-            </Button>
-            <Link to="/" className="flex items-center gap-2">
-              <Box className="h-5 w-5 text-primary" />
-              <span className="font-bold">Frak Sandbox</span>
-            </Link>
-          </header>
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+            <SheetContent side="left" className="w-64 p-0">
+              <SheetHeader className="p-6 border-b">
+                <SheetTitle>
+                  <Link to="/" className="flex items-center gap-2">
+                    <Box className="h-6 w-6 text-primary" />
+                    <span className="font-bold text-lg">Frak Sandbox</span>
+                  </Link>
+                </SheetTitle>
+              </SheetHeader>
+              <SidebarContent />
+              <div className="p-4 border-t space-y-3">
+                <Suspense fallback={null}>
+                  <GitHubStatus />
+                </Suspense>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
+                <div className="text-xs text-muted-foreground">v0.1.0</div>
+              </div>
+            </SheetContent>
+          </Sheet>
 
-          <main className="flex-1 overflow-auto">
-            <Outlet />
-          </main>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <header className="md:hidden flex items-center gap-4 p-4 border-b bg-card">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileMenuOpen(true)}
+              >
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Open menu</span>
+              </Button>
+              <Link to="/" className="flex items-center gap-2">
+                <Box className="h-5 w-5 text-primary" />
+                <span className="font-bold">Frak Sandbox</span>
+              </Link>
+            </header>
 
-          <Suspense fallback={null}>
-            <SystemStatusFooter />
-          </Suspense>
+            <main className="flex-1 overflow-auto">
+              <Outlet />
+            </main>
+
+            <Suspense fallback={null}>
+              <SystemStatusFooter />
+            </Suspense>
+          </div>
         </div>
-      </div>
+      </DrawerProvider>
     </TooltipProvider>
   );
 }

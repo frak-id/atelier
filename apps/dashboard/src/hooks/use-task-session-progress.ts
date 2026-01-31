@@ -3,13 +3,13 @@ import type { Session, Todo } from "@opencode-ai/sdk/v2";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { opencodeSessionsQuery, opencodeTodosQuery } from "@/api/queries";
-import type { SessionWithSandboxInfo } from "@/components/session-row";
 import {
   type AggregatedInteractionState,
   aggregateInteractions,
   type MappedSessionStatus,
   type SessionInteractionInfo,
 } from "@/lib/opencode-helpers";
+import type { SessionWithSandboxInfo } from "@/lib/session-hierarchy";
 import {
   buildSessionHierarchy,
   flattenHierarchy,

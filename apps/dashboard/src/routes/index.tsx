@@ -9,7 +9,7 @@ import {
   Kanban,
   Loader2,
 } from "lucide-react";
-import { Component, type ReactNode, Suspense, useState } from "react";
+import { Component, type ReactNode, Suspense } from "react";
 import {
   sandboxDevCommandsQuery,
   sandboxListQuery,
@@ -22,9 +22,7 @@ import {
   workspaceListQuery,
 } from "@/api/queries";
 import { SandboxCard } from "@/components/sandbox-card";
-import { SandboxDrawer } from "@/components/sandbox-drawer";
 import { StartWorkingCard } from "@/components/start-working-card";
-import { TaskDrawer } from "@/components/task-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAttentionData } from "@/hooks/use-attention-data";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 import { formatRelativeTime } from "@/lib/utils";
+import { useDrawer } from "@/providers/drawer-provider";
 
 class SectionErrorBoundary extends Component<
   { children: ReactNode; fallback?: ReactNode },
@@ -76,10 +75,7 @@ export const Route = createFileRoute("/")({
 });
 
 function MissionControlPage() {
-  const [selectedSandboxId, setSelectedSandboxId] = useState<string | null>(
-    null,
-  );
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const { openTask, openSandbox } = useDrawer();
 
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -105,15 +101,15 @@ function MissionControlPage() {
 
         <SectionErrorBoundary>
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            <ActiveTasksSection onSelectTask={setSelectedTaskId} />
+            <ActiveTasksSection onSelectTask={openTask} />
           </Suspense>
         </SectionErrorBoundary>
 
         <SectionErrorBoundary>
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
             <RunningSandboxesSection
-              onSelectSandbox={setSelectedSandboxId}
-              onSelectTask={setSelectedTaskId}
+              onSelectSandbox={openSandbox}
+              onSelectTask={openTask}
             />
           </Suspense>
         </SectionErrorBoundary>
@@ -124,18 +120,6 @@ function MissionControlPage() {
           </Suspense>
         </SectionErrorBoundary>
       </div>
-
-      <SandboxDrawer
-        sandboxId={selectedSandboxId}
-        onClose={() => setSelectedSandboxId(null)}
-        onOpenTask={setSelectedTaskId}
-      />
-
-      <TaskDrawer
-        taskId={selectedTaskId}
-        onClose={() => setSelectedTaskId(null)}
-        onOpenSandbox={setSelectedSandboxId}
-      />
     </div>
   );
 }
