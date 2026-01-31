@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Kanban,
   Loader2,
+  Server,
 } from "lucide-react";
 import { Component, type ReactNode, Suspense } from "react";
 import {
@@ -353,9 +354,17 @@ function RunningSandboxesSection({
       </div>
 
       {runningSandboxes.length === 0 ? (
-        <div className="max-w-2xl">
-          <StartWorkingCard />
-        </div>
+        <Card className="bg-muted/5 border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+            <Server className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <p className="font-medium text-muted-foreground">
+              No sandboxes running
+            </p>
+            <p className="text-sm text-muted-foreground/70 mt-1">
+              Start a session above to spin up a sandbox
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {runningSandboxes.map((sandbox) => {

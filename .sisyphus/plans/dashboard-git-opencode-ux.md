@@ -170,7 +170,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ## TODOs
 
-- [ ] 1. OpenCode SDK Reply Wrappers + TanStack Mutations
+- [x] 1. OpenCode SDK Reply Wrappers + TanStack Mutations
 
   **What to do**:
   - Add `replyPermission(baseUrl, requestID, reply)` function to `apps/dashboard/src/api/opencode.ts`
@@ -252,7 +252,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 2. Agent Git Operations (diffStat, commit, push)
+- [x] 2. Agent Git Operations (diffStat, commit, push)
 
   **What to do**:
   - Add `gitDiffStat()` method to `apps/manager/src/infrastructure/agent/agent.operations.ts`:
@@ -335,7 +335,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 3. Manager Git Proxy Endpoints
+- [x] 3. Manager Git Proxy Endpoints
 
   **What to do**:
   - Add three new endpoints to `apps/manager/src/api/sandbox.routes.ts`:
@@ -420,7 +420,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 4. Inline Intervention Actions UI
+- [x] 4. Inline Intervention Actions UI
 
   **What to do**:
   - Redesign `apps/dashboard/src/components/expandable-interventions.tsx` to support inline actions:
@@ -521,7 +521,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 5. Session Hierarchy Accordion Redesign
+- [x] 5. Session Hierarchy Accordion Redesign
 
   **What to do**:
   - Redesign `apps/dashboard/src/components/task-session-hierarchy.tsx` as an accordion-based tree:
@@ -616,7 +616,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 6. Git Diff/Commit/Push UI in Sandbox Drawer
+- [x] 6. Git Diff/Commit/Push UI in Sandbox Drawer
 
   **What to do**:
   - Enhance the `RepositoriesTab` in `apps/dashboard/src/components/sandbox-drawer.tsx`:
@@ -715,7 +715,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 7. Wire Interventions into Task Drawer + Task Cards
+- [x] 7. Wire Interventions into Task Drawer + Task Cards
 
   **What to do**:
   - Update `apps/dashboard/src/components/task-drawer.tsx`:
@@ -802,7 +802,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 8. Sessions Tab in Sandbox Drawer
+- [x] 8. Sessions Tab in Sandbox Drawer
 
   **What to do**:
   - Add a "Sessions" tab to the sandbox drawer's tab bar (alongside Repositories, Services, Exec):
@@ -893,7 +893,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 9. Sandbox Card Activity Row + Git Badges on Task Cards
+- [x] 9. Sandbox Card Activity Row + Git Badges on Task Cards
 
   **What to do**:
   
@@ -983,7 +983,7 @@ Parallel Speedup: ~50% faster than sequential
 
 ---
 
-- [ ] 10. Cross-Cutting Polish, Edge Cases, Error Handling
+- [x] 10. Cross-Cutting Polish, Edge Cases, Error Handling
 
   **What to do**:
   - Run `bun run check` and `bun run typecheck` across entire monorepo — fix any issues

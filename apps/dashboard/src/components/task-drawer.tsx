@@ -386,6 +386,7 @@ export function TaskDrawer({
                           permissions={aggregatedInteraction.pendingPermissions}
                           questions={aggregatedInteraction.pendingQuestions}
                           compact={false}
+                          opencodeUrl={sandbox?.runtime?.urls?.opencode}
                         />
                       )}
 

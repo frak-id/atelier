@@ -1,6 +1,9 @@
 {
   "active_plan": "/home/dev/workspace/oc-sandbox/.sisyphus/plans/dashboard-git-opencode-ux.md",
   "started_at": "2026-01-31T01:45:31.650Z",
-  "session_ids": ["ses_3ee53ca65ffeou9Q55mUFIlJMd"],
+  "session_ids": [
+    "ses_3ee53ca65ffeou9Q55mUFIlJMd",
+    "ses_3ec0993c0ffezXnqHJlIDHfblC"
+  ],
   "plan_name": "dashboard-git-opencode-ux"
 }

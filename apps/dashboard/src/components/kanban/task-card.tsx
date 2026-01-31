@@ -10,7 +10,7 @@ import {
   MoreHorizontal,
   Terminal,
 } from "lucide-react";
-import { sandboxDetailQuery } from "@/api/queries";
+import { sandboxDetailQuery, sandboxGitStatusQuery } from "@/api/queries";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { SessionTodoInfo } from "@/components/session-todo-info";
@@ -68,6 +68,22 @@ export function TaskCard({
     ...sandboxDetailQuery(task.data.sandboxId ?? ""),
     enabled: !!task.data.sandboxId,
   });
+
+  const { data: gitStatus } = useQuery({
+    ...sandboxGitStatusQuery(task.data.sandboxId ?? ""),
+    enabled:
+      !!task.data.sandboxId &&
+      !!sandbox?.status &&
+      sandbox.status === "running",
+  });
+
+  const isDirty =
+    gitStatus?.repos?.some((r: { dirty: boolean }) => r.dirty) ?? false;
+  const totalAhead =
+    gitStatus?.repos?.reduce(
+      (sum: number, r: { ahead: number }) => sum + r.ahead,
+      0,
+    ) ?? 0;
 
   const {
     totalCount,
@@ -146,6 +162,22 @@ export function TaskCard({
               <span className="text-xs font-mono text-muted-foreground truncate">
                 {task.data.branchName}
               </span>
+              {isDirty && (
+                <Badge
+                  variant="destructive"
+                  className="text-[9px] h-4 px-1 py-0 leading-none"
+                >
+                  dirty
+                </Badge>
+              )}
+              {totalAhead > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-[9px] h-4 px-1 py-0 leading-none font-mono"
+                >
+                  ↑{totalAhead}
+                </Badge>
+              )}
             </div>
           )}
 
@@ -193,6 +225,7 @@ export function TaskCard({
                 aggregatedInteraction={aggregatedInteraction}
                 needsAttention={needsAttention}
                 opencodeUrl={sandbox?.runtime?.urls?.opencode}
+                onQuestionClick={onClick}
               />
             </div>
           )}
@@ -319,10 +352,12 @@ export function TaskSessionsStatus({
   aggregatedInteraction,
   needsAttention,
   opencodeUrl,
+  onQuestionClick,
 }: {
   aggregatedInteraction: AggregatedInteractionState;
   needsAttention: boolean;
   opencodeUrl: string | undefined;
+  onQuestionClick?: () => void;
 }) {
   const showStatus =
     needsAttention ||
@@ -355,6 +390,9 @@ export function TaskSessionsStatus({
         permissions={aggregatedInteraction.pendingPermissions}
         questions={aggregatedInteraction.pendingQuestions}
         compact={true}
+        opencodeUrl={opencodeUrl}
+        questionsAsLink={true}
+        onQuestionClick={onQuestionClick}
       />
     </div>
   );

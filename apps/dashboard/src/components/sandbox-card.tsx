@@ -2,6 +2,7 @@ import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   Bot,
   ExternalLink,
   Globe,
@@ -17,8 +18,10 @@ import {
 import { useEffect, useRef } from "react";
 import type { Sandbox, Workspace } from "@/api/client";
 import {
+  opencodeSessionsQuery,
   sandboxBrowserStatusQuery,
   sandboxDevCommandsQuery,
+  sandboxGitStatusQuery,
   useStartBrowser,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +38,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useOpencodeData } from "@/hooks/use-opencode-data";
 import { formatRelativeTime } from "@/lib/utils";
 
 interface SandboxCardProps {
@@ -157,6 +161,16 @@ export function SandboxCard({
 
           {sandbox.status === "running" && (
             <BrowserStatusBadge sandboxId={sandbox.id} />
+          )}
+
+          {sandbox.status === "running" && (
+            <SandboxActivitySummary
+              opencodeUrl={sandbox.runtime.urls.opencode}
+            />
+          )}
+
+          {sandbox.status === "running" && (
+            <SandboxGitBadges sandboxId={sandbox.id} />
           )}
 
           {sandbox.status === "running" && (
@@ -449,6 +463,92 @@ function CardBrowserButton({ sandboxId }: { sandboxId: string }) {
         {browserStatus?.status === "running" ? "Open Browser" : "Start Browser"}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function SandboxActivitySummary({
+  opencodeUrl,
+}: {
+  opencodeUrl: string | undefined;
+}) {
+  const { sessionStatuses, permissions, questions } =
+    useOpencodeData(opencodeUrl);
+  const { data: sessions } = useQuery({
+    ...opencodeSessionsQuery(opencodeUrl ?? ""),
+    enabled: !!opencodeUrl,
+  });
+
+  const sessionCount = sessions?.length ?? 0;
+  const workingCount = Object.values(sessionStatuses).filter(
+    (s) => s.type === "busy",
+  ).length;
+  const attentionCount = permissions.length + questions.length;
+
+  if (sessionCount === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <Badge
+        variant="outline"
+        className="text-[10px] h-5 px-1.5 gap-1 font-normal"
+      >
+        <Bot className="h-3 w-3" />
+        {sessionCount} session{sessionCount !== 1 ? "s" : ""}
+      </Badge>
+      {workingCount > 0 && (
+        <Badge
+          variant="secondary"
+          className="text-[10px] h-5 px-1.5 gap-1 font-normal"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+          {workingCount} working
+        </Badge>
+      )}
+      {attentionCount > 0 && (
+        <Badge
+          variant="outline"
+          className="text-[10px] h-5 px-1.5 gap-1 font-normal border-amber-500/50 text-amber-600 dark:text-amber-400"
+        >
+          <AlertTriangle className="h-3 w-3" />
+          {attentionCount} need attention
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function SandboxGitBadges({ sandboxId }: { sandboxId: string }) {
+  const { data: gitStatus } = useQuery(sandboxGitStatusQuery(sandboxId));
+
+  if (!gitStatus?.repos?.length) return null;
+
+  const isDirty = gitStatus.repos.some((r) => r.dirty);
+  const totalAhead = gitStatus.repos.reduce(
+    (sum, r) => sum + (r.ahead ?? 0),
+    0,
+  );
+
+  if (!isDirty && totalAhead === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {isDirty && (
+        <Badge
+          variant="destructive"
+          className="text-[9px] h-4 px-1 py-0 leading-none"
+        >
+          dirty
+        </Badge>
+      )}
+      {totalAhead > 0 && (
+        <Badge
+          variant="outline"
+          className="text-[9px] h-4 px-1 py-0 leading-none font-mono"
+        >
+          ↑{totalAhead}
+        </Badge>
+      )}
+    </div>
   );
 }
 
