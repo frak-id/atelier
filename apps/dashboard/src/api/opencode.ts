@@ -149,4 +149,58 @@ export async function fetchOpenCodeTodos(
   }
 }
 
+export async function replyPermission(
+  baseUrl: string,
+  requestID: string,
+  reply: "once" | "reject",
+): Promise<boolean> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const result = await client.permission.reply({ requestID, reply });
+    return result.data ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export async function replyQuestion(
+  baseUrl: string,
+  requestID: string,
+  answers: Array<Array<string>>,
+): Promise<boolean> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const result = await client.question.reply({ requestID, answers });
+    return result.data ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export async function rejectQuestion(
+  baseUrl: string,
+  requestID: string,
+): Promise<boolean> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const result = await client.question.reject({ requestID });
+    return result.data ?? false;
+  } catch {
+    return false;
+  }
+}
+
+export async function abortSession(
+  baseUrl: string,
+  sessionID: string,
+): Promise<boolean> {
+  try {
+    const client = createOpencodeClient({ baseUrl });
+    const result = await client.session.abort({ sessionID });
+    return result.data ?? false;
+  } catch {
+    return false;
+  }
+}
+
 export type { PermissionRequest, QuestionRequest, Todo };
