@@ -14,8 +14,13 @@ import {
   Terminal,
   Trash2,
 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import type { Sandbox, Workspace } from "@/api/client";
-import { sandboxDevCommandsQuery } from "@/api/queries";
+import {
+  sandboxBrowserStatusQuery,
+  sandboxDevCommandsQuery,
+  useStartBrowser,
+} from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -151,6 +156,10 @@ export function SandboxCard({
           )}
 
           {sandbox.status === "running" && (
+            <BrowserStatusBadge sandboxId={sandbox.id} />
+          )}
+
+          {sandbox.status === "running" && (
             // biome-ignore lint/a11y/noStaticElementInteractions: Stop propagation wrapper
             // biome-ignore lint/a11y/useKeyWithClickEvents: Stop propagation wrapper
             <div
@@ -173,21 +182,7 @@ export function SandboxCard({
                 <TooltipContent>Immerse</TooltipContent>
               </Tooltip>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    asChild
-                  >
-                    <Link to="/sandboxes/$id" params={{ id: sandbox.id }}>
-                      <Globe className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Browser</TooltipContent>
-              </Tooltip>
+              <CardBrowserButton sandboxId={sandbox.id} />
 
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -352,6 +347,108 @@ export function SandboxCard({
         </Tooltip>
       </CardFooter>
     </Card>
+  );
+}
+
+function BrowserStatusBadge({ sandboxId }: { sandboxId: string }) {
+  const { data: browserStatus } = useQuery({
+    ...sandboxBrowserStatusQuery(sandboxId),
+    refetchInterval: 2000,
+  });
+
+  if (!browserStatus || browserStatus.status === "off") return null;
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: Stop propagation wrapper
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Stop propagation wrapper
+    <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+      <Badge
+        variant="outline"
+        className="h-6 gap-1.5 font-normal bg-background/50"
+      >
+        {browserStatus.status === "starting" ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+        )}
+        {browserStatus.status === "running" && browserStatus.url ? (
+          <a
+            href={`${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline flex items-center gap-1"
+          >
+            Browser
+            <ExternalLink className="h-3 w-3 opacity-50" />
+          </a>
+        ) : (
+          <span>
+            Browser {browserStatus.status === "starting" ? "starting..." : ""}
+          </span>
+        )}
+      </Badge>
+    </div>
+  );
+}
+
+function CardBrowserButton({ sandboxId }: { sandboxId: string }) {
+  const startBrowser = useStartBrowser(sandboxId);
+  const { data: browserStatus } = useQuery({
+    ...sandboxBrowserStatusQuery(sandboxId),
+    refetchInterval: 2000,
+  });
+  const pendingOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      pendingOpenRef.current &&
+      browserStatus?.status === "running" &&
+      browserStatus.url
+    ) {
+      pendingOpenRef.current = false;
+      window.open(
+        `${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`,
+        "_blank",
+      );
+    }
+  }, [browserStatus?.status, browserStatus?.url]);
+
+  const handleClick = () => {
+    if (browserStatus?.status === "running" && browserStatus.url) {
+      window.open(
+        `${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`,
+        "_blank",
+      );
+      return;
+    }
+    pendingOpenRef.current = true;
+    startBrowser.mutate();
+  };
+
+  const isLoading =
+    startBrowser.isPending || browserStatus?.status === "starting";
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          onClick={handleClick}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Globe className="h-4 w-4" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {browserStatus?.status === "running" ? "Open Browser" : "Start Browser"}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

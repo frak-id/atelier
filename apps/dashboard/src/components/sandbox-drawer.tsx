@@ -16,7 +16,7 @@ import {
   Terminal,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   sandboxBrowserStatusQuery,
@@ -27,6 +27,7 @@ import {
   useDeleteSandbox,
   useExecCommand,
   useStartBrowser,
+  useStopBrowser,
   workspaceDetailQuery,
 } from "@/api/queries";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
@@ -602,27 +603,60 @@ function BrowserButton({
   browserStatus?: { status: string; url?: string };
 }) {
   const startBrowser = useStartBrowser(sandboxId);
+  const stopBrowser = useStopBrowser(sandboxId);
+  const pendingOpenRef = useRef(false);
 
-  if (browserStatus?.status === "running" && browserStatus.url) {
+  const browserVncUrl = browserStatus?.url
+    ? `${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`
+    : undefined;
+
+  useEffect(() => {
+    if (
+      pendingOpenRef.current &&
+      browserStatus?.status === "running" &&
+      browserVncUrl
+    ) {
+      pendingOpenRef.current = false;
+      window.open(browserVncUrl, "_blank");
+    }
+  }, [browserStatus?.status, browserVncUrl]);
+
+  if (browserStatus?.status === "running" && browserVncUrl) {
     return (
-      <Button variant="outline" size="sm" asChild>
-        <a
-          href={`${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`}
-          target="_blank"
-          rel="noopener noreferrer"
+      <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" asChild>
+          <a href={browserVncUrl} target="_blank" rel="noopener noreferrer">
+            <Globe className="h-4 w-4 mr-2" />
+            Browser
+          </a>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => stopBrowser.mutate()}
+          disabled={stopBrowser.isPending}
+          className="h-8 px-2 text-muted-foreground hover:text-destructive"
         >
-          <Globe className="h-4 w-4 mr-2" />
-          Browser
-        </a>
-      </Button>
+          {stopBrowser.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <span className="text-xs">Stop</span>
+          )}
+        </Button>
+      </div>
     );
   }
+
+  const handleStart = () => {
+    pendingOpenRef.current = true;
+    startBrowser.mutate();
+  };
 
   return (
     <Button
       variant="outline"
       size="sm"
-      onClick={() => startBrowser.mutate()}
+      onClick={handleStart}
       disabled={startBrowser.isPending || browserStatus?.status === "starting"}
     >
       {startBrowser.isPending || browserStatus?.status === "starting" ? (
