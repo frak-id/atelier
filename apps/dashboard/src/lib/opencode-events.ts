@@ -1,6 +1,6 @@
 import type { Event as OpencodeEvent } from "@opencode-ai/sdk/v2";
-import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { QueryClient } from "@tanstack/react-query";
+import { getOpencodeClient } from "@/api/opencode";
 import { queryKeys } from "@/api/queries";
 
 const connections = new Map<string, AbortController>();
@@ -32,7 +32,7 @@ async function subscribeToEvents(
   abortController: AbortController,
   queryClient: QueryClient,
 ) {
-  const client = createOpencodeClient({ baseUrl: opencodeUrl });
+  const client = getOpencodeClient(opencodeUrl);
 
   const handleEvent = (event: OpencodeEvent) => {
     switch (event.type) {

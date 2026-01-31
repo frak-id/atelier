@@ -103,6 +103,13 @@ export const CaddyService = {
   async addRouteDirect(route: RouteDefinition): Promise<void> {
     await this.removeRoute(route.domain);
 
+    const corsResponseHeaders = {
+      set: {
+        "Access-Control-Allow-Origin": [config.dashboardUrl],
+        "Access-Control-Allow-Credentials": ["true"],
+      },
+    };
+
     const handlers: object[] = [];
 
     if (!config.isMock()) {
@@ -116,13 +123,45 @@ export const CaddyService = {
         protocol: "http",
         read_buffer_size: 4096,
       },
+      headers: {
+        response: corsResponseHeaders,
+      },
       flush_interval: -1,
     });
 
     const routeConfig = {
       "@id": route.domain,
       match: [{ host: [route.domain] }],
-      handle: handlers,
+      handle: [
+        {
+          handler: "subroute",
+          routes: [
+            {
+              handle: [
+                {
+                  handler: "headers",
+                  response: {
+                    set: {
+                      ...corsResponseHeaders.set,
+                      "Access-Control-Allow-Methods": [
+                        "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                      ],
+                      "Access-Control-Allow-Headers": [
+                        "Content-Type, Authorization, X-Requested-With",
+                      ],
+                    },
+                  },
+                },
+              ],
+              match: [{ method: ["OPTIONS"] }],
+              terminal: true,
+            },
+            {
+              handle: handlers,
+            },
+          ],
+        },
+      ],
       terminal: true,
     };
 
