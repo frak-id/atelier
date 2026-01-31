@@ -235,12 +235,28 @@ function PendingInterventionLines({
         </div>
       ))}
       {pendingQuestions.map((q) => (
-        <div
-          key={q.id}
-          className="flex items-center gap-1.5 text-xs text-cyan-400"
-        >
-          <MessageCircleQuestion className="h-3 w-3 shrink-0" />
-          <span className="truncate">{getQuestionDisplayText(q)}</span>
+        <div key={q.id} className="space-y-0.5">
+          <div className="flex items-center gap-1.5 text-xs text-cyan-400">
+            <MessageCircleQuestion className="h-3 w-3 shrink-0" />
+            <span className="truncate">{getQuestionDisplayText(q)}</span>
+          </div>
+          {q.questions.length > 1 && (
+            <div className="ml-4.5 space-y-px">
+              {q.questions.map((qi) => (
+                <div
+                  key={qi.header}
+                  className="text-xs text-cyan-400/60 truncate"
+                >
+                  • {qi.question}
+                </div>
+              ))}
+            </div>
+          )}
+          {q.questions.length === 1 && (
+            <div className="ml-4.5 text-xs text-cyan-400/60 truncate">
+              {q.questions[0]?.question}
+            </div>
+          )}
         </div>
       ))}
     </div>
