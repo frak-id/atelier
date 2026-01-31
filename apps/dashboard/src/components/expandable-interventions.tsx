@@ -1,8 +1,4 @@
-import type {
-  PermissionRequest,
-  QuestionInfo,
-  QuestionRequest,
-} from "@opencode-ai/sdk/v2";
+import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
 import {
   AlertTriangle,
   Check,
@@ -26,6 +22,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
 import {
   formatSessionId,
   getQuestionDisplayText,
@@ -179,10 +176,10 @@ function PermissionRow({
   compact: boolean;
   opencodeUrl?: string;
 }) {
+  const replyMutation = useReplyPermission(opencodeUrl ?? "");
   const [clickedAction, setClickedAction] = useState<"once" | "reject" | null>(
     null,
   );
-  const replyMutation = useReplyPermission(opencodeUrl ?? "");
 
   const handleReply = (reply: "once" | "reject") => {
     if (!opencodeUrl) return;
@@ -194,24 +191,21 @@ function PermissionRow({
           toast.success(
             reply === "once" ? "Permission approved" : "Permission denied",
           );
-          setClickedAction(null);
         },
         onError: (error) => {
-          const isGone =
-            error instanceof Error &&
-            (error.message.includes("404") || error.message.includes("gone"));
-          if (isGone) {
+          setClickedAction(null);
+          const is404 = error instanceof Error && error.message.includes("404");
+          if (is404) {
             toast.error("Permission request expired");
           } else {
-            toast.error(
-              `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-            );
+            toast.error("Failed to reply to permission");
           }
-          setClickedAction(null);
         },
       },
     );
   };
+
+  const isPending = replyMutation.isPending;
 
   return (
     <div
@@ -229,16 +223,16 @@ function PermissionRow({
       {opencodeUrl && (
         <div className="flex items-center gap-1 shrink-0">
           <Button
-            variant="default"
             size="sm"
-            className="h-6 px-2 text-xs gap-1"
-            disabled={replyMutation.isPending}
+            variant="default"
+            className="h-6 text-xs gap-1 px-2"
+            disabled={isPending}
             onClick={(e) => {
               e.stopPropagation();
               handleReply("once");
             }}
           >
-            {clickedAction === "once" && replyMutation.isPending ? (
+            {isPending && clickedAction === "once" ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <Check className="h-3 w-3" />
@@ -246,16 +240,16 @@ function PermissionRow({
             Allow Once
           </Button>
           <Button
-            variant="destructive"
             size="sm"
-            className="h-6 px-2 text-xs gap-1"
-            disabled={replyMutation.isPending}
+            variant="destructive"
+            className="h-6 text-xs gap-1 px-2"
+            disabled={isPending}
             onClick={(e) => {
               e.stopPropagation();
               handleReply("reject");
             }}
           >
-            {clickedAction === "reject" && replyMutation.isPending ? (
+            {isPending && clickedAction === "reject" ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <X className="h-3 w-3" />
@@ -279,6 +273,84 @@ function QuestionRow({
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
+  const [selections, setSelections] = useState<Map<number, Set<string>>>(
+    () => new Map(),
+  );
+  const [customInputs, setCustomInputs] = useState<Map<number, string>>(
+    () => new Map(),
+  );
+
+  const replyMutation = useReplyQuestion(opencodeUrl ?? "");
+  const rejectMutation = useRejectQuestion(opencodeUrl ?? "");
+
+  const handleSubmit = () => {
+    if (!opencodeUrl) return;
+
+    const answers: Array<Array<string>> = question.questions.map((_, idx) => {
+      const selected = selections.get(idx) ?? new Set();
+      const custom = customInputs.get(idx)?.trim() ?? "";
+      const result = [...selected];
+      if (custom) result.push(custom);
+      return result;
+    });
+
+    replyMutation.mutate(
+      { requestID: question.id, answers },
+      {
+        onSuccess: () => {
+          toast.success("Answer submitted");
+        },
+        onError: (error) => {
+          const is404 = error instanceof Error && error.message.includes("404");
+          if (is404) {
+            toast.error("Question request expired");
+          } else {
+            toast.error("Failed to submit answer");
+          }
+        },
+      },
+    );
+  };
+
+  const handleSkip = () => {
+    if (!opencodeUrl) return;
+    rejectMutation.mutate(question.id, {
+      onSuccess: () => {
+        toast.success("Question skipped");
+      },
+      onError: (error) => {
+        const is404 = error instanceof Error && error.message.includes("404");
+        if (is404) {
+          toast.error("Question request expired");
+        } else {
+          toast.error("Failed to skip question");
+        }
+      },
+    });
+  };
+
+  const toggleOption = (
+    questionIdx: number,
+    label: string,
+    multiple: boolean,
+  ) => {
+    setSelections((prev) => {
+      const next = new Map(prev);
+      const current = new Set(next.get(questionIdx) ?? []);
+      if (multiple) {
+        if (current.has(label)) current.delete(label);
+        else current.add(label);
+      } else {
+        current.clear();
+        current.add(label);
+      }
+      next.set(questionIdx, current);
+      return next;
+    });
+  };
+
+  const isPending = replyMutation.isPending || rejectMutation.isPending;
+
   return (
     <div
       className={cn(
@@ -288,7 +360,7 @@ function QuestionRow({
     >
       <button
         type="button"
-        className="flex items-center gap-2 w-full text-left p-2 hover:bg-amber-50/50 transition-colors"
+        className="flex items-start gap-2 w-full text-left p-2 hover:bg-amber-50/50 transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
         <Badge variant="outline" className="shrink-0 text-xs bg-white">
@@ -303,189 +375,114 @@ function QuestionRow({
           <ChevronRight className="h-3 w-3 shrink-0 text-amber-600" />
         )}
       </button>
+
       {isOpen && opencodeUrl && (
-        <QuestionForm question={question} opencodeUrl={opencodeUrl} />
-      )}
-    </div>
-  );
-}
+        <div className="border-t border-amber-200/60 p-3 space-y-3">
+          {question.questions.map((qi, idx) => {
+            const isMultiple = qi.multiple ?? false;
+            const allowCustom = qi.custom !== false;
+            const selected = selections.get(idx) ?? new Set();
 
-function QuestionForm({
-  question,
-  opencodeUrl,
-}: {
-  question: QuestionRequest & { sessionId: string };
-  opencodeUrl: string;
-}) {
-  const replyMutation = useReplyQuestion(opencodeUrl);
-  const rejectMutation = useRejectQuestion(opencodeUrl);
+            return (
+              <div key={qi.header} className="space-y-1.5">
+                <p className="font-medium text-amber-900 text-sm">
+                  {qi.question}
+                </p>
 
-  const [answers, setAnswers] = useState<Array<Array<string>>>(() =>
-    question.questions.map(() => []),
-  );
-  const [customTexts, setCustomTexts] = useState<Array<string>>(() =>
-    question.questions.map(() => ""),
-  );
-
-  const isPending = replyMutation.isPending || rejectMutation.isPending;
-
-  const updateAnswer = (
-    qIdx: number,
-    info: QuestionInfo,
-    value: string,
-    checked: boolean,
-  ) => {
-    setAnswers((prev) => {
-      const next = [...prev];
-      if (info.multiple) {
-        const current = new Set(next[qIdx]);
-        if (checked) current.add(value);
-        else current.delete(value);
-        next[qIdx] = [...current];
-      } else {
-        next[qIdx] = checked ? [value] : [];
-      }
-      return next;
-    });
-  };
-
-  const handleSubmit = () => {
-    const finalAnswers = answers.map((selected, idx) => {
-      const custom = customTexts[idx]?.trim();
-      if (custom) return [...selected, custom];
-      return selected;
-    });
-
-    replyMutation.mutate(
-      { requestID: question.id, answers: finalAnswers },
-      {
-        onSuccess: () => {
-          toast.success("Answer submitted");
-        },
-        onError: (error) => {
-          toast.error(
-            `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-          );
-        },
-      },
-    );
-  };
-
-  const handleSkip = () => {
-    rejectMutation.mutate(question.id, {
-      onSuccess: () => {
-        toast.success("Question skipped");
-      },
-      onError: (error) => {
-        toast.error(
-          `Failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
-      },
-    });
-  };
-
-  return (
-    <div className="border-t border-amber-200/60 p-3 space-y-4">
-      {question.questions.map((info, qIdx) => (
-        <div key={info.header} className="space-y-2">
-          <p className="font-medium text-amber-900 text-sm">{info.question}</p>
-
-          <div className="space-y-1.5 pl-1">
-            {info.options.map((opt) => {
-              const isSelected = answers[qIdx]?.includes(opt.label) ?? false;
-              const inputId = `${question.id}-${qIdx}-${opt.label}`;
-
-              return (
-                <label
-                  key={opt.label}
-                  htmlFor={inputId}
-                  className={cn(
-                    "flex items-start gap-2 p-1.5 rounded cursor-pointer transition-colors",
-                    isSelected ? "bg-amber-100/80" : "hover:bg-amber-50/50",
-                  )}
-                >
-                  {info.multiple ? (
-                    <Checkbox
-                      id={inputId}
-                      checked={isSelected}
-                      onChange={(e) =>
-                        updateAnswer(
-                          qIdx,
-                          info,
-                          opt.label,
-                          (e.target as HTMLInputElement).checked,
-                        )
-                      }
-                      className="mt-0.5"
-                    />
-                  ) : (
-                    <input
-                      type="radio"
-                      id={inputId}
-                      name={`${question.id}-${qIdx}`}
-                      checked={isSelected}
-                      onChange={(e) =>
-                        updateAnswer(qIdx, info, opt.label, e.target.checked)
-                      }
-                      className="mt-0.5 h-4 w-4 accent-amber-600"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium text-sm">{opt.label}</span>
-                    {opt.description && (
-                      <p className="text-xs text-amber-700/70 mt-0.5">
-                        {opt.description}
-                      </p>
-                    )}
+                {qi.options.length > 0 && (
+                  <div className="space-y-1 pl-1">
+                    {qi.options.map((opt) => {
+                      const isSelected = selected.has(opt.label);
+                      return (
+                        <button
+                          type="button"
+                          key={opt.label}
+                          onClick={() =>
+                            toggleOption(idx, opt.label, isMultiple)
+                          }
+                          className={cn(
+                            "flex items-start gap-2 p-1.5 rounded cursor-pointer transition-colors w-full text-left",
+                            isSelected
+                              ? "bg-amber-100/80"
+                              : "hover:bg-amber-50/50",
+                          )}
+                        >
+                          {isMultiple ? (
+                            <Checkbox
+                              checked={isSelected}
+                              readOnly
+                              className="mt-0.5 pointer-events-none"
+                            />
+                          ) : (
+                            <input
+                              type="radio"
+                              name={`q-${question.id}-${idx}`}
+                              checked={isSelected}
+                              readOnly
+                              className="mt-0.5 h-4 w-4 accent-amber-600 pointer-events-none"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium text-sm">
+                              {opt.label}
+                            </span>
+                            {opt.description && (
+                              <p className="text-xs text-amber-700/70 mt-0.5">
+                                {opt.description}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                </label>
-              );
-            })}
+                )}
+
+                {allowCustom && (
+                  <Input
+                    placeholder="Or type your answer"
+                    value={customInputs.get(idx) ?? ""}
+                    onChange={(e) => {
+                      setCustomInputs((prev) => {
+                        const next = new Map(prev);
+                        next.set(idx, e.target.value);
+                        return next;
+                      });
+                    }}
+                    className="h-7 text-xs bg-white"
+                  />
+                )}
+              </div>
+            );
+          })}
+
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              className="h-7 px-3 text-xs"
+              disabled={isPending}
+              onClick={handleSubmit}
+            >
+              {replyMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : null}
+              Submit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-3 text-xs text-amber-700"
+              disabled={isPending}
+              onClick={handleSkip}
+            >
+              {rejectMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : null}
+              Skip
+            </Button>
           </div>
-
-          {info.custom !== false && (
-            <input
-              type="text"
-              placeholder="Or type your answer"
-              value={customTexts[qIdx] ?? ""}
-              onChange={(e) =>
-                setCustomTexts((prev) => {
-                  const next = [...prev];
-                  next[qIdx] = e.target.value;
-                  return next;
-                })
-              }
-              className="w-full px-2 py-1.5 text-sm border border-amber-200 rounded bg-white placeholder:text-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
-            />
-          )}
         </div>
-      ))}
-
-      <div className="flex items-center gap-2 pt-1">
-        <Button
-          size="sm"
-          className="h-7 px-3 text-xs"
-          disabled={isPending}
-          onClick={handleSubmit}
-        >
-          {replyMutation.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-          ) : null}
-          Submit
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-3 text-xs text-amber-700"
-          disabled={isPending}
-          onClick={handleSkip}
-        >
-          {rejectMutation.isPending ? (
-            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-          ) : null}
-          Skip
-        </Button>
-      </div>
+      )}
     </div>
   );
 }

@@ -22,7 +22,7 @@ export async function fetchOpenCodeSessions(
   baseUrl: string,
 ): Promise<Session[]> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const { data } = await client.session.list();
     return data ?? [];
   } catch {
@@ -35,9 +35,7 @@ export async function deleteOpenCodeSession(
   sessionId: string,
 ): Promise<boolean> {
   try {
-    const client = getOpencodeClient(
-      baseUrl,
-    );
+    const client = getOpencodeClient(baseUrl);
     const result = await client.session.delete({ sessionID: sessionId });
     return result.data ?? false;
   } catch {
@@ -50,7 +48,7 @@ export async function createOpenCodeSession(
   directory?: string,
 ): Promise<{ sessionId: string; directory: string } | { error: string }> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const { data, error } = await client.session.create({ directory });
     if (error || !data?.id || !data?.directory) {
       return { error: "Failed to create session" };
@@ -74,7 +72,7 @@ export async function sendOpenCodeMessage(
   options?: { directory?: string; templateConfig?: TemplateConfig },
 ): Promise<{ success: true } | { error: string }> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
 
     const result = await client.session.promptAsync({
       sessionID: sessionId,
@@ -97,7 +95,7 @@ export async function sendOpenCodeMessage(
 
 export async function checkOpenCodeHealth(baseUrl: string): Promise<boolean> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const { data } = await client.global.health();
     return data?.healthy ?? false;
   } catch {
@@ -109,7 +107,7 @@ export async function getOpenCodeSessionStatuses(
   baseUrl: string,
 ): Promise<Record<string, SessionStatus>> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const { data } = await client.session.status();
     return (data as Record<string, SessionStatus>) ?? {};
   } catch {
@@ -121,7 +119,7 @@ export async function fetchOpenCodePermissions(
   baseUrl: string,
 ): Promise<PermissionRequest[]> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const { data } = await client.permission.list();
     return data ?? [];
   } catch {
@@ -133,7 +131,7 @@ export async function fetchOpenCodeQuestions(
   baseUrl: string,
 ): Promise<QuestionRequest[]> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const { data } = await client.question.list();
     return data ?? [];
   } catch {
@@ -146,7 +144,7 @@ export async function fetchOpenCodeTodos(
   sessionId: string,
 ): Promise<Todo[]> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const { data } = await client.session.todo({ sessionID: sessionId });
     return data ?? [];
   } catch {
@@ -160,7 +158,7 @@ export async function replyPermission(
   reply: "once" | "reject",
 ): Promise<boolean> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const result = await client.permission.reply({ requestID, reply });
     return result.data ?? false;
   } catch {
@@ -174,7 +172,7 @@ export async function replyQuestion(
   answers: Array<Array<string>>,
 ): Promise<boolean> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const result = await client.question.reply({ requestID, answers });
     return result.data ?? false;
   } catch {
@@ -187,7 +185,7 @@ export async function rejectQuestion(
   requestID: string,
 ): Promise<boolean> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const result = await client.question.reject({ requestID });
     return result.data ?? false;
   } catch {
@@ -200,7 +198,7 @@ export async function abortSession(
   sessionID: string,
 ): Promise<boolean> {
   try {
-    const client = getOpencodeClient(baseUrl);;
+    const client = getOpencodeClient(baseUrl);
     const result = await client.session.abort({ sessionID });
     return result.data ?? false;
   } catch {
