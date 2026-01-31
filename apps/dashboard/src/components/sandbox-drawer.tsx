@@ -1,33 +1,46 @@
-import { useQuery } from "@tanstack/react-query";
+import type { Session, Todo } from "@opencode-ai/sdk/v2";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Bot,
   Check,
+  ChevronDown,
+  ChevronRight,
   ClipboardList,
   Copy,
+  FileText,
   GitBranch,
+  GitCommitHorizontal,
   Globe,
   Key,
   Loader2,
   Maximize2,
+  MessageSquarePlus,
   Monitor,
   Pause,
   Play,
   RefreshCw,
   RotateCcw,
+  Send,
   Terminal,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { createOpenCodeSession } from "@/api/opencode";
 import {
+  opencodeSessionsQuery,
+  opencodeTodosQuery,
   sandboxBrowserStatusQuery,
   sandboxDetailQuery,
+  sandboxGitDiffQuery,
   sandboxGitStatusQuery,
   sandboxServicesQuery,
   taskListQuery,
   useDeleteSandbox,
   useExecCommand,
+  useGitCommit,
+  useGitPush,
   useRestartSandbox,
   useStartBrowser,
   useStartSandbox,
@@ -36,6 +49,7 @@ import {
   workspaceDetailQuery,
 } from "@/api/queries";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
+import { SessionHierarchy } from "@/components/session-hierarchy";
 import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +76,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useOpencodeData } from "@/hooks/use-opencode-data";
+import { aggregateInteractions } from "@/lib/opencode-helpers";
+import {
+  buildSessionHierarchy,
+  flattenHierarchy,
+  type SessionWithSandboxInfo,
+} from "@/lib/session-hierarchy";
 import { formatDate } from "@/lib/utils";
 
 interface SandboxDrawerProps {
@@ -486,6 +507,11 @@ export function SandboxDrawer({
                         <TabsTrigger value="repos">Repositories</TabsTrigger>
                         <TabsTrigger value="services">Services</TabsTrigger>
                         <TabsTrigger value="exec">Exec</TabsTrigger>
+                        <SessionsTabTrigger
+                          opencodeUrl={sandbox.runtime.urls.opencode}
+                          sandboxId={sandbox.id}
+                          workspaceId={sandbox.workspaceId}
+                        />
                       </TabsList>
                       <TabsContent value="repos" className="mt-4">
                         <RepositoriesTab sandboxId={sandbox.id} />
@@ -544,6 +570,13 @@ export function SandboxDrawer({
                       <TabsContent value="exec" className="mt-4">
                         <ExecTab sandboxId={sandbox.id} />
                       </TabsContent>
+                      <TabsContent value="sessions" className="mt-4">
+                        <SessionsTab
+                          opencodeUrl={sandbox.runtime.urls.opencode}
+                          sandboxId={sandbox.id}
+                          workspaceId={sandbox.workspaceId}
+                        />
+                      </TabsContent>
                     </Tabs>
                   </>
                 )}
@@ -601,6 +634,191 @@ export function SandboxDrawer({
   );
 }
 
+interface SessionsTabProps {
+  opencodeUrl: string;
+  sandboxId: string;
+  workspaceId: string | undefined;
+}
+
+function useSandboxSessions({
+  opencodeUrl,
+  sandboxId,
+  workspaceId,
+}: SessionsTabProps) {
+  const { data: sessions, isLoading: isSessionsLoading } = useQuery({
+    ...opencodeSessionsQuery(opencodeUrl),
+    enabled: !!opencodeUrl,
+  });
+
+  const {
+    permissions,
+    questions,
+    sessionStatuses,
+    isLoading: isInteractionsLoading,
+  } = useOpencodeData(opencodeUrl);
+
+  const hierarchyData = useMemo(() => {
+    const sessionsWithSandbox: SessionWithSandboxInfo[] = (sessions ?? []).map(
+      (session: Session) => ({
+        ...session,
+        sandbox: {
+          id: sandboxId,
+          workspaceId,
+          opencodeUrl,
+        },
+      }),
+    );
+
+    const hierarchy = buildSessionHierarchy(sessionsWithSandbox);
+    const allSessions = flattenHierarchy(hierarchy);
+
+    return {
+      hierarchy,
+      allSessions,
+      allSessionIds: allSessions.map((s) => s.id),
+    };
+  }, [sessions, sandboxId, workspaceId, opencodeUrl]);
+
+  const todosResults = useQueries({
+    queries: hierarchyData.allSessionIds.map((sessionId) => ({
+      ...opencodeTodosQuery(opencodeUrl, sessionId),
+      enabled: !!opencodeUrl && !!sessionId,
+    })),
+  });
+
+  const todosBySession = useMemo(() => {
+    const map = new Map<string, Todo[]>();
+    for (let i = 0; i < hierarchyData.allSessionIds.length; i++) {
+      const sessionId = hierarchyData.allSessionIds[i];
+      if (sessionId) {
+        map.set(sessionId, (todosResults[i]?.data ?? []) as Todo[]);
+      }
+    }
+    return map;
+  }, [hierarchyData.allSessionIds, todosResults]);
+
+  return useMemo(() => {
+    const { interactions, needsAttention } = aggregateInteractions(
+      hierarchyData.allSessions.map((s) => s.id),
+      sessionStatuses,
+      permissions,
+      questions,
+    );
+
+    const sessionInteractions = hierarchyData.allSessions.map((session) => {
+      const interaction = interactions.get(session.id);
+      return {
+        sessionId: session.id,
+        status: interaction?.status ?? ("unknown" as const),
+        pendingPermissions: interaction?.pendingPermissions ?? [],
+        pendingQuestions: interaction?.pendingQuestions ?? [],
+        todos: todosBySession.get(session.id) ?? [],
+      };
+    });
+
+    return {
+      hierarchy: hierarchyData.hierarchy,
+      sessionInteractions,
+      needsAttention,
+      totalCount: hierarchyData.allSessions.length,
+      isLoading: isSessionsLoading || isInteractionsLoading,
+    };
+  }, [
+    hierarchyData,
+    sessionStatuses,
+    permissions,
+    questions,
+    todosBySession,
+    isSessionsLoading,
+    isInteractionsLoading,
+  ]);
+}
+
+function SessionsTabTrigger(props: SessionsTabProps) {
+  const { totalCount, needsAttention } = useSandboxSessions(props);
+
+  return (
+    <TabsTrigger value="sessions" className="relative gap-1.5">
+      Sessions
+      {totalCount > 0 && (
+        <Badge
+          variant="secondary"
+          className="text-[10px] h-4 min-w-4 px-1 font-normal"
+        >
+          {totalCount}
+        </Badge>
+      )}
+      {needsAttention && (
+        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500" />
+      )}
+    </TabsTrigger>
+  );
+}
+
+function SessionsTab(props: SessionsTabProps) {
+  const { opencodeUrl, workspaceId } = props;
+  const { hierarchy, sessionInteractions, isLoading } =
+    useSandboxSessions(props);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const directory = workspaceId ?? "/home/dev/workspace";
+
+  const handleCreateSession = async () => {
+    setIsCreating(true);
+    try {
+      const result = await createOpenCodeSession(
+        opencodeUrl,
+        "/home/dev/workspace",
+      );
+      if ("error" in result) {
+        toast.error(`Failed to create session: ${result.error}`);
+      } else {
+        toast.success(`Session created: ${result.sessionId.slice(0, 8)}`);
+      }
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full"
+        onClick={handleCreateSession}
+        disabled={isCreating}
+      >
+        {isCreating ? (
+          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        ) : (
+          <MessageSquarePlus className="h-4 w-4 mr-2" />
+        )}
+        Start New Session
+      </Button>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground py-8 justify-center">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading sessions...
+        </div>
+      ) : hierarchy.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          <Bot className="h-8 w-8 mx-auto mb-2 opacity-50" />
+          <p className="text-sm">No sessions yet</p>
+        </div>
+      ) : (
+        <SessionHierarchy
+          hierarchy={hierarchy}
+          interactions={sessionInteractions}
+          opencodeUrl={opencodeUrl}
+          directory={directory}
+        />
+      )}
+    </div>
+  );
+}
+
 function RepositoriesTab({ sandboxId }: { sandboxId: string }) {
   const { data, isLoading, refetch } = useQuery(
     sandboxGitStatusQuery(sandboxId),
@@ -634,71 +852,292 @@ function RepositoriesTab({ sandboxId }: { sandboxId: string }) {
         ) : (
           <div className="space-y-3">
             {repos.map((repo) => (
-              <div
-                key={repo.path}
-                className="flex items-start justify-between p-3 rounded-lg border bg-muted/30"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="font-mono text-sm font-medium truncate">
-                    {repo.path}
-                  </div>
-                  {repo.error ? (
-                    <div className="text-xs text-destructive mt-1">
-                      {repo.error}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3 mt-1.5">
-                      {repo.branch && (
-                        <div className="flex items-center gap-1 text-xs">
-                          <GitBranch className="h-3 w-3 text-muted-foreground" />
-                          <span className="font-mono">{repo.branch}</span>
-                        </div>
-                      )}
-                      {repo.lastCommit && (
-                        <span
-                          className="text-xs text-muted-foreground truncate max-w-[200px]"
-                          title={repo.lastCommit}
-                        >
-                          {repo.lastCommit}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col items-end gap-1.5 ml-3">
-                  {repo.dirty && (
-                    <Badge variant="warning" className="text-[10px] h-5 px-1.5">
-                      Dirty
-                    </Badge>
-                  )}
-                  {repo.ahead > 0 && (
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px] h-5 px-1.5"
-                    >
-                      +{repo.ahead}
-                    </Badge>
-                  )}
-                  {repo.behind > 0 && (
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px] h-5 px-1.5"
-                    >
-                      -{repo.behind}
-                    </Badge>
-                  )}
-                  {!repo.error && !repo.dirty && repo.ahead === 0 && (
-                    <Badge variant="success" className="text-[10px] h-5 px-1.5">
-                      Clean
-                    </Badge>
-                  )}
-                </div>
-              </div>
+              <RepoRow key={repo.path} sandboxId={sandboxId} repo={repo} />
             ))}
           </div>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function RepoRow({
+  sandboxId,
+  repo,
+}: {
+  sandboxId: string;
+  repo: {
+    path: string;
+    branch: string | null;
+    lastCommit: string | null;
+    dirty: boolean;
+    ahead: number;
+    behind: number;
+    error?: string;
+  };
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [commitMessage, setCommitMessage] = useState("");
+
+  const {
+    data: diffData,
+    isLoading: diffLoading,
+    refetch: refetchDiff,
+  } = useQuery({
+    ...sandboxGitDiffQuery(sandboxId),
+    enabled: expanded,
+  });
+
+  const diffRepo = diffData?.repos?.find(
+    (r: { path: string }) => r.path === repo.path,
+  );
+  const files = diffRepo?.files ?? [];
+
+  const commitMutation = useGitCommit(sandboxId);
+  const pushMutation = useGitPush(sandboxId);
+
+  const handleCommit = async () => {
+    if (!commitMessage.trim()) return;
+    try {
+      const result = await commitMutation.mutateAsync({
+        repoPath: repo.path,
+        message: commitMessage.trim(),
+      });
+      if (result?.success) {
+        toast.success(`Committed: ${result.hash ?? "success"}`);
+        setCommitMessage("");
+        refetchDiff();
+      } else {
+        toast.error(`Commit failed: ${result?.error ?? "Unknown error"}`);
+      }
+    } catch (e) {
+      toast.error(
+        `Commit failed: ${e instanceof Error ? e.message : "Unknown error"}`,
+      );
+    }
+  };
+
+  const handlePush = async () => {
+    try {
+      const result = await pushMutation.mutateAsync({
+        repoPath: repo.path,
+      });
+      if (result?.success) {
+        toast.success("Pushed successfully");
+      } else {
+        toast.error(`Push failed: ${result?.error ?? "Unknown error"}`);
+      }
+    } catch (e) {
+      toast.error(
+        `Push failed: ${e instanceof Error ? e.message : "Unknown error"}`,
+      );
+    }
+  };
+
+  const handleCommitAndPush = async () => {
+    if (!commitMessage.trim()) return;
+    try {
+      const commitResult = await commitMutation.mutateAsync({
+        repoPath: repo.path,
+        message: commitMessage.trim(),
+      });
+      if (!commitResult || !commitResult.success) {
+        toast.error(`Commit failed: ${commitResult?.error ?? "Unknown error"}`);
+        return;
+      }
+      toast.success(`Committed: ${commitResult.hash ?? "success"}`);
+      setCommitMessage("");
+
+      const pushResult = await pushMutation.mutateAsync({
+        repoPath: repo.path,
+      });
+      if (pushResult?.success) {
+        toast.success("Pushed successfully");
+        refetchDiff();
+      } else {
+        toast.error(`Push failed: ${pushResult?.error ?? "Unknown error"}`);
+      }
+    } catch (e) {
+      toast.error(
+        `Operation failed: ${e instanceof Error ? e.message : "Unknown error"}`,
+      );
+    }
+  };
+
+  const isBusy = commitMutation.isPending || pushMutation.isPending;
+
+  return (
+    <div className="rounded-lg border bg-muted/30 overflow-hidden">
+      <button
+        type="button"
+        className="flex items-start justify-between p-3 w-full text-left hover:bg-muted/50 transition-colors"
+        onClick={() => {
+          setExpanded(!expanded);
+          if (!expanded && !diffData) {
+            refetchDiff();
+          }
+        }}
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="font-mono text-sm font-medium truncate">
+              {repo.path}
+            </div>
+            {repo.error ? (
+              <div className="text-xs text-destructive mt-1">{repo.error}</div>
+            ) : (
+              <div className="flex items-center gap-3 mt-1.5">
+                {repo.branch && (
+                  <div className="flex items-center gap-1 text-xs">
+                    <GitBranch className="h-3 w-3 text-muted-foreground" />
+                    <span className="font-mono">{repo.branch}</span>
+                  </div>
+                )}
+                {repo.lastCommit && (
+                  <span
+                    className="text-xs text-muted-foreground truncate max-w-[200px]"
+                    title={repo.lastCommit}
+                  >
+                    {repo.lastCommit}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 ml-3">
+          {repo.dirty && (
+            <Badge variant="warning" className="text-[10px] h-5 px-1.5">
+              Dirty
+            </Badge>
+          )}
+          {repo.ahead > 0 && (
+            <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+              +{repo.ahead}
+            </Badge>
+          )}
+          {repo.behind > 0 && (
+            <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+              -{repo.behind}
+            </Badge>
+          )}
+          {!repo.error && !repo.dirty && repo.ahead === 0 && (
+            <Badge variant="success" className="text-[10px] h-5 px-1.5">
+              Clean
+            </Badge>
+          )}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t px-3 py-3 space-y-3">
+          {diffLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground py-4 justify-center text-sm">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading diff...
+            </div>
+          ) : files.length === 0 ? (
+            <div className="flex items-center gap-2 text-muted-foreground py-4 justify-center text-sm">
+              <Check className="h-3.5 w-3.5" />
+              Working tree clean
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1">
+                {files.map((file) => (
+                  <div
+                    key={file.path}
+                    className="flex items-center justify-between py-1 px-2 rounded text-xs font-mono hover:bg-muted/50"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{file.path}</span>
+                      {file.added > 0 &&
+                        file.removed === 0 &&
+                        file.added === 1 && (
+                          <Badge
+                            variant="outline"
+                            className="text-[9px] h-4 px-1 font-sans"
+                          >
+                            new
+                          </Badge>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2 ml-2 shrink-0">
+                      {file.added > 0 && (
+                        <span className="text-green-500">+{file.added}</span>
+                      )}
+                      {file.removed > 0 && (
+                        <span className="text-red-500">-{file.removed}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t pt-3 space-y-2">
+                <Input
+                  placeholder="Commit message..."
+                  value={commitMessage}
+                  onChange={(e) => setCommitMessage(e.target.value)}
+                  disabled={isBusy}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey &&
+                      commitMessage.trim()
+                    ) {
+                      handleCommit();
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!commitMessage.trim() || isBusy}
+                    onClick={handleCommit}
+                  >
+                    {commitMutation.isPending && !pushMutation.isPending && (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    )}
+                    <GitCommitHorizontal className="h-3 w-3 mr-1" />
+                    Commit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isBusy}
+                    onClick={handlePush}
+                  >
+                    {pushMutation.isPending && !commitMutation.isPending && (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    )}
+                    <Send className="h-3 w-3 mr-1" />
+                    Push
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!commitMessage.trim() || isBusy}
+                    onClick={handleCommitAndPush}
+                  >
+                    {isBusy && (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    )}
+                    Commit & Push
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

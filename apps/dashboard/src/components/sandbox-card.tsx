@@ -17,8 +17,10 @@ import {
 import { useEffect, useRef } from "react";
 import type { Sandbox, Workspace } from "@/api/client";
 import {
+  opencodeSessionsQuery,
   sandboxBrowserStatusQuery,
   sandboxDevCommandsQuery,
+  sandboxGitStatusQuery,
   useStartBrowser,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +37,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useOpencodeData } from "@/hooks/use-opencode-data";
 import { formatRelativeTime } from "@/lib/utils";
 
 interface SandboxCardProps {
@@ -157,6 +160,16 @@ export function SandboxCard({
 
           {sandbox.status === "running" && (
             <BrowserStatusBadge sandboxId={sandbox.id} />
+          )}
+
+          {sandbox.status === "running" && (
+            <SandboxActivitySummary
+              opencodeUrl={sandbox.runtime.urls.opencode}
+            />
+          )}
+
+          {sandbox.status === "running" && (
+            <GitStatusBadges sandboxId={sandbox.id} />
           )}
 
           {sandbox.status === "running" && (
@@ -449,6 +462,93 @@ function CardBrowserButton({ sandboxId }: { sandboxId: string }) {
         {browserStatus?.status === "running" ? "Open Browser" : "Start Browser"}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function SandboxActivitySummary({
+  opencodeUrl,
+}: {
+  opencodeUrl: string | undefined;
+}) {
+  const { data: sessions } = useQuery({
+    ...opencodeSessionsQuery(opencodeUrl ?? ""),
+    enabled: !!opencodeUrl,
+  });
+  const { permissions, questions, sessionStatuses } = useOpencodeData(
+    opencodeUrl,
+    !!opencodeUrl,
+  );
+
+  if (!opencodeUrl) return null;
+
+  const sessionCount = sessions?.length ?? 0;
+  const busyCount = Object.values(sessionStatuses).filter(
+    (s) => s.type === "busy",
+  ).length;
+  const attentionCount = permissions.length + questions.length;
+
+  if (sessionCount === 0 && busyCount === 0 && attentionCount === 0)
+    return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {sessionCount > 0 && (
+        <Badge
+          variant="outline"
+          className="text-[10px] h-5 px-1.5 font-normal gap-1"
+        >
+          🤖 {sessionCount} session{sessionCount !== 1 ? "s" : ""}
+        </Badge>
+      )}
+      {busyCount > 0 && (
+        <Badge
+          variant="outline"
+          className="text-[10px] h-5 px-1.5 font-normal gap-1 border-blue-500/30 text-blue-600 dark:text-blue-400"
+        >
+          🔵 {busyCount} working
+        </Badge>
+      )}
+      {attentionCount > 0 && (
+        <Badge
+          variant="outline"
+          className="text-[10px] h-5 px-1.5 font-normal gap-1 border-amber-500/30 text-amber-600 dark:text-amber-400"
+        >
+          ⚠️ {attentionCount} need attention
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function GitStatusBadges({ sandboxId }: { sandboxId: string }) {
+  const { data: gitStatus } = useQuery(sandboxGitStatusQuery(sandboxId));
+
+  if (!gitStatus?.repos?.length) return null;
+
+  const isDirty = gitStatus.repos.some((r) => r.dirty);
+  const maxAhead = Math.max(...gitStatus.repos.map((r) => r.ahead ?? 0));
+
+  if (!isDirty && maxAhead <= 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {isDirty && (
+        <Badge
+          variant="outline"
+          className="text-[10px] h-5 px-1.5 font-normal gap-1 border-red-500/30 text-red-600 dark:text-red-400"
+        >
+          🔴 dirty
+        </Badge>
+      )}
+      {maxAhead > 0 && (
+        <Badge
+          variant="outline"
+          className="text-[10px] h-5 px-1.5 font-normal gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+        >
+          ↑{maxAhead}
+        </Badge>
+      )}
+    </div>
   );
 }
 

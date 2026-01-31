@@ -11,6 +11,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { sandboxDetailQuery } from "@/api/queries";
+import { sandboxGitStatusQuery } from "@/api/queries/sandbox";
 import { ExpandableInterventions } from "@/components/expandable-interventions";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { SessionTodoInfo } from "@/components/session-todo-info";
@@ -68,6 +69,15 @@ export function TaskCard({
     ...sandboxDetailQuery(task.data.sandboxId ?? ""),
     enabled: !!task.data.sandboxId,
   });
+
+  const { data: gitStatus } = useQuery({
+    ...sandboxGitStatusQuery(task.data.sandboxId ?? ""),
+    enabled: !!task.data.sandboxId && task.status === "active",
+  });
+
+  const hasDirtyRepos = gitStatus?.repos?.some((r) => r.dirty) ?? false;
+  const maxAhead =
+    gitStatus?.repos?.reduce((max, r) => Math.max(max, r.ahead ?? 0), 0) ?? 0;
 
   const {
     totalCount,
@@ -146,6 +156,22 @@ export function TaskCard({
               <span className="text-xs font-mono text-muted-foreground truncate">
                 {task.data.branchName}
               </span>
+              {hasDirtyRepos && (
+                <Badge
+                  variant="destructive"
+                  className="text-[10px] h-4 px-1 py-0 leading-none"
+                >
+                  dirty
+                </Badge>
+              )}
+              {maxAhead > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] h-4 px-1 py-0 leading-none"
+                >
+                  ↑{maxAhead}
+                </Badge>
+              )}
             </div>
           )}
 
@@ -355,6 +381,7 @@ export function TaskSessionsStatus({
         permissions={aggregatedInteraction.pendingPermissions}
         questions={aggregatedInteraction.pendingQuestions}
         compact={true}
+        opencodeUrl={opencodeUrl}
       />
     </div>
   );
