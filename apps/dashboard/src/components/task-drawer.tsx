@@ -155,7 +155,7 @@ export function TaskDrawer({
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-[700px] sm:w-[700px] sm:max-w-none p-0 flex flex-col gap-0"
+        className="w-[900px] sm:w-[900px] sm:max-w-none p-0 flex flex-col gap-0"
       >
         {!taskData ? (
           <div className="p-6">

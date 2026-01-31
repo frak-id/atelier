@@ -11,8 +11,10 @@ import {
   Loader2,
   Maximize2,
   Monitor,
+  Pause,
   Play,
   RefreshCw,
+  RotateCcw,
   Terminal,
   Trash2,
 } from "lucide-react";
@@ -26,8 +28,11 @@ import {
   taskListQuery,
   useDeleteSandbox,
   useExecCommand,
+  useRestartSandbox,
   useStartBrowser,
+  useStartSandbox,
   useStopBrowser,
+  useStopSandbox,
   workspaceDetailQuery,
 } from "@/api/queries";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
@@ -52,6 +57,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatDate } from "@/lib/utils";
 
 interface SandboxDrawerProps {
@@ -93,6 +103,9 @@ export function SandboxDrawer({
   });
 
   const deleteMutation = useDeleteSandbox();
+  const stopMutation = useStopSandbox();
+  const startMutation = useStartSandbox();
+  const restartMutation = useRestartSandbox();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
 
@@ -125,7 +138,7 @@ export function SandboxDrawer({
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-[700px] sm:w-[700px] sm:max-w-none p-0 flex flex-col gap-0"
+        className="w-[900px] sm:w-[900px] sm:max-w-none p-0 flex flex-col gap-0"
       >
         {!sandbox ? (
           <div className="p-6">
@@ -183,53 +196,155 @@ export function SandboxDrawer({
                     Immerse
                   </Link>
                 </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setIsDeleteDialogOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
               </div>
 
               {sandbox.status === "running" && (
-                <div className="flex items-center gap-2 mt-4">
-                  <Button variant="outline" size="sm" asChild>
-                    <a
-                      href={sandbox.runtime.urls.vscode}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Monitor className="h-4 w-4 mr-2" />
-                      VSCode
-                    </a>
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <a
-                      href={sandbox.runtime.urls.terminal}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Terminal className="h-4 w-4 mr-2" />
-                      Terminal
-                    </a>
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <a
-                      href={sandbox.runtime.urls.opencode}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Bot className="h-4 w-4 mr-2" />
-                      OpenCode
-                    </a>
-                  </Button>
+                <div className="flex items-center justify-between mt-4">
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={sandbox.runtime.urls.vscode}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Monitor className="h-4 w-4 mr-2" />
+                        VSCode
+                      </a>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={sandbox.runtime.urls.terminal}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Terminal className="h-4 w-4 mr-2" />
+                        Terminal
+                      </a>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={sandbox.runtime.urls.opencode}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Bot className="h-4 w-4 mr-2" />
+                        OpenCode
+                      </a>
+                    </Button>
 
-                  <BrowserButton
-                    sandboxId={sandbox.id}
-                    browserStatus={browserStatus ?? undefined}
-                  />
+                    <BrowserButton
+                      sandboxId={sandbox.id}
+                      browserStatus={browserStatus ?? undefined}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          onClick={() => stopMutation.mutate(sandbox.id)}
+                          disabled={stopMutation.isPending}
+                        >
+                          {stopMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Pause className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Stop</TooltipContent>
+                    </Tooltip>
+                    {sandbox.workspaceId && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            onClick={() => restartMutation.mutate(sandbox.id)}
+                            disabled={restartMutation.isPending}
+                          >
+                            {restartMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Restart</TooltipContent>
+                      </Tooltip>
+                    )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setIsDeleteDialogOpen(true)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Delete</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+              )}
+
+              {sandbox.status === "stopped" && (
+                <div className="flex items-center justify-end gap-1 mt-4">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => startMutation.mutate(sandbox.id)}
+                        disabled={startMutation.isPending}
+                      >
+                        {startMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Start</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setIsDeleteDialogOpen(true)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete</TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
+
+              {(sandbox.status === "error" ||
+                sandbox.status === "creating") && (
+                <div className="flex items-center justify-end gap-1 mt-4">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setIsDeleteDialogOpen(true)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete</TooltipContent>
+                  </Tooltip>
                 </div>
               )}
             </SheetHeader>
