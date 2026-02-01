@@ -144,12 +144,12 @@ function TasksPage() {
             Manage AI coding tasks with kanban boards per workspace
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Select
             value={filterWorkspaceId}
             onValueChange={setFilterWorkspaceId}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[150px] sm:w-[180px]">
               <SelectValue placeholder="All Workspaces" />
             </SelectTrigger>
             <SelectContent>
@@ -377,16 +377,16 @@ function TasksListView({
               <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[30%]">
                 Title
               </th>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[15%]">
+              <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[15%] hidden md:table-cell">
                 Workspace
               </th>
               <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[10%]">
                 Status
               </th>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[25%]">
+              <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[25%] hidden sm:table-cell">
                 Progress
               </th>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[10%]">
+              <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[10%] hidden lg:table-cell">
                 Created
               </th>
               <th className="h-10 px-4 text-right font-medium text-muted-foreground w-[10%]">
@@ -398,7 +398,7 @@ function TasksListView({
             {sortedTasks.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={99}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No tasks found. Create a task in a workspace to get started.
@@ -495,7 +495,9 @@ function TaskRow({
           </div>
         )}
       </td>
-      <td className="p-4 align-top text-muted-foreground">{workspaceName}</td>
+      <td className="p-4 align-top text-muted-foreground hidden md:table-cell">
+        {workspaceName}
+      </td>
       <td className="p-4 align-top">
         <Badge
           variant={
@@ -509,7 +511,7 @@ function TaskRow({
           {task.status}
         </Badge>
       </td>
-      <td className="p-4 align-top">
+      <td className="p-4 align-top hidden sm:table-cell">
         <div className="space-y-2">
           {todoProgress.total > 0 ? (
             <>
@@ -554,7 +556,7 @@ function TaskRow({
           )}
         </div>
       </td>
-      <td className="p-4 align-top text-muted-foreground whitespace-nowrap">
+      <td className="p-4 align-top text-muted-foreground whitespace-nowrap hidden lg:table-cell">
         {formatDate(task.createdAt)}
       </td>
       <td className="p-4 align-top text-right">

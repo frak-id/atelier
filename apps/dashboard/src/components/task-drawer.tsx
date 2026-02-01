@@ -155,7 +155,7 @@ export function TaskDrawer({
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-[900px] sm:w-[900px] sm:max-w-none p-0 flex flex-col gap-0"
+        className="w-full sm:w-[min(900px,calc(100vw-2rem))] sm:max-w-none p-0 flex flex-col gap-0"
       >
         {!taskData ? (
           <div className="p-6">
@@ -163,12 +163,12 @@ export function TaskDrawer({
           </div>
         ) : (
           <>
-            <SheetHeader className="p-6 border-b flex-shrink-0">
-              <div className="space-y-4">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <SheetTitle className="text-xl font-bold">
+            <SheetHeader className="p-4 sm:p-6 border-b flex-shrink-0">
+              <div className="space-y-3 sm:space-y-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <SheetTitle className="text-lg sm:text-xl font-bold truncate">
                         {taskData.title}
                       </SheetTitle>
                       <Badge
@@ -269,7 +269,7 @@ export function TaskDrawer({
                   </div>
 
                   {sandbox?.status === "running" && sandbox.runtime?.urls && (
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap overflow-x-auto">
                       <Button variant="outline" size="sm" asChild>
                         <a
                           href={sandbox.runtime.urls.vscode}
@@ -308,7 +308,7 @@ export function TaskDrawer({
             </SheetHeader>
 
             <ScrollArea className="flex-1">
-              <div className="p-6 space-y-6">
+              <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
                 <Card>
                   <CardHeader>
                     <CardTitle>Description</CardTitle>
@@ -427,7 +427,7 @@ export function TaskDrawer({
                     <CardTitle>Metadata</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                       <div className="text-muted-foreground">Task ID</div>
                       <code className="font-mono bg-muted px-2 py-1 rounded truncate">
                         {taskData.id}
