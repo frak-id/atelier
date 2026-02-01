@@ -87,6 +87,7 @@ import {
   type SessionWithSandboxInfo,
 } from "@/lib/session-hierarchy";
 import { formatDate } from "@/lib/utils";
+import { ServiceStatus } from "@frak-sandbox/manager/types";
 
 interface SandboxDrawerProps {
   sandboxId: string | null;
@@ -1338,7 +1339,7 @@ function ServicesTab({
   services,
 }: {
   sandboxId: string;
-  services?: { name: string; running: boolean; pid?: number; port?: number }[];
+  services?: ServiceStatus[];
 }) {
   const stopMutation = useServiceStop(sandboxId);
   const restartMutation = useServiceRestart(sandboxId);
@@ -1366,10 +1367,20 @@ function ServicesTab({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Badge
-                    variant={service.running ? "success" : "secondary"}
+                    variant={
+                      service.running
+                        ? "success"
+                        : service.status === "error"
+                          ? "error"
+                          : "secondary"
+                    }
                     className="h-5 px-1.5"
                   >
-                    {service.running ? "Running" : "Stopped"}
+                    {service.running
+                      ? "Running"
+                      : service.status === "error"
+                        ? `Exit ${service.exitCode ?? "?"}`
+                        : "Stopped"}
                   </Badge>
                   {service.running ? (
                     <>

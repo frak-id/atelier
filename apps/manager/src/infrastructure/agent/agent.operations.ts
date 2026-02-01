@@ -11,7 +11,17 @@ export class AgentOperations {
   constructor(private readonly client: AgentClient) {}
 
   async services(sandboxId: string): Promise<{ services: ServiceStatus[] }> {
-    return this.client.serviceList(sandboxId);
+    const result = await this.client.serviceList(sandboxId);
+    return {
+      services: result.services.map((s) => ({
+        ...s,
+        pid: s.pid ?? undefined,
+        port: s.port ?? undefined,
+        startedAt: s.startedAt || undefined,
+        exitCode: s.exitCode ?? undefined,
+        logFile: s.logFile ?? undefined,
+      })),
+    };
   }
 
   async logs(

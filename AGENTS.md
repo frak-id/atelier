@@ -16,7 +16,7 @@ bun run deploy       # Build + SSH deploy to production
 
 | Constraint | Rule | Why |
 |------------|------|-----|
-| **sandbox-agent** | Deno runtime, NO Bun/Node APIs | Bun crashes in Firecracker (SIGILL/AVX) |
+| **sandbox-agent** | Rust runtime, NO Bun/Node APIs | Bun crashes in Firecracker (SIGILL/AVX) |
 | **LVM snapshots** | ALWAYS use `-kn` flag | Without it, volume invisible to FC |
 | **Caddy routes** | Wildcard MUST be last | CaddyService auto-manages ordering |
 | **CLI** | MUST run as root | System-level operations |
@@ -28,7 +28,7 @@ bun run deploy       # Build + SSH deploy to production
 |-----------|---------|-----|
 | Manager API | **Bun** | Performance, native Elysia |
 | Dashboard | **Vite/Browser** | React SPA, static deploy |
-| Sandbox Agent | **Deno** | Lightweight, vsock support, no AVX |
+| Sandbox Agent | **Rust** | Lightweight, vsock support, no AVX |
 | Agent (Rust) | **Tokio** | Alternative implementation |
 | CLI | **Bun** (compiled) | Native binary for host server |
 

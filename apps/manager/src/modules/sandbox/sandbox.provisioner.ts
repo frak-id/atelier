@@ -203,9 +203,6 @@ ${dnsLines}
           user: "root" as const,
           autoStart: false,
         },
-        agent: {
-          port: config.raw.services.agent.port,
-        },
       },
     } satisfies SandboxConfig;
     await Bun.write(

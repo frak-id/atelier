@@ -8,13 +8,13 @@ Things that will break the system if ignored.
 |-----------|---------|-----|
 | Manager API | **Bun** | Performance, native Elysia |
 | Dashboard | **Vite/Browser** | React SPA, static deploy |
-| Sandbox Agent | **Deno** | Lightweight, vsock support, no AVX issues in FC |
+| Sandbox Agent | **Rust** | Lightweight, vsock support, no AVX issues in FC |
 | Agent (Rust) | **Tokio** | Alternative implementation |
 | CLI (server) | **Bun** (compiled) | Runs on host, not VM |
 
 ```bash
-# Agent build - Deno compile for Linux
-deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output dist/sandbox-agent src/index.ts
+# Agent build - Rust compile for Linux
+cargo build --release --target x86_64-unknown-linux-musl
 ```
 
 ## LVM Snapshots
