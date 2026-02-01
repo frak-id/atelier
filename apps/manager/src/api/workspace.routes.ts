@@ -7,6 +7,7 @@ import {
 import {
   CreateWorkspaceBodySchema,
   IdParamSchema,
+  PrebuildCancelResponseSchema,
   PrebuildTriggerResponseSchema,
   UpdateWorkspaceBodySchema,
   WorkspaceListResponseSchema,
@@ -135,6 +136,28 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
     {
       params: IdParamSchema,
       response: PrebuildTriggerResponseSchema,
+    },
+  )
+  .post(
+    "/:id/prebuild/cancel",
+    async ({ params }) => {
+      const workspace = workspaceService.getById(params.id);
+      if (!workspace) {
+        throw new NotFoundError("Workspace", params.id);
+      }
+
+      log.info({ workspaceId: params.id }, "Cancelling prebuild");
+      await prebuildRunner.cancel(params.id);
+
+      return {
+        message: "Prebuild cancelled",
+        workspaceId: params.id,
+        status: "none",
+      };
+    },
+    {
+      params: IdParamSchema,
+      response: PrebuildCancelResponseSchema,
     },
   )
   .delete(

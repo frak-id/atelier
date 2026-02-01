@@ -9,6 +9,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Square,
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
@@ -16,6 +17,7 @@ import type { ConfigFile } from "@/api/client";
 import {
   configFilesListQuery,
   sandboxListQuery,
+  useCancelPrebuild,
   useCreateConfigFile,
   useCreateSandbox,
   useDeleteConfigFile,
@@ -86,6 +88,7 @@ function WorkspaceDetailPage() {
   const createSandboxMutation = useCreateSandbox();
   const prebuildMutation = useTriggerPrebuild();
   const deletePrebuildMutation = useDeletePrebuild();
+  const cancelPrebuildMutation = useCancelPrebuild();
   const createConfigMutation = useCreateConfigFile();
   const updateConfigMutation = useUpdateConfigFile();
   const deleteConfigMutation = useDeleteConfigFile();
@@ -140,21 +143,33 @@ function WorkspaceDetailPage() {
             <Badge variant={prebuildVariant[prebuildStatus]}>
               Prebuild: {prebuildStatus}
             </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => prebuildMutation.mutate(id)}
-              disabled={
-                prebuildMutation.isPending ||
-                deletePrebuildMutation.isPending ||
-                prebuildStatus === "building"
-              }
-              title="Rebuild prebuild (deletes existing and creates fresh from base image)"
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${prebuildMutation.isPending || prebuildStatus === "building" ? "animate-spin" : ""}`}
-              />
-            </Button>
+            {prebuildStatus === "building" ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => cancelPrebuildMutation.mutate(id)}
+                disabled={cancelPrebuildMutation.isPending}
+                title="Cancel prebuild"
+              >
+                <Square
+                  className={`h-4 w-4 text-destructive ${cancelPrebuildMutation.isPending ? "animate-pulse" : ""}`}
+                />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => prebuildMutation.mutate(id)}
+                disabled={
+                  prebuildMutation.isPending || deletePrebuildMutation.isPending
+                }
+                title="Rebuild prebuild (deletes existing and creates fresh from base image)"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${prebuildMutation.isPending ? "animate-spin" : ""}`}
+                />
+              </Button>
+            )}
             {prebuildStatus === "ready" && (
               <Button
                 variant="ghost"

@@ -113,6 +113,15 @@ export type PrebuildTriggerResponse = Static<
   typeof PrebuildTriggerResponseSchema
 >;
 
+export const PrebuildCancelResponseSchema = t.Object({
+  message: t.String(),
+  workspaceId: t.String(),
+  status: t.String(),
+});
+export type PrebuildCancelResponse = Static<
+  typeof PrebuildCancelResponseSchema
+>;
+
 export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
   baseImage: "dev-base",
   vcpus: 2,

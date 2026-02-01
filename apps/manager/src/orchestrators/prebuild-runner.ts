@@ -37,6 +37,11 @@ interface PrebuildRunnerDependencies {
 }
 
 export class PrebuildRunner {
+  private readonly activeBuilds = new Map<
+    string,
+    { abortController: AbortController; sandboxId?: string }
+  >();
+
   constructor(private readonly deps: PrebuildRunnerDependencies) {}
 
   async run(workspaceId: string): Promise<void> {
@@ -50,6 +55,9 @@ export class PrebuildRunner {
         `Workspace '${workspaceId}' already has a prebuild in progress`,
       );
     }
+
+    const abortController = new AbortController();
+    this.activeBuilds.set(workspaceId, { abortController });
 
     this.updatePrebuildStatus(workspaceId, workspace, "building");
     log.info(
@@ -69,6 +77,8 @@ export class PrebuildRunner {
     let sandboxId: string | undefined;
 
     try {
+      this.throwIfAborted(workspaceId);
+
       const sandbox = await this.deps.sandboxSpawner.spawn({
         workspaceId,
         baseImage: workspace.config.baseImage,
@@ -77,8 +87,14 @@ export class PrebuildRunner {
       });
 
       sandboxId = sandbox.id;
+      const activeBuild = this.activeBuilds.get(workspaceId);
+      if (activeBuild) {
+        activeBuild.sandboxId = sandboxId;
+      }
 
       log.info({ prebuildSandboxId: sandbox.id }, "Prebuild sandbox spawned");
+
+      this.throwIfAborted(workspaceId);
 
       const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
         timeout: AGENT_READY_TIMEOUT,
@@ -88,13 +104,19 @@ export class PrebuildRunner {
         throw new Error("Agent failed to become ready");
       }
 
+      this.throwIfAborted(workspaceId);
       await this.runInitCommands(sandbox.id, workspace);
+
+      this.throwIfAborted(workspaceId);
       const commitHashes = await this.captureCommitHashes(
         sandbox.id,
         workspace,
       );
+
+      this.throwIfAborted(workspaceId);
       await this.warmupOpencode(sandbox.id, workspace.id);
 
+      this.throwIfAborted(workspaceId);
       await this.pushLatestAuthAndConfigs(sandbox.id);
       await this.prepareForSnapshot(sandbox.id);
       await this.createVmSnapshot(workspaceId, sandbox.id);
@@ -116,9 +138,15 @@ export class PrebuildRunner {
       );
       log.info({ workspaceId }, "Prebuild completed successfully");
     } catch (error) {
+      const isCancelled = error instanceof Error && error.name === "AbortError";
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      log.error({ workspaceId, error: errorMessage }, "Prebuild failed");
+
+      if (isCancelled) {
+        log.info({ workspaceId }, "Prebuild cancelled");
+      } else {
+        log.error({ workspaceId, error: errorMessage }, "Prebuild failed");
+      }
 
       if (sandboxId) {
         try {
@@ -131,8 +159,27 @@ export class PrebuildRunner {
         }
       }
 
-      this.updatePrebuildStatus(workspaceId, workspace, "failed");
-      throw error;
+      // Clean up any partial snapshots left behind
+      try {
+        await this.deleteVmSnapshot(workspaceId);
+      } catch (cleanupError) {
+        log.warn(
+          { workspaceId, error: cleanupError },
+          "Failed to cleanup partial VM snapshot",
+        );
+      }
+
+      this.updatePrebuildStatus(
+        workspaceId,
+        workspace,
+        isCancelled ? "none" : "failed",
+      );
+
+      if (!isCancelled) {
+        throw error;
+      }
+    } finally {
+      this.activeBuilds.delete(workspaceId);
     }
   }
 
@@ -142,6 +189,54 @@ export class PrebuildRunner {
         log.error({ workspaceId, error }, "Background prebuild failed");
       });
     });
+  }
+
+  async cancel(workspaceId: string): Promise<void> {
+    const activeBuild = this.activeBuilds.get(workspaceId);
+
+    if (activeBuild) {
+      log.info({ workspaceId }, "Cancelling active prebuild");
+      activeBuild.abortController.abort();
+      // The running build will handle cleanup via the catch block
+      return;
+    }
+
+    // No active build tracked — the process may have crashed while status
+    // was still "building". Force-reset status and clean up any leftovers.
+    const workspace = this.deps.workspaceService.getById(workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace '${workspaceId}' not found`);
+    }
+
+    if (workspace.config.prebuild?.status !== "building") {
+      throw new Error(`Workspace '${workspaceId}' has no prebuild to cancel`);
+    }
+
+    log.info({ workspaceId }, "Force-resetting stuck prebuild status");
+
+    try {
+      await this.deleteVmSnapshot(workspaceId);
+    } catch (cleanupError) {
+      log.warn(
+        { workspaceId, error: cleanupError },
+        "Failed to cleanup VM snapshot during force-reset",
+      );
+    }
+
+    this.updatePrebuildStatus(workspaceId, workspace, "none");
+  }
+
+  isBuilding(workspaceId: string): boolean {
+    return this.activeBuilds.has(workspaceId);
+  }
+
+  private throwIfAborted(workspaceId: string): void {
+    const activeBuild = this.activeBuilds.get(workspaceId);
+    if (activeBuild?.abortController.signal.aborted) {
+      const error = new Error("Prebuild cancelled");
+      error.name = "AbortError";
+      throw error;
+    }
   }
 
   async delete(workspaceId: string): Promise<void> {
