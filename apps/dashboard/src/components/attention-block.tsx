@@ -120,15 +120,17 @@ function PermissionRow({
   const isPending = replyMutation.isPending;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <Shield className="h-4 w-4 text-purple-400 shrink-0" />
-      <Badge variant="outline" className="shrink-0 text-xs">
-        {formatSessionId(permission.sessionID)}
-      </Badge>
-      <span className="text-sm flex-1 min-w-0 truncate">
-        {permission.permission}
-      </span>
-      <div className="flex items-center gap-1 shrink-0">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 py-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <Shield className="h-4 w-4 text-purple-400 shrink-0" />
+        <Badge variant="outline" className="shrink-0 text-xs">
+          {formatSessionId(permission.sessionID)}
+        </Badge>
+        <span className="text-sm flex-1 min-w-0 truncate">
+          {permission.permission}
+        </span>
+      </div>
+      <div className="flex items-center gap-1 shrink-0 self-end sm:self-auto">
         <Button
           size="sm"
           variant="default"
@@ -276,10 +278,13 @@ function QuestionRow({
       <CollapsibleTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-3 px-4 py-3 w-full text-left hover:bg-amber-500/5 transition-colors"
+          className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 w-full text-left hover:bg-amber-500/5 transition-colors"
         >
           <MessageCircleQuestion className="h-4 w-4 text-cyan-400 shrink-0" />
-          <Badge variant="outline" className="shrink-0 text-xs">
+          <Badge
+            variant="outline"
+            className="shrink-0 text-xs hidden sm:inline-flex"
+          >
             {formatSessionId(question.sessionID)}
           </Badge>
           <span className="text-sm flex-1 min-w-0 truncate">
