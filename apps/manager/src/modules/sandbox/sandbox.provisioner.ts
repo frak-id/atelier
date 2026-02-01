@@ -371,7 +371,7 @@ ${dnsLines}
       `${cacheDir}/connected-providers.json`,
       JSON.stringify(connectedProviders, null, 2),
     );
-    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.cache/oh-my-opencode`.quiet();
+    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.cache`.quiet();
   },
 
   async injectSandboxMd(
