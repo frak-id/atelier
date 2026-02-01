@@ -14,8 +14,6 @@ import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   AgentHealthSchema,
   AgentMetricsSchema,
-  AppPortListResponseSchema,
-  AppPortSchema,
   BrowserStartResponseSchema,
   BrowserStatusResponseSchema,
   BrowserStopResponseSchema,
@@ -39,12 +37,13 @@ import {
   LogsQuerySchema,
   LogsResponseSchema,
   PromoteToPrebuildResponseSchema,
-  RegisterAppBodySchema,
   ResizeStorageBodySchema,
   ResizeStorageResponseSchema,
   SandboxListQuerySchema,
   SandboxListResponseSchema,
   SandboxSchema,
+  ServiceActionResponseSchema,
+  ServiceNameParamsSchema,
   ServicesResponseSchema,
   SpawnJobSchema,
 } from "../schemas/index.ts";
@@ -186,27 +185,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           response: AgentMetricsSchema,
         },
       )
-      .get(
-        "/:id/apps",
-        async ({ sandbox }) => {
-          return agentClient.getApps(sandbox.id);
-        },
-        {
-          params: IdParamSchema,
-          response: AppPortListResponseSchema,
-        },
-      )
-      .post(
-        "/:id/apps",
-        async ({ body, sandbox }) => {
-          return agentClient.registerApp(sandbox.id, body.port, body.name);
-        },
-        {
-          params: IdParamSchema,
-          body: RegisterAppBodySchema,
-          response: AppPortSchema,
-        },
-      )
       .post(
         "/:id/exec",
         async ({ body, sandbox }) => {
@@ -245,6 +223,26 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         {
           params: IdParamSchema,
           response: ServicesResponseSchema,
+        },
+      )
+      .post(
+        "/:id/services/:name/stop",
+        async ({ params, sandbox }) => {
+          return agentClient.serviceStop(sandbox.id, params.name);
+        },
+        {
+          params: ServiceNameParamsSchema,
+          response: ServiceActionResponseSchema,
+        },
+      )
+      .post(
+        "/:id/services/:name/restart",
+        async ({ params, sandbox }) => {
+          return agentClient.serviceRestart(sandbox.id, params.name);
+        },
+        {
+          params: ServiceNameParamsSchema,
+          response: ServiceActionResponseSchema,
         },
       )
       .get(
@@ -595,43 +593,42 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             return { status: "off" as const };
           }
 
-          const health = await agentClient.health(sandbox.id);
-          const services = health.services as Record<string, boolean>;
-          if (services.browser) {
+          const websockify = await agentClient.serviceStatus(
+            sandbox.id,
+            "websockify",
+          );
+          if (websockify.running) {
             const browserUrl = sandbox.runtime.urls.browser;
             return { status: "running" as const, url: browserUrl };
           }
 
           const browserPort = config.raw.services.browser.port;
 
-          const workspace = sandbox.workspaceId
-            ? workspaceService.getById(sandbox.workspaceId)
-            : undefined;
-          const devCommands = workspace?.config.devCommands ?? [];
-          const defaultDevCommand =
-            devCommands.find((c) => c.isDefault) ?? devCommands[0];
-          const defaultUrl = defaultDevCommand?.port
-            ? `http://localhost:${defaultDevCommand.port}`
-            : "about:blank";
+          const ensureStarted = async (service: string) => {
+            try {
+              await agentClient.serviceStart(sandbox.id, service);
+            } catch (err) {
+              // 409 = already running, safe to ignore
+              if (!String(err).includes("already running")) throw err;
+            }
+          };
 
-          const browserCmd = [
-            `(setsid Xvfb :99 -screen 0 1280x900x24 > /var/log/sandbox/xvfb.log 2>&1 &)`,
-            `sleep 0.3`,
-            `(setsid su - dev -c "DISPLAY=:99 chromium --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --window-size=1280,900 --start-maximized '${defaultUrl}'" > /var/log/sandbox/chromium.log 2>&1 &)`,
-            `sleep 0.5`,
-            `(setsid x11vnc -display :99 -forever -shared -nopw -rfbport 5900 > /var/log/sandbox/x11vnc.log 2>&1 &)`,
-            `sleep 0.2`,
-            `(setsid websockify --web /opt/novnc ${browserPort} localhost:5900 > /var/log/sandbox/novnc.log 2>&1 &)`,
-          ].join("\n");
+          const startBrowser = async () => {
+            await ensureStarted("xvfb");
+            await new Promise((r) => setTimeout(r, 300));
+            await ensureStarted("chromium");
+            await new Promise((r) => setTimeout(r, 500));
+            await ensureStarted("x11vnc");
+            await new Promise((r) => setTimeout(r, 200));
+            await ensureStarted("websockify");
+          };
 
-          agentClient
-            .exec(sandbox.id, browserCmd, { timeout: 10000 })
-            .catch((err) => {
-              log.warn(
-                { sandboxId: sandbox.id, error: String(err) },
-                "Browser start exec failed",
-              );
-            });
+          startBrowser().catch((err) => {
+            log.warn(
+              { sandboxId: sandbox.id, error: String(err) },
+              "Browser start failed",
+            );
+          });
 
           const browserUrl = await CaddyService.registerBrowserRoute(
             sandbox.id,
@@ -666,9 +663,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           }
 
           try {
-            const health = await agentClient.health(sandbox.id);
-            const services = health.services as Record<string, boolean>;
-            if (services.browser) {
+            const websockify = await agentClient.serviceStatus(
+              sandbox.id,
+              "websockify",
+            );
+            if (websockify.running) {
               return { status: "running" as const, url: browserUrl };
             }
             return { status: "starting" as const, url: browserUrl };
@@ -688,22 +687,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             return { status: "off" as const };
           }
 
-          const killCmd = [
-            "pkill -f websockify || true",
-            "pkill -f x11vnc || true",
-            "pkill -f chrome || true",
-            "pkill -f chromium || true",
-            "pkill -f Xvfb || true",
-          ].join("\n");
-
-          agentClient
-            .exec(sandbox.id, killCmd, { timeout: 5000 })
-            .catch((err) => {
-              log.warn(
-                { sandboxId: sandbox.id, error: String(err) },
-                "Browser stop exec failed",
-              );
-            });
+          Promise.all([
+            agentClient.serviceStop(sandbox.id, "websockify").catch(() => {}),
+            agentClient.serviceStop(sandbox.id, "x11vnc").catch(() => {}),
+            agentClient.serviceStop(sandbox.id, "chromium").catch(() => {}),
+            agentClient.serviceStop(sandbox.id, "xvfb").catch(() => {}),
+          ]).catch(() => {});
 
           await CaddyService.removeBrowserRoute(sandbox.id);
 

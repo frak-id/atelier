@@ -9,31 +9,6 @@ use crate::response::json_ok;
 
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-fn check_port_listening(port: u16) -> bool {
-    let target = format!("{:04X}", port);
-
-    for path in &["/proc/net/tcp", "/proc/net/tcp6"] {
-        if let Ok(contents) = std::fs::read_to_string(path) {
-            for line in contents.lines().skip(1) {
-                let fields: Vec<&str> = line.split_whitespace().collect();
-                if fields.len() < 4 {
-                    continue;
-                }
-                let st = fields[3];
-                if st != "0A" {
-                    continue;
-                }
-                if let Some(port_hex) = fields[1].rsplit(':').next() {
-                    if port_hex == target {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    false
-}
-
 fn get_cpu_usage() -> f64 {
     std::fs::read_to_string("/proc/loadavg")
         .ok()
@@ -98,38 +73,13 @@ pub async fn handle_health() -> Response<Full<Bytes>> {
     let _ = *START_TIME;
 
     let cfg = SANDBOX_CONFIG.as_ref();
-    let services = cfg.map(|c| &c.services);
-
-    let vscode_port = services.map_or(8080, |s| s.vscode.port);
-    let opencode_port = services.map_or(3000, |s| s.opencode.port);
-    let ttyd_port = services.map_or(7681, |s| s.terminal.port);
-    let browser_port = services.and_then(|s| s.browser.as_ref()).map_or(6080, |b| b.port);
     let sandbox_id = cfg.map(|c| c.sandbox_id.clone());
 
-    let (vscode, opencode, sshd, ttyd, browser, uptime) =
-        tokio::task::spawn_blocking(move || {
-            (
-                check_port_listening(vscode_port),
-                check_port_listening(opencode_port),
-                check_port_listening(22),
-                check_port_listening(ttyd_port),
-                check_port_listening(browser_port),
-                START_TIME.elapsed().as_secs_f64(),
-            )
-        })
-        .await
-        .unwrap_or_default();
+    let uptime = START_TIME.elapsed().as_secs_f64();
 
     json_ok(serde_json::json!({
         "status": "healthy",
         "sandboxId": sandbox_id,
-        "services": {
-            "vscode": vscode,
-            "opencode": opencode,
-            "sshd": sshd,
-            "ttyd": ttyd,
-            "browser": browser
-        },
         "uptime": uptime
     }))
 }

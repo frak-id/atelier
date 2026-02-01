@@ -286,6 +286,42 @@ export function useStopBrowser(sandboxId: string) {
   });
 }
 
+export function useServiceStop(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "services", "stop", sandboxId],
+    mutationFn: async (name: string) =>
+      unwrap(
+        await api.api
+          .sandboxes({ id: sandboxId })
+          .services({ name })
+          .stop.post(),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.services(sandboxId),
+      });
+    },
+  });
+}
+
+export function useServiceRestart(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "services", "restart", sandboxId],
+    mutationFn: async (name: string) =>
+      unwrap(
+        await api.api
+          .sandboxes({ id: sandboxId })
+          .services({ name })
+          .restart.post(),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.services(sandboxId),
+      });
+    },
+  });
+}
+
 export function useSaveAsPrebuild() {
   return useMutation({
     mutationKey: ["sandboxes", "saveAsPrebuild"],

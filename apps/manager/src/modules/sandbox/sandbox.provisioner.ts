@@ -6,10 +6,8 @@ import type { NetworkAllocation } from "../../infrastructure/network/index.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
 import { SecretsService } from "../../infrastructure/secrets/index.ts";
 import type {
-  FileSecret,
   GitHubSourceConfig,
   MergedConfigFile,
-  RepoConfig,
   Workspace,
 } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
@@ -141,6 +139,18 @@ ${dnsLines}
       clonePath: r.clonePath,
       branch: r.branch,
     }));
+
+    const workspaceDir =
+      repos.length === 1 && repos[0]?.clonePath
+        ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
+        : "/home/dev/workspace";
+
+    const dashboardDomain = config.domains.dashboard;
+    const vsPort = config.raw.services.vscode.port;
+    const ocPort = config.raw.services.opencode.port;
+    const ttydPort = config.raw.services.terminal.port;
+    const browserPort = config.raw.services.browser.port;
+
     const sandboxConfig = {
       sandboxId: ctx.sandboxId,
       workspaceId: ctx.workspace?.id,
@@ -148,27 +158,57 @@ ${dnsLines}
       repos,
       createdAt: new Date().toISOString(),
       network: {
-        dashboardDomain: config.domains.dashboard,
+        dashboardDomain,
         managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
       },
       services: {
-        vscode: { port: config.raw.services.vscode.port },
-        opencode: { port: config.raw.services.opencode.port },
-        terminal: { port: config.raw.services.terminal.port },
-        browser: { port: config.raw.services.browser.port },
-        agent: { port: config.raw.services.agent.port },
+        vscode: {
+          port: vsPort,
+          command: `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vsPort} --auth none --disable-telemetry ${workspaceDir}`,
+          user: "dev" as const,
+          autoStart: true,
+        },
+        opencode: {
+          port: ocPort,
+          command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
+          user: "dev" as const,
+          autoStart: true,
+        },
+        terminal: {
+          port: ttydPort,
+          command: `ttyd -p ${ttydPort} -W -t fontSize=14 -t fontFamily=monospace su - dev`,
+          user: "root" as const,
+          autoStart: true,
+        },
+        xvfb: {
+          command: "Xvfb :99 -screen 0 1280x900x24",
+          user: "root" as const,
+          autoStart: false,
+        },
+        chromium: {
+          command:
+            "chromium --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --user-data-dir=/tmp/chromium-profile --window-size=1280,900 --start-maximized about:blank",
+          user: "dev" as const,
+          autoStart: false,
+          env: { DISPLAY: ":99" },
+        },
+        x11vnc: {
+          command: "x11vnc -display :99 -forever -shared -nopw -rfbport 5900",
+          user: "root" as const,
+          autoStart: false,
+        },
+        websockify: {
+          port: browserPort,
+          command: `websockify --web /opt/novnc ${browserPort} localhost:5900`,
+          user: "root" as const,
+          autoStart: false,
+        },
       },
     } satisfies SandboxConfig;
     await Bun.write(
       `${mountPoint}/etc/sandbox/config.json`,
       JSON.stringify(sandboxConfig, null, 2),
     );
-
-    const workspaceDir =
-      repos.length === 1 && repos[0]?.clonePath
-        ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
-        : "/home/dev/workspace";
-    await Bun.write(`${mountPoint}/etc/sandbox/workspace-dir`, workspaceDir);
   },
 
   async injectSecrets(
@@ -331,7 +371,7 @@ ${dnsLines}
       `${cacheDir}/connected-providers.json`,
       JSON.stringify(connectedProviders, null, 2),
     );
-    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.cache/oh-my-opencode`.quiet();
+    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.cache`.quiet();
   },
 
   async injectSandboxMd(
@@ -344,79 +384,67 @@ ${dnsLines}
   },
 
   generateSandboxMd(ctx: ProvisionContext): string {
-    const workspaceSection = ctx.workspace
-      ? `## Workspace: ${ctx.workspace.name}
+    const ws = ctx.workspace;
+    const reposSection = ws?.config.repos.length
+      ? ws.config.repos
+          .map((r) => {
+            const name = "url" in r ? r.url : r.repo;
+            return `- **${name}** (branch: \`${r.branch}\`, path: \`/home/dev${r.clonePath}\`)`;
+          })
+          .join("\n")
+      : "No repositories configured";
 
-### Repositories
-${ctx.workspace.config.repos.map((r) => `- ${this.getRepoDisplayName(r)}`).join("\n") || "No repositories configured"}
-`
+    const vsPort = config.raw.services.vscode.port;
+    const ocPort = config.raw.services.opencode.port;
+    const ttydPort = config.raw.services.terminal.port;
+
+    const devCommandsSection = ws?.config.devCommands?.length
+      ? ws.config.devCommands
+          .map((cmd) => {
+            const parts = [`\`${cmd.command}\``];
+            if (cmd.workdir) parts.push(`workdir: \`${cmd.workdir}\``);
+            if (cmd.port) parts.push(`port: ${cmd.port}`);
+            return `- **${cmd.name}**: ${parts.join(", ")}`;
+          })
+          .join("\n")
+      : "None configured";
+
+    const secretsSection =
+      ws?.config.secrets && Object.keys(ws.config.secrets).length > 0
+        ? `Available in \`/etc/sandbox/secrets/.env\` (source with: \`source /etc/sandbox/secrets/.env\`)\nKeys: ${Object.keys(ws.config.secrets).join(", ")}`
+        : "None configured";
+
+    const fileSecretsSection = ws?.config.fileSecrets?.length
+      ? ws.config.fileSecrets
+          .map(
+            (s) => `- **${s.name}**: \`${s.path.replace(/^~/, "/home/dev")}\``,
+          )
+          .join("\n")
       : "";
 
-    const fileSecretsSection = this.generateFileSecretsSection(
-      ctx.workspace?.config.fileSecrets,
-    );
+    return `# Sandbox: ${ctx.sandboxId}${ws ? ` (${ws.name})` : ""}
 
-    return `# Sandbox Environment: ${ctx.sandboxId}
+## Repositories
+${reposSection}
 
-${workspaceSection}## Available Services
+## Services
+| Service | Port | Logs |
+|---------|------|------|
+| code-server (VSCode) | ${vsPort} | \`/var/log/sandbox/vscode.log\` |
+| opencode | ${ocPort} | \`/var/log/sandbox/opencode.log\` |
+| terminal (ttyd) | ${ttydPort} | \`/var/log/sandbox/terminal.log\` |
+| sshd | 22 | — |
 
-| Service | URL | Port |
-|---------|-----|------|
-| VSCode Server | http://localhost:${config.raw.services.vscode.port} | ${config.raw.services.vscode.port} |
-| OpenCode Server | http://localhost:${config.raw.services.opencode.port} | ${config.raw.services.opencode.port} |
-| SSH | \`ssh dev@${ctx.network.ipAddress}\` | 22 |
+## Dev Commands
+${devCommandsSection}
 
-## Quick Commands
-
-\`\`\`bash
-# Check sandbox status
-cat /etc/sandbox/config.json
-
-# View service logs
-tail -f /var/log/sandbox/code-server.log
-tail -f /var/log/sandbox/opencode.log
-
-# Restart services
-sudo systemctl restart code-server
-sudo systemctl restart opencode
-\`\`\`
-
-## Secrets
-
-### Environment Variables
-Available in \`/etc/sandbox/secrets/.env\`
-Source with: \`source /etc/sandbox/secrets/.env\`
-${fileSecretsSection}
-## Workspace
-
-Your code is located in \`/home/dev/workspace\`
-
-## Troubleshooting
-
-- Services not responding? Check \`/var/log/sandbox/\`
-- Network issues? Run \`ping ${config.network.bridgeIp}\`
-- Need help? Check the project documentation
+## Environment Secrets
+${secretsSection}
+${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
+## Paths
+- Workspace: \`/home/dev/workspace\`
+- Config: \`/etc/sandbox/config.json\`
+- Logs: \`/var/log/sandbox/\`
 `;
-  },
-
-  generateFileSecretsSection(fileSecrets?: FileSecret[]): string {
-    if (!fileSecrets || fileSecrets.length === 0) return "";
-
-    const lines = fileSecrets.map(
-      (s) => `| ${s.name} | \`${s.path.replace(/^~/, "/home/dev")}\` |`,
-    );
-
-    return `
-### File Secrets
-| Name | Path |
-|------|------|
-${lines.join("\n")}`;
-  },
-
-  getRepoDisplayName(repo: RepoConfig): string {
-    if ("url" in repo) {
-      return `${repo.url} (branch: ${repo.branch})`;
-    }
-    return `${repo.repo} (branch: ${repo.branch})`;
   },
 };

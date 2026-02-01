@@ -25,7 +25,6 @@ export const queryKeys = {
       ["sandboxes", "list", filters] as const,
     detail: (id: string) => ["sandboxes", "detail", id] as const,
     job: (id: string) => ["sandboxes", "job", id] as const,
-    health: (id: string) => ["sandboxes", id, "health"] as const,
     metrics: (id: string) => ["sandboxes", id, "metrics"] as const,
     apps: (id: string) => ["sandboxes", id, "apps"] as const,
     services: (id: string) => ["sandboxes", id, "services"] as const,

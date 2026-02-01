@@ -38,9 +38,9 @@ import type {
   Workspace,
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
+import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { killProcess } from "../shared/lib/shell.ts";
-import { safeNanoid } from "../shared/lib/id.ts";
 
 const log = createChildLogger("sandbox-spawner");
 
@@ -458,32 +458,24 @@ class SpawnContext {
     // reads up-to-date credentials instead of stale prebuild data.
     await this.pushAuthAndConfigs();
 
-    const workspaceDir = this.workspace.config.repos?.[0]?.clonePath
-      ? `/home/dev${this.workspace.config.repos[0].clonePath}`
-      : "/home/dev/workspace";
-    const dashboardDomain =
-      config.domains?.dashboard ?? "sandbox-dash.nivelais.com";
-    const opencodePort = config.raw.services.opencode.port;
-    const vscodePort = config.raw.services.vscode.port;
-    const terminalPort = config.raw.services.terminal.port;
-
-    const servicesCmd = [
-      `(setsid su - dev -c "/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vscodePort} --auth none --disable-telemetry ${workspaceDir} > /var/log/sandbox/code-server.log 2>&1" </dev/null &>/dev/null &)`,
-      `(setsid su - dev -c "cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${opencodePort} --cors https://${dashboardDomain} > /var/log/sandbox/opencode.log 2>&1" </dev/null &>/dev/null &)`,
-      `(setsid ttyd -p ${terminalPort} -W -t fontSize=14 -t fontFamily=monospace su - dev </dev/null > /var/log/sandbox/ttyd.log 2>&1 &)`,
-    ].join("\n");
-
-    // Fire-and-forget: don't block on service startup
-    this.deps.agentClient
-      .exec(this.sandboxId, servicesCmd, {
-        timeout: 10000,
-      })
-      .catch((err) => {
-        log.warn(
-          { sandboxId: this.sandboxId, error: String(err) },
-          "Service restart exec failed (non-blocking)",
-        );
-      });
+    // Fire-and-forget: start services via agent endpoints
+    const serviceNames = ["vscode", "opencode", "terminal"];
+    Promise.all(
+      serviceNames.map((name) =>
+        this.deps.agentClient
+          .serviceStart(this.sandboxId, name)
+          .catch((err) => {
+            log.warn(
+              {
+                sandboxId: this.sandboxId,
+                service: name,
+                error: String(err),
+              },
+              "Service start failed (non-blocking)",
+            );
+          }),
+      ),
+    ).catch(() => {});
 
     log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
   }
@@ -539,34 +531,17 @@ class SpawnContext {
   }
 
   private async pushAuthAndConfigs(): Promise<void> {
-    const [authResult, configResult] = await Promise.allSettled([
-      this.deps.internalService.syncAuthToSandbox(this.sandboxId),
-      this.deps.internalService.syncConfigsToSandbox(this.sandboxId),
-    ]);
-
-    if (authResult.status === "fulfilled") {
-      log.info(
-        { sandboxId: this.sandboxId, synced: authResult.value.synced },
-        "Auth pushed to sandbox",
-      );
-    } else {
-      log.warn(
-        { sandboxId: this.sandboxId, error: authResult.reason },
-        "Failed to push auth to sandbox",
-      );
-    }
-
-    if (configResult.status === "fulfilled") {
-      log.info(
-        { sandboxId: this.sandboxId, synced: configResult.value.synced },
-        "Configs pushed to sandbox",
-      );
-    } else {
-      log.warn(
-        { sandboxId: this.sandboxId, error: configResult.reason },
-        "Failed to push configs to sandbox",
-      );
-    }
+    const result = await this.deps.internalService.syncToSandbox(
+      this.sandboxId,
+    );
+    log.info(
+      {
+        sandboxId: this.sandboxId,
+        authSynced: result.auth.synced,
+        configsSynced: result.configs.synced,
+      },
+      "Auth and configs pushed to sandbox",
+    );
   }
 
   private async expandFilesystem(): Promise<void> {

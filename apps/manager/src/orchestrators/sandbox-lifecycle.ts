@@ -124,10 +124,7 @@ export class SandboxLifecycle {
     if (!agentReady) {
       log.warn({ sandboxId }, "Agent did not become ready after restart");
     } else {
-      await Promise.allSettled([
-        this.deps.internalService.syncAuthToSandbox(sandboxId),
-        this.deps.internalService.syncConfigsToSandbox(sandboxId),
-      ]);
+      await this.deps.internalService.syncToSandbox(sandboxId);
     }
 
     await CaddyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {

@@ -6,13 +6,20 @@ import { getVsockPath } from "../firecracker/index.ts";
 import type {
   AgentHealth,
   AgentMetrics,
-  AppPort,
   BatchExecResult,
   DevCommandListResult,
   DevLogsResult,
   DevStartResult,
   DevStopResult,
   ExecResult,
+  GitCommitResult,
+  GitDiffResult,
+  GitPushResult,
+  GitStatus,
+  ServiceListResult,
+  ServiceStartResult,
+  ServiceStatus,
+  ServiceStopResult,
 } from "./agent.types.ts";
 
 const log = createChildLogger("agent");
@@ -228,30 +235,6 @@ export class AgentClient {
     });
   }
 
-  async getApps(sandboxId: string): Promise<AppPort[]> {
-    return this.request<AppPort[]>(sandboxId, "/apps");
-  }
-
-  async registerApp(
-    sandboxId: string,
-    port: number,
-    name: string,
-  ): Promise<AppPort> {
-    return this.request<AppPort>(sandboxId, "/apps", {
-      method: "POST",
-      body: { port, name },
-    });
-  }
-
-  async unregisterApp(
-    sandboxId: string,
-    port: number,
-  ): Promise<{ success: boolean }> {
-    return this.request<{ success: boolean }>(sandboxId, `/apps/${port}`, {
-      method: "DELETE",
-    });
-  }
-
   async devList(sandboxId: string): Promise<DevCommandListResult> {
     return this.request<DevCommandListResult>(sandboxId, "/dev");
   }
@@ -289,6 +272,109 @@ export class AgentClient {
       sandboxId,
       `/dev/${name}/logs?offset=${offset}&limit=${limit}`,
     );
+  }
+
+  async serviceList(sandboxId: string): Promise<ServiceListResult> {
+    return this.request<ServiceListResult>(sandboxId, "/services");
+  }
+
+  async serviceStatus(sandboxId: string, name: string): Promise<ServiceStatus> {
+    return this.request<ServiceStatus>(sandboxId, `/services/${name}/status`);
+  }
+
+  async serviceStart(
+    sandboxId: string,
+    name: string,
+  ): Promise<ServiceStartResult> {
+    return this.request<ServiceStartResult>(
+      sandboxId,
+      `/services/${name}/start`,
+      {
+        method: "POST",
+        timeout: 30000,
+      },
+    );
+  }
+
+  async serviceStop(
+    sandboxId: string,
+    name: string,
+  ): Promise<ServiceStopResult> {
+    return this.request<ServiceStopResult>(
+      sandboxId,
+      `/services/${name}/stop`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  async serviceRestart(
+    sandboxId: string,
+    name: string,
+  ): Promise<ServiceStartResult> {
+    return this.request<ServiceStartResult>(
+      sandboxId,
+      `/services/${name}/restart`,
+      {
+        method: "POST",
+        timeout: 30000,
+      },
+    );
+  }
+
+  async serviceLogs(
+    sandboxId: string,
+    name: string,
+    offset: number,
+    limit: number,
+  ): Promise<DevLogsResult> {
+    return this.request<DevLogsResult>(
+      sandboxId,
+      `/services/${name}/logs?offset=${offset}&limit=${limit}`,
+    );
+  }
+
+  async gitStatus(
+    sandboxId: string,
+    repos: { clonePath: string }[],
+  ): Promise<GitStatus> {
+    return this.request<GitStatus>(sandboxId, "/git/status", {
+      method: "POST",
+      body: { repos },
+      timeout: 30000,
+    });
+  }
+
+  async gitDiff(
+    sandboxId: string,
+    repos: { clonePath: string }[],
+  ): Promise<GitDiffResult> {
+    return this.request<GitDiffResult>(sandboxId, "/git/diff", {
+      method: "POST",
+      body: { repos },
+      timeout: 30000,
+    });
+  }
+
+  async gitCommit(
+    sandboxId: string,
+    repoPath: string,
+    message: string,
+  ): Promise<GitCommitResult> {
+    return this.request<GitCommitResult>(sandboxId, "/git/commit", {
+      method: "POST",
+      body: { repoPath, message },
+      timeout: 30000,
+    });
+  }
+
+  async gitPush(sandboxId: string, repoPath: string): Promise<GitPushResult> {
+    return this.request<GitPushResult>(sandboxId, "/git/push", {
+      method: "POST",
+      body: { repoPath },
+      timeout: 60000,
+    });
   }
 }
 

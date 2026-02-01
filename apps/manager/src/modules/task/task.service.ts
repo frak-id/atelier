@@ -5,9 +5,9 @@ import type {
   UpdateTaskBody,
 } from "../../schemas/index.ts";
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
+import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { TaskRepository } from "./task.repository.ts";
-import { safeNanoid } from "../../shared/lib/id.ts";
 
 const log = createChildLogger("task-service");
 

@@ -1,9 +1,9 @@
 import type { Workspace, WorkspaceConfig } from "../../schemas/index.ts";
 import { DEFAULT_WORKSPACE_CONFIG } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
+import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { WorkspaceRepository } from "./workspace.repository.ts";
-import { safeNanoid } from "../../shared/lib/id.ts";
 
 const log = createChildLogger("workspace-service");
 

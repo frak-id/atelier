@@ -45,7 +45,7 @@ export const LVM = {
 } as const;
 
 export const OPENCODE = {
-  VERSION: "1.1.44",
+  VERSION: "1.1.48",
   RELEASE_URL: "https://github.com/anomalyco/opencode/releases/download",
   BINARY: "opencode-linux-x64-baseline.tar.gz",
 } as const;

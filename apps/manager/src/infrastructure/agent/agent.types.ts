@@ -1,12 +1,6 @@
 export interface AgentHealth {
   status: string;
   sandboxId?: string;
-  services: {
-    vscode: boolean;
-    opencode: boolean;
-    sshd: boolean;
-    ttyd: boolean;
-  };
   uptime: number;
 }
 
@@ -17,16 +11,35 @@ export interface AgentMetrics {
   timestamp: string;
 }
 
-export interface AppPort {
-  port: number;
-  name: string;
-  registeredAt: string;
-}
-
 export interface ServiceStatus {
   name: string;
+  status: "running" | "stopped" | "error";
   running: boolean;
   pid?: number;
+  port?: number;
+  startedAt?: string;
+  exitCode?: number;
+  logFile?: string;
+}
+
+export interface ServiceListResult {
+  services: ServiceStatus[];
+}
+
+export interface ServiceStartResult {
+  status: string;
+  pid?: number;
+  name: string;
+  port?: number;
+  logFile?: string;
+  startedAt?: string;
+}
+
+export interface ServiceStopResult {
+  status: string;
+  name: string;
+  pid?: number;
+  message?: string;
 }
 
 export interface ExecResult {

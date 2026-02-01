@@ -435,34 +435,15 @@ export class PrebuildRunner {
    * Services are restored post-restore by the spawner.
    */
   private async pushLatestAuthAndConfigs(sandboxId: string): Promise<void> {
-    const [authResult, configResult] = await Promise.allSettled([
-      this.deps.internalService.syncAuthToSandbox(sandboxId),
-      this.deps.internalService.syncConfigsToSandbox(sandboxId),
-    ]);
-
-    if (authResult.status === "fulfilled") {
-      log.info(
-        { sandboxId, synced: authResult.value.synced },
-        "Auth baked into prebuild",
-      );
-    } else {
-      log.warn(
-        { sandboxId, error: authResult.reason },
-        "Failed to push auth before prebuild snapshot",
-      );
-    }
-
-    if (configResult.status === "fulfilled") {
-      log.info(
-        { sandboxId, synced: configResult.value.synced },
-        "Configs baked into prebuild",
-      );
-    } else {
-      log.warn(
-        { sandboxId, error: configResult.reason },
-        "Failed to push configs before prebuild snapshot",
-      );
-    }
+    const result = await this.deps.internalService.syncToSandbox(sandboxId);
+    log.info(
+      {
+        sandboxId,
+        authSynced: result.auth.synced,
+        configsSynced: result.configs.synced,
+      },
+      "Auth and configs baked into prebuild",
+    );
   }
 
   private async prepareForSnapshot(sandboxId: string): Promise<void> {

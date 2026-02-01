@@ -89,26 +89,19 @@ export const ExecResponseSchema = t.Object({
 });
 export type ExecResponse = Static<typeof ExecResponseSchema>;
 
-export const RegisterAppBodySchema = t.Object({
-  port: t.Number({ minimum: 1, maximum: 65535 }),
-  name: t.String({ minLength: 1, maxLength: 100 }),
-});
-export type RegisterAppBody = Static<typeof RegisterAppBodySchema>;
-
-export const AppPortSchema = t.Object({
-  port: t.Number(),
-  name: t.String(),
-  registeredAt: t.String(),
-});
-export type AppPort = Static<typeof AppPortSchema>;
-
-export const AppPortListResponseSchema = t.Array(AppPortSchema);
-export type AppPortListResponse = Static<typeof AppPortListResponseSchema>;
-
 export const ServiceStatusSchema = t.Object({
   name: t.String(),
+  status: t.Union([
+    t.Literal("running"),
+    t.Literal("stopped"),
+    t.Literal("error"),
+  ]),
   running: t.Boolean(),
   pid: t.Optional(t.Number()),
+  port: t.Optional(t.Number()),
+  startedAt: t.Optional(t.String()),
+  exitCode: t.Optional(t.Number()),
+  logFile: t.Optional(t.String()),
 });
 export type ServiceStatus = Static<typeof ServiceStatusSchema>;
 
@@ -116,6 +109,23 @@ export const ServicesResponseSchema = t.Object({
   services: t.Array(ServiceStatusSchema),
 });
 export type ServicesResponse = Static<typeof ServicesResponseSchema>;
+
+export const ServiceNameParamsSchema = t.Object({
+  id: t.String(),
+  name: t.String(),
+});
+export type ServiceNameParams = Static<typeof ServiceNameParamsSchema>;
+
+export const ServiceActionResponseSchema = t.Object({
+  status: t.String(),
+  name: t.String(),
+  pid: t.Optional(t.Number()),
+  port: t.Optional(t.Number()),
+  message: t.Optional(t.String()),
+  logFile: t.Optional(t.String()),
+  startedAt: t.Optional(t.String()),
+});
+export type ServiceActionResponse = Static<typeof ServiceActionResponseSchema>;
 
 export const LogsParamsSchema = t.Object({
   id: t.String(),
@@ -136,13 +146,6 @@ export type LogsResponse = Static<typeof LogsResponseSchema>;
 export const AgentHealthSchema = t.Object({
   status: t.String(),
   sandboxId: t.Optional(t.String()),
-  services: t.Object({
-    vscode: t.Boolean(),
-    opencode: t.Boolean(),
-    sshd: t.Boolean(),
-    ttyd: t.Boolean(),
-    browser: t.Optional(t.Boolean()),
-  }),
   uptime: t.Number(),
 });
 export type AgentHealth = Static<typeof AgentHealthSchema>;

@@ -481,6 +481,39 @@ export class InternalService {
     return { synced: totalSynced };
   }
 
+  /**
+   * Push both auth and config files to a sandbox in parallel.
+   * Used by spawner, prebuild runner, and lifecycle on start.
+   */
+  async syncToSandbox(
+    sandboxId: string,
+  ): Promise<{ auth: { synced: number }; configs: { synced: number } }> {
+    const [authResult, configResult] = await Promise.allSettled([
+      this.syncAuthToSandbox(sandboxId),
+      this.syncConfigsToSandbox(sandboxId),
+    ]);
+
+    const auth =
+      authResult.status === "fulfilled" ? authResult.value : { synced: 0 };
+    const configs =
+      configResult.status === "fulfilled" ? configResult.value : { synced: 0 };
+
+    if (authResult.status === "rejected") {
+      log.warn(
+        { sandboxId, error: authResult.reason },
+        "Failed to push auth to sandbox",
+      );
+    }
+    if (configResult.status === "rejected") {
+      log.warn(
+        { sandboxId, error: configResult.reason },
+        "Failed to push configs to sandbox",
+      );
+    }
+
+    return { auth, configs };
+  }
+
   async syncConfigsToSandbox(sandboxId: string): Promise<{ synced: number }> {
     const sandbox = this.sandboxService.getById(sandboxId);
     const workspaceId = sandbox?.workspaceId ?? undefined;

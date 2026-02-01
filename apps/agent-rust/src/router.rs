@@ -16,20 +16,49 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::POST, "/exec") => routes::exec::handle_exec(req).await,
         (Method::POST, "/exec/batch") => routes::exec::handle_exec_batch(req).await,
 
+        (Method::POST, "/git/status") => routes::git::handle_git_status(req).await,
+        (Method::POST, "/git/diff") => routes::git::handle_git_diff(req).await,
+        (Method::POST, "/git/commit") => routes::git::handle_git_commit(req).await,
+        (Method::POST, "/git/push") => routes::git::handle_git_push(req).await,
+
         (Method::GET, "/config") => routes::config::handle_config(),
         (Method::GET, "/editor-config") => routes::config::handle_editor_config().await,
 
-        (Method::GET, "/apps") => routes::apps::handle_get_apps(),
-        (Method::POST, "/apps") => routes::apps::handle_post_apps(req).await,
-
         (Method::GET, "/dev") => routes::dev::handle_get_dev().await,
+        (Method::GET, "/services") => routes::services::handle_services_list().await,
 
         _ => {
-            if let Some(port) = path.strip_prefix("/apps/").and_then(|s| s.parse::<u16>().ok()) {
-                if method == Method::DELETE {
-                    return routes::apps::handle_delete_app(port);
+            if let Some(rest) = path.strip_prefix("/services/") {
+                let parts: Vec<&str> = rest.splitn(2, '/').collect();
+                if parts.len() == 2 {
+                    let name = urlencoding::decode(parts[0])
+                        .unwrap_or_default()
+                        .into_owned();
+                    match (method.clone(), parts[1]) {
+                        (Method::GET, "status") => {
+                            return routes::services::handle_service_status(&name).await
+                        }
+                        (Method::POST, "start") => {
+                            return routes::services::handle_service_start(&name).await
+                        }
+                        (Method::POST, "stop") => {
+                            return routes::services::handle_service_stop(&name).await
+                        }
+                        (Method::POST, "restart") => {
+                            return routes::services::handle_service_restart(&name).await
+                        }
+                        (Method::GET, sub) if sub.starts_with("logs") => {
+                            let query = req.uri().query().unwrap_or("");
+                            return routes::services::handle_service_logs(&name, query).await;
+                        }
+                        _ => {
+                            return json_error(
+                                StatusCode::METHOD_NOT_ALLOWED,
+                                "Method Not Allowed",
+                            )
+                        }
+                    }
                 }
-                return json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
             }
 
             if let Some(rest) = path.strip_prefix("/dev/") {
