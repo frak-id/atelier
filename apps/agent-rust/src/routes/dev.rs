@@ -55,8 +55,8 @@ fn json_status(status: u16, body: serde_json::Value) -> Response<Full<Bytes>> {
         .unwrap()
 }
 
-pub fn handle_get_dev() -> Response<Full<Bytes>> {
-    let commands = RUNNING_DEV_COMMANDS.blocking_lock();
+pub async fn handle_get_dev() -> Response<Full<Bytes>> {
+    let commands = RUNNING_DEV_COMMANDS.lock().await;
     let list: Vec<DevProcessInfo> = commands
         .values()
         .map(|proc| {

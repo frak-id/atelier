@@ -43,7 +43,7 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::GET, "/apps") => routes::apps::handle_get_apps(),
         (Method::POST, "/apps") => routes::apps::handle_post_apps(req).await,
 
-        (Method::GET, "/dev") => routes::dev::handle_get_dev(),
+        (Method::GET, "/dev") => routes::dev::handle_get_dev().await,
 
         _ => {
             if let Some(port) = path.strip_prefix("/apps/").and_then(|s| s.parse::<u16>().ok()) {

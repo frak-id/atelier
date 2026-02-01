@@ -76,13 +76,13 @@ fn get_memory_usage() -> serde_json::Value {
 fn get_disk_usage() -> serde_json::Value {
     let parse = || -> Option<(u64, u64, u64)> {
         let mut buf: libc::statvfs = unsafe { std::mem::zeroed() };
-        let path = c"/";
-        let ret = unsafe { libc::statvfs(path.as_ptr(), &mut buf) };
+        let path = b"/\0";
+        let ret = unsafe { libc::statvfs(path.as_ptr() as *const libc::c_char, &mut buf) };
         if ret != 0 {
             return None;
         }
-        let total = buf.f_blocks * buf.f_frsize as u64;
-        let free = buf.f_bfree * buf.f_frsize as u64;
+        let total = buf.f_blocks as u64 * buf.f_frsize as u64;
+        let free = buf.f_bfree as u64 * buf.f_frsize as u64;
         let used = total.saturating_sub(free);
         Some((total, used, free))
     };
