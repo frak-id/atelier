@@ -616,6 +616,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           const startBrowser = async () => {
             await ensureStarted("kasmvnc");
             await new Promise((r) => setTimeout(r, 500));
+            await ensureStarted("openbox");
+            await new Promise((r) => setTimeout(r, 200));
             await ensureStarted("chromium");
           };
 
@@ -685,6 +687,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
           Promise.all([
             agentClient.serviceStop(sandbox.id, "chromium").catch(() => {}),
+            agentClient.serviceStop(sandbox.id, "openbox").catch(() => {}),
             agentClient.serviceStop(sandbox.id, "kasmvnc").catch(() => {}),
           ]).catch(() => {});
 

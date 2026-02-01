@@ -186,9 +186,15 @@ ${dnsLines}
           user: "root" as const,
           autoStart: false,
         },
+        openbox: {
+          command: "openbox",
+          user: "dev" as const,
+          autoStart: false,
+          env: { DISPLAY: ":99" },
+        },
         chromium: {
           command:
-            "chromium --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --user-data-dir=/tmp/chromium-profile --window-size=1280,900 --start-maximized about:blank",
+            "chromium --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --user-data-dir=/tmp/chromium-profile about:blank",
           user: "dev" as const,
           autoStart: false,
           env: { DISPLAY: ":99" },

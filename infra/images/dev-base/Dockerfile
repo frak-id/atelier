@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     fonts-liberation \
     xdotool \
+    openbox \
     libegl1 \
     && locale-gen en_US.UTF-8 \
     && usermod -l dev -d /home/dev -m node \
@@ -79,6 +80,7 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
 # Copy config files
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 COPY rootfs/etc/sandbox/ /etc/sandbox/
+COPY rootfs/etc/xdg/openbox/ /etc/xdg/openbox/
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
 COPY --chown=root:root sandbox-agent /usr/local/bin/sandbox-agent
 RUN chmod +x /usr/local/bin/sandbox-agent
