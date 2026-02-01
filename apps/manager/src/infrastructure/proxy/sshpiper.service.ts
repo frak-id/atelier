@@ -75,7 +75,7 @@ export const SshPiperService = {
       from: [fromEntry],
       to: {
         host: `${ipAddress}:22`,
-        username: "root",
+        username: "dev",
         ignore_hostkey: true,
         private_key: "/var/lib/sandbox/firecracker/rootfs/vm-ssh-key",
       },

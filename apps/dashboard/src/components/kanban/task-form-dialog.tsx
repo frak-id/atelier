@@ -161,10 +161,10 @@ export function TaskForm({
   useEffect(() => {
     if (templates.length > 0 && !selectedTemplateId) {
       const defaultTemplate = templates[0];
-      form.setFieldValue("selectedTemplateId", defaultTemplate.id);
+      form.setFieldValue("selectedTemplateId", defaultTemplate?.id ?? "");
       form.setFieldValue(
         "selectedVariantIndex",
-        defaultTemplate.defaultVariantIndex ?? 0,
+        defaultTemplate?.defaultVariantIndex ?? 0,
       );
     }
   }, [templates, selectedTemplateId, form]);

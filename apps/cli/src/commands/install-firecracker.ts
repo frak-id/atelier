@@ -167,6 +167,15 @@ async function downloadRootfs(
     await exec(`chmod 700 ${extractDir}/root/.ssh`);
     await exec(`chmod 600 ${extractDir}/root/.ssh/authorized_keys`);
 
+    // Also inject for dev user (sshpiper connects as dev)
+    await exec(`mkdir -p ${extractDir}/home/dev/.ssh`);
+    await exec(
+      `cp ${sshKeyPath}.pub ${extractDir}/home/dev/.ssh/authorized_keys`,
+    );
+    await exec(`chmod 700 ${extractDir}/home/dev/.ssh`);
+    await exec(`chmod 600 ${extractDir}/home/dev/.ssh/authorized_keys`);
+    await exec(`chown -R 1000:1000 ${extractDir}/home/dev/.ssh`);
+
     spinner.message("Creating ext4 filesystem (1GB)");
     await exec(`truncate -s 1G ${rootfsPath}`);
     await exec(`mkfs.ext4 -d ${extractDir} -F ${rootfsPath} > /dev/null 2>&1`);

@@ -144,6 +144,15 @@ async function buildImage(args: string[]) {
     await exec(`chmod 700 ${mountPoint}/root/.ssh`);
     await exec(`chmod 600 ${mountPoint}/root/.ssh/authorized_keys`);
 
+    // Also inject for dev user (sshpiper connects as dev)
+    await exec(`mkdir -p ${mountPoint}/home/dev/.ssh`);
+    await exec(
+      `cp ${sshKeyPath}.pub ${mountPoint}/home/dev/.ssh/authorized_keys`,
+    );
+    await exec(`chmod 700 ${mountPoint}/home/dev/.ssh`);
+    await exec(`chmod 600 ${mountPoint}/home/dev/.ssh/authorized_keys`);
+    await exec(`chown -R 1000:1000 ${mountPoint}/home/dev/.ssh`);
+
     await exec(`umount ${mountPoint}`);
     spinner.stop("Rootfs extracted with SSH key");
 
