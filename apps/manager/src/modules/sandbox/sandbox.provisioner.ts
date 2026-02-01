@@ -182,7 +182,7 @@ ${dnsLines}
         },
         kasmvnc: {
           port: browserPort,
-          command: `Xvnc :99 -geometry 1280x900 -depth 24 -rfbport 5900 -websocketPort ${browserPort} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -httpd /usr/share/kasmvnc/www -fg`,
+          command: `Xvnc :99 -geometry 1280x900 -depth 24 -websocketPort ${browserPort} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -DisableBasicAuth -UseIPv6 0 -interface 0.0.0.0 -httpd /usr/share/kasmvnc/www`,
           user: "root" as const,
           autoStart: false,
         },

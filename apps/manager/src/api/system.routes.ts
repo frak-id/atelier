@@ -122,13 +122,23 @@ async function performCleanup(): Promise<CleanupResult> {
     }
 
     const overlayResult =
-      await $`find ${config.paths.SANDBOX_DIR} -type d -name "overlay-*" 2>/dev/null | wc -l`
+      await $`find ${config.paths.OVERLAY_DIR} -maxdepth 1 -name "*.ext4" 2>/dev/null`
         .quiet()
         .nothrow();
-    overlaysRemoved = Number.parseInt(
-      overlayResult.stdout.toString().trim() || "0",
-      10,
-    );
+    const overlayFiles = overlayResult.stdout
+      .toString()
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    for (const file of overlayFiles) {
+      const basename = file.split("/").pop() || "";
+      const sandboxId = basename.replace(/\.ext4$/, "");
+      if (!knownSandboxIds.has(sandboxId)) {
+        log.info({ file }, "Removing orphaned overlay file");
+        await $`rm -f ${file}`.quiet().nothrow();
+        overlaysRemoved++;
+      }
+    }
 
     const tapDevices = await NetworkService.listTapDevices();
     for (const tap of tapDevices) {
