@@ -180,8 +180,9 @@ ${dnsLines}
           user: "root" as const,
           autoStart: true,
         },
-        xvfb: {
-          command: "Xvfb :99 -screen 0 1280x900x24",
+        kasmvnc: {
+          port: browserPort,
+          command: `Xvnc :99 -geometry 1280x900 -depth 24 -rfbport 5900 -websocketPort ${browserPort} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -httpd /usr/share/kasmvnc/www -fg`,
           user: "root" as const,
           autoStart: false,
         },
@@ -191,17 +192,6 @@ ${dnsLines}
           user: "dev" as const,
           autoStart: false,
           env: { DISPLAY: ":99" },
-        },
-        x11vnc: {
-          command: "x11vnc -display :99 -forever -shared -nopw -rfbport 5900",
-          user: "root" as const,
-          autoStart: false,
-        },
-        websockify: {
-          port: browserPort,
-          command: `websockify --web /opt/novnc ${browserPort} localhost:5900`,
-          user: "root" as const,
-          autoStart: false,
         },
       },
     } satisfies SandboxConfig;

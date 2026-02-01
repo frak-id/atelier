@@ -593,11 +593,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             return { status: "off" as const };
           }
 
-          const websockify = await agentClient.serviceStatus(
+          const kasmvnc = await agentClient.serviceStatus(
             sandbox.id,
-            "websockify",
+            "kasmvnc",
           );
-          if (websockify.running) {
+          if (kasmvnc.running) {
             const browserUrl = sandbox.runtime.urls.browser;
             return { status: "running" as const, url: browserUrl };
           }
@@ -614,13 +614,9 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           };
 
           const startBrowser = async () => {
-            await ensureStarted("xvfb");
-            await new Promise((r) => setTimeout(r, 300));
-            await ensureStarted("chromium");
+            await ensureStarted("kasmvnc");
             await new Promise((r) => setTimeout(r, 500));
-            await ensureStarted("x11vnc");
-            await new Promise((r) => setTimeout(r, 200));
-            await ensureStarted("websockify");
+            await ensureStarted("chromium");
           };
 
           startBrowser().catch((err) => {
@@ -663,11 +659,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           }
 
           try {
-            const websockify = await agentClient.serviceStatus(
+            const kasmvnc = await agentClient.serviceStatus(
               sandbox.id,
-              "websockify",
+              "kasmvnc",
             );
-            if (websockify.running) {
+            if (kasmvnc.running) {
               return { status: "running" as const, url: browserUrl };
             }
             return { status: "starting" as const, url: browserUrl };
@@ -688,10 +684,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           }
 
           Promise.all([
-            agentClient.serviceStop(sandbox.id, "websockify").catch(() => {}),
-            agentClient.serviceStop(sandbox.id, "x11vnc").catch(() => {}),
             agentClient.serviceStop(sandbox.id, "chromium").catch(() => {}),
-            agentClient.serviceStop(sandbox.id, "xvfb").catch(() => {}),
+            agentClient.serviceStop(sandbox.id, "kasmvnc").catch(() => {}),
           ]).catch(() => {});
 
           await CaddyService.removeBrowserRoute(sandbox.id);

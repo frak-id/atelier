@@ -87,7 +87,7 @@ function SandboxImmersionPage() {
   const startBrowserMutation = useStartBrowser(id);
 
   const browserUrl = browserStatus?.url
-    ? `${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`
+    ? `${browserStatus.url}/?autoconnect=true&resize=remote`
     : undefined;
 
   const [activeTab, setActiveTab] = useState<TabId>("opencode");

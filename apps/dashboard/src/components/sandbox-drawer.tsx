@@ -1,3 +1,4 @@
+import type { ServiceStatus } from "@frak-sandbox/manager/types";
 import type { Session, Todo } from "@opencode-ai/sdk/v2";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -87,7 +88,6 @@ import {
   type SessionWithSandboxInfo,
 } from "@/lib/session-hierarchy";
 import { formatDate } from "@/lib/utils";
-import { ServiceStatus } from "@frak-sandbox/manager/types";
 
 interface SandboxDrawerProps {
   sandboxId: string | null;
@@ -1057,7 +1057,7 @@ function BrowserButton({
   const pendingOpenRef = useRef(false);
 
   const browserVncUrl = browserStatus?.url
-    ? `${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`
+    ? `${browserStatus.url}/?autoconnect=true&resize=remote`
     : undefined;
 
   useEffect(() => {

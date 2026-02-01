@@ -387,7 +387,7 @@ function BrowserStatusBadge({ sandboxId }: { sandboxId: string }) {
         )}
         {browserStatus.status === "running" && browserStatus.url ? (
           <a
-            href={`${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`}
+            href={`${browserStatus.url}/?autoconnect=true&resize=remote`}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:underline flex items-center gap-1"
@@ -421,7 +421,7 @@ function CardBrowserButton({ sandboxId }: { sandboxId: string }) {
     ) {
       pendingOpenRef.current = false;
       window.open(
-        `${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`,
+        `${browserStatus.url}/?autoconnect=true&resize=remote`,
         "_blank",
       );
     }
@@ -430,7 +430,7 @@ function CardBrowserButton({ sandboxId }: { sandboxId: string }) {
   const handleClick = () => {
     if (browserStatus?.status === "running" && browserStatus.url) {
       window.open(
-        `${browserStatus.url}/vnc.html?autoconnect=true&resize=scale`,
+        `${browserStatus.url}/?autoconnect=true&resize=remote`,
         "_blank",
       );
       return;
