@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 pub const VSOCK_PORT: u32 = 9998;
@@ -16,7 +17,13 @@ pub const OPENCODE_CONFIG_PATH: &str = "/home/dev/.config/opencode/opencode.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceConfig {
-    pub port: u16,
+    pub port: Option<u16>,
+    pub command: Option<String>,
+    pub user: Option<String>,
+    #[serde(default)]
+    pub auto_start: bool,
+    #[serde(default)]
+    pub env: Option<HashMap<String, String>>,
     #[serde(default)]
     pub enabled: Option<bool>,
 }
@@ -35,15 +42,7 @@ pub struct RepoConfig {
     pub branch: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SandboxServices {
-    pub vscode: ServiceConfig,
-    pub opencode: ServiceConfig,
-    pub terminal: ServiceConfig,
-    pub browser: Option<ServiceConfig>,
-    pub agent: Option<ServiceConfig>,
-}
+pub type SandboxServices = HashMap<String, ServiceConfig>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

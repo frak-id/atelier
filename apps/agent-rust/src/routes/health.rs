@@ -98,39 +98,38 @@ pub async fn handle_health() -> Response<Full<Bytes>> {
     let _ = *START_TIME;
 
     let cfg = SANDBOX_CONFIG.as_ref();
-    let services = cfg.map(|c| &c.services);
-
-    let vscode_port = services.map_or(8080, |s| s.vscode.port);
-    let opencode_port = services.map_or(3000, |s| s.opencode.port);
-    let ttyd_port = services.map_or(7681, |s| s.terminal.port);
-    let browser_port = services.and_then(|s| s.browser.as_ref()).map_or(6080, |b| b.port);
     let sandbox_id = cfg.map(|c| c.sandbox_id.clone());
 
-    let (vscode, opencode, sshd, ttyd, browser, uptime) =
-        tokio::task::spawn_blocking(move || {
-            (
-                check_port_listening(vscode_port),
-                check_port_listening(opencode_port),
-                check_port_listening(22),
-                check_port_listening(ttyd_port),
-                check_port_listening(browser_port),
-                START_TIME.elapsed().as_secs_f64(),
-            )
-        })
-        .await
-        .unwrap_or_default();
+    let mut port_checks: Vec<(String, u16)> = Vec::new();
+    if let Some(c) = cfg {
+        for (name, svc) in &c.services {
+            if let Some(port) = svc.port {
+                port_checks.push((name.clone(), port));
+            }
+        }
+    }
+    // Always check sshd
+    port_checks.push(("sshd".to_string(), 22));
+
+    let results = tokio::task::spawn_blocking(move || {
+        let mut map = serde_json::Map::new();
+        for (name, port) in &port_checks {
+            map.insert(
+                name.clone(),
+                serde_json::Value::Bool(check_port_listening(*port)),
+            );
+        }
+        let uptime = START_TIME.elapsed().as_secs_f64();
+        (map, uptime)
+    })
+    .await
+    .unwrap_or_else(|_| (serde_json::Map::new(), 0.0));
 
     json_ok(serde_json::json!({
         "status": "healthy",
         "sandboxId": sandbox_id,
-        "services": {
-            "vscode": vscode,
-            "opencode": opencode,
-            "sshd": sshd,
-            "ttyd": ttyd,
-            "browser": browser
-        },
-        "uptime": uptime
+        "services": serde_json::Value::Object(results.0),
+        "uptime": results.1
     }))
 }
 

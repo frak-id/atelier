@@ -141,6 +141,18 @@ ${dnsLines}
       clonePath: r.clonePath,
       branch: r.branch,
     }));
+
+    const workspaceDir =
+      repos.length === 1 && repos[0]?.clonePath
+        ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
+        : "/home/dev/workspace";
+
+    const dashboardDomain = config.domains.dashboard;
+    const vsPort = config.raw.services.vscode.port;
+    const ocPort = config.raw.services.opencode.port;
+    const ttydPort = config.raw.services.terminal.port;
+    const browserPort = config.raw.services.browser.port;
+
     const sandboxConfig = {
       sandboxId: ctx.sandboxId,
       workspaceId: ctx.workspace?.id,
@@ -148,27 +160,63 @@ ${dnsLines}
       repos,
       createdAt: new Date().toISOString(),
       network: {
-        dashboardDomain: config.domains.dashboard,
+        dashboardDomain,
         managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
       },
       services: {
-        vscode: { port: config.raw.services.vscode.port },
-        opencode: { port: config.raw.services.opencode.port },
-        terminal: { port: config.raw.services.terminal.port },
-        browser: { port: config.raw.services.browser.port },
-        agent: { port: config.raw.services.agent.port },
+        vscode: {
+          port: vsPort,
+          command: `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vsPort} --auth none --disable-telemetry ${workspaceDir}`,
+          user: "dev" as const,
+          autoStart: true,
+        },
+        opencode: {
+          port: ocPort,
+          command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
+          user: "dev" as const,
+          autoStart: true,
+        },
+        terminal: {
+          port: ttydPort,
+          command: `ttyd -p ${ttydPort} -W -t fontSize=14 -t fontFamily=monospace su - dev`,
+          user: "root" as const,
+          autoStart: true,
+        },
+        browser: {
+          port: browserPort,
+        },
+        xvfb: {
+          command: "Xvfb :99 -screen 0 1280x900x24",
+          user: "root" as const,
+          autoStart: false,
+        },
+        chromium: {
+          command:
+            "chromium --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --window-size=1280,900 --start-maximized about:blank",
+          user: "dev" as const,
+          autoStart: false,
+          env: { DISPLAY: ":99" },
+        },
+        x11vnc: {
+          command: "x11vnc -display :99 -forever -shared -nopw -rfbport 5900",
+          user: "root" as const,
+          autoStart: false,
+        },
+        websockify: {
+          port: browserPort,
+          command: `websockify --web /opt/novnc ${browserPort} localhost:5900`,
+          user: "root" as const,
+          autoStart: false,
+        },
+        agent: {
+          port: config.raw.services.agent.port,
+        },
       },
     } satisfies SandboxConfig;
     await Bun.write(
       `${mountPoint}/etc/sandbox/config.json`,
       JSON.stringify(sandboxConfig, null, 2),
     );
-
-    const workspaceDir =
-      repos.length === 1 && repos[0]?.clonePath
-        ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
-        : "/home/dev/workspace";
-    await Bun.write(`${mountPoint}/etc/sandbox/workspace-dir`, workspaceDir);
   },
 
   async injectSecrets(

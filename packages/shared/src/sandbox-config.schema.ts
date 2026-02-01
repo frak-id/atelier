@@ -6,7 +6,7 @@
  * and the agent + sandbox-init.sh read it at boot.
  */
 import { type Static, Type } from "@sinclair/typebox";
-import { ServicesConfigSchema } from "./config.schema";
+import { SandboxServiceEntrySchema } from "./config.schema";
 
 const RepoConfigSchema = Type.Object({
   clonePath: Type.String(),
@@ -23,7 +23,7 @@ export const SandboxConfigSchema = Type.Object({
     dashboardDomain: Type.String(),
     managerInternalUrl: Type.String(),
   }),
-  services: ServicesConfigSchema,
+  services: Type.Record(Type.String(), SandboxServiceEntrySchema),
 });
 
 export type SandboxConfig = Static<typeof SandboxConfigSchema>;

@@ -65,7 +65,7 @@ async fn main() {
     println!("Listening on vsock port {VSOCK_PORT}");
 
     tokio::spawn(async {
-        routes::services::discover_running_services().await;
+        routes::services::start_autostart_services().await;
     });
 
     loop {

@@ -36,27 +36,7 @@ export class AgentOperations {
   }
 
   async services(sandboxId: string): Promise<{ services: ServiceStatus[] }> {
-    const serviceNames = ["code-server", "opencode", "sshd", "ttyd"];
-    const { results } = await this.client.batchExec(
-      sandboxId,
-      serviceNames.map((name) => ({
-        id: name,
-        command: `pgrep -f "${name}" 2>/dev/null || true`,
-      })),
-    );
-
-    const services: ServiceStatus[] = results.map((r) => {
-      const pids = r.stdout.trim().split("\n").filter(Boolean);
-      const running = pids.length > 0;
-      return {
-        name: r.id,
-        status: running ? "running" : "stopped",
-        running,
-        pid: pids[0] ? parseInt(pids[0], 10) : undefined,
-      };
-    });
-
-    return { services };
+    return this.client.serviceList(sandboxId);
   }
 
   async logs(

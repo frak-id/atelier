@@ -120,6 +120,17 @@ export const ServicesConfigSchema = Type.Object(
 
 export type ServicesConfig = Static<typeof ServicesConfigSchema>;
 
+export const SandboxServiceEntrySchema = Type.Object({
+  port: Type.Optional(Type.Number()),
+  command: Type.Optional(Type.String()),
+  user: Type.Optional(Type.Union([Type.Literal("dev"), Type.Literal("root")])),
+  autoStart: Type.Optional(Type.Boolean({ default: false })),
+  env: Type.Optional(Type.Record(Type.String(), Type.String())),
+  enabled: Type.Optional(Type.Boolean({ default: true })),
+});
+
+export type SandboxServiceEntry = Static<typeof SandboxServiceEntrySchema>;
+
 export const FrakConfigSchema = Type.Object({
   domains: DomainsConfigSchema,
   network: NetworkConfigSchema,

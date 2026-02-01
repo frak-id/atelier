@@ -7,17 +7,9 @@ use std::sync::LazyLock;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
-use crate::config::{LOG_DIR, SANDBOX_CONFIG, WORKSPACE_DIR};
+use crate::config::{ServiceConfig, LOG_DIR, SANDBOX_CONFIG};
 use crate::response::{json_error, json_ok};
 use crate::routes::dev::{is_process_running, pump_stream, signal_process, ProcessStatus};
-use crate::routes::health::check_port_listening;
-
-struct ServiceDef {
-    name: &'static str,
-    command_template: fn() -> String,
-    user: &'static str,
-    port: fn() -> u16,
-}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,246 +27,64 @@ struct ManagedService {
 static RUNNING_SERVICES: LazyLock<Mutex<HashMap<String, ManagedService>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn get_workspace_dir() -> String {
+fn find_service_config(name: &str) -> Option<&ServiceConfig> {
     SANDBOX_CONFIG
         .as_ref()
-        .and_then(|c| c.repos.first())
-        .map(|r| format!("/home/dev{}", r.clone_path))
-        .unwrap_or_else(|| WORKSPACE_DIR.to_string())
+        .and_then(|c| c.services.get(name))
 }
 
-fn get_dashboard_domain() -> String {
-    SANDBOX_CONFIG
-        .as_ref()
-        .map(|c| c.network.dashboard_domain.clone())
-        .unwrap_or_default()
-}
-
-fn code_server_port() -> u16 {
-    SANDBOX_CONFIG
-        .as_ref()
-        .map(|c| c.services.vscode.port)
-        .unwrap_or(8080)
-}
-
-fn opencode_port() -> u16 {
-    SANDBOX_CONFIG
-        .as_ref()
-        .map(|c| c.services.opencode.port)
-        .unwrap_or(3000)
-}
-
-fn ttyd_port() -> u16 {
-    SANDBOX_CONFIG
-        .as_ref()
-        .map(|c| c.services.terminal.port)
-        .unwrap_or(7681)
-}
-
-fn code_server_command() -> String {
-    let port = code_server_port();
-    let workdir = get_workspace_dir();
-    format!("/opt/shared/bin/code-server --bind-addr 0.0.0.0:{port} --auth none --disable-telemetry {workdir}")
-}
-
-fn opencode_command() -> String {
-    let port = opencode_port();
-    let workdir = get_workspace_dir();
-    let domain = get_dashboard_domain();
-    format!("cd {workdir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port {port} --cors https://{domain}")
-}
-
-fn ttyd_command() -> String {
-    let port = ttyd_port();
-    format!("ttyd -p {port} -W -t fontSize=14 -t fontFamily=monospace su - dev")
-}
-
-static SERVICE_DEFS: &[ServiceDef] = &[
-    ServiceDef {
-        name: "code-server",
-        command_template: code_server_command,
-        user: "dev",
-        port: code_server_port,
-    },
-    ServiceDef {
-        name: "opencode",
-        command_template: opencode_command,
-        user: "dev",
-        port: opencode_port,
-    },
-    ServiceDef {
-        name: "ttyd",
-        command_template: ttyd_command,
-        user: "root",
-        port: ttyd_port,
-    },
-];
-
-fn find_service_def(name: &str) -> Option<&'static ServiceDef> {
-    SERVICE_DEFS.iter().find(|d| d.name == name)
-}
-
-pub async fn discover_running_services() {
-    for def in SERVICE_DEFS {
-        let port = (def.port)();
-        let listening = tokio::task::spawn_blocking(move || check_port_listening(port))
-            .await
-            .unwrap_or(false);
-
-        if !listening {
-            continue;
-        }
-
-        let search = def.name.to_string();
-        let pid = tokio::task::spawn_blocking(move || find_pid_by_cmdline(&search))
-            .await
-            .unwrap_or(None);
-
-        if let Some(pid) = pid {
-            let svc = ManagedService {
-                name: def.name.to_string(),
-                status: ProcessStatus::Running,
-                pid,
-                port,
-                started_at: crate::utc_rfc3339(),
-                exit_code: None,
-                log_file: format!("{}/{}.log", LOG_DIR, def.name),
-                running: true,
-            };
-            RUNNING_SERVICES
-                .lock()
-                .await
-                .insert(def.name.to_string(), svc);
-        }
-    }
-}
-
-fn find_pid_by_cmdline(search: &str) -> Option<u32> {
-    let proc_dir = std::fs::read_dir("/proc").ok()?;
-    for entry in proc_dir.flatten() {
-        let name = entry.file_name();
-        let name_str = name.to_str()?;
-        let pid: u32 = match name_str.parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let cmdline_path = format!("/proc/{}/cmdline", pid);
-        if let Ok(cmdline) = std::fs::read_to_string(&cmdline_path) {
-            if cmdline.contains(search) {
-                return Some(pid);
+pub async fn start_autostart_services() {
+    let Some(cfg) = SANDBOX_CONFIG.as_ref() else {
+        return;
+    };
+    for (name, svc) in &cfg.services {
+        if svc.auto_start && svc.command.is_some() {
+            println!("Auto-starting service: {}", name);
+            if let Err(e) = start_service_internal(name, svc).await {
+                eprintln!("Failed to auto-start {}: {}", name, e);
             }
         }
     }
-    None
 }
 
-pub async fn handle_services_list() -> Response<Full<Bytes>> {
-    let mut services = RUNNING_SERVICES.lock().await;
+async fn start_service_internal(
+    name: &str,
+    cfg: &ServiceConfig,
+) -> Result<ManagedService, String> {
+    let command = cfg
+        .command
+        .as_deref()
+        .ok_or_else(|| format!("Service '{}' has no command", name))?;
 
-    for svc in services.values_mut() {
-        if svc.status == ProcessStatus::Running && !is_process_running(svc.pid) {
-            svc.status = ProcessStatus::Error;
-            svc.running = false;
-        }
-    }
-
-    let mut list: Vec<serde_json::Value> = Vec::new();
-
-    for def in SERVICE_DEFS {
-        if let Some(svc) = services.get(def.name) {
-            list.push(serde_json::to_value(svc).unwrap_or_default());
-        } else {
-            let port = (def.port)();
-            list.push(serde_json::json!({
-                "name": def.name,
-                "status": "stopped",
-                "pid": 0,
-                "port": port,
-                "startedAt": "",
-                "exitCode": null,
-                "logFile": format!("{}/{}.log", LOG_DIR, def.name),
-                "running": false
-            }));
-        }
-    }
-
-    json_ok(serde_json::json!({ "services": list }))
-}
-
-pub async fn handle_service_status(name: &str) -> Response<Full<Bytes>> {
-    let mut services = RUNNING_SERVICES.lock().await;
-
-    if let Some(svc) = services.get_mut(name) {
-        if svc.status == ProcessStatus::Running && !is_process_running(svc.pid) {
-            svc.status = ProcessStatus::Error;
-            svc.running = false;
-        }
-        return json_ok(serde_json::to_value(&*svc).unwrap_or_default());
-    }
-
-    if let Some(def) = find_service_def(name) {
-        let port = (def.port)();
-        return json_ok(serde_json::json!({
-            "name": name,
-            "status": "stopped",
-            "pid": 0,
-            "port": port,
-            "startedAt": "",
-            "exitCode": null,
-            "logFile": format!("{}/{}.log", LOG_DIR, name),
-            "running": false
-        }));
-    }
-
-    json_error(StatusCode::NOT_FOUND, &format!("Unknown service: {}", name))
-}
-
-pub async fn handle_service_start(name: &str) -> Response<Full<Bytes>> {
-    let def = match find_service_def(name) {
-        Some(d) => d,
-        None => {
-            return json_error(
-                StatusCode::NOT_FOUND,
-                &format!("Unknown service: {}", name),
-            )
-        }
-    };
-
-    let port = (def.port)();
-    let command = (def.command_template)();
+    let port = cfg.port.unwrap_or(0);
 
     {
         let services = RUNNING_SERVICES.lock().await;
         if let Some(existing) = services.get(name) {
             if existing.status == ProcessStatus::Running && is_process_running(existing.pid) {
-                return json_error(
-                    StatusCode::CONFLICT,
-                    &format!(
-                        "Service '{}' is already running with PID {}",
-                        name, existing.pid
-                    ),
-                );
+                return Err(format!(
+                    "Service '{}' is already running with PID {}",
+                    name, existing.pid
+                ));
             }
         }
     }
 
     let log_file = format!("{}/{}.log", LOG_DIR, name);
 
-    let log_handle = match tokio::fs::OpenOptions::new()
+    let log_handle = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
         .open(&log_file)
         .await
-    {
-        Ok(f) => f,
-        Err(e) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
-    };
+        .map_err(|e| e.to_string())?;
 
-    let wrapped_cmd = if def.user == "dev" {
+    let user = cfg.user.as_deref().unwrap_or("root");
+    let wrapped_cmd = if user == "dev" {
         format!("su - dev -c \"{}\"", command.replace('"', "\\\""))
     } else {
-        command
+        command.to_string()
     };
 
     let mut cmd = Command::new("/bin/sh");
@@ -282,10 +92,11 @@ pub async fn handle_service_start(name: &str) -> Response<Full<Bytes>> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
-    };
+    if let Some(env_map) = &cfg.env {
+        cmd.envs(env_map);
+    }
+
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
 
     let pid = child.id().unwrap_or(0);
     let started_at = crate::utc_rfc3339();
@@ -349,16 +160,120 @@ pub async fn handle_service_start(name: &str) -> Response<Full<Bytes>> {
         running: true,
     };
 
-    RUNNING_SERVICES.lock().await.insert(name_owned, svc);
+    RUNNING_SERVICES
+        .lock()
+        .await
+        .insert(name_owned.clone(), svc);
 
-    json_ok(serde_json::json!({
-        "status": "running",
-        "pid": pid,
-        "name": name,
-        "port": port,
-        "logFile": log_file,
-        "startedAt": started_at
-    }))
+    let result = ManagedService {
+        name: name_owned,
+        status: ProcessStatus::Running,
+        pid,
+        port,
+        started_at,
+        exit_code: None,
+        log_file,
+        running: true,
+    };
+
+    Ok(result)
+}
+
+pub async fn handle_services_list() -> Response<Full<Bytes>> {
+    let mut services = RUNNING_SERVICES.lock().await;
+
+    for svc in services.values_mut() {
+        if svc.status == ProcessStatus::Running && !is_process_running(svc.pid) {
+            svc.status = ProcessStatus::Error;
+            svc.running = false;
+        }
+    }
+
+    let mut list: Vec<serde_json::Value> = Vec::new();
+
+    if let Some(cfg) = SANDBOX_CONFIG.as_ref() {
+        for (name, svc_cfg) in &cfg.services {
+            if let Some(svc) = services.get(name.as_str()) {
+                list.push(serde_json::to_value(svc).unwrap_or_default());
+            } else {
+                let port = svc_cfg.port.unwrap_or(0);
+                list.push(serde_json::json!({
+                    "name": name,
+                    "status": "stopped",
+                    "pid": 0,
+                    "port": port,
+                    "startedAt": "",
+                    "exitCode": null,
+                    "logFile": format!("{}/{}.log", LOG_DIR, name),
+                    "running": false
+                }));
+            }
+        }
+    }
+
+    json_ok(serde_json::json!({ "services": list }))
+}
+
+pub async fn handle_service_status(name: &str) -> Response<Full<Bytes>> {
+    let mut services = RUNNING_SERVICES.lock().await;
+
+    if let Some(svc) = services.get_mut(name) {
+        if svc.status == ProcessStatus::Running && !is_process_running(svc.pid) {
+            svc.status = ProcessStatus::Error;
+            svc.running = false;
+        }
+        return json_ok(serde_json::to_value(&*svc).unwrap_or_default());
+    }
+
+    if let Some(svc_cfg) = find_service_config(name) {
+        let port = svc_cfg.port.unwrap_or(0);
+        return json_ok(serde_json::json!({
+            "name": name,
+            "status": "stopped",
+            "pid": 0,
+            "port": port,
+            "startedAt": "",
+            "exitCode": null,
+            "logFile": format!("{}/{}.log", LOG_DIR, name),
+            "running": false
+        }));
+    }
+
+    json_error(
+        StatusCode::NOT_FOUND,
+        &format!("Unknown service: {}", name),
+    )
+}
+
+pub async fn handle_service_start(name: &str) -> Response<Full<Bytes>> {
+    let cfg = match find_service_config(name) {
+        Some(c) => c,
+        None => {
+            return json_error(
+                StatusCode::NOT_FOUND,
+                &format!("Unknown service: {}", name),
+            )
+        }
+    };
+
+    match start_service_internal(name, cfg).await {
+        Ok(svc) => json_ok(serde_json::json!({
+            "status": "running",
+            "pid": svc.pid,
+            "name": svc.name,
+            "port": svc.port,
+            "logFile": svc.log_file,
+            "startedAt": svc.started_at
+        })),
+        Err(e) => {
+            let status = if e.contains("already running") {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            json_error(status, &e)
+        }
+    }
 }
 
 pub async fn handle_service_stop(name: &str) -> Response<Full<Bytes>> {
@@ -447,7 +362,7 @@ pub async fn handle_service_restart(name: &str) -> Response<Full<Bytes>> {
 pub async fn handle_service_logs(name: &str, query: &str) -> Response<Full<Bytes>> {
     use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-    if find_service_def(name).is_none() {
+    if find_service_config(name).is_none() {
         return json_error(
             StatusCode::NOT_FOUND,
             &format!("Unknown service: {}", name),

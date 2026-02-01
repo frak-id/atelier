@@ -32,15 +32,9 @@ mount -t tmpfs tmpfs /tmp >> "$LOG_DIR/init.log" 2>&1
 # Read config values using jq
 if [ -f "$CONFIG_FILE" ]; then
     DASHBOARD_DOMAIN=$(jq -r '.network.dashboardDomain // empty' "$CONFIG_FILE" 2>/dev/null)
-    VSCODE_PORT=$(jq -r '.services.vscode.port // empty' "$CONFIG_FILE" 2>/dev/null)
-    OPENCODE_PORT=$(jq -r '.services.opencode.port // empty' "$CONFIG_FILE" 2>/dev/null)
-    TERMINAL_PORT=$(jq -r '.services.terminal.port // empty' "$CONFIG_FILE" 2>/dev/null)
     AGENT_PORT=$(jq -r '.services.agent.port // empty' "$CONFIG_FILE" 2>/dev/null)
 fi
 DASHBOARD_DOMAIN="${DASHBOARD_DOMAIN:-sandbox-dash.localhost}"
-VSCODE_PORT="${VSCODE_PORT:-8080}"
-OPENCODE_PORT="${OPENCODE_PORT:-3000}"
-TERMINAL_PORT="${TERMINAL_PORT:-7681}"
 AGENT_PORT="${AGENT_PORT:-9999}"
 
 log "Creating device nodes..."
@@ -139,61 +133,6 @@ else
 fi
 log "Workspace directory: $WORKSPACE_DIR"
 
-SHARED_BIN="/opt/shared/bin"
-
-log "Starting code-server..."
-if [ -x "$SHARED_BIN/code-server" ]; then
-    su - dev -c "$SHARED_BIN/code-server --bind-addr 0.0.0.0:$VSCODE_PORT --auth none --disable-telemetry $WORKSPACE_DIR > $LOG_DIR/code-server.log 2>&1" &
-    CODE_SERVER_PID=$!
-    log "code-server started (PID $CODE_SERVER_PID) with workspace $WORKSPACE_DIR"
-    
-    EXTENSIONS_FILE="/etc/sandbox/vscode-extensions.json"
-    if [ -f "$EXTENSIONS_FILE" ]; then
-        log "Installing VSCode extensions in background..."
-        (
-            sleep 10
-            EXTENSIONS=$(cat "$EXTENSIONS_FILE" | tr -d '[]"' | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$')
-            for ext in $EXTENSIONS; do
-                log "Installing extension: $ext"
-                su - dev -c "$SHARED_BIN/code-server --install-extension $ext" >> "$LOG_DIR/extensions.log" 2>&1 || true
-            done
-            log "Extension installation complete"
-        ) &
-    fi
-else
-    log "ERROR: code-server not found at $SHARED_BIN/code-server"
-fi
-
-# Pre-install OpenCode plugin SDK (required for external plugins with standalone binary)
-if [ -x "$SHARED_BIN/opencode" ]; then
-    OPENCODE_PLUGIN_DIR="/home/dev/.cache/opencode"
-    if [ ! -d "$OPENCODE_PLUGIN_DIR/node_modules/@opencode-ai/plugin" ]; then
-        log "Installing OpenCode plugin SDK..."
-        mkdir -p "$OPENCODE_PLUGIN_DIR"
-        chown -R dev:dev /home/dev/.cache
-        su - dev -c "cd $OPENCODE_PLUGIN_DIR && bun add @opencode-ai/plugin" >> "$LOG_DIR/init.log" 2>&1
-        log "OpenCode plugin SDK installed"
-    fi
-fi
-
-log "Starting OpenCode server..."
-OPENCODE_CORS="--cors https://${DASHBOARD_DOMAIN}"
-if [ -x "$SHARED_BIN/opencode" ]; then
-    su - dev -c "cd $WORKSPACE_DIR && $SHARED_BIN/opencode serve --hostname 0.0.0.0 --port $OPENCODE_PORT $OPENCODE_CORS > $LOG_DIR/opencode.log 2>&1" &
-    log "OpenCode started (PID $!) in $WORKSPACE_DIR with CORS enabled"
-else
-    log "WARNING: opencode not found at $SHARED_BIN/opencode"
-fi
-
-log "Starting ttyd terminal server..."
-if command -v ttyd >/dev/null 2>&1; then
-    # Run ttyd as dev user with login shell for full environment
-    ttyd -p $TERMINAL_PORT -W -t fontSize=14 -t fontFamily="monospace" su - dev > "$LOG_DIR/ttyd.log" 2>&1 &
-    log "ttyd started (PID $!) on port $TERMINAL_PORT"
-else
-    log "WARNING: ttyd not found"
-fi
-
 if [ -f "$START_SCRIPT" ]; then
     log "Running start commands..."
     chmod +x "$START_SCRIPT"
@@ -201,7 +140,7 @@ if [ -f "$START_SCRIPT" ]; then
 fi
 
 log "Sandbox initialization complete"
-log "Services: SSH(22), code-server($VSCODE_PORT), opencode($OPENCODE_PORT), ttyd($TERMINAL_PORT), agent($AGENT_PORT)"
+log "Services: SSH(22), agent($AGENT_PORT) — other services managed by agent via config"
 
 # List running processes
 log "Running processes:"

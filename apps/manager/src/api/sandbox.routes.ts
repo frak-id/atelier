@@ -604,34 +604,22 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
           const browserPort = config.raw.services.browser.port;
 
-          const workspace = sandbox.workspaceId
-            ? workspaceService.getById(sandbox.workspaceId)
-            : undefined;
-          const devCommands = workspace?.config.devCommands ?? [];
-          const defaultDevCommand =
-            devCommands.find((c) => c.isDefault) ?? devCommands[0];
-          const defaultUrl = defaultDevCommand?.port
-            ? `http://localhost:${defaultDevCommand.port}`
-            : "about:blank";
+          const startBrowser = async () => {
+            await agentClient.serviceStart(sandbox.id, "xvfb");
+            await new Promise((r) => setTimeout(r, 300));
+            await agentClient.serviceStart(sandbox.id, "chromium");
+            await new Promise((r) => setTimeout(r, 500));
+            await agentClient.serviceStart(sandbox.id, "x11vnc");
+            await new Promise((r) => setTimeout(r, 200));
+            await agentClient.serviceStart(sandbox.id, "websockify");
+          };
 
-          const browserCmd = [
-            `(setsid Xvfb :99 -screen 0 1280x900x24 > /var/log/sandbox/xvfb.log 2>&1 &)`,
-            `sleep 0.3`,
-            `(setsid su - dev -c "DISPLAY=:99 chromium --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --window-size=1280,900 --start-maximized '${defaultUrl}'" > /var/log/sandbox/chromium.log 2>&1 &)`,
-            `sleep 0.5`,
-            `(setsid x11vnc -display :99 -forever -shared -nopw -rfbport 5900 > /var/log/sandbox/x11vnc.log 2>&1 &)`,
-            `sleep 0.2`,
-            `(setsid websockify --web /opt/novnc ${browserPort} localhost:5900 > /var/log/sandbox/novnc.log 2>&1 &)`,
-          ].join("\n");
-
-          agentClient
-            .exec(sandbox.id, browserCmd, { timeout: 10000 })
-            .catch((err) => {
-              log.warn(
-                { sandboxId: sandbox.id, error: String(err) },
-                "Browser start exec failed",
-              );
-            });
+          startBrowser().catch((err) => {
+            log.warn(
+              { sandboxId: sandbox.id, error: String(err) },
+              "Browser start failed",
+            );
+          });
 
           const browserUrl = await CaddyService.registerBrowserRoute(
             sandbox.id,
@@ -688,22 +676,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             return { status: "off" as const };
           }
 
-          const killCmd = [
-            "pkill -f websockify || true",
-            "pkill -f x11vnc || true",
-            "pkill -f chrome || true",
-            "pkill -f chromium || true",
-            "pkill -f Xvfb || true",
-          ].join("\n");
-
-          agentClient
-            .exec(sandbox.id, killCmd, { timeout: 5000 })
-            .catch((err) => {
-              log.warn(
-                { sandboxId: sandbox.id, error: String(err) },
-                "Browser stop exec failed",
-              );
-            });
+          Promise.all([
+            agentClient.serviceStop(sandbox.id, "websockify").catch(() => {}),
+            agentClient.serviceStop(sandbox.id, "x11vnc").catch(() => {}),
+            agentClient.serviceStop(sandbox.id, "chromium").catch(() => {}),
+            agentClient.serviceStop(sandbox.id, "xvfb").catch(() => {}),
+          ]).catch(() => {});
 
           await CaddyService.removeBrowserRoute(sandbox.id);
 
