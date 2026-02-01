@@ -19,6 +19,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Save,
   Terminal,
   Trash2,
 } from "lucide-react";
@@ -39,6 +40,7 @@ import {
   useGitCommit,
   useGitPush,
   useRestartSandbox,
+  useSaveAsPrebuild,
   useStartBrowser,
   useStartSandbox,
   useStopBrowser,
@@ -126,7 +128,9 @@ export function SandboxDrawer({
   const stopMutation = useStopSandbox();
   const startMutation = useStartSandbox();
   const restartMutation = useRestartSandbox();
+  const saveAsPrebuildMutation = useSaveAsPrebuild();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
 
   const copyToClipboard = (text: string, id: string) => {
@@ -277,24 +281,44 @@ export function SandboxDrawer({
                       <TooltipContent>Stop</TooltipContent>
                     </Tooltip>
                     {sandbox.workspaceId && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                            onClick={() => restartMutation.mutate(sandbox.id)}
-                            disabled={restartMutation.isPending}
-                          >
-                            {restartMutation.isPending ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <RotateCcw className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Restart</TooltipContent>
-                      </Tooltip>
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              onClick={() => restartMutation.mutate(sandbox.id)}
+                              disabled={restartMutation.isPending}
+                            >
+                              {restartMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Restart</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              onClick={() => setIsSaveDialogOpen(true)}
+                              disabled={saveAsPrebuildMutation.isPending}
+                            >
+                              {saveAsPrebuildMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Save className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Save as Prebuild</TooltipContent>
+                        </Tooltip>
+                      </>
                     )}
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -636,6 +660,47 @@ export function SandboxDrawer({
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               )}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save as Prebuild</DialogTitle>
+            <DialogDescription>
+              This will snapshot the current sandbox state as a prebuild for its
+              workspace. The sandbox will be briefly stopped and restarted
+              during the process.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsSaveDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!sandboxId) return;
+                saveAsPrebuildMutation.mutate(sandboxId, {
+                  onSuccess: () => {
+                    setIsSaveDialogOpen(false);
+                    toast.success("Sandbox saved as prebuild");
+                  },
+                  onError: () => {
+                    toast.error("Failed to save as prebuild");
+                  },
+                });
+              }}
+              disabled={saveAsPrebuildMutation.isPending}
+            >
+              {saveAsPrebuildMutation.isPending && (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              )}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
