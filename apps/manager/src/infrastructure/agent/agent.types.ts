@@ -1,12 +1,7 @@
 export interface AgentHealth {
   status: string;
   sandboxId?: string;
-  services: {
-    vscode: boolean;
-    opencode: boolean;
-    sshd: boolean;
-    ttyd: boolean;
-  };
+  services: Record<string, boolean>;
   uptime: number;
 }
 
@@ -15,12 +10,6 @@ export interface AgentMetrics {
   memory: { total: number; used: number; free: number };
   disk: { total: number; used: number; free: number };
   timestamp: string;
-}
-
-export interface AppPort {
-  port: number;
-  name: string;
-  registeredAt: string;
 }
 
 export interface ServiceStatus {

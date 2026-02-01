@@ -14,8 +14,6 @@ import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   AgentHealthSchema,
   AgentMetricsSchema,
-  AppPortListResponseSchema,
-  AppPortSchema,
   BrowserStartResponseSchema,
   BrowserStatusResponseSchema,
   BrowserStopResponseSchema,
@@ -39,7 +37,6 @@ import {
   LogsQuerySchema,
   LogsResponseSchema,
   PromoteToPrebuildResponseSchema,
-  RegisterAppBodySchema,
   ResizeStorageBodySchema,
   ResizeStorageResponseSchema,
   SandboxListQuerySchema,
@@ -184,27 +181,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         {
           params: IdParamSchema,
           response: AgentMetricsSchema,
-        },
-      )
-      .get(
-        "/:id/apps",
-        async ({ sandbox }) => {
-          return agentClient.getApps(sandbox.id);
-        },
-        {
-          params: IdParamSchema,
-          response: AppPortListResponseSchema,
-        },
-      )
-      .post(
-        "/:id/apps",
-        async ({ body, sandbox }) => {
-          return agentClient.registerApp(sandbox.id, body.port, body.name);
-        },
-        {
-          params: IdParamSchema,
-          body: RegisterAppBodySchema,
-          response: AppPortSchema,
         },
       )
       .post(

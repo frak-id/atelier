@@ -531,34 +531,17 @@ class SpawnContext {
   }
 
   private async pushAuthAndConfigs(): Promise<void> {
-    const [authResult, configResult] = await Promise.allSettled([
-      this.deps.internalService.syncAuthToSandbox(this.sandboxId),
-      this.deps.internalService.syncConfigsToSandbox(this.sandboxId),
-    ]);
-
-    if (authResult.status === "fulfilled") {
-      log.info(
-        { sandboxId: this.sandboxId, synced: authResult.value.synced },
-        "Auth pushed to sandbox",
-      );
-    } else {
-      log.warn(
-        { sandboxId: this.sandboxId, error: authResult.reason },
-        "Failed to push auth to sandbox",
-      );
-    }
-
-    if (configResult.status === "fulfilled") {
-      log.info(
-        { sandboxId: this.sandboxId, synced: configResult.value.synced },
-        "Configs pushed to sandbox",
-      );
-    } else {
-      log.warn(
-        { sandboxId: this.sandboxId, error: configResult.reason },
-        "Failed to push configs to sandbox",
-      );
-    }
+    const result = await this.deps.internalService.syncToSandbox(
+      this.sandboxId,
+    );
+    log.info(
+      {
+        sandboxId: this.sandboxId,
+        authSynced: result.auth.synced,
+        configsSynced: result.configs.synced,
+      },
+      "Auth and configs pushed to sandbox",
+    );
   }
 
   private async expandFilesystem(): Promise<void> {

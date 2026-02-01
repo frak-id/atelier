@@ -89,22 +89,6 @@ export const ExecResponseSchema = t.Object({
 });
 export type ExecResponse = Static<typeof ExecResponseSchema>;
 
-export const RegisterAppBodySchema = t.Object({
-  port: t.Number({ minimum: 1, maximum: 65535 }),
-  name: t.String({ minLength: 1, maxLength: 100 }),
-});
-export type RegisterAppBody = Static<typeof RegisterAppBodySchema>;
-
-export const AppPortSchema = t.Object({
-  port: t.Number(),
-  name: t.String(),
-  registeredAt: t.String(),
-});
-export type AppPort = Static<typeof AppPortSchema>;
-
-export const AppPortListResponseSchema = t.Array(AppPortSchema);
-export type AppPortListResponse = Static<typeof AppPortListResponseSchema>;
-
 export const ServiceStatusSchema = t.Object({
   name: t.String(),
   status: t.Union([
@@ -145,13 +129,7 @@ export type LogsResponse = Static<typeof LogsResponseSchema>;
 export const AgentHealthSchema = t.Object({
   status: t.String(),
   sandboxId: t.Optional(t.String()),
-  services: t.Object({
-    vscode: t.Boolean(),
-    opencode: t.Boolean(),
-    sshd: t.Boolean(),
-    ttyd: t.Boolean(),
-    browser: t.Optional(t.Boolean()),
-  }),
+  services: t.Record(t.String(), t.Boolean()),
   uptime: t.Number(),
 });
 export type AgentHealth = Static<typeof AgentHealthSchema>;

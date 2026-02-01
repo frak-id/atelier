@@ -7,7 +7,6 @@ export BUN_INSTALL=/home/dev/.bun
 
 CONFIG_FILE="/etc/sandbox/config.json"
 SECRETS_FILE="/etc/sandbox/secrets/.env"
-START_SCRIPT="/etc/sandbox/start.sh"
 LOG_DIR="/var/log/sandbox"
 
 mkdir -p "$LOG_DIR"
@@ -132,12 +131,6 @@ else
     WORKSPACE_DIR="/home/dev/workspace"
 fi
 log "Workspace directory: $WORKSPACE_DIR"
-
-if [ -f "$START_SCRIPT" ]; then
-    log "Running start commands..."
-    chmod +x "$START_SCRIPT"
-    su - dev -c "cd /home/dev/workspace && $START_SCRIPT > $LOG_DIR/start.log 2>&1" &
-fi
 
 log "Sandbox initialization complete"
 log "Services: SSH(22), agent($AGENT_PORT) — other services managed by agent via config"

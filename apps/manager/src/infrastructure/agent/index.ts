@@ -3,7 +3,6 @@ export { AgentOperations } from "./agent.operations.ts";
 export type {
   AgentHealth,
   AgentMetrics,
-  AppPort,
   BatchExecResult,
   DevCommandListResult,
   DevCommandStatus,

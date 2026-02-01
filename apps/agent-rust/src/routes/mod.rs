@@ -1,6 +1,7 @@
-pub mod apps;
 pub mod config;
 pub mod dev;
 pub mod exec;
+pub mod git;
 pub mod health;
+pub mod process_manager;
 pub mod services;
