@@ -41,6 +41,8 @@ import {
   useGitPush,
   useRestartSandbox,
   useSaveAsPrebuild,
+  useServiceRestart,
+  useServiceStop,
   useStartBrowser,
   useStartSandbox,
   useStopBrowser,
@@ -551,55 +553,10 @@ export function SandboxDrawer({
                         <RepositoriesTab sandboxId={sandbox.id} />
                       </TabsContent>
                       <TabsContent value="services" className="mt-4">
-                        <Card>
-                          <CardHeader>
-                            <CardTitle className="text-base">
-                              Services
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            {services?.services &&
-                            services.services.length > 0 ? (
-                              <div className="space-y-2">
-                                {services.services.map((service) => (
-                                  <div
-                                    key={service.name}
-                                    className="flex items-center justify-between py-2 border-b last:border-0"
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="font-medium">
-                                        {service.name}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      {service.pid && (
-                                        <span className="text-xs text-muted-foreground font-mono">
-                                          PID: {service.pid}
-                                        </span>
-                                      )}
-                                      <Badge
-                                        variant={
-                                          service.running
-                                            ? "success"
-                                            : "secondary"
-                                        }
-                                        className="h-5 px-1.5"
-                                      >
-                                        {service.running
-                                          ? "Running"
-                                          : "Stopped"}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-sm text-muted-foreground">
-                                No services detected
-                              </p>
-                            )}
-                          </CardContent>
-                        </Card>
+                        <ServicesTab
+                          sandboxId={sandbox.id}
+                          services={services?.services}
+                        />
                       </TabsContent>
                       <TabsContent value="sessions" className="mt-4">
                         <SessionsTab
@@ -1373,6 +1330,103 @@ function SessionsTab({
         />
       )}
     </div>
+  );
+}
+
+function ServicesTab({
+  sandboxId,
+  services,
+}: {
+  sandboxId: string;
+  services?: { name: string; running: boolean; pid?: number; port?: number }[];
+}) {
+  const stopMutation = useServiceStop(sandboxId);
+  const restartMutation = useServiceRestart(sandboxId);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Services</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {services && services.length > 0 ? (
+          <div className="space-y-2">
+            {services.map((service) => (
+              <div
+                key={service.name}
+                className="flex items-center justify-between py-2 border-b last:border-0"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="font-medium text-sm">{service.name}</div>
+                  {service.pid ? (
+                    <span className="text-xs text-muted-foreground font-mono">
+                      PID: {service.pid}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge
+                    variant={service.running ? "success" : "secondary"}
+                    className="h-5 px-1.5"
+                  >
+                    {service.running ? "Running" : "Stopped"}
+                  </Badge>
+                  {service.running ? (
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => restartMutation.mutate(service.name)}
+                            disabled={restartMutation.isPending}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Restart</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => stopMutation.mutate(service.name)}
+                            disabled={stopMutation.isPending}
+                          >
+                            <Pause className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Stop</TooltipContent>
+                      </Tooltip>
+                    </>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => restartMutation.mutate(service.name)}
+                          disabled={restartMutation.isPending}
+                        >
+                          <Play className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Start</TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No services detected</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

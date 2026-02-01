@@ -110,6 +110,23 @@ export const ServicesResponseSchema = t.Object({
 });
 export type ServicesResponse = Static<typeof ServicesResponseSchema>;
 
+export const ServiceNameParamsSchema = t.Object({
+  id: t.String(),
+  name: t.String(),
+});
+export type ServiceNameParams = Static<typeof ServiceNameParamsSchema>;
+
+export const ServiceActionResponseSchema = t.Object({
+  status: t.String(),
+  name: t.String(),
+  pid: t.Optional(t.Number()),
+  port: t.Optional(t.Number()),
+  message: t.Optional(t.String()),
+  logFile: t.Optional(t.String()),
+  startedAt: t.Optional(t.String()),
+});
+export type ServiceActionResponse = Static<typeof ServiceActionResponseSchema>;
+
 export const LogsParamsSchema = t.Object({
   id: t.String(),
   service: t.String(),

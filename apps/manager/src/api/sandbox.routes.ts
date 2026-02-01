@@ -42,6 +42,8 @@ import {
   SandboxListQuerySchema,
   SandboxListResponseSchema,
   SandboxSchema,
+  ServiceActionResponseSchema,
+  ServiceNameParamsSchema,
   ServicesResponseSchema,
   SpawnJobSchema,
 } from "../schemas/index.ts";
@@ -221,6 +223,26 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         {
           params: IdParamSchema,
           response: ServicesResponseSchema,
+        },
+      )
+      .post(
+        "/:id/services/:name/stop",
+        async ({ params, sandbox }) => {
+          return agentClient.serviceStop(sandbox.id, params.name);
+        },
+        {
+          params: ServiceNameParamsSchema,
+          response: ServiceActionResponseSchema,
+        },
+      )
+      .post(
+        "/:id/services/:name/restart",
+        async ({ params, sandbox }) => {
+          return agentClient.serviceRestart(sandbox.id, params.name);
+        },
+        {
+          params: ServiceNameParamsSchema,
+          response: ServiceActionResponseSchema,
         },
       )
       .get(
