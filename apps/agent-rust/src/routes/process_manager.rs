@@ -212,13 +212,31 @@ impl ProcessRegistry {
         }
         .map_err(|e| e.to_string())?;
 
+        let env_prefix = if let Some(env_vars) = params.env {
+            env_vars
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "export {}='{}'",
+                        k,
+                        v.replace('\'', "'\\''")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ")
+                + "; "
+        } else {
+            String::new()
+        };
+
         let wrapped_cmd = if params.user == "dev" {
             format!(
-                "su - dev -c \"{}\"",
+                "su - dev -c \"{}{}\"",
+                env_prefix,
                 params.command.replace('"', "\\\"")
             )
         } else {
-            params.command.to_string()
+            format!("{}{}", env_prefix, params.command)
         };
 
         let mut cmd = Command::new("/bin/sh");
@@ -228,10 +246,6 @@ impl ProcessRegistry {
 
         if let Some(dir) = params.workdir {
             cmd.current_dir(dir);
-        }
-
-        if let Some(env_vars) = params.env {
-            cmd.envs(env_vars);
         }
 
         let mut child = cmd.spawn().map_err(|e| e.to_string())?;
