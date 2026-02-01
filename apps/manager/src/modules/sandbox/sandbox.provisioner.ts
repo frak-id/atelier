@@ -180,9 +180,6 @@ ${dnsLines}
           user: "root" as const,
           autoStart: true,
         },
-        browser: {
-          port: browserPort,
-        },
         xvfb: {
           command: "Xvfb :99 -screen 0 1280x900x24",
           user: "root" as const,

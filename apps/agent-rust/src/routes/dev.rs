@@ -1,22 +1,54 @@
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::{Request, Response, StatusCode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use crate::config::{LOG_DIR, WORKSPACE_DIR};
 use crate::response::{json_error, json_ok};
 use crate::routes::process_manager::{
-    LogOpenMode, ProcessRegistry, StartParams, StopResult,
+    LogOpenMode, ManagedProcess, ProcessRegistry, StartParams,
+    StopResult,
 };
 
 static RUNNING_DEV_COMMANDS: LazyLock<ProcessRegistry> =
     LazyLock::new(ProcessRegistry::new);
 
+#[derive(Serialize)]
+struct DevListResponse {
+    commands: Vec<ManagedProcess>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevStartResponse {
+    status: String,
+    pid: u32,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    port: Option<u16>,
+    log_file: String,
+    started_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevStopResponse {
+    status: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
+    message: String,
+}
+
 pub async fn handle_get_dev() -> Response<Full<Bytes>> {
-    let list = RUNNING_DEV_COMMANDS.list_processes().await;
-    json_ok(serde_json::json!({ "commands": list }))
+    let commands = RUNNING_DEV_COMMANDS.list_processes().await;
+    json_ok(
+        serde_json::to_value(DevListResponse { commands }).unwrap(),
+    )
 }
 
 pub async fn handle_dev_start(
@@ -67,14 +99,17 @@ pub async fn handle_dev_start(
         })
         .await
     {
-        Ok(proc) => json_ok(serde_json::json!({
-            "status": "running",
-            "pid": proc.pid,
-            "name": name,
-            "port": proc.port,
-            "logFile": proc.log_file,
-            "startedAt": proc.started_at
-        })),
+        Ok(proc) => json_ok(
+            serde_json::to_value(DevStartResponse {
+                status: "running".to_string(),
+                pid: proc.pid,
+                name: proc.name,
+                port: proc.port,
+                log_file: proc.log_file,
+                started_at: proc.started_at,
+            })
+            .unwrap(),
+        ),
         Err(e) => {
             let status = if e.contains("already running") {
                 StatusCode::CONFLICT
@@ -89,29 +124,33 @@ pub async fn handle_dev_start(
 pub async fn handle_dev_stop(
     name: &str,
 ) -> Response<Full<Bytes>> {
-    match RUNNING_DEV_COMMANDS.stop_process(name, 100).await {
-        StopResult::NotFound => json_ok(serde_json::json!({
-            "status": "stopped",
-            "name": name,
-            "message": "Command not found or already stopped"
-        })),
+    let resp = match RUNNING_DEV_COMMANDS.stop_process(name, 100).await
+    {
+        StopResult::NotFound => DevStopResponse {
+            status: "stopped".to_string(),
+            name: name.to_string(),
+            pid: None,
+            exit_code: None,
+            message: "Command not found or already stopped".to_string(),
+        },
         StopResult::AlreadyStopped { status, exit_code } => {
-            json_ok(serde_json::json!({
-                "status": status,
-                "name": name,
-                "exitCode": exit_code,
-                "message": "Command already stopped"
-            }))
+            DevStopResponse {
+                status: format!("{:?}", status).to_lowercase(),
+                name: name.to_string(),
+                pid: None,
+                exit_code,
+                message: "Command already stopped".to_string(),
+            }
         }
-        StopResult::Stopped { pid } => {
-            json_ok(serde_json::json!({
-                "status": "stopped",
-                "name": name,
-                "pid": pid,
-                "message": "Command stopped"
-            }))
-        }
-    }
+        StopResult::Stopped { pid } => DevStopResponse {
+            status: "stopped".to_string(),
+            name: name.to_string(),
+            pid: Some(pid),
+            exit_code: None,
+            message: "Command stopped".to_string(),
+        },
+    };
+    json_ok(serde_json::to_value(resp).unwrap())
 }
 
 pub async fn handle_dev_logs(

@@ -1,21 +1,65 @@
 use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::{Response, StatusCode};
+use serde::Serialize;
 use std::sync::LazyLock;
 
 use crate::config::{ServiceConfig, LOG_DIR, SANDBOX_CONFIG};
 use crate::response::{json_error, json_ok};
 use crate::routes::process_manager::{
-    LogOpenMode, ProcessRegistry, StartParams, StopResult,
+    LogOpenMode, ManagedProcess, ProcessRegistry, StartParams,
+    StopResult,
 };
 
 static RUNNING_SERVICES: LazyLock<ProcessRegistry> =
     LazyLock::new(ProcessRegistry::new);
 
+#[derive(Serialize)]
+struct ServiceListResponse {
+    services: Vec<ManagedProcess>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServiceStartResponse {
+    status: String,
+    pid: u32,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    port: Option<u16>,
+    log_file: String,
+    started_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServiceStopResponse {
+    status: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
+    message: String,
+}
+
 fn find_service_config(name: &str) -> Option<&ServiceConfig> {
     SANDBOX_CONFIG
         .as_ref()
         .and_then(|c| c.services.get(name))
+}
+
+fn stopped_service(name: &str, cfg: &ServiceConfig) -> ManagedProcess {
+    ManagedProcess {
+        name: name.to_string(),
+        status: crate::routes::process_manager::ProcessStatus::Stopped,
+        pid: 0,
+        port: cfg.port,
+        started_at: String::new(),
+        exit_code: None,
+        log_file: format!("{}/{}.log", LOG_DIR, name),
+        running: false,
+    }
 }
 
 pub async fn start_autostart_services() {
@@ -36,10 +80,7 @@ pub async fn start_autostart_services() {
 async fn start_service_internal(
     name: &str,
     cfg: &ServiceConfig,
-) -> Result<
-    crate::routes::process_manager::ManagedProcess,
-    String,
-> {
+) -> Result<ManagedProcess, String> {
     let command = cfg
         .command
         .as_deref()
@@ -63,62 +104,42 @@ async fn start_service_internal(
 
 pub async fn handle_services_list() -> Response<Full<Bytes>> {
     let running = RUNNING_SERVICES.list_processes().await;
-    let mut running_map: std::collections::HashMap<
-        String,
-        serde_json::Value,
-    > = running
-        .into_iter()
-        .filter_map(|v| {
-            v.get("name")
-                .and_then(|n| n.as_str())
-                .map(|n| (n.to_string(), v.clone()))
-        })
-        .collect();
+    let mut running_map: std::collections::HashMap<String, ManagedProcess> =
+        running
+            .into_iter()
+            .map(|p| (p.name.clone(), p))
+            .collect();
 
-    let mut list: Vec<serde_json::Value> = Vec::new();
+    let mut services: Vec<ManagedProcess> = Vec::new();
 
     if let Some(cfg) = SANDBOX_CONFIG.as_ref() {
         for (name, svc_cfg) in &cfg.services {
             if let Some(svc) = running_map.remove(name.as_str()) {
-                list.push(svc);
+                services.push(svc);
             } else {
-                let port = svc_cfg.port.unwrap_or(0);
-                list.push(serde_json::json!({
-                    "name": name,
-                    "status": "stopped",
-                    "pid": 0,
-                    "port": port,
-                    "startedAt": "",
-                    "exitCode": null,
-                    "logFile": format!("{}/{}.log", LOG_DIR, name),
-                    "running": false
-                }));
+                services.push(stopped_service(name, svc_cfg));
             }
         }
     }
 
-    json_ok(serde_json::json!({ "services": list }))
+    json_ok(
+        serde_json::to_value(ServiceListResponse { services })
+            .unwrap(),
+    )
 }
 
 pub async fn handle_service_status(
     name: &str,
 ) -> Response<Full<Bytes>> {
-    if let Some(val) = RUNNING_SERVICES.get_process(name).await {
-        return json_ok(val);
+    if let Some(proc) = RUNNING_SERVICES.get_process(name).await {
+        return json_ok(serde_json::to_value(proc).unwrap());
     }
 
     if let Some(svc_cfg) = find_service_config(name) {
-        let port = svc_cfg.port.unwrap_or(0);
-        return json_ok(serde_json::json!({
-            "name": name,
-            "status": "stopped",
-            "pid": 0,
-            "port": port,
-            "startedAt": "",
-            "exitCode": null,
-            "logFile": format!("{}/{}.log", LOG_DIR, name),
-            "running": false
-        }));
+        return json_ok(
+            serde_json::to_value(stopped_service(name, svc_cfg))
+                .unwrap(),
+        );
     }
 
     json_error(
@@ -141,14 +162,17 @@ pub async fn handle_service_start(
     };
 
     match start_service_internal(name, cfg).await {
-        Ok(svc) => json_ok(serde_json::json!({
-            "status": "running",
-            "pid": svc.pid,
-            "name": svc.name,
-            "port": svc.port,
-            "logFile": svc.log_file,
-            "startedAt": svc.started_at
-        })),
+        Ok(svc) => json_ok(
+            serde_json::to_value(ServiceStartResponse {
+                status: "running".to_string(),
+                pid: svc.pid,
+                name: svc.name,
+                port: svc.port,
+                log_file: svc.log_file,
+                started_at: svc.started_at,
+            })
+            .unwrap(),
+        ),
         Err(e) => {
             let status = if e.contains("already running") {
                 StatusCode::CONFLICT
@@ -163,29 +187,32 @@ pub async fn handle_service_start(
 pub async fn handle_service_stop(
     name: &str,
 ) -> Response<Full<Bytes>> {
-    match RUNNING_SERVICES.stop_process(name, 500).await {
-        StopResult::NotFound => json_ok(serde_json::json!({
-            "status": "stopped",
-            "name": name,
-            "message": "Service not found or already stopped"
-        })),
+    let resp = match RUNNING_SERVICES.stop_process(name, 500).await {
+        StopResult::NotFound => ServiceStopResponse {
+            status: "stopped".to_string(),
+            name: name.to_string(),
+            pid: None,
+            exit_code: None,
+            message: "Service not found or already stopped".to_string(),
+        },
         StopResult::AlreadyStopped { status, exit_code } => {
-            json_ok(serde_json::json!({
-                "status": status,
-                "name": name,
-                "exitCode": exit_code,
-                "message": "Service already stopped"
-            }))
+            ServiceStopResponse {
+                status: format!("{:?}", status).to_lowercase(),
+                name: name.to_string(),
+                pid: None,
+                exit_code,
+                message: "Service already stopped".to_string(),
+            }
         }
-        StopResult::Stopped { pid } => {
-            json_ok(serde_json::json!({
-                "status": "stopped",
-                "name": name,
-                "pid": pid,
-                "message": "Service stopped"
-            }))
-        }
-    }
+        StopResult::Stopped { pid } => ServiceStopResponse {
+            status: "stopped".to_string(),
+            name: name.to_string(),
+            pid: Some(pid),
+            exit_code: None,
+            message: "Service stopped".to_string(),
+        },
+    };
+    json_ok(serde_json::to_value(resp).unwrap())
 }
 
 pub async fn handle_service_restart(

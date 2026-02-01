@@ -7,6 +7,14 @@ use tokio::sync::Mutex;
 use crate::config::LOG_DIR;
 use crate::response::json_ok;
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogsResponse {
+    pub name: String,
+    pub content: String,
+    pub next_offset: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProcessStatus {
@@ -15,7 +23,7 @@ pub enum ProcessStatus {
     Error,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedProcess {
     pub name: String,
@@ -106,11 +114,14 @@ pub async fn read_logs(
     let mut file = match tokio::fs::File::open(log_path).await {
         Ok(f) => f,
         Err(_) => {
-            return json_ok(serde_json::json!({
-                "name": name,
-                "content": "",
-                "nextOffset": 0
-            }));
+            return json_ok(
+                serde_json::to_value(LogsResponse {
+                    name: name.to_string(),
+                    content: String::new(),
+                    next_offset: 0,
+                })
+                .unwrap(),
+            );
         }
     };
 
@@ -120,11 +131,14 @@ pub async fn read_logs(
             .await
             .is_err()
         {
-            return json_ok(serde_json::json!({
-                "name": name,
-                "content": "",
-                "nextOffset": offset
-            }));
+            return json_ok(
+                serde_json::to_value(LogsResponse {
+                    name: name.to_string(),
+                    content: String::new(),
+                    next_offset: offset,
+                })
+                .unwrap(),
+            );
         }
     }
 
@@ -135,14 +149,17 @@ pub async fn read_logs(
     };
     buf.truncate(n);
 
-    let content = String::from_utf8_lossy(&buf);
+    let content = String::from_utf8_lossy(&buf).to_string();
     let next_offset = offset + n as u64;
 
-    json_ok(serde_json::json!({
-        "name": name,
-        "content": content,
-        "nextOffset": next_offset
-    }))
+    json_ok(
+        serde_json::to_value(LogsResponse {
+            name: name.to_string(),
+            content,
+            next_offset,
+        })
+        .unwrap(),
+    )
 }
 
 pub struct ProcessRegistry {
@@ -354,7 +371,7 @@ impl ProcessRegistry {
         StopResult::Stopped { pid }
     }
 
-    pub async fn list_processes(&self) -> Vec<serde_json::Value> {
+    pub async fn list_processes(&self) -> Vec<ManagedProcess> {
         let mut procs = self.processes.lock().await;
         for proc_entry in procs.values_mut() {
             if proc_entry.status == ProcessStatus::Running
@@ -364,16 +381,13 @@ impl ProcessRegistry {
                 proc_entry.running = false;
             }
         }
-        procs
-            .values()
-            .map(|p| serde_json::to_value(p).unwrap_or_default())
-            .collect()
+        procs.values().cloned().collect()
     }
 
     pub async fn get_process(
         &self,
         name: &str,
-    ) -> Option<serde_json::Value> {
+    ) -> Option<ManagedProcess> {
         let mut procs = self.processes.lock().await;
         if let Some(p) = procs.get_mut(name) {
             if p.status == ProcessStatus::Running
@@ -382,7 +396,7 @@ impl ProcessRegistry {
                 p.status = ProcessStatus::Error;
                 p.running = false;
             }
-            Some(serde_json::to_value(&*p).unwrap_or_default())
+            Some(p.clone())
         } else {
             None
         }

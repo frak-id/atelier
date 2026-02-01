@@ -573,21 +573,30 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
           const health = await agentClient.health(sandbox.id);
           const services = health.services as Record<string, boolean>;
-          if (services.browser) {
+          if (services.websockify) {
             const browserUrl = sandbox.runtime.urls.browser;
             return { status: "running" as const, url: browserUrl };
           }
 
           const browserPort = config.raw.services.browser.port;
 
+          const ensureStarted = async (service: string) => {
+            try {
+              await agentClient.serviceStart(sandbox.id, service);
+            } catch (err) {
+              // 409 = already running, safe to ignore
+              if (!String(err).includes("already running")) throw err;
+            }
+          };
+
           const startBrowser = async () => {
-            await agentClient.serviceStart(sandbox.id, "xvfb");
+            await ensureStarted("xvfb");
             await new Promise((r) => setTimeout(r, 300));
-            await agentClient.serviceStart(sandbox.id, "chromium");
+            await ensureStarted("chromium");
             await new Promise((r) => setTimeout(r, 500));
-            await agentClient.serviceStart(sandbox.id, "x11vnc");
+            await ensureStarted("x11vnc");
             await new Promise((r) => setTimeout(r, 200));
-            await agentClient.serviceStart(sandbox.id, "websockify");
+            await ensureStarted("websockify");
           };
 
           startBrowser().catch((err) => {
@@ -632,7 +641,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           try {
             const health = await agentClient.health(sandbox.id);
             const services = health.services as Record<string, boolean>;
-            if (services.browser) {
+            if (services.websockify) {
               return { status: "running" as const, url: browserUrl };
             }
             return { status: "starting" as const, url: browserUrl };
