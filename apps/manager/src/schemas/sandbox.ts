@@ -107,8 +107,17 @@ export type AppPortListResponse = Static<typeof AppPortListResponseSchema>;
 
 export const ServiceStatusSchema = t.Object({
   name: t.String(),
+  status: t.Union([
+    t.Literal("running"),
+    t.Literal("stopped"),
+    t.Literal("error"),
+  ]),
   running: t.Boolean(),
   pid: t.Optional(t.Number()),
+  port: t.Optional(t.Number()),
+  startedAt: t.Optional(t.String()),
+  exitCode: t.Optional(t.Number()),
+  logFile: t.Optional(t.String()),
 });
 export type ServiceStatus = Static<typeof ServiceStatusSchema>;
 

@@ -23,6 +23,7 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::POST, "/apps") => routes::apps::handle_post_apps(req).await,
 
         (Method::GET, "/dev") => routes::dev::handle_get_dev().await,
+        (Method::GET, "/services") => routes::services::handle_services_list().await,
 
         _ => {
             if let Some(port) = path.strip_prefix("/apps/").and_then(|s| s.parse::<u16>().ok()) {
@@ -30,6 +31,39 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
                     return routes::apps::handle_delete_app(port);
                 }
                 return json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
+            }
+
+            if let Some(rest) = path.strip_prefix("/services/") {
+                let parts: Vec<&str> = rest.splitn(2, '/').collect();
+                if parts.len() == 2 {
+                    let name = urlencoding::decode(parts[0])
+                        .unwrap_or_default()
+                        .into_owned();
+                    match (method.clone(), parts[1]) {
+                        (Method::GET, "status") => {
+                            return routes::services::handle_service_status(&name).await
+                        }
+                        (Method::POST, "start") => {
+                            return routes::services::handle_service_start(&name).await
+                        }
+                        (Method::POST, "stop") => {
+                            return routes::services::handle_service_stop(&name).await
+                        }
+                        (Method::POST, "restart") => {
+                            return routes::services::handle_service_restart(&name).await
+                        }
+                        (Method::GET, sub) if sub.starts_with("logs") => {
+                            let query = req.uri().query().unwrap_or("");
+                            return routes::services::handle_service_logs(&name, query).await;
+                        }
+                        _ => {
+                            return json_error(
+                                StatusCode::METHOD_NOT_ALLOWED,
+                                "Method Not Allowed",
+                            )
+                        }
+                    }
+                }
             }
 
             if let Some(rest) = path.strip_prefix("/dev/") {

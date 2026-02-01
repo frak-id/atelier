@@ -9,7 +9,7 @@ use crate::response::json_ok;
 
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-fn check_port_listening(port: u16) -> bool {
+pub fn check_port_listening(port: u16) -> bool {
     let target = format!("{:04X}", port);
 
     for path in &["/proc/net/tcp", "/proc/net/tcp6"] {

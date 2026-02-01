@@ -13,6 +13,9 @@ import type {
   DevStartResult,
   DevStopResult,
   ExecResult,
+  ServiceListResult,
+  ServiceStartResult,
+  ServiceStopResult,
 } from "./agent.types.ts";
 
 const log = createChildLogger("agent");
@@ -288,6 +291,63 @@ export class AgentClient {
     return this.request<DevLogsResult>(
       sandboxId,
       `/dev/${name}/logs?offset=${offset}&limit=${limit}`,
+    );
+  }
+
+  async serviceList(sandboxId: string): Promise<ServiceListResult> {
+    return this.request<ServiceListResult>(sandboxId, "/services");
+  }
+
+  async serviceStart(
+    sandboxId: string,
+    name: string,
+  ): Promise<ServiceStartResult> {
+    return this.request<ServiceStartResult>(
+      sandboxId,
+      `/services/${name}/start`,
+      {
+        method: "POST",
+        timeout: 30000,
+      },
+    );
+  }
+
+  async serviceStop(
+    sandboxId: string,
+    name: string,
+  ): Promise<ServiceStopResult> {
+    return this.request<ServiceStopResult>(
+      sandboxId,
+      `/services/${name}/stop`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  async serviceRestart(
+    sandboxId: string,
+    name: string,
+  ): Promise<ServiceStartResult> {
+    return this.request<ServiceStartResult>(
+      sandboxId,
+      `/services/${name}/restart`,
+      {
+        method: "POST",
+        timeout: 30000,
+      },
+    );
+  }
+
+  async serviceLogs(
+    sandboxId: string,
+    name: string,
+    offset: number,
+    limit: number,
+  ): Promise<DevLogsResult> {
+    return this.request<DevLogsResult>(
+      sandboxId,
+      `/services/${name}/logs?offset=${offset}&limit=${limit}`,
     );
   }
 }

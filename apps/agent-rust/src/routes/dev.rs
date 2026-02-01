@@ -13,7 +13,7 @@ use crate::response::{json_error, json_ok};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum ProcessStatus {
+pub enum ProcessStatus {
     Running,
     Stopped,
     Error,
@@ -34,7 +34,7 @@ struct DevProcess {
 static RUNNING_DEV_COMMANDS: LazyLock<Mutex<HashMap<String, DevProcess>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn is_process_running(pid: u32) -> bool {
+pub fn is_process_running(pid: u32) -> bool {
     if pid == 0 {
         return false;
     }
@@ -43,7 +43,7 @@ fn is_process_running(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
-fn signal_process(pid: u32, signal: i32) {
+pub fn signal_process(pid: u32, signal: i32) {
     if pid <= 1 {
         return;
     }
@@ -192,7 +192,7 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
     }))
 }
 
-async fn pump_stream<R: tokio::io::AsyncRead + Unpin>(
+pub async fn pump_stream<R: tokio::io::AsyncRead + Unpin>(
     reader: R,
     writer: std::sync::Arc<tokio::sync::Mutex<tokio::io::WriteHalf<tokio::fs::File>>>,
 ) {

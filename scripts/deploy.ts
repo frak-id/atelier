@@ -69,7 +69,10 @@ async function main() {
   await $`CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc cargo build --release --target x86_64-unknown-linux-musl --manifest-path ${resolve(AGENT_DIR, "Cargo.toml")}`;
   mkdirSync(resolve(AGENT_DIR, "dist"), { recursive: true });
   cpSync(
-    resolve(AGENT_DIR, "target/x86_64-unknown-linux-musl/release/sandbox-agent"),
+    resolve(
+      AGENT_DIR,
+      "target/x86_64-unknown-linux-musl/release/sandbox-agent",
+    ),
     resolve(AGENT_DIR, "dist/sandbox-agent"),
   );
   await $`bun run --filter @frak-sandbox/dashboard build`;

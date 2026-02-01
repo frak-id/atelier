@@ -47,9 +47,11 @@ export class AgentOperations {
 
     const services: ServiceStatus[] = results.map((r) => {
       const pids = r.stdout.trim().split("\n").filter(Boolean);
+      const running = pids.length > 0;
       return {
         name: r.id,
-        running: pids.length > 0,
+        status: running ? "running" : "stopped",
+        running,
         pid: pids[0] ? parseInt(pids[0], 10) : undefined,
       };
     });

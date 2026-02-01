@@ -64,6 +64,10 @@ async fn main() {
     };
     println!("Listening on vsock port {VSOCK_PORT}");
 
+    tokio::spawn(async {
+        routes::services::discover_running_services().await;
+    });
+
     loop {
         let (stream, _addr) = match listener.accept().await {
             Ok(conn) => conn,
