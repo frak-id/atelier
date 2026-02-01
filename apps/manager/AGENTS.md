@@ -2,109 +2,23 @@
 
 Elysia HTTP server orchestrating Firecracker VMs. Runs on Bun, port 4000.
 
-## Structure
-
-```
-src/
-├── api/               # Route handlers (imports from container.ts)
-├── modules/           # Service + Repository classes (NO routes)
-├── infrastructure/    # Low-level services (FC, Network, LVM, Caddy)
-├── orchestrators/     # Complex workflows (spawner, destroyer)
-├── schemas/           # TypeBox validation schemas
-├── shared/            # Errors, logger, config
-└── container.ts       # Dependency injection wiring
-```
-
 ## Architecture
 
-```
-api/*.routes.ts  →  container.ts  →  modules/*.service.ts  →  modules/*.repository.ts
-     │                   │                    │                        │
-  HTTP layer      DI wiring         Business logic              Database (Drizzle)
-```
+Routes → `container.ts` (DI wiring) → Services → Repositories (Drizzle ORM).
 
-Routes are **separated from modules** to break circular dependencies. All routes import services from `container.ts`.
+Routes are **separated from modules** to break circular dependencies. All routes import services from `container.ts`, never directly from modules.
 
-## Where to Look
+## Key Areas
 
-| Task | Location |
-|------|----------|
-| Add API endpoint | `src/api/{module}.routes.ts` |
-| Add business logic | `src/modules/{module}/{module}.service.ts` |
-| Add data access | `src/modules/{module}/{module}.repository.ts` |
-| Add infrastructure | `src/infrastructure/{service}/` |
-| Add complex workflow | `src/orchestrators/` |
-| Wire dependencies | `src/container.ts` |
-| Add validation schema | `src/schemas/{module}.ts` |
-
-## Code Patterns
-
-**Service Class** (receives repository via constructor):
-```typescript
-export class WorkspaceService {
-  constructor(private readonly repository: WorkspaceRepository) {}
-  
-  getById(id: string): Workspace | undefined {
-    return this.repository.getById(id);
-  }
-}
-```
-
-**Repository Class** (Drizzle ORM):
-```typescript
-export class WorkspaceRepository {
-  getById(id: string): Workspace | undefined {
-    const row = db.select().from(workspaces).where(eq(workspaces.id, id)).get();
-    return row ? rowToWorkspace(row) : undefined;
-  }
-}
-```
-
-**Route Handler** (imports from container):
-```typescript
-import { workspaceService } from "../container.ts";
-
-export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
-  .get("/:id", ({ params }) => {
-    const workspace = workspaceService.getById(params.id);
-    if (!workspace) throw new NotFoundError("Workspace", params.id);
-    return workspace;
-  });
-```
-
-**Logging** (always use child logger):
-```typescript
-const log = createChildLogger("workspace-service");
-log.info({ workspaceId }, "Creating workspace");
-```
-
-**Errors** (custom hierarchy in `shared/errors.ts`):
-```typescript
-throw new NotFoundError("Sandbox", id);      // 404
-throw new ValidationError("Invalid config"); // 400
-throw new ResourceExhaustedError("sandboxes"); // 429
-```
-
-**Mock Mode** (local dev without Firecracker):
-```bash
-SANDBOX_MODE=mock bun run dev
-```
-
-All infrastructure services check `config.isMock()` and return mock responses.
+- **api/** — Route handlers only. Import services from `container.ts`.
+- **modules/** — Service + Repository classes. No routes here. See [modules guide](src/modules/AGENTS.md).
+- **infrastructure/** — Low-level services (Firecracker, Network, LVM, Caddy, Agent). See [infrastructure guide](src/infrastructure/AGENTS.md).
+- **orchestrators/** — Multi-step workflows with rollback. See [orchestrators guide](src/orchestrators/AGENTS.md).
+- **schemas/** — TypeBox validation schemas.
+- **shared/** — Errors, logger, config utilities.
 
 ## Initialization Order
 
-```typescript
-1. await initDatabase()           // Must be first
-2. CronService.add(...)           // Schedule jobs
-3. sshKeyService.cleanupExpired() // Cleanup
-4. NetworkService.markAllocated() // Rehydrate state
-5. CaddyService.registerRoutes()  // Re-register routes
-6. app.listen(port)               // Start server
-```
+Database must init first → cron jobs → cleanup → rehydrate network state → register Caddy routes → listen.
 
-## Layer Guides
-
-- **[Modules](src/modules/AGENTS.md)** - Service + Repository classes
-- **[Infrastructure](src/infrastructure/AGENTS.md)** - Low-level services
-- **[Orchestrators](src/orchestrators/AGENTS.md)** - Complex workflows
+For code patterns and examples, see [docs/patterns.md](../../docs/patterns.md).

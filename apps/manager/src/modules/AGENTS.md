@@ -1,21 +1,16 @@
 # Modules
 
-Service and Repository classes for business logic. **Routes are NOT here** — they live in `src/api/`.
+Service and Repository classes for business logic. Routes are NOT here — they live in `api/`.
 
-## Module Structure
+## Pattern
 
-```
-{module}/
-├── index.ts              # Barrel: export Service + Repository
-├── {module}.service.ts   # Business logic class
-└── {module}.repository.ts # Data access (Drizzle ORM)
-```
+Each module follows: `index.ts` (barrel) → `service.ts` (logic) → `repository.ts` (Drizzle ORM). Services receive repositories via constructor. Wired in `container.ts`.
 
 ## Modules
 
-| Module | Has Service | Has Repository | Notes |
-|--------|-------------|----------------|-------|
-| `sandbox` | Yes | Yes | + `sandbox.provisioner.ts` for rootfs injection |
+| Module | Service | Repository | Notes |
+|--------|---------|------------|-------|
+| `sandbox` | Yes | Yes | + `provisioner.ts` for rootfs injection |
 | `workspace` | Yes | Yes | |
 | `task` | Yes | Yes | |
 | `config-file` | Yes | Yes | |
@@ -23,77 +18,6 @@ Service and Repository classes for business logic. **Routes are NOT here** — t
 | `ssh-key` | Yes | Yes | |
 | `session-template` | Yes | No | Template discovery + merging |
 | `internal` | Yes | No | Auth sync, config discovery, registry sync |
-| `shared-auth` | No | Yes | Repository only, used by internal |
+| `shared-auth` | No | Yes | Used by internal |
 
-## Service Pattern
-
-Services receive repositories via constructor:
-
-```typescript
-export class WorkspaceService {
-  constructor(private readonly repository: WorkspaceRepository) {}
-  
-  getAll(): Workspace[] {
-    return this.repository.getAll();
-  }
-  
-  getByIdOrThrow(id: string): Workspace {
-    const workspace = this.repository.getById(id);
-    if (!workspace) throw new NotFoundError("Workspace", id);
-    return workspace;
-  }
-}
-```
-
-## Repository Pattern
-
-Repositories handle Drizzle ORM queries:
-
-```typescript
-export class WorkspaceRepository {
-  getAll(): Workspace[] {
-    return db.select().from(workspaces).all().map(rowToWorkspace);
-  }
-  
-  getById(id: string): Workspace | undefined {
-    const row = db.select().from(workspaces).where(eq(workspaces.id, id)).get();
-    return row ? rowToWorkspace(row) : undefined;
-  }
-}
-```
-
-## Wiring
-
-All services are instantiated in `src/container.ts`:
-
-```typescript
-const workspaceRepository = new WorkspaceRepository();
-const workspaceService = new WorkspaceService(workspaceRepository);
-export { workspaceService };
-```
-
-Routes import from container (NOT directly from modules):
-
-```typescript
-// src/api/workspace.routes.ts
-import { workspaceService } from "../container.ts";
-```
-
-## Where to Look
-
-| Task | File |
-|------|------|
-| Workspace CRUD | `workspace/workspace.service.ts` |
-| Sandbox state | `sandbox/sandbox.service.ts` |
-| RootFS file injection | `sandbox/sandbox.provisioner.ts` |
-| Task management | `task/task.service.ts` |
-| Config file merging | `config-file/config-file.service.ts` |
-| Git source management | `git-source/git-source.service.ts` |
-| SSH key CRUD | `ssh-key/ssh-key.service.ts` |
-| Session templates | `session-template/session-template.service.ts` |
-| Auth + registry sync | `internal/internal.service.ts` |
-
-## See Also
-
-- **[../orchestrators/AGENTS.md](../orchestrators/AGENTS.md)** — Complex multi-step workflows
-- **[../../../../docs/patterns.md](../../../../docs/patterns.md)** — DI and error handling patterns
+For code examples, see [docs/patterns.md](../../../../docs/patterns.md).
