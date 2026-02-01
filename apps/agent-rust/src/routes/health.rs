@@ -107,17 +107,29 @@ pub async fn handle_health() -> Response<Full<Bytes>> {
     let cfg = SANDBOX_CONFIG.as_ref();
     let services = cfg.map(|c| &c.services);
 
-    let vscode = check_port_listening(services.map_or(8080, |s| s.vscode.port));
-    let opencode = check_port_listening(services.map_or(3000, |s| s.opencode.port));
-    let sshd = check_port_listening(22);
-    let ttyd = check_port_listening(services.map_or(7681, |s| s.terminal.port));
-    let browser = check_port_listening(services.and_then(|s| s.browser.as_ref()).map_or(6080, |b| b.port));
+    let vscode_port = services.map_or(8080, |s| s.vscode.port);
+    let opencode_port = services.map_or(3000, |s| s.opencode.port);
+    let ttyd_port = services.map_or(7681, |s| s.terminal.port);
+    let browser_port = services.and_then(|s| s.browser.as_ref()).map_or(6080, |b| b.port);
+    let sandbox_id = cfg.map(|c| c.sandbox_id.clone());
 
-    let uptime = START_TIME.elapsed().as_secs_f64();
+    let (vscode, opencode, sshd, ttyd, browser, uptime) =
+        tokio::task::spawn_blocking(move || {
+            (
+                check_port_listening(vscode_port),
+                check_port_listening(opencode_port),
+                check_port_listening(22),
+                check_port_listening(ttyd_port),
+                check_port_listening(browser_port),
+                START_TIME.elapsed().as_secs_f64(),
+            )
+        })
+        .await
+        .unwrap_or_default();
 
     json_ok(serde_json::json!({
         "status": "healthy",
-        "sandboxId": cfg.map(|c| c.sandbox_id.as_str()),
+        "sandboxId": sandbox_id,
         "services": {
             "vscode": vscode,
             "opencode": opencode,
@@ -129,13 +141,19 @@ pub async fn handle_health() -> Response<Full<Bytes>> {
     }))
 }
 
-pub fn handle_metrics() -> Response<Full<Bytes>> {
-    let now = chrono::Utc::now().to_rfc3339();
+pub async fn handle_metrics() -> Response<Full<Bytes>> {
+    let (cpu, memory, disk) = tokio::task::spawn_blocking(|| {
+        (get_cpu_usage(), get_memory_usage(), get_disk_usage())
+    })
+    .await
+    .unwrap_or_else(|_| (0.0, serde_json::json!({"total": 0, "used": 0, "free": 0}), serde_json::json!({"total": 0, "used": 0, "free": 0})));
+
+    let now = crate::utc_rfc3339();
 
     json_ok(serde_json::json!({
-        "cpu": get_cpu_usage(),
-        "memory": get_memory_usage(),
-        "disk": get_disk_usage(),
+        "cpu": cpu,
+        "memory": memory,
+        "disk": disk,
         "timestamp": now
     }))
 }

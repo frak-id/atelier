@@ -8,6 +8,9 @@ Lightweight HTTP agent running INSIDE Firecracker VMs. Serves over vsock (primar
 # Run agent (inside VM)
 deno run --allow-all --unstable-vsock src/index.ts
 
+# Build for Linux
+deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output dist/sandbox-agent src/index.ts
+
 # Typecheck
 deno check src/index.ts
 ```

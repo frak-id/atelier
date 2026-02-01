@@ -32,7 +32,7 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
 
     match (method.clone(), path.as_str()) {
         (Method::GET, "/health") => routes::health::handle_health().await,
-        (Method::GET, "/metrics") => routes::health::handle_metrics(),
+        (Method::GET, "/metrics") => routes::health::handle_metrics().await,
 
         (Method::POST, "/exec") => routes::exec::handle_exec(req).await,
         (Method::POST, "/exec/batch") => routes::exec::handle_exec_batch(req).await,

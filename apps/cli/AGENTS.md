@@ -69,11 +69,11 @@ curl http://localhost:4000/system/stats
 
 ## Conventions
 
-- **Interactive prompts** - Uses `@clack/prompts` for user input
-- **Shell execution** - Commands run via `Bun.$` (shell.ts wrapper)
-- **Command pattern** - Each command in `src/commands/*.ts`
-- **Context-free** - No state between command runs
-- **Idempotent** - Safe to re-run setup commands
+- **Interactive prompts** — Uses `@clack/prompts` for user input
+- **Shell execution** — Commands run via `Bun.$` (shell.ts wrapper)
+- **Command pattern** — Each command in `src/commands/*.ts`
+- **Context-free** — No state between command runs
+- **Idempotent** — Safe to re-run setup commands
 
 ## Where to Look
 
@@ -89,5 +89,5 @@ curl http://localhost:4000/system/stats
 
 ## See Also
 
-- [Constraints](../../docs/constraints.md) - Network, LVM flags
-- [Infrastructure](../../docs/infrastructure.md) - Network architecture
+- [Constraints](../../docs/constraints.md) — Network, LVM flags
+- [Infrastructure](../../docs/infrastructure.md) — Network architecture

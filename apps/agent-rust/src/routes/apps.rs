@@ -53,7 +53,7 @@ pub async fn handle_post_apps(req: Request<hyper::body::Incoming>) -> Response<F
     let app = AppPort {
         port: parsed.port,
         name: parsed.name,
-        registered_at: chrono::Utc::now().to_rfc3339(),
+        registered_at: crate::utc_rfc3339(),
     };
     apps.push(app.clone());
     json_ok(serde_json::to_value(&app).unwrap())

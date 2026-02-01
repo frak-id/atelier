@@ -6,12 +6,12 @@ Complex multi-step workflows coordinating services and infrastructure.
 
 | Orchestrator | LOC | Purpose |
 |--------------|-----|---------|
-| `SandboxSpawner` | 589 | Full VM creation (network → volume → FC → agent → routes) |
-| `TaskSpawner` | 603 | Task execution (sandbox → session → git branch → prompt) |
-| `SandboxDestroyer` | 65 | Cleanup with rollback (reverse of spawner) |
-| `SandboxLifecycle` | 257 | Health monitoring and state management |
-| `PrebuildRunner` | 335 | Prebuild snapshot creation |
-| `PrebuildChecker` | 133 | Staleness detection and rebuild triggers |
+| `SandboxSpawner` | ~760 | Full VM creation (network → volume → FC → agent → routes) |
+| `TaskSpawner` | ~600 | Task execution (sandbox → session → git branch → prompt) |
+| `PrebuildRunner` | ~540 | Prebuild snapshot creation |
+| `SandboxLifecycle` | ~260 | Health monitoring and state management |
+| `PrebuildChecker` | ~130 | Staleness detection and rebuild triggers |
+| `SandboxDestroyer` | ~65 | Cleanup with rollback (reverse of spawner) |
 
 ## Pattern: Context-Based Execution
 

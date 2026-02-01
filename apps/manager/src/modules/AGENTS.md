@@ -1,6 +1,6 @@
 # Modules
 
-Service and Repository classes for business logic. **Routes are NOT here** - they live in `src/api/`.
+Service and Repository classes for business logic. **Routes are NOT here** — they live in `src/api/`.
 
 ## Module Structure
 
@@ -21,15 +21,9 @@ Service and Repository classes for business logic. **Routes are NOT here** - the
 | `config-file` | Yes | Yes | |
 | `git-source` | Yes | Yes | |
 | `ssh-key` | Yes | Yes | |
-| `session-template` | Yes | No | Uses other services |
-| `internal` | Yes | No | Uses SharedAuthRepository |
+| `session-template` | Yes | No | Template discovery + merging |
+| `internal` | Yes | No | Auth sync, config discovery, registry sync |
 | `shared-auth` | No | Yes | Repository only, used by internal |
-| `auth` | No | No | Just exports, wiring only |
-| `health` | No | No | Routes-only (in src/api/) |
-| `image` | No | No | Routes-only (in src/api/) |
-| `system` | No | No | Routes-only (in src/api/) |
-| `github` | No | No | Routes-only (in src/api/) |
-| `shared-storage` | No | No | Routes-only (in src/api/) |
 
 ## Service Pattern
 
@@ -97,8 +91,9 @@ import { workspaceService } from "../container.ts";
 | Git source management | `git-source/git-source.service.ts` |
 | SSH key CRUD | `ssh-key/ssh-key.service.ts` |
 | Session templates | `session-template/session-template.service.ts` |
+| Auth + registry sync | `internal/internal.service.ts` |
 
 ## See Also
 
-- **[../orchestrators/AGENTS.md](../orchestrators/AGENTS.md)** - Complex multi-step workflows
-- **[../../../../docs/patterns.md](../../../../docs/patterns.md)** - DI and error handling patterns
+- **[../orchestrators/AGENTS.md](../orchestrators/AGENTS.md)** — Complex multi-step workflows
+- **[../../../../docs/patterns.md](../../../../docs/patterns.md)** — DI and error handling patterns

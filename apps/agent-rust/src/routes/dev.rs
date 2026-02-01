@@ -142,7 +142,7 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
     };
 
     let pid = child.id().unwrap_or(0);
-    let started_at = chrono::Utc::now().to_rfc3339();
+    let started_at = crate::utc_rfc3339();
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -276,7 +276,9 @@ pub async fn handle_dev_stop(name: &str) -> Response<Full<Bytes>> {
 }
 
 pub async fn handle_dev_logs(name: &str, query: &str) -> Response<Full<Bytes>> {
-    let mut offset: usize = 0;
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    let mut offset: u64 = 0;
     let mut limit: usize = 10000;
 
     for param in query.split('&') {
@@ -290,22 +292,44 @@ pub async fn handle_dev_logs(name: &str, query: &str) -> Response<Full<Bytes>> {
 
     let log_path = format!("{}/dev-{}.log", LOG_DIR, name);
 
-    let content = match tokio::fs::read_to_string(&log_path).await {
-        Ok(s) => s,
-        Err(_) => String::new(),
+    let mut file = match tokio::fs::File::open(&log_path).await {
+        Ok(f) => f,
+        Err(_) => {
+            return json_ok(serde_json::json!({
+                "name": name,
+                "content": "",
+                "nextOffset": 0
+            }));
+        }
     };
 
-    let end = (offset + limit).min(content.len());
-    let chunk = if offset < content.len() {
-        &content[offset..end]
-    } else {
-        ""
+    if offset > 0 {
+        if file
+            .seek(std::io::SeekFrom::Start(offset))
+            .await
+            .is_err()
+        {
+            return json_ok(serde_json::json!({
+                "name": name,
+                "content": "",
+                "nextOffset": offset
+            }));
+        }
+    }
+
+    let mut buf = vec![0u8; limit];
+    let n = match file.read(&mut buf).await {
+        Ok(n) => n,
+        Err(_) => 0,
     };
-    let next_offset = offset + chunk.len();
+    buf.truncate(n);
+
+    let content = String::from_utf8_lossy(&buf);
+    let next_offset = offset + n as u64;
 
     json_ok(serde_json::json!({
         "name": name,
-        "content": chunk,
+        "content": content,
         "nextOffset": next_offset
     }))
 }

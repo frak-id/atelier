@@ -7,13 +7,14 @@ Things that will break the system if ignored.
 | Component | Runtime | Why |
 |-----------|---------|-----|
 | Manager API | **Bun** | Performance, native Elysia |
-| Dashboard | **Bun** (Vite) | Standard |
-| Sandbox Agent | **Node.js** | Bun crashes in Firecracker (SIGILL/AVX) |
+| Dashboard | **Vite/Browser** | React SPA, static deploy |
+| Sandbox Agent | **Deno** | Lightweight, vsock support, no AVX issues in FC |
+| Agent (Rust) | **Tokio** | Alternative implementation |
 | CLI (server) | **Bun** (compiled) | Runs on host, not VM |
 
 ```bash
-# Agent build - MUST use --target=node
-bun build --bundle --target=node --outfile=dist/agent.mjs src/index.ts
+# Agent build - Deno compile for Linux
+deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output dist/sandbox-agent src/index.ts
 ```
 
 ## LVM Snapshots

@@ -4,11 +4,11 @@ React web interface for sandbox management. Deployed as static files.
 
 ## Stack
 
-- **React 19** + **Vite** - Build & dev server
-- **TanStack Router** - File-based routing with type safety
-- **TanStack Query** - Server state management
-- **shadcn/ui** - Component library (Tailwind + Radix)
-- **Elysia Eden Treaty** - Type-safe API client
+- **React 19** + **Vite** — Build & dev server
+- **TanStack Router** — File-based routing with type safety
+- **TanStack Query** — Server state management
+- **shadcn/ui** — Component library (Tailwind + Radix)
+- **Elysia Eden Treaty** — Type-safe API client
 
 ## API Client
 
@@ -41,22 +41,26 @@ routes/
 
 ## Conventions
 
-- **File-based routing** - TanStack Router auto-generates routes
-- **Query hooks** - API calls via TanStack Query (in `src/api/queries.ts`)
-- **Component co-location** - Dialog components live in `src/components/`
-- **shadcn/ui imports** - Components in `src/components/ui/`
-- **No prop drilling** - Use TanStack Query for server state
-- **Optimistic updates** - For stop/start/delete actions
+- **File-based routing** — TanStack Router auto-generates `routeTree.gen.ts`
+- **Query hooks** — API calls in `src/api/queries/*.ts` (sandbox, workspace, task, platform)
+- **Component co-location** — Feature components in `src/components/`
+- **shadcn/ui imports** — Components in `src/components/ui/`
+- **No prop drilling** — Use TanStack Query for server state
+- **Optimistic updates** — For stop/start/delete actions
 
 ## Where to Look
 
 | Task | File |
 |------|------|
 | Add new route | `src/routes/{name}.tsx` (auto-discovered) |
-| API endpoints | `src/api/client.ts` |
-| Query hooks | `src/api/queries.ts` |
+| API client setup | `src/api/client.ts` |
+| Sandbox queries | `src/api/queries/sandbox.ts` |
+| Workspace queries | `src/api/queries/workspace.ts` |
+| Task queries | `src/api/queries/task.ts` |
+| Platform queries | `src/api/queries/platform.ts` |
 | Create dialogs | `src/components/*-dialog.tsx` |
 | UI components | `src/components/ui/*.tsx` |
+| Utility functions | `src/lib/utils.ts` |
 
 ## Key Components
 
@@ -66,15 +70,17 @@ routes/
 | `CreateWorkspaceDialog` | Create new workspace with git URL |
 | `EditWorkspaceDialog` | Edit workspace config, commands, secrets |
 | `RepositoryPicker` | GitHub repository selector (OAuth) |
+| `SandboxDrawer` | Sandbox detail panel (1300+ lines) |
+| `SandboxCard` | Sandbox list card with actions |
 
 ## Build & Deploy
 
 ```bash
 bun run build              # → dist/
-# Static files served by Caddy at sandbox-dash.nivelais.com
+# Static files served by Caddy at sandbox-dash.{DOMAIN_SUFFIX}
 ```
 
 ## See Also
 
-- [Manager Routes](../manager/src/modules/AGENTS.md) - Backend API structure
-- [Infrastructure](../../docs/infrastructure.md) - Domains, deployment
+- [Manager Routes](../manager/src/modules/AGENTS.md) — Backend API structure
+- [Infrastructure](../../docs/infrastructure.md) — Domains, deployment

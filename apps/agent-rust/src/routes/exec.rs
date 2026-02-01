@@ -94,12 +94,18 @@ pub async fn handle_exec_batch(req: Request<hyper::body::Incoming>) -> Response<
         Err(_) => return json_ok(serde_json::json!({"results": []})),
     };
 
-    let futures: Vec<_> = parsed.commands.into_iter().map(|cmd| async move {
-        let mut result = run_command(&cmd.command, cmd.timeout).await;
-        result.as_object_mut().unwrap().insert("id".into(), serde_json::Value::String(cmd.id));
-        result
-    }).collect();
+    let mut set = tokio::task::JoinSet::new();
+    for cmd in parsed.commands {
+        set.spawn(async move {
+            let mut result = run_command(&cmd.command, cmd.timeout).await;
+            result.as_object_mut().unwrap().insert("id".into(), serde_json::Value::String(cmd.id));
+            result
+        });
+    }
 
-    let results = futures::future::join_all(futures).await;
+    let mut results = Vec::with_capacity(set.len());
+    while let Some(Ok(result)) = set.join_next().await {
+        results.push(result);
+    }
     json_ok(serde_json::json!({ "results": results }))
 }
