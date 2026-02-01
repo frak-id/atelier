@@ -292,7 +292,7 @@ const ChildSessionRow = memo(function ChildSessionRow({
         <SessionStatusIcon status={status} />
 
         <span
-          className="text-xs font-medium truncate shrink-0 max-w-[200px]"
+          className="text-xs font-medium truncate min-w-0"
           title={displayName}
         >
           {displayName}
@@ -404,7 +404,9 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
 
             <SessionStatusIcon status={status} />
 
-            <span className="font-medium truncate flex-1">{displayName}</span>
+            <span className="font-medium truncate flex-1 min-w-0">
+              {displayName}
+            </span>
 
             {/* biome-ignore lint/a11y/useSemanticElements: badge container needs event isolation */}
             <span
@@ -416,7 +418,7 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
               {summary.subsessionCount > 0 && (
                 <Badge
                   variant="secondary"
-                  className="text-xs px-1.5 py-0 h-5 font-normal"
+                  className="text-xs px-1.5 py-0 h-5 font-normal hidden sm:inline-flex"
                 >
                   {summary.subsessionCount} sub
                 </Badge>
@@ -425,7 +427,7 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
               {summary.workingCount > 0 && (
                 <Badge
                   variant="secondary"
-                  className="text-xs px-1.5 py-0 h-5 font-normal bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                  className="text-xs px-1.5 py-0 h-5 font-normal bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 hidden sm:inline-flex"
                 >
                   {summary.workingCount} working
                 </Badge>

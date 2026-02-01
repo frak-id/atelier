@@ -314,7 +314,7 @@ export function TaskDrawer({
                     <CardTitle>Description</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm whitespace-pre-wrap">
+                    <p className="text-sm whitespace-pre-wrap break-words overflow-hidden">
                       {taskData.data.description}
                     </p>
                     {taskData.data.context && (
@@ -322,7 +322,7 @@ export function TaskDrawer({
                         <h4 className="text-sm font-medium text-muted-foreground mb-2">
                           Additional Context
                         </h4>
-                        <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+                        <p className="text-sm whitespace-pre-wrap break-words overflow-hidden text-muted-foreground">
                           {taskData.data.context}
                         </p>
                       </div>
@@ -427,9 +427,9 @@ export function TaskDrawer({
                     <CardTitle>Metadata</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm overflow-hidden">
                       <div className="text-muted-foreground">Task ID</div>
-                      <code className="font-mono bg-muted px-2 py-1 rounded truncate">
+                      <code className="font-mono bg-muted px-2 py-1 rounded truncate min-w-0 block">
                         {taskData.id}
                       </code>
 

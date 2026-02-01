@@ -425,7 +425,7 @@ export function SandboxDrawer({
                             OpenCode CLI
                           </div>
                           <div className="relative">
-                            <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 overflow-x-auto whitespace-nowrap">
+                            <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 whitespace-pre-wrap break-all">
                               opencode attach {sandbox.runtime.urls.opencode}
                             </code>
                             <Button
@@ -453,7 +453,7 @@ export function SandboxDrawer({
                             VSCode Remote
                           </div>
                           <div className="relative">
-                            <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 overflow-x-auto whitespace-nowrap">
+                            <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 whitespace-pre-wrap break-all">
                               code --remote ssh-remote+{sandbox.id}@
                               {SSH_HOST_ALIAS} /workspace
                             </code>
@@ -480,7 +480,7 @@ export function SandboxDrawer({
                         <div className="space-y-2">
                           <div className="text-sm font-medium">SSH</div>
                           <div className="relative">
-                            <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 overflow-x-auto whitespace-nowrap">
+                            <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 whitespace-pre-wrap break-all">
                               ssh {sandbox.id}@{SSH_HOST_ALIAS}
                             </code>
                             <Button

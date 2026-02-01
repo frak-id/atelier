@@ -217,14 +217,14 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
         disabled={isPending || !workspaceId}
       />
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         {templates.length > 1 && (
           <Select
             value={selectedTemplateId}
             onValueChange={handleTemplateChange}
             disabled={isPending}
           >
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-full sm:w-[140px]">
               <SelectValue placeholder="Template" />
             </SelectTrigger>
             <SelectContent>
@@ -243,7 +243,7 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
             onValueChange={(v) => setSelectedVariantIndex(Number(v))}
             disabled={isPending}
           >
-            <SelectTrigger className="w-[140px]">
+            <SelectTrigger className="w-full sm:w-[140px]">
               <SelectValue placeholder="Effort" />
             </SelectTrigger>
             <SelectContent>
@@ -259,7 +259,7 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
         <Button
           onClick={handleStartSession}
           disabled={!canSubmit}
-          className="flex-1"
+          className="w-full sm:flex-1"
         >
           {isPending ? (
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
