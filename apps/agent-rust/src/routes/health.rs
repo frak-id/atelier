@@ -9,31 +9,6 @@ use crate::response::json_ok;
 
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-pub fn check_port_listening(port: u16) -> bool {
-    let target = format!("{:04X}", port);
-
-    for path in &["/proc/net/tcp", "/proc/net/tcp6"] {
-        if let Ok(contents) = std::fs::read_to_string(path) {
-            for line in contents.lines().skip(1) {
-                let fields: Vec<&str> = line.split_whitespace().collect();
-                if fields.len() < 4 {
-                    continue;
-                }
-                let st = fields[3];
-                if st != "0A" {
-                    continue;
-                }
-                if let Some(port_hex) = fields[1].rsplit(':').next() {
-                    if port_hex == target {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    false
-}
-
 fn get_cpu_usage() -> f64 {
     std::fs::read_to_string("/proc/loadavg")
         .ok()
@@ -100,36 +75,12 @@ pub async fn handle_health() -> Response<Full<Bytes>> {
     let cfg = SANDBOX_CONFIG.as_ref();
     let sandbox_id = cfg.map(|c| c.sandbox_id.clone());
 
-    let mut port_checks: Vec<(String, u16)> = Vec::new();
-    if let Some(c) = cfg {
-        for (name, svc) in &c.services {
-            if let Some(port) = svc.port {
-                port_checks.push((name.clone(), port));
-            }
-        }
-    }
-    // Always check sshd
-    port_checks.push(("sshd".to_string(), 22));
-
-    let results = tokio::task::spawn_blocking(move || {
-        let mut map = serde_json::Map::new();
-        for (name, port) in &port_checks {
-            map.insert(
-                name.clone(),
-                serde_json::Value::Bool(check_port_listening(*port)),
-            );
-        }
-        let uptime = START_TIME.elapsed().as_secs_f64();
-        (map, uptime)
-    })
-    .await
-    .unwrap_or_else(|_| (serde_json::Map::new(), 0.0));
+    let uptime = START_TIME.elapsed().as_secs_f64();
 
     json_ok(serde_json::json!({
         "status": "healthy",
         "sandboxId": sandbox_id,
-        "services": serde_json::Value::Object(results.0),
-        "uptime": results.1
+        "uptime": uptime
     }))
 }
 

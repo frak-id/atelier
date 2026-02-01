@@ -1,7 +1,6 @@
 export interface AgentHealth {
   status: string;
   sandboxId?: string;
-  services: Record<string, boolean>;
   uptime: number;
 }
 

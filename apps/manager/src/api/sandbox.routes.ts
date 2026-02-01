@@ -571,9 +571,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             return { status: "off" as const };
           }
 
-          const health = await agentClient.health(sandbox.id);
-          const services = health.services as Record<string, boolean>;
-          if (services.websockify) {
+          const websockify = await agentClient.serviceStatus(
+            sandbox.id,
+            "websockify",
+          );
+          if (websockify.running) {
             const browserUrl = sandbox.runtime.urls.browser;
             return { status: "running" as const, url: browserUrl };
           }
@@ -639,9 +641,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           }
 
           try {
-            const health = await agentClient.health(sandbox.id);
-            const services = health.services as Record<string, boolean>;
-            if (services.websockify) {
+            const websockify = await agentClient.serviceStatus(
+              sandbox.id,
+              "websockify",
+            );
+            if (websockify.running) {
               return { status: "running" as const, url: browserUrl };
             }
             return { status: "starting" as const, url: browserUrl };

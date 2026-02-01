@@ -18,6 +18,7 @@ import type {
   GitStatus,
   ServiceListResult,
   ServiceStartResult,
+  ServiceStatus,
   ServiceStopResult,
 } from "./agent.types.ts";
 
@@ -275,6 +276,10 @@ export class AgentClient {
 
   async serviceList(sandboxId: string): Promise<ServiceListResult> {
     return this.request<ServiceListResult>(sandboxId, "/services");
+  }
+
+  async serviceStatus(sandboxId: string, name: string): Promise<ServiceStatus> {
+    return this.request<ServiceStatus>(sandboxId, `/services/${name}/status`);
   }
 
   async serviceStart(

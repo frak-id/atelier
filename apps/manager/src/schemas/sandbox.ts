@@ -129,7 +129,6 @@ export type LogsResponse = Static<typeof LogsResponseSchema>;
 export const AgentHealthSchema = t.Object({
   status: t.String(),
   sandboxId: t.Optional(t.String()),
-  services: t.Record(t.String(), t.Boolean()),
   uptime: t.Number(),
 });
 export type AgentHealth = Static<typeof AgentHealthSchema>;

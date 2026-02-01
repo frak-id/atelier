@@ -1,6 +1,5 @@
 import type { AgentClient } from "./agent.client.ts";
 import type {
-  AgentHealth,
   GitCommitResult,
   GitDiffResult,
   GitPushResult,
@@ -10,27 +9,6 @@ import type {
 
 export class AgentOperations {
   constructor(private readonly client: AgentClient) {}
-
-  async batchHealth(
-    sandboxIds: string[],
-  ): Promise<Map<string, AgentHealth | { error: string }>> {
-    const results = new Map<string, AgentHealth | { error: string }>();
-
-    await Promise.all(
-      sandboxIds.map(async (sandboxId) => {
-        try {
-          const health = await this.client.health(sandboxId);
-          results.set(sandboxId, health);
-        } catch (error) {
-          results.set(sandboxId, {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }),
-    );
-
-    return results;
-  }
 
   async services(sandboxId: string): Promise<{ services: ServiceStatus[] }> {
     return this.client.serviceList(sandboxId);
