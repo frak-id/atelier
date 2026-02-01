@@ -1,7 +1,5 @@
 import { DEFAULTS } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
-
-import { nanoid } from "nanoid";
 import type {
   AgentClient,
   AgentOperations,
@@ -42,6 +40,7 @@ import type {
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { killProcess } from "../shared/lib/shell.ts";
+import { safeNanoid } from "../shared/lib/id.ts";
 
 const log = createChildLogger("sandbox-spawner");
 
@@ -80,7 +79,7 @@ class SpawnContext {
     private readonly deps: SandboxSpawnerDependencies,
     private readonly options: CreateSandboxBody,
   ) {
-    this.sandboxId = nanoid(12);
+    this.sandboxId = safeNanoid();
   }
 
   async execute(): Promise<Sandbox> {

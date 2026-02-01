@@ -1,9 +1,9 @@
-import { nanoid } from "nanoid";
 import type { Workspace, WorkspaceConfig } from "../../schemas/index.ts";
 import { DEFAULT_WORKSPACE_CONFIG } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { WorkspaceRepository } from "./workspace.repository.ts";
+import { safeNanoid } from "../../shared/lib/id.ts";
 
 const log = createChildLogger("workspace-service");
 
@@ -34,7 +34,7 @@ export class WorkspaceService {
     };
 
     const workspace: Workspace = {
-      id: nanoid(12),
+      id: safeNanoid(12),
       name,
       config: workspaceConfig,
       createdAt: now,

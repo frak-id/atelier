@@ -1,4 +1,3 @@
-import { nanoid } from "nanoid";
 import type {
   CreateTaskBody,
   Task,
@@ -8,6 +7,7 @@ import type {
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { TaskRepository } from "./task.repository.ts";
+import { safeNanoid } from "../../shared/lib/id.ts";
 
 const log = createChildLogger("task-service");
 
@@ -39,7 +39,7 @@ export class TaskService {
     const order = this.repository.getNextOrder(body.workspaceId, "draft");
 
     const task: Task = {
-      id: `task_${nanoid(12)}`,
+      id: `task_${safeNanoid(12)}`,
       workspaceId: body.workspaceId,
       title: body.title,
       status: "draft",
