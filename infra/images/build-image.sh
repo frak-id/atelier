@@ -28,7 +28,7 @@ fi
 AGENT_BINARY="$SCRIPT_DIR/sandbox-agent"
 if [ ! -f "$AGENT_BINARY" ]; then
     echo "Error: sandbox-agent binary not found at: $AGENT_BINARY"
-    echo "Build with: cd apps/agent && deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output dist/sandbox-agent src/index.ts"
+    echo "Build with: cd apps/agent-rust && cargo build --release"
     exit 1
 fi
 

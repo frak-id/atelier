@@ -74,7 +74,7 @@ async function buildImage(args: string[]) {
     throw new Error(
       `sandbox-agent binary not found at: ${agentBinary}\n` +
         `Deploy with 'bun run deploy' first, or build manually on dev machine:\n` +
-        `  cd apps/agent && deno task build:linux`,
+        `  cd apps/agent-rust && cargo build --release`,
     );
   }
 

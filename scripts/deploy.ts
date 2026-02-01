@@ -11,7 +11,7 @@ const ROOT = resolve(import.meta.dirname, "..");
 const CLI_DIR = resolve(ROOT, "apps/cli");
 const MANAGER_DIR = resolve(ROOT, "apps/manager");
 const DASHBOARD_DIR = resolve(ROOT, "apps/dashboard");
-const AGENT_DIR = resolve(ROOT, "apps/agent");
+const AGENT_DIR = resolve(ROOT, "apps/agent-rust");
 const INFRA_DIR = resolve(ROOT, "infra");
 const IMAGES_DIR = resolve(ROOT, "infra/images");
 
@@ -66,7 +66,12 @@ async function main() {
   console.log("\n📦 Building...");
   await $`bun run --filter @frak-sandbox/cli build:linux`;
   await $`bun run --filter @frak-sandbox/manager build`;
-  await $`deno compile --allow-all --unstable-vsock --target x86_64-unknown-linux-gnu --output ${resolve(AGENT_DIR, "dist/sandbox-agent")} ${resolve(AGENT_DIR, "src/index.ts")}`;
+  await $`cargo build --release --manifest-path ${resolve(AGENT_DIR, "Cargo.toml")}`;
+  mkdirSync(resolve(AGENT_DIR, "dist"), { recursive: true });
+  cpSync(
+    resolve(AGENT_DIR, "target/release/sandbox-agent"),
+    resolve(AGENT_DIR, "dist/sandbox-agent"),
+  );
   await $`bun run --filter @frak-sandbox/dashboard build`;
 
   console.log("\n📁 Staging files...");
