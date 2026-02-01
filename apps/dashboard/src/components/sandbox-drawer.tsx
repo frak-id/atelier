@@ -505,7 +505,11 @@ export function SandboxDrawer({
                       </CardContent>
                     </Card>
 
-                    <Tabs defaultValue="repos" className="w-full">
+                    <Tabs
+                      key={sandbox.id}
+                      defaultValue="repos"
+                      className="w-full"
+                    >
                       <TabsList className="w-full justify-start">
                         <TabsTrigger value="repos">Repositories</TabsTrigger>
                         <TabsTrigger value="services">Services</TabsTrigger>
