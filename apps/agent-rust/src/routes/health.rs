@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 use std::time::Instant;
 
 use crate::config::SANDBOX_CONFIG;
+use crate::response::json_ok;
 
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
@@ -93,14 +94,6 @@ fn get_disk_usage() -> serde_json::Value {
     }
 }
 
-fn json_ok(body: serde_json::Value) -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(200)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(body.to_string())))
-        .unwrap()
-}
-
 pub async fn handle_health() -> Response<Full<Bytes>> {
     let _ = *START_TIME;
 
@@ -146,7 +139,10 @@ pub async fn handle_metrics() -> Response<Full<Bytes>> {
         (get_cpu_usage(), get_memory_usage(), get_disk_usage())
     })
     .await
-    .unwrap_or_else(|_| (0.0, serde_json::json!({"total": 0, "used": 0, "free": 0}), serde_json::json!({"total": 0, "used": 0, "free": 0})));
+    .unwrap_or_else(|_| {
+        let empty = serde_json::json!({"total": 0, "used": 0, "free": 0});
+        (0.0, empty.clone(), empty)
+    });
 
     let now = crate::utc_rfc3339();
 

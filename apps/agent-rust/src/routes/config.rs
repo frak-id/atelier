@@ -1,24 +1,17 @@
 use http_body_util::Full;
 use hyper::body::Bytes;
-use hyper::Response;
+use hyper::{Response, StatusCode};
 
 use crate::config::{
     OPENCODE_AUTH_PATH, OPENCODE_CONFIG_PATH, SANDBOX_CONFIG, VSCODE_EXTENSIONS_PATH,
     VSCODE_SETTINGS_PATH,
 };
-
-fn json_ok(body: serde_json::Value) -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(200)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(body.to_string())))
-        .unwrap()
-}
+use crate::response::{json_error, json_ok};
 
 pub fn handle_config() -> Response<Full<Bytes>> {
     match SANDBOX_CONFIG.as_ref() {
-        Some(cfg) => json_ok(serde_json::to_value(cfg).unwrap()),
-        None => json_ok(serde_json::json!({"error": "Config not found"})),
+        Some(cfg) => json_ok(serde_json::to_value(cfg).unwrap_or_default()),
+        None => json_error(StatusCode::NOT_FOUND, "Config not found"),
     }
 }
 
@@ -34,7 +27,7 @@ pub async fn handle_editor_config() -> Response<Full<Bytes>> {
         result
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_else(|| serde_json::from_str(default).unwrap())
+            .unwrap_or_else(|| serde_json::from_str(default).expect("static default"))
     };
 
     json_ok(serde_json::json!({

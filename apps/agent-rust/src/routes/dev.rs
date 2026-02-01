@@ -1,6 +1,6 @@
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
-use hyper::{Request, Response};
+use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -9,81 +9,65 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use crate::config::{LOG_DIR, WORKSPACE_DIR};
+use crate::response::{json_error, json_ok};
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DevProcessInfo {
-    name: String,
-    status: String,
-    pid: u32,
-    port: Option<u16>,
-    started_at: String,
-    exit_code: Option<i32>,
-    log_file: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum ProcessStatus {
+    Running,
+    Stopped,
+    Error,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DevProcess {
-    pid: u32,
     name: String,
-    log_file: String,
-    started_at: String,
+    status: ProcessStatus,
+    pid: u32,
     port: Option<u16>,
-    status: String,
+    started_at: String,
     exit_code: Option<i32>,
+    log_file: String,
 }
 
 static RUNNING_DEV_COMMANDS: LazyLock<Mutex<HashMap<String, DevProcess>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn is_process_running(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    // SAFETY: kill with signal 0 only checks if process exists, no signal is sent.
+    // PID is validated above to never be 0 (which would signal the caller's process group).
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
-fn json_ok(body: serde_json::Value) -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(200)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(body.to_string())))
-        .unwrap()
-}
-
-fn json_status(status: u16, body: serde_json::Value) -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(body.to_string())))
-        .unwrap()
+fn signal_process(pid: u32, signal: i32) {
+    if pid <= 1 {
+        return;
+    }
+    // SAFETY: PID is validated above. Signal is always SIGTERM or SIGKILL from callers.
+    unsafe { libc::kill(pid as i32, signal) };
 }
 
 pub async fn handle_get_dev() -> Response<Full<Bytes>> {
-    let commands = RUNNING_DEV_COMMANDS.lock().await;
-    let list: Vec<DevProcessInfo> = commands
-        .values()
-        .map(|proc| {
-            let status = if proc.status == "running" && !is_process_running(proc.pid) {
-                "error".to_string()
-            } else {
-                proc.status.clone()
-            };
-            DevProcessInfo {
-                name: proc.name.clone(),
-                status,
-                pid: proc.pid,
-                port: proc.port,
-                started_at: proc.started_at.clone(),
-                exit_code: proc.exit_code,
-                log_file: proc.log_file.clone(),
-            }
-        })
-        .collect();
+    let mut commands = RUNNING_DEV_COMMANDS.lock().await;
 
+    for proc in commands.values_mut() {
+        if proc.status == ProcessStatus::Running && !is_process_running(proc.pid) {
+            proc.status = ProcessStatus::Error;
+        }
+    }
+
+    let list: Vec<&DevProcess> = commands.values().collect();
     json_ok(serde_json::json!({ "commands": list }))
 }
 
 pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
     let body = match req.collect().await.map(|b| b.to_bytes()) {
         Ok(b) => b,
-        Err(_) => return json_status(400, serde_json::json!({"error": "Failed to read body"})),
+        Err(_) => return json_error(StatusCode::BAD_REQUEST, "Failed to read body"),
     };
 
     #[derive(Deserialize)]
@@ -96,17 +80,17 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
 
     let parsed: StartBody = match serde_json::from_slice(&body) {
         Ok(p) => p,
-        Err(_) => return json_status(400, serde_json::json!({"error": "Invalid JSON"})),
+        Err(_) => return json_error(StatusCode::BAD_REQUEST, "Invalid JSON"),
     };
 
     let mut commands = RUNNING_DEV_COMMANDS.lock().await;
 
     if let Some(existing) = commands.get(name) {
-        if existing.status == "running" && is_process_running(existing.pid) {
-            return json_status(409, serde_json::json!({
-                "error": "Conflict",
-                "message": format!("Dev command '{}' is already running with PID {}", name, existing.pid)
-            }));
+        if existing.status == ProcessStatus::Running && is_process_running(existing.pid) {
+            return json_error(
+                StatusCode::CONFLICT,
+                &format!("Dev command '{}' is already running with PID {}", name, existing.pid),
+            );
         }
     }
 
@@ -119,7 +103,7 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
         .await
     {
         Ok(f) => f,
-        Err(e) => return json_status(500, serde_json::json!({"error": e.to_string()})),
+        Err(e) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
 
     let workdir = parsed.workdir.unwrap_or_else(|| WORKSPACE_DIR.to_string());
@@ -138,7 +122,7 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return json_status(500, serde_json::json!({"error": e.to_string()})),
+        Err(e) => return json_error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
 
     let pid = child.id().unwrap_or(0);
@@ -147,8 +131,7 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    let (log_rd, log_wr) = tokio::io::split(log_handle);
-    drop(log_rd);
+    let (_log_rd, log_wr) = tokio::io::split(log_handle);
     let log_wr = std::sync::Arc::new(tokio::sync::Mutex::new(log_wr));
 
     if let Some(stdout) = stdout {
@@ -168,7 +151,6 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
     let child_pid = pid;
     let wait_child_name = name_owned.clone();
 
-    // Wait on child OUTSIDE the lock to avoid deadlock, then re-acquire to update status
     tokio::spawn(async move {
         let status = child.wait().await;
         let mut cmds = RUNNING_DEV_COMMANDS.lock().await;
@@ -178,10 +160,10 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
                     Ok(s) => {
                         let code = s.code().unwrap_or(-1);
                         proc.exit_code = Some(code);
-                        proc.status = if code == 0 { "stopped" } else { "error" }.to_string();
+                        proc.status = if code == 0 { ProcessStatus::Stopped } else { ProcessStatus::Error };
                     }
                     Err(_) => {
-                        proc.status = "error".to_string();
+                        proc.status = ProcessStatus::Error;
                     }
                 }
             }
@@ -194,7 +176,7 @@ pub async fn handle_dev_start(name: &str, req: Request<hyper::body::Incoming>) -
         log_file: log_file.clone(),
         started_at: started_at.clone(),
         port: parsed.port,
-        status: "running".to_string(),
+        status: ProcessStatus::Running,
         exit_code: None,
     };
 
@@ -243,11 +225,10 @@ pub async fn handle_dev_stop(name: &str) -> Response<Full<Bytes>> {
         }
     };
 
-    if proc.status != "running" || !is_process_running(proc.pid) {
-        let status = if proc.exit_code == Some(0) { "stopped" } else { "error" };
-        proc.status = status.to_string();
+    if proc.status != ProcessStatus::Running || !is_process_running(proc.pid) {
+        proc.status = if proc.exit_code == Some(0) { ProcessStatus::Stopped } else { ProcessStatus::Error };
         return json_ok(serde_json::json!({
-            "status": status,
+            "status": proc.status,
             "name": name,
             "exitCode": proc.exit_code,
             "message": "Command already stopped"
@@ -255,14 +236,14 @@ pub async fn handle_dev_stop(name: &str) -> Response<Full<Bytes>> {
     }
 
     let pid = proc.pid;
-    unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+    signal_process(pid, libc::SIGTERM);
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     if is_process_running(pid) {
-        unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+        signal_process(pid, libc::SIGKILL);
     }
 
-    proc.status = "stopped".to_string();
+    proc.status = ProcessStatus::Stopped;
     if proc.exit_code.is_none() {
         proc.exit_code = Some(-1);
     }

@@ -84,6 +84,7 @@ oc-sandbox/
 - **[Dashboard](apps/dashboard/AGENTS.md)** — React web interface (TanStack Router/Query)
 - **[CLI](apps/cli/AGENTS.md)** — Server provisioning (runs as root)
 - **[Sandbox Agent](apps/agent/AGENTS.md)** — In-VM agent (Deno, vsock)
+- **[Sandbox Agent Rust](apps/agent-rust/AGENTS.md)** — Alternative Rust agent (Tokio, vsock)
 
 ## Deep Dives
 

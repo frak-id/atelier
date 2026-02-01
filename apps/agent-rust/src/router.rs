@@ -2,29 +2,8 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::{Method, Request, Response, StatusCode};
 
+use crate::response::json_error;
 use crate::routes;
-
-fn json_response(status: StatusCode, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(Full::new(body.into()))
-        .unwrap()
-}
-
-fn json_404() -> Response<Full<Bytes>> {
-    json_response(
-        StatusCode::NOT_FOUND,
-        r#"{"error":"Not Found"}"#,
-    )
-}
-
-fn json_405() -> Response<Full<Bytes>> {
-    json_response(
-        StatusCode::METHOD_NOT_ALLOWED,
-        r#"{"error":"Method Not Allowed"}"#,
-    )
-}
 
 pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
     let method = req.method().clone();
@@ -50,7 +29,7 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
                 if method == Method::DELETE {
                     return routes::apps::handle_delete_app(port);
                 }
-                return json_405();
+                return json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
             }
 
             if let Some(rest) = path.strip_prefix("/dev/") {
@@ -64,12 +43,12 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
                             let query = req.uri().query().unwrap_or("");
                             return routes::dev::handle_dev_logs(&name, query).await;
                         }
-                        _ => return json_405(),
+                        _ => return json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed"),
                     }
                 }
             }
 
-            json_404()
+            json_error(StatusCode::NOT_FOUND, "Not Found")
         }
     }
 }

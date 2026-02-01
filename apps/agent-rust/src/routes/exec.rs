@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::process::Command;
 
 use crate::config::{DEFAULT_EXEC_TIMEOUT_MS, MAX_EXEC_BUFFER};
+use crate::response::json_ok;
 
 #[derive(Deserialize)]
 struct ExecBody {
@@ -59,14 +60,6 @@ async fn run_command(command: &str, timeout_ms: Option<u64>) -> serde_json::Valu
     }
 }
 
-fn json_ok(body: serde_json::Value) -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(200)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(body.to_string())))
-        .unwrap()
-}
-
 async fn read_body(req: Request<hyper::body::Incoming>) -> Result<Bytes, hyper::Error> {
     Ok(req.collect().await?.to_bytes())
 }
@@ -98,7 +91,7 @@ pub async fn handle_exec_batch(req: Request<hyper::body::Incoming>) -> Response<
     for cmd in parsed.commands {
         set.spawn(async move {
             let mut result = run_command(&cmd.command, cmd.timeout).await;
-            result.as_object_mut().unwrap().insert("id".into(), serde_json::Value::String(cmd.id));
+            result.as_object_mut().expect("json object").insert("id".into(), serde_json::Value::String(cmd.id));
             result
         });
     }
