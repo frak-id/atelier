@@ -1,7 +1,7 @@
+import type { ManagerEvent } from "@frak-sandbox/manager/types";
 import type { QueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { queryKeys } from "@/api/queries";
-import { ManagerEvent } from "@frak-sandbox/manager/types";
 
 let controller: AbortController | null = null;
 

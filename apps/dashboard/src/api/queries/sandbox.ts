@@ -234,14 +234,21 @@ export function useGitPush(sandboxId: string) {
   });
 }
 
-export const sandboxBrowserStatusQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.browserStatus(id),
-    queryFn: async () =>
-      unwrap(await api.api.sandboxes({ id }).browser.status.get()),
-    refetchInterval: 2000,
-    refetchIntervalInBackground: false,
-  });
+export function deriveBrowserStatus(
+  services:
+    | { services: Array<{ name: string; running: boolean }> }
+    | null
+    | undefined,
+  sandbox: { runtime: { urls: { browser?: string } } } | null | undefined,
+): { status: "running" | "starting" | "off"; url?: string } {
+  const browserUrl = sandbox?.runtime?.urls?.browser;
+  if (!browserUrl) return { status: "off" };
+
+  const kasmvnc = services?.services?.find((s) => s.name === "kasmvnc");
+  if (!kasmvnc) return { status: "off" };
+  if (kasmvnc.running) return { status: "running", url: browserUrl };
+  return { status: "starting", url: browserUrl };
+}
 
 export function useStartBrowser(sandboxId: string) {
   return useMutation({
@@ -250,7 +257,7 @@ export function useStartBrowser(sandboxId: string) {
       unwrap(await api.api.sandboxes({ id: sandboxId }).browser.start.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.browserStatus(sandboxId),
+        queryKey: queryKeys.sandboxes.services(sandboxId),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(sandboxId),
@@ -266,7 +273,7 @@ export function useStopBrowser(sandboxId: string) {
       unwrap(await api.api.sandboxes({ id: sandboxId }).browser.stop.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.browserStatus(sandboxId),
+        queryKey: queryKeys.sandboxes.services(sandboxId),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(sandboxId),

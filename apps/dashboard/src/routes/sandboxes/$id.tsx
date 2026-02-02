@@ -16,8 +16,9 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Sandbox } from "@/api/client";
 import {
-  sandboxBrowserStatusQuery,
+  deriveBrowserStatus,
   sandboxDetailQuery,
+  sandboxServicesQuery,
   useRestartSandbox,
   useStartBrowser,
   useStartSandbox,
@@ -80,12 +81,15 @@ function SandboxImmersionPage() {
 
   const isMobile = useIsMobile();
 
-  const { data: browserStatus } = useQuery({
-    ...sandboxBrowserStatusQuery(id),
+  const { data: services } = useQuery({
+    ...sandboxServicesQuery(id),
     enabled: sandbox?.status === "running",
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
   });
   const startBrowserMutation = useStartBrowser(id);
 
+  const browserStatus = deriveBrowserStatus(services, sandbox);
   const browserUrl = browserStatus?.url
     ? `${browserStatus.url}/?autoconnect=true&resize=remote`
     : undefined;

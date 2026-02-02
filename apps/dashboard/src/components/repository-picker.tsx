@@ -1,3 +1,4 @@
+import type { GitHubReposResponse } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Github, Lock, Unlock } from "lucide-react";
 import { useState } from "react";
@@ -12,7 +13,6 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { API_URL } from "@/config";
 import { cn } from "@/lib/utils";
-import type { GitHubReposResponse } from "@frak-sandbox/manager/types";
 
 interface RepositoryPickerProps {
   value?: string;

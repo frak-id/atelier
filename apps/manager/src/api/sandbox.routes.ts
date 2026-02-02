@@ -14,7 +14,6 @@ import {
   AgentHealthSchema,
   AgentMetricsSchema,
   BrowserStartResponseSchema,
-  BrowserStatusResponseSchema,
   BrowserStopResponseSchema,
   CreateSandboxBodySchema,
   DevCommandListResponseSchema,
@@ -644,36 +643,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         {
           params: IdParamSchema,
           response: BrowserStartResponseSchema,
-        },
-      )
-      .get(
-        "/:id/browser/status",
-        async ({ sandbox }) => {
-          if (sandbox.status !== "running") {
-            return { status: "off" as const };
-          }
-
-          const browserUrl = sandbox.runtime.urls.browser;
-          if (!browserUrl) {
-            return { status: "off" as const };
-          }
-
-          try {
-            const kasmvnc = await agentClient.serviceStatus(
-              sandbox.id,
-              "kasmvnc",
-            );
-            if (kasmvnc.running) {
-              return { status: "running" as const, url: browserUrl };
-            }
-            return { status: "starting" as const, url: browserUrl };
-          } catch {
-            return { status: "off" as const };
-          }
-        },
-        {
-          params: IdParamSchema,
-          response: BrowserStatusResponseSchema,
         },
       )
       .post(
