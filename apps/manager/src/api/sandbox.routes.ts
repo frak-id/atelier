@@ -8,6 +8,7 @@ import {
   sandboxSpawner,
   workspaceService,
 } from "../container.ts";
+import { internalBus } from "../infrastructure/events/internal-bus.ts";
 import { CaddyService } from "../infrastructure/proxy/caddy.service.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
@@ -225,7 +226,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       .post(
         "/:id/services/:name/stop",
         async ({ params, sandbox }) => {
-          return agentClient.serviceStop(sandbox.id, params.name);
+          const result = await agentClient.serviceStop(sandbox.id, params.name);
+          internalBus.emit({
+            type: "sandbox.poll-services",
+            sandboxId: sandbox.id,
+          });
+          return result;
         },
         {
           params: ServiceNameParamsSchema,
@@ -235,7 +241,15 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       .post(
         "/:id/services/:name/restart",
         async ({ params, sandbox }) => {
-          return agentClient.serviceRestart(sandbox.id, params.name);
+          const result = await agentClient.serviceRestart(
+            sandbox.id,
+            params.name,
+          );
+          internalBus.emit({
+            type: "sandbox.poll-services",
+            sandboxId: sandbox.id,
+          });
+          return result;
         },
         {
           params: ServiceNameParamsSchema,
@@ -638,6 +652,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             },
           });
 
+          internalBus.emit({
+            type: "sandbox.poll-services",
+            sandboxId: sandbox.id,
+          });
           return { status: "starting" as const, url: browserUrl };
         },
         {
@@ -667,6 +685,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             },
           });
 
+          internalBus.emit({
+            type: "sandbox.poll-services",
+            sandboxId: sandbox.id,
+          });
           return { status: "off" as const };
         },
         {

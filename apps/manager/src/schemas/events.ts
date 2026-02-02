@@ -29,10 +29,22 @@ const SandboxDeletedSchema = t.Object({
   }),
 });
 
+const SandboxServicesChangedSchema = t.Object({
+  type: t.Literal("sandbox.services.changed"),
+  properties: t.Object({ id: t.String() }),
+});
+
+const SandboxGitChangedSchema = t.Object({
+  type: t.Literal("sandbox.git.changed"),
+  properties: t.Object({ id: t.String() }),
+});
+
 export const SandboxEventSchema = t.Union([
   SandboxCreatedSchema,
   SandboxUpdatedSchema,
   SandboxDeletedSchema,
+  SandboxServicesChangedSchema,
+  SandboxGitChangedSchema,
 ]);
 export type SandboxEvent = Static<typeof SandboxEventSchema>;
 

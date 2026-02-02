@@ -22,14 +22,17 @@ import {
   workspaceRoutes,
 } from "./api/index.ts";
 import {
+  agentOperations,
   internalService,
   prebuildChecker,
   sandboxService,
   sshKeyService,
+  workspaceService,
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
+import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { SandboxError } from "./shared/errors.ts";
@@ -244,5 +247,14 @@ app.listen(
     );
   },
 );
+
+sandboxPoller.start({
+  agentOperations,
+  getSandboxes: () => sandboxService.getAll(),
+  getWorkspaceRepos: (workspaceId) => {
+    const ws = workspaceService.getById(workspaceId);
+    return ws?.config.repos ?? [];
+  },
+});
 
 export type App = typeof app;

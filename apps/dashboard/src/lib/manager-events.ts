@@ -88,6 +88,22 @@ function handleEvent(event: ManagerEvent, queryClient: QueryClient): void {
         queryKey: queryKeys.configFiles.all,
       });
       break;
+
+    case "sandbox.services.changed":
+      if (properties.id) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.sandboxes.services(properties.id),
+        });
+      }
+      break;
+
+    case "sandbox.git.changed":
+      if (properties.id) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.sandboxes.gitStatus(properties.id),
+        });
+      }
+      break;
   }
 }
 
