@@ -16,26 +16,47 @@ interface PollerDeps {
 }
 
 const POLL_INTERVAL_MS = 10_000;
-const OPTIMISTIC_DELAY_MS = 1_000;
+const OPTIMISTIC_DELAY_MS = 2_000;
 
 class SandboxPollerService {
   private log = createChildLogger("sandbox-poller");
   private timer: Timer | null = null;
-  private servicesHashes = new Map<string, BigInt>();
-  private gitHashes = new Map<string, BigInt>();
+  private servicesHashes = new Map<string, number>();
+  private gitHashes = new Map<string, number>();
   private deps: PollerDeps | null = null;
 
   start(deps: PollerDeps): void {
     this.deps = deps;
     this.timer = setInterval(() => this.pollAll(), POLL_INTERVAL_MS);
 
-    internalBus.subscribe((event) => {
-      if (event.type === "sandbox.poll-services") {
-        this.scheduleOptimisticPoll(event.sandboxId, "services");
-      } else if (event.type === "sandbox.poll-git") {
-        this.scheduleOptimisticPoll(event.sandboxId, "git");
-      } else if (event.type === "sandbox.poll-all") {
-        this.scheduleOptimisticPoll(event.sandboxId, "all");
+    // Optimistic poll triggers from route handlers
+    internalBus
+      .on("sandbox.poll-services", (sandboxId) => {
+        this.scheduleOptimisticPoll(sandboxId, "services");
+      })
+      .on("sandbox.poll-git", (sandboxId) => {
+        this.scheduleOptimisticPoll(sandboxId, "git");
+      })
+      .on("sandbox.poll-all", (sandboxId) => {
+        this.scheduleOptimisticPoll(sandboxId, "all");
+      });
+
+    // React to sandbox lifecycle events
+    eventBus.subscribe((event) => {
+      switch (event.type) {
+        case "sandbox.created":
+          // New sandbox — schedule initial poll after boot
+          this.scheduleOptimisticPoll(event.properties.id, "all");
+          break;
+        case "sandbox.updated":
+          // Status change (e.g. running → stopped)
+          if (event.properties.status !== "running") {
+            this.cleanupSandbox(event.properties.id);
+          }
+          break;
+        case "sandbox.deleted":
+          this.cleanupSandbox(event.properties.id);
+          break;
       }
     });
 
@@ -48,6 +69,11 @@ class SandboxPollerService {
     this.servicesHashes.clear();
     this.gitHashes.clear();
     this.log.info("Sandbox poller stopped");
+  }
+
+  private cleanupSandbox(sandboxId: string): void {
+    this.servicesHashes.delete(sandboxId);
+    this.gitHashes.delete(sandboxId);
   }
 
   private scheduleOptimisticPoll(
@@ -63,11 +89,10 @@ class SandboxPollerService {
       .getSandboxes()
       .filter((s) => s.status === "running");
 
-    // Clean up hashes for stopped sandboxes
+    // Clean up hashes for sandboxes no longer running
     for (const id of this.servicesHashes.keys()) {
       if (!sandboxes.find((s) => s.id === id)) {
-        this.servicesHashes.delete(id);
-        this.gitHashes.delete(id);
+        this.cleanupSandbox(id);
       }
     }
 
@@ -96,7 +121,7 @@ class SandboxPollerService {
     if (!this.deps) return;
     try {
       const result = await this.deps.agentOperations.services(sandboxId);
-      const hash = BigInt(Bun.hash(JSON.stringify(result)));
+      const hash = Number(Bun.hash(JSON.stringify(result)));
       const prev = this.servicesHashes.get(sandboxId);
 
       if (prev !== undefined && prev !== hash) {
@@ -124,7 +149,7 @@ class SandboxPollerService {
         sandboxId,
         repos,
       );
-      const hash = BigInt(Bun.hash(JSON.stringify(result)));
+      const hash = Number(Bun.hash(JSON.stringify(result)));
       const prev = this.gitHashes.get(sandboxId);
 
       if (prev !== undefined && prev !== hash) {

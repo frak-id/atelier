@@ -1,35 +1,11 @@
-import { createChildLogger } from "../../shared/lib/logger.ts";
+import { EventEmitter } from "node:events";
 
-const log = createChildLogger("internal-bus");
-
-type InternalEvent =
-  | { type: "sandbox.poll-services"; sandboxId: string }
-  | { type: "sandbox.poll-git"; sandboxId: string }
-  | { type: "sandbox.poll-all"; sandboxId: string };
-
-type Listener = (event: InternalEvent) => void;
-
-class InternalBus {
-  private listeners = new Set<Listener>();
-
-  emit(event: InternalEvent): void {
-    log.debug({ type: event.type }, "Internal event");
-    for (const listener of this.listeners) {
-      try {
-        listener(event);
-      } catch (e) {
-        log.error({ type: event.type, error: e }, "Internal listener error");
-      }
-    }
-  }
-
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
+interface InternalEvents {
+  "sandbox.poll-services": [sandboxId: string];
+  "sandbox.poll-git": [sandboxId: string];
+  "sandbox.poll-all": [sandboxId: string];
 }
 
-export type { InternalEvent };
+class InternalBus extends EventEmitter<InternalEvents> {}
+
 export const internalBus = new InternalBus();

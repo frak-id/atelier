@@ -227,10 +227,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         "/:id/services/:name/stop",
         async ({ params, sandbox }) => {
           const result = await agentClient.serviceStop(sandbox.id, params.name);
-          internalBus.emit({
-            type: "sandbox.poll-services",
-            sandboxId: sandbox.id,
-          });
+          internalBus.emit("sandbox.poll-services", sandbox.id);
           return result;
         },
         {
@@ -245,10 +242,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             sandbox.id,
             params.name,
           );
-          internalBus.emit({
-            type: "sandbox.poll-services",
-            sandboxId: sandbox.id,
-          });
+          internalBus.emit("sandbox.poll-services", sandbox.id);
           return result;
         },
         {
@@ -652,10 +646,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             },
           });
 
-          internalBus.emit({
-            type: "sandbox.poll-services",
-            sandboxId: sandbox.id,
-          });
+          internalBus.emit("sandbox.poll-services", sandbox.id);
           return { status: "starting" as const, url: browserUrl };
         },
         {
@@ -685,10 +676,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             },
           });
 
-          internalBus.emit({
-            type: "sandbox.poll-services",
-            sandboxId: sandbox.id,
-          });
+          internalBus.emit("sandbox.poll-services", sandbox.id);
           return { status: "off" as const };
         },
         {
