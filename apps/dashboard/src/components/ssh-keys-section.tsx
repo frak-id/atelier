@@ -259,7 +259,7 @@ ${sshConfigCommand}`
           </code>
           <code className="block bg-muted px-2 py-1 rounded">
             code --remote ssh-remote+&lt;sandbox-id&gt;@{SSH_HOST_ALIAS}{" "}
-            /workspace
+            /home/dev/workspace
           </code>
         </div>
       </CardContent>

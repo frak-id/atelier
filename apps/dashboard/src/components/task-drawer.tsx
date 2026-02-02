@@ -48,7 +48,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
-import { formatDate } from "@/lib/utils";
+import { formatDate, getWorkspaceDirectory } from "@/lib/utils";
 
 interface TaskDrawerProps {
   taskId: string | null;
@@ -394,9 +394,7 @@ export function TaskDrawer({
                         taskSessions={taskData.data?.sessions ?? []}
                         interactions={sessionInteractions}
                         opencodeUrl={sandbox?.runtime?.urls?.opencode}
-                        directory={
-                          sandbox?.workspaceId ?? "/home/dev/workspace"
-                        }
+                        directory={getWorkspaceDirectory(workspace)}
                       />
                     </CardContent>
                   </Card>

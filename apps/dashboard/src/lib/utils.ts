@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { Workspace } from "@frak-sandbox/manager/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -51,6 +52,27 @@ export function formatRelativeTime(date: string | Date | number): string {
 
 export function base64UrlEncode(str: string): string {
   return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * Get the workspace directory inside the sandbox VM.
+ * If exactly one repo is configured, points directly to that repo's clone path.
+ * Otherwise, points to the workspace root.
+ *
+ * Mirrors the logic in manager's sandbox.provisioner.ts.
+ */
+export function getWorkspaceDirectory(
+  workspace: Workspace | undefined | null,
+): string {
+  const repos = workspace?.config?.repos;
+  if (repos?.length === 1 && repos[0]?.clonePath) {
+    const clonePath = repos[0].clonePath;
+    const fullPath = clonePath.startsWith("/workspace")
+      ? clonePath
+      : `/workspace${clonePath}`;
+    return `/home/dev${fullPath}`;
+  }
+  return "/home/dev/workspace";
 }
 
 export function buildOpenCodeSessionUrl(
