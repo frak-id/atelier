@@ -50,11 +50,6 @@ export const OPENCODE = {
   BINARY: "opencode-linux-x64-baseline.tar.gz",
 } as const;
 
-export const TTYD = {
-  VERSION: "1.7.7",
-  RELEASE_URL: "https://github.com/tsl0922/ttyd/releases/download",
-} as const;
-
 export const CODE_SERVER = {
   /** code-server version */
   VERSION: "4.108.1",

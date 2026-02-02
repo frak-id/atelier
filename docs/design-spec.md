@@ -1405,13 +1405,13 @@ WantedBy=multi-user.target
 - [x] Logging with pino (structured logging with child loggers)
 - [x] Stop/Start lifecycle (Firecracker pause/resume)
 - [ ] Cold/Warm state management (deferred - requires vCPU/memory hot-plug)
-- [ ] xterm.js interactive terminal (deferred - exec command interface works)
+- [x] xterm.js interactive terminal (portable-pty in agent + xterm.js in dashboard)
 - [ ] Documentation
 - [ ] CI/CD pipeline
 
 **Remaining Work**:
 - **COLD state**: Reducing resources without full stop. Would require Firecracker hot-plug support or VM restart with different config. Deferred for now.
-- **xterm.js terminal**: Real-time interactive shell via WebSocket. Current exec command interface is functional. Research done, implementation deferred.
+- **xterm.js terminal**: ✅ Implemented. Agent spawns PTY with nix crate, exposes WebSocket on port 7681. Manager proxies WebSocket to agent. Dashboard renders xterm.js inline.
 
 **Deliverables**:
 - ✅ Stable system for team use

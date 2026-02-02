@@ -141,7 +141,6 @@ export const ServicesConfigSchema = Type.Object(
   {
     vscode: ServiceEntrySchema(8080),
     opencode: ServiceEntrySchema(3000),
-    terminal: ServiceEntrySchema(7681),
     browser: ServiceEntrySchema(6080),
     agent: ServiceEntrySchema(9999),
   },
@@ -222,7 +221,6 @@ export const ENV_VAR_MAPPING = {
 
   FRAK_VSCODE_PORT: "services.vscode.port",
   FRAK_OPENCODE_PORT: "services.opencode.port",
-  FRAK_TERMINAL_PORT: "services.terminal.port",
   FRAK_BROWSER_PORT: "services.browser.port",
   FRAK_AGENT_PORT: "services.agent.port",
 
@@ -274,7 +272,6 @@ export const DEFAULT_CONFIG: FrakConfig = {
   services: {
     vscode: { port: 8080 },
     opencode: { port: 3000 },
-    terminal: { port: 7681 },
     browser: { port: 6080 },
     agent: { port: 9999 },
   },

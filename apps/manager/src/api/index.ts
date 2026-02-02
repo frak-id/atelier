@@ -17,4 +17,5 @@ export { sharedStorageRoutes } from "./shared-storage.routes.ts";
 export { sshKeyRoutes } from "./ssh-key.routes.ts";
 export { systemRoutes } from "./system.routes.ts";
 export { taskRoutes } from "./task.routes.ts";
+export { terminalRoutes } from "./terminal.routes.ts";
 export { workspaceRoutes } from "./workspace.routes.ts";

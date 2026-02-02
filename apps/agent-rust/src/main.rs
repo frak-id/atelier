@@ -2,6 +2,7 @@ mod config;
 mod response;
 mod router;
 mod routes;
+mod terminal;
 
 use std::convert::Infallible;
 use std::time::SystemTime;
@@ -68,6 +69,10 @@ async fn main() {
     // tokio::spawn(async {
     //     routes::services::start_autostart_services().await;
     // });
+
+    tokio::spawn(async {
+        terminal::start_terminal_server(7681).await;
+    });
 
     loop {
         let (stream, _addr) = match listener.accept().await {

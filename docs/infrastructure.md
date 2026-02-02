@@ -41,7 +41,6 @@ Domains are configurable. Default pattern:
 | Dashboard | `sandbox-dash.{DOMAIN_SUFFIX}` |
 | VSCode | `sandbox-{id}.{DOMAIN_SUFFIX}` |
 | OpenCode | `opencode-{id}.{DOMAIN_SUFFIX}` |
-| Terminal | `terminal-{id}.{DOMAIN_SUFFIX}` |
 
 ## VM Communication
 

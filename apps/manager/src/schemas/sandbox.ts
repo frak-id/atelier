@@ -12,7 +12,6 @@ export type SandboxStatus = Static<typeof SandboxStatusSchema>;
 export const SandboxUrlsSchema = t.Object({
   vscode: t.String(),
   opencode: t.String(),
-  terminal: t.String(),
   ssh: t.String(),
   browser: t.Optional(t.String()),
 });

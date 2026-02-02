@@ -1,5 +1,5 @@
 # Frak Sandbox - dev-base image
-# Minimal development environment with Bun, Git, and ttyd
+# Minimal development environment with Bun and Git
 # code-server and opencode are served via NFS from /opt/shared/bin
 #
 # Build: docker build -t frak-sandbox/dev-base .
@@ -7,7 +7,7 @@
 
 FROM node:22-slim
 
-ARG TTYD_VERSION=1.7.7
+
 ARG KASMVNC_VERSION=1.4.0
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
@@ -46,11 +46,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
     && mkdir -p /var/run/sshd \
+<<<<<<< HEAD
     && sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config \
     && sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config \
     && sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config \
-    && curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64 \
-    && chmod +x /usr/local/bin/ttyd \
     && curl -fsSL -o /tmp/kasmvnc.deb "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_bookworm_${KASMVNC_VERSION}_amd64.deb" \
     && apt-get install -y --no-install-recommends /tmp/kasmvnc.deb \
     && rm -f /tmp/kasmvnc.deb \

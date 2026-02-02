@@ -251,9 +251,7 @@ export function TaskCard({
               </Button>
               <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
                 <a
-                  href={sandbox.runtime.urls.terminal}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={`/sandbox/${sandbox.id}/terminal`}
                   title="Open Terminal"
                 >
                   <Terminal className="h-3.5 w-3.5" />

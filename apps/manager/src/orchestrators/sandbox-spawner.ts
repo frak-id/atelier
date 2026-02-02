@@ -291,7 +291,7 @@ class SpawnContext {
       runtime: {
         ipAddress: this.network.ipAddress,
         macAddress: this.network.macAddress,
-        urls: { vscode: "", opencode: "", terminal: "", ssh: "" },
+        urls: { vscode: "", opencode: "", ssh: "" },
         vcpus,
         memoryMb,
       },
@@ -316,7 +316,6 @@ class SpawnContext {
     this.sandbox.runtime.urls = {
       vscode: `https://sandbox-${this.sandboxId}.${config.caddy.domainSuffix}`,
       opencode: `https://opencode-${this.sandboxId}.${config.caddy.domainSuffix}`,
-      terminal: `https://terminal-${this.sandboxId}.${config.caddy.domainSuffix}`,
       ssh: sshCmd,
     };
     this.sandbox.status = "running";
@@ -496,7 +495,7 @@ class SpawnContext {
 
     await this.pushAuthAndConfigs();
 
-    const serviceNames = ["vscode", "opencode", "terminal"];
+    const serviceNames = ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
       serviceNames,
@@ -599,7 +598,6 @@ class SpawnContext {
     const dashboardDomain = config.domains.dashboard;
     const vsPort = config.raw.services.vscode.port;
     const ocPort = config.raw.services.opencode.port;
-    const ttydPort = config.raw.services.terminal.port;
     const browserPort = config.raw.services.browser.port;
 
     return {
@@ -623,12 +621,6 @@ class SpawnContext {
           port: ocPort,
           command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
           user: "dev" as const,
-          autoStart: true,
-        },
-        terminal: {
-          port: ttydPort,
-          command: `ttyd -p ${ttydPort} -W -t fontSize=14 -t fontFamily=monospace su - dev`,
-          user: "root" as const,
           autoStart: true,
         },
         kasmvnc: {
@@ -754,7 +746,6 @@ class SpawnContext {
 
     const vsPort = config.raw.services.vscode.port;
     const ocPort = config.raw.services.opencode.port;
-    const ttydPort = config.raw.services.terminal.port;
 
     const devCommandsSection = ws?.config.devCommands?.length
       ? ws.config.devCommands
@@ -790,7 +781,6 @@ ${reposSection}
 |---------|------|------|
 | code-server (VSCode) | ${vsPort} | \`/var/log/sandbox/vscode.log\` |
 | opencode | ${ocPort} | \`/var/log/sandbox/opencode.log\` |
-| terminal (ttyd) | ${ttydPort} | \`/var/log/sandbox/terminal.log\` |
 | sshd | 22 | — |
 
 ## Dev Commands
@@ -811,7 +801,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       return;
     }
 
-    const serviceNames = ["vscode", "opencode", "terminal"];
+    const serviceNames = ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
       serviceNames,
@@ -959,7 +949,6 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       {
         vscode: config.raw.services.vscode.port,
         opencode: config.raw.services.opencode.port,
-        terminal: config.raw.services.terminal.port,
       },
     );
 

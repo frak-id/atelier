@@ -20,6 +20,7 @@ import {
   sshKeyRoutes,
   systemRoutes,
   taskRoutes,
+  terminalRoutes,
   workspaceRoutes,
 } from "./api/index.ts";
 import {
@@ -98,7 +99,6 @@ const app = new Elysia()
           {
             vscode: config.raw.services.vscode.port,
             opencode: config.raw.services.opencode.port,
-            terminal: config.raw.services.terminal.port,
           },
         );
         await SshPiperService.registerRoute(
@@ -210,6 +210,7 @@ const app = new Elysia()
       .guard({ beforeHandle: authGuard }, (app) =>
         app
           .use(sandboxRoutes)
+          .use(terminalRoutes)
           .use(workspaceRoutes)
           .use(taskRoutes)
           .use(sessionTemplateRoutes)
