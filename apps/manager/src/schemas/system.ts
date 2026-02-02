@@ -63,34 +63,6 @@ export const StorageStatusSchema = t.Object({
 });
 export type StorageStatus = Static<typeof StorageStatusSchema>;
 
-export const QueueStatsSchema = t.Object({
-  queued: t.Number(),
-  running: t.Number(),
-  completed: t.Number(),
-  failed: t.Number(),
-  maxConcurrent: t.Number(),
-});
-export type QueueStats = Static<typeof QueueStatsSchema>;
-
-export const QueuedJobInfoSchema = t.Object({
-  id: t.String(),
-  workspaceId: t.Optional(t.String()),
-  queuedAt: t.String(),
-});
-
-export const RunningJobInfoSchema = t.Object({
-  id: t.String(),
-  workspaceId: t.Optional(t.String()),
-  startedAt: t.Optional(t.String()),
-});
-
-export const QueueStatusSchema = t.Object({
-  stats: QueueStatsSchema,
-  queued: t.Array(QueuedJobInfoSchema),
-  running: t.Array(RunningJobInfoSchema),
-});
-export type QueueStatus = Static<typeof QueueStatusSchema>;
-
 export const LiveStatusSchema = t.Object({
   status: t.Literal("ok"),
 });

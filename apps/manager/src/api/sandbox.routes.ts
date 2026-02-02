@@ -9,7 +9,6 @@ import {
   workspaceService,
 } from "../container.ts";
 import { CaddyService } from "../infrastructure/proxy/caddy.service.ts";
-import { QueueService } from "../infrastructure/queue/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   AgentHealthSchema,
@@ -45,7 +44,6 @@ import {
   ServiceActionResponseSchema,
   ServiceNameParamsSchema,
   ServicesResponseSchema,
-  SpawnJobSchema,
 } from "../schemas/index.ts";
 import { NotFoundError, ResourceExhaustedError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
@@ -707,18 +705,4 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           response: BrowserStopResponseSchema,
         },
       ),
-  )
-  .get(
-    "/job/:id",
-    ({ params }) => {
-      const job = QueueService.getJob(params.id);
-      if (!job) {
-        throw new NotFoundError("Job", params.id);
-      }
-      return job;
-    },
-    {
-      params: IdParamSchema,
-      response: SpawnJobSchema,
-    },
   );

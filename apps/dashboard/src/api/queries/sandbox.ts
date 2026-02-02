@@ -14,7 +14,7 @@ export const sandboxListQuery = (filters?: {
           query: filters as Record<string, string>,
         }),
       ),
-    refetchInterval: 5000,
+    refetchInterval: 15000,
     refetchIntervalInBackground: false,
   });
 
@@ -90,7 +90,6 @@ export function useCreateSandbox() {
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
-      queryClient.invalidateQueries({ queryKey: queryKeys.system.queue });
     },
   });
 }

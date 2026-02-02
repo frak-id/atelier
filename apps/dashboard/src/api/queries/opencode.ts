@@ -17,8 +17,6 @@ export const opencodeSessionsQuery = (baseUrl: string) =>
   queryOptions({
     queryKey: queryKeys.opencode.sessions(baseUrl),
     queryFn: () => fetchOpenCodeSessions(baseUrl),
-    refetchInterval: 10000,
-    refetchIntervalInBackground: false,
     enabled: !!baseUrl,
   });
 

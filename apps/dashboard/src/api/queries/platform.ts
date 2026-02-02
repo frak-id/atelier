@@ -16,7 +16,7 @@ export const healthQuery = queryOptions({
 export const systemStatsQuery = queryOptions({
   queryKey: queryKeys.system.stats,
   queryFn: async () => unwrap(await api.api.system.stats.get()),
-  refetchInterval: 5000,
+  refetchInterval: 15000,
   refetchIntervalInBackground: false,
 });
 
@@ -24,13 +24,6 @@ export const systemStorageQuery = queryOptions({
   queryKey: queryKeys.system.storage,
   queryFn: async () => unwrap(await api.api.system.storage.get()),
   refetchInterval: 30000,
-  refetchIntervalInBackground: false,
-});
-
-export const systemQueueQuery = queryOptions({
-  queryKey: queryKeys.system.queue,
-  queryFn: async () => unwrap(await api.api.system.queue.get()),
-  refetchInterval: 2000,
   refetchIntervalInBackground: false,
 });
 

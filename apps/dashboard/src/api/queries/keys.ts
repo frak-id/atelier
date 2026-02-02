@@ -61,7 +61,6 @@ export const queryKeys = {
   system: {
     stats: ["system", "stats"] as const,
     storage: ["system", "storage"] as const,
-    queue: ["system", "queue"] as const,
   },
   configFiles: {
     all: ["configFiles"] as const,

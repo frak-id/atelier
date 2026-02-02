@@ -1,6 +1,6 @@
 # Infrastructure
 
-Low-level services for Linux host management. All are singletons except `FirecrackerClient` (per-VM instance) and `QueueService`.
+Low-level services for Linux host management. All are singletons except `FirecrackerClient` (per-VM instance).
 
 ## Services
 
@@ -13,7 +13,6 @@ Low-level services for Linux host management. All are singletons except `Firecra
 | `AgentClient` | Communicate with in-VM agent | Raw HTTP over vsock |
 | `SshPiperService` | SSH proxy configuration | Filesystem |
 | `RegistryService` | Verdaccio npm registry | Shell + HTTP |
-| `QueueService` | Serialize concurrent spawns | In-memory |
 
 ## AgentClient Note
 

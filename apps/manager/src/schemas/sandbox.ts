@@ -56,26 +56,6 @@ export type SandboxListQuery = Static<typeof SandboxListQuerySchema>;
 export const SandboxListResponseSchema = t.Array(SandboxSchema);
 export type SandboxListResponse = Static<typeof SandboxListResponseSchema>;
 
-export const JobStatusSchema = t.Union([
-  t.Literal("queued"),
-  t.Literal("running"),
-  t.Literal("completed"),
-  t.Literal("failed"),
-]);
-export type JobStatus = Static<typeof JobStatusSchema>;
-
-export const SpawnJobSchema = t.Object({
-  id: t.String(),
-  options: CreateSandboxBodySchema,
-  status: JobStatusSchema,
-  result: t.Optional(SandboxSchema),
-  error: t.Optional(t.String()),
-  queuedAt: t.String(),
-  startedAt: t.Optional(t.String()),
-  completedAt: t.Optional(t.String()),
-});
-export type SpawnJob = Static<typeof SpawnJobSchema>;
-
 export const ExecBodySchema = t.Object({
   command: t.String({ minLength: 1 }),
   timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),

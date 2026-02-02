@@ -6,12 +6,10 @@ import {
   CaddyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
-import { QueueService } from "../infrastructure/queue/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   type CleanupResult,
   CleanupResultSchema,
-  QueueStatusSchema,
   StorageStatusSchema,
   type SystemStats,
   SystemStatsSchema,
@@ -190,9 +188,6 @@ async function performCleanup(): Promise<CleanupResult> {
     }
   }
 
-  const ONE_HOUR_MS = 3600000;
-  const jobsRemoved = QueueService.cleanup(ONE_HOUR_MS);
-
   log.info(
     {
       socketsRemoved,
@@ -202,7 +197,6 @@ async function performCleanup(): Promise<CleanupResult> {
       logsRemoved,
       caddyRoutesRemoved,
       sshRoutesRemoved,
-      jobsRemoved,
     },
     "Cleanup completed",
   );
@@ -247,28 +241,6 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
     },
     {
       response: StorageStatusSchema,
-      detail: { tags: ["system"] },
-    },
-  )
-  .get(
-    "/queue",
-    () => {
-      const stats = QueueService.getStats();
-      const queued = QueueService.getQueuedJobs().map((j) => ({
-        id: j.id,
-        workspaceId: j.options.workspaceId,
-        queuedAt: j.queuedAt,
-      }));
-      const running = QueueService.getRunningJobs().map((j) => ({
-        id: j.id,
-        workspaceId: j.options.workspaceId,
-        startedAt: j.startedAt,
-      }));
-
-      return { stats, queued, running };
-    },
-    {
-      response: QueueStatusSchema,
       detail: { tags: ["system"] },
     },
   )

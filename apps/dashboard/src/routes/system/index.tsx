@@ -17,7 +17,6 @@ import { useState } from "react";
 import {
   registryStatusQuery,
   sharedStorageQuery,
-  systemQueueQuery,
   systemStatsQuery,
   systemStorageQuery,
   useDisableRegistry,
@@ -41,7 +40,6 @@ export const Route = createFileRoute("/system/")({
   loader: ({ context }) => {
     context.queryClient.ensureQueryData(systemStatsQuery);
     context.queryClient.ensureQueryData(systemStorageQuery);
-    context.queryClient.ensureQueryData(systemQueueQuery);
     context.queryClient.ensureQueryData(sharedStorageQuery);
     context.queryClient.ensureQueryData(registryStatusQuery);
   },
@@ -61,7 +59,6 @@ export const Route = createFileRoute("/system/")({
 function SystemPage() {
   const { data: stats } = useSuspenseQuery(systemStatsQuery);
   const { data: storage } = useSuspenseQuery(systemStorageQuery);
-  const { data: queue } = useSuspenseQuery(systemQueueQuery);
   const { data: sharedStorage } = useSuspenseQuery(sharedStorageQuery);
   const { data: registry } = useQuery(registryStatusQuery);
   const cleanupMutation = useSystemCleanup();
@@ -78,7 +75,7 @@ function SystemPage() {
     undefined,
   );
 
-  if (!stats || !storage || !queue || !sharedStorage) {
+  if (!stats || !storage || !sharedStorage) {
     return (
       <div className="p-6">
         <p className="text-muted-foreground">Loading system data...</p>
@@ -546,89 +543,6 @@ function SystemPage() {
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-4 w-2/3" />
                 <Skeleton className="h-20 w-full" />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Spawn Queue</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-              <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-2xl font-bold">{queue.stats.queued}</div>
-                <div className="text-xs text-muted-foreground">Queued</div>
-              </div>
-              <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-2xl font-bold">{queue.stats.running}</div>
-                <div className="text-xs text-muted-foreground">Running</div>
-              </div>
-              <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-2xl font-bold">
-                  {queue.stats.completed}
-                </div>
-                <div className="text-xs text-muted-foreground">Completed</div>
-              </div>
-              <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-2xl font-bold">{queue.stats.failed}</div>
-                <div className="text-xs text-muted-foreground">Failed</div>
-              </div>
-              <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-2xl font-bold">
-                  {queue.stats.maxConcurrent}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Max Concurrent
-                </div>
-              </div>
-            </div>
-
-            {(queue.running.length > 0 || queue.queued.length > 0) && (
-              <div className="space-y-4">
-                {queue.running.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">Running Jobs</h4>
-                    <div className="space-y-2">
-                      {queue.running.map((job) => (
-                        <div
-                          key={job.id}
-                          className="flex items-center justify-between p-2 bg-muted rounded"
-                        >
-                          <span className="font-mono text-sm">{job.id}</span>
-                          <div className="flex items-center gap-2">
-                            {job.workspaceId && (
-                              <Badge variant="outline">{job.workspaceId}</Badge>
-                            )}
-                            <Badge variant="warning">Running</Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {queue.queued.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">Queued Jobs</h4>
-                    <div className="space-y-2">
-                      {queue.queued.map((job) => (
-                        <div
-                          key={job.id}
-                          className="flex items-center justify-between p-2 bg-muted rounded"
-                        >
-                          <span className="font-mono text-sm">{job.id}</span>
-                          <div className="flex items-center gap-2">
-                            {job.workspaceId && (
-                              <Badge variant="outline">{job.workspaceId}</Badge>
-                            )}
-                            <Badge variant="secondary">Queued</Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </CardContent>
