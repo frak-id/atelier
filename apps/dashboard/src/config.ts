@@ -10,3 +10,5 @@ export const SSH_HOSTNAME =
 export const SSH_PORT = Number(import.meta.env.VITE_SSH_PORT) || 2222;
 
 export const AUTH_ORG_NAME = import.meta.env.VITE_AUTH_ORG_NAME || "";
+
+export const OPENCODE_PORT = Number(import.meta.env.VITE_OPENCODE_PORT) || 3000;

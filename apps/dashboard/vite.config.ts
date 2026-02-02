@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
     process.env.VITE_SSH_HOSTNAME = frakConfig.sshProxy.domain;
     process.env.VITE_SSH_PORT = String(frakConfig.sshProxy.port);
     process.env.VITE_AUTH_ORG_NAME = frakConfig.auth.allowedOrg || "";
+    process.env.VITE_OPENCODE_PORT = String(frakConfig.services.opencode.port);
   }
 
   return {

@@ -79,6 +79,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { OPENCODE_PORT } from "@/config";
 import { useOpencodeData } from "@/hooks/use-opencode-data";
 import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
 import { aggregateInteractions } from "@/lib/opencode-helpers";
@@ -87,7 +88,11 @@ import {
   flattenHierarchy,
   type SessionWithSandboxInfo,
 } from "@/lib/session-hierarchy";
-import { formatDate, getWorkspaceDirectory } from "@/lib/utils";
+import {
+  formatDate,
+  getWorkspaceDirectory,
+  sandboxIdToLocalPort,
+} from "@/lib/utils";
 
 interface SandboxDrawerProps {
   sandboxId: string | null;
@@ -451,22 +456,28 @@ export function SandboxDrawer({
                       <CardContent className="space-y-4">
                         <div className="space-y-2">
                           <div className="text-sm font-medium">
-                            OpenCode CLI
+                            OpenCode CLI (SSH Tunnel)
                           </div>
                           <div className="relative">
                             <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 whitespace-pre-wrap break-all">
-                              opencode attach {sandbox.runtime.urls.opencode}
+                              ssh -L {sandboxIdToLocalPort(sandbox.id)}
+                              :localhost:{OPENCODE_PORT} -N {sandbox.id}@
+                              {SSH_HOST_ALIAS} & SSH_PID=$!; trap "kill
+                              $SSH_PID" EXIT; sleep 1; opencode attach
+                              http://localhost:
+                              {sandboxIdToLocalPort(sandbox.id)}
                             </code>
                             <Button
                               size="icon"
                               variant="ghost"
                               className="absolute right-1 top-1 h-7 w-7"
-                              onClick={() =>
+                              onClick={() => {
+                                const port = sandboxIdToLocalPort(sandbox.id);
                                 copyToClipboard(
-                                  `opencode attach ${sandbox.runtime.urls.opencode}`,
+                                  `ssh -L ${port}:localhost:${OPENCODE_PORT} -N ${sandbox.id}@${SSH_HOST_ALIAS} & SSH_PID=$!; trap "kill $SSH_PID" EXIT; sleep 1; opencode attach http://localhost:${port}`,
                                   "opencode",
-                                )
-                              }
+                                );
+                              }}
                             >
                               {copiedCommand === "opencode" ? (
                                 <Check className="h-4 w-4 text-green-500" />

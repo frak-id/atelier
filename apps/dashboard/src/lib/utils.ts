@@ -1,6 +1,6 @@
+import type { Workspace } from "@frak-sandbox/manager/types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { Workspace } from "@frak-sandbox/manager/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -124,4 +124,17 @@ export function getSshKeyExpirationStatus(
   }
 
   return { status: "valid", daysRemaining };
+}
+
+/**
+ * Derive a deterministic local port from a sandbox ID.
+ * Uses a simple hash mapped to the 10000–59999 range to avoid
+ * conflicts with well-known ports and ephemeral ports.
+ */
+export function sandboxIdToLocalPort(sandboxId: string): number {
+  let hash = 0;
+  for (let i = 0; i < sandboxId.length; i++) {
+    hash = (hash * 31 + sandboxId.charCodeAt(i)) | 0;
+  }
+  return 10000 + (Math.abs(hash) % 50000);
 }
