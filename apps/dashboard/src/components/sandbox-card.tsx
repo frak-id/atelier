@@ -553,10 +553,7 @@ function SandboxGitBadges({ sandboxId }: { sandboxId: string }) {
 }
 
 function SandboxDevStatus({ sandboxId }: { sandboxId: string }) {
-  const { data } = useQuery({
-    ...sandboxDevCommandsQuery(sandboxId),
-    refetchInterval: 5000,
-  });
+  const { data } = useQuery(sandboxDevCommandsQuery(sandboxId));
 
   const runningCommands = (data?.commands ?? []).filter(
     (c) => c.status === "running",

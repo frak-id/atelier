@@ -11,16 +11,12 @@ export const taskListQuery = (workspaceId?: string) =>
           query: workspaceId ? { workspaceId } : {},
         }),
       ),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
   });
 
 export const taskDetailQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.tasks.detail(id),
     queryFn: async () => unwrap(await api.api.tasks({ id }).get()),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
   });
 
 export function useCreateTask() {

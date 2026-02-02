@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import { eventBus } from "../infrastructure/events/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import {
   CaddyService,
@@ -52,6 +53,10 @@ export class SandboxDestroyer {
     }
 
     this.deps.sandboxService.delete(sandboxId);
+    eventBus.emit({
+      type: "sandbox.deleted",
+      properties: { id: sandboxId, workspaceId: sandbox.workspaceId },
+    });
     log.info({ sandboxId }, "Sandbox destroyed");
   }
 }

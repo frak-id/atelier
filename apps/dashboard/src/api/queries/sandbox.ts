@@ -14,23 +14,19 @@ export const sandboxListQuery = (filters?: {
           query: filters as Record<string, string>,
         }),
       ),
-    refetchInterval: 15000,
-    refetchIntervalInBackground: false,
   });
 
 export const sandboxDetailQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.detail(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).get()),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
   });
 
 export const sandboxMetricsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.metrics(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).metrics.get()),
-    refetchInterval: 5000,
+    refetchInterval: 10000,
     refetchIntervalInBackground: false,
   });
 
@@ -38,16 +34,12 @@ export const sandboxServicesQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.services(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).services.get()),
-    refetchInterval: 10000,
-    refetchIntervalInBackground: false,
   });
 
 export const sandboxDevCommandsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.devCommands(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).dev.get()),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
   });
 
 export const sandboxDevCommandLogsQuery = (
@@ -74,8 +66,6 @@ export const sandboxGitStatusQuery = (id: string) =>
     queryKey: queryKeys.sandboxes.gitStatus(id),
     queryFn: async () =>
       unwrap(await api.api.sandboxes({ id }).git.status.get()),
-    refetchInterval: 10000,
-    refetchIntervalInBackground: false,
   });
 
 export function useCreateSandbox() {

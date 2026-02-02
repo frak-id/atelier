@@ -1,3 +1,4 @@
+import { eventBus } from "../../infrastructure/events/index.ts";
 import type {
   CreateTaskBody,
   Task,
@@ -57,7 +58,12 @@ export class TaskService {
       updatedAt: now,
     };
 
-    return this.repository.create(task);
+    const created = this.repository.create(task);
+    eventBus.emit({
+      type: "task.created",
+      properties: { id: created.id, workspaceId: created.workspaceId },
+    });
+    return created;
   }
 
   update(id: string, body: UpdateTaskBody): Task {
@@ -88,7 +94,12 @@ export class TaskService {
       };
     }
 
-    return this.repository.update(id, updates);
+    const updated = this.repository.update(id, updates);
+    eventBus.emit({
+      type: "task.updated",
+      properties: { id, workspaceId: updated.workspaceId },
+    });
+    return updated;
   }
 
   async startTask(id: string): Promise<Task> {
@@ -117,6 +128,10 @@ export class TaskService {
       data: { ...task.data, order, startedAt: new Date().toISOString() },
     });
 
+    eventBus.emit({
+      type: "task.updated",
+      properties: { id, workspaceId: updated.workspaceId },
+    });
     log.info({ taskId: id, title: task.title }, "Task started");
 
     return updated;
@@ -129,13 +144,18 @@ export class TaskService {
       throw new ValidationError("Task must be active to attach sandbox");
     }
 
-    return this.repository.update(id, {
+    const updated = this.repository.update(id, {
       data: {
         ...task.data,
         sandboxId,
         ...(branchName && { branchName }),
       },
     });
+    eventBus.emit({
+      type: "task.updated",
+      properties: { id, workspaceId: updated.workspaceId },
+    });
+    return updated;
   }
 
   addSession(
@@ -166,6 +186,10 @@ export class TaskService {
       },
     });
 
+    eventBus.emit({
+      type: "task.updated",
+      properties: { id, workspaceId: updatedTask.workspaceId },
+    });
     log.info(
       { taskId: id, sessionId, templateId: sessionTemplateId },
       "Session added to task",
@@ -182,7 +206,7 @@ export class TaskService {
     }
 
     const order = this.repository.getNextOrder(task.workspaceId, "done");
-    return this.repository.update(id, {
+    const updated = this.repository.update(id, {
       status: "done",
       data: {
         ...task.data,
@@ -190,20 +214,30 @@ export class TaskService {
         order,
       },
     });
+    eventBus.emit({
+      type: "task.updated",
+      properties: { id, workspaceId: updated.workspaceId },
+    });
+    return updated;
   }
 
   reorder(id: string, newOrder: number): Task {
     const task = this.getByIdOrThrow(id);
-    return this.repository.update(id, {
+    const updated = this.repository.update(id, {
       data: { ...task.data, order: newOrder },
     });
+    eventBus.emit({
+      type: "task.updated",
+      properties: { id, workspaceId: updated.workspaceId },
+    });
+    return updated;
   }
 
   resetToDraft(id: string): Task {
     const task = this.getByIdOrThrow(id);
 
     const order = this.repository.getNextOrder(task.workspaceId, "draft");
-    return this.repository.update(id, {
+    const updated = this.repository.update(id, {
       status: "draft",
       data: {
         description: task.data.description,
@@ -216,9 +250,22 @@ export class TaskService {
         sessions: [],
       },
     });
+    eventBus.emit({
+      type: "task.updated",
+      properties: { id, workspaceId: updated.workspaceId },
+    });
+    return updated;
   }
 
   delete(id: string): boolean {
-    return this.repository.delete(id);
+    const task = this.getByIdOrThrow(id);
+    const result = this.repository.delete(id);
+    if (result) {
+      eventBus.emit({
+        type: "task.deleted",
+        properties: { id, workspaceId: task.workspaceId },
+      });
+    }
+    return result;
   }
 }

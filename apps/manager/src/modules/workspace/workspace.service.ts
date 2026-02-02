@@ -1,3 +1,4 @@
+import { eventBus } from "../../infrastructure/events/index.ts";
 import type { Workspace, WorkspaceConfig } from "../../schemas/index.ts";
 import { DEFAULT_WORKSPACE_CONFIG } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
@@ -46,6 +47,10 @@ export class WorkspaceService {
       "Creating workspace",
     );
     this.workspaceRepository.create(workspace);
+    eventBus.emit({
+      type: "workspace.created",
+      properties: { id: workspace.id },
+    });
 
     return workspace;
   }
@@ -69,13 +74,22 @@ export class WorkspaceService {
       } as WorkspaceConfig;
     }
 
-    return this.workspaceRepository.update(id, workspaceUpdates);
+    const updated = this.workspaceRepository.update(id, workspaceUpdates);
+    eventBus.emit({
+      type: "workspace.updated",
+      properties: { id },
+    });
+    return updated;
   }
 
   delete(id: string): void {
     this.getByIdOrThrow(id);
     log.info({ workspaceId: id }, "Deleting workspace");
     this.workspaceRepository.delete(id);
+    eventBus.emit({
+      type: "workspace.deleted",
+      properties: { id },
+    });
   }
 
   count(): number {

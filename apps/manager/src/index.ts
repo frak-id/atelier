@@ -5,6 +5,7 @@ import { Elysia } from "elysia";
 import {
   authRoutes,
   configFileRoutes,
+  eventsRoutes,
   githubApiRoutes,
   githubOAuthRoutes,
   gitSourceRoutes,
@@ -215,7 +216,8 @@ const app = new Elysia()
           .use(sharedStorageRoutes)
           .use(registryRoutes)
           .use(imageRoutes)
-          .use(githubApiRoutes),
+          .use(githubApiRoutes)
+          .use(eventsRoutes),
       ),
   )
   .get("/", () => ({
