@@ -24,6 +24,7 @@ export type {
   ConfigFileContentType,
   FileSecret,
   HealthStatus,
+  ManagerEvent,
   Sandbox,
   SshKey,
   StorageStatus,
@@ -31,9 +32,3 @@ export type {
   Task,
   Workspace,
 } from "@frak-sandbox/manager/types";
-
-type GitHubReposResponse = Awaited<
-  ReturnType<typeof api.api.github.repos.get>
->["data"];
-export type GitHubRepository =
-  NonNullable<GitHubReposResponse>["repositories"][number];

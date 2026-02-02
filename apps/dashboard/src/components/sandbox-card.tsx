@@ -18,10 +18,11 @@ import {
 import { useEffect, useRef } from "react";
 import type { Sandbox, Workspace } from "@/api/client";
 import {
+  deriveBrowserStatus,
   opencodeSessionsQuery,
-  sandboxBrowserStatusQuery,
   sandboxDevCommandsQuery,
   sandboxGitStatusQuery,
+  sandboxServicesQuery,
   useStartBrowser,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
@@ -160,7 +161,7 @@ export function SandboxCard({
           )}
 
           {sandbox.status === "running" && (
-            <BrowserStatusBadge sandboxId={sandbox.id} />
+            <BrowserStatusBadge sandboxId={sandbox.id} sandbox={sandbox} />
           )}
 
           {sandbox.status === "running" && (
@@ -196,7 +197,7 @@ export function SandboxCard({
                 <TooltipContent>Immerse</TooltipContent>
               </Tooltip>
 
-              <CardBrowserButton sandboxId={sandbox.id} />
+              <CardBrowserButton sandboxId={sandbox.id} sandbox={sandbox} />
 
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -364,13 +365,20 @@ export function SandboxCard({
   );
 }
 
-function BrowserStatusBadge({ sandboxId }: { sandboxId: string }) {
-  const { data: browserStatus } = useQuery({
-    ...sandboxBrowserStatusQuery(sandboxId),
+function BrowserStatusBadge({
+  sandboxId,
+  sandbox,
+}: {
+  sandboxId: string;
+  sandbox: Sandbox;
+}) {
+  const { data: services } = useQuery({
+    ...sandboxServicesQuery(sandboxId),
     refetchInterval: 2000,
   });
+  const browserStatus = deriveBrowserStatus(services, sandbox);
 
-  if (!browserStatus || browserStatus.status === "off") return null;
+  if (browserStatus.status === "off") return null;
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Stop propagation wrapper
@@ -405,12 +413,19 @@ function BrowserStatusBadge({ sandboxId }: { sandboxId: string }) {
   );
 }
 
-function CardBrowserButton({ sandboxId }: { sandboxId: string }) {
+function CardBrowserButton({
+  sandboxId,
+  sandbox,
+}: {
+  sandboxId: string;
+  sandbox: Sandbox;
+}) {
   const startBrowser = useStartBrowser(sandboxId);
-  const { data: browserStatus } = useQuery({
-    ...sandboxBrowserStatusQuery(sandboxId),
+  const { data: services } = useQuery({
+    ...sandboxServicesQuery(sandboxId),
     refetchInterval: 2000,
   });
+  const browserStatus = deriveBrowserStatus(services, sandbox);
   const pendingOpenRef = useRef(false);
 
   useEffect(() => {
@@ -553,10 +568,7 @@ function SandboxGitBadges({ sandboxId }: { sandboxId: string }) {
 }
 
 function SandboxDevStatus({ sandboxId }: { sandboxId: string }) {
-  const { data } = useQuery({
-    ...sandboxDevCommandsQuery(sandboxId),
-    refetchInterval: 5000,
-  });
+  const { data } = useQuery(sandboxDevCommandsQuery(sandboxId));
 
   const runningCommands = (data?.commands ?? []).filter(
     (c) => c.status === "running",

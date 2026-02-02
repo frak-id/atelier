@@ -14,23 +14,19 @@ export const sandboxListQuery = (filters?: {
           query: filters as Record<string, string>,
         }),
       ),
-    refetchInterval: 15000,
-    refetchIntervalInBackground: false,
   });
 
 export const sandboxDetailQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.detail(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).get()),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
   });
 
 export const sandboxMetricsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.metrics(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).metrics.get()),
-    refetchInterval: 5000,
+    refetchInterval: 10000,
     refetchIntervalInBackground: false,
   });
 
@@ -38,7 +34,7 @@ export const sandboxServicesQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.services(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).services.get()),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });
 
@@ -46,8 +42,6 @@ export const sandboxDevCommandsQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.devCommands(id),
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).dev.get()),
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
   });
 
 export const sandboxDevCommandLogsQuery = (
@@ -74,7 +68,7 @@ export const sandboxGitStatusQuery = (id: string) =>
     queryKey: queryKeys.sandboxes.gitStatus(id),
     queryFn: async () =>
       unwrap(await api.api.sandboxes({ id }).git.status.get()),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });
 
@@ -244,14 +238,21 @@ export function useGitPush(sandboxId: string) {
   });
 }
 
-export const sandboxBrowserStatusQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.browserStatus(id),
-    queryFn: async () =>
-      unwrap(await api.api.sandboxes({ id }).browser.status.get()),
-    refetchInterval: 2000,
-    refetchIntervalInBackground: false,
-  });
+export function deriveBrowserStatus(
+  services:
+    | { services: Array<{ name: string; running: boolean }> }
+    | null
+    | undefined,
+  sandbox: { runtime: { urls: { browser?: string } } } | null | undefined,
+): { status: "running" | "starting" | "off"; url?: string } {
+  const browserUrl = sandbox?.runtime?.urls?.browser;
+  if (!browserUrl) return { status: "off" };
+
+  const kasmvnc = services?.services?.find((s) => s.name === "kasmvnc");
+  if (!kasmvnc) return { status: "off" };
+  if (kasmvnc.running) return { status: "running", url: browserUrl };
+  return { status: "starting", url: browserUrl };
+}
 
 export function useStartBrowser(sandboxId: string) {
   return useMutation({
@@ -260,7 +261,7 @@ export function useStartBrowser(sandboxId: string) {
       unwrap(await api.api.sandboxes({ id: sandboxId }).browser.start.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.browserStatus(sandboxId),
+        queryKey: queryKeys.sandboxes.services(sandboxId),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(sandboxId),
@@ -276,7 +277,7 @@ export function useStopBrowser(sandboxId: string) {
       unwrap(await api.api.sandboxes({ id: sandboxId }).browser.stop.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.browserStatus(sandboxId),
+        queryKey: queryKeys.sandboxes.services(sandboxId),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(sandboxId),

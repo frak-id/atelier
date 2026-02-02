@@ -323,12 +323,6 @@ export const BrowserStatusSchema = t.Union([
 ]);
 export type BrowserStatus = Static<typeof BrowserStatusSchema>;
 
-export const BrowserStatusResponseSchema = t.Object({
-  status: BrowserStatusSchema,
-  url: t.Optional(t.String()),
-});
-export type BrowserStatusResponse = Static<typeof BrowserStatusResponseSchema>;
-
 export const BrowserStartResponseSchema = t.Object({
   status: BrowserStatusSchema,
   url: t.Optional(t.String()),

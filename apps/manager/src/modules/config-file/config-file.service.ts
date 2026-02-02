@@ -1,3 +1,4 @@
+import { eventBus } from "../../infrastructure/events/index.ts";
 import type {
   ConfigFile,
   ConfigFileContentType,
@@ -62,7 +63,16 @@ export class ConfigFileService {
       );
     }
 
-    return this.configFileRepository.create(options);
+    const created = this.configFileRepository.create(options);
+    eventBus.emit({
+      type: "config.created",
+      properties: {
+        id: created.id,
+        scope: created.scope,
+        workspaceId: created.workspaceId,
+      },
+    });
+    return created;
   }
 
   update(id: string, options: UpdateOptions): ConfigFile {
@@ -75,6 +85,14 @@ export class ConfigFileService {
     if (!updated) {
       throw new Error(`Failed to update config file: ${id}`);
     }
+    eventBus.emit({
+      type: "config.updated",
+      properties: {
+        id,
+        scope: updated.scope,
+        workspaceId: updated.workspaceId,
+      },
+    });
     return updated;
   }
 
@@ -85,6 +103,14 @@ export class ConfigFileService {
     }
 
     this.configFileRepository.delete(id);
+    eventBus.emit({
+      type: "config.deleted",
+      properties: {
+        id,
+        scope: existing.scope,
+        workspaceId: existing.workspaceId,
+      },
+    });
     log.info({ id, path: existing.path }, "Config file deleted");
   }
 
@@ -109,6 +135,14 @@ export class ConfigFileService {
       if (!updated) {
         throw new Error(`Failed to update config file: ${existing.id}`);
       }
+      eventBus.emit({
+        type: "config.updated",
+        properties: {
+          id: existing.id,
+          scope: updated.scope,
+          workspaceId: updated.workspaceId,
+        },
+      });
       return { action: "updated", configFile: updated };
     }
 
@@ -118,6 +152,14 @@ export class ConfigFileService {
       contentType,
       scope,
       workspaceId,
+    });
+    eventBus.emit({
+      type: "config.created",
+      properties: {
+        id: created.id,
+        scope: created.scope,
+        workspaceId: created.workspaceId,
+      },
     });
     return { action: "created", configFile: created };
   }

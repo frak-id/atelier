@@ -3,6 +3,7 @@
 
 export { authRoutes } from "./auth.routes.ts";
 export { configFileRoutes } from "./config-file.routes.ts";
+export { eventsRoutes } from "./events.routes.ts";
 export { gitSourceRoutes } from "./git-source.routes.ts";
 export { githubApiRoutes, githubOAuthRoutes } from "./github-api.routes.ts";
 export { healthRoutes } from "./health.routes.ts";

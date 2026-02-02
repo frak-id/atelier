@@ -1,7 +1,7 @@
+import type { GitHubReposResponse } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Github, Lock, Unlock } from "lucide-react";
 import { useState } from "react";
-import type { GitHubRepository } from "@/api/client";
 import { githubReposQuery, githubStatusQuery } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -138,7 +138,7 @@ function RepoItem({
   isSelected,
   onSelect,
 }: {
-  repo: GitHubRepository;
+  repo: GitHubReposResponse["repositories"][number];
   isSelected: boolean;
   onSelect: () => void;
 }) {

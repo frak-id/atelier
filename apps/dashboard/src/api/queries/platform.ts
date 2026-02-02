@@ -7,7 +7,7 @@ import { queryKeys, unwrap } from "./keys";
 export const healthQuery = queryOptions({
   queryKey: queryKeys.health,
   queryFn: async () => unwrap(await api.health.get()),
-  refetchInterval: 30000,
+  refetchInterval: 60000,
   refetchIntervalInBackground: false,
 });
 
@@ -16,15 +16,11 @@ export const healthQuery = queryOptions({
 export const systemStatsQuery = queryOptions({
   queryKey: queryKeys.system.stats,
   queryFn: async () => unwrap(await api.api.system.stats.get()),
-  refetchInterval: 15000,
-  refetchIntervalInBackground: false,
 });
 
 export const systemStorageQuery = queryOptions({
   queryKey: queryKeys.system.storage,
   queryFn: async () => unwrap(await api.api.system.storage.get()),
-  refetchInterval: 30000,
-  refetchIntervalInBackground: false,
 });
 
 export function useSystemCleanup() {
@@ -298,8 +294,6 @@ export function useGitHubReauthorize() {
 export const sharedStorageQuery = queryOptions({
   queryKey: queryKeys.sharedStorage.all,
   queryFn: async () => unwrap(await api.api.storage.get()),
-  refetchInterval: 30000,
-  refetchIntervalInBackground: false,
 });
 
 export function useInstallBinary() {
@@ -329,8 +323,6 @@ export function useRemoveBinary() {
 export const registryStatusQuery = queryOptions({
   queryKey: queryKeys.registry.status,
   queryFn: async () => unwrap(await api.api.registry.get()),
-  refetchInterval: 30000,
-  refetchIntervalInBackground: false,
 });
 
 export function useEnableRegistry() {

@@ -8,13 +8,13 @@ import {
   sandboxSpawner,
   workspaceService,
 } from "../container.ts";
+import { internalBus } from "../infrastructure/events/internal-bus.ts";
 import { CaddyService } from "../infrastructure/proxy/caddy.service.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   AgentHealthSchema,
   AgentMetricsSchema,
   BrowserStartResponseSchema,
-  BrowserStatusResponseSchema,
   BrowserStopResponseSchema,
   CreateSandboxBodySchema,
   DevCommandListResponseSchema,
@@ -226,7 +226,9 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       .post(
         "/:id/services/:name/stop",
         async ({ params, sandbox }) => {
-          return agentClient.serviceStop(sandbox.id, params.name);
+          const result = await agentClient.serviceStop(sandbox.id, params.name);
+          internalBus.emit("sandbox.poll-services", sandbox.id);
+          return result;
         },
         {
           params: ServiceNameParamsSchema,
@@ -236,7 +238,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       .post(
         "/:id/services/:name/restart",
         async ({ params, sandbox }) => {
-          return agentClient.serviceRestart(sandbox.id, params.name);
+          const result = await agentClient.serviceRestart(
+            sandbox.id,
+            params.name,
+          );
+          internalBus.emit("sandbox.poll-services", sandbox.id);
+          return result;
         },
         {
           params: ServiceNameParamsSchema,
@@ -639,41 +646,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             },
           });
 
+          internalBus.emit("sandbox.poll-services", sandbox.id);
           return { status: "starting" as const, url: browserUrl };
         },
         {
           params: IdParamSchema,
           response: BrowserStartResponseSchema,
-        },
-      )
-      .get(
-        "/:id/browser/status",
-        async ({ sandbox }) => {
-          if (sandbox.status !== "running") {
-            return { status: "off" as const };
-          }
-
-          const browserUrl = sandbox.runtime.urls.browser;
-          if (!browserUrl) {
-            return { status: "off" as const };
-          }
-
-          try {
-            const kasmvnc = await agentClient.serviceStatus(
-              sandbox.id,
-              "kasmvnc",
-            );
-            if (kasmvnc.running) {
-              return { status: "running" as const, url: browserUrl };
-            }
-            return { status: "starting" as const, url: browserUrl };
-          } catch {
-            return { status: "off" as const };
-          }
-        },
-        {
-          params: IdParamSchema,
-          response: BrowserStatusResponseSchema,
         },
       )
       .post(
@@ -698,6 +676,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             },
           });
 
+          internalBus.emit("sandbox.poll-services", sandbox.id);
           return { status: "off" as const };
         },
         {

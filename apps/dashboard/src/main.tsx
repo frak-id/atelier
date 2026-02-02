@@ -3,6 +3,7 @@ import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
+import { ManagerEventsProvider } from "./providers/manager-events-provider";
 import { OpencodeEventsProvider } from "./providers/opencode-events-provider";
 import { routeTree } from "./routeTree.gen";
 
@@ -39,9 +40,11 @@ if (rootElement) {
   createRoot(rootElement).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <OpencodeEventsProvider>
-          <RouterProvider router={router} />
-        </OpencodeEventsProvider>
+        <ManagerEventsProvider>
+          <OpencodeEventsProvider>
+            <RouterProvider router={router} />
+          </OpencodeEventsProvider>
+        </ManagerEventsProvider>
       </QueryClientProvider>
     </StrictMode>,
   );

@@ -28,9 +28,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createOpenCodeSession } from "@/api/opencode";
 import {
+  deriveBrowserStatus,
   opencodeSessionsQuery,
   opencodeTodosQuery,
-  sandboxBrowserStatusQuery,
   sandboxDetailQuery,
   sandboxGitDiffQuery,
   sandboxGitStatusQuery,
@@ -127,10 +127,7 @@ export function SandboxDrawer({
     enabled: sandbox?.status === "running",
   });
 
-  const { data: browserStatus } = useQuery({
-    ...sandboxBrowserStatusQuery(sandboxId ?? ""),
-    enabled: sandbox?.status === "running",
-  });
+  const browserStatus = deriveBrowserStatus(services, sandbox);
 
   const workspaceDir = getWorkspaceDirectory(workspace);
 
@@ -268,7 +265,7 @@ export function SandboxDrawer({
 
                     <BrowserButton
                       sandboxId={sandbox.id}
-                      browserStatus={browserStatus ?? undefined}
+                      browserStatus={browserStatus}
                     />
                   </div>
                   <div className="flex items-center gap-1">

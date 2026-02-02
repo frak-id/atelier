@@ -33,7 +33,6 @@ export const queryKeys = {
       ["sandboxes", id, "devCommandLogs", name, offset] as const,
     gitStatus: (id: string) => ["sandboxes", id, "gitStatus"] as const,
     gitDiff: (id: string) => ["sandboxes", id, "gitDiff"] as const,
-    browserStatus: (id: string) => ["sandboxes", id, "browserStatus"] as const,
   },
   opencode: {
     health: (baseUrl: string) => ["opencode", baseUrl, "health"] as const,

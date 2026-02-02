@@ -1,6 +1,7 @@
 import { LVM } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
+import { eventBus } from "../infrastructure/events/index.ts";
 import {
   configureVm,
   FirecrackerClient,
@@ -57,6 +58,10 @@ export class SandboxLifecycle {
     }
 
     this.deps.sandboxService.updateStatus(sandboxId, "stopped");
+    eventBus.emit({
+      type: "sandbox.updated",
+      properties: { id: sandboxId, status: "stopped" },
+    });
     log.info({ sandboxId }, "Sandbox stopped");
 
     const updated = this.deps.sandboxService.getById(sandboxId);
@@ -82,6 +87,10 @@ export class SandboxLifecycle {
 
     if (config.isMock()) {
       this.deps.sandboxService.updateStatus(sandboxId, "running");
+      eventBus.emit({
+        type: "sandbox.updated",
+        properties: { id: sandboxId, status: "running" },
+      });
       const updated = this.deps.sandboxService.getById(sandboxId);
       if (!updated)
         throw new Error(`Sandbox not found after start: ${sandboxId}`);
@@ -144,6 +153,10 @@ export class SandboxLifecycle {
     };
 
     this.deps.sandboxService.update(sandboxId, updatedSandbox);
+    eventBus.emit({
+      type: "sandbox.updated",
+      properties: { id: sandboxId, status: "running" },
+    });
     log.info({ sandboxId, pid: proc_pid }, "Sandbox started");
 
     return updatedSandbox;

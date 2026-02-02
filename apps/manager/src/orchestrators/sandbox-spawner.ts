@@ -4,6 +4,7 @@ import type {
   AgentClient,
   AgentOperations,
 } from "../infrastructure/agent/index.ts";
+import { eventBus } from "../infrastructure/events/index.ts";
 import {
   configureVm,
   type FirecrackerClient,
@@ -290,6 +291,13 @@ class SpawnContext {
     this.sandbox.runtime.pid = Math.floor(Math.random() * 100000);
 
     this.deps.sandboxService.update(this.sandboxId, this.sandbox);
+    eventBus.emit({
+      type: "sandbox.created",
+      properties: {
+        id: this.sandboxId,
+        workspaceId: this.options.workspaceId,
+      },
+    });
     log.info({ sandboxId: this.sandboxId }, "Mock sandbox created");
     return this.sandbox;
   }
@@ -691,6 +699,13 @@ class SpawnContext {
     this.sandbox.runtime.pid = this.pid;
 
     this.deps.sandboxService.update(this.sandboxId, this.sandbox);
+    eventBus.emit({
+      type: "sandbox.created",
+      properties: {
+        id: this.sandboxId,
+        workspaceId: this.options.workspaceId,
+      },
+    });
     log.info(
       { sandboxId: this.sandboxId, pid: this.pid, useLvm: this.paths?.useLvm },
       "Sandbox created successfully",
