@@ -385,7 +385,7 @@ class SpawnContext {
       prebuildSandboxId,
       `/dev/sandbox-vg/sandbox-${prebuildSandboxId}`,
     );
-    await $`ln -sf ${this.paths.overlay} ${originalPaths.overlay}`.quiet();
+    await $`sudo -n ln -sf ${this.paths.overlay} ${originalPaths.overlay}`.quiet();
     await $`rm -f ${originalPaths.vsock}`.quiet().nothrow();
 
     log.info({ sandboxId: this.sandboxId }, "Restoring from VM snapshot");
@@ -410,7 +410,7 @@ class SpawnContext {
     }
 
     await $`ln -sf ${originalPaths.vsock} ${this.paths.vsock}`.quiet();
-    await $`rm -f ${originalPaths.overlay}`.quiet().nothrow();
+    await $`sudo -n rm -f ${originalPaths.overlay}`.quiet().nothrow();
 
     log.info(
       { sandboxId: this.sandboxId },

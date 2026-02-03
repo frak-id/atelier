@@ -28,6 +28,23 @@ export async function ensureDir(path: string): Promise<void> {
   await mkdir(path, { recursive: true });
 }
 
+export async function ensureDirAsRoot(path: string): Promise<void> {
+  await $`sudo -n mkdir -p ${path}`.quiet();
+}
+
+export async function writeFileAsRoot(
+  path: string,
+  content: string | Buffer,
+): Promise<void> {
+  const dir = path.substring(0, path.lastIndexOf("/"));
+  await ensureDirAsRoot(dir);
+
+  const base64 = Buffer.isBuffer(content)
+    ? content.toString("base64")
+    : Buffer.from(content).toString("base64");
+  await $`echo ${base64} | base64 -d | sudo -n tee ${path} > /dev/null`.quiet();
+}
+
 interface InjectFileOptions {
   mountPoint: string;
   path: string;
@@ -52,6 +69,7 @@ export async function injectFile(options: InjectFileOptions): Promise<void> {
   const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
 
   await ensureDir(dir);
+  await $`rm -f ${fullPath}`.quiet().nothrow();
 
   if (contentType === "binary" && typeof content === "string") {
     const buffer = Buffer.from(content, "base64");
@@ -64,7 +82,7 @@ export async function injectFile(options: InjectFileOptions): Promise<void> {
     await $`chmod ${mode} ${fullPath}`.quiet();
   }
 
-  await $`chown ${owner} ${fullPath}`.quiet();
+  await $`sudo -n chown ${owner} ${fullPath}`.quiet();
 }
 
 export async function killProcess(

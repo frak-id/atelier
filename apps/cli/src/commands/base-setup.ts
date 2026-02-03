@@ -136,7 +136,7 @@ export async function baseSetup(_args: string[] = []) {
       throws: false,
     },
   );
-  await exec("usermod -aG kvm frak", { throws: false });
+  await exec("usermod -aG kvm,disk frak", { throws: false });
   await exec("chgrp kvm /dev/kvm 2>/dev/null || true", { throws: false });
   await exec("chmod 660 /dev/kvm 2>/dev/null || true", { throws: false });
   spinner.stop("KVM verified and accessible");
@@ -179,9 +179,9 @@ export async function baseSetup(_args: string[] = []) {
   const sudoersPath = "/etc/sudoers.d/frak-sandbox";
   const sudoersContent = `frak ALL=(root) NOPASSWD: \\
   /usr/sbin/lvcreate, /usr/sbin/lvremove, /usr/sbin/lvextend, /usr/sbin/lvs, \\
-  /usr/sbin/mkfs.ext4, /bin/chown, \\
+  /usr/sbin/mkfs.ext4, /bin/chown, /bin/chmod, /bin/mkdir, /usr/bin/tee, \\
   /sbin/ip, /sbin/bridge, /usr/sbin/bridge, \\
-  /usr/bin/mount, /usr/bin/umount
+  /usr/bin/mount, /usr/bin/umount, /usr/bin/ln, /usr/bin/rm
 `;
   await Bun.write(sudoersPath, sudoersContent);
   await exec(`chmod 440 ${sudoersPath}`);

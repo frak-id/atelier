@@ -41,6 +41,13 @@ export const SandboxProvisioner = {
     }
 
     await $`${{ raw: mountCmd }}`.quiet();
+    await $`sudo -n chown frak:frak ${mountPoint}/etc ${mountPoint}/etc/profile.d ${mountPoint}/etc/sandbox ${mountPoint}/etc/sandbox/secrets ${mountPoint}/home/dev ${mountPoint}/.frak-sandbox`
+      .quiet()
+      .nothrow();
+    await $`sudo -n chown -R frak:frak ${mountPoint}/home/dev/.config ${mountPoint}/home/dev/.local ${mountPoint}/home/dev/.cache`
+      .quiet()
+      .nothrow();
+    await this.removeExistingConfigFiles(mountPoint);
 
     try {
       await this.injectNetworkConfig(mountPoint, ctx.network);
@@ -55,10 +62,31 @@ export const SandboxProvisioner = {
       await this.injectSandboxMd(mountPoint, ctx);
     } finally {
       await $`sudo -n umount ${mountPoint}`.quiet();
-      await $`rmdir ${mountPoint}`.quiet();
+      await $`rmdir ${mountPoint}`.quiet().nothrow();
     }
 
     log.debug({ sandboxId: ctx.sandboxId }, "Config injected");
+  },
+
+  async removeExistingConfigFiles(mountPoint: string): Promise<void> {
+    const filesToRemove = [
+      `${mountPoint}/etc/network-setup.sh`,
+      `${mountPoint}/etc/profile.d/shared-binaries.sh`,
+      `${mountPoint}/etc/profile.d/registry.sh`,
+      `${mountPoint}/etc/npmrc`,
+      `${mountPoint}/home/dev/.bunfig.toml`,
+      `${mountPoint}/home/dev/.yarnrc.yml`,
+      `${mountPoint}/home/dev/.gitconfig`,
+      `${mountPoint}/home/dev/SANDBOX.md`,
+      `${mountPoint}/etc/sandbox/config.json`,
+      `${mountPoint}/etc/sandbox/secrets/.env`,
+      `${mountPoint}/etc/sandbox/secrets/git-credentials`,
+      `${mountPoint}/home/dev/.cache/oh-my-opencode/connected-providers.json`,
+      `${mountPoint}/.frak-sandbox/session-templates.json`,
+    ];
+    await Promise.all(
+      filesToRemove.map((f) => $`rm -f ${f}`.quiet().nothrow()),
+    );
   },
 
   async injectSharedBinariesPath(mountPoint: string): Promise<void> {
@@ -67,7 +95,6 @@ export const SandboxProvisioner = {
       `${mountPoint}/etc/profile.d/shared-binaries.sh`,
       'export PATH="/opt/shared/bin:$PATH"\n',
     );
-    await $`chmod +r ${mountPoint}/etc/profile.d/shared-binaries.sh`.quiet();
   },
 
   async injectNetworkConfig(
@@ -114,17 +141,14 @@ ${dnsLines}
       `${mountPoint}/etc/profile.d/registry.sh`,
       `export NPM_CONFIG_REGISTRY="${registryUrl}"\n`,
     );
-    await $`chmod +r ${mountPoint}/etc/profile.d/registry.sh`.quiet();
 
     await Bun.write(`${mountPoint}/etc/npmrc`, `registry=${registryUrl}\n`);
 
     const bunfigToml = `[install]\nregistry = "${registryUrl}"\n`;
     await Bun.write(`${mountPoint}/home/dev/.bunfig.toml`, bunfigToml);
-    await $`chown 1000:1000 ${mountPoint}/home/dev/.bunfig.toml`.quiet();
 
     const yarnrcYml = `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${config.network.bridgeIp}"\n`;
     await Bun.write(`${mountPoint}/home/dev/.yarnrc.yml`, yarnrcYml);
-    await $`chown 1000:1000 ${mountPoint}/home/dev/.yarnrc.yml`.quiet();
 
     log.debug("Registry config injected");
   },
@@ -294,7 +318,6 @@ ${dnsLines}
 \tname = Sandbox User
 `;
     await Bun.write(`${mountPoint}/home/dev/.gitconfig`, gitconfig);
-    await $`chown 1000:1000 ${mountPoint}/home/dev/.gitconfig`.quiet();
 
     log.debug(
       { sandboxId: ctx.sandboxId, sourceCount: credentials.length },
@@ -317,11 +340,24 @@ ${dnsLines}
       });
     }
 
-    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.local`.quiet().nothrow();
-    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.config`
+    await $`sudo -n chown -R 1000:1000 ${mountPoint}/home/dev/.local`
       .quiet()
       .nothrow();
-    await $`chown -R 1000:1000 ${mountPoint}/etc/sandbox`.quiet().nothrow();
+    await $`sudo -n chown -R 1000:1000 ${mountPoint}/home/dev/.config`
+      .quiet()
+      .nothrow();
+    await $`sudo -n chown -R 1000:1000 ${mountPoint}/etc/sandbox`
+      .quiet()
+      .nothrow();
+    await $`sudo -n chown 1000:1000 ${mountPoint}/home/dev/.bunfig.toml`
+      .quiet()
+      .nothrow();
+    await $`sudo -n chown 1000:1000 ${mountPoint}/home/dev/.yarnrc.yml`
+      .quiet()
+      .nothrow();
+    await $`sudo -n chown 1000:1000 ${mountPoint}/home/dev/.gitconfig`
+      .quiet()
+      .nothrow();
 
     log.debug(
       { sandboxId: ctx.sandboxId, configCount: configs.length },
@@ -367,7 +403,7 @@ ${dnsLines}
       `${cacheDir}/connected-providers.json`,
       JSON.stringify(connectedProviders, null, 2),
     );
-    await $`chown -R 1000:1000 ${mountPoint}/home/dev/.cache`.quiet();
+    await $`sudo -n chown -R 1000:1000 ${mountPoint}/home/dev/.cache`.quiet();
   },
 
   async injectSandboxMd(
@@ -376,7 +412,7 @@ ${dnsLines}
   ): Promise<void> {
     const sandboxMd = this.generateSandboxMd(ctx);
     await Bun.write(`${mountPoint}/home/dev/SANDBOX.md`, sandboxMd);
-    await $`chown 1000:1000 ${mountPoint}/home/dev/SANDBOX.md`.quiet();
+    await $`sudo -n chown 1000:1000 ${mountPoint}/home/dev/SANDBOX.md`.quiet();
   },
 
   generateSandboxMd(ctx: ProvisionContext): string {
