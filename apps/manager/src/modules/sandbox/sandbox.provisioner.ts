@@ -32,8 +32,8 @@ export const SandboxProvisioner = {
     await ensureDir(mountPoint);
 
     const mountCmd = ctx.paths.useLvm
-      ? `mount ${ctx.paths.overlay} ${mountPoint}`
-      : `mount -o loop ${ctx.paths.overlay} ${mountPoint}`;
+      ? `sudo -n mount ${ctx.paths.overlay} ${mountPoint}`
+      : `sudo -n mount -o loop ${ctx.paths.overlay} ${mountPoint}`;
 
     if (!ctx.paths.useLvm) {
       await ensureDir(config.paths.OVERLAY_DIR);
@@ -54,7 +54,7 @@ export const SandboxProvisioner = {
       await this.injectOhMyOpenCodeCache(mountPoint, ctx);
       await this.injectSandboxMd(mountPoint, ctx);
     } finally {
-      await $`umount ${mountPoint}`.quiet();
+      await $`sudo -n umount ${mountPoint}`.quiet();
       await $`rmdir ${mountPoint}`.quiet();
     }
 

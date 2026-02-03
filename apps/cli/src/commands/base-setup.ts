@@ -180,7 +180,8 @@ export async function baseSetup(_args: string[] = []) {
   const sudoersContent = `frak ALL=(root) NOPASSWD: \\
   /usr/sbin/lvcreate, /usr/sbin/lvremove, /usr/sbin/lvextend, /usr/sbin/lvs, \\
   /usr/sbin/mkfs.ext4, /bin/chown, \\
-  /sbin/ip, /sbin/bridge, /usr/sbin/bridge
+  /sbin/ip, /sbin/bridge, /usr/sbin/bridge, \\
+  /usr/bin/mount, /usr/bin/umount
 `;
   await Bun.write(sudoersPath, sudoersContent);
   await exec(`chmod 440 ${sudoersPath}`);
