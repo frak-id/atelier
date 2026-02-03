@@ -226,8 +226,6 @@ systemctl enable frak-sandbox-network frak-sandbox-manager
 systemctl reload caddy || systemctl start caddy || true
 systemctl restart frak-sandbox-manager
 
-rm -rf "$DEPLOY_TMP" /tmp/${TARBALL_NAME}
-
 sleep 2
 curl -sf http://localhost:4000/health/live > /dev/null && echo "HEALTH_OK" || echo "HEALTH_FAIL"
 `;

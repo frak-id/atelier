@@ -26,9 +26,11 @@
 	handle /swagger* {
 		reverse_proxy localhost:{{MANAGER_PORT}}
 	}
-	root * /opt/frak-sandbox/apps/dashboard/dist
-	file_server
-	try_files {path} /index.html
+	handle {
+		root * /opt/frak-sandbox/apps/dashboard/dist
+		try_files {path} /index.html
+		file_server
+	}
 }
 
 *.{{DOMAIN_SUFFIX}} {
