@@ -91,6 +91,11 @@ async function configureNat() {
   );
 
   await exec(
+    `iptables -C FORWARD -i ${frakConfig.network.bridgeName} -o ${frakConfig.network.bridgeName} -s ${frakConfig.network.bridgeCidr} -d ${frakConfig.network.bridgeCidr} -j DROP 2>/dev/null || \
+     iptables -I FORWARD 1 -i ${frakConfig.network.bridgeName} -o ${frakConfig.network.bridgeName} -s ${frakConfig.network.bridgeCidr} -d ${frakConfig.network.bridgeCidr} -j DROP`,
+  );
+
+  await exec(
     `iptables -t nat -C POSTROUTING -s ${frakConfig.network.bridgeCidr} -o ${hostIface} -j MASQUERADE 2>/dev/null || \
      iptables -t nat -A POSTROUTING -s ${frakConfig.network.bridgeCidr} -o ${hostIface} -j MASQUERADE`,
   );
@@ -122,6 +127,9 @@ fi
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
 HOST_IFACE=$(ip -j route list default | jq -r '.[0].dev')
+
+iptables -C FORWARD -i "$BRIDGE" -o "$BRIDGE" -s "$BRIDGE_CIDR" -d "$BRIDGE_CIDR" -j DROP 2>/dev/null || \\
+  iptables -I FORWARD 1 -i "$BRIDGE" -o "$BRIDGE" -s "$BRIDGE_CIDR" -d "$BRIDGE_CIDR" -j DROP
 
 iptables -t nat -C POSTROUTING -s "$BRIDGE_CIDR" -o "$HOST_IFACE" -j MASQUERADE 2>/dev/null || \\
   iptables -t nat -A POSTROUTING -s "$BRIDGE_CIDR" -o "$HOST_IFACE" -j MASQUERADE
