@@ -5,10 +5,8 @@
 import { type Static, Type } from "@sinclair/typebox";
 
 export const DomainsConfigSchema = Type.Object({
-  /** API domain (e.g., sandbox-api.example.com) */
-  api: Type.String({ default: "sandbox-api.localhost" }),
-  /** Dashboard domain (e.g., sandbox-dash.example.com) */
-  dashboard: Type.String({ default: "sandbox-dash.localhost" }),
+  /** Dashboard domain (e.g., sandbox.example.com) - API is served at /api on same domain */
+  dashboard: Type.String({ default: "sandbox.localhost" }),
   /** Suffix for sandbox subdomains (e.g., example.com -> sandbox-{id}.example.com) */
   sandboxSuffix: Type.String({ default: "localhost" }),
   /** SSH proxy domain (e.g., ssh.example.com) */
@@ -178,7 +176,6 @@ export type FrakConfig = Static<typeof FrakConfigSchema>;
 
 /** Maps environment variable names to config paths for the config loader */
 export const ENV_VAR_MAPPING = {
-  FRAK_API_DOMAIN: "domains.api",
   FRAK_DASHBOARD_DOMAIN: "domains.dashboard",
   FRAK_SANDBOX_DOMAIN_SUFFIX: "domains.sandboxSuffix",
   FRAK_SSH_DOMAIN: "domains.ssh",
@@ -221,8 +218,7 @@ export type EnvVarName = keyof typeof ENV_VAR_MAPPING;
 
 export const DEFAULT_CONFIG: FrakConfig = {
   domains: {
-    api: "sandbox-api.localhost",
-    dashboard: "sandbox-dash.localhost",
+    dashboard: "sandbox.localhost",
     sandboxSuffix: "localhost",
     ssh: "ssh.localhost",
   },

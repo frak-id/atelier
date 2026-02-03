@@ -154,9 +154,9 @@ async function main() {
     frakConfig.tls.keyPath?.trim().length > 0;
   let caddyfile = caddyfileTemplate
     .replace(/\{\{SSL_EMAIL\}\}/g, frakConfig.tls.email)
-    .replace(/\{\{API_DOMAIN\}\}/g, frakConfig.domains.api)
     .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, frakConfig.domains.dashboard)
-    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, frakConfig.domains.sandboxSuffix);
+    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, frakConfig.domains.sandboxSuffix)
+    .replace(/\{\{MANAGER_PORT\}\}/g, String(frakConfig.runtime.port));
 
   if (useManualTls) {
     caddyfile = caddyfile

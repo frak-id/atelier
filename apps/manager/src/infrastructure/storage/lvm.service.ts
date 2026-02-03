@@ -80,9 +80,7 @@ export const StorageService = {
         .nothrow();
 
     const volumeCountResult =
-      await $`sudo -n ${LVS} ${vg} -o lv_name --noheadings`
-        .quiet()
-        .nothrow();
+      await $`sudo -n ${LVS} ${vg} -o lv_name --noheadings`.quiet().nothrow();
     const volumeCount = volumeCountResult.stdout
       .toString()
       .split("\n")
@@ -313,9 +311,10 @@ export const StorageService = {
 
     log.info({ sandboxId, previousSize, newSizeGb }, "Resizing sandbox volume");
 
-    const result = await $`sudo -n /usr/sbin/lvextend -L ${newSizeGb}G ${volumePath}`
-      .quiet()
-      .nothrow();
+    const result =
+      await $`sudo -n /usr/sbin/lvextend -L ${newSizeGb}G ${volumePath}`
+        .quiet()
+        .nothrow();
 
     if (result.exitCode !== 0) {
       const error = result.stderr.toString().trim();

@@ -40,7 +40,9 @@ export async function baseSetup(_args: string[] = []) {
     }
   } else {
     spinner.start("Installing Bun");
-    await exec("curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash");
+    await exec(
+      "curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash",
+    );
     const bunLocal = await exec("test -x /usr/local/bin/bun", {
       throws: false,
     });
@@ -128,9 +130,12 @@ export async function baseSetup(_args: string[] = []) {
   await exec("getent group kvm >/dev/null 2>&1 || groupadd kvm", {
     throws: false,
   });
-  await exec("id -u frak >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash frak", {
-    throws: false,
-  });
+  await exec(
+    "id -u frak >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash frak",
+    {
+      throws: false,
+    },
+  );
   await exec("usermod -aG kvm frak", { throws: false });
   await exec("chgrp kvm /dev/kvm 2>/dev/null || true", { throws: false });
   await exec("chmod 660 /dev/kvm 2>/dev/null || true", { throws: false });
@@ -162,9 +167,12 @@ export async function baseSetup(_args: string[] = []) {
   }
 
   await exec(`mkdir -p /etc/frak-sandbox`);
-  await exec(`chown -R frak:frak ${PATHS.SANDBOX_DIR} ${PATHS.LOG_DIR} ${PATHS.APP_DIR}`, {
-    throws: false,
-  });
+  await exec(
+    `chown -R frak:frak ${PATHS.SANDBOX_DIR} ${PATHS.LOG_DIR} ${PATHS.APP_DIR}`,
+    {
+      throws: false,
+    },
+  );
   await exec("chgrp -R frak /etc/frak-sandbox", { throws: false });
   await exec("chmod 750 /etc/frak-sandbox", { throws: false });
 

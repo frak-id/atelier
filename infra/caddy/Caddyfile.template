@@ -9,13 +9,23 @@
 }
 {{/MANUAL_TLS}}
 
-{{API_DOMAIN}} {
-	{{TLS_CONFIG}}
-	reverse_proxy localhost:4000
-}
-
 {{DASHBOARD_DOMAIN}} {
 	{{TLS_CONFIG}}
+	handle /api/* {
+		reverse_proxy localhost:{{MANAGER_PORT}}
+	}
+	handle /auth/* {
+		reverse_proxy localhost:{{MANAGER_PORT}}
+	}
+	handle /config {
+		reverse_proxy localhost:{{MANAGER_PORT}}
+	}
+	handle /health {
+		reverse_proxy localhost:{{MANAGER_PORT}}
+	}
+	handle /swagger* {
+		reverse_proxy localhost:{{MANAGER_PORT}}
+	}
 	root * /opt/frak-sandbox/apps/dashboard/dist
 	file_server
 	try_files {path} /index.html

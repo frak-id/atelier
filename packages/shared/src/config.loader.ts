@@ -200,15 +200,15 @@ export function validateConfig(
     if ((hasCert && !hasKey) || (!hasCert && hasKey)) {
       errors.push({
         field: "tls",
-        message: "Both tls.certPath and tls.keyPath are required for manual TLS",
+        message:
+          "Both tls.certPath and tls.keyPath are required for manual TLS",
       });
     }
 
     if (!hasCert && !hasKey && !config.tls.email) {
       errors.push({
         field: "tls.email",
-        message:
-          "TLS email is required for automatic HTTPS (set TLS_EMAIL)",
+        message: "TLS email is required for automatic HTTPS (set TLS_EMAIL)",
       });
     }
   }

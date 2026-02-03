@@ -1,7 +1,6 @@
 {
   "$schema": "./packages/shared/src/config.schema.ts",
   "domains": {
-    "api": "sandbox-api.example.com",
     "dashboard": "sandbox-dash.example.com",
     "sandboxSuffix": "example.com",
     "ssh": "ssh.example.com"

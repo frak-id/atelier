@@ -79,7 +79,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { OPENCODE_PORT } from "@/config";
+import { config } from "@/config";
 import { useOpencodeData } from "@/hooks/use-opencode-data";
 import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
 import { aggregateInteractions } from "@/lib/opencode-helpers";
@@ -458,7 +458,7 @@ export function SandboxDrawer({
                           <div className="relative">
                             <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 whitespace-pre-wrap break-all">
                               ssh -L {sandboxIdToLocalPort(sandbox.id)}
-                              :localhost:{OPENCODE_PORT} -N {sandbox.id}@
+                              :localhost:{config.opencodePort} -N {sandbox.id}@
                               {SSH_HOST_ALIAS} & SSH_PID=$!; trap "kill
                               $SSH_PID" EXIT; sleep 1; opencode attach
                               http://localhost:
@@ -471,7 +471,7 @@ export function SandboxDrawer({
                               onClick={() => {
                                 const port = sandboxIdToLocalPort(sandbox.id);
                                 copyToClipboard(
-                                  `ssh -L ${port}:localhost:${OPENCODE_PORT} -N ${sandbox.id}@${SSH_HOST_ALIAS} & SSH_PID=$!; trap "kill $SSH_PID" EXIT; sleep 1; opencode attach http://localhost:${port}`,
+                                  `ssh -L ${port}:localhost:${config.opencodePort} -N ${sandbox.id}@${SSH_HOST_ALIAS} & SSH_PID=$!; trap "kill $SSH_PID" EXIT; sleep 1; opencode attach http://localhost:${port}`,
                                   "opencode",
                                 );
                               }}

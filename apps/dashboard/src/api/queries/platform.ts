@@ -1,5 +1,5 @@
 import { queryOptions, useMutation } from "@tanstack/react-query";
-import { API_HOST, api } from "../client";
+import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
 
 // --- Health ---
@@ -284,7 +284,7 @@ export function useGitHubReauthorize() {
   return useMutation({
     mutationKey: ["github", "reauthorize"],
     mutationFn: async () => {
-      window.location.href = `${API_HOST}/api/github/reauthorize`;
+      window.location.href = "/api/github/reauthorize";
     },
   });
 }

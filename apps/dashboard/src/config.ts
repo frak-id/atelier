@@ -1,14 +1,45 @@
-/**
- * Dashboard runtime configuration.
- * Values come from Vite env vars at build time, with sensible defaults for local dev.
- */
+interface RuntimeConfig {
+  sshHostname: string;
+  sshPort: number;
+  opencodePort: number;
+}
 
-export const API_URL = import.meta.env.VITE_API_URL || "";
+let loadedConfig: RuntimeConfig | null = null;
 
-export const SSH_HOSTNAME =
-  import.meta.env.VITE_SSH_HOSTNAME || "ssh.localhost";
-export const SSH_PORT = Number(import.meta.env.VITE_SSH_PORT) || 2222;
+export async function loadConfig(): Promise<void> {
+  if (loadedConfig) return;
 
-export const AUTH_ORG_NAME = import.meta.env.VITE_AUTH_ORG_NAME || "";
+  if (import.meta.env.DEV) {
+    loadedConfig = {
+      sshHostname: "ssh.localhost",
+      sshPort: 2222,
+      opencodePort: 3000,
+    };
+    return;
+  }
 
-export const OPENCODE_PORT = Number(import.meta.env.VITE_OPENCODE_PORT) || 3000;
+  const response = await fetch("/config");
+  if (!response.ok) {
+    throw new Error(`Failed to load config: ${response.status}`);
+  }
+  loadedConfig = await response.json();
+}
+
+function assertLoaded(): RuntimeConfig {
+  if (!loadedConfig) {
+    throw new Error("Config not loaded. Call loadConfig() in main.tsx first.");
+  }
+  return loadedConfig;
+}
+
+export const config = {
+  get sshHostname() {
+    return assertLoaded().sshHostname;
+  },
+  get sshPort() {
+    return assertLoaded().sshPort;
+  },
+  get opencodePort() {
+    return assertLoaded().opencodePort;
+  },
+};

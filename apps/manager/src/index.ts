@@ -11,6 +11,7 @@ import {
   gitSourceRoutes,
   healthRoutes,
   imageRoutes,
+  publicConfigRoutes,
   registryRoutes,
   sandboxRoutes,
   sessionTemplateRoutes,
@@ -201,6 +202,7 @@ const app = new Elysia()
     }
   })
   .use(healthRoutes)
+  .use(publicConfigRoutes)
   .use(authRoutes)
   .group("/api", (app) =>
     app

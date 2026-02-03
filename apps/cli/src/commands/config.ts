@@ -16,7 +16,11 @@ export async function configCommand(args: string[] = []) {
       options: [
         { value: "show", label: "Show", hint: "Print current config" },
         { value: "set", label: "Set", hint: "Set a config value" },
-        { value: "validate", label: "Validate", hint: "Validate config values" },
+        {
+          value: "validate",
+          label: "Validate",
+          hint: "Validate config values",
+        },
       ],
     });
 
@@ -59,7 +63,9 @@ async function showConfig() {
   }
 
   const content = await Bun.file(configPath).text();
-  console.log(content.trim().length ? content : JSON.stringify(DEFAULT_CONFIG, null, 2));
+  console.log(
+    content.trim().length ? content : JSON.stringify(DEFAULT_CONFIG, null, 2),
+  );
 }
 
 async function setConfig(args: string[]) {
@@ -163,8 +169,10 @@ function parseValue(path: string, raw: string): unknown {
   if (trimmed === "false") return false;
   if (!Number.isNaN(Number(trimmed)) && trimmed !== "") return Number(trimmed);
 
-  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-      (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+  if (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  ) {
     try {
       return JSON.parse(trimmed);
     } catch {
@@ -175,7 +183,10 @@ function parseValue(path: string, raw: string): unknown {
   return trimmed;
 }
 
-function parseConfigFile(content: string, path: string): Record<string, unknown> {
+function parseConfigFile(
+  content: string,
+  path: string,
+): Record<string, unknown> {
   try {
     return JSON.parse(content) as Record<string, unknown>;
   } catch {

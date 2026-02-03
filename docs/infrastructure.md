@@ -30,7 +30,6 @@ For Vite (build-time):
 |----------|-------------|
 | `VITE_API_URL` | API URL (empty for proxy, full URL for production) |
 | `VITE_SSH_HOSTNAME` | SSH proxy hostname |
-| `VITE_AUTH_ORG_NAME` | GitHub org name to display in login UI |
 
 ## Domains
 

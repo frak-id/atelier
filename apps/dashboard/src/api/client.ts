@@ -1,10 +1,7 @@
 import { treaty } from "@elysiajs/eden";
 import type { App as ManagerApp } from "@frak-sandbox/manager";
-import { API_URL } from "@/config";
 
-export const API_HOST = API_URL || "http://localhost:4000";
-
-export const api = treaty<ManagerApp>(API_HOST, {
+export const api = treaty<ManagerApp>(window.location.origin, {
   fetch: { credentials: "include" },
 });
 

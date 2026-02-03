@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { loadConfig } from "./config";
 import "./index.css";
 import { ManagerEventsProvider } from "./providers/manager-events-provider";
 import { OpencodeEventsProvider } from "./providers/opencode-events-provider";
@@ -35,17 +36,23 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const rootElement = document.getElementById("root");
-if (rootElement) {
-  createRoot(rootElement).render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <ManagerEventsProvider>
-          <OpencodeEventsProvider>
-            <RouterProvider router={router} />
-          </OpencodeEventsProvider>
-        </ManagerEventsProvider>
-      </QueryClientProvider>
-    </StrictMode>,
-  );
+async function bootstrap() {
+  await loadConfig();
+
+  const rootElement = document.getElementById("root");
+  if (rootElement) {
+    createRoot(rootElement).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <ManagerEventsProvider>
+            <OpencodeEventsProvider>
+              <RouterProvider router={router} />
+            </OpencodeEventsProvider>
+          </ManagerEventsProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+  }
 }
+
+bootstrap();

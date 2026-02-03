@@ -3,6 +3,7 @@ export * from "./config.ts";
 export * from "./events.ts";
 export * from "./git-source.ts";
 export * from "./image.ts";
+export * from "./public-config.ts";
 export * from "./sandbox.ts";
 export * from "./session-template.ts";
 export * from "./shared-storage.ts";

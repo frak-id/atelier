@@ -11,7 +11,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { API_URL } from "@/config";
 
 export function GitHubStatus() {
   const { data: status, isLoading } = useQuery(githubStatusQuery);
@@ -34,7 +33,7 @@ export function GitHubStatus() {
         size="sm"
         className="gap-2"
         onClick={() => {
-          window.location.href = `${API_URL}/api/github/connect`;
+          window.location.href = "/api/github/connect";
         }}
       >
         <Github className="h-4 w-4" />

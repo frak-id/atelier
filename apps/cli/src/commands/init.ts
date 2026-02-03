@@ -74,13 +74,9 @@ async function promptConfig() {
   p.log.info("Configuring sandbox settings...");
 
   const domainSuffix = await promptText("Domain suffix", "example.com");
-  const apiDomain = await promptText(
-    "API domain",
-    `sandbox-api.${domainSuffix}`,
-  );
   const dashboardDomain = await promptText(
     "Dashboard domain",
-    `sandbox-dash.${domainSuffix}`,
+    `sandbox.${domainSuffix}`,
   );
   const sshDomain = await promptText("SSH proxy domain", `ssh.${domainSuffix}`);
   const tlsEmail = await promptText("TLS email", `admin@${domainSuffix}`);
@@ -104,7 +100,6 @@ async function promptConfig() {
   const config = structuredClone(DEFAULT_CONFIG);
 
   config.domains = {
-    api: apiDomain,
     dashboard: dashboardDomain,
     sandboxSuffix: domainSuffix,
     ssh: sshDomain,
@@ -117,8 +112,8 @@ async function promptConfig() {
     ...DEFAULT_CONFIG.auth,
     githubClientId,
     githubClientSecret,
-    githubCallbackUrl: `https://${apiDomain}/api/github/callback`,
-    githubLoginCallbackUrl: `https://${apiDomain}/auth/callback`,
+    githubCallbackUrl: `https://${dashboardDomain}/api/github/callback`,
+    githubLoginCallbackUrl: `https://${dashboardDomain}/auth/callback`,
     jwtSecret,
     allowedOrg: allowedOrg.trim().length > 0 ? allowedOrg : undefined,
     allowedUsers,

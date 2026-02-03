@@ -68,7 +68,7 @@ function ExpirationBadge({ expiresAt }: { expiresAt: string | null }) {
   return null;
 }
 
-import { SSH_HOSTNAME, SSH_PORT } from "@/config";
+import { config } from "@/config";
 
 export const SSH_KEY_PATH = "~/.config/oc-sandbox/sandbox_key";
 export const SSH_HOST_ALIAS = "frak-sandbox";
@@ -184,12 +184,14 @@ function useCopyWithFeedback() {
   return { copy, isCopied: (key: string) => copiedKey === key };
 }
 
-const SSH_CONFIG_SNIPPET = `
+function getSshConfigSnippet() {
+  return `
 Host ${SSH_HOST_ALIAS}
-    HostName ${SSH_HOSTNAME}
-    Port ${SSH_PORT}
+    HostName ${config.sshHostname}
+    Port ${config.sshPort}
     IdentityFile ${SSH_KEY_PATH}
     StrictHostKeyChecking no`;
+}
 
 function SetupInstructions({
   privateKey,
@@ -208,7 +210,7 @@ chmod 600 ${SSH_KEY_PATH}`
     : null;
 
   const sshConfigCommand = `grep -q "Host ${SSH_HOST_ALIAS}" ~/.ssh/config 2>/dev/null || cat >> ~/.ssh/config << 'EOF'
-${SSH_CONFIG_SNIPPET}
+${getSshConfigSnippet()}
 EOF`;
 
   const fullSetupCommand =

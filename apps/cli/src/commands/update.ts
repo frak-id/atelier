@@ -2,8 +2,8 @@ import * as p from "@clack/prompts";
 import { CONFIG_FILE_NAME, loadConfig } from "@frak-sandbox/shared";
 import { PATHS } from "../lib/context";
 import { commandExists, exec, fileExists } from "../lib/shell";
-import { images } from "./images";
 import { CLI_VERSION } from "../version";
+import { images } from "./images";
 
 const DEFAULT_REPO = "frak-id/oc-sandbox";
 
@@ -11,10 +11,14 @@ export async function updateServer(args: string[] = []) {
   p.log.step("Update Server Bundle");
 
   if (!(await commandExists("curl"))) {
-    throw new Error("curl is required. Install it first (apt-get install -y curl).");
+    throw new Error(
+      "curl is required. Install it first (apt-get install -y curl).",
+    );
   }
   if (!(await commandExists("tar"))) {
-    throw new Error("tar is required. Install it first (apt-get install -y tar).");
+    throw new Error(
+      "tar is required. Install it first (apt-get install -y tar).",
+    );
   }
 
   const rebuildImages = args.includes("--rebuild-images");
@@ -42,9 +46,12 @@ export async function updateServer(args: string[] = []) {
   await exec(`curl -fsSL ${tarballUrl} -o ${tarballPath}`);
   spinner.stop("Server bundle downloaded");
 
-  const checksumFetch = await exec(`curl -fsSL ${checksumsUrl} -o ${checksumsPath}`, {
-    throws: false,
-  });
+  const checksumFetch = await exec(
+    `curl -fsSL ${checksumsUrl} -o ${checksumsPath}`,
+    {
+      throws: false,
+    },
+  );
 
   if (checksumFetch.success) {
     const expected = await readChecksum(checksumsPath, tarballName);
@@ -74,7 +81,9 @@ export async function updateServer(args: string[] = []) {
     "mkdir -p /opt/frak-sandbox/infra/images /opt/frak-sandbox/apps/dashboard /opt/frak-sandbox/drizzle /etc/systemd/system /etc/caddy",
   );
 
-  await exec(`cp ${extractDir}/opt/frak-sandbox/server.js /opt/frak-sandbox/server.js`);
+  await exec(
+    `cp ${extractDir}/opt/frak-sandbox/server.js /opt/frak-sandbox/server.js`,
+  );
   await exec(
     `cp -r ${extractDir}/opt/frak-sandbox/drizzle/. /opt/frak-sandbox/drizzle/`,
   );
@@ -154,9 +163,9 @@ async function renderCaddyConfig() {
 
   let output = template
     .replace(/{{SSL_EMAIL}}/g, config.tls.email || "")
-    .replace(/{{API_DOMAIN}}/g, config.domains.api)
     .replace(/{{DASHBOARD_DOMAIN}}/g, config.domains.dashboard)
-    .replace(/{{DOMAIN_SUFFIX}}/g, config.domains.sandboxSuffix);
+    .replace(/{{DOMAIN_SUFFIX}}/g, config.domains.sandboxSuffix)
+    .replace(/{{MANAGER_PORT}}/g, String(config.runtime.port));
 
   if (useManualTls) {
     output = output
@@ -166,10 +175,7 @@ async function renderCaddyConfig() {
       .replace(/{{TLS_KEY_PATH}}/g, config.tls.keyPath)
       .replace(/{{TLS_CONFIG}}/g, "import tls_manual");
   } else {
-    output = output.replace(
-      /{{#MANUAL_TLS}}[\s\S]*?{{\/MANUAL_TLS}}\n?/g,
-      "",
-    );
+    output = output.replace(/{{#MANUAL_TLS}}[\s\S]*?{{\/MANUAL_TLS}}\n?/g, "");
     output = output.replace(/{{TLS_CONFIG}}/g, "");
     output = output.replace(/{{TLS_CERT_PATH}}|{{TLS_KEY_PATH}}/g, "");
   }
