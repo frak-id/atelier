@@ -10,7 +10,7 @@ bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/frak-sand
 
 ## Commands
 
-Provisioning (one-time): `setup`, `base`, `firecracker`, `network`, `storage`, `nfs`, `ssh-proxy`.
+Provisioning (one-time): `init`, `base`, `firecracker`, `network`, `storage`, `nfs`, `ssh-proxy`.
 Service control: `manager start|stop|restart|status|logs`.
 Images: `images [image-id]` — build base image (Docker → ext4 → LVM).
 Debug: `debug-vm start|stop|status|ssh`.

@@ -44,3 +44,11 @@ skip prompts during `frak-sandbox init`.
 
 - Setup guide: `docs/setup.md`
 - Infrastructure details: `docs/infrastructure.md`
+
+## Contributing
+
+See `CONTRIBUTING.md` for development setup and PR guidelines.
+
+## Security
+
+See `SECURITY.md` for vulnerability reporting.

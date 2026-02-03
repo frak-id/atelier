@@ -847,13 +847,13 @@ const walletProject: Project = {
 **Commands**:
 | Command | Subcommands | Description |
 |---------|-------------|-------------|
-| `setup` | - | Full server setup (base + firecracker + network) |
+| `init` | - | Full install (config + setup + update + images) |
 | `base` | - | Install Bun, Docker, Caddy, verify KVM |
 | `firecracker` | - | Download Firecracker binary, kernel, rootfs |
 | `network` | - | Configure persistent br0 bridge with NAT |
 | `storage` | - | Setup LVM thin pool for CoW snapshots |
 | `manager` | `start`, `stop`, `restart`, `status`, `logs` | Manage the API service |
-| `vm` | `start`, `stop`, `status`, `ssh` | Test VM operations |
+| `debug-vm` | `start`, `stop`, `status`, `ssh` | Test VM operations |
 
 **Build**:
 ```bash
@@ -1179,18 +1179,18 @@ if (config.isMock()) {
 # 1. Install the CLI (after deployment)
 # CLI is deployed to /usr/local/bin/frak-sandbox
 
-# 2. Run full setup
+# 2. Run full install
 frak-sandbox init
-# This runs: base → firecracker → network
-# Optionally prompts for storage setup
+# This runs: config → base → firecracker → network → ssh-proxy → storage
+# Then updates the server bundle and optionally builds the base image
 
 # 3. Start the manager
 frak-sandbox manager start
 
 # 4. Test a VM
-frak-sandbox vm start
-frak-sandbox vm ssh
-frak-sandbox vm stop
+frak-sandbox debug-vm start
+frak-sandbox debug-vm ssh
+frak-sandbox debug-vm stop
 ```
 
 ---
@@ -1202,31 +1202,27 @@ frak-sandbox vm stop
 ```bash
 # On fresh Hetzner server (as root)
 
-# 1. Run setup script
-curl -sSL https://raw.githubusercontent.com/frak-id/frak-sandbox/main/infra/scripts/setup-server.sh | bash
+# 1. Run install script
+curl -fsSL https://raw.githubusercontent.com/frak-id/oc-sandbox/main/infra/scripts/install.sh | bash
 
 # This will:
-#   - Install Bun, Docker, Caddy, Firecracker
-#   - Setup LVM thin pool
-#   - Configure network bridge
-#   - Create systemd services
+#   - Configure system dependencies and Firecracker
+#   - Setup network bridge and SSH proxy
+#   - Configure storage (optional)
+#   - Install the server bundle and services
+#   - Optionally build the base image
 
-# 2. Build base rootfs
-cd /opt/frak-sandbox
-bun run build:rootfs
-
-# 3. Configure DNS
+# 2. Configure DNS
 # Add wildcard A record: *.sandbox.frak.dev → server IP
 
-# 4. Start services
-systemctl start sandbox-manager
-systemctl start caddy
+# 3. Verify services
+frak-sandbox manager status
 ```
 
 ### LVM Thin Pool Setup
 
 ```bash
-# /infra/scripts/setup-storage.sh
+# Manual reference (current flow uses `frak-sandbox storage`)
 
 #!/bin/bash
 set -euo pipefail
@@ -1290,15 +1286,15 @@ WantedBy=multi-user.target
 **Goals**: Server ready, basic spawn working
 
 - [x] Provision Hetzner AX52
-- [x] Run setup script (CLI: `frak-sandbox init`)
+- [x] Run install script (CLI: `frak-sandbox init`)
 - [x] Build minimal rootfs (Alpine + SSH)
-- [x] Test manual Firecracker spawn (CLI: `frak-sandbox vm start`)
+- [x] Test manual Firecracker spawn (CLI: `frak-sandbox debug-vm start`)
 - [x] Configure network bridge + NAT (CLI: `frak-sandbox network`)
 - [ ] Setup LVM thin pool (CLI ready: `frak-sandbox storage`)
 - [ ] Setup DNS wildcard
 
 **Deliverables**:
-- ✅ SSH into a Firecracker VM (`frak-sandbox vm ssh`)
+- ✅ SSH into a Firecracker VM (`frak-sandbox debug-vm ssh`)
 - ✅ VM has internet access
 
 ### Phase 2: Manager API (Week 2) ✅ COMPLETE
@@ -1472,10 +1468,10 @@ frak-sandbox manager start     # Start manager service
 frak-sandbox manager stop      # Stop manager service
 frak-sandbox manager status    # Show service health
 frak-sandbox manager logs      # Follow manager logs
-frak-sandbox vm start          # Start test VM
-frak-sandbox vm stop           # Stop test VM
-frak-sandbox vm status         # Show VM status
-frak-sandbox vm ssh            # SSH into test VM
+frak-sandbox debug-vm start    # Start test VM
+frak-sandbox debug-vm stop     # Stop test VM
+frak-sandbox debug-vm status   # Show VM status
+frak-sandbox debug-vm ssh      # SSH into test VM
 
 # Systemd (on server)
 systemctl status frak-sandbox-manager
