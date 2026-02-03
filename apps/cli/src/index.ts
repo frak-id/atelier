@@ -1,10 +1,10 @@
 import * as p from "@clack/prompts";
-import { loadConfig } from "@frak-sandbox/shared";
 import { baseSetup } from "./commands/base-setup";
 import { configCommand } from "./commands/config";
 import { debugVm } from "./commands/debug-vm";
 import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
+import { initServer } from "./commands/init";
 import { installFirecracker } from "./commands/install-firecracker";
 import { setupNetwork } from "./commands/setup-network";
 
@@ -15,11 +15,10 @@ import { printVersion } from "./commands/version";
 import { isRoot } from "./lib/shell";
 
 const COMMANDS = {
-  setup: {
-    label: "Full Setup",
-    description:
-      "Run complete server setup (base + firecracker + network + ssh-proxy)",
-    handler: runFullSetup,
+  init: {
+    label: "Install",
+    description: "Run full install (config + setup + update + images)",
+    handler: initServer,
     requiresRoot: true,
   },
   base: {
@@ -92,49 +91,6 @@ const COMMANDS = {
 
 type CommandKey = keyof typeof COMMANDS;
 
-async function runFullSetup() {
-  p.log.info("Starting full server setup...\n");
-
-  await baseSetup();
-  await installFirecracker();
-  await setupNetwork();
-  await setupSshProxy();
-
-  const config = loadConfig();
-  const hasStorageConfig = !!config.setup?.storage?.method;
-
-  if (hasStorageConfig) {
-    await setupStorage();
-  } else {
-    const setupStorageNow = await p.confirm({
-      message:
-        "Setup LVM storage now? (requires dedicated partition or loop file)",
-      initialValue: false,
-    });
-
-    if (p.isCancel(setupStorageNow)) {
-      p.cancel("Setup cancelled");
-      process.exit(0);
-    }
-
-    if (setupStorageNow) {
-      await setupStorage();
-    } else {
-      p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
-    }
-  }
-
-  p.log.success("Server setup complete!");
-  p.note(
-    `Server is ready. Next:
-  1. Update server bundle: frak-sandbox update
-  2. Build base image: frak-sandbox images build dev-base
-  3. Test VM: frak-sandbox vm start
-  4. API status: frak-sandbox manager status`,
-    "Setup Complete",
-  );
-}
-
 async function selectCommand(): Promise<CommandKey> {
   const command = await p.select({
     message: "What would you like to do?",
@@ -160,7 +116,7 @@ frak-sandbox - Firecracker sandbox management CLI
 Usage: frak-sandbox [command] [subcommand]
 
 PROVISIONING (one-time setup):
-  setup           Run complete server setup (new servers)
+  init            Full install (config + setup + update + images)
   base            Install base packages, Bun, Docker, Caddy, verify KVM
   firecracker     Download Firecracker, kernel, and rootfs
   network         Configure persistent bridge for VM networking
@@ -204,7 +160,7 @@ Options:
   --version, -v   Show CLI version
 
 Examples:
-  frak-sandbox setup              Prepare server (run once)
+  frak-sandbox init               Full install
   frak-sandbox update             Install server bundle
   frak-sandbox update --rebuild-images
   frak-sandbox manager status     Check API health
@@ -276,7 +232,7 @@ async function reexecWithSudo(args: string[]) {
   }
 
   p.log.info("Re-running with sudo...");
-  const proc = Bun.spawn(["sudo", "-E", process.argv[0], ...args], {
+  const proc = Bun.spawn(["sudo", "-E", process.argv[0] ?? "bun", ...args], {
     stdout: "inherit",
     stderr: "inherit",
     stdin: "inherit",

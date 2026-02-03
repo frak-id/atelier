@@ -1180,7 +1180,7 @@ if (config.isMock()) {
 # CLI is deployed to /usr/local/bin/frak-sandbox
 
 # 2. Run full setup
-frak-sandbox setup
+frak-sandbox init
 # This runs: base → firecracker → network
 # Optionally prompts for storage setup
 
@@ -1290,7 +1290,7 @@ WantedBy=multi-user.target
 **Goals**: Server ready, basic spawn working
 
 - [x] Provision Hetzner AX52
-- [x] Run setup script (CLI: `frak-sandbox setup`)
+- [x] Run setup script (CLI: `frak-sandbox init`)
 - [x] Build minimal rootfs (Alpine + SSH)
 - [x] Test manual Firecracker spawn (CLI: `frak-sandbox vm start`)
 - [x] Configure network bridge + NAT (CLI: `frak-sandbox network`)
@@ -1463,7 +1463,7 @@ SANDBOX_MODE=mock bun run dev  # Start with mock Firecracker
 
 # CLI (on server, as root)
 frak-sandbox                   # Interactive mode
-frak-sandbox setup             # Full server setup
+frak-sandbox init              # Full install
 frak-sandbox base              # Base packages only
 frak-sandbox firecracker       # Download Firecracker + kernel + rootfs
 frak-sandbox network           # Configure br0 bridge

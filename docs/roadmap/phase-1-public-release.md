@@ -412,7 +412,7 @@ Current setup requires 5+ separate commands and manual DNS configuration:
 
 ```bash
 # Current flow (error-prone, time-consuming)
-frak-sandbox setup        # Base packages
+frak-sandbox init         # Full install
 frak-sandbox firecracker  # Download binaries
 frak-sandbox network      # Configure bridge
 frak-sandbox storage      # Setup LVM

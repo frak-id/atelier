@@ -80,7 +80,7 @@ sandbox-vg/
 Run on server (CLI auto-sudo for privileged operations):
 
 ```bash
-frak-sandbox setup             # Full server setup
+frak-sandbox init              # Full install
 frak-sandbox images build      # Build rootfs image
 frak-sandbox vm start          # Test VM
 frak-sandbox manager status    # Check API health

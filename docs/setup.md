@@ -32,16 +32,10 @@ By default, the config is read from:
 You can override this with `FRAK_CONFIG=/path/to/sandbox.config.json`.
 - Allowed org/users
 
-It writes `/etc/frak-sandbox/sandbox.config.json`, runs `frak-sandbox setup`,
-and downloads the server bundle.
+It writes `/etc/frak-sandbox/sandbox.config.json`, runs the full setup,
+downloads the server bundle, and can build the base image.
 
 ## Post‑Install
-
-Build the base image:
-
-```bash
-frak-sandbox images build dev-base
-```
 
 Check manager health:
 
@@ -60,7 +54,7 @@ If the agent changed, the CLI will prompt to rebuild the base image.
 ## Optional: Preconfigure Storage
 
 If you add `setup.storage` to `/etc/frak-sandbox/sandbox.config.json`, the CLI
-will skip storage prompts. Example:
+will skip storage prompts during `frak-sandbox init`. Example:
 
 ```json
 {
@@ -73,7 +67,7 @@ will skip storage prompts. Example:
 }
 ```
 
-You can also preconfigure network behavior:
+You can also preconfigure network behavior (used by `frak-sandbox init`):
 
 ```json
 {

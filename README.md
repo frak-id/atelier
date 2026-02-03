@@ -13,8 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/frak-id/oc-sandbox/main/infra/scrip
 After install:
 
 ```bash
-frak-sandbox update
-frak-sandbox images build dev-base
+frak-sandbox manager status
 ```
 
 ## Requirements
@@ -28,7 +27,7 @@ frak-sandbox images build dev-base
 
 ## Key Commands
 
-- `frak-sandbox setup` – one‑time server setup
+- `frak-sandbox init` – full install (config + setup + update + images)
 - `frak-sandbox update` – download + install server bundle
 - `frak-sandbox images build dev-base` – build base image
 - `frak-sandbox manager status` – manager health
@@ -39,7 +38,7 @@ Default config path: `/etc/frak-sandbox/sandbox.config.json`
 Override with `FRAK_CONFIG=/path/to/sandbox.config.json`
 
 If you pre‑fill `setup.storage` or `setup.network` in the config, the CLI will
-skip prompts during `frak-sandbox setup`.
+skip prompts during `frak-sandbox init`.
 
 ## Docs
 
