@@ -4,6 +4,7 @@
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src",
+    "resolveJsonModule": true,
     "types": ["bun"]
   },
   "include": ["src/**/*"]

@@ -248,7 +248,7 @@ export const SharedStorageService = {
       );
 
       const result =
-        await $`/usr/sbin/mkfs.ext4 -d ${srcDir} -F -q -L shared-binaries ${tmpPath} ${imageSizeMb}M`
+        await $`sudo -n /usr/sbin/mkfs.ext4 -d ${srcDir} -F -q -L shared-binaries ${tmpPath} ${imageSizeMb}M`
           .quiet()
           .nothrow();
 
@@ -261,6 +261,7 @@ export const SharedStorageService = {
       }
 
       await $`mv ${tmpPath} ${imgPath}`.quiet();
+      await $`sudo -n chown frak:frak ${imgPath}`.quiet().nothrow();
 
       const finalSize = await getDirSize(imgPath);
       log.info(

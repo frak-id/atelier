@@ -149,13 +149,28 @@ async function main() {
   const caddyfileTemplate = await Bun.file(
     resolve(INFRA_DIR, "caddy/Caddyfile.template"),
   ).text();
-  const caddyfile = caddyfileTemplate
+  const useManualTls =
+    frakConfig.tls.certPath?.trim().length > 0 &&
+    frakConfig.tls.keyPath?.trim().length > 0;
+  let caddyfile = caddyfileTemplate
     .replace(/\{\{SSL_EMAIL\}\}/g, frakConfig.tls.email)
-    .replace(/\{\{TLS_CERT_PATH\}\}/g, frakConfig.tls.certPath)
-    .replace(/\{\{TLS_KEY_PATH\}\}/g, frakConfig.tls.keyPath)
     .replace(/\{\{API_DOMAIN\}\}/g, frakConfig.domains.api)
     .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, frakConfig.domains.dashboard)
     .replace(/\{\{DOMAIN_SUFFIX\}\}/g, frakConfig.domains.sandboxSuffix);
+
+  if (useManualTls) {
+    caddyfile = caddyfile
+      .replace(/\{\{#MANUAL_TLS\}\}/g, "")
+      .replace(/\{\{\/MANUAL_TLS\}\}/g, "")
+      .replace(/\{\{TLS_CERT_PATH\}\}/g, frakConfig.tls.certPath)
+      .replace(/\{\{TLS_KEY_PATH\}\}/g, frakConfig.tls.keyPath)
+      .replace(/\{\{TLS_CONFIG\}\}/g, "import tls_manual");
+  } else {
+    caddyfile = caddyfile
+      .replace(/\{\{#MANUAL_TLS\}\}[\s\S]*?\{\{\/MANUAL_TLS\}\}\n?/g, "")
+      .replace(/\{\{TLS_CONFIG\}\}/g, "")
+      .replace(/\{\{TLS_CERT_PATH\}\}|\{\{TLS_KEY_PATH\}\}/g, "");
+  }
   await Bun.write(resolve(STAGING_DIR, "etc/caddy/Caddyfile"), caddyfile);
   console.log("   ✓ Staged all artifacts");
 

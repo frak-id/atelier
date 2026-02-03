@@ -21,19 +21,37 @@ export async function baseSetup(_args: string[] = []) {
     spinner.stop("Essential packages already installed");
   }
 
-  const bunInstalled = await exec(
-    "test -x /root/.bun/bin/bun || command -v bun",
-    { throws: false },
-  );
-  if (bunInstalled.success) {
+  const bunSystem = await exec("test -x /usr/local/bin/bun", {
+    throws: false,
+  });
+  const bunRoot = await exec("test -x /root/.bun/bin/bun", { throws: false });
+
+  if (bunSystem.success || bunRoot.success) {
     const { stdout } = await exec(
-      "/root/.bun/bin/bun --version 2>/dev/null || bun --version",
+      "/usr/local/bin/bun --version 2>/dev/null || /root/.bun/bin/bun --version 2>/dev/null || bun --version",
       { throws: false },
     );
     p.log.success(`Bun already installed: v${stdout}`);
+
+    if (!bunSystem.success && bunRoot.success) {
+      spinner.start("Linking Bun to /usr/local/bin");
+      await exec("install -m 0755 /root/.bun/bin/bun /usr/local/bin/bun");
+      spinner.stop("Bun linked to /usr/local/bin");
+    }
   } else {
     spinner.start("Installing Bun");
-    await exec("curl -fsSL https://bun.sh/install | bash");
+    await exec("curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash");
+    const bunLocal = await exec("test -x /usr/local/bin/bun", {
+      throws: false,
+    });
+    if (!bunLocal.success) {
+      const bunAlt = await exec("test -x /usr/local/bun/bin/bun", {
+        throws: false,
+      });
+      if (bunAlt.success) {
+        await exec("ln -sf /usr/local/bun/bin/bun /usr/local/bin/bun");
+      }
+    }
     spinner.stop("Bun installed");
   }
 
@@ -107,12 +125,15 @@ export async function baseSetup(_args: string[] = []) {
     );
   }
 
-  await exec(
-    "setfacl -m u:root:rw /dev/kvm 2>/dev/null || chmod 666 /dev/kvm",
-    {
-      throws: false,
-    },
-  );
+  await exec("getent group kvm >/dev/null 2>&1 || groupadd kvm", {
+    throws: false,
+  });
+  await exec("id -u frak >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash frak", {
+    throws: false,
+  });
+  await exec("usermod -aG kvm frak", { throws: false });
+  await exec("chgrp kvm /dev/kvm 2>/dev/null || true", { throws: false });
+  await exec("chmod 660 /dev/kvm 2>/dev/null || true", { throws: false });
   spinner.stop("KVM verified and accessible");
 
   const dirsExist = await exec(`test -d ${PATHS.SANDBOX_DIR}/sockets`, {
@@ -140,6 +161,22 @@ export async function baseSetup(_args: string[] = []) {
     spinner.stop("Directory structure created");
   }
 
+  await exec(`mkdir -p /etc/frak-sandbox`);
+  await exec(`chown -R frak:frak ${PATHS.SANDBOX_DIR} ${PATHS.LOG_DIR} ${PATHS.APP_DIR}`, {
+    throws: false,
+  });
+  await exec("chgrp -R frak /etc/frak-sandbox", { throws: false });
+  await exec("chmod 750 /etc/frak-sandbox", { throws: false });
+
+  const sudoersPath = "/etc/sudoers.d/frak-sandbox";
+  const sudoersContent = `frak ALL=(root) NOPASSWD: \\
+  /usr/sbin/lvcreate, /usr/sbin/lvremove, /usr/sbin/lvextend, /usr/sbin/lvs, \\
+  /usr/sbin/mkfs.ext4, /bin/chown, \\
+  /sbin/ip, /sbin/bridge, /usr/sbin/bridge
+`;
+  await Bun.write(sudoersPath, sudoersContent);
+  await exec(`chmod 440 ${sudoersPath}`);
+
   const ipForward = await exec("cat /proc/sys/net/ipv4/ip_forward", {
     throws: false,
   });
@@ -159,7 +196,8 @@ export async function baseSetup(_args: string[] = []) {
   p.note(
     `Installed: essential packages, Bun, Docker, Caddy
 Verified: KVM support
-Created: ${PATHS.SANDBOX_DIR}`,
+Created: ${PATHS.SANDBOX_DIR}
+User: frak (sudoers + kvm)`,
     "Summary",
   );
 }
@@ -172,9 +210,11 @@ const REQUIRED_PACKAGES = [
   "htop",
   "tree",
   "unzip",
+  "tar",
   "ca-certificates",
   "gnupg",
   "lsb-release",
+  "sudo",
   "acl",
   "e2fsprogs",
   "squashfs-tools",

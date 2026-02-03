@@ -5,10 +5,10 @@
 FRAK Sandbox uses a unified configuration system. Values can be set via:
 
 1. **Environment variables** (highest priority)
-2. **Config file** (`/etc/frak-sandbox/config.yaml` or `FRAK_CONFIG` env var)
+2. **Config file** (`/etc/frak-sandbox/sandbox.config.json` or `FRAK_CONFIG` env var)
 3. **Defaults** (fallback)
 
-See `config.example.yaml` in the repository root for all available options.
+See `sandbox.config.example.json` in the repository root for all available options.
 
 ### Key Environment Variables
 
@@ -77,7 +77,7 @@ sandbox-vg/
 
 ## Server CLI
 
-Run on server as root:
+Run on server (CLI auto-sudo for privileged operations):
 
 ```bash
 frak-sandbox setup             # Full server setup

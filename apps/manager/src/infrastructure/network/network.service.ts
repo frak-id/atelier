@@ -48,9 +48,11 @@ export const NetworkService = {
       return;
     }
 
-    await $`ip link del ${tapDevice} 2>/dev/null || true && ip tuntap add dev ${tapDevice} mode tap && ip link set dev ${tapDevice} master ${config.network.bridgeName} up`
+    await $`sudo -n /sbin/ip link del ${tapDevice} 2>/dev/null || true`
       .quiet()
       .nothrow();
+    await $`sudo -n /sbin/ip tuntap add dev ${tapDevice} mode tap`.quiet();
+    await $`sudo -n /sbin/ip link set dev ${tapDevice} master ${config.network.bridgeName} up`.quiet();
 
     log.info({ tapDevice }, "TAP device created");
   },
@@ -61,7 +63,9 @@ export const NetworkService = {
       return;
     }
 
-    await $`ip link del ${tapDevice} 2>/dev/null || true`.quiet().nothrow();
+    await $`sudo -n /sbin/ip link del ${tapDevice} 2>/dev/null || true`
+      .quiet()
+      .nothrow();
     log.info({ tapDevice }, "TAP device deleted");
   },
 
@@ -95,13 +99,17 @@ export const NetworkService = {
     }
 
     const bridgeName = config.network.bridgeName;
-    const bridgeCheck = await $`ip link show ${bridgeName}`.quiet().nothrow();
+    const bridgeCheck = await $`sudo -n /sbin/ip link show ${bridgeName}`
+      .quiet()
+      .nothrow();
 
     if (bridgeCheck.exitCode !== 0) {
       return { exists: false, ip: null, interfaces: [] };
     }
 
-    const ipResult = await $`ip -j addr show ${bridgeName}`.quiet().nothrow();
+    const ipResult = await $`sudo -n /sbin/ip -j addr show ${bridgeName}`
+      .quiet()
+      .nothrow();
     let ip: string | null = null;
     if (ipResult.exitCode === 0) {
       try {
@@ -113,7 +121,7 @@ export const NetworkService = {
     }
 
     const interfacesResult =
-      await $`bridge link show master ${bridgeName} 2>/dev/null`
+      await $`sudo -n /sbin/bridge link show master ${bridgeName} 2>/dev/null`
         .quiet()
         .nothrow();
     const interfaces = interfacesResult.stdout
@@ -130,7 +138,9 @@ export const NetworkService = {
       return [];
     }
 
-    const result = await $`ip link show type tuntap`.quiet().nothrow();
+    const result = await $`sudo -n /sbin/ip link show type tuntap`
+      .quiet()
+      .nothrow();
     if (result.exitCode !== 0) return [];
 
     return result.stdout

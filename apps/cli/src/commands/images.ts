@@ -65,7 +65,10 @@ async function buildImage(args: string[]) {
   const imageDir = `${IMAGES_DIR}/${imageName}`;
   const dirExists = await exec(`test -d ${imageDir}`, { throws: false });
   if (!dirExists.success) {
-    throw new Error(`Image directory not found: ${imageDir}`);
+    throw new Error(
+      `Image directory not found: ${imageDir}\n` +
+        "Run 'frak-sandbox update' to install image assets.",
+    );
   }
 
   const agentBinary = `${IMAGES_DIR}/sandbox-agent`;
@@ -73,8 +76,7 @@ async function buildImage(args: string[]) {
   if (!agentExists.success) {
     throw new Error(
       `sandbox-agent binary not found at: ${agentBinary}\n` +
-        `Deploy with 'bun run deploy' first, or build manually on dev machine:\n` +
-        `  cd apps/agent-rust && cargo build --release`,
+        "Run 'frak-sandbox update' to download server assets.",
     );
   }
 

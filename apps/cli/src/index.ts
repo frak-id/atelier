@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
 import { baseSetup } from "./commands/base-setup";
+import { configCommand } from "./commands/config";
 import { debugVm } from "./commands/debug-vm";
 import { deployManager } from "./commands/deploy-manager";
 import { images } from "./commands/images";
@@ -8,54 +9,83 @@ import { setupNetwork } from "./commands/setup-network";
 
 import { setupSshProxy } from "./commands/setup-ssh-proxy";
 import { setupStorage } from "./commands/setup-storage";
+import { updateServer } from "./commands/update";
+import { printVersion } from "./commands/version";
 import { isRoot } from "./lib/shell";
 
 const COMMANDS = {
   setup: {
     label: "Full Setup",
     description:
-      "Run complete server setup (base + firecracker + network + manager)",
+      "Run complete server setup (base + firecracker + network + ssh-proxy)",
     handler: runFullSetup,
+    requiresRoot: true,
   },
   base: {
     label: "Base Setup",
     description: "Install base packages, Bun, Docker, Caddy, verify KVM",
     handler: baseSetup,
+    requiresRoot: true,
   },
   firecracker: {
     label: "Install Firecracker",
     description: "Download Firecracker, kernel, and rootfs",
     handler: installFirecracker,
+    requiresRoot: true,
   },
   network: {
     label: "Setup Network",
     description: "Configure persistent bridge for VM networking",
     handler: setupNetwork,
+    requiresRoot: true,
   },
   storage: {
     label: "Setup Storage",
     description: "Configure LVM thin provisioning",
     handler: setupStorage,
+    requiresRoot: true,
   },
   "ssh-proxy": {
     label: "Setup SSH Proxy",
     description: "Install and configure sshpiper for sandbox SSH access",
     handler: setupSshProxy,
+    requiresRoot: true,
   },
   manager: {
     label: "Manager API",
     description: "Deploy/manage the sandbox manager API",
     handler: deployManager,
+    requiresRoot: true,
   },
   images: {
     label: "Images",
     description: "Build base images (Docker → ext4 → LVM)",
     handler: images,
+    requiresRoot: true,
   },
   "debug-vm": {
     label: "Debug VM",
     description: "Start/stop/manage debug VM (isolated from Manager)",
     handler: debugVm,
+    requiresRoot: true,
+  },
+  update: {
+    label: "Update Server",
+    description: "Download and install the matching server bundle",
+    handler: updateServer,
+    requiresRoot: true,
+  },
+  config: {
+    label: "Config",
+    description: "View and edit sandbox.config.json",
+    handler: configCommand,
+    requiresRoot: true,
+  },
+  version: {
+    label: "Version",
+    description: "Show CLI version",
+    handler: printVersion,
+    requiresRoot: false,
   },
 } as const;
 
@@ -67,6 +97,7 @@ async function runFullSetup() {
   await baseSetup();
   await installFirecracker();
   await setupNetwork();
+  await setupSshProxy();
 
   const setupStorageNow = await p.confirm({
     message:
@@ -88,7 +119,7 @@ async function runFullSetup() {
   p.log.success("Server setup complete!");
   p.note(
     `Server is ready. Next:
-  1. From dev machine: bun run deploy
+  1. Update server bundle: frak-sandbox update
   2. Build base image: frak-sandbox images build dev-base
   3. Test VM: frak-sandbox vm start
   4. API status: frak-sandbox manager status`,
@@ -128,6 +159,10 @@ PROVISIONING (one-time setup):
   storage         Configure LVM thin provisioning
   ssh-proxy       Install and configure sshpiper for sandbox SSH access
 
+UPDATES & CONFIG:
+  update          Download and install the matching server bundle
+  config          View or edit sandbox.config.json
+
 SERVICE CONTROL:
   manager         Manage the sandbox manager API service
 
@@ -136,6 +171,9 @@ IMAGE BUILDING:
 
 DEBUGGING:
   debug-vm        Start/stop/manage debug VM (isolated from Manager)
+
+INFO:
+  version         Show CLI version
 
 Manager Subcommands:
   manager start   Start the manager service
@@ -155,12 +193,17 @@ Debug VM Subcommands:
 
 Options:
   --help, -h      Show this help message
+  --version, -v   Show CLI version
 
 Examples:
   frak-sandbox setup              Prepare server (run once)
+  frak-sandbox update             Install server bundle
+  frak-sandbox update --rebuild-images
   frak-sandbox manager status     Check API health
   frak-sandbox images dev-base    Build dev-base image
   frak-sandbox debug-vm start     Start debug VM
+  frak-sandbox config show        Show current config
+  frak-sandbox version            Show CLI version
 
 For runtime operations (sandbox list, resize, etc), use Manager API:
   curl http://localhost:4000/sandboxes
@@ -176,9 +219,9 @@ async function main() {
     process.exit(0);
   }
 
-  if (!(await isRoot())) {
-    p.log.error("This tool must be run as root (use sudo)");
-    process.exit(1);
+  if (args.includes("--version") || args.includes("-v")) {
+    await printVersion();
+    process.exit(0);
   }
 
   p.intro("frak-sandbox");
@@ -199,7 +242,14 @@ async function main() {
   }
 
   try {
-    await COMMANDS[command].handler(subArgs);
+    const commandConfig = COMMANDS[command];
+
+    if (commandConfig.requiresRoot && !(await isRoot())) {
+      await reexecWithSudo([command, ...subArgs]);
+      return;
+    }
+
+    await commandConfig.handler(subArgs);
     p.outro("Done!");
   } catch (error) {
     p.log.error(error instanceof Error ? error.message : String(error));
@@ -208,3 +258,22 @@ async function main() {
 }
 
 main();
+
+async function reexecWithSudo(args: string[]) {
+  const { commandExists } = await import("./lib/shell");
+
+  if (!(await commandExists("sudo"))) {
+    p.log.error("sudo is required for this command but is not installed.");
+    process.exit(1);
+  }
+
+  p.log.info("Re-running with sudo...");
+  const proc = Bun.spawn(["sudo", "-E", process.argv[0], ...args], {
+    stdout: "inherit",
+    stderr: "inherit",
+    stdin: "inherit",
+  });
+
+  const code = await proc.exited;
+  process.exit(code);
+}

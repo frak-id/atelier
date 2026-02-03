@@ -20,8 +20,8 @@
     "allowedUsers": ["username1", "username2"],
     "githubClientId": "githubClientId",
     "githubClientSecret": "githubClientSecret",
-    "githubCallbackUrl": "https://sandbox-api.example.com/auth/github/callback",
-    "githubLoginCallbackUrl": "https://sandbox-api.example.com/login/callback",
+    "githubCallbackUrl": "https://sandbox-api.example.com/github/callback",
+    "githubLoginCallbackUrl": "https://sandbox-api.example.com/auth/callback",
     "jwtSecret": "jwt_secret"
   },
   "sshProxy": {
@@ -36,8 +36,8 @@
   },
   "tls": {
     "email": "ssl@example.com",
-    "certPath": "/etc/ssl/cloudflare/example.com.pem",
-    "keyPath": "/etc/ssl/cloudflare/example.com.key"
+    "certPath": "",
+    "keyPath": ""
   },
   "services": {
     "vscode": { "port": 8080 },
