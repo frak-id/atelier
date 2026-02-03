@@ -1,0 +1,17 @@
+{
+  "name": "Base Development",
+  "description": "Minimal dev environment with code-server, OpenCode, Bun, and Git",
+  "volumeSize": 5,
+  "tools": [
+    "code-server",
+    "opencode",
+    "bun",
+    "node",
+    "git",
+    "curl",
+    "ssh",
+    "htop"
+  ],
+  "base": null,
+  "official": true
+}

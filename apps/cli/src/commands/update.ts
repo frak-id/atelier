@@ -6,15 +6,15 @@ import { CLI_VERSION } from "../version";
 import { images } from "./images";
 
 const DEFAULT_REPO = "frak-id/oc-sandbox";
+const DEFAULT_LOCAL_TARBALL = "/tmp/frak-sandbox-deploy.tar.gz";
+
+type DeploySource =
+  | { type: "github"; tarballUrl: string; checksumsUrl: string }
+  | { type: "local"; tarballPath: string };
 
 export async function updateServer(args: string[] = []) {
   p.log.step("Update Server Bundle");
 
-  if (!(await commandExists("curl"))) {
-    throw new Error(
-      "curl is required. Install it first (apt-get install -y curl).",
-    );
-  }
   if (!(await commandExists("tar"))) {
     throw new Error(
       "tar is required. Install it first (apt-get install -y tar).",
@@ -22,50 +22,56 @@ export async function updateServer(args: string[] = []) {
   }
 
   const rebuildImages = args.includes("--rebuild-images");
-
-  const version = CLI_VERSION;
-  const repo = process.env.FRAK_RELEASE_REPO || DEFAULT_REPO;
-  const baseUrl =
-    process.env.FRAK_RELEASE_BASE_URL ||
-    `https://github.com/${repo}/releases/download/v${version}`;
-  const tarballName = `frak-sandbox-server-${version}.tar.gz`;
-  const tarballUrl = `${baseUrl}/${tarballName}`;
-  const checksumsUrl = `${baseUrl}/checksums.txt`;
+  const source = await resolveDeploySource(args);
 
   const tmpDir = `/tmp/frak-sandbox-update-${Date.now()}`;
   const extractDir = `${tmpDir}/extract`;
-  const tarballPath = `${tmpDir}/${tarballName}`;
-  const checksumsPath = `${tmpDir}/checksums.txt`;
 
   const agentPath = `${PATHS.APP_DIR}/infra/images/sandbox-agent`;
   const beforeHash = await getSha256(agentPath);
 
   const spinner = p.spinner();
-  spinner.start(`Downloading ${tarballName}`);
-  await exec(`mkdir -p ${tmpDir}`);
-  await exec(`curl -fsSL ${tarballUrl} -o ${tarballPath}`);
-  spinner.stop("Server bundle downloaded");
+  let tarballPath: string;
 
-  const checksumFetch = await exec(
-    `curl -fsSL ${checksumsUrl} -o ${checksumsPath}`,
-    {
-      throws: false,
-    },
-  );
+  if (source.type === "github") {
+    if (!(await commandExists("curl"))) {
+      throw new Error(
+        "curl is required for GitHub downloads. Install it first (apt-get install -y curl).",
+      );
+    }
 
-  if (checksumFetch.success) {
-    const expected = await readChecksum(checksumsPath, tarballName);
-    if (expected) {
-      const actual = await getSha256(tarballPath);
-      if (!actual || actual !== expected) {
-        throw new Error("Checksum mismatch for server bundle");
+    const tarballName = source.tarballUrl.split("/").pop() ?? "bundle.tar.gz";
+    tarballPath = `${tmpDir}/${tarballName}`;
+    const checksumsPath = `${tmpDir}/checksums.txt`;
+
+    spinner.start(`Downloading ${tarballName}`);
+    await exec(`mkdir -p ${tmpDir}`);
+    await exec(`curl -fsSL ${source.tarballUrl} -o ${tarballPath}`);
+    spinner.stop("Server bundle downloaded");
+
+    const checksumFetch = await exec(
+      `curl -fsSL ${source.checksumsUrl} -o ${checksumsPath}`,
+      { throws: false },
+    );
+
+    if (checksumFetch.success) {
+      const expected = await readChecksum(checksumsPath, tarballName);
+      if (expected) {
+        const actual = await getSha256(tarballPath);
+        if (!actual || actual !== expected) {
+          throw new Error("Checksum mismatch for server bundle");
+        }
+        p.log.success("Checksum verified");
+      } else {
+        p.log.warn("Checksum file found but entry missing for server bundle");
       }
-      p.log.success("Checksum verified");
     } else {
-      p.log.warn("Checksum file found but entry missing for server bundle");
+      p.log.warn("No checksums.txt found; skipping checksum verification");
     }
   } else {
-    p.log.warn("No checksums.txt found; skipping checksum verification");
+    tarballPath = source.tarballPath;
+    p.log.info(`Using local tarball: ${tarballPath}`);
+    await exec(`mkdir -p ${tmpDir}`);
   }
 
   spinner.start("Extracting bundle");
@@ -102,13 +108,36 @@ export async function updateServer(args: string[] = []) {
   await exec(
     `cp ${extractDir}/etc/systemd/system/frak-sandbox-network.service /etc/systemd/system/frak-sandbox-network.service`,
   );
-  await exec(
-    `cp ${extractDir}/etc/caddy/Caddyfile.template /etc/caddy/Caddyfile.template`,
+
+  const hasTemplate = await fileExists(
+    `${extractDir}/etc/caddy/Caddyfile.template`,
   );
+  if (hasTemplate) {
+    await exec(
+      `cp ${extractDir}/etc/caddy/Caddyfile.template /etc/caddy/Caddyfile.template`,
+    );
+  }
+  const hasCaddyfile = await fileExists(`${extractDir}/etc/caddy/Caddyfile`);
+  if (hasCaddyfile) {
+    await exec(`cp ${extractDir}/etc/caddy/Caddyfile /etc/caddy/Caddyfile`);
+  }
+
+  const hasConfig = await fileExists(
+    `${extractDir}/etc/frak-sandbox/${CONFIG_FILE_NAME}`,
+  );
+  if (hasConfig) {
+    await exec(`mkdir -p /etc/frak-sandbox`);
+    await exec(
+      `cp ${extractDir}/etc/frak-sandbox/${CONFIG_FILE_NAME} /etc/frak-sandbox/${CONFIG_FILE_NAME}`,
+    );
+  }
+
   await exec("chown -R frak:frak /opt/frak-sandbox", { throws: false });
   spinner.stop("Files installed");
 
-  await renderCaddyConfig();
+  if (hasTemplate && !hasCaddyfile) {
+    await renderCaddyConfig();
+  }
 
   spinner.start("Reloading services");
   await exec("systemctl daemon-reload");
@@ -140,7 +169,68 @@ export async function updateServer(args: string[] = []) {
     }
   }
 
-  p.log.success(`Server bundle updated to v${version}`);
+  if (source.type === "local") {
+    p.log.success("Server bundle updated from local tarball");
+  } else {
+    p.log.success(`Server bundle updated to v${CLI_VERSION}`);
+  }
+}
+
+async function resolveDeploySource(args: string[]): Promise<DeploySource> {
+  const localIdx = args.indexOf("--local");
+  if (localIdx !== -1) {
+    const customPath = args[localIdx + 1];
+    const tarballPath =
+      customPath && !customPath.startsWith("--")
+        ? customPath
+        : DEFAULT_LOCAL_TARBALL;
+
+    if (!(await fileExists(tarballPath))) {
+      throw new Error(`Local tarball not found: ${tarballPath}`);
+    }
+    return { type: "local", tarballPath };
+  }
+
+  const localExists = await fileExists(DEFAULT_LOCAL_TARBALL);
+  if (localExists) {
+    const choice = await p.select({
+      message: `Local deploy tarball found at ${DEFAULT_LOCAL_TARBALL}`,
+      options: [
+        {
+          value: "local",
+          label: "Use local tarball",
+          hint: "From scripts/deploy.ts",
+        },
+        {
+          value: "github",
+          label: "Download from GitHub",
+          hint: `v${CLI_VERSION}`,
+        },
+      ],
+    });
+
+    if (p.isCancel(choice)) {
+      p.cancel("Update cancelled");
+      process.exit(0);
+    }
+
+    if (choice === "local") {
+      return { type: "local", tarballPath: DEFAULT_LOCAL_TARBALL };
+    }
+  }
+
+  const version = CLI_VERSION;
+  const repo = process.env.FRAK_RELEASE_REPO || DEFAULT_REPO;
+  const baseUrl =
+    process.env.FRAK_RELEASE_BASE_URL ||
+    `https://github.com/${repo}/releases/download/v${version}`;
+  const tarballName = `frak-sandbox-server-${version}.tar.gz`;
+
+  return {
+    type: "github",
+    tarballUrl: `${baseUrl}/${tarballName}`,
+    checksumsUrl: `${baseUrl}/checksums.txt`,
+  };
 }
 
 async function renderCaddyConfig() {

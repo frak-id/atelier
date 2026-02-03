@@ -125,6 +125,7 @@ PROVISIONING (one-time setup):
 
 UPDATES & CONFIG:
   update          Download and install the matching server bundle
+  update --local  Use local tarball from /tmp/frak-sandbox-deploy.tar.gz
   config          View or edit sandbox.config.json
 
 SERVICE CONTROL:
@@ -161,7 +162,8 @@ Options:
 
 Examples:
   frak-sandbox init               Full install
-  frak-sandbox update             Install server bundle
+  frak-sandbox update             Install server bundle (prompts if local found)
+  frak-sandbox update --local     Use local tarball from deploy.ts
   frak-sandbox update --rebuild-images
   frak-sandbox manager status     Check API health
   frak-sandbox images dev-base    Build dev-base image

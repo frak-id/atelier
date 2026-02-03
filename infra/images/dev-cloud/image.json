@@ -1,0 +1,8 @@
+{
+  "name": "Cloud Development",
+  "description": "Extended dev environment with AWS CLI, Google Cloud SDK, kubectl, and Pulumi for cloud deployments",
+  "volumeSize": 7,
+  "tools": ["aws", "gcloud", "kubectl", "pulumi"],
+  "base": "dev-base",
+  "official": true
+}

@@ -68,8 +68,8 @@ function ImagesPage() {
                   <p>{image.volumeSize} GB</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Volume Name</span>
-                  <p className="font-mono">{image.volumeName}</p>
+                  <span className="text-muted-foreground">Base Image</span>
+                  <p className="font-mono">{image.base ?? "none"}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Tools</span>

@@ -161,6 +161,18 @@ export const SandboxServiceEntrySchema = Type.Object({
 
 export type SandboxServiceEntry = Static<typeof SandboxServiceEntrySchema>;
 
+export const ImagesConfigSchema = Type.Object(
+  {
+    /** Directory containing image definitions (each image is a subdirectory with Dockerfile + image.json) */
+    directory: Type.String({ default: "/opt/frak-sandbox/images" }),
+    /** Default image to use when creating new workspaces */
+    defaultImage: Type.String({ default: "dev-base" }),
+  },
+  { default: {} },
+);
+
+export type ImagesConfig = Static<typeof ImagesConfigSchema>;
+
 export const FrakConfigSchema = Type.Object({
   domains: DomainsConfigSchema,
   network: NetworkConfigSchema,
@@ -170,6 +182,7 @@ export const FrakConfigSchema = Type.Object({
   tls: TlsConfigSchema,
   services: ServicesConfigSchema,
   setup: SetupConfigSchema,
+  images: ImagesConfigSchema,
 });
 
 export type FrakConfig = Static<typeof FrakConfigSchema>;
@@ -212,6 +225,9 @@ export const ENV_VAR_MAPPING = {
   FRAK_TERMINAL_PORT: "services.terminal.port",
   FRAK_BROWSER_PORT: "services.browser.port",
   FRAK_AGENT_PORT: "services.agent.port",
+
+  FRAK_IMAGES_DIR: "images.directory",
+  FRAK_DEFAULT_IMAGE: "images.defaultImage",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;
@@ -263,4 +279,8 @@ export const DEFAULT_CONFIG: FrakConfig = {
     agent: { port: 9999 },
   },
   setup: {},
+  images: {
+    directory: "/opt/frak-sandbox/images",
+    defaultImage: "dev-base",
+  },
 };

@@ -24,6 +24,7 @@ interface PoolStats {
 const vg = LVM.VG_NAME;
 const thinPool = LVM.THIN_POOL;
 const sandboxPrefix = LVM.SANDBOX_PREFIX;
+const imagePrefix = LVM.IMAGE_PREFIX;
 
 const LVCREATE = "/usr/sbin/lvcreate";
 const LVREMOVE = "/usr/sbin/lvremove";
@@ -36,9 +37,6 @@ async function lvExists(volumePath: string): Promise<boolean> {
     .nothrow();
   return result.exitCode === 0;
 }
-
-import type { BaseImageId } from "../../schemas/image.ts";
-import { DEFAULT_BASE_IMAGE, getBaseImage } from "../../schemas/image.ts";
 
 export const StorageService = {
   async isAvailable(): Promise<boolean> {
@@ -113,13 +111,11 @@ export const StorageService = {
     };
   },
 
-  async hasImageVolume(imageId: BaseImageId): Promise<boolean> {
+  async hasImageVolume(imageId: string): Promise<boolean> {
     if (config.isMock()) return true;
 
-    const image = getBaseImage(imageId);
-    if (!image) return false;
-
-    return lvExists(`${vg}/${image.volumeName}`);
+    const volumeName = `${imagePrefix}${imageId}`;
+    return lvExists(`${vg}/${volumeName}`);
   },
 
   async hasPrebuild(workspaceId: string): Promise<boolean> {
@@ -134,6 +130,7 @@ export const StorageService = {
     const volumeName = `${sandboxPrefix}${sandboxId}`;
     const volumePath = `/dev/${vg}/${volumeName}`;
     const { workspaceId, baseImage } = options ?? {};
+    const defaultImage = config.images.defaultImage;
 
     if (config.isMock()) {
       log.debug(
@@ -144,22 +141,16 @@ export const StorageService = {
     }
 
     let sourceVolume: string;
-    const baseImageId = baseImage as BaseImageId | undefined;
 
     if (workspaceId && (await this.hasPrebuild(workspaceId))) {
       sourceVolume = `${prebuildPrefix}${workspaceId}`;
-    } else if (baseImageId && (await this.hasImageVolume(baseImageId))) {
-      const image = getBaseImage(baseImageId);
-      if (!image) throw new Error(`Image not found: ${baseImageId}`);
-      sourceVolume = image.volumeName;
-    } else if (await this.hasImageVolume(DEFAULT_BASE_IMAGE)) {
-      const defaultImage = getBaseImage(DEFAULT_BASE_IMAGE);
-      if (!defaultImage)
-        throw new Error(`Default image not found: ${DEFAULT_BASE_IMAGE}`);
-      sourceVolume = defaultImage.volumeName;
+    } else if (baseImage && (await this.hasImageVolume(baseImage))) {
+      sourceVolume = `${imagePrefix}${baseImage}`;
+    } else if (await this.hasImageVolume(defaultImage)) {
+      sourceVolume = `${imagePrefix}${defaultImage}`;
     } else {
       throw new Error(
-        `No base image volume found. Run 'frak-sandbox images ${DEFAULT_BASE_IMAGE}' first.`,
+        `No base image volume found. Run 'frak-sandbox images ${defaultImage}' first.`,
       );
     }
 

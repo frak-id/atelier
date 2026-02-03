@@ -1,13 +1,18 @@
 import * as p from "@clack/prompts";
 import {
-  BASE_IMAGES,
-  type BaseImageId,
-  getAvailableImages,
-} from "@frak-sandbox/manager/types";
-import { CODE_SERVER, LVM, OPENCODE, PATHS, TTYD } from "../lib/context";
+  discoverImages,
+  getImageById,
+  type ImageDefinition,
+} from "@frak-sandbox/shared";
+import {
+  CODE_SERVER,
+  frakConfig,
+  LVM,
+  OPENCODE,
+  PATHS,
+  TTYD,
+} from "../lib/context";
 import { commandExists, exec } from "../lib/shell";
-
-const IMAGES_DIR = "/opt/frak-sandbox/infra/images";
 
 export async function images(args: string[] = []) {
   await buildImage(args);
@@ -16,27 +21,37 @@ export async function images(args: string[] = []) {
 async function buildImage(args: string[]) {
   p.log.step("Build Base Image");
 
-  // Check Docker is available
+  const imagesDir = frakConfig.images.directory;
+
   if (!(await commandExists("docker"))) {
     throw new Error(
       "Docker is required to build images. Run: frak-sandbox base",
     );
   }
 
-  // Get image to build
-  let imageName = args[0] as BaseImageId | undefined;
+  let image: ImageDefinition | null = null;
+  const imageArg = args[0];
 
-  if (!imageName) {
-    const availableImages = getAvailableImages();
-    const imageOptions = availableImages.map((img) => ({
+  if (imageArg) {
+    image = await getImageById(imagesDir, imageArg);
+    if (!image) {
+      throw new Error(`Unknown image: ${imageArg}`);
+    }
+  } else {
+    const availableImages = await discoverImages(imagesDir);
+    const buildableImages = availableImages.filter((img) => img.hasDockerfile);
+
+    if (buildableImages.length === 0) {
+      throw new Error(
+        `No images found in ${imagesDir}. Each image needs a folder with Dockerfile and image.json.`,
+      );
+    }
+
+    const imageOptions = buildableImages.map((img) => ({
       value: img.id,
       label: img.name,
       hint: img.description,
     }));
-
-    if (imageOptions.length === 0) {
-      throw new Error("No images available to build");
-    }
 
     const selected = await p.select({
       message: "Select image to build",
@@ -48,30 +63,24 @@ async function buildImage(args: string[]) {
       process.exit(0);
     }
 
-    imageName = selected as BaseImageId;
+    image = buildableImages.find((img) => img.id === selected) ?? null;
   }
 
-  const image = BASE_IMAGES[imageName];
   if (!image) {
-    throw new Error(`Unknown image: ${imageName}`);
+    throw new Error("No image selected");
   }
 
-  if (!image.available) {
-    throw new Error(`Image ${imageName} is not available yet`);
-  }
-
-  const spinner = p.spinner();
-
-  const imageDir = `${IMAGES_DIR}/${imageName}`;
-  const dirExists = await exec(`test -d ${imageDir}`, { throws: false });
-  if (!dirExists.success) {
+  if (!image.hasDockerfile) {
     throw new Error(
-      `Image directory not found: ${imageDir}\n` +
-        "Run 'frak-sandbox update' to install image assets.",
+      `Image ${image.id} has no Dockerfile at ${image.path}/Dockerfile`,
     );
   }
 
-  const agentBinary = `${IMAGES_DIR}/sandbox-agent`;
+  const spinner = p.spinner();
+  const imageDir = image.path;
+  const imageName = image.id;
+
+  const agentBinary = `${imagesDir}/sandbox-agent`;
   const agentExists = await exec(`test -f ${agentBinary}`, { throws: false });
   if (!agentExists.success) {
     throw new Error(
@@ -99,7 +108,6 @@ async function buildImage(args: string[]) {
   }
   spinner.stop("Docker image built");
 
-  // Create container and export
   const containerName = `sandbox-build-${imageName}-${process.pid}`;
   const tempDir = `/tmp/sandbox-build-${imageName}-${Date.now()}`;
 
@@ -115,7 +123,6 @@ async function buildImage(args: string[]) {
     await exec(`docker export ${containerName} -o ${tempDir}/rootfs.tar`);
     spinner.stop("Filesystem exported");
 
-    // Calculate size and create ext4 image
     spinner.start("Creating ext4 image");
     const { stdout: tarSize } = await exec(`stat -c%s ${tempDir}/rootfs.tar`);
     const imageSizeMB = Math.ceil(parseInt(tarSize, 10) / 1024 / 1024) + 500;
@@ -123,30 +130,25 @@ async function buildImage(args: string[]) {
     await exec(`mkdir -p ${PATHS.ROOTFS_DIR}`);
     const outputFile = `${PATHS.ROOTFS_DIR}/${imageName}.ext4`;
 
-    // Create sparse file
     await exec(
       `dd if=/dev/zero of=${outputFile} bs=1M count=0 seek=${imageSizeMB} 2>/dev/null`,
     );
 
-    // Create ext4 filesystem
     await exec(`mkfs.ext4 -F -q ${outputFile}`);
     spinner.stop(`Created ${imageSizeMB}MB ext4 image`);
 
-    // Mount and extract
     spinner.start("Extracting rootfs to image");
     const mountPoint = `${tempDir}/mnt`;
     await exec(`mkdir -p ${mountPoint}`);
     await exec(`mount -o loop ${outputFile} ${mountPoint}`);
     await exec(`tar -xf ${tempDir}/rootfs.tar -C ${mountPoint}`);
 
-    // Inject VM SSH key for sshpiper authentication
     const sshKeyPath = `${PATHS.ROOTFS_DIR}/vm-ssh-key`;
     await exec(`mkdir -p ${mountPoint}/root/.ssh`);
     await exec(`cp ${sshKeyPath}.pub ${mountPoint}/root/.ssh/authorized_keys`);
     await exec(`chmod 700 ${mountPoint}/root/.ssh`);
     await exec(`chmod 600 ${mountPoint}/root/.ssh/authorized_keys`);
 
-    // Also inject for dev user (sshpiper connects as dev)
     await exec(`mkdir -p ${mountPoint}/home/dev/.ssh`);
     await exec(
       `cp ${sshKeyPath}.pub ${mountPoint}/home/dev/.ssh/authorized_keys`,
@@ -158,41 +160,34 @@ async function buildImage(args: string[]) {
     await exec(`umount ${mountPoint}`);
     spinner.stop("Rootfs extracted with SSH key");
 
-    // Create LVM snapshot for thin provisioning
     spinner.start("Creating LVM image volume");
     const lvmVolume = `${LVM.IMAGE_PREFIX}${imageName}`;
 
-    // Check if volume exists
     const volumeExists = await exec(
       `lvs ${LVM.VG_NAME}/${lvmVolume} 2>/dev/null`,
       { throws: false },
     );
 
     if (volumeExists.success) {
-      // Remove existing volume
       await exec(`lvremove -f ${LVM.VG_NAME}/${lvmVolume}`);
     }
 
-    // Create thin volume (volumeSize is in GB)
     await exec(
       `lvcreate -V ${image.volumeSize}G -T ${LVM.VG_NAME}/${LVM.THIN_POOL} -n ${lvmVolume}`,
     );
 
-    // Copy ext4 image to LVM volume
     await exec(`dd if=${outputFile} of=/dev/${LVM.VG_NAME}/${lvmVolume} bs=4M`);
     spinner.stop("LVM image volume created");
 
-    // Create symlink if dev-base
-    if (imageName === "dev-base") {
+    if (imageName === frakConfig.images.defaultImage) {
       await exec(`ln -sf ${imageName}.ext4 ${PATHS.ROOTFS_DIR}/rootfs.ext4`);
-      p.log.info("Created symlink: rootfs.ext4 -> dev-base.ext4");
+      p.log.info(`Created symlink: rootfs.ext4 -> ${imageName}.ext4`);
     }
 
     const { stdout: finalSize } = await exec(`du -h ${outputFile} | cut -f1`);
     p.log.success(`Image built: ${outputFile} (${finalSize.trim()})`);
     p.log.success(`LVM volume: ${LVM.VG_NAME}/${lvmVolume}`);
   } finally {
-    // Cleanup
     await exec(`docker rm -f ${containerName} 2>/dev/null || true`, {
       throws: false,
     });

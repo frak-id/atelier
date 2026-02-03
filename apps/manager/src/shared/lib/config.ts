@@ -45,6 +45,8 @@ export const config = {
 
   dashboardUrl: `https://${frakConfig.domains.dashboard}`,
 
+  images: frakConfig.images,
+
   isMock: () => config.mode === "mock",
   isProduction: () => config.mode === "production",
 
