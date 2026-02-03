@@ -1,6 +1,6 @@
 # Manual Setup Commands
 
-Commands that were run manually during testing that should be incorporated into setup scripts.
+Commands that were run manually during testing that should be incorporated into the init flow.
 
 ## LVM Fixes
 
@@ -19,7 +19,7 @@ After deploy, must build the base image:
 frak-sandbox images build dev-base
 ```
 
-## TODO: Add to setup script
+## TODO: Add to init flow
 
 1. After `frak-sandbox storage` setup, automatically build dev-base image
 2. Ensure LVM thin pool has enough space for base images

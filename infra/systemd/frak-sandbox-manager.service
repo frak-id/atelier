@@ -8,15 +8,17 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-User=root
+User=frak
+Group=frak
+SupplementaryGroups=kvm
 WorkingDirectory=/opt/frak-sandbox
 KillMode=process
-Environment=PATH=/root/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=NODE_ENV=production
 Environment=SANDBOX_MODE=production
 Environment=DATA_DIR=/opt/frak-sandbox/data
 Environment=MIGRATIONS_DIR=/opt/frak-sandbox/drizzle
-ExecStart=/root/.bun/bin/bun server.js
+ExecStart=/usr/local/bin/bun server.js
 
 Restart=on-failure
 RestartSec=5

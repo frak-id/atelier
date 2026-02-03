@@ -50,6 +50,7 @@ export async function setupSshProxy(_args: string[] = []) {
   spinner.start("Creating configuration directory");
   await exec(`mkdir -p ${SSH_PROXY.CONFIG_DIR}`);
   await exec(`chmod 700 ${SSH_PROXY.CONFIG_DIR}`);
+  await exec(`chown -R frak:frak ${SSH_PROXY.CONFIG_DIR}`, { throws: false });
   spinner.stop("Configuration directory created");
 
   const hostKeyExists = await fileExists(SSH_PROXY.HOST_KEY);
@@ -74,9 +75,11 @@ pipes: []
 `;
     await Bun.write(SSH_PROXY.PIPES_FILE, initialConfig);
     await exec(`chmod 600 ${SSH_PROXY.PIPES_FILE}`);
+    await exec(`chown frak:frak ${SSH_PROXY.PIPES_FILE}`, { throws: false });
     spinner.stop("Pipes configuration created");
   } else {
     p.log.success("Pipes configuration already exists");
+    await exec(`chown frak:frak ${SSH_PROXY.PIPES_FILE}`, { throws: false });
   }
 
   spinner.start("Setting up systemd service");

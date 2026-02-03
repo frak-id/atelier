@@ -193,6 +193,24 @@ export function validateConfig(
           "Domain suffix should be configured for production (set FRAK_SANDBOX_DOMAIN_SUFFIX)",
       });
     }
+
+    const hasCert = config.tls.certPath?.trim().length > 0;
+    const hasKey = config.tls.keyPath?.trim().length > 0;
+
+    if ((hasCert && !hasKey) || (!hasCert && hasKey)) {
+      errors.push({
+        field: "tls",
+        message: "Both tls.certPath and tls.keyPath are required for manual TLS",
+      });
+    }
+
+    if (!hasCert && !hasKey && !config.tls.email) {
+      errors.push({
+        field: "tls.email",
+        message:
+          "TLS email is required for automatic HTTPS (set TLS_EMAIL)",
+      });
+    }
   }
 
   return errors;

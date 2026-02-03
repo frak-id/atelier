@@ -3,23 +3,25 @@
 	email {{SSL_EMAIL}}
 }
 
-(tls_config) {
+{{#MANUAL_TLS}}
+(tls_manual) {
 	tls {{TLS_CERT_PATH}} {{TLS_KEY_PATH}}
 }
+{{/MANUAL_TLS}}
 
 {{API_DOMAIN}} {
-	import tls_config
+	{{TLS_CONFIG}}
 	reverse_proxy localhost:4000
 }
 
 {{DASHBOARD_DOMAIN}} {
-	import tls_config
+	{{TLS_CONFIG}}
 	root * /opt/frak-sandbox/apps/dashboard/dist
 	file_server
 	try_files {path} /index.html
 }
 
 *.{{DOMAIN_SUFFIX}} {
-	import tls_config
+	{{TLS_CONFIG}}
 	respond "Sandbox not found or not running" 502
 }
