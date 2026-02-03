@@ -33,6 +33,14 @@ frak-sandbox images build dev-base
 - `frak-sandbox images build dev-base` – build base image
 - `frak-sandbox manager status` – manager health
 
+## Configuration
+
+Default config path: `/etc/frak-sandbox/sandbox.config.json`  
+Override with `FRAK_CONFIG=/path/to/sandbox.config.json`
+
+If you pre‑fill `setup.storage` or `setup.network` in the config, the CLI will
+skip prompts during `frak-sandbox setup`.
+
 ## Docs
 
 - Setup guide: `docs/setup.md`

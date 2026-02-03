@@ -70,6 +70,38 @@ export const SshProxyConfigSchema = Type.Object({
 
 export type SshProxyConfig = Static<typeof SshProxyConfigSchema>;
 
+export const StorageSetupSchema = Type.Object({
+  /** Storage backend for setup */
+  method: Type.Optional(
+    Type.Union([Type.Literal("loop"), Type.Literal("device")]),
+  ),
+  /** Loop file size in GB (when method=loop) */
+  loopSizeGb: Type.Optional(Type.Number({ minimum: 10 })),
+  /** Block device path (when method=device) */
+  device: Type.Optional(Type.String()),
+});
+
+export type StorageSetup = Static<typeof StorageSetupSchema>;
+
+export const NetworkSetupSchema = Type.Object({
+  /** Behavior when the bridge already exists */
+  onExists: Type.Optional(
+    Type.Union([Type.Literal("status"), Type.Literal("recreate")]),
+  ),
+});
+
+export type NetworkSetup = Static<typeof NetworkSetupSchema>;
+
+export const SetupConfigSchema = Type.Object(
+  {
+    storage: Type.Optional(StorageSetupSchema),
+    network: Type.Optional(NetworkSetupSchema),
+  },
+  { default: {} },
+);
+
+export type SetupConfig = Static<typeof SetupConfigSchema>;
+
 export const RuntimeModeSchema = Type.Union([
   Type.Literal("production"),
   Type.Literal("mock"),
@@ -139,6 +171,7 @@ export const FrakConfigSchema = Type.Object({
   runtime: RuntimeConfigSchema,
   tls: TlsConfigSchema,
   services: ServicesConfigSchema,
+  setup: SetupConfigSchema,
 });
 
 export type FrakConfig = Static<typeof FrakConfigSchema>;
@@ -233,4 +266,5 @@ export const DEFAULT_CONFIG: FrakConfig = {
     browser: { port: 6080 },
     agent: { port: 9999 },
   },
+  setup: {},
 };

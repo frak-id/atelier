@@ -1,4 +1,5 @@
 import * as p from "@clack/prompts";
+import { loadConfig } from "@frak-sandbox/shared";
 import { frakConfig, PATHS } from "../lib/context";
 import { exec } from "../lib/shell";
 
@@ -19,24 +20,36 @@ export async function setupNetwork(_args: string[] = []) {
     p.log.warn(`Bridge '${frakConfig.network.bridgeName}' already exists`);
     await showNetworkStatus();
 
-    const action = await p.select({
-      message: "Network bridge already configured. What would you like to do?",
-      options: [
-        { value: "status", label: "Show status only" },
-        {
-          value: "recreate",
-          label: "Recreate bridge",
-          hint: "Destroys existing bridge",
-        },
-      ],
-    });
+    const setupConfig = await loadNetworkSetupConfig();
+    const configAction = setupConfig?.onExists;
 
-    if (p.isCancel(action) || action === "status") {
+    if (configAction === "status") {
       return;
     }
 
-    if (action === "recreate") {
+    if (configAction === "recreate") {
       await destroyBridge();
+    } else {
+      const action = await p.select({
+        message:
+          "Network bridge already configured. What would you like to do?",
+        options: [
+          { value: "status", label: "Show status only" },
+          {
+            value: "recreate",
+            label: "Recreate bridge",
+            hint: "Destroys existing bridge",
+          },
+        ],
+      });
+
+      if (p.isCancel(action) || action === "status") {
+        return;
+      }
+
+      if (action === "recreate") {
+        await destroyBridge();
+      }
     }
   }
 
@@ -205,4 +218,24 @@ Guest IPs: ${frakConfig.network.guestSubnet}.${frakConfig.network.guestIpStart}+
 Test VM IP: ${frakConfig.network.guestSubnet}.2`,
     "Network Info",
   );
+}
+
+type NetworkSetupConfig = {
+  onExists?: "status" | "recreate";
+};
+
+async function loadNetworkSetupConfig(): Promise<NetworkSetupConfig | null> {
+  const config = loadConfig();
+  const network = config.setup?.network;
+
+  if (!network) return null;
+
+  const onExistsRaw = network.onExists;
+  const onExists =
+    onExistsRaw === "status" || onExistsRaw === "recreate"
+      ? onExistsRaw
+      : undefined;
+
+  if (!onExists) return null;
+  return { onExists };
 }

@@ -1,4 +1,5 @@
 import * as p from "@clack/prompts";
+import { loadConfig } from "@frak-sandbox/shared";
 import { baseSetup } from "./commands/base-setup";
 import { configCommand } from "./commands/config";
 import { debugVm } from "./commands/debug-vm";
@@ -99,21 +100,28 @@ async function runFullSetup() {
   await setupNetwork();
   await setupSshProxy();
 
-  const setupStorageNow = await p.confirm({
-    message:
-      "Setup LVM storage now? (requires dedicated partition or loop file)",
-    initialValue: false,
-  });
+  const config = loadConfig();
+  const hasStorageConfig = !!config.setup?.storage?.method;
 
-  if (p.isCancel(setupStorageNow)) {
-    p.cancel("Setup cancelled");
-    process.exit(0);
-  }
-
-  if (setupStorageNow) {
+  if (hasStorageConfig) {
     await setupStorage();
   } else {
-    p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
+    const setupStorageNow = await p.confirm({
+      message:
+        "Setup LVM storage now? (requires dedicated partition or loop file)",
+      initialValue: false,
+    });
+
+    if (p.isCancel(setupStorageNow)) {
+      p.cancel("Setup cancelled");
+      process.exit(0);
+    }
+
+    if (setupStorageNow) {
+      await setupStorage();
+    } else {
+      p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
+    }
   }
 
   p.log.success("Server setup complete!");

@@ -1,4 +1,5 @@
 import * as p from "@clack/prompts";
+import { loadConfig } from "@frak-sandbox/shared";
 import { LVM } from "../lib/context";
 import { exec, fileExists } from "../lib/shell";
 
@@ -43,57 +44,74 @@ export async function setupStorage(_args: string[] = []) {
 
   await showDiskLayout();
 
-  const method = await p.select({
-    message: "How would you like to set up storage?",
-    options: [
-      {
-        value: "loop",
-        label: "Loop file (recommended)",
-        hint: "Uses a file on existing filesystem - no partition needed",
-      },
-      {
-        value: "device",
-        label: "Block device",
-        hint: "Uses a dedicated partition - better performance",
-      },
-    ],
-  });
+  const setupConfig = await loadStorageSetupConfig();
+  let method = setupConfig?.method;
 
-  if (p.isCancel(method)) {
-    p.cancel("Cancelled");
-    return;
+  if (!method) {
+    const selected = await p.select({
+      message: "How would you like to set up storage?",
+      options: [
+        {
+          value: "loop",
+          label: "Loop file (recommended)",
+          hint: "Uses a file on existing filesystem - no partition needed",
+        },
+        {
+          value: "device",
+          label: "Block device",
+          hint: "Uses a dedicated partition - better performance",
+        },
+      ],
+    });
+
+    if (p.isCancel(selected)) {
+      p.cancel("Cancelled");
+      return;
+    }
+    method = selected as "loop" | "device";
+  } else {
+    p.log.info(`Using storage setup from config: ${method}`);
   }
 
   const spinner = p.spinner();
 
   if (method === "loop") {
-    await setupWithLoopFile(spinner);
+    await setupWithLoopFile(spinner, setupConfig?.loopSizeGb);
   } else {
-    await setupWithDevice(spinner);
+    await setupWithDevice(spinner, setupConfig?.device);
   }
 
   p.log.success("Storage setup complete");
   await showStorageStatus();
 }
 
-async function setupWithLoopFile(spinner: ReturnType<typeof p.spinner>) {
-  const sizeInput = await p.text({
-    message: "Size of thin pool in GB?",
-    placeholder: String(DEFAULT_LOOP_SIZE_GB),
-    initialValue: String(DEFAULT_LOOP_SIZE_GB),
-    validate: (value: string) => {
-      const num = parseInt(value, 10);
-      if (Number.isNaN(num) || num < 10) return "Minimum 10GB";
-      return undefined;
-    },
-  });
+async function setupWithLoopFile(
+  spinner: ReturnType<typeof p.spinner>,
+  sizeOverride?: number,
+) {
+  let sizeGb = sizeOverride;
 
-  if (p.isCancel(sizeInput)) {
-    p.cancel("Cancelled");
-    process.exit(0);
+  if (!sizeGb) {
+    const sizeInput = await p.text({
+      message: "Size of thin pool in GB?",
+      placeholder: String(DEFAULT_LOOP_SIZE_GB),
+      initialValue: String(DEFAULT_LOOP_SIZE_GB),
+      validate: (value: string) => {
+        const num = parseInt(value, 10);
+        if (Number.isNaN(num) || num < 10) return "Minimum 10GB";
+        return undefined;
+      },
+    });
+
+    if (p.isCancel(sizeInput)) {
+      p.cancel("Cancelled");
+      process.exit(0);
+    }
+
+    sizeGb = parseInt(sizeInput, 10);
+  } else if (sizeGb < 10) {
+    throw new Error(`Invalid loop size: ${sizeGb}GB (minimum 10GB)`);
   }
-
-  const sizeGb = parseInt(sizeInput, 10);
 
   spinner.start(`Creating ${sizeGb}GB sparse file`);
   await exec(`truncate -s ${sizeGb}G ${LOOP_FILE}`);
@@ -139,20 +157,29 @@ WantedBy=local-fs.target
   await exec("systemctl enable sandbox-loop.service");
 }
 
-async function setupWithDevice(spinner: ReturnType<typeof p.spinner>) {
-  const device = await p.text({
-    message: "Enter block device for sandbox storage:",
-    placeholder: "/dev/nvme0n1p4",
-    validate: (value: string) => {
-      if (!value) return "Device path required";
-      if (!value.startsWith("/dev/")) return "Must be a /dev/ path";
-      return undefined;
-    },
-  });
+async function setupWithDevice(
+  spinner: ReturnType<typeof p.spinner>,
+  deviceOverride?: string,
+) {
+  let device = deviceOverride;
 
-  if (p.isCancel(device)) {
-    p.cancel("Cancelled");
-    process.exit(0);
+  if (!device) {
+    const input = await p.text({
+      message: "Enter block device for sandbox storage:",
+      placeholder: "/dev/nvme0n1p4",
+      validate: (value: string) => {
+        if (!value) return "Device path required";
+        if (!value.startsWith("/dev/")) return "Must be a /dev/ path";
+        return undefined;
+      },
+    });
+
+    if (p.isCancel(input)) {
+      p.cancel("Cancelled");
+      process.exit(0);
+    }
+
+    device = input;
   }
 
   await validateDevice(device);
@@ -302,4 +329,30 @@ async function testSnapshotPerformance(spinner: ReturnType<typeof p.spinner>) {
   }
 
   spinner.stop(`Snapshot created in ${duration}ms (${rating})`);
+}
+
+type StorageSetupConfig = {
+  method?: "loop" | "device";
+  loopSizeGb?: number;
+  device?: string;
+};
+
+async function loadStorageSetupConfig(): Promise<StorageSetupConfig | null> {
+  const config = loadConfig();
+  const storage = config.setup?.storage;
+
+  if (!storage) return null;
+
+  const methodRaw = storage.method;
+  const method =
+    methodRaw === "loop" || methodRaw === "device" ? methodRaw : undefined;
+  const loopSizeGb =
+    typeof storage.loopSizeGb === "number" ? storage.loopSizeGb : undefined;
+  const device =
+    typeof storage.device === "string" && storage.device.length > 0
+      ? storage.device
+      : undefined;
+
+  if (!method && loopSizeGb === undefined && !device) return null;
+  return { method, loopSizeGb, device };
 }
