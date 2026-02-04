@@ -8,6 +8,7 @@ import {
   GitSourceService,
 } from "./modules/git-source/index.ts";
 import {
+  AuthSyncService,
   InternalService,
   SharedAuthRepository,
 } from "./modules/internal/index.ts";
@@ -57,8 +58,14 @@ const sandboxService = sandboxRepository;
 const agentClient = new AgentClient();
 const sandboxProvisionService = new SandboxProvisionService(agentClient);
 
-const internalService = new InternalService(
+const authSyncService = new AuthSyncService(
   sharedAuthRepository,
+  agentClient,
+  sandboxService,
+);
+
+const internalService = new InternalService(
+  authSyncService,
   configFileService,
   agentClient,
   sandboxService,
@@ -84,6 +91,7 @@ const sandboxSpawner = new SandboxSpawner({
   configFileService,
   sshKeyService,
   internalService,
+  provisionService: sandboxProvisionService,
   agentClient,
   agentOperations,
 });
@@ -125,6 +133,7 @@ const prebuildChecker = new PrebuildChecker({
 export {
   agentClient,
   agentOperations,
+  authSyncService,
   configFileService,
   gitSourceService,
   internalService,

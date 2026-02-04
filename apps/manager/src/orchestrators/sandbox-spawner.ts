@@ -30,7 +30,10 @@ import {
 import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
-import type { SandboxRepository } from "../modules/sandbox/index.ts";
+import type {
+  SandboxProvisionService,
+  SandboxRepository,
+} from "../modules/sandbox/index.ts";
 import type { SshKeyService } from "../modules/ssh-key/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
@@ -56,6 +59,7 @@ interface SandboxSpawnerDependencies {
   configFileService: ConfigFileService;
   sshKeyService: SshKeyService;
   internalService: InternalService;
+  provisionService: SandboxProvisionService;
   agentClient: AgentClient;
   agentOperations: AgentOperations;
 }
@@ -493,7 +497,10 @@ class SpawnContext {
     await this.pushAuthAndConfigs();
 
     const serviceNames = ["vscode", "opencode", "terminal"];
-    await this.deps.internalService.startServices(this.sandboxId, serviceNames);
+    await this.deps.provisionService.startServices(
+      this.sandboxId,
+      serviceNames,
+    );
     log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
   }
 
@@ -543,7 +550,7 @@ class SpawnContext {
       return;
     }
 
-    await this.deps.internalService.configureNetwork(this.sandboxId, {
+    await this.deps.provisionService.configureNetwork(this.sandboxId, {
       ipAddress: this.network.ipAddress,
       gateway: this.network.gateway,
     });
@@ -561,12 +568,12 @@ class SpawnContext {
 
   private async provisionPostBoot(): Promise<void> {
     const sandboxConfig = this.buildSandboxConfig();
-    await this.deps.internalService.pushSandboxConfig(
+    await this.deps.provisionService.pushSandboxConfig(
       this.sandboxId,
       sandboxConfig,
     );
 
-    await this.deps.internalService.setHostname(
+    await this.deps.provisionService.setHostname(
       this.sandboxId,
       `sandbox-${this.sandboxId}`,
     );
@@ -653,7 +660,7 @@ class SpawnContext {
 
     const decrypted = await SecretsService.decryptSecrets(secrets);
     const envFile = SecretsService.generateEnvFile(decrypted);
-    await this.deps.internalService.pushSecrets(this.sandboxId, envFile);
+    await this.deps.provisionService.pushSecrets(this.sandboxId, envFile);
   }
 
   private async pushGitCredentialsPostBoot(): Promise<void> {
@@ -685,7 +692,7 @@ class SpawnContext {
     }
 
     if (credentials.length > 0) {
-      await this.deps.internalService.pushGitCredentials(
+      await this.deps.provisionService.pushGitCredentials(
         this.sandboxId,
         credentials,
       );
@@ -697,7 +704,7 @@ class SpawnContext {
     if (!fileSecrets || fileSecrets.length === 0) return;
 
     const decrypted = await SecretsService.decryptFileSecrets(fileSecrets);
-    await this.deps.internalService.pushFileSecrets(
+    await this.deps.provisionService.pushFileSecrets(
       this.sandboxId,
       decrypted.map((s) => ({
         path: s.path,
@@ -723,7 +730,7 @@ class SpawnContext {
       }
     }
 
-    await this.deps.internalService.pushOhMyOpenCodeCache(
+    await this.deps.provisionService.pushOhMyOpenCodeCache(
       this.sandboxId,
       providers,
     );
@@ -731,7 +738,7 @@ class SpawnContext {
 
   private async pushSandboxMdPostBoot(): Promise<void> {
     const content = this.generateSandboxMd();
-    await this.deps.internalService.pushSandboxMd(this.sandboxId, content);
+    await this.deps.provisionService.pushSandboxMd(this.sandboxId, content);
   }
 
   private generateSandboxMd(): string {
@@ -805,7 +812,10 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
     }
 
     const serviceNames = ["vscode", "opencode", "terminal"];
-    await this.deps.internalService.startServices(this.sandboxId, serviceNames);
+    await this.deps.provisionService.startServices(
+      this.sandboxId,
+      serviceNames,
+    );
     log.info({ sandboxId: this.sandboxId }, "Post-boot services started");
   }
 

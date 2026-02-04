@@ -1,63 +1,21 @@
-import type { SandboxConfig } from "@frak-sandbox/shared";
 import { AUTH_PROVIDERS } from "@frak-sandbox/shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SandboxProvisionService } from "../sandbox/sandbox-provision.service.ts";
-import {
-  type AuthContent,
-  AuthSyncService,
-  type SharedAuthInfo,
-} from "./auth-sync.service.ts";
-import type { SharedAuthRepository } from "./internal.repository.ts";
+import type { AuthSyncService } from "./auth-sync.service.ts";
 
 const log = createChildLogger("internal-service");
 
 export class InternalService {
-  private readonly authSyncService: AuthSyncService;
-
   constructor(
-    sharedAuthRepository: SharedAuthRepository,
+    private readonly authSyncService: AuthSyncService,
     private readonly configFileService: ConfigFileService,
     private readonly agentClient: AgentClient,
     private readonly sandboxService: SandboxRepository,
     private readonly provisionService: SandboxProvisionService,
-  ) {
-    this.authSyncService = new AuthSyncService(
-      sharedAuthRepository,
-      agentClient,
-      sandboxService,
-    );
-  }
-
-  startAuthWatcher(): void {
-    this.authSyncService.startAuthWatcher();
-  }
-
-  stopAuthWatcher(): void {
-    this.authSyncService.stopAuthWatcher();
-  }
-
-  listAuth(): SharedAuthInfo[] {
-    return this.authSyncService.listAuth();
-  }
-
-  async getAuth(provider: string): Promise<AuthContent | null> {
-    return this.authSyncService.getAuth(provider);
-  }
-
-  updateAuth(provider: string, content: string): SharedAuthInfo {
-    return this.authSyncService.updateAuth(provider, content);
-  }
-
-  async syncAuthToSandboxes(): Promise<{ synced: number }> {
-    return this.authSyncService.syncAuthToSandboxes();
-  }
-
-  async syncAuthToSandbox(sandboxId: string): Promise<{ synced: number }> {
-    return this.authSyncService.syncAuthToSandbox(sandboxId);
-  }
+  ) {}
 
   async syncConfigsToSandboxes(): Promise<{ synced: number }> {
     const runningSandboxes = this.sandboxService
@@ -99,7 +57,7 @@ export class InternalService {
     sandboxId: string,
   ): Promise<{ auth: { synced: number }; configs: { synced: number } }> {
     const [authResult, configResult] = await Promise.allSettled([
-      this.syncAuthToSandbox(sandboxId),
+      this.authSyncService.syncAuthToSandbox(sandboxId),
       this.syncConfigsToSandbox(sandboxId),
     ]);
 
@@ -213,64 +171,6 @@ export class InternalService {
       return configPath;
     }
     return null;
-  }
-
-  async pushSandboxConfig(
-    sandboxId: string,
-    sandboxConfig: SandboxConfig,
-  ): Promise<void> {
-    return this.provisionService.pushSandboxConfig(sandboxId, sandboxConfig);
-  }
-
-  async setHostname(sandboxId: string, hostname: string): Promise<void> {
-    return this.provisionService.setHostname(sandboxId, hostname);
-  }
-
-  async pushSecrets(sandboxId: string, envFileContent: string): Promise<void> {
-    return this.provisionService.pushSecrets(sandboxId, envFileContent);
-  }
-
-  async pushGitCredentials(
-    sandboxId: string,
-    credentials: string[],
-  ): Promise<void> {
-    return this.provisionService.pushGitCredentials(sandboxId, credentials);
-  }
-
-  async pushFileSecrets(
-    sandboxId: string,
-    fileSecrets: { path: string; content: string; mode?: string }[],
-  ): Promise<void> {
-    return this.provisionService.pushFileSecrets(sandboxId, fileSecrets);
-  }
-
-  async pushOhMyOpenCodeCache(
-    sandboxId: string,
-    providers: string[],
-  ): Promise<void> {
-    return this.provisionService.pushOhMyOpenCodeCache(sandboxId, providers);
-  }
-
-  async pushSandboxMd(sandboxId: string, content: string): Promise<void> {
-    return this.provisionService.pushSandboxMd(sandboxId, content);
-  }
-
-  async configureNetwork(
-    sandboxId: string,
-    network: { ipAddress: string; gateway: string },
-  ): Promise<void> {
-    return this.provisionService.configureNetwork(sandboxId, network);
-  }
-
-  async pushRegistryConfigToSandbox(sandboxId: string): Promise<void> {
-    return this.provisionService.pushRegistryConfig(sandboxId);
-  }
-
-  async startServices(
-    sandboxId: string,
-    serviceNames: string[],
-  ): Promise<void> {
-    return this.provisionService.startServices(sandboxId, serviceNames);
   }
 
   async syncAllToSandbox(sandboxId: string): Promise<{

@@ -24,7 +24,7 @@ import {
 } from "./api/index.ts";
 import {
   agentOperations,
-  internalService,
+  authSyncService,
   prebuildChecker,
   sandboxService,
   sshKeyService,
@@ -71,8 +71,8 @@ const app = new Elysia()
       logger.info({ expiredCount }, "Startup: expired SSH keys cleaned up");
     }
 
-    internalService.syncAuthToSandboxes().catch(() => {});
-    internalService.startAuthWatcher();
+    authSyncService.syncAuthToSandboxes().catch(() => {});
+    authSyncService.startAuthWatcher();
 
     const allSandboxes = sandboxService.getAll();
     for (const sandbox of allSandboxes) {
