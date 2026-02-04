@@ -46,7 +46,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
     && mkdir -p /var/run/sshd \
-<<<<<<< HEAD
     && sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config \
     && sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config \
     && sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config \

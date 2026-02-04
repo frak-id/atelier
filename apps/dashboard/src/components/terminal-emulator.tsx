@@ -3,7 +3,6 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { API_HOST } from "@/api/client";
 
 interface TerminalEmulatorProps {
   sandboxId: string;
@@ -22,8 +21,8 @@ export function TerminalEmulator({
   const mountedRef = useRef(true);
 
   const getWsUrl = useCallback(() => {
-    const wsProto = API_HOST.startsWith("https") ? "wss" : "ws";
-    const host = API_HOST.replace(/^https?:\/\//, "");
+    const wsProto = window.location.protocol === "https:" ? "wss" : "ws";
+    const host = window.location.host;
     return `${wsProto}://${host}/api/sandboxes/${sandboxId}/terminal/ws`;
   }, [sandboxId]);
 
