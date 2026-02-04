@@ -1,8 +1,6 @@
 import type { SandboxConfig } from "@frak-sandbox/shared";
 import { AUTH_PROVIDERS } from "@frak-sandbox/shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
-import { RegistryService } from "../../infrastructure/registry/index.ts";
-import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
@@ -20,7 +18,7 @@ export class InternalService {
   private readonly authSyncService: AuthSyncService;
 
   constructor(
-    private readonly sharedAuthRepository: SharedAuthRepository,
+    sharedAuthRepository: SharedAuthRepository,
     private readonly configFileService: ConfigFileService,
     private readonly agentClient: AgentClient,
     private readonly sandboxService: SandboxRepository,

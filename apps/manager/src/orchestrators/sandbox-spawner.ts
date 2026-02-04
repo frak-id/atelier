@@ -35,9 +35,11 @@ import type { SshKeyService } from "../modules/ssh-key/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   CreateSandboxBody,
+  CreateSandboxResponse,
   GitHubSourceConfig,
   RepoConfig,
   Sandbox,
+  SpawnTimings,
   Workspace,
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
@@ -61,7 +63,7 @@ interface SandboxSpawnerDependencies {
 export class SandboxSpawner {
   constructor(private readonly deps: SandboxSpawnerDependencies) {}
 
-  async spawn(options: CreateSandboxBody = {}): Promise<Sandbox> {
+  async spawn(options: CreateSandboxBody = {}): Promise<CreateSandboxResponse> {
     const context = new SpawnContext(this.deps, options);
     return context.execute();
   }
@@ -78,6 +80,9 @@ class SpawnContext {
   private usedPrebuild = false;
   private hasVmSnapshot = false;
 
+  private startTime = performance.now();
+  private timings: Partial<SpawnTimings> = {};
+
   constructor(
     private readonly deps: SandboxSpawnerDependencies,
     private readonly options: CreateSandboxBody,
@@ -85,31 +90,44 @@ class SpawnContext {
     this.sandboxId = safeNanoid();
   }
 
-  async execute(): Promise<Sandbox> {
+  private async time<T>(
+    key: keyof SpawnTimings,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const start = performance.now();
+    const result = await fn();
+    this.timings[key] = Math.round(performance.now() - start);
+    return result;
+  }
+
+  async execute(): Promise<CreateSandboxResponse> {
     try {
-      await this.loadWorkspace();
-      await Promise.all([this.allocateNetwork(), this.createVolume()]);
-      await this.resizeVolumeBeforeBoot();
-      await this.initializeSandbox();
+      await this.time("loadWorkspace", () => this.loadWorkspace());
+      await this.time("networkAndVolume", () =>
+        Promise.all([this.allocateNetwork(), this.createVolume()]),
+      );
+      await this.time("resizeVolume", () => this.resizeVolumeBeforeBoot());
+      await this.time("initializeSandbox", () => this.initializeSandbox());
 
       if (config.isMock()) {
         return await this.finalizeMock();
       }
 
-      await this.createTapDevice();
-      await this.launchFirecracker();
+      await this.time("createTap", () => this.createTapDevice());
+      await this.time("launchFirecracker", () => this.launchFirecracker());
 
       if (this.hasVmSnapshot && this.options.workspaceId) {
-        await this.restoreFromSnapshot();
+        await this.time("configureOrRestore", () => this.restoreFromSnapshot());
       } else {
-        await this.configureVm();
-        await this.boot();
+        await this.time("configureOrRestore", async () => {
+          await this.configureVm();
+          await this.boot();
+        });
       }
 
-      await this.waitForAgentAndSetup();
-      await this.configurePostBoot();
-
-      await this.registerRoutes();
+      await this.time("agentSetup", () => this.waitForAgentAndSetup());
+      await this.time("postBoot", () => this.configurePostBoot());
+      await this.time("registerRoutes", () => this.registerRoutes());
 
       return this.finalize();
     } catch (error) {
@@ -275,7 +293,7 @@ class SpawnContext {
     log.info({ sandboxId: this.sandboxId }, "Sandbox initialized");
   }
 
-  private async finalizeMock(): Promise<Sandbox> {
+  private async finalizeMock(): Promise<CreateSandboxResponse> {
     if (!this.sandbox) throw new Error("Sandbox not initialized");
     if (!this.network) throw new Error("Network not allocated");
 
@@ -302,8 +320,27 @@ class SpawnContext {
         workspaceId: this.options.workspaceId,
       },
     });
-    log.info({ sandboxId: this.sandboxId }, "Mock sandbox created");
-    return this.sandbox;
+
+    const totalTime = Math.round(performance.now() - this.startTime);
+    const finalTimings: SpawnTimings = {
+      total: totalTime,
+      loadWorkspace: this.timings.loadWorkspace ?? 0,
+      networkAndVolume: this.timings.networkAndVolume ?? 0,
+      resizeVolume: this.timings.resizeVolume ?? 0,
+      initializeSandbox: this.timings.initializeSandbox ?? 0,
+      createTap: 0,
+      launchFirecracker: 0,
+      configureOrRestore: 0,
+      agentSetup: 0,
+      postBoot: 0,
+      registerRoutes: 0,
+    };
+
+    log.info(
+      { sandboxId: this.sandboxId, timings: finalTimings },
+      "Mock sandbox created",
+    );
+    return { ...this.sandbox, timings: finalTimings };
   }
 
   private async createTapDevice(): Promise<void> {
@@ -484,6 +521,11 @@ class SpawnContext {
 
   private async waitForAgentAndSetup(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
+
+    // Skip for snapshot restore - reconfigureRestoredGuest() already handled everything
+    if (this.hasVmSnapshot) {
+      return;
+    }
 
     const agentReady = await this.deps.agentClient.waitForAgent(
       this.sandboxId,
@@ -917,7 +959,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
     };
   }
 
-  private finalize(): Sandbox {
+  private finalize(): CreateSandboxResponse {
     if (!this.sandbox) throw new Error("Sandbox not initialized");
     this.sandbox.status = "running";
     this.sandbox.runtime.pid = this.pid;
@@ -930,12 +972,33 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
         workspaceId: this.options.workspaceId,
       },
     });
+
+    const totalTime = Math.round(performance.now() - this.startTime);
+    const finalTimings: SpawnTimings = {
+      total: totalTime,
+      loadWorkspace: this.timings.loadWorkspace ?? 0,
+      networkAndVolume: this.timings.networkAndVolume ?? 0,
+      resizeVolume: this.timings.resizeVolume ?? 0,
+      initializeSandbox: this.timings.initializeSandbox ?? 0,
+      createTap: this.timings.createTap ?? 0,
+      launchFirecracker: this.timings.launchFirecracker ?? 0,
+      configureOrRestore: this.timings.configureOrRestore ?? 0,
+      agentSetup: this.timings.agentSetup ?? 0,
+      postBoot: this.timings.postBoot ?? 0,
+      registerRoutes: this.timings.registerRoutes ?? 0,
+    };
+
     log.info(
-      { sandboxId: this.sandboxId, pid: this.pid, useLvm: this.paths?.useLvm },
+      {
+        sandboxId: this.sandboxId,
+        pid: this.pid,
+        useLvm: this.paths?.useLvm,
+        timings: finalTimings,
+      },
       "Sandbox created successfully",
     );
 
-    return this.sandbox;
+    return { ...this.sandbox, timings: finalTimings };
   }
 
   private async rollback(): Promise<void> {

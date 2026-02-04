@@ -17,6 +17,7 @@ import {
   BrowserStartResponseSchema,
   BrowserStopResponseSchema,
   CreateSandboxBodySchema,
+  CreateSandboxResponseSchema,
   DevCommandListResponseSchema,
   DevCommandLogsQuerySchema,
   DevCommandLogsResponseSchema,
@@ -93,7 +94,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     },
     {
       body: CreateSandboxBodySchema,
-      response: SandboxSchema,
+      response: CreateSandboxResponseSchema,
     },
   )
   .group("", (app) =>
