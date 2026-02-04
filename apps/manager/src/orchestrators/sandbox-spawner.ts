@@ -1,4 +1,5 @@
-import { DEFAULTS } from "@frak-sandbox/shared/constants";
+import type { SandboxConfig } from "@frak-sandbox/shared";
+import { DEFAULTS, VM_PATHS } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import type {
   AgentClient,
@@ -21,6 +22,7 @@ import {
   CaddyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
+import { SecretsService } from "../infrastructure/secrets/index.ts";
 import {
   SharedStorageService,
   StorageService,
@@ -34,6 +36,7 @@ import type { SshKeyService } from "../modules/ssh-key/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   CreateSandboxBody,
+  GitHubSourceConfig,
   RepoConfig,
   Sandbox,
   Workspace,
@@ -310,21 +313,7 @@ class SpawnContext {
   }
 
   private async provisionFilesystem(): Promise<void> {
-    if (!this.paths) {
-      throw new Error("Paths not initialized");
-    }
-
-    const getGitSource = (id: string) => this.deps.gitSourceService.getById(id);
-    const getConfigFiles = (workspaceId?: string) =>
-      this.deps.configFileService.getMergedForSandbox(workspaceId);
-
-    await SandboxProvisioner.provision({
-      sandboxId: this.sandboxId,
-      workspace: this.workspace,
-      paths: this.paths,
-      getGitSource,
-      getConfigFiles,
-    });
+    await SandboxProvisioner.provision();
   }
 
   private async launchFirecracker(): Promise<void> {
@@ -516,6 +505,8 @@ class SpawnContext {
       gateway: this.network.gateway,
     });
 
+    await this.provisionPostBoot();
+
     await this.expandFilesystem();
 
     if (this.needsRepoClone()) {
@@ -523,6 +514,246 @@ class SpawnContext {
     }
 
     await this.pushAuthAndConfigs();
+  }
+
+  private async provisionPostBoot(): Promise<void> {
+    const sandboxConfig = this.buildSandboxConfig();
+    await this.deps.internalService.pushSandboxConfig(
+      this.sandboxId,
+      sandboxConfig,
+    );
+
+    await this.deps.internalService.setHostname(
+      this.sandboxId,
+      `sandbox-${this.sandboxId}`,
+    );
+
+    await this.pushSecretsPostBoot();
+    await this.pushGitCredentialsPostBoot();
+    await this.pushFileSecretsPostBoot();
+    await this.pushOhMyOpenCodeCachePostBoot();
+    await this.pushSandboxMdPostBoot();
+  }
+
+  private buildSandboxConfig(): SandboxConfig {
+    const repos = (this.workspace?.config.repos ?? []).map((r) => ({
+      clonePath: r.clonePath,
+      branch: r.branch,
+    }));
+
+    const workspaceDir =
+      repos.length === 1 && repos[0]?.clonePath
+        ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
+        : "/home/dev/workspace";
+
+    const dashboardDomain = config.domains.dashboard;
+    const vsPort = config.raw.services.vscode.port;
+    const ocPort = config.raw.services.opencode.port;
+    const ttydPort = config.raw.services.terminal.port;
+    const browserPort = config.raw.services.browser.port;
+
+    return {
+      sandboxId: this.sandboxId,
+      workspaceId: this.workspace?.id,
+      workspaceName: this.workspace?.name,
+      repos,
+      createdAt: new Date().toISOString(),
+      network: {
+        dashboardDomain,
+        managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
+      },
+      services: {
+        vscode: {
+          port: vsPort,
+          command: `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vsPort} --auth none --disable-telemetry ${workspaceDir}`,
+          user: "dev" as const,
+          autoStart: true,
+        },
+        opencode: {
+          port: ocPort,
+          command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
+          user: "dev" as const,
+          autoStart: true,
+        },
+        terminal: {
+          port: ttydPort,
+          command: `ttyd -p ${ttydPort} -W -t fontSize=14 -t fontFamily=monospace su - dev`,
+          user: "root" as const,
+          autoStart: true,
+        },
+        kasmvnc: {
+          port: browserPort,
+          command: `Xvnc :99 -geometry 1280x900 -depth 24 -websocketPort ${browserPort} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -DisableBasicAuth -UseIPv6 0 -interface 0.0.0.0 -httpd /usr/share/kasmvnc/www -FrameRate 60 -DynamicQualityMin 7 -DynamicQualityMax 9 -RectThreads 0 -CompareFB 2 -DetectScrolling -sslOnly 0`,
+          user: "root" as const,
+          autoStart: false,
+        },
+        openbox: {
+          command: "openbox",
+          user: "dev" as const,
+          autoStart: false,
+          env: { DISPLAY: ":99" },
+        },
+        chromium: {
+          command:
+            "chromium --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-first-run --disable-session-crashed-bubble --disable-infobars --disable-translate --disable-features=TranslateUI --password-store=basic --disable-background-networking --disable-sync --disable-extensions --disable-default-apps --disable-breakpad --disable-component-extensions-with-background-pages --disable-background-timer-throttling --force-device-scale-factor=1 --disable-lcd-text --renderer-process-limit=2 --disk-cache-size=104857600 --user-data-dir=/tmp/chromium-profile about:blank",
+          user: "dev" as const,
+          autoStart: false,
+          env: { DISPLAY: ":99" },
+        },
+      },
+    };
+  }
+
+  private async pushSecretsPostBoot(): Promise<void> {
+    const secrets = this.workspace?.config.secrets;
+    if (!secrets || Object.keys(secrets).length === 0) return;
+
+    const decrypted = await SecretsService.decryptSecrets(secrets);
+    const envFile = SecretsService.generateEnvFile(decrypted);
+    await this.deps.internalService.pushSecrets(this.sandboxId, envFile);
+  }
+
+  private async pushGitCredentialsPostBoot(): Promise<void> {
+    const repos = this.workspace?.config.repos ?? [];
+    const sourceIds = new Set<string>();
+
+    for (const repo of repos) {
+      if ("sourceId" in repo && repo.sourceId) {
+        sourceIds.add(repo.sourceId);
+      }
+    }
+
+    if (sourceIds.size === 0) return;
+
+    const credentials: string[] = [];
+
+    for (const sourceId of sourceIds) {
+      const source = this.deps.gitSourceService.getById(sourceId);
+      if (!source) continue;
+
+      if (source.type === "github") {
+        const ghConfig = source.config as GitHubSourceConfig;
+        if (ghConfig.accessToken) {
+          credentials.push(
+            `https://x-access-token:${ghConfig.accessToken}@github.com`,
+          );
+        }
+      }
+    }
+
+    if (credentials.length > 0) {
+      await this.deps.internalService.pushGitCredentials(
+        this.sandboxId,
+        credentials,
+      );
+    }
+  }
+
+  private async pushFileSecretsPostBoot(): Promise<void> {
+    const fileSecrets = this.workspace?.config.fileSecrets;
+    if (!fileSecrets || fileSecrets.length === 0) return;
+
+    const decrypted = await SecretsService.decryptFileSecrets(fileSecrets);
+    await this.deps.internalService.pushFileSecrets(
+      this.sandboxId,
+      decrypted.map((s) => ({
+        path: s.path,
+        content: s.content,
+        mode: s.mode,
+      })),
+    );
+  }
+
+  private async pushOhMyOpenCodeCachePostBoot(): Promise<void> {
+    const configs = this.deps.configFileService.getMergedForSandbox(
+      this.workspace?.id,
+    );
+    const authConfig = configs.find((c) => c.path === VM_PATHS.opencodeAuth);
+
+    let providers: string[] = [];
+    if (authConfig) {
+      try {
+        const authJson = JSON.parse(authConfig.content);
+        providers = Object.keys(authJson);
+      } catch {
+        log.warn("Failed to parse auth.json for oh-my-opencode cache seed");
+      }
+    }
+
+    await this.deps.internalService.pushOhMyOpenCodeCache(
+      this.sandboxId,
+      providers,
+    );
+  }
+
+  private async pushSandboxMdPostBoot(): Promise<void> {
+    const content = this.generateSandboxMd();
+    await this.deps.internalService.pushSandboxMd(this.sandboxId, content);
+  }
+
+  private generateSandboxMd(): string {
+    const ws = this.workspace;
+    const reposSection = ws?.config.repos.length
+      ? ws.config.repos
+          .map((r) => {
+            const name = "url" in r ? r.url : r.repo;
+            return `- **${name}** (branch: \`${r.branch}\`, path: \`/home/dev${r.clonePath}\`)`;
+          })
+          .join("\n")
+      : "No repositories configured";
+
+    const vsPort = config.raw.services.vscode.port;
+    const ocPort = config.raw.services.opencode.port;
+    const ttydPort = config.raw.services.terminal.port;
+
+    const devCommandsSection = ws?.config.devCommands?.length
+      ? ws.config.devCommands
+          .map((cmd) => {
+            const parts = [`\`${cmd.command}\``];
+            if (cmd.workdir) parts.push(`workdir: \`${cmd.workdir}\``);
+            if (cmd.port) parts.push(`port: ${cmd.port}`);
+            return `- **${cmd.name}**: ${parts.join(", ")}`;
+          })
+          .join("\n")
+      : "None configured";
+
+    const secretsSection =
+      ws?.config.secrets && Object.keys(ws.config.secrets).length > 0
+        ? `Available in \`/etc/sandbox/secrets/.env\` (source with: \`source /etc/sandbox/secrets/.env\`)\nKeys: ${Object.keys(ws.config.secrets).join(", ")}`
+        : "None configured";
+
+    const fileSecretsSection = ws?.config.fileSecrets?.length
+      ? ws.config.fileSecrets
+          .map(
+            (s) => `- **${s.name}**: \`${s.path.replace(/^~/, "/home/dev")}\``,
+          )
+          .join("\n")
+      : "";
+
+    return `# Sandbox: ${this.sandboxId}${ws ? ` (${ws.name})` : ""}
+
+## Repositories
+${reposSection}
+
+## Services
+| Service | Port | Logs |
+|---------|------|------|
+| code-server (VSCode) | ${vsPort} | \`/var/log/sandbox/vscode.log\` |
+| opencode | ${ocPort} | \`/var/log/sandbox/opencode.log\` |
+| terminal (ttyd) | ${ttydPort} | \`/var/log/sandbox/terminal.log\` |
+| sshd | 22 | — |
+
+## Dev Commands
+${devCommandsSection}
+
+## Environment Secrets
+${secretsSection}
+${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
+## Paths
+- Workspace: \`/home/dev/workspace\`
+- Config: \`/etc/sandbox/config.json\`
+- Logs: \`/var/log/sandbox/\`
+`;
   }
 
   private async configurePostBoot(): Promise<void> {

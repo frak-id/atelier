@@ -1,3 +1,4 @@
+import type { SandboxConfig } from "@frak-sandbox/shared";
 import { AUTH_PROVIDERS, VM_PATHS } from "@frak-sandbox/shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
@@ -626,6 +627,128 @@ export class InternalService {
     return null;
   }
 
+  async pushSandboxConfig(
+    sandboxId: string,
+    sandboxConfig: SandboxConfig,
+  ): Promise<void> {
+    await this.agentClient.setConfig(sandboxId, sandboxConfig);
+    log.debug({ sandboxId }, "Sandbox config pushed via setConfig");
+  }
+
+  async setHostname(sandboxId: string, hostname: string): Promise<void> {
+    const cmd = `hostname "${hostname}" && echo "${hostname}" > /etc/hostname`;
+    const result = await this.agentClient.exec(sandboxId, cmd, {
+      timeout: 5000,
+    });
+
+    if (result.exitCode !== 0) {
+      log.warn(
+        { sandboxId, exitCode: result.exitCode, stderr: result.stderr },
+        "Failed to set hostname",
+      );
+    } else {
+      log.debug({ sandboxId, hostname }, "Hostname set");
+    }
+  }
+
+  async pushSecrets(sandboxId: string, envFileContent: string): Promise<void> {
+    if (!envFileContent) return;
+
+    await this.agentClient.writeFiles(sandboxId, [
+      {
+        path: "/etc/sandbox/secrets/.env",
+        content: envFileContent,
+        mode: "0600",
+        owner: "root",
+      },
+    ]);
+    log.debug({ sandboxId }, "Secrets pushed");
+  }
+
+  async pushGitCredentials(
+    sandboxId: string,
+    credentials: string[],
+  ): Promise<void> {
+    if (credentials.length === 0) return;
+
+    const gitCredentialsContent = `${credentials.join("\n")}\n`;
+    const gitconfigContent = `[credential]
+\thelper = store --file=/etc/sandbox/secrets/git-credentials
+[user]
+\temail = sandbox@frak.dev
+\tname = Sandbox User
+`;
+
+    await this.agentClient.writeFiles(sandboxId, [
+      {
+        path: "/etc/sandbox/secrets/git-credentials",
+        content: gitCredentialsContent,
+        mode: "0600",
+        owner: "dev",
+      },
+      {
+        path: "/home/dev/.gitconfig",
+        content: gitconfigContent,
+        owner: "dev",
+      },
+    ]);
+    log.debug(
+      { sandboxId, credentialCount: credentials.length },
+      "Git credentials pushed",
+    );
+  }
+
+  async pushFileSecrets(
+    sandboxId: string,
+    fileSecrets: { path: string; content: string; mode?: string }[],
+  ): Promise<void> {
+    if (fileSecrets.length === 0) return;
+
+    const files = fileSecrets.map((secret) => ({
+      path: secret.path.replace(/^~/, "/home/dev"),
+      content: secret.content,
+      mode: secret.mode || "0600",
+      owner: "dev" as const,
+    }));
+
+    await this.agentClient.writeFiles(sandboxId, files);
+    log.debug({ sandboxId, fileCount: files.length }, "File secrets pushed");
+  }
+
+  async pushOhMyOpenCodeCache(
+    sandboxId: string,
+    providers: string[],
+  ): Promise<void> {
+    const cacheContent = JSON.stringify(
+      {
+        connected: providers,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    );
+
+    await this.agentClient.writeFiles(sandboxId, [
+      {
+        path: "/home/dev/.cache/oh-my-opencode/connected-providers.json",
+        content: cacheContent,
+        owner: "dev",
+      },
+    ]);
+    log.debug({ sandboxId, providers }, "OhMyOpenCode cache pushed");
+  }
+
+  async pushSandboxMd(sandboxId: string, content: string): Promise<void> {
+    await this.agentClient.writeFiles(sandboxId, [
+      {
+        path: "/home/dev/SANDBOX.md",
+        content,
+        owner: "dev",
+      },
+    ]);
+    log.debug({ sandboxId }, "SANDBOX.md pushed");
+  }
+
   /**
    * Configure network inside the sandbox via agent exec.
    * Called post-boot for both fresh spawns and snapshot restores.
@@ -715,7 +838,6 @@ export class InternalService {
    */
   async syncAllToSandbox(
     sandboxId: string,
-    options?: { skipRegistry?: boolean },
   ): Promise<{
     auth: { synced: number };
     configs: { synced: number };
@@ -723,9 +845,7 @@ export class InternalService {
   }> {
     const [authConfigs, registry] = await Promise.all([
       this.syncToSandbox(sandboxId),
-      options?.skipRegistry
-        ? Promise.resolve(false)
-        : this.pushRegistryConfigToSandbox(sandboxId)
+      this.pushRegistryConfigToSandbox(sandboxId)
             .then(() => true)
             .catch(() => false),
     ]);
