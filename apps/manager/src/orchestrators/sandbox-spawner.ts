@@ -104,7 +104,11 @@ class SpawnContext {
     try {
       await this.time("loadWorkspace", () => this.loadWorkspace());
       await this.time("networkAndVolume", () =>
-        Promise.all([this.allocateNetwork(), this.createVolume()]),
+        Promise.all([
+          this.allocateNetwork(),
+          this.createVolume(),
+          config.isMock() ? Promise.resolve() : this.createTapDevice(),
+        ]),
       );
       await this.time("resizeVolume", () => this.resizeVolumeBeforeBoot());
       await this.time("initializeSandbox", () => this.initializeSandbox());
@@ -113,7 +117,6 @@ class SpawnContext {
         return await this.finalizeMock();
       }
 
-      await this.time("createTap", () => this.createTapDevice());
       await this.time("launchFirecracker", () => this.launchFirecracker());
 
       if (this.hasVmSnapshot && this.options.workspaceId) {
@@ -175,8 +178,10 @@ class SpawnContext {
         const snapshotPaths = getPrebuildSnapshotPaths(
           this.options.workspaceId,
         );
-        const snapExists = await Bun.file(snapshotPaths.snapshotFile).exists();
-        const memExists = await Bun.file(snapshotPaths.memFile).exists();
+        const [snapExists, memExists] = await Promise.all([
+          Bun.file(snapshotPaths.snapshotFile).exists(),
+          Bun.file(snapshotPaths.memFile).exists(),
+        ]);
         this.hasVmSnapshot = snapExists && memExists;
       }
     }
@@ -186,6 +191,7 @@ class SpawnContext {
       lvmVolumePath = await StorageService.createSandboxVolume(this.sandboxId, {
         workspaceId: this.options.workspaceId,
         baseImage,
+        usePrebuild: this.usedPrebuild,
       });
     }
 
@@ -344,8 +350,8 @@ class SpawnContext {
   }
 
   private async createTapDevice(): Promise<void> {
-    if (!this.network) throw new Error("Network not allocated");
-    await NetworkService.createTap(this.network.tapDevice);
+    const tapDevice = `tap-${this.sandboxId.slice(0, 8)}`;
+    await NetworkService.createTap(tapDevice);
   }
 
   private async launchFirecracker(): Promise<void> {
