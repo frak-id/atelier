@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { internalService } from "../container.ts";
+import { authSyncService } from "../container.ts";
 
 const SharedAuthInfoSchema = t.Object({
   provider: t.String(),
@@ -18,7 +18,7 @@ export const sharedAuthRoutes = new Elysia({ prefix: "/shared-auth" })
   .get(
     "/",
     () => {
-      return internalService.listAuth();
+      return authSyncService.listAuth();
     },
     {
       response: t.Array(SharedAuthInfoSchema),
@@ -31,7 +31,7 @@ export const sharedAuthRoutes = new Elysia({ prefix: "/shared-auth" })
   .get(
     "/:provider",
     async ({ params, set }) => {
-      const auth = await internalService.getAuth(params.provider);
+      const auth = await authSyncService.getAuth(params.provider);
       if (!auth) {
         set.status = 404;
         return { error: "Auth not found" };
@@ -51,7 +51,7 @@ export const sharedAuthRoutes = new Elysia({ prefix: "/shared-auth" })
   .put(
     "/:provider",
     ({ params, body }) => {
-      return internalService.updateAuth(params.provider, body.content);
+      return authSyncService.updateAuth(params.provider, body.content);
     },
     {
       params: t.Object({

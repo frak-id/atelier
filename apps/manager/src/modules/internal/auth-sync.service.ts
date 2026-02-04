@@ -1,0 +1,431 @@
+import { AUTH_PROVIDERS, VM_PATHS } from "@frak-sandbox/shared/constants";
+import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
+import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { SandboxRepository } from "../sandbox/index.ts";
+import type { SharedAuthRepository } from "./internal.repository.ts";
+
+const log = createChildLogger("auth-sync");
+
+interface OAuthEntry {
+  type: "oauth";
+  refresh: string;
+  access: string;
+  expires: number;
+  accountId?: string;
+  enterpriseUrl?: string;
+}
+
+interface ApiEntry {
+  type: "api";
+  key: string;
+}
+
+interface WellKnownEntry {
+  type: "wellknown";
+  key: string;
+  token: string;
+}
+
+type AuthEntry = OAuthEntry | ApiEntry | WellKnownEntry;
+type AuthJson = Record<string, AuthEntry>;
+
+interface AuthFileRead {
+  provider: string;
+  content: string;
+  mtime: number;
+}
+
+interface SandboxAuthSnapshot {
+  sandboxId: string;
+  files: AuthFileRead[];
+}
+
+export interface SharedAuthInfo {
+  provider: string;
+  path: string;
+  description: string;
+  content: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export interface AuthContent {
+  content: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+const AUTH_POLL_INTERVAL_MS = 5_000;
+
+export class AuthSyncService {
+  private authPollTimer: Timer | null = null;
+
+  constructor(
+    private readonly sharedAuthRepository: SharedAuthRepository,
+    private readonly agentClient: AgentClient,
+    private readonly sandboxService: SandboxRepository,
+  ) {}
+
+  startAuthWatcher(): void {
+    this.authPollTimer = setInterval(() => {
+      this.pollAuthFromSandboxes();
+    }, AUTH_POLL_INTERVAL_MS);
+
+    log.info({ intervalMs: AUTH_POLL_INTERVAL_MS }, "Auth polling started");
+  }
+
+  stopAuthWatcher(): void {
+    if (this.authPollTimer) {
+      clearInterval(this.authPollTimer);
+      this.authPollTimer = null;
+    }
+  }
+
+  private async pollAuthFromSandboxes(): Promise<void> {
+    const runningSandboxes = this.sandboxService
+      .getAll()
+      .filter((s) => s.status === "running");
+    if (runningSandboxes.length === 0) return;
+
+    const snapshots = await this.readAllAuthFromSandboxes(
+      runningSandboxes.map((s) => s.id),
+    );
+    if (snapshots.length === 0) return;
+
+    for (const providerConfig of AUTH_PROVIDERS) {
+      try {
+        const perProvider = snapshots.flatMap((snap) => {
+          const file = snap.files.find(
+            (f) => f.provider === providerConfig.name,
+          );
+          return file ? [{ sandboxId: snap.sandboxId, ...file }] : [];
+        });
+        if (perProvider.length === 0) continue;
+
+        if (providerConfig.name === "opencode") {
+          await this.aggregateOpencodeAuth(perProvider, runningSandboxes);
+        } else {
+          await this.aggregateOpaqueAuth(
+            providerConfig,
+            perProvider,
+            runningSandboxes,
+          );
+        }
+      } catch (error) {
+        log.debug(
+          { provider: providerConfig.name, error },
+          "Failed to poll auth for provider",
+        );
+      }
+    }
+  }
+
+  private async readAllAuthFromSandboxes(
+    sandboxIds: string[],
+  ): Promise<SandboxAuthSnapshot[]> {
+    const commands = AUTH_PROVIDERS.map((p) => ({
+      id: p.name,
+      command: `stat -c %Y '${p.path}' 2>/dev/null && cat '${p.path}' 2>/dev/null`,
+      timeout: 5000,
+    }));
+
+    const results = await Promise.allSettled(
+      sandboxIds.map(async (sandboxId) => {
+        const batch = await this.agentClient.batchExec(sandboxId, commands, {
+          timeout: 10000,
+        });
+
+        const files: AuthFileRead[] = [];
+        for (const result of batch.results) {
+          if (result.exitCode !== 0 || !result.stdout.trim()) continue;
+
+          const firstNewline = result.stdout.indexOf("\n");
+          if (firstNewline === -1) continue;
+
+          const mtime = Number.parseInt(
+            result.stdout.slice(0, firstNewline),
+            10,
+          );
+          const content = result.stdout.slice(firstNewline + 1).trim();
+          if (!content || Number.isNaN(mtime)) continue;
+
+          files.push({ provider: result.id, content, mtime });
+        }
+
+        return { sandboxId, files };
+      }),
+    );
+
+    const snapshots: SandboxAuthSnapshot[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value.files.length > 0) {
+        snapshots.push(result.value);
+      }
+    }
+    return snapshots;
+  }
+
+  private async aggregateOpencodeAuth(
+    sandboxAuths: { sandboxId: string; content: string; mtime: number }[],
+    runningSandboxes: { id: string }[],
+  ): Promise<void> {
+    const dbAuth: AuthJson = this.parseDbAuth();
+    const bestAuth: AuthJson = { ...dbAuth };
+
+    for (const { sandboxId, content } of sandboxAuths) {
+      let auth: AuthJson;
+      try {
+        const raw = JSON.parse(content);
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+        auth = raw as AuthJson;
+      } catch {
+        log.debug({ sandboxId }, "Failed to parse auth.json from sandbox");
+        continue;
+      }
+
+      for (const [key, entry] of Object.entries(auth)) {
+        if (!entry) continue;
+        const current = bestAuth[key];
+
+        if (
+          entry.type === "oauth" &&
+          current?.type === "oauth" &&
+          entry.expires <= current.expires
+        ) {
+          continue;
+        }
+
+        bestAuth[key] = entry;
+      }
+    }
+
+    const bestContent = JSON.stringify(bestAuth, null, 2);
+
+    const existing = this.sharedAuthRepository.getByProvider("opencode");
+    if (existing?.content === bestContent) return;
+
+    this.sharedAuthRepository.upsert("opencode", bestContent, "sandbox");
+    log.info(
+      { keys: Object.keys(bestAuth) },
+      "Auth aggregated from sandboxes and stored in DB",
+    );
+
+    const staleSandboxIds = new Set<string>();
+    const readSandboxIds = new Set(sandboxAuths.map((a) => a.sandboxId));
+
+    for (const { sandboxId, content } of sandboxAuths) {
+      if (content !== bestContent) {
+        staleSandboxIds.add(sandboxId);
+      }
+    }
+    for (const sandbox of runningSandboxes) {
+      if (!readSandboxIds.has(sandbox.id)) {
+        staleSandboxIds.add(sandbox.id);
+      }
+    }
+
+    if (staleSandboxIds.size === 0) return;
+
+    const staleSandboxIdList = [...staleSandboxIds];
+    await this.pushFilesToSandboxes(
+      staleSandboxIdList,
+      [{ path: VM_PATHS.opencodeAuth, content: bestContent }],
+      "auth",
+    );
+  }
+
+  private parseDbAuth(): AuthJson {
+    const record = this.sharedAuthRepository.getByProvider("opencode");
+    if (!record) return {};
+    try {
+      const raw = JSON.parse(record.content);
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        return raw as AuthJson;
+      }
+    } catch {
+      log.warn("Failed to parse existing DB auth.json, starting fresh");
+    }
+    return {};
+  }
+
+  private async aggregateOpaqueAuth(
+    providerConfig: (typeof AUTH_PROVIDERS)[number],
+    sandboxAuths: { sandboxId: string; content: string; mtime: number }[],
+    runningSandboxes: { id: string }[],
+  ): Promise<void> {
+    const newest = sandboxAuths.reduce((best, current) =>
+      current.mtime > best.mtime ? current : best,
+    );
+
+    const existing = this.sharedAuthRepository.getByProvider(
+      providerConfig.name,
+    );
+    if (existing?.content === newest.content) return;
+
+    this.sharedAuthRepository.upsert(
+      providerConfig.name,
+      newest.content,
+      "sandbox",
+    );
+    log.info(
+      { provider: providerConfig.name, source: newest.sandboxId },
+      "Auth synced from sandbox to DB (last edit wins)",
+    );
+
+    const staleSandboxIds = runningSandboxes
+      .filter((sandbox) => {
+        const match = sandboxAuths.find((a) => a.sandboxId === sandbox.id);
+        return !match || match.content !== newest.content;
+      })
+      .map((s) => s.id);
+
+    if (staleSandboxIds.length === 0) return;
+
+    await this.pushFilesToSandboxes(
+      staleSandboxIds,
+      [{ path: providerConfig.path, content: newest.content }],
+      "auth",
+    );
+  }
+
+  private async pushFilesToSandboxes(
+    sandboxIds: string[],
+    files: { path: string; content: string; owner?: "dev" | "root" }[],
+    label: string,
+  ): Promise<void> {
+    const fileWrites = files.map((f) => ({
+      path: f.path,
+      content: f.content,
+      owner: f.owner ?? ("dev" as const),
+    }));
+
+    const results = await Promise.allSettled(
+      sandboxIds.map((sandboxId) =>
+        this.agentClient.writeFiles(sandboxId, fileWrites),
+      ),
+    );
+
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      log.warn(
+        { label, failures: failures.length, total: results.length },
+        "Some file pushes to sandboxes failed",
+      );
+    } else {
+      log.debug(
+        { label, sandboxes: sandboxIds.length, files: files.length },
+        "Files pushed to sandboxes",
+      );
+    }
+  }
+
+  listAuth(): SharedAuthInfo[] {
+    const storedAuth = this.sharedAuthRepository.list();
+    const storedByProvider = new Map(storedAuth.map((a) => [a.provider, a]));
+
+    return AUTH_PROVIDERS.map((provider) => {
+      const stored = storedByProvider.get(provider.name);
+      return {
+        provider: provider.name,
+        path: provider.path,
+        description: provider.description,
+        content: stored?.content ?? null,
+        updatedAt: stored?.updatedAt ?? null,
+        updatedBy: stored?.updatedBy ?? null,
+      };
+    });
+  }
+
+  async getAuth(provider: string): Promise<AuthContent | null> {
+    const record = this.sharedAuthRepository.getByProvider(provider);
+    if (!record) return null;
+
+    return {
+      content: record.content,
+      updatedAt: record.updatedAt,
+      updatedBy: record.updatedBy,
+    };
+  }
+
+  updateAuth(provider: string, content: string): SharedAuthInfo {
+    const providerInfo = AUTH_PROVIDERS.find((p) => p.name === provider);
+    if (!providerInfo) {
+      throw new Error(`Unknown auth provider: ${provider}`);
+    }
+
+    const record = this.sharedAuthRepository.upsert(
+      provider,
+      content,
+      "dashboard",
+    );
+
+    log.info({ provider }, "Auth updated from dashboard");
+
+    this.syncAuthToSandboxes().catch((error) => {
+      log.error(
+        { error },
+        "Failed to sync auth to sandboxes after dashboard update",
+      );
+    });
+
+    return {
+      provider: record.provider,
+      path: providerInfo.path,
+      description: providerInfo.description,
+      content: record.content,
+      updatedAt: record.updatedAt,
+      updatedBy: record.updatedBy,
+    };
+  }
+
+  async syncAuthToSandboxes(): Promise<{ synced: number }> {
+    const runningSandboxes = this.sandboxService
+      .getAll()
+      .filter((s) => s.status === "running");
+    if (runningSandboxes.length === 0) return { synced: 0 };
+
+    const { files, synced } = this.getAuthFilesToPush();
+    if (files.length === 0) return { synced: 0 };
+
+    await this.pushFilesToSandboxes(
+      runningSandboxes.map((s) => s.id),
+      files,
+      "auth",
+    );
+
+    log.info(
+      { synced, sandboxes: runningSandboxes.length },
+      "Auth sync complete",
+    );
+    return { synced };
+  }
+
+  async syncAuthToSandbox(sandboxId: string): Promise<{ synced: number }> {
+    const { files, synced } = this.getAuthFilesToPush();
+    if (files.length === 0) return { synced: 0 };
+
+    await this.pushFilesToSandboxes([sandboxId], files, "auth");
+    log.info({ synced, sandboxId }, "Auth pushed to sandbox");
+    return { synced };
+  }
+
+  private getAuthFilesToPush(): {
+    files: { path: string; content: string }[];
+    synced: number;
+  } {
+    const storedAuth = this.sharedAuthRepository.list();
+    const files: { path: string; content: string }[] = [];
+    let synced = 0;
+
+    for (const auth of storedAuth) {
+      const providerConfig = AUTH_PROVIDERS.find(
+        (p) => p.name === auth.provider,
+      );
+      if (!providerConfig) continue;
+      files.push({ path: providerConfig.path, content: auth.content });
+      synced++;
+    }
+
+    return { files, synced };
+  }
+}

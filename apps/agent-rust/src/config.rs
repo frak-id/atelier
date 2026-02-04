@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 pub const VSOCK_PORT: u32 = 9998;
 pub const LOG_DIR: &str = "/var/log/sandbox";
@@ -9,10 +9,6 @@ pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 30_000;
 pub const MAX_EXEC_BUFFER: usize = 10 * 1024 * 1024;
 
 pub const CONFIG_PATH: &str = "/etc/sandbox/config.json";
-pub const VSCODE_SETTINGS_PATH: &str = "/home/dev/.local/share/code-server/User/settings.json";
-pub const VSCODE_EXTENSIONS_PATH: &str = "/etc/sandbox/vscode-extensions.json";
-pub const OPENCODE_AUTH_PATH: &str = "/home/dev/.local/share/opencode/auth.json";
-pub const OPENCODE_CONFIG_PATH: &str = "/home/dev/.config/opencode/opencode.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,8 +53,26 @@ pub struct SandboxConfig {
     pub services: SandboxServices,
 }
 
-pub static SANDBOX_CONFIG: LazyLock<Option<SandboxConfig>> = LazyLock::new(|| {
-    std::fs::read_to_string(CONFIG_PATH)
+pub static SANDBOX_CONFIG: LazyLock<RwLock<Option<SandboxConfig>>> = LazyLock::new(|| {
+    let config = std::fs::read_to_string(CONFIG_PATH)
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|s| serde_json::from_str(&s).ok());
+    RwLock::new(config)
 });
+
+/// Set config from JSON and write to disk
+pub fn set_config(config: SandboxConfig) -> Result<(), String> {
+    let content =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize: {}", e))?;
+    std::fs::write(CONFIG_PATH, &content).map_err(|e| format!("Failed to write config: {}", e))?;
+    let mut guard = SANDBOX_CONFIG
+        .write()
+        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    *guard = Some(config);
+    Ok(())
+}
+
+/// Get a clone of current config
+pub fn get_config() -> Option<SandboxConfig> {
+    SANDBOX_CONFIG.read().ok().and_then(|g| g.clone())
+}

@@ -333,3 +333,36 @@ export const BrowserStopResponseSchema = t.Object({
   status: BrowserStatusSchema,
 });
 export type BrowserStopResponse = Static<typeof BrowserStopResponseSchema>;
+
+export const SpawnTimingsSchema = t.Object({
+  total: t.Number({ description: "Total spawn time in ms" }),
+  loadWorkspace: t.Number({ description: "Workspace loading time in ms" }),
+  networkAndVolume: t.Number({
+    description: "Parallel network allocation + volume creation in ms",
+  }),
+  resizeVolume: t.Number({ description: "Volume resize time in ms" }),
+  initializeSandbox: t.Number({ description: "Sandbox record creation in ms" }),
+  createTap: t.Number({ description: "TAP device creation in ms" }),
+  launchFirecracker: t.Number({
+    description: "Firecracker process launch in ms",
+  }),
+  configureOrRestore: t.Number({
+    description: "VM configuration + boot OR snapshot restore in ms",
+  }),
+  agentSetup: t.Number({
+    description: "Agent wait + network config + provisioning in ms",
+  }),
+  postBoot: t.Number({ description: "Post-boot service startup in ms" }),
+  registerRoutes: t.Number({
+    description: "Caddy + SSH route registration in ms",
+  }),
+});
+export type SpawnTimings = Static<typeof SpawnTimingsSchema>;
+
+export const CreateSandboxResponseSchema = t.Intersect([
+  SandboxSchema,
+  t.Object({
+    timings: t.Optional(SpawnTimingsSchema),
+  }),
+]);
+export type CreateSandboxResponse = Static<typeof CreateSandboxResponseSchema>;

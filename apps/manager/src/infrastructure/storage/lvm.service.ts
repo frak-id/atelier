@@ -38,14 +38,21 @@ async function lvExists(volumePath: string): Promise<boolean> {
   return result.exitCode === 0;
 }
 
+let lvmAvailableCache: boolean | null = null;
+
 export const StorageService = {
   async isAvailable(): Promise<boolean> {
     if (config.isMock()) return true;
+    if (lvmAvailableCache !== null) return lvmAvailableCache;
 
     const result = await $`test -x /usr/sbin/lvm`.quiet().nothrow();
-    if (result.exitCode !== 0) return false;
+    if (result.exitCode !== 0) {
+      lvmAvailableCache = false;
+      return false;
+    }
 
-    return lvExists(`${vg}/${thinPool}`);
+    lvmAvailableCache = await lvExists(`${vg}/${thinPool}`);
+    return lvmAvailableCache;
   },
 
   async getPoolStats(): Promise<PoolStats> {
@@ -125,11 +132,15 @@ export const StorageService = {
 
   async createSandboxVolume(
     sandboxId: string,
-    options?: { workspaceId?: string; baseImage?: string },
+    options?: {
+      workspaceId?: string;
+      baseImage?: string;
+      usePrebuild?: boolean;
+    },
   ): Promise<string> {
     const volumeName = `${sandboxPrefix}${sandboxId}`;
     const volumePath = `/dev/${vg}/${volumeName}`;
-    const { workspaceId, baseImage } = options ?? {};
+    const { workspaceId, baseImage, usePrebuild } = options ?? {};
     const defaultImage = config.images.defaultImage;
 
     if (config.isMock()) {
@@ -142,7 +153,7 @@ export const StorageService = {
 
     let sourceVolume: string;
 
-    if (workspaceId && (await this.hasPrebuild(workspaceId))) {
+    if (workspaceId && (usePrebuild ?? (await this.hasPrebuild(workspaceId)))) {
       sourceVolume = `${prebuildPrefix}${workspaceId}`;
     } else if (baseImage && (await this.hasImageVolume(baseImage))) {
       sourceVolume = `${imagePrefix}${baseImage}`;

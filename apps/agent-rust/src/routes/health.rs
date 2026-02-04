@@ -4,7 +4,7 @@ use hyper::Response;
 use std::sync::LazyLock;
 use std::time::Instant;
 
-use crate::config::SANDBOX_CONFIG;
+use crate::config::get_config;
 use crate::response::json_ok;
 
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
@@ -72,8 +72,7 @@ fn get_disk_usage() -> serde_json::Value {
 pub async fn handle_health() -> Response<Full<Bytes>> {
     let _ = *START_TIME;
 
-    let cfg = SANDBOX_CONFIG.as_ref();
-    let sandbox_id = cfg.map(|c| c.sandbox_id.clone());
+    let sandbox_id = get_config().map(|c| c.sandbox_id);
 
     let uptime = START_TIME.elapsed().as_secs_f64();
 

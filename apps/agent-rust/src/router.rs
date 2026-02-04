@@ -22,7 +22,9 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::POST, "/git/push") => routes::git::handle_git_push(req).await,
 
         (Method::GET, "/config") => routes::config::handle_config(),
-        (Method::GET, "/editor-config") => routes::config::handle_editor_config().await,
+        (Method::POST, "/config") => routes::config::handle_set_config(req).await,
+
+        (Method::POST, "/files/write") => routes::files::handle_write_files(req).await,
 
         (Method::GET, "/dev") => routes::dev::handle_get_dev().await,
         (Method::GET, "/services") => routes::services::handle_services_list().await,

@@ -78,14 +78,9 @@ cat > /etc/hosts << 'EOF'
 EOF
 log "Created /etc/hosts"
 
-log "Configuring network..."
-if [ -f /etc/network-setup.sh ]; then
-    chmod +x /etc/network-setup.sh
-    /etc/network-setup.sh >> "$LOG_DIR/init.log" 2>&1
-    log "Network configured"
-else
-    log "WARNING: No network-setup.sh found"
-fi
+# Network is configured by the manager post-boot via agent exec
+# This allows the same init script to work for both fresh spawns and snapshot restores
+log "Network will be configured by manager after agent ready"
 
 link_config() {
     local src="$1"

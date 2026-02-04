@@ -127,15 +127,30 @@ export async function baseSetup(_args: string[] = []) {
     );
   }
 
+  // Create frak group with GID 1000 (matches guest 'dev' group)
+  await exec("getent group frak >/dev/null 2>&1 || groupadd --gid 1000 frak", {
+    throws: false,
+  });
   await exec("getent group kvm >/dev/null 2>&1 || groupadd kvm", {
     throws: false,
   });
-  await exec(
-    "id -u frak >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash frak",
-    {
-      throws: false,
-    },
-  );
+
+  // Create frak user with UID 1000 (matches guest 'dev' user)
+  const frakExists = await exec("id -u frak 2>/dev/null", { throws: false });
+  if (!frakExists.success) {
+    await exec(
+      "useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash frak",
+      { throws: false },
+    );
+  } else {
+    // Verify UID is 1000
+    const frakUid = frakExists.stdout.trim();
+    if (frakUid !== "1000") {
+      p.log.warn(
+        `frak user exists with UID ${frakUid}, expected 1000. Consider recreating instance.`,
+      );
+    }
+  }
   await exec("usermod -aG kvm,disk frak", { throws: false });
   await exec("chgrp kvm /dev/kvm 2>/dev/null || true", { throws: false });
   await exec("chmod 660 /dev/kvm 2>/dev/null || true", { throws: false });

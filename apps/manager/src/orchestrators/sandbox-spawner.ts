@@ -1,4 +1,5 @@
-import { DEFAULTS } from "@frak-sandbox/shared/constants";
+import type { SandboxConfig } from "@frak-sandbox/shared";
+import { DEFAULTS, VM_PATHS } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import type {
   AgentClient,
@@ -21,6 +22,7 @@ import {
   CaddyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
+import { SecretsService } from "../infrastructure/secrets/index.ts";
 import {
   SharedStorageService,
   StorageService,
@@ -28,14 +30,19 @@ import {
 import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
-import type { SandboxRepository } from "../modules/sandbox/index.ts";
-import { SandboxProvisioner } from "../modules/sandbox/sandbox.provisioner.ts";
+import type {
+  SandboxProvisionService,
+  SandboxRepository,
+} from "../modules/sandbox/index.ts";
 import type { SshKeyService } from "../modules/ssh-key/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   CreateSandboxBody,
+  CreateSandboxResponse,
+  GitHubSourceConfig,
   RepoConfig,
   Sandbox,
+  SpawnTimings,
   Workspace,
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
@@ -52,6 +59,7 @@ interface SandboxSpawnerDependencies {
   configFileService: ConfigFileService;
   sshKeyService: SshKeyService;
   internalService: InternalService;
+  provisionService: SandboxProvisionService;
   agentClient: AgentClient;
   agentOperations: AgentOperations;
 }
@@ -59,7 +67,7 @@ interface SandboxSpawnerDependencies {
 export class SandboxSpawner {
   constructor(private readonly deps: SandboxSpawnerDependencies) {}
 
-  async spawn(options: CreateSandboxBody = {}): Promise<Sandbox> {
+  async spawn(options: CreateSandboxBody = {}): Promise<CreateSandboxResponse> {
     const context = new SpawnContext(this.deps, options);
     return context.execute();
   }
@@ -76,6 +84,9 @@ class SpawnContext {
   private usedPrebuild = false;
   private hasVmSnapshot = false;
 
+  private startTime = performance.now();
+  private timings: Partial<SpawnTimings> = {};
+
   constructor(
     private readonly deps: SandboxSpawnerDependencies,
     private readonly options: CreateSandboxBody,
@@ -83,29 +94,47 @@ class SpawnContext {
     this.sandboxId = safeNanoid();
   }
 
-  async execute(): Promise<Sandbox> {
+  private async time<T>(
+    key: keyof SpawnTimings,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const start = performance.now();
+    const result = await fn();
+    this.timings[key] = Math.round(performance.now() - start);
+    return result;
+  }
+
+  async execute(): Promise<CreateSandboxResponse> {
     try {
-      await this.loadWorkspace();
-      await Promise.all([this.allocateNetwork(), this.createVolume()]);
-      await this.resizeVolumeBeforeBoot();
-      await this.initializeSandbox();
+      await this.time("loadWorkspace", () => this.loadWorkspace());
+      await this.time("networkAndVolume", () =>
+        Promise.all([
+          this.allocateNetwork(),
+          this.createVolume(),
+          config.isMock() ? Promise.resolve() : this.createTapDevice(),
+        ]),
+      );
+      await this.time("resizeVolume", () => this.resizeVolumeBeforeBoot());
+      await this.time("initializeSandbox", () => this.initializeSandbox());
 
       if (config.isMock()) {
         return await this.finalizeMock();
       }
 
-      await Promise.all([this.createTapDevice(), this.provisionFilesystem()]);
-      await this.launchFirecracker();
+      await this.time("launchFirecracker", () => this.launchFirecracker());
 
       if (this.hasVmSnapshot && this.options.workspaceId) {
-        await this.restoreFromSnapshot();
+        await this.time("configureOrRestore", () => this.restoreFromSnapshot());
       } else {
-        await this.configureVm();
-        await this.boot();
+        await this.time("configureOrRestore", async () => {
+          await this.configureVm();
+          await this.boot();
+        });
       }
 
-      await this.waitForAgentAndSetup();
-      await this.registerRoutes();
+      await this.time("agentSetup", () => this.waitForAgentAndSetup());
+      await this.time("postBoot", () => this.configurePostBoot());
+      await this.time("registerRoutes", () => this.registerRoutes());
 
       return this.finalize();
     } catch (error) {
@@ -153,8 +182,10 @@ class SpawnContext {
         const snapshotPaths = getPrebuildSnapshotPaths(
           this.options.workspaceId,
         );
-        const snapExists = await Bun.file(snapshotPaths.snapshotFile).exists();
-        const memExists = await Bun.file(snapshotPaths.memFile).exists();
+        const [snapExists, memExists] = await Promise.all([
+          Bun.file(snapshotPaths.snapshotFile).exists(),
+          Bun.file(snapshotPaths.memFile).exists(),
+        ]);
         this.hasVmSnapshot = snapExists && memExists;
       }
     }
@@ -164,6 +195,7 @@ class SpawnContext {
       lvmVolumePath = await StorageService.createSandboxVolume(this.sandboxId, {
         workspaceId: this.options.workspaceId,
         baseImage,
+        usePrebuild: this.usedPrebuild,
       });
     }
 
@@ -271,7 +303,7 @@ class SpawnContext {
     log.info({ sandboxId: this.sandboxId }, "Sandbox initialized");
   }
 
-  private async finalizeMock(): Promise<Sandbox> {
+  private async finalizeMock(): Promise<CreateSandboxResponse> {
     if (!this.sandbox) throw new Error("Sandbox not initialized");
     if (!this.network) throw new Error("Network not allocated");
 
@@ -298,32 +330,32 @@ class SpawnContext {
         workspaceId: this.options.workspaceId,
       },
     });
-    log.info({ sandboxId: this.sandboxId }, "Mock sandbox created");
-    return this.sandbox;
+
+    const totalTime = Math.round(performance.now() - this.startTime);
+    const finalTimings: SpawnTimings = {
+      total: totalTime,
+      loadWorkspace: this.timings.loadWorkspace ?? 0,
+      networkAndVolume: this.timings.networkAndVolume ?? 0,
+      resizeVolume: this.timings.resizeVolume ?? 0,
+      initializeSandbox: this.timings.initializeSandbox ?? 0,
+      createTap: 0,
+      launchFirecracker: 0,
+      configureOrRestore: 0,
+      agentSetup: 0,
+      postBoot: 0,
+      registerRoutes: 0,
+    };
+
+    log.info(
+      { sandboxId: this.sandboxId, timings: finalTimings },
+      "Mock sandbox created",
+    );
+    return { ...this.sandbox, timings: finalTimings };
   }
 
   private async createTapDevice(): Promise<void> {
-    if (!this.network) throw new Error("Network not allocated");
-    await NetworkService.createTap(this.network.tapDevice);
-  }
-
-  private async provisionFilesystem(): Promise<void> {
-    if (!this.paths || !this.network) {
-      throw new Error("Paths or network not initialized");
-    }
-
-    const getGitSource = (id: string) => this.deps.gitSourceService.getById(id);
-    const getConfigFiles = (workspaceId?: string) =>
-      this.deps.configFileService.getMergedForSandbox(workspaceId);
-
-    await SandboxProvisioner.provision({
-      sandboxId: this.sandboxId,
-      workspace: this.workspace,
-      network: this.network,
-      paths: this.paths,
-      getGitSource,
-      getConfigFiles,
-    });
+    const tapDevice = `tap-${this.sandboxId.slice(0, 8)}`;
+    await NetworkService.createTap(tapDevice);
   }
 
   private async launchFirecracker(): Promise<void> {
@@ -462,29 +494,13 @@ class SpawnContext {
       }
     }
 
-    // Push latest auth and configs BEFORE launching services so opencode
-    // reads up-to-date credentials instead of stale prebuild data.
     await this.pushAuthAndConfigs();
 
-    // Fire-and-forget: start services via agent endpoints
     const serviceNames = ["vscode", "opencode", "terminal"];
-    Promise.all(
-      serviceNames.map((name) =>
-        this.deps.agentClient
-          .serviceStart(this.sandboxId, name)
-          .catch((err) => {
-            log.warn(
-              {
-                sandboxId: this.sandboxId,
-                service: name,
-                error: String(err),
-              },
-              "Service start failed (non-blocking)",
-            );
-          }),
-      ),
-    ).catch(() => {});
-
+    await this.deps.provisionService.startServices(
+      this.sandboxId,
+      serviceNames,
+    );
     log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
   }
 
@@ -519,6 +535,11 @@ class SpawnContext {
   private async waitForAgentAndSetup(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
 
+    // Skip for snapshot restore - reconfigureRestoredGuest() already handled everything
+    if (this.hasVmSnapshot) {
+      return;
+    }
+
     const agentReady = await this.deps.agentClient.waitForAgent(
       this.sandboxId,
       { timeout: 60000 },
@@ -529,6 +550,13 @@ class SpawnContext {
       return;
     }
 
+    await this.deps.provisionService.configureNetwork(this.sandboxId, {
+      ipAddress: this.network.ipAddress,
+      gateway: this.network.gateway,
+    });
+
+    await this.provisionPostBoot();
+
     await this.expandFilesystem();
 
     if (this.needsRepoClone()) {
@@ -538,8 +566,261 @@ class SpawnContext {
     await this.pushAuthAndConfigs();
   }
 
+  private async provisionPostBoot(): Promise<void> {
+    const sandboxConfig = this.buildSandboxConfig();
+    await this.deps.provisionService.pushSandboxConfig(
+      this.sandboxId,
+      sandboxConfig,
+    );
+
+    await this.deps.provisionService.setHostname(
+      this.sandboxId,
+      `sandbox-${this.sandboxId}`,
+    );
+
+    await this.pushSecretsPostBoot();
+    await this.pushGitCredentialsPostBoot();
+    await this.pushFileSecretsPostBoot();
+    await this.pushOhMyOpenCodeCachePostBoot();
+    await this.pushSandboxMdPostBoot();
+  }
+
+  private buildSandboxConfig(): SandboxConfig {
+    const repos = (this.workspace?.config.repos ?? []).map((r) => ({
+      clonePath: r.clonePath,
+      branch: r.branch,
+    }));
+
+    const workspaceDir =
+      repos.length === 1 && repos[0]?.clonePath
+        ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
+        : "/home/dev/workspace";
+
+    const dashboardDomain = config.domains.dashboard;
+    const vsPort = config.raw.services.vscode.port;
+    const ocPort = config.raw.services.opencode.port;
+    const ttydPort = config.raw.services.terminal.port;
+    const browserPort = config.raw.services.browser.port;
+
+    return {
+      sandboxId: this.sandboxId,
+      workspaceId: this.workspace?.id,
+      workspaceName: this.workspace?.name,
+      repos,
+      createdAt: new Date().toISOString(),
+      network: {
+        dashboardDomain,
+        managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
+      },
+      services: {
+        vscode: {
+          port: vsPort,
+          command: `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vsPort} --auth none --disable-telemetry ${workspaceDir}`,
+          user: "dev" as const,
+          autoStart: true,
+        },
+        opencode: {
+          port: ocPort,
+          command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
+          user: "dev" as const,
+          autoStart: true,
+        },
+        terminal: {
+          port: ttydPort,
+          command: `ttyd -p ${ttydPort} -W -t fontSize=14 -t fontFamily=monospace su - dev`,
+          user: "root" as const,
+          autoStart: true,
+        },
+        kasmvnc: {
+          port: browserPort,
+          command: `Xvnc :99 -geometry 1280x900 -depth 24 -websocketPort ${browserPort} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -DisableBasicAuth -UseIPv6 0 -interface 0.0.0.0 -httpd /usr/share/kasmvnc/www -FrameRate 60 -DynamicQualityMin 7 -DynamicQualityMax 9 -RectThreads 0 -CompareFB 2 -DetectScrolling -sslOnly 0`,
+          user: "root" as const,
+          autoStart: false,
+        },
+        openbox: {
+          command: "openbox",
+          user: "dev" as const,
+          autoStart: false,
+          env: { DISPLAY: ":99" },
+        },
+        chromium: {
+          command:
+            "chromium --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-first-run --disable-session-crashed-bubble --disable-infobars --disable-translate --disable-features=TranslateUI --password-store=basic --disable-background-networking --disable-sync --disable-extensions --disable-default-apps --disable-breakpad --disable-component-extensions-with-background-pages --disable-background-timer-throttling --force-device-scale-factor=1 --disable-lcd-text --renderer-process-limit=2 --disk-cache-size=104857600 --user-data-dir=/tmp/chromium-profile about:blank",
+          user: "dev" as const,
+          autoStart: false,
+          env: { DISPLAY: ":99" },
+        },
+      },
+    };
+  }
+
+  private async pushSecretsPostBoot(): Promise<void> {
+    const secrets = this.workspace?.config.secrets;
+    if (!secrets || Object.keys(secrets).length === 0) return;
+
+    const decrypted = await SecretsService.decryptSecrets(secrets);
+    const envFile = SecretsService.generateEnvFile(decrypted);
+    await this.deps.provisionService.pushSecrets(this.sandboxId, envFile);
+  }
+
+  private async pushGitCredentialsPostBoot(): Promise<void> {
+    const repos = this.workspace?.config.repos ?? [];
+    const sourceIds = new Set<string>();
+
+    for (const repo of repos) {
+      if ("sourceId" in repo && repo.sourceId) {
+        sourceIds.add(repo.sourceId);
+      }
+    }
+
+    if (sourceIds.size === 0) return;
+
+    const credentials: string[] = [];
+
+    for (const sourceId of sourceIds) {
+      const source = this.deps.gitSourceService.getById(sourceId);
+      if (!source) continue;
+
+      if (source.type === "github") {
+        const ghConfig = source.config as GitHubSourceConfig;
+        if (ghConfig.accessToken) {
+          credentials.push(
+            `https://x-access-token:${ghConfig.accessToken}@github.com`,
+          );
+        }
+      }
+    }
+
+    if (credentials.length > 0) {
+      await this.deps.provisionService.pushGitCredentials(
+        this.sandboxId,
+        credentials,
+      );
+    }
+  }
+
+  private async pushFileSecretsPostBoot(): Promise<void> {
+    const fileSecrets = this.workspace?.config.fileSecrets;
+    if (!fileSecrets || fileSecrets.length === 0) return;
+
+    const decrypted = await SecretsService.decryptFileSecrets(fileSecrets);
+    await this.deps.provisionService.pushFileSecrets(
+      this.sandboxId,
+      decrypted.map((s) => ({
+        path: s.path,
+        content: s.content,
+        mode: s.mode,
+      })),
+    );
+  }
+
+  private async pushOhMyOpenCodeCachePostBoot(): Promise<void> {
+    const configs = this.deps.configFileService.getMergedForSandbox(
+      this.workspace?.id,
+    );
+    const authConfig = configs.find((c) => c.path === VM_PATHS.opencodeAuth);
+
+    let providers: string[] = [];
+    if (authConfig) {
+      try {
+        const authJson = JSON.parse(authConfig.content);
+        providers = Object.keys(authJson);
+      } catch {
+        log.warn("Failed to parse auth.json for oh-my-opencode cache seed");
+      }
+    }
+
+    await this.deps.provisionService.pushOhMyOpenCodeCache(
+      this.sandboxId,
+      providers,
+    );
+  }
+
+  private async pushSandboxMdPostBoot(): Promise<void> {
+    const content = this.generateSandboxMd();
+    await this.deps.provisionService.pushSandboxMd(this.sandboxId, content);
+  }
+
+  private generateSandboxMd(): string {
+    const ws = this.workspace;
+    const reposSection = ws?.config.repos.length
+      ? ws.config.repos
+          .map((r) => {
+            const name = "url" in r ? r.url : r.repo;
+            return `- **${name}** (branch: \`${r.branch}\`, path: \`/home/dev${r.clonePath}\`)`;
+          })
+          .join("\n")
+      : "No repositories configured";
+
+    const vsPort = config.raw.services.vscode.port;
+    const ocPort = config.raw.services.opencode.port;
+    const ttydPort = config.raw.services.terminal.port;
+
+    const devCommandsSection = ws?.config.devCommands?.length
+      ? ws.config.devCommands
+          .map((cmd) => {
+            const parts = [`\`${cmd.command}\``];
+            if (cmd.workdir) parts.push(`workdir: \`${cmd.workdir}\``);
+            if (cmd.port) parts.push(`port: ${cmd.port}`);
+            return `- **${cmd.name}**: ${parts.join(", ")}`;
+          })
+          .join("\n")
+      : "None configured";
+
+    const secretsSection =
+      ws?.config.secrets && Object.keys(ws.config.secrets).length > 0
+        ? `Available in \`/etc/sandbox/secrets/.env\` (source with: \`source /etc/sandbox/secrets/.env\`)\nKeys: ${Object.keys(ws.config.secrets).join(", ")}`
+        : "None configured";
+
+    const fileSecretsSection = ws?.config.fileSecrets?.length
+      ? ws.config.fileSecrets
+          .map(
+            (s) => `- **${s.name}**: \`${s.path.replace(/^~/, "/home/dev")}\``,
+          )
+          .join("\n")
+      : "";
+
+    return `# Sandbox: ${this.sandboxId}${ws ? ` (${ws.name})` : ""}
+
+## Repositories
+${reposSection}
+
+## Services
+| Service | Port | Logs |
+|---------|------|------|
+| code-server (VSCode) | ${vsPort} | \`/var/log/sandbox/vscode.log\` |
+| opencode | ${ocPort} | \`/var/log/sandbox/opencode.log\` |
+| terminal (ttyd) | ${ttydPort} | \`/var/log/sandbox/terminal.log\` |
+| sshd | 22 | — |
+
+## Dev Commands
+${devCommandsSection}
+
+## Environment Secrets
+${secretsSection}
+${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
+## Paths
+- Workspace: \`/home/dev/workspace\`
+- Config: \`/etc/sandbox/config.json\`
+- Logs: \`/var/log/sandbox/\`
+`;
+  }
+
+  private async configurePostBoot(): Promise<void> {
+    if (this.hasVmSnapshot) {
+      return;
+    }
+
+    const serviceNames = ["vscode", "opencode", "terminal"];
+    await this.deps.provisionService.startServices(
+      this.sandboxId,
+      serviceNames,
+    );
+    log.info({ sandboxId: this.sandboxId }, "Post-boot services started");
+  }
+
   private async pushAuthAndConfigs(): Promise<void> {
-    const result = await this.deps.internalService.syncToSandbox(
+    const result = await this.deps.internalService.syncAllToSandbox(
       this.sandboxId,
     );
     log.info(
@@ -547,8 +828,9 @@ class SpawnContext {
         sandboxId: this.sandboxId,
         authSynced: result.auth.synced,
         configsSynced: result.configs.synced,
+        registry: result.registry,
       },
-      "Auth and configs pushed to sandbox",
+      "Auth, configs, and registry pushed to sandbox",
     );
   }
 
@@ -693,7 +975,7 @@ class SpawnContext {
     };
   }
 
-  private finalize(): Sandbox {
+  private finalize(): CreateSandboxResponse {
     if (!this.sandbox) throw new Error("Sandbox not initialized");
     this.sandbox.status = "running";
     this.sandbox.runtime.pid = this.pid;
@@ -706,12 +988,33 @@ class SpawnContext {
         workspaceId: this.options.workspaceId,
       },
     });
+
+    const totalTime = Math.round(performance.now() - this.startTime);
+    const finalTimings: SpawnTimings = {
+      total: totalTime,
+      loadWorkspace: this.timings.loadWorkspace ?? 0,
+      networkAndVolume: this.timings.networkAndVolume ?? 0,
+      resizeVolume: this.timings.resizeVolume ?? 0,
+      initializeSandbox: this.timings.initializeSandbox ?? 0,
+      createTap: this.timings.createTap ?? 0,
+      launchFirecracker: this.timings.launchFirecracker ?? 0,
+      configureOrRestore: this.timings.configureOrRestore ?? 0,
+      agentSetup: this.timings.agentSetup ?? 0,
+      postBoot: this.timings.postBoot ?? 0,
+      registerRoutes: this.timings.registerRoutes ?? 0,
+    };
+
     log.info(
-      { sandboxId: this.sandboxId, pid: this.pid, useLvm: this.paths?.useLvm },
+      {
+        sandboxId: this.sandboxId,
+        pid: this.pid,
+        useLvm: this.paths?.useLvm,
+        timings: finalTimings,
+      },
       "Sandbox created successfully",
     );
 
-    return this.sandbox;
+    return { ...this.sandbox, timings: finalTimings };
   }
 
   private async rollback(): Promise<void> {

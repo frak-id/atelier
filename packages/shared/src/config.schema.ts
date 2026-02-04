@@ -164,7 +164,7 @@ export type SandboxServiceEntry = Static<typeof SandboxServiceEntrySchema>;
 export const ImagesConfigSchema = Type.Object(
   {
     /** Directory containing image definitions (each image is a subdirectory with Dockerfile + image.json) */
-    directory: Type.String({ default: "/opt/frak-sandbox/images" }),
+    directory: Type.String({ default: "/opt/frak-sandbox/infra/images" }),
     /** Default image to use when creating new workspaces */
     defaultImage: Type.String({ default: "dev-base" }),
   },
@@ -280,7 +280,7 @@ export const DEFAULT_CONFIG: FrakConfig = {
   },
   setup: {},
   images: {
-    directory: "/opt/frak-sandbox/images",
+    directory: "/opt/frak-sandbox/infra/images",
     defaultImage: "dev-base",
   },
 };

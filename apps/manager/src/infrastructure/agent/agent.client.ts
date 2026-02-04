@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
+import type { SandboxConfig } from "@frak-sandbox/shared";
 import { SandboxError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { getVsockPath } from "../firecracker/index.ts";
@@ -12,6 +13,7 @@ import type {
   DevStartResult,
   DevStopResult,
   ExecResult,
+  FileWrite,
   GitCommitResult,
   GitDiffResult,
   GitPushResult,
@@ -20,6 +22,7 @@ import type {
   ServiceStartResult,
   ServiceStatus,
   ServiceStopResult,
+  WriteFilesResult,
 } from "./agent.types.ts";
 
 const log = createChildLogger("agent");
@@ -210,6 +213,28 @@ export class AgentClient {
     return this.request<Record<string, unknown>>(sandboxId, "/config");
   }
 
+  async setConfig(
+    sandboxId: string,
+    config: SandboxConfig,
+  ): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(sandboxId, "/config", {
+      method: "POST",
+      body: config,
+      timeout: 10000,
+    });
+  }
+
+  async writeFiles(
+    sandboxId: string,
+    files: FileWrite[],
+  ): Promise<WriteFilesResult> {
+    return this.request<WriteFilesResult>(sandboxId, "/files/write", {
+      method: "POST",
+      body: { files },
+      timeout: 30000,
+    });
+  }
+
   async exec(
     sandboxId: string,
     command: string,
@@ -375,6 +400,20 @@ export class AgentClient {
       body: { repoPath },
       timeout: 60000,
     });
+  }
+
+  async startServices(
+    sandboxId: string,
+    serviceNames: string[],
+  ): Promise<void> {
+    await Promise.all(
+      serviceNames.map((name) =>
+        this.serviceStart(sandboxId, name).catch((err) => {
+          // Log but don't fail - some services may not be configured
+          console.warn(`Failed to start service ${name}: ${err}`);
+        }),
+      ),
+    );
   }
 }
 

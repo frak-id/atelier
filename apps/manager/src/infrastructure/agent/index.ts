@@ -10,7 +10,10 @@ export type {
   DevStartResult,
   DevStopResult,
   ExecResult,
+  FileWrite,
+  FileWriteResult,
   GitRepoStatus,
   GitStatus,
   ServiceStatus,
+  WriteFilesResult,
 } from "./agent.types.ts";
