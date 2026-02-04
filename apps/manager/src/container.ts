@@ -11,7 +11,10 @@ import {
   InternalService,
   SharedAuthRepository,
 } from "./modules/internal/index.ts";
-import { SandboxRepository } from "./modules/sandbox/index.ts";
+import {
+  SandboxProvisionService,
+  SandboxRepository,
+} from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
@@ -52,12 +55,14 @@ const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = sandboxRepository;
 
 const agentClient = new AgentClient();
+const sandboxProvisionService = new SandboxProvisionService(agentClient);
 
 const internalService = new InternalService(
   sharedAuthRepository,
   configFileService,
   agentClient,
   sandboxService,
+  sandboxProvisionService,
 );
 
 const agentOperations = new AgentOperations(agentClient);

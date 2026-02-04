@@ -31,7 +31,6 @@ import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
-import { SandboxProvisioner } from "../modules/sandbox/sandbox.provisioner.ts";
 import type { SshKeyService } from "../modules/ssh-key/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
@@ -97,7 +96,7 @@ class SpawnContext {
         return await this.finalizeMock();
       }
 
-      await Promise.all([this.createTapDevice(), this.provisionFilesystem()]);
+      await this.createTapDevice();
       await this.launchFirecracker();
 
       if (this.hasVmSnapshot && this.options.workspaceId) {
@@ -310,10 +309,6 @@ class SpawnContext {
   private async createTapDevice(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
     await NetworkService.createTap(this.network.tapDevice);
-  }
-
-  private async provisionFilesystem(): Promise<void> {
-    await SandboxProvisioner.provision();
   }
 
   private async launchFirecracker(): Promise<void> {

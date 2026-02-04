@@ -10,14 +10,14 @@ Each module follows: `index.ts` (barrel) → `service.ts` (logic) → `repositor
 
 | Module | Service | Repository | Notes |
 |--------|---------|------------|-------|
-| `sandbox` | Yes | Yes | + `provisioner.ts` for rootfs injection |
+| `sandbox` | Yes | Yes | + `SandboxProvisionService` for post-boot provisioning |
 | `workspace` | Yes | Yes | |
 | `task` | Yes | Yes | |
 | `config-file` | Yes | Yes | |
 | `git-source` | Yes | Yes | |
 | `ssh-key` | Yes | Yes | |
 | `session-template` | Yes | No | Template discovery + merging |
-| `internal` | Yes | No | Auth sync, config discovery, registry sync |
-| `shared-auth` | No | Yes | Used by internal |
+| `internal` | Yes | No | Facade for `AuthSyncService` + config sync |
+| `shared-auth` | No | Yes | Used by AuthSyncService |
 
 For code examples, see [docs/patterns.md](../../../../docs/patterns.md).
