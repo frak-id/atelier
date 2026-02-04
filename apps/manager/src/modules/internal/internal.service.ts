@@ -306,19 +306,18 @@ export class InternalService {
 
   private async pushFilesToSandboxes(
     sandboxIds: string[],
-    files: { path: string; content: string }[],
+    files: { path: string; content: string; owner?: "dev" | "root" }[],
     label: string,
   ): Promise<void> {
-    const eof = `${label.toUpperCase()}EOF`;
-    const commands = files.map((file, i) => ({
-      id: `${label}-${i}`,
-      command: `mkdir -p "$(dirname '${file.path}')" && cat > '${file.path}.tmp' << '${eof}'\n${file.content}\n${eof}\nmv '${file.path}.tmp' '${file.path}' && chown dev:dev '${file.path}' && chown dev:dev "$(dirname '${file.path}')"`,
-      timeout: 5000,
+    const fileWrites = files.map((f) => ({
+      path: f.path,
+      content: f.content,
+      owner: f.owner ?? ("dev" as const),
     }));
 
     const results = await Promise.allSettled(
       sandboxIds.map((sandboxId) =>
-        this.agentClient.batchExec(sandboxId, commands, { timeout: 10000 }),
+        this.agentClient.writeFiles(sandboxId, fileWrites),
       ),
     );
 

@@ -9,10 +9,6 @@ pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 30_000;
 pub const MAX_EXEC_BUFFER: usize = 10 * 1024 * 1024;
 
 pub const CONFIG_PATH: &str = "/etc/sandbox/config.json";
-pub const VSCODE_SETTINGS_PATH: &str = "/home/dev/.local/share/code-server/User/settings.json";
-pub const VSCODE_EXTENSIONS_PATH: &str = "/etc/sandbox/vscode-extensions.json";
-pub const OPENCODE_AUTH_PATH: &str = "/home/dev/.local/share/opencode/auth.json";
-pub const OPENCODE_CONFIG_PATH: &str = "/home/dev/.config/opencode/opencode.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,19 +59,6 @@ pub static SANDBOX_CONFIG: LazyLock<RwLock<Option<SandboxConfig>>> = LazyLock::n
         .and_then(|s| serde_json::from_str(&s).ok());
     RwLock::new(config)
 });
-
-/// Reload config from disk
-pub fn reload_config() -> Result<(), String> {
-    let content = std::fs::read_to_string(CONFIG_PATH)
-        .map_err(|e| format!("Failed to read config: {}", e))?;
-    let config: SandboxConfig =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
-    let mut guard = SANDBOX_CONFIG
-        .write()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    *guard = Some(config);
-    Ok(())
-}
 
 /// Set config from JSON and write to disk
 pub fn set_config(config: SandboxConfig) -> Result<(), String> {

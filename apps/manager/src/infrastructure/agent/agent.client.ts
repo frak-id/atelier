@@ -13,6 +13,7 @@ import type {
   DevStartResult,
   DevStopResult,
   ExecResult,
+  FileWrite,
   GitCommitResult,
   GitDiffResult,
   GitPushResult,
@@ -21,6 +22,7 @@ import type {
   ServiceStartResult,
   ServiceStatus,
   ServiceStopResult,
+  WriteFilesResult,
 } from "./agent.types.ts";
 
 const log = createChildLogger("agent");
@@ -219,6 +221,17 @@ export class AgentClient {
       method: "POST",
       body: config,
       timeout: 10000,
+    });
+  }
+
+  async writeFiles(
+    sandboxId: string,
+    files: FileWrite[],
+  ): Promise<WriteFilesResult> {
+    return this.request<WriteFilesResult>(sandboxId, "/files/write", {
+      method: "POST",
+      body: { files },
+      timeout: 30000,
     });
   }
 

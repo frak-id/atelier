@@ -60,21 +60,6 @@ fn stopped_service(name: &str, cfg: &ServiceConfig) -> ManagedProcess {
     }
 }
 
-pub async fn start_autostart_services() {
-    let Some(cfg) = get_config() else {
-        return;
-    };
-    for (name, svc) in &cfg.services {
-        if svc.auto_start && svc.command.is_some() {
-            println!("Auto-starting service: {}", name);
-            if let Err(e) = start_service_internal(name, svc).await
-            {
-                eprintln!("Failed to auto-start {}: {}", name, e);
-            }
-        }
-    }
-}
-
 async fn start_service_internal(
     name: &str,
     cfg: &ServiceConfig,

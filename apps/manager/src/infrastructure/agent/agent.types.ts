@@ -136,3 +136,20 @@ export interface DevLogsResult {
 export interface SetConfigResult {
   success: boolean;
 }
+
+export interface FileWrite {
+  path: string;
+  content: string;
+  mode?: string;
+  owner?: "dev" | "root";
+}
+
+export interface FileWriteResult {
+  path: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface WriteFilesResult {
+  results: FileWriteResult[];
+}
