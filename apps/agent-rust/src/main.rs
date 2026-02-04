@@ -64,9 +64,10 @@ async fn main() {
     };
     println!("Listening on vsock port {VSOCK_PORT}");
 
-    tokio::spawn(async {
-        routes::services::start_autostart_services().await;
-    });
+    // Services are started by the manager after config push via POST /services/{name}/start
+    // tokio::spawn(async {
+    //     routes::services::start_autostart_services().await;
+    // });
 
     loop {
         let (stream, _addr) = match listener.accept().await {

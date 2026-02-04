@@ -2,8 +2,6 @@ import type { SandboxConfig } from "@frak-sandbox/shared";
 import { VM_PATHS } from "@frak-sandbox/shared/constants";
 import { $ } from "bun";
 import type { SandboxPaths } from "../../infrastructure/firecracker/index.ts";
-import type { NetworkAllocation } from "../../infrastructure/network/index.ts";
-import { RegistryService } from "../../infrastructure/registry/index.ts";
 import { SecretsService } from "../../infrastructure/secrets/index.ts";
 import type {
   GitHubSourceConfig,
@@ -19,7 +17,6 @@ const log = createChildLogger("sandbox-provisioner");
 interface ProvisionContext {
   sandboxId: string;
   workspace?: Workspace;
-  network: NetworkAllocation;
   paths: SandboxPaths;
   getGitSource: (id: string) => { type: string; config: unknown } | undefined;
   getConfigFiles: (workspaceId?: string) => MergedConfigFile[];
@@ -41,23 +38,12 @@ export const SandboxProvisioner = {
     }
 
     await $`${{ raw: mountCmd }}`.quiet();
-    await $`sudo -n chown frak:frak ${mountPoint}/etc ${mountPoint}/etc/profile.d ${mountPoint}/etc/sandbox ${mountPoint}/etc/sandbox/secrets ${mountPoint}/home/dev ${mountPoint}/.frak-sandbox`
-      .quiet()
-      .nothrow();
-    await $`sudo -n chown -R frak:frak ${mountPoint}/home/dev/.config ${mountPoint}/home/dev/.local ${mountPoint}/home/dev/.cache`
-      .quiet()
-      .nothrow();
-    await this.removeExistingConfigFiles(mountPoint);
 
     try {
-      await this.injectNetworkConfig(mountPoint, ctx.network);
-      await this.injectSharedBinariesPath(mountPoint);
-      await this.injectRegistryConfig(mountPoint, ctx);
       await this.injectSandboxConfig(mountPoint, ctx);
       await this.injectSecrets(mountPoint, ctx.workspace);
       await this.injectFileSecrets(mountPoint, ctx);
       await this.injectGitCredentials(mountPoint, ctx);
-      await this.injectEditorConfigs(mountPoint, ctx);
       await this.injectOhMyOpenCodeCache(mountPoint, ctx);
       await this.injectSandboxMd(mountPoint, ctx);
     } finally {
@@ -66,91 +52,6 @@ export const SandboxProvisioner = {
     }
 
     log.debug({ sandboxId: ctx.sandboxId }, "Config injected");
-  },
-
-  async removeExistingConfigFiles(mountPoint: string): Promise<void> {
-    const filesToRemove = [
-      `${mountPoint}/etc/network-setup.sh`,
-      `${mountPoint}/etc/profile.d/shared-binaries.sh`,
-      `${mountPoint}/etc/profile.d/registry.sh`,
-      `${mountPoint}/etc/npmrc`,
-      `${mountPoint}/home/dev/.bunfig.toml`,
-      `${mountPoint}/home/dev/.yarnrc.yml`,
-      `${mountPoint}/home/dev/.gitconfig`,
-      `${mountPoint}/home/dev/SANDBOX.md`,
-      `${mountPoint}/etc/sandbox/config.json`,
-      `${mountPoint}/etc/sandbox/secrets/.env`,
-      `${mountPoint}/etc/sandbox/secrets/git-credentials`,
-      `${mountPoint}/home/dev/.cache/oh-my-opencode/connected-providers.json`,
-      `${mountPoint}/.frak-sandbox/session-templates.json`,
-    ];
-    await Promise.all(
-      filesToRemove.map((f) => $`rm -f ${f}`.quiet().nothrow()),
-    );
-  },
-
-  async injectSharedBinariesPath(mountPoint: string): Promise<void> {
-    await ensureDir(`${mountPoint}/etc/profile.d`);
-    await Bun.write(
-      `${mountPoint}/etc/profile.d/shared-binaries.sh`,
-      'export PATH="/opt/shared/bin:$PATH"\n',
-    );
-  },
-
-  async injectNetworkConfig(
-    mountPoint: string,
-    network: NetworkAllocation,
-  ): Promise<void> {
-    const dnsLines = config.network.dnsServers
-      .map((dns) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
-      .join("\n");
-    const networkScript = `#!/bin/bash
-ip addr add 127.0.0.1/8 dev lo
-ip link set lo up
-ip addr add ${network.ipAddress}/24 dev eth0
-ip link set eth0 up
-ip route add default via ${network.gateway} dev eth0
-> /etc/resolv.conf
-${dnsLines}
-`;
-    await Bun.write(`${mountPoint}/etc/network-setup.sh`, networkScript);
-    await $`chmod +x ${mountPoint}/etc/network-setup.sh`.quiet();
-  },
-
-  async injectRegistryConfig(
-    mountPoint: string,
-    ctx: ProvisionContext,
-  ): Promise<void> {
-    const settings = RegistryService.getSettings();
-    if (!settings.enabled) {
-      log.debug("Registry disabled globally, skipping injection");
-      return;
-    }
-
-    if (ctx.workspace?.config.useRegistryCache === false) {
-      log.debug(
-        { workspaceId: ctx.workspace.id },
-        "Registry disabled for workspace, skipping injection",
-      );
-      return;
-    }
-
-    const registryUrl = RegistryService.getRegistryUrl();
-
-    await Bun.write(
-      `${mountPoint}/etc/profile.d/registry.sh`,
-      `export NPM_CONFIG_REGISTRY="${registryUrl}"\n`,
-    );
-
-    await Bun.write(`${mountPoint}/etc/npmrc`, `registry=${registryUrl}\n`);
-
-    const bunfigToml = `[install]\nregistry = "${registryUrl}"\n`;
-    await Bun.write(`${mountPoint}/home/dev/.bunfig.toml`, bunfigToml);
-
-    const yarnrcYml = `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${config.network.bridgeIp}"\n`;
-    await Bun.write(`${mountPoint}/home/dev/.yarnrc.yml`, yarnrcYml);
-
-    log.debug("Registry config injected");
   },
 
   async injectSandboxConfig(
@@ -325,46 +226,6 @@ ${dnsLines}
     );
   },
 
-  async injectEditorConfigs(
-    mountPoint: string,
-    ctx: ProvisionContext,
-  ): Promise<void> {
-    const configs = ctx.getConfigFiles(ctx.workspace?.id);
-
-    for (const configFile of configs) {
-      await injectFile({
-        mountPoint,
-        path: configFile.path,
-        content: configFile.content,
-        contentType: configFile.contentType === "binary" ? "binary" : "text",
-      });
-    }
-
-    await $`sudo -n chown -R 1000:1000 ${mountPoint}/home/dev/.local`
-      .quiet()
-      .nothrow();
-    await $`sudo -n chown -R 1000:1000 ${mountPoint}/home/dev/.config`
-      .quiet()
-      .nothrow();
-    await $`sudo -n chown -R 1000:1000 ${mountPoint}/etc/sandbox`
-      .quiet()
-      .nothrow();
-    await $`sudo -n chown 1000:1000 ${mountPoint}/home/dev/.bunfig.toml`
-      .quiet()
-      .nothrow();
-    await $`sudo -n chown 1000:1000 ${mountPoint}/home/dev/.yarnrc.yml`
-      .quiet()
-      .nothrow();
-    await $`sudo -n chown 1000:1000 ${mountPoint}/home/dev/.gitconfig`
-      .quiet()
-      .nothrow();
-
-    log.debug(
-      { sandboxId: ctx.sandboxId, configCount: configs.length },
-      "Config files injected",
-    );
-  },
-
   /**
    * Seed oh-my-opencode's connected-providers cache to prevent a deadlock:
    * oh-my-opencode's config hook calls fetchAvailableModels() which requests
@@ -403,7 +264,6 @@ ${dnsLines}
       `${cacheDir}/connected-providers.json`,
       JSON.stringify(connectedProviders, null, 2),
     );
-    await $`sudo -n chown -R 1000:1000 ${mountPoint}/home/dev/.cache`.quiet();
   },
 
   async injectSandboxMd(
@@ -412,7 +272,6 @@ ${dnsLines}
   ): Promise<void> {
     const sandboxMd = this.generateSandboxMd(ctx);
     await Bun.write(`${mountPoint}/home/dev/SANDBOX.md`, sandboxMd);
-    await $`sudo -n chown 1000:1000 ${mountPoint}/home/dev/SANDBOX.md`.quiet();
   },
 
   generateSandboxMd(ctx: ProvisionContext): string {

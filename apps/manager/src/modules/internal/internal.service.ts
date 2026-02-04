@@ -626,4 +626,115 @@ export class InternalService {
     }
     return null;
   }
+
+  /**
+   * Configure network inside the sandbox via agent exec.
+   * Called post-boot for both fresh spawns and snapshot restores.
+   */
+  async configureNetwork(
+    sandboxId: string,
+    network: { ipAddress: string; gateway: string },
+  ): Promise<void> {
+    const dnsServers = config.network.dnsServers;
+    const dnsCommands = dnsServers
+      .map((dns) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
+      .join(" && ");
+
+    const networkCmd = `ip addr add ${network.ipAddress}/24 dev eth0 && ip link set eth0 up && ip route add default via ${network.gateway} dev eth0 && > /etc/resolv.conf && ${dnsCommands}`;
+
+    const result = await this.agentClient.exec(sandboxId, networkCmd, {
+      timeout: 10000,
+    });
+
+    if (result.exitCode !== 0) {
+      log.error(
+        { sandboxId, exitCode: result.exitCode, stderr: result.stderr },
+        "Network configuration failed",
+      );
+      throw new Error(`Network configuration failed: ${result.stderr}`);
+    }
+
+    log.info({ sandboxId, ipAddress: network.ipAddress }, "Network configured");
+  }
+
+  /**
+   * Push registry configuration to a single sandbox.
+   */
+  async pushRegistryConfigToSandbox(sandboxId: string): Promise<void> {
+    const settings = RegistryService.getSettings();
+    if (!settings.enabled) return;
+
+    const registryUrl = RegistryService.getRegistryUrl();
+    const bridgeIp = config.network.bridgeIp;
+
+    const files = [
+      {
+        path: "/etc/profile.d/registry.sh",
+        content: `export NPM_CONFIG_REGISTRY="${registryUrl}"`,
+      },
+      {
+        path: "/etc/npmrc",
+        content: `registry=${registryUrl}`,
+      },
+      {
+        path: "/home/dev/.bunfig.toml",
+        content: `[install]\nregistry = "${registryUrl}"`,
+      },
+      {
+        path: "/home/dev/.yarnrc.yml",
+        content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${bridgeIp}"`,
+      },
+    ];
+
+    await this.pushFilesToSandboxes([sandboxId], files, "registry");
+    log.debug({ sandboxId }, "Registry config pushed");
+  }
+
+  /**
+   * Start services in the sandbox via agent endpoints.
+   */
+  async startServices(
+    sandboxId: string,
+    serviceNames: string[],
+  ): Promise<void> {
+    await Promise.all(
+      serviceNames.map((name) =>
+        this.agentClient.serviceStart(sandboxId, name).catch((err) => {
+          log.warn(
+            { sandboxId, service: name, error: String(err) },
+            "Service start failed (non-blocking)",
+          );
+        }),
+      ),
+    );
+    log.info({ sandboxId, services: serviceNames }, "Services started");
+  }
+
+  /**
+   * Push all configuration to a sandbox post-boot.
+   * This is the main entry point for spawner post-boot configuration.
+   */
+  async syncAllToSandbox(
+    sandboxId: string,
+    options?: { skipRegistry?: boolean },
+  ): Promise<{
+    auth: { synced: number };
+    configs: { synced: number };
+    registry: boolean;
+  }> {
+    const [authConfigs, registry] = await Promise.all([
+      this.syncToSandbox(sandboxId),
+      options?.skipRegistry
+        ? Promise.resolve(false)
+        : this.pushRegistryConfigToSandbox(sandboxId)
+            .then(() => true)
+            .catch(() => false),
+    ]);
+
+    return {
+      auth: authConfigs.auth,
+      configs: authConfigs.configs,
+      registry,
+    };
+  }
 }

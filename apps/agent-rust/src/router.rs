@@ -22,6 +22,12 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::POST, "/git/push") => routes::git::handle_git_push(req).await,
 
         (Method::GET, "/config") => routes::config::handle_config(),
+        (Method::POST, "/config") => {
+            routes::config::handle_set_config(req).await
+        }
+        (Method::POST, "/config/reload") => {
+            routes::config::handle_reload_config()
+        }
         (Method::GET, "/editor-config") => routes::config::handle_editor_config().await,
 
         (Method::GET, "/dev") => routes::dev::handle_get_dev().await,

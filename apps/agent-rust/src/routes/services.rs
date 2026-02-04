@@ -4,7 +4,7 @@ use hyper::{Response, StatusCode};
 use serde::Serialize;
 use std::sync::LazyLock;
 
-use crate::config::{ServiceConfig, LOG_DIR, SANDBOX_CONFIG};
+use crate::config::{get_config, ServiceConfig, LOG_DIR};
 use crate::response::{json_error, json_ok};
 use crate::routes::process_manager::{
     LogOpenMode, ManagedProcess, ProcessRegistry, StartParams,
@@ -43,10 +43,8 @@ struct ServiceStopResponse {
     message: String,
 }
 
-fn find_service_config(name: &str) -> Option<&ServiceConfig> {
-    SANDBOX_CONFIG
-        .as_ref()
-        .and_then(|c| c.services.get(name))
+fn find_service_config(name: &str) -> Option<ServiceConfig> {
+    get_config().and_then(|c| c.services.get(name).cloned())
 }
 
 fn stopped_service(name: &str, cfg: &ServiceConfig) -> ManagedProcess {
@@ -63,7 +61,7 @@ fn stopped_service(name: &str, cfg: &ServiceConfig) -> ManagedProcess {
 }
 
 pub async fn start_autostart_services() {
-    let Some(cfg) = SANDBOX_CONFIG.as_ref() else {
+    let Some(cfg) = get_config() else {
         return;
     };
     for (name, svc) in &cfg.services {
@@ -112,7 +110,7 @@ pub async fn handle_services_list() -> Response<Full<Bytes>> {
 
     let mut services: Vec<ManagedProcess> = Vec::new();
 
-    if let Some(cfg) = SANDBOX_CONFIG.as_ref() {
+    if let Some(cfg) = get_config() {
         for (name, svc_cfg) in &cfg.services {
             if let Some(svc) = running_map.remove(name.as_str()) {
                 services.push(svc);
@@ -137,7 +135,7 @@ pub async fn handle_service_status(
 
     if let Some(svc_cfg) = find_service_config(name) {
         return json_ok(
-            serde_json::to_value(stopped_service(name, svc_cfg))
+            serde_json::to_value(stopped_service(name, &svc_cfg))
                 .unwrap(),
         );
     }
@@ -161,7 +159,7 @@ pub async fn handle_service_start(
         }
     };
 
-    match start_service_internal(name, cfg).await {
+    match start_service_internal(name, &cfg).await {
         Ok(svc) => json_ok(
             serde_json::to_value(ServiceStartResponse {
                 status: "running".to_string(),

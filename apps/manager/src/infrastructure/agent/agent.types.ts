@@ -132,3 +132,7 @@ export interface DevLogsResult {
   content: string;
   nextOffset: number;
 }
+
+export interface SetConfigResult {
+  success: boolean;
+}

@@ -105,6 +105,8 @@ class SpawnContext {
       }
 
       await this.waitForAgentAndSetup();
+      await this.configurePostBoot();
+
       await this.registerRoutes();
 
       return this.finalize();
@@ -308,8 +310,8 @@ class SpawnContext {
   }
 
   private async provisionFilesystem(): Promise<void> {
-    if (!this.paths || !this.network) {
-      throw new Error("Paths or network not initialized");
+    if (!this.paths) {
+      throw new Error("Paths not initialized");
     }
 
     const getGitSource = (id: string) => this.deps.gitSourceService.getById(id);
@@ -319,7 +321,6 @@ class SpawnContext {
     await SandboxProvisioner.provision({
       sandboxId: this.sandboxId,
       workspace: this.workspace,
-      network: this.network,
       paths: this.paths,
       getGitSource,
       getConfigFiles,
@@ -462,29 +463,10 @@ class SpawnContext {
       }
     }
 
-    // Push latest auth and configs BEFORE launching services so opencode
-    // reads up-to-date credentials instead of stale prebuild data.
     await this.pushAuthAndConfigs();
 
-    // Fire-and-forget: start services via agent endpoints
     const serviceNames = ["vscode", "opencode", "terminal"];
-    Promise.all(
-      serviceNames.map((name) =>
-        this.deps.agentClient
-          .serviceStart(this.sandboxId, name)
-          .catch((err) => {
-            log.warn(
-              {
-                sandboxId: this.sandboxId,
-                service: name,
-                error: String(err),
-              },
-              "Service start failed (non-blocking)",
-            );
-          }),
-      ),
-    ).catch(() => {});
-
+    await this.deps.internalService.startServices(this.sandboxId, serviceNames);
     log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
   }
 
@@ -529,6 +511,11 @@ class SpawnContext {
       return;
     }
 
+    await this.deps.internalService.configureNetwork(this.sandboxId, {
+      ipAddress: this.network.ipAddress,
+      gateway: this.network.gateway,
+    });
+
     await this.expandFilesystem();
 
     if (this.needsRepoClone()) {
@@ -538,8 +525,18 @@ class SpawnContext {
     await this.pushAuthAndConfigs();
   }
 
+  private async configurePostBoot(): Promise<void> {
+    if (this.hasVmSnapshot) {
+      return;
+    }
+
+    const serviceNames = ["vscode", "opencode", "terminal"];
+    await this.deps.internalService.startServices(this.sandboxId, serviceNames);
+    log.info({ sandboxId: this.sandboxId }, "Post-boot services started");
+  }
+
   private async pushAuthAndConfigs(): Promise<void> {
-    const result = await this.deps.internalService.syncToSandbox(
+    const result = await this.deps.internalService.syncAllToSandbox(
       this.sandboxId,
     );
     log.info(
@@ -547,8 +544,9 @@ class SpawnContext {
         sandboxId: this.sandboxId,
         authSynced: result.auth.synced,
         configsSynced: result.configs.synced,
+        registry: result.registry,
       },
-      "Auth and configs pushed to sandbox",
+      "Auth, configs, and registry pushed to sandbox",
     );
   }
 

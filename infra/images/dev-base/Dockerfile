@@ -66,17 +66,24 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
     && echo 'export BUN_INSTALL="/home/dev/.bun"' > /etc/profile.d/bun.sh \
     && echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> /etc/profile.d/bun.sh
 
-# Create sandbox directories
+# Create sandbox directories with proper ownership
+# All paths owned by dev:dev (UID/GID 1000) to match host frak user
 RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
     /home/dev/workspace \
     /home/dev/.local/share/code-server/User \
     /home/dev/.local/share/opencode \
-    /home/dev/.config \
-    && chown -R dev:dev /home/dev /var/log/sandbox
+    /home/dev/.config/opencode \
+    /home/dev/.cache/oh-my-opencode \
+    /.frak-sandbox \
+    && chown -R dev:dev /home/dev /var/log/sandbox /etc/sandbox /.frak-sandbox \
+    && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.frak-sandbox
+
+# Bake static profile scripts (no per-spawn injection needed)
+RUN echo 'export PATH="/opt/shared/bin:$PATH"' > /etc/profile.d/shared-binaries.sh
 
 # Copy config files
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
-COPY rootfs/etc/sandbox/ /etc/sandbox/
+COPY --chown=dev:dev rootfs/etc/sandbox/ /etc/sandbox/
 COPY rootfs/etc/xdg/openbox/ /etc/xdg/openbox/
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
 COPY --chown=root:root sandbox-agent /usr/local/bin/sandbox-agent
