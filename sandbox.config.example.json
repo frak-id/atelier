@@ -41,6 +41,7 @@
   "services": {
     "vscode": { "port": 8080 },
     "opencode": { "port": 3000 },
+    "terminal": { "port": 7681 },
     "agent": { "port": 9999 }
   },
   "setup": {

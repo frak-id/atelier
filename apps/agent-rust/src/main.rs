@@ -71,7 +71,7 @@ async fn main() {
     // });
 
     tokio::spawn(async {
-        terminal::start_terminal_server(7681).await;
+        terminal::ensure_terminal_from_config().await;
     });
 
     loop {

@@ -1,11 +1,21 @@
 use std::ffi::CString;
+use std::sync::LazyLock;
 use futures_util::{SinkExt, StreamExt};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::{close, dup2, execvp, fork, setgid, setsid, setuid, ForkResult, Gid, Pid, Uid};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::config::get_config;
+
+struct TerminalState {
+    port: u16,
+}
+
+static TERMINAL_STATE: LazyLock<Mutex<Option<TerminalState>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 fn raw_openpty() -> Option<(i32, i32)> {
     let mut master: libc::c_int = -1;
@@ -185,6 +195,45 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
     unsafe { libc::close(master_fd) };
 
     ws_writer.abort();
+}
+
+pub async fn ensure_terminal_running(port: u16) {
+    let mut guard = TERMINAL_STATE.lock().await;
+    if let Some(state) = guard.as_ref() {
+        if state.port == port {
+            return;
+        }
+        eprintln!(
+            "terminal: server already running on port {}, ignoring port {}",
+            state.port, port
+        );
+        return;
+    }
+
+    tokio::spawn(async move {
+        start_terminal_server(port).await;
+    });
+
+    *guard = Some(TerminalState { port });
+}
+
+pub async fn ensure_terminal_from_config() {
+    let config = match get_config() {
+        Some(cfg) => cfg,
+        None => return,
+    };
+
+    let service = match config.services.get("terminal") {
+        Some(cfg) => cfg,
+        None => return,
+    };
+
+    if service.enabled == Some(false) {
+        return;
+    }
+
+    let port = service.port.unwrap_or(7681);
+    ensure_terminal_running(port).await;
 }
 
 pub async fn start_terminal_server(port: u16) {

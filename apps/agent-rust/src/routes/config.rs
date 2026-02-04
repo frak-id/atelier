@@ -3,6 +3,7 @@ use hyper::body::Bytes;
 use hyper::{Request, Response, StatusCode};
 
 use crate::config::{get_config, set_config, SandboxConfig};
+use crate::terminal;
 use crate::response::{json_error, json_ok};
 
 pub fn handle_config() -> Response<Full<Bytes>> {
@@ -26,7 +27,10 @@ pub async fn handle_set_config(req: Request<hyper::body::Incoming>) -> Response<
     };
 
     match set_config(config) {
-        Ok(()) => json_ok(serde_json::json!({ "success": true })),
+        Ok(()) => {
+            terminal::ensure_terminal_from_config().await;
+            json_ok(serde_json::json!({ "success": true }))
+        }
         Err(e) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
     }
 }

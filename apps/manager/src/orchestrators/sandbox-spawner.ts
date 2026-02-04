@@ -599,6 +599,7 @@ class SpawnContext {
     const vsPort = config.raw.services.vscode.port;
     const ocPort = config.raw.services.opencode.port;
     const browserPort = config.raw.services.browser.port;
+    const terminalPort = config.raw.services.terminal.port;
 
     return {
       sandboxId: this.sandboxId,
@@ -622,6 +623,10 @@ class SpawnContext {
           command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
           user: "dev" as const,
           autoStart: true,
+        },
+        terminal: {
+          port: terminalPort,
+          enabled: true,
         },
         kasmvnc: {
           port: browserPort,

@@ -1,14 +1,16 @@
 import { Elysia } from "elysia";
-import { sandboxService } from "../container.ts";
-import { createChildLogger } from "../shared/lib/logger.ts";
+import { sandboxService } from "../../container.ts";
+import { config } from "../../shared/lib/config.ts";
+import { createChildLogger } from "../../shared/lib/logger.ts";
+import { sandboxIdGuard } from "./guard.ts";
 
 const log = createChildLogger("terminal-proxy");
 
-const TERMINAL_WS_PORT = 7681;
+const TERMINAL_WS_PORT = config.raw.services.terminal.port;
 
-export const terminalRoutes = new Elysia({ prefix: "/sandboxes" }).ws(
-  "/:id/terminal/ws",
-  {
+export const terminalRoutes = new Elysia()
+  .use(sandboxIdGuard)
+  .ws("/:id/terminal/ws", {
     open(ws) {
       const id = (ws.data.params as { id: string }).id;
       const sandbox = sandboxService.getById(id);
@@ -28,8 +30,26 @@ export const terminalRoutes = new Elysia({ prefix: "/sandboxes" }).ws(
 
       upstream.onmessage = (event) => {
         try {
-          ws.send(event.data as ArrayBuffer | string);
-        } catch {
+          const data = event.data;
+          if (data instanceof ArrayBuffer) {
+            ws.send(Buffer.from(data));
+          } else if (Buffer.isBuffer(data)) {
+            ws.send(data);
+          } else if (data instanceof Uint8Array) {
+            ws.send(Buffer.from(data));
+          } else if (typeof data === "string") {
+            ws.send(data);
+          } else {
+            log.warn(
+              { sandboxId: id, dataType: typeof data },
+              "Unknown upstream data type",
+            );
+          }
+        } catch (err) {
+          log.error(
+            { sandboxId: id, error: String(err) },
+            "Failed to forward upstream data",
+          );
           upstream.close();
         }
       };
@@ -52,12 +72,19 @@ export const terminalRoutes = new Elysia({ prefix: "/sandboxes" }).ws(
         | undefined;
       if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
 
-      if (message instanceof ArrayBuffer) {
+      if (Buffer.isBuffer(message)) {
         upstream.send(message);
+      } else if (message instanceof Uint8Array) {
+        upstream.send(message);
+      } else if (message instanceof ArrayBuffer) {
+        upstream.send(new Uint8Array(message));
       } else if (typeof message === "string") {
         upstream.send(message);
       } else {
-        upstream.send(message as Uint8Array);
+        log.warn(
+          { messageType: typeof message },
+          "Unknown client message type",
+        );
       }
     },
 
@@ -69,5 +96,4 @@ export const terminalRoutes = new Elysia({ prefix: "/sandboxes" }).ws(
         upstream.close();
       }
     },
-  },
-);
+  });

@@ -20,7 +20,6 @@ import {
   sshKeyRoutes,
   systemRoutes,
   taskRoutes,
-  terminalRoutes,
   workspaceRoutes,
 } from "./api/index.ts";
 import {
@@ -210,7 +209,6 @@ const app = new Elysia()
       .guard({ beforeHandle: authGuard }, (app) =>
         app
           .use(sandboxRoutes)
-          .use(terminalRoutes)
           .use(workspaceRoutes)
           .use(taskRoutes)
           .use(sessionTemplateRoutes)
