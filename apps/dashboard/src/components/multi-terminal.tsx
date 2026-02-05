@@ -69,40 +69,35 @@ export function MultiTerminal({ sandboxId, className }: MultiTerminalProps) {
 
   return (
     <div className={cn("flex flex-col bg-[#09090b]", className)}>
-      <div className="flex items-center border-b border-zinc-800 bg-zinc-900/50">
-        <div className="flex-1 flex items-center overflow-x-auto">
-          {sessions.map((session) => (
+      <div className="flex items-center border-b border-zinc-800 bg-zinc-900/50 overflow-x-auto">
+        {sessions.map((session) => (
+          <button
+            key={session.id}
+            type="button"
+            onClick={() => setActiveSessionId(session.id)}
+            className={cn(
+              "group flex items-center gap-2 px-3 py-1.5 text-sm border-r border-zinc-800 transition-colors shrink-0",
+              activeSessionId === session.id
+                ? "bg-[#09090b] text-white"
+                : "text-zinc-400 hover:text-white hover:bg-zinc-800/50",
+            )}
+          >
+            <span className="truncate max-w-[120px]">{session.title}</span>
             <button
-              key={session.id}
               type="button"
-              onClick={() => setActiveSessionId(session.id)}
-              className={cn(
-                "group flex items-center gap-2 px-3 py-1.5 text-sm border-r border-zinc-800 transition-colors",
-                activeSessionId === session.id
-                  ? "bg-[#09090b] text-white"
-                  : "text-zinc-400 hover:text-white hover:bg-zinc-800/50",
-              )}
+              onClick={(e) => handleCloseSession(session.id, e)}
+              className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity p-0.5"
             >
-              <span className="truncate max-w-[120px]">{session.title}</span>
-              {session.status === "exited" && (
-                <span className="text-[10px] text-red-400">(exited)</span>
-              )}
-              <button
-                type="button"
-                onClick={(e) => handleCloseSession(session.id, e)}
-                className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity p-0.5"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              <X className="h-3 w-3" />
             </button>
-          ))}
-        </div>
+          </button>
+        ))}
         <Button
           variant="ghost"
           size="sm"
           onClick={handleCreateSession}
           disabled={createMutation.isPending}
-          className="h-8 px-2 text-zinc-400 hover:text-white"
+          className="h-8 px-2 text-zinc-400 hover:text-white shrink-0"
         >
           {createMutation.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -112,7 +107,7 @@ export function MultiTerminal({ sandboxId, className }: MultiTerminalProps) {
         </Button>
       </div>
 
-      <div className="flex-1 relative">
+      <div className="flex-1 relative min-h-0">
         {sessions.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500">
             <p className="text-sm mb-3">No terminal sessions</p>
@@ -142,6 +137,7 @@ export function MultiTerminal({ sandboxId, className }: MultiTerminalProps) {
               <TerminalPane
                 sandboxId={sandboxId}
                 session={session}
+                isActive={activeSessionId === session.id}
                 onReconnect={() => {}}
               />
             </div>
@@ -155,10 +151,11 @@ export function MultiTerminal({ sandboxId, className }: MultiTerminalProps) {
 interface TerminalPaneProps {
   sandboxId: string;
   session: TerminalSession;
+  isActive: boolean;
   onReconnect: () => void;
 }
 
-function TerminalPane({ sandboxId, session }: TerminalPaneProps) {
+function TerminalPane({ sandboxId, session, isActive }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -188,6 +185,21 @@ function TerminalPane({ sandboxId, session }: TerminalPaneProps) {
   }, [session.status]);
 
   useEffect(() => {
+    if (isActive && fitAddonRef.current && terminalRef.current) {
+      const timer = setTimeout(() => {
+        fitAddonRef.current?.fit();
+        const ws = wsRef.current;
+        const terminal = terminalRef.current;
+        if (ws?.readyState === WebSocket.OPEN && terminal) {
+          const { cols, rows } = terminal;
+          ws.send(JSON.stringify({ type: "resize", cols, rows }));
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isActive]);
+
+  useEffect(() => {
     mountedRef.current = true;
     const container = containerRef.current;
     if (!container) return;
@@ -210,10 +222,7 @@ function TerminalPane({ sandboxId, session }: TerminalPaneProps) {
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
     terminal.open(container);
-
-    requestAnimationFrame(() => {
-      fitAddon.fit();
-    });
+    fitAddon.fit();
 
     function connect() {
       if (!mountedRef.current) return;
@@ -223,6 +232,7 @@ function TerminalPane({ sandboxId, session }: TerminalPaneProps) {
 
       ws.onopen = () => {
         hasConnectedRef.current = true;
+        fitAddon.fit();
         const { cols, rows } = terminal;
         ws.send(JSON.stringify({ type: "resize", cols, rows }));
       };
@@ -300,10 +310,10 @@ function TerminalPane({ sandboxId, session }: TerminalPaneProps) {
   }, [getWsUrl, session.status]);
 
   return (
-    <div className="relative w-full h-full">
+    <div className="absolute inset-0">
       <div
         ref={containerRef}
-        className="w-full h-full"
+        className="absolute inset-0"
         style={{ background: "#09090b" }}
       />
       {isExited && (

@@ -226,14 +226,16 @@ export const terminalRoutes = new Elysia()
         | undefined;
       if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
 
-      if (Buffer.isBuffer(message)) {
+      if (typeof message === "string") {
+        upstream.send(message);
+      } else if (Buffer.isBuffer(message)) {
         upstream.send(message);
       } else if (message instanceof Uint8Array) {
         upstream.send(message);
       } else if (message instanceof ArrayBuffer) {
         upstream.send(new Uint8Array(message));
-      } else if (typeof message === "string") {
-        upstream.send(message);
+      } else if (typeof message === "object" && message !== null) {
+        upstream.send(JSON.stringify(message));
       }
     },
 

@@ -88,8 +88,12 @@ fn set_winsize(fd: i32, cols: u16, rows: u16) {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    unsafe {
-        libc::ioctl(fd, libc::TIOCSWINSZ, &ws);
+    if unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &ws) } == -1 {
+        return;
+    }
+    let fg_pgrp = unsafe { libc::tcgetpgrp(fd) };
+    if fg_pgrp > 0 {
+        unsafe { libc::kill(-fg_pgrp, libc::SIGWINCH) };
     }
 }
 
@@ -119,14 +123,22 @@ pub async fn create_session(
         Ok(ForkResult::Child) => {
             unsafe { libc::close(master_fd) };
             let _ = setsid();
-            unsafe {
-                libc::ioctl(slave_fd, libc::TIOCSCTTY as _, 0);
-            }
             let _ = dup2(slave_fd, 0);
             let _ = dup2(slave_fd, 1);
             let _ = dup2(slave_fd, 2);
             if slave_fd > 2 {
                 let _ = close(slave_fd);
+            }
+            unsafe {
+                libc::ioctl(0, libc::TIOCSCTTY as _, 0);
+                libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+                libc::signal(libc::SIGHUP, libc::SIG_DFL);
+                libc::signal(libc::SIGINT, libc::SIG_DFL);
+                libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+                libc::signal(libc::SIGTERM, libc::SIG_DFL);
+                libc::signal(libc::SIGWINCH, libc::SIG_DFL);
+                let empty_set: libc::sigset_t = std::mem::zeroed();
+                libc::sigprocmask(libc::SIG_SETMASK, &empty_set, std::ptr::null_mut());
             }
             std::env::set_var("TERM", "xterm-256color");
             std::env::set_var("HOME", "/home/dev");
@@ -241,9 +253,8 @@ pub async fn create_session(
                     let _ = s.output_broadcast.send(data);
                 }
                 _ => {
-                    let mut s = reader_session.lock().await;
-                    s.info.status = SessionStatus::Exited;
-                    println!("terminal: session {} exited", reader_session_id);
+                    drop(reader_session);
+                    let _ = delete_session(&reader_session_id).await;
                     break;
                 }
             }
@@ -259,17 +270,12 @@ pub async fn create_session(
 
 pub async fn list_sessions() -> Vec<SessionInfo> {
     let guard = TERMINAL_STATE.read().await;
-    match guard.as_ref() {
-        Some(state) => {
-            let mut sessions = Vec::new();
-            for session in state.sessions.values() {
-                let s = session.lock().await;
-                sessions.push(s.info.clone());
-            }
-            sessions
-        }
-        None => Vec::new(),
+    let Some(state) = guard.as_ref() else { return vec![] };
+    let mut sessions = Vec::with_capacity(state.sessions.len());
+    for session in state.sessions.values() {
+        sessions.push(session.lock().await.info.clone());
     }
+    sessions
 }
 
 pub async fn get_session(session_id: &str) -> Option<SessionInfo> {
@@ -335,6 +341,21 @@ struct CreateSessionBody {
     workdir: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct WsCommand {
+    r#type: String,
+    cols: Option<u16>,
+    rows: Option<u16>,
+}
+
+fn try_parse_resize(data: &[u8]) -> Option<(u16, u16)> {
+    let cmd: WsCommand = serde_json::from_slice(data).ok()?;
+    if cmd.r#type != "resize" {
+        return None;
+    }
+    Some((cmd.cols.unwrap_or(80), cmd.rows.unwrap_or(24)))
+}
+
 async fn read_body(req: Request<hyper::body::Incoming>) -> Result<Bytes, hyper::Error> {
     Ok(req.collect().await?.to_bytes())
 }
@@ -375,39 +396,24 @@ pub async fn handle_delete_session(session_id: &str) -> Response<Full<Bytes>> {
     }
 }
 
+async fn get_session_for_ws(session_id: &str) -> Option<(String, broadcast::Receiver<Vec<u8>>)> {
+    let guard = TERMINAL_STATE.read().await;
+    let state = guard.as_ref()?;
+    let session = state.sessions.get(session_id)?;
+    let s = session.lock().await;
+    (s.info.status == SessionStatus::Running).then(|| {
+        (s.buffer.clone(), s.output_broadcast.subscribe())
+    })
+}
+
 async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String) {
-    let ws_stream = match accept_async(stream).await {
-        Ok(ws) => ws,
-        Err(e) => {
-            eprintln!("terminal: ws handshake failed: {e}");
-            return;
-        }
-    };
-
-    let (buffer, status, mut output_rx) = {
-        let guard = TERMINAL_STATE.read().await;
-        let state = match guard.as_ref() {
-            Some(s) => s,
-            None => {
-                eprintln!("terminal: state not initialized");
-                return;
-            }
-        };
-        let session = match state.sessions.get(&session_id) {
-            Some(s) => s,
-            None => {
-                eprintln!("terminal: session {} not found", session_id);
-                return;
-            }
-        };
-        let s = session.lock().await;
-        (s.buffer.clone(), s.info.status, s.output_broadcast.subscribe())
-    };
-
-    if status == SessionStatus::Exited {
-        eprintln!("terminal: session {} already exited", session_id);
+    let Ok(ws_stream) = accept_async(stream).await else {
         return;
-    }
+    };
+
+    let Some((buffer, mut output_rx)) = get_session_for_ws(&session_id).await else {
+        return;
+    };
 
     let (mut ws_sink, mut ws_source) = ws_stream.split();
 
@@ -436,21 +442,17 @@ async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String)
     let ws_reader_session_id = session_id.clone();
     let ws_reader = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_source.next().await {
-            match msg {
-                Message::Binary(data) => {
-                    let _ = write_to_session(&ws_reader_session_id, data.into()).await;
-                }
-                Message::Text(text) => {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                        if val.get("type").and_then(|t| t.as_str()) == Some("resize") {
-                            let cols = val.get("cols").and_then(|c| c.as_u64()).unwrap_or(80) as u16;
-                            let rows = val.get("rows").and_then(|r| r.as_u64()).unwrap_or(24) as u16;
-                            let _ = resize_session(&ws_reader_session_id, cols, rows).await;
-                        }
-                    }
-                }
+            let data = match msg {
+                Message::Binary(b) => b.to_vec(),
+                Message::Text(t) => t.as_bytes().to_vec(),
                 Message::Close(_) => break,
-                _ => {}
+                _ => continue,
+            };
+
+            if let Some((cols, rows)) = try_parse_resize(&data) {
+                let _ = resize_session(&ws_reader_session_id, cols, rows).await;
+            } else {
+                let _ = write_to_session(&ws_reader_session_id, data).await;
             }
         }
     });
@@ -488,68 +490,37 @@ pub async fn ensure_terminal_running(port: u16) {
 }
 
 pub async fn ensure_terminal_from_config() {
-    let config = match get_config() {
-        Some(cfg) => cfg,
-        None => return,
-    };
-
-    let service = match config.services.get("terminal") {
-        Some(cfg) => cfg,
-        None => return,
-    };
-
+    let Some(config) = get_config() else { return };
+    let Some(service) = config.services.get("terminal") else { return };
     if service.enabled == Some(false) {
         return;
     }
+    ensure_terminal_running(service.port.unwrap_or(7681)).await;
+}
 
-    let port = service.port.unwrap_or(7681);
-    ensure_terminal_running(port).await;
+fn parse_session_id_from_request(buf: &[u8]) -> Option<String> {
+    let request = String::from_utf8_lossy(buf);
+    let path = request.lines().next()?.split_whitespace().nth(1)?;
+    let id = path.strip_prefix('/')?;
+    (!id.is_empty() && !id.contains(' ')).then(|| id.to_string())
 }
 
 pub async fn start_terminal_server(port: u16) {
     ensure_devpts().await;
 
-    let listener = match TcpListener::bind(("0.0.0.0", port)).await {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("terminal: failed to bind port {port}: {e}");
-            return;
-        }
+    let Ok(listener) = TcpListener::bind(("0.0.0.0", port)).await else {
+        eprintln!("terminal: failed to bind port {port}");
+        return;
     };
     println!("Terminal WebSocket server listening on port {port}");
 
-    loop {
-        match listener.accept().await {
-            Ok((stream, addr)) => {
-                let mut buf = [0u8; 1024];
-                match stream.peek(&mut buf).await {
-                    Ok(n) => {
-                        let request = String::from_utf8_lossy(&buf[..n]);
-                        let session_id = request
-                            .lines()
-                            .next()
-                            .and_then(|line| line.split_whitespace().nth(1))
-                            .and_then(|path| path.strip_prefix('/'))
-                            .map(|s| s.to_string());
+    while let Ok((stream, addr)) = listener.accept().await {
+        let mut buf = [0u8; 1024];
+        let Ok(n) = stream.peek(&mut buf).await else { continue };
 
-                        match session_id {
-                            Some(id) if !id.is_empty() && !id.contains(' ') => {
-                                println!("terminal: connection from {addr} for session {id}");
-                                tokio::spawn(handle_ws_connection(stream, id));
-                            }
-                            _ => {
-                                eprintln!("terminal: invalid request from {addr}");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("terminal: peek error: {e}");
-                    }
-                };
-            }
-            Err(e) => {
-                eprintln!("terminal: accept error: {e}");
-            }
+        if let Some(id) = parse_session_id_from_request(&buf[..n]) {
+            println!("terminal: connection from {addr} for session {id}");
+            tokio::spawn(handle_ws_connection(stream, id));
         }
     }
 }
