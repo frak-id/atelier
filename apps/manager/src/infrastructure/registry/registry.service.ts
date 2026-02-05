@@ -16,9 +16,9 @@ const log = createChildLogger("registry");
  * are loaded via dynamic require() which breaks in Bun's bundled output.
  * We install it in a dedicated directory and dynamically import runServer().
  */
-const VERDACCIO_DIR = "/var/lib/sandbox/registry/packages";
+const VERDACCIO_DIR = REGISTRY.PACKAGES_DIR;
 const VERDACCIO_PKG = "verdaccio";
-const VERDACCIO_VERSION = "6.2.4";
+const VERDACCIO_VERSION = config.raw.versions.verdaccio;
 
 const SETTINGS_FILE = () => path.join(appPaths.data, "registry-settings.json");
 

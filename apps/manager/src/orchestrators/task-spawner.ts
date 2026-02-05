@@ -1,4 +1,4 @@
-import { DEFAULT_SESSION_TEMPLATES } from "@frak/atelier-shared/constants";
+import { DEFAULT_SESSION_TEMPLATES, VM } from "@frak/atelier-shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
@@ -20,7 +20,7 @@ const log = createChildLogger("task-spawner");
 const AGENT_READY_TIMEOUT = 60000;
 const OPENCODE_HEALTH_TIMEOUT = 120000;
 
-const WORKSPACE_DIR = "/home/dev";
+const WORKSPACE_DIR = VM.HOME;
 
 interface TaskSpawnerDependencies {
   sandboxSpawner: SandboxSpawner;

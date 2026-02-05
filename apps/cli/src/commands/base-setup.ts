@@ -1,4 +1,5 @@
 import * as p from "@clack/prompts";
+import { VM } from "@frak/atelier-shared/constants";
 import { PATHS } from "../lib/context";
 import { commandExists, exec } from "../lib/shell";
 
@@ -144,7 +145,7 @@ export async function baseSetup(_args: string[] = []) {
   });
   if (!atelierExists.success) {
     await exec(
-      "useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash atelier",
+      `useradd --uid ${VM.UID} --gid ${VM.GID} --create-home --shell /bin/bash atelier`,
       { throws: false },
     );
   } else {

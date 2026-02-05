@@ -1,4 +1,5 @@
 import type { SandboxConfig } from "@frak/atelier-shared";
+import { VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
 import { config } from "../../shared/lib/config.ts";
@@ -83,8 +84,8 @@ export class SandboxProvisionService {
     const gitconfigContent = `[credential]
 \thelper = store --file=/etc/sandbox/secrets/git-credentials
 [user]
-\temail = sandbox@frak.dev
-\tname = Sandbox User
+\temail = ${config.git.email}
+\tname = ${config.git.name}
 `;
 
     await this.agentClient.writeFiles(sandboxId, [
@@ -95,7 +96,7 @@ export class SandboxProvisionService {
         owner: "dev",
       },
       {
-        path: "/home/dev/.gitconfig",
+        path: `${VM.HOME}/.gitconfig`,
         content: gitconfigContent,
         owner: "dev",
       },
@@ -113,7 +114,7 @@ export class SandboxProvisionService {
     if (fileSecrets.length === 0) return;
 
     const files = fileSecrets.map((secret) => ({
-      path: secret.path.replace(/^~/, "/home/dev"),
+      path: secret.path.replace(/^~/, VM.HOME),
       content: secret.content,
       mode: secret.mode || "0600",
       owner: "dev" as const,
@@ -138,7 +139,7 @@ export class SandboxProvisionService {
 
     await this.agentClient.writeFiles(sandboxId, [
       {
-        path: "/home/dev/.cache/oh-my-opencode/connected-providers.json",
+        path: `${VM.HOME}/.cache/oh-my-opencode/connected-providers.json`,
         content: cacheContent,
         owner: "dev",
       },
@@ -149,7 +150,7 @@ export class SandboxProvisionService {
   async pushSandboxMd(sandboxId: string, content: string): Promise<void> {
     await this.agentClient.writeFiles(sandboxId, [
       {
-        path: "/home/dev/SANDBOX.md",
+        path: `${VM.HOME}/SANDBOX.md`,
         content,
         owner: "dev",
       },
@@ -174,11 +175,11 @@ export class SandboxProvisionService {
         content: `registry=${registryUrl}`,
       },
       {
-        path: "/home/dev/.bunfig.toml",
+        path: `${VM.HOME}/.bunfig.toml`,
         content: `[install]\nregistry = "${registryUrl}"`,
       },
       {
-        path: "/home/dev/.yarnrc.yml",
+        path: `${VM.HOME}/.yarnrc.yml`,
         content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${bridgeIp}"`,
       },
     ];

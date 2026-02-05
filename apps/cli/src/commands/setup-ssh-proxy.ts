@@ -25,7 +25,7 @@ export async function setupSshProxy(_args: string[] = []) {
     const releaseArch = archMap[arch] ?? "x86_64";
 
     const tarball = `sshpiperd_with_plugins_linux_${releaseArch}.tar.gz`;
-    const url = `https://github.com/tg123/sshpiper/releases/download/v${SSH_PROXY.VERSION}/${tarball}`;
+    const url = `https://github.com/tg123/sshpiper/releases/download/v${atelierConfig.versions.sshProxy}/${tarball}`;
 
     await exec(
       "rm -rf /tmp/sshpiper-install && mkdir -p /tmp/sshpiper-install",

@@ -1,5 +1,5 @@
 import {
-  SHARED_BINARIES,
+  getSharedBinaries,
   SHARED_STORAGE,
   type SharedBinaryId,
 } from "@frak/atelier-shared/constants";
@@ -8,6 +8,11 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("shared-storage");
+
+const SHARED_BINARIES = getSharedBinaries({
+  opencode: config.raw.versions.opencode,
+  codeServer: config.raw.versions.codeServer,
+});
 
 export const BINARIES_IMAGE_PATH = `${SHARED_STORAGE.BINARIES_DIR}.ext4`;
 

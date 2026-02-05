@@ -1,3 +1,4 @@
+import { VM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import {
@@ -22,7 +23,7 @@ import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("prebuild-runner");
 
-const WORKSPACE_DIR = "/home/dev/workspace";
+const WORKSPACE_DIR = VM.WORKSPACE_DIR;
 const AGENT_READY_TIMEOUT = 60000;
 const COMMAND_TIMEOUT = 300000;
 const OPENCODE_HEALTH_TIMEOUT = 120000;
@@ -336,7 +337,7 @@ export class PrebuildRunner {
       const clonePath = repo.clonePath.startsWith("/")
         ? repo.clonePath
         : `/${repo.clonePath}`;
-      const fullPath = `/home/dev${clonePath}`;
+      const fullPath = `${VM.HOME}${clonePath}`;
 
       const result = await this.deps.agentClient.exec(
         sandboxId,

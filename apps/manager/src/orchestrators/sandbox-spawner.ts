@@ -1,5 +1,5 @@
 import type { SandboxConfig } from "@frak/atelier-shared";
-import { DEFAULTS, VM_PATHS } from "@frak/atelier-shared/constants";
+import { DEFAULTS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type {
   AgentClient,
@@ -592,8 +592,8 @@ class SpawnContext {
 
     const workspaceDir =
       repos.length === 1 && repos[0]?.clonePath
-        ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
-        : "/home/dev/workspace";
+        ? `${VM.HOME}${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
+        : VM.WORKSPACE_DIR;
 
     const dashboardDomain = config.domains.dashboard;
     const vsPort = config.raw.services.vscode.port;
@@ -744,7 +744,7 @@ class SpawnContext {
       ? ws.config.repos
           .map((r) => {
             const name = "url" in r ? r.url : r.repo;
-            return `- **${name}** (branch: \`${r.branch}\`, path: \`/home/dev${r.clonePath}\`)`;
+            return `- **${name}** (branch: \`${r.branch}\`, path: \`${VM.HOME}${r.clonePath}\`)`;
           })
           .join("\n")
       : "No repositories configured";
@@ -770,9 +770,7 @@ class SpawnContext {
 
     const fileSecretsSection = ws?.config.fileSecrets?.length
       ? ws.config.fileSecrets
-          .map(
-            (s) => `- **${s.name}**: \`${s.path.replace(/^~/, "/home/dev")}\``,
-          )
+          .map((s) => `- **${s.name}**: \`${s.path.replace(/^~/, VM.HOME)}\``)
           .join("\n")
       : "";
 
@@ -795,7 +793,7 @@ ${devCommandsSection}
 ${secretsSection}
 ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
 ## Paths
-- Workspace: \`/home/dev/workspace\`
+- Workspace: \`${VM.WORKSPACE_DIR}\`
 - Config: \`/etc/sandbox/config.json\`
 - Logs: \`/var/log/sandbox/\`
 `;
@@ -884,7 +882,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
   private async cloneRepository(repo: RepoConfig): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
 
-    const clonePath = `/home/dev${repo.clonePath}`;
+    const clonePath = `${VM.HOME}${repo.clonePath}`;
     const gitUrl =
       "url" in repo ? repo.url : await this.buildAuthenticatedUrl(repo);
     const branch = repo.branch;

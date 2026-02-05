@@ -1,4 +1,4 @@
-import { AUTH_PROVIDERS } from "@frak/atelier-shared/constants";
+import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
@@ -135,8 +135,7 @@ export class InternalService {
       const commands = [
         {
           id: "registry-remove",
-          command:
-            "rm -f /etc/profile.d/registry.sh /etc/npmrc /home/dev/.bunfig.toml /home/dev/.yarnrc.yml",
+          command: `rm -f /etc/profile.d/registry.sh /etc/npmrc ${VM.HOME}/.bunfig.toml ${VM.HOME}/.yarnrc.yml`,
           timeout: 5000,
         },
       ];
@@ -165,7 +164,7 @@ export class InternalService {
 
   private getVmPathForConfig(configPath: string): string | null {
     if (configPath.startsWith("~/")) {
-      return `/home/dev/${configPath.slice(2)}`;
+      return `${VM.HOME}/${configPath.slice(2)}`;
     }
     if (configPath.startsWith("/")) {
       return configPath;

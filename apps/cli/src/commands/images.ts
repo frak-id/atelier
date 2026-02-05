@@ -4,6 +4,7 @@ import {
   getImageById,
   type ImageDefinition,
 } from "@frak/atelier-shared";
+import { VM } from "@frak/atelier-shared/constants";
 import {
   atelierConfig,
   CODE_SERVER,
@@ -93,8 +94,8 @@ async function buildImage(args: string[]) {
   spinner.start(`Building Docker image: atelier/${imageName}`);
   try {
     const buildArgs = [
-      `--build-arg OPENCODE_VERSION=${OPENCODE.VERSION}`,
-      `--build-arg CODE_SERVER_VERSION=${CODE_SERVER.VERSION}`,
+      `--build-arg OPENCODE_VERSION=${atelierConfig.versions.opencode}`,
+      `--build-arg CODE_SERVER_VERSION=${atelierConfig.versions.codeServer}`,
     ].join(" ");
     await exec(
       `docker build --no-cache ${buildArgs} -t atelier/${imageName} ${imageDir}`,
@@ -149,7 +150,7 @@ async function buildImage(args: string[]) {
     );
     await exec(`chmod 700 ${mountPoint}/home/dev/.ssh`);
     await exec(`chmod 600 ${mountPoint}/home/dev/.ssh/authorized_keys`);
-    await exec(`chown -R 1000:1000 ${mountPoint}/home/dev/.ssh`);
+    await exec(`chown -R ${VM.OWNER} ${mountPoint}/home/dev/.ssh`);
 
     await exec(`umount ${mountPoint}`);
     spinner.stop("Rootfs extracted with SSH key");

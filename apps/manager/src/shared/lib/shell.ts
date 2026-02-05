@@ -1,4 +1,5 @@
 import { mkdir, stat } from "node:fs/promises";
+import { VM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import {
   getSocketPath,
@@ -61,10 +62,10 @@ export async function injectFile(options: InjectFileOptions): Promise<void> {
     content,
     contentType = "text",
     mode,
-    owner = "1000:1000",
+    owner = VM.OWNER,
   } = options;
 
-  const targetPath = path.replace(/^~/, "/home/dev");
+  const targetPath = path.replace(/^~/, VM.HOME);
   const fullPath = `${mountPoint}${targetPath}`;
   const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
 

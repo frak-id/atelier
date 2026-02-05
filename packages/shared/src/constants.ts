@@ -2,6 +2,21 @@
  * Shared constants for L'atelier infrastructure
  */
 
+export const VM = {
+  /** Default VM user */
+  USER: "dev",
+  /** Default VM user home directory */
+  HOME: "/home/dev",
+  /** VM user UID */
+  UID: "1000",
+  /** VM user GID */
+  GID: "1000",
+  /** VM user UID:GID for chown */
+  OWNER: "1000:1000",
+  /** Default workspace directory inside the VM */
+  WORKSPACE_DIR: "/home/dev/workspace",
+} as const;
+
 export const PATHS = {
   /** Main data directory */
   SANDBOX_DIR: "/var/lib/sandbox",
@@ -86,6 +101,8 @@ export const DEFAULTS = {
 export const REGISTRY = {
   PORT: 4873,
   STORAGE_DIR: "/var/lib/sandbox/registry/storage",
+  PACKAGES_DIR: "/var/lib/sandbox/registry/packages",
+  VERDACCIO_VERSION: "6.2.4",
   EVICTION_DAYS: 14,
 } as const;
 
@@ -96,12 +113,12 @@ export const SHARED_STORAGE = {
 export const VM_PATHS = {
   config: "/etc/sandbox/config.json",
   secrets: "/etc/sandbox/secrets/.env",
-  vscodeSettings: "/home/dev/.local/share/code-server/User/settings.json",
+  vscodeSettings: `${VM.HOME}/.local/share/code-server/User/settings.json`,
   vscodeExtensions: "/etc/sandbox/vscode-extensions.json",
-  opencodeAuth: "/home/dev/.local/share/opencode/auth.json",
-  opencodeConfig: "/home/dev/.config/opencode/opencode.json",
-  opencodeOhMy: "/home/dev/.config/opencode/oh-my-opencode.json",
-  antigravityAccounts: "/home/dev/.config/opencode/antigravity-accounts.json",
+  opencodeAuth: `${VM.HOME}/.local/share/opencode/auth.json`,
+  opencodeConfig: `${VM.HOME}/.config/opencode/opencode.json`,
+  opencodeOhMy: `${VM.HOME}/.config/opencode/oh-my-opencode.json`,
+  antigravityAccounts: `${VM.HOME}/.config/opencode/antigravity-accounts.json`,
 } as const;
 
 export const AUTH_PROVIDERS = [
@@ -136,32 +153,55 @@ export const CONFIG_SCAN_DIRS: ReadonlyArray<{
   dir: string;
   category: DiscoverableConfigCategory;
 }> = [
-  { dir: "/home/dev/.local/share/opencode", category: "opencode" },
-  { dir: "/home/dev/.config/opencode", category: "opencode" },
-  { dir: "/home/dev/.config/opencode/plugins", category: "opencode" },
-  { dir: "/home/dev/.config/opencode/providers", category: "opencode" },
+  { dir: `${VM.HOME}/.local/share/opencode`, category: "opencode" },
+  { dir: `${VM.HOME}/.config/opencode`, category: "opencode" },
+  { dir: `${VM.HOME}/.config/opencode/plugins`, category: "opencode" },
+  { dir: `${VM.HOME}/.config/opencode/providers`, category: "opencode" },
 ];
 
-export const SHARED_BINARIES = {
-  opencode: {
-    name: "opencode",
-    version: OPENCODE.VERSION,
-    url: `${OPENCODE.RELEASE_URL}/v${OPENCODE.VERSION}/${OPENCODE.BINARY}`,
-    extractCommand: "tar -xzf",
-    binaryPath: "opencode",
-    estimatedSizeMb: 100,
-  },
-  "code-server": {
-    name: "code-server",
-    version: CODE_SERVER.VERSION,
-    url: `${CODE_SERVER.RELEASE_URL}/v${CODE_SERVER.VERSION}/code-server-${CODE_SERVER.VERSION}-linux-amd64.tar.gz`,
-    extractCommand: "tar -xzf",
-    binaryPath: `code-server-${CODE_SERVER.VERSION}-linux-amd64`,
-    estimatedSizeMb: 500,
-  },
-} as const;
+export type SharedBinaryId = "opencode" | "code-server";
 
-export type SharedBinaryId = keyof typeof SHARED_BINARIES;
+export interface SharedBinaryInfo {
+  name: string;
+  version: string;
+  url: string;
+  extractCommand: string;
+  binaryPath: string;
+  estimatedSizeMb: number;
+}
+
+interface VersionOverrides {
+  opencode?: string;
+  codeServer?: string;
+}
+
+export function getSharedBinaries(
+  overrides: VersionOverrides = {},
+): Record<SharedBinaryId, SharedBinaryInfo> {
+  const ocVersion = overrides.opencode ?? OPENCODE.VERSION;
+  const csVersion = overrides.codeServer ?? CODE_SERVER.VERSION;
+
+  return {
+    opencode: {
+      name: "opencode",
+      version: ocVersion,
+      url: `${OPENCODE.RELEASE_URL}/v${ocVersion}/${OPENCODE.BINARY}`,
+      extractCommand: "tar -xzf",
+      binaryPath: "opencode",
+      estimatedSizeMb: 100,
+    },
+    "code-server": {
+      name: "code-server",
+      version: csVersion,
+      url: `${CODE_SERVER.RELEASE_URL}/v${csVersion}/code-server-${csVersion}-linux-amd64.tar.gz`,
+      extractCommand: "tar -xzf",
+      binaryPath: `code-server-${csVersion}-linux-amd64`,
+      estimatedSizeMb: 500,
+    },
+  };
+}
+
+export const SHARED_BINARIES = getSharedBinaries();
 
 export interface SessionTemplateVariant {
   name: string;

@@ -1,3 +1,4 @@
+import { DEFAULTS } from "@frak/atelier-shared/constants";
 import type { Static } from "elysia";
 import { t } from "elysia";
 import { SessionTemplatesSchema } from "./session-template.ts";
@@ -66,8 +67,12 @@ export type DevCommand = Static<typeof DevCommandSchema>;
 
 export const WorkspaceConfigSchema = t.Object({
   baseImage: t.String({ default: "dev-base" }),
-  vcpus: t.Number({ minimum: 1, maximum: 8, default: 2 }),
-  memoryMb: t.Number({ minimum: 512, maximum: 16384, default: 2048 }),
+  vcpus: t.Number({ minimum: 1, maximum: 8, default: DEFAULTS.VCPUS }),
+  memoryMb: t.Number({
+    minimum: 512,
+    maximum: 16384,
+    default: DEFAULTS.MEMORY_MB,
+  }),
   initCommands: t.Array(t.String(), { default: [] }),
   secrets: t.Record(t.String(), t.String(), { default: {} }),
   fileSecrets: t.Optional(t.Array(FileSecretSchema, { default: [] })),
@@ -124,8 +129,8 @@ export type PrebuildCancelResponse = Static<
 
 export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
   baseImage: "dev-base",
-  vcpus: 2,
-  memoryMb: 2048,
+  vcpus: DEFAULTS.VCPUS,
+  memoryMb: DEFAULTS.MEMORY_MB,
   initCommands: [],
   secrets: {},
   fileSecrets: [],

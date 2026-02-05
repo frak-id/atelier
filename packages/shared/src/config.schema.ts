@@ -161,6 +161,38 @@ export const SandboxServiceEntrySchema = Type.Object({
 
 export type SandboxServiceEntry = Static<typeof SandboxServiceEntrySchema>;
 
+export const CaddyConfigSchema = Type.Object(
+  {
+    adminApi: Type.String({ default: "http://localhost:2019" }),
+  },
+  { default: {} },
+);
+
+export type CaddyConfig = Static<typeof CaddyConfigSchema>;
+
+export const GitConfigSchema = Type.Object(
+  {
+    email: Type.String({ default: "sandbox@atelier.dev" }),
+    name: Type.String({ default: "Sandbox User" }),
+  },
+  { default: {} },
+);
+
+export type GitConfig = Static<typeof GitConfigSchema>;
+
+export const VersionsConfigSchema = Type.Object(
+  {
+    firecracker: Type.String({ default: "1.14.0" }),
+    opencode: Type.String({ default: "1.1.48" }),
+    codeServer: Type.String({ default: "4.108.1" }),
+    sshProxy: Type.String({ default: "1.5.1" }),
+    verdaccio: Type.String({ default: "6.2.4" }),
+  },
+  { default: {} },
+);
+
+export type VersionsConfig = Static<typeof VersionsConfigSchema>;
+
 export const ImagesConfigSchema = Type.Object(
   {
     /** Directory containing image definitions (each image is a subdirectory with Dockerfile + image.json) */
@@ -183,6 +215,9 @@ export const AtelierConfigSchema = Type.Object({
   services: ServicesConfigSchema,
   setup: SetupConfigSchema,
   images: ImagesConfigSchema,
+  caddy: CaddyConfigSchema,
+  git: GitConfigSchema,
+  versions: VersionsConfigSchema,
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;
@@ -228,6 +263,17 @@ export const ENV_VAR_MAPPING = {
 
   ATELIER_IMAGES_DIR: "images.directory",
   ATELIER_DEFAULT_IMAGE: "images.defaultImage",
+
+  CADDY_ADMIN_API: "caddy.adminApi",
+
+  ATELIER_GIT_EMAIL: "git.email",
+  ATELIER_GIT_NAME: "git.name",
+
+  ATELIER_VERSION_FIRECRACKER: "versions.firecracker",
+  ATELIER_VERSION_OPENCODE: "versions.opencode",
+  ATELIER_VERSION_CODE_SERVER: "versions.codeServer",
+  ATELIER_VERSION_SSH_PROXY: "versions.sshProxy",
+  ATELIER_VERSION_VERDACCIO: "versions.verdaccio",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;
@@ -282,5 +328,19 @@ export const DEFAULT_CONFIG: AtelierConfig = {
   images: {
     directory: "/opt/atelier/infra/images",
     defaultImage: "dev-base",
+  },
+  caddy: {
+    adminApi: "http://localhost:2019",
+  },
+  git: {
+    email: "sandbox@atelier.dev",
+    name: "Sandbox User",
+  },
+  versions: {
+    firecracker: "1.14.0",
+    opencode: "1.1.48",
+    codeServer: "4.108.1",
+    sshProxy: "1.5.1",
+    verdaccio: "6.2.4",
   },
 };
