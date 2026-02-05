@@ -1,7 +1,7 @@
 import {
   SHARED_BINARIES,
   type SharedBinaryId,
-} from "@frak-sandbox/shared/constants";
+} from "@frak/atelier-shared/constants";
 import { Elysia } from "elysia";
 import { SharedStorageService } from "../infrastructure/storage/index.ts";
 import {

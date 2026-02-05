@@ -1,4 +1,4 @@
-import type { SandboxConfig } from "@frak-sandbox/shared";
+import type { SandboxConfig } from "@frak/atelier-shared";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
 import { config } from "../../shared/lib/config.ts";

@@ -1,4 +1,4 @@
-import type { Task } from "@frak-sandbox/manager/types";
+import type { Task } from "@frak/atelier-manager/types";
 import { SessionHierarchy } from "@/components/session-hierarchy";
 import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
 import type { SessionNode } from "@/lib/session-hierarchy";

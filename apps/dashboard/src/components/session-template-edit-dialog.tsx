@@ -1,4 +1,4 @@
-import type { SessionTemplate } from "@frak-sandbox/shared/constants";
+import type { SessionTemplate } from "@frak/atelier-shared/constants";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";

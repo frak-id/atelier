@@ -127,31 +127,36 @@ export async function baseSetup(_args: string[] = []) {
     );
   }
 
-  // Create frak group with GID 1000 (matches guest 'dev' group)
-  await exec("getent group frak >/dev/null 2>&1 || groupadd --gid 1000 frak", {
-    throws: false,
-  });
+  // Create atelier group with GID 1000 (matches guest 'dev' group)
+  await exec(
+    "getent group atelier >/dev/null 2>&1 || groupadd --gid 1000 atelier",
+    {
+      throws: false,
+    },
+  );
   await exec("getent group kvm >/dev/null 2>&1 || groupadd kvm", {
     throws: false,
   });
 
-  // Create frak user with UID 1000 (matches guest 'dev' user)
-  const frakExists = await exec("id -u frak 2>/dev/null", { throws: false });
-  if (!frakExists.success) {
+  // Create atelier user with UID 1000 (matches guest 'dev' user)
+  const atelierExists = await exec("id -u atelier 2>/dev/null", {
+    throws: false,
+  });
+  if (!atelierExists.success) {
     await exec(
-      "useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash frak",
+      "useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash atelier",
       { throws: false },
     );
   } else {
     // Verify UID is 1000
-    const frakUid = frakExists.stdout.trim();
-    if (frakUid !== "1000") {
+    const atelierUid = atelierExists.stdout.trim();
+    if (atelierUid !== "1000") {
       p.log.warn(
-        `frak user exists with UID ${frakUid}, expected 1000. Consider recreating instance.`,
+        `atelier user exists with UID ${atelierUid}, expected 1000. Consider recreating instance.`,
       );
     }
   }
-  await exec("usermod -aG kvm,disk frak", { throws: false });
+  await exec("usermod -aG kvm,disk atelier", { throws: false });
   await exec("chgrp kvm /dev/kvm 2>/dev/null || true", { throws: false });
   await exec("chmod 660 /dev/kvm 2>/dev/null || true", { throws: false });
   spinner.stop("KVM verified and accessible");
@@ -181,22 +186,22 @@ export async function baseSetup(_args: string[] = []) {
     spinner.stop("Directory structure created");
   }
 
-  await exec(`mkdir -p /etc/frak-sandbox`);
+  await exec(`mkdir -p /etc/atelier`);
   await exec(
-    `chown -R frak:frak ${PATHS.SANDBOX_DIR} ${PATHS.LOG_DIR} ${PATHS.APP_DIR}`,
+    `chown -R atelier:atelier ${PATHS.SANDBOX_DIR} ${PATHS.LOG_DIR} ${PATHS.APP_DIR}`,
     {
       throws: false,
     },
   );
-  await exec("chgrp -R frak /etc/frak-sandbox", { throws: false });
-  await exec("chmod 750 /etc/frak-sandbox", { throws: false });
+  await exec("chgrp -R atelier /etc/atelier", { throws: false });
+  await exec("chmod 750 /etc/atelier", { throws: false });
 
-  const sudoersPath = "/etc/sudoers.d/frak-sandbox";
-  const sudoersContent = `frak ALL=(root) NOPASSWD: \\
-  /usr/sbin/lvcreate, /usr/sbin/lvremove, /usr/sbin/lvextend, /usr/sbin/lvs, \\
-  /usr/sbin/mkfs.ext4, /bin/chown, /bin/chmod, /bin/mkdir, /usr/bin/tee, \\
-  /sbin/ip, /sbin/bridge, /usr/sbin/bridge, \\
-  /usr/bin/mount, /usr/bin/umount, /usr/bin/ln, /usr/bin/rm
+  const sudoersPath = "/etc/sudoers.d/atelier";
+  const sudoersContent = `atelier ALL=(root) NOPASSWD: \\
+   /usr/sbin/lvcreate, /usr/sbin/lvremove, /usr/sbin/lvextend, /usr/sbin/lvs, \\
+   /usr/sbin/mkfs.ext4, /bin/chown, /bin/chmod, /bin/mkdir, /usr/bin/tee, \\
+   /sbin/ip, /sbin/bridge, /usr/sbin/bridge, \\
+   /usr/bin/mount, /usr/bin/umount, /usr/bin/ln, /usr/bin/rm
 `;
   await Bun.write(sudoersPath, sudoersContent);
   await exec(`chmod 440 ${sudoersPath}`);
@@ -221,7 +226,7 @@ export async function baseSetup(_args: string[] = []) {
     `Installed: essential packages, Bun, Docker, Caddy
 Verified: KVM support
 Created: ${PATHS.SANDBOX_DIR}
-User: frak (sudoers + kvm)`,
+User: atelier (sudoers + kvm)`,
     "Summary",
   );
 }

@@ -1,10 +1,10 @@
-# FRAK Sandbox Roadmap
+# L'atelier Roadmap
 
 > Open-source Firecracker microVM orchestrator for isolated development environments
 
 ## Vision
 
-FRAK Sandbox aims to become the **go-to self-hosted platform** for secure, isolated development sandboxes - serving both human developers and AI agents with VM-level isolation, instant startup, and zero operational overhead.
+L'atelier aims to become the **go-to self-hosted platform** for secure, isolated development sandboxes - serving both human developers and AI agents with VM-level isolation, instant startup, and zero operational overhead.
 
 ---
 
@@ -41,7 +41,7 @@ Phase 1: Public Release          Phase 2: Killer Features
 | CONTRIBUTING.md guide | Planned | Critical |
 | DevContainer support | Planned | High |
 | Extract hardcoded values | Planned | Critical |
-| Single `frak-sandbox init` | Planned | High |
+| Single `atelier init` | Planned | High |
 | Basic test suite | Planned | High |
 | GitHub Actions CI | Planned | High |
 
@@ -52,7 +52,7 @@ Phase 1: Public Release          Phase 2: Killer Features
 
 ### [Phase 2: Killer Features](./phase-2-killer-features.md)
 
-**Goal:** Differentiate FRAK with enterprise-grade features based on community feedback.
+**Goal:** Differentiate Atelier with enterprise-grade features based on community feedback.
 
 | Focus Area | Status | Priority |
 |------------|--------|----------|

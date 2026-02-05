@@ -71,7 +71,7 @@ function ExpirationBadge({ expiresAt }: { expiresAt: string | null }) {
 import { config } from "@/config";
 
 export const SSH_KEY_PATH = "~/.config/oc-sandbox/sandbox_key";
-export const SSH_HOST_ALIAS = "frak-sandbox";
+export const SSH_HOST_ALIAS = "atelier";
 
 export function SshKeysSection() {
   const { data: keys, isLoading } = useQuery(sshKeysListQuery);

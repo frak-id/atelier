@@ -1,5 +1,5 @@
-import type { SessionTemplate } from "@frak-sandbox/shared/constants";
-import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
+import type { SessionTemplate } from "@frak/atelier-shared/constants";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak/atelier-shared/constants";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import {
   AlertCircle,

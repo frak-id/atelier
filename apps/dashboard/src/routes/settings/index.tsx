@@ -1,4 +1,4 @@
-import type { SessionTemplate } from "@frak-sandbox/shared/constants";
+import type { SessionTemplate } from "@frak/atelier-shared/constants";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {

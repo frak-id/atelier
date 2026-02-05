@@ -1,6 +1,6 @@
 # Phase 2: Killer Features
 
-> Differentiate FRAK with enterprise-grade features based on community feedback
+> Differentiate Atelier with enterprise-grade features based on community feedback
 
 **Timeline:** 8-12 weeks (after Phase 1)
 **Total Effort:** ~150-200 hours
@@ -11,7 +11,7 @@
 
 ## Executive Summary
 
-Phase 2 transforms FRAK from "a good sandbox tool" into "the enterprise platform for secure, isolated compute" with four pillars:
+Phase 2 transforms Atelier from "a good sandbox tool" into "the enterprise platform for secure, isolated compute" with four pillars:
 
 1. **Infrastructure Abstraction** - Swap providers without code changes
 2. **Multi-Host Swarm** - Scale horizontally across servers
@@ -24,7 +24,7 @@ Phase 2 transforms FRAK from "a good sandbox tool" into "the enterprise platform
 
 ### Market Signals (2025-2026)
 
-| Signal | Implication for FRAK |
+| Signal | Implication for Atelier |
 |--------|---------------------|
 | Gitpod → Ona (AI agents) | AI runtime is the future |
 | Daytona pivots to AI | <100ms sandboxes for agents |
@@ -32,13 +32,13 @@ Phase 2 transforms FRAK from "a good sandbox tool" into "the enterprise platform
 | DevPod grows 14k stars | Self-hosted wins |
 | Fly.io $467M valuation | Firecracker at scale works |
 
-### FRAK's Unique Position
+### Atelier's Unique Position
 
 ```
                     Security
                        ▲
                        │
-              FRAK ────┼──── Enterprise
+              Atelier ────┼──── Enterprise
              (VMs)     │     sweet spot
                        │
     Containers ────────┼──────────────► Speed
@@ -526,7 +526,7 @@ The developer sandbox market is pivoting to AI agent runtimes:
 - **Daytona:** "<90ms sandboxes for agent workflows"
 - **Coder:** "AI agent governance stack"
 
-### FRAK's Advantage
+### Atelier's Advantage
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -554,7 +554,7 @@ The developer sandbox market is pivoting to AI agent runtimes:
 ```typescript
 // packages/frak-sdk/src/index.ts
 
-export class FrakClient {
+export class AtelierClient {
   constructor(private config: { apiUrl: string; apiKey: string }) {}
 
   /**
@@ -582,7 +582,7 @@ export class FrakClient {
 
 export class Sandbox {
   constructor(
-    private client: FrakClient,
+    private client: AtelierClient,
     public readonly data: SandboxData
   ) {}
 
@@ -648,12 +648,12 @@ export class Sandbox {
 }
 
 // Usage example
-const frak = new FrakClient({
+const atelier = new AtelierClient({
   apiUrl: 'https://sandbox-api.mycompany.com',
-  apiKey: process.env.FRAK_API_KEY,
+  apiKey: process.env.ATELIER_API_KEY,
 });
 
-const sandbox = await frak.createSandbox({
+const sandbox = await atelier.createSandbox({
   vcpus: 4,
   memoryMb: 8192,
   timeoutMs: 300000, // 5 minutes max
@@ -692,7 +692,7 @@ class ExecResult:
     exit_code: int
 
 class Sandbox:
-    def __init__(self, client: 'FrakClient', data: dict):
+    def __init__(self, client: 'AtelierClient', data: dict):
         self._client = client
         self.id = data['id']
         self.status = data['status']
@@ -734,7 +734,7 @@ class Sandbox:
         """Destroy the sandbox."""
         await self._client._request('DELETE', f'/api/sandboxes/{self.id}')
 
-class FrakClient:
+class AtelierClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
         self._http = httpx.AsyncClient(
@@ -765,12 +765,12 @@ class FrakClient:
 
 # Usage
 import asyncio
-from frak import FrakClient
+from atelier import AtelierClient
 
 async def main():
-    client = FrakClient(
+    client = AtelierClient(
         api_url='https://sandbox-api.mycompany.com',
-        api_key=os.environ['FRAK_API_KEY'],
+        api_key=os.environ['ATELIER_API_KEY'],
     )
 
     sandbox = await client.create_sandbox(vcpus=4, memory_mb=8192)
@@ -857,7 +857,7 @@ Enterprise customers with security requirements need:
 │                 ENTERPRISE NETWORK (Air-Gapped)              │
 │                                                              │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │              FRAK Manager + Dashboard                  │  │
+│  │              Atelier Manager + Dashboard                  │  │
 │  │                                                        │  │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  │  │
 │  │  │ OCI Registry│  │ NFS Storage │  │ Internal DNS │  │  │
@@ -927,7 +927,7 @@ services:
 auth:
   provider: oidc
   issuer: https://idp.internal
-  clientId: frak-sandbox
+  clientId: atelier
   clientSecret: ${OIDC_SECRET}
 
 # Audit logging
@@ -968,7 +968,7 @@ export class AirGapNetworkService implements NetworkProvider {
     await exec(`iptables -A FORWARD -i ${tapDevice} -j DROP`);
     
     // Log blocked attempts
-    await exec(`iptables -A FORWARD -i ${tapDevice} -j LOG --log-prefix "FRAK-BLOCKED: "`);
+    await exec(`iptables -A FORWARD -i ${tapDevice} -j LOG --log-prefix "ATELIER-BLOCKED: "`);
   }
 }
 ```
@@ -1065,7 +1065,7 @@ export class CustomLLMProvider implements LLMProvider {
 }
 
 // Agent code (inside sandbox)
-import { createLLMClient } from '@frak-sandbox/llm-client';
+import { createLLMClient } from '@frak/atelier-llm-client';
 
 const llm = createLLMClient(); // Reads from /etc/sandbox/llm-config.json
 

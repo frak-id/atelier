@@ -3,8 +3,14 @@ import {
   discoverImages,
   getImageById,
   type ImageDefinition,
-} from "@frak-sandbox/shared";
-import { CODE_SERVER, frakConfig, LVM, OPENCODE, PATHS } from "../lib/context";
+} from "@frak/atelier-shared";
+import {
+  atelierConfig,
+  CODE_SERVER,
+  LVM,
+  OPENCODE,
+  PATHS,
+} from "../lib/context";
 import { commandExists, exec } from "../lib/shell";
 
 export async function images(args: string[] = []) {
@@ -14,12 +20,10 @@ export async function images(args: string[] = []) {
 async function buildImage(args: string[]) {
   p.log.step("Build Base Image");
 
-  const imagesDir = frakConfig.images.directory;
+  const imagesDir = atelierConfig.images.directory;
 
   if (!(await commandExists("docker"))) {
-    throw new Error(
-      "Docker is required to build images. Run: frak-sandbox base",
-    );
+    throw new Error("Docker is required to build images. Run: atelier base");
   }
 
   let image: ImageDefinition | null = null;
@@ -78,7 +82,7 @@ async function buildImage(args: string[]) {
   if (!agentExists.success) {
     throw new Error(
       `sandbox-agent binary not found at: ${agentBinary}\n` +
-        "Run 'frak-sandbox update' to download server assets.",
+        "Run 'atelier update' to download server assets.",
     );
   }
 
@@ -86,14 +90,14 @@ async function buildImage(args: string[]) {
   await exec(`cp ${agentBinary} ${imageDir}/sandbox-agent`);
   spinner.stop("Build context ready");
 
-  spinner.start(`Building Docker image: frak-sandbox/${imageName}`);
+  spinner.start(`Building Docker image: atelier/${imageName}`);
   try {
     const buildArgs = [
       `--build-arg OPENCODE_VERSION=${OPENCODE.VERSION}`,
       `--build-arg CODE_SERVER_VERSION=${CODE_SERVER.VERSION}`,
     ].join(" ");
     await exec(
-      `docker build --no-cache ${buildArgs} -t frak-sandbox/${imageName} ${imageDir}`,
+      `docker build --no-cache ${buildArgs} -t atelier/${imageName} ${imageDir}`,
     );
   } finally {
     await exec(`rm -f ${imageDir}/sandbox-agent`, { throws: false });
@@ -105,9 +109,7 @@ async function buildImage(args: string[]) {
 
   try {
     spinner.start("Creating container");
-    await exec(
-      `docker create --name ${containerName} frak-sandbox/${imageName}`,
-    );
+    await exec(`docker create --name ${containerName} atelier/${imageName}`);
     spinner.stop("Container created");
 
     spinner.start("Exporting filesystem");
@@ -171,7 +173,7 @@ async function buildImage(args: string[]) {
     await exec(`dd if=${outputFile} of=/dev/${LVM.VG_NAME}/${lvmVolume} bs=4M`);
     spinner.stop("LVM image volume created");
 
-    if (imageName === frakConfig.images.defaultImage) {
+    if (imageName === atelierConfig.images.defaultImage) {
       await exec(`ln -sf ${imageName}.ext4 ${PATHS.ROOTFS_DIR}/rootfs.ext4`);
       p.log.info(`Created symlink: rootfs.ext4 -> ${imageName}.ext4`);
     }

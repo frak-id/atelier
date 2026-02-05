@@ -4,7 +4,7 @@ import {
   DEFAULT_CONFIG,
   loadConfig,
   validateConfig,
-} from "@frak-sandbox/shared";
+} from "@frak/atelier-shared";
 import { fileExists } from "../lib/shell";
 
 export async function configCommand(args: string[] = []) {
@@ -133,7 +133,7 @@ async function validateConfigCommand() {
 }
 
 function getConfigPath(): string {
-  return process.env.FRAK_CONFIG || `/etc/frak-sandbox/${CONFIG_FILE_NAME}`;
+  return process.env.ATELIER_CONFIG || `/etc/atelier/${CONFIG_FILE_NAME}`;
 }
 
 function setNestedValue(

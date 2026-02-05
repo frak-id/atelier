@@ -1,4 +1,4 @@
-import { LVM } from "@frak-sandbox/shared/constants";
+import { LVM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -161,7 +161,7 @@ export const StorageService = {
       sourceVolume = `${imagePrefix}${defaultImage}`;
     } else {
       throw new Error(
-        `No base image volume found. Run 'frak-sandbox images ${defaultImage}' first.`,
+        `No base image volume found. Run 'atelier images ${defaultImage}' first.`,
       );
     }
 

@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
-import { SSH_PROXY } from "@frak-sandbox/shared/constants";
-import { frakConfig } from "../lib/context";
+import { SSH_PROXY } from "@frak/atelier-shared/constants";
+import { atelierConfig } from "../lib/context";
 import { exec, fileExists, getArch } from "../lib/shell";
 
 export async function setupSshProxy(_args: string[] = []) {
@@ -50,7 +50,9 @@ export async function setupSshProxy(_args: string[] = []) {
   spinner.start("Creating configuration directory");
   await exec(`mkdir -p ${SSH_PROXY.CONFIG_DIR}`);
   await exec(`chmod 700 ${SSH_PROXY.CONFIG_DIR}`);
-  await exec(`chown -R frak:frak ${SSH_PROXY.CONFIG_DIR}`, { throws: false });
+  await exec(`chown -R atelier:atelier ${SSH_PROXY.CONFIG_DIR}`, {
+    throws: false,
+  });
   spinner.stop("Configuration directory created");
 
   const hostKeyExists = await fileExists(SSH_PROXY.HOST_KEY);
@@ -69,17 +71,21 @@ export async function setupSshProxy(_args: string[] = []) {
   if (!pipesExists) {
     spinner.start("Creating initial pipes configuration");
     const initialConfig = `# sshpiper pipes configuration
-# Managed by frak-sandbox manager - do not edit manually
+# Managed by atelier manager - do not edit manually
 version: "1.0"
 pipes: []
 `;
     await Bun.write(SSH_PROXY.PIPES_FILE, initialConfig);
     await exec(`chmod 600 ${SSH_PROXY.PIPES_FILE}`);
-    await exec(`chown frak:frak ${SSH_PROXY.PIPES_FILE}`, { throws: false });
+    await exec(`chown atelier:atelier ${SSH_PROXY.PIPES_FILE}`, {
+      throws: false,
+    });
     spinner.stop("Pipes configuration created");
   } else {
     p.log.success("Pipes configuration already exists");
-    await exec(`chown frak:frak ${SSH_PROXY.PIPES_FILE}`, { throws: false });
+    await exec(`chown atelier:atelier ${SSH_PROXY.PIPES_FILE}`, {
+      throws: false,
+    });
   }
 
   spinner.start("Setting up systemd service");
@@ -92,7 +98,7 @@ Type=simple
 ExecStart=${SSH_PROXY.BINARY_PATH} \\
   -i ${SSH_PROXY.HOST_KEY} \\
   -l 0.0.0.0 \\
-  -p ${frakConfig.sshProxy.port} \\
+   -p ${atelierConfig.sshProxy.port} \\
   --log-level info \\
   yaml \\
   --config ${SSH_PROXY.PIPES_FILE}
@@ -134,16 +140,16 @@ WantedBy=multi-user.target
 
   p.log.success("SSH Proxy setup complete");
   p.note(
-    `sshpiper listening on port ${frakConfig.sshProxy.port}
+    `sshpiper listening on port ${atelierConfig.sshProxy.port}
 Config: ${SSH_PROXY.PIPES_FILE}
 Host key: ${SSH_PROXY.HOST_KEY}
 
 Users can connect with:
-  ssh <sandbox-id>@${frakConfig.sshProxy.domain}
+   ssh <sandbox-id>@${atelierConfig.sshProxy.domain}
 
 Make sure to:
-  1. Configure DNS: ${frakConfig.sshProxy.domain} → this server
-  2. Open firewall port ${frakConfig.sshProxy.port}`,
+   1. Configure DNS: ${atelierConfig.sshProxy.domain} → this server
+   2. Open firewall port ${atelierConfig.sshProxy.port}`,
     "Summary",
   );
 }

@@ -8,7 +8,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import type { Task } from "@frak-sandbox/manager/types";
+import type { Task } from "@frak/atelier-manager/types";
 import { useMemo, useState } from "react";
 import { useCompleteTask, useReorderTask, useStartTask } from "@/api/queries";
 import { KanbanColumn } from "./kanban-column";

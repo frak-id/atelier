@@ -1,4 +1,4 @@
-import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak/atelier-shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";

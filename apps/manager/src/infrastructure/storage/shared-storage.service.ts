@@ -2,7 +2,7 @@ import {
   SHARED_BINARIES,
   SHARED_STORAGE,
   type SharedBinaryId,
-} from "@frak-sandbox/shared/constants";
+} from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -261,7 +261,7 @@ export const SharedStorageService = {
       }
 
       await $`mv ${tmpPath} ${imgPath}`.quiet();
-      await $`sudo -n chown frak:frak ${imgPath}`.quiet().nothrow();
+      await $`sudo -n chown atelier:atelier ${imgPath}`.quiet().nothrow();
 
       const finalSize = await getDirSize(imgPath);
       log.info(

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve FRAK Sandbox.
+Thanks for helping improve L'atelier.
 
 ## Quick start
 

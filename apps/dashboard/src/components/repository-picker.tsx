@@ -1,4 +1,4 @@
-import type { GitHubReposResponse } from "@frak-sandbox/manager/types";
+import type { GitHubReposResponse } from "@frak/atelier-manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, Github, Lock, Unlock } from "lucide-react";
 import { useState } from "react";

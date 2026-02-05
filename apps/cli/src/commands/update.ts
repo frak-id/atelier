@@ -1,12 +1,12 @@
 import * as p from "@clack/prompts";
-import { CONFIG_FILE_NAME, loadConfig } from "@frak-sandbox/shared";
+import { CONFIG_FILE_NAME, loadConfig } from "@frak/atelier-shared";
 import { PATHS } from "../lib/context";
 import { commandExists, exec, fileExists } from "../lib/shell";
 import { CLI_VERSION } from "../version";
 import { images } from "./images";
 
 const DEFAULT_REPO = "frak-id/oc-sandbox";
-const DEFAULT_LOCAL_TARBALL = "/tmp/frak-sandbox-deploy.tar.gz";
+const DEFAULT_LOCAL_TARBALL = "/tmp/atelier-deploy.tar.gz";
 
 type DeploySource =
   | { type: "github"; tarballUrl: string; checksumsUrl: string }
@@ -24,7 +24,7 @@ export async function updateServer(args: string[] = []) {
   const rebuildImages = args.includes("--rebuild-images");
   const source = await resolveDeploySource(args);
 
-  const tmpDir = `/tmp/frak-sandbox-update-${Date.now()}`;
+  const tmpDir = `/tmp/atelier-update-${Date.now()}`;
   const extractDir = `${tmpDir}/extract`;
 
   const agentPath = `${PATHS.APP_DIR}/infra/images/sandbox-agent`;
@@ -80,33 +80,29 @@ export async function updateServer(args: string[] = []) {
   spinner.stop("Bundle extracted");
 
   spinner.start("Installing files");
-  await exec("systemctl stop frak-sandbox-manager || true", {
+  await exec("systemctl stop atelier-manager || true", {
     throws: false,
   });
   await exec(
-    "mkdir -p /opt/frak-sandbox/infra/images /opt/frak-sandbox/apps/dashboard /opt/frak-sandbox/drizzle /etc/systemd/system /etc/caddy",
+    "mkdir -p /opt/atelier/infra/images /opt/atelier/apps/dashboard /opt/atelier/drizzle /etc/systemd/system /etc/caddy",
   );
 
+  await exec(`cp ${extractDir}/opt/atelier/server.js /opt/atelier/server.js`);
+  await exec(`cp -r ${extractDir}/opt/atelier/drizzle/. /opt/atelier/drizzle/`);
   await exec(
-    `cp ${extractDir}/opt/frak-sandbox/server.js /opt/frak-sandbox/server.js`,
+    `cp -r ${extractDir}/opt/atelier/apps/dashboard/dist/. /opt/atelier/apps/dashboard/dist/`,
   );
   await exec(
-    `cp -r ${extractDir}/opt/frak-sandbox/drizzle/. /opt/frak-sandbox/drizzle/`,
+    `cp -r ${extractDir}/opt/atelier/infra/images/. /opt/atelier/infra/images/`,
   );
-  await exec(
-    `cp -r ${extractDir}/opt/frak-sandbox/apps/dashboard/dist/. /opt/frak-sandbox/apps/dashboard/dist/`,
-  );
-  await exec(
-    `cp -r ${extractDir}/opt/frak-sandbox/infra/images/. /opt/frak-sandbox/infra/images/`,
-  );
-  await exec("chmod +x /opt/frak-sandbox/infra/images/build-image.sh", {
+  await exec("chmod +x /opt/atelier/infra/images/build-image.sh", {
     throws: false,
   });
   await exec(
-    `cp ${extractDir}/etc/systemd/system/frak-sandbox-manager.service /etc/systemd/system/frak-sandbox-manager.service`,
+    `cp ${extractDir}/etc/systemd/system/atelier-manager.service /etc/systemd/system/atelier-manager.service`,
   );
   await exec(
-    `cp ${extractDir}/etc/systemd/system/frak-sandbox-network.service /etc/systemd/system/frak-sandbox-network.service`,
+    `cp ${extractDir}/etc/systemd/system/atelier-network.service /etc/systemd/system/atelier-network.service`,
   );
 
   const hasTemplate = await fileExists(
@@ -123,16 +119,16 @@ export async function updateServer(args: string[] = []) {
   }
 
   const hasConfig = await fileExists(
-    `${extractDir}/etc/frak-sandbox/${CONFIG_FILE_NAME}`,
+    `${extractDir}/etc/atelier/${CONFIG_FILE_NAME}`,
   );
   if (hasConfig) {
-    await exec(`mkdir -p /etc/frak-sandbox`);
+    await exec(`mkdir -p /etc/atelier`);
     await exec(
-      `cp ${extractDir}/etc/frak-sandbox/${CONFIG_FILE_NAME} /etc/frak-sandbox/${CONFIG_FILE_NAME}`,
+      `cp ${extractDir}/etc/atelier/${CONFIG_FILE_NAME} /etc/atelier/${CONFIG_FILE_NAME}`,
     );
   }
 
-  await exec("chown -R frak:frak /opt/frak-sandbox", { throws: false });
+  await exec("chown -R atelier:atelier /opt/atelier", { throws: false });
   spinner.stop("Files installed");
 
   if (hasTemplate && !hasCaddyfile) {
@@ -141,13 +137,13 @@ export async function updateServer(args: string[] = []) {
 
   spinner.start("Reloading services");
   await exec("systemctl daemon-reload");
-  await exec("systemctl enable frak-sandbox-network frak-sandbox-manager", {
+  await exec("systemctl enable atelier-network atelier-manager", {
     throws: false,
   });
   await exec("systemctl reload caddy || systemctl start caddy || true", {
     throws: false,
   });
-  await exec("systemctl restart frak-sandbox-manager");
+  await exec("systemctl restart atelier-manager");
   spinner.stop("Services reloaded");
 
   await exec(`rm -rf ${tmpDir}`, { throws: false });
@@ -220,11 +216,11 @@ async function resolveDeploySource(args: string[]): Promise<DeploySource> {
   }
 
   const version = CLI_VERSION;
-  const repo = process.env.FRAK_RELEASE_REPO || DEFAULT_REPO;
+  const repo = process.env.ATELIER_RELEASE_REPO || DEFAULT_REPO;
   const baseUrl =
-    process.env.FRAK_RELEASE_BASE_URL ||
+    process.env.ATELIER_RELEASE_BASE_URL ||
     `https://github.com/${repo}/releases/download/v${version}`;
-  const tarballName = `frak-sandbox-server-${version}.tar.gz`;
+  const tarballName = `atelier-server-${version}.tar.gz`;
 
   return {
     type: "github",
@@ -235,11 +231,11 @@ async function resolveDeploySource(args: string[]): Promise<DeploySource> {
 
 async function renderCaddyConfig() {
   const configPath =
-    process.env.FRAK_CONFIG || `/etc/frak-sandbox/${CONFIG_FILE_NAME}`;
+    process.env.ATELIER_CONFIG || `/etc/atelier/${CONFIG_FILE_NAME}`;
 
   if (!(await fileExists(configPath))) {
     throw new Error(
-      `Config file not found: ${configPath}. Run 'frak-sandbox config set' or reinstall.`,
+      `Config file not found: ${configPath}. Run 'atelier config set' or reinstall.`,
     );
   }
 

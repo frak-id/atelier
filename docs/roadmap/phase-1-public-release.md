@@ -1,6 +1,6 @@
 # Phase 1: Preparing Public Release
 
-> Make FRAK Sandbox ready for open-source contributors and easy deployment
+> Make L'atelier ready for open-source contributors and easy deployment
 
 **Timeline:** 4-6 weeks
 **Total Effort:** ~50-60 hours
@@ -114,7 +114,7 @@ Create comprehensive `CONTRIBUTING.md` at repository root.
 ### Content Outline
 
 ```markdown
-# Contributing to FRAK Sandbox
+# Contributing to L'atelier
 
 ## Quick Start (Development)
 - Prerequisites (Bun, Docker)
@@ -199,7 +199,7 @@ Add `.devcontainer/` configuration for instant dev environment.
 
 ```json
 {
-  "name": "FRAK Sandbox Dev",
+  "name": "L'atelier Dev",
   "build": {
     "dockerfile": "Dockerfile"
   },
@@ -333,12 +333,12 @@ export type Config = Static<typeof ConfigSchema>;
 
 ```typescript
 // apps/manager/src/shared/lib/config.ts
-import { loadConfig } from '@frak-sandbox/shared/config';
+import { loadConfig } from '@frak/atelier-shared/config';
 
 // Priority: ENV > config.yaml > defaults
 export const config = loadConfig({
-  envPrefix: 'FRAK_',
-  configFile: process.env.FRAK_CONFIG || '/etc/frak-sandbox/config.yaml',
+  envPrefix: 'ATELIER_',
+  configFile: process.env.ATELIER_CONFIG || '/etc/atelier/config.yaml',
 });
 ```
 
@@ -359,7 +359,7 @@ export const NETWORK = {
 **4. Example config file:**
 
 ```yaml
-# /etc/frak-sandbox/config.yaml
+# /etc/atelier/config.yaml
 apiDomain: sandbox-api.mycompany.com
 dashboardDomain: sandbox-dash.mycompany.com
 sandboxDomainSuffix: mycompany.com
@@ -393,14 +393,14 @@ auth:
 
 ### Acceptance Criteria
 
-- [ ] Can deploy to any domain by setting `FRAK_API_DOMAIN` etc.
+- [ ] Can deploy to any domain by setting `ATELIER_API_DOMAIN` etc.
 - [ ] Can use different network ranges via config
 - [ ] Startup fails fast with clear error if required config missing
-- [ ] `frak-sandbox config validate` command works
+- [ ] `atelier config validate` command works
 
 ---
 
-## 5. Single `frak-sandbox init` Command
+## 5. Single `atelier init` Command
 
 **Priority:** High
 **Effort:** 12 hours
@@ -412,14 +412,14 @@ Current setup requires 5+ separate commands and manual DNS configuration:
 
 ```bash
 # Current flow (error-prone, time-consuming)
-frak-sandbox init         # Full install
-frak-sandbox firecracker  # Download binaries
-frak-sandbox network      # Configure bridge
-frak-sandbox storage      # Setup LVM
+atelier init         # Full install
+atelier firecracker  # Download binaries
+atelier network      # Configure bridge
+atelier storage      # Setup LVM
 # ... manual DNS setup ...
 # ... manual .env creation ...
-frak-sandbox manager start
-frak-sandbox images dev-base
+atelier manager start
+atelier images dev-base
 ```
 
 ### Solution
@@ -427,7 +427,7 @@ frak-sandbox images dev-base
 Single command that handles everything:
 
 ```bash
-frak-sandbox init \
+atelier init \
   --domain sandbox.example.com \
   --dns-provider cloudflare \
   --dns-token $CLOUDFLARE_TOKEN \
@@ -446,7 +446,7 @@ frak-sandbox init \
 import { intro, outro, spinner, confirm, select, text } from '@clack/prompts';
 
 export async function init(options: InitOptions) {
-  intro('FRAK Sandbox Initialization');
+  intro('L'atelier Initialization');
 
   // Phase 1: Validate prerequisites
   const s = spinner();
@@ -484,14 +484,14 @@ export async function init(options: InitOptions) {
   }
 
   outro(`
-    FRAK Sandbox is ready!
+    L'atelier is ready!
 
     Dashboard: https://${config.dashboardDomain}
     API:       https://${config.apiDomain}
     
     Next steps:
     1. Visit the dashboard to create your first sandbox
-    2. Run 'frak-sandbox status' to check health
+    2. Run 'atelier status' to check health
   `);
 }
 ```
@@ -807,7 +807,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: cli-linux-x64
-          path: apps/cli/dist/frak-sandbox-linux-x64
+          path: apps/cli/dist/atelier-linux-x64
 ```
 
 ### Tasks
@@ -856,7 +856,7 @@ Phase 1 is complete when:
 - [ ] CONTRIBUTING.md exists with complete guidance
 - [ ] DevContainer works in VS Code, Codespaces, DevPod
 - [ ] Can deploy to any domain via configuration
-- [ ] `frak-sandbox init` completes full setup
+- [ ] `atelier init` completes full setup
 - [ ] Test coverage > 60%
 - [ ] CI passes on all PRs
 - [ ] README updated with badges and quick start

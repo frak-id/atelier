@@ -1,4 +1,4 @@
-import { discoverImages, getImageById } from "@frak-sandbox/shared";
+import { discoverImages, getImageById } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {

@@ -1,4 +1,4 @@
-import { AUTH_PROVIDERS, VM_PATHS } from "@frak-sandbox/shared/constants";
+import { AUTH_PROVIDERS, VM_PATHS } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";

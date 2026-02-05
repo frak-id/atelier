@@ -5,7 +5,7 @@ import {
   DEFAULT_CONFIG,
   loadConfig,
   validateConfig,
-} from "@frak-sandbox/shared";
+} from "@frak/atelier-shared";
 import { fileExists } from "../lib/shell";
 import { baseSetup } from "./base-setup";
 import { images } from "./images";
@@ -43,8 +43,8 @@ export async function initServer(_args: string[] = []) {
   p.log.success("Installation complete!");
   p.note(
     `Next steps:
-  1. Check API health: frak-sandbox manager status
-  2. Build image later: frak-sandbox images dev-base`,
+   1. Check API health: atelier manager status
+   2. Build image later: atelier images dev-base`,
     "Install Complete",
   );
 }
@@ -164,7 +164,7 @@ async function runStorageSetup(): Promise<boolean> {
     return true;
   }
 
-  p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
+  p.log.info("Skipping storage setup. Run 'atelier storage' later.");
   return false;
 }
 
@@ -185,5 +185,5 @@ async function validateConfigFile(configPath: string) {
 }
 
 function getConfigPath(): string {
-  return process.env.FRAK_CONFIG || `/etc/frak-sandbox/${CONFIG_FILE_NAME}`;
+  return process.env.ATELIER_CONFIG || `/etc/atelier/${CONFIG_FILE_NAME}`;
 }

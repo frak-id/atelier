@@ -1,4 +1,4 @@
-import type { ServiceStatus, Workspace } from "@frak-sandbox/manager/types";
+import type { ServiceStatus, Workspace } from "@frak/atelier-manager/types";
 import type { Session, Todo } from "@opencode-ai/sdk/v2";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";

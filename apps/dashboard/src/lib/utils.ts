@@ -1,4 +1,4 @@
-import type { Workspace } from "@frak-sandbox/manager/types";
+import type { Workspace } from "@frak/atelier-manager/types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 

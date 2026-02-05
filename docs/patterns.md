@@ -47,7 +47,7 @@ initSandboxService({
 ## Error Handling
 
 ```typescript
-import { NotFoundError, ValidationError } from "@frak-sandbox/shared/errors.ts";
+import { NotFoundError, ValidationError } from "@frak/atelier-shared/errors.ts";
 
 throw new NotFoundError("Sandbox not found");
 throw new ValidationError("Invalid configuration");

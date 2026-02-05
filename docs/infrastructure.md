@@ -2,10 +2,10 @@
 
 ## Configuration
 
-FRAK Sandbox uses a unified configuration system. Values can be set via:
+L'atelier uses a unified configuration system. Values can be set via:
 
 1. **Environment variables** (highest priority)
-2. **Config file** (`/etc/frak-sandbox/sandbox.config.json` or `FRAK_CONFIG` env var)
+2. **Config file** (`/etc/atelier/sandbox.config.json` or `ATELIER_CONFIG` env var)
 3. **Defaults** (fallback)
 
 See `sandbox.config.example.json` in the repository root for all available options.
@@ -14,10 +14,10 @@ See `sandbox.config.example.json` in the repository root for all available optio
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FRAK_SANDBOX_DOMAIN_SUFFIX` | Domain suffix for sandboxes | `localhost` |
-| `FRAK_API_DOMAIN` | API domain | `sandbox-api.{suffix}` |
-| `FRAK_DASHBOARD_DOMAIN` | Dashboard domain | `sandbox-dash.{suffix}` |
-| `FRAK_DNS_SERVERS` | DNS servers (comma-separated) | `8.8.8.8,8.8.4.4` |
+| `ATELIER_SANDBOX_DOMAIN_SUFFIX` | Domain suffix for sandboxes | `localhost` |
+| `ATELIER_API_DOMAIN` | API domain | `sandbox-api.{suffix}` |
+| `ATELIER_DASHBOARD_DOMAIN` | Dashboard domain | `sandbox-dash.{suffix}` |
+| `ATELIER_DNS_SERVERS` | DNS servers (comma-separated) | `8.8.8.8,8.8.4.4` |
 | `GITHUB_CLIENT_ID` | GitHub OAuth client ID | (required for production) |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | (required for production) |
 | `JWT_SECRET` | JWT signing secret | (required for production) |
@@ -78,10 +78,10 @@ sandbox-vg/
 Run on server (CLI auto-sudo for privileged operations):
 
 ```bash
-frak-sandbox init              # Full install
-frak-sandbox images build      # Build rootfs image
-frak-sandbox debug-vm start    # Test VM
-frak-sandbox manager status    # Check API health
+atelier init              # Full install
+atelier images build      # Build rootfs image
+atelier debug-vm start    # Test VM
+atelier manager status    # Check API health
 ```
 
 ## Deployment

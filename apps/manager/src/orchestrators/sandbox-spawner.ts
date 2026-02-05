@@ -1,5 +1,5 @@
-import type { SandboxConfig } from "@frak-sandbox/shared";
-import { DEFAULTS, VM_PATHS } from "@frak-sandbox/shared/constants";
+import type { SandboxConfig } from "@frak/atelier-shared";
+import { DEFAULTS, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type {
   AgentClient,

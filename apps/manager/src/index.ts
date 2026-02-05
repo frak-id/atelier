@@ -1,6 +1,6 @@
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
-import { validateConfig } from "@frak-sandbox/shared";
+import { validateConfig } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
 import {
   authRoutes,
@@ -137,7 +137,7 @@ const app = new Elysia()
       path: "/swagger",
       documentation: {
         info: {
-          title: "Frak Sandbox Manager API",
+          title: "L'atelier Manager API",
           version: "0.1.0",
           description:
             "API for managing Firecracker-based sandbox environments",
@@ -225,7 +225,7 @@ const app = new Elysia()
       ),
   )
   .get("/", () => ({
-    name: "Frak Sandbox Manager",
+    name: "L'atelier Manager",
     version: "0.1.0",
     mode: config.mode,
     docs: "/swagger",
@@ -244,7 +244,7 @@ app.listen(
         mode: config.mode,
         swagger: `http://${hostname}:${port}/swagger`,
       },
-      "Frak Sandbox Manager started",
+      "L'atelier Manager started",
     );
   },
 );

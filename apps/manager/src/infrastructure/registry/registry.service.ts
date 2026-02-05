@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import type { Server } from "node:http";
 import path from "node:path";
-import { REGISTRY } from "@frak-sandbox/shared/constants";
+import { REGISTRY } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -113,7 +113,11 @@ async function ensureVerdaccioInstalled(): Promise<void> {
   if (!existsSync(pkgJsonPath)) {
     writeFileSync(
       pkgJsonPath,
-      JSON.stringify({ name: "frak-registry-cache", private: true }, null, 2),
+      JSON.stringify(
+        { name: "atelier-registry-cache", private: true },
+        null,
+        2,
+      ),
     );
   }
 

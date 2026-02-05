@@ -1,4 +1,4 @@
-import { loadConfig } from "@frak-sandbox/shared";
+import { loadConfig } from "@frak/atelier-shared";
 
 export {
   CODE_SERVER,
@@ -8,7 +8,7 @@ export {
   PATHS,
   SHARED_BINARIES,
   SSH_PROXY,
-} from "@frak-sandbox/shared/constants";
+} from "@frak/atelier-shared/constants";
 
 /** Loaded config - network, domains, sshProxy values come from sandbox.config.json / env vars */
-export const frakConfig = loadConfig();
+export const atelierConfig = loadConfig();

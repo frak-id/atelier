@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${ATELIER_REPO:-frak-id/oc-sandbox}"
+REPO="${ATELIER_REPO:-frak-id/atelier}"
 VERSION="${ATELIER_VERSION:-}"
 CLI_NAME="atelier"
 CLI_PATH="/usr/local/bin/${CLI_NAME}"

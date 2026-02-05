@@ -1,4 +1,4 @@
-# FRAK SANDBOX
+# L'atelier
 
 Firecracker microVM orchestrator for isolated dev environments. Bun monorepo.
 

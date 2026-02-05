@@ -1,4 +1,4 @@
-import { LVM } from "@frak-sandbox/shared/constants";
+import { LVM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import { eventBus } from "../infrastructure/events/index.ts";

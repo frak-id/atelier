@@ -1,5 +1,5 @@
 {
-  "name": "@frak-sandbox/dashboard",
+  "name": "@frak/atelier-dashboard",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -13,8 +13,8 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@elysiajs/eden": "^1.4.6",
-    "@frak-sandbox/manager": "workspace:*",
-    "@frak-sandbox/shared": "workspace:*",
+    "@frak/atelier-manager": "workspace:*",
+    "@frak/atelier-shared": "workspace:*",
     "@opencode-ai/sdk": "1.1.48",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.4",

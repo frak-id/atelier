@@ -1,5 +1,5 @@
 import { treaty } from "@elysiajs/eden";
-import type { App as ManagerApp } from "@frak-sandbox/manager";
+import type { App as ManagerApp } from "@frak/atelier-manager";
 
 export const api = treaty<ManagerApp>(window.location.origin, {
   fetch: { credentials: "include" },
@@ -28,4 +28,4 @@ export type {
   SystemStats,
   Task,
   Workspace,
-} from "@frak-sandbox/manager/types";
+} from "@frak/atelier-manager/types";

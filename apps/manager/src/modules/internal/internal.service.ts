@@ -1,4 +1,4 @@
-import { AUTH_PROVIDERS } from "@frak-sandbox/shared/constants";
+import { AUTH_PROVIDERS } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";

@@ -1,4 +1,4 @@
-import type { Task } from "@frak-sandbox/manager/types";
+import type { Task } from "@frak/atelier-manager/types";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useDeleteTask } from "@/api/queries";

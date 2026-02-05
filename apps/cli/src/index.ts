@@ -111,69 +111,69 @@ async function selectCommand(): Promise<CommandKey> {
 
 function printHelp() {
   console.log(`
-frak-sandbox - Firecracker sandbox management CLI
+atelier - Firecracker sandbox management CLI
 
-Usage: frak-sandbox [command] [subcommand]
+Usage: atelier [command] [subcommand]
 
 PROVISIONING (one-time setup):
-  init            Full install (config + setup + update + images)
-  base            Install base packages, Bun, Docker, Caddy, verify KVM
-  firecracker     Download Firecracker, kernel, and rootfs
-  network         Configure persistent bridge for VM networking
-  storage         Configure LVM thin provisioning
-  ssh-proxy       Install and configure sshpiper for sandbox SSH access
+   init            Full install (config + setup + update + images)
+   base            Install base packages, Bun, Docker, Caddy, verify KVM
+   firecracker     Download Firecracker, kernel, and rootfs
+   network         Configure persistent bridge for VM networking
+   storage         Configure LVM thin provisioning
+   ssh-proxy       Install and configure sshpiper for sandbox SSH access
 
 UPDATES & CONFIG:
-  update          Download and install the matching server bundle
-  update --local  Use local tarball from /tmp/frak-sandbox-deploy.tar.gz
-  config          View or edit sandbox.config.json
+   update          Download and install the matching server bundle
+   update --local  Use local tarball from /tmp/atelier-deploy.tar.gz
+   config          View or edit sandbox.config.json
 
 SERVICE CONTROL:
-  manager         Manage the sandbox manager API service
+   manager         Manage the sandbox manager API service
 
 IMAGE BUILDING:
-  images          Build base images (Docker -> ext4 -> LVM)
+   images          Build base images (Docker -> ext4 -> LVM)
 
 DEBUGGING:
-  debug-vm        Start/stop/manage debug VM (isolated from Manager)
+   debug-vm        Start/stop/manage debug VM (isolated from Manager)
 
 INFO:
-  version         Show CLI version
+   version         Show CLI version
 
 Manager Subcommands:
-  manager start   Start the manager service
-  manager stop    Stop the manager service
-  manager restart Restart the manager service
-  manager status  Show service status and health
-  manager logs    View manager logs (follows)
+   manager start   Start the manager service
+   manager stop    Stop the manager service
+   manager restart Restart the manager service
+   manager status  Show service status and health
+   manager logs    View manager logs (follows)
 
 Images:
-  images [image-id]   Build a base image (interactive or: images dev-base)
+   images [image-id]   Build a base image (interactive or: images dev-base)
 
 Debug VM Subcommands:
-  debug-vm start      Start debug VM
-  debug-vm stop       Stop debug VM
-  debug-vm status     Show VM status
-  debug-vm ssh        SSH into VM
+   debug-vm start      Start debug VM
+   debug-vm stop       Stop debug VM
+   debug-vm status     Show VM status
+   debug-vm ssh        SSH into VM
 
 Options:
-  --help, -h      Show this help message
-  --version, -v   Show CLI version
+   --help, -h      Show this help message
+   --version, -v   Show CLI version
 
 Examples:
-  frak-sandbox init               Full install
-  frak-sandbox update             Install server bundle (prompts if local found)
-  frak-sandbox update --local     Use local tarball from deploy.ts
-  frak-sandbox update --rebuild-images
-  frak-sandbox manager status     Check API health
-  frak-sandbox images dev-base    Build dev-base image
-  frak-sandbox debug-vm start     Start debug VM
-  frak-sandbox config show        Show current config
-  frak-sandbox version            Show CLI version
+   atelier init               Full install
+   atelier update             Install server bundle (prompts if local found)
+   atelier update --local     Use local tarball from deploy.ts
+   atelier update --rebuild-images
+   atelier manager status     Check API health
+   atelier images dev-base    Build dev-base image
+   atelier debug-vm start     Start debug VM
+   atelier config show        Show current config
+   atelier version            Show CLI version
 
 For runtime operations (sandbox list, resize, etc), use Manager API:
-  curl http://localhost:4000/sandboxes
-  curl http://localhost:4000/images
+   curl http://localhost:4000/sandboxes
+   curl http://localhost:4000/images
 `);
 }
 
@@ -190,7 +190,7 @@ async function main() {
     process.exit(0);
   }
 
-  p.intro("frak-sandbox");
+  p.intro("atelier");
 
   let command: CommandKey;
   const subArgs = args.slice(1);

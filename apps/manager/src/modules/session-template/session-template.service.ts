@@ -1,7 +1,7 @@
 import {
   DEFAULT_SESSION_TEMPLATES,
   SESSION_TEMPLATES_CONFIG_PATH,
-} from "@frak-sandbox/shared/constants";
+} from "@frak/atelier-shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type {
   SessionTemplate,
