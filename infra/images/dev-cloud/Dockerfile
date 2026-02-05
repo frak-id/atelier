@@ -1,10 +1,10 @@
-# Frak Sandbox - dev-cloud image
+# L'atelier - dev-cloud image
 # Extends dev-base with cloud CLI tools: AWS CLI, Google Cloud SDK, kubectl
 #
-# Build: docker build -t frak-sandbox/dev-cloud .
-# Requires: frak-sandbox/dev-base image to be built first
+# Build: docker build -t atelier/dev-cloud .
+# Requires: atelier/dev-base image to be built first
 
-FROM frak-sandbox/dev-base:latest
+FROM atelier/dev-base:latest
 
 USER root
 

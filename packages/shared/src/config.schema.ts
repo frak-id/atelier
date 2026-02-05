@@ -1,5 +1,5 @@
 /**
- * Unified configuration schema for FRAK Sandbox.
+ * Unified configuration schema for L'atelier.
  * Configuration priority: ENV vars > config file > defaults
  */
 import { type Static, Type } from "@sinclair/typebox";
@@ -164,7 +164,7 @@ export type SandboxServiceEntry = Static<typeof SandboxServiceEntrySchema>;
 export const ImagesConfigSchema = Type.Object(
   {
     /** Directory containing image definitions (each image is a subdirectory with Dockerfile + image.json) */
-    directory: Type.String({ default: "/opt/frak-sandbox/infra/images" }),
+    directory: Type.String({ default: "/opt/atelier/infra/images" }),
     /** Default image to use when creating new workspaces */
     defaultImage: Type.String({ default: "dev-base" }),
   },
@@ -173,7 +173,7 @@ export const ImagesConfigSchema = Type.Object(
 
 export type ImagesConfig = Static<typeof ImagesConfigSchema>;
 
-export const FrakConfigSchema = Type.Object({
+export const AtelierConfigSchema = Type.Object({
   domains: DomainsConfigSchema,
   network: NetworkConfigSchema,
   auth: AuthConfigSchema,
@@ -185,20 +185,20 @@ export const FrakConfigSchema = Type.Object({
   images: ImagesConfigSchema,
 });
 
-export type FrakConfig = Static<typeof FrakConfigSchema>;
+export type AtelierConfig = Static<typeof AtelierConfigSchema>;
 
 /** Maps environment variable names to config paths for the config loader */
 export const ENV_VAR_MAPPING = {
-  FRAK_DASHBOARD_DOMAIN: "domains.dashboard",
-  FRAK_SANDBOX_DOMAIN_SUFFIX: "domains.sandboxSuffix",
-  FRAK_SSH_DOMAIN: "domains.ssh",
+  ATELIER_DASHBOARD_DOMAIN: "domains.dashboard",
+  ATELIER_SANDBOX_DOMAIN_SUFFIX: "domains.sandboxSuffix",
+  ATELIER_SSH_DOMAIN: "domains.ssh",
 
-  FRAK_BRIDGE_NAME: "network.bridgeName",
-  FRAK_BRIDGE_IP: "network.bridgeIp",
-  FRAK_BRIDGE_CIDR: "network.bridgeCidr",
-  FRAK_GUEST_SUBNET: "network.guestSubnet",
-  FRAK_GUEST_IP_START: "network.guestIpStart",
-  FRAK_DNS_SERVERS: "network.dnsServers", // comma-separated
+  ATELIER_BRIDGE_NAME: "network.bridgeName",
+  ATELIER_BRIDGE_IP: "network.bridgeIp",
+  ATELIER_BRIDGE_CIDR: "network.bridgeCidr",
+  ATELIER_GUEST_SUBNET: "network.guestSubnet",
+  ATELIER_GUEST_IP_START: "network.guestIpStart",
+  ATELIER_DNS_SERVERS: "network.dnsServers", // comma-separated
 
   GITHUB_CLIENT_ID: "auth.githubClientId",
   GITHUB_CLIENT_SECRET: "auth.githubClientSecret",
@@ -220,19 +220,19 @@ export const ENV_VAR_MAPPING = {
   TLS_CERT_PATH: "tls.certPath",
   TLS_KEY_PATH: "tls.keyPath",
 
-  FRAK_VSCODE_PORT: "services.vscode.port",
-  FRAK_OPENCODE_PORT: "services.opencode.port",
-  FRAK_BROWSER_PORT: "services.browser.port",
-  FRAK_TERMINAL_PORT: "services.terminal.port",
-  FRAK_AGENT_PORT: "services.agent.port",
+  ATELIER_VSCODE_PORT: "services.vscode.port",
+  ATELIER_OPENCODE_PORT: "services.opencode.port",
+  ATELIER_BROWSER_PORT: "services.browser.port",
+  ATELIER_TERMINAL_PORT: "services.terminal.port",
+  ATELIER_AGENT_PORT: "services.agent.port",
 
-  FRAK_IMAGES_DIR: "images.directory",
-  FRAK_DEFAULT_IMAGE: "images.defaultImage",
+  ATELIER_IMAGES_DIR: "images.directory",
+  ATELIER_DEFAULT_IMAGE: "images.defaultImage",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;
 
-export const DEFAULT_CONFIG: FrakConfig = {
+export const DEFAULT_CONFIG: AtelierConfig = {
   domains: {
     dashboard: "sandbox.localhost",
     sandboxSuffix: "localhost",
@@ -280,7 +280,7 @@ export const DEFAULT_CONFIG: FrakConfig = {
   },
   setup: {},
   images: {
-    directory: "/opt/frak-sandbox/infra/images",
+    directory: "/opt/atelier/infra/images",
     defaultImage: "dev-base",
   },
 };

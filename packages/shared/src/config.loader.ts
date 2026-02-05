@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { Value } from "@sinclair/typebox/value";
 import {
+  type AtelierConfig,
+  AtelierConfigSchema,
   ENV_VAR_MAPPING,
-  type FrakConfig,
-  FrakConfigSchema,
 } from "./config.schema.ts";
 
 function setNestedValue(
@@ -103,25 +103,25 @@ export interface LoadConfigOptions {
   skipFile?: boolean;
 }
 
-export function loadConfig(options: LoadConfigOptions = {}): FrakConfig {
+export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {
   const configFile =
     options.configFile ||
-    process.env.FRAK_CONFIG ||
-    `/etc/frak-sandbox/${CONFIG_FILE_NAME}`;
+    process.env.ATELIER_CONFIG ||
+    `/etc/atelier/${CONFIG_FILE_NAME}`;
 
   const fileConfig = options.skipFile ? {} : loadFromFile(configFile);
   const envConfig = options.skipEnv ? {} : loadFromEnv();
 
   const merged = deepMerge({}, fileConfig, envConfig);
 
-  const withDefaults = Value.Default(FrakConfigSchema, merged);
-  const converted = Value.Convert(FrakConfigSchema, withDefaults);
-  const cleaned = Value.Clean(FrakConfigSchema, converted);
+  const withDefaults = Value.Default(AtelierConfigSchema, merged);
+  const converted = Value.Convert(AtelierConfigSchema, withDefaults);
+  const cleaned = Value.Clean(AtelierConfigSchema, converted);
 
-  return cleaned as FrakConfig;
+  return cleaned as AtelierConfig;
 }
 
-export function getConfigValue<T>(config: FrakConfig, path: string): T {
+export function getConfigValue<T>(config: AtelierConfig, path: string): T {
   const keys = path.split(".");
   let current: unknown = config;
 
@@ -150,13 +150,13 @@ export interface ValidateConfigOptions {
 }
 
 export function validateConfig(
-  config: FrakConfig,
+  config: AtelierConfig,
   options: ValidateConfigOptions = {},
 ): ConfigValidationError[] {
   const errors: ConfigValidationError[] = [];
   const isProduction = config.runtime.mode === "production";
 
-  const schemaErrors = [...Value.Errors(FrakConfigSchema, config)];
+  const schemaErrors = [...Value.Errors(AtelierConfigSchema, config)];
   for (const err of schemaErrors) {
     errors.push({
       field: err.path,
@@ -190,7 +190,7 @@ export function validateConfig(
       errors.push({
         field: "domains.sandboxSuffix",
         message:
-          "Domain suffix should be configured for production (set FRAK_SANDBOX_DOMAIN_SUFFIX)",
+          "Domain suffix should be configured for production (set ATELIER_SANDBOX_DOMAIN_SUFFIX)",
       });
     }
 
@@ -217,7 +217,7 @@ export function validateConfig(
 }
 
 export function assertConfigValid(
-  config: FrakConfig,
+  config: AtelierConfig,
   options: ValidateConfigOptions = {},
 ): void {
   const errors = validateConfig(config, options);

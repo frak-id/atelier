@@ -1,5 +1,5 @@
 /**
- * Shared constants for Frak Sandbox infrastructure
+ * Shared constants for L'atelier infrastructure
  */
 
 export const PATHS = {
@@ -16,7 +16,7 @@ export const PATHS = {
   /** Application logs */
   LOG_DIR: "/var/log/sandbox",
   /** Application code */
-  APP_DIR: "/opt/frak-sandbox",
+  APP_DIR: "/opt/atelier",
   /** Git repository cache */
   GIT_CACHE_DIR: "/var/lib/sandbox/git-cache",
   /** Encrypted secrets */
@@ -289,5 +289,4 @@ Make the code as simple as possible while maintaining functionality.`,
   },
 ];
 
-export const SESSION_TEMPLATES_CONFIG_PATH =
-  "/.frak-sandbox/session-templates.json";
+export const SESSION_TEMPLATES_CONFIG_PATH = "/.atelier/session-templates.json";
