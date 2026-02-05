@@ -142,14 +142,6 @@ export function useRestartSandbox() {
   });
 }
 
-export function useExecCommand(sandboxId: string) {
-  return useMutation({
-    mutationKey: ["sandboxes", "exec", sandboxId],
-    mutationFn: async (data: { command: string; timeout?: number }) =>
-      unwrap(await api.api.sandboxes({ id: sandboxId }).exec.post(data)),
-  });
-}
-
 export function useStartDevCommand(sandboxId: string) {
   return useMutation({
     mutationKey: ["sandboxes", "dev", "start", sandboxId],

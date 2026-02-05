@@ -102,13 +102,19 @@ fn generate_session_id() -> String {
     format!("pty_{:x}", nanos)
 }
 
-pub async fn create_session(user_id: String, title: Option<String>) -> Result<SessionInfo, String> {
+pub async fn create_session(
+    user_id: String,
+    title: Option<String>,
+    command: Option<String>,
+    workdir: Option<String>,
+) -> Result<SessionInfo, String> {
     let mut guard = TERMINAL_STATE.write().await;
     let state = guard.as_mut().ok_or("Terminal server not initialized")?;
 
     let (master_fd, slave_fd) = raw_openpty().ok_or("Failed to open PTY")?;
     set_winsize(master_fd, 80, 24);
 
+    let workdir_path = workdir.unwrap_or_else(|| "/home/dev".to_string());
     let child_pid = match unsafe { fork() } {
         Ok(ForkResult::Child) => {
             unsafe { libc::close(master_fd) };
@@ -128,8 +134,20 @@ pub async fn create_session(user_id: String, title: Option<String>) -> Result<Se
             std::env::set_var("SHELL", "/bin/bash");
             let _ = setgid(Gid::from_raw(1000));
             let _ = setuid(Uid::from_raw(1000));
+            let _ = std::env::set_current_dir(&workdir_path);
             let cmd = CString::new("/bin/bash").unwrap();
-            let args = [CString::new("/bin/bash").unwrap()];
+            let args: Vec<CString> = match &command {
+                Some(c) => vec![
+                    CString::new("/bin/bash").unwrap(),
+                    CString::new("-l").unwrap(),
+                    CString::new("-c").unwrap(),
+                    CString::new(c.as_str()).unwrap(),
+                ],
+                None => vec![
+                    CString::new("/bin/bash").unwrap(),
+                    CString::new("-l").unwrap(),
+                ],
+            };
             let _ = execvp(&cmd, &args);
             std::process::exit(1);
         }
@@ -313,6 +331,8 @@ pub async fn write_to_session(session_id: &str, data: Vec<u8>) -> Result<(), Str
 struct CreateSessionBody {
     user_id: String,
     title: Option<String>,
+    command: Option<String>,
+    workdir: Option<String>,
 }
 
 async fn read_body(req: Request<hyper::body::Incoming>) -> Result<Bytes, hyper::Error> {
@@ -330,7 +350,7 @@ pub async fn handle_create_session(req: Request<hyper::body::Incoming>) -> Respo
         Err(_) => return json_error(StatusCode::BAD_REQUEST, "Invalid JSON"),
     };
 
-    match create_session(parsed.user_id, parsed.title).await {
+    match create_session(parsed.user_id, parsed.title, parsed.command, parsed.workdir).await {
         Ok(info) => json_ok(serde_json::to_value(info).unwrap()),
         Err(e) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
     }

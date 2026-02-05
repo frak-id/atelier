@@ -55,19 +55,6 @@ export type SandboxListQuery = Static<typeof SandboxListQuerySchema>;
 export const SandboxListResponseSchema = t.Array(SandboxSchema);
 export type SandboxListResponse = Static<typeof SandboxListResponseSchema>;
 
-export const ExecBodySchema = t.Object({
-  command: t.String({ minLength: 1 }),
-  timeout: t.Optional(t.Number({ minimum: 1000, maximum: 300000 })),
-});
-export type ExecBody = Static<typeof ExecBodySchema>;
-
-export const ExecResponseSchema = t.Object({
-  exitCode: t.Number(),
-  stdout: t.String(),
-  stderr: t.String(),
-});
-export type ExecResponse = Static<typeof ExecResponseSchema>;
-
 export const ServiceStatusSchema = t.Object({
   name: t.String(),
   status: t.Union([

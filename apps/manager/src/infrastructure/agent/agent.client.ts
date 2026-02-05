@@ -421,14 +421,19 @@ export class AgentClient {
   async terminalSessionCreate(
     sandboxId: string,
     userId: string,
-    title?: string,
+    options?: { title?: string; command?: string; workdir?: string },
   ): Promise<TerminalSessionCreateResult> {
     return this.request<TerminalSessionCreateResult>(
       sandboxId,
       "/terminal/sessions",
       {
         method: "POST",
-        body: { userId, title },
+        body: {
+          userId,
+          title: options?.title,
+          command: options?.command,
+          workdir: options?.workdir,
+        },
         timeout: 10000,
       },
     );

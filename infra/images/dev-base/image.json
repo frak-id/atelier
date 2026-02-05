@@ -10,7 +10,7 @@
     "git",
     "curl",
     "ssh",
-    "htop"
+    "vim"
   ],
   "base": null,
   "official": true

@@ -22,13 +22,10 @@ ENV LC_ALL=en_US.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    wget \
     git \
     openssh-server \
     sudo \
-    htop \
     vim \
-    nano \
     jq \
     unzip \
     xz-utils \
@@ -39,7 +36,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nfs-common \
     chromium \
     fonts-liberation \
-    xdotool \
     openbox \
     libegl1 \
     && locale-gen en_US.UTF-8 \

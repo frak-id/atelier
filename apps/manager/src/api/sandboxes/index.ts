@@ -18,8 +18,6 @@ import {
   BrowserStopResponseSchema,
   CreateSandboxBodySchema,
   CreateSandboxResponseSchema,
-  ExecBodySchema,
-  ExecResponseSchema,
   GitCommitBodySchema,
   GitCommitResponseSchema,
   GitDiffResponseSchema,
@@ -167,19 +165,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         {
           params: IdParamSchema,
           response: AgentMetricsSchema,
-        },
-      )
-      .post(
-        "/:id/exec",
-        async ({ body, sandbox }) => {
-          return agentClient.exec(sandbox.id, body.command, {
-            timeout: body.timeout,
-          });
-        },
-        {
-          params: IdParamSchema,
-          body: ExecBodySchema,
-          response: ExecResponseSchema,
         },
       )
       .get(

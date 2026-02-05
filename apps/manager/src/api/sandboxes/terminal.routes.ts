@@ -24,6 +24,8 @@ const TerminalSessionSchema = t.Object({
 
 const CreateSessionBodySchema = t.Object({
   title: t.Optional(t.String()),
+  command: t.Optional(t.String()),
+  workdir: t.Optional(t.String()),
 });
 
 export const terminalRoutes = new Elysia()
@@ -63,7 +65,7 @@ export const terminalRoutes = new Elysia()
         const session = await agentClient.terminalSessionCreate(
           params.id,
           user.id,
-          body.title,
+          { title: body.title, command: body.command, workdir: body.workdir },
         );
         log.info(
           { sandboxId: params.id, sessionId: session.id, userId: user.id },
