@@ -103,6 +103,19 @@ export interface LoadConfigOptions {
   skipFile?: boolean;
 }
 
+/**
+ * Generate a default config from the schema.
+ * Single source of truth — no hand-written DEFAULT_CONFIG object.
+ * Note: `runtime.mode` has no schema default, so we inject "mock" here.
+ */
+export function getDefaultConfig(): AtelierConfig {
+  const base = { runtime: { mode: "mock" } };
+  const withDefaults = Value.Default(AtelierConfigSchema, base);
+  const converted = Value.Convert(AtelierConfigSchema, withDefaults);
+  const cleaned = Value.Clean(AtelierConfigSchema, converted);
+  return cleaned as AtelierConfig;
+}
+
 export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {
   const configFile =
     options.configFile ||

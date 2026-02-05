@@ -1,7 +1,7 @@
 import * as p from "@clack/prompts";
 import {
   CONFIG_FILE_NAME,
-  DEFAULT_CONFIG,
+  getDefaultConfig,
   loadConfig,
   validateConfig,
 } from "@frak/atelier-shared";
@@ -58,13 +58,15 @@ async function showConfig() {
 
   if (!exists) {
     p.log.warn(`Config not found at ${configPath}. Showing defaults.`);
-    console.log(JSON.stringify(DEFAULT_CONFIG, null, 2));
+    console.log(JSON.stringify(getDefaultConfig(), null, 2));
     return;
   }
 
   const content = await Bun.file(configPath).text();
   console.log(
-    content.trim().length ? content : JSON.stringify(DEFAULT_CONFIG, null, 2),
+    content.trim().length
+      ? content
+      : JSON.stringify(getDefaultConfig(), null, 2),
   );
 }
 
@@ -92,11 +94,12 @@ async function setConfig(args: string[]) {
     value = input;
   }
 
+  const defaults = getDefaultConfig();
   const config = exists
     ? parseConfigFile(await Bun.file(configPath).text(), configPath)
     : {
-        ...structuredClone(DEFAULT_CONFIG),
-        runtime: { ...DEFAULT_CONFIG.runtime, mode: "production" },
+        ...structuredClone(defaults),
+        runtime: { ...defaults.runtime, mode: "production" as const },
       };
 
   setNestedValue(config, path, parseValue(path, value));

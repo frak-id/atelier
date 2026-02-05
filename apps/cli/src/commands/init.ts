@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import * as p from "@clack/prompts";
 import {
   CONFIG_FILE_NAME,
-  DEFAULT_CONFIG,
+  getDefaultConfig,
   loadConfig,
   validateConfig,
 } from "@frak/atelier-shared";
@@ -97,7 +97,8 @@ async function promptConfig() {
     .map((user) => user.trim())
     .filter(Boolean);
 
-  const config = structuredClone(DEFAULT_CONFIG);
+  const defaults = getDefaultConfig();
+  const config = structuredClone(defaults);
 
   config.domains = {
     dashboard: dashboardDomain,
@@ -105,11 +106,11 @@ async function promptConfig() {
     ssh: sshDomain,
   };
 
-  config.network = { ...DEFAULT_CONFIG.network };
-  config.services = { ...DEFAULT_CONFIG.services };
+  config.network = { ...defaults.network };
+  config.services = { ...defaults.services };
 
   config.auth = {
-    ...DEFAULT_CONFIG.auth,
+    ...defaults.auth,
     githubClientId,
     githubClientSecret,
     githubCallbackUrl: `https://${dashboardDomain}/api/github/callback`,
@@ -119,9 +120,9 @@ async function promptConfig() {
     allowedUsers,
   };
 
-  config.sshProxy = { ...DEFAULT_CONFIG.sshProxy, domain: sshDomain };
-  config.runtime = { ...DEFAULT_CONFIG.runtime, mode: "production" };
-  config.tls = { ...DEFAULT_CONFIG.tls, email: tlsEmail };
+  config.sshProxy = { ...defaults.sshProxy, domain: sshDomain };
+  config.runtime = { ...defaults.runtime, mode: "production" };
+  config.tls = { ...defaults.tls, email: tlsEmail };
 
   return config;
 }

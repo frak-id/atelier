@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./constants": "./src/constants.ts",
+    "./constants": "./src/constants/index.ts",
     "./config": "./src/config.schema.ts",
     "./config-loader": "./src/config.loader.ts",
     "./sandbox-config": "./src/sandbox-config.schema.ts",
