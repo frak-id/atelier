@@ -235,10 +235,6 @@ function WorkspaceDetailPage() {
             <Edit className="h-4 w-4 mr-2" />
             Edit
           </Button>
-          <Button variant="destructive" onClick={handleDelete}>
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </Button>
         </div>
       </div>
 
@@ -415,6 +411,36 @@ function WorkspaceDetailPage() {
           <WorkspaceSessionTemplatesSection workspaceId={id} />
         </div>
       </div>
+
+      <Card className="border-destructive/50">
+        <CardHeader>
+          <CardTitle className="text-destructive flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" />
+            Danger Zone
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Delete this workspace</p>
+              <p className="text-sm text-muted-foreground">
+                Once deleted, this workspace cannot be recovered. All associated
+                sandboxes, prebuilds, and config files will be permanently
+                removed.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+              className="shrink-0"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Workspace
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <EditWorkspaceDialog
         workspace={workspace}

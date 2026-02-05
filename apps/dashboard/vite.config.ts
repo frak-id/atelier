@@ -42,8 +42,19 @@ export default defineConfig({
       },
     },
   },
+  optimizeDeps: {
+    exclude: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links"],
+  },
   build: {
     outDir: "dist",
     sourcemap: false,
+    minify: "terser",
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          xterm: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links"],
+        },
+      },
+    },
   },
 });

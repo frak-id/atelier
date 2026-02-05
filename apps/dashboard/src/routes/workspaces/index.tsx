@@ -1,9 +1,9 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { FolderGit2, Plus, Trash2 } from "lucide-react";
+import { FolderGit2, Plus } from "lucide-react";
 import { useState } from "react";
 import type { Workspace } from "@/api/client";
-import { useDeleteWorkspace, workspaceListQuery } from "@/api/queries";
+import { workspaceListQuery } from "@/api/queries";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,13 +31,6 @@ export const Route = createFileRoute("/workspaces/")({
 function WorkspacesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const { data: workspaces } = useSuspenseQuery(workspaceListQuery());
-  const deleteMutation = useDeleteWorkspace();
-
-  const handleDelete = (id: string, name: string) => {
-    if (confirm(`Delete workspace "${name}"?`)) {
-      deleteMutation.mutate(id);
-    }
-  };
 
   return (
     <div className="p-6 space-y-6">
@@ -73,11 +66,7 @@ function WorkspacesPage() {
       ) : (
         <div className="grid gap-4">
           {workspaces.map((workspace) => (
-            <WorkspaceCard
-              key={workspace.id}
-              workspace={workspace}
-              onDelete={() => handleDelete(workspace.id, workspace.name)}
-            />
+            <WorkspaceCard key={workspace.id} workspace={workspace} />
           ))}
         </div>
       )}
@@ -87,13 +76,7 @@ function WorkspacesPage() {
   );
 }
 
-function WorkspaceCard({
-  workspace,
-  onDelete,
-}: {
-  workspace: Workspace;
-  onDelete: () => void;
-}) {
+function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const prebuildStatus = workspace.config.prebuild?.status ?? "none";
   const prebuildVariant = {
     none: "secondary",
@@ -104,7 +87,7 @@ function WorkspaceCard({
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
+      <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center gap-2">
           <Link to="/workspaces/$id" params={{ id: workspace.id }}>
             <CardTitle className="hover:underline cursor-pointer">
@@ -115,9 +98,6 @@ function WorkspaceCard({
             Prebuild: {prebuildStatus}
           </Badge>
         </div>
-        <Button variant="ghost" size="icon" onClick={onDelete}>
-          <Trash2 className="h-4 w-4 text-destructive" />
-        </Button>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

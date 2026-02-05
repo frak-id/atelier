@@ -2,6 +2,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Task } from "@frak-sandbox/manager/types";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   Code,
   ExternalLink,
@@ -26,7 +27,6 @@ import {
   type AggregatedInteractionState,
   useTaskSessionProgress,
 } from "@/hooks/use-task-session-progress";
-import { Link } from "@tanstack/react-router";
 
 export type TaskCardProps = {
   task: Task;
