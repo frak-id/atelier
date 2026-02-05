@@ -1,5 +1,5 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Bot,
@@ -14,6 +14,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import type { Sandbox } from "@/api/client";
 import {
   deriveBrowserStatus,
@@ -36,8 +37,17 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+const tabSchema = z.enum(["opencode", "vscode", "terminal", "web"]);
+type TabId = z.infer<typeof tabSchema>;
+
+const searchSchema = z.object({
+  tab1: tabSchema.optional().catch(undefined),
+  tab2: tabSchema.optional().catch(undefined),
+});
+
 export const Route = createFileRoute("/sandboxes/$id")({
   component: SandboxImmersionPage,
+  validateSearch: (search) => searchSchema.parse(search),
   loader: ({ context, params }) => {
     context.queryClient.ensureQueryData(sandboxDetailQuery(params.id));
   },
@@ -50,8 +60,6 @@ const statusVariant = {
   stopped: "secondary",
   error: "error",
 } as const;
-
-type TabId = "opencode" | "vscode" | "terminal" | "web";
 
 const tabs: { id: TabId; label: string; icon: typeof Monitor }[] = [
   { id: "opencode", label: "OpenCode", icon: Bot },
@@ -74,6 +82,9 @@ function useIsMobile() {
 
 function SandboxImmersionPage() {
   const { id } = Route.useParams();
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+
   const { data: sandbox } = useSuspenseQuery(sandboxDetailQuery(id));
   const { data: workspace } = useQuery({
     ...workspaceDetailQuery(sandbox?.workspaceId ?? ""),
@@ -95,15 +106,18 @@ function SandboxImmersionPage() {
     ? `${browserStatus.url}/?autoconnect=true&resize=remote`
     : undefined;
 
-  const [activeTab, setActiveTab] = useState<TabId>("opencode");
-  const [splitOpen, setSplitOpen] = useState(!isMobile);
-  const [rightTab, setRightTab] = useState<"vscode" | "terminal" | "web">(
-    "vscode",
-  );
+  const tab1 = search.tab1 ?? "opencode";
+  const tab2 = isMobile ? undefined : search.tab2;
+  const isSplit = !!tab2;
 
-  useEffect(() => {
-    if (isMobile) setSplitOpen(false);
-  }, [isMobile]);
+  const setView = useCallback(
+    (newTab1: TabId, newTab2?: TabId) => {
+      const cleanTab1 =
+        newTab1 === "opencode" && !newTab2 ? undefined : newTab1;
+      navigate({ search: { tab1: cleanTab1, tab2: newTab2 }, replace: true });
+    },
+    [navigate],
+  );
 
   const handleTabClick = useCallback(
     (tabId: TabId) => {
@@ -112,59 +126,51 @@ function SandboxImmersionPage() {
       }
 
       if (isMobile) {
-        setActiveTab(tabId);
+        setView(tabId);
         return;
       }
 
-      if (tabId === "opencode") {
-        if (splitOpen && activeTab === "opencode") {
-          setSplitOpen(false);
-        } else if (!splitOpen && activeTab === "opencode") {
-          setSplitOpen(true);
+      if (isSplit) {
+        if (tab1 === tabId || tab2 === tabId) {
+          setView(tabId);
         } else {
-          setActiveTab("opencode");
+          setView(tab1, tabId);
         }
-      } else if (splitOpen) {
-        if (rightTab === tabId) {
-          // Active right tab clicked again → collapse to single
-          setSplitOpen(false);
-          setActiveTab(tabId);
-        } else {
-          setRightTab(tabId);
-        }
-      } else if (activeTab === tabId) {
-        // Active single tab clicked again → expand to split
-        setSplitOpen(true);
-        setRightTab(tabId);
       } else {
-        setActiveTab(tabId);
+        if (tab1 === tabId) {
+          const rightTab = tabId === "opencode" ? "vscode" : tabId;
+          setView("opencode", rightTab);
+        } else {
+          setView(tabId);
+        }
       }
     },
     [
       isMobile,
-      splitOpen,
-      activeTab,
-      rightTab,
+      isSplit,
+      tab1,
+      tab2,
       browserStatus?.status,
       startBrowserMutation,
+      setView,
     ],
   );
 
   const toggleLayout = useCallback(() => {
     if (isMobile) return;
-    setSplitOpen((prev) => {
-      if (!prev && activeTab !== "opencode") {
-        setRightTab(activeTab as "vscode" | "terminal" | "web");
-      }
-      return !prev;
-    });
-  }, [isMobile, activeTab]);
+    if (isSplit) {
+      setView(tab1);
+    } else {
+      const right = tab1 === "opencode" ? "vscode" : tab1;
+      setView("opencode", right);
+    }
+  }, [isMobile, isSplit, tab1, setView]);
 
   const isTabActive = (tabId: TabId): boolean => {
-    if (splitOpen) {
-      return tabId === "opencode" || tabId === rightTab;
+    if (isSplit) {
+      return tabId === tab1 || tabId === tab2;
     }
-    return tabId === activeTab;
+    return tabId === tab1;
   };
 
   const stopMutation = useStopSandbox();
@@ -292,7 +298,7 @@ function SandboxImmersionPage() {
                       "text-muted-foreground hover:text-foreground hover:bg-muted",
                     )}
                   >
-                    {splitOpen ? (
+                    {isSplit ? (
                       <Square className="h-4 w-4" />
                     ) : (
                       <Columns2 className="h-4 w-4" />
@@ -300,7 +306,7 @@ function SandboxImmersionPage() {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {splitOpen ? "Single view" : "Split view"}
+                  {isSplit ? "Single view" : "Split view"}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -311,9 +317,8 @@ function SandboxImmersionPage() {
       {isRunning ? (
         <ImmersionContent
           sandbox={sandbox}
-          splitOpen={splitOpen}
-          activeTab={activeTab}
-          rightTab={rightTab}
+          tab1={tab1}
+          tab2={tab2}
           browserUrl={browserUrl}
           browserStarting={browserStatus?.status === "starting"}
         />
@@ -392,24 +397,19 @@ function useSplitResize() {
   return { splitPercent, dividerRef, containerRef, onPointerDown };
 }
 
-function ImmersionContent({
+function TabPanel({
+  tabId,
   sandbox,
-  splitOpen,
-  activeTab,
-  rightTab,
   browserUrl,
   browserStarting,
+  isActive,
 }: {
+  tabId: TabId;
   sandbox: Sandbox;
-  splitOpen: boolean;
-  activeTab: TabId;
-  rightTab: "vscode" | "terminal" | "web";
   browserUrl?: string;
   browserStarting?: boolean;
+  isActive: boolean;
 }) {
-  const { splitPercent, dividerRef, containerRef, onPointerDown } =
-    useSplitResize();
-
   const urlMap: Record<TabId, string | undefined> = {
     opencode: sandbox.runtime.urls.opencode,
     vscode: sandbox.runtime.urls.vscode,
@@ -417,76 +417,101 @@ function ImmersionContent({
     web: browserUrl,
   };
 
-  if (!splitOpen) {
+  if (tabId === "terminal") {
+    return (
+      <div className={cn("absolute inset-0", !isActive && "hidden")}>
+        <MultiTerminal sandboxId={sandbox.id} className="w-full h-full" />
+      </div>
+    );
+  }
+
+  const url = urlMap[tabId];
+  if (!url) {
+    return (
+      <div
+        className={cn(
+          "absolute inset-0 flex items-center justify-center bg-muted/30",
+          !isActive && "hidden",
+        )}
+      >
+        <div className="text-center space-y-3">
+          <Globe className="h-8 w-8 mx-auto text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            {browserStarting
+              ? "Browser is starting..."
+              : "Click to start browser"}
+          </p>
+          {browserStarting && (
+            <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const tabLabel = tabs.find((t) => t.id === tabId)?.label ?? tabId;
+
+  return (
+    <iframe
+      src={url}
+      className={cn(
+        "absolute inset-0 w-full h-full border-0",
+        !isActive && "hidden",
+      )}
+      title={tabLabel}
+      allow={tabId === "web" ? "clipboard-write" : undefined}
+    />
+  );
+}
+
+function ImmersionContent({
+  sandbox,
+  tab1,
+  tab2,
+  browserUrl,
+  browserStarting,
+}: {
+  sandbox: Sandbox;
+  tab1: TabId;
+  tab2?: TabId;
+  browserUrl?: string;
+  browserStarting?: boolean;
+}) {
+  const { splitPercent, dividerRef, containerRef, onPointerDown } =
+    useSplitResize();
+
+  const isSplit = !!tab2;
+
+  if (!isSplit) {
     return (
       <div className="flex-1 relative">
-        {tabs.map((tab) => {
-          if (tab.id === "terminal") {
-            return (
-              <div
-                key={tab.id}
-                className={cn(
-                  "absolute inset-0",
-                  tab.id !== activeTab && "hidden",
-                )}
-              >
-                <MultiTerminal
-                  sandboxId={sandbox.id}
-                  className="w-full h-full"
-                />
-              </div>
-            );
-          }
-          const url = urlMap[tab.id];
-          if (!url) {
-            return (
-              <div
-                key={tab.id}
-                className={cn(
-                  "absolute inset-0 flex items-center justify-center bg-muted/30",
-                  tab.id !== activeTab && "hidden",
-                )}
-              >
-                <div className="text-center space-y-3">
-                  <Globe className="h-8 w-8 mx-auto text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">
-                    {browserStarting
-                      ? "Browser is starting..."
-                      : "Click to start browser"}
-                  </p>
-                  {browserStarting && (
-                    <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
-                  )}
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <iframe
-              key={tab.id}
-              src={url}
-              className={cn(
-                "absolute inset-0 w-full h-full border-0",
-                tab.id !== activeTab && "hidden",
-              )}
-              title={tab.label}
-              allow={tab.id === "web" ? "clipboard-write" : undefined}
-            />
-          );
-        })}
+        {tabs.map((tab) => (
+          <TabPanel
+            key={tab.id}
+            tabId={tab.id}
+            sandbox={sandbox}
+            browserUrl={browserUrl}
+            browserStarting={browserStarting}
+            isActive={tab.id === tab1}
+          />
+        ))}
       </div>
     );
   }
 
   return (
     <div ref={containerRef} className="flex-1 flex min-h-0">
-      <div style={{ width: `${splitPercent}%` }} className="min-w-0">
-        <iframe
-          src={urlMap.opencode}
-          className="w-full h-full border-0"
-          title="OpenCode"
-        />
+      <div style={{ width: `${splitPercent}%` }} className="min-w-0 relative">
+        {tabs.map((tab) => (
+          <TabPanel
+            key={tab.id}
+            tabId={tab.id}
+            sandbox={sandbox}
+            browserUrl={browserUrl}
+            browserStarting={browserStarting}
+            isActive={tab.id === tab1}
+          />
+        ))}
       </div>
 
       <div
@@ -498,60 +523,16 @@ function ImmersionContent({
       </div>
 
       <div className="flex-1 min-w-0 relative">
-        {(["vscode", "terminal", "web"] as const).map((tabId) => {
-          if (tabId === "terminal") {
-            return (
-              <div
-                key={tabId}
-                className={cn(
-                  "absolute inset-0",
-                  rightTab !== tabId && "hidden",
-                )}
-              >
-                <MultiTerminal
-                  sandboxId={sandbox.id}
-                  className="w-full h-full"
-                />
-              </div>
-            );
-          }
-          const url = urlMap[tabId];
-          if (!url) {
-            return (
-              <div
-                key={tabId}
-                className={cn(
-                  "absolute inset-0 flex items-center justify-center bg-muted/30",
-                  rightTab !== tabId && "hidden",
-                )}
-              >
-                <div className="text-center space-y-3">
-                  <Globe className="h-8 w-8 mx-auto text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">
-                    {browserStarting
-                      ? "Browser is starting..."
-                      : "Click to start browser"}
-                  </p>
-                  {browserStarting && (
-                    <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
-                  )}
-                </div>
-              </div>
-            );
-          }
-          return (
-            <iframe
-              key={tabId}
-              src={url}
-              className={cn(
-                "absolute inset-0 w-full h-full border-0",
-                rightTab !== tabId && "hidden",
-              )}
-              title={tabId === "vscode" ? "VSCode" : "Web"}
-              allow={tabId === "web" ? "clipboard-write" : undefined}
-            />
-          );
-        })}
+        {tabs.map((tab) => (
+          <TabPanel
+            key={tab.id}
+            tabId={tab.id}
+            sandbox={sandbox}
+            browserUrl={browserUrl}
+            browserStarting={browserStarting}
+            isActive={tab.id === tab2}
+          />
+        ))}
       </div>
     </div>
   );

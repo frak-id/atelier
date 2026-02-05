@@ -227,9 +227,13 @@ export function SandboxCard({
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     asChild
                   >
-                    <a href={`/sandbox/${sandbox.id}/terminal`}>
+                    <Link
+                      to="/sandboxes/$id"
+                      params={{ id: sandbox.id }}
+                      search={{ tab1: "terminal" }}
+                    >
                       <Terminal className="h-4 w-4" />
-                    </a>
+                    </Link>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Terminal</TooltipContent>

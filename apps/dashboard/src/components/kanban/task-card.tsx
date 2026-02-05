@@ -26,6 +26,7 @@ import {
   type AggregatedInteractionState,
   useTaskSessionProgress,
 } from "@/hooks/use-task-session-progress";
+import { Link } from "@tanstack/react-router";
 
 export type TaskCardProps = {
   task: Task;
@@ -250,12 +251,14 @@ export function TaskCard({
                 </a>
               </Button>
               <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
-                <a
-                  href={`/sandbox/${sandbox.id}/terminal`}
+                <Link
+                  to="/sandboxes/$id"
+                  params={{ id: sandbox.id }}
+                  search={{ tab1: "terminal" }}
                   title="Open Terminal"
                 >
                   <Terminal className="h-3.5 w-3.5" />
-                </a>
+                </Link>
               </Button>
             </div>
           )}

@@ -291,10 +291,15 @@ export function TaskDrawer({
                         </a>
                       </Button>
                       <Button variant="outline" size="sm" asChild>
-                        <a href={`/sandbox/${sandbox.id}/terminal`}>
+                        <Link
+                          to="/sandboxes/$id"
+                          params={{ id: sandbox.id }}
+                          search={{ tab1: "terminal" }}
+                          title="Open Terminal"
+                        >
                           <Terminal className="h-4 w-4 mr-2" />
                           Terminal
-                        </a>
+                        </Link>
                       </Button>
                       <CopySshButton ssh={sandbox.runtime.urls.ssh} />
                     </div>

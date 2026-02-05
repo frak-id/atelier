@@ -243,10 +243,15 @@ export function SandboxDrawer({
                       </a>
                     </Button>
                     <Button variant="outline" size="sm" asChild>
-                      <a href={`/sandbox/${sandbox.id}/terminal`}>
+                      <Link
+                        to="/sandboxes/$id"
+                        params={{ id: sandbox.id }}
+                        search={{ tab1: "terminal" }}
+                        title="Open Terminal"
+                      >
                         <Terminal className="h-4 w-4 mr-2" />
                         Terminal
-                      </a>
+                      </Link>
                     </Button>
                     <Button variant="outline" size="sm" asChild>
                       <a
@@ -1459,7 +1464,11 @@ function TerminalTab({ sandboxId }: { sandboxId: string }) {
           Terminal
         </CardTitle>
         <Button variant="ghost" size="sm" asChild className="h-7 px-2">
-          <Link to="/sandbox/$id/terminal" params={{ id: sandboxId }}>
+          <Link
+            to="/sandboxes/$id"
+            params={{ id: sandboxId }}
+            search={{ tab1: "terminal" }}
+          >
             <Maximize2 className="h-3.5 w-3.5 mr-1.5" />
             Expand
           </Link>
