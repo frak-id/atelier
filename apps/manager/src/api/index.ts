@@ -10,7 +10,7 @@ export { healthRoutes } from "./health.routes.ts";
 export { imageRoutes } from "./image.routes.ts";
 export { publicConfigRoutes } from "./public-config.routes.ts";
 export { registryRoutes } from "./registry.routes.ts";
-export { sandboxRoutes } from "./sandbox.routes.ts";
+export { sandboxRoutes } from "./sandboxes/index.ts";
 export { sessionTemplateRoutes } from "./session-template.routes.ts";
 export { sharedAuthRoutes } from "./shared-auth.routes.ts";
 export { sharedStorageRoutes } from "./shared-storage.routes.ts";

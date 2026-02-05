@@ -4,6 +4,7 @@ use hyper::{Method, Request, Response, StatusCode};
 
 use crate::response::json_error;
 use crate::routes;
+use crate::terminal;
 
 pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
     let method = req.method().clone();
@@ -29,7 +30,20 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::GET, "/dev") => routes::dev::handle_get_dev().await,
         (Method::GET, "/services") => routes::services::handle_services_list().await,
 
+        (Method::POST, "/terminal/sessions") => terminal::handle_create_session(req).await,
+        (Method::GET, "/terminal/sessions") => terminal::handle_list_sessions().await,
+
         _ => {
+            if let Some(rest) = path.strip_prefix("/terminal/sessions/") {
+                let session_id = urlencoding::decode(rest).unwrap_or_default().into_owned();
+                if !session_id.is_empty() && !session_id.contains('/') {
+                    return match method {
+                        Method::GET => terminal::handle_get_session(&session_id).await,
+                        Method::DELETE => terminal::handle_delete_session(&session_id).await,
+                        _ => json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed"),
+                    };
+                }
+            }
             if let Some(rest) = path.strip_prefix("/services/") {
                 let parts: Vec<&str> = rest.splitn(2, '/').collect();
                 if parts.len() == 2 {

@@ -449,11 +449,9 @@ export class PrebuildRunner {
   private async prepareForSnapshot(sandboxId: string): Promise<void> {
     log.info({ sandboxId }, "Preparing VM for snapshot");
 
-    // Kill services that hold state (opencode, code-server, ttyd)
-    // Agent is NOT killed — its vsock listener survives snapshot restore
     await this.deps.agentClient.exec(
       sandboxId,
-      "pkill -f 'opencode serve'; pkill -f code-server; pkill -f ttyd",
+      "pkill -f 'opencode serve'; pkill -f code-server",
       { timeout: 5000 },
     );
 

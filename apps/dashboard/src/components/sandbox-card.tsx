@@ -227,11 +227,7 @@ export function SandboxCard({
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     asChild
                   >
-                    <a
-                      href={sandbox.runtime.urls.terminal}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
+                    <a href={`/sandbox/${sandbox.id}/terminal`}>
                       <Terminal className="h-4 w-4" />
                     </a>
                   </Button>

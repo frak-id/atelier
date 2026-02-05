@@ -37,7 +37,6 @@ import {
   sandboxServicesQuery,
   taskListQuery,
   useDeleteSandbox,
-  useExecCommand,
   useGitCommit,
   useGitPush,
   useRestartSandbox,
@@ -52,6 +51,7 @@ import {
 } from "@/api/queries";
 import { AttentionBlock } from "@/components/attention-block";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
+import { MultiTerminal } from "@/components/multi-terminal";
 import { SessionHierarchy } from "@/components/session-hierarchy";
 import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
 import { Badge } from "@/components/ui/badge";
@@ -65,7 +65,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -243,11 +243,7 @@ export function SandboxDrawer({
                       </a>
                     </Button>
                     <Button variant="outline" size="sm" asChild>
-                      <a
-                        href={sandbox.runtime.urls.terminal}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
+                      <a href={`/sandbox/${sandbox.id}/terminal`}>
                         <Terminal className="h-4 w-4 mr-2" />
                         Terminal
                       </a>
@@ -558,7 +554,7 @@ export function SandboxDrawer({
                             workspaceId={sandbox.workspaceId}
                           />
                         </TabsTrigger>
-                        <TabsTrigger value="exec">Exec</TabsTrigger>
+                        <TabsTrigger value="terminal">Terminal</TabsTrigger>
                       </TabsList>
                       <TabsContent value="repos" className="mt-4">
                         <RepositoriesTab sandboxId={sandbox.id} />
@@ -577,8 +573,8 @@ export function SandboxDrawer({
                           workspace={workspace}
                         />
                       </TabsContent>
-                      <TabsContent value="exec" className="mt-4">
-                        <ExecTab sandboxId={sandbox.id} />
+                      <TabsContent value="terminal" className="mt-4">
+                        <TerminalTab sandboxId={sandbox.id} />
                       </TabsContent>
                     </Tabs>
                   </>
@@ -1454,72 +1450,23 @@ function ServicesTab({
   );
 }
 
-function ExecTab({ sandboxId }: { sandboxId: string }) {
-  const [command, setCommand] = useState("");
-  const [execOutput, setExecOutput] = useState<{
-    stdout: string;
-    stderr: string;
-    exitCode: number;
-  } | null>(null);
-  const execMutation = useExecCommand(sandboxId);
-
-  const handleExec = () => {
-    if (!command.trim()) return;
-    execMutation.mutate(
-      { command },
-      {
-        onSuccess: (result) => {
-          setExecOutput(result);
-          setCommand("");
-        },
-      },
-    );
-  };
-
+function TerminalTab({ sandboxId }: { sandboxId: string }) {
   return (
-    <Card>
-      <CardHeader className="py-4">
+    <Card className="overflow-hidden">
+      <CardHeader className="py-3 flex flex-row items-center justify-between">
         <CardTitle className="text-base flex items-center gap-2">
           <Terminal className="h-4 w-4" />
-          Execute Command
+          Terminal
         </CardTitle>
+        <Button variant="ghost" size="sm" asChild className="h-7 px-2">
+          <Link to="/sandbox/$id/terminal" params={{ id: sandboxId }}>
+            <Maximize2 className="h-3.5 w-3.5 mr-1.5" />
+            Expand
+          </Link>
+        </Button>
       </CardHeader>
-      <CardContent className="pt-0 space-y-4">
-        <div className="flex gap-2">
-          <Input
-            placeholder="Enter command..."
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleExec()}
-            className="font-mono text-sm"
-          />
-          <Button
-            onClick={handleExec}
-            disabled={execMutation.isPending || !command.trim()}
-            size="icon"
-          >
-            {execMutation.isPending ? (
-              <RefreshCw className="h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-        {execOutput && (
-          <div className="bg-black rounded-lg p-3 font-mono text-xs text-green-400 max-h-[300px] overflow-auto">
-            <div className="flex items-center justify-between mb-2 text-[10px] text-muted-foreground border-b border-white/10 pb-1">
-              <span>Exit code: {execOutput.exitCode}</span>
-            </div>
-            {execOutput.stdout && (
-              <pre className="whitespace-pre-wrap">{execOutput.stdout}</pre>
-            )}
-            {execOutput.stderr && (
-              <pre className="whitespace-pre-wrap text-red-400 mt-2">
-                {execOutput.stderr}
-              </pre>
-            )}
-          </div>
-        )}
+      <CardContent className="p-0">
+        <MultiTerminal sandboxId={sandboxId} className="h-[350px]" />
       </CardContent>
     </Card>
   );

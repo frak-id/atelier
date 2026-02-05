@@ -153,3 +153,19 @@ export interface FileWriteResult {
 export interface WriteFilesResult {
   results: FileWriteResult[];
 }
+
+export interface TerminalSession {
+  id: string;
+  userId: string;
+  title: string;
+  status: "running" | "exited";
+  createdAt: string;
+}
+
+export interface TerminalSessionCreateResult extends TerminalSession {}
+
+export interface TerminalSessionListResult extends Array<TerminalSession> {}
+
+export interface TerminalSessionDeleteResult {
+  success: boolean;
+}

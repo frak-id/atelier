@@ -7,10 +7,10 @@ import {
   sandboxService,
   sandboxSpawner,
   workspaceService,
-} from "../container.ts";
-import { internalBus } from "../infrastructure/events/internal-bus.ts";
-import { CaddyService } from "../infrastructure/proxy/caddy.service.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
+} from "../../container.ts";
+import { internalBus } from "../../infrastructure/events/internal-bus.ts";
+import { CaddyService } from "../../infrastructure/proxy/caddy.service.ts";
+import { StorageService } from "../../infrastructure/storage/index.ts";
 import {
   AgentHealthSchema,
   AgentMetricsSchema,
@@ -18,14 +18,6 @@ import {
   BrowserStopResponseSchema,
   CreateSandboxBodySchema,
   CreateSandboxResponseSchema,
-  DevCommandListResponseSchema,
-  DevCommandLogsQuerySchema,
-  DevCommandLogsResponseSchema,
-  DevCommandNameParamsSchema,
-  DevCommandStartResponseSchema,
-  DevCommandStopResponseSchema,
-  ExecBodySchema,
-  ExecResponseSchema,
   GitCommitBodySchema,
   GitCommitResponseSchema,
   GitDiffResponseSchema,
@@ -33,22 +25,20 @@ import {
   GitPushResponseSchema,
   GitStatusResponseSchema,
   IdParamSchema,
-  LogsParamsSchema,
-  LogsQuerySchema,
-  LogsResponseSchema,
   PromoteToPrebuildResponseSchema,
   ResizeStorageBodySchema,
   ResizeStorageResponseSchema,
   SandboxListQuerySchema,
   SandboxListResponseSchema,
   SandboxSchema,
-  ServiceActionResponseSchema,
-  ServiceNameParamsSchema,
-  ServicesResponseSchema,
-} from "../schemas/index.ts";
-import { NotFoundError, ResourceExhaustedError } from "../shared/errors.ts";
-import { config } from "../shared/lib/config.ts";
-import { createChildLogger } from "../shared/lib/logger.ts";
+} from "../../schemas/index.ts";
+import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
+import { config } from "../../shared/lib/config.ts";
+import { createChildLogger } from "../../shared/lib/logger.ts";
+import { devRoutes } from "./dev.routes.ts";
+import { sandboxIdGuard } from "./guard.ts";
+import { servicesRoutes } from "./services.routes.ts";
+import { terminalRoutes } from "./terminal.routes.ts";
 
 const log = createChildLogger("sandbox-routes");
 
@@ -99,14 +89,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   )
   .group("", (app) =>
     app
-      .resolve(({ params }) => {
-        const { id } = params as { id: string };
-        const sandbox = sandboxService.getById(id);
-        if (!sandbox) {
-          throw new NotFoundError("Sandbox", id);
-        }
-        return { sandbox };
-      })
+      .use(sandboxIdGuard)
       .get(
         "/:id",
         async ({ sandbox }) => {
@@ -182,73 +165,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         {
           params: IdParamSchema,
           response: AgentMetricsSchema,
-        },
-      )
-      .post(
-        "/:id/exec",
-        async ({ body, sandbox }) => {
-          return agentClient.exec(sandbox.id, body.command, {
-            timeout: body.timeout,
-          });
-        },
-        {
-          params: IdParamSchema,
-          body: ExecBodySchema,
-          response: ExecResponseSchema,
-        },
-      )
-      .get(
-        "/:id/logs/:service",
-        async ({ params, query, sandbox }) => {
-          const lines = query.lines ? Number.parseInt(query.lines, 10) : 100;
-          const result = await agentOperations.logs(
-            sandbox.id,
-            params.service,
-            lines,
-          );
-          return { logs: result.content };
-        },
-        {
-          params: LogsParamsSchema,
-          query: LogsQuerySchema,
-          response: LogsResponseSchema,
-        },
-      )
-      .get(
-        "/:id/services",
-        async ({ sandbox }) => {
-          return agentOperations.services(sandbox.id);
-        },
-        {
-          params: IdParamSchema,
-          response: ServicesResponseSchema,
-        },
-      )
-      .post(
-        "/:id/services/:name/stop",
-        async ({ params, sandbox }) => {
-          const result = await agentClient.serviceStop(sandbox.id, params.name);
-          internalBus.emit("sandbox.poll-services", sandbox.id);
-          return result;
-        },
-        {
-          params: ServiceNameParamsSchema,
-          response: ServiceActionResponseSchema,
-        },
-      )
-      .post(
-        "/:id/services/:name/restart",
-        async ({ params, sandbox }) => {
-          const result = await agentClient.serviceRestart(
-            sandbox.id,
-            params.name,
-          );
-          internalBus.emit("sandbox.poll-services", sandbox.id);
-          return result;
-        },
-        {
-          params: ServiceNameParamsSchema,
-          response: ServiceActionResponseSchema,
         },
       )
       .get(
@@ -431,167 +347,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           response: PromoteToPrebuildResponseSchema,
         },
       )
-      .get(
-        "/:id/dev",
-        async ({ sandbox }) => {
-          const workspace = sandbox.workspaceId
-            ? workspaceService.getById(sandbox.workspaceId)
-            : undefined;
-          const configuredCommands = workspace?.config.devCommands ?? [];
-
-          const runtimeStatus = await agentClient.devList(sandbox.id);
-
-          return {
-            commands: configuredCommands.map((cmd) => {
-              const runtime = runtimeStatus.commands.find(
-                (r) => r.name === cmd.name,
-              );
-              const isRunning = runtime?.status === "running";
-
-              let devUrl: string | undefined;
-              let defaultDevUrl: string | undefined;
-              let extraDevUrls:
-                | Array<{ alias: string; port: number; url: string }>
-                | undefined;
-
-              if (isRunning && cmd.port) {
-                devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.caddy.domainSuffix}`;
-                if (cmd.isDefault) {
-                  defaultDevUrl = `https://dev-${sandbox.id}.${config.caddy.domainSuffix}`;
-                }
-              }
-
-              if (isRunning && cmd.extraPorts?.length) {
-                extraDevUrls = cmd.extraPorts.map((ep) => ({
-                  alias: ep.alias,
-                  port: ep.port,
-                  url: `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.caddy.domainSuffix}`,
-                }));
-              }
-
-              return {
-                ...cmd,
-                status: runtime?.status ?? "stopped",
-                pid: runtime?.pid,
-                startedAt: runtime?.startedAt,
-                exitCode: runtime?.exitCode,
-                devUrl,
-                defaultDevUrl,
-                extraDevUrls,
-              };
-            }),
-          };
-        },
-        {
-          params: IdParamSchema,
-          response: DevCommandListResponseSchema,
-        },
-      )
-      .post(
-        "/:id/dev/:name/start",
-        async ({ params, sandbox }) => {
-          const workspace = sandbox.workspaceId
-            ? workspaceService.getById(sandbox.workspaceId)
-            : undefined;
-          const devCommand = workspace?.config.devCommands?.find(
-            (c) => c.name === params.name,
-          );
-          if (!devCommand) throw new NotFoundError("DevCommand", params.name);
-
-          const result = await agentClient.devStart(
-            sandbox.id,
-            params.name,
-            devCommand,
-          );
-
-          let devUrl: string | undefined;
-          let defaultDevUrl: string | undefined;
-          let extraDevUrls:
-            | Array<{ alias: string; port: number; url: string }>
-            | undefined;
-
-          if (devCommand.port) {
-            try {
-              const urls = await CaddyService.registerDevRoute(
-                sandbox.id,
-                sandbox.runtime.ipAddress,
-                params.name,
-                devCommand.port,
-                devCommand.isDefault ?? false,
-                devCommand.extraPorts,
-              );
-              devUrl = urls.namedUrl;
-              defaultDevUrl = urls.defaultUrl;
-              extraDevUrls = urls.extraDevUrls;
-            } catch (err) {
-              log.warn(
-                { sandboxId: sandbox.id, name: params.name, error: err },
-                "Failed to register dev route",
-              );
-            }
-          }
-
-          return {
-            ...result,
-            devUrl,
-            defaultDevUrl,
-            extraDevUrls,
-          };
-        },
-        {
-          params: DevCommandNameParamsSchema,
-          response: DevCommandStartResponseSchema,
-        },
-      )
-      .post(
-        "/:id/dev/:name/stop",
-        async ({ params, sandbox }) => {
-          const workspace = sandbox.workspaceId
-            ? workspaceService.getById(sandbox.workspaceId)
-            : undefined;
-          const devCommand = workspace?.config.devCommands?.find(
-            (c) => c.name === params.name,
-          );
-
-          const result = await agentClient.devStop(sandbox.id, params.name);
-
-          if (devCommand?.port) {
-            try {
-              await CaddyService.removeDevRoute(
-                sandbox.id,
-                params.name,
-                devCommand.isDefault ?? false,
-                devCommand.extraPorts,
-              );
-            } catch (err) {
-              log.warn(
-                { sandboxId: sandbox.id, name: params.name, error: err },
-                "Failed to remove dev route",
-              );
-            }
-          }
-
-          return result;
-        },
-        {
-          params: DevCommandNameParamsSchema,
-          response: DevCommandStopResponseSchema,
-        },
-      )
-      .get(
-        "/:id/dev/:name/logs",
-        async ({ params, query, sandbox }) => {
-          const offset = query.offset ? Number.parseInt(query.offset, 10) : 0;
-          const limit = query.limit ? Number.parseInt(query.limit, 10) : 10000;
-
-          return agentClient.devLogs(sandbox.id, params.name, offset, limit);
-        },
-        {
-          params: DevCommandNameParamsSchema,
-          query: DevCommandLogsQuerySchema,
-          response: DevCommandLogsResponseSchema,
-        },
-      )
       .post(
         "/:id/browser/start",
         async ({ sandbox }) => {
@@ -684,5 +439,8 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           params: IdParamSchema,
           response: BrowserStopResponseSchema,
         },
-      ),
+      )
+      .use(terminalRoutes)
+      .use(servicesRoutes)
+      .use(devRoutes),
   );

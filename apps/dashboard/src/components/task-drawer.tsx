@@ -291,11 +291,7 @@ export function TaskDrawer({
                         </a>
                       </Button>
                       <Button variant="outline" size="sm" asChild>
-                        <a
-                          href={sandbox.runtime.urls.terminal}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
+                        <a href={`/sandbox/${sandbox.id}/terminal`}>
                           <Terminal className="h-4 w-4 mr-2" />
                           Terminal
                         </a>

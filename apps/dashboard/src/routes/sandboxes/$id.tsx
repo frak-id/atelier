@@ -25,6 +25,7 @@ import {
   useStopSandbox,
   workspaceDetailQuery,
 } from "@/api/queries";
+import { MultiTerminal } from "@/components/multi-terminal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -412,7 +413,7 @@ function ImmersionContent({
   const urlMap: Record<TabId, string | undefined> = {
     opencode: sandbox.runtime.urls.opencode,
     vscode: sandbox.runtime.urls.vscode,
-    terminal: sandbox.runtime.urls.terminal,
+    terminal: undefined,
     web: browserUrl,
   };
 
@@ -420,6 +421,22 @@ function ImmersionContent({
     return (
       <div className="flex-1 relative">
         {tabs.map((tab) => {
+          if (tab.id === "terminal") {
+            return (
+              <div
+                key={tab.id}
+                className={cn(
+                  "absolute inset-0",
+                  tab.id !== activeTab && "hidden",
+                )}
+              >
+                <MultiTerminal
+                  sandboxId={sandbox.id}
+                  className="w-full h-full"
+                />
+              </div>
+            );
+          }
           const url = urlMap[tab.id];
           if (!url) {
             return (
@@ -444,6 +461,7 @@ function ImmersionContent({
               </div>
             );
           }
+
           return (
             <iframe
               key={tab.id}
@@ -481,6 +499,22 @@ function ImmersionContent({
 
       <div className="flex-1 min-w-0 relative">
         {(["vscode", "terminal", "web"] as const).map((tabId) => {
+          if (tabId === "terminal") {
+            return (
+              <div
+                key={tabId}
+                className={cn(
+                  "absolute inset-0",
+                  rightTab !== tabId && "hidden",
+                )}
+              >
+                <MultiTerminal
+                  sandboxId={sandbox.id}
+                  className="w-full h-full"
+                />
+              </div>
+            );
+          }
           const url = urlMap[tabId];
           if (!url) {
             return (
@@ -513,13 +547,7 @@ function ImmersionContent({
                 "absolute inset-0 w-full h-full border-0",
                 rightTab !== tabId && "hidden",
               )}
-              title={
-                tabId === "vscode"
-                  ? "VSCode"
-                  : tabId === "terminal"
-                    ? "Terminal"
-                    : "Web"
-              }
+              title={tabId === "vscode" ? "VSCode" : "Web"}
               allow={tabId === "web" ? "clipboard-write" : undefined}
             />
           );

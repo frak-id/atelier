@@ -98,7 +98,6 @@ const app = new Elysia()
           {
             vscode: config.raw.services.vscode.port,
             opencode: config.raw.services.opencode.port,
-            terminal: config.raw.services.terminal.port,
           },
         );
         await SshPiperService.registerRoute(
