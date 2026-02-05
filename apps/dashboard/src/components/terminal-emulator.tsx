@@ -1,8 +1,10 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
+import { RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface TerminalEmulatorProps {
   sandboxId: string;
@@ -19,12 +21,23 @@ export function TerminalEmulator({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mountedRef = useRef(true);
+  const hasConnectedRef = useRef(false);
+  const [isExited, setIsExited] = useState(false);
 
   const getWsUrl = useCallback(() => {
     const wsProto = window.location.protocol === "https:" ? "wss" : "ws";
     const host = window.location.host;
     return `${wsProto}://${host}/api/sandboxes/${sandboxId}/terminal/ws`;
   }, [sandboxId]);
+
+  const reconnect = useCallback(() => {
+    setIsExited(false);
+    hasConnectedRef.current = false;
+    // Clear reconnect timer and trigger a fresh connection
+    clearTimeout(reconnectTimerRef.current);
+    wsRef.current?.close();
+    // connect() will be called by useEffect when state changes
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -50,7 +63,6 @@ export function TerminalEmulator({
     terminal.loadAddon(new WebLinksAddon());
     terminal.open(container);
 
-    // Initial fit after a frame
     requestAnimationFrame(() => {
       fitAddon.fit();
     });
@@ -62,7 +74,7 @@ export function TerminalEmulator({
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Send initial resize
+        hasConnectedRef.current = true;
         const { cols, rows } = terminal;
         ws.send(JSON.stringify({ type: "resize", cols, rows }));
       };
@@ -75,8 +87,17 @@ export function TerminalEmulator({
 
       ws.onclose = () => {
         if (!mountedRef.current) return;
-        terminal.writeln("\r\n\x1b[33mDisconnected. Reconnecting...\x1b[0m");
-        reconnectTimerRef.current = setTimeout(connect, 2000);
+
+        // If we never connected successfully, retry
+        if (!hasConnectedRef.current) {
+          terminal.writeln("\r\n\x1b[33mConnection failed. Retrying...\x1b[0m");
+          reconnectTimerRef.current = setTimeout(connect, 2000);
+          return;
+        }
+
+        // We were connected but now closed - session ended (exit command)
+        setIsExited(true);
+        terminal.writeln("\r\n\x1b[31mSession ended.\x1b[0m");
       };
 
       ws.onerror = () => {
@@ -98,7 +119,6 @@ export function TerminalEmulator({
       }
     });
 
-    // Throttled fit on window resize
     let resizeTimer: ReturnType<typeof setTimeout>;
     const onWindowResize = () => {
       clearTimeout(resizeTimer);
@@ -108,7 +128,6 @@ export function TerminalEmulator({
     };
     window.addEventListener("resize", onWindowResize);
 
-    // ResizeObserver for container
     const observer = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
@@ -133,10 +152,20 @@ export function TerminalEmulator({
   }, [getWsUrl]);
 
   return (
-    <div
-      ref={containerRef}
-      className={className}
-      style={{ width: "100%", height: "100%" }}
-    />
+    <div className={`relative ${className}`}>
+      <div
+        ref={containerRef}
+        className="w-full h-full"
+        style={{ background: "#09090b" }}
+      />
+      {isExited && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#09090b]/90">
+          <Button onClick={reconnect} variant="outline" className="gap-2">
+            <RotateCcw className="h-4 w-4" />
+            Reconnect Terminal
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

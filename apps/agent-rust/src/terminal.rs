@@ -81,7 +81,7 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
             let _ = setsid();
 
             unsafe {
-                libc::ioctl(slave_fd, libc::TIOCSCTTY, 0);
+                libc::ioctl(slave_fd, libc::TIOCSCTTY as _, 0);
             }
 
             let _ = dup2(slave_fd, 0);
@@ -194,7 +194,8 @@ async fn handle_connection(stream: tokio::net::TcpStream) {
     let _ = kill(Pid::from_raw(-child_pid.as_raw()), Signal::SIGHUP);
     unsafe { libc::close(master_fd) };
 
-    ws_writer.abort();
+    drop(ws_write_tx);
+    let _ = tokio::time::timeout(tokio::time::Duration::from_millis(100), ws_writer).await;
 }
 
 pub async fn ensure_terminal_running(port: u16) {
