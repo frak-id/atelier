@@ -25,7 +25,7 @@ import {
   useStopSandbox,
   workspaceDetailQuery,
 } from "@/api/queries";
-import { TerminalEmulator } from "@/components/terminal-emulator";
+import { MultiTerminal } from "@/components/multi-terminal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -430,7 +430,7 @@ function ImmersionContent({
                   tab.id !== activeTab && "hidden",
                 )}
               >
-                <TerminalEmulator
+                <MultiTerminal
                   sandboxId={sandbox.id}
                   className="w-full h-full"
                 />
@@ -508,7 +508,7 @@ function ImmersionContent({
                   rightTab !== tabId && "hidden",
                 )}
               >
-                <TerminalEmulator
+                <MultiTerminal
                   sandboxId={sandbox.id}
                   className="w-full h-full"
                 />

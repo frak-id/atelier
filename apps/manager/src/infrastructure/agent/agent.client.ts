@@ -22,6 +22,9 @@ import type {
   ServiceStartResult,
   ServiceStatus,
   ServiceStopResult,
+  TerminalSession,
+  TerminalSessionCreateResult,
+  TerminalSessionDeleteResult,
   WriteFilesResult,
 } from "./agent.types.ts";
 
@@ -409,10 +412,50 @@ export class AgentClient {
     await Promise.all(
       serviceNames.map((name) =>
         this.serviceStart(sandboxId, name).catch((err) => {
-          // Log but don't fail - some services may not be configured
           console.warn(`Failed to start service ${name}: ${err}`);
         }),
       ),
+    );
+  }
+
+  async terminalSessionCreate(
+    sandboxId: string,
+    userId: string,
+    title?: string,
+  ): Promise<TerminalSessionCreateResult> {
+    return this.request<TerminalSessionCreateResult>(
+      sandboxId,
+      "/terminal/sessions",
+      {
+        method: "POST",
+        body: { userId, title },
+        timeout: 10000,
+      },
+    );
+  }
+
+  async terminalSessionList(sandboxId: string): Promise<TerminalSession[]> {
+    return this.request<TerminalSession[]>(sandboxId, "/terminal/sessions");
+  }
+
+  async terminalSessionGet(
+    sandboxId: string,
+    sessionId: string,
+  ): Promise<TerminalSession> {
+    return this.request<TerminalSession>(
+      sandboxId,
+      `/terminal/sessions/${sessionId}`,
+    );
+  }
+
+  async terminalSessionDelete(
+    sandboxId: string,
+    sessionId: string,
+  ): Promise<TerminalSessionDeleteResult> {
+    return this.request<TerminalSessionDeleteResult>(
+      sandboxId,
+      `/terminal/sessions/${sessionId}`,
+      { method: "DELETE" },
     );
   }
 }

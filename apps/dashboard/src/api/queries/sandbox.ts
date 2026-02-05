@@ -333,3 +333,56 @@ export function useSaveAsPrebuild() {
     },
   });
 }
+
+export interface TerminalSession {
+  id: string;
+  userId: string;
+  title: string;
+  status: "running" | "exited";
+  createdAt: string;
+}
+
+export const terminalSessionsQuery = (sandboxId: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.terminalSessions(sandboxId),
+    queryFn: async () =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).terminal.sessions.get(),
+      ) as TerminalSession[],
+    refetchInterval: 5000,
+  });
+
+export function useCreateTerminalSession(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "terminal", "create", sandboxId],
+    mutationFn: async (title?: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).terminal.sessions.post({
+          title,
+        }),
+      ) as TerminalSession,
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.terminalSessions(sandboxId),
+      });
+    },
+  });
+}
+
+export function useDeleteTerminalSession(sandboxId: string) {
+  return useMutation({
+    mutationKey: ["sandboxes", "terminal", "delete", sandboxId],
+    mutationFn: async (sessionId: string) =>
+      unwrap(
+        await api.api
+          .sandboxes({ id: sandboxId })
+          .terminal.sessions({ sessionId })
+          .delete(),
+      ),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.terminalSessions(sandboxId),
+      });
+    },
+  });
+}

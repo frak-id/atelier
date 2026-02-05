@@ -1,13 +1,13 @@
 import Elysia from "elysia";
-import { sandboxIdGuard } from "./guard";
 import { agentClient, agentOperations } from "../../container";
+import { internalBus } from "../../infrastructure/events";
 import {
   IdParamSchema,
   ServiceActionResponseSchema,
   ServiceNameParamsSchema,
   ServicesResponseSchema,
 } from "../../schemas";
-import { internalBus } from "../../infrastructure/events";
+import { sandboxIdGuard } from "./guard";
 
 export const servicesRoutes = new Elysia()
   .use(sandboxIdGuard)
