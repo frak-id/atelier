@@ -1,3 +1,4 @@
+import { SSH_PROXY } from "@frak/atelier-shared/constants";
 import * as yaml from "yaml";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -33,7 +34,7 @@ function encodeAuthorizedKeys(publicKeys: string[]): string | undefined {
 
 async function readPipesConfig(): Promise<PipesConfig> {
   try {
-    const content = await Bun.file(config.sshProxy.pipesFile).text();
+    const content = await Bun.file(SSH_PROXY.PIPES_FILE).text();
     return yaml.parse(content) as PipesConfig;
   } catch {
     return { version: "1.0", pipes: [] };
@@ -42,7 +43,7 @@ async function readPipesConfig(): Promise<PipesConfig> {
 
 async function writePipesConfig(pipesConfig: PipesConfig): Promise<void> {
   const content = yaml.stringify(pipesConfig, { lineWidth: 0 });
-  await Bun.write(config.sshProxy.pipesFile, content);
+  await Bun.write(SSH_PROXY.PIPES_FILE, content);
 }
 
 export const SshPiperService = {

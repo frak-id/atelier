@@ -103,7 +103,6 @@ async function promptConfig() {
   config.domains = {
     dashboard: dashboardDomain,
     sandboxSuffix: domainSuffix,
-    ssh: sshDomain,
   };
 
   config.network = { ...defaults.network };
@@ -113,8 +112,6 @@ async function promptConfig() {
     ...defaults.auth,
     githubClientId,
     githubClientSecret,
-    githubCallbackUrl: `https://${dashboardDomain}/api/github/callback`,
-    githubLoginCallbackUrl: `https://${dashboardDomain}/auth/callback`,
     jwtSecret,
     allowedOrg: allowedOrg.trim().length > 0 ? allowedOrg : undefined,
     allowedUsers,

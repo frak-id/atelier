@@ -1,5 +1,5 @@
 import { loadConfig } from "@frak/atelier-shared";
-import { DEFAULTS, PATHS } from "@frak/atelier-shared/constants";
+import { CADDY, DEFAULTS, PATHS } from "@frak/atelier-shared/constants";
 
 const atelierConfig = loadConfig();
 
@@ -15,18 +15,9 @@ function getMode(): Mode {
   return process.env.NODE_ENV === "production" ? "production" : "mock";
 }
 
-const DEFAULT_CALLBACK_URL = "http://localhost:4000/api/github/callback";
-const DEFAULT_LOGIN_CALLBACK_URL = "http://localhost:4000/auth/callback";
-
-function resolveCallbackUrl(
-  explicitUrl: string,
-  defaultUrl: string,
-  path: string,
-): string {
-  if (explicitUrl && explicitUrl !== defaultUrl) return explicitUrl;
-  const domain = atelierConfig.domains.dashboard;
-  if (domain.includes("localhost")) return defaultUrl;
-  return `https://${domain}${path}`;
+function deriveCallbackUrl(dashboard: string, port: number, path: string) {
+  if (dashboard.includes("localhost")) return `http://localhost:${port}${path}`;
+  return `https://${dashboard}${path}`;
 }
 
 export const config = {
@@ -37,7 +28,7 @@ export const config = {
   paths: PATHS,
   network: atelierConfig.network,
   caddy: {
-    adminApi: atelierConfig.caddy.adminApi,
+    adminApi: CADDY.ADMIN_API,
     domainSuffix: atelierConfig.domains.sandboxSuffix,
   },
   domains: atelierConfig.domains,
@@ -47,14 +38,14 @@ export const config = {
   github: {
     clientId: atelierConfig.auth.githubClientId,
     clientSecret: atelierConfig.auth.githubClientSecret,
-    callbackUrl: resolveCallbackUrl(
-      atelierConfig.auth.githubCallbackUrl,
-      DEFAULT_CALLBACK_URL,
+    callbackUrl: deriveCallbackUrl(
+      atelierConfig.domains.dashboard,
+      atelierConfig.runtime.port,
       "/api/github/callback",
     ),
-    loginCallbackUrl: resolveCallbackUrl(
-      atelierConfig.auth.githubLoginCallbackUrl,
-      DEFAULT_LOGIN_CALLBACK_URL,
+    loginCallbackUrl: deriveCallbackUrl(
+      atelierConfig.domains.dashboard,
+      atelierConfig.runtime.port,
       "/auth/callback",
     ),
   },

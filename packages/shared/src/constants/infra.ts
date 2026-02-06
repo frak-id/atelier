@@ -57,3 +57,7 @@ export const REGISTRY = {
 export const SHARED_STORAGE = {
   BINARIES_DIR: "/var/lib/sandbox/shared-binaries",
 } as const;
+
+export const CADDY = {
+  ADMIN_API: "http://localhost:2019",
+} as const;

@@ -97,6 +97,14 @@ function deepMerge(
 
 export const CONFIG_FILE_NAME = "sandbox.config.json";
 
+function deriveNetworkFields(config: AtelierConfig): void {
+  const octets = config.network.bridgeIp.split(".");
+  const subnet = octets.slice(0, 3).join(".");
+  config.network.guestSubnet = subnet;
+  config.network.bridgeNetmask = "24";
+  config.network.bridgeCidr = `${subnet}.0/24`;
+}
+
 export interface LoadConfigOptions {
   configFile?: string;
   skipEnv?: boolean;
@@ -113,7 +121,9 @@ export function getDefaultConfig(): AtelierConfig {
   const withDefaults = Value.Default(AtelierConfigSchema, base);
   const converted = Value.Convert(AtelierConfigSchema, withDefaults);
   const cleaned = Value.Clean(AtelierConfigSchema, converted);
-  return cleaned as AtelierConfig;
+  const config = cleaned as AtelierConfig;
+  deriveNetworkFields(config);
+  return config;
 }
 
 export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {
@@ -130,8 +140,9 @@ export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {
   const withDefaults = Value.Default(AtelierConfigSchema, merged);
   const converted = Value.Convert(AtelierConfigSchema, withDefaults);
   const cleaned = Value.Clean(AtelierConfigSchema, converted);
-
-  return cleaned as AtelierConfig;
+  const config = cleaned as AtelierConfig;
+  deriveNetworkFields(config);
+  return config;
 }
 
 export function getConfigValue<T>(config: AtelierConfig, path: string): T {

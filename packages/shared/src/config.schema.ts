@@ -9,8 +9,6 @@ export const DomainsConfigSchema = Type.Object({
   dashboard: Type.String({ default: "sandbox.localhost" }),
   /** Suffix for sandbox subdomains (e.g., example.com -> sandbox-{id}.example.com) */
   sandboxSuffix: Type.String({ default: "localhost" }),
-  /** SSH proxy domain (e.g., ssh.example.com) */
-  ssh: Type.String({ default: "ssh.localhost" }),
 });
 
 export type DomainsConfig = Static<typeof DomainsConfigSchema>;
@@ -39,14 +37,6 @@ export const AuthConfigSchema = Type.Object({
   githubClientId: Type.String({ default: "" }),
   /** GitHub OAuth client secret */
   githubClientSecret: Type.String({ default: "" }),
-  /** GitHub OAuth callback URL */
-  githubCallbackUrl: Type.String({
-    default: "http://localhost:4000/api/github/callback",
-  }),
-  /** GitHub login callback URL */
-  githubLoginCallbackUrl: Type.String({
-    default: "http://localhost:4000/auth/callback",
-  }),
   /** JWT signing secret */
   jwtSecret: Type.String({ default: "dev-secret-change-in-production" }),
   /** Required GitHub organization - if set, only org members can access */
@@ -62,8 +52,6 @@ export const SshProxyConfigSchema = Type.Object({
   port: Type.Number({ default: 2222 }),
   /** SSH proxy domain for external connections */
   domain: Type.String({ default: "ssh.localhost" }),
-  /** Path to sshpiper pipes configuration */
-  pipesFile: Type.String({ default: "/var/lib/sandbox/sshpiper/pipes.yaml" }),
 });
 
 export type SshProxyConfig = Static<typeof SshProxyConfigSchema>;
@@ -161,15 +149,6 @@ export const SandboxServiceEntrySchema = Type.Object({
 
 export type SandboxServiceEntry = Static<typeof SandboxServiceEntrySchema>;
 
-export const CaddyConfigSchema = Type.Object(
-  {
-    adminApi: Type.String({ default: "http://localhost:2019" }),
-  },
-  { default: {} },
-);
-
-export type CaddyConfig = Static<typeof CaddyConfigSchema>;
-
 export const GitConfigSchema = Type.Object(
   {
     email: Type.String({ default: "sandbox@atelier.dev" }),
@@ -215,7 +194,6 @@ export const AtelierConfigSchema = Type.Object({
   services: ServicesConfigSchema,
   setup: SetupConfigSchema,
   images: ImagesConfigSchema,
-  caddy: CaddyConfigSchema,
   git: GitConfigSchema,
   versions: VersionsConfigSchema,
 });
@@ -226,26 +204,20 @@ export type AtelierConfig = Static<typeof AtelierConfigSchema>;
 export const ENV_VAR_MAPPING = {
   ATELIER_DASHBOARD_DOMAIN: "domains.dashboard",
   ATELIER_SANDBOX_DOMAIN_SUFFIX: "domains.sandboxSuffix",
-  ATELIER_SSH_DOMAIN: "domains.ssh",
 
   ATELIER_BRIDGE_NAME: "network.bridgeName",
   ATELIER_BRIDGE_IP: "network.bridgeIp",
-  ATELIER_BRIDGE_CIDR: "network.bridgeCidr",
-  ATELIER_GUEST_SUBNET: "network.guestSubnet",
   ATELIER_GUEST_IP_START: "network.guestIpStart",
   ATELIER_DNS_SERVERS: "network.dnsServers", // comma-separated
 
   GITHUB_CLIENT_ID: "auth.githubClientId",
   GITHUB_CLIENT_SECRET: "auth.githubClientSecret",
-  GITHUB_CALLBACK_URL: "auth.githubCallbackUrl",
-  GITHUB_LOGIN_CALLBACK_URL: "auth.githubLoginCallbackUrl",
   JWT_SECRET: "auth.jwtSecret",
   AUTH_ALLOWED_ORG: "auth.allowedOrg",
   AUTH_ALLOWED_USERS: "auth.allowedUsers", // comma-separated
 
   SSH_PROXY_PORT: "sshProxy.port",
   SSH_PROXY_DOMAIN: "sshProxy.domain",
-  SSH_PROXY_PIPES_FILE: "sshProxy.pipesFile",
 
   SANDBOX_MODE: "runtime.mode",
   PORT: "runtime.port",
@@ -263,8 +235,6 @@ export const ENV_VAR_MAPPING = {
 
   ATELIER_IMAGES_DIR: "images.directory",
   ATELIER_DEFAULT_IMAGE: "images.defaultImage",
-
-  CADDY_ADMIN_API: "caddy.adminApi",
 
   ATELIER_GIT_EMAIL: "git.email",
   ATELIER_GIT_NAME: "git.name",
