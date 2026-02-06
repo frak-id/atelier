@@ -47,4 +47,4 @@ See each app's AGENTS.md for component-specific guidelines.
 For code patterns and DI details, see [docs/patterns.md](docs/patterns.md).
 For critical gotchas, see [docs/constraints.md](docs/constraints.md).
 For network, domains, and cleanup, see [docs/infrastructure.md](docs/infrastructure.md).
-For full architecture, see [docs/design-spec.md](docs/design-spec.md).
+For full architecture, see [docs/architecture.md](docs/architecture.md).
