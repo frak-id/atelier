@@ -30,10 +30,7 @@
   "network": {
     "bridgeIp": "172.16.0.1",
     "bridgeName": "br0",
-    "dnsServers": [
-      "8.8.8.8",
-      "8.8.4.4"
-    ],
+    "dnsServers": ["8.8.8.8", "8.8.4.4"],
     "guestIpStart": 10,
     "guestSubnet": "172.16.0",
     "bridgeCidr": "172.16.0.0/24",
@@ -61,11 +58,11 @@
     "vm": {
       "vscode": {
         "port": 8080,
-        "version": "4.108.1"
+        "version": "4.108.2"
       },
       "opencode": {
         "port": 3000,
-        "version": "1.1.48"
+        "version": "1.1.53"
       },
       "browser": {
         "port": 6080
@@ -80,13 +77,13 @@
     "server": {
       "verdaccio": {
         "port": 4873,
-        "version": "6.2.4"
+        "version": "6.2.5"
       },
       "sshProxy": {
-        "version": "1.5.1"
+        "version": "1.5.2"
       },
       "firecracker": {
-        "version": "1.14.0"
+        "version": "1.14.1"
       }
     }
   }

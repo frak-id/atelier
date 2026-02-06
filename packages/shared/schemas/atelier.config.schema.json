@@ -1,10 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": [
-    "domain",
-    "auth"
-  ],
+  "required": ["domain", "auth"],
   "properties": {
     "domain": {
       "type": "object",
@@ -87,9 +84,7 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "properties": {
         "mode": {
           "anyOf": [
@@ -130,10 +125,7 @@
           "type": "string"
         },
         "dnsServers": {
-          "default": [
-            "8.8.8.8",
-            "8.8.4.4"
-          ],
+          "default": ["8.8.8.8", "8.8.4.4"],
           "type": "array",
           "items": {
             "type": "string"
@@ -249,7 +241,7 @@
                   "type": "number"
                 },
                 "version": {
-                  "default": "4.108.1",
+                  "default": "4.108.2",
                   "type": "string"
                 }
               }
@@ -263,7 +255,7 @@
                   "type": "number"
                 },
                 "version": {
-                  "default": "1.1.48",
+                  "default": "1.1.53",
                   "type": "string"
                 }
               }
@@ -313,7 +305,7 @@
                   "type": "number"
                 },
                 "version": {
-                  "default": "6.2.4",
+                  "default": "6.2.5",
                   "type": "string"
                 }
               }
@@ -323,7 +315,7 @@
               "type": "object",
               "properties": {
                 "version": {
-                  "default": "1.5.1",
+                  "default": "1.5.2",
                   "type": "string"
                 }
               }
@@ -333,7 +325,7 @@
               "type": "object",
               "properties": {
                 "version": {
-                  "default": "1.14.0",
+                  "default": "1.14.1",
                   "type": "string"
                 }
               }

@@ -96,16 +96,19 @@ export const RuntimeModeSchema = Type.Union([
 
 export type RuntimeMode = Static<typeof RuntimeModeSchema>;
 
-export const ServerConfigSchema = Type.Object({
-  /** Runtime mode: production (real VMs) or mock (local dev) */
-  mode: RuntimeModeSchema,
-  /** Manager API port */
-  port: Type.Number({ default: 4000 }),
-  /** Manager API bind host */
-  host: Type.String({ default: "0.0.0.0" }),
-  /** Maximum concurrent sandboxes */
-  maxSandboxes: Type.Number({ default: 20 }),
-}, {default: {}});
+export const ServerConfigSchema = Type.Object(
+  {
+    /** Runtime mode: production (real VMs) or mock (local dev) */
+    mode: RuntimeModeSchema,
+    /** Manager API port */
+    port: Type.Number({ default: 4000 }),
+    /** Manager API bind host */
+    host: Type.String({ default: "0.0.0.0" }),
+    /** Maximum concurrent sandboxes */
+    maxSandboxes: Type.Number({ default: 20 }),
+  },
+  { default: {} },
+);
 
 export type ServerConfig = Static<typeof ServerConfigSchema>;
 
@@ -113,24 +116,27 @@ export type ServerConfig = Static<typeof ServerConfigSchema>;
 // Network
 // ---------------------------------------------------------------------------
 
-export const NetworkConfigSchema = Type.Object({
-  /** Bridge IP address (host-side, e.g., 172.16.0.1) */
-  bridgeIp: Type.String({ default: "172.16.0.1" }),
-  /** Bridge device name */
-  bridgeName: Type.String({ default: "br0" }),
-  /** DNS servers for guest VMs */
-  dnsServers: Type.Array(Type.String(), { default: ["8.8.8.8", "8.8.4.4"] }),
-  /** First guest IP last octet — guests get .10, .11, etc. */
-  guestIpStart: Type.Number({ default: 10 }),
+export const NetworkConfigSchema = Type.Object(
+  {
+    /** Bridge IP address (host-side, e.g., 172.16.0.1) */
+    bridgeIp: Type.String({ default: "172.16.0.1" }),
+    /** Bridge device name */
+    bridgeName: Type.String({ default: "br0" }),
+    /** DNS servers for guest VMs */
+    dnsServers: Type.Array(Type.String(), { default: ["8.8.8.8", "8.8.4.4"] }),
+    /** First guest IP last octet — guests get .10, .11, etc. */
+    guestIpStart: Type.Number({ default: 10 }),
 
-  // Derived fields (computed from bridgeIp by the loader — do not set manually)
-  /** @internal Guest subnet prefix without last octet (e.g., 172.16.0) */
-  guestSubnet: Type.String({ default: "172.16.0" }),
-  /** @internal Bridge network CIDR (e.g., 172.16.0.0/24) */
-  bridgeCidr: Type.String({ default: "172.16.0.0/24" }),
-  /** @internal Bridge netmask (e.g., 24) */
-  bridgeNetmask: Type.String({ default: "24" }),
-}, { default: {} });
+    // Derived fields (computed from bridgeIp by the loader — do not set manually)
+    /** @internal Guest subnet prefix without last octet (e.g., 172.16.0) */
+    guestSubnet: Type.String({ default: "172.16.0" }),
+    /** @internal Bridge network CIDR (e.g., 172.16.0.0/24) */
+    bridgeCidr: Type.String({ default: "172.16.0.0/24" }),
+    /** @internal Bridge netmask (e.g., 24) */
+    bridgeNetmask: Type.String({ default: "24" }),
+  },
+  { default: {} },
+);
 
 export type NetworkConfig = Static<typeof NetworkConfigSchema>;
 
@@ -223,8 +229,8 @@ const VmService = (defaultPort: number) =>
 
 export const AdvancedVmConfigSchema = Type.Object(
   {
-    vscode: VmServiceWithVersion(8080, "4.108.1"),
-    opencode: VmServiceWithVersion(3000, "1.1.48"),
+    vscode: VmServiceWithVersion(8080, "4.108.2"),
+    opencode: VmServiceWithVersion(3000, "1.1.53"),
     browser: VmService(6080),
     terminal: VmService(7681),
     agent: VmService(9999),
@@ -243,19 +249,19 @@ export const AdvancedServerConfigSchema = Type.Object(
     verdaccio: Type.Object(
       {
         port: Type.Number({ default: 4873 }),
-        version: Type.String({ default: "6.2.4" }),
+        version: Type.String({ default: "6.2.5" }),
       },
       { default: {} },
     ),
     sshProxy: Type.Object(
       {
-        version: Type.String({ default: "1.5.1" }),
+        version: Type.String({ default: "1.5.2" }),
       },
       { default: {} },
     ),
     firecracker: Type.Object(
       {
-        version: Type.String({ default: "1.14.0" }),
+        version: Type.String({ default: "1.14.1" }),
       },
       { default: {} },
     ),
