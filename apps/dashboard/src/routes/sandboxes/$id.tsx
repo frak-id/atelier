@@ -4,10 +4,10 @@ import {
   ArrowLeft,
   Bot,
   Columns2,
+  Ellipsis,
   Globe,
   Loader2,
   Monitor,
-  PanelRight,
   Pause,
   Play,
   RotateCcw,
@@ -323,7 +323,7 @@ function SandboxImmersionPage() {
               onClick={() => openSandbox(id)}
               className="flex items-center gap-1.5 px-2 h-8 rounded-md text-sm transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
             >
-              <PanelRight className="h-4 w-4" />
+              <Ellipsis className="h-4 w-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent>Sandbox details</TooltipContent>

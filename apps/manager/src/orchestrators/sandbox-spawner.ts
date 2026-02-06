@@ -564,6 +564,7 @@ class SpawnContext {
     await this.provisionPostBoot();
 
     await this.expandFilesystem();
+    await this.setupSwap();
 
     if (this.needsRepoClone()) {
       await this.cloneRepositories();
@@ -866,6 +867,54 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       log.warn(
         { sandboxId: this.sandboxId, error },
         "Filesystem expansion failed",
+      );
+    }
+  }
+
+  private async setupSwap(): Promise<void> {
+    if (!this.paths?.useLvm) return;
+
+    // Prebuild already has swap from its own expansion
+    if (this.usedPrebuild) return;
+
+    try {
+      const swapScript = [
+        "if [ -f /swapfile ]; then echo swap_exists; exit 0; fi",
+        "TOTAL_MEM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)",
+        "AVAIL_KB=$(df / | awk 'NR==2 {print $4}')",
+        "SWAP_KB=$TOTAL_MEM_KB",
+        "[ $SWAP_KB -gt 16777216 ] && SWAP_KB=16777216",
+        "MAX_KB=$((AVAIL_KB - 1048576))",
+        "[ $SWAP_KB -gt $MAX_KB ] && SWAP_KB=$MAX_KB",
+        "[ $SWAP_KB -lt 262144 ] && { echo swap_skipped_no_space; exit 0; }",
+        "SWAP_MB=$((SWAP_KB / 1024))",
+        "fallocate -l ${SWAP_MB}M /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=$SWAP_MB 2>/dev/null",
+        "chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile",
+        "echo 10 > /proc/sys/vm/swappiness",
+        "echo swap_created_${SWAP_MB}mb",
+      ].join(" && ");
+
+      const result = await this.deps.agentClient.exec(
+        this.sandboxId,
+        `bash -c '${swapScript}'`,
+        { timeout: 30000 },
+      );
+
+      if (result.exitCode === 0) {
+        log.info(
+          { sandboxId: this.sandboxId, output: result.stdout.trim() },
+          "Swap setup completed",
+        );
+      } else {
+        log.warn(
+          { sandboxId: this.sandboxId, stderr: result.stderr },
+          "Swap setup failed (non-critical)",
+        );
+      }
+    } catch (error) {
+      log.warn(
+        { sandboxId: this.sandboxId, error },
+        "Swap setup failed (non-critical)",
       );
     }
   }
