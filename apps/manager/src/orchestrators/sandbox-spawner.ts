@@ -471,6 +471,8 @@ class SpawnContext {
       "Guest network reconfigured",
     );
 
+    await this.deps.provisionService.syncClock(this.sandboxId);
+
     const imageInfo = await SharedStorageService.getBinariesImageInfo();
     if (imageInfo.exists) {
       const mountResult = await this.deps.agentClient.exec(
@@ -556,6 +558,8 @@ class SpawnContext {
       ipAddress: this.network.ipAddress,
       gateway: this.network.gateway,
     });
+
+    await this.deps.provisionService.syncClock(this.sandboxId);
 
     await this.provisionPostBoot();
 

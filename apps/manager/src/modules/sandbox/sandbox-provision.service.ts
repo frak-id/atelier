@@ -43,7 +43,7 @@ export class SandboxProvisionService {
       .map((dns) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
       .join(" && ");
 
-    const networkCmd = `ip addr add ${network.ipAddress}/24 dev eth0 && ip link set eth0 up && ip route add default via ${network.gateway} dev eth0 && > /etc/resolv.conf && ${dnsCommands}`;
+    const networkCmd = `ip link set lo up && ip addr add ${network.ipAddress}/24 dev eth0 && ip link set eth0 up && ip route add default via ${network.gateway} dev eth0 && > /etc/resolv.conf && ${dnsCommands}`;
 
     const result = await this.agentClient.exec(sandboxId, networkCmd, {
       timeout: 10000,
@@ -58,6 +58,24 @@ export class SandboxProvisionService {
     }
 
     log.info({ sandboxId, ipAddress: network.ipAddress }, "Network configured");
+  }
+
+  async syncClock(sandboxId: string): Promise<void> {
+    // Kill stale chronyd (may survive snapshot restore), then restart fresh
+    const cmd =
+      "pkill chronyd 2>/dev/null; chronyd -f /etc/chrony/chrony.conf 2>/dev/null || true";
+    const result = await this.agentClient.exec(sandboxId, cmd, {
+      timeout: 5000,
+    });
+
+    if (result.exitCode !== 0) {
+      log.warn(
+        { sandboxId, exitCode: result.exitCode, stderr: result.stderr },
+        "Clock sync failed (non-blocking)",
+      );
+    } else {
+      log.debug({ sandboxId }, "chronyd started");
+    }
   }
 
   async pushSecrets(sandboxId: string, envFileContent: string): Promise<void> {
