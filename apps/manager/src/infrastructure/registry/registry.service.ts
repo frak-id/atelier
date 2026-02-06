@@ -18,7 +18,7 @@ const log = createChildLogger("registry");
  */
 const VERDACCIO_DIR = REGISTRY.PACKAGES_DIR;
 const VERDACCIO_PKG = "verdaccio";
-const VERDACCIO_VERSION = config.raw.versions.verdaccio;
+const VERDACCIO_VERSION = config.versions.verdaccio;
 
 const SETTINGS_FILE = () => path.join(appPaths.data, "registry-settings.json");
 
@@ -207,7 +207,7 @@ export const RegistryService = {
     const runServer = await importRunServer();
 
     log.info(
-      { port: config.raw.services.verdaccio.port },
+      { port: config.services.verdaccio.port },
       "Starting Verdaccio via programmatic API",
     );
 
@@ -215,11 +215,11 @@ export const RegistryService = {
 
     await new Promise<void>((resolve, reject) => {
       const server = app.listen(
-        config.raw.services.verdaccio.port,
+        config.services.verdaccio.port,
         "0.0.0.0",
         () => {
           log.info(
-            { port: config.raw.services.verdaccio.port, host: "0.0.0.0" },
+            { port: config.services.verdaccio.port, host: "0.0.0.0" },
             "Verdaccio listening",
           );
           resolve();
@@ -290,7 +290,7 @@ export const RegistryService = {
     if (config.isMock()) return state.settings.enabled;
     try {
       const res = await fetch(
-        `http://127.0.0.1:${config.raw.services.verdaccio.port}/-/ping`,
+        `http://127.0.0.1:${config.services.verdaccio.port}/-/ping`,
         {
           signal: AbortSignal.timeout(3000),
         },
@@ -437,7 +437,7 @@ export const RegistryService = {
   },
 
   getRegistryUrl(): string {
-    return `http://${config.network.bridgeIp}:${config.raw.services.verdaccio.port}`;
+    return `http://${config.network.bridgeIp}:${config.services.verdaccio.port}`;
   },
 
   async waitForHealthy(timeoutMs: number): Promise<boolean> {

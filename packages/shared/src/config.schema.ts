@@ -1,45 +1,83 @@
 /**
  * Unified configuration schema for L'atelier.
  * Configuration priority: ENV vars > config file > defaults
+ *
+ * Sections:
+ *   domain   — Where this runs (base domain, TLS, SSH)
+ *   auth     — Who can access (GitHub OAuth, JWT, ACLs)
+ *   server   — Manager API settings (mode, port, limits)
+ *   network  — Bridge/guest networking
+ *   sandbox  — Defaults for new sandboxes (image, git identity)
+ *   setup    — One-time init options (storage, network bootstrap)
+ *   advanced — Power-user overrides (VM service ports, versions)
  */
 import { type Static, Type } from "@sinclair/typebox";
 
-export const DomainsConfigSchema = Type.Object({
-  /** Dashboard domain (e.g., sandbox.example.com) - API is served at /api on same domain */
-  dashboard: Type.String({ default: "sandbox.localhost" }),
-  /** Suffix for sandbox subdomains (e.g., example.com -> sandbox-{id}.example.com) */
-  sandboxSuffix: Type.String({ default: "localhost" }),
+// ---------------------------------------------------------------------------
+// Domain
+// ---------------------------------------------------------------------------
+
+export const TlsConfigSchema = Type.Object(
+  {
+    /** Email for TLS certificate (e.g., ACME / Let's Encrypt) */
+    email: Type.String({ default: "" }),
+    /** Path to TLS certificate PEM file (manual TLS) */
+    certPath: Type.String({ default: "" }),
+    /** Path to TLS private key file (manual TLS) */
+    keyPath: Type.String({ default: "" }),
+  },
+  { default: {} },
+);
+
+export type TlsConfig = Static<typeof TlsConfigSchema>;
+
+export const SshConfigSchema = Type.Object(
+  {
+    /** SSH proxy listen port */
+    port: Type.Number({ default: 2222 }),
+    /** SSH proxy hostname — defaults to ssh.{baseDomain} if empty */
+    hostname: Type.String({ default: "" }),
+  },
+  { default: {} },
+);
+
+export type SshConfig = Static<typeof SshConfigSchema>;
+
+export const DomainConfigSchema = Type.Object({
+  /** Base domain for all services (e.g., example.com) */
+  baseDomain: Type.String({ default: "localhost" }),
+  /** Dashboard domain — defaults to sandbox.{baseDomain} if empty */
+  dashboard: Type.String({ default: "" }),
+  /** TLS / HTTPS configuration */
+  tls: TlsConfigSchema,
+  /** SSH proxy configuration */
+  ssh: SshConfigSchema,
 });
 
-export type DomainsConfig = Static<typeof DomainsConfigSchema>;
+export type DomainConfig = Static<typeof DomainConfigSchema>;
 
-export const NetworkConfigSchema = Type.Object({
-  /** Bridge device name */
-  bridgeName: Type.String({ default: "br0" }),
-  /** Bridge IP address (host-side, e.g., 172.16.0.1) */
-  bridgeIp: Type.String({ default: "172.16.0.1" }),
-  /** Bridge network CIDR (e.g., 172.16.0.0/24) */
-  bridgeCidr: Type.String({ default: "172.16.0.0/24" }),
-  /** Bridge netmask without slash (e.g., 24) */
-  bridgeNetmask: Type.String({ default: "24" }),
-  /** Guest subnet prefix without last octet (e.g., 172.16.0) */
-  guestSubnet: Type.String({ default: "172.16.0" }),
-  /** First guest IP last octet - guests get .10, .11, etc. */
-  guestIpStart: Type.Number({ default: 10 }),
-  /** DNS servers for guest VMs */
-  dnsServers: Type.Array(Type.String(), { default: ["8.8.8.8", "8.8.4.4"] }),
-});
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
 
-export type NetworkConfig = Static<typeof NetworkConfigSchema>;
+export const GithubAuthConfigSchema = Type.Object(
+  {
+    /** GitHub OAuth client ID */
+    clientId: Type.String({ default: "" }),
+    /** GitHub OAuth client secret */
+    clientSecret: Type.String({ default: "" }),
+  },
+  { default: {} },
+);
+
+export type GithubAuthConfig = Static<typeof GithubAuthConfigSchema>;
 
 export const AuthConfigSchema = Type.Object({
-  /** GitHub OAuth client ID */
-  githubClientId: Type.String({ default: "" }),
-  /** GitHub OAuth client secret */
-  githubClientSecret: Type.String({ default: "" }),
+  /** GitHub OAuth credentials */
+  github: GithubAuthConfigSchema,
   /** JWT signing secret */
   jwtSecret: Type.String({ default: "dev-secret-change-in-production" }),
-  /** Required GitHub organization - if set, only org members can access */
+  /** Required GitHub organization — if set, only org members can access */
   allowedOrg: Type.Optional(Type.String()),
   /** Allowed GitHub usernames as fallback if org check fails */
   allowedUsers: Type.Array(Type.String(), { default: [] }),
@@ -47,14 +85,88 @@ export const AuthConfigSchema = Type.Object({
 
 export type AuthConfig = Static<typeof AuthConfigSchema>;
 
-export const SshProxyConfigSchema = Type.Object({
-  /** SSH proxy listen port */
-  port: Type.Number({ default: 2222 }),
-  /** SSH proxy domain for external connections */
-  domain: Type.String({ default: "ssh.localhost" }),
+// ---------------------------------------------------------------------------
+// Server
+// ---------------------------------------------------------------------------
+
+export const RuntimeModeSchema = Type.Union([
+  Type.Literal("production"),
+  Type.Literal("mock"),
+]);
+
+export type RuntimeMode = Static<typeof RuntimeModeSchema>;
+
+export const ServerConfigSchema = Type.Object({
+  /** Runtime mode: production (real VMs) or mock (local dev) */
+  mode: RuntimeModeSchema,
+  /** Manager API port */
+  port: Type.Number({ default: 4000 }),
+  /** Manager API bind host */
+  host: Type.String({ default: "0.0.0.0" }),
+  /** Maximum concurrent sandboxes */
+  maxSandboxes: Type.Number({ default: 20 }),
 });
 
-export type SshProxyConfig = Static<typeof SshProxyConfigSchema>;
+export type ServerConfig = Static<typeof ServerConfigSchema>;
+
+// ---------------------------------------------------------------------------
+// Network
+// ---------------------------------------------------------------------------
+
+export const NetworkConfigSchema = Type.Object({
+  /** Bridge IP address (host-side, e.g., 172.16.0.1) */
+  bridgeIp: Type.String({ default: "172.16.0.1" }),
+  /** Bridge device name */
+  bridgeName: Type.String({ default: "br0" }),
+  /** DNS servers for guest VMs */
+  dnsServers: Type.Array(Type.String(), { default: ["8.8.8.8", "8.8.4.4"] }),
+  /** First guest IP last octet — guests get .10, .11, etc. */
+  guestIpStart: Type.Number({ default: 10 }),
+
+  // Derived fields (computed from bridgeIp by the loader — do not set manually)
+  /** @internal Guest subnet prefix without last octet (e.g., 172.16.0) */
+  guestSubnet: Type.String({ default: "172.16.0" }),
+  /** @internal Bridge network CIDR (e.g., 172.16.0.0/24) */
+  bridgeCidr: Type.String({ default: "172.16.0.0/24" }),
+  /** @internal Bridge netmask (e.g., 24) */
+  bridgeNetmask: Type.String({ default: "24" }),
+});
+
+export type NetworkConfig = Static<typeof NetworkConfigSchema>;
+
+// ---------------------------------------------------------------------------
+// Sandbox defaults
+// ---------------------------------------------------------------------------
+
+export const SandboxGitConfigSchema = Type.Object(
+  {
+    /** Default git email for sandbox users */
+    email: Type.String({ default: "sandbox@atelier.dev" }),
+    /** Default git name for sandbox users */
+    name: Type.String({ default: "Sandbox User" }),
+  },
+  { default: {} },
+);
+
+export type SandboxGitConfig = Static<typeof SandboxGitConfigSchema>;
+
+export const SandboxDefaultsSchema = Type.Object(
+  {
+    /** Default image for new sandboxes */
+    defaultImage: Type.String({ default: "dev-base" }),
+    /** Directory containing image definitions */
+    imagesDirectory: Type.String({ default: "/opt/atelier/infra/images" }),
+    /** Default git identity injected into sandboxes */
+    git: SandboxGitConfigSchema,
+  },
+  { default: {} },
+);
+
+export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
+
+// ---------------------------------------------------------------------------
+// Setup (one-time init)
+// ---------------------------------------------------------------------------
 
 export const StorageSetupSchema = Type.Object({
   /** Storage backend for setup */
@@ -88,38 +200,20 @@ export const SetupConfigSchema = Type.Object(
 
 export type SetupConfig = Static<typeof SetupConfigSchema>;
 
-export const RuntimeModeSchema = Type.Union([
-  Type.Literal("production"),
-  Type.Literal("mock"),
-]);
+// ---------------------------------------------------------------------------
+// Advanced — VM services (inside sandbox)
+// ---------------------------------------------------------------------------
 
-export type RuntimeMode = Static<typeof RuntimeModeSchema>;
+const VmServiceWithVersion = (defaultPort: number, defaultVersion: string) =>
+  Type.Object(
+    {
+      port: Type.Number({ default: defaultPort }),
+      version: Type.String({ default: defaultVersion }),
+    },
+    { default: {} },
+  );
 
-export const RuntimeConfigSchema = Type.Object({
-  /** Runtime mode: production (real VMs) or mock (local dev) */
-  mode: RuntimeModeSchema,
-  /** Manager API port */
-  port: Type.Number({ default: 4000 }),
-  /** Manager API bind host */
-  host: Type.String({ default: "0.0.0.0" }),
-  /** Max sandbox */
-  maxSandbox: Type.Number({ default: 20 }),
-});
-
-export type RuntimeConfig = Static<typeof RuntimeConfigSchema>;
-
-export const TlsConfigSchema = Type.Object({
-  /** Email for TLS certificate (e.g., ACME / Let's Encrypt) */
-  email: Type.String({ default: "" }),
-  /** Path to TLS certificate PEM file */
-  certPath: Type.String({ default: "" }),
-  /** Path to TLS private key file */
-  keyPath: Type.String({ default: "" }),
-});
-
-export type TlsConfig = Static<typeof TlsConfigSchema>;
-
-const ServiceEntrySchema = (defaultPort: number) =>
+const VmService = (defaultPort: number) =>
   Type.Object(
     {
       port: Type.Number({ default: defaultPort }),
@@ -127,130 +221,124 @@ const ServiceEntrySchema = (defaultPort: number) =>
     { default: {} },
   );
 
-export const ServicesConfigSchema = Type.Object(
+export const AdvancedVmConfigSchema = Type.Object(
   {
-    vscode: ServiceEntrySchema(8080),
-    opencode: ServiceEntrySchema(3000),
-    browser: ServiceEntrySchema(6080),
-    terminal: ServiceEntrySchema(7681),
-    agent: ServiceEntrySchema(9999),
-    verdaccio: ServiceEntrySchema(4873),
+    vscode: VmServiceWithVersion(8080, "4.108.1"),
+    opencode: VmServiceWithVersion(3000, "1.1.48"),
+    browser: VmService(6080),
+    terminal: VmService(7681),
+    agent: VmService(9999),
   },
   { default: {} },
 );
 
-export type ServicesConfig = Static<typeof ServicesConfigSchema>;
+export type AdvancedVmConfig = Static<typeof AdvancedVmConfigSchema>;
 
-export const SandboxServiceEntrySchema = Type.Object({
-  port: Type.Optional(Type.Number()),
-  command: Type.Optional(Type.String()),
-  user: Type.Optional(Type.Union([Type.Literal("dev"), Type.Literal("root")])),
-  autoStart: Type.Optional(Type.Boolean({ default: false })),
-  env: Type.Optional(Type.Record(Type.String(), Type.String())),
-  enabled: Type.Optional(Type.Boolean({ default: true })),
-});
+// ---------------------------------------------------------------------------
+// Advanced — Server services (on host)
+// ---------------------------------------------------------------------------
 
-export type SandboxServiceEntry = Static<typeof SandboxServiceEntrySchema>;
-
-export const GitConfigSchema = Type.Object(
+export const AdvancedServerConfigSchema = Type.Object(
   {
-    email: Type.String({ default: "sandbox@atelier.dev" }),
-    name: Type.String({ default: "Sandbox User" }),
+    verdaccio: Type.Object(
+      {
+        port: Type.Number({ default: 4873 }),
+        version: Type.String({ default: "6.2.4" }),
+      },
+      { default: {} },
+    ),
+    sshProxy: Type.Object(
+      {
+        version: Type.String({ default: "1.5.1" }),
+      },
+      { default: {} },
+    ),
+    firecracker: Type.Object(
+      {
+        version: Type.String({ default: "1.14.0" }),
+      },
+      { default: {} },
+    ),
   },
   { default: {} },
 );
 
-export type GitConfig = Static<typeof GitConfigSchema>;
+export type AdvancedServerConfig = Static<typeof AdvancedServerConfigSchema>;
 
-export const VersionsConfigSchema = Type.Object(
+export const AdvancedConfigSchema = Type.Object(
   {
-    firecracker: Type.String({ default: "1.14.0" }),
-    opencode: Type.String({ default: "1.1.48" }),
-    codeServer: Type.String({ default: "4.108.1" }),
-    sshProxy: Type.String({ default: "1.5.1" }),
-    verdaccio: Type.String({ default: "6.2.4" }),
+    /** Services running inside each sandbox VM */
+    vm: AdvancedVmConfigSchema,
+    /** Services running on the host server */
+    server: AdvancedServerConfigSchema,
   },
   { default: {} },
 );
 
-export type VersionsConfig = Static<typeof VersionsConfigSchema>;
+export type AdvancedConfig = Static<typeof AdvancedConfigSchema>;
 
-export const ImagesConfigSchema = Type.Object(
-  {
-    /** Directory containing image definitions (each image is a subdirectory with Dockerfile + image.json) */
-    directory: Type.String({ default: "/opt/atelier/infra/images" }),
-    /** Default image to use when creating new workspaces */
-    defaultImage: Type.String({ default: "dev-base" }),
-  },
-  { default: {} },
-);
-
-export type ImagesConfig = Static<typeof ImagesConfigSchema>;
+// ---------------------------------------------------------------------------
+// Root config
+// ---------------------------------------------------------------------------
 
 export const AtelierConfigSchema = Type.Object({
-  domains: DomainsConfigSchema,
-  network: NetworkConfigSchema,
+  domain: DomainConfigSchema,
   auth: AuthConfigSchema,
-  sshProxy: SshProxyConfigSchema,
-  runtime: RuntimeConfigSchema,
-  tls: TlsConfigSchema,
-  services: ServicesConfigSchema,
+  server: ServerConfigSchema,
+  network: NetworkConfigSchema,
+  sandbox: SandboxDefaultsSchema,
   setup: SetupConfigSchema,
-  images: ImagesConfigSchema,
-  git: GitConfigSchema,
-  versions: VersionsConfigSchema,
+  advanced: AdvancedConfigSchema,
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;
 
-/** Maps environment variable names to config paths for the config loader */
+// ---------------------------------------------------------------------------
+// Environment variable → config path mapping
+// ---------------------------------------------------------------------------
+
 export const ENV_VAR_MAPPING = {
-  ATELIER_DASHBOARD_DOMAIN: "domains.dashboard",
-  ATELIER_SANDBOX_DOMAIN_SUFFIX: "domains.sandboxSuffix",
+  ATELIER_BASE_DOMAIN: "domain.baseDomain",
+  ATELIER_DASHBOARD_DOMAIN: "domain.dashboard",
+  TLS_EMAIL: "domain.tls.email",
+  TLS_CERT_PATH: "domain.tls.certPath",
+  TLS_KEY_PATH: "domain.tls.keyPath",
+  SSH_PROXY_PORT: "domain.ssh.port",
+  SSH_PROXY_DOMAIN: "domain.ssh.hostname",
+
+  GITHUB_CLIENT_ID: "auth.github.clientId",
+  GITHUB_CLIENT_SECRET: "auth.github.clientSecret",
+  JWT_SECRET: "auth.jwtSecret",
+  AUTH_ALLOWED_ORG: "auth.allowedOrg",
+  AUTH_ALLOWED_USERS: "auth.allowedUsers",
+
+  SANDBOX_MODE: "server.mode",
+  PORT: "server.port",
+  HOST: "server.host",
+  MAX_SANDBOX: "server.maxSandboxes",
 
   ATELIER_BRIDGE_NAME: "network.bridgeName",
   ATELIER_BRIDGE_IP: "network.bridgeIp",
   ATELIER_GUEST_IP_START: "network.guestIpStart",
-  ATELIER_DNS_SERVERS: "network.dnsServers", // comma-separated
+  ATELIER_DNS_SERVERS: "network.dnsServers",
 
-  GITHUB_CLIENT_ID: "auth.githubClientId",
-  GITHUB_CLIENT_SECRET: "auth.githubClientSecret",
-  JWT_SECRET: "auth.jwtSecret",
-  AUTH_ALLOWED_ORG: "auth.allowedOrg",
-  AUTH_ALLOWED_USERS: "auth.allowedUsers", // comma-separated
+  ATELIER_IMAGES_DIR: "sandbox.imagesDirectory",
+  ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",
+  ATELIER_GIT_EMAIL: "sandbox.git.email",
+  ATELIER_GIT_NAME: "sandbox.git.name",
 
-  SSH_PROXY_PORT: "sshProxy.port",
-  SSH_PROXY_DOMAIN: "sshProxy.domain",
+  ATELIER_VSCODE_PORT: "advanced.vm.vscode.port",
+  ATELIER_OPENCODE_PORT: "advanced.vm.opencode.port",
+  ATELIER_BROWSER_PORT: "advanced.vm.browser.port",
+  ATELIER_TERMINAL_PORT: "advanced.vm.terminal.port",
+  ATELIER_AGENT_PORT: "advanced.vm.agent.port",
+  ATELIER_VERDACCIO_PORT: "advanced.server.verdaccio.port",
 
-  SANDBOX_MODE: "runtime.mode",
-  PORT: "runtime.port",
-  HOST: "runtime.host",
-  MAX_SANDBOX: "runtime.maxSandbox",
-
-  TLS_EMAIL: "tls.email",
-  TLS_CERT_PATH: "tls.certPath",
-  TLS_KEY_PATH: "tls.keyPath",
-
-  ATELIER_VSCODE_PORT: "services.vscode.port",
-  ATELIER_OPENCODE_PORT: "services.opencode.port",
-  ATELIER_BROWSER_PORT: "services.browser.port",
-  ATELIER_TERMINAL_PORT: "services.terminal.port",
-  ATELIER_AGENT_PORT: "services.agent.port",
-  ATELIER_VERDACCIO_PORT: "services.verdaccio.port",
-
-  ATELIER_IMAGES_DIR: "images.directory",
-  ATELIER_DEFAULT_IMAGE: "images.defaultImage",
-
-  CADDY_ADMIN_API: "caddy.adminApi",
-
-  ATELIER_GIT_EMAIL: "git.email",
-  ATELIER_GIT_NAME: "git.name",
-
-  ATELIER_VERSION_FIRECRACKER: "versions.firecracker",
-  ATELIER_VERSION_OPENCODE: "versions.opencode",
-  ATELIER_VERSION_CODE_SERVER: "versions.codeServer",
-  ATELIER_VERSION_SSH_PROXY: "versions.sshProxy",
-  ATELIER_VERSION_VERDACCIO: "versions.verdaccio",
+  ATELIER_VERSION_FIRECRACKER: "advanced.server.firecracker.version",
+  ATELIER_VERSION_OPENCODE: "advanced.vm.opencode.version",
+  ATELIER_VERSION_CODE_SERVER: "advanced.vm.vscode.version",
+  ATELIER_VERSION_SSH_PROXY: "advanced.server.sshProxy.version",
+  ATELIER_VERSION_VERDACCIO: "advanced.server.verdaccio.version",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;

@@ -7,10 +7,10 @@ type Mode = "production" | "mock";
 
 function getMode(): Mode {
   if (
-    atelierConfig.runtime.mode === "production" ||
-    atelierConfig.runtime.mode === "mock"
+    atelierConfig.server.mode === "production" ||
+    atelierConfig.server.mode === "mock"
   ) {
-    return atelierConfig.runtime.mode;
+    return atelierConfig.server.mode;
   }
   return process.env.NODE_ENV === "production" ? "production" : "mock";
 }
@@ -22,30 +22,37 @@ function deriveCallbackUrl(dashboard: string, port: number, path: string) {
 
 export const config = {
   mode: getMode(),
-  port: atelierConfig.runtime.port,
-  host: atelierConfig.runtime.host,
+  port: atelierConfig.server.port,
+  host: atelierConfig.server.host,
+  maxSandboxes: atelierConfig.server.maxSandboxes,
 
   paths: PATHS,
   network: atelierConfig.network,
   caddy: {
     adminApi: CADDY.ADMIN_API,
-    domainSuffix: atelierConfig.domains.sandboxSuffix,
+    domainSuffix: atelierConfig.domain.baseDomain,
   },
-  domains: atelierConfig.domains,
-  sshProxy: atelierConfig.sshProxy,
+  domains: {
+    dashboard: atelierConfig.domain.dashboard,
+    sandboxSuffix: atelierConfig.domain.baseDomain,
+  },
+  sshProxy: {
+    domain: atelierConfig.domain.ssh.hostname,
+    port: atelierConfig.domain.ssh.port,
+  },
   defaults: DEFAULTS,
 
   github: {
-    clientId: atelierConfig.auth.githubClientId,
-    clientSecret: atelierConfig.auth.githubClientSecret,
+    clientId: atelierConfig.auth.github.clientId,
+    clientSecret: atelierConfig.auth.github.clientSecret,
     callbackUrl: deriveCallbackUrl(
-      atelierConfig.domains.dashboard,
-      atelierConfig.runtime.port,
+      atelierConfig.domain.dashboard,
+      atelierConfig.server.port,
       "/api/github/callback",
     ),
     loginCallbackUrl: deriveCallbackUrl(
-      atelierConfig.domains.dashboard,
-      atelierConfig.runtime.port,
+      atelierConfig.domain.dashboard,
+      atelierConfig.server.port,
       "/auth/callback",
     ),
   },
@@ -56,11 +63,31 @@ export const config = {
     allowedUsers: atelierConfig.auth.allowedUsers,
   },
 
-  dashboardUrl: `https://${atelierConfig.domains.dashboard}`,
+  dashboardUrl: `https://${atelierConfig.domain.dashboard}`,
 
-  git: atelierConfig.git,
+  git: atelierConfig.sandbox.git,
 
-  images: atelierConfig.images,
+  images: {
+    directory: atelierConfig.sandbox.imagesDirectory,
+    defaultImage: atelierConfig.sandbox.defaultImage,
+  },
+
+  services: {
+    vscode: { port: atelierConfig.advanced.vm.vscode.port },
+    opencode: { port: atelierConfig.advanced.vm.opencode.port },
+    browser: { port: atelierConfig.advanced.vm.browser.port },
+    terminal: { port: atelierConfig.advanced.vm.terminal.port },
+    agent: { port: atelierConfig.advanced.vm.agent.port },
+    verdaccio: { port: atelierConfig.advanced.server.verdaccio.port },
+  },
+
+  versions: {
+    opencode: atelierConfig.advanced.vm.opencode.version,
+    codeServer: atelierConfig.advanced.vm.vscode.version,
+    verdaccio: atelierConfig.advanced.server.verdaccio.version,
+    firecracker: atelierConfig.advanced.server.firecracker.version,
+    sshProxy: atelierConfig.advanced.server.sshProxy.version,
+  },
 
   isMock: () => config.mode === "mock",
   isProduction: () => config.mode === "production",

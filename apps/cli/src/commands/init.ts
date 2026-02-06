@@ -100,26 +100,28 @@ async function promptConfig() {
   const defaults = getDefaultConfig();
   const config = structuredClone(defaults);
 
-  config.domains = {
+  config.domain = {
+    ...defaults.domain,
+    baseDomain: domainSuffix,
     dashboard: dashboardDomain,
-    sandboxSuffix: domainSuffix,
+    tls: { ...defaults.domain.tls, email: tlsEmail },
+    ssh: { ...defaults.domain.ssh, hostname: sshDomain },
   };
 
   config.network = { ...defaults.network };
-  config.services = { ...defaults.services };
 
   config.auth = {
     ...defaults.auth,
-    githubClientId,
-    githubClientSecret,
+    github: {
+      clientId: githubClientId,
+      clientSecret: githubClientSecret,
+    },
     jwtSecret,
     allowedOrg: allowedOrg.trim().length > 0 ? allowedOrg : undefined,
     allowedUsers,
   };
 
-  config.sshProxy = { ...defaults.sshProxy, domain: sshDomain };
-  config.runtime = { ...defaults.runtime, mode: "production" };
-  config.tls = { ...defaults.tls, email: tlsEmail };
+  config.server = { ...defaults.server, mode: "production" };
 
   return config;
 }

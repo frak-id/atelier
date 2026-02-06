@@ -468,7 +468,7 @@ export class PrebuildRunner {
   ): Promise<void> {
     log.info({ workspaceId }, "Warming up opencode server");
 
-    const port = config.raw.services.opencode.port;
+    const port = config.services.opencode.port;
     // Use nohup + setsid + explicit fd close to fully detach from the shell.
     // Without closing fds 1&2 at the outer sh level, Deno.Command's piped
     // stdout stays open until the background process exits → timeout.

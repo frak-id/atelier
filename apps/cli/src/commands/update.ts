@@ -244,21 +244,21 @@ async function renderCaddyConfig() {
   const template = await Bun.file(templatePath).text();
 
   const useManualTls =
-    config.tls.certPath.trim().length > 0 &&
-    config.tls.keyPath.trim().length > 0;
+    config.domain.tls.certPath.trim().length > 0 &&
+    config.domain.tls.keyPath.trim().length > 0;
 
   let output = template
-    .replace(/{{SSL_EMAIL}}/g, config.tls.email || "")
-    .replace(/{{DASHBOARD_DOMAIN}}/g, config.domains.dashboard)
-    .replace(/{{DOMAIN_SUFFIX}}/g, config.domains.sandboxSuffix)
-    .replace(/{{MANAGER_PORT}}/g, String(config.runtime.port));
+    .replace(/{{SSL_EMAIL}}/g, config.domain.tls.email || "")
+    .replace(/{{DASHBOARD_DOMAIN}}/g, config.domain.dashboard)
+    .replace(/{{DOMAIN_SUFFIX}}/g, config.domain.baseDomain)
+    .replace(/{{MANAGER_PORT}}/g, String(config.server.port));
 
   if (useManualTls) {
     output = output
       .replace(/{{#MANUAL_TLS}}/g, "")
       .replace(/{{\/MANUAL_TLS}}/g, "")
-      .replace(/{{TLS_CERT_PATH}}/g, config.tls.certPath)
-      .replace(/{{TLS_KEY_PATH}}/g, config.tls.keyPath)
+      .replace(/{{TLS_CERT_PATH}}/g, config.domain.tls.certPath)
+      .replace(/{{TLS_KEY_PATH}}/g, config.domain.tls.keyPath)
       .replace(/{{TLS_CONFIG}}/g, "import tls_manual");
   } else {
     output = output.replace(/{{#MANUAL_TLS}}[\s\S]*?{{\/MANUAL_TLS}}\n?/g, "");

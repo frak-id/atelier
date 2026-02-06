@@ -6,7 +6,17 @@
  * and the agent + sandbox-init.sh read it at boot.
  */
 import { type Static, Type } from "@sinclair/typebox";
-import { SandboxServiceEntrySchema } from "./config.schema";
+
+export const SandboxServiceEntrySchema = Type.Object({
+  port: Type.Optional(Type.Number()),
+  command: Type.Optional(Type.String()),
+  user: Type.Optional(Type.Union([Type.Literal("dev"), Type.Literal("root")])),
+  autoStart: Type.Optional(Type.Boolean({ default: false })),
+  env: Type.Optional(Type.Record(Type.String(), Type.String())),
+  enabled: Type.Optional(Type.Boolean({ default: true })),
+});
+
+export type SandboxServiceEntry = Static<typeof SandboxServiceEntrySchema>;
 
 const RepoConfigSchema = Type.Object({
   clonePath: Type.String(),

@@ -7,7 +7,7 @@ export const publicConfigRoutes = new Elysia().get(
   () => ({
     sshHostname: config.sshProxy.domain,
     sshPort: config.sshProxy.port,
-    opencodePort: config.raw.services.opencode.port,
+    opencodePort: config.services.opencode.port,
   }),
   {
     response: PublicConfigSchema,

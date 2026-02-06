@@ -40,12 +40,12 @@ async function main() {
   const atelierConfig = loadConfig({ configFile: CONFIG_FILE });
 
   if (
-    !atelierConfig.auth.githubClientId ||
-    !atelierConfig.auth.githubClientSecret ||
+    !atelierConfig.auth.github.clientId ||
+    !atelierConfig.auth.github.clientSecret ||
     !atelierConfig.auth.jwtSecret
   ) {
     console.error(
-      "Missing required secrets: githubClientId, githubClientSecret, jwtSecret",
+      "Missing required secrets: clientId, clientSecret, jwtSecret",
     );
     console.error("Set them in sandbox.config.json (auth section)");
     process.exit(1);
@@ -147,20 +147,20 @@ async function main() {
     resolve(INFRA_DIR, "caddy/Caddyfile.template"),
   ).text();
   const useManualTls =
-    atelierConfig.tls.certPath?.trim().length > 0 &&
-    atelierConfig.tls.keyPath?.trim().length > 0;
+    atelierConfig.domain.tls.certPath?.trim().length > 0 &&
+    atelierConfig.domain.tls.keyPath?.trim().length > 0;
   let caddyfile = caddyfileTemplate
-    .replace(/\{\{SSL_EMAIL\}\}/g, atelierConfig.tls.email)
-    .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, atelierConfig.domains.dashboard)
-    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, atelierConfig.domains.sandboxSuffix)
-    .replace(/\{\{MANAGER_PORT\}\}/g, String(atelierConfig.runtime.port));
+    .replace(/\{\{SSL_EMAIL\}\}/g, atelierConfig.domain.tls.email)
+    .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, atelierConfig.domain.dashboard)
+    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, atelierConfig.domain.baseDomain)
+    .replace(/\{\{MANAGER_PORT\}\}/g, String(atelierConfig.server.port));
 
   if (useManualTls) {
     caddyfile = caddyfile
       .replace(/\{\{#MANUAL_TLS\}\}/g, "")
       .replace(/\{\{\/MANUAL_TLS\}\}/g, "")
-      .replace(/\{\{TLS_CERT_PATH\}\}/g, atelierConfig.tls.certPath)
-      .replace(/\{\{TLS_KEY_PATH\}\}/g, atelierConfig.tls.keyPath)
+      .replace(/\{\{TLS_CERT_PATH\}\}/g, atelierConfig.domain.tls.certPath)
+      .replace(/\{\{TLS_KEY_PATH\}\}/g, atelierConfig.domain.tls.keyPath)
       .replace(/\{\{TLS_CONFIG\}\}/g, "import tls_manual");
   } else {
     caddyfile = caddyfile

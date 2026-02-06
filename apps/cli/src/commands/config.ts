@@ -99,7 +99,7 @@ async function setConfig(args: string[]) {
     ? parseConfigFile(await Bun.file(configPath).text(), configPath)
     : {
         ...structuredClone(defaults),
-        runtime: { ...defaults.runtime, mode: "production" as const },
+        server: { ...defaults.server, mode: "production" as const },
       };
 
   setNestedValue(config, path, parseValue(path, value));

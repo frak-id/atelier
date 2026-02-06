@@ -16,13 +16,13 @@ export async function installFirecracker(_args: string[] = []) {
     });
     const currentVersion = stdout.match(/v?(\d+\.\d+\.\d+)/)?.[1];
 
-    if (currentVersion === atelierConfig.versions.firecracker) {
+    if (currentVersion === atelierConfig.advanced.server.firecracker.version) {
       p.log.success(
-        `Firecracker v${atelierConfig.versions.firecracker} already installed`,
+        `Firecracker v${atelierConfig.advanced.server.firecracker.version} already installed`,
       );
     } else {
       p.log.warn(
-        `Upgrading Firecracker from v${currentVersion} to v${atelierConfig.versions.firecracker}`,
+        `Upgrading Firecracker from v${currentVersion} to v${atelierConfig.advanced.server.firecracker.version}`,
       );
       await downloadFirecracker(spinner, arch);
     }
@@ -48,12 +48,12 @@ async function downloadFirecracker(
   arch: string,
 ) {
   spinner.start(
-    `Downloading Firecracker v${atelierConfig.versions.firecracker}`,
+    `Downloading Firecracker v${atelierConfig.advanced.server.firecracker.version}`,
   );
 
-  const tarball = `firecracker-v${atelierConfig.versions.firecracker}-${arch}.tgz`;
-  const url = `${FIRECRACKER.RELEASE_URL}/download/v${atelierConfig.versions.firecracker}/${tarball}`;
-  const releaseDir = `release-v${atelierConfig.versions.firecracker}-${arch}`;
+  const tarball = `firecracker-v${atelierConfig.advanced.server.firecracker.version}-${arch}.tgz`;
+  const url = `${FIRECRACKER.RELEASE_URL}/download/v${atelierConfig.advanced.server.firecracker.version}/${tarball}`;
+  const releaseDir = `release-v${atelierConfig.advanced.server.firecracker.version}-${arch}`;
 
   await exec(
     "rm -rf /tmp/firecracker-release && mkdir -p /tmp/firecracker-release",
@@ -63,14 +63,16 @@ async function downloadFirecracker(
   );
 
   await exec(
-    `install -m 0755 /tmp/firecracker-release/${releaseDir}/firecracker-v${atelierConfig.versions.firecracker}-${arch} /usr/local/bin/firecracker`,
+    `install -m 0755 /tmp/firecracker-release/${releaseDir}/firecracker-v${atelierConfig.advanced.server.firecracker.version}-${arch} /usr/local/bin/firecracker`,
   );
   await exec(
-    `install -m 0755 /tmp/firecracker-release/${releaseDir}/jailer-v${atelierConfig.versions.firecracker}-${arch} /usr/local/bin/jailer`,
+    `install -m 0755 /tmp/firecracker-release/${releaseDir}/jailer-v${atelierConfig.advanced.server.firecracker.version}-${arch} /usr/local/bin/jailer`,
   );
 
   await exec("rm -rf /tmp/firecracker-release");
-  spinner.stop(`Firecracker v${atelierConfig.versions.firecracker} installed`);
+  spinner.stop(
+    `Firecracker v${atelierConfig.advanced.server.firecracker.version} installed`,
+  );
 }
 
 async function downloadKernel(

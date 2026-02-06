@@ -96,8 +96,8 @@ const app = new Elysia()
           sandbox.id,
           sandbox.runtime.ipAddress,
           {
-            vscode: config.raw.services.vscode.port,
-            opencode: config.raw.services.opencode.port,
+            vscode: config.services.vscode.port,
+            opencode: config.services.opencode.port,
           },
         );
         await SshPiperService.registerRoute(

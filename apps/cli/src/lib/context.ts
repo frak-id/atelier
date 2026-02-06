@@ -1,5 +1,4 @@
 import { loadConfig } from "@frak/atelier-shared";
-import { getSharedBinaries } from "@frak/atelier-shared/constants";
 
 export {
   CODE_SERVER,
@@ -12,8 +11,3 @@ export {
 
 /** Loaded config - network, domains, sshProxy values come from sandbox.config.json / env vars */
 export const atelierConfig = loadConfig();
-
-export const SHARED_BINARIES = getSharedBinaries({
-  opencode: atelierConfig.versions.opencode,
-  codeServer: atelierConfig.versions.codeServer,
-});

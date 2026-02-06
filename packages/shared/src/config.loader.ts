@@ -105,24 +105,32 @@ function deriveNetworkFields(config: AtelierConfig): void {
   config.network.bridgeCidr = config.network.bridgeCidr ?? `${subnet}.0/24`;
 }
 
+function deriveDomainFields(config: AtelierConfig): void {
+  const base = config.domain.baseDomain;
+  if (!config.domain.dashboard) {
+    config.domain.dashboard =
+      base === "localhost" ? "sandbox.localhost" : `sandbox.${base}`;
+  }
+  if (!config.domain.ssh.hostname) {
+    config.domain.ssh.hostname =
+      base === "localhost" ? "ssh.localhost" : `ssh.${base}`;
+  }
+}
+
 export interface LoadConfigOptions {
   configFile?: string;
   skipEnv?: boolean;
   skipFile?: boolean;
 }
 
-/**
- * Generate a default config from the schema.
- * Single source of truth — no hand-written DEFAULT_CONFIG object.
- * Note: `runtime.mode` has no schema default, so we inject "mock" here.
- */
 export function getDefaultConfig(): AtelierConfig {
-  const base = { runtime: { mode: "mock" } };
+  const base = { server: { mode: "mock" } };
   const withDefaults = Value.Default(AtelierConfigSchema, base);
   const converted = Value.Convert(AtelierConfigSchema, withDefaults);
   const cleaned = Value.Clean(AtelierConfigSchema, converted);
   const config = cleaned as AtelierConfig;
   deriveNetworkFields(config);
+  deriveDomainFields(config);
   return config;
 }
 
@@ -142,6 +150,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {
   const cleaned = Value.Clean(AtelierConfigSchema, converted);
   const config = cleaned as AtelierConfig;
   deriveNetworkFields(config);
+  deriveDomainFields(config);
   return config;
 }
 
@@ -178,7 +187,7 @@ export function validateConfig(
   options: ValidateConfigOptions = {},
 ): ConfigValidationError[] {
   const errors: ConfigValidationError[] = [];
-  const isProduction = config.runtime.mode === "production";
+  const isProduction = config.server.mode === "production";
 
   const schemaErrors = [...Value.Errors(AtelierConfigSchema, config)];
   for (const err of schemaErrors) {
@@ -189,15 +198,15 @@ export function validateConfig(
   }
 
   if (isProduction || options.requireAuth) {
-    if (!config.auth.githubClientId) {
+    if (!config.auth.github.clientId) {
       errors.push({
-        field: "auth.githubClientId",
+        field: "auth.github.clientId",
         message: "GitHub client ID is required (set GITHUB_CLIENT_ID)",
       });
     }
-    if (!config.auth.githubClientSecret) {
+    if (!config.auth.github.clientSecret) {
       errors.push({
-        field: "auth.githubClientSecret",
+        field: "auth.github.clientSecret",
         message: "GitHub client secret is required (set GITHUB_CLIENT_SECRET)",
       });
     }
@@ -210,28 +219,28 @@ export function validateConfig(
   }
 
   if (isProduction || options.requireDomains) {
-    if (config.domains.sandboxSuffix === "localhost") {
+    if (config.domain.baseDomain === "localhost") {
       errors.push({
-        field: "domains.sandboxSuffix",
+        field: "domain.baseDomain",
         message:
-          "Domain suffix should be configured for production (set ATELIER_SANDBOX_DOMAIN_SUFFIX)",
+          "Base domain should be configured for production (set ATELIER_BASE_DOMAIN)",
       });
     }
 
-    const hasCert = config.tls.certPath?.trim().length > 0;
-    const hasKey = config.tls.keyPath?.trim().length > 0;
+    const hasCert = config.domain.tls.certPath?.trim().length > 0;
+    const hasKey = config.domain.tls.keyPath?.trim().length > 0;
 
     if ((hasCert && !hasKey) || (!hasCert && hasKey)) {
       errors.push({
-        field: "tls",
+        field: "domain.tls",
         message:
           "Both tls.certPath and tls.keyPath are required for manual TLS",
       });
     }
 
-    if (!hasCert && !hasKey && !config.tls.email) {
+    if (!hasCert && !hasKey && !config.domain.tls.email) {
       errors.push({
-        field: "tls.email",
+        field: "domain.tls.email",
         message: "TLS email is required for automatic HTTPS (set TLS_EMAIL)",
       });
     }

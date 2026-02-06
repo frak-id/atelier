@@ -137,8 +137,8 @@ export class SandboxLifecycle {
     }
 
     await CaddyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
-      vscode: config.raw.services.vscode.port,
-      opencode: config.raw.services.opencode.port,
+      vscode: config.services.vscode.port,
+      opencode: config.services.opencode.port,
     });
 
     const updatedSandbox: Sandbox = {

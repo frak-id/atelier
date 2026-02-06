@@ -7,7 +7,7 @@ import { sandboxIdGuard } from "./guard.ts";
 
 const log = createChildLogger("terminal-routes");
 
-const TERMINAL_WS_PORT = config.raw.services.terminal.port;
+const TERMINAL_WS_PORT = config.services.terminal.port;
 
 function getUser(store: { user?: AuthUser }): AuthUser {
   if (!store.user) throw new Error("User not authenticated");

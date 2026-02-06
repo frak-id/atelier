@@ -25,7 +25,7 @@ export async function setupSshProxy(_args: string[] = []) {
     const releaseArch = archMap[arch] ?? "x86_64";
 
     const tarball = `sshpiperd_with_plugins_linux_${releaseArch}.tar.gz`;
-    const url = `https://github.com/tg123/sshpiper/releases/download/v${atelierConfig.versions.sshProxy}/${tarball}`;
+    const url = `https://github.com/tg123/sshpiper/releases/download/v${atelierConfig.advanced.server.sshProxy.version}/${tarball}`;
 
     await exec(
       "rm -rf /tmp/sshpiper-install && mkdir -p /tmp/sshpiper-install",
@@ -96,12 +96,12 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=${SSH_PROXY.BINARY_PATH} \\
-  -i ${SSH_PROXY.HOST_KEY} \\
-  -l 0.0.0.0 \\
-   -p ${atelierConfig.sshProxy.port} \\
-  --log-level info \\
-  yaml \\
-  --config ${SSH_PROXY.PIPES_FILE}
+   -i ${SSH_PROXY.HOST_KEY} \\
+   -l 0.0.0.0 \\
+    -p ${atelierConfig.domain.ssh.port} \\
+   --log-level info \\
+   yaml \\
+   --config ${SSH_PROXY.PIPES_FILE}
 Restart=always
 RestartSec=5
 
@@ -140,16 +140,16 @@ WantedBy=multi-user.target
 
   p.log.success("SSH Proxy setup complete");
   p.note(
-    `sshpiper listening on port ${atelierConfig.sshProxy.port}
+    `sshpiper listening on port ${atelierConfig.domain.ssh.port}
 Config: ${SSH_PROXY.PIPES_FILE}
 Host key: ${SSH_PROXY.HOST_KEY}
 
 Users can connect with:
-   ssh <sandbox-id>@${atelierConfig.sshProxy.domain}
+    ssh <sandbox-id>@${atelierConfig.domain.ssh.hostname}
 
 Make sure to:
-   1. Configure DNS: ${atelierConfig.sshProxy.domain} → this server
-   2. Open firewall port ${atelierConfig.sshProxy.port}`,
+    1. Configure DNS: ${atelierConfig.domain.ssh.hostname} → this server
+    2. Open firewall port ${atelierConfig.domain.ssh.port}`,
     "Summary",
   );
 }

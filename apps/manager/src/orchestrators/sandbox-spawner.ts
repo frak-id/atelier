@@ -596,10 +596,10 @@ class SpawnContext {
         : VM.WORKSPACE_DIR;
 
     const dashboardDomain = config.domains.dashboard;
-    const vsPort = config.raw.services.vscode.port;
-    const ocPort = config.raw.services.opencode.port;
-    const browserPort = config.raw.services.browser.port;
-    const terminalPort = config.raw.services.terminal.port;
+    const vsPort = config.services.vscode.port;
+    const ocPort = config.services.opencode.port;
+    const browserPort = config.services.browser.port;
+    const terminalPort = config.services.terminal.port;
 
     return {
       sandboxId: this.sandboxId,
@@ -609,7 +609,7 @@ class SpawnContext {
       createdAt: new Date().toISOString(),
       network: {
         dashboardDomain,
-        managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
+        managerInternalUrl: `http://${config.network.bridgeIp}:${config.port}/internal`,
       },
       services: {
         vscode: {
@@ -749,8 +749,8 @@ class SpawnContext {
           .join("\n")
       : "No repositories configured";
 
-    const vsPort = config.raw.services.vscode.port;
-    const ocPort = config.raw.services.opencode.port;
+    const vsPort = config.services.vscode.port;
+    const ocPort = config.services.opencode.port;
 
     const devCommandsSection = ws?.config.devCommands?.length
       ? ws.config.devCommands
@@ -950,8 +950,8 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       this.sandboxId,
       this.network.ipAddress,
       {
-        vscode: config.raw.services.vscode.port,
-        opencode: config.raw.services.opencode.port,
+        vscode: config.services.vscode.port,
+        opencode: config.services.opencode.port,
       },
     );
 

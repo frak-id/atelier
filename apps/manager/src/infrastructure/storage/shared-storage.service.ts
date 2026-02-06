@@ -10,8 +10,8 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 const log = createChildLogger("shared-storage");
 
 const SHARED_BINARIES = getSharedBinaries({
-  opencode: config.raw.versions.opencode,
-  codeServer: config.raw.versions.codeServer,
+  opencode: config.versions.opencode,
+  codeServer: config.versions.codeServer,
 });
 
 export const BINARIES_IMAGE_PATH = `${SHARED_STORAGE.BINARIES_DIR}.ext4`;

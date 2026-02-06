@@ -5,13 +5,7 @@ import {
   type ImageDefinition,
 } from "@frak/atelier-shared";
 import { VM } from "@frak/atelier-shared/constants";
-import {
-  atelierConfig,
-  CODE_SERVER,
-  LVM,
-  OPENCODE,
-  PATHS,
-} from "../lib/context";
+import { atelierConfig, LVM, PATHS } from "../lib/context";
 import { commandExists, exec } from "../lib/shell";
 
 export async function images(args: string[] = []) {
@@ -21,7 +15,7 @@ export async function images(args: string[] = []) {
 async function buildImage(args: string[]) {
   p.log.step("Build Base Image");
 
-  const imagesDir = atelierConfig.images.directory;
+  const imagesDir = atelierConfig.sandbox.imagesDirectory;
 
   if (!(await commandExists("docker"))) {
     throw new Error("Docker is required to build images. Run: atelier base");
@@ -94,8 +88,8 @@ async function buildImage(args: string[]) {
   spinner.start(`Building Docker image: atelier/${imageName}`);
   try {
     const buildArgs = [
-      `--build-arg OPENCODE_VERSION=${atelierConfig.versions.opencode}`,
-      `--build-arg CODE_SERVER_VERSION=${atelierConfig.versions.codeServer}`,
+      `--build-arg OPENCODE_VERSION=${atelierConfig.advanced.vm.opencode.version}`,
+      `--build-arg CODE_SERVER_VERSION=${atelierConfig.advanced.vm.vscode.version}`,
     ].join(" ");
     await exec(
       `docker build --no-cache ${buildArgs} -t atelier/${imageName} ${imageDir}`,
@@ -174,7 +168,7 @@ async function buildImage(args: string[]) {
     await exec(`dd if=${outputFile} of=/dev/${LVM.VG_NAME}/${lvmVolume} bs=4M`);
     spinner.stop("LVM image volume created");
 
-    if (imageName === atelierConfig.images.defaultImage) {
+    if (imageName === atelierConfig.sandbox.defaultImage) {
       await exec(`ln -sf ${imageName}.ext4 ${PATHS.ROOTFS_DIR}/rootfs.ext4`);
       p.log.info(`Created symlink: rootfs.ext4 -> ${imageName}.ext4`);
     }
