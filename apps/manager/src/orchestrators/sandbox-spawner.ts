@@ -493,6 +493,11 @@ class SpawnContext {
 
     await this.pushAuthAndConfigs();
 
+    // Re-push secrets on every restore — they may have changed since prebuild
+    await this.pushSecretsPostBoot();
+    await this.pushGitCredentialsPostBoot();
+    await this.pushFileSecretsPostBoot();
+
     const serviceNames = ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,

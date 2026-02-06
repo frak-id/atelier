@@ -68,7 +68,7 @@ export class SandboxProvisionService {
         path: "/etc/sandbox/secrets/.env",
         content: envFileContent,
         mode: "0600",
-        owner: "root",
+        owner: "dev",
       },
     ]);
     log.debug({ sandboxId }, "Secrets pushed");
