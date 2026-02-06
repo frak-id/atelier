@@ -1,5 +1,6 @@
 {
   "name": "atelier",
+  "version": "0.1.0",
   "type": "module",
   "private": true,
   "scripts": {
@@ -9,7 +10,8 @@
     "format": "biome format --write .",
     "check": "biome check --write .",
     "typecheck": "tsc --build",
-    "knip": "knip"
+    "knip": "knip",
+    "version:bump": "bun run scripts/bump-version.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",

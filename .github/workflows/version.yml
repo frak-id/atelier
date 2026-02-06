@@ -1,0 +1,44 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type or explicit version (e.g. patch, minor, major, 1.2.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Bump versions
+        run: bun run scripts/bump-version.ts "${{ inputs.bump }}"
+
+      - name: Read new version
+        id: version
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: release/v${{ steps.version.outputs.version }}
+          commit-message: "release: v${{ steps.version.outputs.version }}"
+          title: "release: v${{ steps.version.outputs.version }}"
+          body: |
+            Bumps all packages to `${{ steps.version.outputs.version }}`.
+
+            Merging this PR will automatically create the `v${{ steps.version.outputs.version }}` tag and trigger the release build.
+          labels: release

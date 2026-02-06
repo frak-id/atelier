@@ -9,7 +9,28 @@ permissions:
   contents: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Lint and format
+        run: bun run check
+
+      - name: Typecheck
+        run: bun run typecheck
+
   build:
+    needs: check
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -31,43 +52,43 @@ jobs:
       - name: Install JS deps
         run: bun install
 
-       - name: Build CLI
-         run: bun run --filter @frak/atelier-cli build:linux
+      - name: Build CLI
+        run: bun run --filter @frak/atelier-cli build:linux
 
-       - name: Build Manager
-         run: bun run --filter @frak/atelier-manager build
+      - name: Build Manager
+        run: bun run --filter @frak/atelier-manager build
 
-       - name: Build Dashboard
-         run: bun run --filter @frak/atelier-dashboard build
+      - name: Build Dashboard
+        run: bun run --filter @frak/atelier-dashboard build
 
       - name: Build Agent
         run: cargo build --release --target x86_64-unknown-linux-musl --manifest-path apps/agent-rust/Cargo.toml
 
-       - name: Package Server Bundle
-         run: |
-           VERSION="${GITHUB_REF_NAME#v}"
-           STAGING="$(mktemp -d)"
-           mkdir -p "$STAGING"/opt/atelier/{drizzle,infra/images/dev-base,infra/images/dev-cloud,apps/dashboard/dist} \
-                    "$STAGING"/etc/{systemd/system,caddy}
+      - name: Package Server Bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGING="$(mktemp -d)"
+          mkdir -p "$STAGING"/opt/atelier/{drizzle,infra/images/dev-base,infra/images/dev-cloud,apps/dashboard/dist} \
+                   "$STAGING"/etc/{systemd/system,caddy}
 
-           cp apps/manager/dist/server.js "$STAGING/opt/atelier/server.js"
-           cp -r apps/manager/drizzle/. "$STAGING/opt/atelier/drizzle/"
-           cp -r apps/dashboard/dist/. "$STAGING/opt/atelier/apps/dashboard/dist/"
-           cp infra/images/build-image.sh "$STAGING/opt/atelier/infra/images/build-image.sh"
-           cp -r infra/images/dev-base/. "$STAGING/opt/atelier/infra/images/dev-base/"
-           cp -r infra/images/dev-cloud/. "$STAGING/opt/atelier/infra/images/dev-cloud/"
-           cp apps/agent-rust/target/x86_64-unknown-linux-musl/release/sandbox-agent "$STAGING/opt/atelier/infra/images/sandbox-agent"
-           cp infra/systemd/atelier-manager.service "$STAGING/etc/systemd/system/"
-           cp infra/systemd/atelier-network.service "$STAGING/etc/systemd/system/"
-           cp infra/caddy/Caddyfile.template "$STAGING/etc/caddy/Caddyfile.template"
+          cp apps/manager/dist/server.js "$STAGING/opt/atelier/server.js"
+          cp -r apps/manager/drizzle/. "$STAGING/opt/atelier/drizzle/"
+          cp -r apps/dashboard/dist/. "$STAGING/opt/atelier/apps/dashboard/dist/"
+          cp infra/images/build-image.sh "$STAGING/opt/atelier/infra/images/build-image.sh"
+          cp -r infra/images/dev-base/. "$STAGING/opt/atelier/infra/images/dev-base/"
+          cp -r infra/images/dev-cloud/. "$STAGING/opt/atelier/infra/images/dev-cloud/"
+          cp apps/agent-rust/target/x86_64-unknown-linux-musl/release/sandbox-agent "$STAGING/opt/atelier/infra/images/sandbox-agent"
+          cp infra/systemd/atelier-manager.service "$STAGING/etc/systemd/system/"
+          cp infra/systemd/atelier-network.service "$STAGING/etc/systemd/system/"
+          cp infra/caddy/Caddyfile.template "$STAGING/etc/caddy/Caddyfile.template"
 
-           tar -czf "atelier-server-${VERSION}.tar.gz" -C "$STAGING" .
-           sha256sum "atelier-server-${VERSION}.tar.gz" apps/cli/dist/atelier-linux-x64 > checksums.txt
+          tar -czf "atelier-server-${VERSION}.tar.gz" -C "$STAGING" .
+          sha256sum "atelier-server-${VERSION}.tar.gz" apps/cli/dist/atelier-linux-x64 > checksums.txt
 
-       - name: Publish Release
-         uses: softprops/action-gh-release@v2
-         with:
-           files: |
-             atelier-server-*.tar.gz
-             apps/cli/dist/atelier-linux-x64
-             checksums.txt
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            atelier-server-*.tar.gz
+            apps/cli/dist/atelier-linux-x64
+            checksums.txt
