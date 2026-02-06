@@ -15,7 +15,7 @@ WorkingDirectory=/opt/atelier
 KillMode=process
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=NODE_ENV=production
-Environment=SANDBOX_MODE=production
+Environment=ATELIER_SERVER_MODE=production
 Environment=DATA_DIR=/opt/atelier/data
 Environment=MIGRATIONS_DIR=/opt/atelier/drizzle
 ExecStart=/usr/local/bin/bun server.js

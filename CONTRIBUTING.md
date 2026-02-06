@@ -6,7 +6,7 @@ Thanks for helping improve L'atelier.
 
 ```bash
 bun install
-SANDBOX_MODE=mock bun run dev
+ATELIER_SERVER_MODE=mock bun run dev
 ```
 
 ## Requirements

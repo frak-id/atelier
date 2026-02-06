@@ -11,6 +11,9 @@
     "./sandbox-config": "./src/sandbox-config.schema.ts",
     "./sandbox-config-loader": "./src/sandbox-config.loader.ts"
   },
+  "scripts": {
+    "generate-schema": "bun run scripts/generate-schema.ts"
+  },
   "dependencies": {
     "@sinclair/typebox": "^0.34.0"
   },

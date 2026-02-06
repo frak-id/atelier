@@ -1,4 +1,5 @@
 {
+  "$schema": "./packages/shared/schemas/atelier.config.schema.json",
   "domain": {
     "baseDomain": "example.com",
     "dashboard": "sandbox.example.com",

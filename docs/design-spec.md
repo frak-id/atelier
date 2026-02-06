@@ -1122,7 +1122,7 @@ bun install
 
 # 2. Start manager in mock mode (no Firecracker needed)
 cd apps/manager
-SANDBOX_MODE=mock bun run dev
+ATELIER_SERVER_MODE=mock bun run dev
 # → http://localhost:4000
 # → Swagger: http://localhost:4000/swagger
 
@@ -1155,7 +1155,7 @@ The manager supports mock mode for local development without Firecracker:
 
 ```typescript
 // Set via environment
-SANDBOX_MODE=mock bun run dev
+ATELIER_SERVER_MODE=mock bun run dev
 
 // In firecracker.ts
 if (config.isMock()) {
@@ -1271,7 +1271,7 @@ ExecStart=/root/.bun/bin/bun run start
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
-Environment=SANDBOX_MODE=production
+Environment=ATELIER_SERVER_MODE=production
 
 [Install]
 WantedBy=multi-user.target
@@ -1311,7 +1311,7 @@ WantedBy=multi-user.target
 - [x] Implement sandbox CRUD API (list, create, get, delete)
 - [x] Add Swagger docs (`/swagger`)
 - [x] Deploy with systemd (`scripts/deploy.ts`)
-- [x] Mock mode for local development (`SANDBOX_MODE=mock`)
+- [x] Mock mode for local development (`ATELIER_SERVER_MODE=mock`)
 
 **Deliverables**:
 - ✅ `POST /api/sandboxes` spawns a working VM
@@ -1453,7 +1453,7 @@ bun run build:cli              # Build CLI for Linux
 
 # Manager API (local development)
 cd apps/manager
-SANDBOX_MODE=mock bun run dev  # Start with mock Firecracker
+ATELIER_SERVER_MODE=mock bun run dev  # Start with mock Firecracker
 # → http://localhost:4000
 # → http://localhost:4000/swagger (API docs)
 
@@ -1511,8 +1511,14 @@ journalctl -u atelier-manager -f
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SANDBOX_MODE` | `production` | Set to `mock` for local development |
-| `SANDBOX_HOST` | `0.0.0.0` | Manager bind address |
-| `SANDBOX_PORT` | `4000` | Manager port |
-| `CADDY_ADMIN_API` | `http://localhost:2019` | Caddy admin endpoint |
-| `CADDY_DOMAIN_SUFFIX` | `sandbox.frak.dev` | Domain for sandbox URLs |
+| `ATELIER_CONFIG` | `/etc/atelier/sandbox.config.json` | Override config file path |
+| `ATELIER_SERVER_MODE` | `mock` | Runtime mode (`production` or `mock`) |
+| `ATELIER_SERVER_HOST` | `0.0.0.0` | Manager bind address |
+| `ATELIER_SERVER_PORT` | `4000` | Manager port |
+| `ATELIER_MAX_SANDBOXES` | `20` | Maximum concurrent sandboxes |
+| `ATELIER_BASE_DOMAIN` | `localhost` | Base domain (e.g. `example.com`) |
+| `ATELIER_DASHBOARD_DOMAIN` | (derived) | Dashboard domain override |
+| `ATELIER_TLS_EMAIL` | (none) | TLS email for ACME / Let's Encrypt |
+| `ATELIER_SSH_PROXY_HOSTNAME` | (derived) | SSH proxy hostname override |
+| `ATELIER_SSH_PROXY_PORT` | `2222` | SSH proxy listen port |
+| `ATELIER_DNS_SERVERS` | `8.8.8.8,8.8.4.4` | DNS servers (comma-separated) |

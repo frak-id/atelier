@@ -201,19 +201,21 @@ export function validateConfig(
     if (!config.auth.github.clientId) {
       errors.push({
         field: "auth.github.clientId",
-        message: "GitHub client ID is required (set GITHUB_CLIENT_ID)",
+        message: "GitHub client ID is required (set ATELIER_GITHUB_CLIENT_ID)",
       });
     }
     if (!config.auth.github.clientSecret) {
       errors.push({
         field: "auth.github.clientSecret",
-        message: "GitHub client secret is required (set GITHUB_CLIENT_SECRET)",
+        message:
+          "GitHub client secret is required (set ATELIER_GITHUB_CLIENT_SECRET)",
       });
     }
     if (config.auth.jwtSecret === "dev-secret-change-in-production") {
       errors.push({
         field: "auth.jwtSecret",
-        message: "JWT secret must be changed from default (set JWT_SECRET)",
+        message:
+          "JWT secret must be changed from default (set ATELIER_JWT_SECRET)",
       });
     }
   }
@@ -241,7 +243,8 @@ export function validateConfig(
     if (!hasCert && !hasKey && !config.domain.tls.email) {
       errors.push({
         field: "domain.tls.email",
-        message: "TLS email is required for automatic HTTPS (set TLS_EMAIL)",
+        message:
+          "TLS email is required for automatic HTTPS (set ATELIER_TLS_EMAIL)",
       });
     }
   }
