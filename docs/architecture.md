@@ -25,14 +25,14 @@
 | Reverse Proxy | **Caddy** | Dynamic routing, auto HTTPS |
 | Process Manager | **systemd** | Service lifecycle |
 | Container Build | **Docker** | Rootfs image building only |
-| Database | **SQLite** (Drizzle ORM) | Sandbox and project state |
+| Database | **SQLite** (Drizzle ORM) | Sandbox, workspace, task, config, and auth state |
 
 ---
 
 ## Monorepo Structure
 
 ```
-l-atelier/
+atelier/
 ├── apps/
 │   ├── manager/          # Sandbox orchestration API (ElysiaJS)
 │   ├── dashboard/        # Admin web interface (React + Vite)
@@ -59,16 +59,15 @@ l-atelier/
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Sandbox Lifecycle                                    │
 │                                                                             │
-│  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐  │
-│  │ QUEUED  │───►│CREATING │───►│ RUNNING │───►│ STOPPED │───►│DESTROYED│  │
-│  └─────────┘    └─────────┘    └────┬────┘    └─────────┘    └─────────┘  │
-│                                     │                                       │
+│       ┌──────────┐       ┌──────────┐       ┌──────────┐       ┌──────────┐  │
+│       │ CREATING │──────►│ RUNNING  │──────►│ STOPPED  │──────►│  ERROR   │  │
+│       └──────────┘       └──────────┘       └──────────┘       └──────────┘  │
+│                                                                             │
 │  States:                                                                    │
-│  • QUEUED    - Waiting for spawn slot                                       │
-│  • CREATING  - VM booting, services starting                                │
-│  • RUNNING   - Fully operational                                            │
-│  • STOPPED   - VM paused, state preserved                                   │
-│  • DESTROYED - Cleaned up, resources freed                                  │
+│  • CREATING - VM booting, services starting                                 │
+│  • RUNNING  - Fully operational                                             │
+│  • STOPPED  - VM process killed, disk preserved                             │
+│  • ERROR    - Failed to start or crashed                                    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -76,20 +75,21 @@ l-atelier/
 
 ```
 Without Prebuilds (slow, ~2-5 minutes):
-  Boot VM  →  Clone Repo  →  npm install  →  Ready
+  Boot VM  →  Clone Repo  →  run workspace init commands  →  Ready
 
 With Prebuilds (fast):
 
   One-time (background):
-  Boot VM  →  Clone Repo  →  npm install  →  Snapshot
+  Boot VM  →  Clone Repo  →  run workspace init commands  →  Snapshot
 
   Every spawn (instant):
-  Clone Snapshot  →  Ready  (<200ms)
+  Restore Snapshot (LVM + Firecracker Memory)  →  Ready  (<200ms)
 ```
 
 Prebuilds run expensive initialization (git clone, dependency install, build)
-**once** and snapshot the result as an LVM thin volume. Subsequent sandboxes
-clone from the snapshot instantly via copy-on-write.
+**once** and snapshot the result as both an LVM thin volume and a Firecracker
+VM state snapshot (including memory). Subsequent sandboxes restore from these
+snapshots instantly.
 
 ---
 
@@ -133,21 +133,24 @@ External traffic:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Caddy                                    │
-│                                                                  │
-│  Static Routes (Caddyfile):                                      │
-│  ├── {DASHBOARD_DOMAIN}  → localhost:5173                        │
-│  └── {API_DOMAIN}        → localhost:4000                        │
-│                                                                  │
-│  Dynamic Routes (Admin API, managed by Manager):                 │
-│  ├── sandbox-{id}.{DOMAIN}  → 172.16.0.x:8080 (VSCode)         │
-│  ├── opencode-{id}.{DOMAIN} → 172.16.0.x:3000 (OpenCode)       │
-│  └── app-{id}-{port}.{DOMAIN} → 172.16.0.x:{port} (User apps)  │
-│                                                                  │
-│  Features:                                                       │
-│  ├── Automatic HTTPS (Let's Encrypt)                             │
-│  ├── Wildcard cert via DNS challenge                             │
-│  └── Zero-downtime route updates via Admin API                   │
+│                         Caddy                                   │
+│                                                                 │
+│  Static Routes (Caddyfile):                                     │
+│  └── {DOMAIN}                                                   │
+│      ├── /api/*, /auth/*, /config, /health, /swagger*           │
+│      │   → localhost:4000 (Manager)                             │
+│      └── * → Static Files (Dashboard SPA)                       │
+│                                                                 │
+│  Dynamic Routes (Admin API, protected via forward-auth):        │
+│  ├── sandbox-{id}.{DOMAIN}  → 172.16.0.x:8080 (VSCode)          │
+│  ├── opencode-{id}.{DOMAIN} → 172.16.0.x:3000 (OpenCode)        │
+│  ├── dev-{name}-{id}.{DOMAIN} → 172.16.0.x:{port} (Dev)         │
+│  └── browser-{id}.{DOMAIN}  → 172.16.0.x:7681 (KasmVNC)         │
+│                                                                 │
+│  Features:                                                      │
+│  ├── Automatic HTTPS (ACME HTTP-01)                             │
+│  ├── Manual TLS (certPath/keyPath)                              │
+│  └── Zero-downtime route updates via Admin API                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -157,40 +160,45 @@ External traffic:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Firecracker MicroVM                           │
-│                                                                  │
-│  Resources (configurable per sandbox):                           │
-│  ├── vCPUs: 1-8                                                  │
-│  ├── RAM: 512MB - 8GB                                            │
-│  └── Boot time: ~125ms                                           │
-│                                                                  │
-│  Storage:                                                        │
-│  └── /dev/vda → LVM thin volume (CoW clone of base/prebuild)    │
-│                                                                  │
-│  Filesystem:                                                     │
-│  /                                                               │
-│  ├── usr/bin/                                                    │
+│                    Firecracker MicroVM                          │
+│                                                                 │
+│  Resources (configurable per sandbox):                          │
+│  ├── vCPUs: 1-8                                                 │
+│  ├── RAM: 512MB - 16GB                                          │
+│  └── Boot time: ~125ms                                          │
+│                                                                 │
+│  Storage:                                                       │
+│  ├── /dev/vda → LVM thin volume (CoW clone of base/prebuild)    │
+│  └── /dev/vdb → /opt/shared (ro ext4 image: tools & binaries)   │
+│                                                                 │
+│  Filesystem:                                                    │
+│  /                                                              │
+│  ├── usr/local/bin/                                             │
+│  │   └── sandbox-agent      # In-VM agent binary                │
+│  ├── opt/shared/bin/                                            │
 │  │   ├── code-server        # VSCode Server                     │
 │  │   ├── opencode           # OpenCode CLI                      │
-│  │   ├── sandbox-agent      # In-VM agent binary                │
-│  │   ├── node, bun, git     # Dev tools                         │
-│  │   └── ...                                                    │
-│  ├── home/dev/                                                   │
+│  │   └── node, bun, git     # Dev tools                         │
+│  ├── home/dev/                                                  │
 │  │   ├── workspace/         # Project code                      │
 │  │   └── SANDBOX.md         # Agent skill file                  │
-│  ├── etc/sandbox/                                                │
+│  ├── etc/sandbox/                                               │
 │  │   ├── config.json        # Sandbox metadata                  │
 │  │   └── secrets/.env       # Injected secrets                  │
 │  └── var/log/sandbox/       # Service logs                      │
-│                                                                  │
-│  Services (managed by sandbox-init):                             │
-│  ├── sandbox-agent (:9999)  # Health, metrics, apps             │
-│  ├── sshd (:22)             # SSH access                        │
-│  ├── code-server (:8080)    # VSCode Server                     │
-│  └── opencode serve (:3000) # OpenCode remote                   │
-│                                                                  │
-│  Network:                                                        │
-│  └── eth0 → 172.16.0.x/24, gateway 172.16.0.1                   │
+│                                                                 │
+│  Services:                                                      │
+│  ├── sandbox-init starts sshd + sandbox-agent                   │
+│  ├── agent starts services after manager pushes config:         │
+│  │   ├── sandbox-agent (vsock:9998)                             │
+│  │   ├── code-server (:8080)                                    │
+│  │   ├── opencode serve (:3000)                                 │
+│  │   ├── terminal (:7681)   # WebSocket PTY                     │
+│  │   └── browser            # KasmVNC/Chromium on demand        │
+│  └── sshd (:22)                                                 │
+│                                                                 │
+│  Network:                                                       │
+│  └── eth0 → 172.16.0.x/24, gateway 172.16.0.1                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -211,31 +219,31 @@ External traffic:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    LVM Thin Pool                                 │
-│                    (sandbox-vg/thin-pool)                        │
-│                                                                  │
-│  Base Volumes (read-only templates):                             │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │ base-rootfs (2GB)                                         │   │
-│  │ Alpine + VSCode + OpenCode + tools                        │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  Prebuild Volumes (per-project snapshots):                       │
+│                    LVM Thin Pool                                │
+│                    (atelier-vg/thin-pool)                       │
+│                                                                 │
+│  Base Images (read-only templates):                             │
+│  ┌──────────────────────────┐  ┌──────────────────────────┐     │
+│  │ image-dev-base (5GB)     │  │ image-dev-cloud (7GB)    │     │
+│  │ Debian Bookworm + Node22 │  │ dev-base + Cloud SDKs    │     │
+│  └──────────────────────────┘  └──────────────────────────┘     │
+│                                                                 │
+│  Prebuild Volumes (per-workspace snapshots):                    │
 │  ┌──────────────────────┐  ┌──────────────────────┐             │
 │  │ prebuild-myproject   │  │ prebuild-backend     │             │
-│  │ (clone of base +     │  │ (clone of base +     │             │
-│  │  repo + node_modules)│  │  repo + deps)        │             │
+│  │ (clone of image +    │  │ (clone of image +    │             │
+│  │  repo + init deps)   │  │  repo + init deps)   │             │
 │  └──────────────────────┘  └──────────────────────┘             │
-│           │                          │                           │
-│           │ instant clone            │ instant clone             │
-│           ▼                          ▼                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
+│           │                          │                          │
+│           │ instant clone            │ instant clone            │
+│           ▼                          ▼                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
 │  │ sandbox-abc │  │ sandbox-def │  │ sandbox-ghi │              │
-│  │ (CoW, ~0 MB │  │ (CoW, ~0 MB │  │ (CoW, ~5 MB │             │
+│  │ (CoW, ~0 MB │  │ (CoW, ~0 MB │  │ (CoW, ~5 MB │              │
 │  │  initial)   │  │  initial)   │  │  delta)     │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘             │
-│                                                                  │
-│  Only changed blocks are stored per sandbox!                     │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+│                                                                 │
+│  Only changed blocks are stored per sandbox!                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -243,28 +251,21 @@ External traffic:
 
 ## Sandbox Agent
 
-A lightweight Rust binary running inside each VM.
+A lightweight Rust binary running inside each VM, communicating with the manager
+via Firecracker vsock.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Sandbox Agent (:9999)                       │
-│                                                                  │
-│  Health Reporting:                                               │
-│  ├── Service health checks (VSCode, OpenCode, SSH)              │
-│  ├── Heartbeat to detect stuck sandboxes                        │
-│  └── Report sandbox status to manager                           │
-│                                                                  │
-│  Resource Metrics:                                               │
-│  ├── CPU, memory, disk usage                                    │
-│  └── Exposed via /metrics endpoint                              │
-│                                                                  │
-│  Command Execution:                                              │
-│  ├── /exec endpoint for running commands                        │
-│  └── Interactive terminal via WebSocket (PTY)                   │
-│                                                                  │
-│  Dynamic App Registration:                                       │
-│  ├── Detect new ports being listened on                         │
-│  └── Request Caddy route from manager                           │
+│                    Sandbox Agent (vsock:9998)                   │
+│                                                                 │
+│  Core Responsibilities:                                         │
+│  ├── vsock HTTP API for manager orchestration                   │
+│  ├── Service & dev process lifecycle management                 │
+│  ├── Workspace config application                               │
+│  ├── File system operations (writes, git helpers)               │
+│  ├── Command execution (/exec)                                  │
+│  ├── Interactive terminal sessions (WebSocket PTY)              │
+│  └── Resource metrics (CPU, memory, disk)                       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -280,10 +281,20 @@ The Manager exposes a REST API on port 4000:
 
 | Group | Endpoints | Description |
 |-------|-----------|-------------|
-| Health | `GET /health`, `/health/live`, `/health/ready` | Liveness and readiness probes |
-| Sandboxes | `GET/POST /api/sandboxes`, `DELETE /:id`, `POST /:id/stop`, `POST /:id/start` | Full sandbox lifecycle |
-| Projects | `GET/POST /api/projects`, `PUT/DELETE /:id`, `POST /:id/prebuild` | Project CRUD and prebuilds |
-| Images | `GET /api/images` | Base image listing |
-| System | `GET /api/system/stats`, `/storage`, `/queue`, `POST /cleanup` | Monitoring and maintenance |
+| Health | `/health`, `/health/live`, `/health/ready` | Liveness and readiness probes |
+| Sandboxes | `/api/sandboxes` | Full sandbox lifecycle |
+| Workspaces | `/api/workspaces` | Workspace CRUD and prebuilds |
+| Tasks | `/api/tasks` | AI task orchestration |
+| Templates | `/api/session-templates` | AI workflow configurations |
+| Git | `/api/git-sources` | Repository management |
+| Config | `/api/config-files` | Global and workspace config files |
+| Auth | `/api/shared-auth` | OAuth token synchronization |
+| Storage | `/api/storage`, `/api/binaries` | LVM and tool image management |
+| Registry | `/api/registry` | Shared npm registry (Verdaccio) |
+| SSH | `/api/ssh-keys` | User SSH key management |
+| Events | `/api/events` | System-wide event stream |
+| GitHub | `/api/github` | GitHub App integration |
+| Images | `/api/images` | Base image listing |
+| System | `/api/system/stats`, `/cleanup` | Monitoring and maintenance |
 
 Full API documentation available at `/swagger` when the manager is running.

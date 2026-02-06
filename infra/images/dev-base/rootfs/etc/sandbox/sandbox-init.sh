@@ -28,45 +28,9 @@ mount -t tmpfs tmpfs /dev/shm >> "$LOG_DIR/init.log" 2>&1
 mount -t tmpfs tmpfs /run >> "$LOG_DIR/init.log" 2>&1
 mount -t tmpfs tmpfs /tmp >> "$LOG_DIR/init.log" 2>&1
 
-# Setup swap — deferred if filesystem hasn't been expanded yet
 log "Setting up swap..."
-SWAPFILE="/swapfile"
-setup_swap() {
-    TOTAL_MEM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
-    SWAP_SIZE_KB=$TOTAL_MEM_KB
-    # Cap at 16GB (16777216 KB)
-    if [ "$SWAP_SIZE_KB" -gt 16777216 ]; then
-        SWAP_SIZE_KB=16777216
-    fi
-    # Require at least 1GB free after swap creation
-    AVAILABLE_KB=$(df / | awk 'NR==2 {print $4}')
-    RESERVED_KB=1048576
-    MAX_SWAP_KB=$((AVAILABLE_KB - RESERVED_KB))
-    if [ "$SWAP_SIZE_KB" -gt "$MAX_SWAP_KB" ]; then
-        SWAP_SIZE_KB=$MAX_SWAP_KB
-    fi
-    # Need at least 256MB to be worthwhile
-    if [ "$SWAP_SIZE_KB" -lt 262144 ]; then
-        log "Insufficient disk space for swap (available: ${AVAILABLE_KB}KB), deferring"
-        return 1
-    fi
-    SWAP_SIZE_MB=$((SWAP_SIZE_KB / 1024))
-    log "Creating ${SWAP_SIZE_MB}MB swap file..."
-    fallocate -l "${SWAP_SIZE_MB}M" "$SWAPFILE" >> "$LOG_DIR/init.log" 2>&1 \
-        || dd if=/dev/zero of="$SWAPFILE" bs=1M count="$SWAP_SIZE_MB" >> "$LOG_DIR/init.log" 2>&1
-    chmod 600 "$SWAPFILE"
-    mkswap "$SWAPFILE" >> "$LOG_DIR/init.log" 2>&1
-}
-if [ ! -f "$SWAPFILE" ]; then
-    setup_swap
-fi
-if [ -f "$SWAPFILE" ]; then
-    swapon "$SWAPFILE" >> "$LOG_DIR/init.log" 2>&1
-    echo 10 > /proc/sys/vm/swappiness
-    log "Swap enabled: swappiness=10"
-else
-    log "Swap deferred — will be created after filesystem expansion"
-fi
+/etc/sandbox/setup-swap.sh >> "$LOG_DIR/init.log" 2>&1
+log "Swap setup result: $?"
 
 # Read config values using jq
 if [ -f "$CONFIG_FILE" ]; then
