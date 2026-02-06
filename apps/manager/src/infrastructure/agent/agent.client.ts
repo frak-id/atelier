@@ -241,11 +241,16 @@ export class AgentClient {
   async exec(
     sandboxId: string,
     command: string,
-    options: { timeout?: number } = {},
+    options: { timeout?: number; user?: "dev" | "root"; workdir?: string } = {},
   ): Promise<ExecResult> {
     return this.request<ExecResult>(sandboxId, "/exec", {
       method: "POST",
-      body: { command, timeout: options.timeout },
+      body: {
+        command,
+        timeout: options.timeout,
+        user: options.user,
+        workdir: options.workdir,
+      },
       timeout: (options.timeout ?? 30000) + 5000,
     });
   }

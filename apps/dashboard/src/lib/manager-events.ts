@@ -89,6 +89,17 @@ function handleEvent(event: ManagerEvent, queryClient: QueryClient): void {
       });
       break;
 
+    case "prebuild.updated":
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.all,
+      });
+      if (properties.workspaceId) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.workspaces.detail(properties.workspaceId),
+        });
+      }
+      break;
+
     case "sandbox.services.changed":
       if (properties.id) {
         queryClient.invalidateQueries({

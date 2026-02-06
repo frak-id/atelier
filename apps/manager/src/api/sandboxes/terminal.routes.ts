@@ -18,7 +18,6 @@ const TerminalSessionSchema = t.Object({
   id: t.String(),
   userId: t.String(),
   title: t.String(),
-  status: t.Union([t.Literal("running"), t.Literal("exited")]),
   createdAt: t.String(),
 });
 

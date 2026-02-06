@@ -431,11 +431,11 @@ export class TaskSpawner {
     const baseBranchName = `task/${taskId}`;
 
     const gitExec = (cmd: string, timeout = 30000) =>
-      this.deps.agentClient.exec(
-        sandboxId,
-        `su - dev -c 'cd ${repoPath} && ${cmd}'`,
-        { timeout },
-      );
+      this.deps.agentClient.exec(sandboxId, cmd, {
+        timeout,
+        user: "dev",
+        workdir: repoPath,
+      });
 
     for (let attempt = 0; attempt < 10; attempt++) {
       const branchName =

@@ -921,7 +921,8 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
     );
     await this.deps.agentClient.exec(
       this.sandboxId,
-      `su - dev -c 'git config --global --add safe.directory ${clonePath}'`,
+      `git config --global --add safe.directory ${clonePath}`,
+      { user: "dev" },
     );
     log.info(
       { sandboxId: this.sandboxId, clonePath },

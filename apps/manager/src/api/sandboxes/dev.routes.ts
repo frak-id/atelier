@@ -60,9 +60,9 @@ export const devRoutes = new Elysia()
           return {
             ...cmd,
             status: runtime?.status ?? "stopped",
-            pid: runtime?.pid,
-            startedAt: runtime?.startedAt,
-            exitCode: runtime?.exitCode,
+            pid: runtime?.pid ?? undefined,
+            startedAt: runtime?.startedAt ?? undefined,
+            exitCode: runtime?.exitCode ?? undefined,
             devUrl,
             defaultDevUrl,
             extraDevUrls,
@@ -120,7 +120,12 @@ export const devRoutes = new Elysia()
       }
 
       return {
-        ...result,
+        status: result.status,
+        name: result.name,
+        pid: result.pid ?? undefined,
+        port: result.port ?? undefined,
+        logFile: result.logFile ?? undefined,
+        startedAt: result.startedAt ?? undefined,
         devUrl,
         defaultDevUrl,
         extraDevUrls,
@@ -159,7 +164,13 @@ export const devRoutes = new Elysia()
         }
       }
 
-      return result;
+      return {
+        status: result.status,
+        name: result.name,
+        pid: result.pid ?? undefined,
+        message: result.message ?? undefined,
+        exitCode: result.exitCode ?? undefined,
+      };
     },
     {
       params: DevCommandNameParamsSchema,

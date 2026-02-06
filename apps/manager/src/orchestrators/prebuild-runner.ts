@@ -1,6 +1,7 @@
 import { PATHS, VM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
+import { eventBus } from "../infrastructure/events/index.ts";
 import {
   FirecrackerClient,
   getPrebuildSnapshotPaths,
@@ -321,6 +322,11 @@ export class PrebuildRunner {
     this.deps.workspaceService.update(workspaceId, {
       config: { ...workspace.config, prebuild },
     });
+
+    eventBus.emit({
+      type: "prebuild.updated",
+      properties: { workspaceId, status },
+    });
   }
 
   private async captureCommitHashes(
@@ -341,8 +347,8 @@ export class PrebuildRunner {
 
       const result = await this.deps.agentClient.exec(
         sandboxId,
-        `su dev -c 'git -C ${fullPath} rev-parse HEAD'`,
-        { timeout: 10000 },
+        `git -C ${fullPath} rev-parse HEAD`,
+        { timeout: 10000, user: "dev" },
       );
 
       if (result.exitCode === 0 && result.stdout.trim()) {
@@ -391,11 +397,11 @@ export class PrebuildRunner {
         "Executing init command",
       );
 
-      const result = await this.deps.agentClient.exec(
-        sandboxId,
-        `cd ${WORKSPACE_DIR} && su dev -c '${command.replace(/'/g, "'\\''")}'`,
-        { timeout: COMMAND_TIMEOUT },
-      );
+      const result = await this.deps.agentClient.exec(sandboxId, command, {
+        timeout: COMMAND_TIMEOUT,
+        user: "dev",
+        workdir: WORKSPACE_DIR,
+      });
 
       if (result.exitCode !== 0) {
         log.error(
@@ -474,8 +480,8 @@ export class PrebuildRunner {
     // stdout stays open until the background process exits → timeout.
     const startResult = await this.deps.agentClient.exec(
       sandboxId,
-      `su dev -c 'cd ${WORKSPACE_DIR} && nohup setsid opencode serve --hostname 0.0.0.0 --port ${port} </dev/null >/tmp/opencode-warmup.log 2>&1 &' </dev/null >/dev/null 2>&1`,
-      { timeout: 10000 },
+      `nohup setsid opencode serve --hostname 0.0.0.0 --port ${port} </dev/null >/tmp/opencode-warmup.log 2>&1 &`,
+      { timeout: 10000, user: "dev", workdir: WORKSPACE_DIR },
     );
 
     if (startResult.exitCode !== 0) {

@@ -12,6 +12,8 @@ use crate::response::json_ok;
 struct ExecBody {
     command: String,
     timeout: Option<u64>,
+    user: Option<String>,
+    workdir: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -19,6 +21,8 @@ struct BatchCommand {
     id: String,
     command: String,
     timeout: Option<u64>,
+    user: Option<String>,
+    workdir: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -26,16 +30,28 @@ struct BatchBody {
     commands: Vec<BatchCommand>,
 }
 
-async fn run_command(command: &str, timeout_ms: Option<u64>) -> serde_json::Value {
+async fn run_command(
+    command: &str,
+    timeout_ms: Option<u64>,
+    user: Option<&str>,
+    workdir: Option<&str>,
+) -> serde_json::Value {
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_EXEC_TIMEOUT_MS));
 
-    let result = tokio::time::timeout(timeout, async {
-        Command::new("sh")
-            .args(["-c", command])
-            .output()
-            .await
-    })
-    .await;
+    let mut cmd = Command::new("/bin/bash");
+    cmd.args(["-l", "-c", command]);
+
+    if user == Some("dev") {
+        cmd.uid(1000).gid(1000);
+        cmd.env("HOME", "/home/dev");
+        cmd.env("USER", "dev");
+    }
+
+    if let Some(dir) = workdir {
+        cmd.current_dir(dir);
+    }
+
+    let result = tokio::time::timeout(timeout, cmd.output()).await;
 
     match result {
         Ok(Ok(output)) => {
@@ -74,7 +90,12 @@ pub async fn handle_exec(req: Request<hyper::body::Incoming>) -> Response<Full<B
         Err(_) => return json_ok(serde_json::json!({"exitCode": 1, "stdout": "", "stderr": "Invalid JSON"})),
     };
 
-    json_ok(run_command(&parsed.command, parsed.timeout).await)
+    json_ok(run_command(
+        &parsed.command,
+        parsed.timeout,
+        parsed.user.as_deref(),
+        parsed.workdir.as_deref(),
+    ).await)
 }
 
 pub async fn handle_exec_batch(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
@@ -90,7 +111,12 @@ pub async fn handle_exec_batch(req: Request<hyper::body::Incoming>) -> Response<
     let mut set = tokio::task::JoinSet::new();
     for cmd in parsed.commands {
         set.spawn(async move {
-            let mut result = run_command(&cmd.command, cmd.timeout).await;
+            let mut result = run_command(
+                &cmd.command,
+                cmd.timeout,
+                cmd.user.as_deref(),
+                cmd.workdir.as_deref(),
+            ).await;
             result.as_object_mut().expect("json object").insert("id".into(), serde_json::Value::String(cmd.id));
             result
         });

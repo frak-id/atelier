@@ -180,7 +180,6 @@ const TerminalPane = memo(
     const reconnectFnRef = useRef<(() => void) | null>(null);
 
     const [isExited, setIsExited] = useState(false);
-    const initialStatusRef = useRef(session.status);
 
     const [showSearch, setShowSearch] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -195,12 +194,6 @@ const TerminalPane = memo(
       setIsExited(false);
       reconnectFnRef.current?.();
     }, []);
-
-    useEffect(() => {
-      if (session.status === "exited") {
-        setIsExited(true);
-      }
-    }, [session.status]);
 
     useEffect(() => {
       if (isActive && fitAddonRef.current && terminalRef.current) {
@@ -247,6 +240,7 @@ const TerminalPane = memo(
       if (!container) return;
 
       const terminal = new Terminal({
+        allowProposedApi: true,
         cursorBlink: true,
         fontSize: 14,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
@@ -356,11 +350,7 @@ const TerminalPane = memo(
       });
       observer.observe(container);
 
-      if (initialStatusRef.current !== "exited") {
-        connect();
-      } else {
-        setIsExited(true);
-      }
+      connect();
 
       return () => {
         mountedRef.current = false;
@@ -478,6 +468,5 @@ const TerminalPane = memo(
   (prev, next) =>
     prev.sandboxId === next.sandboxId &&
     prev.session.id === next.session.id &&
-    prev.session.status === next.session.status &&
     prev.isActive === next.isActive,
 );

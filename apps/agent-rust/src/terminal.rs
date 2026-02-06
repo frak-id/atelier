@@ -27,15 +27,7 @@ pub struct SessionInfo {
     pub id: String,
     pub user_id: String,
     pub title: String,
-    pub status: SessionStatus,
     pub created_at: String,
-}
-
-#[derive(Clone, Copy, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum SessionStatus {
-    Running,
-    Exited,
 }
 
 struct ActiveSession {
@@ -181,7 +173,6 @@ pub async fn create_session(
         id: session_id.clone(),
         user_id: user_id.clone(),
         title: title.unwrap_or_else(|| format!("Terminal {}", &session_id[4..12])),
-        status: SessionStatus::Running,
         created_at: utc_rfc3339(),
     };
 
@@ -202,13 +193,7 @@ pub async fn create_session(
     let writer_session = session.clone();
     tokio::spawn(async move {
         while let Some(data) = write_rx.recv().await {
-            let fd = {
-                let s = writer_session.lock().await;
-                if s.info.status != SessionStatus::Running {
-                    break;
-                }
-                s.master_fd
-            };
+            let fd = writer_session.lock().await.master_fd;
             let _ = tokio::task::spawn_blocking(move || unsafe {
                 libc::write(fd, data.as_ptr() as *const libc::c_void, data.len());
             })
@@ -220,13 +205,7 @@ pub async fn create_session(
     let reader_session_id = session_id.clone();
     tokio::spawn(async move {
         loop {
-            let fd = {
-                let s = reader_session.lock().await;
-                if s.info.status != SessionStatus::Running {
-                    break;
-                }
-                s.master_fd
-            };
+            let fd = reader_session.lock().await.master_fd;
 
             let result = tokio::task::spawn_blocking(move || {
                 let mut buf = [0u8; 4096];
@@ -310,10 +289,7 @@ pub async fn resize_session(session_id: &str, cols: u16, rows: u16) -> Result<()
     let state = guard.as_ref().ok_or("Terminal server not initialized")?;
     let session = state.sessions.get(session_id).ok_or("Session not found")?;
 
-    let s = session.lock().await;
-    if s.info.status == SessionStatus::Running {
-        set_winsize(s.master_fd, cols, rows);
-    }
+    set_winsize(session.lock().await.master_fd, cols, rows);
     Ok(())
 }
 
@@ -323,9 +299,6 @@ pub async fn write_to_session(session_id: &str, data: Vec<u8>) -> Result<(), Str
     let session = state.sessions.get(session_id).ok_or("Session not found")?;
 
     let s = session.lock().await;
-    if s.info.status != SessionStatus::Running {
-        return Err("Session not running".to_string());
-    }
     s.write_tx
         .send(data)
         .await
@@ -401,9 +374,7 @@ async fn get_session_for_ws(session_id: &str) -> Option<(String, broadcast::Rece
     let state = guard.as_ref()?;
     let session = state.sessions.get(session_id)?;
     let s = session.lock().await;
-    (s.info.status == SessionStatus::Running).then(|| {
-        (s.buffer.clone(), s.output_broadcast.subscribe())
-    })
+    Some((s.buffer.clone(), s.output_broadcast.subscribe()))
 }
 
 async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String) {

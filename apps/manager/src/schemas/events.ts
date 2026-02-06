@@ -39,6 +39,21 @@ const SandboxGitChangedSchema = t.Object({
   properties: t.Object({ id: t.String() }),
 });
 
+/* -------------------------------------------------------------------------- */
+/*                             Prebuild Events                                */
+/* -------------------------------------------------------------------------- */
+
+const PrebuildUpdatedSchema = t.Object({
+  type: t.Literal("prebuild.updated"),
+  properties: t.Object({
+    workspaceId: t.String(),
+    status: t.String(),
+  }),
+});
+
+export const PrebuildEventSchema = PrebuildUpdatedSchema;
+export type PrebuildEvent = Static<typeof PrebuildEventSchema>;
+
 export const SandboxEventSchema = t.Union([
   SandboxCreatedSchema,
   SandboxUpdatedSchema,
@@ -156,5 +171,6 @@ export const ManagerEventSchema = t.Union([
   ...TaskEventSchema.anyOf,
   ...WorkspaceEventSchema.anyOf,
   ...ConfigEventSchema.anyOf,
+  PrebuildEventSchema,
 ]);
 export type ManagerEvent = Static<typeof ManagerEventSchema>;

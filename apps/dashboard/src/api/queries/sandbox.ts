@@ -330,7 +330,6 @@ export interface TerminalSession {
   id: string;
   userId: string;
   title: string;
-  status: "running" | "exited";
   createdAt: string;
 }
 

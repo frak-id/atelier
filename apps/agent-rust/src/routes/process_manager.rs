@@ -212,37 +212,22 @@ impl ProcessRegistry {
         }
         .map_err(|e| e.to_string())?;
 
-        let env_prefix = if let Some(env_vars) = params.env {
-            env_vars
-                .iter()
-                .map(|(k, v)| {
-                    format!(
-                        "export {}='{}'",
-                        k,
-                        v.replace('\'', "'\\''")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("; ")
-                + "; "
-        } else {
-            String::new()
-        };
-
-        let wrapped_cmd = if params.user == "dev" {
-            format!(
-                "su - dev -c \"{}{}\"",
-                env_prefix,
-                params.command.replace('"', "\\\"")
-            )
-        } else {
-            format!("{}{}", env_prefix, params.command)
-        };
-
-        let mut cmd = Command::new("/bin/sh");
-        cmd.args(["-c", &wrapped_cmd])
+        let mut cmd = Command::new("/bin/bash");
+        cmd.args(["-l", "-c", params.command])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+
+        if params.user == "dev" {
+            cmd.uid(1000).gid(1000);
+            cmd.env("HOME", "/home/dev");
+            cmd.env("USER", "dev");
+        }
+
+        if let Some(env_vars) = params.env {
+            for (k, v) in env_vars.iter() {
+                cmd.env(k, v);
+            }
+        }
 
         if let Some(dir) = params.workdir {
             cmd.current_dir(dir);
