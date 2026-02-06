@@ -72,7 +72,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         sandboxService.countByStatus("running") +
         sandboxService.countByStatus("creating");
 
-      if (activeCount >= config.defaults.MAX_SANDBOXES) {
+      if (activeCount >= config.raw.runtime.maxSandbox) {
         throw new ResourceExhaustedError("sandboxes");
       }
 

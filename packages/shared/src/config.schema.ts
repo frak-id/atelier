@@ -102,6 +102,8 @@ export const RuntimeConfigSchema = Type.Object({
   port: Type.Number({ default: 4000 }),
   /** Manager API bind host */
   host: Type.String({ default: "0.0.0.0" }),
+  /** Max sandbox */
+  maxSandbox: Type.Number({ default: 20 }),
 });
 
 export type RuntimeConfig = Static<typeof RuntimeConfigSchema>;
@@ -132,6 +134,7 @@ export const ServicesConfigSchema = Type.Object(
     browser: ServiceEntrySchema(6080),
     terminal: ServiceEntrySchema(7681),
     agent: ServiceEntrySchema(9999),
+    verdaccio: ServiceEntrySchema(4873),
   },
   { default: {} },
 );
@@ -222,6 +225,7 @@ export const ENV_VAR_MAPPING = {
   SANDBOX_MODE: "runtime.mode",
   PORT: "runtime.port",
   HOST: "runtime.host",
+  MAX_SANDBOX: "runtime.maxSandbox",
 
   TLS_EMAIL: "tls.email",
   TLS_CERT_PATH: "tls.certPath",
@@ -232,9 +236,12 @@ export const ENV_VAR_MAPPING = {
   ATELIER_BROWSER_PORT: "services.browser.port",
   ATELIER_TERMINAL_PORT: "services.terminal.port",
   ATELIER_AGENT_PORT: "services.agent.port",
+  ATELIER_VERDACCIO_PORT: "services.verdaccio.port",
 
   ATELIER_IMAGES_DIR: "images.directory",
   ATELIER_DEFAULT_IMAGE: "images.defaultImage",
+
+  CADDY_ADMIN_API: "caddy.adminApi",
 
   ATELIER_GIT_EMAIL: "git.email",
   ATELIER_GIT_NAME: "git.name",

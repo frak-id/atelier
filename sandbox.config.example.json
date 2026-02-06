@@ -8,9 +8,6 @@
   "network": {
     "bridgeName": "br0",
     "bridgeIp": "172.16.0.1",
-    "bridgeCidr": "172.16.0.0/24",
-    "bridgeNetmask": "24",
-    "guestSubnet": "172.16.0",
     "guestIpStart": 10,
     "dnsServers": ["8.8.8.8", "8.8.4.4"]
   },

@@ -207,20 +207,24 @@ export const RegistryService = {
     const runServer = await importRunServer();
 
     log.info(
-      { port: REGISTRY.PORT },
+      { port: config.raw.services.verdaccio.port },
       "Starting Verdaccio via programmatic API",
     );
 
     const app = await runServer(verdaccioConfig);
 
     await new Promise<void>((resolve, reject) => {
-      const server = app.listen(REGISTRY.PORT, "0.0.0.0", () => {
-        log.info(
-          { port: REGISTRY.PORT, host: "0.0.0.0" },
-          "Verdaccio listening",
-        );
-        resolve();
-      });
+      const server = app.listen(
+        config.raw.services.verdaccio.port,
+        "0.0.0.0",
+        () => {
+          log.info(
+            { port: config.raw.services.verdaccio.port, host: "0.0.0.0" },
+            "Verdaccio listening",
+          );
+          resolve();
+        },
+      );
       server.on("error", (err: Error) => {
         reject(err);
       });
@@ -285,9 +289,12 @@ export const RegistryService = {
   async checkHealth(): Promise<boolean> {
     if (config.isMock()) return state.settings.enabled;
     try {
-      const res = await fetch(`http://127.0.0.1:${REGISTRY.PORT}/-/ping`, {
-        signal: AbortSignal.timeout(3000),
-      });
+      const res = await fetch(
+        `http://127.0.0.1:${config.raw.services.verdaccio.port}/-/ping`,
+        {
+          signal: AbortSignal.timeout(3000),
+        },
+      );
       return res.ok;
     } catch {
       return false;
@@ -430,7 +437,7 @@ export const RegistryService = {
   },
 
   getRegistryUrl(): string {
-    return `http://${config.network.bridgeIp}:${REGISTRY.PORT}`;
+    return `http://${config.network.bridgeIp}:${config.raw.services.verdaccio.port}`;
   },
 
   async waitForHealthy(timeoutMs: number): Promise<boolean> {

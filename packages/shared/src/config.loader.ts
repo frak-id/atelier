@@ -100,9 +100,9 @@ export const CONFIG_FILE_NAME = "sandbox.config.json";
 function deriveNetworkFields(config: AtelierConfig): void {
   const octets = config.network.bridgeIp.split(".");
   const subnet = octets.slice(0, 3).join(".");
-  config.network.guestSubnet = subnet;
-  config.network.bridgeNetmask = "24";
-  config.network.bridgeCidr = `${subnet}.0/24`;
+  config.network.guestSubnet = config.network.guestSubnet ?? subnet;
+  config.network.bridgeNetmask = config.network.bridgeNetmask ?? "24";
+  config.network.bridgeCidr = config.network.bridgeCidr ?? `${subnet}.0/24`;
 }
 
 export interface LoadConfigOptions {

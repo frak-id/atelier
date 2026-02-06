@@ -48,7 +48,6 @@ export const DEFAULTS = {
 } as const;
 
 export const REGISTRY = {
-  PORT: 4873,
   STORAGE_DIR: "/var/lib/sandbox/registry/storage",
   PACKAGES_DIR: "/var/lib/sandbox/registry/packages",
   EVICTION_DAYS: 14,

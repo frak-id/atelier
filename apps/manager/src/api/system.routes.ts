@@ -31,7 +31,7 @@ async function getSystemStats(): Promise<SystemStats> {
       diskTotal: 500 * 1024 * 1024 * 1024,
       diskPercent: 10,
       activeSandboxes: sandboxService.countByStatus("running"),
-      maxSandboxes: config.defaults.MAX_SANDBOXES,
+      maxSandboxes: config.raw.runtime.maxSandbox,
       uptime: Math.floor((Date.now() - startTime) / 1000),
     };
   }
@@ -63,7 +63,7 @@ async function getSystemStats(): Promise<SystemStats> {
     diskTotal,
     diskPercent: diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0,
     activeSandboxes: sandboxService.countByStatus("running"),
-    maxSandboxes: config.defaults.MAX_SANDBOXES,
+    maxSandboxes: config.raw.runtime.maxSandbox,
     uptime: Math.floor((Date.now() - startTime) / 1000),
   };
 }
