@@ -1,17 +1,17 @@
 {
-  "name": "@frak-sandbox/cli",
+  "name": "@frak/atelier-cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --compile --minify --sourcemap=none --outfile dist/frak-sandbox",
-    "build:linux": "bun build src/index.ts --compile --target=bun-linux-x64 --minify --sourcemap=none --outfile dist/frak-sandbox-linux-x64"
+    "build": "bun build src/index.ts --compile --minify --sourcemap=none --outfile dist/atelier",
+    "build:linux": "bun build src/index.ts --compile --target=bun-linux-x64 --minify --sourcemap=none --outfile dist/atelier-linux-x64"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "@frak-sandbox/manager": "workspace:*",
-    "@frak-sandbox/shared": "workspace:*"
+    "@frak/atelier-manager": "workspace:*",
+    "@frak/atelier-shared": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest"

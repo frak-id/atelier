@@ -26,13 +26,13 @@ The installer prompts for:
 By default, the config is read from:
 
 ```
-/etc/frak-sandbox/sandbox.config.json
+/etc/atelier/sandbox.config.json
 ```
 
-You can override this with `FRAK_CONFIG=/path/to/sandbox.config.json`.
+You can override this with `ATELIER_CONFIG=/path/to/sandbox.config.json`.
 - Allowed org/users
 
-It writes `/etc/frak-sandbox/sandbox.config.json`, runs the full setup,
+It writes `/etc/atelier/sandbox.config.json`, runs the full setup,
 downloads the server bundle, and can build the base image.
 
 ## Post‑Install
@@ -40,21 +40,21 @@ downloads the server bundle, and can build the base image.
 Check manager health:
 
 ```bash
-frak-sandbox manager status
+atelier manager status
 ```
 
 ## Update
 
 ```bash
-frak-sandbox update
+atelier update
 ```
 
 If the agent changed, the CLI will prompt to rebuild the base image.
 
 ## Optional: Preconfigure Storage
 
-If you add `setup.storage` to `/etc/frak-sandbox/sandbox.config.json`, the CLI
-will skip storage prompts during `frak-sandbox init`. Example:
+If you add `setup.storage` to `/etc/atelier/sandbox.config.json`, the CLI
+will skip storage prompts during `atelier init`. Example:
 
 ```json
 {
@@ -67,7 +67,7 @@ will skip storage prompts during `frak-sandbox init`. Example:
 }
 ```
 
-You can also preconfigure network behavior (used by `frak-sandbox init`):
+You can also preconfigure network behavior (used by `atelier init`):
 
 ```json
 {
@@ -83,4 +83,4 @@ You can also preconfigure network behavior (used by `frak-sandbox init`):
 
 - **No `/dev/kvm`**: ensure virtualization is enabled and use bare‑metal.
 - **Caddy not issuing certs**: confirm DNS wildcard and open ports 80/443.
-- **Manager unhealthy**: `journalctl -u frak-sandbox-manager -n 200 --no-pager`
+- **Manager unhealthy**: `journalctl -u atelier-manager -n 200 --no-pager`

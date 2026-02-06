@@ -1,6 +1,6 @@
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
-import { validateConfig } from "@frak-sandbox/shared";
+import { validateConfig } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
 import {
   authRoutes,
@@ -38,12 +38,12 @@ import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
-import { config } from "./shared/lib/config.ts";
+import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 
-const configErrors = validateConfig(config.raw);
-if (configErrors.length > 0 && config.isProduction()) {
+const configErrors = validateConfig(config);
+if (configErrors.length > 0 && isProduction()) {
   for (const err of configErrors) {
     logger.error({ field: err.field }, err.message);
   }
@@ -96,8 +96,8 @@ const app = new Elysia()
           sandbox.id,
           sandbox.runtime.ipAddress,
           {
-            vscode: config.raw.services.vscode.port,
-            opencode: config.raw.services.opencode.port,
+            vscode: config.advanced.vm.vscode.port,
+            opencode: config.advanced.vm.opencode.port,
           },
         );
         await SshPiperService.registerRoute(
@@ -128,7 +128,7 @@ const app = new Elysia()
   })
   .use(
     cors({
-      origin: config.dashboardUrl,
+      origin: dashboardUrl,
       credentials: true,
     }),
   )
@@ -137,7 +137,7 @@ const app = new Elysia()
       path: "/swagger",
       documentation: {
         info: {
-          title: "Frak Sandbox Manager API",
+          title: "L'atelier Manager API",
           version: "0.1.0",
           description:
             "API for managing Firecracker-based sandbox environments",
@@ -193,9 +193,7 @@ const app = new Elysia()
         set.status = 500;
         return {
           error: "INTERNAL_ERROR",
-          message: config.isProduction()
-            ? "Internal server error"
-            : errorMessage,
+          message: isProduction() ? "Internal server error" : errorMessage,
         };
       }
     }
@@ -225,26 +223,26 @@ const app = new Elysia()
       ),
   )
   .get("/", () => ({
-    name: "Frak Sandbox Manager",
+    name: "L'atelier Manager",
     version: "0.1.0",
-    mode: config.mode,
+    mode: config.server.mode,
     docs: "/swagger",
   }));
 
 app.listen(
   {
-    port: config.port,
-    hostname: config.host,
+    port: config.server.port,
+    hostname: config.server.host,
   },
   ({ hostname, port }) => {
     logger.info(
       {
         hostname,
         port,
-        mode: config.mode,
+        mode: config.server.mode,
         swagger: `http://${hostname}:${port}/swagger`,
       },
-      "Frak Sandbox Manager started",
+      "L'atelier Manager started",
     );
   },
 );

@@ -1,4 +1,4 @@
-# FRAK SANDBOX
+# L'atelier
 
 Firecracker microVM orchestrator for isolated dev environments. Bun monorepo.
 
@@ -39,7 +39,7 @@ bun run deploy       # Build + SSH deploy to production
 - **Logging**: `createChildLogger("name")` — always use child logger with context
 - **Errors**: Custom hierarchy — `NotFoundError`, `ValidationError`, `ResourceExhaustedError`
 - **DI**: Manual wiring in `container.ts`, routes import from container only
-- **Mock mode**: `SANDBOX_MODE=mock bun run dev` — no KVM/LVM needed locally
+- **Mock mode**: `ATELIER_SERVER_MODE=mock bun run dev` — no KVM/LVM needed locally
 - **No tests**: No test framework configured
 
 See each app's AGENTS.md for component-specific guidelines.

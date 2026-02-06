@@ -1,6 +1,6 @@
 # Swarm Architecture Specification
 
-> Technical design for multi-host FRAK Sandbox deployment
+> Technical design for multi-host L'atelier deployment
 
 **Status:** Design Phase
 **Target:** Phase 2.2
@@ -733,7 +733,7 @@ Request → Host 1 Caddy → Local VM or Proxy to correct host
 
 ```bash
 # 1. Install manager as before
-frak-sandbox init --mode manager
+atelier init --mode manager
 
 # 2. Registry starts automatically on :5000
 ```
@@ -744,7 +744,7 @@ frak-sandbox init --mode manager
 # On each worker host
 
 # 1. Download host agent
-curl -L https://github.com/frak-id/frak-sandbox/releases/latest/download/host-agent-linux-x64 \
+curl -L https://github.com/frak-id/atelier/releases/latest/download/host-agent-linux-x64 \
   -o /usr/local/bin/frak-host-agent
 chmod +x /usr/local/bin/frak-host-agent
 
@@ -765,7 +765,7 @@ frak-host-agent join \
 ```ini
 # /etc/systemd/system/frak-host-agent.service
 [Unit]
-Description=FRAK Sandbox Host Agent
+Description=L'atelier Host Agent
 After=network.target
 
 [Service]

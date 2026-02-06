@@ -2,10 +2,10 @@ import { randomBytes } from "node:crypto";
 import * as p from "@clack/prompts";
 import {
   CONFIG_FILE_NAME,
-  DEFAULT_CONFIG,
+  getDefaultConfig,
   loadConfig,
   validateConfig,
-} from "@frak-sandbox/shared";
+} from "@frak/atelier-shared";
 import { fileExists } from "../lib/shell";
 import { baseSetup } from "./base-setup";
 import { images } from "./images";
@@ -43,8 +43,8 @@ export async function initServer(_args: string[] = []) {
   p.log.success("Installation complete!");
   p.note(
     `Next steps:
-  1. Check API health: frak-sandbox manager status
-  2. Build image later: frak-sandbox images dev-base`,
+   1. Check API health: atelier manager status
+   2. Build image later: atelier images dev-base`,
     "Install Complete",
   );
 }
@@ -97,31 +97,31 @@ async function promptConfig() {
     .map((user) => user.trim())
     .filter(Boolean);
 
-  const config = structuredClone(DEFAULT_CONFIG);
+  const defaults = getDefaultConfig();
+  const config = structuredClone(defaults);
 
-  config.domains = {
+  config.domain = {
+    ...defaults.domain,
+    baseDomain: domainSuffix,
     dashboard: dashboardDomain,
-    sandboxSuffix: domainSuffix,
-    ssh: sshDomain,
+    tls: { ...defaults.domain.tls, email: tlsEmail },
+    ssh: { ...defaults.domain.ssh, hostname: sshDomain },
   };
 
-  config.network = { ...DEFAULT_CONFIG.network };
-  config.services = { ...DEFAULT_CONFIG.services };
+  config.network = { ...defaults.network };
 
   config.auth = {
-    ...DEFAULT_CONFIG.auth,
-    githubClientId,
-    githubClientSecret,
-    githubCallbackUrl: `https://${dashboardDomain}/api/github/callback`,
-    githubLoginCallbackUrl: `https://${dashboardDomain}/auth/callback`,
+    ...defaults.auth,
+    github: {
+      clientId: githubClientId,
+      clientSecret: githubClientSecret,
+    },
     jwtSecret,
     allowedOrg: allowedOrg.trim().length > 0 ? allowedOrg : undefined,
     allowedUsers,
   };
 
-  config.sshProxy = { ...DEFAULT_CONFIG.sshProxy, domain: sshDomain };
-  config.runtime = { ...DEFAULT_CONFIG.runtime, mode: "production" };
-  config.tls = { ...DEFAULT_CONFIG.tls, email: tlsEmail };
+  config.server = { ...defaults.server, mode: "production" };
 
   return config;
 }
@@ -164,7 +164,7 @@ async function runStorageSetup(): Promise<boolean> {
     return true;
   }
 
-  p.log.info("Skipping storage setup. Run 'frak-sandbox storage' later.");
+  p.log.info("Skipping storage setup. Run 'atelier storage' later.");
   return false;
 }
 
@@ -185,5 +185,5 @@ async function validateConfigFile(configPath: string) {
 }
 
 function getConfigPath(): string {
-  return process.env.FRAK_CONFIG || `/etc/frak-sandbox/${CONFIG_FILE_NAME}`;
+  return process.env.ATELIER_CONFIG || `/etc/atelier/${CONFIG_FILE_NAME}`;
 }

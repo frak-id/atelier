@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { config } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("network");
@@ -43,7 +43,7 @@ export const NetworkService = {
   },
 
   async createTap(tapDevice: string): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ tapDevice }, "Mock: TAP device creation skipped");
       return;
     }
@@ -58,7 +58,7 @@ export const NetworkService = {
   },
 
   async deleteTap(tapDevice: string): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ tapDevice }, "Mock: TAP device deletion skipped");
       return;
     }
@@ -94,7 +94,7 @@ export const NetworkService = {
     ip: string | null;
     interfaces: string[];
   }> {
-    if (config.isMock()) {
+    if (isMock()) {
       return { exists: true, ip: config.network.bridgeIp, interfaces: [] };
     }
 
@@ -134,7 +134,7 @@ export const NetworkService = {
   },
 
   async listTapDevices(): Promise<string[]> {
-    if (config.isMock()) {
+    if (isMock()) {
       return [];
     }
 

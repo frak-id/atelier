@@ -1,5 +1,5 @@
-import type { SandboxConfig } from "@frak-sandbox/shared";
-import { DEFAULTS, VM_PATHS } from "@frak-sandbox/shared/constants";
+import type { SandboxConfig } from "@frak/atelier-shared";
+import { DEFAULTS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type {
   AgentClient,
@@ -45,7 +45,7 @@ import type {
   SpawnTimings,
   Workspace,
 } from "../schemas/index.ts";
-import { config } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { killProcess } from "../shared/lib/shell.ts";
@@ -111,13 +111,13 @@ class SpawnContext {
         Promise.all([
           this.allocateNetwork(),
           this.createVolume(),
-          config.isMock() ? Promise.resolve() : this.createTapDevice(),
+          isMock() ? Promise.resolve() : this.createTapDevice(),
         ]),
       );
       await this.time("resizeVolume", () => this.resizeVolumeBeforeBoot());
       await this.time("initializeSandbox", () => this.initializeSandbox());
 
-      if (config.isMock()) {
+      if (isMock()) {
         return await this.finalizeMock();
       }
 
@@ -276,13 +276,11 @@ class SpawnContext {
     if (!this.network) throw new Error("Network not allocated");
 
     const vcpus =
-      this.options.vcpus ??
-      this.workspace?.config.vcpus ??
-      config.defaults.VCPUS;
+      this.options.vcpus ?? this.workspace?.config.vcpus ?? DEFAULTS.VCPUS;
     const memoryMb =
       this.options.memoryMb ??
       this.workspace?.config.memoryMb ??
-      config.defaults.MEMORY_MB;
+      DEFAULTS.MEMORY_MB;
 
     this.sandbox = {
       id: this.sandboxId,
@@ -314,8 +312,8 @@ class SpawnContext {
     );
 
     this.sandbox.runtime.urls = {
-      vscode: `https://sandbox-${this.sandboxId}.${config.caddy.domainSuffix}`,
-      opencode: `https://opencode-${this.sandboxId}.${config.caddy.domainSuffix}`,
+      vscode: `https://sandbox-${this.sandboxId}.${config.domain.baseDomain}`,
+      opencode: `https://opencode-${this.sandboxId}.${config.domain.baseDomain}`,
       ssh: sshCmd,
     };
     this.sandbox.status = "running";
@@ -592,14 +590,14 @@ class SpawnContext {
 
     const workspaceDir =
       repos.length === 1 && repos[0]?.clonePath
-        ? `/home/dev${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
-        : "/home/dev/workspace";
+        ? `${VM.HOME}${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
+        : VM.WORKSPACE_DIR;
 
-    const dashboardDomain = config.domains.dashboard;
-    const vsPort = config.raw.services.vscode.port;
-    const ocPort = config.raw.services.opencode.port;
-    const browserPort = config.raw.services.browser.port;
-    const terminalPort = config.raw.services.terminal.port;
+    const dashboardDomain = config.domain.dashboard;
+    const vsPort = config.advanced.vm.vscode.port;
+    const ocPort = config.advanced.vm.opencode.port;
+    const browserPort = config.advanced.vm.browser.port;
+    const terminalPort = config.advanced.vm.terminal.port;
 
     return {
       sandboxId: this.sandboxId,
@@ -609,7 +607,7 @@ class SpawnContext {
       createdAt: new Date().toISOString(),
       network: {
         dashboardDomain,
-        managerInternalUrl: `http://${config.network.bridgeIp}:${config.raw.runtime.port}/internal`,
+        managerInternalUrl: `http://${config.network.bridgeIp}:${config.server.port}/internal`,
       },
       services: {
         vscode: {
@@ -744,13 +742,13 @@ class SpawnContext {
       ? ws.config.repos
           .map((r) => {
             const name = "url" in r ? r.url : r.repo;
-            return `- **${name}** (branch: \`${r.branch}\`, path: \`/home/dev${r.clonePath}\`)`;
+            return `- **${name}** (branch: \`${r.branch}\`, path: \`${VM.HOME}${r.clonePath}\`)`;
           })
           .join("\n")
       : "No repositories configured";
 
-    const vsPort = config.raw.services.vscode.port;
-    const ocPort = config.raw.services.opencode.port;
+    const vsPort = config.advanced.vm.vscode.port;
+    const ocPort = config.advanced.vm.opencode.port;
 
     const devCommandsSection = ws?.config.devCommands?.length
       ? ws.config.devCommands
@@ -770,9 +768,7 @@ class SpawnContext {
 
     const fileSecretsSection = ws?.config.fileSecrets?.length
       ? ws.config.fileSecrets
-          .map(
-            (s) => `- **${s.name}**: \`${s.path.replace(/^~/, "/home/dev")}\``,
-          )
+          .map((s) => `- **${s.name}**: \`${s.path.replace(/^~/, VM.HOME)}\``)
           .join("\n")
       : "";
 
@@ -795,7 +791,7 @@ ${devCommandsSection}
 ${secretsSection}
 ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
 ## Paths
-- Workspace: \`/home/dev/workspace\`
+- Workspace: \`${VM.WORKSPACE_DIR}\`
 - Config: \`/etc/sandbox/config.json\`
 - Logs: \`/var/log/sandbox/\`
 `;
@@ -884,7 +880,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
   private async cloneRepository(repo: RepoConfig): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
 
-    const clonePath = `/home/dev${repo.clonePath}`;
+    const clonePath = `${VM.HOME}${repo.clonePath}`;
     const gitUrl =
       "url" in repo ? repo.url : await this.buildAuthenticatedUrl(repo);
     const branch = repo.branch;
@@ -952,8 +948,8 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       this.sandboxId,
       this.network.ipAddress,
       {
-        vscode: config.raw.services.vscode.port,
-        opencode: config.raw.services.opencode.port,
+        vscode: config.advanced.vm.vscode.port,
+        opencode: config.advanced.vm.opencode.port,
       },
     );
 

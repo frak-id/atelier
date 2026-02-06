@@ -2,7 +2,7 @@ import * as p from "@clack/prompts";
 import { PATHS } from "../lib/context";
 import { exec, fileExists } from "../lib/shell";
 
-const MANAGER_SERVICE = "frak-sandbox-manager";
+const MANAGER_SERVICE = "atelier-manager";
 const MANAGER_PORT = 4000;
 
 export async function deployManager(args: string[] = []) {

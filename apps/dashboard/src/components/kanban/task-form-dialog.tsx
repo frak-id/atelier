@@ -1,5 +1,5 @@
-import type { RepoConfig, Task } from "@frak-sandbox/manager/types";
-import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
+import type { RepoConfig, Task } from "@frak/atelier-manager/types";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak/atelier-shared/constants";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";

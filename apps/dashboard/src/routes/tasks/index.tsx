@@ -1,4 +1,4 @@
-import type { Task } from "@frak-sandbox/manager/types";
+import type { Task } from "@frak/atelier-manager/types";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
@@ -68,7 +68,7 @@ function TasksPage() {
   const expandedIds = expanded ? expanded.split(",").filter(Boolean) : [];
 
   const [view, setView] = useState(
-    () => localStorage.getItem("frak_task_view") || "list",
+    () => localStorage.getItem("atelier_task_view") || "list",
   );
   const { openTask } = useDrawer();
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -79,7 +79,7 @@ function TasksPage() {
   const deleteMutation = useDeleteTask();
 
   useEffect(() => {
-    localStorage.setItem("frak_task_view", view);
+    localStorage.setItem("atelier_task_view", view);
   }, [view]);
 
   const toggleExpanded = (workspaceId: string) => {

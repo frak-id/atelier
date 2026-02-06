@@ -3,7 +3,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import type { Task } from "@frak-sandbox/manager/types";
+import type { Task } from "@frak/atelier-manager/types";
 import { CheckCircle, Edit3, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TaskCard } from "./task-card";

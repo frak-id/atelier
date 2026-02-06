@@ -1,4 +1,4 @@
-import { discoverImages, getImageById } from "@frak-sandbox/shared";
+import { discoverImages, getImageById } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
@@ -14,7 +14,7 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
   .get(
     "/",
     async ({ query }) => {
-      const images = await discoverImages(config.images.directory);
+      const images = await discoverImages(config.sandbox.imagesDirectory);
 
       const imagesWithAvailability = await Promise.all(
         images.map(async (img) => ({
@@ -43,7 +43,10 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
   .get(
     "/:id",
     async ({ params }) => {
-      const image = await getImageById(config.images.directory, params.id);
+      const image = await getImageById(
+        config.sandbox.imagesDirectory,
+        params.id,
+      );
       if (!image) {
         throw new NotFoundError("Image", params.id);
       }

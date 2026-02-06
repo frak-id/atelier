@@ -1,4 +1,4 @@
-# Frak Sandbox - Architecture & Tooling Specification v2
+# L'atelier - Architecture & Tooling Specification v2
 
 > A Bun monorepo-based sandbox orchestration system using Firecracker microVMs
 > 
@@ -305,7 +305,7 @@ oc-sandbox/
 │       │       ├── deploy-manager.ts
 │       │       └── test-vm.ts
 │       ├── dist/
-│       │   └── frak-sandbox-linux-x64
+│       │   └── atelier-linux-x64
 │       └── package.json
 │
 ├── infra/
@@ -315,8 +315,8 @@ oc-sandbox/
 │   │   ├── dev-base/Dockerfile    # Alpine + Node + Bun + code-server + opencode
 │   │   └── ...
 │   └── systemd/
-│       ├── frak-sandbox-manager.service
-│       └── frak-sandbox-network.service
+│       ├── atelier-manager.service
+│       └── atelier-network.service
 │
 ├── scripts/
 │   └── deploy.ts                  # ✅ SSH deployment (manager + agent + dashboard)
@@ -832,14 +832,14 @@ const walletProject: Project = {
 
 **Purpose**: Server provisioning and management CLI. Interactive prompts via `@clack/prompts`.
 
-**Package**: `@frak-sandbox/cli`
+**Package**: `@frak/atelier-cli`
 
 **Dependencies**:
 ```json
 {
   "dependencies": {
     "@clack/prompts": "^0.10.0",
-    "@frak-sandbox/shared": "workspace:*"
+    "@frak/atelier-shared": "workspace:*"
   }
 }
 ```
@@ -857,7 +857,7 @@ const walletProject: Project = {
 
 **Build**:
 ```bash
-bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/frak-sandbox-linux-x64
+bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/atelier-linux-x64
 ```
 
 ---
@@ -866,7 +866,7 @@ bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/frak-sand
 
 **Purpose**: Backend API orchestrating Firecracker VMs and system resources.
 
-**Package**: `@frak-sandbox/manager`
+**Package**: `@frak/atelier-manager`
 
 **Dependencies**:
 ```json
@@ -875,7 +875,7 @@ bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/frak-sand
     "elysia": "^1.2.0",
     "@elysiajs/cors": "^1.2.0",
     "@elysiajs/swagger": "^1.2.0",
-    "@frak-sandbox/shared": "workspace:*",
+    "@frak/atelier-shared": "workspace:*",
     "pino": "^9.0.0",
     "nanoid": "^5.0.0"
   }
@@ -954,7 +954,7 @@ services/
 
 **Purpose**: Shared types and constants used by CLI and Manager.
 
-**Package**: `@frak-sandbox/shared`
+**Package**: `@frak/atelier-shared`
 
 **Exports**:
 ```typescript
@@ -992,7 +992,7 @@ export const PATHS = {
   OVERLAY_DIR: "/var/lib/sandbox/overlays",
   SOCKET_DIR: "/var/lib/sandbox/sockets",
   LOG_DIR: "/var/log/sandbox",
-  APP_DIR: "/opt/frak-sandbox",
+  APP_DIR: "/opt/atelier",
 } as const;
 
 export const FIRECRACKER = {
@@ -1023,7 +1023,7 @@ export const DEFAULTS = {
 
 **Status**: Complete. Deployed at https://sandbox-dash.nivelais.com/
 
-**Package**: `@frak-sandbox/dashboard`
+**Package**: `@frak/atelier-dashboard`
 
 **Dependencies**:
 ```json
@@ -1078,7 +1078,7 @@ export const DEFAULTS = {
 
 **Status**: Complete. Runs on port 9999 inside each sandbox.
 
-**Package**: `@frak-sandbox/agent`
+**Package**: `@frak/atelier-agent`
 
 **IMPORTANT**: Built with `--target=node` (NOT bun) because Bun crashes with SIGILL inside Firecracker due to AVX instruction issues.
 
@@ -1122,7 +1122,7 @@ bun install
 
 # 2. Start manager in mock mode (no Firecracker needed)
 cd apps/manager
-SANDBOX_MODE=mock bun run dev
+ATELIER_SERVER_MODE=mock bun run dev
 # → http://localhost:4000
 # → Swagger: http://localhost:4000/swagger
 
@@ -1155,7 +1155,7 @@ The manager supports mock mode for local development without Firecracker:
 
 ```typescript
 // Set via environment
-SANDBOX_MODE=mock bun run dev
+ATELIER_SERVER_MODE=mock bun run dev
 
 // In firecracker.ts
 if (config.isMock()) {
@@ -1177,20 +1177,20 @@ if (config.isMock()) {
 # On the server as root:
 
 # 1. Install the CLI (after deployment)
-# CLI is deployed to /usr/local/bin/frak-sandbox
+# CLI is deployed to /usr/local/bin/atelier
 
 # 2. Run full install
-frak-sandbox init
+atelier init
 # This runs: config → base → firecracker → network → ssh-proxy → storage
 # Then updates the server bundle and optionally builds the base image
 
 # 3. Start the manager
-frak-sandbox manager start
+atelier manager start
 
 # 4. Test a VM
-frak-sandbox debug-vm start
-frak-sandbox debug-vm ssh
-frak-sandbox debug-vm stop
+atelier debug-vm start
+atelier debug-vm ssh
+atelier debug-vm stop
 ```
 
 ---
@@ -1216,13 +1216,13 @@ curl -fsSL https://raw.githubusercontent.com/frak-id/oc-sandbox/main/infra/scrip
 # Add wildcard A record: *.sandbox.frak.dev → server IP
 
 # 3. Verify services
-frak-sandbox manager status
+atelier manager status
 ```
 
 ### LVM Thin Pool Setup
 
 ```bash
-# Manual reference (current flow uses `frak-sandbox storage`)
+# Manual reference (current flow uses `atelier storage`)
 
 #!/bin/bash
 set -euo pipefail
@@ -1257,21 +1257,21 @@ echo "Base volume: /dev/${VG_NAME}/base-rootfs"
 
 ### Systemd Services
 
-**frak-sandbox-manager.service**:
+**atelier-manager.service**:
 ```ini
 [Unit]
-Description=Frak Sandbox Manager
+Description=L'atelier Manager
 After=network.target sandbox-network.service
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/frak-sandbox/apps/manager
+WorkingDirectory=/opt/atelier/apps/manager
 ExecStart=/root/.bun/bin/bun run start
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production
-Environment=SANDBOX_MODE=production
+Environment=ATELIER_SERVER_MODE=production
 
 [Install]
 WantedBy=multi-user.target
@@ -1286,15 +1286,15 @@ WantedBy=multi-user.target
 **Goals**: Server ready, basic spawn working
 
 - [x] Provision Hetzner AX52
-- [x] Run install script (CLI: `frak-sandbox init`)
+- [x] Run install script (CLI: `atelier init`)
 - [x] Build minimal rootfs (Alpine + SSH)
-- [x] Test manual Firecracker spawn (CLI: `frak-sandbox debug-vm start`)
-- [x] Configure network bridge + NAT (CLI: `frak-sandbox network`)
-- [ ] Setup LVM thin pool (CLI ready: `frak-sandbox storage`)
+- [x] Test manual Firecracker spawn (CLI: `atelier debug-vm start`)
+- [x] Configure network bridge + NAT (CLI: `atelier network`)
+- [ ] Setup LVM thin pool (CLI ready: `atelier storage`)
 - [ ] Setup DNS wildcard
 
 **Deliverables**:
-- ✅ SSH into a Firecracker VM (`frak-sandbox debug-vm ssh`)
+- ✅ SSH into a Firecracker VM (`atelier debug-vm ssh`)
 - ✅ VM has internet access
 
 ### Phase 2: Manager API (Week 2) ✅ COMPLETE
@@ -1311,7 +1311,7 @@ WantedBy=multi-user.target
 - [x] Implement sandbox CRUD API (list, create, get, delete)
 - [x] Add Swagger docs (`/swagger`)
 - [x] Deploy with systemd (`scripts/deploy.ts`)
-- [x] Mock mode for local development (`SANDBOX_MODE=mock`)
+- [x] Mock mode for local development (`ATELIER_SERVER_MODE=mock`)
 
 **Deliverables**:
 - ✅ `POST /api/sandboxes` spawns a working VM
@@ -1453,29 +1453,29 @@ bun run build:cli              # Build CLI for Linux
 
 # Manager API (local development)
 cd apps/manager
-SANDBOX_MODE=mock bun run dev  # Start with mock Firecracker
+ATELIER_SERVER_MODE=mock bun run dev  # Start with mock Firecracker
 # → http://localhost:4000
 # → http://localhost:4000/swagger (API docs)
 
 # CLI (on server, as root)
-frak-sandbox                   # Interactive mode
-frak-sandbox init              # Full install
-frak-sandbox base              # Base packages only
-frak-sandbox firecracker       # Download Firecracker + kernel + rootfs
-frak-sandbox network           # Configure br0 bridge
-frak-sandbox storage           # Setup LVM thin pool
-frak-sandbox manager start     # Start manager service
-frak-sandbox manager stop      # Stop manager service
-frak-sandbox manager status    # Show service health
-frak-sandbox manager logs      # Follow manager logs
-frak-sandbox debug-vm start    # Start test VM
-frak-sandbox debug-vm stop     # Stop test VM
-frak-sandbox debug-vm status   # Show VM status
-frak-sandbox debug-vm ssh      # SSH into test VM
+atelier                   # Interactive mode
+atelier init              # Full install
+atelier base              # Base packages only
+atelier firecracker       # Download Firecracker + kernel + rootfs
+atelier network           # Configure br0 bridge
+atelier storage           # Setup LVM thin pool
+atelier manager start     # Start manager service
+atelier manager stop      # Stop manager service
+atelier manager status    # Show service health
+atelier manager logs      # Follow manager logs
+atelier debug-vm start    # Start test VM
+atelier debug-vm stop     # Stop test VM
+atelier debug-vm status   # Show VM status
+atelier debug-vm ssh      # SSH into test VM
 
 # Systemd (on server)
-systemctl status frak-sandbox-manager
-journalctl -u frak-sandbox-manager -f
+systemctl status atelier-manager
+journalctl -u atelier-manager -f
 ```
 
 ### Key Ports
@@ -1493,11 +1493,11 @@ journalctl -u frak-sandbox-manager -f
 
 | Path | Purpose |
 |------|---------|
-| `/opt/frak-sandbox` | Application root |
-| `/opt/frak-sandbox/apps/manager/server.js` | Manager API bundle |
-| `/opt/frak-sandbox/apps/dashboard/dist/` | Dashboard static files |
-| `/opt/frak-sandbox/infra/images/sandbox-agent.mjs` | Agent bundle (copied to VMs) |
-| `/usr/local/bin/frak-sandbox` | CLI binary |
+| `/opt/atelier` | Application root |
+| `/opt/atelier/apps/manager/server.js` | Manager API bundle |
+| `/opt/atelier/apps/dashboard/dist/` | Dashboard static files |
+| `/opt/atelier/infra/images/sandbox-agent.mjs` | Agent bundle (copied to VMs) |
+| `/usr/local/bin/atelier` | CLI binary |
 | `/usr/local/bin/firecracker` | Firecracker binary |
 | `/var/lib/sandbox/firecracker/kernels` | Kernel images |
 | `/var/lib/sandbox/firecracker/rootfs` | Base rootfs images |
@@ -1511,8 +1511,14 @@ journalctl -u frak-sandbox-manager -f
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SANDBOX_MODE` | `production` | Set to `mock` for local development |
-| `SANDBOX_HOST` | `0.0.0.0` | Manager bind address |
-| `SANDBOX_PORT` | `4000` | Manager port |
-| `CADDY_ADMIN_API` | `http://localhost:2019` | Caddy admin endpoint |
-| `CADDY_DOMAIN_SUFFIX` | `sandbox.frak.dev` | Domain for sandbox URLs |
+| `ATELIER_CONFIG` | `/etc/atelier/sandbox.config.json` | Override config file path |
+| `ATELIER_SERVER_MODE` | `mock` | Runtime mode (`production` or `mock`) |
+| `ATELIER_SERVER_HOST` | `0.0.0.0` | Manager bind address |
+| `ATELIER_SERVER_PORT` | `4000` | Manager port |
+| `ATELIER_MAX_SANDBOXES` | `20` | Maximum concurrent sandboxes |
+| `ATELIER_BASE_DOMAIN` | `localhost` | Base domain (e.g. `example.com`) |
+| `ATELIER_DASHBOARD_DOMAIN` | (derived) | Dashboard domain override |
+| `ATELIER_TLS_EMAIL` | (none) | TLS email for ACME / Let's Encrypt |
+| `ATELIER_SSH_PROXY_HOSTNAME` | (derived) | SSH proxy hostname override |
+| `ATELIER_SSH_PROXY_PORT` | `2222` | SSH proxy listen port |
+| `ATELIER_DNS_SERVERS` | `8.8.8.8,8.8.4.4` | DNS servers (comma-separated) |

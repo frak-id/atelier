@@ -1,6 +1,9 @@
-import type { Workspace } from "@frak-sandbox/manager/types";
+import type { Workspace } from "@frak/atelier-manager/types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+
+const VM_HOME = "/home/dev";
+const VM_WORKSPACE_DIR = "/home/dev/workspace";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -70,9 +73,9 @@ export function getWorkspaceDirectory(
     const fullPath = clonePath.startsWith("/workspace")
       ? clonePath
       : `/workspace${clonePath}`;
-    return `/home/dev${fullPath}`;
+    return `${VM_HOME}${fullPath}`;
   }
-  return "/home/dev/workspace";
+  return VM_WORKSPACE_DIR;
 }
 
 export function buildOpenCodeSessionUrl(

@@ -1,6 +1,6 @@
-import { FIRECRACKER } from "@frak-sandbox/shared/constants";
+import { FIRECRACKER } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
-import { config } from "../../shared/lib/config.ts";
+import { isMock } from "../../shared/lib/config.ts";
 import { fileExists } from "../../shared/lib/shell.ts";
 
 type RequestOptions = {
@@ -12,7 +12,7 @@ export class FirecrackerClient {
   constructor(private socketPath: string) {}
 
   static async isHealthy(): Promise<boolean> {
-    if (config.isMock()) {
+    if (isMock()) {
       return true;
     }
 

@@ -1,9 +1,9 @@
-# Frak Sandbox - dev-base image
+# L'atelier - dev-base image
 # Minimal development environment with Bun and Git
 # code-server and opencode are served via NFS from /opt/shared/bin
 #
-# Build: docker build -t frak-sandbox/dev-base .
-# Export: docker export $(docker create frak-sandbox/dev-base) | tar -C ./rootfs -xf -
+# Build: docker build -t atelier/dev-base .
+# Export: docker export $(docker create atelier/dev-base) | tar -C ./rootfs -xf -
 
 FROM node:22-slim
 
@@ -61,16 +61,16 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
     && echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> /etc/profile.d/bun.sh
 
 # Create sandbox directories with proper ownership
-# All paths owned by dev:dev (UID/GID 1000) to match host frak user
+# All paths owned by dev:dev (UID/GID 1000) to match host atelier user
 RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
     /home/dev/workspace \
     /home/dev/.local/share/code-server/User \
     /home/dev/.local/share/opencode \
     /home/dev/.config/opencode \
     /home/dev/.cache/oh-my-opencode \
-    /.frak-sandbox \
-    && chown -R dev:dev /home/dev /var/log/sandbox /etc/sandbox /.frak-sandbox \
-    && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.frak-sandbox
+    /.atelier \
+    && chown -R dev:dev /home/dev /var/log/sandbox /etc/sandbox /.atelier \
+    && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.atelier
 
 # Bake static profile scripts (no per-spawn injection needed)
 RUN echo 'export PATH="/opt/shared/bin:$PATH"' > /etc/profile.d/shared-binaries.sh

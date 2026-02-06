@@ -51,7 +51,7 @@ Wildcard fallback must be last. `CaddyService` auto-manages this by deleting and
 Manager runs without KVM/LVM locally:
 
 ```bash
-SANDBOX_MODE=mock bun run dev
+ATELIER_SERVER_MODE=mock bun run dev
 ```
 
 All infrastructure services check `config.isMock()` and return mock responses.

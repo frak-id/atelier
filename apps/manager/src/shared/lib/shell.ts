@@ -1,10 +1,10 @@
 import { mkdir, stat } from "node:fs/promises";
+import { PATHS, VM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import {
   getSocketPath,
   getVsockPath,
 } from "../../infrastructure/firecracker/index.ts";
-import { config } from "./config.ts";
 
 export async function fileExists(path: string): Promise<boolean> {
   try {
@@ -61,10 +61,10 @@ export async function injectFile(options: InjectFileOptions): Promise<void> {
     content,
     contentType = "text",
     mode,
-    owner = "1000:1000",
+    owner = VM.OWNER,
   } = options;
 
-  const targetPath = path.replace(/^~/, "/home/dev");
+  const targetPath = path.replace(/^~/, VM.HOME);
   const fullPath = `${mountPoint}${targetPath}`;
   const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
 
@@ -97,8 +97,8 @@ export async function killProcess(
 export async function cleanupSandboxFiles(sandboxId: string): Promise<void> {
   const socketPath = getSocketPath(sandboxId);
   const vsockPath = getVsockPath(sandboxId);
-  const pidPath = `${config.paths.SOCKET_DIR}/${sandboxId}.pid`;
-  const logPath = `${config.paths.LOG_DIR}/${sandboxId}.log`;
+  const pidPath = `${PATHS.SOCKET_DIR}/${sandboxId}.pid`;
+  const logPath = `${PATHS.LOG_DIR}/${sandboxId}.log`;
   await $`rm -f ${socketPath} ${vsockPath} ${pidPath} ${logPath}`
     .quiet()
     .nothrow();

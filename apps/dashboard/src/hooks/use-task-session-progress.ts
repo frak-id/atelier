@@ -1,4 +1,4 @@
-import type { Task } from "@frak-sandbox/manager/types";
+import type { Task } from "@frak/atelier-manager/types";
 import type { Session, Todo } from "@opencode-ai/sdk/v2";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";

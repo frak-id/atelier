@@ -16,12 +16,12 @@ rm -f /var/lib/sandbox/firecracker/rootfs/dev-base.ext4
 
 After deploy, must build the base image:
 ```bash
-frak-sandbox images build dev-base
+atelier images build dev-base
 ```
 
 ## TODO: Add to init flow
 
-1. After `frak-sandbox storage` setup, automatically build dev-base image
+1. After `atelier storage` setup, automatically build dev-base image
 2. Ensure LVM thin pool has enough space for base images
 3. Add health check to verify image was built correctly
 

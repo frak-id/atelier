@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { Value } from "@sinclair/typebox/value";
 import {
+  type AtelierConfig,
+  AtelierConfigSchema,
   ENV_VAR_MAPPING,
-  type FrakConfig,
-  FrakConfigSchema,
 } from "./config.schema.ts";
 
 function setNestedValue(
@@ -97,31 +97,64 @@ function deepMerge(
 
 export const CONFIG_FILE_NAME = "sandbox.config.json";
 
+function deriveNetworkFields(config: AtelierConfig): void {
+  const octets = config.network.bridgeIp.split(".");
+  const subnet = octets.slice(0, 3).join(".");
+  config.network.guestSubnet = config.network.guestSubnet ?? subnet;
+  config.network.bridgeNetmask = config.network.bridgeNetmask ?? "24";
+  config.network.bridgeCidr = config.network.bridgeCidr ?? `${subnet}.0/24`;
+}
+
+function deriveDomainFields(config: AtelierConfig): void {
+  const base = config.domain.baseDomain;
+  if (!config.domain.dashboard) {
+    config.domain.dashboard =
+      base === "localhost" ? "sandbox.localhost" : `sandbox.${base}`;
+  }
+  if (!config.domain.ssh.hostname) {
+    config.domain.ssh.hostname =
+      base === "localhost" ? "ssh.localhost" : `ssh.${base}`;
+  }
+}
+
 export interface LoadConfigOptions {
   configFile?: string;
   skipEnv?: boolean;
   skipFile?: boolean;
 }
 
-export function loadConfig(options: LoadConfigOptions = {}): FrakConfig {
+export function getDefaultConfig(): AtelierConfig {
+  const base = { server: { mode: "mock" } };
+  const withDefaults = Value.Default(AtelierConfigSchema, base);
+  const converted = Value.Convert(AtelierConfigSchema, withDefaults);
+  const cleaned = Value.Clean(AtelierConfigSchema, converted);
+  const config = cleaned as AtelierConfig;
+  deriveNetworkFields(config);
+  deriveDomainFields(config);
+  return config;
+}
+
+export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {
   const configFile =
     options.configFile ||
-    process.env.FRAK_CONFIG ||
-    `/etc/frak-sandbox/${CONFIG_FILE_NAME}`;
+    process.env.ATELIER_CONFIG ||
+    `/etc/atelier/${CONFIG_FILE_NAME}`;
 
   const fileConfig = options.skipFile ? {} : loadFromFile(configFile);
   const envConfig = options.skipEnv ? {} : loadFromEnv();
 
   const merged = deepMerge({}, fileConfig, envConfig);
 
-  const withDefaults = Value.Default(FrakConfigSchema, merged);
-  const converted = Value.Convert(FrakConfigSchema, withDefaults);
-  const cleaned = Value.Clean(FrakConfigSchema, converted);
-
-  return cleaned as FrakConfig;
+  const withDefaults = Value.Default(AtelierConfigSchema, merged);
+  const converted = Value.Convert(AtelierConfigSchema, withDefaults);
+  const cleaned = Value.Clean(AtelierConfigSchema, converted);
+  const config = cleaned as AtelierConfig;
+  deriveNetworkFields(config);
+  deriveDomainFields(config);
+  return config;
 }
 
-export function getConfigValue<T>(config: FrakConfig, path: string): T {
+export function getConfigValue<T>(config: AtelierConfig, path: string): T {
   const keys = path.split(".");
   let current: unknown = config;
 
@@ -150,13 +183,13 @@ export interface ValidateConfigOptions {
 }
 
 export function validateConfig(
-  config: FrakConfig,
+  config: AtelierConfig,
   options: ValidateConfigOptions = {},
 ): ConfigValidationError[] {
   const errors: ConfigValidationError[] = [];
-  const isProduction = config.runtime.mode === "production";
+  const isProduction = config.server.mode === "production";
 
-  const schemaErrors = [...Value.Errors(FrakConfigSchema, config)];
+  const schemaErrors = [...Value.Errors(AtelierConfigSchema, config)];
   for (const err of schemaErrors) {
     errors.push({
       field: err.path,
@@ -165,50 +198,53 @@ export function validateConfig(
   }
 
   if (isProduction || options.requireAuth) {
-    if (!config.auth.githubClientId) {
+    if (!config.auth.github.clientId) {
       errors.push({
-        field: "auth.githubClientId",
-        message: "GitHub client ID is required (set GITHUB_CLIENT_ID)",
+        field: "auth.github.clientId",
+        message: "GitHub client ID is required (set ATELIER_GITHUB_CLIENT_ID)",
       });
     }
-    if (!config.auth.githubClientSecret) {
+    if (!config.auth.github.clientSecret) {
       errors.push({
-        field: "auth.githubClientSecret",
-        message: "GitHub client secret is required (set GITHUB_CLIENT_SECRET)",
+        field: "auth.github.clientSecret",
+        message:
+          "GitHub client secret is required (set ATELIER_GITHUB_CLIENT_SECRET)",
       });
     }
     if (config.auth.jwtSecret === "dev-secret-change-in-production") {
       errors.push({
         field: "auth.jwtSecret",
-        message: "JWT secret must be changed from default (set JWT_SECRET)",
+        message:
+          "JWT secret must be changed from default (set ATELIER_JWT_SECRET)",
       });
     }
   }
 
   if (isProduction || options.requireDomains) {
-    if (config.domains.sandboxSuffix === "localhost") {
+    if (config.domain.baseDomain === "localhost") {
       errors.push({
-        field: "domains.sandboxSuffix",
+        field: "domain.baseDomain",
         message:
-          "Domain suffix should be configured for production (set FRAK_SANDBOX_DOMAIN_SUFFIX)",
+          "Base domain should be configured for production (set ATELIER_BASE_DOMAIN)",
       });
     }
 
-    const hasCert = config.tls.certPath?.trim().length > 0;
-    const hasKey = config.tls.keyPath?.trim().length > 0;
+    const hasCert = config.domain.tls.certPath?.trim().length > 0;
+    const hasKey = config.domain.tls.keyPath?.trim().length > 0;
 
     if ((hasCert && !hasKey) || (!hasCert && hasKey)) {
       errors.push({
-        field: "tls",
+        field: "domain.tls",
         message:
           "Both tls.certPath and tls.keyPath are required for manual TLS",
       });
     }
 
-    if (!hasCert && !hasKey && !config.tls.email) {
+    if (!hasCert && !hasKey && !config.domain.tls.email) {
       errors.push({
-        field: "tls.email",
-        message: "TLS email is required for automatic HTTPS (set TLS_EMAIL)",
+        field: "domain.tls.email",
+        message:
+          "TLS email is required for automatic HTTPS (set ATELIER_TLS_EMAIL)",
       });
     }
   }
@@ -217,7 +253,7 @@ export function validateConfig(
 }
 
 export function assertConfigValid(
-  config: FrakConfig,
+  config: AtelierConfig,
   options: ValidateConfigOptions = {},
 ): void {
   const errors = validateConfig(config, options);

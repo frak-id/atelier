@@ -72,7 +72,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         sandboxService.countByStatus("running") +
         sandboxService.countByStatus("creating");
 
-      if (activeCount >= config.defaults.MAX_SANDBOXES) {
+      if (activeCount >= config.server.maxSandboxes) {
         throw new ResourceExhaustedError("sandboxes");
       }
 
@@ -363,7 +363,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             return { status: "running" as const, url: browserUrl };
           }
 
-          const browserPort = config.raw.services.browser.port;
+          const browserPort = config.advanced.vm.browser.port;
 
           const ensureStarted = async (service: string) => {
             try {

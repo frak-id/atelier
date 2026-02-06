@@ -42,13 +42,13 @@ cp "$AGENT_BINARY" "$IMAGE_DIR/sandbox-agent"
 
 echo ""
 echo "Step 2: Building Docker image..."
-docker build -t "frak-sandbox/$IMAGE_NAME" "$IMAGE_DIR"
+docker build -t "atelier/$IMAGE_NAME" "$IMAGE_DIR"
 
 rm -f "$IMAGE_DIR/sandbox-agent"
 
 echo ""
 echo "Step 3: Creating container..."
-docker create --name "$CONTAINER_NAME" "frak-sandbox/$IMAGE_NAME"
+docker create --name "$CONTAINER_NAME" "atelier/$IMAGE_NAME"
 
 echo ""
 echo "Step 4: Exporting filesystem..."

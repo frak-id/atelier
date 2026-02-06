@@ -1,10 +1,10 @@
 import * as p from "@clack/prompts";
 import {
   CONFIG_FILE_NAME,
-  DEFAULT_CONFIG,
+  getDefaultConfig,
   loadConfig,
   validateConfig,
-} from "@frak-sandbox/shared";
+} from "@frak/atelier-shared";
 import { fileExists } from "../lib/shell";
 
 export async function configCommand(args: string[] = []) {
@@ -58,13 +58,15 @@ async function showConfig() {
 
   if (!exists) {
     p.log.warn(`Config not found at ${configPath}. Showing defaults.`);
-    console.log(JSON.stringify(DEFAULT_CONFIG, null, 2));
+    console.log(JSON.stringify(getDefaultConfig(), null, 2));
     return;
   }
 
   const content = await Bun.file(configPath).text();
   console.log(
-    content.trim().length ? content : JSON.stringify(DEFAULT_CONFIG, null, 2),
+    content.trim().length
+      ? content
+      : JSON.stringify(getDefaultConfig(), null, 2),
   );
 }
 
@@ -92,11 +94,12 @@ async function setConfig(args: string[]) {
     value = input;
   }
 
+  const defaults = getDefaultConfig();
   const config = exists
     ? parseConfigFile(await Bun.file(configPath).text(), configPath)
     : {
-        ...structuredClone(DEFAULT_CONFIG),
-        runtime: { ...DEFAULT_CONFIG.runtime, mode: "production" },
+        ...structuredClone(defaults),
+        server: { ...defaults.server, mode: "production" as const },
       };
 
   setNestedValue(config, path, parseValue(path, value));
@@ -133,7 +136,7 @@ async function validateConfigCommand() {
 }
 
 function getConfigPath(): string {
-  return process.env.FRAK_CONFIG || `/etc/frak-sandbox/${CONFIG_FILE_NAME}`;
+  return process.env.ATELIER_CONFIG || `/etc/atelier/${CONFIG_FILE_NAME}`;
 }
 
 function setNestedValue(

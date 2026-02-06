@@ -1,15 +1,18 @@
 {
-  "name": "@frak-sandbox/shared",
+  "name": "@frak/atelier-shared",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./constants": "./src/constants.ts",
+    "./constants": "./src/constants/index.ts",
     "./config": "./src/config.schema.ts",
     "./config-loader": "./src/config.loader.ts",
     "./sandbox-config": "./src/sandbox-config.schema.ts",
     "./sandbox-config-loader": "./src/sandbox-config.loader.ts"
+  },
+  "scripts": {
+    "generate-schema": "bun run scripts/generate-schema.ts"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.0"

@@ -27,7 +27,7 @@
 		reverse_proxy localhost:{{MANAGER_PORT}}
 	}
 	handle {
-		root * /opt/frak-sandbox/apps/dashboard/dist
+		root * /opt/atelier/apps/dashboard/dist
 		try_files {path} /index.html
 		file_server
 	}

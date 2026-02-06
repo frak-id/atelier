@@ -43,9 +43,9 @@ export const devRoutes = new Elysia()
             | undefined;
 
           if (isRunning && cmd.port) {
-            devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.caddy.domainSuffix}`;
+            devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.domain.baseDomain}`;
             if (cmd.isDefault) {
-              defaultDevUrl = `https://dev-${sandbox.id}.${config.caddy.domainSuffix}`;
+              defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.baseDomain}`;
             }
           }
 
@@ -53,7 +53,7 @@ export const devRoutes = new Elysia()
             extraDevUrls = cmd.extraPorts.map((ep) => ({
               alias: ep.alias,
               port: ep.port,
-              url: `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.caddy.domainSuffix}`,
+              url: `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.domain.baseDomain}`,
             }));
           }
 

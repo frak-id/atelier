@@ -1,3 +1,4 @@
+import { PATHS } from "@frak/atelier-shared/constants";
 import { Elysia, t } from "elysia";
 import { CronService } from "../infrastructure/cron/index.ts";
 import { FirecrackerClient } from "../infrastructure/firecracker/index.ts";
@@ -11,7 +12,6 @@ import {
   LiveStatusSchema,
   ReadyStatusSchema,
 } from "../schemas/index.ts";
-import { config } from "../shared/lib/config.ts";
 import { dirExists } from "../shared/lib/shell.ts";
 
 const startTime = Date.now();
@@ -25,7 +25,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
           FirecrackerClient.isHealthy(),
           CaddyService.isHealthy(),
           NetworkService.getBridgeStatus().then((s) => s.exists),
-          dirExists(config.paths.SANDBOX_DIR),
+          dirExists(PATHS.SANDBOX_DIR),
           StorageService.isAvailable(),
         ]);
 

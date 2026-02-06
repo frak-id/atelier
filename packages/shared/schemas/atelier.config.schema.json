@@ -1,0 +1,346 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "domain",
+    "auth"
+  ],
+  "properties": {
+    "domain": {
+      "type": "object",
+      "properties": {
+        "baseDomain": {
+          "default": "localhost",
+          "type": "string"
+        },
+        "dashboard": {
+          "default": "",
+          "type": "string"
+        },
+        "tls": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "email": {
+              "default": "",
+              "type": "string"
+            },
+            "certPath": {
+              "default": "",
+              "type": "string"
+            },
+            "keyPath": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        },
+        "ssh": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "port": {
+              "default": 2222,
+              "type": "number"
+            },
+            "hostname": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "github": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "clientId": {
+              "default": "",
+              "type": "string"
+            },
+            "clientSecret": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        },
+        "jwtSecret": {
+          "default": "dev-secret-change-in-production",
+          "type": "string"
+        },
+        "allowedOrg": {
+          "type": "string"
+        },
+        "allowedUsers": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "server": {
+      "default": {},
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "const": "production",
+              "type": "string"
+            },
+            {
+              "const": "mock",
+              "type": "string"
+            }
+          ]
+        },
+        "port": {
+          "default": 4000,
+          "type": "number"
+        },
+        "host": {
+          "default": "0.0.0.0",
+          "type": "string"
+        },
+        "maxSandboxes": {
+          "default": 20,
+          "type": "number"
+        }
+      }
+    },
+    "network": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "bridgeIp": {
+          "default": "172.16.0.1",
+          "type": "string"
+        },
+        "bridgeName": {
+          "default": "br0",
+          "type": "string"
+        },
+        "dnsServers": {
+          "default": [
+            "8.8.8.8",
+            "8.8.4.4"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "guestIpStart": {
+          "default": 10,
+          "type": "number"
+        },
+        "guestSubnet": {
+          "default": "172.16.0",
+          "type": "string"
+        },
+        "bridgeCidr": {
+          "default": "172.16.0.0/24",
+          "type": "string"
+        },
+        "bridgeNetmask": {
+          "default": "24",
+          "type": "string"
+        }
+      }
+    },
+    "sandbox": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "defaultImage": {
+          "default": "dev-base",
+          "type": "string"
+        },
+        "imagesDirectory": {
+          "default": "/opt/atelier/infra/images",
+          "type": "string"
+        },
+        "git": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "email": {
+              "default": "sandbox@atelier.dev",
+              "type": "string"
+            },
+            "name": {
+              "default": "Sandbox User",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "setup": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "storage": {
+          "type": "object",
+          "properties": {
+            "method": {
+              "anyOf": [
+                {
+                  "const": "loop",
+                  "type": "string"
+                },
+                {
+                  "const": "device",
+                  "type": "string"
+                }
+              ]
+            },
+            "loopSizeGb": {
+              "minimum": 10,
+              "type": "number"
+            },
+            "device": {
+              "type": "string"
+            }
+          }
+        },
+        "network": {
+          "type": "object",
+          "properties": {
+            "onExists": {
+              "anyOf": [
+                {
+                  "const": "status",
+                  "type": "string"
+                },
+                {
+                  "const": "recreate",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "advanced": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "vm": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "vscode": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "port": {
+                  "default": 8080,
+                  "type": "number"
+                },
+                "version": {
+                  "default": "4.108.1",
+                  "type": "string"
+                }
+              }
+            },
+            "opencode": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "port": {
+                  "default": 3000,
+                  "type": "number"
+                },
+                "version": {
+                  "default": "1.1.48",
+                  "type": "string"
+                }
+              }
+            },
+            "browser": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "port": {
+                  "default": 6080,
+                  "type": "number"
+                }
+              }
+            },
+            "terminal": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "port": {
+                  "default": 7681,
+                  "type": "number"
+                }
+              }
+            },
+            "agent": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "port": {
+                  "default": 9999,
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "server": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "verdaccio": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "port": {
+                  "default": 4873,
+                  "type": "number"
+                },
+                "version": {
+                  "default": "6.2.4",
+                  "type": "string"
+                }
+              }
+            },
+            "sshProxy": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "version": {
+                  "default": "1.5.1",
+                  "type": "string"
+                }
+              }
+            },
+            "firecracker": {
+              "default": {},
+              "type": "object",
+              "properties": {
+                "version": {
+                  "default": "1.14.0",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

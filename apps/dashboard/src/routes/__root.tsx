@@ -289,7 +289,7 @@ function RootLayout() {
               <Link to="/" className="flex items-center gap-2">
                 <Box className="h-6 w-6 text-primary shrink-0" />
                 {!collapsed && (
-                  <span className="font-bold text-lg">Frak Sandbox</span>
+                  <span className="font-bold text-lg">L'atelier</span>
                 )}
               </Link>
               <Tooltip>
@@ -324,7 +324,7 @@ function RootLayout() {
                 <SheetTitle>
                   <Link to="/" className="flex items-center gap-2">
                     <Box className="h-6 w-6 text-primary" />
-                    <span className="font-bold text-lg">Frak Sandbox</span>
+                    <span className="font-bold text-lg">L'atelier</span>
                   </Link>
                 </SheetTitle>
               </SheetHeader>
@@ -358,7 +358,7 @@ function RootLayout() {
               </Button>
               <Link to="/" className="flex items-center gap-2">
                 <Box className="h-5 w-5 text-primary" />
-                <span className="font-bold">Frak Sandbox</span>
+                <span className="font-bold">L'atelier</span>
               </Link>
             </header>
 

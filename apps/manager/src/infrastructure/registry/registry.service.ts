@@ -2,9 +2,9 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import type { Server } from "node:http";
 import path from "node:path";
-import { REGISTRY } from "@frak-sandbox/shared/constants";
+import { REGISTRY } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
-import { config } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { appPaths } from "../../shared/lib/paths.ts";
 import { CronService } from "../cron/index.ts";
@@ -16,9 +16,9 @@ const log = createChildLogger("registry");
  * are loaded via dynamic require() which breaks in Bun's bundled output.
  * We install it in a dedicated directory and dynamically import runServer().
  */
-const VERDACCIO_DIR = "/var/lib/sandbox/registry/packages";
+const VERDACCIO_DIR = REGISTRY.PACKAGES_DIR;
 const VERDACCIO_PKG = "verdaccio";
-const VERDACCIO_VERSION = "6.2.4";
+const VERDACCIO_VERSION = config.advanced.server.verdaccio.version;
 
 const SETTINGS_FILE = () => path.join(appPaths.data, "registry-settings.json");
 
@@ -113,7 +113,11 @@ async function ensureVerdaccioInstalled(): Promise<void> {
   if (!existsSync(pkgJsonPath)) {
     writeFileSync(
       pkgJsonPath,
-      JSON.stringify({ name: "frak-registry-cache", private: true }, null, 2),
+      JSON.stringify(
+        { name: "atelier-registry-cache", private: true },
+        null,
+        2,
+      ),
     );
   }
 
@@ -184,7 +188,7 @@ export const RegistryService = {
   },
 
   async start(): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.info("Mock: Registry start skipped");
       state.settings.enabled = true;
       saveSettings(state.settings);
@@ -203,20 +207,24 @@ export const RegistryService = {
     const runServer = await importRunServer();
 
     log.info(
-      { port: REGISTRY.PORT },
+      { port: config.advanced.server.verdaccio.port },
       "Starting Verdaccio via programmatic API",
     );
 
     const app = await runServer(verdaccioConfig);
 
     await new Promise<void>((resolve, reject) => {
-      const server = app.listen(REGISTRY.PORT, "0.0.0.0", () => {
-        log.info(
-          { port: REGISTRY.PORT, host: "0.0.0.0" },
-          "Verdaccio listening",
-        );
-        resolve();
-      });
+      const server = app.listen(
+        config.advanced.server.verdaccio.port,
+        "0.0.0.0",
+        () => {
+          log.info(
+            { port: config.advanced.server.verdaccio.port, host: "0.0.0.0" },
+            "Verdaccio listening",
+          );
+          resolve();
+        },
+      );
       server.on("error", (err: Error) => {
         reject(err);
       });
@@ -238,7 +246,7 @@ export const RegistryService = {
   },
 
   async stop(): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.info("Mock: Registry stop");
       state.settings.enabled = false;
       saveSettings(state.settings);
@@ -279,11 +287,14 @@ export const RegistryService = {
   },
 
   async checkHealth(): Promise<boolean> {
-    if (config.isMock()) return state.settings.enabled;
+    if (isMock()) return state.settings.enabled;
     try {
-      const res = await fetch(`http://127.0.0.1:${REGISTRY.PORT}/-/ping`, {
-        signal: AbortSignal.timeout(3000),
-      });
+      const res = await fetch(
+        `http://127.0.0.1:${config.advanced.server.verdaccio.port}/-/ping`,
+        {
+          signal: AbortSignal.timeout(3000),
+        },
+      );
       return res.ok;
     } catch {
       return false;
@@ -291,7 +302,7 @@ export const RegistryService = {
   },
 
   async getPackageCount(): Promise<number> {
-    if (config.isMock()) return state.settings.enabled ? 42 : 0;
+    if (isMock()) return state.settings.enabled ? 42 : 0;
     try {
       const storagePath = state.settings.storagePath;
       if (!existsSync(storagePath)) return 0;
@@ -310,7 +321,7 @@ export const RegistryService = {
     totalBytes: number;
     usedPercent: number;
   }> {
-    if (config.isMock()) {
+    if (isMock()) {
       return state.settings.enabled
         ? {
             usedBytes: 1024 * 1024 * 500,
@@ -343,7 +354,7 @@ export const RegistryService = {
   },
 
   async checkUplinkHealth(): Promise<boolean> {
-    if (config.isMock()) return true;
+    if (isMock()) return true;
     try {
       const res = await fetch("https://registry.npmjs.org/-/ping", {
         signal: AbortSignal.timeout(5000),
@@ -379,7 +390,7 @@ export const RegistryService = {
   },
 
   async purgeCache(): Promise<{ freedBytes: number }> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.info("Mock: Cache purge");
       return { freedBytes: 1024 * 1024 * 200 };
     }
@@ -426,7 +437,7 @@ export const RegistryService = {
   },
 
   getRegistryUrl(): string {
-    return `http://${config.network.bridgeIp}:${REGISTRY.PORT}`;
+    return `http://${config.network.bridgeIp}:${config.advanced.server.verdaccio.port}`;
   },
 
   async waitForHealthy(timeoutMs: number): Promise<boolean> {

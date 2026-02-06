@@ -1,6 +1,5 @@
-import { FIRECRACKER } from "@frak-sandbox/shared/constants";
+import { FIRECRACKER, PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
-import { config } from "../../shared/lib/config.ts";
 import { ensureDir } from "../../shared/lib/shell.ts";
 import { BINARIES_IMAGE_PATH, SharedStorageService } from "../storage/index.ts";
 import { FirecrackerClient } from "./firecracker.client.ts";
@@ -17,10 +16,7 @@ export interface VmConfigOptions {
 export async function launchFirecracker(
   paths: SandboxPaths,
 ): Promise<{ pid: number; client: FirecrackerClient }> {
-  await Promise.all([
-    ensureDir(config.paths.SOCKET_DIR),
-    ensureDir(config.paths.LOG_DIR),
-  ]);
+  await Promise.all([ensureDir(PATHS.SOCKET_DIR), ensureDir(PATHS.LOG_DIR)]);
 
   await Promise.all([
     $`rm -f ${paths.socket}`.quiet().nothrow(),
@@ -75,7 +71,7 @@ export async function configureVm(
     options.tapDevice,
   );
 
-  const cpuTemplatePath = `${config.paths.SANDBOX_DIR}/cpu-template-no-avx.json`;
+  const cpuTemplatePath = `${PATHS.SANDBOX_DIR}/cpu-template-no-avx.json`;
   await client.setCpuConfig(cpuTemplatePath);
 
   await client.setMachineConfig(options.vcpus, options.memoryMb);

@@ -5,7 +5,7 @@ Server provisioning and management CLI. Compiles to native Linux binary. Must ru
 ## Build
 
 ```bash
-bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/frak-sandbox-linux-x64
+bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/atelier-linux-x64
 ```
 
 ## Commands

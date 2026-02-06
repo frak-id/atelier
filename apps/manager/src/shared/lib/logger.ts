@@ -1,17 +1,17 @@
 import pino from "pino";
-import { config } from "./config.ts";
+import { isProduction } from "./config.ts";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 function getLevel(): LogLevel {
   const env = process.env.LOG_LEVEL as LogLevel;
   if (env && ["debug", "info", "warn", "error"].includes(env)) return env;
-  return config.isProduction() ? "info" : "debug";
+  return isProduction() ? "info" : "debug";
 }
 
 export const logger = pino({
   level: getLevel(),
-  ...(config.isProduction()
+  ...(isProduction()
     ? {}
     : {
         transport: {

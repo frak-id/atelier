@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${FRAK_REPO:-frak-id/oc-sandbox}"
-VERSION="${FRAK_VERSION:-}"
-CLI_NAME="frak-sandbox"
+REPO="${ATELIER_REPO:-frak-id/atelier}"
+VERSION="${ATELIER_VERSION:-}"
+CLI_NAME="atelier"
 CLI_PATH="/usr/local/bin/${CLI_NAME}"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -53,7 +53,7 @@ if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
   exit 1
 fi
 
-CLI_URL="https://github.com/${REPO}/releases/download/${VERSION}/frak-sandbox-linux-x64"
+CLI_URL="https://github.com/${REPO}/releases/download/${VERSION}/atelier-linux-x64"
 
 echo "Downloading CLI ${VERSION}..."
 curl -fsSL "$CLI_URL" -o "$CLI_PATH"

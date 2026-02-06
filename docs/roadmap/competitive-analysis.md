@@ -1,6 +1,6 @@
 # Competitive Analysis & Market Positioning
 
-> Understanding the landscape to differentiate FRAK Sandbox
+> Understanding the landscape to differentiate L'atelier
 
 **Last Updated:** January 2026
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The Cloud Development Environment (CDE) market is experiencing rapid evolution with a notable **pivot toward AI agent runtimes** (2025-2026). FRAK's unique position combining **Firecracker VM isolation** with **container-like speed** creates differentiation opportunities in both traditional developer sandboxes and emerging AI agent infrastructure.
+The Cloud Development Environment (CDE) market is experiencing rapid evolution with a notable **pivot toward AI agent runtimes** (2025-2026). Atelier's unique position combining **Firecracker VM isolation** with **container-like speed** creates differentiation opportunities in both traditional developer sandboxes and emerging AI agent infrastructure.
 
 ---
 
@@ -35,7 +35,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 │  │ • OpenVSCode Server        │         │ • Firecracker (raw) │   │
 │  └────────────────────────────┘         └─────────────────────┘   │
 │                                                                    │
-│                        FRAK OPPORTUNITY:                           │
+│                        ATELIER OPPORTUNITY:                           │
 │              ┌─────────────────────────────────┐                  │
 │              │   VM isolation + Self-hosted    │                  │
 │              │   + AI agent ready + Simple     │                  │
@@ -71,7 +71,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 | **Strengths** | Perfect GitHub integration, enterprise trust, reliable |
 | **Weaknesses** | GitHub-only, expensive at scale, no self-hosting |
 
-**FRAK Differentiation:**
+**Atelier Differentiation:**
 - ✅ Self-hosted (data sovereignty)
 - ✅ Multi-SCM support
 - ✅ Cost control (your infrastructure)
@@ -89,7 +89,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 | **Strengths** | Infrastructure flexibility, Terraform-based, mature |
 | **Weaknesses** | Complex setup, Kubernetes required, container isolation |
 
-**FRAK Differentiation:**
+**Atelier Differentiation:**
 - ✅ Simpler setup (no Kubernetes)
 - ✅ VM isolation (stronger than containers)
 - ✅ Firecracker speed
@@ -107,7 +107,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 | **Strengths** | No server, works anywhere, DevContainer standard |
 | **Weaknesses** | Client-side complexity, container isolation only |
 
-**FRAK Differentiation:**
+**Atelier Differentiation:**
 - ✅ VM isolation
 - ✅ Centralized management (dashboard)
 - ✅ Prebuilds on server
@@ -125,7 +125,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 | **Strengths** | <90ms startup, AI-first pivot, momentum |
 | **Weaknesses** | Young project, pivot uncertainty |
 
-**FRAK Differentiation:**
+**Atelier Differentiation:**
 - ✅ Proven Firecracker technology
 - ✅ VM isolation (vs containers)
 - ✅ Self-hosted focus
@@ -143,7 +143,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 | **Strengths** | Global edge, proven Firecracker at scale |
 | **Weaknesses** | Platform lock-in, not open-source |
 
-**Learnings for FRAK:**
+**Learnings for Atelier:**
 - Custom orchestrator (`flyd`) beats generic solutions
 - BGP Anycast + WireGuard for global networking
 - Developer UX is critical
@@ -158,7 +158,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 | **Strengths** | Kubernetes-native, enterprise backing, flexible |
 | **Weaknesses** | K8s complexity, not developer-focused |
 
-**Learnings for FRAK:**
+**Learnings for Atelier:**
 - Provider abstraction (multiple hypervisors) is valuable
 - Kubernetes integration is table stakes for enterprise
 
@@ -190,7 +190,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 
 ### Feature Comparison
 
-| Feature | FRAK | Codespaces | Coder | DevPod | Daytona |
+| Feature | Atelier | Codespaces | Coder | DevPod | Daytona |
 |---------|------|------------|-------|--------|---------|
 | **Self-hosted** | ✅ | ❌ | ✅ | ✅* | ✅ |
 | **VM isolation** | ✅ | ✅ | ❌ | ❌ | ❌ |
@@ -209,7 +209,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 
 ### Performance Comparison
 
-| Metric | FRAK | Codespaces | Coder | DevPod | Daytona |
+| Metric | Atelier | Codespaces | Coder | DevPod | Daytona |
 |--------|------|------------|-------|--------|---------|
 | Cold start | ~200ms | ~30s | ~30s | ~30s | <90ms |
 | Warm resume | <10ms | ~5s | ~5s | N/A | ~10ms |
@@ -219,7 +219,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 
 | Platform | Free Tier | Paid | Self-hosted |
 |----------|-----------|------|-------------|
-| **FRAK** | Unlimited (OSS) | N/A | Your infra cost |
+| **Atelier** | Unlimited (OSS) | N/A | Your infra cost |
 | **Codespaces** | 120 core-hrs/mo | $0.18/hr+ | N/A |
 | **Coder** | Unlimited (OSS) | $250k/yr | Your infra cost |
 | **DevPod** | Unlimited | N/A | Your infra cost |
@@ -227,7 +227,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 
 ---
 
-## FRAK's Unique Value Proposition
+## Atelier's Unique Value Proposition
 
 ### The Security-Speed Intersection
 
@@ -235,7 +235,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
                          ISOLATION STRENGTH
                                ▲
                                │
-                    Kata ──────┼────── FRAK
+                    Kata ──────┼────── Atelier
                    (slow)      │      (fast VMs)
                                │
             Codespaces ────────┼──────────────────► STARTUP SPEED
@@ -246,7 +246,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
                                │
 ```
 
-**FRAK's Position:** Strong isolation (VMs) + Fast startup (Firecracker) = Unique.
+**Atelier's Position:** Strong isolation (VMs) + Fast startup (Firecracker) = Unique.
 
 ### Target User Personas
 
@@ -259,7 +259,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 - Codespaces not allowed (data sovereignty)
 - Coder too complex to operate
 
-**FRAK Value:**
+**Atelier Value:**
 - VM isolation satisfies security team
 - Self-hosted satisfies compliance
 - Simple enough for platform team to manage
@@ -272,7 +272,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 - Codespaces costs $500-1000+/month per developer
 - Need instant environments but control costs
 
-**FRAK Value:**
+**Atelier Value:**
 - Run on existing infrastructure
 - Same speed, fraction of the cost
 - No per-user pricing
@@ -286,7 +286,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 - Container escape is a real risk
 - Need programmatic control (SDK)
 
-**FRAK Value:**
+**Atelier Value:**
 - VM boundary prevents escape
 - SDK for programmatic control
 - Fast enough for agent workflows
@@ -300,7 +300,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 - Codespaces requires GitHub Enterprise
 - Need something simple to operate
 
-**FRAK Value:**
+**Atelier Value:**
 - Single binary, simple setup
 - No Kubernetes required
 - Dashboard for self-service
@@ -363,15 +363,15 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 1. **Blog series:**
    - "The Case for VM Isolation in 2026"
    - "Firecracker vs Docker: A Performance Comparison"
-   - "Building AI Agent Sandboxes with FRAK"
+   - "Building AI Agent Sandboxes with Atelier"
 
 2. **Tutorials:**
-   - "Deploy FRAK on Hetzner in 10 Minutes"
-   - "Migrate from Codespaces to FRAK"
-   - "Self-Hosted AI Coding Agent with FRAK + Ollama"
+   - "Deploy Atelier on Hetzner in 10 Minutes"
+   - "Migrate from Codespaces to Atelier"
+   - "Self-Hosted AI Coding Agent with Atelier + Ollama"
 
 3. **Comparisons:**
-   - "FRAK vs Coder: Which is Right for You?"
+   - "Atelier vs Coder: Which is Right for You?"
    - "The Complete Guide to Self-Hosted Dev Environments"
 
 ### Phase 3: Enterprise Outreach
@@ -397,7 +397,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 
 ### Competitive Benchmarks
 
-| Metric | DevPod (2yr) | Daytona (1yr) | Target for FRAK |
+| Metric | DevPod (2yr) | Daytona (1yr) | Target for Atelier |
 |--------|--------------|---------------|-----------------|
 | Stars | 14,600 | 50,400* | 5,000 (Y1) |
 | Contributors | 50 | 100 | 25 (Y1) |
@@ -438,7 +438,7 @@ The Cloud Development Environment (CDE) market is experiencing rapid evolution w
 
 ## Conclusion
 
-FRAK occupies a unique position in the CDE/sandbox market:
+Atelier occupies a unique position in the CDE/sandbox market:
 
 **Strengths:**
 - ✅ Only self-hosted solution with VM isolation + fast startup
@@ -457,4 +457,4 @@ FRAK occupies a unique position in the CDE/sandbox market:
 3. **Expand to AI agents** - Ride the market trend
 4. **Enterprise upsell** - Air-gapped, compliance features
 
-**The bottom line:** FRAK can succeed by owning the intersection of **VM-level security**, **self-hosted simplicity**, and **AI-ready architecture** that no current competitor fully addresses.
+**The bottom line:** Atelier can succeed by owning the intersection of **VM-level security**, **self-hosted simplicity**, and **AI-ready architecture** that no current competitor fully addresses.

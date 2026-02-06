@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { loadConfig } from "@frak-sandbox/shared";
+import { loadConfig } from "@frak/atelier-shared";
 import { LVM } from "../lib/context";
 import { exec, fileExists } from "../lib/shell";
 
@@ -269,7 +269,7 @@ async function showStorageStatus() {
 
   console.log("");
   p.note(
-    `Build image:      frak-sandbox images dev-base
+    `Build image:      atelier images dev-base
 Delete snapshot:  lvremove -f ${LVM.VG_NAME}/sandbox-{id}
 List volumes:     lvs ${LVM.VG_NAME}`,
     "Usage",
@@ -308,9 +308,7 @@ async function testSnapshotPerformance(spinner: ReturnType<typeof p.spinner>) {
     throws: false,
   });
   if (!sourceExists.success) {
-    spinner.stop(
-      "No image volume found — run 'frak-sandbox images dev-base' first",
-    );
+    spinner.stop("No image volume found — run 'atelier images dev-base' first");
     return;
   }
   await exec(`lvcreate -s -n ${testSnap} ${LVM.VG_NAME}/${sourceVolume}`);

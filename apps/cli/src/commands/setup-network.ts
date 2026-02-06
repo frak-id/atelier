@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
-import { loadConfig } from "@frak-sandbox/shared";
-import { frakConfig, PATHS } from "../lib/context";
+import { loadConfig } from "@frak/atelier-shared";
+import { atelierConfig, PATHS } from "../lib/context";
 import { exec } from "../lib/shell";
 
 const SYSTEMD_SERVICE_PATH = "/etc/systemd/system/sandbox-network.service";
@@ -10,14 +10,14 @@ export async function setupNetwork(_args: string[] = []) {
   p.log.step("Network Setup: Persistent Bridge");
 
   const bridgeExists = await exec(
-    `ip link show ${frakConfig.network.bridgeName}`,
+    `ip link show ${atelierConfig.network.bridgeName}`,
     {
       throws: false,
     },
   );
 
   if (bridgeExists.success) {
-    p.log.warn(`Bridge '${frakConfig.network.bridgeName}' already exists`);
+    p.log.warn(`Bridge '${atelierConfig.network.bridgeName}' already exists`);
     await showNetworkStatus();
 
     const setupConfig = await loadNetworkSetupConfig();
@@ -57,7 +57,7 @@ export async function setupNetwork(_args: string[] = []) {
 
   spinner.start("Creating bridge interface");
   await createBridge();
-  spinner.stop(`Bridge ${frakConfig.network.bridgeName} created`);
+  spinner.stop(`Bridge ${atelierConfig.network.bridgeName} created`);
 
   spinner.start("Configuring NAT");
   await configureNat();
@@ -72,11 +72,13 @@ export async function setupNetwork(_args: string[] = []) {
 }
 
 async function createBridge() {
-  await exec(`ip link add name ${frakConfig.network.bridgeName} type bridge`);
   await exec(
-    `ip addr add ${frakConfig.network.bridgeIp}/${frakConfig.network.bridgeNetmask} dev ${frakConfig.network.bridgeName}`,
+    `ip link add name ${atelierConfig.network.bridgeName} type bridge`,
   );
-  await exec(`ip link set dev ${frakConfig.network.bridgeName} up`);
+  await exec(
+    `ip addr add ${atelierConfig.network.bridgeIp}/${atelierConfig.network.bridgeNetmask} dev ${atelierConfig.network.bridgeName}`,
+  );
+  await exec(`ip link set dev ${atelierConfig.network.bridgeName} up`);
 }
 
 async function configureNat() {
@@ -91,22 +93,22 @@ async function configureNat() {
   );
 
   await exec(
-    `iptables -C FORWARD -i ${frakConfig.network.bridgeName} -o ${frakConfig.network.bridgeName} -s ${frakConfig.network.bridgeCidr} -d ${frakConfig.network.bridgeCidr} -j DROP 2>/dev/null || \
-     iptables -I FORWARD 1 -i ${frakConfig.network.bridgeName} -o ${frakConfig.network.bridgeName} -s ${frakConfig.network.bridgeCidr} -d ${frakConfig.network.bridgeCidr} -j DROP`,
+    `iptables -C FORWARD -i ${atelierConfig.network.bridgeName} -o ${atelierConfig.network.bridgeName} -s ${atelierConfig.network.bridgeCidr} -d ${atelierConfig.network.bridgeCidr} -j DROP 2>/dev/null || \
+      iptables -I FORWARD 1 -i ${atelierConfig.network.bridgeName} -o ${atelierConfig.network.bridgeName} -s ${atelierConfig.network.bridgeCidr} -d ${atelierConfig.network.bridgeCidr} -j DROP`,
   );
 
   await exec(
-    `iptables -t nat -C POSTROUTING -s ${frakConfig.network.bridgeCidr} -o ${hostIface} -j MASQUERADE 2>/dev/null || \
-     iptables -t nat -A POSTROUTING -s ${frakConfig.network.bridgeCidr} -o ${hostIface} -j MASQUERADE`,
+    `iptables -t nat -C POSTROUTING -s ${atelierConfig.network.bridgeCidr} -o ${hostIface} -j MASQUERADE 2>/dev/null || \
+      iptables -t nat -A POSTROUTING -s ${atelierConfig.network.bridgeCidr} -o ${hostIface} -j MASQUERADE`,
   );
 
   await exec(
-    `iptables -C FORWARD -i ${frakConfig.network.bridgeName} -o ${hostIface} -j ACCEPT 2>/dev/null || \
-     iptables -A FORWARD -i ${frakConfig.network.bridgeName} -o ${hostIface} -j ACCEPT`,
+    `iptables -C FORWARD -i ${atelierConfig.network.bridgeName} -o ${hostIface} -j ACCEPT 2>/dev/null || \
+      iptables -A FORWARD -i ${atelierConfig.network.bridgeName} -o ${hostIface} -j ACCEPT`,
   );
   await exec(
-    `iptables -C FORWARD -i ${hostIface} -o ${frakConfig.network.bridgeName} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-     iptables -A FORWARD -i ${hostIface} -o ${frakConfig.network.bridgeName} -m state --state RELATED,ESTABLISHED -j ACCEPT`,
+    `iptables -C FORWARD -i ${hostIface} -o ${atelierConfig.network.bridgeName} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+      iptables -A FORWARD -i ${hostIface} -o ${atelierConfig.network.bridgeName} -m state --state RELATED,ESTABLISHED -j ACCEPT`,
   );
 }
 
@@ -114,14 +116,14 @@ async function installSystemdService() {
   const scriptContent = `#!/bin/bash
 set -e
 
-BRIDGE="${frakConfig.network.bridgeName}"
-BRIDGE_IP="${frakConfig.network.bridgeIp}"
-BRIDGE_CIDR="${frakConfig.network.bridgeCidr}"
+BRIDGE="${atelierConfig.network.bridgeName}"
+BRIDGE_IP="${atelierConfig.network.bridgeIp}"
+BRIDGE_CIDR="${atelierConfig.network.bridgeCidr}"
 
 if ! ip link show "$BRIDGE" &>/dev/null; then
-  ip link add name "$BRIDGE" type bridge
-  ip addr add "$BRIDGE_IP/${frakConfig.network.bridgeNetmask}" dev "$BRIDGE"
-  ip link set dev "$BRIDGE" up
+   ip link add name "$BRIDGE" type bridge
+   ip addr add "$BRIDGE_IP/${atelierConfig.network.bridgeNetmask}" dev "$BRIDGE"
+   ip link set dev "$BRIDGE" up
 fi
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
@@ -146,7 +148,7 @@ echo "Sandbox network configured"
   const serviceContent = `[Unit]
 Description=Sandbox Network Bridge
 After=network.target
-Before=frak-sandbox-manager.service
+Before=atelier-manager.service
 
 [Service]
 Type=oneshot
@@ -173,7 +175,7 @@ async function destroyBridge() {
   spinner.start("Destroying existing bridge");
 
   const { stdout: taps } = await exec(
-    `ip link show master ${frakConfig.network.bridgeName} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || true`,
+    `ip link show master ${atelierConfig.network.bridgeName} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || true`,
     { throws: false },
   );
 
@@ -181,7 +183,9 @@ async function destroyBridge() {
     await exec(`ip link del ${tap}`, { throws: false });
   }
 
-  await exec(`ip link del ${frakConfig.network.bridgeName}`, { throws: false });
+  await exec(`ip link del ${atelierConfig.network.bridgeName}`, {
+    throws: false,
+  });
 
   spinner.stop("Bridge destroyed");
 }
@@ -190,7 +194,7 @@ async function showNetworkStatus() {
   p.log.info("Network Status:");
 
   const bridgeInfo = await exec(
-    `ip addr show ${frakConfig.network.bridgeName}`,
+    `ip addr show ${atelierConfig.network.bridgeName}`,
     {
       throws: false,
     },
@@ -202,7 +206,7 @@ async function showNetworkStatus() {
   console.log("");
 
   const { stdout: attachedTaps } = await exec(
-    `ip link show master ${frakConfig.network.bridgeName} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || echo "None"`,
+    `ip link show master ${atelierConfig.network.bridgeName} 2>/dev/null | grep -oP '^\\d+: \\K[^:@]+' || echo "None"`,
     { throws: false },
   );
   console.log(
@@ -221,9 +225,9 @@ async function showNetworkStatus() {
 
   console.log("");
   p.note(
-    `Bridge: ${frakConfig.network.bridgeName} (${frakConfig.network.bridgeIp}/${frakConfig.network.bridgeNetmask})
-Guest IPs: ${frakConfig.network.guestSubnet}.${frakConfig.network.guestIpStart}+
-Test VM IP: ${frakConfig.network.guestSubnet}.2`,
+    `Bridge: ${atelierConfig.network.bridgeName} (${atelierConfig.network.bridgeIp}/${atelierConfig.network.bridgeNetmask})
+Guest IPs: ${atelierConfig.network.guestSubnet}.${atelierConfig.network.guestIpStart}+
+Test VM IP: ${atelierConfig.network.guestSubnet}.2`,
     "Network Info",
   );
 }

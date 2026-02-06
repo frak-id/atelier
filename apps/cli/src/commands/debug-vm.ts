@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { frakConfig, PATHS } from "../lib/context";
+import { atelierConfig, PATHS } from "../lib/context";
 
 const TEST_TAP = "tap-test";
 const TEST_VM_MAC = "06:00:AC:10:00:02";
@@ -99,7 +99,9 @@ async function startVm() {
 
   spinner.start("Creating TAP device");
   await createTap();
-  spinner.stop(`TAP ${TEST_TAP} attached to ${frakConfig.network.bridgeName}`);
+  spinner.stop(
+    `TAP ${TEST_TAP} attached to ${atelierConfig.network.bridgeName}`,
+  );
 
   spinner.start("Creating working copy of rootfs");
   await exec(`cp ${PATHS.ROOTFS_DIR}/rootfs.ext4 ${paths.rootfs}`);
@@ -167,9 +169,9 @@ async function startVm() {
 
   p.log.success(`VM started (PID: ${proc.pid})`);
   p.note(
-    `Guest IP: ${`${frakConfig.network.guestSubnet}.2`}
-SSH: frak-sandbox debug-vm ssh
-Stop: frak-sandbox debug-vm stop`,
+    `Guest IP: ${`${atelierConfig.network.guestSubnet}.2`}
+SSH: atelier debug-vm ssh
+Stop: atelier debug-vm stop`,
     "Debug VM",
   );
 }
@@ -232,14 +234,14 @@ async function vmStatus() {
   const socketExists = await fileExists(paths.socket);
   const pidExists = await fileExists(paths.pid);
   const bridgeExists = (
-    await exec(`ip link show ${frakConfig.network.bridgeName}`, {
+    await exec(`ip link show ${atelierConfig.network.bridgeName}`, {
       throws: false,
     })
   ).success;
   const tapExists = (await exec(`ip link show ${TEST_TAP}`, { throws: false }))
     .success;
   const pingable = (
-    await exec(`ping -c 1 -W 1 ${`${frakConfig.network.guestSubnet}.2`}`, {
+    await exec(`ping -c 1 -W 1 ${`${atelierConfig.network.guestSubnet}.2`}`, {
       throws: false,
     })
   ).success;
@@ -254,7 +256,7 @@ async function vmStatus() {
   console.log("VM Status:");
   console.log("----------");
   console.log(
-    `  Bridge:  ${bridgeExists ? `✓ ${frakConfig.network.bridgeName}` : "✗ not found (run 'frak-sandbox network')"}`,
+    `  Bridge:  ${bridgeExists ? `✓ ${atelierConfig.network.bridgeName}` : "✗ not found (run 'atelier network')"}`,
   );
   console.log(`  TAP:     ${tapExists ? `✓ ${TEST_TAP}` : "○ not created"}`);
   console.log(`  Socket:  ${socketExists ? "✓ exists" : "✗ not found"}`);
@@ -262,7 +264,7 @@ async function vmStatus() {
     `  Process: ${processRunning ? "✓ running" : pidExists ? "✗ dead (stale PID)" : "○ not running"}`,
   );
   console.log(
-    `  Guest:   ${pingable ? "✓ reachable" : "○ not reachable"} (${`${frakConfig.network.guestSubnet}.2`})`,
+    `  Guest:   ${pingable ? "✓ reachable" : "○ not reachable"} (${`${atelierConfig.network.guestSubnet}.2`})`,
   );
   console.log("");
 }
@@ -274,33 +276,35 @@ async function sshToVm() {
     throw new Error(`SSH key not found: ${paths.sshKey}`);
   }
 
-  p.log.info(`Connecting to ${`${frakConfig.network.guestSubnet}.2`}...`);
+  p.log.info(`Connecting to ${`${atelierConfig.network.guestSubnet}.2`}...`);
 
   await execLive(
     `ssh -i ${paths.sshKey} \
-      -o StrictHostKeyChecking=no \
-      -o UserKnownHostsFile=/dev/null \
-      root@${`${frakConfig.network.guestSubnet}.2`}`,
+       -o StrictHostKeyChecking=no \
+       -o UserKnownHostsFile=/dev/null \
+       root@${`${atelierConfig.network.guestSubnet}.2`}`,
   );
 }
 
 async function createTap() {
   await exec(`ip link del ${TEST_TAP} 2>/dev/null || true`);
   await exec(`ip tuntap add dev ${TEST_TAP} mode tap`);
-  await exec(`ip link set ${TEST_TAP} master ${frakConfig.network.bridgeName}`);
+  await exec(
+    `ip link set ${TEST_TAP} master ${atelierConfig.network.bridgeName}`,
+  );
   await exec(`ip link set dev ${TEST_TAP} up`);
 }
 
 async function checkPrerequisites(paths: VmPaths) {
   const bridgeExists = await exec(
-    `ip link show ${frakConfig.network.bridgeName}`,
+    `ip link show ${atelierConfig.network.bridgeName}`,
     {
       throws: false,
     },
   );
   if (!bridgeExists.success) {
     throw new Error(
-      `Bridge ${frakConfig.network.bridgeName} not found. Run 'frak-sandbox network' first.`,
+      `Bridge ${atelierConfig.network.bridgeName} not found. Run 'atelier network' first.`,
     );
   }
 
@@ -313,7 +317,7 @@ async function checkPrerequisites(paths: VmPaths) {
   for (const check of checks) {
     if (!(await fileExists(check.path))) {
       throw new Error(
-        `${check.name} not found: ${check.path}. Run 'frak-sandbox firecracker' first.`,
+        `${check.name} not found: ${check.path}. Run 'atelier firecracker' first.`,
       );
     }
   }
@@ -322,7 +326,7 @@ async function checkPrerequisites(paths: VmPaths) {
     throws: false,
   });
   if (!kvmOk.success) {
-    throw new Error("KVM not accessible. Run 'frak-sandbox base' first.");
+    throw new Error("KVM not accessible. Run 'atelier base' first.");
   }
 }
 
@@ -333,13 +337,13 @@ async function injectNetworkConfig(rootfsPath: string) {
   await exec(`mount -o loop ${rootfsPath} ${mountPoint}`);
 
   try {
-    const dnsLines = frakConfig.network.dnsServers
+    const dnsLines = atelierConfig.network.dnsServers
       .map((dns) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
       .join("\n");
     const networkScript = `#!/bin/bash
-ip addr add ${`${frakConfig.network.guestSubnet}.2`}/${frakConfig.network.bridgeNetmask} dev eth0
+ip addr add ${`${atelierConfig.network.guestSubnet}.2`}/${atelierConfig.network.bridgeNetmask} dev eth0
 ip link set eth0 up
-ip route add default via ${frakConfig.network.bridgeIp} dev eth0
+ip route add default via ${atelierConfig.network.bridgeIp} dev eth0
 > /etc/resolv.conf
 ${dnsLines}
 `;

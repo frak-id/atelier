@@ -1,12 +1,12 @@
 # Contributing
 
-Thanks for helping improve FRAK Sandbox.
+Thanks for helping improve L'atelier.
 
 ## Quick start
 
 ```bash
 bun install
-SANDBOX_MODE=mock bun run dev
+ATELIER_SERVER_MODE=mock bun run dev
 ```
 
 ## Requirements

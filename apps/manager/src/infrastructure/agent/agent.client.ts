@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
-import type { SandboxConfig } from "@frak-sandbox/shared";
+import type { SandboxConfig } from "@frak/atelier-shared";
 import { SandboxError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { getVsockPath } from "../firecracker/index.ts";

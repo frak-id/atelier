@@ -1,7 +1,7 @@
 import {
-  SHARED_BINARIES,
+  getSharedBinaries,
   type SharedBinaryId,
-} from "@frak-sandbox/shared/constants";
+} from "@frak/atelier-shared/constants";
 import { Elysia } from "elysia";
 import { SharedStorageService } from "../infrastructure/storage/index.ts";
 import {
@@ -12,9 +12,15 @@ import {
   SharedStorageStatusSchema,
 } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
+import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("shared-storage-routes");
+
+const SHARED_BINARIES = getSharedBinaries({
+  opencode: config.advanced.vm.opencode.version,
+  codeServer: config.advanced.vm.vscode.version,
+});
 
 function isValidBinaryId(id: string): id is SharedBinaryId {
   return id in SHARED_BINARIES;

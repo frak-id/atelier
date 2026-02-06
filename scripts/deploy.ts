@@ -16,7 +16,7 @@ const INFRA_DIR = resolve(ROOT, "infra");
 const IMAGES_DIR = resolve(ROOT, "infra/images");
 
 const STAGING_DIR = resolve(ROOT, ".deploy-staging");
-const TARBALL_NAME = "frak-sandbox-deploy.tar.gz";
+const TARBALL_NAME = "atelier-deploy.tar.gz";
 const CONFIG_FILE = resolve(ROOT, CONFIG_FILE_NAME);
 
 const { SSH_KEY_PATH, SSH_USER, SSH_HOST, SSH_KEY_PASSPHRASE } = process.env;
@@ -37,15 +37,15 @@ async function main() {
     process.exit(1);
   }
 
-  const frakConfig = loadConfig({ configFile: CONFIG_FILE });
+  const atelierConfig = loadConfig({ configFile: CONFIG_FILE });
 
   if (
-    !frakConfig.auth.githubClientId ||
-    !frakConfig.auth.githubClientSecret ||
-    !frakConfig.auth.jwtSecret
+    !atelierConfig.auth.github.clientId ||
+    !atelierConfig.auth.github.clientSecret ||
+    !atelierConfig.auth.jwtSecret
   ) {
     console.error(
-      "Missing required secrets: githubClientId, githubClientSecret, jwtSecret",
+      "Missing required secrets: clientId, clientSecret, jwtSecret",
     );
     console.error("Set them in sandbox.config.json (auth section)");
     process.exit(1);
@@ -64,8 +64,8 @@ async function main() {
   const target = `${SSH_USER}@${SSH_HOST}`;
 
   console.log("\n📦 Building...");
-  await $`bun run --filter @frak-sandbox/cli build:linux`;
-  await $`bun run --filter @frak-sandbox/manager build`;
+  await $`bun run --filter @frak/atelier-cli build:linux`;
+  await $`bun run --filter @frak/atelier-manager build`;
   await $`CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc cargo build --release --target x86_64-unknown-linux-musl --manifest-path ${resolve(AGENT_DIR, "Cargo.toml")}`;
   mkdirSync(resolve(AGENT_DIR, "dist"), { recursive: true });
   cpSync(
@@ -75,95 +75,92 @@ async function main() {
     ),
     resolve(AGENT_DIR, "dist/sandbox-agent"),
   );
-  await $`bun run --filter @frak-sandbox/dashboard build`;
+  await $`bun run --filter @frak/atelier-dashboard build`;
 
   console.log("\n📁 Staging files...");
   rmSync(STAGING_DIR, { recursive: true, force: true });
   mkdirSync(STAGING_DIR, { recursive: true });
 
   const dirs = [
-    "opt/frak-sandbox/drizzle",
-    "opt/frak-sandbox/infra/images/dev-base",
-    "opt/frak-sandbox/infra/images/dev-cloud",
-    "opt/frak-sandbox/apps/dashboard",
+    "opt/atelier/drizzle",
+    "opt/atelier/infra/images/dev-base",
+    "opt/atelier/infra/images/dev-cloud",
+    "opt/atelier/apps/dashboard",
     "usr/local/bin",
     "etc/systemd/system",
     "etc/caddy",
-    "etc/frak-sandbox",
+    "etc/atelier",
   ];
   for (const dir of dirs) {
     mkdirSync(resolve(STAGING_DIR, dir), { recursive: true });
   }
 
   cpSync(
-    resolve(CLI_DIR, "dist/frak-sandbox-linux-x64"),
-    resolve(STAGING_DIR, "usr/local/bin/frak-sandbox"),
+    resolve(CLI_DIR, "dist/atelier-linux-x64"),
+    resolve(STAGING_DIR, "usr/local/bin/atelier"),
   );
   cpSync(
     resolve(MANAGER_DIR, "dist/server.js"),
-    resolve(STAGING_DIR, "opt/frak-sandbox/server.js"),
+    resolve(STAGING_DIR, "opt/atelier/server.js"),
   );
   cpSync(
     resolve(MANAGER_DIR, "drizzle"),
-    resolve(STAGING_DIR, "opt/frak-sandbox/drizzle"),
+    resolve(STAGING_DIR, "opt/atelier/drizzle"),
     { recursive: true },
   );
   cpSync(
     resolve(AGENT_DIR, "dist/sandbox-agent"),
-    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/sandbox-agent"),
+    resolve(STAGING_DIR, "opt/atelier/infra/images/sandbox-agent"),
   );
   cpSync(
     resolve(DASHBOARD_DIR, "dist"),
-    resolve(STAGING_DIR, "opt/frak-sandbox/apps/dashboard/dist"),
+    resolve(STAGING_DIR, "opt/atelier/apps/dashboard/dist"),
     { recursive: true },
   );
   cpSync(
     resolve(IMAGES_DIR, "build-image.sh"),
-    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/build-image.sh"),
+    resolve(STAGING_DIR, "opt/atelier/infra/images/build-image.sh"),
   );
   cpSync(
     resolve(IMAGES_DIR, "dev-base"),
-    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/dev-base"),
+    resolve(STAGING_DIR, "opt/atelier/infra/images/dev-base"),
     { recursive: true },
   );
   cpSync(
     resolve(IMAGES_DIR, "dev-cloud"),
-    resolve(STAGING_DIR, "opt/frak-sandbox/infra/images/dev-cloud"),
+    resolve(STAGING_DIR, "opt/atelier/infra/images/dev-cloud"),
     { recursive: true },
   );
 
-  cpSync(
-    CONFIG_FILE,
-    resolve(STAGING_DIR, `etc/frak-sandbox/${CONFIG_FILE_NAME}`),
-  );
+  cpSync(CONFIG_FILE, resolve(STAGING_DIR, `etc/atelier/${CONFIG_FILE_NAME}`));
 
   cpSync(
-    resolve(INFRA_DIR, "systemd/frak-sandbox-manager.service"),
-    resolve(STAGING_DIR, "etc/systemd/system/frak-sandbox-manager.service"),
+    resolve(INFRA_DIR, "systemd/atelier-manager.service"),
+    resolve(STAGING_DIR, "etc/systemd/system/atelier-manager.service"),
   );
   cpSync(
-    resolve(INFRA_DIR, "systemd/frak-sandbox-network.service"),
-    resolve(STAGING_DIR, "etc/systemd/system/frak-sandbox-network.service"),
+    resolve(INFRA_DIR, "systemd/atelier-network.service"),
+    resolve(STAGING_DIR, "etc/systemd/system/atelier-network.service"),
   );
 
   const caddyfileTemplate = await Bun.file(
     resolve(INFRA_DIR, "caddy/Caddyfile.template"),
   ).text();
   const useManualTls =
-    frakConfig.tls.certPath?.trim().length > 0 &&
-    frakConfig.tls.keyPath?.trim().length > 0;
+    atelierConfig.domain.tls.certPath?.trim().length > 0 &&
+    atelierConfig.domain.tls.keyPath?.trim().length > 0;
   let caddyfile = caddyfileTemplate
-    .replace(/\{\{SSL_EMAIL\}\}/g, frakConfig.tls.email)
-    .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, frakConfig.domains.dashboard)
-    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, frakConfig.domains.sandboxSuffix)
-    .replace(/\{\{MANAGER_PORT\}\}/g, String(frakConfig.runtime.port));
+    .replace(/\{\{SSL_EMAIL\}\}/g, atelierConfig.domain.tls.email)
+    .replace(/\{\{DASHBOARD_DOMAIN\}\}/g, atelierConfig.domain.dashboard)
+    .replace(/\{\{DOMAIN_SUFFIX\}\}/g, atelierConfig.domain.baseDomain)
+    .replace(/\{\{MANAGER_PORT\}\}/g, String(atelierConfig.server.port));
 
   if (useManualTls) {
     caddyfile = caddyfile
       .replace(/\{\{#MANUAL_TLS\}\}/g, "")
       .replace(/\{\{\/MANUAL_TLS\}\}/g, "")
-      .replace(/\{\{TLS_CERT_PATH\}\}/g, frakConfig.tls.certPath)
-      .replace(/\{\{TLS_KEY_PATH\}\}/g, frakConfig.tls.keyPath)
+      .replace(/\{\{TLS_CERT_PATH\}\}/g, atelierConfig.domain.tls.certPath)
+      .replace(/\{\{TLS_KEY_PATH\}\}/g, atelierConfig.domain.tls.keyPath)
       .replace(/\{\{TLS_CONFIG\}\}/g, "import tls_manual");
   } else {
     caddyfile = caddyfile
@@ -194,37 +191,37 @@ async function main() {
   const installScript = `
 set -e
 
-DEPLOY_TMP="/tmp/frak-deploy-$$"
+DEPLOY_TMP="/tmp/atelier-deploy-$$"
 mkdir -p "$DEPLOY_TMP"
 tar -xzf /tmp/${TARBALL_NAME} -C "$DEPLOY_TMP"
 
-mkdir -p /opt/frak-sandbox/infra/images /opt/frak-sandbox/apps/dashboard /opt/frak-sandbox/drizzle /etc/frak-sandbox
+mkdir -p /opt/atelier/infra/images /opt/atelier/apps/dashboard /opt/atelier/drizzle /etc/atelier
 
 # Stop service and kill any CLI processes before overwriting binary (Text file busy fix)
-systemctl stop frak-sandbox-manager || true
-pkill -9 frak-sandbox || true
+systemctl stop atelier-manager || true
+pkill -9 atelier || true
 sleep 1
 
-cp "$DEPLOY_TMP/usr/local/bin/frak-sandbox" /usr/local/bin/frak-sandbox
-cp "$DEPLOY_TMP/opt/frak-sandbox/server.js" /opt/frak-sandbox/server.js
-cp -r "$DEPLOY_TMP/opt/frak-sandbox/drizzle/." /opt/frak-sandbox/drizzle/
-cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/sandbox-agent" /opt/frak-sandbox/infra/images/sandbox-agent
-cp "$DEPLOY_TMP/opt/frak-sandbox/infra/images/build-image.sh" /opt/frak-sandbox/infra/images/build-image.sh
-cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-base/." /opt/frak-sandbox/infra/images/dev-base/
-cp -r "$DEPLOY_TMP/opt/frak-sandbox/infra/images/dev-cloud/." /opt/frak-sandbox/infra/images/dev-cloud/
-cp -r "$DEPLOY_TMP/opt/frak-sandbox/apps/dashboard/dist/." /opt/frak-sandbox/apps/dashboard/dist/
-cp "$DEPLOY_TMP/etc/frak-sandbox/${CONFIG_FILE_NAME}" /etc/frak-sandbox/${CONFIG_FILE_NAME}
-cp "$DEPLOY_TMP/etc/systemd/system/frak-sandbox-manager.service" /etc/systemd/system/frak-sandbox-manager.service
-cp "$DEPLOY_TMP/etc/systemd/system/frak-sandbox-network.service" /etc/systemd/system/frak-sandbox-network.service
+cp "$DEPLOY_TMP/usr/local/bin/atelier" /usr/local/bin/atelier
+cp "$DEPLOY_TMP/opt/atelier/server.js" /opt/atelier/server.js
+cp -r "$DEPLOY_TMP/opt/atelier/drizzle/." /opt/atelier/drizzle/
+cp "$DEPLOY_TMP/opt/atelier/infra/images/sandbox-agent" /opt/atelier/infra/images/sandbox-agent
+cp "$DEPLOY_TMP/opt/atelier/infra/images/build-image.sh" /opt/atelier/infra/images/build-image.sh
+cp -r "$DEPLOY_TMP/opt/atelier/infra/images/dev-base/." /opt/atelier/infra/images/dev-base/
+cp -r "$DEPLOY_TMP/opt/atelier/infra/images/dev-cloud/." /opt/atelier/infra/images/dev-cloud/
+cp -r "$DEPLOY_TMP/opt/atelier/apps/dashboard/dist/." /opt/atelier/apps/dashboard/dist/
+cp "$DEPLOY_TMP/etc/atelier/${CONFIG_FILE_NAME}" /etc/atelier/${CONFIG_FILE_NAME}
+cp "$DEPLOY_TMP/etc/systemd/system/atelier-manager.service" /etc/systemd/system/atelier-manager.service
+cp "$DEPLOY_TMP/etc/systemd/system/atelier-network.service" /etc/systemd/system/atelier-network.service
 cp "$DEPLOY_TMP/etc/caddy/Caddyfile" /etc/caddy/Caddyfile
 
-chmod +x /usr/local/bin/frak-sandbox
-chmod +x /opt/frak-sandbox/infra/images/build-image.sh
+chmod +x /usr/local/bin/atelier
+chmod +x /opt/atelier/infra/images/build-image.sh
 
 systemctl daemon-reload
-systemctl enable frak-sandbox-network frak-sandbox-manager
+systemctl enable atelier-network atelier-manager
 systemctl reload caddy || systemctl start caddy || true
-systemctl restart frak-sandbox-manager
+systemctl restart atelier-manager
 
 sleep 2
 curl -sf http://localhost:4000/health/live > /dev/null && echo "HEALTH_OK" || echo "HEALTH_FAIL"
@@ -245,7 +242,7 @@ curl -sf http://localhost:4000/health/live > /dev/null && echo "HEALTH_OK" || ec
   if (REBUILD_IMAGE) {
     console.log("\n🐳 Rebuilding base image (this takes a few minutes)...");
     try {
-      await $`ssh -i ${SSH_KEY_PATH} ${target} "frak-sandbox images build dev-base"`;
+      await $`ssh -i ${SSH_KEY_PATH} ${target} "atelier images build dev-base"`;
       console.log("   ✓ Base image rebuilt");
     } catch (err) {
       console.error("   ✗ Image rebuild failed:", err);

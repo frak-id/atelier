@@ -1,4 +1,4 @@
-# FRAK Sandbox (oc-sandbox)
+# L'atelier (oc-sandbox)
 
 Firecracker‑based, self‑hosted sandboxes with fast boot, strong isolation, and a simple CLI.
 
@@ -13,7 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/frak-id/oc-sandbox/main/infra/scrip
 After install:
 
 ```bash
-frak-sandbox manager status
+atelier manager status
 ```
 
 ## Requirements
@@ -27,18 +27,18 @@ frak-sandbox manager status
 
 ## Key Commands
 
-- `frak-sandbox init` – full install (config + setup + update + images)
-- `frak-sandbox update` – download + install server bundle
-- `frak-sandbox images build dev-base` – build base image
-- `frak-sandbox manager status` – manager health
+- `atelier init` – full install (config + setup + update + images)
+- `atelier update` – download + install server bundle
+- `atelier images build dev-base` – build base image
+- `atelier manager status` – manager health
 
 ## Configuration
 
-Default config path: `/etc/frak-sandbox/sandbox.config.json`  
-Override with `FRAK_CONFIG=/path/to/sandbox.config.json`
+Default config path: `/etc/atelier/sandbox.config.json`  
+Override with `ATELIER_CONFIG=/path/to/sandbox.config.json`
 
 If you pre‑fill `setup.storage` or `setup.network` in the config, the CLI will
-skip prompts during `frak-sandbox init`.
+skip prompts during `atelier init`.
 
 ## Docs
 

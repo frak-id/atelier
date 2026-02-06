@@ -1,4 +1,4 @@
-import { DEFAULT_SESSION_TEMPLATES } from "@frak-sandbox/shared/constants";
+import { DEFAULT_SESSION_TEMPLATES, VM } from "@frak/atelier-shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
@@ -20,7 +20,7 @@ const log = createChildLogger("task-spawner");
 const AGENT_READY_TIMEOUT = 60000;
 const OPENCODE_HEALTH_TIMEOUT = 120000;
 
-const WORKSPACE_DIR = "/home/dev";
+const WORKSPACE_DIR = VM.HOME;
 
 interface TaskSpawnerDependencies {
   sandboxSpawner: SandboxSpawner;
@@ -303,7 +303,7 @@ export class TaskSpawner {
       throw new Error(`Workspace '${task.workspaceId}' not found`);
     }
 
-    const opencodeUrl = `http://${ipAddress}:${config.raw.services.opencode.port}`;
+    const opencodeUrl = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
     const sessionConfig = this.resolveSessionConfig(
       sessionTemplateId,
       workspace.id,
@@ -504,7 +504,7 @@ export class TaskSpawner {
         sandbox: {
           id: sandboxId ?? "undefined",
           ip: ipAddress,
-          url: `http://${ipAddress}:${config.raw.services.opencode.port}`,
+          url: `http://${ipAddress}:${config.advanced.vm.opencode.port}`,
         },
       };
 
@@ -540,7 +540,7 @@ export class TaskSpawner {
 
   private async waitForOpencode(ipAddress: string): Promise<void> {
     const startTime = Date.now();
-    const url = `http://${ipAddress}:${config.raw.services.opencode.port}`;
+    const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
       try {
