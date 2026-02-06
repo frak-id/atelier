@@ -1,6 +1,6 @@
 import { LVM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
-import { config } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("storage");
@@ -42,7 +42,7 @@ let lvmAvailableCache: boolean | null = null;
 
 export const StorageService = {
   async isAvailable(): Promise<boolean> {
-    if (config.isMock()) return true;
+    if (isMock()) return true;
     if (lvmAvailableCache !== null) return lvmAvailableCache;
 
     const result = await $`test -x /usr/sbin/lvm`.quiet().nothrow();
@@ -56,7 +56,7 @@ export const StorageService = {
   },
 
   async getPoolStats(): Promise<PoolStats> {
-    if (config.isMock()) {
+    if (isMock()) {
       return {
         exists: true,
         dataPercent: 15.5,
@@ -119,14 +119,14 @@ export const StorageService = {
   },
 
   async hasImageVolume(imageId: string): Promise<boolean> {
-    if (config.isMock()) return true;
+    if (isMock()) return true;
 
     const volumeName = `${imagePrefix}${imageId}`;
     return lvExists(`${vg}/${volumeName}`);
   },
 
   async hasPrebuild(workspaceId: string): Promise<boolean> {
-    if (config.isMock()) return false;
+    if (isMock()) return false;
     return lvExists(`${vg}/${prebuildPrefix}${workspaceId}`);
   },
 
@@ -141,9 +141,9 @@ export const StorageService = {
     const volumeName = `${sandboxPrefix}${sandboxId}`;
     const volumePath = `/dev/${vg}/${volumeName}`;
     const { workspaceId, baseImage, usePrebuild } = options ?? {};
-    const defaultImage = config.images.defaultImage;
+    const defaultImage = config.sandbox.defaultImage;
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug(
         { sandboxId, workspaceId, baseImage },
         "Mock: sandbox volume creation",
@@ -176,7 +176,7 @@ export const StorageService = {
   async deleteSandboxVolume(sandboxId: string): Promise<void> {
     const volumeName = `${sandboxPrefix}${sandboxId}`;
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ sandboxId }, "Mock: sandbox volume deletion");
       return;
     }
@@ -191,7 +191,7 @@ export const StorageService = {
     const prebuildVolume = `${prebuildPrefix}${workspaceId}`;
     const sandboxVolume = `${sandboxPrefix}${sandboxId}`;
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ workspaceId, sandboxId }, "Mock: prebuild creation");
       return;
     }
@@ -206,7 +206,7 @@ export const StorageService = {
   },
 
   async deletePrebuild(workspaceId: string): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ workspaceId }, "Mock: prebuild deletion");
       return;
     }
@@ -218,7 +218,7 @@ export const StorageService = {
   },
 
   async listSandboxVolumes(): Promise<VolumeInfo[]> {
-    if (config.isMock()) return [];
+    if (isMock()) return [];
 
     const result =
       await $`sudo -n ${LVS} ${vg} -o lv_name,lv_size,data_percent,origin --noheadings`
@@ -245,7 +245,7 @@ export const StorageService = {
   },
 
   async getVolumeInfo(sandboxId: string): Promise<VolumeInfo | null> {
-    if (config.isMock()) {
+    if (isMock()) {
       return { name: sandboxId, size: "4G", used: "1.2" };
     }
 
@@ -266,7 +266,7 @@ export const StorageService = {
   },
 
   async getVolumeSizeBytes(sandboxId: string): Promise<number> {
-    if (config.isMock()) return 5 * 1024 * 1024 * 1024;
+    if (isMock()) return 5 * 1024 * 1024 * 1024;
 
     const volumeName = `${sandboxPrefix}${sandboxId}`;
     const result =
@@ -290,7 +290,7 @@ export const StorageService = {
     const volumeName = `${sandboxPrefix}${sandboxId}`;
     const volumePath = `${vg}/${volumeName}`;
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ sandboxId, newSizeGb }, "Mock: sandbox volume resize");
       return {
         success: true,

@@ -82,11 +82,11 @@ export class SandboxProvisionService {
 
     const gitCredentialsContent = `${credentials.join("\n")}\n`;
     const gitconfigContent = `[credential]
-\thelper = store --file=/etc/sandbox/secrets/git-credentials
-[user]
-\temail = ${config.git.email}
-\tname = ${config.git.name}
-`;
+ \thelper = store --file=/etc/sandbox/secrets/git-credentials
+ [user]
+ \temail = ${config.sandbox.git.email}
+ \tname = ${config.sandbox.git.name}
+ `;
 
     await this.agentClient.writeFiles(sandboxId, [
       {

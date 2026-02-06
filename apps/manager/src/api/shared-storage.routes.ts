@@ -18,8 +18,8 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 const log = createChildLogger("shared-storage-routes");
 
 const SHARED_BINARIES = getSharedBinaries({
-  opencode: config.versions.opencode,
-  codeServer: config.versions.codeServer,
+  opencode: config.advanced.vm.opencode.version,
+  codeServer: config.advanced.vm.vscode.version,
 });
 
 function isValidBinaryId(id: string): id is SharedBinaryId {

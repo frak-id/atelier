@@ -1,4 +1,4 @@
-import { config } from "../../shared/lib/config.ts";
+import { PATHS } from "@frak/atelier-shared/constants";
 
 export interface SandboxPaths {
   socket: string;
@@ -16,23 +16,23 @@ export function getSandboxPaths(
   lvmVolumePath?: string,
 ): SandboxPaths {
   return {
-    socket: `${config.paths.SOCKET_DIR}/${sandboxId}.sock`,
-    vsock: `${config.paths.SOCKET_DIR}/${sandboxId}.vsock`,
-    pid: `${config.paths.SOCKET_DIR}/${sandboxId}.pid`,
-    log: `${config.paths.LOG_DIR}/${sandboxId}.log`,
-    overlay: lvmVolumePath || `${config.paths.OVERLAY_DIR}/${sandboxId}.ext4`,
-    kernel: `${config.paths.KERNEL_DIR}/vmlinux`,
-    rootfs: `${config.paths.ROOTFS_DIR}/rootfs.ext4`,
+    socket: `${PATHS.SOCKET_DIR}/${sandboxId}.sock`,
+    vsock: `${PATHS.SOCKET_DIR}/${sandboxId}.vsock`,
+    pid: `${PATHS.SOCKET_DIR}/${sandboxId}.pid`,
+    log: `${PATHS.LOG_DIR}/${sandboxId}.log`,
+    overlay: lvmVolumePath || `${PATHS.OVERLAY_DIR}/${sandboxId}.ext4`,
+    kernel: `${PATHS.KERNEL_DIR}/vmlinux`,
+    rootfs: `${PATHS.ROOTFS_DIR}/rootfs.ext4`,
     useLvm: !!lvmVolumePath,
   };
 }
 
 export function getVsockPath(sandboxId: string): string {
-  return `${config.paths.SOCKET_DIR}/${sandboxId}.vsock`;
+  return `${PATHS.SOCKET_DIR}/${sandboxId}.vsock`;
 }
 
 export function getSocketPath(sandboxId: string): string {
-  return `${config.paths.SOCKET_DIR}/${sandboxId}.sock`;
+  return `${PATHS.SOCKET_DIR}/${sandboxId}.sock`;
 }
 
 export interface PrebuildSnapshotPaths {
@@ -43,7 +43,7 @@ export interface PrebuildSnapshotPaths {
 export function getPrebuildSnapshotPaths(
   workspaceId: string,
 ): PrebuildSnapshotPaths {
-  const snapshotDir = `${config.paths.SANDBOX_DIR}/snapshots`;
+  const snapshotDir = `${PATHS.SANDBOX_DIR}/snapshots`;
   return {
     snapshotFile: `${snapshotDir}/prebuild-${workspaceId}.snap`,
     memFile: `${snapshotDir}/prebuild-${workspaceId}.mem`,

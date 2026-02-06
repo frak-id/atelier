@@ -11,7 +11,12 @@ import {
   type GitSource,
   type GitSourceConfig,
 } from "../schemas/index.ts";
-import { config } from "../shared/lib/config.ts";
+import {
+  config,
+  dashboardUrl,
+  deriveCallbackUrl,
+  isProduction,
+} from "../shared/lib/config.ts";
 import {
   buildOAuthRedirectUrl,
   exchangeCodeForToken,
@@ -330,15 +335,15 @@ export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
     cookie.github_code_verifier?.set({
       value: codeVerifier,
       httpOnly: true,
-      secure: config.isProduction(),
-      sameSite: config.isProduction() ? "none" : "lax",
+      secure: isProduction(),
+      sameSite: isProduction() ? "none" : "lax",
       path: "/",
-      domain: `.${config.caddy.domainSuffix}`,
+      domain: `.${config.domain.baseDomain}`,
       maxAge: 600,
     });
 
     const url = buildOAuthRedirectUrl(
-      config.github.callbackUrl,
+      deriveCallbackUrl("/api/github/callback"),
       "repo read:user read:org",
       {
         state: nanoid(16),
@@ -353,11 +358,11 @@ export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
     async ({ query, redirect, cookie }) => {
       if (query.error) {
         log.error({ error: query.error }, "GitHub OAuth error");
-        return redirect(`${config.dashboardUrl}?github_error=${query.error}`);
+        return redirect(`${dashboardUrl}?github_error=${query.error}`);
       }
 
       if (!query.code) {
-        return redirect(`${config.dashboardUrl}?github_error=no_code`);
+        return redirect(`${dashboardUrl}?github_error=no_code`);
       }
 
       try {
@@ -367,10 +372,10 @@ export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
         cookie.github_code_verifier?.set({
           value: "",
           httpOnly: true,
-          secure: config.isProduction(),
-          sameSite: config.isProduction() ? "none" : "lax",
+          secure: isProduction(),
+          sameSite: isProduction() ? "none" : "lax",
           path: "/",
-          domain: `.${config.caddy.domainSuffix}`,
+          domain: `.${config.domain.baseDomain}`,
           maxAge: 0,
         });
 
@@ -406,10 +411,10 @@ export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
           log.info({ userId: user.id, login: user.login }, "GitHub connected");
         }
 
-        return redirect(`${config.dashboardUrl}?github_success=true`);
+        return redirect(`${dashboardUrl}?github_success=true`);
       } catch (error) {
         log.error({ error }, "GitHub OAuth callback failed");
-        return redirect(`${config.dashboardUrl}?github_error=callback_failed`);
+        return redirect(`${dashboardUrl}?github_error=callback_failed`);
       }
     },
     {
@@ -434,15 +439,15 @@ export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
     cookie.github_code_verifier?.set({
       value: codeVerifier,
       httpOnly: true,
-      secure: config.isProduction(),
-      sameSite: config.isProduction() ? "none" : "lax",
+      secure: isProduction(),
+      sameSite: isProduction() ? "none" : "lax",
       path: "/",
-      domain: `.${config.caddy.domainSuffix}`,
+      domain: `.${config.domain.baseDomain}`,
       maxAge: 600,
     });
 
     const url = buildOAuthRedirectUrl(
-      config.github.callbackUrl,
+      deriveCallbackUrl("/api/github/callback"),
       "repo read:user read:org",
       {
         state: nanoid(16),

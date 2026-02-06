@@ -1,53 +1,19 @@
 {
-  "$schema": "./packages/shared/src/config.schema.ts",
-  "domains": {
-    "dashboard": "sandbox-dash.example.com",
-    "sandboxSuffix": "example.com",
-    "ssh": "ssh.example.com"
-  },
-  "network": {
-    "bridgeName": "br0",
-    "bridgeIp": "172.16.0.1",
-    "guestIpStart": 10,
-    "dnsServers": ["8.8.8.8", "8.8.4.4"]
+  "domain": {
+    "baseDomain": "example.com",
+    "tls": {
+      "email": "admin@example.com"
+    }
   },
   "auth": {
-    "allowedOrg": "your-org",
-    "allowedUsers": ["username1", "username2"],
-    "githubClientId": "githubClientId",
-    "githubClientSecret": "githubClientSecret",
-    "githubCallbackUrl": "https://sandbox-api.example.com/github/callback",
-    "githubLoginCallbackUrl": "https://sandbox-api.example.com/auth/callback",
-    "jwtSecret": "jwt_secret"
-  },
-  "sshProxy": {
-    "port": 2222,
-    "domain": "ssh.example.com",
-    "pipesFile": "/var/lib/sandbox/sshpiper/pipes.yaml"
-  },
-  "runtime": {
-    "mode": "production",
-    "port": 4000,
-    "host": "0.0.0.0"
-  },
-  "tls": {
-    "email": "ssl@example.com",
-    "certPath": "",
-    "keyPath": ""
-  },
-  "services": {
-    "vscode": { "port": 8080 },
-    "opencode": { "port": 3000 },
-    "terminal": { "port": 7681 },
-    "agent": { "port": 9999 }
-  },
-  "setup": {
-    "storage": {
-      "method": "loop",
-      "loopSizeGb": 100
+    "github": {
+      "clientId": "your-github-client-id",
+      "clientSecret": "your-github-client-secret"
     },
-    "network": {
-      "onExists": "status"
-    }
+    "jwtSecret": "generate-a-random-secret-here",
+    "allowedOrg": "your-github-org"
+  },
+  "server": {
+    "mode": "production"
   }
 }

@@ -1,4 +1,5 @@
-import { config } from "../../shared/lib/config.ts";
+import { CADDY } from "@frak/atelier-shared/constants";
+import { config, dashboardUrl, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("caddy");
@@ -11,7 +12,7 @@ interface RouteDefinition {
 function buildForwardAuthHandler(): object {
   return {
     handler: "reverse_proxy",
-    upstreams: [{ dial: `${config.host}:${config.port}` }],
+    upstreams: [{ dial: `${config.server.host}:${config.server.port}` }],
     rewrite: {
       method: "GET",
       uri: "/auth/verify",
@@ -48,10 +49,10 @@ export const CaddyService = {
     ipAddress: string,
     ports: { vscode: number; opencode: number },
   ): Promise<{ vscode: string; opencode: string }> {
-    const vscodeDomain = `sandbox-${sandboxId}.${config.caddy.domainSuffix}`;
-    const opencodeDomain = `opencode-${sandboxId}.${config.caddy.domainSuffix}`;
+    const vscodeDomain = `sandbox-${sandboxId}.${config.domain.baseDomain}`;
+    const opencodeDomain = `opencode-${sandboxId}.${config.domain.baseDomain}`;
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug(
         { sandboxId, vscodeDomain, opencodeDomain },
         "Mock: Caddy routes registered",
@@ -84,7 +85,7 @@ export const CaddyService = {
 
     if (hadWildcard) {
       await fetch(
-        `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes/${wildcardIndex}`,
+        `${CADDY.ADMIN_API}/config/apps/http/servers/srv0/routes/${wildcardIndex}`,
         { method: "DELETE" },
       );
     }
@@ -101,14 +102,14 @@ export const CaddyService = {
 
     const corsResponseHeaders = {
       set: {
-        "Access-Control-Allow-Origin": [config.dashboardUrl],
+        "Access-Control-Allow-Origin": [dashboardUrl],
         "Access-Control-Allow-Credentials": ["true"],
       },
     };
 
     const handlers: object[] = [];
 
-    if (!config.isMock()) {
+    if (!isMock()) {
       handlers.push(buildForwardAuthHandler());
     }
 
@@ -162,7 +163,7 @@ export const CaddyService = {
     };
 
     const response = await fetch(
-      `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
+      `${CADDY.ADMIN_API}/config/apps/http/servers/srv0/routes`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -192,17 +193,17 @@ export const CaddyService = {
     defaultUrl?: string;
     extraDevUrls?: Array<{ alias: string; port: number; url: string }>;
   }> {
-    const namedDomain = `dev-${name}-${sandboxId}.${config.caddy.domainSuffix}`;
+    const namedDomain = `dev-${name}-${sandboxId}.${config.domain.baseDomain}`;
 
     const extraDevUrls = (extraPorts ?? []).map((ep) => ({
       alias: ep.alias,
       port: ep.port,
-      url: `https://dev-${name}-${ep.alias}-${sandboxId}.${config.caddy.domainSuffix}`,
+      url: `https://dev-${name}-${ep.alias}-${sandboxId}.${config.domain.baseDomain}`,
     }));
 
-    if (config.isMock()) {
+    if (isMock()) {
       const defaultUrl = isDefault
-        ? `https://dev-${sandboxId}.${config.caddy.domainSuffix}`
+        ? `https://dev-${sandboxId}.${config.domain.baseDomain}`
         : undefined;
       log.debug(
         { sandboxId, name, namedDomain, extraPorts: extraPorts?.length ?? 0 },
@@ -218,13 +219,13 @@ export const CaddyService = {
     await this.addRoute(namedDomain, `${ipAddress}:${port}`);
 
     for (const ep of extraPorts ?? []) {
-      const epDomain = `dev-${name}-${ep.alias}-${sandboxId}.${config.caddy.domainSuffix}`;
+      const epDomain = `dev-${name}-${ep.alias}-${sandboxId}.${config.domain.baseDomain}`;
       await this.addRoute(epDomain, `${ipAddress}:${ep.port}`);
     }
 
     let defaultUrl: string | undefined;
     if (isDefault) {
-      const defaultDomain = `dev-${sandboxId}.${config.caddy.domainSuffix}`;
+      const defaultDomain = `dev-${sandboxId}.${config.domain.baseDomain}`;
       await this.addRoute(defaultDomain, `${ipAddress}:${port}`);
       defaultUrl = `https://${defaultDomain}`;
     }
@@ -236,7 +237,7 @@ export const CaddyService = {
         namedDomain,
         extraPorts: extraPorts?.length ?? 0,
         defaultDomain: isDefault
-          ? `dev-${sandboxId}.${config.caddy.domainSuffix}`
+          ? `dev-${sandboxId}.${config.domain.baseDomain}`
           : undefined,
       },
       "Dev route registered",
@@ -255,23 +256,23 @@ export const CaddyService = {
     isDefault: boolean,
     extraPorts?: Array<{ alias: string }>,
   ): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ sandboxId, name }, "Mock: Dev route removed");
       return;
     }
 
     await this.removeRoute(
-      `dev-${name}-${sandboxId}.${config.caddy.domainSuffix}`,
+      `dev-${name}-${sandboxId}.${config.domain.baseDomain}`,
     );
 
     for (const ep of extraPorts ?? []) {
       await this.removeRoute(
-        `dev-${name}-${ep.alias}-${sandboxId}.${config.caddy.domainSuffix}`,
+        `dev-${name}-${ep.alias}-${sandboxId}.${config.domain.baseDomain}`,
       );
     }
 
     if (isDefault) {
-      await this.removeRoute(`dev-${sandboxId}.${config.caddy.domainSuffix}`);
+      await this.removeRoute(`dev-${sandboxId}.${config.domain.baseDomain}`);
     }
 
     log.info({ sandboxId, name }, "Dev route removed");
@@ -298,7 +299,7 @@ export const CaddyService = {
   async addWildcardFallback(): Promise<void> {
     const wildcardConfig = {
       "@id": "wildcard-fallback",
-      match: [{ host: [`*.${config.caddy.domainSuffix}`] }],
+      match: [{ host: [`*.${config.domain.baseDomain}`] }],
       handle: [
         {
           handler: "subroute",
@@ -318,14 +319,11 @@ export const CaddyService = {
       terminal: true,
     };
 
-    await fetch(
-      `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(wildcardConfig),
-      },
-    );
+    await fetch(`${CADDY.ADMIN_API}/config/apps/http/servers/srv0/routes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(wildcardConfig),
+    });
   },
 
   async registerBrowserRoute(
@@ -333,9 +331,9 @@ export const CaddyService = {
     ipAddress: string,
     port: number,
   ): Promise<string> {
-    const browserDomain = `browser-${sandboxId}.${config.caddy.domainSuffix}`;
+    const browserDomain = `browser-${sandboxId}.${config.domain.baseDomain}`;
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ sandboxId, browserDomain }, "Mock: Browser route registered");
       return `https://${browserDomain}`;
     }
@@ -348,9 +346,9 @@ export const CaddyService = {
   },
 
   async removeBrowserRoute(sandboxId: string): Promise<void> {
-    const browserDomain = `browser-${sandboxId}.${config.caddy.domainSuffix}`;
+    const browserDomain = `browser-${sandboxId}.${config.domain.baseDomain}`;
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ sandboxId }, "Mock: Browser route removed");
       return;
     }
@@ -360,17 +358,17 @@ export const CaddyService = {
   },
 
   async removeRoutes(sandboxId: string): Promise<void> {
-    const vscodeDomain = `sandbox-${sandboxId}.${config.caddy.domainSuffix}`;
-    const opencodeDomain = `opencode-${sandboxId}.${config.caddy.domainSuffix}`;
+    const vscodeDomain = `sandbox-${sandboxId}.${config.domain.baseDomain}`;
+    const opencodeDomain = `opencode-${sandboxId}.${config.domain.baseDomain}`;
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ sandboxId }, "Mock: Caddy routes removed");
       return;
     }
 
     const devRouteDomains = await this.findDevRoutesForSandbox(sandboxId);
 
-    const browserDomain = `browser-${sandboxId}.${config.caddy.domainSuffix}`;
+    const browserDomain = `browser-${sandboxId}.${config.domain.baseDomain}`;
 
     await Promise.all([
       this.removeRoute(vscodeDomain),
@@ -388,7 +386,7 @@ export const CaddyService = {
   async findDevRoutesForSandbox(sandboxId: string): Promise<string[]> {
     try {
       const routes = await this.getRoutes();
-      const suffix = `${sandboxId}.${config.caddy.domainSuffix}`;
+      const suffix = `${sandboxId}.${config.domain.baseDomain}`;
       const domains: string[] = [];
 
       for (const route of routes) {
@@ -407,7 +405,7 @@ export const CaddyService = {
   },
 
   async removeRoute(domain: string): Promise<void> {
-    const response = await fetch(`${config.caddy.adminApi}/id/${domain}`, {
+    const response = await fetch(`${CADDY.ADMIN_API}/id/${domain}`, {
       method: "DELETE",
     });
 
@@ -420,11 +418,11 @@ export const CaddyService = {
   },
 
   async getConfig(): Promise<unknown> {
-    if (config.isMock()) {
+    if (isMock()) {
       return { mock: true, message: "Caddy not available in mock mode" };
     }
 
-    const response = await fetch(`${config.caddy.adminApi}/config/`);
+    const response = await fetch(`${CADDY.ADMIN_API}/config/`);
     if (!response.ok) {
       throw new Error(`Failed to get Caddy config: ${response.statusText}`);
     }
@@ -432,12 +430,12 @@ export const CaddyService = {
   },
 
   async getRoutes(): Promise<unknown[]> {
-    if (config.isMock()) {
+    if (isMock()) {
       return [];
     }
 
     const response = await fetch(
-      `${config.caddy.adminApi}/config/apps/http/servers/srv0/routes`,
+      `${CADDY.ADMIN_API}/config/apps/http/servers/srv0/routes`,
     );
     if (!response.ok) {
       return [];
@@ -447,12 +445,12 @@ export const CaddyService = {
   },
 
   async isHealthy(): Promise<boolean> {
-    if (config.isMock()) {
+    if (isMock()) {
       return true;
     }
 
     try {
-      const response = await fetch(`${config.caddy.adminApi}/config/`);
+      const response = await fetch(`${CADDY.ADMIN_API}/config/`);
       return response.ok;
     } catch {
       return false;

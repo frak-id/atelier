@@ -4,14 +4,14 @@ import {
   type SharedBinaryId,
 } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
-import { config } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("shared-storage");
 
 const SHARED_BINARIES = getSharedBinaries({
-  opencode: config.versions.opencode,
-  codeServer: config.versions.codeServer,
+  opencode: config.advanced.vm.opencode.version,
+  codeServer: config.advanced.vm.vscode.version,
 });
 
 export const BINARIES_IMAGE_PATH = `${SHARED_STORAGE.BINARIES_DIR}.ext4`;
@@ -55,7 +55,7 @@ export const SharedStorageService = {
       let installed = false;
       let sizeBytes: number | undefined;
 
-      if (config.isMock()) {
+      if (isMock()) {
         installed = binaryId === "opencode";
         sizeBytes = installed
           ? binary.estimatedSizeMb * 1024 * 1024
@@ -88,7 +88,7 @@ export const SharedStorageService = {
     let installed = false;
     let sizeBytes: number | undefined;
 
-    if (config.isMock()) {
+    if (isMock()) {
       installed = id === "opencode";
       sizeBytes = installed ? binary.estimatedSizeMb * 1024 * 1024 : undefined;
     } else {
@@ -116,7 +116,7 @@ export const SharedStorageService = {
       return { success: false, error: `Unknown binary: ${id}` };
     }
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.info({ id, version: binary.version }, "Mock: Installing binary");
       return { success: true };
     }
@@ -181,7 +181,7 @@ export const SharedStorageService = {
       return { success: false, error: `Unknown binary: ${id}` };
     }
 
-    if (config.isMock()) {
+    if (isMock()) {
       log.info({ id }, "Mock: Removing binary");
       return { success: true };
     }
@@ -219,7 +219,7 @@ export const SharedStorageService = {
     sizeBytes?: number;
     error?: string;
   }> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.info("Mock: Building binaries ext4 image");
       return { success: true, sizeBytes: 0 };
     }
@@ -283,7 +283,7 @@ export const SharedStorageService = {
   },
 
   async getBinariesImageInfo(): Promise<BinariesImageInfo> {
-    if (config.isMock()) {
+    if (isMock()) {
       return {
         exists: true,
         sizeBytes: 650 * 1024 * 1024,

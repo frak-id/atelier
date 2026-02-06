@@ -39,8 +39,8 @@ export async function exchangeCodeForToken(
       Accept: "application/json",
     },
     body: JSON.stringify({
-      client_id: config.github.clientId,
-      client_secret: config.github.clientSecret,
+      client_id: config.auth.github.clientId,
+      client_secret: config.auth.github.clientSecret,
       code,
       ...(codeVerifier && { code_verifier: codeVerifier }),
     }),
@@ -84,12 +84,12 @@ export function buildOAuthRedirectUrl(
   scopes: string,
   extraParams?: Record<string, string>,
 ): string {
-  if (!config.github.clientId) {
+  if (!config.auth.github.clientId) {
     throw new Error("GitHub OAuth not configured");
   }
 
   const params = new URLSearchParams({
-    client_id: config.github.clientId,
+    client_id: config.auth.github.clientId,
     redirect_uri: callbackUrl,
     scope: scopes,
     ...extraParams,

@@ -1,11 +1,10 @@
 import { mkdir, stat } from "node:fs/promises";
-import { VM } from "@frak/atelier-shared/constants";
+import { PATHS, VM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import {
   getSocketPath,
   getVsockPath,
 } from "../../infrastructure/firecracker/index.ts";
-import { config } from "./config.ts";
 
 export async function fileExists(path: string): Promise<boolean> {
   try {
@@ -98,8 +97,8 @@ export async function killProcess(
 export async function cleanupSandboxFiles(sandboxId: string): Promise<void> {
   const socketPath = getSocketPath(sandboxId);
   const vsockPath = getVsockPath(sandboxId);
-  const pidPath = `${config.paths.SOCKET_DIR}/${sandboxId}.pid`;
-  const logPath = `${config.paths.LOG_DIR}/${sandboxId}.log`;
+  const pidPath = `${PATHS.SOCKET_DIR}/${sandboxId}.pid`;
+  const logPath = `${PATHS.LOG_DIR}/${sandboxId}.log`;
   await $`rm -f ${socketPath} ${vsockPath} ${pidPath} ${logPath}`
     .quiet()
     .nothrow();

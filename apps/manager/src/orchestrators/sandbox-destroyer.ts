@@ -1,3 +1,4 @@
+import { PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { eventBus } from "../infrastructure/events/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
@@ -8,7 +9,7 @@ import {
 import { StorageService } from "../infrastructure/storage/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
-import { config } from "../shared/lib/config.ts";
+import { isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { cleanupSandboxFiles, killProcess } from "../shared/lib/shell.ts";
 
@@ -29,7 +30,7 @@ export class SandboxDestroyer {
 
     log.info({ sandboxId }, "Destroying sandbox");
 
-    if (!config.isMock()) {
+    if (!isMock()) {
       if (sandbox.runtime.pid) {
         await killProcess(sandbox.runtime.pid);
       }
@@ -40,7 +41,7 @@ export class SandboxDestroyer {
       if (lvmAvailable) {
         await StorageService.deleteSandboxVolume(sandboxId);
       } else {
-        const overlayPath = `${config.paths.OVERLAY_DIR}/${sandboxId}.ext4`;
+        const overlayPath = `${PATHS.OVERLAY_DIR}/${sandboxId}.ext4`;
         await $`rm -f ${overlayPath}`.quiet().nothrow();
       }
 

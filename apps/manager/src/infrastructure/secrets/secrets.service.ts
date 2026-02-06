@@ -1,5 +1,5 @@
 import type { FileSecret } from "../../schemas/index.ts";
-import { config } from "../../shared/lib/config.ts";
+import { isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("secrets");
@@ -50,7 +50,7 @@ export const SecretsService = {
   },
 
   async encrypt(value: string): Promise<string> {
-    if (config.isMock()) {
+    if (isMock()) {
       return `${ENCRYPTION_PREFIX}${Buffer.from(value).toString("base64")}`;
     }
 
@@ -79,7 +79,7 @@ export const SecretsService = {
 
     const data = encrypted.slice(ENCRYPTION_PREFIX.length);
 
-    if (config.isMock()) {
+    if (isMock()) {
       return Buffer.from(data, "base64").toString("utf-8");
     }
 
@@ -114,10 +114,7 @@ export const SecretsService = {
     const secretKey =
       process.env.SANDBOX_SECRETS_KEY || "default-dev-key-change-in-production";
 
-    if (
-      secretKey === "default-dev-key-change-in-production" &&
-      !config.isMock()
-    ) {
+    if (secretKey === "default-dev-key-change-in-production" && !isMock()) {
       log.warn(
         "Using default secrets key - set SANDBOX_SECRETS_KEY in production!",
       );

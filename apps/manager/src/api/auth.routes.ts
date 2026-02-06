@@ -3,7 +3,12 @@ import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
 import { isUserAuthorized } from "../modules/auth/auth.service.ts";
 import { verifyJwt } from "../shared/lib/auth.ts";
-import { config } from "../shared/lib/config.ts";
+import {
+  config,
+  dashboardUrl,
+  deriveCallbackUrl,
+  isProduction,
+} from "../shared/lib/config.ts";
 import {
   buildOAuthRedirectUrl,
   exchangeCodeForToken,
@@ -32,15 +37,15 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     cookie.oauth_code_verifier?.set({
       value: codeVerifier,
       httpOnly: true,
-      secure: config.isProduction(),
-      sameSite: config.isProduction() ? "none" : "lax",
+      secure: isProduction(),
+      sameSite: isProduction() ? "none" : "lax",
       path: "/",
-      domain: `.${config.caddy.domainSuffix}`,
+      domain: `.${config.domain.baseDomain}`,
       maxAge: 600,
     });
 
     const url = buildOAuthRedirectUrl(
-      config.github.loginCallbackUrl,
+      deriveCallbackUrl("/auth/callback"),
       "read:user read:org",
       {
         state: nanoid(16),
@@ -55,11 +60,11 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     async ({ query, redirect, jwt, cookie }) => {
       if (query.error) {
         log.error({ error: query.error }, "GitHub OAuth error");
-        return redirect(`${config.dashboardUrl}?login_error=${query.error}`);
+        return redirect(`${dashboardUrl}?login_error=${query.error}`);
       }
 
       if (!query.code) {
-        return redirect(`${config.dashboardUrl}?login_error=no_code`);
+        return redirect(`${dashboardUrl}?login_error=no_code`);
       }
 
       try {
@@ -69,10 +74,10 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         cookie.oauth_code_verifier?.set({
           value: "",
           httpOnly: true,
-          secure: config.isProduction(),
-          sameSite: config.isProduction() ? "none" : "lax",
+          secure: isProduction(),
+          sameSite: isProduction() ? "none" : "lax",
           path: "/",
-          domain: `.${config.caddy.domainSuffix}`,
+          domain: `.${config.domain.baseDomain}`,
           maxAge: 0,
         });
 
@@ -88,7 +93,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
             { username: user.login },
             "Unauthorized user attempted login",
           );
-          return redirect(`${config.dashboardUrl}?login_error=unauthorized`);
+          return redirect(`${dashboardUrl}?login_error=unauthorized`);
         }
 
         const token = await jwt.sign({
@@ -100,19 +105,19 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         cookie.sandbox_token?.set({
           value: token,
           httpOnly: true,
-          secure: config.isProduction(),
-          sameSite: config.isProduction() ? "none" : "lax",
+          secure: isProduction(),
+          sameSite: isProduction() ? "none" : "lax",
           path: "/",
-          domain: `.${config.caddy.domainSuffix}`,
+          domain: `.${config.domain.baseDomain}`,
           maxAge: JWT_EXPIRY_SECONDS,
         });
 
         log.info({ username: user.login }, "User logged in successfully");
 
-        return redirect(config.dashboardUrl);
+        return redirect(dashboardUrl);
       } catch (error) {
         log.error({ error }, "GitHub login callback failed");
-        return redirect(`${config.dashboardUrl}?login_error=callback_failed`);
+        return redirect(`${dashboardUrl}?login_error=callback_failed`);
       }
     },
     {
@@ -161,10 +166,10 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     cookie.sandbox_token?.set({
       value: "",
       httpOnly: true,
-      secure: config.isProduction(),
-      sameSite: config.isProduction() ? "none" : "lax",
+      secure: isProduction(),
+      sameSite: isProduction() ? "none" : "lax",
       path: "/",
-      domain: `.${config.caddy.domainSuffix}`,
+      domain: `.${config.domain.baseDomain}`,
       maxAge: 0,
     });
     return { ok: true };

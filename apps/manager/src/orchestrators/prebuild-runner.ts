@@ -1,4 +1,4 @@
-import { VM } from "@frak/atelier-shared/constants";
+import { PATHS, VM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import {
@@ -15,7 +15,7 @@ import type {
   Workspace,
   WorkspaceConfig,
 } from "../schemas/index.ts";
-import { config } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { ensureDir } from "../shared/lib/shell.ts";
 import type { SandboxDestroyer } from "./sandbox-destroyer.ts";
@@ -260,7 +260,7 @@ export class PrebuildRunner {
     workspaceId: string,
     sandboxId: string,
   ): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ workspaceId }, "Mock: VM snapshot creation skipped");
       return;
     }
@@ -269,7 +269,7 @@ export class PrebuildRunner {
     const socketPath = getSocketPath(sandboxId);
     const client = new FirecrackerClient(socketPath);
 
-    await ensureDir(`${config.paths.SANDBOX_DIR}/snapshots`);
+    await ensureDir(`${PATHS.SANDBOX_DIR}/snapshots`);
 
     log.info({ workspaceId, sandboxId }, "Creating VM snapshot");
     await client.createSnapshot(
@@ -280,7 +280,7 @@ export class PrebuildRunner {
   }
 
   private async deleteVmSnapshot(workspaceId: string): Promise<void> {
-    if (config.isMock()) return;
+    if (isMock()) return;
 
     const snapshotPaths = getPrebuildSnapshotPaths(workspaceId);
     await $`rm -f ${snapshotPaths.snapshotFile} ${snapshotPaths.memFile}`
@@ -289,7 +289,7 @@ export class PrebuildRunner {
   }
 
   async hasVmSnapshot(workspaceId: string): Promise<boolean> {
-    if (config.isMock()) return false;
+    if (isMock()) return false;
 
     const snapshotPaths = getPrebuildSnapshotPaths(workspaceId);
     const snapExists = await Bun.file(snapshotPaths.snapshotFile).exists();
@@ -468,7 +468,7 @@ export class PrebuildRunner {
   ): Promise<void> {
     log.info({ workspaceId }, "Warming up opencode server");
 
-    const port = config.services.opencode.port;
+    const port = config.advanced.vm.opencode.port;
     // Use nohup + setsid + explicit fd close to fully detach from the shell.
     // Without closing fds 1&2 at the outer sh level, Deno.Command's piped
     // stdout stays open until the background process exits → timeout.

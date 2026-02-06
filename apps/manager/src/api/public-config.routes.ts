@@ -5,9 +5,9 @@ import { config } from "../shared/lib/config.ts";
 export const publicConfigRoutes = new Elysia().get(
   "/config",
   () => ({
-    sshHostname: config.sshProxy.domain,
-    sshPort: config.sshProxy.port,
-    opencodePort: config.services.opencode.port,
+    sshHostname: config.domain.ssh.hostname,
+    sshPort: config.domain.ssh.port,
+    opencodePort: config.advanced.vm.opencode.port,
   }),
   {
     response: PublicConfigSchema,

@@ -301,7 +301,7 @@ export class SessionTemplateService {
 
     try {
       const client = createOpencodeClient({
-        baseUrl: `http://${ipAddress}:${config.services.opencode.port}`,
+        baseUrl: `http://${ipAddress}:${config.advanced.vm.opencode.port}`,
       });
 
       const [providersResult, agentsResult] = await Promise.all([

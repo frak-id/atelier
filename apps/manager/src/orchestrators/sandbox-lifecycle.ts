@@ -16,7 +16,7 @@ import type { InternalService } from "../modules/internal/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import type { Sandbox } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
-import { config } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { cleanupSandboxFiles, killProcess } from "../shared/lib/shell.ts";
 
@@ -45,7 +45,7 @@ export class SandboxLifecycle {
 
     log.info({ sandboxId }, "Stopping sandbox");
 
-    if (!config.isMock()) {
+    if (!isMock()) {
       if (sandbox.runtime.pid) {
         await killProcess(sandbox.runtime.pid);
       }
@@ -85,7 +85,7 @@ export class SandboxLifecycle {
 
     log.info({ sandboxId }, "Starting sandbox");
 
-    if (config.isMock()) {
+    if (isMock()) {
       this.deps.sandboxService.updateStatus(sandboxId, "running");
       eventBus.emit({
         type: "sandbox.updated",
@@ -137,8 +137,8 @@ export class SandboxLifecycle {
     }
 
     await CaddyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
-      vscode: config.services.vscode.port,
-      opencode: config.services.opencode.port,
+      vscode: config.advanced.vm.vscode.port,
+      opencode: config.advanced.vm.opencode.port,
     });
 
     const updatedSandbox: Sandbox = {
@@ -183,7 +183,7 @@ export class SandboxLifecycle {
       return undefined;
     }
 
-    if (config.isMock() || !sandbox.runtime.pid) {
+    if (isMock() || !sandbox.runtime.pid) {
       return sandbox;
     }
 
@@ -215,7 +215,7 @@ export class SandboxLifecycle {
   }
 
   async getFirecrackerState(sandboxId: string): Promise<unknown> {
-    if (config.isMock()) {
+    if (isMock()) {
       return { mock: true, sandboxId };
     }
 

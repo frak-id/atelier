@@ -45,7 +45,7 @@ import type {
   SpawnTimings,
   Workspace,
 } from "../schemas/index.ts";
-import { config } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { killProcess } from "../shared/lib/shell.ts";
@@ -111,13 +111,13 @@ class SpawnContext {
         Promise.all([
           this.allocateNetwork(),
           this.createVolume(),
-          config.isMock() ? Promise.resolve() : this.createTapDevice(),
+          isMock() ? Promise.resolve() : this.createTapDevice(),
         ]),
       );
       await this.time("resizeVolume", () => this.resizeVolumeBeforeBoot());
       await this.time("initializeSandbox", () => this.initializeSandbox());
 
-      if (config.isMock()) {
+      if (isMock()) {
         return await this.finalizeMock();
       }
 
@@ -276,13 +276,11 @@ class SpawnContext {
     if (!this.network) throw new Error("Network not allocated");
 
     const vcpus =
-      this.options.vcpus ??
-      this.workspace?.config.vcpus ??
-      config.defaults.VCPUS;
+      this.options.vcpus ?? this.workspace?.config.vcpus ?? DEFAULTS.VCPUS;
     const memoryMb =
       this.options.memoryMb ??
       this.workspace?.config.memoryMb ??
-      config.defaults.MEMORY_MB;
+      DEFAULTS.MEMORY_MB;
 
     this.sandbox = {
       id: this.sandboxId,
@@ -314,8 +312,8 @@ class SpawnContext {
     );
 
     this.sandbox.runtime.urls = {
-      vscode: `https://sandbox-${this.sandboxId}.${config.caddy.domainSuffix}`,
-      opencode: `https://opencode-${this.sandboxId}.${config.caddy.domainSuffix}`,
+      vscode: `https://sandbox-${this.sandboxId}.${config.domain.baseDomain}`,
+      opencode: `https://opencode-${this.sandboxId}.${config.domain.baseDomain}`,
       ssh: sshCmd,
     };
     this.sandbox.status = "running";
@@ -595,11 +593,11 @@ class SpawnContext {
         ? `${VM.HOME}${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
         : VM.WORKSPACE_DIR;
 
-    const dashboardDomain = config.domains.dashboard;
-    const vsPort = config.services.vscode.port;
-    const ocPort = config.services.opencode.port;
-    const browserPort = config.services.browser.port;
-    const terminalPort = config.services.terminal.port;
+    const dashboardDomain = config.domain.dashboard;
+    const vsPort = config.advanced.vm.vscode.port;
+    const ocPort = config.advanced.vm.opencode.port;
+    const browserPort = config.advanced.vm.browser.port;
+    const terminalPort = config.advanced.vm.terminal.port;
 
     return {
       sandboxId: this.sandboxId,
@@ -609,7 +607,7 @@ class SpawnContext {
       createdAt: new Date().toISOString(),
       network: {
         dashboardDomain,
-        managerInternalUrl: `http://${config.network.bridgeIp}:${config.port}/internal`,
+        managerInternalUrl: `http://${config.network.bridgeIp}:${config.server.port}/internal`,
       },
       services: {
         vscode: {
@@ -749,8 +747,8 @@ class SpawnContext {
           .join("\n")
       : "No repositories configured";
 
-    const vsPort = config.services.vscode.port;
-    const ocPort = config.services.opencode.port;
+    const vsPort = config.advanced.vm.vscode.port;
+    const ocPort = config.advanced.vm.opencode.port;
 
     const devCommandsSection = ws?.config.devCommands?.length
       ? ws.config.devCommands
@@ -950,8 +948,8 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       this.sandboxId,
       this.network.ipAddress,
       {
-        vscode: config.services.vscode.port,
-        opencode: config.services.opencode.port,
+        vscode: config.advanced.vm.vscode.port,
+        opencode: config.advanced.vm.opencode.port,
       },
     );
 

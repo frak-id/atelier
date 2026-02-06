@@ -1,6 +1,6 @@
 import { SSH_PROXY } from "@frak/atelier-shared/constants";
 import * as yaml from "yaml";
-import { config } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("sshpiper");
@@ -52,9 +52,9 @@ export const SshPiperService = {
     ipAddress: string,
     publicKeys: string[] = [],
   ): Promise<string> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ sandboxId, ipAddress }, "Mock: SSH route registered");
-      return `ssh ${sandboxId}@${config.sshProxy.domain} -p ${config.sshProxy.port}`;
+      return `ssh ${sandboxId}@${config.domain.ssh.hostname} -p ${config.domain.ssh.port}`;
     }
 
     const pipesConfig = await readPipesConfig();
@@ -85,11 +85,11 @@ export const SshPiperService = {
     await writePipesConfig(pipesConfig);
     log.info({ sandboxId, ipAddress }, "SSH route registered");
 
-    return `ssh ${sandboxId}@${config.sshProxy.domain} -p ${config.sshProxy.port}`;
+    return `ssh ${sandboxId}@${config.domain.ssh.hostname} -p ${config.domain.ssh.port}`;
   },
 
   async removeRoute(sandboxId: string): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug({ sandboxId }, "Mock: SSH route removed");
       return;
     }
@@ -108,14 +108,14 @@ export const SshPiperService = {
   },
 
   async listRouteSandboxIds(): Promise<string[]> {
-    if (config.isMock()) return [];
+    if (isMock()) return [];
 
     const pipesConfig = await readPipesConfig();
     return pipesConfig.pipes.flatMap((p) => p.from.map((f) => f.username));
   },
 
   async updateAuthorizedKeys(publicKeys: string[]): Promise<void> {
-    if (config.isMock()) {
+    if (isMock()) {
       log.debug(
         { keyCount: publicKeys.length },
         "Mock: Updating authorized keys",

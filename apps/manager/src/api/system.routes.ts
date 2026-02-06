@@ -1,3 +1,4 @@
+import { PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { Elysia } from "elysia";
 import { sandboxService } from "../container.ts";
@@ -14,14 +15,14 @@ import {
   type SystemStats,
   SystemStatsSchema,
 } from "../schemas/index.ts";
-import { config } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("system-routes");
 const startTime = Date.now();
 
 async function getSystemStats(): Promise<SystemStats> {
-  if (config.isMock()) {
+  if (isMock()) {
     return {
       cpuUsage: 25,
       memoryUsed: 4 * 1024 * 1024 * 1024,
@@ -31,7 +32,7 @@ async function getSystemStats(): Promise<SystemStats> {
       diskTotal: 500 * 1024 * 1024 * 1024,
       diskPercent: 10,
       activeSandboxes: sandboxService.countByStatus("running"),
-      maxSandboxes: config.maxSandboxes,
+      maxSandboxes: config.server.maxSandboxes,
       uptime: Math.floor((Date.now() - startTime) / 1000),
     };
   }
@@ -63,7 +64,7 @@ async function getSystemStats(): Promise<SystemStats> {
     diskTotal,
     diskPercent: diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0,
     activeSandboxes: sandboxService.countByStatus("running"),
-    maxSandboxes: config.maxSandboxes,
+    maxSandboxes: config.server.maxSandboxes,
     uptime: Math.floor((Date.now() - startTime) / 1000),
   };
 }
@@ -80,11 +81,11 @@ async function performCleanup(): Promise<CleanupResult> {
   let sshRoutesRemoved = 0;
   const spaceFreed = 0;
 
-  if (!config.isMock()) {
+  if (!isMock()) {
     const knownSandboxIds = new Set(sandboxService.getAll().map((s) => s.id));
 
     const orphanSocketResult =
-      await $`find ${config.paths.SOCKET_DIR} -maxdepth 1 \( -name "*.sock" -o -name "*.vsock" -o -name "*.pid" \) 2>/dev/null`
+      await $`find ${PATHS.SOCKET_DIR} -maxdepth 1 \( -name "*.sock" -o -name "*.vsock" -o -name "*.pid" \) 2>/dev/null`
         .quiet()
         .nothrow();
     const socketFiles = orphanSocketResult.stdout
@@ -102,7 +103,7 @@ async function performCleanup(): Promise<CleanupResult> {
     }
 
     const orphanLogResult =
-      await $`find ${config.paths.LOG_DIR} -maxdepth 1 -name "*.log" 2>/dev/null`
+      await $`find ${PATHS.LOG_DIR} -maxdepth 1 -name "*.log" 2>/dev/null`
         .quiet()
         .nothrow();
     const logFiles = orphanLogResult.stdout
@@ -120,7 +121,7 @@ async function performCleanup(): Promise<CleanupResult> {
     }
 
     const overlayResult =
-      await $`find ${config.paths.OVERLAY_DIR} -maxdepth 1 -name "*.ext4" 2>/dev/null`
+      await $`find ${PATHS.OVERLAY_DIR} -maxdepth 1 -name "*.ext4" 2>/dev/null`
         .quiet()
         .nothrow();
     const overlayFiles = overlayResult.stdout
@@ -168,11 +169,11 @@ async function performCleanup(): Promise<CleanupResult> {
       if (!id || id === "wildcard-fallback") continue;
 
       const sandboxIdMatch = [...knownSandboxIds].find((sid: string) =>
-        id.endsWith(`${sid}.${config.caddy.domainSuffix}`),
+        id.endsWith(`${sid}.${config.domain.baseDomain}`),
       );
       if (!sandboxIdMatch) {
         const domain = id;
-        if (domain.endsWith(`.${config.caddy.domainSuffix}`)) {
+        if (domain.endsWith(`.${config.domain.baseDomain}`)) {
           await CaddyService.removeRoute(domain);
           caddyRoutesRemoved++;
         }
