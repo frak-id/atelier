@@ -90,7 +90,7 @@ pub async fn handle_dev_start(
         .start_process(StartParams {
             name,
             command: &parsed.command,
-            user: "root",
+            user: "dev",
             workdir: Some(&workdir),
             port: parsed.port,
             env: parsed.env.as_ref(),
