@@ -1,0 +1,93 @@
+{
+  "domain": {
+    "baseDomain": "localhost",
+    "dashboard": "",
+    "tls": {
+      "email": "",
+      "certPath": "",
+      "keyPath": ""
+    },
+    "ssh": {
+      "port": 2222,
+      "hostname": ""
+    }
+  },
+  "auth": {
+    "github": {
+      "clientId": "",
+      "clientSecret": ""
+    },
+    "jwtSecret": "dev-secret-change-in-production",
+    "allowedOrg": "",
+    "allowedUsers": []
+  },
+  "server": {
+    "mode": "production",
+    "port": 4000,
+    "host": "0.0.0.0",
+    "maxSandboxes": 20
+  },
+  "network": {
+    "bridgeIp": "172.16.0.1",
+    "bridgeName": "br0",
+    "dnsServers": [
+      "8.8.8.8",
+      "8.8.4.4"
+    ],
+    "guestIpStart": 10,
+    "guestSubnet": "172.16.0",
+    "bridgeCidr": "172.16.0.0/24",
+    "bridgeNetmask": "24"
+  },
+  "sandbox": {
+    "defaultImage": "dev-base",
+    "imagesDirectory": "/opt/atelier/infra/images",
+    "git": {
+      "email": "sandbox@atelier.dev",
+      "name": "Sandbox User"
+    }
+  },
+  "setup": {
+    "storage": {
+      "method": "loop",
+      "loopSizeGb": 0,
+      "device": ""
+    },
+    "network": {
+      "onExists": "status"
+    }
+  },
+  "advanced": {
+    "vm": {
+      "vscode": {
+        "port": 8080,
+        "version": "4.108.1"
+      },
+      "opencode": {
+        "port": 3000,
+        "version": "1.1.48"
+      },
+      "browser": {
+        "port": 6080
+      },
+      "terminal": {
+        "port": 7681
+      },
+      "agent": {
+        "port": 9999
+      }
+    },
+    "server": {
+      "verdaccio": {
+        "port": 4873,
+        "version": "6.2.4"
+      },
+      "sshProxy": {
+        "version": "1.5.1"
+      },
+      "firecracker": {
+        "version": "1.14.0"
+      }
+    }
+  }
+}

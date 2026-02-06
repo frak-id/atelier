@@ -105,7 +105,7 @@ export const ServerConfigSchema = Type.Object({
   host: Type.String({ default: "0.0.0.0" }),
   /** Maximum concurrent sandboxes */
   maxSandboxes: Type.Number({ default: 20 }),
-});
+}, {default: {}});
 
 export type ServerConfig = Static<typeof ServerConfigSchema>;
 
@@ -130,7 +130,7 @@ export const NetworkConfigSchema = Type.Object({
   bridgeCidr: Type.String({ default: "172.16.0.0/24" }),
   /** @internal Bridge netmask (e.g., 24) */
   bridgeNetmask: Type.String({ default: "24" }),
-});
+}, { default: {} });
 
 export type NetworkConfig = Static<typeof NetworkConfigSchema>;
 

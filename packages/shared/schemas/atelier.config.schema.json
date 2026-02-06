@@ -3,17 +3,11 @@
   "type": "object",
   "required": [
     "domain",
-    "auth",
-    "server",
-    "network",
-    "sandbox",
-    "setup",
-    "advanced"
+    "auth"
   ],
   "properties": {
     "domain": {
       "type": "object",
-      "required": ["baseDomain", "dashboard", "tls", "ssh"],
       "properties": {
         "baseDomain": {
           "default": "localhost",
@@ -26,7 +20,6 @@
         "tls": {
           "default": {},
           "type": "object",
-          "required": ["email", "certPath", "keyPath"],
           "properties": {
             "email": {
               "default": "",
@@ -45,7 +38,6 @@
         "ssh": {
           "default": {},
           "type": "object",
-          "required": ["port", "hostname"],
           "properties": {
             "port": {
               "default": 2222,
@@ -61,12 +53,10 @@
     },
     "auth": {
       "type": "object",
-      "required": ["github", "jwtSecret", "allowedUsers"],
       "properties": {
         "github": {
           "default": {},
           "type": "object",
-          "required": ["clientId", "clientSecret"],
           "properties": {
             "clientId": {
               "default": "",
@@ -95,8 +85,11 @@
       }
     },
     "server": {
+      "default": {},
       "type": "object",
-      "required": ["mode", "port", "host", "maxSandboxes"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "anyOf": [
@@ -125,16 +118,8 @@
       }
     },
     "network": {
+      "default": {},
       "type": "object",
-      "required": [
-        "bridgeIp",
-        "bridgeName",
-        "dnsServers",
-        "guestIpStart",
-        "guestSubnet",
-        "bridgeCidr",
-        "bridgeNetmask"
-      ],
       "properties": {
         "bridgeIp": {
           "default": "172.16.0.1",
@@ -145,7 +130,10 @@
           "type": "string"
         },
         "dnsServers": {
-          "default": ["8.8.8.8", "8.8.4.4"],
+          "default": [
+            "8.8.8.8",
+            "8.8.4.4"
+          ],
           "type": "array",
           "items": {
             "type": "string"
@@ -172,7 +160,6 @@
     "sandbox": {
       "default": {},
       "type": "object",
-      "required": ["defaultImage", "imagesDirectory", "git"],
       "properties": {
         "defaultImage": {
           "default": "dev-base",
@@ -185,7 +172,6 @@
         "git": {
           "default": {},
           "type": "object",
-          "required": ["email", "name"],
           "properties": {
             "email": {
               "default": "sandbox@atelier.dev",
@@ -249,17 +235,14 @@
     "advanced": {
       "default": {},
       "type": "object",
-      "required": ["vm", "server"],
       "properties": {
         "vm": {
           "default": {},
           "type": "object",
-          "required": ["vscode", "opencode", "browser", "terminal", "agent"],
           "properties": {
             "vscode": {
               "default": {},
               "type": "object",
-              "required": ["port", "version"],
               "properties": {
                 "port": {
                   "default": 8080,
@@ -274,7 +257,6 @@
             "opencode": {
               "default": {},
               "type": "object",
-              "required": ["port", "version"],
               "properties": {
                 "port": {
                   "default": 3000,
@@ -289,7 +271,6 @@
             "browser": {
               "default": {},
               "type": "object",
-              "required": ["port"],
               "properties": {
                 "port": {
                   "default": 6080,
@@ -300,7 +281,6 @@
             "terminal": {
               "default": {},
               "type": "object",
-              "required": ["port"],
               "properties": {
                 "port": {
                   "default": 7681,
@@ -311,7 +291,6 @@
             "agent": {
               "default": {},
               "type": "object",
-              "required": ["port"],
               "properties": {
                 "port": {
                   "default": 9999,
@@ -324,12 +303,10 @@
         "server": {
           "default": {},
           "type": "object",
-          "required": ["verdaccio", "sshProxy", "firecracker"],
           "properties": {
             "verdaccio": {
               "default": {},
               "type": "object",
-              "required": ["port", "version"],
               "properties": {
                 "port": {
                   "default": 4873,
@@ -344,7 +321,6 @@
             "sshProxy": {
               "default": {},
               "type": "object",
-              "required": ["version"],
               "properties": {
                 "version": {
                   "default": "1.5.1",
@@ -355,7 +331,6 @@
             "firecracker": {
               "default": {},
               "type": "object",
-              "required": ["version"],
               "properties": {
                 "version": {
                   "default": "1.14.0",
