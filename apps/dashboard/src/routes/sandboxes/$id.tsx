@@ -7,6 +7,7 @@ import {
   Globe,
   Loader2,
   Monitor,
+  PanelRight,
   Pause,
   Play,
   RotateCcw,
@@ -36,6 +37,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useDrawer } from "@/providers/drawer-provider";
 
 const tabSchema = z.enum(["opencode", "vscode", "terminal", "web"]);
 type TabId = z.infer<typeof tabSchema>;
@@ -173,6 +175,7 @@ function SandboxImmersionPage() {
     return tabId === tab1;
   };
 
+  const { openSandbox } = useDrawer();
   const stopMutation = useStopSandbox();
   const startMutation = useStartSandbox();
   const restartMutation = useRestartSandbox();
@@ -312,6 +315,19 @@ function SandboxImmersionPage() {
             )}
           </div>
         )}
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => openSandbox(id)}
+              className="flex items-center gap-1.5 px-2 h-8 rounded-md text-sm transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Sandbox details</TooltipContent>
+        </Tooltip>
       </div>
 
       {isRunning ? (

@@ -102,8 +102,35 @@ fi
 # Start sandbox-agent FIRST for fast boot detection by manager
 log "Starting sandbox-agent..."
 if [ -x /usr/local/bin/sandbox-agent ]; then
-    /usr/local/bin/sandbox-agent > "$LOG_DIR/agent.log" 2>&1 &
-    log "sandbox-agent started (PID $!)"
+    # Supervision loop for sandbox-agent with auto-restart and backoff
+    (
+        restart_times=()
+        while true; do
+            /usr/local/bin/sandbox-agent >> "$LOG_DIR/agent.log" 2>&1
+            exit_code=$?
+            log "sandbox-agent exited with code $exit_code"
+
+            # Track restart times (keep only last 60 seconds)
+            current_time=$(date +%s)
+            restart_times+=("$current_time")
+            restart_times=("${restart_times[@]:(-5)}")
+
+            # Check if we have more than 5 restarts in the last 60 seconds
+            if [ ${#restart_times[@]} -ge 5 ]; then
+                oldest_time=${restart_times[0]}
+                time_diff=$((current_time - oldest_time))
+                if [ $time_diff -lt 60 ]; then
+                    log "WARNING: sandbox-agent restarted 5+ times in 60s, backing off for 30s"
+                    sleep 30
+                    restart_times=()
+                fi
+            fi
+
+            log "Restarting sandbox-agent in 2 seconds..."
+            sleep 2
+        done
+    ) &
+    log "sandbox-agent supervision loop started"
 else
     log "ERROR: sandbox-agent binary not found"
     ls -la /usr/local/bin/sandbox-agent >> "$LOG_DIR/init.log" 2>&1

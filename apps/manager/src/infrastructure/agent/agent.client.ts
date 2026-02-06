@@ -34,6 +34,17 @@ const DEFAULT_TIMEOUT = 10000;
 const VSOCK_GUEST_PORT = 9998;
 const VSOCK_CONNECT_TIMEOUT = 5000;
 
+export class AgentUnavailableError extends SandboxError {
+  constructor(sandboxId: string, cause: string) {
+    super(
+      `Agent for sandbox ${sandboxId} is unavailable: ${cause}`,
+      "AGENT_UNAVAILABLE",
+      503,
+    );
+    this.name = "AgentUnavailableError";
+  }
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
@@ -65,10 +76,23 @@ export class AgentClient {
       );
     }
 
-    const socket = await this.connectVsock(vsockPath, VSOCK_GUEST_PORT);
+    let socket: Socket;
+    try {
+      socket = await this.connectVsock(vsockPath, VSOCK_GUEST_PORT);
+    } catch (err) {
+      throw new AgentUnavailableError(
+        sandboxId,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
 
     try {
       return await this.rawHttp<T>(socket, path, options, timeout);
+    } catch (err) {
+      throw new AgentUnavailableError(
+        sandboxId,
+        err instanceof Error ? err.message : String(err),
+      );
     } finally {
       socket.destroy();
     }

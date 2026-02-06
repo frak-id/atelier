@@ -88,6 +88,11 @@ export class SandboxProvisionService {
         mode: "0600",
         owner: "dev",
       },
+      {
+        path: "/etc/profile.d/99-sandbox-secrets.sh",
+        content:
+          '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n',
+      },
     ]);
     log.debug({ sandboxId }, "Secrets pushed");
   }

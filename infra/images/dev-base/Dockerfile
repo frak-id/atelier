@@ -78,7 +78,8 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
     && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.atelier
 
 # Layer 6: Profile scripts + config files (most likely to change)
-RUN echo 'export PATH="/opt/shared/bin:$PATH"' > /etc/profile.d/shared-binaries.sh
+RUN echo 'export PATH="/opt/shared/bin:$PATH"' > /etc/profile.d/shared-binaries.sh \
+    && printf '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n' > /etc/profile.d/99-sandbox-secrets.sh
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 COPY --chown=dev:dev rootfs/etc/sandbox/ /etc/sandbox/
 COPY rootfs/etc/xdg/openbox/ /etc/xdg/openbox/
