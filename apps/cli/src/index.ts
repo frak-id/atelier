@@ -149,6 +149,7 @@ Manager Subcommands:
 
 Images:
    images [image-id]   Build a base image (interactive or: images dev-base)
+   images --no-cache   Skip Docker layer cache for the build
 
 Debug VM Subcommands:
    debug-vm start      Start debug VM
