@@ -97,6 +97,31 @@ export class SandboxProvisionService {
     log.debug({ sandboxId }, "Secrets pushed");
   }
 
+  async pushRuntimeEnv(
+    sandboxId: string,
+    env: Record<string, string>,
+  ): Promise<void> {
+    const content = `${Object.entries(env)
+      .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
+      .join("\n")}\n`;
+
+    await this.agentClient.writeFiles(sandboxId, [
+      {
+        path: "/etc/sandbox/runtime.env",
+        content,
+        mode: "0644",
+        owner: "root",
+      },
+      {
+        path: "/etc/profile.d/98-atelier-runtime.sh",
+        content:
+          "[ -r /etc/sandbox/runtime.env ] && . /etc/sandbox/runtime.env\n",
+        owner: "root",
+      },
+    ]);
+    log.debug({ sandboxId, keys: Object.keys(env) }, "Runtime env pushed");
+  }
+
   async pushGitCredentials(
     sandboxId: string,
     credentials: string[],

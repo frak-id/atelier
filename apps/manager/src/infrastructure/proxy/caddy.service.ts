@@ -9,10 +9,17 @@ interface RouteDefinition {
   upstream: string;
 }
 
+function getManagerDialAddress(): string {
+  // Caddy needs a concrete dial address; 0.0.0.0 is a bind address, not a dial.
+  const host =
+    config.server.host === "0.0.0.0" ? "127.0.0.1" : config.server.host;
+  return `${host}:${config.server.port}`;
+}
+
 function buildForwardAuthHandler(): object {
   return {
     handler: "reverse_proxy",
-    upstreams: [{ dial: `${config.server.host}:${config.server.port}` }],
+    upstreams: [{ dial: getManagerDialAddress() }],
     rewrite: {
       method: "GET",
       uri: "/auth/verify",

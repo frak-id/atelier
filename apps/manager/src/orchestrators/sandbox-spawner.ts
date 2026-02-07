@@ -473,6 +473,15 @@ class SpawnContext {
 
     await this.deps.provisionService.syncClock(this.sandboxId);
 
+    await this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
+      ATELIER_SANDBOX_ID: this.sandboxId,
+    });
+
+    await this.deps.provisionService.setHostname(
+      this.sandboxId,
+      `sandbox-${this.sandboxId}`,
+    );
+
     const imageInfo = await SharedStorageService.getBinariesImageInfo();
     if (imageInfo.exists) {
       const mountResult = await this.deps.agentClient.exec(
@@ -579,6 +588,10 @@ class SpawnContext {
       this.sandboxId,
       sandboxConfig,
     );
+
+    await this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
+      ATELIER_SANDBOX_ID: this.sandboxId,
+    });
 
     await this.deps.provisionService.setHostname(
       this.sandboxId,

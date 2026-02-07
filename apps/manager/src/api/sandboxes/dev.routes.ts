@@ -86,10 +86,18 @@ export const devRoutes = new Elysia()
       );
       if (!devCommand) throw new NotFoundError("DevCommand", params.name);
 
+      const devCommandWithSandboxEnv = {
+        ...devCommand,
+        env: {
+          ...devCommand.env,
+          ATELIER_SANDBOX_ID: sandbox.id,
+        },
+      };
+
       const result = await agentClient.devStart(
         sandbox.id,
         params.name,
-        devCommand,
+        devCommandWithSandboxEnv,
       );
 
       let devUrl: string | undefined;
