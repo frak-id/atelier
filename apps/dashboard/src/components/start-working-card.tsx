@@ -248,7 +248,10 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
             </SelectTrigger>
             <SelectContent>
               {selectedTemplate.variants.map((variant, idx) => (
-                <SelectItem key={idx} value={String(idx)}>
+                <SelectItem
+                  key={`${variant.name}-${variant.model.providerID}-${variant.model.modelID}-${variant.variant ?? ""}-${variant.agent ?? ""}`}
+                  value={String(idx)}
+                >
                   {variant.name}
                 </SelectItem>
               ))}

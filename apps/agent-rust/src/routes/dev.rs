@@ -95,7 +95,7 @@ pub async fn handle_dev_start(
             port: parsed.port,
             env: parsed.env.as_ref(),
             log_prefix: &format!("dev-{}.log", name),
-            log_open_mode: LogOpenMode::Append,
+            log_open_mode: LogOpenMode::Truncate,
         })
         .await
     {

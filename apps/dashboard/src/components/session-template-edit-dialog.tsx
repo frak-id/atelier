@@ -236,6 +236,7 @@ export function SessionTemplateEditDialog({
 
               <div className="space-y-3">
                 {data.variants.map((variant, idx) => {
+                  const variantKey = `${variant.name}-${variant.model.providerID}-${variant.model.modelID}-${variant.variant ?? ""}-${variant.agent ?? ""}`;
                   const modelOptions = getModelOptions(
                     variant.model.providerID,
                   );
@@ -246,7 +247,7 @@ export function SessionTemplateEditDialog({
 
                   return (
                     <div
-                      key={`variant-${idx}`}
+                      key={variantKey}
                       className="p-3 border rounded-md space-y-3"
                     >
                       <div className="flex items-center justify-between">

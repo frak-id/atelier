@@ -232,6 +232,15 @@ function DevCommandLogs({
   const [logs, setLogs] = useState("");
   const [offset, setOffset] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const wasRunning = useRef(isRunning);
+
+  useEffect(() => {
+    if (isRunning && !wasRunning.current) {
+      setLogs("");
+      setOffset(0);
+    }
+    wasRunning.current = isRunning;
+  }, [isRunning]);
 
   const { data } = useQuery({
     ...sandboxDevCommandLogsQuery(sandboxId, commandName, offset),

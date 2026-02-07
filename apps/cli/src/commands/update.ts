@@ -149,8 +149,7 @@ export async function updateServer(args: string[] = []) {
   await exec(`rm -rf ${tmpDir}`, { throws: false });
 
   const afterHash = await getSha256(agentPath);
-  const agentChanged =
-    beforeHash && afterHash && beforeHash !== afterHash ? true : false;
+  const agentChanged = !!(beforeHash && afterHash && beforeHash !== afterHash);
 
   if (rebuildImages) {
     await images(["dev-base"]);
