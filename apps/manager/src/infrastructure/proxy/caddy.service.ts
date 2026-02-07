@@ -1,5 +1,5 @@
 import { CADDY } from "@frak/atelier-shared/constants";
-import { config, dashboardUrl, isMock } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("caddy");
@@ -109,8 +109,11 @@ export const CaddyService = {
 
     const corsResponseHeaders = {
       set: {
-        "Access-Control-Allow-Origin": [dashboardUrl],
+        // Reflect request Origin to support dev-*/sandbox-* cross-origin calls.
+        // Using a wildcard is incompatible with credentials.
+        "Access-Control-Allow-Origin": ["{http.request.header.Origin}"],
         "Access-Control-Allow-Credentials": ["true"],
+        Vary: ["Origin"],
       },
     };
 
@@ -151,8 +154,9 @@ export const CaddyService = {
                         "GET, POST, PUT, DELETE, PATCH, OPTIONS",
                       ],
                       "Access-Control-Allow-Headers": [
-                        "Content-Type, Authorization, X-Requested-With",
+                        "{http.request.header.Access-Control-Request-Headers}",
                       ],
+                      "Access-Control-Max-Age": ["600"],
                     },
                   },
                 },
