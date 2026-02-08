@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Workspace } from "@/api/client";
 import { workspaceListQuery } from "@/api/queries";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
+import { RouteErrorComponent } from "@/components/route-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,7 @@ export const Route = createFileRoute("/workspaces/")({
       </div>
     </div>
   ),
+  errorComponent: RouteErrorComponent,
 });
 
 function WorkspacesPage() {

@@ -23,6 +23,7 @@ import {
   workspaceListQuery,
 } from "@/api/queries";
 import { AttentionBlock } from "@/components/attention-block";
+import { RouteErrorComponent } from "@/components/route-error";
 import { SandboxCard } from "@/components/sandbox-card";
 import { StartWorkingCard } from "@/components/start-working-card";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +75,7 @@ export const Route = createFileRoute("/")({
     context.queryClient.ensureQueryData(sandboxListQuery());
   },
   pendingComponent: MissionControlSkeleton,
+  errorComponent: RouteErrorComponent,
 });
 
 function MissionControlPage() {

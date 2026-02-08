@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { HardDrive } from "lucide-react";
 import { imageListQuery } from "@/api/queries";
+import { RouteErrorComponent } from "@/components/route-error";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,6 +23,7 @@ export const Route = createFileRoute("/images/")({
       </div>
     </div>
   ),
+  errorComponent: RouteErrorComponent,
 });
 
 function ImagesPage() {

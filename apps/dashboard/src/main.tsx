@@ -2,6 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  RouteErrorComponent,
+  RouteNotFoundComponent,
+} from "@/components/route-error";
 import { loadConfig } from "./config";
 import "./index.css";
 import { ManagerEventsProvider } from "./providers/manager-events-provider";
@@ -28,6 +32,8 @@ const router = createRouter({
   context: { queryClient },
   defaultPreload: "intent",
   defaultPreloadStaleTime: 0,
+  defaultErrorComponent: RouteErrorComponent,
+  defaultNotFoundComponent: RouteNotFoundComponent,
 });
 
 declare module "@tanstack/react-router" {

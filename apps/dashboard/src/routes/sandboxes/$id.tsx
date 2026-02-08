@@ -28,6 +28,10 @@ import {
   workspaceDetailQuery,
 } from "@/api/queries";
 import { MultiTerminal } from "@/components/multi-terminal";
+import {
+  RouteErrorComponent,
+  RouteNotFoundComponent,
+} from "@/components/route-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -54,6 +58,8 @@ export const Route = createFileRoute("/sandboxes/$id")({
     context.queryClient.ensureQueryData(sandboxDetailQuery(params.id));
   },
   pendingComponent: ImmersionSkeleton,
+  errorComponent: RouteErrorComponent,
+  notFoundComponent: RouteNotFoundComponent,
 });
 
 const statusVariant = {

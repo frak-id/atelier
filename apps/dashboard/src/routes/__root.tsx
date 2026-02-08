@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import type { ErrorComponentProps } from "@tanstack/react-router";
 import {
   createRootRouteWithContext,
   Link,
@@ -6,6 +7,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   Box,
   Boxes,
   ChevronDown,
@@ -31,6 +33,14 @@ import { SystemStatusFooter } from "@/components/system-status-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -54,7 +64,37 @@ export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
   component: RootLayout,
+  errorComponent: RootErrorFallback,
 });
+
+function RootErrorFallback({ error, reset }: ErrorComponentProps) {
+  return (
+    <div className="flex min-h-screen items-center justify-center p-6 bg-background">
+      <Card className="w-full max-w-md border-destructive/50">
+        <CardHeader>
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+            <CardTitle>Critical Error</CardTitle>
+          </div>
+          <CardDescription>
+            The application encountered a critical error and cannot continue.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md font-mono break-all">
+            {error instanceof Error ? error.message : "Unknown error"}
+          </div>
+        </CardContent>
+        <CardFooter className="flex justify-between gap-4">
+          <Button variant="outline" asChild>
+            <Link to="/">Go home</Link>
+          </Button>
+          <Button onClick={reset}>Try again</Button>
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
 
 const ADMIN_ROUTES = ["/workspaces", "/images", "/system", "/settings"];
 
