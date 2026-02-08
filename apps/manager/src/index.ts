@@ -27,6 +27,7 @@ import {
   agentOperations,
   authSyncService,
   prebuildChecker,
+  sandboxLifecycle,
   sandboxService,
   sshKeyService,
   workspaceService,
@@ -66,6 +67,17 @@ const app = new Elysia()
       name: "Prebuild Staleness Check",
       pattern: "*/30 * * * *",
       handler: () => prebuildChecker.checkAllAndRebuildStale(),
+    });
+
+    CronService.add("sandboxSelfHeal", {
+      name: "Sandbox Self Heal",
+      pattern: "*/1 * * * *",
+      handler: async () => {
+        const running = sandboxService.getByStatus("running");
+        await Promise.allSettled(
+          running.map((s) => sandboxLifecycle.getStatus(s.id)),
+        );
+      },
     });
     const expiredCount = sshKeyService.cleanupExpired();
     if (expiredCount > 0) {
