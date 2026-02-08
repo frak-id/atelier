@@ -14,6 +14,7 @@ import {
   useWorkspaceDataMap,
 } from "@/api/queries";
 import { CreateSandboxDialog } from "@/components/create-sandbox-dialog";
+import { RouteErrorComponent } from "@/components/route-error";
 import { SandboxCard } from "@/components/sandbox-card";
 import { SshKeyAlert } from "@/components/ssh-key-alert";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ export const Route = createFileRoute("/sandboxes/")({
       </div>
     </div>
   ),
+  errorComponent: RouteErrorComponent,
 });
 
 function SandboxesPage() {

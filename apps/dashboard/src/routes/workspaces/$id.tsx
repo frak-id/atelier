@@ -28,6 +28,7 @@ import {
   workspaceDetailQuery,
 } from "@/api/queries";
 import { EditWorkspaceDialog } from "@/components/edit-workspace-dialog";
+import { RouteErrorComponent } from "@/components/route-error";
 import { SandboxRow } from "@/components/sandbox-row";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,7 @@ export const Route = createFileRoute("/workspaces/$id")({
       <Skeleton className="h-64" />
     </div>
   ),
+  errorComponent: RouteErrorComponent,
 });
 
 function WorkspaceDetailPage() {

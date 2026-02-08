@@ -28,6 +28,7 @@ import {
   TaskFormDialog,
 } from "@/components/kanban";
 import { TaskMenu, TaskSessionsStatus } from "@/components/kanban/task-card";
+import { RouteErrorComponent } from "@/components/route-error";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ export const Route = createFileRoute("/tasks/")({
     context.queryClient.ensureQueryData(workspaceListQuery());
   },
   pendingComponent: TasksSkeleton,
+  errorComponent: RouteErrorComponent,
 });
 
 function TasksPage() {
