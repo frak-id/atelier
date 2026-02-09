@@ -44,7 +44,7 @@ Most sandbox tools use containers — fast, but with weak isolation boundaries. 
 ## Quickstart
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/frak-id/oc-sandbox/main/infra/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/frak-id/atelier/main/infra/scripts/install.sh | bash
 ```
 
 After install:

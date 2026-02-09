@@ -14,7 +14,7 @@
 Must be run as root.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/frak-id/oc-sandbox/main/infra/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/frak-id/atelier/main/infra/scripts/install.sh | sudo bash
 ```
 
 Optional: set `ATELIER_VERSION=vX.Y.Z` to pin CLI version.

@@ -70,7 +70,7 @@ function ExpirationBadge({ expiresAt }: { expiresAt: string | null }) {
 
 import { config } from "@/config";
 
-export const SSH_KEY_PATH = "~/.config/oc-sandbox/sandbox_key";
+export const SSH_KEY_PATH = "~/.config/atelier/sandbox_key";
 export const SSH_HOST_ALIAS = "atelier";
 
 export function SshKeysSection() {
@@ -203,7 +203,7 @@ function SetupInstructions({
   const { copy, isCopied } = useCopyWithFeedback();
 
   const keySetupCommand = privateKey
-    ? `mkdir -p ~/.config/oc-sandbox && cat > ${SSH_KEY_PATH} << 'EOF'
+    ? `mkdir -p ~/.config/atelier && cat > ${SSH_KEY_PATH} << 'EOF'
 ${privateKey}
 EOF
 chmod 600 ${SSH_KEY_PATH}`

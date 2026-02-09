@@ -5,7 +5,7 @@ import { commandExists, exec, fileExists } from "../lib/shell";
 import { CLI_VERSION } from "../version";
 import { images } from "./images";
 
-const DEFAULT_REPO = "frak-id/oc-sandbox";
+const DEFAULT_REPO = "frak-id/atelier";
 const DEFAULT_LOCAL_TARBALL = "/tmp/atelier-deploy.tar.gz";
 
 type DeploySource =

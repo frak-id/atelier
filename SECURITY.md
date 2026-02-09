@@ -4,7 +4,7 @@
 
 Please report security issues via GitHub Security Advisories:
 
-https://github.com/frak-id/oc-sandbox/security/advisories/new
+https://github.com/frak-id/atelier/security/advisories/new
 
 If you cannot use GitHub advisories, open a private discussion with the
 maintainers and note that it is a security report.
