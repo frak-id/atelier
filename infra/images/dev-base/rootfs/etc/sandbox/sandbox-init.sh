@@ -108,9 +108,73 @@ log "Starting sandbox-agent..."
 if [ -x /usr/local/bin/sandbox-agent ]; then
     # Supervision loop for sandbox-agent with auto-restart and backoff
     (
+        HEARTBEAT_FILE="/run/sandbox-agent.heartbeat"
+        AGENT_LOG="$LOG_DIR/agent.log"
+        AGENT_LOG_MAX_BYTES=$((2 * 1024 * 1024))
+        AGENT_LOG_KEEP=5
+        HEARTBEAT_STALE_SECS=30
+        HEARTBEAT_GRACE_SECS=15
+
+        rotate_log_copytruncate() {
+            local file="$1"
+            local max_bytes="$2"
+            local keep="$3"
+
+            [ -f "$file" ] || return 0
+
+            local size
+            size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+            if [ "$size" -lt "$max_bytes" ]; then
+                return 0
+            fi
+
+            # Shift older logs
+            local i
+            for i in $(seq "$keep" -1 2); do
+                if [ -f "${file}.$((i - 1))" ]; then
+                    mv -f "${file}.$((i - 1))" "${file}.${i}" 2>/dev/null || true
+                fi
+            done
+
+            cp -f "$file" "${file}.1" 2>/dev/null || true
+            : > "$file" 2>/dev/null || true
+            log "Rotated $file (>${max_bytes} bytes)"
+        }
+
         restart_times=()
         while true; do
-            /usr/local/bin/sandbox-agent >> "$LOG_DIR/agent.log" 2>&1
+            rm -f "$HEARTBEAT_FILE" 2>/dev/null || true
+
+            /usr/local/bin/sandbox-agent >> "$AGENT_LOG" 2>&1 &
+            agent_pid=$!
+            start_time=$(date +%s)
+
+            # While agent is running, rotate logs and detect hangs via heartbeat.
+            while kill -0 "$agent_pid" 2>/dev/null; do
+                rotate_log_copytruncate "$AGENT_LOG" "$AGENT_LOG_MAX_BYTES" "$AGENT_LOG_KEEP"
+
+                now=$(date +%s)
+                if [ -f "$HEARTBEAT_FILE" ]; then
+                    hb_mtime=$(stat -c %Y "$HEARTBEAT_FILE" 2>/dev/null || echo 0)
+                    hb_age=$((now - hb_mtime))
+                    if [ "$hb_age" -gt "$HEARTBEAT_STALE_SECS" ]; then
+                        log "WARNING: sandbox-agent heartbeat stale (${hb_age}s), killing PID ${agent_pid}"
+                        kill -9 "$agent_pid" 2>/dev/null || true
+                        break
+                    fi
+                else
+                    age=$((now - start_time))
+                    if [ "$age" -gt "$HEARTBEAT_GRACE_SECS" ]; then
+                        log "WARNING: sandbox-agent heartbeat missing after ${age}s, killing PID ${agent_pid}"
+                        kill -9 "$agent_pid" 2>/dev/null || true
+                        break
+                    fi
+                fi
+
+                sleep 5
+            done
+
+            wait "$agent_pid"
             exit_code=$?
             log "sandbox-agent exited with code $exit_code"
 

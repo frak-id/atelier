@@ -1,11 +1,13 @@
+use http_body_util::Full;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::{Request, Response};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
-use tokio::process::Command;
 
+use crate::body::{read_body_limited, ReadBodyError};
+use crate::command::run_shell_command_limited;
 use crate::config::DEFAULT_EXEC_TIMEOUT_MS;
+use crate::limits::{GIT_SEMAPHORE, MAX_COMMAND_OUTPUT_BYTES, MAX_REQUEST_BODY_BYTES};
 use crate::response::json_ok;
 
 #[derive(Deserialize)]
@@ -94,29 +96,31 @@ struct GitPushResponse {
     error: Option<String>,
 }
 
-async fn read_body(req: Request<hyper::body::Incoming>) -> Result<Bytes, hyper::Error> {
-    Ok(req.collect().await?.to_bytes())
+fn parse_exec_value(v: serde_json::Value) -> (i32, String, String) {
+    let exit_code = v.get("exitCode").and_then(|x| x.as_i64()).unwrap_or(1) as i32;
+    let stdout = v
+        .get("stdout")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let stderr = v
+        .get("stderr")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    (exit_code, stdout, stderr)
 }
 
 async fn run_as_dev(cmd: &str) -> (i32, String, String) {
-    let timeout = Duration::from_millis(DEFAULT_EXEC_TIMEOUT_MS);
-    let result = tokio::time::timeout(timeout, async {
-        Command::new("su")
-            .args(["-", "dev", "-c", cmd])
-            .output()
-            .await
-    })
+    let v = run_shell_command_limited(
+        cmd,
+        DEFAULT_EXEC_TIMEOUT_MS,
+        Some("dev"),
+        None,
+        MAX_COMMAND_OUTPUT_BYTES,
+    )
     .await;
-
-    match result {
-        Ok(Ok(output)) => (
-            output.status.code().unwrap_or(1),
-            String::from_utf8_lossy(&output.stdout).to_string(),
-            String::from_utf8_lossy(&output.stderr).to_string(),
-        ),
-        Ok(Err(e)) => (1, String::new(), e.to_string()),
-        Err(_) => (1, String::new(), "Command timed out".to_string()),
-    }
+    parse_exec_value(v)
 }
 
 fn full_path(clone_path: &str) -> String {
@@ -139,8 +143,7 @@ async fn get_repo_status(clone_path: String) -> GitRepoStatus {
         };
     }
 
-    let (_, branch_out, _) =
-        run_as_dev(&format!("git -C '{path}' branch --show-current")).await;
+    let (_, branch_out, _) = run_as_dev(&format!("git -C '{path}' branch --show-current")).await;
     let branch = branch_out.trim().to_string();
 
     let (_, dirty_out, _) =
@@ -161,13 +164,16 @@ async fn get_repo_status(clone_path: String) -> GitRepoStatus {
         (0, 0)
     };
 
-    let (_, commit_out, _) =
-        run_as_dev(&format!("git -C '{path}' log -1 --format='%h %s'")).await;
+    let (_, commit_out, _) = run_as_dev(&format!("git -C '{path}' log -1 --format='%h %s'")).await;
     let commit = commit_out.trim().to_string();
 
     GitRepoStatus {
         path: clone_path,
-        branch: if branch.is_empty() { None } else { Some(branch) },
+        branch: if branch.is_empty() {
+            None
+        } else {
+            Some(branch)
+        },
         dirty,
         ahead,
         behind,
@@ -181,9 +187,15 @@ async fn get_repo_status(clone_path: String) -> GitRepoStatus {
 }
 
 pub async fn handle_git_status(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
-    let body = match read_body(req).await {
+    let body = match read_body_limited(req, MAX_REQUEST_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => return json_ok(serde_json::json!({"repos": []})),
+        Err(ReadBodyError::TooLarge) => {
+            return json_ok(serde_json::json!({
+                "repos": [],
+                "error": "Request body too large"
+            }))
+        }
+        Err(ReadBodyError::ReadFailed) => return json_ok(serde_json::json!({"repos": []})),
     };
     let parsed: MultiRepoBody = match serde_json::from_slice(&body) {
         Ok(p) => p,
@@ -192,7 +204,10 @@ pub async fn handle_git_status(req: Request<hyper::body::Incoming>) -> Response<
 
     let mut set = tokio::task::JoinSet::new();
     for repo in parsed.repos {
-        set.spawn(get_repo_status(repo.clone_path));
+        set.spawn(async move {
+            let _permit = GIT_SEMAPHORE.acquire().await.unwrap();
+            get_repo_status(repo.clone_path).await
+        });
     }
 
     let mut repos = Vec::with_capacity(set.len());
@@ -217,8 +232,7 @@ async fn get_repo_diff(clone_path: String) -> GitDiffRepo {
         };
     }
 
-    let (_, unstaged_out, _) =
-        run_as_dev(&format!("git -C '{path}' diff --numstat HEAD")).await;
+    let (_, unstaged_out, _) = run_as_dev(&format!("git -C '{path}' diff --numstat HEAD")).await;
     let (_, staged_out, _) =
         run_as_dev(&format!("git -C '{path}' diff --numstat --cached HEAD")).await;
     let (_, untracked_out, _) = run_as_dev(&format!(
@@ -230,10 +244,7 @@ async fn get_repo_diff(clone_path: String) -> GitDiffRepo {
     let mut total_added: u32 = 0;
     let mut total_removed: u32 = 0;
 
-    for line in unstaged_out
-        .lines()
-        .chain(staged_out.lines())
-    {
+    for line in unstaged_out.lines().chain(staged_out.lines()) {
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -276,9 +287,15 @@ async fn get_repo_diff(clone_path: String) -> GitDiffRepo {
 }
 
 pub async fn handle_git_diff(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
-    let body = match read_body(req).await {
+    let body = match read_body_limited(req, MAX_REQUEST_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => return json_ok(serde_json::json!({"repos": []})),
+        Err(ReadBodyError::TooLarge) => {
+            return json_ok(serde_json::json!({
+                "repos": [],
+                "error": "Request body too large"
+            }))
+        }
+        Err(ReadBodyError::ReadFailed) => return json_ok(serde_json::json!({"repos": []})),
     };
     let parsed: MultiRepoBody = match serde_json::from_slice(&body) {
         Ok(p) => p,
@@ -287,7 +304,10 @@ pub async fn handle_git_diff(req: Request<hyper::body::Incoming>) -> Response<Fu
 
     let mut set = tokio::task::JoinSet::new();
     for repo in parsed.repos {
-        set.spawn(get_repo_diff(repo.clone_path));
+        set.spawn(async move {
+            let _permit = GIT_SEMAPHORE.acquire().await.unwrap();
+            get_repo_diff(repo.clone_path).await
+        });
     }
 
     let mut repos = Vec::with_capacity(set.len());
@@ -299,76 +319,116 @@ pub async fn handle_git_diff(req: Request<hyper::body::Incoming>) -> Response<Fu
 }
 
 pub async fn handle_git_commit(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
-    let body = match read_body(req).await {
+    let _permit = GIT_SEMAPHORE.acquire().await.unwrap();
+
+    let body = match read_body_limited(req, MAX_REQUEST_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => {
-            return json_ok(serde_json::to_value(GitCommitResponse {
-                path: String::new(),
-                success: false,
-                hash: None,
-                error: Some("Failed to read body".to_string()),
-            }).unwrap())
+        Err(ReadBodyError::TooLarge) => {
+            return json_ok(
+                serde_json::to_value(GitCommitResponse {
+                    path: String::new(),
+                    success: false,
+                    hash: None,
+                    error: Some("Request body too large".to_string()),
+                })
+                .unwrap(),
+            )
+        }
+        Err(ReadBodyError::ReadFailed) => {
+            return json_ok(
+                serde_json::to_value(GitCommitResponse {
+                    path: String::new(),
+                    success: false,
+                    hash: None,
+                    error: Some("Failed to read body".to_string()),
+                })
+                .unwrap(),
+            )
         }
     };
     let parsed: CommitBody = match serde_json::from_slice(&body) {
         Ok(p) => p,
         Err(_) => {
-            return json_ok(serde_json::to_value(GitCommitResponse {
-                path: String::new(),
-                success: false,
-                hash: None,
-                error: Some("Invalid JSON".to_string()),
-            }).unwrap())
+            return json_ok(
+                serde_json::to_value(GitCommitResponse {
+                    path: String::new(),
+                    success: false,
+                    hash: None,
+                    error: Some("Invalid JSON".to_string()),
+                })
+                .unwrap(),
+            )
         }
     };
 
     let path = full_path(&parsed.repo_path);
     let escaped_msg = parsed.message.replace('\'', "'\\''");
 
-    let cmd = format!(
-        "git -C '{path}' add -A && git -C '{path}' commit -m '{escaped_msg}'"
-    );
+    let cmd = format!("git -C '{path}' add -A && git -C '{path}' commit -m '{escaped_msg}'");
     let (code, _stdout, stderr) = run_as_dev(&cmd).await;
 
     if code != 0 {
-        return json_ok(serde_json::to_value(GitCommitResponse {
-            path: parsed.repo_path,
-            success: false,
-            hash: None,
-            error: Some(stderr.trim().to_string()),
-        }).unwrap());
+        return json_ok(
+            serde_json::to_value(GitCommitResponse {
+                path: parsed.repo_path,
+                success: false,
+                hash: None,
+                error: Some(stderr.trim().to_string()),
+            })
+            .unwrap(),
+        );
     }
 
-    let (_, hash_out, _) =
-        run_as_dev(&format!("git -C '{path}' rev-parse --short HEAD")).await;
+    let (_, hash_out, _) = run_as_dev(&format!("git -C '{path}' rev-parse --short HEAD")).await;
 
-    json_ok(serde_json::to_value(GitCommitResponse {
-        path: parsed.repo_path,
-        success: true,
-        hash: Some(hash_out.trim().to_string()),
-        error: None,
-    }).unwrap())
+    json_ok(
+        serde_json::to_value(GitCommitResponse {
+            path: parsed.repo_path,
+            success: true,
+            hash: Some(hash_out.trim().to_string()),
+            error: None,
+        })
+        .unwrap(),
+    )
 }
 
 pub async fn handle_git_push(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
-    let body = match read_body(req).await {
+    let _permit = GIT_SEMAPHORE.acquire().await.unwrap();
+
+    let body = match read_body_limited(req, MAX_REQUEST_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => {
-            return json_ok(serde_json::to_value(GitPushResponse {
-                path: String::new(),
-                success: false,
-                error: Some("Failed to read body".to_string()),
-            }).unwrap())
+        Err(ReadBodyError::TooLarge) => {
+            return json_ok(
+                serde_json::to_value(GitPushResponse {
+                    path: String::new(),
+                    success: false,
+                    error: Some("Request body too large".to_string()),
+                })
+                .unwrap(),
+            )
+        }
+        Err(ReadBodyError::ReadFailed) => {
+            return json_ok(
+                serde_json::to_value(GitPushResponse {
+                    path: String::new(),
+                    success: false,
+                    error: Some("Failed to read body".to_string()),
+                })
+                .unwrap(),
+            )
         }
     };
     let parsed: PushBody = match serde_json::from_slice(&body) {
         Ok(p) => p,
         Err(_) => {
-            return json_ok(serde_json::to_value(GitPushResponse {
-                path: String::new(),
-                success: false,
-                error: Some("Invalid JSON".to_string()),
-            }).unwrap())
+            return json_ok(
+                serde_json::to_value(GitPushResponse {
+                    path: String::new(),
+                    success: false,
+                    error: Some("Invalid JSON".to_string()),
+                })
+                .unwrap(),
+            )
         }
     };
 
@@ -383,17 +443,23 @@ pub async fn handle_git_push(req: Request<hyper::body::Incoming>) -> Response<Fu
         .await;
 
         if code2 != 0 {
-            return json_ok(serde_json::to_value(GitPushResponse {
-                path: parsed.repo_path,
-                success: false,
-                error: Some(stderr2.trim().to_string()),
-            }).unwrap());
+            return json_ok(
+                serde_json::to_value(GitPushResponse {
+                    path: parsed.repo_path,
+                    success: false,
+                    error: Some(stderr2.trim().to_string()),
+                })
+                .unwrap(),
+            );
         }
     }
 
-    json_ok(serde_json::to_value(GitPushResponse {
-        path: parsed.repo_path,
-        success: true,
-        error: None,
-    }).unwrap())
+    json_ok(
+        serde_json::to_value(GitPushResponse {
+            path: parsed.repo_path,
+            success: true,
+            error: None,
+        })
+        .unwrap(),
+    )
 }

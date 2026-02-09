@@ -6,7 +6,9 @@ use std::fs::{self, Permissions};
 use std::os::unix::fs::{chown, PermissionsExt};
 use std::path::Path;
 
-use crate::response::{json, json_error};
+use crate::body::{read_body_limited, ReadBodyError};
+use crate::limits::{FILES_SEMAPHORE, MAX_REQUEST_BODY_BYTES};
+use crate::response::{json, json_error, json_ok};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,18 +80,24 @@ fn write_single_file(file: &FileWrite) -> Result<(), String> {
 }
 
 pub async fn handle_write_files(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
-    use http_body_util::BodyExt;
+    let _permit = FILES_SEMAPHORE.acquire().await.unwrap();
 
-    let body = match req.collect().await.map(|b| b.to_bytes()) {
+    let body = match read_body_limited(req, MAX_REQUEST_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => return json_error(StatusCode::BAD_REQUEST, "Failed to read body"),
+        Err(ReadBodyError::TooLarge) => {
+            return json_ok(serde_json::json!({
+                "results": [],
+                "error": "Request body too large"
+            }))
+        }
+        Err(ReadBodyError::ReadFailed) => {
+            return json_error(StatusCode::BAD_REQUEST, "Failed to read body")
+        }
     };
 
     let write_req: WriteFilesRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
-        Err(e) => {
-            return json_error(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {}", e))
-        }
+        Err(e) => return json_error(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {}", e)),
     };
 
     let results: Vec<FileWriteResult> = write_req

@@ -14,7 +14,9 @@ use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::body::{read_body_limited, ReadBodyError};
 use crate::config::get_config;
+use crate::limits::MAX_REQUEST_BODY_BYTES;
 use crate::response::{json_error, json_ok};
 use crate::utc_rfc3339;
 
@@ -209,8 +211,7 @@ pub async fn create_session(
 
             let result = tokio::task::spawn_blocking(move || {
                 let mut buf = [0u8; 4096];
-                let n =
-                    unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+                let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
                 if n > 0 {
                     Some(buf[..n as usize].to_vec())
                 } else {
@@ -249,7 +250,9 @@ pub async fn create_session(
 
 pub async fn list_sessions() -> Vec<SessionInfo> {
     let guard = TERMINAL_STATE.read().await;
-    let Some(state) = guard.as_ref() else { return vec![] };
+    let Some(state) = guard.as_ref() else {
+        return vec![];
+    };
     let mut sessions = Vec::with_capacity(state.sessions.len());
     for session in state.sessions.values() {
         sessions.push(session.lock().await.info.clone());
@@ -329,14 +332,17 @@ fn try_parse_resize(data: &[u8]) -> Option<(u16, u16)> {
     Some((cmd.cols.unwrap_or(80), cmd.rows.unwrap_or(24)))
 }
 
-async fn read_body(req: Request<hyper::body::Incoming>) -> Result<Bytes, hyper::Error> {
-    Ok(req.collect().await?.to_bytes())
-}
-
 pub async fn handle_create_session(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
-    let body = match read_body(req).await {
+    let body = match read_body_limited(req, MAX_REQUEST_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => return json_error(StatusCode::BAD_REQUEST, "Failed to read body"),
+        Err(ReadBodyError::TooLarge) => {
+            return json_ok(serde_json::json!({
+                "error": "Request body too large"
+            }))
+        }
+        Err(ReadBodyError::ReadFailed) => {
+            return json_error(StatusCode::BAD_REQUEST, "Failed to read body")
+        }
     };
 
     let parsed: CreateSessionBody = match serde_json::from_slice(&body) {
@@ -393,7 +399,11 @@ async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String)
         for chunk_start in (0..buffer_bytes.len()).step_by(BUFFER_CHUNK) {
             let chunk_end = (chunk_start + BUFFER_CHUNK).min(buffer_bytes.len());
             let chunk = &buffer_bytes[chunk_start..chunk_end];
-            if ws_sink.send(Message::Binary(chunk.to_vec().into())).await.is_err() {
+            if ws_sink
+                .send(Message::Binary(chunk.to_vec().into()))
+                .await
+                .is_err()
+            {
                 return;
             }
         }
@@ -462,7 +472,9 @@ pub async fn ensure_terminal_running(port: u16) {
 
 pub async fn ensure_terminal_from_config() {
     let Some(config) = get_config() else { return };
-    let Some(service) = config.services.get("terminal") else { return };
+    let Some(service) = config.services.get("terminal") else {
+        return;
+    };
     if service.enabled == Some(false) {
         return;
     }
@@ -487,7 +499,9 @@ pub async fn start_terminal_server(port: u16) {
 
     while let Ok((stream, addr)) = listener.accept().await {
         let mut buf = [0u8; 1024];
-        let Ok(n) = stream.peek(&mut buf).await else { continue };
+        let Ok(n) = stream.peek(&mut buf).await else {
+            continue;
+        };
 
         if let Some(id) = parse_session_id_from_request(&buf[..n]) {
             println!("terminal: connection from {addr} for session {id}");
