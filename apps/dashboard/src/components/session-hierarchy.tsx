@@ -224,24 +224,26 @@ function PendingInterventionLines({
     return null;
 
   return (
-    <div className="ml-9 space-y-0.5 py-0.5">
+    <div className="ml-9 space-y-0.5 py-0.5 min-w-0 overflow-hidden">
       {pendingPermissions.map((p) => (
         <div
           key={p.id}
-          className="flex items-center gap-1.5 text-xs text-purple-400"
+          className="flex items-center gap-1.5 text-xs text-purple-400 min-w-0"
         >
           <Shield className="h-3 w-3 shrink-0" />
-          <span className="truncate">{p.permission}</span>
+          <span className="truncate min-w-0">{p.permission}</span>
         </div>
       ))}
       {pendingQuestions.map((q) => (
-        <div key={q.id} className="space-y-0.5">
-          <div className="flex items-center gap-1.5 text-xs text-cyan-400">
+        <div key={q.id} className="space-y-0.5 min-w-0">
+          <div className="flex items-center gap-1.5 text-xs text-cyan-400 min-w-0">
             <MessageCircleQuestion className="h-3 w-3 shrink-0" />
-            <span className="truncate">{getQuestionDisplayText(q)}</span>
+            <span className="truncate min-w-0">
+              {getQuestionDisplayText(q)}
+            </span>
           </div>
           {q.questions.length > 1 && (
-            <div className="ml-4.5 space-y-px">
+            <div className="ml-4.5 space-y-px min-w-0">
               {q.questions.map((qi) => (
                 <div
                   key={qi.header}
@@ -287,8 +289,8 @@ const ChildSessionRow = memo(function ChildSessionRow({
       : undefined;
 
   return (
-    <div>
-      <div className="flex items-center gap-2 text-sm py-1.5 px-3 rounded-md hover:bg-muted/50 transition-colors">
+    <div className="min-w-0">
+      <div className="flex items-center gap-2 text-sm py-1.5 px-3 rounded-md hover:bg-muted/50 transition-colors min-w-0">
         <SessionStatusIcon status={status} />
 
         <span
@@ -305,17 +307,21 @@ const ChildSessionRow = memo(function ChildSessionRow({
         )}
         {!currentTodo && <span className="flex-1" />}
 
-        <TodoProgressBadge todos={todos} />
+        <div className="shrink-0">
+          <TodoProgressBadge todos={todos} />
+        </div>
 
         {interaction && (status === "busy" || status === "idle") && (
-          <SessionStatusIndicator
-            interaction={{
-              status: interaction.status,
-              pendingPermissions: interaction.pendingPermissions,
-              pendingQuestions: interaction.pendingQuestions,
-            }}
-            compact
-          />
+          <div className="shrink-0">
+            <SessionStatusIndicator
+              interaction={{
+                status: interaction.status,
+                pendingPermissions: interaction.pendingPermissions,
+                pendingQuestions: interaction.pendingQuestions,
+              }}
+              compact
+            />
+          </div>
         )}
 
         {sessionUrl && (
@@ -333,7 +339,7 @@ const ChildSessionRow = memo(function ChildSessionRow({
       <PendingInterventionLines interaction={interaction} />
 
       {node.children.length > 0 && (
-        <div className="ml-6 border-l border-border/50 space-y-0.5 mt-0.5">
+        <div className="ml-6 border-l border-border/50 space-y-0.5 mt-0.5 min-w-0">
           {node.children.map((child) => (
             <ChildSessionRow
               key={child.session.id}
@@ -396,7 +402,7 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
           <button
             type="button"
             className={cn(
-              "flex w-full items-center gap-2.5 px-4 py-3 text-sm transition-colors",
+              "flex w-full items-center gap-2.5 px-4 py-3 text-sm transition-colors min-w-0",
               "hover:bg-muted/50 cursor-pointer text-left",
             )}
           >
@@ -469,13 +475,13 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div className="border-t px-2 py-2 space-y-1">
+          <div className="border-t px-2 py-2 space-y-1 overflow-hidden min-w-0">
             <PendingInterventionLines interaction={interaction} />
 
             {todos.length > 0 && <RootTodoList todos={todos} />}
 
             {hasChildren && (
-              <div className="space-y-0.5">
+              <div className="space-y-0.5 min-w-0">
                 {node.children.map((child) => (
                   <ChildSessionRow
                     key={child.session.id}

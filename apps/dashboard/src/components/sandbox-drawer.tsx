@@ -548,7 +548,7 @@ export function SandboxDrawer({
                       defaultValue="repos"
                       className="w-full"
                     >
-                      <TabsList className="w-full justify-start">
+                      <TabsList className="w-full justify-start overflow-x-auto">
                         <TabsTrigger value="repos">Repositories</TabsTrigger>
                         <TabsTrigger value="services">Services</TabsTrigger>
                         <TabsTrigger value="sessions" className="gap-1.5">
@@ -1369,17 +1369,19 @@ function ServicesTab({
             {services.map((service) => (
               <div
                 key={service.name}
-                className="flex items-center justify-between py-2 border-b last:border-0"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 border-b last:border-0"
               >
-                <div className="flex items-center gap-3">
-                  <div className="font-medium text-sm">{service.name}</div>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="font-medium text-sm truncate">
+                    {service.name}
+                  </div>
                   {service.pid ? (
-                    <span className="text-xs text-muted-foreground font-mono">
+                    <span className="text-xs text-muted-foreground font-mono shrink-0">
                       PID: {service.pid}
                     </span>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
                   <Badge
                     variant={
                       service.running

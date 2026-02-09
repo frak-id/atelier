@@ -269,7 +269,7 @@ export function TaskDrawer({
                   </div>
 
                   {sandbox?.status === "running" && sandbox.runtime?.urls && (
-                    <div className="flex items-center gap-2 flex-wrap overflow-x-auto">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Button variant="outline" size="sm" asChild>
                         <a
                           href={sandbox.runtime.urls.vscode}
