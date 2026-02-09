@@ -14,6 +14,8 @@ pub async fn read_body_limited(
 ) -> Result<Bytes, ReadBodyError> {
     let mut body = req.into_body();
     let mut buf: Vec<u8> = Vec::new();
+    // Avoid lots of tiny reallocations for small/medium payloads.
+    buf.reserve(std::cmp::min(max_bytes, 64 * 1024));
 
     while let Some(frame_result) = body.frame().await {
         let frame = frame_result.map_err(|_| ReadBodyError::ReadFailed)?;

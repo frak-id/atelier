@@ -7,12 +7,26 @@ static LAST_TICK: LazyLock<AtomicU64> = LazyLock::new(|| AtomicU64::new(0));
 pub const HEARTBEAT_PATH: &str = "/run/sandbox-agent.heartbeat";
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(2);
 const HANG_TIMEOUT: Duration = Duration::from_secs(30);
+const MEM_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn read_rss_bytes() -> Option<u64> {
+    // Parse /proc/self/status for VmRSS (kB).
+    let contents = std::fs::read_to_string("/proc/self/status").ok()?;
+    for line in contents.lines() {
+        let Some(rest) = line.strip_prefix("VmRSS:") else {
+            continue;
+        };
+        let kb: u64 = rest.trim().split_whitespace().next()?.parse().ok()?;
+        return Some(kb.saturating_mul(1024));
+    }
+    None
 }
 
 pub fn start() {
@@ -44,4 +58,25 @@ pub fn start() {
             std::process::abort();
         }
     });
+
+    // Optional memory watchdog: abort if RSS exceeds SANDBOX_AGENT_MAX_RSS_MB.
+    if let Ok(limit) = std::env::var("SANDBOX_AGENT_MAX_RSS_MB") {
+        if let Ok(limit_mb) = limit.trim().parse::<u64>() {
+            let limit_bytes = limit_mb.saturating_mul(1024).saturating_mul(1024);
+            std::thread::spawn(move || loop {
+                std::thread::sleep(MEM_CHECK_INTERVAL);
+                let Some(rss) = read_rss_bytes() else {
+                    continue;
+                };
+                if rss > limit_bytes {
+                    eprintln!(
+                        "watchdog: RSS {}MB exceeds limit {}MB, aborting",
+                        rss / 1024 / 1024,
+                        limit_mb
+                    );
+                    std::process::abort();
+                }
+            });
+        }
+    }
 }
