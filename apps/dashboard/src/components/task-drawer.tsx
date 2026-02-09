@@ -309,7 +309,7 @@ export function TaskDrawer({
             </SheetHeader>
 
             <ScrollArea className="flex-1">
-              <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-hidden">
                 <Card>
                   <CardHeader>
                     <CardTitle>Description</CardTitle>
