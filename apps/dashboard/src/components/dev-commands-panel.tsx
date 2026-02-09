@@ -106,12 +106,12 @@ function DevCommandItem({
 
   return (
     <div className="border rounded-lg overflow-hidden">
-      <div className="p-4 bg-muted/30 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="p-4 bg-muted/30 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 w-6 p-0"
+            className="h-6 w-6 p-0 shrink-0"
             onClick={() => setExpanded(!expanded)}
           >
             {expanded ? (
@@ -120,22 +120,22 @@ function DevCommandItem({
               <ChevronRight className="h-4 w-4" />
             )}
           </Button>
-          <div>
-            <div className="font-medium flex items-center gap-2">
-              {command.name}
+          <div className="min-w-0">
+            <div className="font-medium flex items-center gap-2 flex-wrap">
+              <span className="truncate">{command.name}</span>
               <StatusBadge
                 status={command.status}
                 exitCode={command.exitCode}
               />
             </div>
-            <div className="text-xs text-muted-foreground font-mono mt-0.5">
+            <div className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
               {command.command}
               {command.port && ` • Port ${command.port}`}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap shrink-0 sm:justify-end">
           {command.extraDevUrls?.map((ep) =>
             isRunning ? (
               <Button key={ep.alias} variant="outline" size="sm" asChild>
