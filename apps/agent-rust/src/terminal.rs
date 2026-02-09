@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
-use http_body_util::{BodyExt, Full};
+use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::{Request, Response, StatusCode};
 use nix::sys::signal::{kill, Signal};
@@ -519,8 +519,8 @@ async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String)
     let ws_reader = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_source.next().await {
             let data = match msg {
-                Message::Binary(b) => b,
-                Message::Text(t) => t.into_bytes(),
+                Message::Binary(b) => b.to_vec(),
+                Message::Text(t) => t.as_bytes().to_vec(),
                 Message::Close(_) => break,
                 _ => continue,
             };

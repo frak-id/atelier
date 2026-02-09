@@ -5,6 +5,16 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::watch;
 
+fn kill_pid(pid: u32) {
+    if pid <= 1 {
+        return;
+    }
+    // SAFETY: best-effort kill; ignore errors (process may have already exited).
+    unsafe {
+        libc::kill(pid as i32, libc::SIGKILL);
+    }
+}
+
 fn truncate_marker(truncated: bool) -> &'static str {
     if truncated {
         "\n[truncated]\n"
@@ -59,6 +69,8 @@ pub async fn run_shell_command_limited(
         }
     };
 
+    let pid = child.id().unwrap_or(0);
+
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
@@ -104,7 +116,7 @@ pub async fn run_shell_command_limited(
                     Ok(Err(_)) => 1,
                     Err(_) => {
                         timed_out = true;
-                        let _ = child.kill().await;
+                        kill_pid(pid);
                         killed = true;
                         1
                     }
@@ -112,12 +124,18 @@ pub async fn run_shell_command_limited(
             }
             changed = trunc_rx.changed() => {
                 if changed.is_ok() && *trunc_rx.borrow() {
-                    let _ = child.kill().await;
+                    kill_pid(pid);
                     killed = true;
                 }
             }
         }
     };
+
+    // If the timeout fired, the `child.wait()` future was cancelled; explicitly reap.
+    drop(wait_fut);
+    if timed_out {
+        let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
+    }
 
     let (stdout_bytes, stdout_truncated) = stdout_task.await.unwrap_or((Vec::new(), false));
     let (stderr_bytes, stderr_truncated) = stderr_task.await.unwrap_or((Vec::new(), false));

@@ -38,12 +38,6 @@ pub struct ManagedProcess {
     pub running: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum LogOpenMode {
-    Truncate,
-    Append,
-}
-
 pub struct StartParams<'a> {
     pub name: &'a str,
     pub command: &'a str,
@@ -52,7 +46,6 @@ pub struct StartParams<'a> {
     pub port: Option<u16>,
     pub env: Option<&'a HashMap<String, String>>,
     pub log_prefix: &'a str,
-    pub log_open_mode: LogOpenMode,
 }
 
 pub fn is_process_running(pid: u32) -> bool {
@@ -197,24 +190,13 @@ impl ProcessRegistry {
 
         let log_file = format!("{}/{}", LOG_DIR, params.log_prefix);
 
-        let log_handle = match params.log_open_mode {
-            LogOpenMode::Truncate => {
-                tokio::fs::OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(&log_file)
-                    .await
-            }
-            LogOpenMode::Append => {
-                tokio::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&log_file)
-                    .await
-            }
-        }
-        .map_err(|e| e.to_string())?;
+        let log_handle = tokio::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&log_file)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let mut cmd = Command::new("/bin/bash");
         cmd.args(["-l", "-c", params.command])
