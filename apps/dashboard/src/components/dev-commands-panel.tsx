@@ -128,7 +128,7 @@ function DevCommandItem({
                 exitCode={command.exitCode}
               />
             </div>
-            <div className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+            <div className="text-xs text-muted-foreground font-mono mt-0.5 break-all">
               {command.command}
               {command.port && ` • Port ${command.port}`}
             </div>
