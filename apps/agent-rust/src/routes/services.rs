@@ -7,8 +7,7 @@ use std::sync::LazyLock;
 use crate::config::{get_config, ServiceConfig, LOG_DIR};
 use crate::response::{json_error, json_ok};
 use crate::routes::process_manager::{
-    LogOpenMode, ManagedProcess, ProcessRegistry, StartParams,
-    StopResult,
+    ManagedProcess, ProcessRegistry, StartParams, StopResult,
 };
 
 static RUNNING_SERVICES: LazyLock<ProcessRegistry> =
@@ -80,7 +79,6 @@ async fn start_service_internal(
             port: Some(cfg.port.unwrap_or(0)),
             env: cfg.env.as_ref(),
             log_prefix: &format!("{}.log", name),
-            log_open_mode: LogOpenMode::Truncate,
         })
         .await
 }

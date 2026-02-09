@@ -6,7 +6,6 @@ pub const VSOCK_PORT: u32 = 9998;
 pub const LOG_DIR: &str = "/var/log/sandbox";
 pub const WORKSPACE_DIR: &str = "/home/dev/workspace";
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 30_000;
-pub const MAX_EXEC_BUFFER: usize = 10 * 1024 * 1024;
 
 pub const CONFIG_PATH: &str = "/etc/sandbox/config.json";
 

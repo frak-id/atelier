@@ -10,7 +10,7 @@ use crate::config::{LOG_DIR, WORKSPACE_DIR};
 use crate::limits::MAX_REQUEST_BODY_BYTES;
 use crate::response::{json_error, json_ok};
 use crate::routes::process_manager::{
-    LogOpenMode, ManagedProcess, ProcessRegistry, StartParams, StopResult,
+    ManagedProcess, ProcessRegistry, StartParams, StopResult,
 };
 
 static RUNNING_DEV_COMMANDS: LazyLock<ProcessRegistry> = LazyLock::new(ProcessRegistry::new);
@@ -89,7 +89,6 @@ pub async fn handle_dev_start(
             port: parsed.port,
             env: parsed.env.as_ref(),
             log_prefix: &format!("dev-{}.log", name),
-            log_open_mode: LogOpenMode::Truncate,
         })
         .await
     {
