@@ -7,6 +7,8 @@ use tokio::sync::Mutex;
 use crate::config::LOG_DIR;
 use crate::response::json_ok;
 
+const MAX_LOG_READ_BYTES: usize = 1024 * 1024;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogsResponse {
@@ -110,6 +112,8 @@ pub async fn read_logs(
             _ => {}
         }
     }
+
+    limit = limit.min(MAX_LOG_READ_BYTES);
 
     let mut file = match tokio::fs::File::open(log_path).await {
         Ok(f) => f,

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::ffi::CString;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use http_body_util::{BodyExt, Full};
@@ -10,16 +12,62 @@ use nix::sys::signal::{kill, Signal};
 use nix::unistd::{close, dup2, execvp, fork, setgid, setsid, setuid, ForkResult, Gid, Pid, Uid};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, watch, Mutex, RwLock};
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+
+use crate::body::{read_body_limited, ReadBodyError};
 use crate::config::get_config;
+use crate::limits::MAX_REQUEST_BODY_BYTES;
 use crate::response::{json_error, json_ok};
 use crate::utc_rfc3339;
 
 const BUFFER_LIMIT: usize = 1024 * 1024 * 2;
-const BUFFER_CHUNK: usize = 64 * 1024;
+const SESSION_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
+const SESSION_IDLE_TTL: Duration = Duration::from_secs(60 * 60);
+
+#[derive(Default)]
+struct OutputBuffer {
+    chunks: VecDeque<Bytes>,
+    total_len: usize,
+}
+
+impl OutputBuffer {
+    fn push(&mut self, chunk: Bytes) {
+        if chunk.is_empty() {
+            return;
+        }
+        self.total_len = self.total_len.saturating_add(chunk.len());
+        self.chunks.push_back(chunk);
+        self.trim_to_limit();
+    }
+
+    fn snapshot_chunks(&self) -> Vec<Bytes> {
+        self.chunks.iter().cloned().collect()
+    }
+
+    fn trim_to_limit(&mut self) {
+        while self.total_len > BUFFER_LIMIT {
+            let excess = self.total_len - BUFFER_LIMIT;
+            let Some(front) = self.chunks.pop_front() else {
+                self.total_len = 0;
+                break;
+            };
+            if front.len() <= excess {
+                self.total_len -= front.len();
+                continue;
+            }
+
+            // Keep only the tail of the front chunk, slicing without copying.
+            let keep = front.slice(excess..);
+            self.total_len -= excess;
+            self.chunks.push_front(keep);
+            break;
+        }
+    }
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,9 +82,11 @@ struct ActiveSession {
     info: SessionInfo,
     master_fd: i32,
     child_pid: Pid,
-    buffer: String,
+    buffer: OutputBuffer,
     write_tx: mpsc::Sender<Vec<u8>>,
-    output_broadcast: broadcast::Sender<Vec<u8>>,
+    output_broadcast: broadcast::Sender<Bytes>,
+    shutdown_tx: watch::Sender<bool>,
+    last_activity: Instant,
 }
 
 struct TerminalState {
@@ -177,27 +227,40 @@ pub async fn create_session(
     };
 
     let (write_tx, mut write_rx) = mpsc::channel::<Vec<u8>>(64);
-    let (output_broadcast, _) = broadcast::channel::<Vec<u8>>(256);
+    let (output_broadcast, _) = broadcast::channel::<Bytes>(256);
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     let session = Arc::new(Mutex::new(ActiveSession {
         info: info.clone(),
         master_fd,
         child_pid,
-        buffer: String::new(),
+        buffer: OutputBuffer::default(),
         write_tx,
         output_broadcast: output_broadcast.clone(),
+        shutdown_tx,
+        last_activity: Instant::now(),
     }));
 
     state.sessions.insert(session_id.clone(), session.clone());
 
-    let writer_session = session.clone();
+    let writer_fd = master_fd;
+    let mut writer_shutdown_rx = shutdown_rx.clone();
     tokio::spawn(async move {
-        while let Some(data) = write_rx.recv().await {
-            let fd = writer_session.lock().await.master_fd;
-            let _ = tokio::task::spawn_blocking(move || unsafe {
-                libc::write(fd, data.as_ptr() as *const libc::c_void, data.len());
-            })
-            .await;
+        loop {
+            tokio::select! {
+                _ = writer_shutdown_rx.changed() => {
+                    if *writer_shutdown_rx.borrow() {
+                        break;
+                    }
+                }
+                maybe = write_rx.recv() => {
+                    let Some(data) = maybe else { break; };
+                    let fd = writer_fd;
+                    let _ = tokio::task::spawn_blocking(move || unsafe {
+                        libc::write(fd, data.as_ptr() as *const libc::c_void, data.len());
+                    }).await;
+                }
+            }
         }
     });
 
@@ -209,8 +272,7 @@ pub async fn create_session(
 
             let result = tokio::task::spawn_blocking(move || {
                 let mut buf = [0u8; 4096];
-                let n =
-                    unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+                let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
                 if n > 0 {
                     Some(buf[..n as usize].to_vec())
                 } else {
@@ -222,14 +284,10 @@ pub async fn create_session(
             match result {
                 Ok(Some(data)) => {
                     let mut s = reader_session.lock().await;
-                    if let Ok(text) = String::from_utf8(data.clone()) {
-                        s.buffer.push_str(&text);
-                        if s.buffer.len() > BUFFER_LIMIT {
-                            let excess = s.buffer.len() - BUFFER_LIMIT;
-                            s.buffer = s.buffer[excess..].to_string();
-                        }
-                    }
-                    let _ = s.output_broadcast.send(data);
+                    s.last_activity = Instant::now();
+                    let bytes = Bytes::from(data);
+                    s.buffer.push(bytes.clone());
+                    let _ = s.output_broadcast.send(bytes);
                 }
                 _ => {
                     drop(reader_session);
@@ -249,7 +307,9 @@ pub async fn create_session(
 
 pub async fn list_sessions() -> Vec<SessionInfo> {
     let guard = TERMINAL_STATE.read().await;
-    let Some(state) = guard.as_ref() else { return vec![] };
+    let Some(state) = guard.as_ref() else {
+        return vec![];
+    };
     let mut sessions = Vec::with_capacity(state.sessions.len());
     for session in state.sessions.values() {
         sessions.push(session.lock().await.info.clone());
@@ -274,11 +334,39 @@ pub async fn delete_session(session_id: &str) -> Result<(), String> {
         .remove(session_id)
         .ok_or("Session not found")?;
 
-    let s = session.lock().await;
-    let _ = kill(Pid::from_raw(-s.child_pid.as_raw()), Signal::SIGHUP);
+    let (master_fd, child_pid, shutdown_tx) = {
+        let s = session.lock().await;
+        (s.master_fd, s.child_pid, s.shutdown_tx.clone())
+    };
+
+    let _ = shutdown_tx.send(true);
+
+    let _ = kill(Pid::from_raw(-child_pid.as_raw()), Signal::SIGHUP);
     unsafe {
-        libc::close(s.master_fd);
+        libc::close(master_fd);
     }
+
+    // Reap the forked PTY child to avoid accumulating zombies.
+    tokio::task::spawn_blocking(move || {
+        let mut waited = false;
+        for _ in 0..20 {
+            match waitpid(child_pid, Some(WaitPidFlag::WNOHANG)) {
+                Ok(WaitStatus::StillAlive) => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Ok(_) => {
+                    waited = true;
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+
+        if !waited {
+            let _ = kill(Pid::from_raw(-child_pid.as_raw()), Signal::SIGKILL);
+            let _ = waitpid(child_pid, None);
+        }
+    });
 
     println!("terminal: deleted session {}", session_id);
     Ok(())
@@ -289,7 +377,11 @@ pub async fn resize_session(session_id: &str, cols: u16, rows: u16) -> Result<()
     let state = guard.as_ref().ok_or("Terminal server not initialized")?;
     let session = state.sessions.get(session_id).ok_or("Session not found")?;
 
-    set_winsize(session.lock().await.master_fd, cols, rows);
+    {
+        let mut s = session.lock().await;
+        s.last_activity = Instant::now();
+        set_winsize(s.master_fd, cols, rows);
+    }
     Ok(())
 }
 
@@ -298,8 +390,13 @@ pub async fn write_to_session(session_id: &str, data: Vec<u8>) -> Result<(), Str
     let state = guard.as_ref().ok_or("Terminal server not initialized")?;
     let session = state.sessions.get(session_id).ok_or("Session not found")?;
 
-    let s = session.lock().await;
-    s.write_tx
+    let write_tx = {
+        let mut s = session.lock().await;
+        s.last_activity = Instant::now();
+        s.write_tx.clone()
+    };
+
+    write_tx
         .send(data)
         .await
         .map_err(|_| "Write channel closed".to_string())
@@ -329,14 +426,17 @@ fn try_parse_resize(data: &[u8]) -> Option<(u16, u16)> {
     Some((cmd.cols.unwrap_or(80), cmd.rows.unwrap_or(24)))
 }
 
-async fn read_body(req: Request<hyper::body::Incoming>) -> Result<Bytes, hyper::Error> {
-    Ok(req.collect().await?.to_bytes())
-}
-
 pub async fn handle_create_session(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
-    let body = match read_body(req).await {
+    let body = match read_body_limited(req, MAX_REQUEST_BODY_BYTES).await {
         Ok(b) => b,
-        Err(_) => return json_error(StatusCode::BAD_REQUEST, "Failed to read body"),
+        Err(ReadBodyError::TooLarge) => {
+            return json_ok(serde_json::json!({
+                "error": "Request body too large"
+            }))
+        }
+        Err(ReadBodyError::ReadFailed) => {
+            return json_error(StatusCode::BAD_REQUEST, "Failed to read body")
+        }
     };
 
     let parsed: CreateSessionBody = match serde_json::from_slice(&body) {
@@ -369,12 +469,14 @@ pub async fn handle_delete_session(session_id: &str) -> Response<Full<Bytes>> {
     }
 }
 
-async fn get_session_for_ws(session_id: &str) -> Option<(String, broadcast::Receiver<Vec<u8>>)> {
+async fn get_session_for_ws(
+    session_id: &str,
+) -> Option<(Vec<Bytes>, broadcast::Receiver<Bytes>)> {
     let guard = TERMINAL_STATE.read().await;
     let state = guard.as_ref()?;
     let session = state.sessions.get(session_id)?;
     let s = session.lock().await;
-    Some((s.buffer.clone(), s.output_broadcast.subscribe()))
+    Some((s.buffer.snapshot_chunks(), s.output_broadcast.subscribe()))
 }
 
 async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String) {
@@ -382,20 +484,19 @@ async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String)
         return;
     };
 
-    let Some((buffer, mut output_rx)) = get_session_for_ws(&session_id).await else {
+    let Some((buffer_chunks, mut output_rx)) = get_session_for_ws(&session_id).await else {
         return;
     };
 
     let (mut ws_sink, mut ws_source) = ws_stream.split();
 
-    if !buffer.is_empty() {
-        let buffer_bytes = buffer.as_bytes();
-        for chunk_start in (0..buffer_bytes.len()).step_by(BUFFER_CHUNK) {
-            let chunk_end = (chunk_start + BUFFER_CHUNK).min(buffer_bytes.len());
-            let chunk = &buffer_bytes[chunk_start..chunk_end];
-            if ws_sink.send(Message::Binary(chunk.to_vec().into())).await.is_err() {
-                return;
-            }
+    for chunk in buffer_chunks {
+        if ws_sink
+            .send(Message::Binary(chunk.to_vec().into()))
+            .await
+            .is_err()
+        {
+            return;
         }
     }
 
@@ -403,7 +504,11 @@ async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String)
 
     let broadcast_forwarder = tokio::spawn(async move {
         while let Ok(data) = output_rx.recv().await {
-            if ws_sink.send(Message::Binary(data.into())).await.is_err() {
+            if ws_sink
+                .send(Message::Binary(data.to_vec().into()))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -414,8 +519,8 @@ async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String)
     let ws_reader = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_source.next().await {
             let data = match msg {
-                Message::Binary(b) => b.to_vec(),
-                Message::Text(t) => t.as_bytes().to_vec(),
+                Message::Binary(b) => b,
+                Message::Text(t) => t.into_bytes(),
                 Message::Close(_) => break,
                 _ => continue,
             };
@@ -458,11 +563,49 @@ pub async fn ensure_terminal_running(port: u16) {
     tokio::spawn(async move {
         start_terminal_server(port).await;
     });
+
+    tokio::spawn(async {
+        loop {
+            tokio::time::sleep(SESSION_SWEEP_INTERVAL).await;
+            sweep_sessions().await;
+        }
+    });
+}
+
+async fn sweep_sessions() {
+    let sessions: Vec<(String, Arc<Mutex<ActiveSession>>)> = {
+        let guard = TERMINAL_STATE.read().await;
+        let Some(state) = guard.as_ref() else {
+            return;
+        };
+        state
+            .sessions
+            .iter()
+            .map(|(id, s)| (id.clone(), s.clone()))
+            .collect()
+    };
+
+    let now = Instant::now();
+    let mut stale_ids = Vec::new();
+    for (id, session) in sessions {
+        let s = session.lock().await;
+        let idle = now.duration_since(s.last_activity) > SESSION_IDLE_TTL;
+        let alive = unsafe { libc::kill(s.child_pid.as_raw(), 0) == 0 };
+        if idle || !alive {
+            stale_ids.push(id);
+        }
+    }
+
+    for id in stale_ids {
+        let _ = delete_session(&id).await;
+    }
 }
 
 pub async fn ensure_terminal_from_config() {
     let Some(config) = get_config() else { return };
-    let Some(service) = config.services.get("terminal") else { return };
+    let Some(service) = config.services.get("terminal") else {
+        return;
+    };
     if service.enabled == Some(false) {
         return;
     }
@@ -487,7 +630,9 @@ pub async fn start_terminal_server(port: u16) {
 
     while let Ok((stream, addr)) = listener.accept().await {
         let mut buf = [0u8; 1024];
-        let Ok(n) = stream.peek(&mut buf).await else { continue };
+        let Ok(n) = stream.peek(&mut buf).await else {
+            continue;
+        };
 
         if let Some(id) = parse_session_id_from_request(&buf[..n]) {
             println!("terminal: connection from {addr} for session {id}");

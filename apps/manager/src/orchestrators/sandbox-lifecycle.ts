@@ -7,6 +7,7 @@ import {
   FirecrackerClient,
   getSandboxPaths,
   getSocketPath,
+  getVsockPath,
   launchFirecracker,
 } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
@@ -30,6 +31,33 @@ interface SandboxLifecycleDependencies {
 
 export class SandboxLifecycle {
   constructor(private readonly deps: SandboxLifecycleDependencies) {}
+
+  private async tryRepairVsock(
+    sandboxId: string,
+    socketPath: string,
+    vsockPath: string,
+  ): Promise<boolean> {
+    try {
+      const apiSocketExists = await Bun.file(socketPath).exists();
+      if (!apiSocketExists) return false;
+
+      const client = new FirecrackerClient(socketPath);
+      await client.setVsock(3, vsockPath);
+
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        if (await Bun.file(vsockPath).exists()) return true;
+        await Bun.sleep(50);
+      }
+      return await Bun.file(vsockPath).exists();
+    } catch (error) {
+      log.warn(
+        { sandboxId, socketPath, vsockPath, error },
+        "Vsock repair failed",
+      );
+      return false;
+    }
+  }
 
   async stop(sandboxId: string): Promise<Sandbox> {
     const sandbox = this.deps.sandboxService.getById(sandboxId);
@@ -192,23 +220,60 @@ export class SandboxLifecycle {
     }
 
     const socketPath = getSocketPath(sandboxId);
+    const vsockPath = getVsockPath(sandboxId);
     const processAlive = await $`kill -0 ${sandbox.runtime.pid}`
       .quiet()
       .nothrow();
-    const socketExists = await Bun.file(socketPath).exists();
+    const apiSocketExists = await Bun.file(socketPath).exists();
+    const vsockExists = await Bun.file(vsockPath).exists();
 
-    if (processAlive.exitCode !== 0 || !socketExists) {
+    if (processAlive.exitCode !== 0) {
       log.warn(
         {
           sandboxId,
           pid: sandbox.runtime.pid,
           processAlive: processAlive.exitCode === 0,
           socketPath,
-          socketExists,
+          apiSocketExists,
+          vsockPath,
+          vsockExists,
         },
         "Sandbox liveness check failed, marking as error",
       );
       this.deps.sandboxService.updateStatus(sandboxId, "error");
+    } else if (!apiSocketExists && !vsockExists) {
+      log.warn(
+        {
+          sandboxId,
+          pid: sandbox.runtime.pid,
+          socketPath,
+          apiSocketExists,
+          vsockPath,
+          vsockExists,
+        },
+        "Sandbox sockets missing, marking as error",
+      );
+      this.deps.sandboxService.updateStatus(sandboxId, "error");
+    } else if (!vsockExists) {
+      const repaired = await this.tryRepairVsock(
+        sandboxId,
+        socketPath,
+        vsockPath,
+      );
+      if (repaired) {
+        log.info({ sandboxId, vsockPath }, "Vsock repaired");
+      } else {
+        log.warn(
+          { sandboxId, socketPath, vsockPath },
+          "Vsock missing and repair failed, marking as error",
+        );
+        this.deps.sandboxService.updateStatus(sandboxId, "error");
+      }
+    } else if (!apiSocketExists) {
+      log.warn(
+        { sandboxId, socketPath, vsockPath },
+        "Firecracker API socket missing but agent reachable",
+      );
     }
 
     return this.deps.sandboxService.getById(sandboxId) ?? sandbox;

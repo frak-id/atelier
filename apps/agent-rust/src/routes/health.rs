@@ -49,6 +49,43 @@ fn get_memory_usage() -> serde_json::Value {
     }
 }
 
+fn get_process_memory_usage() -> serde_json::Value {
+    // Read VmRSS/VmSize from /proc/self/status. Values are in kB.
+    let parse_kb = |key: &str, contents: &str| -> Option<u64> {
+        let prefix = format!("{key}:");
+        for line in contents.lines() {
+            let Some(rest) = line.strip_prefix(&prefix) else {
+                continue;
+            };
+            let kb: u64 = rest.trim().split_whitespace().next()?.parse().ok()?;
+            return Some(kb);
+        }
+        None
+    };
+
+    let contents = match std::fs::read_to_string("/proc/self/status") {
+        Ok(c) => c,
+        Err(_) => {
+            return serde_json::json!({
+                "rssBytes": 0,
+                "vsizeBytes": 0
+            })
+        }
+    };
+
+    let rss_bytes = parse_kb("VmRSS", &contents)
+        .unwrap_or(0)
+        .saturating_mul(1024);
+    let vsize_bytes = parse_kb("VmSize", &contents)
+        .unwrap_or(0)
+        .saturating_mul(1024);
+
+    serde_json::json!({
+        "rssBytes": rss_bytes,
+        "vsizeBytes": vsize_bytes
+    })
+}
+
 fn get_disk_usage() -> serde_json::Value {
     let parse = || -> Option<(u64, u64, u64)> {
         let mut buf: libc::statvfs = unsafe { std::mem::zeroed() };
@@ -84,13 +121,18 @@ pub async fn handle_health() -> Response<Full<Bytes>> {
 }
 
 pub async fn handle_metrics() -> Response<Full<Bytes>> {
-    let (cpu, memory, disk) = tokio::task::spawn_blocking(|| {
-        (get_cpu_usage(), get_memory_usage(), get_disk_usage())
+    let (cpu, memory, disk, process) = tokio::task::spawn_blocking(|| {
+        (
+            get_cpu_usage(),
+            get_memory_usage(),
+            get_disk_usage(),
+            get_process_memory_usage(),
+        )
     })
     .await
     .unwrap_or_else(|_| {
         let empty = serde_json::json!({"total": 0, "used": 0, "free": 0});
-        (0.0, empty.clone(), empty)
+        (0.0, empty.clone(), empty, serde_json::json!({"rssBytes": 0, "vsizeBytes": 0}))
     });
 
     let now = crate::utc_rfc3339();
@@ -99,6 +141,7 @@ pub async fn handle_metrics() -> Response<Full<Bytes>> {
         "cpu": cpu,
         "memory": memory,
         "disk": disk,
+        "process": process,
         "timestamp": now
     }))
 }

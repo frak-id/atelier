@@ -1,8 +1,12 @@
+mod body;
+mod command;
 mod config;
+mod limits;
 mod response;
 mod router;
 mod routes;
 mod terminal;
+mod watchdog;
 
 use std::convert::Infallible;
 use std::time::SystemTime;
@@ -54,6 +58,8 @@ async fn handle(req: Request<hyper::body::Incoming>) -> Result<Response<Full<Byt
 #[tokio::main]
 async fn main() {
     println!("Sandbox agent starting...");
+
+    watchdog::start();
 
     let addr = VsockAddr::new(libc::VMADDR_CID_ANY, VSOCK_PORT);
     let listener = match VsockListener::bind(addr) {
