@@ -438,12 +438,16 @@ class SpawnContext {
       await Bun.sleep(100);
     }
 
-    await $`ln -sf ${originalPaths.vsock} ${this.paths.vsock}`.quiet();
+    // Move (rename) the live UDS to the new sandbox path instead of symlinking.
+    // rename() on a UDS works on Linux — the kernel inode stays intact, FC keeps
+    // using the same socket, and the file is now "owned" by the real sandbox id
+    // so orphan-cleanup won't mistake it for a stale prebuild artifact.
+    await $`mv ${originalPaths.vsock} ${this.paths.vsock}`.quiet();
     await $`sudo -n rm -f ${originalPaths.overlay}`.quiet().nothrow();
 
     log.info(
       { sandboxId: this.sandboxId },
-      "Vsock symlink established after snapshot restore",
+      "Vsock moved to sandbox path after snapshot restore",
     );
 
     // Agent vsock listener survived the snapshot — connect and reconfigure guest

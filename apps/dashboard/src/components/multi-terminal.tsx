@@ -456,7 +456,11 @@ const TerminalPane = memo(
 
         {isExited && (
           <div className="absolute inset-0 flex items-center justify-center bg-[#09090b]/90">
-            <Button onClick={reconnect} variant="outline" className="gap-2 z-10">
+            <Button
+              onClick={reconnect}
+              variant="outline"
+              className="gap-2 z-10"
+            >
               <RotateCcw className="h-4 w-4" />
               Reconnect
             </Button>

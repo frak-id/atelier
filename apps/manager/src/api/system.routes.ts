@@ -84,6 +84,21 @@ async function performCleanup(): Promise<CleanupResult> {
   if (!isMock()) {
     const knownSandboxIds = new Set(sandboxService.getAll().map((s) => s.id));
 
+    // Build a set of realpath targets for known sandbox vsock files so we
+    // never delete a symlink target that a running sandbox still references
+    // (covers pre-fix sandboxes that still use the old symlink approach).
+    const protectedRealPaths = new Set<string>();
+    for (const sid of knownSandboxIds) {
+      const vsockFile = `${PATHS.SOCKET_DIR}/${sid}.vsock`;
+      const resolved = await $`realpath ${vsockFile} 2>/dev/null`
+        .quiet()
+        .nothrow();
+      const resolvedPath = resolved.stdout.toString().trim();
+      if (resolved.exitCode === 0 && resolvedPath) {
+        protectedRealPaths.add(resolvedPath);
+      }
+    }
+
     const orphanSocketResult =
       await $`find ${PATHS.SOCKET_DIR} -maxdepth 1 \( -name "*.sock" -o -name "*.vsock" -o -name "*.pid" \) 2>/dev/null`
         .quiet()
@@ -97,6 +112,7 @@ async function performCleanup(): Promise<CleanupResult> {
       const basename = file.split("/").pop() || "";
       const sandboxId = basename.replace(/\.(sock|vsock|pid)$/, "");
       if (!knownSandboxIds.has(sandboxId)) {
+        if (protectedRealPaths.has(file)) continue;
         await $`rm -f ${file}`.quiet().nothrow();
         socketsRemoved++;
       }
