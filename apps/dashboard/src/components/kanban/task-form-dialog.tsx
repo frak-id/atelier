@@ -2,11 +2,12 @@ import type { RepoConfig, Task } from "@frak/atelier-manager/types";
 import { DEFAULT_SESSION_TEMPLATES } from "@frak/atelier-shared/constants";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, Play } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import {
   githubBranchesQuery,
   useCreateTask,
+  useStartTask,
   useUpdateTask,
   workspaceDetailQuery,
   workspaceListQuery,
@@ -71,7 +72,11 @@ export function TaskForm({
 
   const createMutation = useCreateTask();
   const updateMutation = useUpdateTask();
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const startMutation = useStartTask();
+  const isPending =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    startMutation.isPending;
 
   const form = useForm({
     defaultValues: {
@@ -83,6 +88,7 @@ export function TaskForm({
       selectedWorkspaceId: "",
       selectedTemplateId: task?.data.workflowId ?? "",
       selectedVariantIndex: task?.data.variantIndex ?? 0,
+      autoStart: false,
     },
     onSubmit: async ({ value }) => {
       const workspaceId = fixedWorkspaceId || value.selectedWorkspaceId;
@@ -100,19 +106,28 @@ export function TaskForm({
           } as Parameters<typeof updateMutation.mutateAsync>[0]["data"],
         });
       } else {
-        await createMutation.mutateAsync({
-          workspaceId,
-          title: value.title.trim(),
-          description: value.description.trim(),
-          context: value.context.trim() || undefined,
-          workflowId: value.selectedTemplateId || undefined,
-          variantIndex: value.selectedVariantIndex,
-          baseBranch: value.selectedBranch || undefined,
-          targetRepoIndices:
-            value.selectedRepoIndices.length > 0
-              ? value.selectedRepoIndices
-              : undefined,
-        } as Parameters<typeof createMutation.mutateAsync>[0]);
+        await createMutation.mutateAsync(
+          {
+            workspaceId,
+            title: value.title.trim(),
+            description: value.description.trim(),
+            context: value.context.trim() || undefined,
+            workflowId: value.selectedTemplateId || undefined,
+            variantIndex: value.selectedVariantIndex,
+            baseBranch: value.selectedBranch || undefined,
+            targetRepoIndices:
+              value.selectedRepoIndices.length > 0
+                ? value.selectedRepoIndices
+                : undefined,
+          } as Parameters<typeof createMutation.mutateAsync>[0],
+          {
+            onSuccess: async (created) => {
+              if (value.autoStart && created?.id) {
+                await startMutation.mutateAsync(created.id);
+              }
+            },
+          },
+        );
       }
 
       form.reset();
@@ -140,6 +155,7 @@ export function TaskForm({
     form.store,
     (s) => s.values.selectedVariantIndex,
   );
+  const autoStart = useStore(form.store, (s) => s.values.autoStart);
   const workspaceId = fixedWorkspaceId || selectedWorkspaceId;
 
   const { data: workspaces } = useQuery({
@@ -383,10 +399,41 @@ export function TaskForm({
         </div>
       )}
 
-      <Button type="submit" disabled={!canSubmit} className="w-full">
-        {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-        {isEditing ? "Save Changes" : "Create Task"}
-      </Button>
+      {isEditing ? (
+        <Button type="submit" disabled={!canSubmit} className="w-full">
+          {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          Save Changes
+        </Button>
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            type="submit"
+            variant="outline"
+            disabled={!canSubmit}
+            className="flex-1"
+          >
+            {isPending && !autoStart && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
+            Create Task
+          </Button>
+          <Button
+            type="button"
+            disabled={!canSubmit}
+            className="flex-1"
+            onClick={() => {
+              form.setFieldValue("autoStart", true);
+              form.handleSubmit();
+            }}
+          >
+            {isPending && autoStart && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
+            <Play className="h-4 w-4 mr-1" />
+            Create & Start
+          </Button>
+        </div>
+      )}
     </form>
   );
 }
