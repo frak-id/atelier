@@ -1,5 +1,4 @@
 use http_body_util::Full;
-use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::{Request, Response};
 use serde::Deserialize;
