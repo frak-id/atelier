@@ -796,16 +796,16 @@ function RepoRow({
             {repo.error ? (
               <div className="text-xs text-destructive mt-1">{repo.error}</div>
             ) : (
-              <div className="flex items-center gap-3 mt-1.5">
+              <div className="flex flex-col gap-1 mt-1.5 min-w-0">
                 {repo.branch && (
-                  <div className="flex items-center gap-1 text-xs">
-                    <GitBranch className="h-3 w-3 text-muted-foreground" />
-                    <span className="font-mono">{repo.branch}</span>
+                  <div className="flex items-center gap-1 text-xs min-w-0">
+                    <GitBranch className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span className="font-mono truncate">{repo.branch}</span>
                   </div>
                 )}
                 {repo.lastCommit && (
                   <span
-                    className="text-xs text-muted-foreground truncate max-w-[200px]"
+                    className="text-xs text-muted-foreground truncate"
                     title={repo.lastCommit}
                   >
                     {repo.lastCommit}

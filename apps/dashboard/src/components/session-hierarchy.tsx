@@ -290,11 +290,11 @@ const ChildSessionRow = memo(function ChildSessionRow({
 
   return (
     <div className="min-w-0">
-      <div className="flex items-center gap-2 text-sm py-1.5 px-3 rounded-md hover:bg-muted/50 transition-colors min-w-0">
+      <div className="flex items-center gap-2 text-sm py-1.5 px-3 rounded-md hover:bg-muted/50 transition-colors min-w-0 overflow-hidden">
         <SessionStatusIcon status={status} />
 
         <span
-          className="text-xs font-medium truncate min-w-0"
+          className="text-xs font-medium truncate min-w-0 shrink"
           title={displayName}
         >
           {displayName}
@@ -305,7 +305,7 @@ const ChildSessionRow = memo(function ChildSessionRow({
             {currentTodo.content}
           </span>
         )}
-        {!currentTodo && <span className="flex-1" />}
+        {!currentTodo && <span className="flex-1 min-w-0" />}
 
         <div className="shrink-0">
           <TodoProgressBadge todos={todos} />
