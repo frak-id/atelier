@@ -6,6 +6,8 @@ Isolated dev environments that boot in milliseconds, not minutes.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 
+![demo](https://raw.githubusercontent.com/frak-id/atelier/main/docs/assets/demo.gif)
+
 ## Batteries Included
 
 Each sandbox is a complete development environment — VS Code, AI agent, and browser, accessible from any device.
