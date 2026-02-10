@@ -11,18 +11,6 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-if [ -f /etc/os-release ]; then
-  # shellcheck disable=SC1091
-  . /etc/os-release
-  if [ "${ID:-}" != "debian" ]; then
-    echo "Unsupported distro: ${ID:-unknown}. Debian required." >&2
-    exit 1
-  fi
-else
-  echo "/etc/os-release not found. Cannot verify distro." >&2
-  exit 1
-fi
-
 ARCH="$(uname -m)"
 if [ "$ARCH" != "x86_64" ]; then
   echo "Unsupported architecture: $ARCH (x86_64 required)." >&2
@@ -34,6 +22,11 @@ if ! command -v systemctl >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "apt package manager is required (apt-get not found)." >&2
+  exit 1
+fi
+
 if [ ! -c /dev/kvm ]; then
   echo "/dev/kvm not found. Ensure KVM is enabled and this is bare metal." >&2
   exit 1
@@ -41,7 +34,12 @@ fi
 
 echo "Installing prerequisites..."
 apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates sudo jq
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates sudo jq lvm2
+
+if ! command -v lvm >/dev/null 2>&1; then
+  echo "LVM is required but lvm2 failed to install." >&2
+  exit 1
+fi
 
 if [ -z "$VERSION" ]; then
   echo "Fetching latest release..."

@@ -57,7 +57,7 @@ atelier manager status
 
 ## Requirements
 
-- Debian 12 (systemd)
+- apt-based Linux distro (Debian, Ubuntu, etc.) with systemd
 - Bare‑metal KVM (`/dev/kvm` present)
 - x86_64 CPU
 - A domain with wildcard DNS (`*.your-domain.com` → server IP)
