@@ -719,6 +719,39 @@ class SpawnContext {
         credentials,
       );
     }
+
+    await this.sanitizeGitRemoteUrls();
+  }
+
+  private async sanitizeGitRemoteUrls(): Promise<void> {
+    const repos = this.workspace?.config.repos ?? [];
+    if (repos.length === 0) return;
+
+    for (const repo of repos) {
+      const clonePath = `${VM.HOME}${repo.clonePath}`;
+      const result = await this.deps.agentClient.exec(
+        this.sandboxId,
+        `git -C '${clonePath}' remote get-url origin 2>/dev/null`,
+        { timeout: 5000, user: "dev" },
+      );
+
+      if (result.exitCode !== 0) continue;
+
+      const currentUrl = result.stdout.trim();
+      const cleanUrl = currentUrl.replace(/^(https?:\/\/)[^@]+@/, "$1");
+
+      if (cleanUrl !== currentUrl) {
+        await this.deps.agentClient.exec(
+          this.sandboxId,
+          `git -C '${clonePath}' remote set-url origin '${cleanUrl}'`,
+          { timeout: 5000, user: "dev" },
+        );
+        log.debug(
+          { sandboxId: this.sandboxId, clonePath },
+          "Sanitized git remote URL",
+        );
+      }
+    }
   }
 
   private async pushFileSecretsPostBoot(): Promise<void> {
