@@ -1,5 +1,6 @@
 {
   "name": "@frak/atelier-manager",
+  "description": "Manager server for L'atelier self hosted instance",
   "version": "0.1.3",
   "private": true,
   "type": "module",
