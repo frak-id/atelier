@@ -1,4 +1,7 @@
-import { config } from "./config.ts";
+import { config, isMock } from "./config.ts";
+import { createChildLogger } from "./logger.ts";
+
+const log = createChildLogger("github");
 
 const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
@@ -32,6 +35,11 @@ export async function exchangeCodeForToken(
   code: string,
   codeVerifier?: string,
 ): Promise<string> {
+  if (isMock()) {
+    log.debug("Mock: returning mock access token");
+    return `mock-access-token-${code}`;
+  }
+
   const response = await fetch(GITHUB_TOKEN_URL, {
     method: "POST",
     headers: {
@@ -64,6 +72,15 @@ export async function exchangeCodeForToken(
 export async function fetchGitHubUser(
   accessToken: string,
 ): Promise<GitHubUser> {
+  if (isMock()) {
+    log.debug("Mock: returning mock GitHub user");
+    return {
+      id: 12345,
+      login: "mock-user",
+      avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+    };
+  }
+
   const response = await fetch(GITHUB_USER_URL, {
     headers: {
       Authorization: `Bearer ${accessToken}`,

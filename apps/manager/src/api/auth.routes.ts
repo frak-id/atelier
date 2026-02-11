@@ -7,6 +7,7 @@ import {
   config,
   dashboardUrl,
   deriveCallbackUrl,
+  isMock,
   isProduction,
 } from "../shared/lib/config.ts";
 import {
@@ -30,7 +31,28 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       exp: `${JWT_EXPIRY_SECONDS}s`,
     }),
   )
-  .get("/github", async ({ redirect, cookie }) => {
+  .get("/github", async ({ redirect, cookie, jwt }) => {
+    if (isMock()) {
+      const token = await jwt.sign({
+        sub: "12345",
+        username: "mock-user",
+        avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      });
+
+      cookie.sandbox_token?.set({
+        value: token,
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+        domain: `.${config.domain.baseDomain}`,
+        maxAge: JWT_EXPIRY_SECONDS,
+      });
+
+      log.info("Mock: user auto-logged in as mock-user");
+      return redirect(dashboardUrl);
+    }
+
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = await generateCodeChallenge(codeVerifier);
 
