@@ -43,7 +43,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         value: token,
         httpOnly: true,
         secure: false,
-        sameSite: "lax",
+        sameSite: "none",
         path: "/",
         maxAge: JWT_EXPIRY_SECONDS,
       });
@@ -149,23 +149,23 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       }),
     },
   )
-  .get("/me", async ({ cookie, jwt, set }) => {
+  .get("/me", async ({ cookie, set }) => {
     const token = cookie.sandbox_token?.value as string | undefined;
     if (!token) {
       set.status = 401;
       return { error: "UNAUTHORIZED", message: "Missing authentication" };
     }
 
-    const payload = await jwt.verify(token);
-    if (!payload) {
+    const user = await verifyJwt(token);
+    if (!user) {
       set.status = 401;
       return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
     }
 
     return {
-      id: payload.sub,
-      username: payload.username,
-      avatarUrl: payload.avatarUrl,
+      id: user.id,
+      username: user.username,
+      avatarUrl: user.avatarUrl,
     };
   })
   .get("/verify", async ({ cookie, set }) => {

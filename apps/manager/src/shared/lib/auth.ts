@@ -1,5 +1,5 @@
 import * as jose from "jose";
-import { config } from "./config.ts";
+import { config, isMock } from "./config.ts";
 
 const JWT_SECRET = new TextEncoder().encode(config.auth.jwtSecret);
 
@@ -10,6 +10,14 @@ export interface AuthUser {
 }
 
 export async function verifyJwt(token: string): Promise<AuthUser | null> {
+  if (isMock()) {
+    return {
+        id: "12345",
+        username: "mock-user",
+        avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+    };
+  }
+
   try {
     const { payload } = await jose.jwtVerify(token, JWT_SECRET);
     if (!payload.sub || !payload.username) {
