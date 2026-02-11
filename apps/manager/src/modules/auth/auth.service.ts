@@ -1,4 +1,4 @@
-import { config } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("auth-service");
@@ -14,6 +14,11 @@ export async function isUserAuthorized(
   accessToken: string,
   username: string,
 ): Promise<boolean> {
+  if (isMock()) {
+    log.info({ username }, "Mock: user authorized");
+    return true;
+  }
+
   if (config.auth.allowedOrg) {
     try {
       const isOrgMember = await checkOrgMembership(

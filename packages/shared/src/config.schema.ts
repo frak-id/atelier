@@ -43,16 +43,19 @@ export const SshConfigSchema = Type.Object(
 
 export type SshConfig = Static<typeof SshConfigSchema>;
 
-export const DomainConfigSchema = Type.Object({
-  /** Base domain for all services (e.g., example.com) */
-  baseDomain: Type.String({ default: "localhost" }),
-  /** Dashboard domain — defaults to sandbox.{baseDomain} if empty */
-  dashboard: Type.String({ default: "" }),
-  /** TLS / HTTPS configuration */
-  tls: TlsConfigSchema,
-  /** SSH proxy configuration */
-  ssh: SshConfigSchema,
-});
+export const DomainConfigSchema = Type.Object(
+  {
+    /** Base domain for all services (e.g., example.com) */
+    baseDomain: Type.String({ default: "localhost" }),
+    /** Dashboard domain — defaults to sandbox.{baseDomain} if empty */
+    dashboard: Type.String({ default: "" }),
+    /** TLS / HTTPS configuration */
+    tls: TlsConfigSchema,
+    /** SSH proxy configuration */
+    ssh: SshConfigSchema,
+  },
+  { default: {} },
+);
 
 export type DomainConfig = Static<typeof DomainConfigSchema>;
 
@@ -72,16 +75,19 @@ export const GithubAuthConfigSchema = Type.Object(
 
 export type GithubAuthConfig = Static<typeof GithubAuthConfigSchema>;
 
-export const AuthConfigSchema = Type.Object({
-  /** GitHub OAuth credentials */
-  github: GithubAuthConfigSchema,
-  /** JWT signing secret */
-  jwtSecret: Type.String({ default: "dev-secret-change-in-production" }),
-  /** Required GitHub organization — if set, only org members can access */
-  allowedOrg: Type.Optional(Type.String()),
-  /** Allowed GitHub usernames as fallback if org check fails */
-  allowedUsers: Type.Array(Type.String(), { default: [] }),
-});
+export const AuthConfigSchema = Type.Object(
+  {
+    /** GitHub OAuth credentials */
+    github: GithubAuthConfigSchema,
+    /** JWT signing secret */
+    jwtSecret: Type.String({ default: "dev-secret-change-in-production" }),
+    /** Required GitHub organization — if set, only org members can access */
+    allowedOrg: Type.Optional(Type.String()),
+    /** Allowed GitHub usernames as fallback if org check fails */
+    allowedUsers: Type.Array(Type.String(), { default: [] }),
+  },
+  { default: {} },
+);
 
 export type AuthConfig = Static<typeof AuthConfigSchema>;
 
