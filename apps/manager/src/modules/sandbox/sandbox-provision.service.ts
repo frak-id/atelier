@@ -122,38 +122,44 @@ export class SandboxProvisionService {
     log.debug({ sandboxId, keys: Object.keys(env) }, "Runtime env pushed");
   }
 
-  async pushGitCredentials(
-    sandboxId: string,
-    credentials: string[],
-  ): Promise<void> {
-    if (credentials.length === 0) return;
-
-    const gitCredentialsContent = `${credentials.join("\n")}\n`;
-    const gitconfigContent = [
-      "[credential]",
-      "\thelper = store --file=/etc/sandbox/secrets/git-credentials",
+  async pushGitConfig(sandboxId: string, credentials: string[]): Promise<void> {
+    const gitconfigSections = [
       "[user]",
       `\temail = ${config.sandbox.git.email}`,
       `\tname = ${config.sandbox.git.name}`,
-      "",
-    ].join("\n");
+    ];
 
-    await this.agentClient.writeFiles(sandboxId, [
+    if (credentials.length > 0) {
+      gitconfigSections.unshift(
+        "[credential]",
+        "\thelper = store --file=/etc/sandbox/secrets/git-credentials",
+      );
+    }
+
+    gitconfigSections.push("");
+    const gitconfigContent = gitconfigSections.join("\n");
+
+    const files: Parameters<typeof this.agentClient.writeFiles>[1] = [
       {
+        path: "/etc/gitconfig",
+        content: gitconfigContent,
+        owner: "root",
+      },
+    ];
+
+    if (credentials.length > 0) {
+      files.push({
         path: "/etc/sandbox/secrets/git-credentials",
-        content: gitCredentialsContent,
+        content: `${credentials.join("\n")}\n`,
         mode: "0600",
         owner: "dev",
-      },
-      {
-        path: `${VM.HOME}/.gitconfig`,
-        content: gitconfigContent,
-        owner: "dev",
-      },
-    ]);
+      });
+    }
+
+    await this.agentClient.writeFiles(sandboxId, files);
     log.debug(
       { sandboxId, credentialCount: credentials.length },
-      "Git credentials pushed",
+      "Git config pushed",
     );
   }
 

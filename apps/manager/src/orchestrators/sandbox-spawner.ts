@@ -686,23 +686,10 @@ class SpawnContext {
   }
 
   private async pushGitCredentialsPostBoot(): Promise<void> {
-    const repos = this.workspace?.config.repos ?? [];
-    const sourceIds = new Set<string>();
-
-    for (const repo of repos) {
-      if ("sourceId" in repo && repo.sourceId) {
-        sourceIds.add(repo.sourceId);
-      }
-    }
-
-    if (sourceIds.size === 0) return;
-
+    const sources = this.deps.gitSourceService.getAll();
     const credentials: string[] = [];
 
-    for (const sourceId of sourceIds) {
-      const source = this.deps.gitSourceService.getById(sourceId);
-      if (!source) continue;
-
+    for (const source of sources) {
       if (source.type === "github") {
         const ghConfig = source.config as GitHubSourceConfig;
         if (ghConfig.accessToken) {
@@ -713,12 +700,7 @@ class SpawnContext {
       }
     }
 
-    if (credentials.length > 0) {
-      await this.deps.provisionService.pushGitCredentials(
-        this.sandboxId,
-        credentials,
-      );
-    }
+    await this.deps.provisionService.pushGitConfig(this.sandboxId, credentials);
 
     await this.sanitizeGitRemoteUrls();
   }
