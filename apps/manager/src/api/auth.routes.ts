@@ -45,12 +45,11 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         secure: false,
         sameSite: "lax",
         path: "/",
-        domain: `.${config.domain.baseDomain}`,
         maxAge: JWT_EXPIRY_SECONDS,
       });
 
       log.info("Mock: user auto-logged in as mock-user");
-      return redirect(dashboardUrl);
+      return redirect("/");
     }
 
     const codeVerifier = generateCodeVerifier();
