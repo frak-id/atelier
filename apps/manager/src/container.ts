@@ -104,6 +104,10 @@ const sandboxLifecycle = new SandboxLifecycle({
   sandboxService,
   agentClient,
   internalService,
+  provisionService: sandboxProvisionService,
+  workspaceService,
+  gitSourceService,
+  configFileService,
 });
 
 const prebuildRunner = new PrebuildRunner({

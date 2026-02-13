@@ -12,9 +12,9 @@ export interface AuthUser {
 export async function verifyJwt(token: string): Promise<AuthUser | null> {
   if (isMock()) {
     return {
-        id: "12345",
-        username: "mock-user",
-        avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      id: "12345",
+      username: "mock-user",
+      avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
     };
   }
 

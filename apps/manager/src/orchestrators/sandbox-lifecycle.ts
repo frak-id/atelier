@@ -12,10 +12,20 @@ import {
 } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import { CaddyService } from "../infrastructure/proxy/index.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
+import { SecretsService } from "../infrastructure/secrets/index.ts";
+import {
+  SharedStorageService,
+  StorageService,
+} from "../infrastructure/storage/index.ts";
+import type { ConfigFileService } from "../modules/config-file/index.ts";
+import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
-import type { SandboxRepository } from "../modules/sandbox/index.ts";
-import type { Sandbox } from "../schemas/index.ts";
+import type {
+  SandboxProvisionService,
+  SandboxRepository,
+} from "../modules/sandbox/index.ts";
+import type { WorkspaceService } from "../modules/workspace/index.ts";
+import type { GitHubSourceConfig, Sandbox } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -27,6 +37,10 @@ interface SandboxLifecycleDependencies {
   sandboxService: SandboxRepository;
   agentClient: AgentClient;
   internalService: InternalService;
+  provisionService: SandboxProvisionService;
+  workspaceService: WorkspaceService;
+  gitSourceService: GitSourceService;
+  configFileService: ConfigFileService;
 }
 
 export class SandboxLifecycle {
@@ -165,7 +179,7 @@ export class SandboxLifecycle {
     if (!agentReady) {
       log.warn({ sandboxId }, "Agent did not become ready after restart");
     } else {
-      await this.deps.internalService.syncToSandbox(sandboxId);
+      await this.reprovisionGuest(sandboxId, sandbox);
     }
 
     await CaddyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
@@ -191,6 +205,121 @@ export class SandboxLifecycle {
     log.info({ sandboxId, pid: proc_pid }, "Sandbox started");
 
     return updatedSandbox;
+  }
+
+  /**
+   * Re-provision guest after a stop/start cycle.
+   *
+   * When a VM boots from its LVM volume (not a snapshot resume), all ephemeral
+   * state is gone: network config, clock, /opt/shared mount, services.
+   * This mirrors SandboxSpawner.reconfigureRestoredGuest().
+   */
+  private async reprovisionGuest(
+    sandboxId: string,
+    sandbox: Sandbox,
+  ): Promise<void> {
+    const { provisionService } = this.deps;
+
+    // 1. Configure guest network
+    await provisionService.configureNetwork(sandboxId, {
+      ipAddress: sandbox.runtime.ipAddress,
+      gateway: config.network.bridgeIp,
+    });
+
+    // 2. Sync clock (restart chronyd)
+    await provisionService.syncClock(sandboxId);
+
+    // 3. Push runtime env
+    await provisionService.pushRuntimeEnv(sandboxId, {
+      ATELIER_SANDBOX_ID: sandboxId,
+    });
+
+    // 4. Set hostname
+    await provisionService.setHostname(sandboxId, `sandbox-${sandboxId}`);
+
+    // 5. Mount shared binaries (/opt/shared)
+    const imageInfo = await SharedStorageService.getBinariesImageInfo();
+    if (imageInfo.exists) {
+      const mountResult = await this.deps.agentClient.exec(
+        sandboxId,
+        "mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared",
+        { timeout: 5000 },
+      );
+      if (mountResult.exitCode === 0) {
+        log.info({ sandboxId }, "Shared binaries mounted");
+      } else {
+        log.warn(
+          { sandboxId, stderr: mountResult.stderr },
+          "Failed to mount shared binaries",
+        );
+      }
+    }
+
+    // 6. Push auth, configs, and registry
+    await this.deps.internalService.syncAllToSandbox(sandboxId);
+
+    // 7. Re-push secrets (may have changed since last boot)
+    await this.pushSecrets(sandboxId, sandbox);
+    await this.pushGitCredentials(sandboxId);
+    await this.pushFileSecrets(sandboxId, sandbox);
+
+    // 8. Start services (vscode, opencode)
+    const serviceNames = ["vscode", "opencode"];
+    await provisionService.startServices(sandboxId, serviceNames);
+
+    log.info({ sandboxId }, "Guest re-provisioned after restart");
+  }
+
+  private async pushSecrets(
+    sandboxId: string,
+    sandbox: Sandbox,
+  ): Promise<void> {
+    if (!sandbox.workspaceId) return;
+    const workspace = this.deps.workspaceService.getById(sandbox.workspaceId);
+    const secrets = workspace?.config.secrets;
+    if (!secrets || Object.keys(secrets).length === 0) return;
+
+    const decrypted = await SecretsService.decryptSecrets(secrets);
+    const envFile = SecretsService.generateEnvFile(decrypted);
+    await this.deps.provisionService.pushSecrets(sandboxId, envFile);
+  }
+
+  private async pushGitCredentials(sandboxId: string): Promise<void> {
+    const sources = this.deps.gitSourceService.getAll();
+    const credentials: string[] = [];
+
+    for (const source of sources) {
+      if (source.type === "github") {
+        const ghConfig = source.config as GitHubSourceConfig;
+        if (ghConfig.accessToken) {
+          credentials.push(
+            `https://x-access-token:${ghConfig.accessToken}@github.com`,
+          );
+        }
+      }
+    }
+
+    await this.deps.provisionService.pushGitConfig(sandboxId, credentials);
+  }
+
+  private async pushFileSecrets(
+    sandboxId: string,
+    sandbox: Sandbox,
+  ): Promise<void> {
+    if (!sandbox.workspaceId) return;
+    const workspace = this.deps.workspaceService.getById(sandbox.workspaceId);
+    const fileSecrets = workspace?.config.fileSecrets;
+    if (!fileSecrets || fileSecrets.length === 0) return;
+
+    const decrypted = await SecretsService.decryptFileSecrets(fileSecrets);
+    await this.deps.provisionService.pushFileSecrets(
+      sandboxId,
+      decrypted.map((s) => ({
+        path: s.path,
+        content: s.content,
+        mode: s.mode,
+      })),
+    );
   }
 
   private async waitForBoot(
