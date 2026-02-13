@@ -84,7 +84,9 @@ COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json
 COPY --chown=dev:dev rootfs/etc/sandbox/ /etc/sandbox/
 COPY rootfs/etc/xdg/openbox/ /etc/xdg/openbox/
 COPY rootfs/etc/chrony/chrony.conf /etc/chrony/chrony.conf
-RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony
+RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony \
+    && echo 'dev ALL=(root) NOPASSWD: /usr/sbin/chronyd, /usr/bin/chronyc' > /etc/sudoers.d/chrony \
+    && chmod 440 /etc/sudoers.d/chrony
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
 COPY --chown=root:root sandbox-agent /usr/local/bin/sandbox-agent
 RUN chmod +x /usr/local/bin/sandbox-agent
