@@ -255,7 +255,7 @@
                   "type": "number"
                 },
                 "version": {
-                  "default": "1.1.53",
+                  "default": "1.1.54",
                   "type": "string"
                 }
               }
