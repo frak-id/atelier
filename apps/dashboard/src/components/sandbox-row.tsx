@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Code2, ExternalLink, Trash2 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Bot, Monitor, Trash2 } from "lucide-react";
 import type { Sandbox } from "@/api/client";
 import { opencodeSessionsQuery, useDeleteSandbox } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
@@ -83,13 +84,14 @@ export function SandboxRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                  <a
-                    href={sandbox.runtime.urls.vscode}
+                  <Link
+                    to="/sandboxes/$id"
+                    params={{ id: sandbox.id }}
+                    search={{ tab1: "vscode" }}
                     target="_blank"
-                    rel="noopener noreferrer"
                   >
-                    <Code2 className="h-4 w-4" />
-                  </a>
+                    <Monitor className="h-4 w-4" />
+                  </Link>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Open VSCode</TooltipContent>
@@ -98,13 +100,14 @@ export function SandboxRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                  <a
-                    href={sandbox.runtime.urls.opencode}
+                  <Link
+                    to="/sandboxes/$id"
+                    params={{ id: sandbox.id }}
+                    search={{ tab1: "opencode" }}
                     target="_blank"
-                    rel="noopener noreferrer"
                   >
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
+                    <Bot className="h-4 w-4" />
+                  </Link>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Open OpenCode</TooltipContent>

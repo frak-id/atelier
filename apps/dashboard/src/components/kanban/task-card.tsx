@@ -4,10 +4,10 @@ import type { Task } from "@frak/atelier-manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  Code,
-  ExternalLink,
+  Bot,
   GitBranch,
   GripVertical,
+  Monitor,
   MoreHorizontal,
   Terminal,
 } from "lucide-react";
@@ -231,30 +231,33 @@ export function TaskCard({
           {showConnectionInfo && sandbox && (
             <div className="flex items-center gap-1 mt-2">
               <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
-                <a
-                  href={sandbox.runtime.urls.vscode}
+                <Link
+                  to="/sandboxes/$id"
+                  params={{ id: sandbox.id }}
+                  search={{ tab1: "vscode" }}
                   target="_blank"
-                  rel="noopener noreferrer"
                   title="Open VSCode"
                 >
-                  <Code className="h-3.5 w-3.5" />
-                </a>
+                  <Monitor className="h-3.5 w-3.5" />
+                </Link>
               </Button>
               <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
-                <a
-                  href={sandbox.runtime.urls.opencode}
+                <Link
+                  to="/sandboxes/$id"
+                  params={{ id: sandbox.id }}
+                  search={{ tab1: "opencode" }}
                   target="_blank"
-                  rel="noopener noreferrer"
                   title="Open OpenCode"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+                  <Bot className="h-3.5 w-3.5" />
+                </Link>
               </Button>
               <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
                 <Link
                   to="/sandboxes/$id"
                   params={{ id: sandbox.id }}
                   search={{ tab1: "terminal" }}
+                  target="_blank"
                   title="Open Terminal"
                 >
                   <Terminal className="h-3.5 w-3.5" />

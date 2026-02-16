@@ -4,6 +4,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Bot,
+  Cable,
   Check,
   ChevronDown,
   ChevronRight,
@@ -11,7 +12,6 @@ import {
   Copy,
   GitBranch,
   Globe,
-  Key,
   Loader2,
   Maximize2,
   Monitor,
@@ -233,35 +233,37 @@ export function SandboxDrawer({
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mt-4">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Button variant="outline" size="sm" asChild>
-                      <a
-                        href={sandbox.runtime.urls.vscode}
+                      <Link
+                        to="/sandboxes/$id"
+                        params={{ id: sandbox.id }}
+                        search={{ tab1: "vscode" }}
                         target="_blank"
-                        rel="noopener noreferrer"
                       >
                         <Monitor className="h-4 w-4 mr-2" />
                         VSCode
-                      </a>
+                      </Link>
                     </Button>
                     <Button variant="outline" size="sm" asChild>
                       <Link
                         to="/sandboxes/$id"
                         params={{ id: sandbox.id }}
                         search={{ tab1: "terminal" }}
-                        title="Open Terminal"
+                        target="_blank"
                       >
                         <Terminal className="h-4 w-4 mr-2" />
                         Terminal
                       </Link>
                     </Button>
                     <Button variant="outline" size="sm" asChild>
-                      <a
-                        href={sandbox.runtime.urls.opencode}
+                      <Link
+                        to="/sandboxes/$id"
+                        params={{ id: sandbox.id }}
+                        search={{ tab1: "opencode" }}
                         target="_blank"
-                        rel="noopener noreferrer"
                       >
                         <Bot className="h-4 w-4 mr-2" />
                         OpenCode
-                      </a>
+                      </Link>
                     </Button>
 
                     <BrowserButton
@@ -447,11 +449,30 @@ export function SandboxDrawer({
                     <Card>
                       <CardHeader>
                         <CardTitle className="text-base flex items-center gap-2">
-                          <Key className="h-4 w-4" />
+                          <Cable className="h-4 w-4" />
                           Quick Connect
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="outline" size="sm" asChild>
+                            <a
+                              href={`vscode://vscode-remote/ssh-remote+${sandbox.id}@${SSH_HOST_ALIAS}${workspaceDir}`}
+                            >
+                              <Monitor className="h-4 w-4 mr-2" />
+                              Open in VSCode
+                            </a>
+                          </Button>
+                          <Button variant="outline" size="sm" asChild>
+                            <a href={`ssh://${sandbox.id}@${SSH_HOST_ALIAS}`}>
+                              <Terminal className="h-4 w-4 mr-2" />
+                              SSH
+                            </a>
+                          </Button>
+                        </div>
+
+                        <div className="border-t" />
+
                         <div className="space-y-2">
                           <div className="text-sm font-medium">
                             OpenCode CLI (SSH Tunnel)
@@ -1079,18 +1100,23 @@ function BrowserButton({
       browserVncUrl
     ) {
       pendingOpenRef.current = false;
-      window.open(browserVncUrl, "_blank");
+      window.open(`/sandboxes/${sandboxId}?tab1=web`, "_blank");
     }
-  }, [browserStatus?.status, browserVncUrl]);
+  }, [browserStatus?.status, browserVncUrl, sandboxId]);
 
   if (browserStatus?.status === "running" && browserVncUrl) {
     return (
       <div className="flex items-center gap-1">
         <Button variant="outline" size="sm" asChild>
-          <a href={browserVncUrl} target="_blank" rel="noopener noreferrer">
+          <Link
+            to="/sandboxes/$id"
+            params={{ id: sandboxId }}
+            search={{ tab1: "web" }}
+            target="_blank"
+          >
             <Globe className="h-4 w-4 mr-2" />
             Browser
-          </a>
+          </Link>
         </Button>
         <Button
           variant="ghost"
