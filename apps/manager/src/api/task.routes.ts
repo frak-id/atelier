@@ -6,12 +6,12 @@ import {
   taskSpawner,
 } from "../container.ts";
 import {
-  AddSessionsBodySchema,
+  AddSessionBodySchema,
   CreateTaskBodySchema,
   IdParamSchema,
   ReorderTaskBodySchema,
   ResetTaskQuerySchema,
-  SpawnSessionsResponseSchema,
+  SpawnSessionResponseSchema,
   TaskListResponseSchema,
   TaskSchema,
   UpdateTaskBodySchema,
@@ -95,24 +95,24 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     "/:id/sessions",
     async ({ params, body, set }) => {
       log.info(
-        { taskId: params.id, templateIds: body.sessionTemplateIds },
-        "Adding sessions to task",
+        { taskId: params.id, templateId: body.sessionTemplateId },
+        "Adding session to task",
       );
 
-      taskSpawner.spawnSessionsInBackground(params.id, body.sessionTemplateIds);
+      taskSpawner.addSessionInBackground(params.id, body.sessionTemplateId);
 
       set.status = 202;
       return {
         status: "spawning" as const,
         taskId: params.id,
-        requestedTemplates: body.sessionTemplateIds,
-        message: `Spawning ${body.sessionTemplateIds.length} session(s) in background`,
+        sessionTemplateId: body.sessionTemplateId,
+        message: "Spawning session in background",
       };
     },
     {
       params: IdParamSchema,
-      body: AddSessionsBodySchema,
-      response: SpawnSessionsResponseSchema,
+      body: AddSessionBodySchema,
+      response: SpawnSessionResponseSchema,
     },
   )
   .post(

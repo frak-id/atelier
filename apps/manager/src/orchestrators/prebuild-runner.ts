@@ -1,4 +1,5 @@
 import { PATHS, VM } from "@frak/atelier-shared/constants";
+import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import { eventBus } from "../infrastructure/events/index.ts";
@@ -116,7 +117,11 @@ export class PrebuildRunner {
       );
 
       this.throwIfAborted(workspaceId);
-      await this.warmupOpencode(sandbox.id, workspace.id);
+      await this.warmupOpencode(
+        sandbox.id,
+        workspace.id,
+        sandbox.runtime.ipAddress,
+      );
 
       this.throwIfAborted(workspaceId);
       await this.pushLatestAuthAndConfigs(sandbox.id);
@@ -471,6 +476,7 @@ export class PrebuildRunner {
   private async warmupOpencode(
     sandboxId: string,
     workspaceId: string,
+    ipAddress: string,
   ): Promise<void> {
     log.info({ workspaceId }, "Warming up opencode server");
 
@@ -492,17 +498,15 @@ export class PrebuildRunner {
       return;
     }
 
+    const url = `http://${ipAddress}:${port}`;
     const startTime = Date.now();
     let healthy = false;
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
       try {
-        const result = await this.deps.agentClient.exec(
-          sandboxId,
-          `curl -sf http://localhost:${port}/global/health`,
-          { timeout: 5000 },
-        );
-        if (result.exitCode === 0 && result.stdout.includes("healthy")) {
+        const client = createOpencodeClient({ baseUrl: url });
+        const { data } = await client.global.health();
+        if (data?.healthy) {
           healthy = true;
           log.info({ workspaceId }, "Opencode server is healthy");
           break;

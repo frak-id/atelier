@@ -20,7 +20,7 @@ import {
   globalSessionTemplatesQuery,
   sandboxDetailQuery,
   taskDetailQuery,
-  useAddTaskSessions,
+  useAddTaskSession,
   useCompleteTask,
   useDeleteTask,
   useStartTask,
@@ -576,21 +576,20 @@ function SecondaryTemplateButton({
   template: SecondaryTemplate;
   taskId: string;
 }) {
-  const addSessionsMutation = useAddTaskSessions();
+  const addSessionMutation = useAddTaskSession();
   const icon = TEMPLATE_ICONS[template.id] ?? <Sparkles className="h-4 w-4" />;
   const shortName = template.name.replace(" Review", "").replace("ation", "");
 
   const handleSpawn = () => {
-    addSessionsMutation.mutate(
-      { id: taskId, sessionTemplateIds: [template.id] },
+    addSessionMutation.mutate(
+      { id: taskId, sessionTemplateId: template.id },
       {
         onSuccess: () => {
           toast.success(`${template.name} session started`);
         },
-        onError: (error) => {
+        onError: (error: Error) => {
           toast.error(`Failed to start ${template.name}`, {
-            description:
-              error instanceof Error ? error.message : "Unknown error",
+            description: error.message,
           });
         },
       },
@@ -605,9 +604,9 @@ function SecondaryTemplateButton({
           size="sm"
           className="gap-2"
           onClick={handleSpawn}
-          disabled={addSessionsMutation.isPending}
+          disabled={addSessionMutation.isPending}
         >
-          {addSessionsMutation.isPending ? (
+          {addSessionMutation.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             icon
