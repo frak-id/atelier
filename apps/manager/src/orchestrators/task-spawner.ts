@@ -312,7 +312,7 @@ export class TaskSpawner {
 
     const sessionResult = await this.createOpencodeSession(
       opencodeUrl,
-      `${task.title} - ${sessionTemplateId}`,
+      task.title,
       opencodeDirectory,
     );
 
