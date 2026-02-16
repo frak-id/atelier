@@ -138,7 +138,7 @@ function TodoProgressBadge({ todos }: { todos: Todo[] }) {
         <ul className="max-h-60 overflow-y-auto py-1">
           {activeTodos.map((todo) => (
             <li
-              key={todo.id || todo.content.slice(0, 50)}
+              key={todo.content.slice(0, 50)}
               className="flex items-start gap-2 px-3 py-1.5 text-xs"
             >
               <div className="mt-px shrink-0">
@@ -190,7 +190,7 @@ function RootTodoList({ todos }: { todos: Todo[] }) {
         <ul className="py-1 ml-5">
           {activeTodos.map((todo) => (
             <li
-              key={todo.id || todo.content.slice(0, 50)}
+              key={todo.content.slice(0, 50)}
               className="flex items-start gap-2 px-3 py-1 text-xs"
             >
               <div className="mt-px shrink-0">
