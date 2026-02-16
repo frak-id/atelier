@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  Bot,
   Check,
   CheckCircle,
-  Code,
   Copy,
-  ExternalLink,
   GitBranch,
   Loader2,
+  Monitor,
   Shield,
   Sparkles,
   Terminal,
@@ -271,31 +271,33 @@ export function TaskDrawer({
                   {sandbox?.status === "running" && sandbox.runtime?.urls && (
                     <div className="flex items-center gap-2 flex-wrap">
                       <Button variant="outline" size="sm" asChild>
-                        <a
-                          href={sandbox.runtime.urls.vscode}
+                        <Link
+                          to="/sandboxes/$id"
+                          params={{ id: sandbox.id }}
+                          search={{ tab1: "vscode" }}
                           target="_blank"
-                          rel="noopener noreferrer"
                         >
-                          <Code className="h-4 w-4 mr-2" />
+                          <Monitor className="h-4 w-4 mr-2" />
                           VSCode
-                        </a>
+                        </Link>
                       </Button>
                       <Button variant="outline" size="sm" asChild>
-                        <a
-                          href={sandbox.runtime.urls.opencode}
+                        <Link
+                          to="/sandboxes/$id"
+                          params={{ id: sandbox.id }}
+                          search={{ tab1: "opencode" }}
                           target="_blank"
-                          rel="noopener noreferrer"
                         >
-                          <ExternalLink className="h-4 w-4 mr-2" />
+                          <Bot className="h-4 w-4 mr-2" />
                           OpenCode
-                        </a>
+                        </Link>
                       </Button>
                       <Button variant="outline" size="sm" asChild>
                         <Link
                           to="/sandboxes/$id"
                           params={{ id: sandbox.id }}
                           search={{ tab1: "terminal" }}
-                          title="Open Terminal"
+                          target="_blank"
                         >
                           <Terminal className="h-4 w-4 mr-2" />
                           Terminal

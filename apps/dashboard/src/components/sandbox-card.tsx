@@ -71,6 +71,14 @@ export function SandboxCard({
   onShowDetails,
   onShowTask,
 }: SandboxCardProps) {
+  const { data: services } = useQuery({
+    ...sandboxServicesQuery(sandbox.id),
+    enabled: sandbox.status === "running",
+    refetchInterval: 2000,
+    refetchIntervalInBackground: false,
+  });
+  const browserStatus = deriveBrowserStatus(services, sandbox);
+
   const statusVariant = {
     running: "success",
     creating: "warning",
@@ -161,7 +169,10 @@ export function SandboxCard({
           )}
 
           {sandbox.status === "running" && (
-            <BrowserStatusBadge sandboxId={sandbox.id} sandbox={sandbox} />
+            <BrowserStatusBadge
+              sandboxId={sandbox.id}
+              browserStatus={browserStatus}
+            />
           )}
 
           {sandbox.status === "running" && (
@@ -197,7 +208,10 @@ export function SandboxCard({
                 <TooltipContent>Immerse</TooltipContent>
               </Tooltip>
 
-              <CardBrowserButton sandboxId={sandbox.id} sandbox={sandbox} />
+              <CardBrowserButton
+                sandboxId={sandbox.id}
+                browserStatus={browserStatus}
+              />
 
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -207,13 +221,14 @@ export function SandboxCard({
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     asChild
                   >
-                    <a
-                      href={sandbox.runtime.urls.vscode}
+                    <Link
+                      to="/sandboxes/$id"
+                      params={{ id: sandbox.id }}
+                      search={{ tab1: "vscode" }}
                       target="_blank"
-                      rel="noopener noreferrer"
                     >
                       <Monitor className="h-4 w-4" />
-                    </a>
+                    </Link>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>VSCode</TooltipContent>
@@ -231,6 +246,7 @@ export function SandboxCard({
                       to="/sandboxes/$id"
                       params={{ id: sandbox.id }}
                       search={{ tab1: "terminal" }}
+                      target="_blank"
                     >
                       <Terminal className="h-4 w-4" />
                     </Link>
@@ -247,13 +263,14 @@ export function SandboxCard({
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     asChild
                   >
-                    <a
-                      href={sandbox.runtime.urls.opencode}
+                    <Link
+                      to="/sandboxes/$id"
+                      params={{ id: sandbox.id }}
+                      search={{ tab1: "opencode" }}
                       target="_blank"
-                      rel="noopener noreferrer"
                     >
                       <Bot className="h-4 w-4" />
-                    </a>
+                    </Link>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>OpenCode</TooltipContent>
@@ -367,17 +384,11 @@ export function SandboxCard({
 
 function BrowserStatusBadge({
   sandboxId,
-  sandbox,
+  browserStatus,
 }: {
   sandboxId: string;
-  sandbox: Sandbox;
+  browserStatus: { status: string; url?: string };
 }) {
-  const { data: services } = useQuery({
-    ...sandboxServicesQuery(sandboxId),
-    refetchInterval: 2000,
-  });
-  const browserStatus = deriveBrowserStatus(services, sandbox);
-
   if (browserStatus.status === "off") return null;
 
   return (
@@ -394,15 +405,16 @@ function BrowserStatusBadge({
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
         )}
         {browserStatus.status === "running" && browserStatus.url ? (
-          <a
-            href={`${browserStatus.url}/?autoconnect=true&resize=remote`}
+          <Link
+            to="/sandboxes/$id"
+            params={{ id: sandboxId }}
+            search={{ tab1: "web" }}
             target="_blank"
-            rel="noopener noreferrer"
             className="hover:underline flex items-center gap-1"
           >
             Browser
             <ExternalLink className="h-3 w-3 opacity-50" />
-          </a>
+          </Link>
         ) : (
           <span>
             Browser {browserStatus.status === "starting" ? "starting..." : ""}
@@ -415,17 +427,12 @@ function BrowserStatusBadge({
 
 function CardBrowserButton({
   sandboxId,
-  sandbox,
+  browserStatus,
 }: {
   sandboxId: string;
-  sandbox: Sandbox;
+  browserStatus: { status: string; url?: string };
 }) {
   const startBrowser = useStartBrowser(sandboxId);
-  const { data: services } = useQuery({
-    ...sandboxServicesQuery(sandboxId),
-    refetchInterval: 2000,
-  });
-  const browserStatus = deriveBrowserStatus(services, sandbox);
   const pendingOpenRef = useRef(false);
 
   useEffect(() => {
@@ -435,19 +442,13 @@ function CardBrowserButton({
       browserStatus.url
     ) {
       pendingOpenRef.current = false;
-      window.open(
-        `${browserStatus.url}/?autoconnect=true&resize=remote`,
-        "_blank",
-      );
+      window.open(`/sandboxes/${sandboxId}?tab1=web`, "_blank");
     }
-  }, [browserStatus?.status, browserStatus?.url]);
+  }, [browserStatus?.status, browserStatus?.url, sandboxId]);
 
   const handleClick = () => {
     if (browserStatus?.status === "running" && browserStatus.url) {
-      window.open(
-        `${browserStatus.url}/?autoconnect=true&resize=remote`,
-        "_blank",
-      );
+      window.open(`/sandboxes/${sandboxId}?tab1=web`, "_blank");
       return;
     }
     pendingOpenRef.current = true;
