@@ -28,7 +28,5 @@
     "apps/*",
     "infra/*"
   ],
-  "dependencies": {
-    "@elysiajs/cookie": "^0.8.0"
-  }
+  "dependencies": {}
 }
