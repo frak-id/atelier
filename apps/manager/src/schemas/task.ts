@@ -72,18 +72,13 @@ export const AddSessionBodySchema = t.Object({
 });
 export type AddSessionBody = Static<typeof AddSessionBodySchema>;
 
-export const AddSessionsBodySchema = t.Object({
-  sessionTemplateIds: t.Array(t.String({ minLength: 1 }), { minItems: 1 }),
-});
-export type AddSessionsBody = Static<typeof AddSessionsBodySchema>;
-
-export const SpawnSessionsResponseSchema = t.Object({
+export const SpawnSessionResponseSchema = t.Object({
   status: t.Literal("spawning"),
   taskId: t.String(),
-  requestedTemplates: t.Array(t.String()),
+  sessionTemplateId: t.String(),
   message: t.String(),
 });
-export type SpawnSessionsResponse = Static<typeof SpawnSessionsResponseSchema>;
+export type SpawnSessionResponse = Static<typeof SpawnSessionResponseSchema>;
 
 export const SandboxActionValues = ["detach", "stop", "destroy"] as const;
 export type SandboxAction = (typeof SandboxActionValues)[number];

@@ -75,17 +75,17 @@ export function useStartTask() {
   });
 }
 
-export function useAddTaskSessions() {
+export function useAddTaskSession() {
   return useMutation({
-    mutationKey: ["tasks", "addSessions"],
+    mutationKey: ["tasks", "addSession"],
     mutationFn: async ({
       id,
-      sessionTemplateIds,
+      sessionTemplateId,
     }: {
       id: string;
-      sessionTemplateIds: string[];
+      sessionTemplateId: string;
     }) =>
-      unwrap(await api.api.tasks({ id }).sessions.post({ sessionTemplateIds })),
+      unwrap(await api.api.tasks({ id }).sessions.post({ sessionTemplateId })),
     onSuccess: (_data, variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({
