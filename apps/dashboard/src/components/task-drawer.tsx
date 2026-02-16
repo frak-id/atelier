@@ -274,22 +274,22 @@ export function TaskDrawer({
                         <Link
                           to="/sandboxes/$id"
                           params={{ id: sandbox.id }}
-                          search={{ tab1: "vscode" }}
+                          search={{ tab1: "opencode" }}
                           target="_blank"
                         >
-                          <Monitor className="h-4 w-4 mr-2" />
-                          VSCode
+                          <Bot className="h-4 w-4 mr-2" />
+                          OpenCode
                         </Link>
                       </Button>
                       <Button variant="outline" size="sm" asChild>
                         <Link
                           to="/sandboxes/$id"
                           params={{ id: sandbox.id }}
-                          search={{ tab1: "opencode" }}
+                          search={{ tab1: "vscode" }}
                           target="_blank"
                         >
-                          <Bot className="h-4 w-4 mr-2" />
-                          OpenCode
+                          <Monitor className="h-4 w-4 mr-2" />
+                          VSCode
                         </Link>
                       </Button>
                       <Button variant="outline" size="sm" asChild>

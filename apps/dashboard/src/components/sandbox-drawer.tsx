@@ -236,6 +236,17 @@ export function SandboxDrawer({
                       <Link
                         to="/sandboxes/$id"
                         params={{ id: sandbox.id }}
+                        search={{ tab1: "opencode" }}
+                        target="_blank"
+                      >
+                        <Bot className="h-4 w-4 mr-2" />
+                        OpenCode
+                      </Link>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link
+                        to="/sandboxes/$id"
+                        params={{ id: sandbox.id }}
                         search={{ tab1: "vscode" }}
                         target="_blank"
                       >
@@ -252,17 +263,6 @@ export function SandboxDrawer({
                       >
                         <Terminal className="h-4 w-4 mr-2" />
                         Terminal
-                      </Link>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link
-                        to="/sandboxes/$id"
-                        params={{ id: sandbox.id }}
-                        search={{ tab1: "opencode" }}
-                        target="_blank"
-                      >
-                        <Bot className="h-4 w-4 mr-2" />
-                        OpenCode
                       </Link>
                     </Button>
 

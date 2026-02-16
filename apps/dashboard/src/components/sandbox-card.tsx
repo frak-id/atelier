@@ -208,10 +208,26 @@ export function SandboxCard({
                 <TooltipContent>Immerse</TooltipContent>
               </Tooltip>
 
-              <CardBrowserButton
-                sandboxId={sandbox.id}
-                browserStatus={browserStatus}
-              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    asChild
+                  >
+                    <Link
+                      to="/sandboxes/$id"
+                      params={{ id: sandbox.id }}
+                      search={{ tab1: "opencode" }}
+                      target="_blank"
+                    >
+                      <Bot className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>OpenCode</TooltipContent>
+              </Tooltip>
 
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -255,26 +271,10 @@ export function SandboxCard({
                 <TooltipContent>Terminal</TooltipContent>
               </Tooltip>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    asChild
-                  >
-                    <Link
-                      to="/sandboxes/$id"
-                      params={{ id: sandbox.id }}
-                      search={{ tab1: "opencode" }}
-                      target="_blank"
-                    >
-                      <Bot className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>OpenCode</TooltipContent>
-              </Tooltip>
+              <CardBrowserButton
+                sandboxId={sandbox.id}
+                browserStatus={browserStatus}
+              />
             </div>
           )}
         </CardContent>
