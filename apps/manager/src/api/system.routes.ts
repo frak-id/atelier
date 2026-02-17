@@ -1,7 +1,11 @@
 import { PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { Elysia } from "elysia";
-import { sandboxService, systemSandboxService } from "../container.ts";
+import {
+  sandboxService,
+  systemPrebuildRunner,
+  systemSandboxService,
+} from "../container.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import {
   CaddyService,
@@ -273,11 +277,35 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
   )
   .get(
     "/sandbox",
-    () => {
-      return systemSandboxService.getStatus();
+    async () => {
+      const status = systemSandboxService.getStatus();
+      const meta = await systemPrebuildRunner.readMetadata();
+      return {
+        ...status,
+        prebuild: {
+          exists:
+            (await systemPrebuildRunner.hasPrebuild(SYSTEM_WORKSPACE_ID)) &&
+            (await systemPrebuildRunner.hasVmSnapshot(SYSTEM_WORKSPACE_ID)),
+          building: systemPrebuildRunner.isBuilding(),
+          builtAt: meta?.builtAt ?? null,
+        },
+      };
     },
     {
       response: SystemSandboxStatusSchema,
+      detail: { tags: ["system"] },
+    },
+  )
+  .post(
+    "/sandbox/prebuild",
+    async () => {
+      if (systemPrebuildRunner.isBuilding()) {
+        return { started: false, message: "Prebuild already in progress" };
+      }
+      systemPrebuildRunner.runInBackground();
+      return { started: true, message: "System prebuild started" };
+    },
+    {
       detail: { tags: ["system"] },
     },
   )

@@ -93,6 +93,11 @@ export const SystemSandboxStatusSchema = t.Object({
   sandboxId: t.Nullable(t.String()),
   activeCount: t.Number(),
   uptimeMs: t.Nullable(t.Number()),
+  prebuild: t.Object({
+    exists: t.Boolean(),
+    building: t.Boolean(),
+    builtAt: t.Nullable(t.String()),
+  }),
 });
 export type SystemSandboxStatusResponse = Static<
   typeof SystemSandboxStatusSchema

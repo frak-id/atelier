@@ -27,11 +27,12 @@ import {
 } from "./modules/workspace/index.ts";
 import {
   PrebuildChecker,
-  PrebuildRunner,
   SandboxDestroyer,
   SandboxLifecycle,
   SandboxSpawner,
+  SystemPrebuildRunner,
   TaskSpawner,
+  WorkspacePrebuildRunner,
 } from "./orchestrators/index.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -125,11 +126,19 @@ const sandboxLifecycle = new SandboxLifecycle({
   configFileService,
 });
 
-const prebuildRunner = new PrebuildRunner({
+const workspacePrebuildRunner = new WorkspacePrebuildRunner({
   sandboxSpawner,
   sandboxDestroyer,
   sandboxService,
   workspaceService,
+  agentClient,
+  internalService,
+});
+
+const systemPrebuildRunner = new SystemPrebuildRunner({
+  sandboxSpawner,
+  sandboxDestroyer,
+  sandboxService,
   agentClient,
   internalService,
 });
@@ -146,7 +155,7 @@ const taskSpawner = new TaskSpawner({
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
   gitSourceService,
-  prebuildRunner,
+  prebuildRunner: workspacePrebuildRunner,
 });
 
 export {
@@ -157,7 +166,8 @@ export {
   gitSourceService,
   internalService,
   prebuildChecker,
-  prebuildRunner,
+  workspacePrebuildRunner as prebuildRunner,
+  systemPrebuildRunner,
   sandboxDestroyer,
   sandboxLifecycle,
   sandboxService,

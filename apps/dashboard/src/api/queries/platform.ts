@@ -30,6 +30,19 @@ export const systemSandboxQuery = queryOptions({
   refetchInterval: 30000,
 });
 
+export function useSystemSandboxPrebuild() {
+  return useMutation({
+    mutationKey: ["system", "sandbox", "prebuild"],
+    mutationFn: async () =>
+      unwrap(await api.api.system.sandbox.prebuild.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.system.sandbox,
+      });
+    },
+  });
+}
+
 export function useSystemCleanup() {
   return useMutation({
     mutationKey: ["system", "cleanup"],

@@ -1,5 +1,5 @@
 import type { SandboxConfig } from "@frak/atelier-shared";
-import { DEFAULTS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
+import { DEFAULTS, PATHS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type {
   AgentClient,
@@ -173,13 +173,17 @@ class SpawnContext {
       this.options.baseImage ?? this.workspace?.config.baseImage;
     const lvmAvailable = await StorageService.isAvailable();
 
-    if (
-      this.options.workspaceId &&
-      this.workspace?.config.prebuild?.status === "ready"
-    ) {
-      this.usedPrebuild = await StorageService.hasPrebuild(
-        this.options.workspaceId,
-      );
+    if (this.options.workspaceId) {
+      if (this.isSystem) {
+        this.usedPrebuild = await StorageService.hasPrebuild(
+          this.options.workspaceId,
+        );
+      } else if (this.workspace?.config.prebuild?.status === "ready") {
+        this.usedPrebuild = await StorageService.hasPrebuild(
+          this.options.workspaceId,
+        );
+      }
+
       if (this.usedPrebuild) {
         const snapshotPaths = getPrebuildSnapshotPaths(
           this.options.workspaceId,
@@ -397,16 +401,29 @@ class SpawnContext {
       !this.client ||
       !this.paths ||
       !this.network ||
-      !this.options.workspaceId ||
-      !this.workspace
+      !this.options.workspaceId
     ) {
       throw new Error("Snapshot restore prerequisites not initialized");
     }
 
     const snapshotPaths = getPrebuildSnapshotPaths(this.options.workspaceId);
-    const prebuildSandboxId = this.workspace.config.prebuild?.latestId;
-    if (!prebuildSandboxId) {
-      throw new Error("Prebuild has no latestId");
+    let prebuildSandboxId: string;
+    if (this.isSystem) {
+      const metaPath = `${PATHS.SANDBOX_DIR}/system-prebuild.json`;
+      const metaFile = Bun.file(metaPath);
+      if (!(await metaFile.exists())) {
+        throw new Error("System prebuild metadata not found");
+      }
+      const meta = (await metaFile.json()) as { latestId?: string };
+      if (!meta.latestId) {
+        throw new Error("System prebuild metadata is invalid");
+      }
+      prebuildSandboxId = meta.latestId;
+    } else {
+      prebuildSandboxId = this.workspace?.config.prebuild?.latestId ?? "";
+      if (!prebuildSandboxId) {
+        throw new Error("Prebuild has no latestId");
+      }
     }
 
     // FC snapshot restore requires drive/vsock paths to match the original.
@@ -459,8 +476,8 @@ class SpawnContext {
   }
 
   private async reconfigureRestoredGuest(): Promise<void> {
-    if (!this.network || !this.workspace) {
-      throw new Error("Network or workspace not initialized");
+    if (!this.network) {
+      throw new Error("Network not initialized");
     }
 
     const newIp = this.network.ipAddress;
@@ -510,12 +527,13 @@ class SpawnContext {
 
     await this.pushAuthAndConfigs();
 
-    // Re-push secrets on every restore — they may have changed since prebuild
-    await this.pushSecretsPostBoot();
-    await this.pushGitCredentialsPostBoot();
-    await this.pushFileSecretsPostBoot();
+    if (!this.isSystem) {
+      await this.pushSecretsPostBoot();
+      await this.pushGitCredentialsPostBoot();
+      await this.pushFileSecretsPostBoot();
+    }
 
-    const serviceNames = ["vscode", "opencode"];
+    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
       serviceNames,

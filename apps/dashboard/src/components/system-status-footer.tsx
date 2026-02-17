@@ -8,6 +8,7 @@ import {
   Cpu,
   Database,
   HardDrive,
+  RefreshCw,
   Server,
 } from "lucide-react";
 import { useState } from "react";
@@ -17,8 +18,10 @@ import {
   systemSandboxQuery,
   systemStatsQuery,
   systemStorageQuery,
+  useSystemSandboxPrebuild,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/utils";
 
 export function SystemStatusFooter() {
@@ -29,6 +32,8 @@ export function SystemStatusFooter() {
   const { data: stats } = useQuery(systemStatsQuery);
   const { data: storage } = useQuery(systemStorageQuery);
   const { data: sandboxes } = useQuery(sandboxListQuery());
+  const { mutate: rebuild, isPending: isRebuilding } =
+    useSystemSandboxPrebuild();
 
   const runningSandboxes =
     sandboxes?.filter((s) => s.status === "running").length ?? 0;
@@ -193,6 +198,56 @@ export function SystemStatusFooter() {
             <div className="text-sm font-medium mb-2">System Sandbox</div>
             <div className="flex items-center gap-4">
               <SystemSandboxBadge status={systemSandbox?.status ?? "off"} />
+
+              {systemSandbox?.prebuild && (
+                <Badge
+                  variant={
+                    systemSandbox.prebuild.building
+                      ? "warning"
+                      : systemSandbox.prebuild.exists
+                        ? "success"
+                        : "outline"
+                  }
+                  className="gap-1"
+                >
+                  {systemSandbox.prebuild.building ? (
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                  ) : systemSandbox.prebuild.exists ? (
+                    <CheckCircle className="h-3 w-3" />
+                  ) : (
+                    <AlertCircle className="h-3 w-3" />
+                  )}
+                  {systemSandbox.prebuild.building
+                    ? "Prebuild: Building..."
+                    : systemSandbox.prebuild.exists
+                      ? "Prebuild: Ready"
+                      : "No Prebuild"}
+                </Badge>
+              )}
+
+              {systemSandbox?.prebuild?.builtAt && (
+                <span className="text-xs text-muted-foreground">
+                  Built: {formatTimeAgo(systemSandbox.prebuild.builtAt)}
+                </span>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs gap-1"
+                onClick={() => rebuild()}
+                disabled={isRebuilding || systemSandbox?.prebuild?.building}
+              >
+                <RefreshCw
+                  className={`h-3 w-3 ${
+                    isRebuilding || systemSandbox?.prebuild?.building
+                      ? "animate-spin"
+                      : ""
+                  }`}
+                />
+                Rebuild
+              </Button>
+
               {systemSandbox?.activeCount !== undefined &&
                 systemSandbox.activeCount > 0 && (
                   <span className="text-xs text-muted-foreground">
@@ -210,6 +265,18 @@ export function SystemStatusFooter() {
       )}
     </div>
   );
+}
+
+function formatTimeAgo(dateStr: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMins > 0) return `${diffMins}m ago`;
+  return "just now";
 }
 
 function formatUptime(ms: number) {
