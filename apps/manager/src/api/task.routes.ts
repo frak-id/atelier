@@ -48,13 +48,13 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
   )
   .post(
     "/",
-    ({ body, set }) => {
+    async ({ body, set }) => {
       log.info(
         { title: body.title, workspaceId: body.workspaceId },
         "Creating task",
       );
 
-      const task = taskService.create(body);
+      const task = await taskService.create(body);
       set.status = 201;
       return task;
     },

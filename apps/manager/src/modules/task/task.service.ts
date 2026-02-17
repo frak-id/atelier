@@ -8,6 +8,7 @@ import type {
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { TitleService } from "../title/index.ts";
 import type { TaskRepository } from "./task.repository.ts";
 
 const log = createChildLogger("task-service");
@@ -15,7 +16,10 @@ const log = createChildLogger("task-service");
 const MAX_ACTIVE_TASKS = 3;
 
 export class TaskService {
-  constructor(private readonly repository: TaskRepository) {}
+  constructor(
+    private readonly repository: TaskRepository,
+    private readonly titleService: TitleService,
+  ) {}
 
   getAll(): Task[] {
     return this.repository.getAll();
@@ -35,14 +39,18 @@ export class TaskService {
     return task;
   }
 
-  create(body: CreateTaskBody): Task {
+  async create(body: CreateTaskBody): Promise<Task> {
+    const title =
+      body.title?.trim() ||
+      (await this.titleService.generateTitle(body.description));
+
     const now = new Date().toISOString();
     const order = this.repository.getNextOrder(body.workspaceId, "draft");
 
     const task: Task = {
       id: `task_${safeNanoid(12)}`,
       workspaceId: body.workspaceId,
-      title: body.title,
+      title,
       status: "draft",
       data: {
         description: body.description,
@@ -109,8 +117,8 @@ export class TaskService {
       throw new ValidationError("Can only start tasks in draft status");
     }
 
-    if (!task.title.trim() || !task.data.description?.trim()) {
-      throw new ValidationError("Task must have a title and description");
+    if (!task.data.description?.trim()) {
+      throw new ValidationError("Task must have a description");
     }
 
     const activeCount = this.repository.countByStatuses(task.workspaceId, [

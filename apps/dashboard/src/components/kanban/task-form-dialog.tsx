@@ -109,7 +109,7 @@ export function TaskForm({
         await createMutation.mutateAsync(
           {
             workspaceId,
-            title: value.title.trim(),
+            title: value.title.trim() || undefined,
             description: value.description.trim(),
             context: value.context.trim() || undefined,
             workflowId: value.selectedTemplateId || undefined,
@@ -207,8 +207,7 @@ export function TaskForm({
     githubBranchesQuery(gitHubInfo?.owner ?? "", gitHubInfo?.repo ?? ""),
   );
 
-  const canSubmit =
-    !isPending && !!title.trim() && !!description.trim() && !!workspaceId;
+  const canSubmit = !isPending && !!description.trim() && !!workspaceId;
 
   const toggleRepoSelection = (index: number) => {
     const prev = selectedRepoIndices;
@@ -259,12 +258,12 @@ export function TaskForm({
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="title">Title</Label>
+        <Label htmlFor="title">Title (optional)</Label>
         <Input
           id="title"
           value={title}
           onChange={(e) => form.setFieldValue("title", e.target.value)}
-          placeholder="e.g., Implement user authentication"
+          placeholder="Auto-generated from description if empty"
         />
       </div>
 

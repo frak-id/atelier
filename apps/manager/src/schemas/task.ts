@@ -43,7 +43,7 @@ export type Task = Static<typeof TaskSchema>;
 
 export const CreateTaskBodySchema = t.Object({
   workspaceId: t.String({ minLength: 1 }),
-  title: t.String({ minLength: 1, maxLength: 200 }),
+  title: t.Optional(t.String({ maxLength: 200 })),
   description: t.String({ minLength: 1 }),
   context: t.Optional(t.String()),
   workflowId: t.Optional(t.String()),
