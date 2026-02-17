@@ -83,6 +83,7 @@ class SpawnContext {
   private client?: FirecrackerClient;
   private usedPrebuild = false;
   private hasVmSnapshot = false;
+  private isSystem: boolean;
 
   private startTime = performance.now();
   private timings: Partial<SpawnTimings> = {};
@@ -92,6 +93,7 @@ class SpawnContext {
     private readonly options: CreateSandboxBody,
   ) {
     this.sandboxId = safeNanoid();
+    this.isSystem = options.system ?? false;
   }
 
   private async time<T>(
@@ -151,7 +153,7 @@ class SpawnContext {
   }
 
   private async loadWorkspace(): Promise<void> {
-    if (this.options.workspaceId) {
+    if (this.options.workspaceId && !this.isSystem) {
       this.workspace = this.deps.workspaceService.getById(
         this.options.workspaceId,
       );
@@ -574,6 +576,12 @@ class SpawnContext {
 
     await this.deps.provisionService.syncClock(this.sandboxId);
 
+    if (this.isSystem) {
+      await this.provisionSystemPostBoot();
+      await this.pushAuthAndConfigs();
+      return;
+    }
+
     await this.provisionPostBoot();
 
     await this.expandFilesystem();
@@ -584,6 +592,21 @@ class SpawnContext {
     }
 
     await this.pushAuthAndConfigs();
+  }
+
+  private async provisionSystemPostBoot(): Promise<void> {
+    const sandboxConfig = this.buildSandboxConfig();
+    await this.deps.provisionService.pushSandboxConfig(
+      this.sandboxId,
+      sandboxConfig,
+    );
+    await this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
+      ATELIER_SANDBOX_ID: this.sandboxId,
+    });
+    await this.deps.provisionService.setHostname(
+      this.sandboxId,
+      `sandbox-${this.sandboxId}`,
+    );
   }
 
   private async provisionPostBoot(): Promise<void> {
@@ -844,7 +867,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       return;
     }
 
-    const serviceNames = ["vscode", "opencode"];
+    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
       serviceNames,
@@ -1016,6 +1039,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
   }
 
   private async registerRoutes(): Promise<void> {
+    if (this.isSystem) return;
     if (!this.network) throw new Error("Network not allocated");
     if (!this.sandbox) throw new Error("Sandbox not initialized");
 

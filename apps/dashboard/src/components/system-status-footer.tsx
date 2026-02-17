@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   AlertCircle,
+  Bot,
   CheckCircle,
   ChevronUp,
   Cpu,
@@ -13,6 +14,7 @@ import { useState } from "react";
 import {
   healthQuery,
   sandboxListQuery,
+  systemSandboxQuery,
   systemStatsQuery,
   systemStorageQuery,
 } from "@/api/queries";
@@ -23,6 +25,7 @@ export function SystemStatusFooter() {
   const [expanded, setExpanded] = useState(false);
 
   const { data: health } = useQuery(healthQuery);
+  const { data: systemSandbox } = useQuery(systemSandboxQuery);
   const { data: stats } = useQuery(systemStatsQuery);
   const { data: storage } = useQuery(systemStorageQuery);
   const { data: sandboxes } = useQuery(sandboxListQuery());
@@ -52,6 +55,24 @@ export function SystemStatusFooter() {
           <span className="flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" />
             {runningSandboxes}/{maxSandboxes} VMs
+          </span>
+          <span
+            className={`flex items-center gap-1.5 ${
+              !systemSandbox || systemSandbox.status === "off"
+                ? "text-muted-foreground"
+                : systemSandbox.status === "booting"
+                  ? "text-yellow-500"
+                  : systemSandbox.status === "running"
+                    ? "text-green-500"
+                    : "text-blue-500"
+            }`}
+          >
+            <Bot className="h-3.5 w-3.5" />
+            AI:{" "}
+            {systemSandbox?.status
+              ? systemSandbox.status.charAt(0).toUpperCase() +
+                systemSandbox.status.slice(1)
+              : "Off"}
           </span>
           <span className="flex items-center gap-1.5">
             {isHealthy ? (
@@ -167,9 +188,52 @@ export function SystemStatusFooter() {
               )}
             </div>
           </div>
+
+          <div className="pt-2 border-t">
+            <div className="text-sm font-medium mb-2">System Sandbox</div>
+            <div className="flex items-center gap-4">
+              <SystemSandboxBadge status={systemSandbox?.status ?? "off"} />
+              {systemSandbox?.activeCount !== undefined &&
+                systemSandbox.activeCount > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {systemSandbox.activeCount} active sessions
+                  </span>
+                )}
+              {systemSandbox?.uptimeMs && (
+                <span className="text-xs text-muted-foreground">
+                  Uptime: {formatUptime(systemSandbox.uptimeMs)}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+function formatUptime(ms: number) {
+  const minutes = Math.floor(ms / 60000);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
+}
+
+function SystemSandboxBadge({ status }: { status: string }) {
+  const variant =
+    status === "running"
+      ? "success"
+      : status === "booting"
+        ? "warning"
+        : status === "idle"
+          ? "default"
+          : "outline";
+
+  return (
+    <Badge variant={variant} className="gap-1">
+      <Bot className="h-3 w-3" />
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </Badge>
   );
 }
 

@@ -14,6 +14,10 @@ const HEALTH_POLL_INTERVAL_MS = 2000;
 const SYSTEM_SANDBOX_VCPUS = 1;
 const SYSTEM_SANDBOX_MEMORY_MB = 1024;
 
+export const SYSTEM_WORKSPACE_ID = "__system__";
+
+export type SystemSandboxStatus = "off" | "booting" | "running" | "idle";
+
 interface SystemSandboxDependencies {
   sandboxSpawner: SandboxSpawner;
   sandboxDestroyer: SandboxDestroyer;
@@ -26,8 +30,86 @@ export class SystemSandboxService {
   private activeCount = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private bootPromise: Promise<string> | null = null;
+  private bootedAt: number | null = null;
 
   constructor(private readonly deps: SystemSandboxDependencies) {}
+
+  /**
+   * Reclaim or clean up system sandboxes from a previous manager lifetime.
+   * MUST run before any acquire() call — called during startup.
+   */
+  async recoverFromRestart(): Promise<void> {
+    const systemSandboxes = this.deps.sandboxService
+      .getAll()
+      .filter((s) => s.workspaceId === SYSTEM_WORKSPACE_ID);
+
+    if (systemSandboxes.length === 0) {
+      log.info("No system sandboxes found from previous run");
+      return;
+    }
+
+    // Sort by creation time descending — keep newest, destroy rest
+    const sorted = systemSandboxes.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    const candidate = sorted[0];
+    const extras = sorted.slice(1);
+
+    // Destroy extras first
+    for (const extra of extras) {
+      log.info(
+        { sandboxId: extra.id },
+        "Destroying extra system sandbox from previous run",
+      );
+      await this.deps.sandboxDestroyer.destroy(extra.id).catch((error) => {
+        log.warn(
+          { sandboxId: extra.id, error },
+          "Failed to destroy extra system sandbox",
+        );
+      });
+    }
+
+    // Try to reclaim the newest one
+    if (candidate && candidate.status === "running") {
+      try {
+        await this.waitForOpencode(candidate.runtime.ipAddress);
+        this.sandboxId = candidate.id;
+        this.bootedAt = new Date(candidate.createdAt).getTime();
+        log.info(
+          { sandboxId: candidate.id },
+          "Reclaimed system sandbox from previous run",
+        );
+        // Start idle timer since nobody is actively using it
+        this.startIdleTimer();
+      } catch {
+        log.warn(
+          { sandboxId: candidate.id },
+          "System sandbox from previous run not healthy, destroying",
+        );
+        await this.deps.sandboxDestroyer
+          .destroy(candidate.id)
+          .catch((error) => {
+            log.warn(
+              { sandboxId: candidate.id, error },
+              "Failed to destroy unhealthy system sandbox",
+            );
+          });
+      }
+    } else if (candidate) {
+      log.info(
+        { sandboxId: candidate.id, status: candidate.status },
+        "Destroying non-running system sandbox from previous run",
+      );
+      await this.deps.sandboxDestroyer.destroy(candidate.id).catch((error) => {
+        log.warn(
+          { sandboxId: candidate.id, error },
+          "Failed to destroy non-running system sandbox",
+        );
+      });
+    }
+  }
 
   async acquire(): Promise<{ client: OpencodeClient; ipAddress: string }> {
     this.activeCount++;
@@ -51,6 +133,7 @@ export class SystemSandboxService {
   async dispose(): Promise<void> {
     this.clearIdleTimer();
     this.bootPromise = null;
+    this.bootedAt = null;
 
     if (this.sandboxId) {
       const id = this.sandboxId;
@@ -68,6 +151,28 @@ export class SystemSandboxService {
     return this.sandboxId;
   }
 
+  getStatus(): {
+    status: SystemSandboxStatus;
+    sandboxId: string | null;
+    activeCount: number;
+    uptimeMs: number | null;
+  } {
+    let status: SystemSandboxStatus = "off";
+
+    if (this.bootPromise) {
+      status = "booting";
+    } else if (this.sandboxId) {
+      status = this.activeCount > 0 ? "running" : "idle";
+    }
+
+    return {
+      status,
+      sandboxId: this.sandboxId,
+      activeCount: this.activeCount,
+      uptimeMs: this.bootedAt ? Date.now() - this.bootedAt : null,
+    };
+  }
+
   private async ensureSandbox(): Promise<string> {
     if (this.sandboxId) {
       const sandbox = this.deps.sandboxService.getById(this.sandboxId);
@@ -78,7 +183,16 @@ export class SystemSandboxService {
         { sandboxId: this.sandboxId },
         "System sandbox no longer running, recreating",
       );
+      // Destroy the stale sandbox to prevent resource leaks
+      const staleId = this.sandboxId;
       this.sandboxId = null;
+      this.bootedAt = null;
+      await this.deps.sandboxDestroyer.destroy(staleId).catch((error) => {
+        log.warn(
+          { sandboxId: staleId, error },
+          "Failed to destroy stale system sandbox",
+        );
+      });
     }
 
     if (this.bootPromise) {
@@ -89,6 +203,11 @@ export class SystemSandboxService {
 
     try {
       return await this.bootPromise;
+    } catch (error) {
+      // Clear sandboxId on boot failure to avoid stale state
+      this.sandboxId = null;
+      this.bootedAt = null;
+      throw error;
     } finally {
       this.bootPromise = null;
     }
@@ -99,11 +218,14 @@ export class SystemSandboxService {
     const startTime = performance.now();
 
     const sandbox = await this.deps.sandboxSpawner.spawn({
+      workspaceId: SYSTEM_WORKSPACE_ID,
+      system: true,
       vcpus: SYSTEM_SANDBOX_VCPUS,
       memoryMb: SYSTEM_SANDBOX_MEMORY_MB,
     });
 
     this.sandboxId = sandbox.id;
+    this.bootedAt = Date.now();
     const ipAddress = sandbox.runtime.ipAddress;
 
     log.info(

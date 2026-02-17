@@ -82,3 +82,18 @@ export const CronJobInfoSchema = t.Object({
   nextRun: t.Nullable(t.String()),
 });
 export type CronJobInfo = Static<typeof CronJobInfoSchema>;
+
+export const SystemSandboxStatusSchema = t.Object({
+  status: t.Union([
+    t.Literal("off"),
+    t.Literal("booting"),
+    t.Literal("running"),
+    t.Literal("idle"),
+  ]),
+  sandboxId: t.Nullable(t.String()),
+  activeCount: t.Number(),
+  uptimeMs: t.Nullable(t.Number()),
+});
+export type SystemSandboxStatusResponse = Static<
+  typeof SystemSandboxStatusSchema
+>;

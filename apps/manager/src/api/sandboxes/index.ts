@@ -11,6 +11,7 @@ import {
 import { internalBus } from "../../infrastructure/events/internal-bus.ts";
 import { CaddyService } from "../../infrastructure/proxy/caddy.service.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
+import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
 import {
   AgentHealthSchema,
   AgentMetricsSchema,
@@ -46,7 +47,9 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/",
     ({ query }) => {
-      let sandboxes = sandboxService.getAll();
+      let sandboxes = sandboxService
+        .getAll()
+        .filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
 
       if (query.status) {
         sandboxes = sandboxes.filter((s) => s.status === query.status);
@@ -68,11 +71,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .post(
     "/",
     async ({ body, set }) => {
-      const activeCount =
-        sandboxService.countByStatus("running") +
-        sandboxService.countByStatus("creating");
+      const allActive = [
+        ...sandboxService.getByStatus("running"),
+        ...sandboxService.getByStatus("creating"),
+      ].filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
 
-      if (activeCount >= config.server.maxSandboxes) {
+      if (allActive.length >= config.server.maxSandboxes) {
         throw new ResourceExhaustedError("sandboxes");
       }
 

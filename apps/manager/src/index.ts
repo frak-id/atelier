@@ -30,6 +30,7 @@ import {
   sandboxLifecycle,
   sandboxService,
   sshKeyService,
+  systemSandboxService,
   workspaceService,
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
@@ -242,6 +243,8 @@ const app = new Elysia()
     mode: config.server.mode,
     docs: "/swagger",
   }));
+
+await systemSandboxService.recoverFromRestart();
 
 app.listen(
   {

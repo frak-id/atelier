@@ -1,17 +1,19 @@
 import { PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { Elysia } from "elysia";
-import { sandboxService } from "../container.ts";
+import { sandboxService, systemSandboxService } from "../container.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import {
   CaddyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
+import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
 import {
   type CleanupResult,
   CleanupResultSchema,
   StorageStatusSchema,
+  SystemSandboxStatusSchema,
   type SystemStats,
   SystemStatsSchema,
 } from "../schemas/index.ts";
@@ -23,6 +25,9 @@ const startTime = Date.now();
 
 async function getSystemStats(): Promise<SystemStats> {
   if (isMock()) {
+    const mockRunning = sandboxService
+      .getByStatus("running")
+      .filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
     return {
       cpuUsage: 25,
       memoryUsed: 4 * 1024 * 1024 * 1024,
@@ -31,7 +36,7 @@ async function getSystemStats(): Promise<SystemStats> {
       diskUsed: 50 * 1024 * 1024 * 1024,
       diskTotal: 500 * 1024 * 1024 * 1024,
       diskPercent: 10,
-      activeSandboxes: sandboxService.countByStatus("running"),
+      activeSandboxes: mockRunning.length,
       maxSandboxes: config.server.maxSandboxes,
       uptime: Math.floor((Date.now() - startTime) / 1000),
     };
@@ -55,6 +60,11 @@ async function getSystemStats(): Promise<SystemStats> {
   const diskTotal = Number.parseInt(diskParts[1] || "0", 10);
   const diskUsed = Number.parseInt(diskParts[2] || "0", 10);
 
+  const allRunning = sandboxService.getByStatus("running");
+  const userRunning = allRunning.filter(
+    (s) => s.workspaceId !== SYSTEM_WORKSPACE_ID,
+  );
+
   return {
     cpuUsage,
     memoryUsed,
@@ -63,7 +73,7 @@ async function getSystemStats(): Promise<SystemStats> {
     diskUsed,
     diskTotal,
     diskPercent: diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0,
-    activeSandboxes: sandboxService.countByStatus("running"),
+    activeSandboxes: userRunning.length,
     maxSandboxes: config.server.maxSandboxes,
     uptime: Math.floor((Date.now() - startTime) / 1000),
   };
@@ -258,6 +268,16 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
     },
     {
       response: StorageStatusSchema,
+      detail: { tags: ["system"] },
+    },
+  )
+  .get(
+    "/sandbox",
+    () => {
+      return systemSandboxService.getStatus();
+    },
+    {
+      response: SystemSandboxStatusSchema,
       detail: { tags: ["system"] },
     },
   )
