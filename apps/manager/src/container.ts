@@ -113,7 +113,7 @@ const systemSandboxService = new SystemSandboxService({
 });
 
 const titleService = new TitleService(systemSandboxService);
-const taskService = new TaskService(taskRepository, titleService);
+const taskService = new TaskService(taskRepository);
 
 const sandboxLifecycle = new SandboxLifecycle({
   sandboxService,

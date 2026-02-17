@@ -8,7 +8,6 @@ import type {
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import type { TitleService } from "../title/index.ts";
 import type { TaskRepository } from "./task.repository.ts";
 
 const log = createChildLogger("task-service");
@@ -16,10 +15,7 @@ const log = createChildLogger("task-service");
 const MAX_ACTIVE_TASKS = 3;
 
 export class TaskService {
-  constructor(
-    private readonly repository: TaskRepository,
-    private readonly titleService: TitleService,
-  ) {}
+  constructor(private readonly repository: TaskRepository) {}
 
   getAll(): Task[] {
     return this.repository.getAll();
@@ -39,18 +35,14 @@ export class TaskService {
     return task;
   }
 
-  async create(body: CreateTaskBody): Promise<Task> {
-    const title =
-      body.title?.trim() ||
-      (await this.titleService.generateTitle(body.description));
-
+  create(body: CreateTaskBody & { title: string }): Task {
     const now = new Date().toISOString();
     const order = this.repository.getNextOrder(body.workspaceId, "draft");
 
     const task: Task = {
       id: `task_${safeNanoid(12)}`,
       workspaceId: body.workspaceId,
-      title,
+      title: body.title,
       status: "draft",
       data: {
         description: body.description,

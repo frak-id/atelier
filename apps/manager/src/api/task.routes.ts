@@ -4,6 +4,7 @@ import {
   sandboxLifecycle,
   taskService,
   taskSpawner,
+  titleService,
 } from "../container.ts";
 import {
   AddSessionBodySchema,
@@ -49,12 +50,13 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
   .post(
     "/",
     async ({ body, set }) => {
-      log.info(
-        { title: body.title, workspaceId: body.workspaceId },
-        "Creating task",
-      );
+      const title =
+        body.title?.trim() ||
+        (await titleService.generateTitle(body.description));
 
-      const task = await taskService.create(body);
+      log.info({ title, workspaceId: body.workspaceId }, "Creating task");
+
+      const task = taskService.create({ ...body, title });
       set.status = 201;
       return task;
     },
