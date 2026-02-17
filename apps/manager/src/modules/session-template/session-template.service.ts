@@ -232,19 +232,7 @@ export class SessionTemplateService {
     return Array.from(result.values());
   }
 
-  async getOpenCodeConfig(workspaceId: string): Promise<{
-    available: boolean;
-    sandboxId?: string;
-    providers?: Array<{
-      id: string;
-      name: string;
-      models: Record<
-        string,
-        { id: string; name: string; variants?: Record<string, unknown> }
-      >;
-    }>;
-    agents?: Array<{ name: string; description?: string; mode: string }>;
-  }> {
+  async getOpenCodeConfig(workspaceId: string) {
     const sandboxes = this.sandboxService.getByWorkspaceId(workspaceId);
     const runningSandbox = sandboxes.find((s) => s.status === "running");
 
@@ -255,19 +243,7 @@ export class SessionTemplateService {
     return this.fetchOpenCodeConfigFromSandbox(runningSandbox);
   }
 
-  async getOpenCodeConfigFromAnySandbox(): Promise<{
-    available: boolean;
-    sandboxId?: string;
-    providers?: Array<{
-      id: string;
-      name: string;
-      models: Record<
-        string,
-        { id: string; name: string; variants?: Record<string, unknown> }
-      >;
-    }>;
-    agents?: Array<{ name: string; description?: string; mode: string }>;
-  }> {
+  async getOpenCodeConfigFromAnySandbox() {
     const allSandboxes = this.sandboxService.getAll();
     const runningSandbox = allSandboxes.find((s) => s.status === "running");
 
@@ -281,19 +257,7 @@ export class SessionTemplateService {
   private async fetchOpenCodeConfigFromSandbox(sandbox: {
     id: string;
     runtime?: { ipAddress?: string };
-  }): Promise<{
-    available: boolean;
-    sandboxId?: string;
-    providers?: Array<{
-      id: string;
-      name: string;
-      models: Record<
-        string,
-        { id: string; name: string; variants?: Record<string, unknown> }
-      >;
-    }>;
-    agents?: Array<{ name: string; description?: string; mode: string }>;
-  }> {
+  }) {
     const ipAddress = sandbox.runtime?.ipAddress;
     if (!ipAddress) {
       return { available: false };
@@ -319,25 +283,8 @@ export class SessionTemplateService {
       return {
         available: true,
         sandboxId: sandbox.id,
-        providers: providers.map((p) => ({
-          id: p.id,
-          name: p.name,
-          models: Object.fromEntries(
-            Object.entries(p.models).map(([key, model]) => [
-              key,
-              {
-                id: model.id,
-                name: model.name,
-                variants: model.variants,
-              },
-            ]),
-          ),
-        })),
-        agents: agents.map((a) => ({
-          name: a.name,
-          description: a.description,
-          mode: a.mode,
-        })),
+        providers: providers,
+        agents: agents,
       };
     } catch (error) {
       log.warn(

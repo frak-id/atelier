@@ -1,6 +1,7 @@
 import { queryOptions, useMutation } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
+import { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
 
 // --- Health ---
 
@@ -94,20 +95,26 @@ export const workspaceSessionTemplatesOverrideQuery = (workspaceId: string) =>
 export const workspaceOpenCodeConfigQuery = (workspaceId: string) =>
   queryOptions({
     queryKey: queryKeys.sessionTemplates.opencodeConfig(workspaceId),
-    queryFn: async () =>
-      unwrap(
+    queryFn: async () => {
+      const result = unwrap(
         await api.api["session-templates"]
           .workspace({ workspaceId })
           ["opencode-config"].get(),
-      ),
+      );
+      return result as OpenCodeConfigResponse | null;
+    },
     enabled: !!workspaceId,
     staleTime: 30000,
   });
 
 export const globalOpenCodeConfigQuery = queryOptions({
   queryKey: queryKeys.sessionTemplates.opencodeConfigGlobal,
-  queryFn: async () =>
-    unwrap(await api.api["session-templates"]["opencode-config"].get()),
+  queryFn: async () => {
+    const result = unwrap(
+      await api.api["session-templates"]["opencode-config"].get(),
+    );
+    return result as OpenCodeConfigResponse | null;
+  },
   staleTime: 30000,
 });
 

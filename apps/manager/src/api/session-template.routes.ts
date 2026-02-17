@@ -2,7 +2,6 @@ import { Elysia, t } from "elysia";
 import { sessionTemplateService } from "../container.ts";
 import {
   MergedSessionTemplatesResponseSchema,
-  OpenCodeConfigResponseSchema,
   SessionTemplatesSchema,
   UpdateSessionTemplatesBodySchema,
 } from "../schemas/index.ts";
@@ -84,9 +83,8 @@ export const sessionTemplateRoutes = new Elysia({
   )
   .get(
     "/workspace/:workspaceId/opencode-config",
-    async ({ params }) => {
-      return sessionTemplateService.getOpenCodeConfig(params.workspaceId);
-    },
+    async ({ params }) =>
+      sessionTemplateService.getOpenCodeConfig(params.workspaceId),
     {
       detail: {
         tags: ["session-templates"],
@@ -96,7 +94,6 @@ export const sessionTemplateRoutes = new Elysia({
       params: t.Object({
         workspaceId: t.String(),
       }),
-      response: OpenCodeConfigResponseSchema,
     },
   )
   .get(
@@ -110,6 +107,5 @@ export const sessionTemplateRoutes = new Elysia({
         summary:
           "Get OpenCode configuration (providers, agents) from any running sandbox",
       },
-      response: OpenCodeConfigResponseSchema,
     },
   );

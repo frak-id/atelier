@@ -19,24 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-export interface OpenCodeConfig {
-  available: boolean;
-  sandboxId?: string;
-  providers?: Array<{
-    id: string;
-    name: string;
-    models: Record<
-      string,
-      { id: string; name: string; variants?: Record<string, unknown> }
-    >;
-  }>;
-  agents?: Array<{ name: string; description?: string; mode: string }>;
-}
+import { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
 
 interface SessionTemplateEditDialogProps {
   template: SessionTemplate | null;
-  openCodeConfig: OpenCodeConfig | undefined;
+  openCodeConfig: OpenCodeConfigResponse | undefined;
   onClose: () => void;
   onSave: (template: SessionTemplate) => void;
   isNew: boolean;
@@ -82,15 +69,18 @@ export function SessionTemplateEditDialog({
 
   const getVariantOptions = (providerID: string, modelID: string) => {
     const provider = providers.find((p) => p.id === providerID);
-    if (!provider) return ["standard", "high", "max"];
+    if (!provider) return [];
     const model = Object.values(provider.models).find((m) => m.id === modelID);
     if (!model?.variants || Object.keys(model.variants).length === 0) {
-      return ["standard", "high", "max"];
+      return [];
     }
     return Object.keys(model.variants);
   };
 
-  const agentOptions = agents.map((a) => ({ value: a.name, label: a.name }));
+  const agentOptions = agents
+    .filter((a) => !a.hidden)
+    .filter((a) => a.mode !== "subagent")
+    .map((a) => ({ value: a.name, label: a.name }));
 
   if (!template) return null;
 
@@ -363,26 +353,29 @@ export function SessionTemplateEditDialog({
                             />
                           )}
                         </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">Variant</Label>
-                          <Select
-                            value={variant.variant ?? "high"}
-                            onValueChange={(v) =>
-                              updateVariant(idx, "variant", v)
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select variant" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {variantOptions.map((v) => (
-                                <SelectItem key={v} value={v}>
-                                  {v}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        {variantOptions.length > 0 && (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Variant</Label>
+                            <Select
+                              value={variant.variant ?? "high"}
+                              onValueChange={(v) =>
+                                updateVariant(idx, "variant", v)
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select variant" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {variantOptions.map((v) => (
+                                  <SelectItem key={v} value={v}>
+                                    {v}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+
                         <div className="space-y-1.5">
                           <Label className="text-xs">Agent</Label>
                           {agentOptions.length > 0 ? (

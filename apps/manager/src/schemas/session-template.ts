@@ -1,3 +1,7 @@
+import type {
+  AppAgentsResponse,
+  ProviderListResponse,
+} from "@opencode-ai/sdk/v2";
 import type { Static } from "elysia";
 import { t } from "elysia";
 
@@ -55,36 +59,12 @@ export type MergedSessionTemplatesResponse = Static<
   typeof MergedSessionTemplatesResponseSchema
 >;
 
-export const OpenCodeModelInfoSchema = t.Object({
-  id: t.String(),
-  name: t.String(),
-  variants: t.Optional(t.Record(t.String(), t.Unknown())),
-});
-export type OpenCodeModelInfo = Static<typeof OpenCodeModelInfoSchema>;
-
-export const OpenCodeProviderInfoSchema = t.Object({
-  id: t.String(),
-  name: t.String(),
-  models: t.Record(t.String(), OpenCodeModelInfoSchema),
-});
-export type OpenCodeProviderInfo = Static<typeof OpenCodeProviderInfoSchema>;
-
-export const OpenCodeAgentInfoSchema = t.Object({
-  name: t.String(),
-  description: t.Optional(t.String()),
-  mode: t.String(),
-});
-export type OpenCodeAgentInfo = Static<typeof OpenCodeAgentInfoSchema>;
-
-export const OpenCodeConfigResponseSchema = t.Object({
-  available: t.Boolean(),
-  sandboxId: t.Optional(t.String()),
-  providers: t.Optional(t.Array(OpenCodeProviderInfoSchema)),
-  agents: t.Optional(t.Array(OpenCodeAgentInfoSchema)),
-});
-export type OpenCodeConfigResponse = Static<
-  typeof OpenCodeConfigResponseSchema
->;
+export type OpenCodeConfigResponse = {
+  available: boolean;
+  sandboxId?: string;
+  providers?: ProviderListResponse["all"];
+  agents?: AppAgentsResponse;
+};
 
 export interface SessionTemplateVariables {
   task: {
