@@ -62,6 +62,7 @@ export const queryKeys = {
   system: {
     stats: ["system", "stats"] as const,
     storage: ["system", "storage"] as const,
+    sandbox: ["system", "sandbox"] as const,
   },
   configFiles: {
     all: ["configFiles"] as const,

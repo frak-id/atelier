@@ -35,7 +35,7 @@ export class TaskService {
     return task;
   }
 
-  create(body: CreateTaskBody): Task {
+  create(body: CreateTaskBody & { title: string }): Task {
     const now = new Date().toISOString();
     const order = this.repository.getNextOrder(body.workspaceId, "draft");
 
@@ -109,8 +109,8 @@ export class TaskService {
       throw new ValidationError("Can only start tasks in draft status");
     }
 
-    if (!task.title.trim() || !task.data.description?.trim()) {
-      throw new ValidationError("Task must have a title and description");
+    if (!task.data.description?.trim()) {
+      throw new ValidationError("Task must have a description");
     }
 
     const activeCount = this.repository.countByStatuses(task.workspaceId, [

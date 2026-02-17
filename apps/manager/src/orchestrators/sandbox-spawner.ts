@@ -1,5 +1,5 @@
 import type { SandboxConfig } from "@frak/atelier-shared";
-import { DEFAULTS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
+import { DEFAULTS, PATHS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import type {
   AgentClient,
@@ -83,6 +83,7 @@ class SpawnContext {
   private client?: FirecrackerClient;
   private usedPrebuild = false;
   private hasVmSnapshot = false;
+  private isSystem: boolean;
 
   private startTime = performance.now();
   private timings: Partial<SpawnTimings> = {};
@@ -92,6 +93,7 @@ class SpawnContext {
     private readonly options: CreateSandboxBody,
   ) {
     this.sandboxId = safeNanoid();
+    this.isSystem = options.system ?? false;
   }
 
   private async time<T>(
@@ -151,7 +153,7 @@ class SpawnContext {
   }
 
   private async loadWorkspace(): Promise<void> {
-    if (this.options.workspaceId) {
+    if (this.options.workspaceId && !this.isSystem) {
       this.workspace = this.deps.workspaceService.getById(
         this.options.workspaceId,
       );
@@ -171,13 +173,17 @@ class SpawnContext {
       this.options.baseImage ?? this.workspace?.config.baseImage;
     const lvmAvailable = await StorageService.isAvailable();
 
-    if (
-      this.options.workspaceId &&
-      this.workspace?.config.prebuild?.status === "ready"
-    ) {
-      this.usedPrebuild = await StorageService.hasPrebuild(
-        this.options.workspaceId,
-      );
+    if (this.options.workspaceId) {
+      if (this.isSystem) {
+        this.usedPrebuild = await StorageService.hasPrebuild(
+          this.options.workspaceId,
+        );
+      } else if (this.workspace?.config.prebuild?.status === "ready") {
+        this.usedPrebuild = await StorageService.hasPrebuild(
+          this.options.workspaceId,
+        );
+      }
+
       if (this.usedPrebuild) {
         const snapshotPaths = getPrebuildSnapshotPaths(
           this.options.workspaceId,
@@ -395,16 +401,29 @@ class SpawnContext {
       !this.client ||
       !this.paths ||
       !this.network ||
-      !this.options.workspaceId ||
-      !this.workspace
+      !this.options.workspaceId
     ) {
       throw new Error("Snapshot restore prerequisites not initialized");
     }
 
     const snapshotPaths = getPrebuildSnapshotPaths(this.options.workspaceId);
-    const prebuildSandboxId = this.workspace.config.prebuild?.latestId;
-    if (!prebuildSandboxId) {
-      throw new Error("Prebuild has no latestId");
+    let prebuildSandboxId: string;
+    if (this.isSystem) {
+      const metaPath = `${PATHS.SANDBOX_DIR}/system-prebuild.json`;
+      const metaFile = Bun.file(metaPath);
+      if (!(await metaFile.exists())) {
+        throw new Error("System prebuild metadata not found");
+      }
+      const meta = (await metaFile.json()) as { latestId?: string };
+      if (!meta.latestId) {
+        throw new Error("System prebuild metadata is invalid");
+      }
+      prebuildSandboxId = meta.latestId;
+    } else {
+      prebuildSandboxId = this.workspace?.config.prebuild?.latestId ?? "";
+      if (!prebuildSandboxId) {
+        throw new Error("Prebuild has no latestId");
+      }
     }
 
     // FC snapshot restore requires drive/vsock paths to match the original.
@@ -457,8 +476,8 @@ class SpawnContext {
   }
 
   private async reconfigureRestoredGuest(): Promise<void> {
-    if (!this.network || !this.workspace) {
-      throw new Error("Network or workspace not initialized");
+    if (!this.network) {
+      throw new Error("Network not initialized");
     }
 
     const newIp = this.network.ipAddress;
@@ -508,12 +527,13 @@ class SpawnContext {
 
     await this.pushAuthAndConfigs();
 
-    // Re-push secrets on every restore — they may have changed since prebuild
-    await this.pushSecretsPostBoot();
-    await this.pushGitCredentialsPostBoot();
-    await this.pushFileSecretsPostBoot();
+    if (!this.isSystem) {
+      await this.pushSecretsPostBoot();
+      await this.pushGitCredentialsPostBoot();
+      await this.pushFileSecretsPostBoot();
+    }
 
-    const serviceNames = ["vscode", "opencode"];
+    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
       serviceNames,
@@ -574,6 +594,12 @@ class SpawnContext {
 
     await this.deps.provisionService.syncClock(this.sandboxId);
 
+    if (this.isSystem) {
+      await this.provisionSystemPostBoot();
+      await this.pushAuthAndConfigs();
+      return;
+    }
+
     await this.provisionPostBoot();
 
     await this.expandFilesystem();
@@ -584,6 +610,21 @@ class SpawnContext {
     }
 
     await this.pushAuthAndConfigs();
+  }
+
+  private async provisionSystemPostBoot(): Promise<void> {
+    const sandboxConfig = this.buildSandboxConfig();
+    await this.deps.provisionService.pushSandboxConfig(
+      this.sandboxId,
+      sandboxConfig,
+    );
+    await this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
+      ATELIER_SANDBOX_ID: this.sandboxId,
+    });
+    await this.deps.provisionService.setHostname(
+      this.sandboxId,
+      `sandbox-${this.sandboxId}`,
+    );
   }
 
   private async provisionPostBoot(): Promise<void> {
@@ -844,7 +885,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       return;
     }
 
-    const serviceNames = ["vscode", "opencode"];
+    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
       serviceNames,
@@ -1016,6 +1057,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
   }
 
   private async registerRoutes(): Promise<void> {
+    if (this.isSystem) return;
     if (!this.network) throw new Error("Network not allocated");
     if (!this.sandbox) throw new Error("Sandbox not initialized");
 

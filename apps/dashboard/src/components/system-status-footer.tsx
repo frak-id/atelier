@@ -2,30 +2,38 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   AlertCircle,
+  Bot,
   CheckCircle,
   ChevronUp,
   Cpu,
   Database,
   HardDrive,
+  RefreshCw,
   Server,
 } from "lucide-react";
 import { useState } from "react";
 import {
   healthQuery,
   sandboxListQuery,
+  systemSandboxQuery,
   systemStatsQuery,
   systemStorageQuery,
+  useSystemSandboxPrebuild,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/utils";
 
 export function SystemStatusFooter() {
   const [expanded, setExpanded] = useState(false);
 
   const { data: health } = useQuery(healthQuery);
+  const { data: systemSandbox } = useQuery(systemSandboxQuery);
   const { data: stats } = useQuery(systemStatsQuery);
   const { data: storage } = useQuery(systemStorageQuery);
   const { data: sandboxes } = useQuery(sandboxListQuery());
+  const { mutate: rebuild, isPending: isRebuilding } =
+    useSystemSandboxPrebuild();
 
   const runningSandboxes =
     sandboxes?.filter((s) => s.status === "running").length ?? 0;
@@ -52,6 +60,24 @@ export function SystemStatusFooter() {
           <span className="flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" />
             {runningSandboxes}/{maxSandboxes} VMs
+          </span>
+          <span
+            className={`flex items-center gap-1.5 ${
+              !systemSandbox || systemSandbox.status === "off"
+                ? "text-muted-foreground"
+                : systemSandbox.status === "booting"
+                  ? "text-yellow-500"
+                  : systemSandbox.status === "running"
+                    ? "text-green-500"
+                    : "text-blue-500"
+            }`}
+          >
+            <Bot className="h-3.5 w-3.5" />
+            AI:{" "}
+            {systemSandbox?.status
+              ? systemSandbox.status.charAt(0).toUpperCase() +
+                systemSandbox.status.slice(1)
+              : "Off"}
           </span>
           <span className="flex items-center gap-1.5">
             {isHealthy ? (
@@ -167,9 +193,114 @@ export function SystemStatusFooter() {
               )}
             </div>
           </div>
+
+          <div className="pt-2 border-t">
+            <div className="text-sm font-medium mb-2">System Sandbox</div>
+            <div className="flex items-center gap-4">
+              <SystemSandboxBadge status={systemSandbox?.status ?? "off"} />
+
+              {systemSandbox?.prebuild && (
+                <Badge
+                  variant={
+                    systemSandbox.prebuild.building
+                      ? "warning"
+                      : systemSandbox.prebuild.exists
+                        ? "success"
+                        : "outline"
+                  }
+                  className="gap-1"
+                >
+                  {systemSandbox.prebuild.building ? (
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                  ) : systemSandbox.prebuild.exists ? (
+                    <CheckCircle className="h-3 w-3" />
+                  ) : (
+                    <AlertCircle className="h-3 w-3" />
+                  )}
+                  {systemSandbox.prebuild.building
+                    ? "Prebuild: Building..."
+                    : systemSandbox.prebuild.exists
+                      ? "Prebuild: Ready"
+                      : "No Prebuild"}
+                </Badge>
+              )}
+
+              {systemSandbox?.prebuild?.builtAt && (
+                <span className="text-xs text-muted-foreground">
+                  Built: {formatTimeAgo(systemSandbox.prebuild.builtAt)}
+                </span>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs gap-1"
+                onClick={() => rebuild()}
+                disabled={isRebuilding || systemSandbox?.prebuild?.building}
+              >
+                <RefreshCw
+                  className={`h-3 w-3 ${
+                    isRebuilding || systemSandbox?.prebuild?.building
+                      ? "animate-spin"
+                      : ""
+                  }`}
+                />
+                Rebuild
+              </Button>
+
+              {systemSandbox?.activeCount !== undefined &&
+                systemSandbox.activeCount > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {systemSandbox.activeCount} active sessions
+                  </span>
+                )}
+              {systemSandbox?.uptimeMs && (
+                <span className="text-xs text-muted-foreground">
+                  Uptime: {formatUptime(systemSandbox.uptimeMs)}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
+  );
+}
+
+function formatTimeAgo(dateStr: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMins > 0) return `${diffMins}m ago`;
+  return "just now";
+}
+
+function formatUptime(ms: number) {
+  const minutes = Math.floor(ms / 60000);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
+}
+
+function SystemSandboxBadge({ status }: { status: string }) {
+  const variant =
+    status === "running"
+      ? "success"
+      : status === "booting"
+        ? "warning"
+        : status === "idle"
+          ? "default"
+          : "outline";
+
+  return (
+    <Badge variant={variant} className="gap-1">
+      <Bot className="h-3 w-3" />
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </Badge>
   );
 }
 

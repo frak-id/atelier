@@ -18,18 +18,21 @@ import {
 } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
+import { SystemSandboxService } from "./modules/system-sandbox/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
+import { TitleService } from "./modules/title/index.ts";
 import {
   WorkspaceRepository,
   WorkspaceService,
 } from "./modules/workspace/index.ts";
 import {
   PrebuildChecker,
-  PrebuildRunner,
   SandboxDestroyer,
   SandboxLifecycle,
   SandboxSpawner,
+  SystemPrebuildRunner,
   TaskSpawner,
+  WorkspacePrebuildRunner,
 } from "./orchestrators/index.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -51,7 +54,6 @@ const sharedAuthRepository = new SharedAuthRepository();
 const configFileService = new ConfigFileService(configFileRepository);
 const gitSourceService = new GitSourceService(gitSourceRepository);
 const sshKeyService = new SshKeyService(sshKeyRepository);
-const taskService = new TaskService(taskRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = sandboxRepository;
 
@@ -84,6 +86,10 @@ const sessionTemplateService = new SessionTemplateService(
 /*                                Orchestrators                               */
 /* -------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------- */
+/*                             System Sandbox + AI                            */
+/* -------------------------------------------------------------------------- */
+
 const sandboxSpawner = new SandboxSpawner({
   sandboxService,
   workspaceService,
@@ -100,6 +106,16 @@ const sandboxDestroyer = new SandboxDestroyer({
   sandboxService,
 });
 
+const systemSandboxService = new SystemSandboxService({
+  sandboxSpawner,
+  sandboxDestroyer,
+  sandboxService,
+  internalService,
+});
+
+const titleService = new TitleService(systemSandboxService);
+const taskService = new TaskService(taskRepository);
+
 const sandboxLifecycle = new SandboxLifecycle({
   sandboxService,
   agentClient,
@@ -110,11 +126,19 @@ const sandboxLifecycle = new SandboxLifecycle({
   configFileService,
 });
 
-const prebuildRunner = new PrebuildRunner({
+const workspacePrebuildRunner = new WorkspacePrebuildRunner({
   sandboxSpawner,
   sandboxDestroyer,
   sandboxService,
   workspaceService,
+  agentClient,
+  internalService,
+});
+
+const systemPrebuildRunner = new SystemPrebuildRunner({
+  sandboxSpawner,
+  sandboxDestroyer,
+  sandboxService,
   agentClient,
   internalService,
 });
@@ -131,7 +155,7 @@ const taskSpawner = new TaskSpawner({
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
   gitSourceService,
-  prebuildRunner,
+  prebuildRunner: workspacePrebuildRunner,
 });
 
 export {
@@ -142,14 +166,17 @@ export {
   gitSourceService,
   internalService,
   prebuildChecker,
-  prebuildRunner,
+  workspacePrebuildRunner as prebuildRunner,
+  systemPrebuildRunner,
   sandboxDestroyer,
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
   sshKeyService,
+  systemSandboxService,
   taskService,
   taskSpawner,
+  titleService,
   sessionTemplateService,
   workspaceService,
 };

@@ -1,7 +1,7 @@
+import type { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
 import { queryOptions, useMutation } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
-import { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
 
 // --- Health ---
 
@@ -23,6 +23,25 @@ export const systemStorageQuery = queryOptions({
   queryKey: queryKeys.system.storage,
   queryFn: async () => unwrap(await api.api.system.storage.get()),
 });
+
+export const systemSandboxQuery = queryOptions({
+  queryKey: queryKeys.system.sandbox,
+  queryFn: async () => unwrap(await api.api.system.sandbox.get()),
+  refetchInterval: 30000,
+});
+
+export function useSystemSandboxPrebuild() {
+  return useMutation({
+    mutationKey: ["system", "sandbox", "prebuild"],
+    mutationFn: async () =>
+      unwrap(await api.api.system.sandbox.prebuild.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.system.sandbox,
+      });
+    },
+  });
+}
 
 export function useSystemCleanup() {
   return useMutation({

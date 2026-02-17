@@ -30,6 +30,8 @@ import {
   sandboxLifecycle,
   sandboxService,
   sshKeyService,
+  systemPrebuildRunner,
+  systemSandboxService,
   workspaceService,
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
@@ -242,6 +244,14 @@ const app = new Elysia()
     mode: config.server.mode,
     docs: "/swagger",
   }));
+
+await systemSandboxService.recoverFromRestart();
+
+setImmediate(() => {
+  systemPrebuildRunner.ensurePrebuild().catch((error) => {
+    logger.warn({ error }, "System prebuild auto-build failed");
+  });
+});
 
 app.listen(
   {

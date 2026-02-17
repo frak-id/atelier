@@ -24,7 +24,7 @@ export function useCreateTask() {
     mutationKey: ["tasks", "create"],
     mutationFn: async (data: {
       workspaceId: string;
-      title: string;
+      title?: string;
       description: string;
       context?: string;
       templateId?: string;

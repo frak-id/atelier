@@ -1,3 +1,4 @@
+import type { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
 import type { SessionTemplate } from "@frak/atelier-shared/constants";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -19,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
 
 interface SessionTemplateEditDialogProps {
   template: SessionTemplate | null;
