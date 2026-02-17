@@ -24,6 +24,7 @@ export class TitleService {
       const { data: session, error: createError } =
         await client.session.create();
       if (createError || !session?.id) {
+        log.error({ createError }, "Failed to create opencode session");
         throw new Error("Failed to create opencode session for title");
       }
 
@@ -35,11 +36,34 @@ export class TitleService {
         });
 
         if (promptError || !data) {
+          log.error({ promptError }, "Title prompt returned error");
           throw new Error("Title prompt failed");
+        }
+
+        if (data.info?.error) {
+          log.error(
+            { assistantError: data.info.error },
+            "Title agent LLM error",
+          );
+          throw new Error(
+            `Title agent error: ${data.info.error.name} - ${JSON.stringify(data.info.error.data)}`,
+          );
         }
 
         const textPart = data.parts.find((p) => p.type === "text");
         if (!textPart || textPart.type !== "text" || !textPart.text.trim()) {
+          log.error(
+            {
+              partTypes: data.parts.map((p) => p.type),
+              partCount: data.parts.length,
+              info: {
+                modelID: data.info?.modelID,
+                providerID: data.info?.providerID,
+                finish: data.info?.finish,
+              },
+            },
+            "No text part in title response",
+          );
           throw new Error("No text in title response");
         }
 
