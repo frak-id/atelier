@@ -48,8 +48,11 @@ export const NetworkService = {
       return;
     }
 
-    const bridgeName = config.network.bridgeName;
-    await $`sudo -n /bin/sh -c ${`/sbin/ip link del ${tapDevice} 2>/dev/null; /sbin/ip tuntap add dev ${tapDevice} mode tap && /sbin/ip link set dev ${tapDevice} master ${bridgeName} up`}`.quiet();
+    await $`sudo -n /sbin/ip link del ${tapDevice} 2>/dev/null || true`
+      .quiet()
+      .nothrow();
+    await $`sudo -n /sbin/ip tuntap add dev ${tapDevice} mode tap`.quiet();
+    await $`sudo -n /sbin/ip link set dev ${tapDevice} master ${config.network.bridgeName} up`.quiet();
 
     log.info({ tapDevice }, "TAP device created");
   },
