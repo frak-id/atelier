@@ -68,9 +68,7 @@ export type OpenCodeConfigResponse = {
 
 export interface SessionTemplateVariables {
   task: {
-    title: string;
     description: string;
-    context?: string;
     branch?: string;
   };
   workspace: {

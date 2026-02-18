@@ -22,7 +22,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -80,9 +79,7 @@ export function TaskForm({
 
   const form = useForm({
     defaultValues: {
-      title: task?.title ?? "",
       description: task?.data.description ?? "",
-      context: task?.data.context ?? "",
       selectedRepoIndices: task?.data.targetRepoIndices ?? ([] as number[]),
       selectedBranch: task?.data.baseBranch ?? "",
       selectedWorkspaceId: "",
@@ -98,9 +95,7 @@ export function TaskForm({
         await updateMutation.mutateAsync({
           id: task.id,
           data: {
-            title: value.title.trim(),
             description: value.description.trim(),
-            context: value.context.trim() || undefined,
             workflowId: value.selectedTemplateId || undefined,
             variantIndex: value.selectedVariantIndex,
           } as Parameters<typeof updateMutation.mutateAsync>[0]["data"],
@@ -109,9 +104,7 @@ export function TaskForm({
         await createMutation.mutateAsync(
           {
             workspaceId,
-            title: value.title.trim() || undefined,
             description: value.description.trim(),
-            context: value.context.trim() || undefined,
             workflowId: value.selectedTemplateId || undefined,
             variantIndex: value.selectedVariantIndex,
             baseBranch: value.selectedBranch || undefined,
@@ -135,9 +128,7 @@ export function TaskForm({
     },
   });
 
-  const title = useStore(form.store, (s) => s.values.title);
   const description = useStore(form.store, (s) => s.values.description);
-  const context = useStore(form.store, (s) => s.values.context);
   const selectedRepoIndices = useStore(
     form.store,
     (s) => s.values.selectedRepoIndices,
@@ -258,37 +249,13 @@ export function TaskForm({
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="title">Title (optional)</Label>
-        <Input
-          id="title"
-          value={title}
-          onChange={(e) => form.setFieldValue("title", e.target.value)}
-          placeholder="Auto-generated from description if empty"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="description">Description</Label>
+        <Label htmlFor="description">Task</Label>
         <Textarea
           id="description"
           value={description}
           onChange={(e) => form.setFieldValue("description", e.target.value)}
-          placeholder="Describe the task in detail. This will be sent to the AI as the initial prompt."
+          placeholder="Describe what you want the AI to work on. This will be sent as the initial prompt."
           rows={5}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="context">
-          Additional Context{" "}
-          <span className="text-muted-foreground">(optional)</span>
-        </Label>
-        <Textarea
-          id="context"
-          value={context}
-          onChange={(e) => form.setFieldValue("context", e.target.value)}
-          placeholder="Documentation links, API references, or any other helpful context."
-          rows={3}
         />
       </div>
 

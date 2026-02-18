@@ -454,9 +454,7 @@ export class TaskSpawner {
     if (promptTemplate) {
       const variables: SessionTemplateVariables = {
         task: {
-          title: task.title,
           description: task.data.description,
-          context: task.data.context,
           branch: branchName,
         },
         workspace: {
@@ -479,7 +477,7 @@ export class TaskSpawner {
       );
     }
 
-    let prompt = `# Task: ${task.title}\n\n`;
+    let prompt = "";
 
     const firstRepo = targetRepos[0];
     if (branchName && targetRepos.length === 1 && firstRepo) {
@@ -495,10 +493,6 @@ export class TaskSpawner {
     }
 
     prompt += task.data.description;
-
-    if (task.data.context) {
-      prompt += `\n\n## Additional Context\n${task.data.context}`;
-    }
 
     return prompt;
   }

@@ -26,7 +26,6 @@ export function useCreateTask() {
       workspaceId: string;
       title?: string;
       description: string;
-      context?: string;
       templateId?: string;
       variantIndex?: number;
       baseBranch?: string;
@@ -49,7 +48,6 @@ export function useUpdateTask() {
       data: {
         title?: string;
         description?: string;
-        context?: string;
         templateId?: string;
         variantIndex?: number;
       };
