@@ -117,6 +117,44 @@ function buildForwardAuthHandler(): Record<string, unknown> {
   };
 }
 
+function buildOpenCodeForwardAuthHandler(): Record<string, unknown> {
+  return {
+    handler: "reverse_proxy",
+    upstreams: [{ dial: getManagerDialAddress() }],
+    rewrite: { method: "GET", uri: "/auth/opencode/verify" },
+    headers: {
+      request: {
+        set: {
+          "X-Forwarded-Method": ["{http.request.method}"],
+          "X-Forwarded-Uri": ["{http.request.uri}"],
+          "X-Forwarded-Host": ["{http.request.host}"],
+        },
+      },
+    },
+    handle_response: [
+      {
+        match: { status_code: [2] },
+        routes: [
+          {
+            handle: [
+              {
+                handler: "headers",
+                request: {
+                  set: {
+                    Authorization: [
+                      "{http.reverse_proxy.header.X-Inject-Authorization}",
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 /**
  * CORS headers shared between the OPTIONS preflight handler and the
  * reverse-proxy response. Uses Origin reflection instead of a wildcard
@@ -172,6 +210,58 @@ function buildRoute({ domain, upstream }: RouteDefinition): CaddyRoute {
             terminal: true,
           },
           { handle: handlers },
+        ],
+      },
+    ],
+    terminal: true,
+  };
+}
+
+function buildOpenCodeRoute({ domain, upstream }: RouteDefinition): CaddyRoute {
+  const upstreamProxy: Record<string, unknown> = {
+    handler: "reverse_proxy",
+    upstreams: [{ dial: upstream }],
+    transport: { protocol: "http", read_buffer_size: 4096 },
+    headers: { response: { set: { ...CORS_HEADERS } } },
+    flush_interval: -1,
+  };
+
+  return {
+    "@id": domain,
+    match: [{ host: [domain] }],
+    handle: [
+      {
+        handler: "subroute",
+        routes: [
+          {
+            handle: [
+              {
+                handler: "headers",
+                response: {
+                  set: {
+                    ...CORS_HEADERS,
+                    "Access-Control-Allow-Methods": [
+                      "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                    ],
+                    "Access-Control-Allow-Headers": [
+                      "{http.request.header.Access-Control-Request-Headers}",
+                    ],
+                    "Access-Control-Max-Age": ["600"],
+                  },
+                },
+              },
+            ],
+            match: [{ method: ["OPTIONS"] }],
+            terminal: true,
+          },
+          {
+            match: [{ header: { Authorization: ["*"] } }],
+            handle: [upstreamProxy],
+            terminal: true,
+          },
+          ...(isMock()
+            ? [{ handle: [upstreamProxy] }]
+            : [{ handle: [buildOpenCodeForwardAuthHandler(), upstreamProxy] }]),
         ],
       },
     ],
@@ -236,7 +326,7 @@ export const CaddyService = {
         domain: vscodeDomain,
         upstream: `${ipAddress}:${ports.vscode}`,
       }),
-      buildRoute({
+      buildOpenCodeRoute({
         domain: opencodeDomain,
         upstream: `${ipAddress}:${ports.opencode}`,
       }),

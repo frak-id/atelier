@@ -25,6 +25,7 @@ export const SandboxRuntimeSchema = t.Object({
   memoryMb: t.Number(),
   pid: t.Optional(t.Number()),
   error: t.Optional(t.String()),
+  opencodePassword: t.Optional(t.String()),
 });
 export type SandboxRuntime = Static<typeof SandboxRuntimeSchema>;
 

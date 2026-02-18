@@ -3,6 +3,7 @@ import type { SandboxDestroyer } from "../../orchestrators/sandbox-destroyer.ts"
 import type { SandboxSpawner } from "../../orchestrators/sandbox-spawner.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
 import type { InternalService } from "../internal/index.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 
@@ -26,6 +27,7 @@ interface SystemSandboxDependencies {
 
 export class SystemSandboxService {
   private sandboxId: string | null = null;
+  private opencodePassword: string | null = null;
   private activeCount = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private bootPromise: Promise<string> | null = null;
@@ -73,8 +75,12 @@ export class SystemSandboxService {
     // Try to reclaim the newest one
     if (candidate && candidate.status === "running") {
       try {
-        await this.waitForOpencode(candidate.runtime.ipAddress);
+        await this.waitForOpencode(
+          candidate.runtime.ipAddress,
+          candidate.runtime.opencodePassword,
+        );
         this.sandboxId = candidate.id;
+        this.opencodePassword = candidate.runtime.opencodePassword ?? null;
         this.bootedAt = new Date(candidate.createdAt).getTime();
         log.info(
           { sandboxId: candidate.id },
@@ -116,7 +122,10 @@ export class SystemSandboxService {
 
     const ipAddress = await this.ensureSandbox();
     const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
-    const client = createOpencodeClient({ baseUrl: url });
+    const client = createOpencodeClient({
+      baseUrl: url,
+      headers: buildOpenCodeAuthHeaders(this.opencodePassword ?? undefined),
+    });
 
     return { client, ipAddress };
   }
@@ -133,6 +142,7 @@ export class SystemSandboxService {
     this.clearIdleTimer();
     this.bootPromise = null;
     this.bootedAt = null;
+    this.opencodePassword = null;
 
     if (this.sandboxId) {
       const id = this.sandboxId;
@@ -176,6 +186,7 @@ export class SystemSandboxService {
     if (this.sandboxId) {
       const sandbox = this.deps.sandboxService.getById(this.sandboxId);
       if (sandbox?.status === "running" && sandbox.runtime?.ipAddress) {
+        this.opencodePassword = sandbox.runtime.opencodePassword ?? null;
         return sandbox.runtime.ipAddress;
       }
       log.warn(
@@ -185,6 +196,7 @@ export class SystemSandboxService {
       // Destroy the stale sandbox to prevent resource leaks
       const staleId = this.sandboxId;
       this.sandboxId = null;
+      this.opencodePassword = null;
       this.bootedAt = null;
       await this.deps.sandboxDestroyer.destroy(staleId).catch((error) => {
         log.warn(
@@ -205,6 +217,7 @@ export class SystemSandboxService {
     } catch (error) {
       // Clear sandboxId on boot failure to avoid stale state
       this.sandboxId = null;
+      this.opencodePassword = null;
       this.bootedAt = null;
       throw error;
     } finally {
@@ -224,6 +237,7 @@ export class SystemSandboxService {
     });
 
     this.sandboxId = sandbox.id;
+    this.opencodePassword = sandbox.runtime.opencodePassword ?? null;
     this.bootedAt = Date.now();
     const ipAddress = sandbox.runtime.ipAddress;
 
@@ -236,12 +250,15 @@ export class SystemSandboxService {
       "System sandbox booted",
     );
 
-    await this.waitForOpencode(ipAddress);
+    await this.waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
 
     return ipAddress;
   }
 
-  private async waitForOpencode(ipAddress: string): Promise<void> {
+  private async waitForOpencode(
+    ipAddress: string,
+    password?: string,
+  ): Promise<void> {
     if (isMock()) return;
 
     const startTime = Date.now();
@@ -250,7 +267,10 @@ export class SystemSandboxService {
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT_MS) {
       try {
-        const client = createOpencodeClient({ baseUrl: url });
+        const client = createOpencodeClient({
+          baseUrl: url,
+          headers: buildOpenCodeAuthHeaders(password),
+        });
         const { data } = await client.global.health();
         if (data?.healthy) {
           log.info({ ipAddress }, "System sandbox opencode is healthy");
