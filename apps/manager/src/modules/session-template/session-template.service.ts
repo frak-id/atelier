@@ -170,17 +170,13 @@ export class SessionTemplateService {
   }
 
   private buildDefaultPrompt(variables: SessionTemplateVariables): string {
-    let prompt = `# Task: ${variables.task.title}\n\n`;
+    let prompt = "";
 
     if (variables.task.branch) {
       prompt += `**Working branch:** \`${variables.task.branch}\`\n\n`;
     }
 
     prompt += variables.task.description;
-
-    if (variables.task.context) {
-      prompt += `\n\n## Additional Context\n${variables.task.context}`;
-    }
 
     return prompt;
   }

@@ -320,16 +320,6 @@ export function TaskDrawer({
                     <p className="text-sm whitespace-pre-wrap break-words overflow-hidden">
                       {taskData.data.description}
                     </p>
-                    {taskData.data.context && (
-                      <div className="mt-4 pt-4 border-t">
-                        <h4 className="text-sm font-medium text-muted-foreground mb-2">
-                          Additional Context
-                        </h4>
-                        <p className="text-sm whitespace-pre-wrap break-words overflow-hidden text-muted-foreground">
-                          {taskData.data.context}
-                        </p>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
 

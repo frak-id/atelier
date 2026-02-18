@@ -46,7 +46,6 @@ export class TaskService {
       status: "draft",
       data: {
         description: body.description,
-        context: body.context,
         workflowId: body.workflowId,
         variantIndex: body.variantIndex,
         order,
@@ -77,7 +76,6 @@ export class TaskService {
     if (body.title !== undefined) updates.title = body.title;
     if (
       body.description !== undefined ||
-      body.context !== undefined ||
       body.workflowId !== undefined ||
       body.variantIndex !== undefined
     ) {
@@ -86,7 +84,6 @@ export class TaskService {
         ...(body.description !== undefined && {
           description: body.description,
         }),
-        ...(body.context !== undefined && { context: body.context }),
         ...(body.workflowId !== undefined && { workflowId: body.workflowId }),
         ...(body.variantIndex !== undefined && {
           variantIndex: body.variantIndex,
@@ -252,7 +249,6 @@ export class TaskService {
       status: "draft",
       data: {
         description: task.data.description,
-        context: task.data.context,
         workflowId: task.data.workflowId,
         variantIndex: task.data.variantIndex,
         order,

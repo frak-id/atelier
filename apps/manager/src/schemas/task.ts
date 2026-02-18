@@ -15,7 +15,6 @@ export type TaskSession = Static<typeof TaskSessionSchema>;
 
 export const TaskDataSchema = t.Object({
   description: t.String(),
-  context: t.Optional(t.String()),
   workflowId: t.Optional(t.String()),
   variantIndex: t.Optional(t.Number()),
   sandboxId: t.Optional(t.String()),
@@ -45,7 +44,6 @@ export const CreateTaskBodySchema = t.Object({
   workspaceId: t.String({ minLength: 1 }),
   title: t.Optional(t.String({ maxLength: 200 })),
   description: t.String({ minLength: 1 }),
-  context: t.Optional(t.String()),
   workflowId: t.Optional(t.String()),
   variantIndex: t.Optional(t.Number()),
   baseBranch: t.Optional(t.String()),
@@ -56,7 +54,6 @@ export type CreateTaskBody = Static<typeof CreateTaskBodySchema>;
 export const UpdateTaskBodySchema = t.Object({
   title: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
   description: t.Optional(t.String({ minLength: 1 })),
-  context: t.Optional(t.String()),
   workflowId: t.Optional(t.String()),
   variantIndex: t.Optional(t.Number()),
 });
