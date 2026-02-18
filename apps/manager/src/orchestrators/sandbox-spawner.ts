@@ -483,6 +483,7 @@ class SpawnContext {
     const newIp = this.network.ipAddress;
     const gateway = this.network.gateway;
 
+    // Step 1: Network reconfig (must be first)
     await this.deps.agentClient.exec(
       this.sandboxId,
       `ip addr flush dev eth0 && ip addr add ${newIp}/24 dev eth0 && ip link set eth0 up && ip route replace default via ${gateway} dev eth0`,
@@ -494,45 +495,51 @@ class SpawnContext {
       "Guest network reconfigured",
     );
 
-    await this.deps.provisionService.syncClock(this.sandboxId);
-
-    await this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
-      ATELIER_SANDBOX_ID: this.sandboxId,
-    });
-
-    await this.deps.provisionService.setHostname(
-      this.sandboxId,
-      `sandbox-${this.sandboxId}`,
-    );
-
-    const imageInfo = await SharedStorageService.getBinariesImageInfo();
-    if (imageInfo.exists) {
-      const mountResult = await this.deps.agentClient.exec(
+    // Step 2: Everything else in parallel (all independent after network is up)
+    const parallelOps: Promise<void>[] = [
+      this.deps.provisionService.syncClock(this.sandboxId),
+      this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
+        ATELIER_SANDBOX_ID: this.sandboxId,
+      }),
+      this.deps.provisionService.setHostname(
         this.sandboxId,
-        `mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared`,
-        { timeout: 5000 },
-      );
-      if (mountResult.exitCode === 0) {
-        log.info(
-          { sandboxId: this.sandboxId },
-          "Shared binaries mounted in restored guest",
-        );
-      } else {
-        log.warn(
-          { sandboxId: this.sandboxId, stderr: mountResult.stderr },
-          "Failed to mount shared binaries in restored guest",
-        );
-      }
-    }
-
-    await this.pushAuthAndConfigs();
+        `sandbox-${this.sandboxId}`,
+      ),
+      (async () => {
+        const imageInfo = await SharedStorageService.getBinariesImageInfo();
+        if (imageInfo.exists) {
+          const mountResult = await this.deps.agentClient.exec(
+            this.sandboxId,
+            `mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared`,
+            { timeout: 5000 },
+          );
+          if (mountResult.exitCode === 0) {
+            log.info(
+              { sandboxId: this.sandboxId },
+              "Shared binaries mounted in restored guest",
+            );
+          } else {
+            log.warn(
+              { sandboxId: this.sandboxId, stderr: mountResult.stderr },
+              "Failed to mount shared binaries in restored guest",
+            );
+          }
+        }
+      })(),
+      this.pushAuthAndConfigs(),
+    ];
 
     if (!this.isSystem) {
-      await this.pushSecretsPostBoot();
-      await this.pushGitCredentialsPostBoot();
-      await this.pushFileSecretsPostBoot();
+      parallelOps.push(
+        this.pushSecretsPostBoot(),
+        this.pushGitCredentialsPostBoot(),
+        this.pushFileSecretsPostBoot(),
+      );
     }
 
+    await Promise.all(parallelOps);
+
+    // Step 3: Start services (needs configs pushed first)
     const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
@@ -635,20 +642,21 @@ class SpawnContext {
       sandboxConfig,
     );
 
-    await this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
-      ATELIER_SANDBOX_ID: this.sandboxId,
-    });
-
-    await this.deps.provisionService.setHostname(
-      this.sandboxId,
-      `sandbox-${this.sandboxId}`,
-    );
-
-    await this.pushSecretsPostBoot();
-    await this.pushGitCredentialsPostBoot();
-    await this.pushFileSecretsPostBoot();
-    await this.pushOhMyOpenCodeCachePostBoot();
-    await this.pushSandboxMdPostBoot();
+    // These are all independent — parallelize
+    await Promise.all([
+      this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
+        ATELIER_SANDBOX_ID: this.sandboxId,
+      }),
+      this.deps.provisionService.setHostname(
+        this.sandboxId,
+        `sandbox-${this.sandboxId}`,
+      ),
+      this.pushSecretsPostBoot(),
+      this.pushGitCredentialsPostBoot(),
+      this.pushFileSecretsPostBoot(),
+      this.pushOhMyOpenCodeCachePostBoot(),
+      this.pushSandboxMdPostBoot(),
+    ]);
   }
 
   private buildSandboxConfig(): SandboxConfig {

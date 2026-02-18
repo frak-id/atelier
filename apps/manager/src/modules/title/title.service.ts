@@ -8,13 +8,41 @@ const MAX_FALLBACK_TITLE_LENGTH = 80;
 export class TitleService {
   constructor(private readonly systemSandbox: SystemSandboxService) {}
 
-  async generateTitle(description: string): Promise<string> {
-    try {
-      return await this.generateViaOpenCode(description);
-    } catch (error) {
-      log.warn({ error }, "Title generation failed, using fallback");
-      return this.fallbackTitle(description);
-    }
+  /**
+   * Generate a fallback title synchronously (truncated description).
+   */
+  fallbackTitle(description: string): string {
+    const trimmed = description.trim();
+    if (trimmed.length <= MAX_FALLBACK_TITLE_LENGTH) return trimmed;
+
+    const truncated = trimmed.slice(0, MAX_FALLBACK_TITLE_LENGTH);
+    const lastSpace = truncated.lastIndexOf(" ");
+    return lastSpace > 40
+      ? `${truncated.slice(0, lastSpace)}...`
+      : `${truncated}...`;
+  }
+
+  /**
+   * Generate a title via LLM in the background.
+   * Calls `onTitle` with the generated title when ready.
+   * Silently does nothing on failure (fallback title already set).
+   */
+  generateTitleInBackground(
+    description: string,
+    onTitle: (title: string) => void,
+  ): void {
+    setImmediate(() => {
+      this.generateViaOpenCode(description)
+        .then((title) => {
+          onTitle(title);
+        })
+        .catch((error) => {
+          log.warn(
+            { error },
+            "Background title generation failed, keeping fallback",
+          );
+        });
+    });
   }
 
   private async generateViaOpenCode(description: string): Promise<string> {
@@ -76,16 +104,5 @@ export class TitleService {
     } finally {
       this.systemSandbox.release();
     }
-  }
-
-  private fallbackTitle(description: string): string {
-    const trimmed = description.trim();
-    if (trimmed.length <= MAX_FALLBACK_TITLE_LENGTH) return trimmed;
-
-    const truncated = trimmed.slice(0, MAX_FALLBACK_TITLE_LENGTH);
-    const lastSpace = truncated.lastIndexOf(" ");
-    return lastSpace > 40
-      ? `${truncated.slice(0, lastSpace)}...`
-      : `${truncated}...`;
   }
 }

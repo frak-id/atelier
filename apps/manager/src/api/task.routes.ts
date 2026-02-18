@@ -49,14 +49,26 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
   )
   .post(
     "/",
-    async ({ body, set }) => {
+    ({ body, set }) => {
       const title =
-        body.title?.trim() ||
-        (await titleService.generateTitle(body.description));
+        body.title?.trim() || titleService.fallbackTitle(body.description);
 
       log.info({ title, workspaceId: body.workspaceId }, "Creating task");
 
       const task = taskService.create({ ...body, title });
+
+      if (!body.title?.trim()) {
+        titleService.generateTitleInBackground(
+          body.description,
+          (generatedTitle) => {
+            taskService.updateTitle(task.id, generatedTitle);
+            taskSpawner
+              .updateSessionTitles(task.id, generatedTitle)
+              .catch(() => {});
+          },
+        );
+      }
+
       set.status = 201;
       return task;
     },
