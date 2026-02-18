@@ -594,6 +594,8 @@ class SpawnContext {
 
     await this.deps.provisionService.syncClock(this.sandboxId);
 
+    await this.expandFilesystem();
+
     if (this.isSystem) {
       await this.provisionSystemPostBoot();
       await this.pushAuthAndConfigs();
@@ -602,7 +604,6 @@ class SpawnContext {
 
     await this.provisionPostBoot();
 
-    await this.expandFilesystem();
     await this.setupSwap();
 
     if (this.needsRepoClone()) {
