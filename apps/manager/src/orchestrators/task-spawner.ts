@@ -166,6 +166,39 @@ export class TaskSpawner {
     });
   }
 
+  async updateSessionTitles(taskId: string, title: string): Promise<void> {
+    const task = this.deps.taskService.getById(taskId);
+    if (!task?.data.sandboxId || !task.data.sessions?.length) {
+      return;
+    }
+
+    const sandbox = this.deps.sandboxService.getById(task.data.sandboxId);
+    if (!sandbox?.runtime?.ipAddress) return;
+
+    const url = `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`;
+    const client = createOpencodeClient({ baseUrl: url });
+
+    await Promise.allSettled(
+      task.data.sessions.map((session) =>
+        client.session.update({ sessionID: session.id, title }).catch((err) => {
+          log.warn(
+            {
+              taskId,
+              sessionId: session.id,
+              error: String(err),
+            },
+            "Failed to update OpenCode session title",
+          );
+        }),
+      ),
+    );
+
+    log.info(
+      { taskId, title, sessionCount: task.data.sessions.length },
+      "OpenCode session titles updated",
+    );
+  }
+
   async addSession(taskId: string, sessionTemplateId: string): Promise<void> {
     const task = this.deps.taskService.getById(taskId);
     if (!task) {
@@ -473,6 +506,7 @@ export class TaskSpawner {
   private async waitForOpencode(ipAddress: string): Promise<void> {
     const startTime = Date.now();
     const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+    let delay = 250;
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
       try {
@@ -483,7 +517,8 @@ export class TaskSpawner {
           return;
         }
       } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 2, 2000);
     }
 
     throw new Error("OpenCode server did not become healthy within timeout");

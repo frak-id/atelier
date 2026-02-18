@@ -221,6 +221,17 @@ export class TaskService {
     return updated;
   }
 
+  updateTitle(id: string, title: string): Task {
+    this.getByIdOrThrow(id);
+    const updated = this.repository.update(id, { title });
+    eventBus.emit({
+      type: "task.updated",
+      properties: { id, workspaceId: updated.workspaceId },
+    });
+    log.info({ taskId: id, title }, "Task title updated");
+    return updated;
+  }
+
   reorder(id: string, newOrder: number): Task {
     const task = this.getByIdOrThrow(id);
     const updated = this.repository.update(id, {

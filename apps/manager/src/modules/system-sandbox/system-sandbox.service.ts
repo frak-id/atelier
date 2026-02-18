@@ -10,7 +10,6 @@ const log = createChildLogger("system-sandbox");
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
-const HEALTH_POLL_INTERVAL_MS = 2000;
 const SYSTEM_SANDBOX_VCPUS = 1;
 const SYSTEM_SANDBOX_MEMORY_MB = 1024;
 
@@ -247,6 +246,7 @@ export class SystemSandboxService {
 
     const startTime = Date.now();
     const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+    let delay = 250;
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT_MS) {
       try {
@@ -257,7 +257,8 @@ export class SystemSandboxService {
           return;
         }
       } catch {}
-      await Bun.sleep(HEALTH_POLL_INTERVAL_MS);
+      await Bun.sleep(delay);
+      delay = Math.min(delay * 2, 2000);
     }
 
     throw new Error(
