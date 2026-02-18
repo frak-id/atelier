@@ -1,6 +1,7 @@
 import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
+import { sandboxService } from "../container.ts";
 import { isUserAuthorized } from "../modules/auth/auth.service.ts";
 import { verifyJwt } from "../shared/lib/auth.ts";
 import {
@@ -179,6 +180,63 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     if (!user) {
       set.status = 401;
       return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
+    }
+
+    return { ok: true, user: user.username };
+  })
+  .get("/opencode/verify", async ({ cookie, set, headers }) => {
+    if (isMock()) {
+      const mockAuth = Buffer.from("opencode:mock-password").toString("base64");
+      set.headers["X-Inject-Authorization"] = `Basic ${mockAuth}`;
+      return { ok: true };
+    }
+
+    const token = cookie.sandbox_token?.value as string | undefined;
+    if (!token) {
+      set.status = 401;
+      return { error: "UNAUTHORIZED", message: "No token provided" };
+    }
+
+    const user = await verifyJwt(token);
+    if (!user) {
+      set.status = 401;
+      return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
+    }
+
+    const forwardedHost = headers["x-forwarded-host"];
+    if (!forwardedHost) {
+      set.status = 400;
+      return { error: "BAD_REQUEST", message: "Missing X-Forwarded-Host" };
+    }
+
+    const match = forwardedHost.match(/^opencode-([^.]+)\./);
+    if (!match?.[1]) {
+      set.status = 400;
+      return {
+        error: "BAD_REQUEST",
+        message: "Cannot extract sandbox ID from host",
+      };
+    }
+
+    const sandboxId = match[1];
+    const sandbox = sandboxService.getById(sandboxId);
+    if (!sandbox) {
+      set.status = 404;
+      return {
+        error: "NOT_FOUND",
+        message: "Sandbox not found",
+      };
+    }
+
+    // If sandbox has a password, inject Basic Auth header
+    // for Caddy to forward to OpenCode. Otherwise let the
+    // request through without auth (legacy sandboxes started
+    // before password support was added).
+    if (sandbox.runtime.opencodePassword) {
+      const basicAuth = Buffer.from(
+        `opencode:${sandbox.runtime.opencodePassword}`,
+      ).toString("base64");
+      set.headers["X-Inject-Authorization"] = `Basic ${basicAuth}`;
     }
 
     return { ok: true, user: user.username };

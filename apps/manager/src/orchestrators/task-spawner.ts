@@ -13,6 +13,7 @@ import type {
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("task-spawner");
@@ -96,7 +97,7 @@ export class TaskSpawner {
         throw new Error("Agent failed to become ready");
       }
 
-      await this.waitForOpencode(ipAddress);
+      await this.waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
 
       const targetRepos = this.getTargetRepos(task, workspace);
       let branchName: string | undefined;
@@ -130,6 +131,7 @@ export class TaskSpawner {
         sessionTemplateId,
         ipAddress,
         opencodeDirectory,
+        sandbox.runtime.opencodePassword,
       );
 
       log.info({ taskId, sandboxId }, "Task initial session started");
@@ -176,7 +178,10 @@ export class TaskSpawner {
     if (!sandbox?.runtime?.ipAddress) return;
 
     const url = `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`;
-    const client = createOpencodeClient({ baseUrl: url });
+    const client = createOpencodeClient({
+      baseUrl: url,
+      headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
+    });
 
     await Promise.allSettled(
       task.data.sessions.map((session) =>
@@ -238,6 +243,7 @@ export class TaskSpawner {
       sessionTemplateId,
       sandbox.runtime.ipAddress,
       opencodeDirectory,
+      sandbox.runtime.opencodePassword,
     );
   }
 
@@ -257,6 +263,7 @@ export class TaskSpawner {
     sessionTemplateId: string,
     ipAddress: string,
     opencodeDirectory?: string,
+    password?: string,
   ): Promise<void> {
     const task = this.deps.taskService.getById(taskId);
     if (!task) {
@@ -279,6 +286,7 @@ export class TaskSpawner {
       opencodeUrl,
       task.title,
       opencodeDirectory,
+      password,
     );
 
     if ("error" in sessionResult) {
@@ -306,6 +314,7 @@ export class TaskSpawner {
       session.id,
       prompt,
       sessionConfig,
+      password,
     );
 
     if ("error" in promptResult) {
@@ -497,14 +506,20 @@ export class TaskSpawner {
     return prompt;
   }
 
-  private async waitForOpencode(ipAddress: string): Promise<void> {
+  private async waitForOpencode(
+    ipAddress: string,
+    password?: string,
+  ): Promise<void> {
     const startTime = Date.now();
     const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
     let delay = 250;
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
       try {
-        const client = createOpencodeClient({ baseUrl: url });
+        const client = createOpencodeClient({
+          baseUrl: url,
+          headers: buildOpenCodeAuthHeaders(password),
+        });
         const { data } = await client.global.health();
         if (data?.healthy) {
           log.info({ ip: ipAddress }, "OpenCode server is healthy");
@@ -522,9 +537,13 @@ export class TaskSpawner {
     baseUrl: string,
     title: string,
     directory?: string,
+    password?: string,
   ): Promise<{ sessionId: string } | { error: string }> {
     try {
-      const client = createOpencodeClient({ baseUrl });
+      const client = createOpencodeClient({
+        baseUrl,
+        headers: buildOpenCodeAuthHeaders(password),
+      });
       const { data, error } = await client.session.create({
         title,
         ...(directory && { directory }),
@@ -543,9 +562,13 @@ export class TaskSpawner {
     sessionId: string,
     message: string,
     config?: SessionConfig,
+    password?: string,
   ): Promise<{ success: true } | { error: string }> {
     try {
-      const client = createOpencodeClient({ baseUrl });
+      const client = createOpencodeClient({
+        baseUrl,
+        headers: buildOpenCodeAuthHeaders(password),
+      });
 
       const result = await client.session.promptAsync({
         sessionID: sessionId,

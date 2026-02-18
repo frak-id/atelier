@@ -10,6 +10,7 @@ import type {
 } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
 import type { ConfigFileService } from "../config-file/index.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import type { WorkspaceService } from "../workspace/index.ts";
@@ -252,7 +253,7 @@ export class SessionTemplateService {
 
   private async fetchOpenCodeConfigFromSandbox(sandbox: {
     id: string;
-    runtime?: { ipAddress?: string };
+    runtime?: { ipAddress?: string; opencodePassword?: string };
   }) {
     const ipAddress = sandbox.runtime?.ipAddress;
     if (!ipAddress) {
@@ -262,6 +263,7 @@ export class SessionTemplateService {
     try {
       const client = createOpencodeClient({
         baseUrl: `http://${ipAddress}:${config.advanced.vm.opencode.port}`,
+        headers: buildOpenCodeAuthHeaders(sandbox.runtime?.opencodePassword),
       });
 
       const [providersResult, agentsResult] = await Promise.all([

@@ -1,6 +1,7 @@
 import type { SandboxConfig } from "@frak/atelier-shared";
 import { DEFAULTS, PATHS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
+import { customAlphabet } from "nanoid";
 import type {
   AgentClient,
   AgentOperations,
@@ -287,6 +288,10 @@ class SpawnContext {
       this.options.memoryMb ??
       this.workspace?.config.memoryMb ??
       DEFAULTS.MEMORY_MB;
+    const generatePassword = customAlphabet(
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+    );
+    const opencodePassword = generatePassword(32);
 
     this.sandbox = {
       id: this.sandboxId,
@@ -298,6 +303,7 @@ class SpawnContext {
         urls: { vscode: "", opencode: "", ssh: "" },
         vcpus,
         memoryMb,
+        opencodePassword,
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -698,6 +704,11 @@ class SpawnContext {
           command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
           user: "dev" as const,
           autoStart: true,
+          env: {
+            ...(this.sandbox?.runtime.opencodePassword && {
+              OPENCODE_SERVER_PASSWORD: this.sandbox.runtime.opencodePassword,
+            }),
+          },
         },
         terminal: {
           port: terminalPort,
