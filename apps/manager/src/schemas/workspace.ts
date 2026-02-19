@@ -73,6 +73,7 @@ export const WorkspaceConfigSchema = t.Object({
     maximum: 16384,
     default: DEFAULTS.MEMORY_MB,
   }),
+  description: t.Optional(t.String({ maxLength: 4000 })),
   initCommands: t.Array(t.String(), { default: [] }),
   secrets: t.Record(t.String(), t.String(), { default: {} }),
   fileSecrets: t.Optional(t.Array(FileSecretSchema, { default: [] })),

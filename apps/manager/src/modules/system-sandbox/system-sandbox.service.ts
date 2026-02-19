@@ -82,11 +82,14 @@ export class SystemSandboxService {
         this.sandboxId = candidate.id;
         this.opencodePassword = candidate.runtime.opencodePassword ?? null;
         this.bootedAt = new Date(candidate.createdAt).getTime();
+        await this.registerMcpServer(
+          candidate.runtime.ipAddress,
+          candidate.runtime.opencodePassword,
+        );
         log.info(
           { sandboxId: candidate.id },
           "Reclaimed system sandbox from previous run",
         );
-        // Start idle timer since nobody is actively using it
         this.startIdleTimer();
       } catch {
         log.warn(
@@ -251,8 +254,45 @@ export class SystemSandboxService {
     );
 
     await this.waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
+    await this.registerMcpServer(ipAddress, sandbox.runtime.opencodePassword);
 
     return ipAddress;
+  }
+
+  private async registerMcpServer(
+    ipAddress: string,
+    password?: string,
+  ): Promise<void> {
+    const mcpToken = config.server.mcpToken;
+    const mcpUrl = `http://${config.network.bridgeIp}:${config.server.port}/mcp`;
+
+    const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+    const client = createOpencodeClient({
+      baseUrl: url,
+      headers: buildOpenCodeAuthHeaders(password),
+    });
+
+    try {
+      await client.mcp.add({
+        name: "atelier-manager",
+        config: {
+          type: "remote" as const,
+          url: mcpUrl,
+          enabled: true,
+          ...(mcpToken && {
+            headers: { Authorization: `Bearer ${mcpToken}` },
+          }),
+          oauth: false,
+          timeout: 10000,
+        },
+      });
+      log.info({ ipAddress }, "MCP server registered with system sandbox");
+    } catch (error) {
+      log.warn(
+        { error, ipAddress },
+        "Failed to register MCP server with system sandbox",
+      );
+    }
   }
 
   private async waitForOpencode(

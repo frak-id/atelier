@@ -40,6 +40,7 @@ import { NetworkService } from "./infrastructure/network/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
+import { mcpRoutes } from "./mcp/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
@@ -217,6 +218,7 @@ const app = new Elysia()
   .use(publicConfigRoutes)
   .use(internalWellKnownRoutes)
   .use(authRoutes)
+  .use(mcpRoutes)
   .group("/api", (app) =>
     app
       .use(githubOAuthRoutes)
