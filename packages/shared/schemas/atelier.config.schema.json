@@ -241,7 +241,7 @@
                   "type": "number"
                 },
                 "version": {
-                  "default": "4.108.2",
+                  "default": "4.109.2",
                   "type": "string"
                 }
               }

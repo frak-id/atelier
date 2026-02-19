@@ -237,8 +237,8 @@ const VmService = (defaultPort: number) =>
 
 export const AdvancedVmConfigSchema = Type.Object(
   {
-    vscode: VmServiceWithVersion(8080, "4.108.2"),
-    opencode: VmServiceWithVersion(3000, "1.2.5"),
+    vscode: VmServiceWithVersion(8080, "4.109.2"),
+    opencode: VmServiceWithVersion(3000, "1.2.6"),
     browser: VmService(6080),
     terminal: VmService(7681),
     agent: VmService(9999),
