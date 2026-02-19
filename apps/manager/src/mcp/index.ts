@@ -56,6 +56,7 @@ export const mcpRoutes = new Elysia({ prefix: "/mcp" }).all(
 
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
+      enableJsonResponse: true,
     });
 
     await server.connect(transport);

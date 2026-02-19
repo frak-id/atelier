@@ -26,6 +26,9 @@
 	handle /swagger* {
 		reverse_proxy localhost:{{MANAGER_PORT}}
 	}
+	handle /mcp* {
+		reverse_proxy localhost:{{MANAGER_PORT}}
+	}
 	handle {
 		root * /opt/atelier/apps/dashboard/dist
 		try_files {path} /index.html
