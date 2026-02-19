@@ -218,6 +218,21 @@ export class TaskService {
     return updated;
   }
 
+  setIntegrationMetadata(
+    id: string,
+    integration: NonNullable<Task["data"]["integration"]>,
+  ): Task {
+    const task = this.getByIdOrThrow(id);
+    const updated = this.repository.update(id, {
+      data: { ...task.data, integration },
+    });
+    log.info(
+      { taskId: id, source: integration.source },
+      "Integration metadata set",
+    );
+    return updated;
+  }
+
   updateTitle(id: string, title: string): Task {
     this.getByIdOrThrow(id);
     const updated = this.repository.update(id, { title });

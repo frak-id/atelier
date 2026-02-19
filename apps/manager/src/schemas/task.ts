@@ -13,6 +13,22 @@ export const TaskSessionSchema = t.Object({
 });
 export type TaskSession = Static<typeof TaskSessionSchema>;
 
+export const TaskIntegrationMetadataSchema = t.Optional(
+  t.Object({
+    source: t.String(),
+    slack: t.Optional(
+      t.Object({
+        channel: t.String(),
+        threadTs: t.String(),
+        triggeredBy: t.Optional(t.String()),
+      }),
+    ),
+  }),
+);
+export type TaskIntegrationMetadata = Static<
+  typeof TaskIntegrationMetadataSchema
+>;
+
 export const TaskDataSchema = t.Object({
   description: t.String(),
   workflowId: t.Optional(t.String()),
@@ -26,6 +42,7 @@ export const TaskDataSchema = t.Object({
   baseBranch: t.Optional(t.String()),
   branchName: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
+  integration: TaskIntegrationMetadataSchema,
 });
 export type TaskData = Static<typeof TaskDataSchema>;
 

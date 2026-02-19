@@ -18,6 +18,7 @@ import {
   sessionTemplateRoutes,
   sharedAuthRoutes,
   sharedStorageRoutes,
+  slackRoutes,
   sshKeyRoutes,
   systemRoutes,
   taskRoutes,
@@ -29,6 +30,7 @@ import {
   prebuildChecker,
   sandboxLifecycle,
   sandboxService,
+  slackService,
   sshKeyService,
   systemPrebuildRunner,
   systemSandboxService,
@@ -36,6 +38,7 @@ import {
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
+import { eventBus } from "./infrastructure/events/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
@@ -141,6 +144,15 @@ const app = new Elysia()
     }
 
     await RegistryService.initialize();
+
+    if (slackService.isEnabled()) {
+      eventBus.subscribe((event) => {
+        slackService.onTaskEvent(event).catch((err) => {
+          logger.error({ error: err }, "Slack task event handler failed");
+        });
+      });
+      logger.info("Slack integration enabled");
+    }
   })
   .use(
     cors({
@@ -219,6 +231,7 @@ const app = new Elysia()
   .use(internalWellKnownRoutes)
   .use(authRoutes)
   .use(mcpRoutes)
+  .group("/integrations", (app) => app.use(slackRoutes))
   .group("/api", (app) =>
     app
       .use(githubOAuthRoutes)

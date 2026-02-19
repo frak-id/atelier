@@ -17,6 +17,7 @@ import {
   SandboxRepository,
 } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
+import { SlackService } from "./modules/slack/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { SystemSandboxService } from "./modules/system-sandbox/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
@@ -152,6 +153,14 @@ const taskSpawner = new TaskSpawner({
   agentClient,
 });
 
+const slackService = new SlackService({
+  systemSandboxService,
+  taskService,
+  taskSpawner,
+  workspaceService,
+  titleService,
+});
+
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
   gitSourceService,
@@ -172,6 +181,7 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
+  slackService,
   sshKeyService,
   systemSandboxService,
   taskService,
