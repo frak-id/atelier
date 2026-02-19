@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Elysia } from "elysia";
-import { isMock } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { registerDevCommandTools } from "./tools/dev-commands.ts";
 import { registerSandboxTools } from "./tools/sandbox.ts";
@@ -11,12 +11,6 @@ import { registerTaskTools } from "./tools/task.ts";
 import { registerWorkspaceTools } from "./tools/workspace.ts";
 
 const log = createChildLogger("mcp");
-
-const MCP_TOKEN_ENV = "ATELIER_MCP_TOKEN";
-
-function getMcpToken(): string | undefined {
-  return process.env[MCP_TOKEN_ENV] || undefined;
-}
 
 function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -37,7 +31,7 @@ function createMcpServer(): McpServer {
 function verifyMcpAuth(request: Request): boolean {
   if (isMock()) return true;
 
-  const token = getMcpToken();
+  const token = config.server.mcpToken;
   if (!token) return true;
 
   const authHeader = request.headers.get("authorization");

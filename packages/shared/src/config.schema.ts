@@ -112,6 +112,8 @@ export const ServerConfigSchema = Type.Object(
     host: Type.String({ default: "0.0.0.0" }),
     /** Maximum concurrent sandboxes */
     maxSandboxes: Type.Number({ default: 20 }),
+    /** Bearer token for MCP server authentication — if empty, MCP auth is disabled */
+    mcpToken: Type.String({ default: "" }),
   },
   { default: {} },
 );
@@ -329,6 +331,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SERVER_PORT: "server.port",
   ATELIER_SERVER_HOST: "server.host",
   ATELIER_MAX_SANDBOXES: "server.maxSandboxes",
+  ATELIER_MCP_TOKEN: "server.mcpToken",
 
   ATELIER_BRIDGE_NAME: "network.bridgeName",
   ATELIER_BRIDGE_IP: "network.bridgeIp",
