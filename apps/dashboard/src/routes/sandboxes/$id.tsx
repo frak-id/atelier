@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type { Sandbox } from "@/api/client";
+import { registerOpencodePassword } from "@/api/opencode";
 import {
   deriveBrowserStatus,
   sandboxDetailQuery,
@@ -98,6 +99,15 @@ function SandboxImmersionPage() {
     ...workspaceDetailQuery(sandbox?.workspaceId ?? ""),
     enabled: !!sandbox?.workspaceId,
   });
+
+  useEffect(() => {
+    if (sandbox?.runtime.opencodePassword) {
+      registerOpencodePassword(
+        sandbox.runtime.urls.opencode,
+        sandbox.runtime.opencodePassword,
+      );
+    }
+  }, [sandbox]);
 
   const isMobile = useIsMobile();
 

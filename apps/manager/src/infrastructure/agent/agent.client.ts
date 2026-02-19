@@ -441,20 +441,6 @@ export class AgentClient {
     );
   }
 
-  async serviceRestart(
-    sandboxId: string,
-    name: string,
-  ): Promise<ServiceStartResult> {
-    return this.request<ServiceStartResult>(
-      sandboxId,
-      `/services/${name}/restart`,
-      {
-        method: "POST",
-        timeout: 30000,
-      },
-    );
-  }
-
   async serviceLogs(
     sandboxId: string,
     name: string,

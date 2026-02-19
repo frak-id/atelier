@@ -34,9 +34,9 @@ export const servicesRoutes = new Elysia()
     },
   )
   .post(
-    "/:id/services/:name/restart",
+    "/:id/services/:name/start",
     async ({ params, sandbox }) => {
-      const result = await agentClient.serviceRestart(sandbox.id, params.name);
+      const result = await agentClient.serviceStart(sandbox.id, params.name);
       internalBus.emit("sandbox.poll-services", sandbox.id);
       return result;
     },

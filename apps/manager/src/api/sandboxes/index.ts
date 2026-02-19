@@ -369,21 +369,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
           const browserPort = config.advanced.vm.browser.port;
 
-          const ensureStarted = async (service: string) => {
-            try {
-              await agentClient.serviceStart(sandbox.id, service);
-            } catch (err) {
-              // 409 = already running, safe to ignore
-              if (!String(err).includes("already running")) throw err;
-            }
-          };
-
           const startBrowser = async () => {
-            await ensureStarted("kasmvnc");
+            await agentClient.serviceStart(sandbox.id, "kasmvnc");
             await new Promise((r) => setTimeout(r, 500));
-            await ensureStarted("openbox");
+            await agentClient.serviceStart(sandbox.id, "openbox");
             await new Promise((r) => setTimeout(r, 200));
-            await ensureStarted("chromium");
+            await agentClient.serviceStart(sandbox.id, "chromium");
           };
 
           startBrowser().catch((err) => {

@@ -26,7 +26,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { createOpenCodeSession } from "@/api/opencode";
+import {
+  createOpenCodeSession,
+  registerOpencodePassword,
+} from "@/api/opencode";
 import {
   deriveBrowserStatus,
   opencodeSessionsQuery,
@@ -41,7 +44,7 @@ import {
   useGitPush,
   useRestartSandbox,
   useSaveAsPrebuild,
-  useServiceRestart,
+  useServiceStart,
   useServiceStop,
   useStartBrowser,
   useStartSandbox,
@@ -110,6 +113,15 @@ export function SandboxDrawer({
     ...workspaceDetailQuery(sandbox?.workspaceId ?? ""),
     enabled: !!sandbox?.workspaceId,
   });
+
+  useEffect(() => {
+    if (sandbox?.runtime.opencodePassword) {
+      registerOpencodePassword(
+        sandbox.runtime.urls.opencode,
+        sandbox.runtime.opencodePassword,
+      );
+    }
+  }, [sandbox]);
 
   const { data: tasks } = useQuery({
     ...taskListQuery(),
@@ -1374,7 +1386,7 @@ function ServicesTab({
   services?: ServiceStatus[];
 }) {
   const stopMutation = useServiceStop(sandboxId);
-  const restartMutation = useServiceRestart(sandboxId);
+  const restartMutation = useServiceStart(sandboxId);
 
   return (
     <Card>

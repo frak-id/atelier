@@ -154,14 +154,7 @@ pub async fn handle_service_start(
             })
             .unwrap(),
         ),
-        Err(e) => {
-            let status = if e.contains("already running") {
-                StatusCode::CONFLICT
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            json_error(status, &e)
-        }
+        Err(e) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
     }
 }
 
@@ -194,13 +187,6 @@ pub async fn handle_service_stop(
         },
     };
     json_ok(serde_json::to_value(resp).unwrap())
-}
-
-pub async fn handle_service_restart(
-    name: &str,
-) -> Response<Full<Bytes>> {
-    RUNNING_SERVICES.stop_process(name, 500).await;
-    handle_service_start(name).await
 }
 
 pub async fn handle_service_logs(

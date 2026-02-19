@@ -501,7 +501,14 @@ class SpawnContext {
       "Guest network reconfigured",
     );
 
-    // Step 2: Everything else in parallel (all independent after network is up)
+    // Step 2: Push fresh sandbox config (agent start is idempotent — kills stale processes)
+    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
+    await this.deps.provisionService.pushSandboxConfig(
+      this.sandboxId,
+      this.buildSandboxConfig(),
+    );
+
+    // Step 3: Everything else in parallel (all independent after network is up)
     const parallelOps: Promise<void>[] = [
       this.deps.provisionService.syncClock(this.sandboxId),
       this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
@@ -545,8 +552,7 @@ class SpawnContext {
 
     await Promise.all(parallelOps);
 
-    // Step 3: Start services (needs configs pushed first)
-    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
+    // Step 4: Start services fresh with new config
     await this.deps.provisionService.startServices(
       this.sandboxId,
       serviceNames,

@@ -11,10 +11,25 @@ export type SessionStatus =
   | { type: "retry"; attempt: number; message: string; next: number }
   | { type: "busy" };
 
+const passwordRegistry = new Map<string, string>();
+
+export function registerOpencodePassword(
+  baseUrl: string,
+  password: string,
+): void {
+  passwordRegistry.set(baseUrl, password);
+}
+
 export function getOpencodeClient(baseUrl: string) {
+  const password = passwordRegistry.get(baseUrl);
   return createOpencodeClient({
     baseUrl,
     credentials: "include",
+    ...(password && {
+      headers: {
+        Authorization: `Basic ${btoa(`opencode:${password}`)}`,
+      },
+    }),
   });
 }
 

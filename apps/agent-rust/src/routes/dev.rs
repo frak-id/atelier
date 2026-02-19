@@ -103,14 +103,7 @@ pub async fn handle_dev_start(
             })
             .unwrap(),
         ),
-        Err(e) => {
-            let status = if e.contains("already running") {
-                StatusCode::CONFLICT
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            json_error(status, &e)
-        }
+        Err(e) => json_error(StatusCode::INTERNAL_SERVER_ERROR, &e),
     }
 }
 

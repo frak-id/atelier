@@ -174,19 +174,7 @@ impl ProcessRegistry {
         &self,
         params: StartParams<'_>,
     ) -> Result<ManagedProcess, String> {
-        {
-            let procs = self.processes.lock().await;
-            if let Some(existing) = procs.get(params.name) {
-                if existing.status == ProcessStatus::Running
-                    && is_process_running(existing.pid)
-                {
-                    return Err(format!(
-                        "'{}' is already running with PID {}",
-                        params.name, existing.pid
-                    ));
-                }
-            }
-        }
+        self.stop_process(params.name, 500).await;
 
         let log_file = format!("{}/{}", LOG_DIR, params.log_prefix);
 

@@ -60,9 +60,6 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
                         (Method::POST, "stop") => {
                             return routes::services::handle_service_stop(&name).await
                         }
-                        (Method::POST, "restart") => {
-                            return routes::services::handle_service_restart(&name).await
-                        }
                         (Method::GET, sub) if sub.starts_with("logs") => {
                             let query = req.uri().query().unwrap_or("");
                             return routes::services::handle_service_logs(&name, query).await;

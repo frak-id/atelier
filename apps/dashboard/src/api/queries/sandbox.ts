@@ -296,15 +296,15 @@ export function useServiceStop(sandboxId: string) {
   });
 }
 
-export function useServiceRestart(sandboxId: string) {
+export function useServiceStart(sandboxId: string) {
   return useMutation({
-    mutationKey: ["sandboxes", "services", "restart", sandboxId],
+    mutationKey: ["sandboxes", "services", "start", sandboxId],
     mutationFn: async (name: string) =>
       unwrap(
         await api.api
           .sandboxes({ id: sandboxId })
           .services({ name })
-          .restart.post(),
+          .start.post(),
       ),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
