@@ -4,11 +4,22 @@ import { config } from "../shared/lib/config.ts";
 
 export const publicConfigRoutes = new Elysia().get(
   "/config",
-  () => ({
-    sshHostname: config.domain.ssh.hostname,
-    sshPort: config.domain.ssh.port,
-    opencodePort: config.advanced.vm.opencode.port,
-  }),
+  () => {
+    const baseDomain = config.domain.baseDomain;
+    const protocol = baseDomain === "localhost" ? "http" : "https";
+    const dashboard = config.domain.dashboard;
+    const mcpUrl = `${protocol}://${dashboard}/mcp`;
+
+    return {
+      sshHostname: config.domain.ssh.hostname,
+      sshPort: config.domain.ssh.port,
+      opencodePort: config.advanced.vm.opencode.port,
+      mcp: {
+        url: mcpUrl,
+        hasToken: !!config.server.mcpToken,
+      },
+    };
+  },
   {
     response: PublicConfigSchema,
     detail: {

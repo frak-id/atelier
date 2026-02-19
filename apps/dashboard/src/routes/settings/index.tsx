@@ -30,6 +30,7 @@ import {
   useUpdateSharedAuth,
   workspaceListQuery,
 } from "@/api/queries";
+import { McpConnectionSection } from "@/components/mcp-connection-section";
 import { SessionTemplateEditDialog } from "@/components/session-template-edit-dialog";
 import { SshKeysSection } from "@/components/ssh-keys-section";
 import { Button } from "@/components/ui/button";
@@ -125,6 +126,7 @@ function SettingsPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <McpConnectionSection />
       <SshKeysSection />
 
       <div className="border-t pt-6">
