@@ -50,6 +50,7 @@ export function CreateWorkspaceDialog({
   const form = useForm({
     defaultValues: {
       name: "",
+      description: "",
       baseImage: "dev-base",
       vcpus: 2,
       memoryMb: 2048,
@@ -64,6 +65,7 @@ export function CreateWorkspaceDialog({
             baseImage: value.baseImage,
             vcpus: value.vcpus,
             memoryMb: value.memoryMb,
+            description: value.description || undefined,
             initCommands: value.initCommands
               .split("\n")
               .filter((cmd: string) => cmd.trim()),
@@ -84,6 +86,7 @@ export function CreateWorkspaceDialog({
 
   const isGitHubConnected = githubStatus?.connected === true;
   const name = useStore(form.store, (s) => s.values.name);
+  const description = useStore(form.store, (s) => s.values.description);
   const baseImage = useStore(form.store, (s) => s.values.baseImage);
   const vcpus = useStore(form.store, (s) => s.values.vcpus);
   const memoryMb = useStore(form.store, (s) => s.values.memoryMb);
@@ -108,11 +111,13 @@ export function CreateWorkspaceDialog({
           <div className="space-y-4 py-4">
             <GeneralForm
               name={name}
+              description={description}
               baseImage={baseImage}
               vcpus={vcpus}
               memoryMb={memoryMb}
               images={images ?? []}
               onNameChange={(v) => form.setFieldValue("name", v)}
+              onDescriptionChange={(v) => form.setFieldValue("description", v)}
               onBaseImageChange={(v) => form.setFieldValue("baseImage", v)}
               onVcpusChange={(v) => form.setFieldValue("vcpus", v)}
               onMemoryMbChange={(v) => form.setFieldValue("memoryMb", v)}
