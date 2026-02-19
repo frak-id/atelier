@@ -6,6 +6,7 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 import { registerDevCommandTools } from "./tools/dev-commands.ts";
 import { registerSandboxTools } from "./tools/sandbox.ts";
 import { registerSessionTemplateTools } from "./tools/session-template.ts";
+import { registerSlackTools } from "./tools/slack.ts";
 import { registerSystemTools } from "./tools/system.ts";
 import { registerTaskTools } from "./tools/task.ts";
 import { registerWorkspaceTools } from "./tools/workspace.ts";
@@ -24,6 +25,10 @@ function createMcpServer(): McpServer {
   registerDevCommandTools(server);
   registerSessionTemplateTools(server);
   registerSystemTools(server);
+
+  if (config.integrations.slack.enabled && config.integrations.slack.botToken) {
+    registerSlackTools(server);
+  }
 
   return server;
 }

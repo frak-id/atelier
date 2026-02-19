@@ -155,10 +155,7 @@ const taskSpawner = new TaskSpawner({
 
 const slackService = new SlackService({
   systemSandboxService,
-  taskService,
-  taskSpawner,
   workspaceService,
-  titleService,
 });
 
 const prebuildChecker = new PrebuildChecker({

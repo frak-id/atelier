@@ -1,11 +1,7 @@
 import { WebClient } from "@slack/web-api";
-import type { ManagerEvent } from "../../infrastructure/events/index.ts";
-import type { TaskSpawner } from "../../orchestrators/task-spawner.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SystemSandboxService } from "../system-sandbox/index.ts";
-import type { TaskService } from "../task/index.ts";
-import type { TitleService } from "../title/index.ts";
 import type { WorkspaceService } from "../workspace/index.ts";
 
 const log = createChildLogger("slack");
@@ -20,7 +16,7 @@ interface SlackMessage {
   thread_ts?: string;
 }
 
-interface SlackMentionEvent {
+export interface SlackMentionEvent {
   type: string;
   user: string;
   text: string;
@@ -29,22 +25,9 @@ interface SlackMentionEvent {
   thread_ts?: string;
 }
 
-interface AiDecision {
-  action: "create_task" | "reply";
-  workspaceId?: string;
-  title?: string;
-  description?: string;
-  message?: string;
-  baseBranch?: string;
-  workflowId?: string;
-}
-
 interface SlackServiceDependencies {
   systemSandboxService: SystemSandboxService;
-  taskService: TaskService;
-  taskSpawner: TaskSpawner;
   workspaceService: WorkspaceService;
-  titleService: TitleService;
 }
 
 export class SlackService {
@@ -99,63 +82,12 @@ export class SlackService {
 
     log.info({ channel, threadTs, user }, "Processing Slack mention");
 
-    try {
-      const messages = await this.extractThreadContext(channel, threadTs);
-      const links = this.extractLinks(messages);
-      const linkContents = await this.fetchLinkContent(links);
-      const prompt = this.buildPrompt(messages, links, linkContents, event);
-      const decision = await this.decideAction(prompt);
+    const messages = await this.extractThreadContext(channel, threadTs);
+    const links = this.extractLinks(messages);
+    const linkContents = await this.fetchLinkContent(links);
+    const context = this.buildContext(messages, links, linkContents, event);
 
-      if (decision.action === "create_task" && decision.workspaceId) {
-        await this.createTask(decision, channel, threadTs, user);
-      } else if (decision.message) {
-        await this.postReply(channel, threadTs, decision.message);
-      } else {
-        await this.postReply(
-          channel,
-          threadTs,
-          "I looked at the conversation but couldn't determine an action to take. Could you be more specific about what you'd like me to do?",
-        );
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      log.error({ channel, threadTs, error: msg }, "Failed to handle mention");
-      await this.postReply(
-        channel,
-        threadTs,
-        `Something went wrong while processing your request: ${msg}`,
-      ).catch(() => {});
-    }
-  }
-
-  async onTaskEvent(event: ManagerEvent): Promise<void> {
-    if (event.type !== "task.updated") return;
-
-    const task = this.deps.taskService.getById(event.properties.id);
-    if (!task) return;
-
-    const integration = task.data.integration;
-    if (!integration?.slack || integration.source !== "slack") return;
-
-    if (task.status !== "done") return;
-
-    const { channel, threadTs } = integration.slack;
-    const branch = task.data.branchName;
-
-    const message = branch
-      ? `Task *${task.title}* is complete — ready for review on branch \`${branch}\``
-      : `Task *${task.title}* is complete`;
-
-    log.info(
-      { taskId: task.id, channel, threadTs },
-      "Notifying Slack of task completion",
-    );
-    await this.postReply(channel, threadTs, message).catch((error) => {
-      log.error(
-        { taskId: task.id, error },
-        "Failed to post task completion to Slack",
-      );
-    });
+    await this.sendToAi(context, channel, threadTs);
   }
 
   private async extractThreadContext(
@@ -225,210 +157,105 @@ export class SlackService {
     return contents;
   }
 
-  private buildPrompt(
+  private buildContext(
     messages: SlackMessage[],
     links: string[],
     linkContents: Map<string, string>,
     mentionEvent: SlackMentionEvent,
   ): string {
-    let prompt = "# Slack Conversation Context\n\n";
+    let ctx = "# Slack Conversation Context\n\n";
 
     if (messages.length > 0) {
-      prompt += "## Thread Messages\n\n";
+      ctx += "## Thread Messages\n\n";
       for (const msg of messages) {
         const userLabel = msg.user ? `<@${msg.user}>` : "unknown";
         const text = msg.text ?? "(empty)";
-        prompt += `**${userLabel}**: ${text}\n\n`;
+        ctx += `**${userLabel}**: ${text}\n\n`;
       }
     }
 
     if (links.length > 0) {
-      prompt += "## Links Referenced\n\n";
+      ctx += "## Links Referenced\n\n";
       for (const link of links) {
         const content = linkContents.get(link);
         if (content) {
-          prompt += `### ${link}\n\n\`\`\`\n${content}\n\`\`\`\n\n`;
+          ctx += `### ${link}\n\n\`\`\`\n${content}\n\`\`\`\n\n`;
         } else {
-          prompt += `- ${link}\n`;
+          ctx += `- ${link}\n`;
         }
       }
-      prompt += "\n";
+      ctx += "\n";
     }
 
-    prompt += "## Current Request\n\n";
-    prompt += `**From:** <@${mentionEvent.user}>\n`;
-    prompt += `**Message:** ${mentionEvent.text}\n`;
+    ctx += "## Current Request\n\n";
+    ctx += `**From:** <@${mentionEvent.user}>\n`;
+    ctx += `**Message:** ${mentionEvent.text}\n`;
 
-    return prompt;
+    return ctx;
   }
 
-  private async decideAction(prompt: string): Promise<AiDecision> {
+  private async sendToAi(
+    context: string,
+    channel: string,
+    threadTs: string,
+  ): Promise<void> {
     const workspaces = this.deps.workspaceService.getAll();
     const workspaceList = workspaces
       .map((w) => `- **${w.name}** (id: \`${w.id}\`)`)
       .join("\n");
 
-    const systemPrompt = [
-      "You are the Atelier Slack bot.",
-      "You receive Slack conversations where someone mentioned you.",
-      "Your job is to decide if the user wants you to create a coding task.",
+    const masterPrompt = [
+      "You are the Atelier Slack bot. Someone mentioned you in a Slack conversation.",
+      "You have access to atelier-mcp tools to manage workspaces and tasks,",
+      "and Slack tools to read threads and post messages.",
+      "",
+      `**Slack channel:** \`${channel}\``,
+      `**Thread timestamp:** \`${threadTs}\``,
       "",
       "Available workspaces:",
       workspaceList || "- (no workspaces configured)",
       "",
-      "Rules:",
-      "- If the user is requesting implementation, review, fix, or any coding work: create a task",
-      "- If the user is just chatting or asking a question you can answer directly: reply",
-      "- Pick the most appropriate workspace based on the context",
-      "- Write a clear, detailed task description from the conversation context",
-      "- Generate a concise task title",
+      "Based on the conversation context below, decide what to do:",
       "",
-      "Respond with ONLY a JSON object (no markdown, no code fences):",
-      '{"action":"create_task","workspaceId":"...","title":"...","description":"..."}',
-      "or",
-      '{"action":"reply","message":"..."}',
+      "- If the user is requesting implementation, review, fix, or any coding work:",
+      "  1. Pick the most appropriate workspace",
+      "  2. Use `create_task` with `autoStart: true` to create and start the task",
+      "  3. Use `slack_post_message` to reply in the thread confirming what you did",
+      "",
+      "- If it's a question you can answer or doesn't require a task:",
+      "  1. Use `slack_post_message` to reply in the thread with your answer",
+      "",
+      "Always reply in the Slack thread so the user knows you handled their request.",
+      "",
+      "---",
+      "",
+      context,
     ].join("\n");
-
-    const fullPrompt = `${systemPrompt}\n\n---\n\n${prompt}`;
 
     const { client } = await this.deps.systemSandboxService.acquire();
     try {
       const { data: session, error: createError } =
         await client.session.create();
       if (createError || !session?.id) {
-        throw new Error("Failed to create OpenCode session for Slack decision");
+        throw new Error("Failed to create OpenCode session for Slack mention");
       }
 
       try {
-        const { data, error: promptError } = await client.session.prompt({
+        const { error: promptError } = await client.session.promptAsync({
           sessionID: session.id,
-          parts: [{ type: "text", text: fullPrompt }],
+          parts: [{ type: "text", text: masterPrompt }],
         });
 
-        if (promptError || !data) {
-          throw new Error("Slack decision prompt failed");
+        if (promptError) {
+          throw new Error("Slack AI prompt failed");
         }
 
-        const textPart = data.parts.find((p) => p.type === "text");
-        if (!textPart || textPart.type !== "text" || !textPart.text.trim()) {
-          throw new Error("No text in Slack decision response");
-        }
-
-        return this.parseDecision(textPart.text);
+        log.info({ channel, threadTs }, "Slack mention dispatched to AI");
       } finally {
         await client.session.delete({ sessionID: session.id }).catch(() => {});
       }
     } finally {
       this.deps.systemSandboxService.release();
     }
-  }
-
-  private parseDecision(raw: string): AiDecision {
-    const cleaned = raw
-      .replace(/```json\s*/g, "")
-      .replace(/```\s*/g, "")
-      .trim();
-
-    try {
-      const parsed = JSON.parse(cleaned) as AiDecision;
-      if (parsed.action !== "create_task" && parsed.action !== "reply") {
-        log.warn({ raw: cleaned }, "Unknown AI decision action");
-        return { action: "reply", message: cleaned };
-      }
-      return parsed;
-    } catch {
-      log.warn({ raw: cleaned }, "Failed to parse AI decision as JSON");
-      return { action: "reply", message: cleaned };
-    }
-  }
-
-  private async createTask(
-    decision: AiDecision,
-    channel: string,
-    threadTs: string,
-    triggeredBy: string,
-  ): Promise<void> {
-    const workspaceId = decision.workspaceId;
-    if (!workspaceId) return;
-
-    const workspace = this.deps.workspaceService.getById(workspaceId);
-    if (!workspace) {
-      await this.postReply(
-        channel,
-        threadTs,
-        `Workspace \`${workspaceId}\` not found. Available workspaces: ${this.deps.workspaceService
-          .getAll()
-          .map((w) => `\`${w.name}\``)
-          .join(", ")}`,
-      );
-      return;
-    }
-
-    const title =
-      decision.title?.trim() ||
-      this.deps.titleService.fallbackTitle(
-        decision.description ?? "Slack task",
-      );
-
-    const task = this.deps.taskService.create({
-      workspaceId,
-      description: decision.description ?? "Task from Slack",
-      title,
-      baseBranch: decision.baseBranch,
-      workflowId: decision.workflowId,
-    });
-
-    this.deps.taskService.setIntegrationMetadata(task.id, {
-      source: "slack",
-      slack: { channel, threadTs, triggeredBy },
-    });
-
-    if (!decision.title?.trim()) {
-      this.deps.titleService.generateTitleInBackground(
-        decision.description ?? "Slack task",
-        (generatedTitle) => {
-          this.deps.taskService.updateTitle(task.id, generatedTitle);
-          this.deps.taskSpawner
-            .updateSessionTitles(task.id, generatedTitle)
-            .catch(() => {});
-        },
-      );
-    }
-
-    try {
-      await this.deps.taskService.startTask(task.id);
-      this.deps.taskSpawner.runInBackground(task.id);
-
-      log.info(
-        { taskId: task.id, title, workspace: workspace.name },
-        "Task created from Slack",
-      );
-
-      await this.postReply(
-        channel,
-        threadTs,
-        `Task created: *${title}* (id: \`${task.id}\`) on workspace *${workspace.name}*\nI'll let you know when it's done.`,
-      );
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      log.error({ taskId: task.id, error: msg }, "Failed to start Slack task");
-      await this.postReply(
-        channel,
-        threadTs,
-        `Task created but failed to start: ${msg}`,
-      );
-    }
-  }
-
-  private async postReply(
-    channel: string,
-    threadTs: string,
-    text: string,
-  ): Promise<void> {
-    await this.client.chat.postMessage({
-      channel,
-      thread_ts: threadTs,
-      text,
-    });
   }
 }
