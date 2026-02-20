@@ -13,29 +13,27 @@ export const TaskSessionSchema = t.Object({
 });
 export type TaskSession = Static<typeof TaskSessionSchema>;
 
-export const TaskIntegrationMetadataSchema = t.Optional(
-  t.Object({
-    source: t.String(),
-    threadKey: t.String(),
-    sessionId: t.Optional(t.String()),
-    slack: t.Optional(
-      t.Object({
-        channel: t.String(),
-        threadTs: t.String(),
-        triggeredBy: t.Optional(t.String()),
-      }),
-    ),
-    github: t.Optional(
-      t.Object({
-        owner: t.String(),
-        repo: t.String(),
-        prNumber: t.Number(),
-        commentId: t.Optional(t.Number()),
-        triggeredBy: t.Optional(t.String()),
-      }),
-    ),
-  }),
-);
+export const TaskIntegrationMetadataSchema = t.Object({
+  source: t.String(),
+  threadKey: t.String(),
+  sessionId: t.Optional(t.String()),
+  slack: t.Optional(
+    t.Object({
+      channel: t.String(),
+      threadTs: t.String(),
+      triggeredBy: t.Optional(t.String()),
+    }),
+  ),
+  github: t.Optional(
+    t.Object({
+      owner: t.String(),
+      repo: t.String(),
+      prNumber: t.Number(),
+      commentId: t.Optional(t.Number()),
+      triggeredBy: t.Optional(t.String()),
+    }),
+  ),
+});
 export type TaskIntegrationMetadata = Static<
   typeof TaskIntegrationMetadataSchema
 >;
@@ -53,7 +51,7 @@ export const TaskDataSchema = t.Object({
   baseBranch: t.Optional(t.String()),
   branchName: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
-  integration: TaskIntegrationMetadataSchema,
+  integration: t.Optional(TaskIntegrationMetadataSchema),
 });
 export type TaskData = Static<typeof TaskDataSchema>;
 

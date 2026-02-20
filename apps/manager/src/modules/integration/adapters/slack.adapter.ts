@@ -5,18 +5,11 @@ import type {
   IntegrationAdapter,
   IntegrationContext,
   IntegrationEvent,
-  IntegrationLink,
   IntegrationMessage,
 } from "../integration.types.ts";
 
 const log = createChildLogger("slack-adapter");
 
-const URL_REGEX = /<(https?:\/\/[^|>]+)(?:\|[^>]*)?>/g;
-const PLAIN_URL_REGEX = /(?<![<|])https?:\/\/[^\s<>|]+/g;
-
-const MAX_LINKS = 5;
-const LINK_FETCH_TIMEOUT = 5000;
-const LINK_CONTENT_MAX_LENGTH = 3000;
 const THREAD_FETCH_LIMIT = 50;
 
 interface SlackRawEvent {
@@ -65,17 +58,8 @@ export class SlackAdapter implements IntegrationAdapter {
       timestamp: m.ts,
     }));
 
-    const urls = this.extractLinks(rawMessages);
-    const linkContents = await this.fetchLinkContent(urls);
-
-    const links: IntegrationLink[] = urls.map((url) => ({
-      url,
-      content: linkContents.get(url),
-    }));
-
     return {
       messages,
-      links,
       currentRequest: { user: event.user, text: event.text },
     };
   }
@@ -88,18 +72,6 @@ export class SlackAdapter implements IntegrationAdapter {
       for (const msg of context.messages) {
         md += `**<@${msg.user}>**: ${msg.text}\n\n`;
       }
-    }
-
-    if (context.links.length > 0) {
-      md += "## Referenced Links\n\n";
-      for (const link of context.links) {
-        if (link.content) {
-          md += `### ${link.url}\n\n\`\`\`\n${link.content}\n\`\`\`\n\n`;
-        } else {
-          md += `- ${link.url}\n`;
-        }
-      }
-      md += "\n";
     }
 
     md += "## Current Request\n\n";
@@ -142,14 +114,6 @@ export class SlackAdapter implements IntegrationAdapter {
       text,
       thread_ts: threadTs,
     });
-  }
-
-  formatCompletionMessage(taskTitle: string, description: string): string {
-    const truncated =
-      description.length > 200 ? `${description.slice(0, 200)}…` : description;
-    return [`✅ *Task completed:* ${taskTitle}`, "", `> ${truncated}`].join(
-      "\n",
-    );
   }
 
   async verifyRequest(
@@ -202,53 +166,5 @@ export class SlackAdapter implements IntegrationAdapter {
       log.warn({ channel, threadTs, error }, "Failed to fetch thread");
       return [];
     }
-  }
-
-  private extractLinks(messages: SlackMessage[]): string[] {
-    const links = new Set<string>();
-    for (const msg of messages) {
-      if (!msg.text) continue;
-
-      for (const match of msg.text.matchAll(URL_REGEX)) {
-        if (match[1]) links.add(match[1]);
-      }
-      for (const match of msg.text.matchAll(PLAIN_URL_REGEX)) {
-        if (match[0]) links.add(match[0]);
-      }
-    }
-    return [...links];
-  }
-
-  private async fetchLinkContent(urls: string[]): Promise<Map<string, string>> {
-    const contents = new Map<string, string>();
-    const fetches = urls.slice(0, MAX_LINKS).map(async (url) => {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(
-          () => controller.abort(),
-          LINK_FETCH_TIMEOUT,
-        );
-        const response = await fetch(url, {
-          signal: controller.signal,
-          headers: { "User-Agent": "AtelierBot/1.0" },
-        });
-        clearTimeout(timeout);
-
-        if (!response.ok) return;
-
-        const contentType = response.headers.get("content-type") ?? "";
-        if (!contentType.includes("text") && !contentType.includes("json")) {
-          return;
-        }
-
-        const text = await response.text();
-        contents.set(url, text.slice(0, LINK_CONTENT_MAX_LENGTH));
-      } catch {
-        log.debug({ url }, "Failed to fetch link content");
-      }
-    });
-
-    await Promise.allSettled(fetches);
-    return contents;
   }
 }

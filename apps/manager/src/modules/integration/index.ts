@@ -4,7 +4,6 @@ export type {
   IntegrationAdapter,
   IntegrationContext,
   IntegrationEvent,
-  IntegrationLink,
   IntegrationMessage,
   IntegrationSource,
 } from "./integration.types.ts";

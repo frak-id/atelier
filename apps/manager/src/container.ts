@@ -38,6 +38,7 @@ import {
   TaskSpawner,
   WorkspacePrebuildRunner,
 } from "./orchestrators/index.ts";
+import { config } from "./shared/lib/config.ts";
 
 /* -------------------------------------------------------------------------- */
 /*                                Repositories                                */
@@ -156,7 +157,9 @@ const taskSpawner = new TaskSpawner({
   agentClient,
 });
 
-const slackAdapter = new SlackAdapter();
+const slackAdapter = config.integrations.slack.enabled
+  ? new SlackAdapter()
+  : null;
 
 const integrationGateway = new IntegrationGateway({
   taskService,
@@ -165,7 +168,9 @@ const integrationGateway = new IntegrationGateway({
   systemSandboxService,
   workspaceService,
 });
-integrationGateway.registerAdapter(slackAdapter);
+if (slackAdapter) {
+  integrationGateway.registerAdapter(slackAdapter);
+}
 
 const prebuildChecker = new PrebuildChecker({
   workspaceService,

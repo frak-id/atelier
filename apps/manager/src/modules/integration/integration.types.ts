@@ -20,60 +20,13 @@ export interface IntegrationMessage {
   timestamp?: string;
 }
 
-export interface IntegrationLink {
-  url: string;
-  content?: string;
-}
-
 export interface IntegrationContext {
   messages: IntegrationMessage[];
-  links: IntegrationLink[];
   currentRequest: {
     user: string;
     text: string;
   };
 }
-
-export interface IntegrationAdapter {
-  readonly source: IntegrationSource;
-
-  extractContext(event: IntegrationEvent): Promise<IntegrationContext>;
-  formatContextForPrompt(context: IntegrationContext): string;
-
-  addReaction(event: IntegrationEvent, emoji: string): Promise<void>;
-  removeReaction(event: IntegrationEvent, emoji: string): Promise<void>;
-
-  postMessage(event: IntegrationEvent, text: string): Promise<void>;
-  formatCompletionMessage(taskTitle: string, description: string): string;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Context extracted from the conversation / PR                      */
-/* ------------------------------------------------------------------ */
-
-export interface IntegrationMessage {
-  user: string;
-  text: string;
-  timestamp?: string;
-}
-
-export interface IntegrationLink {
-  url: string;
-  content?: string;
-}
-
-export interface IntegrationContext {
-  messages: IntegrationMessage[];
-  links: IntegrationLink[];
-  currentRequest: {
-    user: string;
-    text: string;
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/*  Adapter contract                                                   */
-/* ------------------------------------------------------------------ */
 
 export interface IntegrationAdapter {
   readonly source: IntegrationSource;
@@ -102,10 +55,4 @@ export interface IntegrationAdapter {
 
   /** Post a message in the originating thread / PR comment. */
   postMessage(event: IntegrationEvent, text: string): Promise<void>;
-
-  /**
-   * Build a structured completion summary for the platform.
-   * Called by the gateway safety-net when the task finishes.
-   */
-  formatCompletionMessage(taskTitle: string, description: string): string;
 }

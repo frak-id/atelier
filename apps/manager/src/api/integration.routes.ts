@@ -6,6 +6,22 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("integration-routes");
 
+/** Slack can retry webhook delivery — deduplicate by event_id with a 5-min TTL. */
+const DEDUP_TTL_MS = 5 * 60 * 1000;
+const recentEventIds = new Map<string, number>();
+
+function isDuplicateEvent(eventId: string): boolean {
+  const now = Date.now();
+  if (recentEventIds.size > 500) {
+    for (const [id, ts] of recentEventIds) {
+      if (now - ts > DEDUP_TTL_MS) recentEventIds.delete(id);
+    }
+  }
+  if (recentEventIds.has(eventId)) return true;
+  recentEventIds.set(eventId, now);
+  return false;
+}
+
 function isSlackEnabled(): boolean {
   const { enabled, botToken, signingSecret } = config.integrations.slack;
   return enabled && !!botToken && !!signingSecret;
@@ -37,6 +53,14 @@ export const integrationRoutes = new Elysia({
   }
 
   if (payload.type === "event_callback" && payload.event) {
+    if (payload.event_id && isDuplicateEvent(payload.event_id)) {
+      log.debug(
+        { eventId: payload.event_id },
+        "Duplicate Slack event, skipping",
+      );
+      return { ok: true };
+    }
+
     const event = payload.event;
 
     if (event.type === "app_mention") {
