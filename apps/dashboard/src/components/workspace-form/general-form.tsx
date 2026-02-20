@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Image {
   id: string;
@@ -16,11 +17,13 @@ interface Image {
 
 interface GeneralFormProps {
   name: string;
+  description?: string;
   baseImage: string;
   vcpus: number;
   memoryMb: number;
   images: Image[];
   onNameChange: (value: string) => void;
+  onDescriptionChange?: (value: string) => void;
   onBaseImageChange: (value: string) => void;
   onVcpusChange: (value: number) => void;
   onMemoryMbChange: (value: number) => void;
@@ -31,11 +34,13 @@ interface GeneralFormProps {
 
 export function GeneralForm({
   name,
+  description,
   baseImage,
   vcpus,
   memoryMb,
   images,
   onNameChange,
+  onDescriptionChange,
   onBaseImageChange,
   onVcpusChange,
   onMemoryMbChange,
@@ -53,6 +58,20 @@ export function GeneralForm({
             required
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
+          />
+        </div>
+      )}
+
+      {onDescriptionChange && (
+        <div className="space-y-2">
+          <Label htmlFor="description">Description</Label>
+          <Textarea
+            id="description"
+            value={description ?? ""}
+            onChange={(e) => onDescriptionChange(e.target.value)}
+            placeholder="Brief description of this workspace"
+            className="resize-none"
+            rows={2}
           />
         </div>
       )}

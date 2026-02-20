@@ -192,6 +192,11 @@ function WorkspaceDetailPage() {
               </Button>
             )}
           </div>
+          {workspace.config.description && (
+            <p className="text-muted-foreground mt-1">
+              {workspace.config.description}
+            </p>
+          )}
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span>
               {workspace.config.repos.length} repository(ies) configured

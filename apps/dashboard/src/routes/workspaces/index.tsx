@@ -100,6 +100,11 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             Prebuild: {prebuildStatus}
           </Badge>
         </div>
+        {workspace.config.description && (
+          <p className="text-sm text-muted-foreground line-clamp-2">
+            {workspace.config.description}
+          </p>
+        )}
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
