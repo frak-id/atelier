@@ -8,6 +8,10 @@ import {
   GitSourceService,
 } from "./modules/git-source/index.ts";
 import {
+  IntegrationGateway,
+  SlackAdapter,
+} from "./modules/integration/index.ts";
+import {
   AuthSyncService,
   InternalService,
   SharedAuthRepository,
@@ -17,7 +21,6 @@ import {
   SandboxRepository,
 } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
-import { SlackService } from "./modules/slack/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { SystemSandboxService } from "./modules/system-sandbox/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
@@ -153,10 +156,16 @@ const taskSpawner = new TaskSpawner({
   agentClient,
 });
 
-const slackService = new SlackService({
+const slackAdapter = new SlackAdapter();
+
+const integrationGateway = new IntegrationGateway({
+  taskService,
+  sandboxService,
+  sandboxLifecycle,
   systemSandboxService,
   workspaceService,
 });
+integrationGateway.registerAdapter(slackAdapter);
 
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
@@ -178,7 +187,8 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
-  slackService,
+  integrationGateway,
+  slackAdapter,
   sshKeyService,
   systemSandboxService,
   taskService,

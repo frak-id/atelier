@@ -11,6 +11,7 @@ import {
   gitSourceRoutes,
   healthRoutes,
   imageRoutes,
+  integrationRoutes,
   internalWellKnownRoutes,
   publicConfigRoutes,
   registryRoutes,
@@ -18,7 +19,6 @@ import {
   sessionTemplateRoutes,
   sharedAuthRoutes,
   sharedStorageRoutes,
-  slackRoutes,
   sshKeyRoutes,
   systemRoutes,
   taskRoutes,
@@ -27,6 +27,7 @@ import {
 import {
   agentOperations,
   authSyncService,
+  integrationGateway,
   prebuildChecker,
   sandboxLifecycle,
   sandboxService,
@@ -42,6 +43,7 @@ import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
+import { setTaskMcpGateway, taskMcpRoutes } from "./mcp/task-mcp.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
@@ -220,7 +222,8 @@ const app = new Elysia()
   .use(internalWellKnownRoutes)
   .use(authRoutes)
   .use(mcpRoutes)
-  .group("/integrations", (app) => app.use(slackRoutes))
+  .use(taskMcpRoutes)
+  .use(integrationRoutes)
   .group("/api", (app) =>
     app
       .use(githubOAuthRoutes)
@@ -249,6 +252,7 @@ const app = new Elysia()
     docs: "/swagger",
   }));
 
+setTaskMcpGateway(integrationGateway);
 await systemSandboxService.recoverFromRestart();
 
 setImmediate(() => {

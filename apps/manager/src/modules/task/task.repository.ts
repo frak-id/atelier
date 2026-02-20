@@ -120,6 +120,23 @@ export class TaskRepository {
     return true;
   }
 
+  findByIntegrationKey(source: string, threadKey: string): Task | undefined {
+    const row = getDatabase()
+      .select()
+      .from(tasks)
+      .where(
+        and(
+          eq(sql`json_extract(${tasks.data}, '$.integration.source')`, source),
+          eq(
+            sql`json_extract(${tasks.data}, '$.integration.threadKey')`,
+            threadKey,
+          ),
+        ),
+      )
+      .get();
+    return row ? rowToTask(row) : undefined;
+  }
+
   getNextOrder(workspaceId: string, status: TaskStatus): number {
     const result = getDatabase()
       .select({

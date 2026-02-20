@@ -125,6 +125,14 @@ export class TaskSpawner {
 
       this.deps.taskService.attachSandbox(taskId, sandbox.id, branchName);
 
+      if (task.data.integration) {
+        await this.registerTaskMcpServer(
+          taskId,
+          ipAddress,
+          sandbox.runtime.opencodePassword,
+        );
+      }
+
       const sessionTemplateId = this.getFirstSessionTemplateId(task, workspace);
       await this.spawnSession(
         taskId,
@@ -256,6 +264,41 @@ export class TaskSpawner {
         );
       });
     });
+  }
+
+  private async registerTaskMcpServer(
+    taskId: string,
+    ipAddress: string,
+    password?: string,
+  ): Promise<void> {
+    const mcpUrl = `http://${config.network.bridgeIp}:${config.server.port}/mcp/task/${taskId}`;
+    const opcUrl = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+    const client = createOpencodeClient({
+      baseUrl: opcUrl,
+      headers: buildOpenCodeAuthHeaders(password),
+    });
+
+    try {
+      await client.mcp.add({
+        name: "atelier-integration",
+        config: {
+          type: "remote" as const,
+          url: mcpUrl,
+          enabled: true,
+          oauth: false,
+          timeout: 10000,
+        },
+      });
+      log.info(
+        { taskId, ipAddress },
+        "Integration MCP server registered on task sandbox",
+      );
+    } catch (error) {
+      log.warn(
+        { taskId, error },
+        "Failed to register integration MCP on task sandbox",
+      );
+    }
   }
 
   private async spawnSession(

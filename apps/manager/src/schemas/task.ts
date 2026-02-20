@@ -16,10 +16,20 @@ export type TaskSession = Static<typeof TaskSessionSchema>;
 export const TaskIntegrationMetadataSchema = t.Optional(
   t.Object({
     source: t.String(),
+    threadKey: t.String(),
     slack: t.Optional(
       t.Object({
         channel: t.String(),
         threadTs: t.String(),
+        triggeredBy: t.Optional(t.String()),
+      }),
+    ),
+    github: t.Optional(
+      t.Object({
+        owner: t.String(),
+        repo: t.String(),
+        prNumber: t.Number(),
+        commentId: t.Optional(t.Number()),
         triggeredBy: t.Optional(t.String()),
       }),
     ),

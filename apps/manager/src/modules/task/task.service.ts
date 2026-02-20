@@ -218,6 +218,10 @@ export class TaskService {
     return updated;
   }
 
+  findByIntegrationKey(source: string, threadKey: string): Task | undefined {
+    return this.repository.findByIntegrationKey(source, threadKey);
+  }
+
   setIntegrationMetadata(
     id: string,
     integration: NonNullable<Task["data"]["integration"]>,
