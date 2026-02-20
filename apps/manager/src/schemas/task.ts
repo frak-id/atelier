@@ -17,6 +17,7 @@ export const TaskIntegrationMetadataSchema = t.Optional(
   t.Object({
     source: t.String(),
     threadKey: t.String(),
+    sessionId: t.Optional(t.String()),
     slack: t.Optional(
       t.Object({
         channel: t.String(),

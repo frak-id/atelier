@@ -232,14 +232,10 @@ export class IntegrationGateway {
       ),
     });
 
-    const { data: session, error: createError } =
-      await opcClient.session.create();
-    if (createError || !session?.id) {
-      throw new Error("Failed to create session on task sandbox");
-    }
+    const sessionId = await this.resolveOrCreateSession(opcClient, task);
 
     const { error: promptError } = await opcClient.session.promptAsync({
-      sessionID: session.id,
+      sessionID: sessionId,
       parts: [{ type: "text", text: followUpPrompt }],
     });
 
@@ -248,8 +244,48 @@ export class IntegrationGateway {
     }
 
     log.info(
-      { taskId: task.id, sandboxId, sessionId: session.id },
+      { taskId: task.id, sandboxId, sessionId },
       "Re-mention dispatched to task sandbox",
     );
+  }
+
+  private async resolveOrCreateSession(
+    client: ReturnType<typeof createOpencodeClient>,
+    task: NonNullable<ReturnType<TaskService["getById"]>>,
+  ): Promise<string> {
+    const existingSessionId = task.data.integration?.sessionId;
+
+    if (existingSessionId) {
+      try {
+        const { data } = await client.session.get({
+          sessionID: existingSessionId,
+        });
+        if (data?.id) {
+          log.info(
+            { taskId: task.id, sessionId: existingSessionId },
+            "Reusing existing integration session",
+          );
+          return existingSessionId;
+        }
+      } catch {
+        log.info(
+          { taskId: task.id, sessionId: existingSessionId },
+          "Stored session not found, creating new one",
+        );
+      }
+    }
+
+    const { data: session, error } = await client.session.create();
+    if (error || !session?.id) {
+      throw new Error("Failed to create session on task sandbox");
+    }
+
+    this.deps.taskService.setIntegrationSessionId(task.id, session.id);
+
+    log.info(
+      { taskId: task.id, sessionId: session.id },
+      "Created new integration session",
+    );
+    return session.id;
   }
 }

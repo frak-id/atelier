@@ -237,6 +237,19 @@ export class TaskService {
     return updated;
   }
 
+  setIntegrationSessionId(id: string, sessionId: string): Task {
+    const task = this.getByIdOrThrow(id);
+    if (!task.data.integration) {
+      throw new ValidationError("Task has no integration metadata");
+    }
+    return this.repository.update(id, {
+      data: {
+        ...task.data,
+        integration: { ...task.data.integration, sessionId },
+      },
+    });
+  }
+
   updateTitle(id: string, title: string): Task {
     this.getByIdOrThrow(id);
     const updated = this.repository.update(id, { title });
