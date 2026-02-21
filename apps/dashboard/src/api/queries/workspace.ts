@@ -120,6 +120,19 @@ export function useDeletePrebuild() {
   });
 }
 
+export function useGenerateDescription() {
+  return useMutation({
+    mutationKey: ["workspaces", "generateDescription"],
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.workspaces({ id })["generate-description"].post()),
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.detail(id),
+      });
+    },
+  });
+}
+
 export function useCancelPrebuild() {
   return useMutation({
     mutationKey: ["workspaces", "cancelPrebuild"],
