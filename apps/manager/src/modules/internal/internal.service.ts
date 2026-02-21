@@ -4,6 +4,10 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SandboxProvisionService } from "../sandbox/sandbox-provision.service.ts";
+import {
+  SYSTEM_AGENTS_CONFIG,
+  SYSTEM_WORKSPACE_ID,
+} from "../system-sandbox/index.ts";
 import type { AuthSyncService } from "./auth-sync.service.ts";
 
 const log = createChildLogger("internal-service");
@@ -98,6 +102,11 @@ export class InternalService {
   } {
     const authManagedPaths = new Set<string>(AUTH_PROVIDERS.map((p) => p.path));
     const merged = this.configFileService.getMergedForSandbox(workspaceId);
+
+    if (workspaceId === SYSTEM_WORKSPACE_ID) {
+      this.injectSystemAgents(merged);
+    }
+
     const files: { path: string; content: string }[] = [];
 
     for (const cfg of merged) {
@@ -117,6 +126,32 @@ export class InternalService {
     }
 
     return { files };
+  }
+
+  private injectSystemAgents(
+    merged: { path: string; content: string; contentType: string }[],
+  ): void {
+    const configPath = "~/.config/opencode/opencode.json";
+    const existing = merged.find((c) => c.path === configPath);
+
+    if (existing && existing.contentType === "json") {
+      try {
+        const parsed = JSON.parse(existing.content);
+        parsed.agent = {
+          ...parsed.agent,
+          ...SYSTEM_AGENTS_CONFIG.agent,
+        };
+        existing.content = JSON.stringify(parsed);
+      } catch {
+        log.warn("Failed to parse existing opencode config for system agents");
+      }
+    } else if (!existing) {
+      merged.push({
+        path: configPath,
+        content: JSON.stringify(SYSTEM_AGENTS_CONFIG),
+        contentType: "json",
+      });
+    }
   }
 
   async syncRegistryToSandboxes(enabled: boolean): Promise<{ synced: number }> {
