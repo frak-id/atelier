@@ -43,6 +43,32 @@ export function useSystemSandboxPrebuild() {
   });
 }
 
+export function useCancelSystemSandboxPrebuild() {
+  return useMutation({
+    mutationKey: ["system", "sandbox", "prebuild", "cancel"],
+    mutationFn: async () =>
+      unwrap(await api.api.system.sandbox.prebuild.cancel.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.system.sandbox,
+      });
+    },
+  });
+}
+
+export function useDeleteSystemSandboxPrebuild() {
+  return useMutation({
+    mutationKey: ["system", "sandbox", "prebuild", "delete"],
+    mutationFn: async () =>
+      unwrap(await api.api.system.sandbox.prebuild.delete()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.system.sandbox,
+      });
+    },
+  });
+}
+
 export function useSystemCleanup() {
   return useMutation({
     mutationKey: ["system", "cleanup"],
