@@ -1,3 +1,4 @@
+import type { KnownBlock } from "@slack/web-api";
 import { WebClient } from "@slack/web-api";
 import { config } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
@@ -6,6 +7,8 @@ import type {
   IntegrationContext,
   IntegrationEvent,
   IntegrationMessage,
+  ProgressState,
+  TodoItem,
 } from "../integration.types.ts";
 
 const log = createChildLogger("slack-adapter");
@@ -116,6 +119,43 @@ export class SlackAdapter implements IntegrationAdapter {
     });
   }
 
+  async postProgressMessage(
+    event: IntegrationEvent,
+    state: ProgressState,
+  ): Promise<string | undefined> {
+    const { channel, threadTs } = SlackAdapter.parseThreadKey(event.threadKey);
+    try {
+      const result = await this.client.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: progressFallbackText(state),
+        blocks: buildProgressBlocks(state),
+      });
+      return result.ts;
+    } catch (error) {
+      log.debug({ error }, "Failed to post progress message");
+      return undefined;
+    }
+  }
+
+  async updateProgressMessage(
+    event: IntegrationEvent,
+    messageId: string,
+    state: ProgressState,
+  ): Promise<void> {
+    const { channel } = SlackAdapter.parseThreadKey(event.threadKey);
+    try {
+      await this.client.chat.update({
+        channel,
+        ts: messageId,
+        text: progressFallbackText(state),
+        blocks: buildProgressBlocks(state),
+      });
+    } catch (error) {
+      log.debug({ error }, "Failed to update progress message");
+    }
+  }
+
   async verifyRequest(
     signature: string,
     timestamp: string,
@@ -166,5 +206,95 @@ export class SlackAdapter implements IntegrationAdapter {
       log.warn({ channel, threadTs, error }, "Failed to fetch thread");
       return [];
     }
+  }
+}
+
+const MAX_DISPLAY_TODOS = 15;
+
+const TODO_ICONS: Record<TodoItem["status"], string> = {
+  completed: ":white_check_mark:",
+  in_progress: ":arrows_counterclockwise:",
+  pending: ":white_large_square:",
+  cancelled: ":no_entry_sign:",
+};
+
+function buildProgressBlocks(state: ProgressState): KnownBlock[] {
+  const blocks: KnownBlock[] = [];
+
+  blocks.push({
+    type: "section",
+    text: { type: "mrkdwn", text: progressHeader(state) },
+  });
+
+  const links = [
+    `<${state.urls.dashboard}|:computer: Dashboard>`,
+    `<${state.urls.opencode}|:brain: OpenCode>`,
+  ].join("  ·  ");
+  blocks.push({
+    type: "context",
+    elements: [{ type: "mrkdwn", text: links }],
+  });
+
+  if (state.attention) {
+    const icon =
+      state.attention.type === "permission" ? ":raised_hand:" : ":question:";
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `${icon} ${state.attention.description}\n<${state.attention.url}|Answer in Dashboard>`,
+      },
+    });
+  }
+
+  const activeTodos = state.todos.filter((t) => t.status !== "cancelled");
+  if (activeTodos.length > 0) {
+    const completed = activeTodos.filter(
+      (t) => t.status === "completed",
+    ).length;
+    let todoText = `*Progress* (${completed}/${activeTodos.length})\n`;
+
+    const visible = activeTodos.slice(0, MAX_DISPLAY_TODOS);
+    for (const todo of visible) {
+      todoText += `${TODO_ICONS[todo.status]} ${todo.content}\n`;
+    }
+    if (activeTodos.length > MAX_DISPLAY_TODOS) {
+      todoText += `_…and ${activeTodos.length - MAX_DISPLAY_TODOS} more_`;
+    }
+
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: todoText.trimEnd() },
+    });
+  }
+
+  return blocks;
+}
+
+function progressHeader(state: ProgressState): string {
+  switch (state.status) {
+    case "completed": {
+      const dur = state.duration ? ` — ${state.duration}` : "";
+      return `:white_check_mark: *Agent finished*${dur}`;
+    }
+    case "attention":
+      return ":warning: *Agent needs input*";
+    case "running":
+      return ":hourglass_flowing_sand: *Agent working*";
+    default:
+      return ":rocket: *Agent started*";
+  }
+}
+
+function progressFallbackText(state: ProgressState): string {
+  switch (state.status) {
+    case "completed":
+      return `Agent finished${state.duration ? ` — ${state.duration}` : ""}`;
+    case "attention":
+      return "Agent needs input";
+    case "running":
+      return "Agent working…";
+    default:
+      return "Agent started";
   }
 }

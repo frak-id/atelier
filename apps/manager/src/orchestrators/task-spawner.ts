@@ -143,6 +143,18 @@ export class TaskSpawner {
       );
 
       log.info({ taskId, sandboxId }, "Task initial session started");
+
+      if (task.data.integration) {
+        try {
+          const { integrationEventBridge } = await import("../container.ts");
+          await integrationEventBridge.startListening(taskId);
+        } catch (bridgeError) {
+          log.warn(
+            { taskId, error: bridgeError },
+            "Failed to start integration event bridge",
+          );
+        }
+      }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);

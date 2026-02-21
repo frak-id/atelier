@@ -247,6 +247,16 @@ export class IntegrationGateway {
       { taskId: task.id, sandboxId, sessionId },
       "Re-mention dispatched to task sandbox",
     );
+
+    try {
+      const { integrationEventBridge } = await import("../../container.ts");
+      await integrationEventBridge.startListening(task.id);
+    } catch (error) {
+      log.debug(
+        { taskId: task.id, error },
+        "Failed to restart event bridge on re-mention",
+      );
+    }
   }
 
   private async resolveOrCreateSession(
