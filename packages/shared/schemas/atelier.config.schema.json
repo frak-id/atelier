@@ -1,9 +1,9 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["domain", "auth"],
   "properties": {
     "domain": {
+      "default": {},
       "type": "object",
       "properties": {
         "baseDomain": {
@@ -49,6 +49,7 @@
       }
     },
     "auth": {
+      "default": {},
       "type": "object",
       "properties": {
         "github": {
@@ -84,7 +85,9 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "anyOf": [
@@ -109,6 +112,10 @@
         "maxSandboxes": {
           "default": 20,
           "type": "number"
+        },
+        "mcpToken": {
+          "default": "",
+          "type": "string"
         }
       }
     },
@@ -125,7 +132,10 @@
           "type": "string"
         },
         "dnsServers": {
-          "default": ["8.8.8.8", "8.8.4.4"],
+          "default": [
+            "8.8.8.8",
+            "8.8.4.4"
+          ],
           "type": "array",
           "items": {
             "type": "string"
@@ -255,7 +265,7 @@
                   "type": "number"
                 },
                 "version": {
-                  "default": "1.1.54",
+                  "default": "1.2.6",
                   "type": "string"
                 }
               }
@@ -329,6 +339,30 @@
                   "type": "string"
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    "integrations": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "slack": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "botToken": {
+              "default": "",
+              "type": "string"
+            },
+            "signingSecret": {
+              "default": "",
+              "type": "string"
             }
           }
         }

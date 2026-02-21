@@ -24,6 +24,7 @@
     "@frak/atelier-shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@opencode-ai/sdk": "1.2.6",
+    "@slack/web-api": "^7.14.1",
     "async-mutex": "^0.5.0",
     "croner": "^6.0.7",
     "drizzle-orm": "^0.45.1",

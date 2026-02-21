@@ -292,6 +292,36 @@ export const AdvancedConfigSchema = Type.Object(
 export type AdvancedConfig = Static<typeof AdvancedConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Integrations
+// ---------------------------------------------------------------------------
+
+export const SlackIntegrationConfigSchema = Type.Object(
+  {
+    /** Enable Slack integration */
+    enabled: Type.Boolean({ default: false }),
+    /** Slack Bot User OAuth Token (xoxb-...) */
+    botToken: Type.String({ default: "" }),
+    /** Slack app signing secret for webhook verification */
+    signingSecret: Type.String({ default: "" }),
+  },
+  { default: {} },
+);
+
+export type SlackIntegrationConfig = Static<
+  typeof SlackIntegrationConfigSchema
+>;
+
+export const IntegrationsConfigSchema = Type.Object(
+  {
+    /** Slack bot integration */
+    slack: SlackIntegrationConfigSchema,
+  },
+  { default: {} },
+);
+
+export type IntegrationsConfig = Static<typeof IntegrationsConfigSchema>;
+
+// ---------------------------------------------------------------------------
 // Root config
 // ---------------------------------------------------------------------------
 
@@ -303,6 +333,7 @@ export const AtelierConfigSchema = Type.Object({
   sandbox: SandboxDefaultsSchema,
   setup: SetupConfigSchema,
   advanced: AdvancedConfigSchema,
+  integrations: IntegrationsConfigSchema,
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;
@@ -355,6 +386,10 @@ export const ENV_VAR_MAPPING = {
   ATELIER_VERSION_CODE_SERVER: "advanced.vm.vscode.version",
   ATELIER_VERSION_SSH_PROXY: "advanced.server.sshProxy.version",
   ATELIER_VERSION_VERDACCIO: "advanced.server.verdaccio.version",
+
+  ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
+  ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",
+  ATELIER_SLACK_SIGNING_SECRET: "integrations.slack.signingSecret",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;

@@ -25,12 +25,16 @@
     "mode": "production",
     "port": 4000,
     "host": "0.0.0.0",
-    "maxSandboxes": 20
+    "maxSandboxes": 20,
+    "mcpToken": ""
   },
   "network": {
     "bridgeIp": "172.16.0.1",
     "bridgeName": "br0",
-    "dnsServers": ["8.8.8.8", "8.8.4.4"],
+    "dnsServers": [
+      "8.8.8.8",
+      "8.8.4.4"
+    ],
     "guestIpStart": 10,
     "guestSubnet": "172.16.0",
     "bridgeCidr": "172.16.0.0/24",
@@ -85,6 +89,13 @@
       "firecracker": {
         "version": "1.14.1"
       }
+    }
+  },
+  "integrations": {
+    "slack": {
+      "enabled": false,
+      "botToken": "",
+      "signingSecret": ""
     }
   }
 }

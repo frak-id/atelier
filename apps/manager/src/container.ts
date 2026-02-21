@@ -8,6 +8,10 @@ import {
   GitSourceService,
 } from "./modules/git-source/index.ts";
 import {
+  IntegrationGateway,
+  SlackAdapter,
+} from "./modules/integration/index.ts";
+import {
   AuthSyncService,
   InternalService,
   SharedAuthRepository,
@@ -34,6 +38,7 @@ import {
   TaskSpawner,
   WorkspacePrebuildRunner,
 } from "./orchestrators/index.ts";
+import { config } from "./shared/lib/config.ts";
 
 /* -------------------------------------------------------------------------- */
 /*                                Repositories                                */
@@ -152,6 +157,21 @@ const taskSpawner = new TaskSpawner({
   agentClient,
 });
 
+const slackAdapter = config.integrations.slack.enabled
+  ? new SlackAdapter()
+  : null;
+
+const integrationGateway = new IntegrationGateway({
+  taskService,
+  sandboxService,
+  sandboxLifecycle,
+  systemSandboxService,
+  workspaceService,
+});
+if (slackAdapter) {
+  integrationGateway.registerAdapter(slackAdapter);
+}
+
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
   gitSourceService,
@@ -172,6 +192,8 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
+  integrationGateway,
+  slackAdapter,
   sshKeyService,
   systemSandboxService,
   taskService,
