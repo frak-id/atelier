@@ -310,6 +310,34 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
     },
   )
   .post(
+    "/sandbox/prebuild/cancel",
+    async () => {
+      if (!systemPrebuildRunner.isBuilding()) {
+        return { cancelled: false, message: "No prebuild in progress" };
+      }
+      await systemPrebuildRunner.cancel();
+      return { cancelled: true, message: "System prebuild cancelled" };
+    },
+    {
+      detail: { tags: ["system"] },
+    },
+  )
+  .delete(
+    "/sandbox/prebuild",
+    async ({ set }) => {
+      if (systemPrebuildRunner.isBuilding()) {
+        set.status = 409;
+        return { message: "Cannot delete while prebuild is in progress" };
+      }
+      await systemPrebuildRunner.delete();
+      set.status = 204;
+      return null;
+    },
+    {
+      detail: { tags: ["system"] },
+    },
+  )
+  .post(
     "/cleanup",
     async () => {
       return performCleanup();
