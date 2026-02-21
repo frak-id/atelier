@@ -358,19 +358,28 @@ export class IntegrationGateway {
 }
 
 function extractCreatedTaskId(parts: Part[]): string | undefined {
-  for (const part of parts) {
-    if (part.type !== "tool" || part.tool !== "create_task") continue;
+  const toolParts = parts.filter((p): p is ToolPart => p.type === "tool");
 
-    const toolPart = part as ToolPart;
-    if (toolPart.state.status !== "completed") continue;
+  if (toolParts.length > 0) {
+    log.debug(
+      {
+        tools: toolParts.map((p) => ({ name: p.tool, status: p.state.status })),
+      },
+      "Tool calls in system sandbox response",
+    );
+  }
+
+  for (const part of toolParts) {
+    if (!part.tool.endsWith("create_task")) continue;
+    if (part.state.status !== "completed") continue;
 
     try {
-      const output = JSON.parse(toolPart.state.output);
+      const output = JSON.parse(part.state.output);
       if (output?.id && typeof output.id === "string") {
         return output.id;
       }
     } catch {
-      log.warn("Failed to parse create_task tool output");
+      log.warn({ tool: part.tool }, "Failed to parse create_task tool output");
     }
   }
   return undefined;
