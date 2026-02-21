@@ -28,6 +28,34 @@ export interface IntegrationContext {
   };
 }
 
+/* — Progress tracking types — */
+
+export interface TodoItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+}
+
+export interface AttentionItem {
+  type: "permission" | "question";
+  description: string;
+  url: string;
+}
+
+export interface ProgressState {
+  status: "starting" | "running" | "attention" | "completed";
+  sandboxId: string;
+  urls: {
+    dashboard: string;
+    opencode: string;
+  };
+  startedAt: string;
+  completedAt?: string;
+  duration?: string;
+  todos: TodoItem[];
+  currentTask?: string;
+  attention?: AttentionItem;
+}
+
 export interface IntegrationAdapter {
   readonly source: IntegrationSource;
 
@@ -55,4 +83,24 @@ export interface IntegrationAdapter {
 
   /** Post a message in the originating thread / PR comment. */
   postMessage(event: IntegrationEvent, text: string): Promise<void>;
+
+  /* — Progress tracking — */
+
+  /**
+   * Post a progress tracking message (Block Kit on Slack, rich comment
+   * on GitHub, etc.).  Returns a platform message ID for future updates.
+   */
+  postProgressMessage?(
+    event: IntegrationEvent,
+    state: ProgressState,
+  ): Promise<string | undefined>;
+
+  /**
+   * Update a previously posted progress message in-place.
+   */
+  updateProgressMessage?(
+    event: IntegrationEvent,
+    messageId: string,
+    state: ProgressState,
+  ): Promise<void>;
 }
