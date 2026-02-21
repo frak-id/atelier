@@ -145,8 +145,7 @@ export class IntegrationGateway {
         throw new Error("System sandbox prompt failed");
       }
 
-      // Extract task ID from create_task tool call output
-      const taskId = data ? extractCreatedTaskId(data.parts) : undefined;
+      const taskId = await this.extractCreatedTaskId(client, session.id);
 
       if (taskId) {
         log.info(
@@ -154,8 +153,9 @@ export class IntegrationGateway {
           "Task created via system sandbox — injecting metadata",
         );
         await this.attachIntegrationToTask(taskId, event);
-      } else if (data) {
-        // No task created — forward text response to platform
+      }
+
+      if (data) {
         const textReply = data.parts
           .filter(
             (p): p is Extract<Part, { type: "text" }> => p.type === "text",
@@ -166,8 +166,8 @@ export class IntegrationGateway {
 
         if (textReply) {
           log.info(
-            { threadKey: event.threadKey },
-            "System sandbox replied with text — forwarding to platform",
+            { threadKey: event.threadKey, hasTask: !!taskId },
+            "Forwarding text response to platform",
           );
           await adapter.postMessage(event, textReply);
         }
@@ -355,32 +355,37 @@ export class IntegrationGateway {
     );
     return session.id;
   }
-}
 
-function extractCreatedTaskId(parts: Part[]): string | undefined {
-  const toolParts = parts.filter((p): p is ToolPart => p.type === "tool");
+  private async extractCreatedTaskId(
+    client: ReturnType<typeof createOpencodeClient>,
+    sessionId: string,
+  ): Promise<string | undefined> {
+    const { data: messages } = await client.session.messages({
+      sessionID: sessionId,
+    });
+    if (!messages) return undefined;
 
-  if (toolParts.length > 0) {
-    log.debug(
-      {
-        tools: toolParts.map((p) => ({ name: p.tool, status: p.state.status })),
-      },
-      "Tool calls in system sandbox response",
-    );
-  }
+    for (const msg of messages) {
+      for (const part of msg.parts) {
+        if (part.type !== "tool") continue;
+        const toolPart = part as ToolPart;
+        if (!toolPart.tool.endsWith("create_task")) continue;
+        if (toolPart.state.status !== "completed") continue;
 
-  for (const part of toolParts) {
-    if (!part.tool.endsWith("create_task")) continue;
-    if (part.state.status !== "completed") continue;
-
-    try {
-      const output = JSON.parse(part.state.output);
-      if (output?.id && typeof output.id === "string") {
-        return output.id;
+        try {
+          const output = JSON.parse(toolPart.state.output);
+          if (output?.id && typeof output.id === "string") {
+            return output.id;
+          }
+        } catch {
+          log.warn(
+            { tool: toolPart.tool },
+            "Failed to parse create_task output",
+          );
+        }
       }
-    } catch {
-      log.warn({ tool: part.tool }, "Failed to parse create_task tool output");
     }
+
+    return undefined;
   }
-  return undefined;
 }
