@@ -49,6 +49,7 @@ export class SystemAiService {
   ): void {
     this.runInBackground(
       {
+        agent: "description",
         text: this.buildDescriptionPrompt(workspace, trigger),
         label: "description",
       },

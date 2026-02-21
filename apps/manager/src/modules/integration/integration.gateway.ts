@@ -107,21 +107,9 @@ export class IntegrationGateway {
       )
       .join("\n");
 
-    const masterPrompt = [
-      "You are the Atelier bot. Someone mentioned you on an external platform.",
-      "You have access to atelier-mcp tools to manage workspaces and tasks.",
-      "",
+    const dispatcherInput = [
       "Available workspaces:",
       workspaceList || "- (no workspaces configured)",
-      "",
-      "Based on the conversation context below, decide what to do:",
-      "",
-      "- If the user is requesting implementation, review, fix, or any coding work:",
-      "  1. Pick the most appropriate workspace",
-      "  2. Use `create_task` with `autoStart: true`",
-      "",
-      "- If it's a question you can answer without a task:",
-      "  1. Respond concisely",
       "",
       "---",
       "",
@@ -138,7 +126,8 @@ export class IntegrationGateway {
 
       const { data, error: promptError } = await client.session.prompt({
         sessionID: session.id,
-        parts: [{ type: "text", text: masterPrompt }],
+        agent: "dispatcher",
+        parts: [{ type: "text", text: dispatcherInput }],
       });
 
       if (promptError) {
