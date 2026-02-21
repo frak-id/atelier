@@ -1,5 +1,10 @@
-import { createOpencodeClient } from "@opencode-ai/sdk/v2";
+import {
+  createOpencodeClient,
+  type Part,
+  type ToolPart,
+} from "@opencode-ai/sdk/v2";
 import type { SandboxLifecycle } from "../../orchestrators/sandbox-lifecycle.ts";
+import type { TaskIntegrationMetadata } from "../../schemas/task.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
@@ -96,14 +101,11 @@ export class IntegrationGateway {
 
     const workspaces = this.deps.workspaceService.getAll();
     const workspaceList = workspaces
-      .map((w) => `- **${w.name}** (id: \`${w.id}\`)`)
+      .map(
+        (w) =>
+          `- **${w.name}** (id: \`${w.id}\`)${w.config.description ? ` — ${w.config.description}` : ""}`,
+      )
       .join("\n");
-
-    const integrationPayload = JSON.stringify({
-      source: event.source,
-      threadKey: event.threadKey,
-      raw: event.raw,
-    });
 
     const masterPrompt = [
       "You are the Atelier bot. Someone mentioned you on an external platform.",
@@ -116,16 +118,10 @@ export class IntegrationGateway {
       "",
       "- If the user is requesting implementation, review, fix, or any coding work:",
       "  1. Pick the most appropriate workspace",
-      "  2. Use `create_task` with `autoStart: true` and pass the integration",
-      "     metadata below so the task is linked to this conversation",
+      "  2. Use `create_task` with `autoStart: true`",
       "",
       "- If it's a question you can answer without a task:",
-      "  1. Respond concisely (the platform will handle delivery)",
-      "",
-      "**Integration metadata (pass to create_task as-is):**",
-      "```json",
-      integrationPayload,
-      "```",
+      "  1. Respond concisely",
       "",
       "---",
       "",
@@ -140,7 +136,7 @@ export class IntegrationGateway {
         throw new Error("Failed to create system sandbox session");
       }
 
-      const { error: promptError } = await client.session.prompt({
+      const { data, error: promptError } = await client.session.prompt({
         sessionID: session.id,
         parts: [{ type: "text", text: masterPrompt }],
       });
@@ -149,12 +145,73 @@ export class IntegrationGateway {
         throw new Error("System sandbox prompt failed");
       }
 
-      log.info(
-        { source: event.source, threadKey: event.threadKey },
-        "New mention dispatched to system sandbox",
-      );
+      // Extract task ID from create_task tool call output
+      const taskId = data ? extractCreatedTaskId(data.parts) : undefined;
+
+      if (taskId) {
+        log.info(
+          { taskId, threadKey: event.threadKey },
+          "Task created via system sandbox — injecting metadata",
+        );
+        await this.attachIntegrationToTask(taskId, event);
+      } else if (data) {
+        // No task created — forward text response to platform
+        const textReply = data.parts
+          .filter(
+            (p): p is Extract<Part, { type: "text" }> => p.type === "text",
+          )
+          .map((p) => p.text)
+          .join("\n")
+          .trim();
+
+        if (textReply) {
+          log.info(
+            { threadKey: event.threadKey },
+            "System sandbox replied with text — forwarding to platform",
+          );
+          await adapter.postMessage(event, textReply);
+        }
+      }
     } finally {
       this.deps.systemSandboxService.release();
+    }
+  }
+
+  private async attachIntegrationToTask(
+    taskId: string,
+    event: IntegrationEvent,
+  ): Promise<void> {
+    const raw = event.raw as Record<string, unknown>;
+    const metadata: TaskIntegrationMetadata = {
+      source: event.source,
+      threadKey: event.threadKey,
+    };
+
+    if (event.source === "slack") {
+      metadata.slack = {
+        channel: String(raw.channel ?? ""),
+        ts: String(raw.ts ?? ""),
+        threadTs: String(raw.threadTs ?? ""),
+      };
+    } else if (event.source === "github") {
+      metadata.github = {
+        owner: String(raw.owner ?? ""),
+        repo: String(raw.repo ?? ""),
+        prNumber: Number(raw.prNumber ?? 0),
+      };
+    }
+
+    this.deps.taskService.setIntegrationMetadata(taskId, metadata);
+
+    // Start the event bridge for real-time progress
+    try {
+      const { integrationEventBridge } = await import("../../container.ts");
+      await integrationEventBridge.startListening(taskId);
+    } catch (error) {
+      log.warn(
+        { taskId, error },
+        "Failed to start event bridge after metadata injection",
+      );
     }
   }
 
@@ -298,4 +355,23 @@ export class IntegrationGateway {
     );
     return session.id;
   }
+}
+
+function extractCreatedTaskId(parts: Part[]): string | undefined {
+  for (const part of parts) {
+    if (part.type !== "tool" || part.tool !== "create_task") continue;
+
+    const toolPart = part as ToolPart;
+    if (toolPart.state.status !== "completed") continue;
+
+    try {
+      const output = JSON.parse(toolPart.state.output);
+      if (output?.id && typeof output.id === "string") {
+        return output.id;
+      }
+    } catch {
+      log.warn("Failed to parse create_task tool output");
+    }
+  }
+  return undefined;
 }
