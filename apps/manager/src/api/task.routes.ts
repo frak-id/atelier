@@ -2,9 +2,9 @@ import { Elysia, t } from "elysia";
 import {
   sandboxDestroyer,
   sandboxLifecycle,
+  systemAiService,
   taskService,
   taskSpawner,
-  titleService,
 } from "../container.ts";
 import {
   AddSessionBodySchema,
@@ -51,14 +51,14 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     "/",
     ({ body, set }) => {
       const title =
-        body.title?.trim() || titleService.fallbackTitle(body.description);
+        body.title?.trim() || systemAiService.fallbackTitle(body.description);
 
       log.info({ title, workspaceId: body.workspaceId }, "Creating task");
 
       const task = taskService.create({ ...body, title });
 
       if (!body.title?.trim()) {
-        titleService.generateTitleInBackground(
+        systemAiService.generateTitleInBackground(
           body.description,
           (generatedTitle) => {
             taskService.updateTitle(task.id, generatedTitle);

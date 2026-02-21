@@ -2,9 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
 import {
   sandboxService,
+  systemAiService,
   taskService,
   taskSpawner,
-  titleService,
   workspaceService,
 } from "../../container.ts";
 import type { Task } from "../../schemas/index.ts";
@@ -190,7 +190,7 @@ export function registerTaskTools(server: McpServer): void {
       }
 
       const taskTitle =
-        title?.trim() || titleService.fallbackTitle(description);
+        title?.trim() || systemAiService.fallbackTitle(description);
 
       const task = taskService.create({
         workspaceId,
@@ -232,7 +232,7 @@ export function registerTaskTools(server: McpServer): void {
       }
 
       if (!title?.trim()) {
-        titleService.generateTitleInBackground(
+        systemAiService.generateTitleInBackground(
           description,
           (generatedTitle) => {
             taskService.updateTitle(task.id, generatedTitle);

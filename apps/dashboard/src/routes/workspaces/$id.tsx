@@ -9,6 +9,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Sparkles,
   Square,
   Trash2,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import {
   useDeleteConfigFile,
   useDeletePrebuild,
   useDeleteWorkspace,
+  useGenerateDescription,
   useTriggerPrebuild,
   useUpdateConfigFile,
   workspaceDetailQuery,
@@ -91,6 +93,7 @@ function WorkspaceDetailPage() {
   const prebuildMutation = useTriggerPrebuild();
   const deletePrebuildMutation = useDeletePrebuild();
   const cancelPrebuildMutation = useCancelPrebuild();
+  const generateDescriptionMutation = useGenerateDescription();
   const createConfigMutation = useCreateConfigFile();
   const updateConfigMutation = useUpdateConfigFile();
   const deleteConfigMutation = useDeleteConfigFile();
@@ -192,11 +195,33 @@ function WorkspaceDetailPage() {
               </Button>
             )}
           </div>
-          {workspace.config.description && (
-            <p className="text-muted-foreground mt-1">
-              {workspace.config.description}
-            </p>
-          )}
+          <div className="flex items-start gap-1 mt-1">
+            {workspace.config.description ? (
+              <p className="text-muted-foreground">
+                {workspace.config.description}
+              </p>
+            ) : (
+              <p className="text-muted-foreground italic">No description</p>
+            )}
+            {workspace.config.repos.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 h-6 w-6 p-0"
+                onClick={() => generateDescriptionMutation.mutate(id)}
+                disabled={generateDescriptionMutation.isPending}
+                title={
+                  workspace.config.description
+                    ? "Regenerate description with AI"
+                    : "Generate description with AI"
+                }
+              >
+                <Sparkles
+                  className={`h-3.5 w-3.5 ${generateDescriptionMutation.isPending ? "animate-pulse" : ""}`}
+                />
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span>
               {workspace.config.repos.length} repository(ies) configured

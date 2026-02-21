@@ -1,3 +1,4 @@
+export { SystemAiService } from "./ai.service.ts";
 export {
   SYSTEM_WORKSPACE_ID,
   SystemSandboxService,
