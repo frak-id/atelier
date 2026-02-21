@@ -145,6 +145,38 @@ export class SystemPrebuildRunner extends PrebuildRunner {
     });
   }
 
+  async cancel(): Promise<void> {
+    const key = SYSTEM_WORKSPACE_ID;
+    const activeBuild = this.activeBuilds.get(key);
+
+    if (activeBuild) {
+      log.info("Cancelling active system prebuild");
+      activeBuild.abortController.abort();
+      return;
+    }
+
+    if (!this.isBuilding()) {
+      throw new Error("No system prebuild in progress to cancel");
+    }
+  }
+
+  async delete(): Promise<void> {
+    const key = SYSTEM_WORKSPACE_ID;
+    await this.cleanupStorage(key);
+
+    try {
+      const file = Bun.file(this.metadataPath);
+      if (await file.exists()) {
+        const { unlink } = await import("node:fs/promises");
+        await unlink(this.metadataPath);
+      }
+    } catch (e) {
+      log.warn({ error: e }, "Failed to remove system prebuild metadata");
+    }
+
+    log.info("System prebuild deleted");
+  }
+
   async ensurePrebuild(): Promise<void> {
     const key = SYSTEM_WORKSPACE_ID;
     const hasLvm = await StorageService.hasPrebuild(key);

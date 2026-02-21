@@ -1083,9 +1083,24 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
   }
 
   private async registerRoutes(): Promise<void> {
-    if (this.isSystem) return;
     if (!this.network) throw new Error("Network not allocated");
     if (!this.sandbox) throw new Error("Sandbox not initialized");
+
+    // System sandboxes only get SSH (no Caddy web routes)
+    const sshCmd = await SshPiperService.registerRoute(
+      this.sandboxId,
+      this.network.ipAddress,
+      this.deps.sshKeyService.getValidPublicKeys(),
+    );
+
+    if (this.isSystem) {
+      this.sandbox.runtime.urls = {
+        vscode: "",
+        opencode: "",
+        ssh: sshCmd,
+      };
+      return;
+    }
 
     const urls = await CaddyService.registerRoutes(
       this.sandboxId,
@@ -1094,12 +1109,6 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
         vscode: config.advanced.vm.vscode.port,
         opencode: config.advanced.vm.opencode.port,
       },
-    );
-
-    const sshCmd = await SshPiperService.registerRoute(
-      this.sandboxId,
-      this.network.ipAddress,
-      this.deps.sshKeyService.getValidPublicKeys(),
     );
 
     this.sandbox.runtime.urls = {

@@ -3,29 +3,39 @@ import {
   Activity,
   AlertCircle,
   Bot,
+  Check,
   CheckCircle,
   ChevronUp,
+  Copy,
   Cpu,
   Database,
   HardDrive,
   RefreshCw,
   Server,
+  Square,
+  Terminal,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   healthQuery,
   sandboxListQuery,
   systemSandboxQuery,
   systemStatsQuery,
   systemStorageQuery,
+  useCancelSystemSandboxPrebuild,
+  useDeleteSystemSandboxPrebuild,
   useSystemSandboxPrebuild,
 } from "@/api/queries";
+import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/utils";
 
 export function SystemStatusFooter() {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const { data: health } = useQuery(healthQuery);
   const { data: systemSandbox } = useQuery(systemSandboxQuery);
@@ -34,12 +44,27 @@ export function SystemStatusFooter() {
   const { data: sandboxes } = useQuery(sandboxListQuery());
   const { mutate: rebuild, isPending: isRebuilding } =
     useSystemSandboxPrebuild();
+  const cancelPrebuild = useCancelSystemSandboxPrebuild();
+  const deletePrebuild = useDeleteSystemSandboxPrebuild();
 
   const runningSandboxes =
     sandboxes?.filter((s) => s.status === "running").length ?? 0;
   const maxSandboxes = stats?.maxSandboxes ?? 10;
 
   const isHealthy = health?.status === "ok";
+
+  const sandboxIsActive =
+    systemSandbox?.status === "running" || systemSandbox?.status === "idle";
+  const sshCommand = systemSandbox?.sandboxId
+    ? `ssh ${systemSandbox.sandboxId}@${SSH_HOST_ALIAS}`
+    : null;
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    toast.success("Copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="border-t bg-card">
@@ -196,7 +221,7 @@ export function SystemStatusFooter() {
 
           <div className="pt-2 border-t">
             <div className="text-sm font-medium mb-2">System Sandbox</div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <SystemSandboxBadge status={systemSandbox?.status ?? "off"} />
 
               {systemSandbox?.prebuild && (
@@ -231,22 +256,60 @@ export function SystemStatusFooter() {
                 </span>
               )}
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-xs gap-1"
-                onClick={() => rebuild()}
-                disabled={isRebuilding || systemSandbox?.prebuild?.building}
-              >
-                <RefreshCw
-                  className={`h-3 w-3 ${
-                    isRebuilding || systemSandbox?.prebuild?.building
-                      ? "animate-spin"
-                      : ""
-                  }`}
-                />
-                Rebuild
-              </Button>
+              {systemSandbox?.prebuild?.building ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => cancelPrebuild.mutate()}
+                  disabled={cancelPrebuild.isPending}
+                  title="Cancel prebuild"
+                >
+                  <Square
+                    className={`h-3 w-3 text-destructive ${
+                      cancelPrebuild.isPending ? "animate-pulse" : ""
+                    }`}
+                  />
+                  Cancel
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => rebuild()}
+                  disabled={isRebuilding || deletePrebuild.isPending}
+                  title="Rebuild prebuild"
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 ${isRebuilding ? "animate-spin" : ""}`}
+                  />
+                  Rebuild
+                </Button>
+              )}
+
+              {systemSandbox?.prebuild?.exists &&
+                !systemSandbox.prebuild.building && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 px-2 text-xs gap-1"
+                    onClick={() => {
+                      if (confirm("Delete the system prebuild snapshot?")) {
+                        deletePrebuild.mutate();
+                      }
+                    }}
+                    disabled={deletePrebuild.isPending || isRebuilding}
+                    title="Delete prebuild"
+                  >
+                    <Trash2
+                      className={`h-3 w-3 text-destructive ${
+                        deletePrebuild.isPending ? "animate-pulse" : ""
+                      }`}
+                    />
+                    Delete
+                  </Button>
+                )}
 
               {systemSandbox?.activeCount !== undefined &&
                 systemSandbox.activeCount > 0 && (
@@ -260,6 +323,27 @@ export function SystemStatusFooter() {
                 </span>
               )}
             </div>
+
+            {sandboxIsActive && sshCommand && (
+              <div className="mt-3 flex items-center gap-2">
+                <Terminal className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <code className="flex-1 bg-muted px-2.5 py-1 rounded text-xs font-mono">
+                  {sshCommand}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 shrink-0"
+                  onClick={() => copyToClipboard(sshCommand)}
+                >
+                  {copied ? (
+                    <Check className="h-3 w-3 text-green-500" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}
