@@ -64,7 +64,7 @@
       },
       "opencode": {
         "port": 3000,
-        "version": "1.2.6"
+        "version": "1.2.10"
       },
       "browser": {
         "port": 6080

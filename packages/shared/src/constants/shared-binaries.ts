@@ -26,7 +26,7 @@ interface VersionOverrides {
 export function getSharedBinaries(
   overrides: VersionOverrides = {},
 ): Record<SharedBinaryId, SharedBinaryInfo> {
-  const ocVersion = overrides.opencode ?? "1.2.6";
+  const ocVersion = overrides.opencode ?? "1.2.10";
   const csVersion = overrides.codeServer ?? "4.109.2";
 
   return {
