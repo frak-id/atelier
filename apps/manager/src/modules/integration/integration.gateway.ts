@@ -140,7 +140,7 @@ export class IntegrationGateway {
         throw new Error("Failed to create system sandbox session");
       }
 
-      const { error: promptError } = await client.session.promptAsync({
+      const { error: promptError } = await client.session.prompt({
         sessionID: session.id,
         parts: [{ type: "text", text: masterPrompt }],
       });
