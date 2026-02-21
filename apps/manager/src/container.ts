@@ -22,9 +22,11 @@ import {
 } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
-import { SystemSandboxService } from "./modules/system-sandbox/index.ts";
+import {
+  SystemAiService,
+  SystemSandboxService,
+} from "./modules/system-sandbox/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
-import { TitleService } from "./modules/title/index.ts";
 import {
   WorkspaceRepository,
   WorkspaceService,
@@ -118,7 +120,7 @@ const systemSandboxService = new SystemSandboxService({
   internalService,
 });
 
-const titleService = new TitleService(systemSandboxService);
+const systemAiService = new SystemAiService(systemSandboxService);
 const taskService = new TaskService(taskRepository);
 
 const sandboxLifecycle = new SandboxLifecycle({
@@ -138,6 +140,7 @@ const workspacePrebuildRunner = new WorkspacePrebuildRunner({
   workspaceService,
   agentClient,
   internalService,
+  aiService: systemAiService,
 });
 
 const systemPrebuildRunner = new SystemPrebuildRunner({
@@ -195,10 +198,10 @@ export {
   integrationGateway,
   slackAdapter,
   sshKeyService,
+  systemAiService,
   systemSandboxService,
   taskService,
   taskSpawner,
-  titleService,
   sessionTemplateService,
   workspaceService,
 };

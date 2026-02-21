@@ -1,6 +1,7 @@
 import { VM } from "@frak/atelier-shared/constants";
 import { eventBus } from "../infrastructure/events/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
+import type { SystemAiService } from "../modules/system-sandbox/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   PrebuildStatus,
@@ -22,6 +23,7 @@ const COMMAND_TIMEOUT = 300000;
 interface WorkspacePrebuildRunnerDependencies
   extends PrebuildRunnerDependencies {
   workspaceService: WorkspaceService;
+  aiService: SystemAiService;
 }
 
 export class WorkspacePrebuildRunner extends PrebuildRunner {
@@ -128,6 +130,16 @@ export class WorkspacePrebuildRunner extends PrebuildRunner {
         commitHashes,
       );
       log.info({ workspaceId }, "Prebuild completed successfully");
+
+      this.deps.aiService.generateDescriptionInBackground(
+        workspace,
+        "updated",
+        (description) => {
+          this.deps.workspaceService.update(workspaceId, {
+            config: { description },
+          });
+        },
+      );
     } catch (error) {
       const isCancelled = error instanceof Error && error.name === "AbortError";
       const errorMessage =

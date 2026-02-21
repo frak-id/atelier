@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import {
   prebuildRunner,
   sandboxService,
+  systemAiService,
   workspaceService,
 } from "../container.ts";
 import {
@@ -38,6 +39,16 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       if (hasRepos) {
         log.info({ workspaceId: workspace.id }, "Triggering initial prebuild");
         prebuildRunner.runInBackground(workspace.id);
+
+        systemAiService.generateDescriptionInBackground(
+          workspace,
+          "created",
+          (description) => {
+            workspaceService.update(workspace.id, {
+              config: { description },
+            });
+          },
+        );
       }
 
       set.status = 201;
