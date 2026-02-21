@@ -8,6 +8,7 @@ import {
   GitSourceService,
 } from "./modules/git-source/index.ts";
 import {
+  IntegrationEventBridge,
   IntegrationGateway,
   SlackAdapter,
 } from "./modules/integration/index.ts";
@@ -172,6 +173,12 @@ if (slackAdapter) {
   integrationGateway.registerAdapter(slackAdapter);
 }
 
+const integrationEventBridge = new IntegrationEventBridge({
+  taskService,
+  sandboxService,
+  integrationGateway,
+});
+
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
   gitSourceService,
@@ -192,6 +199,7 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
+  integrationEventBridge,
   integrationGateway,
   slackAdapter,
   sshKeyService,
