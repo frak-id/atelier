@@ -63,14 +63,20 @@ export const integrationRoutes = new Elysia({
 
     const event = payload.event;
 
-    if (event.type === "app_mention") {
+    const isDm =
+      event.type === "message" &&
+      event.channel_type === "im" &&
+      !event.bot_id &&
+      !event.subtype;
+
+    if (event.type === "app_mention" || isDm) {
       if (event.bot_id) {
         return { ok: true };
       }
 
       log.info(
-        { channel: event.channel, user: event.user },
-        "Received Slack mention",
+        { channel: event.channel, user: event.user, dm: isDm },
+        isDm ? "Received Slack DM" : "Received Slack mention",
       );
 
       const threadTs = event.thread_ts ?? event.ts;
