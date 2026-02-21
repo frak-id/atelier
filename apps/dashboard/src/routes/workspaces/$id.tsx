@@ -195,33 +195,6 @@ function WorkspaceDetailPage() {
               </Button>
             )}
           </div>
-          <div className="flex items-start gap-1 mt-1">
-            {workspace.config.description ? (
-              <p className="text-muted-foreground">
-                {workspace.config.description}
-              </p>
-            ) : (
-              <p className="text-muted-foreground italic">No description</p>
-            )}
-            {workspace.config.repos.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="shrink-0 h-6 w-6 p-0"
-                onClick={() => generateDescriptionMutation.mutate(id)}
-                disabled={generateDescriptionMutation.isPending}
-                title={
-                  workspace.config.description
-                    ? "Regenerate description with AI"
-                    : "Generate description with AI"
-                }
-              >
-                <Sparkles
-                  className={`h-3.5 w-3.5 ${generateDescriptionMutation.isPending ? "animate-pulse" : ""}`}
-                />
-              </Button>
-            )}
-          </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span>
               {workspace.config.repos.length} repository(ies) configured
@@ -268,6 +241,30 @@ function WorkspaceDetailPage() {
             Edit
           </Button>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <p className={workspace.config.description ? "" : "italic"}>
+          {workspace.config.description || "No description"}
+        </p>
+        {workspace.config.repos.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 h-6 w-6 p-0"
+            onClick={() => generateDescriptionMutation.mutate(id)}
+            disabled={generateDescriptionMutation.isPending}
+            title={
+              workspace.config.description
+                ? "Regenerate description with AI"
+                : "Generate description with AI"
+            }
+          >
+            <Sparkles
+              className={`h-3.5 w-3.5 ${generateDescriptionMutation.isPending ? "animate-pulse" : ""}`}
+            />
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
