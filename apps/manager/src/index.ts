@@ -27,7 +27,6 @@ import {
 import {
   agentOperations,
   authSyncService,
-  integrationGateway,
   prebuildChecker,
   sandboxLifecycle,
   sandboxService,
@@ -43,7 +42,7 @@ import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
-import { setTaskMcpGateway, taskMcpRoutes } from "./mcp/task-mcp.ts";
+
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
@@ -222,7 +221,6 @@ const app = new Elysia()
   .use(internalWellKnownRoutes)
   .use(authRoutes)
   .use(mcpRoutes)
-  .use(taskMcpRoutes)
   .use(integrationRoutes)
   .group("/api", (app) =>
     app
@@ -252,7 +250,6 @@ const app = new Elysia()
     docs: "/swagger",
   }));
 
-setTaskMcpGateway(integrationGateway);
 await systemSandboxService.recoverFromRestart();
 
 setImmediate(() => {

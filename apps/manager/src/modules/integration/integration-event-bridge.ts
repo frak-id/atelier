@@ -50,18 +50,43 @@ export class IntegrationEventBridge {
   constructor(private readonly deps: IntegrationEventBridgeDependencies) {}
 
   async startListening(taskId: string): Promise<void> {
-    if (this.listeners.has(taskId)) return;
+    if (this.listeners.has(taskId)) {
+      log.debug({ taskId }, "Bridge already listening, skipping");
+      return;
+    }
 
     const task = this.deps.taskService.getById(taskId);
-    if (!task?.data.integration || !task.data.sandboxId) return;
+    if (!task?.data.integration || !task.data.sandboxId) {
+      log.warn(
+        {
+          taskId,
+          hasIntegration: !!task?.data.integration,
+          hasSandbox: !!task?.data.sandboxId,
+        },
+        "Cannot start bridge — missing integration or sandbox",
+      );
+      return;
+    }
 
     const sandbox = this.deps.sandboxService.getById(task.data.sandboxId);
-    if (!sandbox?.runtime?.ipAddress) return;
+    if (!sandbox?.runtime?.ipAddress) {
+      log.warn(
+        { taskId, sandboxId: task.data.sandboxId },
+        "Cannot start bridge — sandbox has no IP",
+      );
+      return;
+    }
 
     const adapter = this.deps.integrationGateway.getAdapter(
       task.data.integration.source as IntegrationSource,
     );
-    if (!adapter) return;
+    if (!adapter) {
+      log.warn(
+        { taskId, source: task.data.integration.source },
+        "Cannot start bridge — no adapter for source",
+      );
+      return;
+    }
 
     const event = this.buildEventFromMetadata(task.data.integration);
     const opcClient = createOpencodeClient({
@@ -120,12 +145,24 @@ export class IntegrationEventBridge {
     >["data"]["integration"],
   ): IntegrationEvent {
     if (!integration) throw new Error("No integration metadata");
+
+    let raw: unknown = {};
+    if (integration.slack) {
+      raw = {
+        channel: integration.slack.channel,
+        ts: integration.slack.ts,
+        threadTs: integration.slack.threadTs,
+      };
+    } else if (integration.github) {
+      raw = integration.github;
+    }
+
     return {
       source: integration.source as IntegrationSource,
       threadKey: integration.threadKey,
       user: "system",
       text: "",
-      raw: integration.slack ?? integration.github ?? {},
+      raw,
     };
   }
 

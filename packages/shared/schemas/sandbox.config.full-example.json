@@ -32,10 +32,7 @@
   "network": {
     "bridgeIp": "172.16.0.1",
     "bridgeName": "br0",
-    "dnsServers": [
-      "8.8.8.8",
-      "8.8.4.4"
-    ],
+    "dnsServers": ["8.8.8.8", "8.8.4.4"],
     "guestIpStart": 10,
     "guestSubnet": "172.16.0",
     "bridgeCidr": "172.16.0.0/24",

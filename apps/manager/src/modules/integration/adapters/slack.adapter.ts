@@ -112,11 +112,19 @@ export class SlackAdapter implements IntegrationAdapter {
 
   async postMessage(event: IntegrationEvent, text: string): Promise<void> {
     const { channel, threadTs } = SlackAdapter.parseThreadKey(event.threadKey);
-    await this.client.chat.postMessage({
+    log.debug(
+      { channel, threadTs, threadKey: event.threadKey },
+      "Posting message to thread",
+    );
+    const result = await this.client.chat.postMessage({
       channel,
       text,
       thread_ts: threadTs,
     });
+    log.debug(
+      { ok: result.ok, ts: result.ts, threadTs: result.message?.thread_ts },
+      "Message posted",
+    );
   }
 
   async postProgressMessage(

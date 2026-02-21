@@ -152,17 +152,6 @@ export function registerTaskTools(server: McpServer): void {
             "Start the task immediately after creation. " +
               "Spawns sandbox and launches AI session in background",
           ),
-        integration: z
-          .object({
-            source: z.string(),
-            threadKey: z.string(),
-            raw: z.unknown().optional(),
-          })
-          .optional()
-          .describe(
-            "Integration metadata linking this task to an external " +
-              "conversation (Slack thread, GitHub PR, etc.)",
-          ),
       }),
     },
     async ({
@@ -174,7 +163,6 @@ export function registerTaskTools(server: McpServer): void {
       variantIndex,
       targetRepoIndices,
       autoStart,
-      integration,
     }) => {
       const workspace = workspaceService.getById(workspaceId);
       if (!workspace) {
@@ -201,35 +189,6 @@ export function registerTaskTools(server: McpServer): void {
         variantIndex,
         targetRepoIndices,
       });
-
-      if (integration) {
-        const slackMeta =
-          integration.source === "slack" && integration.raw
-            ? {
-                channel:
-                  (integration.raw as { channel?: string }).channel ?? "",
-                threadTs:
-                  (integration.raw as { threadTs?: string }).threadTs ?? "",
-              }
-            : undefined;
-
-        const githubMeta =
-          integration.source === "github" && integration.raw
-            ? {
-                owner: (integration.raw as { owner?: string }).owner ?? "",
-                repo: (integration.raw as { repo?: string }).repo ?? "",
-                prNumber:
-                  (integration.raw as { prNumber?: number }).prNumber ?? 0,
-              }
-            : undefined;
-
-        taskService.setIntegrationMetadata(task.id, {
-          source: integration.source,
-          threadKey: integration.threadKey,
-          ...(slackMeta && { slack: slackMeta }),
-          ...(githubMeta && { github: githubMeta }),
-        });
-      }
 
       if (!title?.trim()) {
         systemAiService.generateTitleInBackground(

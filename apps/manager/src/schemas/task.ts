@@ -20,6 +20,7 @@ export const TaskIntegrationMetadataSchema = t.Object({
   slack: t.Optional(
     t.Object({
       channel: t.String(),
+      ts: t.String(),
       threadTs: t.String(),
       triggeredBy: t.Optional(t.String()),
     }),

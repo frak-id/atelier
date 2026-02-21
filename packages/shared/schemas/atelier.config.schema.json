@@ -85,9 +85,7 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "properties": {
         "mode": {
           "anyOf": [
@@ -136,10 +134,7 @@
           "type": "string"
         },
         "dnsServers": {
-          "default": [
-            "8.8.8.8",
-            "8.8.4.4"
-          ],
+          "default": ["8.8.8.8", "8.8.4.4"],
           "type": "array",
           "items": {
             "type": "string"
