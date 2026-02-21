@@ -9,10 +9,9 @@ import { NotFoundError, ValidationError } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { TaskRepository } from "./task.repository.ts";
+import { config } from "../../shared/lib/config.ts";
 
 const log = createChildLogger("task-service");
-
-const MAX_ACTIVE_TASKS = 3;
 
 export class TaskService {
   constructor(private readonly repository: TaskRepository) {}
@@ -113,9 +112,9 @@ export class TaskService {
     const activeCount = this.repository.countByStatuses(task.workspaceId, [
       "active",
     ]);
-    if (activeCount >= MAX_ACTIVE_TASKS) {
+    if (activeCount >= config.server.maxActiveTasks) {
       throw new ValidationError(
-        `Maximum ${MAX_ACTIVE_TASKS} active tasks. Complete or cancel existing tasks first.`,
+        `Maximum ${config.server.maxActiveTasks} active tasks. Complete or cancel existing tasks first.`,
       );
     }
 
