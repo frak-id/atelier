@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import {
   generateEd25519Keypair,
   isWebCryptoEd25519Supported,
@@ -172,18 +173,6 @@ export function SshKeysSection() {
   );
 }
 
-function useCopyWithFeedback() {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  const copy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
-
-  return { copy, isCopied: (key: string) => copiedKey === key };
-}
-
 function getSshConfigSnippet() {
   return `
 Host ${SSH_HOST_ALIAS}
@@ -200,7 +189,7 @@ function SetupInstructions({
   privateKey?: string;
   showPrivateKeySetup?: boolean;
 }) {
-  const { copy, isCopied } = useCopyWithFeedback();
+  const { copy, isCopied } = useCopyToClipboard();
 
   const keySetupCommand = privateKey
     ? `mkdir -p ~/.config/atelier && cat > ${SSH_KEY_PATH} << 'EOF'

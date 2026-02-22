@@ -1,9 +1,9 @@
 import { Cable, Check, Copy, Monitor, Terminal } from "lucide-react";
-import { useState } from "react";
 import { toast } from "sonner";
 import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 
 interface QuickConnectCardProps {
   sandboxId: string;
@@ -18,13 +18,10 @@ export function QuickConnectCard({
   opencodePassword,
   workspaceDir,
 }: QuickConnectCardProps) {
-  const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
-
+  const { copy, isCopied } = useCopyToClipboard();
   const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedCommand(id);
+    copy(text, id);
     toast.success("Copied to clipboard");
-    setTimeout(() => setCopiedCommand(null), 2000);
   };
 
   return (
@@ -73,7 +70,7 @@ export function QuickConnectCard({
                 copyToClipboard(cmd, "opencode");
               }}
             >
-              {copiedCommand === "opencode" ? (
+              {isCopied("opencode") ? (
                 <Check className="h-4 w-4 text-green-500" />
               ) : (
                 <Copy className="h-4 w-4" />
@@ -100,7 +97,7 @@ export function QuickConnectCard({
                 )
               }
             >
-              {copiedCommand === "vscode" ? (
+              {isCopied("vscode") ? (
                 <Check className="h-4 w-4 text-green-500" />
               ) : (
                 <Copy className="h-4 w-4" />
@@ -123,7 +120,7 @@ export function QuickConnectCard({
                 copyToClipboard(`ssh ${sandboxId}@${SSH_HOST_ALIAS}`, "ssh")
               }
             >
-              {copiedCommand === "ssh" ? (
+              {isCopied("ssh") ? (
                 <Check className="h-4 w-4 text-green-500" />
               ) : (
                 <Copy className="h-4 w-4" />
