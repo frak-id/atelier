@@ -338,6 +338,72 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
     },
   )
   .post(
+    "/sandbox/start",
+    async () => {
+      const status = systemSandboxService.getStatus();
+      if (status.status === "booting") {
+        return {
+          success: false,
+          message: "System sandbox is already booting",
+        };
+      }
+      if (status.status === "running" || status.status === "idle") {
+        return {
+          success: true,
+          message: "System sandbox is already running",
+        };
+      }
+      await systemSandboxService.ensureRunning();
+      return { success: true, message: "System sandbox started" };
+    },
+    {
+      detail: { tags: ["system"] },
+    },
+  )
+  .post(
+    "/sandbox/stop",
+    async () => {
+      const status = systemSandboxService.getStatus();
+      if (status.status === "off") {
+        return {
+          success: true,
+          message: "System sandbox is already off",
+        };
+      }
+      if (status.status === "booting") {
+        return {
+          success: false,
+          message: "Cannot stop while booting",
+        };
+      }
+      await systemSandboxService.dispose();
+      return { success: true, message: "System sandbox stopped" };
+    },
+    {
+      detail: { tags: ["system"] },
+    },
+  )
+  .post(
+    "/sandbox/restart",
+    async () => {
+      const status = systemSandboxService.getStatus();
+      if (status.status === "booting") {
+        return {
+          success: false,
+          message: "Cannot restart while booting",
+        };
+      }
+      if (status.status === "running" || status.status === "idle") {
+        await systemSandboxService.dispose();
+      }
+      await systemSandboxService.ensureRunning();
+      return { success: true, message: "System sandbox restarted" };
+    },
+    {
+      detail: { tags: ["system"] },
+    },
+  )
+  .post(
     "/cleanup",
     async () => {
       return performCleanup();

@@ -69,6 +69,42 @@ export function useDeleteSystemSandboxPrebuild() {
   });
 }
 
+export function useStartSystemSandbox() {
+  return useMutation({
+    mutationKey: ["system", "sandbox", "start"],
+    mutationFn: async () => unwrap(await api.api.system.sandbox.start.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.system.sandbox,
+      });
+    },
+  });
+}
+
+export function useStopSystemSandbox() {
+  return useMutation({
+    mutationKey: ["system", "sandbox", "stop"],
+    mutationFn: async () => unwrap(await api.api.system.sandbox.stop.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.system.sandbox,
+      });
+    },
+  });
+}
+
+export function useRestartSystemSandbox() {
+  return useMutation({
+    mutationKey: ["system", "sandbox", "restart"],
+    mutationFn: async () => unwrap(await api.api.system.sandbox.restart.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.system.sandbox,
+      });
+    },
+  });
+}
+
 export function useSystemCleanup() {
   return useMutation({
     mutationKey: ["system", "cleanup"],

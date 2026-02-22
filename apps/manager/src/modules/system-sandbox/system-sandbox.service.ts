@@ -141,6 +141,16 @@ export class SystemSandboxService {
     }
   }
 
+  /**
+   * Boot the system sandbox without acquiring a session.
+   * The sandbox will enter the idle state and auto-dispose after the
+   * idle timeout if no sessions acquire it.
+   */
+  async ensureRunning(): Promise<void> {
+    await this.ensureSandbox();
+    this.startIdleTimer();
+  }
+
   async dispose(): Promise<void> {
     this.clearIdleTimer();
     this.bootPromise = null;
