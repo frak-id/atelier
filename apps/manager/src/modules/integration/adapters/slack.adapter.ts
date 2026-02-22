@@ -19,6 +19,7 @@ interface SlackRawEvent {
   channel: string;
   ts: string;
   threadTs: string;
+  channelType?: string;
 }
 
 interface SlackMessage {
@@ -53,7 +54,11 @@ export class SlackAdapter implements IntegrationAdapter {
 
   async extractContext(event: IntegrationEvent): Promise<IntegrationContext> {
     const { channel, threadTs } = SlackAdapter.parseThreadKey(event.threadKey);
-    const rawMessages = await this.fetchThread(channel, threadTs);
+    const raw = event.raw as SlackRawEvent;
+    const isDirectMessage = raw.channelType === "im";
+
+    // Skip thread history for DMs to avoid fetching entire DM conversation
+    const rawMessages = isDirectMessage ? [] : await this.fetchThread(channel, threadTs);
 
     const messages: IntegrationMessage[] = rawMessages.map((m) => ({
       user: m.user ?? m.bot_id ?? "unknown",
@@ -64,11 +69,16 @@ export class SlackAdapter implements IntegrationAdapter {
     return {
       messages,
       currentRequest: { user: event.user, text: event.text },
+      isDirectMessage,
     };
   }
 
   formatContextForPrompt(context: IntegrationContext): string {
     let md = "# Conversation Context\n\n";
+
+    if (context.isDirectMessage) {
+      md += "_Note: This is a direct message. Post progress updates to the same message; do not send additional messages._\n\n";
+    }
 
     if (context.messages.length > 0) {
       md += "## Thread Messages\n\n";

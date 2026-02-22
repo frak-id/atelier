@@ -26,6 +26,8 @@ export interface IntegrationContext {
     user: string;
     text: string;
   };
+  /** Indicates this is a direct message (Slack DM / im channel). */
+  isDirectMessage?: boolean;
 }
 
 /* — Progress tracking types — */
