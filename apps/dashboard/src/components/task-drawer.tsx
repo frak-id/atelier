@@ -47,6 +47,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
 import { formatDate, getWorkspaceDirectory } from "@/lib/utils";
 
@@ -514,30 +515,19 @@ export function TaskDrawer({
 }
 
 function CopySshButton({ ssh }: { ssh: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(ssh);
-      setCopied(true);
-      toast.success("SSH command copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Failed to copy SSH command", {
-        description: "Your browser may not support clipboard access",
-      });
-    }
-  };
-
+  const { copy, isCopied } = useCopyToClipboard();
   return (
     <Button
       variant="outline"
       size="sm"
       className="h-9 px-3 text-sm gap-2"
-      onClick={handleCopy}
+      onClick={() => {
+        copy(ssh, "ssh");
+        toast.success("SSH command copied to clipboard");
+      }}
       title="Copy SSH command"
     >
-      {copied ? (
+      {isCopied("ssh") ? (
         <Check className="h-4 w-4 text-green-500" />
       ) : (
         <Copy className="h-4 w-4" />

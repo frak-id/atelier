@@ -1,25 +1,13 @@
 import { Check, Copy, Server, Shield, ShieldAlert } from "lucide-react";
-import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { config } from "@/config";
-
-function useCopyWithFeedback() {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  const copy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
-
-  return { copy, isCopied: (key: string) => copiedKey === key };
-}
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 
 export function McpConnectionSection() {
-  const { copy, isCopied } = useCopyWithFeedback();
+  const { copy, isCopied } = useCopyToClipboard();
   const { url, hasToken } = config.mcp;
 
   const opencodeConfig = JSON.stringify(

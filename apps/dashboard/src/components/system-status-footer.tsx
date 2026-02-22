@@ -38,11 +38,12 @@ import {
 import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { formatBytes } from "@/lib/utils";
 
 export function SystemStatusFooter() {
   const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { copy, isCopied } = useCopyToClipboard();
 
   const { data: health } = useQuery(healthQuery);
   const { data: systemSandbox } = useQuery(systemSandboxQuery);
@@ -71,10 +72,8 @@ export function SystemStatusFooter() {
     : null;
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
+    copy(text, "ssh");
     toast.success("Copied to clipboard");
-    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -401,7 +400,7 @@ export function SystemStatusFooter() {
                   className="h-6 w-6 p-0 shrink-0"
                   onClick={() => copyToClipboard(sshCommand)}
                 >
-                  {copied ? (
+                  {isCopied("ssh") ? (
                     <Check className="h-3 w-3 text-green-500" />
                   ) : (
                     <Copy className="h-3 w-3" />
