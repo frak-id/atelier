@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/workspaces/")({
   component: WorkspacesPage,
@@ -101,9 +102,7 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
           </Badge>
         </div>
         {workspace.config.description && (
-          <p className="text-sm text-muted-foreground line-clamp-2">
-            {workspace.config.description}
-          </p>
+          <ExpandableDescription text={workspace.config.description} />
         )}
       </CardHeader>
       <CardContent>
@@ -147,5 +146,32 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ExpandableDescription({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 150;
+
+  return (
+    <div>
+      <p
+        className={cn(
+          "text-sm leading-relaxed text-muted-foreground",
+          !expanded && "line-clamp-2",
+        )}
+      >
+        {text}
+      </p>
+      {isLong && (
+        <button
+          type="button"
+          className="text-xs text-muted-foreground/70 hover:text-muted-foreground mt-0.5 transition-colors"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
   );
 }
