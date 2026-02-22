@@ -9,7 +9,10 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
-import type { SystemAiService, SystemSandboxService } from "../system-sandbox/index.ts";
+import type {
+  SystemAiService,
+  SystemSandboxService,
+} from "../system-sandbox/index.ts";
 import type { TaskService } from "../task/index.ts";
 import type { WorkspaceService } from "../workspace/index.ts";
 import type {

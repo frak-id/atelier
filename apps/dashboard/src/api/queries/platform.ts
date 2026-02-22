@@ -1,4 +1,7 @@
-import type { OpenCodeConfigResponse, SystemModelConfig } from "@frak/atelier-manager/types";
+import type {
+  OpenCodeConfigResponse,
+  SystemModelConfig,
+} from "@frak/atelier-manager/types";
 import { queryOptions, useMutation } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";

@@ -1,5 +1,8 @@
 import type { SessionTemplate } from "@frak/atelier-shared/constants";
-import type { SystemModelConfig, SystemModelRef } from "@frak/atelier-manager/types";
+import type {
+  SystemModelConfig,
+  SystemModelRef,
+} from "@frak/atelier-manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -938,8 +941,7 @@ const MODEL_FIELDS = [
   {
     key: "default" as const,
     label: "Default Model",
-    description:
-      "Fallback model used when no action-specific model is set",
+    description: "Fallback model used when no action-specific model is set",
   },
   {
     key: "title" as const,
@@ -950,8 +952,7 @@ const MODEL_FIELDS = [
   {
     key: "description" as const,
     label: "Description Generation",
-    description:
-      "Analyzes workspace repos to generate technical descriptions",
+    description: "Analyzes workspace repos to generate technical descriptions",
   },
   {
     key: "dispatcher" as const,
@@ -1041,16 +1042,13 @@ function SystemModelConfigSection() {
             const value = config[field.key];
             const defaultModel = config.default;
             const isActionField = field.key !== "default";
-            const showDefaultHint =
-              isActionField && !value && defaultModel;
+            const showDefaultHint = isActionField && !value && defaultModel;
 
             return (
               <div key={field.key} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm font-medium">
-                      {field.label}
-                    </Label>
+                    <Label className="text-sm font-medium">{field.label}</Label>
                     <p className="text-xs text-muted-foreground">
                       {field.description}
                     </p>
@@ -1076,10 +1074,7 @@ function SystemModelConfigSection() {
                           const firstModel = getModelOptions(v)[0];
                           updateField(field.key, {
                             providerID: v,
-                            modelID:
-                              firstModel?.value ??
-                              value?.modelID ??
-                              "",
+                            modelID: firstModel?.value ?? value?.modelID ?? "",
                           });
                         }}
                       >
@@ -1121,8 +1116,7 @@ function SystemModelConfigSection() {
 
                   <div className="space-y-1.5">
                     <Label className="text-xs">Model</Label>
-                    {providerOptions.length > 0 &&
-                    value?.providerID ? (
+                    {providerOptions.length > 0 && value?.providerID ? (
                       <Select
                         value={value?.modelID ?? ""}
                         onValueChange={(v) =>
@@ -1142,13 +1136,8 @@ function SystemModelConfigSection() {
                           />
                         </SelectTrigger>
                         <SelectContent>
-                          {getModelOptions(
-                            value.providerID,
-                          ).map((opt) => (
-                            <SelectItem
-                              key={opt.value}
-                              value={opt.value}
-                            >
+                          {getModelOptions(value.providerID).map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
                               {opt.label}
                             </SelectItem>
                           ))}

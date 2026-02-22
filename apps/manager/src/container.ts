@@ -121,7 +121,10 @@ const systemSandboxService = new SystemSandboxService({
   internalService,
 });
 
-const systemAiService = new SystemAiService(systemSandboxService, configFileService);
+const systemAiService = new SystemAiService(
+  systemSandboxService,
+  configFileService,
+);
 const taskService = new TaskService(taskRepository);
 
 const sandboxLifecycle = new SandboxLifecycle({

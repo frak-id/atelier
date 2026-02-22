@@ -12,17 +12,17 @@ const DESCRIPTION_PERMISSION: Record<string, "allow" | "deny"> = {
 // Denies all built-in tools — MCP tools (atelier-manager) remain accessible
 // since they are not governed by opencode's built-in permission keys.
 const DISPATCHER_PERMISSION: Record<string, "allow" | "deny"> = {
-  read: "deny",
+  read: "allow",
   edit: "deny",
   bash: "deny",
   glob: "deny",
   grep: "deny",
   lsp: "deny",
-  task: "deny",
+  task: "allow",
   skill: "deny",
-  webfetch: "deny",
-  websearch: "deny",
-  codesearch: "deny",
+  webfetch: "allow",
+  websearch: "allow",
+  codesearch: "allow",
   todowrite: "deny",
   todoread: "deny",
 };
@@ -46,7 +46,7 @@ This description helps an AI agent pick the right workspace when dispatching tas
 
 - Output ONLY the description text — no preamble, no markdown headers, no explanation.
 - 2-4 lines maximum.
-- Focus on: project/product name, what it does, key technologies, repo structure if multiple.
+- Focus on: project/product name, what it does, repo structure if multiple.
 - Be specific enough that two similar projects are distinguishable.
 - Use present tense ("manages", "provides", not "will manage").
 
@@ -61,7 +61,8 @@ Bad:
 ## Constraints
 
 - Read-only: you cannot create, modify, or delete project files.
-- No tasks: you cannot spawn tasks or delegate work.
+- NO TASKS: you cannot spawn tasks or delegate work.
+- NO MCP TOOLS: Don't use the atelier MCP tools to create the description.
 - Clean up: remove cloned repos from tmp when done.`;
 
 const DISPATCHER_PROMPT = `You are the Atelier integration dispatcher. You route external platform events (Slack, GitHub) to the right workspace and task.
@@ -80,11 +81,12 @@ You receive a message from an external platform and decide what to do with it us
      → Use \`create_task\` with \`autoStart: true\` to dispatch.
      → Include a clear, actionable task description.
    - **Simple question** (no code changes needed):
+     → Clone the repository into a tmp directory if needed.
+     → Delegate the exploration work to other agent if needed.
      → Answer concisely and directly.
    - **Unclear which workspace**:
      → If only one workspace exists, use that one.
      → If multiple exist, pick the best match from the description.
-     → If genuinely ambiguous, ask for clarification.
 
 ## MCP Tools Available
 
@@ -105,7 +107,7 @@ You receive a message from an external platform and decide what to do with it us
 ## Response Format
 
 When dispatching a task: Use the \`create_task\` tool, then briefly confirm what you did.
-When answering a question: Reply with a short, direct answer.`;
+When answering a question: Reply with a short, direct answer. It will be send back to the external platform.`;
 
 export const SYSTEM_AGENTS_CONFIG = {
   agent: {

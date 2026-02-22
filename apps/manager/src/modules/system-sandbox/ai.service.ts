@@ -88,7 +88,11 @@ export class SystemAiService {
         label: "title",
         model: this.resolveModel("title"),
       },
-      onTitle,
+      (title) => {
+        // If the titles generation goes wtf and generate a very looong title, skip.
+        if (title.length > 80) return;
+        onTitle(title);
+      },
     );
   }
 
