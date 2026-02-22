@@ -6,9 +6,11 @@ import { Link } from "@tanstack/react-router";
 import {
   Bot,
   GitBranch,
+  Github,
   GripVertical,
   Monitor,
   MoreHorizontal,
+  Slack,
   Terminal,
 } from "lucide-react";
 import { sandboxDetailQuery, sandboxGitStatusQuery } from "@/api/queries";
@@ -23,6 +25,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   type AggregatedInteractionState,
   useTaskSessionProgress,
@@ -140,6 +147,7 @@ export function TaskCard({
               >
                 {task.title}
               </button>
+              <IntegrationSourceBadge integration={task.data.integration} />
             </div>
             <TaskMenu
               task={task}
@@ -366,4 +374,57 @@ export function TaskSessionsStatus({
   }
 
   return <SessionStatusIndicator interaction={aggregatedInteraction} compact />;
+}
+
+function IntegrationSourceBadge({
+  integration,
+}: {
+  integration?: Task["data"]["integration"];
+}) {
+  if (!integration) return null;
+
+  const isSlack = integration.source === "slack";
+  const isGithub = integration.source === "github";
+  if (!isSlack && !isGithub) return null;
+
+  const icon = isSlack ? (
+    <Slack className="h-3 w-3" />
+  ) : (
+    <Github className="h-3 w-3" />
+  );
+  const label = isSlack ? "Slack" : "GitHub";
+
+  if (integration.externalUrl) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a
+            href={integration.externalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {icon}
+          </a>
+        </TooltipTrigger>
+        <TooltipContent>
+          <span>Created from {label}</span>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center text-muted-foreground shrink-0">
+          {icon}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        <span>Created from {label}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
