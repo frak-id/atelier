@@ -97,4 +97,8 @@ export const queryKeys = {
       "global",
     ] as const,
   },
+  systemModelConfig: {
+    all: ["systemModelConfig"] as const,
+    config: ["systemModelConfig", "config"] as const,
+  },
 };
