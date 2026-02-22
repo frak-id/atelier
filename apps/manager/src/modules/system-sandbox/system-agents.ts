@@ -112,7 +112,7 @@ export const SYSTEM_AGENTS_CONFIG = {
     description: {
       description:
         "Explores workspace repos to generate concise technical descriptions.",
-      mode: "subagent" as const,
+      mode: "primary" as const,
       temperature: 0.1,
       steps: 15,
       permission: DESCRIPTION_PERMISSION,
@@ -122,7 +122,7 @@ export const SYSTEM_AGENTS_CONFIG = {
       description:
         "Routes integration events (Slack/GitHub) to tasks via MCP tools. " +
         "Never does coding work directly.",
-      mode: "subagent" as const,
+      mode: "primary" as const,
       temperature: 0.1,
       steps: 3,
       permission: DISPATCHER_PERMISSION,
