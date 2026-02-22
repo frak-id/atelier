@@ -10,7 +10,11 @@ import {
   Cpu,
   Database,
   HardDrive,
+  Loader2,
+  Pause,
+  Play,
   RefreshCw,
+  RotateCcw,
   Server,
   Square,
   Terminal,
@@ -26,6 +30,9 @@ import {
   systemStorageQuery,
   useCancelSystemSandboxPrebuild,
   useDeleteSystemSandboxPrebuild,
+  useRestartSystemSandbox,
+  useStartSystemSandbox,
+  useStopSystemSandbox,
   useSystemSandboxPrebuild,
 } from "@/api/queries";
 import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
@@ -46,6 +53,10 @@ export function SystemStatusFooter() {
     useSystemSandboxPrebuild();
   const cancelPrebuild = useCancelSystemSandboxPrebuild();
   const deletePrebuild = useDeleteSystemSandboxPrebuild();
+
+  const startSandbox = useStartSystemSandbox();
+  const stopSandbox = useStopSystemSandbox();
+  const restartSandbox = useRestartSystemSandbox();
 
   const runningSandboxes =
     sandboxes?.filter((s) => s.status === "running").length ?? 0;
@@ -310,6 +321,60 @@ export function SystemStatusFooter() {
                     Delete
                   </Button>
                 )}
+
+              {systemSandbox?.status === "off" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => startSandbox.mutate()}
+                  disabled={startSandbox.isPending}
+                  title="Start system sandbox"
+                >
+                  {startSandbox.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                  Start
+                </Button>
+              )}
+
+              {sandboxIsActive && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => stopSandbox.mutate()}
+                  disabled={stopSandbox.isPending}
+                  title="Stop system sandbox"
+                >
+                  {stopSandbox.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Pause className="h-3 w-3" />
+                  )}
+                  Stop
+                </Button>
+              )}
+
+              {sandboxIsActive && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => restartSandbox.mutate()}
+                  disabled={restartSandbox.isPending}
+                  title="Restart system sandbox"
+                >
+                  {restartSandbox.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3 w-3" />
+                  )}
+                  Restart
+                </Button>
+              )}
 
               {systemSandbox?.activeCount !== undefined &&
                 systemSandbox.activeCount > 0 && (
