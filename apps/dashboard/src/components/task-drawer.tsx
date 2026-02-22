@@ -1,3 +1,4 @@
+import type { Task } from "@frak/atelier-manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -5,10 +6,13 @@ import {
   Check,
   CheckCircle,
   Copy,
+  ExternalLink,
   GitBranch,
+  Github,
   Loader2,
   Monitor,
   Shield,
+  Slack,
   Sparkles,
   Terminal,
   Trash2,
@@ -192,6 +196,11 @@ export function TaskDrawer({
                         >
                           Sandbox {sandbox.status}
                         </Badge>
+                      )}
+                      {taskData.data.integration && (
+                        <IntegrationBadge
+                          integration={taskData.data.integration}
+                        />
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -490,6 +499,15 @@ export function TaskDrawer({
                       <span>
                         {new Date(taskData.updatedAt).toLocaleString()}
                       </span>
+
+                      {taskData.data.integration && (
+                        <>
+                          <div className="text-muted-foreground">Source</div>
+                          <IntegrationSourceLink
+                            integration={taskData.data.integration}
+                          />
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -598,5 +616,87 @@ function SecondaryTemplateButton({
         <span>{template.description ?? template.name}</span>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function IntegrationBadge({
+  integration,
+}: {
+  integration: Task["data"]["integration"];
+}) {
+  if (!integration) return null;
+
+  const isSlack = integration.source === "slack";
+  const isGithub = integration.source === "github";
+  if (!isSlack && !isGithub) return null;
+
+  const icon = isSlack ? (
+    <Slack className="h-3 w-3" />
+  ) : (
+    <Github className="h-3 w-3" />
+  );
+  const label = isSlack ? "via Slack" : "via GitHub";
+
+  const badge = (
+    <Badge variant="outline" className="gap-1 text-xs">
+      {icon}
+      {label}
+    </Badge>
+  );
+
+  if (integration.externalUrl) {
+    return (
+      <a
+        href={integration.externalUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hover:opacity-80 transition-opacity"
+      >
+        {badge}
+      </a>
+    );
+  }
+
+  return badge;
+}
+
+function IntegrationSourceLink({
+  integration,
+}: {
+  integration: Task["data"]["integration"];
+}) {
+  if (!integration) return null;
+
+  const isSlack = integration.source === "slack";
+  const isGithub = integration.source === "github";
+  if (!isSlack && !isGithub) return null;
+
+  const icon = isSlack ? (
+    <Slack className="h-4 w-4" />
+  ) : (
+    <Github className="h-4 w-4" />
+  );
+  const label = isSlack ? "Slack" : "GitHub";
+
+  if (integration.externalUrl) {
+    return (
+      <a
+        href={integration.externalUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
+      >
+        {icon}
+        <span>{label}</span>
+        <ExternalLink className="h-3 w-3" />
+      </a>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {icon}
+      <span>{label}</span>
+    </span>
   );
 }

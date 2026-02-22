@@ -58,7 +58,9 @@ export class SlackAdapter implements IntegrationAdapter {
     const isDirectMessage = raw.channelType === "im";
 
     // Skip thread history for DMs to avoid fetching entire DM conversation
-    const rawMessages = isDirectMessage ? [] : await this.fetchThread(channel, threadTs);
+    const rawMessages = isDirectMessage
+      ? []
+      : await this.fetchThread(channel, threadTs);
 
     const messages: IntegrationMessage[] = rawMessages.map((m) => ({
       user: m.user ?? m.bot_id ?? "unknown",
@@ -77,7 +79,8 @@ export class SlackAdapter implements IntegrationAdapter {
     let md = "# Conversation Context\n\n";
 
     if (context.isDirectMessage) {
-      md += "_Note: This is a direct message. Post progress updates to the same message; do not send additional messages._\n\n";
+      md +=
+        "_Note: This is a direct message. Post progress updates to the same message; do not send additional messages._\n\n";
     }
 
     if (context.messages.length > 0) {

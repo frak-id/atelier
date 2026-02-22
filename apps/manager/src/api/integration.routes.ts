@@ -93,6 +93,7 @@ export const integrationRoutes = new Elysia({
               ts: event.ts,
               threadTs,
               channelType: event.channel_type,
+              teamId: payload.team_id,
             },
           })
           .catch((err: unknown) => {

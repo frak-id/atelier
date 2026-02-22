@@ -16,12 +16,14 @@ export type TaskSession = Static<typeof TaskSessionSchema>;
 export const TaskIntegrationMetadataSchema = t.Object({
   source: t.String(),
   threadKey: t.String(),
+  externalUrl: t.Optional(t.String()),
   sessionId: t.Optional(t.String()),
   slack: t.Optional(
     t.Object({
       channel: t.String(),
       ts: t.String(),
       threadTs: t.String(),
+      teamId: t.Optional(t.String()),
       triggeredBy: t.Optional(t.String()),
     }),
   ),

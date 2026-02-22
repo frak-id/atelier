@@ -184,17 +184,31 @@ export class IntegrationGateway {
     };
 
     if (event.source === "slack") {
+      const channel = String(raw.channel ?? "");
+      const threadTs = String(raw.threadTs ?? "");
+      const teamId = String(raw.teamId ?? "");
       metadata.slack = {
-        channel: String(raw.channel ?? ""),
+        channel,
         ts: String(raw.ts ?? ""),
-        threadTs: String(raw.threadTs ?? ""),
+        threadTs,
+        teamId: teamId || undefined,
       };
+      if (teamId && channel && threadTs) {
+        const tsForUrl = threadTs.replace(".", "");
+        metadata.externalUrl = `https://app.slack.com/client/${teamId}/${channel}/thread/${channel}-${tsForUrl}`;
+      }
     } else if (event.source === "github") {
+      const owner = String(raw.owner ?? "");
+      const repo = String(raw.repo ?? "");
+      const prNumber = Number(raw.prNumber ?? 0);
       metadata.github = {
-        owner: String(raw.owner ?? ""),
-        repo: String(raw.repo ?? ""),
-        prNumber: Number(raw.prNumber ?? 0),
+        owner,
+        repo,
+        prNumber,
       };
+      if (owner && repo && prNumber) {
+        metadata.externalUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+      }
     }
 
     this.deps.taskService.setIntegrationMetadata(taskId, metadata);
