@@ -23,7 +23,7 @@ export function SessionTemplatesSection() {
 
   if (isLoading) {
     return (
-      <div className="border-t pt-6">
+      <div>
         <h2 className="text-xl font-bold mb-4">Task Templates</h2>
         <div className="animate-pulse h-32 bg-muted rounded" />
       </div>
@@ -82,7 +82,7 @@ export function SessionTemplatesSection() {
   };
 
   return (
-    <div className="border-t pt-6">
+    <div>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-bold">Task Templates</h2>

@@ -76,7 +76,9 @@ export function SshKeyAlert({ keys }: SshKeyAlertProps) {
             </p>
           </div>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/settings">Configure SSH Keys</Link>
+            <Link to="/settings" search={{ tab: "connection" }}>
+              Configure SSH Keys
+            </Link>
           </Button>
         </CardContent>
       </Card>
@@ -98,7 +100,9 @@ export function SshKeyAlert({ keys }: SshKeyAlertProps) {
             </p>
           </div>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/settings">Regenerate SSH Key</Link>
+            <Link to="/settings" search={{ tab: "connection" }}>
+              Regenerate SSH Key
+            </Link>
           </Button>
         </CardContent>
       </Card>
@@ -121,7 +125,9 @@ export function SshKeyAlert({ keys }: SshKeyAlertProps) {
             </p>
           </div>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/settings">Regenerate SSH Key</Link>
+            <Link to="/settings" search={{ tab: "connection" }}>
+              Regenerate SSH Key
+            </Link>
           </Button>
         </CardContent>
       </Card>
