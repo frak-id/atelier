@@ -121,7 +121,7 @@ const systemSandboxService = new SystemSandboxService({
   internalService,
 });
 
-const systemAiService = new SystemAiService(systemSandboxService);
+const systemAiService = new SystemAiService(systemSandboxService, configFileService);
 const taskService = new TaskService(taskRepository);
 
 const sandboxLifecycle = new SandboxLifecycle({
@@ -171,6 +171,7 @@ const integrationGateway = new IntegrationGateway({
   sandboxLifecycle,
   systemSandboxService,
   workspaceService,
+  systemAiService,
 });
 if (slackAdapter) {
   integrationGateway.registerAdapter(slackAdapter);

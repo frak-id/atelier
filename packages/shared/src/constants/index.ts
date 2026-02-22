@@ -15,6 +15,13 @@ export {
   type SessionTemplate,
 } from "./session-templates.ts";
 export {
+  DEFAULT_SYSTEM_MODEL_CONFIG,
+  SYSTEM_MODEL_CONFIG_PATH,
+  type SystemModelAction,
+  type SystemModelConfig,
+  type SystemModelRef,
+} from "./system-model-config.ts";
+export {
   CODE_SERVER,
   getSharedBinaries,
   OPENCODE,

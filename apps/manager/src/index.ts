@@ -20,6 +20,7 @@ import {
   sharedAuthRoutes,
   sharedStorageRoutes,
   sshKeyRoutes,
+  systemModelConfigRoutes,
   systemRoutes,
   taskRoutes,
   workspaceRoutes,
@@ -241,7 +242,8 @@ const app = new Elysia()
           .use(registryRoutes)
           .use(imageRoutes)
           .use(githubApiRoutes)
-          .use(eventsRoutes),
+          .use(eventsRoutes)
+          .use(systemModelConfigRoutes),
       ),
   )
   .get("/", () => ({

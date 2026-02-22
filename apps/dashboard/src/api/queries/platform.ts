@@ -1,4 +1,4 @@
-import type { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
+import type { OpenCodeConfigResponse, SystemModelConfig } from "@frak/atelier-manager/types";
 import { queryOptions, useMutation } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
@@ -501,6 +501,26 @@ export function useDeleteSshKey() {
       unwrap(await api.api["ssh-keys"]({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sshKeys.all });
+    },
+  });
+}
+
+// --- System Model Config ---
+
+export const systemModelConfigQuery = queryOptions({
+  queryKey: queryKeys.systemModelConfig.config,
+  queryFn: async () => unwrap(await api.api["system-model-config"].get()),
+});
+
+export function useUpdateSystemModelConfig() {
+  return useMutation({
+    mutationKey: ["systemModelConfig", "update"],
+    mutationFn: async (config: SystemModelConfig) =>
+      unwrap(await api.api["system-model-config"].put(config)),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.systemModelConfig.all,
+      });
     },
   });
 }

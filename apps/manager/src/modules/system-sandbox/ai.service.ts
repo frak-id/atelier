@@ -1,5 +1,13 @@
+import {
+  DEFAULT_SYSTEM_MODEL_CONFIG,
+  SYSTEM_MODEL_CONFIG_PATH,
+  type SystemModelAction,
+  type SystemModelConfig,
+  type SystemModelRef,
+} from "@frak/atelier-shared/constants";
 import type { Workspace } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { ConfigFileService } from "../config-file/index.ts";
 import type { SystemSandboxService } from "./system-sandbox.service.ts";
 
 const log = createChildLogger("system-ai");
@@ -12,10 +20,51 @@ interface PromptOptions {
   agent?: string;
   text: string;
   label: string;
+  model?: { providerID: string; modelID: string };
 }
 
 export class SystemAiService {
-  constructor(private readonly systemSandbox: SystemSandboxService) {}
+  constructor(
+    private readonly systemSandbox: SystemSandboxService,
+    private readonly configFileService: ConfigFileService,
+  ) {}
+
+  getModelConfig(): SystemModelConfig {
+    const configFile = this.configFileService.getByPath(
+      SYSTEM_MODEL_CONFIG_PATH,
+      "global",
+    );
+
+    if (!configFile) {
+      return DEFAULT_SYSTEM_MODEL_CONFIG;
+    }
+
+    try {
+      return JSON.parse(configFile.content) as SystemModelConfig;
+    } catch {
+      log.warn("Failed to parse system model config, using defaults");
+      return DEFAULT_SYSTEM_MODEL_CONFIG;
+    }
+  }
+
+  setModelConfig(config: SystemModelConfig): void {
+    this.configFileService.upsert(
+      undefined,
+      SYSTEM_MODEL_CONFIG_PATH,
+      JSON.stringify(config, null, 2),
+      "json",
+    );
+  }
+
+  resolveModel(
+    action: SystemModelAction,
+  ): { providerID: string; modelID: string } | undefined {
+    const config = this.getModelConfig();
+    const actionModel: SystemModelRef | null = config[action];
+    if (actionModel) return actionModel;
+    if (config.default) return config.default;
+    return undefined;
+  }
 
   fallbackTitle(description: string): string {
     const trimmed = description.trim();
@@ -37,6 +86,7 @@ export class SystemAiService {
         agent: "title",
         text: description,
         label: "title",
+        model: this.resolveModel("title"),
       },
       onTitle,
     );
@@ -52,6 +102,7 @@ export class SystemAiService {
         agent: "description",
         text: this.buildDescriptionPrompt(workspace, trigger),
         label: "description",
+        model: this.resolveModel("description"),
       },
       onDescription,
     );
@@ -90,6 +141,7 @@ export class SystemAiService {
         const { data, error: promptError } = await client.session.prompt({
           sessionID: session.id,
           ...(options.agent && { agent: options.agent }),
+          ...(options.model && { model: options.model }),
           parts: [{ type: "text", text: options.text }],
         });
 
