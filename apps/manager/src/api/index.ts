@@ -17,7 +17,7 @@ export { sessionTemplateRoutes } from "./session-template.routes.ts";
 export { sharedAuthRoutes } from "./shared-auth.routes.ts";
 export { sharedStorageRoutes } from "./shared-storage.routes.ts";
 export { sshKeyRoutes } from "./ssh-key.routes.ts";
-export { systemModelConfigRoutes } from "./system-model-config.routes.ts";
 export { systemRoutes } from "./system.routes.ts";
+export { systemModelConfigRoutes } from "./system-model-config.routes.ts";
 export { taskRoutes } from "./task.routes.ts";
 export { workspaceRoutes } from "./workspace.routes.ts";

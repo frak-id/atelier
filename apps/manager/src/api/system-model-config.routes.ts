@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
-import { SystemModelConfigSchema } from "../schemas/system-model-config.ts";
 import { systemAiService } from "../container.ts";
+import { SystemModelConfigSchema } from "../schemas/system-model-config.ts";
 
 export const systemModelConfigRoutes = new Elysia({
   prefix: "/system-model-config",
