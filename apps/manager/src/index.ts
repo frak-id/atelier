@@ -82,6 +82,7 @@ const app = new Elysia()
         await Promise.allSettled(
           running.map((s) => sandboxLifecycle.getStatus(s.id)),
         );
+        systemSandboxService.healIfNeeded();
       },
     });
     const expiredCount = sshKeyService.cleanupExpired();

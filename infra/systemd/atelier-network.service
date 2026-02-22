@@ -1,7 +1,8 @@
 [Unit]
 Description=L'atelier Network Bridge
 Documentation=https://github.com/frak-id/frak-sandbox
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot

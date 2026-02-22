@@ -89,8 +89,14 @@ async function configureNat() {
   );
 
   const { stdout: hostIface } = await exec(
-    "ip -j route list default | jq -r '.[0].dev'",
+    "ip -j route list default | jq -r '.[0].dev // empty'",
   );
+
+  if (!hostIface.trim() || hostIface.trim() === "null") {
+    throw new Error(
+      `Could not detect host network interface. 'ip route list default' returned: '${hostIface.trim()}'`,
+    );
+  }
 
   await exec(
     `iptables -C FORWARD -i ${atelierConfig.network.bridgeName} -o ${atelierConfig.network.bridgeName} -s ${atelierConfig.network.bridgeCidr} -d ${atelierConfig.network.bridgeCidr} -j DROP 2>/dev/null || \
@@ -128,7 +134,22 @@ fi
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-HOST_IFACE=$(ip -j route list default | jq -r '.[0].dev')
+# Wait for default route (network-online.target may fire before route is ready)
+for i in $(seq 1 30); do
+  HOST_IFACE=$(ip -j route list default 2>/dev/null | jq -r '.[0].dev // empty')
+  if [ -n "$HOST_IFACE" ] && [ "$HOST_IFACE" != "null" ]; then
+    break
+  fi
+  echo "Waiting for default route... ($i/30)"
+  sleep 1
+done
+
+if [ -z "$HOST_IFACE" ] || [ "$HOST_IFACE" = "null" ]; then
+  echo "ERROR: No default route found after 30s. Cannot configure NAT." >&2
+  exit 1
+fi
+
+echo "Using host interface: $HOST_IFACE"
 
 iptables -C FORWARD -i "$BRIDGE" -o "$BRIDGE" -s "$BRIDGE_CIDR" -d "$BRIDGE_CIDR" -j DROP 2>/dev/null || \\
   iptables -I FORWARD 1 -i "$BRIDGE" -o "$BRIDGE" -s "$BRIDGE_CIDR" -d "$BRIDGE_CIDR" -j DROP
@@ -142,12 +163,13 @@ iptables -C FORWARD -i "$BRIDGE" -o "$HOST_IFACE" -j ACCEPT 2>/dev/null || \\
 iptables -C FORWARD -i "$HOST_IFACE" -o "$BRIDGE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \\
   iptables -A FORWARD -i "$HOST_IFACE" -o "$BRIDGE" -m state --state RELATED,ESTABLISHED -j ACCEPT
 
-echo "Sandbox network configured"
+echo "Sandbox network configured (interface: $HOST_IFACE)"
 `;
 
   const serviceContent = `[Unit]
 Description=Sandbox Network Bridge
-After=network.target
+After=network-online.target
+Wants=network-online.target
 Before=atelier-manager.service
 
 [Service]

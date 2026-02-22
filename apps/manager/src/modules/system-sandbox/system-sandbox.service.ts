@@ -159,6 +159,33 @@ export class SystemSandboxService {
     }
   }
 
+  /**
+   * Detect and reset zombie state where in-memory sandboxId points to a
+   * sandbox that no longer exists in the DB or whose process has died.
+   * Called from the self-heal cron.
+   */
+  healIfNeeded(): void {
+    if (!this.sandboxId || this.bootPromise) return;
+
+    const sandbox = this.deps.sandboxService.getById(this.sandboxId);
+
+    if (!sandbox || sandbox.status !== "running") {
+      log.warn(
+        {
+          sandboxId: this.sandboxId,
+          found: !!sandbox,
+          status: sandbox?.status,
+        },
+        "System sandbox zombie detected, resetting state",
+      );
+      this.clearIdleTimer();
+      this.sandboxId = null;
+      this.opencodePassword = null;
+      this.bootedAt = null;
+      this.activeCount = 0;
+    }
+  }
+
   getSandboxId(): string | null {
     return this.sandboxId;
   }
