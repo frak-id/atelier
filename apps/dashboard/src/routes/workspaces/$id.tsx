@@ -53,7 +53,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { WorkspaceSessionTemplatesSection } from "@/components/workspace-session-templates";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { useDrawer } from "@/providers/drawer-provider";
 
 export const Route = createFileRoute("/workspaces/$id")({
@@ -243,15 +243,20 @@ function WorkspaceDetailPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <p className={workspace.config.description ? "" : "italic"}>
+      <div className="flex items-start gap-2">
+        <p
+          className={cn(
+            "text-sm leading-relaxed text-muted-foreground max-w-2xl",
+            !workspace.config.description && "italic",
+          )}
+        >
           {workspace.config.description || "No description"}
         </p>
         {workspace.config.repos.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
-            className="shrink-0 h-6 w-6 p-0"
+            className="shrink-0 h-6 w-6 p-0 mt-0.5"
             onClick={() => generateDescriptionMutation.mutate(id)}
             disabled={generateDescriptionMutation.isPending}
             title={
@@ -261,7 +266,10 @@ function WorkspaceDetailPage() {
             }
           >
             <Sparkles
-              className={`h-3.5 w-3.5 ${generateDescriptionMutation.isPending ? "animate-pulse" : ""}`}
+              className={cn(
+                "h-3.5 w-3.5",
+                generateDescriptionMutation.isPending && "animate-pulse",
+              )}
             />
           </Button>
         )}
