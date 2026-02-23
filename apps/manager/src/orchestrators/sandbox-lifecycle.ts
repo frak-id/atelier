@@ -266,7 +266,6 @@ export class SandboxLifecycle {
     // 8. Start services (vscode, opencode)
     const serviceNames = ["vscode", "opencode"];
     await provisionService.startServices(sandboxId, serviceNames);
-
     log.info({ sandboxId }, "Guest re-provisioned after restart");
   }
 

@@ -7,6 +7,8 @@ export interface RouteConfig {
   upstream: string;
   /** Authentication mode for this route */
   auth: "standard" | "opencode" | "none";
+  /** Health check path on the upstream (e.g., "/healthz"). Omit to skip. */
+  healthPath?: string;
 }
 
 export interface ProxyProvider {

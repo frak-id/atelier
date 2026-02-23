@@ -1,9 +1,11 @@
 import { SSH_PROXY } from "@frak/atelier-shared/constants";
+import { Mutex } from "async-mutex";
 import * as yaml from "yaml";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("sshpiper");
+const pipesMutex = new Mutex();
 
 interface SshPipeFrom {
   username: string;
@@ -57,35 +59,37 @@ export const SshPiperService = {
       return `ssh ${sandboxId}@${config.domain.ssh.hostname} -p ${config.domain.ssh.port}`;
     }
 
-    const pipesConfig = await readPipesConfig();
-    const authorizedKeysData = encodeAuthorizedKeys(publicKeys);
+    return pipesMutex.runExclusive(async () => {
+      const pipesConfig = await readPipesConfig();
+      const authorizedKeysData = encodeAuthorizedKeys(publicKeys);
 
-    const existingIndex = pipesConfig.pipes.findIndex((p) =>
-      p.from.some((f) => f.username === sandboxId),
-    );
-    if (existingIndex >= 0) {
-      pipesConfig.pipes.splice(existingIndex, 1);
-    }
+      const existingIndex = pipesConfig.pipes.findIndex((p) =>
+        p.from.some((f) => f.username === sandboxId),
+      );
+      if (existingIndex >= 0) {
+        pipesConfig.pipes.splice(existingIndex, 1);
+      }
 
-    const fromEntry: SshPipeFrom = { username: sandboxId };
-    if (authorizedKeysData) {
-      fromEntry.authorized_keys_data = authorizedKeysData;
-    }
+      const fromEntry: SshPipeFrom = { username: sandboxId };
+      if (authorizedKeysData) {
+        fromEntry.authorized_keys_data = authorizedKeysData;
+      }
 
-    pipesConfig.pipes.push({
-      from: [fromEntry],
-      to: {
-        host: `${ipAddress}:22`,
-        username: "dev",
-        ignore_hostkey: true,
-        private_key: "/var/lib/sandbox/firecracker/rootfs/vm-ssh-key",
-      },
+      pipesConfig.pipes.push({
+        from: [fromEntry],
+        to: {
+          host: `${ipAddress}:22`,
+          username: "dev",
+          ignore_hostkey: true,
+          private_key: "/var/lib/sandbox/firecracker/rootfs/vm-ssh-key",
+        },
+      });
+
+      await writePipesConfig(pipesConfig);
+      log.info({ sandboxId, ipAddress }, "SSH route registered");
+
+      return `ssh ${sandboxId}@${config.domain.ssh.hostname} -p ${config.domain.ssh.port}`;
     });
-
-    await writePipesConfig(pipesConfig);
-    log.info({ sandboxId, ipAddress }, "SSH route registered");
-
-    return `ssh ${sandboxId}@${config.domain.ssh.hostname} -p ${config.domain.ssh.port}`;
   },
 
   async removeRoute(sandboxId: string): Promise<void> {
@@ -94,17 +98,19 @@ export const SshPiperService = {
       return;
     }
 
-    const pipesConfig = await readPipesConfig();
+    await pipesMutex.runExclusive(async () => {
+      const pipesConfig = await readPipesConfig();
 
-    const existingIndex = pipesConfig.pipes.findIndex((p) =>
-      p.from.some((f) => f.username === sandboxId),
-    );
+      const existingIndex = pipesConfig.pipes.findIndex((p) =>
+        p.from.some((f) => f.username === sandboxId),
+      );
 
-    if (existingIndex >= 0) {
-      pipesConfig.pipes.splice(existingIndex, 1);
-      await writePipesConfig(pipesConfig);
-      log.info({ sandboxId }, "SSH route removed");
-    }
+      if (existingIndex >= 0) {
+        pipesConfig.pipes.splice(existingIndex, 1);
+        await writePipesConfig(pipesConfig);
+        log.info({ sandboxId }, "SSH route removed");
+      }
+    });
   },
 
   async listRouteSandboxIds(): Promise<string[]> {
@@ -123,23 +129,25 @@ export const SshPiperService = {
       return;
     }
 
-    const pipesConfig = await readPipesConfig();
-    const authorizedKeysData = encodeAuthorizedKeys(publicKeys);
+    await pipesMutex.runExclusive(async () => {
+      const pipesConfig = await readPipesConfig();
+      const authorizedKeysData = encodeAuthorizedKeys(publicKeys);
 
-    for (const pipe of pipesConfig.pipes) {
-      for (const from of pipe.from) {
-        if (authorizedKeysData) {
-          from.authorized_keys_data = authorizedKeysData;
-        } else {
-          delete from.authorized_keys_data;
+      for (const pipe of pipesConfig.pipes) {
+        for (const from of pipe.from) {
+          if (authorizedKeysData) {
+            from.authorized_keys_data = authorizedKeysData;
+          } else {
+            delete from.authorized_keys_data;
+          }
         }
       }
-    }
 
-    await writePipesConfig(pipesConfig);
-    log.info(
-      { pipeCount: pipesConfig.pipes.length, keyCount: publicKeys.length },
-      "SSH authorized keys updated",
-    );
+      await writePipesConfig(pipesConfig);
+      log.info(
+        { pipeCount: pipesConfig.pipes.length, keyCount: publicKeys.length },
+        "SSH authorized keys updated",
+      );
+    });
   },
 };

@@ -557,9 +557,6 @@ class SpawnContext {
       this.sandboxId,
       serviceNames,
     );
-
-    // Step 5: Wait for services to be ready before registering routes
-    await this.waitForServicesReady(serviceNames);
     log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
   }
 
@@ -918,59 +915,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       this.sandboxId,
       serviceNames,
     );
-
-    await this.waitForServicesReady(serviceNames);
     log.info({ sandboxId: this.sandboxId }, "Post-boot services started");
-  }
-
-  /**
-   * Poll service ports inside the guest until they accept connections.
-   * Prevents Caddy 502s by ensuring services are listening before
-   * routes are registered.
-   */
-  private async waitForServicesReady(
-    serviceNames: string[],
-    timeoutMs = 15000,
-  ): Promise<void> {
-    const portMap: Record<string, number> = {
-      vscode: config.advanced.vm.vscode.port,
-      opencode: config.advanced.vm.opencode.port,
-    };
-    const ports = serviceNames
-      .map((name) => portMap[name])
-      .filter((port): port is number => port !== undefined);
-
-    if (ports.length === 0) return;
-
-    const checkCmd = ports
-      .map((port) => `(echo > /dev/tcp/127.0.0.1/${port}) 2>/dev/null`)
-      .join(" && ");
-
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      try {
-        const result = await this.deps.agentClient.exec(
-          this.sandboxId,
-          `bash -c '${checkCmd}'`,
-          { timeout: 3000 },
-        );
-        if (result.exitCode === 0) {
-          log.debug(
-            { sandboxId: this.sandboxId, ports },
-            "Services confirmed listening",
-          );
-          return;
-        }
-      } catch {
-        // Agent exec failed, retry
-      }
-      await Bun.sleep(500);
-    }
-
-    log.warn(
-      { sandboxId: this.sandboxId, ports, timeoutMs },
-      "Services did not become ready within timeout, proceeding anyway",
-    );
   }
 
   private async pushAuthAndConfigs(): Promise<void> {
