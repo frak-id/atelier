@@ -148,7 +148,7 @@ export function useDeleteTask() {
       sandboxAction?: "detach" | "stop" | "destroy";
     }) =>
       unwrap(
-        await api.api.tasks({ id }).delete({
+        await api.api.tasks({ id }).delete(undefined, {
           query: sandboxAction ? { sandboxAction } : {},
         }),
       ),
