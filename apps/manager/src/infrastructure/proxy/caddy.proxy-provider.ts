@@ -52,15 +52,38 @@ function buildCorsPreflightSubroute(): Record<string, unknown> {
 
 /**
  * Reverse proxy handler for an upstream with CORS response headers and streaming.
+ * When healthPath is provided, active + passive health checks are configured
+ * so Caddy knows upstream status (like K8s readiness/liveness probes).
  */
-function buildUpstreamHandler(upstream: string): Record<string, unknown> {
-  return {
+function buildUpstreamHandler(
+  upstream: string,
+  healthPath?: string,
+): Record<string, unknown> {
+  const handler: Record<string, unknown> = {
     handler: "reverse_proxy",
     upstreams: [{ dial: upstream }],
     transport: { protocol: "http", read_buffer_size: 4096 },
     headers: { response: { set: { ...CORS_HEADERS } } },
     flush_interval: -1,
   };
+
+  if (healthPath) {
+    handler.health_checks = {
+      active: {
+        uri: healthPath,
+        interval: "10s",
+        timeout: "5s",
+        expect_status: 200,
+      },
+      passive: {
+        fail_duration: "30s",
+        max_fails: 3,
+        unhealthy_status: [502, 503],
+      },
+    };
+  }
+
+  return handler;
 }
 
 /**
@@ -155,7 +178,7 @@ function buildOpenCodeForwardAuthHandler(
 }
 
 function buildRoute(
-  route: { domain: string; upstream: string },
+  route: { domain: string; upstream: string; healthPath?: string },
   managerAddress: string,
   withAuth = true,
 ): CaddyRoute {
@@ -163,8 +186,7 @@ function buildRoute(
   if (withAuth) {
     handlers.push(buildForwardAuthHandler(managerAddress));
   }
-  handlers.push(buildUpstreamHandler(route.upstream));
-
+  handlers.push(buildUpstreamHandler(route.upstream, route.healthPath));
   return wrapInHostRoute(route.domain, [
     buildCorsPreflightSubroute(),
     { handle: handlers },
@@ -172,11 +194,10 @@ function buildRoute(
 }
 
 function buildOpenCodeRoute(
-  route: { domain: string; upstream: string },
+  route: { domain: string; upstream: string; healthPath?: string },
   managerAddress: string,
 ): CaddyRoute {
-  const upstream = buildUpstreamHandler(route.upstream);
-
+  const upstream = buildUpstreamHandler(route.upstream, route.healthPath);
   return wrapInHostRoute(route.domain, [
     buildCorsPreflightSubroute(),
     {

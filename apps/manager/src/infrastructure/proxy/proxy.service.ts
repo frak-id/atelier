@@ -23,11 +23,13 @@ export class ProxyService {
         domain: vscodeDomain,
         upstream: `${ipAddress}:${ports.vscode}`,
         auth: "standard",
+        healthPath: "/healthz",
       },
       {
         domain: opencodeDomain,
         upstream: `${ipAddress}:${ports.opencode}`,
         auth: "opencode",
+        healthPath: "/health",
       },
     ]);
 
