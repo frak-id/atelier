@@ -1,4 +1,4 @@
-import { queryOptions, useMutation } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
 
@@ -30,13 +30,28 @@ export const sandboxMetricsQuery = (id: string) =>
     refetchIntervalInBackground: false,
   });
 
-export const sandboxServicesQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.services(id),
-    queryFn: async () => unwrap(await api.api.sandboxes({ id }).services.get()),
-    refetchInterval: 30000,
-    refetchIntervalInBackground: false,
+export const allSandboxServicesQuery = queryOptions({
+  queryKey: queryKeys.sandboxes.allServices,
+  queryFn: async () => unwrap(await api.api.sandboxes["all-services"].get()),
+  refetchInterval: 5000,
+  refetchIntervalInBackground: false,
+});
+
+/**
+ * Uses the batched all-services query with a selector to extract
+ * services for a single sandbox. All components share the same
+ * underlying request — no N+1 problem.
+ */
+export function useSandboxServices(sandboxId: string, enabled = true) {
+  return useQuery({
+    ...allSandboxServicesQuery,
+    enabled,
+    select: (data) => {
+      const services = data?.[sandboxId];
+      return services ? { services } : undefined;
+    },
   });
+}
 
 export const sandboxDevCommandsQuery = (id: string) =>
   queryOptions({
@@ -253,7 +268,7 @@ export function useStartBrowser(sandboxId: string) {
       unwrap(await api.api.sandboxes({ id: sandboxId }).browser.start.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.services(sandboxId),
+        queryKey: queryKeys.sandboxes.allServices,
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(sandboxId),
@@ -269,7 +284,7 @@ export function useStopBrowser(sandboxId: string) {
       unwrap(await api.api.sandboxes({ id: sandboxId }).browser.stop.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.services(sandboxId),
+        queryKey: queryKeys.sandboxes.allServices,
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(sandboxId),
@@ -290,7 +305,7 @@ export function useServiceStop(sandboxId: string) {
       ),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.services(sandboxId),
+        queryKey: queryKeys.sandboxes.allServices,
       });
     },
   });
@@ -308,7 +323,7 @@ export function useServiceStart(sandboxId: string) {
       ),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.services(sandboxId),
+        queryKey: queryKeys.sandboxes.allServices,
       });
     },
   });

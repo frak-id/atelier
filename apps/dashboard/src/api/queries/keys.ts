@@ -28,6 +28,7 @@ export const queryKeys = {
     metrics: (id: string) => ["sandboxes", id, "metrics"] as const,
     apps: (id: string) => ["sandboxes", id, "apps"] as const,
     services: (id: string) => ["sandboxes", id, "services"] as const,
+    allServices: ["sandboxes", "allServices"] as const,
     devCommands: (id: string) => ["sandboxes", id, "devCommands"] as const,
     devCommandLogs: (id: string, name: string, offset: number) =>
       ["sandboxes", id, "devCommandLogs", name, offset] as const,

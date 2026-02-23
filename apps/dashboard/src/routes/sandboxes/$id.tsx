@@ -21,8 +21,8 @@ import { registerOpencodePassword } from "@/api/opencode";
 import {
   deriveBrowserStatus,
   sandboxDetailQuery,
-  sandboxServicesQuery,
   useRestartSandbox,
+  useSandboxServices,
   useStartBrowser,
   useStartSandbox,
   useStopSandbox,
@@ -111,12 +111,10 @@ function SandboxImmersionPage() {
 
   const isMobile = useIsMobile();
 
-  const { data: services } = useQuery({
-    ...sandboxServicesQuery(id),
-    enabled: sandbox?.status === "running",
-    refetchInterval: 2000,
-    refetchIntervalInBackground: false,
-  });
+  const { data: services } = useSandboxServices(
+    id,
+    sandbox?.status === "running",
+  );
   const startBrowserMutation = useStartBrowser(id);
 
   const browserStatus = deriveBrowserStatus(services, sandbox);
