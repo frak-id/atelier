@@ -175,6 +175,9 @@ const integrationGateway = new IntegrationGateway({
   systemSandboxService,
   workspaceService,
   systemAiService,
+  taskSpawner,
+  agentClient,
+  sessionTemplateService,
 });
 if (slackAdapter) {
   integrationGateway.registerAdapter(slackAdapter);

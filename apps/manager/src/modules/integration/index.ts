@@ -10,4 +10,8 @@ export type {
   TodoItem,
 } from "./integration.types.ts";
 export { INTEGRATION_SOURCES } from "./integration.types.ts";
+export {
+  type IntegrationCommand,
+  parseMention,
+} from "./integration-commands.ts";
 export { IntegrationEventBridge } from "./integration-event-bridge.ts";
