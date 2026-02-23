@@ -63,6 +63,10 @@ export async function setupNetwork(_args: string[] = []) {
   await configureNat();
   spinner.stop("NAT configured");
 
+  spinner.start("Configuring UFW (if active)");
+  await configureUfw();
+  spinner.stop("UFW configured");
+
   spinner.start("Installing systemd service");
   await installSystemdService();
   spinner.stop("Systemd service installed");
@@ -118,6 +122,33 @@ async function configureNat() {
   );
 }
 
+async function isUfwActive(): Promise<boolean> {
+  const result = await exec("ufw status", { throws: false });
+  return result.success && result.stdout.includes("Status: active");
+}
+
+async function configureUfw() {
+  if (!(await isUfwActive())) return;
+
+  const { stdout: hostIface } = await exec(
+    "ip -j route list default | jq -r '.[0].dev // empty'",
+  );
+  const iface = hostIface.trim();
+  if (!iface || iface === "null") return;
+
+  const bridge = atelierConfig.network.bridgeName;
+
+  // Allow forwarding from bridge to host interface (outbound VM traffic)
+  await exec(`ufw route allow in on ${bridge} out on ${iface}`, {
+    throws: false,
+  });
+
+  // Allow return traffic from host interface to bridge
+  await exec(`ufw route allow in on ${iface} out on ${bridge}`, {
+    throws: false,
+  });
+}
+
 async function installSystemdService() {
   const scriptContent = `#!/bin/bash
 set -e
@@ -162,6 +193,14 @@ iptables -C FORWARD -i "$BRIDGE" -o "$HOST_IFACE" -j ACCEPT 2>/dev/null || \\
 
 iptables -C FORWARD -i "$HOST_IFACE" -o "$BRIDGE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \\
   iptables -A FORWARD -i "$HOST_IFACE" -o "$BRIDGE" -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+
+# Configure UFW forwarding rules if UFW is active
+if ufw status 2>/dev/null | grep -q "Status: active"; then
+  ufw route allow in on "$BRIDGE" out on "$HOST_IFACE" 2>/dev/null || true
+  ufw route allow in on "$HOST_IFACE" out on "$BRIDGE" 2>/dev/null || true
+  echo "UFW route rules configured for $BRIDGE <-> $HOST_IFACE"
+fi
 
 echo "Sandbox network configured (interface: $HOST_IFACE)"
 `;

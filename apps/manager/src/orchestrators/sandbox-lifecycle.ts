@@ -242,7 +242,7 @@ export class SandboxLifecycle {
     if (imageInfo.exists) {
       const mountResult = await this.deps.agentClient.exec(
         sandboxId,
-        "mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared",
+        "mountpoint -q /opt/shared || { mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared; }",
         { timeout: 5000 },
       );
       if (mountResult.exitCode === 0) {

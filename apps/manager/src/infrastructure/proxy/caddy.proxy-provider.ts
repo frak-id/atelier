@@ -53,9 +53,7 @@ function buildCorsPreflightSubroute(): Record<string, unknown> {
 /**
  * Reverse proxy handler for an upstream with CORS response headers and streaming.
  */
-function buildUpstreamHandler(
-  upstream: string,
-): Record<string, unknown> {
+function buildUpstreamHandler(upstream: string): Record<string, unknown> {
   return {
     handler: "reverse_proxy",
     upstreams: [{ dial: upstream }],
@@ -187,10 +185,7 @@ function buildOpenCodeRoute(
       terminal: true,
     },
     {
-      handle: [
-        buildOpenCodeForwardAuthHandler(managerAddress),
-        upstream,
-      ],
+      handle: [buildOpenCodeForwardAuthHandler(managerAddress), upstream],
     },
   ]);
 }
