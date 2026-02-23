@@ -557,13 +557,6 @@ class SpawnContext {
       this.sandboxId,
       serviceNames,
     );
-
-    // Step 5: Wait for services to be ready before registering routes
-    await this.deps.provisionService.waitForServicesReady(
-      this.sandboxId,
-      this.network.ipAddress,
-      serviceNames,
-    );
     log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
   }
 
@@ -917,17 +910,9 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
     if (this.hasVmSnapshot) {
       return;
     }
-    if (!this.network) throw new Error("Network not allocated");
-
     const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
-      serviceNames,
-    );
-
-    await this.deps.provisionService.waitForServicesReady(
-      this.sandboxId,
-      this.network.ipAddress,
       serviceNames,
     );
     log.info({ sandboxId: this.sandboxId }, "Post-boot services started");

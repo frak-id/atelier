@@ -266,13 +266,6 @@ export class SandboxLifecycle {
     // 8. Start services (vscode, opencode)
     const serviceNames = ["vscode", "opencode"];
     await provisionService.startServices(sandboxId, serviceNames);
-
-    // 9. Wait for services to be ready before registering routes
-    await provisionService.waitForServicesReady(
-      sandboxId,
-      sandbox.runtime.ipAddress,
-      serviceNames,
-    );
     log.info({ sandboxId }, "Guest re-provisioned after restart");
   }
 
