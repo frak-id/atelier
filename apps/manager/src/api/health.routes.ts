@@ -2,7 +2,7 @@ import { PATHS } from "@frak/atelier-shared/constants";
 import { Elysia, t } from "elysia";
 import { CronService } from "../infrastructure/cron/index.ts";
 import { FirecrackerClient } from "../infrastructure/firecracker/index.ts";
-import { NetworkService } from "../infrastructure/network/index.ts";
+import { networkService } from "../infrastructure/network/index.ts";
 import { proxyService } from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
@@ -24,7 +24,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
         await Promise.all([
           FirecrackerClient.isHealthy(),
           proxyService.isHealthy(),
-          NetworkService.getBridgeStatus().then((s) => s.exists),
+          networkService.getBridgeStatus().then((s) => s.exists),
           dirExists(PATHS.SANDBOX_DIR),
           StorageService.isAvailable(),
         ]);

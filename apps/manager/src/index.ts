@@ -38,7 +38,7 @@ import {
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
-import { NetworkService } from "./infrastructure/network/index.ts";
+import { networkService } from "./infrastructure/network/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { proxyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
@@ -96,14 +96,14 @@ const app = new Elysia()
 
     const allSandboxes = sandboxService.getAll();
     for (const sandbox of allSandboxes) {
-      NetworkService.markAllocated(sandbox.runtime.ipAddress);
+      networkService.markAllocated(sandbox.runtime.ipAddress);
     }
 
     if (allSandboxes.length > 0) {
       logger.info(
         {
           count: allSandboxes.length,
-          allocatedIps: NetworkService.getAllocatedCount(),
+          allocatedIps: networkService.getAllocatedCount(),
         },
         "Startup: IP allocations rehydrated",
       );

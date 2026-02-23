@@ -10,7 +10,7 @@ import {
   getVsockPath,
   launchFirecracker,
 } from "../infrastructure/firecracker/index.ts";
-import { NetworkService } from "../infrastructure/network/index.ts";
+import { networkService } from "../infrastructure/network/index.ts";
 import { proxyService } from "../infrastructure/proxy/index.ts";
 import { SecretsService } from "../infrastructure/secrets/index.ts";
 import {
@@ -99,7 +99,7 @@ export class SandboxLifecycle {
       await cleanupSandboxFiles(sandboxId);
 
       const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
-      await NetworkService.deleteTap(tapDevice);
+      await networkService.deleteTap(tapDevice);
       await proxyService.removeRoutes(sandboxId);
     }
 
@@ -154,7 +154,7 @@ export class SandboxLifecycle {
     const paths = getSandboxPaths(sandboxId, volumePath);
     const { macAddress } = sandbox.runtime;
     const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
-    await NetworkService.createTap(tapDevice);
+    await networkService.createTap(tapDevice);
 
     const { pid: proc_pid, client } = await launchFirecracker(paths);
     log.debug({ sandboxId, pid: proc_pid }, "Firecracker process started");

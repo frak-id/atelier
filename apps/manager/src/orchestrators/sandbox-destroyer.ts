@@ -1,7 +1,7 @@
 import { PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { eventBus } from "../infrastructure/events/index.ts";
-import { NetworkService } from "../infrastructure/network/index.ts";
+import { networkService } from "../infrastructure/network/index.ts";
 import {
   proxyService,
   SshPiperService,
@@ -46,9 +46,9 @@ export class SandboxDestroyer {
       }
 
       const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
-      await NetworkService.deleteTap(tapDevice);
+      await networkService.deleteTap(tapDevice);
 
-      NetworkService.release(sandbox.runtime.ipAddress);
+      networkService.release(sandbox.runtime.ipAddress);
       await proxyService.removeRoutes(sandboxId);
       await SshPiperService.removeRoute(sandboxId);
     }

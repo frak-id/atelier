@@ -17,7 +17,7 @@ import {
 } from "../infrastructure/firecracker/index.ts";
 import {
   type NetworkAllocation,
-  NetworkService,
+  networkService,
 } from "../infrastructure/network/index.ts";
 import {
   proxyService,
@@ -162,7 +162,7 @@ class SpawnContext {
   }
 
   private async allocateNetwork(): Promise<void> {
-    this.network = await NetworkService.allocate(this.sandboxId);
+    this.network = await networkService.allocate(this.sandboxId);
     log.debug(
       { sandboxId: this.sandboxId, network: this.network },
       "Network allocated",
@@ -364,7 +364,7 @@ class SpawnContext {
 
   private async createTapDevice(): Promise<void> {
     const tapDevice = `tap-${this.sandboxId.slice(0, 8)}`;
-    await NetworkService.createTap(tapDevice);
+    await networkService.createTap(tapDevice);
   }
 
   private async launchFirecracker(): Promise<void> {
@@ -1179,8 +1179,8 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
     }
 
     if (this.network) {
-      await NetworkService.deleteTap(this.network.tapDevice);
-      NetworkService.release(this.network.ipAddress);
+      await networkService.deleteTap(this.network.tapDevice);
+      networkService.release(this.network.ipAddress);
     }
 
     await proxyService.removeRoutes(this.sandboxId);

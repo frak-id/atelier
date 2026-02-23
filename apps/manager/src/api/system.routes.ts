@@ -6,7 +6,7 @@ import {
   systemPrebuildRunner,
   systemSandboxService,
 } from "../container.ts";
-import { NetworkService } from "../infrastructure/network/index.ts";
+import { networkService } from "../infrastructure/network/index.ts";
 import {
   proxyService,
   SshPiperService,
@@ -169,14 +169,14 @@ async function performCleanup(): Promise<CleanupResult> {
       }
     }
 
-    const tapDevices = await NetworkService.listTapDevices();
+    const tapDevices = await networkService.listTapDevices();
     for (const tap of tapDevices) {
       const sandboxId = tap.replace("tap-", "");
       const matchingSandbox = sandboxService
         .getAll()
         .find((s) => s.id.startsWith(sandboxId));
       if (!matchingSandbox) {
-        await NetworkService.deleteTap(tap);
+        await networkService.deleteTap(tap);
         tapDevicesRemoved++;
       }
     }
