@@ -5,7 +5,7 @@ import {
   sandboxService,
   workspaceService,
 } from "../../container.ts";
-import { CaddyService } from "../../infrastructure/proxy/index.ts";
+import { proxyService } from "../../infrastructure/proxy/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
@@ -190,7 +190,7 @@ export function registerDevCommandTools(server: McpServer): void {
 
             if (devCommand.port) {
               try {
-                const urls = await CaddyService.registerDevRoute(
+                const urls = await proxyService.registerDevRoute(
                   sandbox.id,
                   sandbox.runtime.ipAddress,
                   name,
@@ -221,7 +221,7 @@ export function registerDevCommandTools(server: McpServer): void {
 
             if (devCommand.port) {
               try {
-                await CaddyService.removeDevRoute(
+                await proxyService.removeDevRoute(
                   sandbox.id,
                   name,
                   devCommand.isDefault ?? false,

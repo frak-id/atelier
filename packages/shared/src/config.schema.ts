@@ -323,6 +323,40 @@ export const IntegrationsConfigSchema = Type.Object(
 
 export type IntegrationsConfig = Static<typeof IntegrationsConfigSchema>;
 
+export const ProxyProviderConfigSchema = Type.Object(
+  {
+    type: Type.Union([Type.Literal("caddy"), Type.Literal("none")], {
+      default: "caddy",
+    }),
+  },
+  { default: {} },
+);
+
+export type ProxyProviderSchemaType = Static<typeof ProxyProviderConfigSchema>;
+
+export const NetworkProviderConfigSchema = Type.Object(
+  {
+    type: Type.Union([Type.Literal("default"), Type.Literal("none")], {
+      default: "default",
+    }),
+  },
+  { default: {} },
+);
+
+export type NetworkProviderSchemaType = Static<
+  typeof NetworkProviderConfigSchema
+>;
+
+export const ProvidersConfigSchema = Type.Object(
+  {
+    proxy: ProxyProviderConfigSchema,
+    network: NetworkProviderConfigSchema,
+  },
+  { default: {} },
+);
+
+export type ProvidersConfig = Static<typeof ProvidersConfigSchema>;
+
 // ---------------------------------------------------------------------------
 // Root config
 // ---------------------------------------------------------------------------
@@ -336,6 +370,7 @@ export const AtelierConfigSchema = Type.Object({
   setup: SetupConfigSchema,
   advanced: AdvancedConfigSchema,
   integrations: IntegrationsConfigSchema,
+  providers: ProvidersConfigSchema,
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;
@@ -389,6 +424,9 @@ export const ENV_VAR_MAPPING = {
   ATELIER_VERSION_CODE_SERVER: "advanced.vm.vscode.version",
   ATELIER_VERSION_SSH_PROXY: "advanced.server.sshProxy.version",
   ATELIER_VERSION_VERDACCIO: "advanced.server.verdaccio.version",
+
+  ATELIER_PROXY_PROVIDER: "providers.proxy.type",
+  ATELIER_NETWORK_PROVIDER: "providers.network.type",
 
   ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
   ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",

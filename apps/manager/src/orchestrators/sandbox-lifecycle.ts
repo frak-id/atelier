@@ -10,8 +10,8 @@ import {
   getVsockPath,
   launchFirecracker,
 } from "../infrastructure/firecracker/index.ts";
-import { NetworkService } from "../infrastructure/network/index.ts";
-import { CaddyService } from "../infrastructure/proxy/index.ts";
+import { networkService } from "../infrastructure/network/index.ts";
+import { proxyService } from "../infrastructure/proxy/index.ts";
 import { SecretsService } from "../infrastructure/secrets/index.ts";
 import {
   SharedStorageService,
@@ -99,8 +99,8 @@ export class SandboxLifecycle {
       await cleanupSandboxFiles(sandboxId);
 
       const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
-      await NetworkService.deleteTap(tapDevice);
-      await CaddyService.removeRoutes(sandboxId);
+      await networkService.deleteTap(tapDevice);
+      await proxyService.removeRoutes(sandboxId);
     }
 
     this.deps.sandboxService.updateStatus(sandboxId, "stopped");
@@ -154,7 +154,7 @@ export class SandboxLifecycle {
     const paths = getSandboxPaths(sandboxId, volumePath);
     const { macAddress } = sandbox.runtime;
     const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
-    await NetworkService.createTap(tapDevice);
+    await networkService.createTap(tapDevice);
 
     const { pid: proc_pid, client } = await launchFirecracker(paths);
     log.debug({ sandboxId, pid: proc_pid }, "Firecracker process started");
@@ -182,7 +182,7 @@ export class SandboxLifecycle {
       await this.reprovisionGuest(sandboxId, sandbox);
     }
 
-    await CaddyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
+    await proxyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
       vscode: config.advanced.vm.vscode.port,
       opencode: config.advanced.vm.opencode.port,
     });

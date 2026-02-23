@@ -9,7 +9,7 @@ import {
   workspaceService,
 } from "../../container.ts";
 import { internalBus } from "../../infrastructure/events/internal-bus.ts";
-import { CaddyService } from "../../infrastructure/proxy/caddy.service.ts";
+import { proxyService } from "../../infrastructure/proxy/index.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
 import {
@@ -384,7 +384,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             );
           });
 
-          const browserUrl = await CaddyService.registerBrowserRoute(
+          const browserUrl = await proxyService.registerBrowserRoute(
             sandbox.id,
             sandbox.runtime.ipAddress,
             browserPort,
@@ -418,7 +418,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             agentClient.serviceStop(sandbox.id, "kasmvnc").catch(() => {}),
           ]).catch(() => {});
 
-          await CaddyService.removeBrowserRoute(sandbox.id);
+          await proxyService.removeBrowserRoute(sandbox.id);
 
           sandboxService.update(sandbox.id, {
             runtime: {

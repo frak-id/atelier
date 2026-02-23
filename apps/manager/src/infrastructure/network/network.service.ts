@@ -1,15 +1,10 @@
-import { $ } from "bun";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { BridgeNetworkProvider } from "./bridge.network-provider.ts";
+import type { NetworkProvider } from "./network.provider.ts";
+import { NoopNetworkProvider } from "./noop.network-provider.ts";
 
 const log = createChildLogger("network");
-
-const allocatedIps = new Set<number>();
-
-function generateMac(ipOctet: number): string {
-  const hex = ipOctet.toString(16).padStart(2, "0");
-  return `06:00:AC:10:00:${hex}`;
-}
 
 export interface NetworkAllocation {
   ipAddress: string;
@@ -18,10 +13,26 @@ export interface NetworkAllocation {
   gateway: string;
 }
 
-export const NetworkService = {
+function generateMac(ipOctet: number): string {
+  const hex = ipOctet.toString(16).padStart(2, "0");
+  return `06:00:AC:10:00:${hex}`;
+}
+
+function createNetworkProvider(): NetworkProvider {
+  if (isMock() || config.providers.network.type === "none") {
+    return new NoopNetworkProvider();
+  }
+  return new BridgeNetworkProvider();
+}
+
+export class NetworkService {
+  private readonly allocatedIps = new Set<number>();
+
+  constructor(private readonly provider: NetworkProvider) {}
+
   async allocate(sandboxId: string): Promise<NetworkAllocation> {
     let ipOctet = config.network.guestIpStart;
-    while (allocatedIps.has(ipOctet) && ipOctet < 255) {
+    while (this.allocatedIps.has(ipOctet) && ipOctet < 255) {
       ipOctet++;
     }
 
@@ -29,7 +40,7 @@ export const NetworkService = {
       throw new Error("No available IP addresses in subnet");
     }
 
-    allocatedIps.add(ipOctet);
+    this.allocatedIps.add(ipOctet);
 
     const allocation: NetworkAllocation = {
       ipAddress: `${config.network.guestSubnet}.${ipOctet}`,
@@ -40,113 +51,47 @@ export const NetworkService = {
 
     log.debug({ sandboxId, allocation }, "Network allocated");
     return allocation;
-  },
+  }
 
   async createTap(tapDevice: string): Promise<void> {
-    if (isMock()) {
-      log.debug({ tapDevice }, "Mock: TAP device creation skipped");
-      return;
-    }
-
-    await $`sudo -n /sbin/ip link del ${tapDevice} 2>/dev/null || true`
-      .quiet()
-      .nothrow();
-    await $`sudo -n /sbin/ip tuntap add dev ${tapDevice} mode tap`.quiet();
-    await $`sudo -n /sbin/ip link set dev ${tapDevice} master ${config.network.bridgeName} up`.quiet();
-
-    log.info({ tapDevice }, "TAP device created");
-  },
+    return this.provider.createTap(tapDevice);
+  }
 
   async deleteTap(tapDevice: string): Promise<void> {
-    if (isMock()) {
-      log.debug({ tapDevice }, "Mock: TAP device deletion skipped");
-      return;
-    }
-
-    await $`sudo -n /sbin/ip link del ${tapDevice} 2>/dev/null || true`
-      .quiet()
-      .nothrow();
-    log.info({ tapDevice }, "TAP device deleted");
-  },
+    return this.provider.deleteTap(tapDevice);
+  }
 
   release(ipAddress: string): void {
     const parts = ipAddress.split(".");
     const octet = Number.parseInt(parts[3] ?? "0", 10);
-    allocatedIps.delete(octet);
+    this.allocatedIps.delete(octet);
     log.debug({ ipAddress }, "IP address released");
-  },
+  }
 
   markAllocated(ipAddress: string): void {
     const parts = ipAddress.split(".");
     const octet = Number.parseInt(parts[3] ?? "0", 10);
     if (octet > 0 && octet < 255) {
-      allocatedIps.add(octet);
+      this.allocatedIps.add(octet);
       log.debug({ ipAddress, octet }, "IP address marked as allocated");
     }
-  },
+  }
 
   getAllocatedCount(): number {
-    return allocatedIps.size;
-  },
+    return this.allocatedIps.size;
+  }
 
   async getBridgeStatus(): Promise<{
     exists: boolean;
     ip: string | null;
     interfaces: string[];
   }> {
-    if (isMock()) {
-      return { exists: true, ip: config.network.bridgeIp, interfaces: [] };
-    }
-
-    const bridgeName = config.network.bridgeName;
-    const bridgeCheck = await $`sudo -n /sbin/ip link show ${bridgeName}`
-      .quiet()
-      .nothrow();
-
-    if (bridgeCheck.exitCode !== 0) {
-      return { exists: false, ip: null, interfaces: [] };
-    }
-
-    const ipResult = await $`sudo -n /sbin/ip -j addr show ${bridgeName}`
-      .quiet()
-      .nothrow();
-    let ip: string | null = null;
-    if (ipResult.exitCode === 0) {
-      try {
-        const parsed = JSON.parse(ipResult.stdout.toString());
-        ip = parsed[0]?.addr_info?.[0]?.local ?? null;
-      } catch {
-        ip = null;
-      }
-    }
-
-    const interfacesResult =
-      await $`sudo -n /sbin/bridge link show master ${bridgeName} 2>/dev/null`
-        .quiet()
-        .nothrow();
-    const interfaces = interfacesResult.stdout
-      .toString()
-      .split("\n")
-      .map((line) => line.match(/^\d+:\s+(\S+):/)?.[1])
-      .filter((iface): iface is string => !!iface);
-
-    return { exists: true, ip, interfaces };
-  },
+    return this.provider.getBridgeStatus();
+  }
 
   async listTapDevices(): Promise<string[]> {
-    if (isMock()) {
-      return [];
-    }
+    return this.provider.listTapDevices();
+  }
+}
 
-    const result = await $`sudo -n /sbin/ip link show type tuntap`
-      .quiet()
-      .nothrow();
-    if (result.exitCode !== 0) return [];
-
-    return result.stdout
-      .toString()
-      .split("\n")
-      .map((line) => line.match(/^\d+:\s+(tap-\S+):/)?.[1])
-      .filter((device): device is string => !!device);
-  },
-};
+export const networkService = new NetworkService(createNetworkProvider());
