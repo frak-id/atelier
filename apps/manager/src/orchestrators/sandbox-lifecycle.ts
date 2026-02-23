@@ -267,6 +267,8 @@ export class SandboxLifecycle {
     const serviceNames = ["vscode", "opencode"];
     await provisionService.startServices(sandboxId, serviceNames);
 
+    // 9. Wait for services to be ready before registering routes
+    await this.waitForServicesReady(sandboxId, serviceNames);
     log.info({ sandboxId }, "Guest re-provisioned after restart");
   }
 
@@ -426,6 +428,54 @@ export class SandboxLifecycle {
       runtime: cleanRuntime,
     });
     log.info({ sandboxId }, "Cleared stale runtime error");
+  }
+
+  /**
+   * Poll service ports inside the guest until they accept connections.
+   * Prevents Caddy 502s by ensuring services are listening before
+   * routes are registered.
+   */
+  private async waitForServicesReady(
+    sandboxId: string,
+    serviceNames: string[],
+    timeoutMs = 15000,
+  ): Promise<void> {
+    const portMap: Record<string, number> = {
+      vscode: config.advanced.vm.vscode.port,
+      opencode: config.advanced.vm.opencode.port,
+    };
+    const ports = serviceNames
+      .map((name) => portMap[name])
+      .filter((port): port is number => port !== undefined);
+
+    if (ports.length === 0) return;
+
+    const checkCmd = ports
+      .map((port) => `(echo > /dev/tcp/127.0.0.1/${port}) 2>/dev/null`)
+      .join(" && ");
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        const result = await this.deps.agentClient.exec(
+          sandboxId,
+          `bash -c '${checkCmd}'`,
+          { timeout: 3000 },
+        );
+        if (result.exitCode === 0) {
+          log.debug({ sandboxId, ports }, "Services confirmed listening");
+          return;
+        }
+      } catch {
+        // Agent exec failed, retry
+      }
+      await Bun.sleep(500);
+    }
+
+    log.warn(
+      { sandboxId, ports, timeoutMs },
+      "Services did not become ready within timeout, proceeding anyway",
+    );
   }
 
   async getFirecrackerState(sandboxId: string): Promise<unknown> {

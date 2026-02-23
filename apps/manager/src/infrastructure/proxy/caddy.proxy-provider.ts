@@ -235,14 +235,31 @@ export class CaddyProxyProvider implements ProxyProvider {
   }
 
   private async patchRoutes(routes: CaddyRoute[]): Promise<void> {
-    const res = await fetch(this.routesUrl, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(routes),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Caddy PATCH failed (${res.status}): ${body}`);
+    const maxRetries = 3;
+    const baseDelayMs = 500;
+    const payload = JSON.stringify(routes);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetch(this.routesUrl, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        });
+        if (res.ok) return;
+        const body = await res.text();
+        if (attempt === maxRetries) {
+          throw new Error(`Caddy PATCH failed (${res.status}): ${body}`);
+        }
+        log.warn(
+          { status: res.status, attempt },
+          "Caddy PATCH failed, retrying",
+        );
+      } catch (error) {
+        if (attempt === maxRetries) throw error;
+        log.warn({ attempt, error }, "Caddy PATCH request failed, retrying");
+      }
+      await Bun.sleep(baseDelayMs * 2 ** attempt);
     }
   }
 

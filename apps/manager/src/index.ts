@@ -109,6 +109,42 @@ const app = new Elysia()
       );
     }
 
+    // Reconcile stale "creating" sandboxes from a previous crash
+    const staleTtlMs = 10 * 60 * 1000;
+    const now = Date.now();
+    const staleSandboxes = allSandboxes.filter(
+      (s) =>
+        s.status === "creating" &&
+        now - new Date(s.createdAt).getTime() > staleTtlMs,
+    );
+    for (const sandbox of staleSandboxes) {
+      sandboxService.updateStatus(
+        sandbox.id,
+        "error",
+        "Stale creating state after manager restart",
+      );
+      logger.warn(
+        { sandboxId: sandbox.id, createdAt: sandbox.createdAt },
+        "Startup: marked stale creating sandbox as error",
+      );
+    }
+
+    // Wait for Caddy to become ready before rehydrating routes
+    const caddyDeadline = Date.now() + 30_000;
+    let caddyReady = false;
+    while (Date.now() < caddyDeadline) {
+      if (await proxyService.isHealthy()) {
+        caddyReady = true;
+        break;
+      }
+      logger.warn("Startup: waiting for Caddy to become ready");
+      await Bun.sleep(1000);
+    }
+    if (!caddyReady) {
+      logger.error(
+        "Startup: Caddy not ready after 30s — route rehydration may fail",
+      );
+    }
     const runningSandboxes = allSandboxes.filter((s) => s.status === "running");
     for (const sandbox of runningSandboxes) {
       try {
