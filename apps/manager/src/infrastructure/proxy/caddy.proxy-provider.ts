@@ -22,6 +22,63 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Credentials": ["true"],
   Vary: ["Origin"],
 } as const;
+/**
+ * CORS preflight subroute — handles OPTIONS with full CORS headers.
+ * Extracted to avoid duplicating this block in every route builder.
+ */
+function buildCorsPreflightSubroute(): Record<string, unknown> {
+  return {
+    handle: [
+      {
+        handler: "headers",
+        response: {
+          set: {
+            ...CORS_HEADERS,
+            "Access-Control-Allow-Methods": [
+              "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+            ],
+            "Access-Control-Allow-Headers": [
+              "{http.request.header.Access-Control-Request-Headers}",
+            ],
+            "Access-Control-Max-Age": ["600"],
+          },
+        },
+      },
+    ],
+    match: [{ method: ["OPTIONS"] }],
+    terminal: true,
+  };
+}
+
+/**
+ * Reverse proxy handler for an upstream with CORS response headers and streaming.
+ */
+function buildUpstreamHandler(
+  upstream: string,
+): Record<string, unknown> {
+  return {
+    handler: "reverse_proxy",
+    upstreams: [{ dial: upstream }],
+    transport: { protocol: "http", read_buffer_size: 4096 },
+    headers: { response: { set: { ...CORS_HEADERS } } },
+    flush_interval: -1,
+  };
+}
+
+/**
+ * Wraps subroutes in a host-matched CaddyRoute.
+ */
+function wrapInHostRoute(
+  domain: string,
+  subroutes: Record<string, unknown>[],
+): CaddyRoute {
+  return {
+    "@id": domain,
+    match: [{ host: [domain] }],
+    handle: [{ handler: "subroute", routes: subroutes }],
+    terminal: true,
+  };
+}
 
 function routeId(route: CaddyRoute): string | undefined {
   return route["@id"];
@@ -108,107 +165,34 @@ function buildRoute(
   if (withAuth) {
     handlers.push(buildForwardAuthHandler(managerAddress));
   }
+  handlers.push(buildUpstreamHandler(route.upstream));
 
-  handlers.push({
-    handler: "reverse_proxy",
-    upstreams: [{ dial: route.upstream }],
-    transport: { protocol: "http", read_buffer_size: 4096 },
-    headers: { response: { set: { ...CORS_HEADERS } } },
-    flush_interval: -1,
-  });
-
-  return {
-    "@id": route.domain,
-    match: [{ host: [route.domain] }],
-    handle: [
-      {
-        handler: "subroute",
-        routes: [
-          {
-            handle: [
-              {
-                handler: "headers",
-                response: {
-                  set: {
-                    ...CORS_HEADERS,
-                    "Access-Control-Allow-Methods": [
-                      "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                    ],
-                    "Access-Control-Allow-Headers": [
-                      "{http.request.header.Access-Control-Request-Headers}",
-                    ],
-                    "Access-Control-Max-Age": ["600"],
-                  },
-                },
-              },
-            ],
-            match: [{ method: ["OPTIONS"] }],
-            terminal: true,
-          },
-          { handle: handlers },
-        ],
-      },
-    ],
-    terminal: true,
-  };
+  return wrapInHostRoute(route.domain, [
+    buildCorsPreflightSubroute(),
+    { handle: handlers },
+  ]);
 }
 
 function buildOpenCodeRoute(
   route: { domain: string; upstream: string },
   managerAddress: string,
 ): CaddyRoute {
-  const upstreamProxy: Record<string, unknown> = {
-    handler: "reverse_proxy",
-    upstreams: [{ dial: route.upstream }],
-    transport: { protocol: "http", read_buffer_size: 4096 },
-    headers: { response: { set: { ...CORS_HEADERS } } },
-    flush_interval: -1,
-  };
+  const upstream = buildUpstreamHandler(route.upstream);
 
-  return {
-    "@id": route.domain,
-    match: [{ host: [route.domain] }],
-    handle: [
-      {
-        handler: "subroute",
-        routes: [
-          {
-            handle: [
-              {
-                handler: "headers",
-                response: {
-                  set: {
-                    ...CORS_HEADERS,
-                    "Access-Control-Allow-Methods": [
-                      "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                    ],
-                    "Access-Control-Allow-Headers": [
-                      "{http.request.header.Access-Control-Request-Headers}",
-                    ],
-                    "Access-Control-Max-Age": ["600"],
-                  },
-                },
-              },
-            ],
-            match: [{ method: ["OPTIONS"] }],
-            terminal: true,
-          },
-          {
-            match: [{ header: { Authorization: ["*"] } }],
-            handle: [upstreamProxy],
-            terminal: true,
-          },
-          {
-            handle: [
-              buildOpenCodeForwardAuthHandler(managerAddress),
-              upstreamProxy,
-            ],
-          },
-        ],
-      },
-    ],
-    terminal: true,
-  };
+  return wrapInHostRoute(route.domain, [
+    buildCorsPreflightSubroute(),
+    {
+      match: [{ header: { Authorization: ["*"] } }],
+      handle: [upstream],
+      terminal: true,
+    },
+    {
+      handle: [
+        buildOpenCodeForwardAuthHandler(managerAddress),
+        upstream,
+      ],
+    },
+  ]);
 }
 
 function buildWildcardRoute(baseDomain: string): CaddyRoute {

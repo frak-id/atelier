@@ -54,7 +54,7 @@ export class ProxyService {
       {
         domain: namedDomain,
         upstream: `${ipAddress}:${port}`,
-        auth: "standard",
+        auth: "none",
       },
     ];
 
@@ -68,7 +68,7 @@ export class ProxyService {
       routes.push({
         domain: `dev-${name}-${ep.alias}-${sandboxId}.${this.baseDomain}`,
         upstream: `${ipAddress}:${ep.port}`,
-        auth: "standard",
+        auth: "none",
       });
     }
 
@@ -78,7 +78,7 @@ export class ProxyService {
       routes.push({
         domain: defaultDomain,
         upstream: `${ipAddress}:${port}`,
-        auth: "standard",
+        auth: "none",
       });
       defaultUrl = `https://${defaultDomain}`;
     }
@@ -121,7 +121,7 @@ export class ProxyService {
       {
         domain: browserDomain,
         upstream: `${ipAddress}:${port}`,
-        auth: "standard",
+        auth: "none",
       },
     ]);
     return `https://${browserDomain}`;
