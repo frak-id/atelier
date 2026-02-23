@@ -22,7 +22,7 @@ import {
   opencodeSessionsQuery,
   sandboxDevCommandsQuery,
   sandboxGitStatusQuery,
-  sandboxServicesQuery,
+  useSandboxServices,
   useStartBrowser,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
@@ -71,12 +71,10 @@ export function SandboxCard({
   onShowDetails,
   onShowTask,
 }: SandboxCardProps) {
-  const { data: services } = useQuery({
-    ...sandboxServicesQuery(sandbox.id),
-    enabled: sandbox.status === "running",
-    refetchInterval: 2000,
-    refetchIntervalInBackground: false,
-  });
+  const { data: services } = useSandboxServices(
+    sandbox.id,
+    sandbox.status === "running",
+  );
   const browserStatus = deriveBrowserStatus(services, sandbox);
 
   const statusVariant = {

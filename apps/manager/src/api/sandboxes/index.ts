@@ -12,9 +12,11 @@ import { internalBus } from "../../infrastructure/events/internal-bus.ts";
 import { proxyService } from "../../infrastructure/proxy/index.ts";
 import { StorageService } from "../../infrastructure/storage/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
+import type { ServiceStatus } from "../../schemas/index.ts";
 import {
   AgentHealthSchema,
   AgentMetricsSchema,
+  AllServicesResponseSchema,
   BrowserStartResponseSchema,
   BrowserStopResponseSchema,
   CreateSandboxBodySchema,
@@ -89,6 +91,33 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       body: CreateSandboxBodySchema,
       response: CreateSandboxResponseSchema,
+    },
+  )
+  .get(
+    "/all-services",
+    async () => {
+      const running = sandboxService
+        .getByStatus("running")
+        .filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
+
+      const results = await Promise.allSettled(
+        running.map(async (s) => ({
+          id: s.id,
+          services: await agentOperations.services(s.id),
+        })),
+      );
+
+      const response: Record<string, ServiceStatus[]> = {};
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          response[result.value.id] = result.value.services.services;
+        }
+      }
+
+      return response;
+    },
+    {
+      response: AllServicesResponseSchema,
     },
   )
   .group("", (app) =>

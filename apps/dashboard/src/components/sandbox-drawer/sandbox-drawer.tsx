@@ -19,10 +19,10 @@ import { registerOpencodePassword } from "@/api/opencode";
 import {
   deriveBrowserStatus,
   sandboxDetailQuery,
-  sandboxServicesQuery,
   taskListQuery,
   useDeleteSandbox,
   useRestartSandbox,
+  useSandboxServices,
   useSaveAsPrebuild,
   useStartSandbox,
   useStopSandbox,
@@ -100,10 +100,10 @@ export function SandboxDrawer({
   });
   const task = tasks?.find((t) => t.data.sandboxId === sandboxId);
 
-  const { data: services } = useQuery({
-    ...sandboxServicesQuery(sandboxId ?? ""),
-    enabled: sandbox?.status === "running",
-  });
+  const { data: services } = useSandboxServices(
+    sandboxId ?? "",
+    sandbox?.status === "running",
+  );
 
   const browserStatus = deriveBrowserStatus(services, sandbox);
 

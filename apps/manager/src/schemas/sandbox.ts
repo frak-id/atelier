@@ -78,6 +78,12 @@ export const ServicesResponseSchema = t.Object({
 });
 export type ServicesResponse = Static<typeof ServicesResponseSchema>;
 
+export const AllServicesResponseSchema = t.Record(
+  t.String(),
+  t.Array(ServiceStatusSchema),
+);
+export type AllServicesResponse = Static<typeof AllServicesResponseSchema>;
+
 export const ServiceNameParamsSchema = t.Object({
   id: t.String(),
   name: t.String(),

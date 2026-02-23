@@ -4,6 +4,7 @@ import {
   type ToolPart,
 } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../../infrastructure/agent/index.ts";
+import { proxyService } from "../../infrastructure/proxy/proxy.service.ts";
 import type { SandboxLifecycle } from "../../orchestrators/sandbox-lifecycle.ts";
 import type { TaskSpawner } from "../../orchestrators/task-spawner.ts";
 import type { Task } from "../../schemas/index.ts";
@@ -28,7 +29,6 @@ import {
   type IntegrationCommand,
   parseMention,
 } from "./integration-commands.ts";
-import { proxyService } from "../../infrastructure/proxy/proxy.service.ts";
 
 const log = createChildLogger("integration-gateway");
 
