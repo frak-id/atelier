@@ -490,12 +490,80 @@ class SpawnContext {
     const gateway = this.network.gateway;
 
     // Step 1: Network reconfig (must be first)
-    await this.deps.agentClient.exec(
+    // Includes: IPv4 flush+add, route, ARP/neighbor cache flush, DNS config
+    // Per Firecracker docs: stale ARP entries from the snapshot can cause
+    // packets to use old link-layer addresses until cache timeout.
+    const dnsServers = config.network.dnsServers;
+    const dnsCommands = dnsServers
+      .map((dns: string) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
+      .join(" && ");
+
+    const networkCmd = [
+      "ip -4 addr flush dev eth0",
+      `ip addr add ${newIp}/24 dev eth0`,
+      "ip link set eth0 up",
+      `ip route replace default via ${gateway} dev eth0`,
+      "ip -family inet neigh flush any",
+      "ip -family inet6 neigh flush any",
+      `> /etc/resolv.conf && ${dnsCommands}`,
+    ].join(" && ");
+
+    const maxRetries = 3;
+    let lastError: string | undefined;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const result = await this.deps.agentClient.exec(
+        this.sandboxId,
+        networkCmd,
+        { timeout: 5000 },
+      );
+
+      if (result.exitCode === 0) {
+        lastError = undefined;
+        break;
+      }
+
+      lastError = result.stderr || `exit code ${result.exitCode}`;
+      log.warn(
+        {
+          sandboxId: this.sandboxId,
+          attempt,
+          exitCode: result.exitCode,
+          stderr: result.stderr,
+        },
+        "Guest network reconfiguration failed, retrying",
+      );
+
+      if (attempt < maxRetries) {
+        await Bun.sleep(200 * attempt);
+      }
+    }
+
+    if (lastError) {
+      throw new Error(
+        `Guest network reconfiguration failed after ${maxRetries} attempts: ${lastError}`,
+      );
+    }
+
+    // Step 1b: Gratuitous ARP + gateway reachability check
+    // gARP announces our MAC→IP binding to the bridge/host so the first
+    // real packet doesn't have to wait for ARP resolution.
+    const verifyResult = await this.deps.agentClient.exec(
       this.sandboxId,
-      `ip addr flush dev eth0 && ip addr add ${newIp}/24 dev eth0 && ip link set eth0 up && ip route replace default via ${gateway} dev eth0`,
+      `(arping -U -c 1 -I eth0 ${newIp} &) 2>/dev/null; ping -c 1 -W 2 ${gateway} >/dev/null 2>&1`,
       { timeout: 5000 },
     );
 
+    if (verifyResult.exitCode !== 0) {
+      log.warn(
+        {
+          sandboxId: this.sandboxId,
+          exitCode: verifyResult.exitCode,
+          stderr: verifyResult.stderr,
+        },
+        "Gateway ping failed after network reconfig (non-fatal)",
+      );
+    }
     log.info(
       { sandboxId: this.sandboxId, newIp },
       "Guest network reconfigured",
