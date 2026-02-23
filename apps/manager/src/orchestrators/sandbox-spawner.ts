@@ -20,7 +20,7 @@ import {
   NetworkService,
 } from "../infrastructure/network/index.ts";
 import {
-  CaddyService,
+  proxyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import { SecretsService } from "../infrastructure/secrets/index.ts";
@@ -1102,7 +1102,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       return;
     }
 
-    const urls = await CaddyService.registerRoutes(
+    const urls = await proxyService.registerRoutes(
       this.sandboxId,
       this.network.ipAddress,
       {
@@ -1183,7 +1183,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       NetworkService.release(this.network.ipAddress);
     }
 
-    await CaddyService.removeRoutes(this.sandboxId);
+    await proxyService.removeRoutes(this.sandboxId);
     await SshPiperService.removeRoute(this.sandboxId);
 
     try {

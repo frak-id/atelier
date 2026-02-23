@@ -3,7 +3,7 @@ import { $ } from "bun";
 import { eventBus } from "../infrastructure/events/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import {
-  CaddyService,
+  proxyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
@@ -49,7 +49,7 @@ export class SandboxDestroyer {
       await NetworkService.deleteTap(tapDevice);
 
       NetworkService.release(sandbox.runtime.ipAddress);
-      await CaddyService.removeRoutes(sandboxId);
+      await proxyService.removeRoutes(sandboxId);
       await SshPiperService.removeRoute(sandboxId);
     }
 

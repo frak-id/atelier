@@ -8,7 +8,7 @@ import {
 } from "../container.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
 import {
-  CaddyService,
+  proxyService,
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
@@ -192,19 +192,14 @@ async function performCleanup(): Promise<CleanupResult> {
       }
     }
 
-    const routes = await CaddyService.getRoutes();
-    for (const route of routes) {
-      const r = route as { "@id"?: string };
-      const id = r["@id"];
-      if (!id || id === "wildcard-fallback") continue;
-
+    const domains = await proxyService.getRegisteredDomains();
+    for (const domain of domains) {
       const sandboxIdMatch = [...knownSandboxIds].find((sid: string) =>
-        id.endsWith(`${sid}.${config.domain.baseDomain}`),
+        domain.endsWith(`${sid}.${config.domain.baseDomain}`),
       );
       if (!sandboxIdMatch) {
-        const domain = id;
         if (domain.endsWith(`.${config.domain.baseDomain}`)) {
-          await CaddyService.removeRoute(domain);
+          await proxyService.removeRoute(domain);
           caddyRoutesRemoved++;
         }
       }

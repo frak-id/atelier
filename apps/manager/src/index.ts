@@ -40,7 +40,7 @@ import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { NetworkService } from "./infrastructure/network/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
-import { CaddyService, SshPiperService } from "./infrastructure/proxy/index.ts";
+import { proxyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
 
@@ -112,7 +112,7 @@ const app = new Elysia()
     const runningSandboxes = allSandboxes.filter((s) => s.status === "running");
     for (const sandbox of runningSandboxes) {
       try {
-        await CaddyService.registerRoutes(
+        await proxyService.registerRoutes(
           sandbox.id,
           sandbox.runtime.ipAddress,
           {

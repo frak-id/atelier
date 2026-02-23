@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { agentClient, workspaceService } from "../../container";
-import { CaddyService } from "../../infrastructure/proxy";
+import { proxyService } from "../../infrastructure/proxy";
 import {
   DevCommandListResponseSchema,
   DevCommandLogsQuerySchema,
@@ -108,7 +108,7 @@ export const devRoutes = new Elysia()
 
       if (devCommand.port) {
         try {
-          const urls = await CaddyService.registerDevRoute(
+          const urls = await proxyService.registerDevRoute(
             sandbox.id,
             sandbox.runtime.ipAddress,
             params.name,
@@ -158,7 +158,7 @@ export const devRoutes = new Elysia()
 
       if (devCommand?.port) {
         try {
-          await CaddyService.removeDevRoute(
+          await proxyService.removeDevRoute(
             sandbox.id,
             params.name,
             devCommand.isDefault ?? false,

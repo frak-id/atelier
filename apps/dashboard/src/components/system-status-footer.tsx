@@ -220,7 +220,7 @@ export function SystemStatusFooter() {
                     name="Firecracker"
                     status={health.checks.firecracker}
                   />
-                  <HealthBadge name="Caddy" status={health.checks.caddy} />
+                  <HealthBadge name="Proxy" status={health.checks.proxy} />
                   <HealthBadge name="Network" status={health.checks.network} />
                   <HealthBadge name="Storage" status={health.checks.storage} />
                   <HealthBadge name="LVM" status={health.checks.lvm} />

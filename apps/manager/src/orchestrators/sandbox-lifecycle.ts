@@ -11,7 +11,7 @@ import {
   launchFirecracker,
 } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
-import { CaddyService } from "../infrastructure/proxy/index.ts";
+import { proxyService } from "../infrastructure/proxy/index.ts";
 import { SecretsService } from "../infrastructure/secrets/index.ts";
 import {
   SharedStorageService,
@@ -100,7 +100,7 @@ export class SandboxLifecycle {
 
       const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
       await NetworkService.deleteTap(tapDevice);
-      await CaddyService.removeRoutes(sandboxId);
+      await proxyService.removeRoutes(sandboxId);
     }
 
     this.deps.sandboxService.updateStatus(sandboxId, "stopped");
@@ -182,7 +182,7 @@ export class SandboxLifecycle {
       await this.reprovisionGuest(sandboxId, sandbox);
     }
 
-    await CaddyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
+    await proxyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
       vscode: config.advanced.vm.vscode.port,
       opencode: config.advanced.vm.opencode.port,
     });

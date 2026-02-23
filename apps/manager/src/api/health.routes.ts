@@ -3,7 +3,7 @@ import { Elysia, t } from "elysia";
 import { CronService } from "../infrastructure/cron/index.ts";
 import { FirecrackerClient } from "../infrastructure/firecracker/index.ts";
 import { NetworkService } from "../infrastructure/network/index.ts";
-import { CaddyService } from "../infrastructure/proxy/index.ts";
+import { proxyService } from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   CronJobInfoSchema,
@@ -20,17 +20,17 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
   .get(
     "/",
     async (): Promise<HealthStatus> => {
-      const [firecracker, caddy, network, storageDir, lvmAvailable] =
+      const [firecracker, proxy, network, storageDir, lvmAvailable] =
         await Promise.all([
           FirecrackerClient.isHealthy(),
-          CaddyService.isHealthy(),
+          proxyService.isHealthy(),
           NetworkService.getBridgeStatus().then((s) => s.exists),
           dirExists(PATHS.SANDBOX_DIR),
           StorageService.isAvailable(),
         ]);
 
       const storage = storageDir || lvmAvailable;
-      const allHealthy = firecracker && caddy && network && storage;
+      const allHealthy = firecracker && proxy && network && storage;
 
       return {
         status: allHealthy ? "ok" : "degraded",
@@ -38,7 +38,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
         timestamp: Date.now(),
         checks: {
           firecracker: firecracker ? "ok" : "error",
-          caddy: caddy ? "ok" : "error",
+          proxy: proxy ? "ok" : "error",
           network: network ? "ok" : "error",
           storage: storage ? "ok" : "error",
           lvm: lvmAvailable ? "ok" : "unavailable",
