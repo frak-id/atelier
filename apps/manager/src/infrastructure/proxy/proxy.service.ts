@@ -29,7 +29,6 @@ export class ProxyService {
         domain: opencodeDomain,
         upstream: `${ipAddress}:${ports.opencode}`,
         auth: "opencode",
-        healthPath: "/health",
       },
     ]);
 
