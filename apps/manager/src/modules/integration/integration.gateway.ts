@@ -676,45 +676,49 @@ export class IntegrationGateway {
         throw new Error("Failed to create system sandbox session");
       }
 
-      const dispatcherModel =
-        this.deps.systemAiService.resolveModel("dispatcher");
-      const { data, error: promptError } = await client.session.prompt({
-        sessionID: session.id,
-        agent: "dispatcher",
-        ...(dispatcherModel && { model: dispatcherModel }),
-        parts: [{ type: "text", text: dispatcherInput }],
-      });
+      try {
+        const dispatcherModel =
+          this.deps.systemAiService.resolveModel("dispatcher");
+        const { data, error: promptError } = await client.session.prompt({
+          sessionID: session.id,
+          agent: "dispatcher",
+          ...(dispatcherModel && { model: dispatcherModel }),
+          parts: [{ type: "text", text: dispatcherInput }],
+        });
 
-      if (promptError) {
-        throw new Error("System sandbox prompt failed");
-      }
-
-      const taskId = await this.extractCreatedTaskId(client, session.id);
-
-      if (taskId) {
-        log.info(
-          { taskId, threadKey: event.threadKey },
-          "Task created via system sandbox — injecting metadata",
-        );
-        await this.attachIntegrationToTask(taskId, event);
-      }
-
-      if (data) {
-        const textReply = data.parts
-          .filter(
-            (p): p is Extract<Part, { type: "text" }> => p.type === "text",
-          )
-          .map((p) => p.text)
-          .join("\n")
-          .trim();
-
-        if (textReply) {
-          log.info(
-            { threadKey: event.threadKey, hasTask: !!taskId },
-            "Forwarding text response to platform",
-          );
-          await adapter.postMessage(event, textReply);
+        if (promptError) {
+          throw new Error("System sandbox prompt failed");
         }
+
+        const taskId = await this.extractCreatedTaskId(client, session.id);
+
+        if (taskId) {
+          log.info(
+            { taskId, threadKey: event.threadKey },
+            "Task created via system sandbox \u2014 injecting metadata",
+          );
+          await this.attachIntegrationToTask(taskId, event);
+        }
+
+        if (data) {
+          const textReply = data.parts
+            .filter(
+              (p): p is Extract<Part, { type: "text" }> => p.type === "text",
+            )
+            .map((p) => p.text)
+            .join("\n")
+            .trim();
+
+          if (textReply) {
+            log.info(
+              { threadKey: event.threadKey, hasTask: !!taskId },
+              "Forwarding text response to platform",
+            );
+            await adapter.postMessage(event, textReply);
+          }
+        }
+      } finally {
+        await client.session.delete({ sessionID: session.id }).catch(() => {});
       }
     } finally {
       this.deps.systemSandboxService.release();

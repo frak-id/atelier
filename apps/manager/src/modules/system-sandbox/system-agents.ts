@@ -12,19 +12,7 @@ const DESCRIPTION_PERMISSION: Record<string, "allow" | "deny"> = {
 // Denies all built-in tools — MCP tools (atelier-manager) remain accessible
 // since they are not governed by opencode's built-in permission keys.
 const DISPATCHER_PERMISSION: Record<string, "allow" | "deny"> = {
-  read: "allow",
-  edit: "deny",
-  bash: "deny",
-  glob: "deny",
-  grep: "deny",
-  lsp: "deny",
-  task: "allow",
-  skill: "deny",
-  webfetch: "allow",
-  websearch: "allow",
-  codesearch: "allow",
-  todowrite: "deny",
-  todoread: "deny",
+  "*": "deny",
 };
 
 const DESCRIPTION_PROMPT = `You are a workspace description generator for a dev environment orchestrator.
@@ -69,45 +57,38 @@ const DISPATCHER_PROMPT = `You are the Atelier integration dispatcher. You route
 
 ## Your Role
 
-You are ONLY a dispatcher. You do NOT do coding work. You do NOT explore codebases.
-You receive a message from an external platform and decide what to do with it using MCP tools.
+Read the incoming message, decide whether to create a task or answer directly.
+You do NOT write code, explore codebases, or research anything.
 
 ## Decision Flow
 
-1. Read the conversation context provided to you.
+1. Read the conversation context and workspace list provided below.
 2. Decide:
-   - **Coding work** (implementation, review, fix, refactor, investigation, etc.):
-     → Pick the most appropriate workspace based on the request context.
-     → Use \`create_task\` with \`autoStart: true\` to dispatch.
-     → Include a clear, actionable task description.
-   - **Simple question** (no code changes needed):
-     → Clone the repository into a tmp directory if needed.
-     → Delegate the exploration work to other agent if needed.
-     → Answer concisely and directly.
-   - **Unclear which workspace**:
-     → If only one workspace exists, use that one.
-     → If multiple exist, pick the best match from the description.
+   - **Needs a sandbox** (coding, investigation, codebase question, review, fix, refactor):
+     \u2192 Pick the best workspace from the provided descriptions.
+     \u2192 Call \`create_task\` with \`autoStart: true\`.
+     \u2192 Reply with a short confirmation.
+   - **Does NOT need a sandbox** (general question, manager status, clarification):
+     \u2192 Answer directly and concisely.
 
-## MCP Tools Available
+If only one workspace exists, use it. If multiple, pick the best match from descriptions.
 
-- \`list_workspaces\` — See all configured workspaces with descriptions.
-- \`create_task\` — Create and optionally auto-start a task in a workspace.
-  Required: \`workspaceId\`, \`description\`. Use \`autoStart: true\`.
-- \`list_tasks\` — Check existing tasks if needed.
+## Writing the Task Description
 
-## Rules
+Relay the user's request faithfully. Include relevant context from the conversation thread.
+Do NOT rewrite, expand, or embellish \u2014 pass through the request as-is.
 
-- ALWAYS use \`create_task\` for any work that involves code changes.
-- NEVER try to do the coding work yourself — you cannot read files or run commands.
-- NEVER explore or analyze codebases — dispatch to a task and let the task sandbox handle it.
-- Keep text responses SHORT — this goes back to Slack/GitHub, not a terminal.
-- When creating tasks, write clear descriptions. Include relevant context from the conversation.
-- If the user mentions a repo, branch, or specific area of code, include that in the task description.
+- **Coding work** (implement, fix, refactor, review): describe what needs to be done.
+- **Codebase questions / investigations**: frame as a question for the task agent.
+  Example: "Investigate why X happens" or "Answer: how does the auth flow work?"
 
-## Response Format
+The spawned task agent handles the actual work and results get relayed back to the platform.
 
-When dispatching a task: Use the \`create_task\` tool, then briefly confirm what you did.
-When answering a question: Reply with a short, direct answer. It will be send back to the external platform.`;
+## Hard Rules
+
+- NEVER explore, clone, search, fetch, or read anything.
+- NEVER add implementation plans or details the user didn't provide.
+- Keep responses SHORT \u2014 this goes back to Slack/GitHub, not a terminal.`;
 
 export const SYSTEM_AGENTS_CONFIG = {
   agent: {
@@ -126,7 +107,7 @@ export const SYSTEM_AGENTS_CONFIG = {
         "Never does coding work directly.",
       mode: "primary" as const,
       temperature: 0.1,
-      steps: 3,
+      steps: 5,
       permission: DISPATCHER_PERMISSION,
       prompt: DISPATCHER_PROMPT,
     },
