@@ -9,6 +9,7 @@ import {
 import {
   AddSessionBodySchema,
   CreateTaskBodySchema,
+  DeleteTaskQuerySchema,
   IdParamSchema,
   ReorderTaskBodySchema,
   ResetTaskQuerySchema,
@@ -181,14 +182,35 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
   )
   .delete(
     "/:id",
-    ({ params, set }) => {
-      log.info({ taskId: params.id }, "Deleting task");
+    async ({ params, query, set }) => {
+      const task = taskService.getByIdOrThrow(params.id);
+      const sandboxAction = (query.sandboxAction ?? "detach") as
+        | "detach"
+        | "stop"
+        | "destroy";
 
+      log.info({ taskId: params.id, sandboxAction }, "Deleting task");
+
+      if (task.data.sandboxId) {
+        try {
+          if (sandboxAction === "stop") {
+            await sandboxLifecycle.stop(task.data.sandboxId);
+          } else if (sandboxAction === "destroy") {
+            await sandboxDestroyer.destroy(task.data.sandboxId);
+          }
+        } catch (error) {
+          log.warn(
+            { taskId: params.id, sandboxId: task.data.sandboxId, error },
+            "Sandbox cleanup failed during task deletion, continuing",
+          );
+        }
+      }
       taskService.delete(params.id);
       set.status = 204;
       return null;
     },
     {
       params: IdParamSchema,
+      query: DeleteTaskQuerySchema,
     },
   );

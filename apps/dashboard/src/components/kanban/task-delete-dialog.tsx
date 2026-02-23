@@ -1,7 +1,8 @@
 import type { Task } from "@frak/atelier-manager/types";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import { useState } from "react";
-import { useDeleteTask } from "@/api/queries";
+import { useEffect, useState } from "react";
+import { sandboxDetailQuery, useDeleteTask } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,14 +30,33 @@ export function TaskDeleteDialog({
   const [sandboxAction, setSandboxAction] = useState<SandboxAction>("destroy");
   const deleteMutation = useDeleteTask();
 
-  const hasSandbox = !!task?.data.sandboxId;
+  const { data: sandbox, isLoading: isSandboxLoading } = useQuery({
+    ...sandboxDetailQuery(task?.data.sandboxId ?? ""),
+    enabled: open && !!task?.data.sandboxId,
+    retry: false,
+  });
+
+  const sandboxExists = !!sandbox;
+  const sandboxIsRunning = sandbox?.status === "running";
+  const showSandboxOptions = !!task?.data.sandboxId && sandboxExists;
+
+  useEffect(() => {
+    if (!open) return;
+    if (!task?.data.sandboxId || !sandboxExists) {
+      setSandboxAction("detach");
+    } else if (sandboxIsRunning) {
+      setSandboxAction("destroy");
+    } else {
+      setSandboxAction("destroy");
+    }
+  }, [open, task?.data.sandboxId, sandboxExists, sandboxIsRunning]);
 
   const handleDelete = async () => {
     if (!task) return;
 
     await deleteMutation.mutateAsync({
       id: task.id,
-      sandboxAction: hasSandbox ? sandboxAction : undefined,
+      sandboxAction: showSandboxOptions ? sandboxAction : undefined,
     });
 
     onOpenChange(false);
@@ -57,11 +77,19 @@ export function TaskDeleteDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {hasSandbox && (
+        {task.data.sandboxId && isSandboxLoading && (
+          <div className="py-4 flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Checking sandbox status...
+          </div>
+        )}
+
+        {showSandboxOptions && !isSandboxLoading && (
           <div className="py-4">
             <p className="text-sm text-muted-foreground mb-3">
-              This task has an associated sandbox. What would you like to do
-              with it?
+              This task has an associated sandbox
+              {sandbox?.status ? ` (${sandbox.status})` : ""}. What would you
+              like to do with it?
             </p>
             <div className="space-y-2">
               <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors">
@@ -74,30 +102,36 @@ export function TaskDeleteDialog({
                 />
                 <div>
                   <Label className="cursor-pointer">
-                    Leave sandbox running
+                    {sandboxIsRunning
+                      ? "Leave sandbox running"
+                      : "Keep sandbox"}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    The sandbox will keep running independently
+                    {sandboxIsRunning
+                      ? "The sandbox will keep running independently"
+                      : "The sandbox will be kept as-is"}
                   </p>
                 </div>
               </label>
-              <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors">
-                <input
-                  type="radio"
-                  name="sandboxAction"
-                  checked={sandboxAction === "stop"}
-                  onChange={() => setSandboxAction("stop")}
-                  className="h-4 w-4"
-                />
-                <div>
-                  <Label className="cursor-pointer">
-                    Stop sandbox (keep data)
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    The sandbox will be stopped but data will be preserved
-                  </p>
-                </div>
-              </label>
+              {sandboxIsRunning && (
+                <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors">
+                  <input
+                    type="radio"
+                    name="sandboxAction"
+                    checked={sandboxAction === "stop"}
+                    onChange={() => setSandboxAction("stop")}
+                    className="h-4 w-4"
+                  />
+                  <div>
+                    <Label className="cursor-pointer">
+                      Stop sandbox (keep data)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      The sandbox will be stopped but data will be preserved
+                    </p>
+                  </div>
+                </label>
+              )}
               <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors">
                 <input
                   type="radio"
@@ -119,7 +153,8 @@ export function TaskDeleteDialog({
           </div>
         )}
 
-        {!hasSandbox && (
+        {(!task.data.sandboxId ||
+          (!isSandboxLoading && !showSandboxOptions)) && (
           <p className="py-4 text-sm text-muted-foreground">
             This action cannot be undone.
           </p>
@@ -132,7 +167,7 @@ export function TaskDeleteDialog({
           <Button
             variant="destructive"
             onClick={handleDelete}
-            disabled={deleteMutation.isPending}
+            disabled={deleteMutation.isPending || isSandboxLoading}
           >
             {deleteMutation.isPending && (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
