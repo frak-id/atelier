@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::ffi::CString;
+use std::io;
+use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -17,6 +19,7 @@ use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use tokio::io::unix::AsyncFd;
 
 use crate::body::{read_body_limited, ReadBodyError};
 use crate::config::get_config;
@@ -79,19 +82,33 @@ pub struct SessionInfo {
 }
 
 struct ActiveSession {
-    info: SessionInfo,
-    master_fd: i32,
-    child_pid: Pid,
-    buffer: OutputBuffer,
-    write_tx: mpsc::Sender<Vec<u8>>,
+    master_fd: RawFd,
+    buffer: Arc<Mutex<OutputBuffer>>,
     output_broadcast: broadcast::Sender<Bytes>,
+    meta: Mutex<SessionMetadata>,
+}
+
+struct SessionMetadata {
+    info: SessionInfo,
+    child_pid: Pid,
+    write_tx: mpsc::Sender<Vec<u8>>,
     shutdown_tx: watch::Sender<bool>,
     last_activity: Instant,
 }
 
+struct PtyMasterFd {
+    fd: RawFd,
+}
+
+impl AsRawFd for PtyMasterFd {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd
+    }
+}
+
 struct TerminalState {
     port: u16,
-    sessions: HashMap<String, Arc<Mutex<ActiveSession>>>,
+    sessions: HashMap<String, Arc<ActiveSession>>,
 }
 
 static TERMINAL_STATE: std::sync::LazyLock<RwLock<Option<TerminalState>>> =
@@ -113,6 +130,36 @@ fn raw_openpty() -> Option<(i32, i32)> {
         Some((master, slave))
     } else {
         None
+    }
+}
+
+fn pty_read(fd: RawFd, buf: &mut [u8]) -> io::Result<usize> {
+    loop {
+        let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+        if n >= 0 {
+            return Ok(n as usize);
+        }
+
+        let err = io::Error::last_os_error();
+        if err.kind() == io::ErrorKind::Interrupted {
+            continue;
+        }
+        return Err(err);
+    }
+}
+
+fn pty_write(fd: RawFd, data: &[u8]) -> io::Result<usize> {
+    loop {
+        let n = unsafe { libc::write(fd, data.as_ptr() as *const libc::c_void, data.len()) };
+        if n >= 0 {
+            return Ok(n as usize);
+        }
+
+        let err = io::Error::last_os_error();
+        if err.kind() == io::ErrorKind::Interrupted {
+            continue;
+        }
+        return Err(err);
     }
 }
 
@@ -158,6 +205,21 @@ pub async fn create_session(
     let state = guard.as_mut().ok_or("Terminal server not initialized")?;
 
     let (master_fd, slave_fd) = raw_openpty().ok_or("Failed to open PTY")?;
+    let flags = unsafe { libc::fcntl(master_fd, libc::F_GETFL) };
+    if flags == -1 {
+        unsafe {
+            libc::close(master_fd);
+            libc::close(slave_fd);
+        }
+        return Err("Failed to get PTY fd flags".to_string());
+    }
+    if unsafe { libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } == -1 {
+        unsafe {
+            libc::close(master_fd);
+            libc::close(slave_fd);
+        }
+        return Err("Failed to set PTY fd non-blocking".to_string());
+    }
     set_winsize(master_fd, 80, 24);
 
     let workdir_path = workdir.unwrap_or_else(|| "/home/dev".to_string());
@@ -228,22 +290,29 @@ pub async fn create_session(
 
     let (write_tx, mut write_rx) = mpsc::channel::<Vec<u8>>(64);
     let (output_broadcast, _) = broadcast::channel::<Bytes>(256);
+    let buffer = Arc::new(Mutex::new(OutputBuffer::default()));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let master_async_fd = Arc::new(
+        AsyncFd::new(PtyMasterFd { fd: master_fd })
+            .map_err(|e| format!("Failed to register PTY fd: {e}"))?,
+    );
 
-    let session = Arc::new(Mutex::new(ActiveSession {
-        info: info.clone(),
+    let session = Arc::new(ActiveSession {
         master_fd,
-        child_pid,
-        buffer: OutputBuffer::default(),
-        write_tx,
+        buffer: buffer.clone(),
         output_broadcast: output_broadcast.clone(),
-        shutdown_tx,
-        last_activity: Instant::now(),
-    }));
+        meta: Mutex::new(SessionMetadata {
+            info: info.clone(),
+            child_pid,
+            write_tx,
+            shutdown_tx,
+            last_activity: Instant::now(),
+        }),
+    });
 
     state.sessions.insert(session_id.clone(), session.clone());
 
-    let writer_fd = master_fd;
+    let writer_fd = master_async_fd.clone();
     let mut writer_shutdown_rx = shutdown_rx.clone();
     tokio::spawn(async move {
         loop {
@@ -255,44 +324,124 @@ pub async fn create_session(
                 }
                 maybe = write_rx.recv() => {
                     let Some(data) = maybe else { break; };
-                    let fd = writer_fd;
-                    let _ = tokio::task::spawn_blocking(move || unsafe {
-                        libc::write(fd, data.as_ptr() as *const libc::c_void, data.len());
-                    }).await;
+                    let mut written = 0;
+                    while written < data.len() {
+                        let mut guard = match writer_fd.writable().await {
+                            Ok(guard) => guard,
+                            Err(_) => return,
+                        };
+                        let result = guard.try_io(|inner| {
+                            pty_write(inner.get_ref().as_raw_fd(), &data[written..])
+                        });
+
+                        match result {
+                            Ok(Ok(0)) => return,
+                            Ok(Ok(n)) => {
+                                written += n;
+                            }
+                            Ok(Err(_)) => return,
+                            Err(_would_block) => continue,
+                        }
+                    }
                 }
             }
         }
     });
 
+    let reader_master_fd = master_async_fd.clone();
+    let reader_buffer = buffer;
+    let reader_output_broadcast = output_broadcast;
     let reader_session = session.clone();
     let reader_session_id = session_id.clone();
+    let mut reader_shutdown_rx = shutdown_rx;
     tokio::spawn(async move {
+        const READ_BUFFER_SIZE: usize = 16 * 1024;
+        const COALESCE_MAX_WAIT: Duration = Duration::from_millis(2);
+        let mut read_buf = [0u8; READ_BUFFER_SIZE];
+
         loop {
-            let fd = reader_session.lock().await.master_fd;
-
-            let result = tokio::task::spawn_blocking(move || {
-                let mut buf = [0u8; 4096];
-                let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
-                if n > 0 {
-                    Some(buf[..n as usize].to_vec())
-                } else {
-                    None
+            tokio::select! {
+                _ = reader_shutdown_rx.changed() => {
+                    if *reader_shutdown_rx.borrow() {
+                        break;
+                    }
                 }
-            })
-            .await;
+                readable = reader_master_fd.readable() => {
+                    let mut guard = match readable {
+                        Ok(guard) => guard,
+                        Err(_) => {
+                            let _ = delete_session(&reader_session_id).await;
+                            break;
+                        }
+                    };
 
-            match result {
-                Ok(Some(data)) => {
-                    let mut s = reader_session.lock().await;
-                    s.last_activity = Instant::now();
-                    let bytes = Bytes::from(data);
-                    s.buffer.push(bytes.clone());
-                    let _ = s.output_broadcast.send(bytes);
-                }
-                _ => {
-                    drop(reader_session);
-                    let _ = delete_session(&reader_session_id).await;
-                    break;
+                    let mut combined = Vec::with_capacity(READ_BUFFER_SIZE);
+                    let coalesce_deadline = Instant::now() + COALESCE_MAX_WAIT;
+                    let mut should_delete = false;
+
+                    loop {
+                        let read_result = guard.try_io(|inner| {
+                            pty_read(inner.get_ref().as_raw_fd(), &mut read_buf)
+                        });
+
+                        match read_result {
+                            Ok(Ok(0)) => {
+                                should_delete = true;
+                                break;
+                            }
+                            Ok(Ok(n)) => {
+                                combined.extend_from_slice(&read_buf[..n]);
+                                if combined.len() >= READ_BUFFER_SIZE {
+                                    break;
+                                }
+                            }
+                            Ok(Err(_)) => {
+                                should_delete = true;
+                                break;
+                            }
+                            Err(_would_block) => {
+                                break;
+                            }
+                        }
+
+                        let now = Instant::now();
+                        if now >= coalesce_deadline {
+                            break;
+                        }
+
+                        match tokio::time::timeout(
+                            coalesce_deadline.saturating_duration_since(now),
+                            reader_master_fd.readable(),
+                        )
+                        .await
+                        {
+                            Ok(Ok(next_guard)) => {
+                                guard = next_guard;
+                            }
+                            Ok(Err(_)) => {
+                                should_delete = true;
+                                break;
+                            }
+                            Err(_) => {
+                                break;
+                            }
+                        }
+                    }
+
+                    if !combined.is_empty() {
+                        let bytes = Bytes::from(combined);
+                        {
+                            let mut buffer = reader_buffer.lock().await;
+                            buffer.push(bytes.clone());
+                        }
+                        let _ = reader_output_broadcast.send(bytes);
+                        reader_session.meta.lock().await.last_activity = Instant::now();
+                    }
+
+                    if should_delete {
+                        let _ = delete_session(&reader_session_id).await;
+                        break;
+                    }
                 }
             }
         }
@@ -312,7 +461,7 @@ pub async fn list_sessions() -> Vec<SessionInfo> {
     };
     let mut sessions = Vec::with_capacity(state.sessions.len());
     for session in state.sessions.values() {
-        sessions.push(session.lock().await.info.clone());
+        sessions.push(session.meta.lock().await.info.clone());
     }
     sessions
 }
@@ -321,7 +470,7 @@ pub async fn get_session(session_id: &str) -> Option<SessionInfo> {
     let guard = TERMINAL_STATE.read().await;
     let state = guard.as_ref()?;
     let session = state.sessions.get(session_id)?;
-    let s = session.lock().await;
+    let s = session.meta.lock().await;
     Some(s.info.clone())
 }
 
@@ -335,8 +484,8 @@ pub async fn delete_session(session_id: &str) -> Result<(), String> {
         .ok_or("Session not found")?;
 
     let (master_fd, child_pid, shutdown_tx) = {
-        let s = session.lock().await;
-        (s.master_fd, s.child_pid, s.shutdown_tx.clone())
+        let s = session.meta.lock().await;
+        (session.master_fd, s.child_pid, s.shutdown_tx.clone())
     };
 
     let _ = shutdown_tx.send(true);
@@ -378,9 +527,9 @@ pub async fn resize_session(session_id: &str, cols: u16, rows: u16) -> Result<()
     let session = state.sessions.get(session_id).ok_or("Session not found")?;
 
     {
-        let mut s = session.lock().await;
+        let mut s = session.meta.lock().await;
         s.last_activity = Instant::now();
-        set_winsize(s.master_fd, cols, rows);
+        set_winsize(session.master_fd, cols, rows);
     }
     Ok(())
 }
@@ -391,7 +540,7 @@ pub async fn write_to_session(session_id: &str, data: Vec<u8>) -> Result<(), Str
     let session = state.sessions.get(session_id).ok_or("Session not found")?;
 
     let write_tx = {
-        let mut s = session.lock().await;
+        let mut s = session.meta.lock().await;
         s.last_activity = Instant::now();
         s.write_tx.clone()
     };
@@ -475,8 +624,8 @@ async fn get_session_for_ws(
     let guard = TERMINAL_STATE.read().await;
     let state = guard.as_ref()?;
     let session = state.sessions.get(session_id)?;
-    let s = session.lock().await;
-    Some((s.buffer.snapshot_chunks(), s.output_broadcast.subscribe()))
+    let chunks = session.buffer.lock().await.snapshot_chunks();
+    Some((chunks, session.output_broadcast.subscribe()))
 }
 
 async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String) {
@@ -492,7 +641,7 @@ async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String)
 
     for chunk in buffer_chunks {
         if ws_sink
-            .send(Message::Binary(chunk.to_vec().into()))
+            .send(Message::Binary(chunk))
             .await
             .is_err()
         {
@@ -505,7 +654,7 @@ async fn handle_ws_connection(stream: tokio::net::TcpStream, session_id: String)
     let broadcast_forwarder = tokio::spawn(async move {
         while let Ok(data) = output_rx.recv().await {
             if ws_sink
-                .send(Message::Binary(data.to_vec().into()))
+                .send(Message::Binary(data))
                 .await
                 .is_err()
             {
@@ -573,7 +722,7 @@ pub async fn ensure_terminal_running(port: u16) {
 }
 
 async fn sweep_sessions() {
-    let sessions: Vec<(String, Arc<Mutex<ActiveSession>>)> = {
+    let sessions: Vec<(String, Arc<ActiveSession>)> = {
         let guard = TERMINAL_STATE.read().await;
         let Some(state) = guard.as_ref() else {
             return;
@@ -588,7 +737,7 @@ async fn sweep_sessions() {
     let now = Instant::now();
     let mut stale_ids = Vec::new();
     for (id, session) in sessions {
-        let s = session.lock().await;
+        let s = session.meta.lock().await;
         let idle = now.duration_since(s.last_activity) > SESSION_IDLE_TTL;
         let alive = unsafe { libc::kill(s.child_pid.as_raw(), 0) == 0 };
         if idle || !alive {
