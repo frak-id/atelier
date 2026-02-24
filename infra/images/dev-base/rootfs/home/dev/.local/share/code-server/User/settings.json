@@ -5,5 +5,6 @@
   "security.workspace.trust.emptyWindow": false,
   "security.workspace.trust.untrustedFiles": "open",
   "workbench.startupEditor": "none",
-  "telemetry.telemetryLevel": "off"
+  "telemetry.telemetryLevel": "off",
+  "workbench.colorTheme": "Default Dark Modern"
 }
