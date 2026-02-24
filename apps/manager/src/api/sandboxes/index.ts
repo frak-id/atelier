@@ -180,6 +180,17 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           response: SandboxSchema,
         },
       )
+      .post(
+        "/:id/recover",
+        async ({ params, sandbox: _sandbox }) => {
+          log.info({ sandboxId: params.id }, "Recovering sandbox");
+          return sandboxLifecycle.recover(params.id);
+        },
+        {
+          params: IdParamSchema,
+          response: SandboxSchema,
+        },
+      )
       .get(
         "/:id/health",
         async ({ sandbox }) => {

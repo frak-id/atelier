@@ -117,6 +117,52 @@ export class SandboxLifecycle {
     return updated;
   }
 
+  /**
+   * Recover a sandbox stuck in error state.
+   *
+   * Cleans up stale resources (dead process, orphaned sockets, TAP device,
+   * Caddy routes) then boots the VM from its LVM volume. The volume survives
+   * reboots — only ephemeral resources need rebuilding.
+   */
+  async recover(sandboxId: string): Promise<Sandbox> {
+    const sandbox = this.deps.sandboxService.getById(sandboxId);
+    if (!sandbox) {
+      throw new NotFoundError("Sandbox", sandboxId);
+    }
+
+    if (sandbox.status !== "error") {
+      throw new Error(
+        `Sandbox '${sandboxId}' is not in error state (status: ${sandbox.status})`,
+      );
+    }
+
+    log.info({ sandboxId }, "Recovering sandbox from error state");
+
+    // Defensive cleanup — all operations are tolerant of already-gone resources
+    if (!isMock()) {
+      if (sandbox.runtime.pid) {
+        await killProcess(sandbox.runtime.pid);
+      }
+
+      await cleanupSandboxFiles(sandboxId);
+
+      const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
+      await networkService.deleteTap(tapDevice);
+      await proxyService.removeRoutes(sandboxId);
+    }
+
+    // Transition to stopped so start() can take over
+    this.deps.sandboxService.updateStatus(sandboxId, "stopped");
+    eventBus.emit({
+      type: "sandbox.updated",
+      properties: { id: sandboxId, status: "stopped" },
+    });
+    log.info({ sandboxId }, "Stale resources cleaned up, starting VM");
+
+    // Delegate to start() for the full boot sequence
+    return this.start(sandboxId);
+  }
+
   async start(sandboxId: string): Promise<Sandbox> {
     const sandbox = this.deps.sandboxService.getById(sandboxId);
     if (!sandbox) {

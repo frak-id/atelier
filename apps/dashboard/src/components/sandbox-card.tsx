@@ -6,6 +6,7 @@ import {
   Bot,
   ExternalLink,
   Globe,
+  HeartPulse,
   Loader2,
   Maximize2,
   Monitor,
@@ -53,6 +54,8 @@ interface SandboxCardProps {
   onStart?: () => void;
   isStopping?: boolean;
   isStarting?: boolean;
+  onRecover?: () => void;
+  isRecovering?: boolean;
   onShowDetails: () => void;
   onShowTask?: () => void;
 }
@@ -68,6 +71,8 @@ export function SandboxCard({
   onStart,
   isStopping,
   isStarting,
+  onRecover,
+  isRecovering,
   onShowDetails,
   onShowTask,
 }: SandboxCardProps) {
@@ -342,6 +347,28 @@ export function SandboxCard({
               </Button>
             </TooltipTrigger>
             <TooltipContent>Recreate Sandbox</TooltipContent>
+          </Tooltip>
+        )}
+
+        {sandbox.status === "error" && onRecover && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onRecover}
+                disabled={isRecovering}
+                className="h-8 px-2"
+              >
+                {isRecovering ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <HeartPulse className="h-4 w-4 mr-1.5" />
+                )}
+                Recover
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Recover Sandbox</TooltipContent>
           </Tooltip>
         )}
 
