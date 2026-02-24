@@ -157,6 +157,20 @@ export function useRestartSandbox() {
   });
 }
 
+export function useRecoverSandbox() {
+  return useMutation({
+    mutationKey: ["sandboxes", "recover"],
+    mutationFn: async (id: string) =>
+      unwrap(await api.api.sandboxes({ id }).recover.post()),
+    onSuccess: (_data, id, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(id),
+      });
+    },
+  });
+}
+
 export function useStartDevCommand(sandboxId: string) {
   return useMutation({
     mutationKey: ["sandboxes", "dev", "start", sandboxId],

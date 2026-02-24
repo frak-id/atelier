@@ -9,6 +9,7 @@ import {
   taskListQuery,
   useCreateSandbox,
   useDeleteSandbox,
+  useRecoverSandbox,
   useStartSandbox,
   useStopSandbox,
   useWorkspaceDataMap,
@@ -61,6 +62,7 @@ function SandboxesPage() {
   const createMutation = useCreateSandbox();
   const stopMutation = useStopSandbox();
   const startMutation = useStartSandbox();
+  const recoverMutation = useRecoverSandbox();
 
   const filteredSandboxes =
     statusFilter === "all"
@@ -168,6 +170,11 @@ function SandboxesPage() {
                 isStarting={
                   startMutation.isPending &&
                   startMutation.variables === sandbox.id
+                }
+                onRecover={() => recoverMutation.mutate(sandbox.id)}
+                isRecovering={
+                  recoverMutation.isPending &&
+                  recoverMutation.variables === sandbox.id
                 }
                 onShowDetails={() => openSandbox(sandbox.id)}
                 onShowTask={() => {

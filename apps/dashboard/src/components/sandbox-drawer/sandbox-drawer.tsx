@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   Bot,
   ClipboardList,
+  HeartPulse,
   Loader2,
   Maximize2,
   Monitor,
@@ -21,6 +22,7 @@ import {
   sandboxDetailQuery,
   taskListQuery,
   useDeleteSandbox,
+  useRecoverSandbox,
   useRestartSandbox,
   useSandboxServices,
   useSaveAsPrebuild,
@@ -113,6 +115,7 @@ export function SandboxDrawer({
   const stopMutation = useStopSandbox();
   const startMutation = useStartSandbox();
   const restartMutation = useRestartSandbox();
+  const recoverMutation = useRecoverSandbox();
   const saveAsPrebuildMutation = useSaveAsPrebuild();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
@@ -353,8 +356,50 @@ export function SandboxDrawer({
                 </div>
               )}
 
-              {(sandbox.status === "error" ||
-                sandbox.status === "creating") && (
+              {sandbox.status === "error" && (
+                <div className="flex items-center justify-end gap-1 mt-4">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          recoverMutation.mutate(sandbox.id, {
+                            onSuccess: () => toast.success("Sandbox recovered"),
+                            onError: () =>
+                              toast.error("Failed to recover sandbox"),
+                          })
+                        }
+                        disabled={recoverMutation.isPending}
+                      >
+                        {recoverMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <HeartPulse className="h-4 w-4 mr-1.5" />
+                        )}
+                        Recover
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Recover Sandbox</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setIsDeleteDialogOpen(true)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete</TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
+
+              {sandbox.status === "creating" && (
                 <div className="flex items-center justify-end gap-1 mt-4">
                   <Tooltip>
                     <TooltipTrigger asChild>
