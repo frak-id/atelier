@@ -306,7 +306,7 @@ const TerminalPane = memo(
             terminal.writeln(
               "\r\n\x1b[33mConnection failed. Retrying...\x1b[0m",
             );
-            reconnectTimerRef.current = setTimeout(connect, 2000);
+            reconnectTimerRef.current = setTimeout(connect, 500);
             return;
           }
 
