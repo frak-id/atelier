@@ -34,30 +34,30 @@ export class SandboxProvisionService {
     }
   }
 
-  async configureNetwork(
-    sandboxId: string,
-    network: { ipAddress: string; gateway: string },
-  ): Promise<void> {
+  /**
+   * Configure DNS only (resolv.conf). Used when kernel ip= handles
+   * the IP/route setup and we only need to push DNS configuration.
+   */
+  async configureDns(sandboxId: string): Promise<void> {
     const dnsServers = config.network.dnsServers;
     const dnsCommands = dnsServers
       .map((dns) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
       .join(" && ");
 
-    const networkCmd = `ip link set lo up && ip addr add ${network.ipAddress}/24 dev eth0 && ip link set eth0 up && ip route add default via ${network.gateway} dev eth0 && > /etc/resolv.conf && ${dnsCommands}`;
-
-    const result = await this.agentClient.exec(sandboxId, networkCmd, {
-      timeout: 10000,
+    const cmd = `> /etc/resolv.conf && ${dnsCommands}`;
+    const result = await this.agentClient.exec(sandboxId, cmd, {
+      timeout: 5000,
     });
 
     if (result.exitCode !== 0) {
-      log.error(
+      log.warn(
         { sandboxId, exitCode: result.exitCode, stderr: result.stderr },
-        "Network configuration failed",
+        "DNS configuration failed",
       );
-      throw new Error(`Network configuration failed: ${result.stderr}`);
+      throw new Error(`DNS configuration failed: ${result.stderr}`);
     }
 
-    log.info({ sandboxId, ipAddress: network.ipAddress }, "Network configured");
+    log.debug({ sandboxId }, "DNS configured");
   }
 
   async syncClock(sandboxId: string): Promise<void> {

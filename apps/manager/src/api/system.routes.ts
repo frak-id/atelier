@@ -214,6 +214,10 @@ async function performCleanup(): Promise<CleanupResult> {
     }
   }
 
+  // Reconcile IP pool — rebuild from DB to fix any stale allocations
+  const activeIps = sandboxService.getAll().map((s) => s.runtime.ipAddress);
+  networkService.reconcile(activeIps);
+
   log.info(
     {
       socketsRemoved,

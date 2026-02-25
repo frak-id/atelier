@@ -1,6 +1,7 @@
 import { FIRECRACKER, PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { ensureDir } from "../../shared/lib/shell.ts";
+import { buildKernelIpArg } from "../network/network.service.ts";
 import { BINARIES_IMAGE_PATH, SharedStorageService } from "../storage/index.ts";
 import { FirecrackerClient } from "./firecracker.client.ts";
 import type { SandboxPaths } from "./firecracker.paths.ts";
@@ -11,6 +12,10 @@ export interface VmConfigOptions {
   tapDevice: string;
   vcpus: number;
   memoryMb: number;
+  /** Guest IP for kernel ip= boot arg. When set, eth0 is configured at kernel level. */
+  ipAddress?: string;
+  /** Gateway for kernel ip= boot arg. Required when ipAddress is set. */
+  gateway?: string;
 }
 
 export async function launchFirecracker(
@@ -54,8 +59,13 @@ export async function configureVm(
   client: FirecrackerClient,
   options: VmConfigOptions,
 ): Promise<void> {
-  const bootArgs =
+  let bootArgs =
     "console=ttyS0 reboot=k panic=1 pci=off quiet loglevel=1 8250.nr_uarts=0 init=/etc/sandbox/sandbox-init.sh";
+
+  // Append kernel ip= for instant guest networking (skips agent-push)
+  if (options.ipAddress && options.gateway) {
+    bootArgs += ` ${buildKernelIpArg(options.ipAddress, options.gateway)}`;
+  }
 
   await client.setBootSource(options.paths.kernel, bootArgs);
   await client.setDrive("rootfs", options.paths.overlay, true);

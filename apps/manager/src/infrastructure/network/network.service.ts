@@ -18,6 +18,15 @@ function generateMac(ipOctet: number): string {
   return `06:00:AC:10:00:${hex}`;
 }
 
+/**
+ * Build the kernel `ip=` boot argument for instant guest networking.
+ * Format: ip=<client-ip>:<server-ip>:<gw-ip>:<netmask>:<hostname>:<device>:<autoconf>
+ * This configures eth0 at kernel level — network is ready before init runs.
+ */
+export function buildKernelIpArg(ipAddress: string, gateway: string): string {
+  return `ip=${ipAddress}::${gateway}:${config.network.bridgeNetmask === "24" ? "255.255.255.0" : "255.255.255.0"}::eth0:off`;
+}
+
 function createNetworkProvider(): NetworkProvider {
   if (isMock() || config.providers.network.type === "none") {
     return new NoopNetworkProvider();
@@ -68,13 +77,29 @@ export class NetworkService {
     log.debug({ ipAddress }, "IP address released");
   }
 
-  markAllocated(ipAddress: string): void {
+  private markAllocated(ipAddress: string): void {
     const parts = ipAddress.split(".");
     const octet = Number.parseInt(parts[3] ?? "0", 10);
     if (octet > 0 && octet < 255) {
       this.allocatedIps.add(octet);
-      log.debug({ ipAddress, octet }, "IP address marked as allocated");
     }
+  }
+
+  /**
+   * Rebuild the in-memory IP cache from a list of active sandbox IPs.
+   * The DB is the source of truth — this ensures the cache matches it.
+   * Should be called at startup and after orphan cleanup.
+   */
+  reconcile(activeIpAddresses: string[]): void {
+    const before = this.allocatedIps.size;
+    this.allocatedIps.clear();
+    for (const ip of activeIpAddresses) {
+      this.markAllocated(ip);
+    }
+    log.info(
+      { before, after: this.allocatedIps.size },
+      "IP pool reconciled from DB",
+    );
   }
 
   getAllocatedCount(): number {

@@ -15,6 +15,7 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 import { ensureDir } from "../shared/lib/shell.ts";
 import type { SandboxDestroyer } from "./sandbox-destroyer.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
+import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
 
 const log = createChildLogger("prebuild-runner");
 
@@ -126,6 +127,7 @@ export abstract class PrebuildRunner {
     sandboxId: string,
     prebuildKey: string,
     ipAddress: string,
+    opencodePassword?: string,
   ): Promise<void> {
     log.info({ prebuildKey }, "Warming up opencode server");
 
@@ -150,7 +152,10 @@ export abstract class PrebuildRunner {
 
     while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
       try {
-        const client = createOpencodeClient({ baseUrl: url });
+        const client = createOpencodeClient({
+          baseUrl: url,
+          headers: buildOpenCodeAuthHeaders(opencodePassword),
+        });
         const { data } = await client.global.health();
         if (data?.healthy) {
           healthy = true;

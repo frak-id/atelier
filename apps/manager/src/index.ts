@@ -95,17 +95,14 @@ const app = new Elysia()
     authSyncService.startAuthWatcher();
 
     const allSandboxes = sandboxService.getAll();
-    for (const sandbox of allSandboxes) {
-      networkService.markAllocated(sandbox.runtime.ipAddress);
-    }
-
+    networkService.reconcile(allSandboxes.map((s) => s.runtime.ipAddress));
     if (allSandboxes.length > 0) {
       logger.info(
         {
           count: allSandboxes.length,
           allocatedIps: networkService.getAllocatedCount(),
         },
-        "Startup: IP allocations rehydrated",
+        "Startup: IP pool reconciled from DB",
       );
     }
 
