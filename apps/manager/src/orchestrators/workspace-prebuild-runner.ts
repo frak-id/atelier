@@ -107,6 +107,7 @@ export class WorkspacePrebuildRunner extends PrebuildRunner {
         sandbox.id,
         workspace.id,
         sandbox.runtime.ipAddress,
+        sandbox.runtime.opencodePassword,
       );
 
       this.throwIfAborted(workspaceId);

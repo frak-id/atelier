@@ -89,7 +89,12 @@ export class SystemPrebuildRunner extends PrebuildRunner {
       if (!agentReady) throw new Error("Agent failed to become ready");
 
       this.throwIfAborted(key);
-      await this.warmupOpencode(sandbox.id, key, sandbox.runtime.ipAddress);
+      await this.warmupOpencode(
+        sandbox.id,
+        key,
+        sandbox.runtime.ipAddress,
+        sandbox.runtime.opencodePassword,
+      );
 
       this.throwIfAborted(key);
       await this.pushLatestAuthAndConfigs(sandbox.id);
