@@ -391,6 +391,8 @@ class SpawnContext {
       tapDevice: this.network.tapDevice,
       vcpus: this.sandbox.runtime.vcpus,
       memoryMb: this.sandbox.runtime.memoryMb,
+      ipAddress: this.network.ipAddress,
+      gateway: this.network.gateway,
     });
 
     log.debug({ sandboxId: this.sandboxId }, "VM configured");
@@ -674,10 +676,8 @@ class SpawnContext {
       return;
     }
 
-    await this.deps.provisionService.configureNetwork(this.sandboxId, {
-      ipAddress: this.network.ipAddress,
-      gateway: this.network.gateway,
-    });
+    // Kernel ip= already configured eth0 — only push DNS (resolv.conf)
+    await this.deps.provisionService.configureDns(this.sandboxId);
 
     await this.deps.provisionService.syncClock(this.sandboxId);
 

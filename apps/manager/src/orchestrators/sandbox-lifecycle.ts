@@ -211,6 +211,8 @@ export class SandboxLifecycle {
       tapDevice,
       vcpus: sandbox.runtime.vcpus,
       memoryMb: sandbox.runtime.memoryMb,
+      ipAddress: sandbox.runtime.ipAddress,
+      gateway: config.network.bridgeIp,
     });
     log.debug({ sandboxId }, "VM configured");
 
@@ -257,8 +259,8 @@ export class SandboxLifecycle {
    * Re-provision guest after a stop/start cycle.
    *
    * When a VM boots from its LVM volume (not a snapshot resume), all ephemeral
-   * state is gone: network config, clock, /opt/shared mount, services.
-   * This mirrors SandboxSpawner.reconfigureRestoredGuest().
+   * state is gone: clock, /opt/shared mount, services.
+   * Network (IP/route) is handled by kernel ip= boot arg — only DNS needs pushing.
    */
   private async reprovisionGuest(
     sandboxId: string,
@@ -266,11 +268,8 @@ export class SandboxLifecycle {
   ): Promise<void> {
     const { provisionService } = this.deps;
 
-    // 1. Configure guest network
-    await provisionService.configureNetwork(sandboxId, {
-      ipAddress: sandbox.runtime.ipAddress,
-      gateway: config.network.bridgeIp,
-    });
+    // 1. Push DNS only — kernel ip= already configured eth0
+    await provisionService.configureDns(sandboxId);
 
     // 2. Sync clock (restart chronyd)
     await provisionService.syncClock(sandboxId);
@@ -452,6 +451,11 @@ export class SandboxLifecycle {
       this.clearRuntimeError(sandboxId, sandbox);
     }
 
+    // IP self-heal: verify guest has the expected IP
+    if (processAlive.exitCode === 0 && vsockExists) {
+      await this.healIpIfNeeded(sandboxId, sandbox);
+    }
+
     return this.deps.sandboxService.getById(sandboxId) ?? sandbox;
   }
 
@@ -471,6 +475,75 @@ export class SandboxLifecycle {
       runtime: cleanRuntime,
     });
     log.info({ sandboxId }, "Cleared stale runtime error");
+  }
+
+  /**
+   * Verify guest IP matches DB record. If mismatch, attempt to push
+   * the correct IP via agent. If push fails, mark sandbox as error.
+   */
+  private async healIpIfNeeded(
+    sandboxId: string,
+    sandbox: Sandbox,
+  ): Promise<void> {
+    const expectedIp = sandbox.runtime.ipAddress;
+    if (!expectedIp) return;
+
+    try {
+      const result = await this.deps.agentClient.exec(
+        sandboxId,
+        "ip -4 addr show dev eth0 | grep -oP 'inet \\K[\\d.]+'",
+        { timeout: 3000 },
+      );
+
+      if (result.exitCode !== 0) return; // Agent unreachable, skip
+
+      const guestIp = result.stdout.trim();
+      if (!guestIp || guestIp === expectedIp) return;
+
+      log.warn(
+        { sandboxId, expectedIp, guestIp },
+        "IP mismatch detected, attempting auto-fix",
+      );
+
+      // Attempt fix: push correct IP
+      const fixCmd = [
+        "ip -4 addr flush dev eth0",
+        `ip addr add ${expectedIp}/${config.network.bridgeNetmask} dev eth0`,
+        "ip link set eth0 up",
+        `ip route replace default via ${config.network.bridgeIp} dev eth0`,
+        "ip -family inet neigh flush any",
+      ].join(" && ");
+
+      const fixResult = await this.deps.agentClient.exec(sandboxId, fixCmd, {
+        timeout: 5000,
+      });
+
+      if (fixResult.exitCode === 0) {
+        log.info({ sandboxId, expectedIp }, "IP mismatch auto-fixed");
+      } else {
+        log.error(
+          {
+            sandboxId,
+            expectedIp,
+            guestIp,
+            stderr: fixResult.stderr,
+          },
+          "IP mismatch auto-fix failed, marking as error",
+        );
+        this.deps.sandboxService.updateStatus(
+          sandboxId,
+          "error",
+          `IP mismatch: expected ${expectedIp}, got ${guestIp}`,
+        );
+        eventBus.emit({
+          type: "sandbox.updated",
+          properties: { id: sandboxId, status: "error" },
+        });
+      }
+    } catch {
+      // Agent communication failed — don't mark as error for transient issues
+      log.debug({ sandboxId }, "IP heal check skipped (agent unreachable)");
+    }
   }
 
   async getFirecrackerState(sandboxId: string): Promise<unknown> {
