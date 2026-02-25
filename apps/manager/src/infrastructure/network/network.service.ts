@@ -77,7 +77,7 @@ export class NetworkService {
     log.debug({ ipAddress }, "IP address released");
   }
 
-  markAllocated(ipAddress: string): void {
+  private markAllocated(ipAddress: string): void {
     const parts = ipAddress.split(".");
     const octet = Number.parseInt(parts[3] ?? "0", 10);
     if (octet > 0 && octet < 255) {
