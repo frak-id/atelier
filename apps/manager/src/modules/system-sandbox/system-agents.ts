@@ -9,10 +9,12 @@ const DESCRIPTION_PERMISSION: Record<string, "allow" | "deny"> = {
   skill: "deny",
 };
 
-// Denies all built-in tools — MCP tools (atelier-manager) remain accessible
-// since they are not governed by opencode's built-in permission keys.
+// Deny all built-in tools, but explicitly allow atelier-manager MCP tools
+// (create_task, list_tasks, etc.) which the dispatcher needs for routing.
+// opencode uses last-match-wins: "atelier-manager_*" overrides the "*" deny.
 const DISPATCHER_PERMISSION: Record<string, "allow" | "deny"> = {
   "*": "deny",
+  "atelier-manager_*": "allow",
 };
 
 const DESCRIPTION_PROMPT = `You are a workspace description generator for a dev environment orchestrator.
