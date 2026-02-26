@@ -29,9 +29,14 @@ import { cn } from "@/lib/utils";
 interface MultiTerminalProps {
   sandboxId: string;
   className?: string;
+  onActiveSessionChange?: (title: string | null) => void;
 }
 
-export function MultiTerminal({ sandboxId, className }: MultiTerminalProps) {
+export function MultiTerminal({
+  sandboxId,
+  className,
+  onActiveSessionChange,
+}: MultiTerminalProps) {
   const { data: sessions = [], isLoading } = useQuery(
     terminalSessionsQuery(sandboxId),
   );
@@ -54,6 +59,12 @@ export function MultiTerminal({ sandboxId, className }: MultiTerminalProps) {
       return current;
     });
   }, [sessions]);
+
+  useEffect(() => {
+    if (!onActiveSessionChange) return;
+    const active = sessions.find((s) => s.id === activeSessionId);
+    onActiveSessionChange(active?.title ?? null);
+  }, [activeSessionId, sessions, onActiveSessionChange]);
 
   const handleCreateSession = useCallback(async () => {
     const session = await createMutationRef.current.mutateAsync(undefined);

@@ -21,6 +21,7 @@ import { registerOpencodePassword } from "@/api/opencode";
 import {
   deriveBrowserStatus,
   sandboxDetailQuery,
+  taskListQuery,
   useRestartSandbox,
   useSandboxServices,
   useStartBrowser,
@@ -100,6 +101,11 @@ function SandboxImmersionPage() {
     enabled: !!sandbox?.workspaceId,
   });
 
+  const { data: tasks } = useQuery({
+    ...taskListQuery(),
+  });
+  const task = tasks?.find((t) => t.data.sandboxId === id);
+
   useEffect(() => {
     if (sandbox?.runtime.opencodePassword) {
       registerOpencodePassword(
@@ -125,6 +131,32 @@ function SandboxImmersionPage() {
   const tab1 = search.tab1 ?? "opencode";
   const tab2 = isMobile ? undefined : search.tab2;
   const isSplit = !!tab2;
+
+  const [terminalSessionTitle, setTerminalSessionTitle] = useState<
+    string | null
+  >(null);
+
+  const buildTabSegment = useCallback(
+    (tabId: TabId) => {
+      const label = tabs.find((t) => t.id === tabId)?.label ?? tabId;
+      if (tabId === "terminal" && terminalSessionTitle) {
+        return `${label}: ${terminalSessionTitle}`;
+      }
+      return label;
+    },
+    [terminalSessionTitle],
+  );
+
+  useEffect(() => {
+    const tabPart = tab2
+      ? `${buildTabSegment(tab1)} + ${buildTabSegment(tab2)}`
+      : buildTabSegment(tab1);
+    const context = task?.title ?? sandbox?.id;
+    document.title = context ? `A | ${tabPart} · ${context}` : `A | ${tabPart}`;
+    return () => {
+      document.title = "L'atelier";
+    };
+  }, [tab1, tab2, buildTabSegment, task?.title, sandbox?.id]);
 
   const setView = useCallback(
     (newTab1: TabId, newTab2?: TabId) => {
@@ -351,6 +383,7 @@ function SandboxImmersionPage() {
           tab2={tab2}
           browserUrl={browserUrl}
           browserStarting={browserStatus?.status === "starting"}
+          onTerminalSessionChange={setTerminalSessionTitle}
         />
       ) : (
         <div className="flex-1 flex items-center justify-center">
@@ -433,12 +466,14 @@ function TabPanel({
   browserUrl,
   browserStarting,
   isActive,
+  onTerminalSessionChange,
 }: {
   tabId: TabId;
   sandbox: Sandbox;
   browserUrl?: string;
   browserStarting?: boolean;
   isActive: boolean;
+  onTerminalSessionChange?: (title: string | null) => void;
 }) {
   const urlMap: Record<TabId, string | undefined> = {
     opencode: sandbox.runtime.urls.opencode,
@@ -450,7 +485,11 @@ function TabPanel({
   if (tabId === "terminal") {
     return (
       <div className={cn("absolute inset-0", !isActive && "hidden")}>
-        <MultiTerminal sandboxId={sandbox.id} className="w-full h-full" />
+        <MultiTerminal
+          sandboxId={sandbox.id}
+          className="w-full h-full"
+          onActiveSessionChange={onTerminalSessionChange}
+        />
       </div>
     );
   }
@@ -500,12 +539,14 @@ function ImmersionContent({
   tab2,
   browserUrl,
   browserStarting,
+  onTerminalSessionChange,
 }: {
   sandbox: Sandbox;
   tab1: TabId;
   tab2?: TabId;
   browserUrl?: string;
   browserStarting?: boolean;
+  onTerminalSessionChange?: (title: string | null) => void;
 }) {
   const { splitPercent, dividerRef, containerRef, onPointerDown } =
     useSplitResize();
@@ -523,6 +564,7 @@ function ImmersionContent({
             browserUrl={browserUrl}
             browserStarting={browserStarting}
             isActive={tab.id === tab1}
+            onTerminalSessionChange={onTerminalSessionChange}
           />
         ))}
       </div>
@@ -540,6 +582,7 @@ function ImmersionContent({
             browserUrl={browserUrl}
             browserStarting={browserStarting}
             isActive={tab.id === tab1}
+            onTerminalSessionChange={onTerminalSessionChange}
           />
         ))}
       </div>
@@ -561,6 +604,7 @@ function ImmersionContent({
             browserUrl={browserUrl}
             browserStarting={browserStarting}
             isActive={tab.id === tab2}
+            onTerminalSessionChange={onTerminalSessionChange}
           />
         ))}
       </div>
