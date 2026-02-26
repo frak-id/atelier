@@ -1,6 +1,13 @@
 {
 	admin localhost:2019
 	email {{SSL_EMAIL}}
+
+	# Performance: high concurrency from same IP (multi-sandbox, SSE, polling)
+	servers {
+		protocols h1 h2 h3
+		keepalive_interval 30s
+		enable_full_duplex
+	}
 }
 
 {{#MANUAL_TLS}}

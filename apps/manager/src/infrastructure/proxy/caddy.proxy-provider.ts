@@ -40,7 +40,7 @@ function buildCorsPreflightSubroute(): Record<string, unknown> {
             "Access-Control-Allow-Headers": [
               "{http.request.header.Access-Control-Request-Headers}",
             ],
-            "Access-Control-Max-Age": ["600"],
+            "Access-Control-Max-Age": ["7200"],
           },
         },
       },
@@ -62,11 +62,21 @@ function buildUpstreamHandler(
   const handler: Record<string, unknown> = {
     handler: "reverse_proxy",
     upstreams: [{ dial: upstream }],
-    transport: { protocol: "http", read_buffer_size: 4096 },
+    transport: {
+      protocol: "http",
+      read_buffer_size: 16_384,
+      write_buffer_size: 16_384,
+      keep_alive: {
+        enabled: true,
+        probe_interval: "30s",
+        max_idle_conns_per_host: 32,
+        max_idle_conns: 64,
+        idle_timeout: "2m",
+      },
+    },
     headers: { response: { set: { ...CORS_HEADERS } } },
     flush_interval: -1,
   };
-
   if (healthPath) {
     handler.health_checks = {
       active: {
