@@ -12,10 +12,10 @@ import type { InternalService } from "../modules/internal/internal.service.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
 import { ensureDir } from "../shared/lib/shell.ts";
 import type { SandboxDestroyer } from "./sandbox-destroyer.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
-import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
 
 const log = createChildLogger("prebuild-runner");
 
