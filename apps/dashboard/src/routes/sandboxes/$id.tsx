@@ -136,11 +136,11 @@ function SandboxImmersionPage() {
     string | null
   >(null);
 
-  const buildTabTitle = useCallback(
+  const buildTabSegment = useCallback(
     (tabId: TabId) => {
       const label = tabs.find((t) => t.id === tabId)?.label ?? tabId;
       if (tabId === "terminal" && terminalSessionTitle) {
-        return `${label} | ${terminalSessionTitle}`;
+        return `${label}: ${terminalSessionTitle}`;
       }
       return label;
     },
@@ -148,18 +148,15 @@ function SandboxImmersionPage() {
   );
 
   useEffect(() => {
-    const parts = ["L'atelier", buildTabTitle(tab1)];
-    if (tab2) {
-      parts.push(buildTabTitle(tab2));
-    }
-    if (task?.title) {
-      parts.push(task.title);
-    }
-    document.title = parts.join(" | ");
+    const tabPart = tab2
+      ? `${buildTabSegment(tab1)} + ${buildTabSegment(tab2)}`
+      : buildTabSegment(tab1);
+    const context = task?.title ?? sandbox?.id;
+    document.title = context ? `A | ${tabPart} · ${context}` : `A | ${tabPart}`;
     return () => {
       document.title = "L'atelier";
     };
-  }, [tab1, tab2, buildTabTitle, task?.title]);
+  }, [tab1, tab2, buildTabSegment, task?.title, sandbox?.id]);
 
   const setView = useCallback(
     (newTab1: TabId, newTab2?: TabId) => {
