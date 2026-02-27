@@ -65,11 +65,8 @@ All infrastructure services check `isMock()` and return mock responses.
 
 ## Shared Binaries Mount
 
-Firecracker attaches shared binaries as `/dev/vdb` (read-only ext4 image). Guest init mounts it at `/opt/shared`. If unmounted, code-server and opencode (`/opt/shared/bin/*`) will fail. On snapshot restore, manager remounts it explicitly.
+Firecracker attaches shared binaries as `/dev/vdb` (read-only ext4 image). Guest init mounts it at `/opt/shared`. If unmounted, code-server and opencode (`/opt/shared/bin/*`) will fail. On stop/start cycles, manager remounts it explicitly.
 
-## Snapshot Restore Paths
-
-Firecracker snapshot restore requires drive and vsock paths to match the original VM. The manager uses symlinks to ensure path compatibility. Do not change the sandbox path layout (`getSandboxPaths()`) without updating restore logic.
 
 ## Cleanup Order
 

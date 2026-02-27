@@ -57,7 +57,6 @@ export class SystemPrebuildRunner extends PrebuildRunner {
 
     if (await StorageService.hasPrebuild(key)) {
       await StorageService.deletePrebuild(key);
-      await this.deleteVmSnapshot(key);
       log.info("Deleted existing system prebuild before regeneration");
     }
 
@@ -98,8 +97,7 @@ export class SystemPrebuildRunner extends PrebuildRunner {
 
       this.throwIfAborted(key);
       await this.pushLatestAuthAndConfigs(sandbox.id);
-      await this.prepareForSnapshot(sandbox.id);
-      await this.createVmSnapshot(key, sandbox.id);
+      await this.syncFilesystem(sandbox.id);
       await StorageService.createPrebuild(key, sandbox.id);
       await this.writeMetadata(sandbox.id);
 
@@ -125,15 +123,6 @@ export class SystemPrebuildRunner extends PrebuildRunner {
             "Failed to cleanup system prebuild sandbox",
           );
         });
-      }
-
-      try {
-        await this.deleteVmSnapshot(key);
-      } catch (cleanupError) {
-        log.warn(
-          { error: cleanupError },
-          "Failed to cleanup partial system VM snapshot",
-        );
       }
 
       if (!isCancelled) throw error;
@@ -185,8 +174,7 @@ export class SystemPrebuildRunner extends PrebuildRunner {
   async ensurePrebuild(): Promise<void> {
     const key = SYSTEM_WORKSPACE_ID;
     const hasLvm = await StorageService.hasPrebuild(key);
-    const hasVm = await this.hasVmSnapshot(key);
-    if (hasLvm && hasVm) {
+    if (hasLvm) {
       log.info("System prebuild already exists, skipping");
       return;
     }

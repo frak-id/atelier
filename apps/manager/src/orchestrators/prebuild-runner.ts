@@ -1,19 +1,12 @@
-import { PATHS, VM } from "@frak/atelier-shared/constants";
+import { VM } from "@frak/atelier-shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
-import {
-  FirecrackerClient,
-  getPrebuildSnapshotPaths,
-  getSocketPath,
-} from "../infrastructure/firecracker/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
 import type { InternalService } from "../modules/internal/internal.service.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
-import { config, isMock } from "../shared/lib/config.ts";
+import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
-import { ensureDir } from "../shared/lib/shell.ts";
 import type { SandboxDestroyer } from "./sandbox-destroyer.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
@@ -47,54 +40,12 @@ export abstract class PrebuildRunner {
     }
   }
 
-  protected async createVmSnapshot(
-    key: string,
-    sandboxId: string,
-  ): Promise<void> {
-    if (isMock()) {
-      log.debug({ key }, "Mock: VM snapshot creation skipped");
-      return;
-    }
-
-    const snapshotPaths = getPrebuildSnapshotPaths(key);
-    const socketPath = getSocketPath(sandboxId);
-    const client = new FirecrackerClient(socketPath);
-
-    await ensureDir(`${PATHS.SANDBOX_DIR}/snapshots`);
-
-    log.info({ key, sandboxId }, "Creating VM snapshot");
-    await client.createSnapshot(
-      snapshotPaths.snapshotFile,
-      snapshotPaths.memFile,
-    );
-    log.info({ key }, "VM snapshot created");
-  }
-
-  protected async deleteVmSnapshot(key: string): Promise<void> {
-    if (isMock()) return;
-
-    const snapshotPaths = getPrebuildSnapshotPaths(key);
-    await $`rm -f ${snapshotPaths.snapshotFile} ${snapshotPaths.memFile}`
-      .quiet()
-      .nothrow();
-  }
-
-  async hasVmSnapshot(key: string): Promise<boolean> {
-    if (isMock()) return false;
-
-    const snapshotPaths = getPrebuildSnapshotPaths(key);
-    const snapExists = await Bun.file(snapshotPaths.snapshotFile).exists();
-    const memExists = await Bun.file(snapshotPaths.memFile).exists();
-    return snapExists && memExists;
-  }
-
   async hasPrebuild(key: string): Promise<boolean> {
     return StorageService.hasPrebuild(key);
   }
 
   async cleanupStorage(key: string): Promise<void> {
     await StorageService.deletePrebuild(key);
-    await this.deleteVmSnapshot(key);
   }
 
   protected async pushLatestAuthAndConfigs(sandboxId: string): Promise<void> {
@@ -109,18 +60,8 @@ export abstract class PrebuildRunner {
     );
   }
 
-  protected async prepareForSnapshot(sandboxId: string): Promise<void> {
-    log.info({ sandboxId }, "Preparing VM for snapshot");
-
-    await this.deps.agentClient.exec(
-      sandboxId,
-      "pkill -f 'opencode serve'; pkill -f code-server",
-      { timeout: 5000 },
-    );
-
+  protected async syncFilesystem(sandboxId: string): Promise<void> {
     await this.deps.agentClient.exec(sandboxId, "sync", { timeout: 5000 });
-
-    log.info({ sandboxId }, "VM prepared for snapshot");
   }
 
   protected async warmupOpencode(

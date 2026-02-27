@@ -282,9 +282,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
       return {
         ...status,
         prebuild: {
-          exists:
-            (await systemPrebuildRunner.hasPrebuild(SYSTEM_WORKSPACE_ID)) &&
-            (await systemPrebuildRunner.hasVmSnapshot(SYSTEM_WORKSPACE_ID)),
+          exists: await systemPrebuildRunner.hasPrebuild(SYSTEM_WORKSPACE_ID),
           building: systemPrebuildRunner.isBuilding(),
           builtAt: meta?.builtAt ?? null,
         },

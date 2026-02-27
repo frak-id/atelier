@@ -77,19 +77,18 @@ atelier/
 Without Prebuilds (slow, ~2-5 minutes):
   Boot VM  →  Clone Repo  →  run workspace init commands  →  Ready
 
-With Prebuilds (fast):
+With Prebuilds (fast, ~1-3 seconds):
 
   One-time (background):
-  Boot VM  →  Clone Repo  →  run workspace init commands  →  Snapshot
+  Boot VM  →  Clone Repo  →  run workspace init commands  →  LVM Snapshot
 
-  Every spawn (instant):
-  Restore Snapshot (LVM + Firecracker Memory)  →  Ready  (<200ms)
+  Every spawn:
+  Clone LVM Snapshot (<5ms)  →  Boot VM  →  Start Services  →  Ready
 ```
 
 Prebuilds run expensive initialization (git clone, dependency install, build)
-**once** and snapshot the result as both an LVM thin volume and a Firecracker
-VM state snapshot (including memory). Subsequent sandboxes restore from these
-snapshots instantly.
+**once** and snapshot the filesystem as an LVM thin volume. Subsequent
+sandboxes clone from this volume instantly via copy-on-write and boot fresh.
 
 ---
 

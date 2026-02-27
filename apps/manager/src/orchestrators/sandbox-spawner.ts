@@ -1,5 +1,5 @@
 import type { SandboxConfig } from "@frak/atelier-shared";
-import { DEFAULTS, PATHS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
+import { DEFAULTS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { customAlphabet } from "nanoid";
 import type {
@@ -10,7 +10,6 @@ import { eventBus } from "../infrastructure/events/index.ts";
 import {
   configureVm,
   type FirecrackerClient,
-  getPrebuildSnapshotPaths,
   getSandboxPaths,
   launchFirecracker,
   type SandboxPaths,
@@ -24,10 +23,7 @@ import {
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import { SecretsService } from "../infrastructure/secrets/index.ts";
-import {
-  SharedStorageService,
-  StorageService,
-} from "../infrastructure/storage/index.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
@@ -83,7 +79,6 @@ class SpawnContext {
   private pid?: number;
   private client?: FirecrackerClient;
   private usedPrebuild = false;
-  private hasVmSnapshot = false;
   private isSystem: boolean;
 
   private startTime = performance.now();
@@ -126,14 +121,10 @@ class SpawnContext {
 
       await this.time("launchFirecracker", () => this.launchFirecracker());
 
-      if (this.hasVmSnapshot && this.options.workspaceId) {
-        await this.time("configureOrRestore", () => this.restoreFromSnapshot());
-      } else {
-        await this.time("configureOrRestore", async () => {
-          await this.configureVm();
-          await this.boot();
-        });
-      }
+      await this.time("configureOrRestore", async () => {
+        await this.configureVm();
+        await this.boot();
+      });
 
       await this.time("agentSetup", () => this.waitForAgentAndSetup());
       await this.time("postBoot", () => this.configurePostBoot());
@@ -183,17 +174,6 @@ class SpawnContext {
         this.usedPrebuild = await StorageService.hasPrebuild(
           this.options.workspaceId,
         );
-      }
-
-      if (this.usedPrebuild) {
-        const snapshotPaths = getPrebuildSnapshotPaths(
-          this.options.workspaceId,
-        );
-        const [snapExists, memExists] = await Promise.all([
-          Bun.file(snapshotPaths.snapshotFile).exists(),
-          Bun.file(snapshotPaths.memFile).exists(),
-        ]);
-        this.hasVmSnapshot = snapExists && memExists;
       }
     }
 
@@ -404,232 +384,6 @@ class SpawnContext {
     log.debug({ sandboxId: this.sandboxId }, "VM booted");
   }
 
-  private async restoreFromSnapshot(): Promise<void> {
-    if (
-      !this.client ||
-      !this.paths ||
-      !this.network ||
-      !this.options.workspaceId
-    ) {
-      throw new Error("Snapshot restore prerequisites not initialized");
-    }
-
-    const snapshotPaths = getPrebuildSnapshotPaths(this.options.workspaceId);
-    let prebuildSandboxId: string;
-    if (this.isSystem) {
-      const metaPath = `${PATHS.SANDBOX_DIR}/system-prebuild.json`;
-      const metaFile = Bun.file(metaPath);
-      if (!(await metaFile.exists())) {
-        throw new Error("System prebuild metadata not found");
-      }
-      const meta = (await metaFile.json()) as { latestId?: string };
-      if (!meta.latestId) {
-        throw new Error("System prebuild metadata is invalid");
-      }
-      prebuildSandboxId = meta.latestId;
-    } else {
-      prebuildSandboxId = this.workspace?.config.prebuild?.latestId ?? "";
-      if (!prebuildSandboxId) {
-        throw new Error("Prebuild has no latestId");
-      }
-    }
-
-    // FC snapshot restore requires drive/vsock paths to match the original.
-    // Drive: symlink original LVM path → new LVM volume
-    // Vsock: FC recreates UDS at original path; we symlink new path to it after restore
-    const originalPaths = getSandboxPaths(
-      prebuildSandboxId,
-      `/dev/sandbox-vg/sandbox-${prebuildSandboxId}`,
-    );
-    await $`sudo -n ln -sf ${this.paths.overlay} ${originalPaths.overlay}`.quiet();
-    await $`rm -f ${originalPaths.vsock}`.quiet().nothrow();
-
-    log.info({ sandboxId: this.sandboxId }, "Restoring from VM snapshot");
-    await this.client.loadSnapshot(
-      snapshotPaths.snapshotFile,
-      snapshotPaths.memFile,
-      {
-        networkOverrides: [
-          { iface_id: "eth0", host_dev_name: this.network.tapDevice },
-        ],
-      },
-    );
-
-    await this.waitForBoot();
-
-    // FC creates vsock UDS at the original path after resume — poll until it exists
-    const vsockDeadline = Date.now() + 5000;
-    while (Date.now() < vsockDeadline) {
-      const check = await $`test -S ${originalPaths.vsock}`.quiet().nothrow();
-      if (check.exitCode === 0) break;
-      await Bun.sleep(100);
-    }
-
-    // Move (rename) the live UDS to the new sandbox path instead of symlinking.
-    // rename() on a UDS works on Linux — the kernel inode stays intact, FC keeps
-    // using the same socket, and the file is now "owned" by the real sandbox id
-    // so orphan-cleanup won't mistake it for a stale prebuild artifact.
-    await $`mv ${originalPaths.vsock} ${this.paths.vsock}`.quiet();
-    await $`sudo -n rm -f ${originalPaths.overlay}`.quiet().nothrow();
-
-    log.info(
-      { sandboxId: this.sandboxId },
-      "Vsock moved to sandbox path after snapshot restore",
-    );
-
-    // Agent vsock listener survived the snapshot — connect and reconfigure guest
-    await this.reconfigureRestoredGuest();
-
-    log.info({ sandboxId: this.sandboxId }, "VM restored from snapshot");
-  }
-
-  private async reconfigureRestoredGuest(): Promise<void> {
-    if (!this.network) {
-      throw new Error("Network not initialized");
-    }
-
-    const newIp = this.network.ipAddress;
-    const gateway = this.network.gateway;
-
-    // Step 1: Network reconfig (must be first)
-    // Includes: IPv4 flush+add, route, ARP/neighbor cache flush, DNS config
-    // Per Firecracker docs: stale ARP entries from the snapshot can cause
-    // packets to use old link-layer addresses until cache timeout.
-    const dnsServers = config.network.dnsServers;
-    const dnsCommands = dnsServers
-      .map((dns: string) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
-      .join(" && ");
-
-    const networkCmd = [
-      "ip -4 addr flush dev eth0",
-      `ip addr add ${newIp}/24 dev eth0`,
-      "ip link set eth0 up",
-      `ip route replace default via ${gateway} dev eth0`,
-      "ip -family inet neigh flush any",
-      "ip -family inet6 neigh flush any",
-      `> /etc/resolv.conf && ${dnsCommands}`,
-    ].join(" && ");
-
-    const maxRetries = 3;
-    let lastError: string | undefined;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const result = await this.deps.agentClient.exec(
-        this.sandboxId,
-        networkCmd,
-        { timeout: 5000 },
-      );
-
-      if (result.exitCode === 0) {
-        lastError = undefined;
-        break;
-      }
-
-      lastError = result.stderr || `exit code ${result.exitCode}`;
-      log.warn(
-        {
-          sandboxId: this.sandboxId,
-          attempt,
-          exitCode: result.exitCode,
-          stderr: result.stderr,
-        },
-        "Guest network reconfiguration failed, retrying",
-      );
-
-      if (attempt < maxRetries) {
-        await Bun.sleep(200 * attempt);
-      }
-    }
-
-    if (lastError) {
-      throw new Error(
-        `Guest network reconfiguration failed after ${maxRetries} attempts: ${lastError}`,
-      );
-    }
-
-    // Step 1b: Gratuitous ARP + gateway reachability check
-    // gARP announces our MAC→IP binding to the bridge/host so the first
-    // real packet doesn't have to wait for ARP resolution.
-    const verifyResult = await this.deps.agentClient.exec(
-      this.sandboxId,
-      `(arping -U -c 1 -I eth0 ${newIp} &) 2>/dev/null; ping -c 1 -W 2 ${gateway} >/dev/null 2>&1`,
-      { timeout: 5000 },
-    );
-
-    if (verifyResult.exitCode !== 0) {
-      log.warn(
-        {
-          sandboxId: this.sandboxId,
-          exitCode: verifyResult.exitCode,
-          stderr: verifyResult.stderr,
-        },
-        "Gateway ping failed after network reconfig (non-fatal)",
-      );
-    }
-    log.info(
-      { sandboxId: this.sandboxId, newIp },
-      "Guest network reconfigured",
-    );
-
-    // Step 2: Push fresh sandbox config (agent start is idempotent — kills stale processes)
-    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
-    await this.deps.provisionService.pushSandboxConfig(
-      this.sandboxId,
-      this.buildSandboxConfig(),
-    );
-
-    // Step 3: Everything else in parallel (all independent after network is up)
-    const parallelOps: Promise<void>[] = [
-      this.deps.provisionService.syncClock(this.sandboxId),
-      this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
-        ATELIER_SANDBOX_ID: this.sandboxId,
-      }),
-      this.deps.provisionService.setHostname(
-        this.sandboxId,
-        `sandbox-${this.sandboxId}`,
-      ),
-      (async () => {
-        const imageInfo = await SharedStorageService.getBinariesImageInfo();
-        if (imageInfo.exists) {
-          const mountResult = await this.deps.agentClient.exec(
-            this.sandboxId,
-            `mountpoint -q /opt/shared || { mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared; }`,
-            { timeout: 5000 },
-          );
-          if (mountResult.exitCode === 0) {
-            log.info(
-              { sandboxId: this.sandboxId },
-              "Shared binaries mounted in restored guest",
-            );
-          } else {
-            log.warn(
-              { sandboxId: this.sandboxId, stderr: mountResult.stderr },
-              "Failed to mount shared binaries in restored guest",
-            );
-          }
-        }
-      })(),
-      this.pushAuthAndConfigs(),
-    ];
-
-    if (!this.isSystem) {
-      parallelOps.push(
-        this.pushSecretsPostBoot(),
-        this.pushGitCredentialsPostBoot(),
-        this.pushFileSecretsPostBoot(),
-      );
-    }
-
-    await Promise.all(parallelOps);
-
-    // Step 4: Start services fresh with new config
-    await this.deps.provisionService.startServices(
-      this.sandboxId,
-      serviceNames,
-    );
-    log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
-  }
-
   private async waitForBoot(timeoutMs = 30000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
 
@@ -660,11 +414,6 @@ class SpawnContext {
 
   private async waitForAgentAndSetup(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
-
-    // Skip for snapshot restore - reconfigureRestoredGuest() already handled everything
-    if (this.hasVmSnapshot) {
-      return;
-    }
 
     const agentReady = await this.deps.agentClient.waitForAgent(
       this.sandboxId,
@@ -975,9 +724,6 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
   }
 
   private async configurePostBoot(): Promise<void> {
-    if (this.hasVmSnapshot) {
-      return;
-    }
     const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,

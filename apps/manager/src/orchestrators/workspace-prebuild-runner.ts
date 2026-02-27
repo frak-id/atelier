@@ -56,7 +56,6 @@ export class WorkspacePrebuildRunner extends PrebuildRunner {
 
     if (await StorageService.hasPrebuild(workspaceId)) {
       await StorageService.deletePrebuild(workspaceId);
-      await this.deleteVmSnapshot(workspaceId);
       log.info(
         { workspaceId },
         "Deleted existing prebuild before regeneration",
@@ -112,13 +111,12 @@ export class WorkspacePrebuildRunner extends PrebuildRunner {
 
       this.throwIfAborted(workspaceId);
       await this.pushLatestAuthAndConfigs(sandbox.id);
-      await this.prepareForSnapshot(sandbox.id);
-      await this.createVmSnapshot(workspaceId, sandbox.id);
+      await this.syncFilesystem(sandbox.id);
       await StorageService.createPrebuild(workspaceId, sandbox.id);
 
       log.info(
         { workspaceId, sandboxId: sandbox.id },
-        "Prebuild snapshot created (LVM + VM state)",
+        "Prebuild snapshot created (LVM)",
       );
 
       await this.deps.sandboxDestroyer.destroy(sandbox.id);
@@ -163,15 +161,6 @@ export class WorkspacePrebuildRunner extends PrebuildRunner {
         }
       }
 
-      try {
-        await this.deleteVmSnapshot(workspaceId);
-      } catch (cleanupError) {
-        log.warn(
-          { workspaceId, error: cleanupError },
-          "Failed to cleanup partial VM snapshot",
-        );
-      }
-
       this.updatePrebuildStatus(
         workspaceId,
         workspace,
@@ -214,14 +203,9 @@ export class WorkspacePrebuildRunner extends PrebuildRunner {
 
     log.info({ workspaceId }, "Force-resetting stuck prebuild status");
 
-    try {
-      await this.deleteVmSnapshot(workspaceId);
-    } catch (cleanupError) {
-      log.warn(
-        { workspaceId, error: cleanupError },
-        "Failed to cleanup VM snapshot during force-reset",
-      );
-    }
+    log.info({ workspaceId }, "Force-resetting stuck prebuild status");
+
+    this.updatePrebuildStatus(workspaceId, workspace, "none");
 
     this.updatePrebuildStatus(workspaceId, workspace, "none");
   }
