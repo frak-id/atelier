@@ -34,7 +34,7 @@ const DEFAULT_TIMEOUT = 10000;
 const VSOCK_GUEST_PORT = 9998;
 const VSOCK_CONNECT_TIMEOUT = 5000;
 
-// When Firecracker is resuming a snapshot or restarting a VM, the vsock UDS can
+// When Firecracker is restarting a VM, the vsock UDS can
 // briefly disappear and reappear. Waiting a little avoids spurious 503s.
 const VSOCK_READY_TIMEOUT = 2000;
 const VSOCK_READY_INTERVAL = 50;

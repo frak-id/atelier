@@ -258,7 +258,7 @@ export class SandboxLifecycle {
   /**
    * Re-provision guest after a stop/start cycle.
    *
-   * When a VM boots from its LVM volume (not a snapshot resume), all ephemeral
+   * When a VM boots from its LVM volume, all ephemeral
    * state is gone: clock, /opt/shared mount, services.
    * Network (IP/route) is handled by kernel ip= boot arg — only DNS needs pushing.
    */

@@ -61,7 +61,7 @@ export class SandboxProvisionService {
   }
 
   async syncClock(sandboxId: string): Promise<void> {
-    // Kill stale chronyd (may survive snapshot restore), then restart fresh
+    // Kill stale chronyd (may survive stop/start cycle), then restart fresh
     const cmd =
       "pkill chronyd 2>/dev/null; chronyd -f /etc/chrony/chrony.conf 2>/dev/null || true";
     const result = await this.agentClient.exec(sandboxId, cmd, {
