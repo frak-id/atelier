@@ -9,10 +9,11 @@ import type { SandboxRepository } from "../sandbox/index.ts";
 
 const log = createChildLogger("system-sandbox");
 
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
 const SYSTEM_SANDBOX_VCPUS = 1;
 const SYSTEM_SANDBOX_MEMORY_MB = 1024;
+const MAX_LIFETIME_MS = 6 * 60 * 60 * 1000;
 
 export const SYSTEM_WORKSPACE_ID = "__system__";
 
@@ -31,6 +32,7 @@ export class SystemSandboxService {
   private activeCount = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private bootPromise: Promise<string> | null = null;
+  private maxLifetimeTimer: ReturnType<typeof setTimeout> | null = null;
   private bootedAt: number | null = null;
 
   constructor(private readonly deps: SystemSandboxDependencies) {}
@@ -91,6 +93,7 @@ export class SystemSandboxService {
           "Reclaimed system sandbox from previous run",
         );
         this.startIdleTimer();
+        this.startMaxLifetimeTimer();
       } catch {
         log.warn(
           { sandboxId: candidate.id },
@@ -120,10 +123,14 @@ export class SystemSandboxService {
   }
 
   async acquire(): Promise<{ client: OpencodeClient; ipAddress: string }> {
-    this.activeCount++;
     this.clearIdleTimer();
 
     const ipAddress = await this.ensureSandbox();
+
+    // Increment AFTER ensureSandbox succeeds — if it throws, activeCount
+    // stays balanced and the idle timer can still fire.
+    this.activeCount++;
+
     const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
     const client = createOpencodeClient({
       baseUrl: url,
@@ -153,6 +160,7 @@ export class SystemSandboxService {
 
   async dispose(): Promise<void> {
     this.clearIdleTimer();
+    this.clearMaxLifetimeTimer();
     this.bootPromise = null;
     this.bootedAt = null;
     this.opencodePassword = null;
@@ -292,6 +300,7 @@ export class SystemSandboxService {
 
     await this.waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
     await this.registerMcpServer(ipAddress, sandbox.runtime.opencodePassword);
+    this.startMaxLifetimeTimer();
 
     return ipAddress;
   }
@@ -380,6 +389,29 @@ export class SystemSandboxService {
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
+    }
+  }
+
+  private startMaxLifetimeTimer(): void {
+    this.clearMaxLifetimeTimer();
+    this.maxLifetimeTimer = setTimeout(() => {
+      log.info(
+        { sandboxId: this.sandboxId, activeCount: this.activeCount },
+        "System sandbox max lifetime reached, recycling",
+      );
+      this.dispose().catch((error) => {
+        log.error(
+          { error },
+          "Failed to dispose system sandbox on max lifetime",
+        );
+      });
+    }, MAX_LIFETIME_MS);
+  }
+
+  private clearMaxLifetimeTimer(): void {
+    if (this.maxLifetimeTimer) {
+      clearTimeout(this.maxLifetimeTimer);
+      this.maxLifetimeTimer = null;
     }
   }
 }
