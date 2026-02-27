@@ -5,3 +5,4 @@ export {
   SystemSandboxService,
   type SystemSandboxStatus,
 } from "./system-sandbox.service.ts";
+export { SystemSandboxEventListener } from "./system-sandbox-event-listener.ts";

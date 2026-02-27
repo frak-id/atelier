@@ -93,6 +93,7 @@ export const SystemSandboxStatusSchema = t.Object({
   sandboxId: t.Nullable(t.String()),
   activeCount: t.Number(),
   uptimeMs: t.Nullable(t.Number()),
+  opencodeUrl: t.Nullable(t.String()),
   prebuild: t.Object({
     exists: t.Boolean(),
     building: t.Boolean(),

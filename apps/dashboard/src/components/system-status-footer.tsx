@@ -9,6 +9,7 @@ import {
   Copy,
   Cpu,
   Database,
+  ExternalLink,
   HardDrive,
   Loader2,
   Pause,
@@ -406,6 +407,20 @@ export function SystemStatusFooter() {
                     <Copy className="h-3 w-3" />
                   )}
                 </Button>
+              </div>
+            )}
+
+            {sandboxIsActive && systemSandbox?.opencodeUrl && (
+              <div className="mt-2 flex items-center gap-2">
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <a
+                  href={systemSandbox.opencodeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline"
+                >
+                  Open system sandbox OpenCode
+                </a>
               </div>
             )}
           </div>

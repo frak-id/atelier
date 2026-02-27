@@ -3,6 +3,7 @@ import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2";
 import { config, dashboardUrl } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
+import { runOpencodeEventStream } from "../../shared/lib/opencode-sse.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import type { TaskService } from "../task/index.ts";
 import type { IntegrationGateway } from "./integration.gateway.ts";
@@ -21,9 +22,6 @@ const REACTION_THINKING = "brain";
 const REACTION_ATTENTION = "warning";
 
 const UPDATE_DEBOUNCE_MS = 2_000;
-const SSE_MAX_RETRY = 10;
-const SSE_RETRY_DELAY = 3_000;
-const SSE_MAX_RETRY_DELAY = 30_000;
 
 interface TaskListenerState {
   taskId: string;
@@ -167,33 +165,19 @@ export class IntegrationEventBridge {
   }
 
   private subscribe(state: TaskListenerState): void {
-    const connect = async () => {
-      try {
-        const result = await state.opcClient.event.subscribe(undefined, {
-          signal: state.abortController.signal,
-          sseMaxRetryAttempts: SSE_MAX_RETRY,
-          sseDefaultRetryDelay: SSE_RETRY_DELAY,
-          sseMaxRetryDelay: SSE_MAX_RETRY_DELAY,
-        });
-
-        for await (const event of result.stream) {
-          if (state.abortController.signal.aborted) break;
-          await this.handleEvent(state, event as OpencodeEvent);
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") return;
+    void runOpencodeEventStream({
+      signal: state.abortController.signal,
+      getClient: () => state.opcClient,
+      onEvent: async (event) => {
+        await this.handleEvent(state, event as OpencodeEvent);
+      },
+      onReconnect: ({ reason, error }) => {
         log.warn(
-          { taskId: state.taskId, error },
-          "SSE subscription failed, reconnecting",
+          { taskId: state.taskId, reason, error },
+          "SSE subscription reconnecting",
         );
-
-        if (!state.abortController.signal.aborted) {
-          setTimeout(() => connect(), SSE_RETRY_DELAY);
-        }
-      }
-    };
-
-    connect();
+      },
+    });
   }
 
   private async handleEvent(

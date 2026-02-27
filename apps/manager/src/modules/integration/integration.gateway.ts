@@ -1,8 +1,4 @@
-import {
-  createOpencodeClient,
-  type Part,
-  type ToolPart,
-} from "@opencode-ai/sdk/v2";
+import { createOpencodeClient, type Part } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../../infrastructure/agent/index.ts";
 import { proxyService } from "../../infrastructure/proxy/proxy.service.ts";
 import type { SandboxLifecycle } from "../../orchestrators/sandbox-lifecycle.ts";
@@ -16,6 +12,7 @@ import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SessionTemplateService } from "../session-template/index.ts";
 import type {
   SystemAiService,
+  SystemSandboxEventListener,
   SystemSandboxService,
 } from "../system-sandbox/index.ts";
 import type { TaskService } from "../task/index.ts";
@@ -39,6 +36,7 @@ interface IntegrationGatewayDependencies {
   sandboxService: SandboxRepository;
   sandboxLifecycle: SandboxLifecycle;
   systemSandboxService: SystemSandboxService;
+  systemSandboxEventListener: SystemSandboxEventListener;
   workspaceService: WorkspaceService;
   systemAiService: SystemAiService;
   taskSpawner: TaskSpawner;
@@ -668,7 +666,34 @@ export class IntegrationGateway {
       contextMarkdown,
     ].join("\n");
 
+    await this.dispatchToSystemSandbox(dispatcherInput, event, adapter);
+  }
+
+  /**
+   * Dispatch a prompt to the system sandbox and collect results.
+   *
+   * Registers SSE event callbacks BEFORE firing promptAsync to
+   * avoid a race where the task-created or session-idle event
+   * arrives before the callback is in place.
+   *
+   * The sandbox slot is released immediately after promptAsync
+   * so concurrent dispatches are not serialized. The opencode
+   * client remains usable after release because the sandbox
+   * will not be disposed for IDLE_TIMEOUT_MS (30 min).
+   *
+   * NOTE: A future improvement would track idle based on
+   * session status (all sessions idle → start countdown with a
+   * shorter timeout) rather than a fixed timer after release.
+   */
+  private async dispatchToSystemSandbox(
+    prompt: string,
+    event: IntegrationEvent,
+    adapter: IntegrationAdapter,
+  ): Promise<void> {
     const { client } = await this.deps.systemSandboxService.acquire();
+    let released = false;
+    let sessionId: string | undefined;
+
     try {
       const { data: session, error: createError } =
         await client.session.create();
@@ -676,52 +701,133 @@ export class IntegrationGateway {
         throw new Error("Failed to create system sandbox session");
       }
 
+      sessionId = session.id;
+
       try {
+        // Register callbacks BEFORE promptAsync to avoid
+        // missing fast SSE events (race condition fix).
+        const taskPromise = this.deps.systemSandboxEventListener.waitForTask(
+          session.id,
+        );
+        const idlePromise = this.deps.systemSandboxEventListener.waitForIdle(
+          session.id,
+        );
+
         const dispatcherModel =
           this.deps.systemAiService.resolveModel("dispatcher");
-        const { data, error: promptError } = await client.session.prompt({
+        const { error: promptError } = await client.session.promptAsync({
           sessionID: session.id,
           agent: "dispatcher",
-          ...(dispatcherModel && { model: dispatcherModel }),
-          parts: [{ type: "text", text: dispatcherInput }],
+          ...(dispatcherModel && {
+            model: dispatcherModel,
+          }),
+          parts: [{ type: "text", text: prompt }],
         });
 
         if (promptError) {
           throw new Error("System sandbox prompt failed");
         }
 
-        const taskId = await this.extractCreatedTaskId(client, session.id);
+        this.deps.systemSandboxService.release();
+        released = true;
+
+        let taskId: string | undefined;
+
+        try {
+          taskId = await taskPromise;
+        } catch (error) {
+          log.warn(
+            {
+              threadKey: event.threadKey,
+              sessionId: session.id,
+              error,
+            },
+            "Failed waiting for dispatcher task event",
+          );
+        }
 
         if (taskId) {
           log.info(
             { taskId, threadKey: event.threadKey },
-            "Task created via system sandbox \u2014 injecting metadata",
+            "Task created via system sandbox",
           );
           await this.attachIntegrationToTask(taskId, event);
         }
 
-        if (data) {
-          const textReply = data.parts
-            .filter(
-              (p): p is Extract<Part, { type: "text" }> => p.type === "text",
-            )
-            .map((p) => p.text)
-            .join("\n")
-            .trim();
+        try {
+          await idlePromise;
+        } catch (error) {
+          log.warn(
+            {
+              threadKey: event.threadKey,
+              sessionId: session.id,
+              error,
+            },
+            "Failed waiting for dispatcher idle event",
+          );
+        }
 
-          if (textReply) {
+        if (!taskId) {
+          taskId = await this.extractCreatedTaskId(client, session.id);
+
+          if (taskId) {
             log.info(
-              { threadKey: event.threadKey, hasTask: !!taskId },
-              "Forwarding text response to platform",
+              { taskId, threadKey: event.threadKey },
+              "Task found via fallback message inspection",
             );
-            await adapter.postMessage(event, textReply);
+            await this.attachIntegrationToTask(taskId, event);
           }
         }
+
+        await this.postDispatcherReply(
+          client,
+          session.id,
+          event,
+          adapter,
+          taskId,
+        );
       } finally {
-        await client.session.delete({ sessionID: session.id }).catch(() => {});
+        if (sessionId) {
+          await client.session.delete({ sessionID: sessionId }).catch(() => {});
+        }
       }
     } finally {
-      this.deps.systemSandboxService.release();
+      if (!released) {
+        this.deps.systemSandboxService.release();
+      }
+    }
+  }
+
+  private async postDispatcherReply(
+    client: ReturnType<typeof createOpencodeClient>,
+    sessionId: string,
+    event: IntegrationEvent,
+    adapter: IntegrationAdapter,
+    taskId: string | undefined,
+  ): Promise<void> {
+    const { data: messages } = await client.session.messages({
+      sessionID: sessionId,
+    });
+
+    const textReply = (messages ?? [])
+      .filter((message) => message.info.role === "assistant")
+      .flatMap((message) => message.parts)
+      .filter(
+        (part): part is Extract<Part, { type: "text" }> => part.type === "text",
+      )
+      .map((part) => part.text)
+      .join("\n")
+      .trim();
+
+    if (textReply) {
+      log.info(
+        {
+          threadKey: event.threadKey,
+          hasTask: !!taskId,
+        },
+        "Forwarding text response to platform",
+      );
+      await adapter.postMessage(event, textReply);
     }
   }
 
@@ -930,20 +1036,16 @@ export class IntegrationGateway {
     for (const msg of messages) {
       for (const part of msg.parts) {
         if (part.type !== "tool") continue;
-        const toolPart = part as ToolPart;
-        if (!toolPart.tool.endsWith("create_task")) continue;
-        if (toolPart.state.status !== "completed") continue;
+        if (!part.tool.endsWith("create_task")) continue;
+        if (part.state.status !== "completed") continue;
 
         try {
-          const output = JSON.parse(toolPart.state.output);
+          const output = JSON.parse(part.state.output);
           if (output?.id && typeof output.id === "string") {
             return output.id;
           }
         } catch {
-          log.warn(
-            { tool: toolPart.tool },
-            "Failed to parse create_task output",
-          );
+          log.warn({ tool: part.tool }, "Failed to parse create_task output");
         }
       }
     }

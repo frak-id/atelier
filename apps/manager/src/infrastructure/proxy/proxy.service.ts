@@ -38,6 +38,24 @@ export class ProxyService {
     };
   }
 
+  async registerOpenCodeRoute(
+    sandboxId: string,
+    ipAddress: string,
+    port: number,
+  ): Promise<string> {
+    const domain = `opencode-${sandboxId}.${this.baseDomain}`;
+
+    await this.provider.addRoutes([
+      {
+        domain,
+        upstream: `${ipAddress}:${port}`,
+        auth: "opencode",
+      },
+    ]);
+
+    return `https://${domain}`;
+  }
+
   async registerDevRoute(
     sandboxId: string,
     ipAddress: string,

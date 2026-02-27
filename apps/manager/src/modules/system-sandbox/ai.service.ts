@@ -7,13 +7,19 @@ import {
 } from "@frak/atelier-shared/constants";
 import type { Workspace } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { withRetry } from "../../shared/lib/retry.ts";
 import type { ConfigFileService } from "../config-file/index.ts";
 import type { SystemSandboxService } from "./system-sandbox.service.ts";
 
 const log = createChildLogger("system-ai");
 
-const MAX_FALLBACK_TITLE_LENGTH = 80;
+const MAX_TITLE_LENGTH = 80;
 
+const GENERATION_RETRY = {
+  maxAttempts: 3,
+  baseDelayMs: 500,
+  maxDelayMs: 2000,
+} as const;
 type DescriptionTrigger = "created" | "updated";
 
 interface PromptOptions {
@@ -68,9 +74,9 @@ export class SystemAiService {
 
   fallbackTitle(description: string): string {
     const trimmed = description.trim();
-    if (trimmed.length <= MAX_FALLBACK_TITLE_LENGTH) return trimmed;
+    if (trimmed.length <= MAX_TITLE_LENGTH) return trimmed;
 
-    const truncated = trimmed.slice(0, MAX_FALLBACK_TITLE_LENGTH);
+    const truncated = trimmed.slice(0, MAX_TITLE_LENGTH);
     const lastSpace = truncated.lastIndexOf(" ");
     return lastSpace > 40
       ? `${truncated.slice(0, lastSpace)}...`
@@ -88,10 +94,12 @@ export class SystemAiService {
         label: "title",
         model: this.resolveModel("title"),
       },
+      onTitle,
       (title) => {
-        // If the titles generation goes wtf and generate a very looong title, skip.
-        if (title.length > 80) return;
-        onTitle(title);
+        if (title.length > MAX_TITLE_LENGTH) {
+          throw new Error(`Title too long (${title.length} chars), retrying`);
+        }
+        return title;
       },
     );
   }
@@ -115,14 +123,21 @@ export class SystemAiService {
   private runInBackground(
     options: PromptOptions,
     onResult: (text: string) => void,
+    validate?: (result: string) => string,
   ): void {
     setImmediate(() => {
-      this.promptOpenCode(options)
+      withRetry(
+        async () => {
+          const result = await this.promptOpenCode(options);
+          return validate ? validate(result) : result;
+        },
+        { ...GENERATION_RETRY, label: options.label },
+      )
         .then(onResult)
         .catch((error) => {
           log.warn(
             { error, label: options.label },
-            `Background ${options.label} generation failed`,
+            `Background ${options.label} generation failed after retries`,
           );
         });
     });

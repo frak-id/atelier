@@ -76,7 +76,7 @@ const app = new Elysia()
     });
 
     CronService.add("sandboxSelfHeal", {
-      name: "Sandbox Self Heal",
+      name: "Sandbox + Listener Self Heal",
       pattern: "*/1 * * * *",
       handler: async () => {
         const running = sandboxService.getByStatus("running");

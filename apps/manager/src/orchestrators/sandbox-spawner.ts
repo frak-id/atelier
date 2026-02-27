@@ -1161,9 +1161,14 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
     );
 
     if (this.isSystem) {
+      const opencodeUrl = await proxyService.registerOpenCodeRoute(
+        this.sandboxId,
+        this.network.ipAddress,
+        config.advanced.vm.opencode.port,
+      );
       this.sandbox.runtime.urls = {
         vscode: "",
-        opencode: "",
+        opencode: opencodeUrl,
         ssh: sshCmd,
       };
       return;
