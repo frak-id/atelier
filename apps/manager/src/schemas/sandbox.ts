@@ -346,6 +346,25 @@ export const SpawnTimingsSchema = t.Object({
   agentSetup: t.Number({
     description: "Agent wait + network config + provisioning in ms",
   }),
+  agentSetupDetails: t.Optional(
+    t.Object({
+      waitForAgent: t.Number({
+        description: "Time waiting for agent health check in ms",
+      }),
+      configureDns: t.Number({ description: "DNS configuration in ms" }),
+      syncClock: t.Number({ description: "Clock sync in ms" }),
+      expandFilesystem: t.Number({
+        description: "Filesystem expansion in ms",
+      }),
+      provision: t.Number({
+        description: "Push sandbox config, env, hostname, secrets in ms",
+      }),
+      setupSwap: t.Number({ description: "Swap setup in ms" }),
+      pushAuthAndConfigs: t.Number({
+        description: "Auth, configs, registry sync in ms",
+      }),
+    }),
+  ),
   postBoot: t.Number({ description: "Post-boot service startup in ms" }),
   registerRoutes: t.Number({
     description: "Caddy + SSH route registration in ms",

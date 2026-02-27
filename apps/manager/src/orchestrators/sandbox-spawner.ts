@@ -93,12 +93,14 @@ class SpawnContext {
   }
 
   private async time<T>(
-    key: keyof SpawnTimings,
+    key: Exclude<keyof SpawnTimings, "agentSetupDetails">,
     fn: () => Promise<T>,
   ): Promise<T> {
     const start = performance.now();
     const result = await fn();
-    this.timings[key] = Math.round(performance.now() - start);
+    (this.timings as Record<string, number>)[key] = Math.round(
+      performance.now() - start,
+    );
     return result;
   }
 
@@ -415,38 +417,55 @@ class SpawnContext {
   private async waitForAgentAndSetup(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
 
-    const agentReady = await this.deps.agentClient.waitForAgent(
-      this.sandboxId,
-      { timeout: 60000 },
-    );
+    const details: Record<string, number> = {};
+    const step = async (name: string, fn: () => Promise<void>) => {
+      const start = performance.now();
+      await fn();
+      details[name] = Math.round(performance.now() - start);
+    };
 
-    if (!agentReady) {
-      log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
-      return;
-    }
+    await step("waitForAgent", async () => {
+      const agentReady = await this.deps.agentClient.waitForAgent(
+        this.sandboxId,
+        { timeout: 60000 },
+      );
+      if (!agentReady) {
+        log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
+      }
+    });
 
     // Kernel ip= already configured eth0 — only push DNS (resolv.conf)
-    await this.deps.provisionService.configureDns(this.sandboxId);
+    await step("configureDns", () =>
+      this.deps.provisionService.configureDns(this.sandboxId),
+    );
 
-    await this.deps.provisionService.syncClock(this.sandboxId);
+    await step("syncClock", () =>
+      this.deps.provisionService.syncClock(this.sandboxId),
+    );
 
-    await this.expandFilesystem();
+    await step("expandFilesystem", () => this.expandFilesystem());
 
     if (this.isSystem) {
-      await this.provisionSystemPostBoot();
-      await this.pushAuthAndConfigs();
+      await step("provision", () => this.provisionSystemPostBoot());
+      await step("pushAuthAndConfigs", () => this.pushAuthAndConfigs());
+      this.timings.agentSetupDetails =
+        details as SpawnTimings["agentSetupDetails"];
       return;
     }
 
-    await this.provisionPostBoot();
-
-    await this.setupSwap();
+    await step("provision", () => this.provisionPostBoot());
+    await step("setupSwap", () => this.setupSwap());
 
     if (this.needsRepoClone()) {
-      await this.cloneRepositories();
+      await step("cloneRepositories", async () => {
+        await this.cloneRepositories();
+      });
     }
 
-    await this.pushAuthAndConfigs();
+    await step("pushAuthAndConfigs", () => this.pushAuthAndConfigs());
+
+    this.timings.agentSetupDetails =
+      details as SpawnTimings["agentSetupDetails"];
   }
 
   private async provisionSystemPostBoot(): Promise<void> {
