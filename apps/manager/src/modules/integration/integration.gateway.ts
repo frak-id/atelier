@@ -107,7 +107,9 @@ export class IntegrationGateway {
           await this.handleSessionCommand(event, existingTask, parsed, adapter);
           break;
         default:
-          if (existingTask?.data.sandboxId) {
+          // DMs are fire-and-forget — no thread continuation,
+          // always treat as a fresh mention.
+          if (existingTask?.data.sandboxId && !event.isDirectMessage) {
             await this.handleRemention(event, existingTask, adapter);
           } else {
             await this.handleNewMention(event, adapter);

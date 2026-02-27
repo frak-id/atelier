@@ -12,6 +12,8 @@ export interface IntegrationEvent {
   text: string;
   /** Platform-specific payload, only accessed by the matching adapter. */
   raw: unknown;
+  /** True when this event originates from a direct message (Slack im). */
+  isDirectMessage?: boolean;
 }
 
 export interface IntegrationMessage {
