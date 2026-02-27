@@ -213,6 +213,7 @@ export class SystemSandboxService {
     sandboxId: string | null;
     activeCount: number;
     uptimeMs: number | null;
+    opencodeUrl: string | null;
   } {
     let status: SystemSandboxStatus = "off";
 
@@ -222,11 +223,16 @@ export class SystemSandboxService {
       status = this.activeCount > 0 ? "running" : "idle";
     }
 
+    const sandbox = this.sandboxId
+      ? this.deps.sandboxService.getById(this.sandboxId)
+      : undefined;
+
     return {
       status,
       sandboxId: this.sandboxId,
       activeCount: this.activeCount,
       uptimeMs: this.bootedAt ? Date.now() - this.bootedAt : null,
+      opencodeUrl: sandbox?.runtime?.urls?.opencode || null,
     };
   }
 
