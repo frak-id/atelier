@@ -979,6 +979,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       launchFirecracker: this.timings.launchFirecracker ?? 0,
       configureAndBoot: this.timings.configureAndBoot ?? 0,
       agentSetup: this.timings.agentSetup ?? 0,
+      agentSetupDetails: this.timings.agentSetupDetails,
       postBoot: this.timings.postBoot ?? 0,
       registerRoutes: this.timings.registerRoutes ?? 0,
     };
