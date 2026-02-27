@@ -121,7 +121,7 @@ class SpawnContext {
 
       await this.time("launchFirecracker", () => this.launchFirecracker());
 
-      await this.time("configureOrRestore", async () => {
+      await this.time("configureAndBoot", async () => {
         await this.configureVm();
         await this.boot();
       });
@@ -329,7 +329,7 @@ class SpawnContext {
       initializeSandbox: this.timings.initializeSandbox ?? 0,
       createTap: 0,
       launchFirecracker: 0,
-      configureOrRestore: 0,
+      configureAndBoot: 0,
       agentSetup: 0,
       postBoot: 0,
       registerRoutes: 0,
@@ -958,7 +958,7 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       initializeSandbox: this.timings.initializeSandbox ?? 0,
       createTap: this.timings.createTap ?? 0,
       launchFirecracker: this.timings.launchFirecracker ?? 0,
-      configureOrRestore: this.timings.configureOrRestore ?? 0,
+      configureAndBoot: this.timings.configureAndBoot ?? 0,
       agentSetup: this.timings.agentSetup ?? 0,
       postBoot: this.timings.postBoot ?? 0,
       registerRoutes: this.timings.registerRoutes ?? 0,

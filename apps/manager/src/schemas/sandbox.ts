@@ -340,7 +340,7 @@ export const SpawnTimingsSchema = t.Object({
   launchFirecracker: t.Number({
     description: "Firecracker process launch in ms",
   }),
-  configureOrRestore: t.Number({
+  configureAndBoot: t.Number({
     description: "VM configuration + boot in ms",
   }),
   agentSetup: t.Number({
