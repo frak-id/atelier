@@ -6,6 +6,7 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
 import type { InternalService } from "../internal/index.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
+import type { SystemSandboxEventListener } from "./system-sandbox-event-listener.ts";
 
 const log = createChildLogger("system-sandbox");
 
@@ -24,6 +25,7 @@ interface SystemSandboxDependencies {
   sandboxDestroyer: SandboxDestroyer;
   sandboxService: SandboxRepository;
   internalService: InternalService;
+  eventListener: SystemSandboxEventListener;
 }
 
 export class SystemSandboxService {
@@ -86,6 +88,10 @@ export class SystemSandboxService {
         this.bootedAt = new Date(candidate.createdAt).getTime();
         await this.registerMcpServer(
           candidate.runtime.ipAddress,
+          candidate.runtime.opencodePassword,
+        );
+        this.deps.eventListener.start(
+          candidate.id,
           candidate.runtime.opencodePassword,
         );
         log.info(
@@ -159,6 +165,7 @@ export class SystemSandboxService {
   }
 
   async dispose(): Promise<void> {
+    this.deps.eventListener.stop();
     this.clearIdleTimer();
     this.clearMaxLifetimeTimer();
     this.bootPromise = null;
@@ -197,11 +204,18 @@ export class SystemSandboxService {
         "System sandbox zombie detected, resetting state",
       );
       this.clearIdleTimer();
+      this.deps.eventListener.stop();
       this.sandboxId = null;
       this.opencodePassword = null;
       this.bootedAt = null;
       this.activeCount = 0;
+      return;
     }
+
+    this.deps.eventListener.healIfNeeded(
+      this.sandboxId,
+      this.opencodePassword ?? undefined,
+    );
   }
 
   getSandboxId(): string | null {
@@ -306,6 +320,7 @@ export class SystemSandboxService {
 
     await this.waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
     await this.registerMcpServer(ipAddress, sandbox.runtime.opencodePassword);
+    this.deps.eventListener.start(sandbox.id, sandbox.runtime.opencodePassword);
     this.startMaxLifetimeTimer();
 
     return ipAddress;

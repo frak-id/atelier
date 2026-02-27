@@ -25,6 +25,7 @@ import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import {
   SystemAiService,
+  SystemSandboxEventListener,
   SystemSandboxService,
 } from "./modules/system-sandbox/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
@@ -114,11 +115,16 @@ const sandboxDestroyer = new SandboxDestroyer({
   sandboxService,
 });
 
+const systemSandboxEventListener = new SystemSandboxEventListener({
+  sandboxService,
+});
+
 const systemSandboxService = new SystemSandboxService({
   sandboxSpawner,
   sandboxDestroyer,
   sandboxService,
   internalService,
+  eventListener: systemSandboxEventListener,
 });
 
 const systemAiService = new SystemAiService(
@@ -173,6 +179,7 @@ const integrationGateway = new IntegrationGateway({
   sandboxService,
   sandboxLifecycle,
   systemSandboxService,
+  systemSandboxEventListener,
   workspaceService,
   systemAiService,
   taskSpawner,
@@ -214,6 +221,7 @@ export {
   slackAdapter,
   sshKeyService,
   systemAiService,
+  systemSandboxEventListener,
   systemSandboxService,
   taskService,
   taskSpawner,
