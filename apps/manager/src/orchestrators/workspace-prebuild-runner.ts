@@ -203,10 +203,6 @@ export class WorkspacePrebuildRunner extends PrebuildRunner {
 
     log.info({ workspaceId }, "Force-resetting stuck prebuild status");
 
-    log.info({ workspaceId }, "Force-resetting stuck prebuild status");
-
-    this.updatePrebuildStatus(workspaceId, workspace, "none");
-
     this.updatePrebuildStatus(workspaceId, workspace, "none");
   }
 
