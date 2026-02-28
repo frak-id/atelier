@@ -270,6 +270,11 @@ export class AgentClient {
       socket.on("error", (err) => {
         settle(() => reject(err));
       });
+      socket.on("end", () => {
+        settle(() =>
+          reject(new Error("Vsock connection closed before handshake")),
+        );
+      });
 
       const timer = setTimeout(() => {
         socket.destroy();
@@ -596,6 +601,7 @@ function isRetryableConnectError(error: unknown): boolean {
     const msg = error.message;
     if (msg.includes("Vsock connection timed out")) return true;
     if (msg.includes("Vsock handshake failed")) return true;
+    if (msg.includes("Vsock connection closed")) return true;
   }
 
   return false;
