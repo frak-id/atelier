@@ -32,7 +32,7 @@ const log = createChildLogger("agent");
 
 const DEFAULT_TIMEOUT = 10000;
 const VSOCK_GUEST_PORT = 9998;
-const VSOCK_CONNECT_TIMEOUT = 5000;
+const VSOCK_CONNECT_TIMEOUT = 1000;
 
 // When Firecracker is restarting a VM, the vsock UDS can
 // briefly disappear and reappear. Waiting a little avoids spurious 503s.
