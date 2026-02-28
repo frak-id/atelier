@@ -5,14 +5,12 @@
 # responds to a health check over vsock.  Structure:
 #   Phase 1: Minimal mounts + device nodes (required for agent + exec)
 #   Phase 2: Start agent immediately (host can begin talking)
-#   Phase 3: Non-critical setup (hostname, hosts, SSH, swap — in background)
+#   Phase 3: Non-critical setup (/etc/hosts, SSH)
 
 export PATH=/opt/shared/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/dev/.bun/bin
 export HOME=/root
 export BUN_INSTALL=/home/dev/.bun
 
-CONFIG_FILE="/etc/sandbox/config.json"
-SECRETS_FILE="/etc/sandbox/secrets/.env"
 LOG_DIR="/var/log/sandbox"
 
 mkdir -p "$LOG_DIR"
@@ -171,16 +169,9 @@ fi
 # Everything below runs AFTER the agent is started.  The host may already
 # be talking to the agent while these complete — that's fine because all
 # required mounts and devices are already in place.
-
-# Hostname — extract sandboxId with pure bash (no jq cold-start penalty).
-if [ -f "$CONFIG_FILE" ]; then
-    SANDBOX_ID=$(grep -o '"sandboxId"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONFIG_FILE" 2>/dev/null | head -1 | cut -d'"' -f4)
-    if [ -n "$SANDBOX_ID" ]; then
-        hostname "sandbox-$SANDBOX_ID"
-        echo "sandbox-$SANDBOX_ID" > /etc/hostname
-        log "Hostname set to sandbox-$SANDBOX_ID"
-    fi
-fi
+#
+# Hostname, DNS, secrets, swap, and services are managed by the manager
+# over vsock — the init script only handles /etc/hosts and sshd.
 
 # /etc/hosts (not included in Docker export)
 cat > /etc/hosts << 'EOF'
@@ -188,13 +179,6 @@ cat > /etc/hosts << 'EOF'
 ::1		localhost ip6-localhost ip6-loopback
 EOF
 log "Created /etc/hosts"
-
-if [ -f "$SECRETS_FILE" ]; then
-    set -a
-    source "$SECRETS_FILE"
-    set +a
-    log "Secrets loaded"
-fi
 
 # SSH
 log "Starting SSH daemon"
@@ -207,21 +191,7 @@ else
     log "ERROR: sshd not found"
 fi
 
-# Swap — deferred to background
-/etc/sandbox/setup-swap.sh >> "$LOG_DIR/init.log" 2>&1 &
-
-WORKSPACE_DIR_FILE="/etc/sandbox/workspace-dir"
-if [ -f "$WORKSPACE_DIR_FILE" ]; then
-    WORKSPACE_DIR=$(cat "$WORKSPACE_DIR_FILE")
-else
-    WORKSPACE_DIR="/home/dev/workspace"
-fi
-
-log "Init complete (workspace=$WORKSPACE_DIR)"
-
-# List running processes
-log "Running processes:"
-ps aux >> "$LOG_DIR/init.log" 2>&1
+log "Init complete"
 
 # PID 1 must stay alive - reap zombies and wait
 while true; do
