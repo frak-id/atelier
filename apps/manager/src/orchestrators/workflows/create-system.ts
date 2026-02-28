@@ -7,7 +7,7 @@ import {
   cleanupSandboxResources,
   finalizeNewSandbox,
 } from "../kernel/index.ts";
-import * as guestOps from "../ports/guest-ops.ts";
+import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 import { buildSandboxConfig } from "../sandbox-config.ts";
 
@@ -34,11 +34,11 @@ export async function createSystemSandbox(
       ports,
     );
     // --- Guest provisioning (linear, no branching) ---
-    await guestOps.configureDns(ports.agent, sandboxId);
-    await guestOps.syncClock(ports.agent, sandboxId);
+    await GuestOps.configureDns(ports.agent, sandboxId);
+    await GuestOps.syncClock(ports.agent, sandboxId);
 
     if (!boot.usedPrebuild) {
-      const resized = await guestOps.resizeStorage(ports.agent, sandboxId);
+      const resized = await GuestOps.resizeStorage(ports.agent, sandboxId);
       if (resized.success) {
         log.info(
           { sandboxId, disk: resized.disk },
@@ -57,11 +57,11 @@ export async function createSystemSandbox(
       undefined,
       boot.sandbox.runtime.opencodePassword,
     );
-    await guestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig);
-    await guestOps.pushRuntimeEnv(ports.agent, sandboxId, {
+    await GuestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig);
+    await GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
       ATELIER_SANDBOX_ID: sandboxId,
     });
-    await guestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
+    await GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
 
     const result = await ports.internal.syncAllToSandbox(sandboxId);
     log.info(
@@ -74,7 +74,7 @@ export async function createSystemSandbox(
       "Internal sync complete",
     );
 
-    await guestOps.startServices(ports.agent, sandboxId, ["opencode"]);
+    await GuestOps.startServices(ports.agent, sandboxId, ["opencode"]);
 
     // --- Finalize: register routes + update status ---
     return await finalizeNewSandbox(

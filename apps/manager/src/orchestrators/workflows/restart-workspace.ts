@@ -4,7 +4,7 @@ import {
   bootExistingSandbox,
   finalizeRestartedSandbox,
 } from "../kernel/index.ts";
-import * as guestOps from "../ports/guest-ops.ts";
+import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 
 const log = createChildLogger("wf-restart-workspace");
@@ -18,17 +18,17 @@ export async function restartWorkspaceSandbox(
   const boot = await bootExistingSandbox(sandboxId, sandbox, ports);
 
   if (boot.agentReady) {
-    await guestOps.configureDns(ports.agent, sandboxId);
-    await guestOps.syncClock(ports.agent, sandboxId);
-    await guestOps.mountSharedBinaries(ports.agent, sandboxId);
-    await guestOps.pushRuntimeEnv(ports.agent, sandboxId, {
+    await GuestOps.configureDns(ports.agent, sandboxId);
+    await GuestOps.syncClock(ports.agent, sandboxId);
+    await GuestOps.mountSharedBinaries(ports.agent, sandboxId);
+    await GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
       ATELIER_SANDBOX_ID: sandboxId,
     });
-    await guestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
+    await GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
 
-    await guestOps.syncSecrets(ports.agent, sandboxId, workspace);
-    await guestOps.syncGitCredentials(ports.agent, sandboxId, ports.gitSources);
-    await guestOps.syncFileSecrets(ports.agent, sandboxId, workspace);
+    await GuestOps.syncSecrets(ports.agent, sandboxId, workspace);
+    await GuestOps.syncGitCredentials(ports.agent, sandboxId, ports.gitSources);
+    await GuestOps.syncFileSecrets(ports.agent, sandboxId, workspace);
 
     const result = await ports.internal.syncAllToSandbox(sandboxId);
     log.info(
@@ -41,7 +41,7 @@ export async function restartWorkspaceSandbox(
       "Internal sync complete",
     );
 
-    await guestOps.startServices(ports.agent, sandboxId, [
+    await GuestOps.startServices(ports.agent, sandboxId, [
       "vscode",
       "opencode",
     ]);

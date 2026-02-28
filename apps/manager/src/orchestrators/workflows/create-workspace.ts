@@ -11,7 +11,7 @@ import {
   cleanupSandboxResources,
   finalizeNewSandbox,
 } from "../kernel/index.ts";
-import * as guestOps from "../ports/guest-ops.ts";
+import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 import { buildSandboxConfig, generateSandboxMd } from "../sandbox-config.ts";
 
@@ -39,11 +39,11 @@ export async function createWorkspaceSandbox(
       ports,
     );
     // --- Guest provisioning (linear, no branching) ---
-    await guestOps.configureDns(ports.agent, sandboxId);
-    await guestOps.syncClock(ports.agent, sandboxId);
+    await GuestOps.configureDns(ports.agent, sandboxId);
+    await GuestOps.syncClock(ports.agent, sandboxId);
 
     if (!boot.usedPrebuild) {
-      const resized = await guestOps.resizeStorage(ports.agent, sandboxId);
+      const resized = await GuestOps.resizeStorage(ports.agent, sandboxId);
       if (resized.success) {
         log.info(
           { sandboxId, disk: resized.disk },
@@ -62,15 +62,15 @@ export async function createWorkspaceSandbox(
       workspace,
       boot.sandbox.runtime.opencodePassword,
     );
-    await guestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig);
-    await guestOps.pushRuntimeEnv(ports.agent, sandboxId, {
+    await GuestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig);
+    await GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
       ATELIER_SANDBOX_ID: sandboxId,
     });
-    await guestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
+    await GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
 
-    await guestOps.syncSecrets(ports.agent, sandboxId, workspace);
-    await guestOps.syncGitCredentials(ports.agent, sandboxId, ports.gitSources);
-    await guestOps.syncFileSecrets(ports.agent, sandboxId, workspace);
+    await GuestOps.syncSecrets(ports.agent, sandboxId, workspace);
+    await GuestOps.syncGitCredentials(ports.agent, sandboxId, ports.gitSources);
+    await GuestOps.syncFileSecrets(ports.agent, sandboxId, workspace);
 
     const configs = ports.configFiles.getMergedForSandbox(workspace.id);
     const authConfig = configs.find((c) => c.path === VM_PATHS.opencodeAuth);
@@ -86,10 +86,10 @@ export async function createWorkspaceSandbox(
         log.warn("Failed to parse auth.json for oh-my-opencode cache seed");
       }
     }
-    await guestOps.pushOhMyOpenCodeCache(ports.agent, sandboxId, providers);
+    await GuestOps.pushOhMyOpenCodeCache(ports.agent, sandboxId, providers);
 
     const mdContent = generateSandboxMd(sandboxId, workspace);
-    await guestOps.pushSandboxMd(ports.agent, sandboxId, mdContent);
+    await GuestOps.pushSandboxMd(ports.agent, sandboxId, mdContent);
 
     const result = await ports.internal.syncAllToSandbox(sandboxId);
     log.info(
@@ -102,22 +102,22 @@ export async function createWorkspaceSandbox(
       "Internal sync complete",
     );
 
-    await guestOps.startServices(ports.agent, sandboxId, [
+    await GuestOps.startServices(ports.agent, sandboxId, [
       "vscode",
       "opencode",
     ]);
-    await guestOps.setupSwap(ports.agent, sandboxId);
+    await GuestOps.setupSwap(ports.agent, sandboxId);
 
     if (!boot.usedPrebuild && workspace.config.repos?.length) {
       for (const repo of workspace.config.repos) {
-        await guestOps.cloneRepository(
+        await GuestOps.cloneRepository(
           ports.agent,
           sandboxId,
           repo,
           ports.gitSources,
         );
       }
-      await guestOps.sanitizeGitRemoteUrls(
+      await GuestOps.sanitizeGitRemoteUrls(
         ports.agent,
         sandboxId,
         workspace.config.repos,

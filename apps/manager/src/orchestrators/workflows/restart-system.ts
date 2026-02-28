@@ -4,7 +4,7 @@ import {
   bootExistingSandbox,
   finalizeRestartedSandbox,
 } from "../kernel/index.ts";
-import * as guestOps from "../ports/guest-ops.ts";
+import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 
 const log = createChildLogger("wf-restart-system");
@@ -17,13 +17,13 @@ export async function restartSystemSandbox(
   const boot = await bootExistingSandbox(sandboxId, sandbox, ports);
 
   if (boot.agentReady) {
-    await guestOps.configureDns(ports.agent, sandboxId);
-    await guestOps.syncClock(ports.agent, sandboxId);
-    await guestOps.mountSharedBinaries(ports.agent, sandboxId);
-    await guestOps.pushRuntimeEnv(ports.agent, sandboxId, {
+    await GuestOps.configureDns(ports.agent, sandboxId);
+    await GuestOps.syncClock(ports.agent, sandboxId);
+    await GuestOps.mountSharedBinaries(ports.agent, sandboxId);
+    await GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
       ATELIER_SANDBOX_ID: sandboxId,
     });
-    await guestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
+    await GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
 
     const result = await ports.internal.syncAllToSandbox(sandboxId);
     log.info(
@@ -36,7 +36,7 @@ export async function restartSystemSandbox(
       "Internal sync complete",
     );
 
-    await guestOps.startServices(ports.agent, sandboxId, ["opencode"]);
+    await GuestOps.startServices(ports.agent, sandboxId, ["opencode"]);
   }
 
   return await finalizeRestartedSandbox(sandboxId, sandbox, boot.pid, ports, {
