@@ -2,8 +2,8 @@ import { PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { Elysia } from "elysia";
 import {
+  prebuildRunner,
   sandboxService,
-  systemPrebuildRunner,
   systemSandboxService,
 } from "../container.ts";
 import { networkService } from "../infrastructure/network/index.ts";
@@ -278,12 +278,12 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
     "/sandbox",
     async () => {
       const status = systemSandboxService.getStatus();
-      const meta = await systemPrebuildRunner.readMetadata();
+      const meta = await prebuildRunner.readSystemMetadata();
       return {
         ...status,
         prebuild: {
-          exists: await systemPrebuildRunner.hasPrebuild(SYSTEM_WORKSPACE_ID),
-          building: systemPrebuildRunner.isBuilding(),
+          exists: await prebuildRunner.hasPrebuild(SYSTEM_WORKSPACE_ID),
+          building: prebuildRunner.isSystemBuilding(),
           builtAt: meta?.builtAt ?? null,
         },
       };
@@ -296,10 +296,10 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
   .post(
     "/sandbox/prebuild",
     async () => {
-      if (systemPrebuildRunner.isBuilding()) {
+      if (prebuildRunner.isSystemBuilding()) {
         return { started: false, message: "Prebuild already in progress" };
       }
-      systemPrebuildRunner.runInBackground();
+      prebuildRunner.runSystemInBackground();
       return { started: true, message: "System prebuild started" };
     },
     {
@@ -309,10 +309,10 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
   .post(
     "/sandbox/prebuild/cancel",
     async () => {
-      if (!systemPrebuildRunner.isBuilding()) {
+      if (!prebuildRunner.isSystemBuilding()) {
         return { cancelled: false, message: "No prebuild in progress" };
       }
-      await systemPrebuildRunner.cancel();
+      await prebuildRunner.cancelSystem();
       return { cancelled: true, message: "System prebuild cancelled" };
     },
     {
@@ -322,11 +322,11 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
   .delete(
     "/sandbox/prebuild",
     async ({ set }) => {
-      if (systemPrebuildRunner.isBuilding()) {
+      if (prebuildRunner.isSystemBuilding()) {
         set.status = 409;
         return { message: "Cannot delete while prebuild is in progress" };
       }
-      await systemPrebuildRunner.delete();
+      await prebuildRunner.deleteSystem();
       set.status = 204;
       return null;
     },

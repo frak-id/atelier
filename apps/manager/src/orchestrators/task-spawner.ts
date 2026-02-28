@@ -14,12 +14,12 @@ import type {
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
+import { waitForOpencode } from "./sandbox-provisioning.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("task-spawner");
 
 const AGENT_READY_TIMEOUT = 60000;
-const OPENCODE_HEALTH_TIMEOUT = 120000;
 
 const WORKSPACE_DIR = VM.HOME;
 
@@ -97,7 +97,7 @@ export class TaskSpawner {
         throw new Error("Agent failed to become ready");
       }
 
-      await this.waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
+      await waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
 
       const targetRepos = this.getTargetRepos(task, workspace);
       let branchName: string | undefined;
@@ -504,33 +504,6 @@ export class TaskSpawner {
     prompt += task.data.description;
 
     return prompt;
-  }
-
-  private async waitForOpencode(
-    ipAddress: string,
-    password?: string,
-  ): Promise<void> {
-    const startTime = Date.now();
-    const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
-    let delay = 250;
-
-    while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT) {
-      try {
-        const client = createOpencodeClient({
-          baseUrl: url,
-          headers: buildOpenCodeAuthHeaders(password),
-        });
-        const { data } = await client.global.health();
-        if (data?.healthy) {
-          log.info({ ip: ipAddress }, "OpenCode server is healthy");
-          return;
-        }
-      } catch {}
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay = Math.min(delay * 2, 2000);
-    }
-
-    throw new Error("OpenCode server did not become healthy within timeout");
   }
 
   private async createOpencodeSession(

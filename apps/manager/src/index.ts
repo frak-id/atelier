@@ -29,10 +29,10 @@ import {
   agentOperations,
   authSyncService,
   prebuildChecker,
+  prebuildRunner,
   sandboxLifecycle,
   sandboxService,
   sshKeyService,
-  systemPrebuildRunner,
   systemSandboxService,
   workspaceService,
 } from "./container.ts";
@@ -289,7 +289,7 @@ const app = new Elysia()
 await systemSandboxService.recoverFromRestart();
 
 setImmediate(() => {
-  systemPrebuildRunner.ensurePrebuild().catch((error) => {
+  prebuildRunner.ensureSystemPrebuild().catch((error) => {
     logger.warn({ error }, "System prebuild auto-build failed");
   });
 });
