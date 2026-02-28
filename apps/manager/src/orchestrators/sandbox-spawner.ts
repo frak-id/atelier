@@ -1,5 +1,4 @@
-import type { SandboxConfig } from "@frak/atelier-shared";
-import { DEFAULTS, PATHS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
+import { DEFAULTS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { customAlphabet } from "nanoid";
 import type {
@@ -10,7 +9,6 @@ import { eventBus } from "../infrastructure/events/index.ts";
 import {
   configureVm,
   type FirecrackerClient,
-  getPrebuildSnapshotPaths,
   getSandboxPaths,
   launchFirecracker,
   type SandboxPaths,
@@ -24,10 +22,7 @@ import {
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import { SecretsService } from "../infrastructure/secrets/index.ts";
-import {
-  SharedStorageService,
-  StorageService,
-} from "../infrastructure/storage/index.ts";
+import { StorageService } from "../infrastructure/storage/index.ts";
 import type { ConfigFileService } from "../modules/config-file/index.ts";
 import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
@@ -43,13 +38,16 @@ import type {
   GitHubSourceConfig,
   RepoConfig,
   Sandbox,
-  SpawnTimings,
   Workspace,
 } from "../schemas/index.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { killProcess } from "../shared/lib/shell.ts";
+import {
+  buildSandboxConfig,
+  generateSandboxMd,
+} from "./sandbox-config.ts";
 
 const log = createChildLogger("sandbox-spawner");
 
@@ -83,11 +81,7 @@ class SpawnContext {
   private pid?: number;
   private client?: FirecrackerClient;
   private usedPrebuild = false;
-  private hasVmSnapshot = false;
   private isSystem: boolean;
-
-  private startTime = performance.now();
-  private timings: Partial<SpawnTimings> = {};
 
   constructor(
     private readonly deps: SandboxSpawnerDependencies,
@@ -97,47 +91,27 @@ class SpawnContext {
     this.isSystem = options.system ?? false;
   }
 
-  private async time<T>(
-    key: keyof SpawnTimings,
-    fn: () => Promise<T>,
-  ): Promise<T> {
-    const start = performance.now();
-    const result = await fn();
-    this.timings[key] = Math.round(performance.now() - start);
-    return result;
-  }
-
   async execute(): Promise<CreateSandboxResponse> {
     try {
-      await this.time("loadWorkspace", () => this.loadWorkspace());
-      await this.time("networkAndVolume", () =>
-        Promise.all([
-          this.allocateNetwork(),
-          this.createVolume(),
-          isMock() ? Promise.resolve() : this.createTapDevice(),
-        ]),
-      );
-      await this.time("resizeVolume", () => this.resizeVolumeBeforeBoot());
-      await this.time("initializeSandbox", () => this.initializeSandbox());
+      await this.loadWorkspace();
+      await Promise.all([
+        this.allocateNetwork(),
+        this.createVolume(),
+        isMock() ? Promise.resolve() : this.createTapDevice(),
+      ]);
+      await this.resizeVolumeBeforeBoot();
+      await this.initializeSandbox();
 
       if (isMock()) {
         return await this.finalizeMock();
       }
 
-      await this.time("launchFirecracker", () => this.launchFirecracker());
-
-      if (this.hasVmSnapshot && this.options.workspaceId) {
-        await this.time("configureOrRestore", () => this.restoreFromSnapshot());
-      } else {
-        await this.time("configureOrRestore", async () => {
-          await this.configureVm();
-          await this.boot();
-        });
-      }
-
-      await this.time("agentSetup", () => this.waitForAgentAndSetup());
-      await this.time("postBoot", () => this.configurePostBoot());
-      await this.time("registerRoutes", () => this.registerRoutes());
+      await this.launchFirecracker();
+      await this.configureVm();
+      await this.boot();
+      await this.setupAgent();
+      await this.configurePostBoot();
+      await this.registerRoutes();
 
       return this.finalize();
     } catch (error) {
@@ -174,27 +148,13 @@ class SpawnContext {
       this.options.baseImage ?? this.workspace?.config.baseImage;
     const lvmAvailable = await StorageService.isAvailable();
 
-    if (this.options.workspaceId) {
-      if (this.isSystem) {
-        this.usedPrebuild = await StorageService.hasPrebuild(
-          this.options.workspaceId,
-        );
-      } else if (this.workspace?.config.prebuild?.status === "ready") {
-        this.usedPrebuild = await StorageService.hasPrebuild(
-          this.options.workspaceId,
-        );
-      }
-
-      if (this.usedPrebuild) {
-        const snapshotPaths = getPrebuildSnapshotPaths(
-          this.options.workspaceId,
-        );
-        const [snapExists, memExists] = await Promise.all([
-          Bun.file(snapshotPaths.snapshotFile).exists(),
-          Bun.file(snapshotPaths.memFile).exists(),
-        ]);
-        this.hasVmSnapshot = snapExists && memExists;
-      }
+    if (
+      this.options.workspaceId &&
+      (this.isSystem || this.workspace?.config.prebuild?.status === "ready")
+    ) {
+      this.usedPrebuild = await StorageService.hasPrebuild(
+        this.options.workspaceId,
+      );
     }
 
     let lvmVolumePath: string | undefined;
@@ -340,26 +300,8 @@ class SpawnContext {
       },
     });
 
-    const totalTime = Math.round(performance.now() - this.startTime);
-    const finalTimings: SpawnTimings = {
-      total: totalTime,
-      loadWorkspace: this.timings.loadWorkspace ?? 0,
-      networkAndVolume: this.timings.networkAndVolume ?? 0,
-      resizeVolume: this.timings.resizeVolume ?? 0,
-      initializeSandbox: this.timings.initializeSandbox ?? 0,
-      createTap: 0,
-      launchFirecracker: 0,
-      configureOrRestore: 0,
-      agentSetup: 0,
-      postBoot: 0,
-      registerRoutes: 0,
-    };
-
-    log.info(
-      { sandboxId: this.sandboxId, timings: finalTimings },
-      "Mock sandbox created",
-    );
-    return { ...this.sandbox, timings: finalTimings };
+    log.info({ sandboxId: this.sandboxId }, "Mock sandbox created");
+    return this.sandbox;
   }
 
   private async createTapDevice(): Promise<void> {
@@ -400,234 +342,20 @@ class SpawnContext {
 
   private async boot(): Promise<void> {
     await this.client?.start();
-    await this.waitForBoot();
-    log.debug({ sandboxId: this.sandboxId }, "VM booted");
-  }
 
-  private async restoreFromSnapshot(): Promise<void> {
-    if (
-      !this.client ||
-      !this.paths ||
-      !this.network ||
-      !this.options.workspaceId
-    ) {
-      throw new Error("Snapshot restore prerequisites not initialized");
+    // Boot check and agent polling run concurrently — vsock attempts fail
+    // cheaply during early boot (~50 ms each) and succeed once the kernel
+    // driver + agent are ready.
+    const [, agentReady] = await Promise.all([
+      this.waitForBoot(),
+      this.deps.agentClient.waitForAgent(this.sandboxId, { timeout: 60000 }),
+    ]);
+
+    if (!agentReady) {
+      log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
     }
 
-    const snapshotPaths = getPrebuildSnapshotPaths(this.options.workspaceId);
-    let prebuildSandboxId: string;
-    if (this.isSystem) {
-      const metaPath = `${PATHS.SANDBOX_DIR}/system-prebuild.json`;
-      const metaFile = Bun.file(metaPath);
-      if (!(await metaFile.exists())) {
-        throw new Error("System prebuild metadata not found");
-      }
-      const meta = (await metaFile.json()) as { latestId?: string };
-      if (!meta.latestId) {
-        throw new Error("System prebuild metadata is invalid");
-      }
-      prebuildSandboxId = meta.latestId;
-    } else {
-      prebuildSandboxId = this.workspace?.config.prebuild?.latestId ?? "";
-      if (!prebuildSandboxId) {
-        throw new Error("Prebuild has no latestId");
-      }
-    }
-
-    // FC snapshot restore requires drive/vsock paths to match the original.
-    // Drive: symlink original LVM path → new LVM volume
-    // Vsock: FC recreates UDS at original path; we symlink new path to it after restore
-    const originalPaths = getSandboxPaths(
-      prebuildSandboxId,
-      `/dev/sandbox-vg/sandbox-${prebuildSandboxId}`,
-    );
-    await $`sudo -n ln -sf ${this.paths.overlay} ${originalPaths.overlay}`.quiet();
-    await $`rm -f ${originalPaths.vsock}`.quiet().nothrow();
-
-    log.info({ sandboxId: this.sandboxId }, "Restoring from VM snapshot");
-    await this.client.loadSnapshot(
-      snapshotPaths.snapshotFile,
-      snapshotPaths.memFile,
-      {
-        networkOverrides: [
-          { iface_id: "eth0", host_dev_name: this.network.tapDevice },
-        ],
-      },
-    );
-
-    await this.waitForBoot();
-
-    // FC creates vsock UDS at the original path after resume — poll until it exists
-    const vsockDeadline = Date.now() + 5000;
-    while (Date.now() < vsockDeadline) {
-      const check = await $`test -S ${originalPaths.vsock}`.quiet().nothrow();
-      if (check.exitCode === 0) break;
-      await Bun.sleep(100);
-    }
-
-    // Move (rename) the live UDS to the new sandbox path instead of symlinking.
-    // rename() on a UDS works on Linux — the kernel inode stays intact, FC keeps
-    // using the same socket, and the file is now "owned" by the real sandbox id
-    // so orphan-cleanup won't mistake it for a stale prebuild artifact.
-    await $`mv ${originalPaths.vsock} ${this.paths.vsock}`.quiet();
-    await $`sudo -n rm -f ${originalPaths.overlay}`.quiet().nothrow();
-
-    log.info(
-      { sandboxId: this.sandboxId },
-      "Vsock moved to sandbox path after snapshot restore",
-    );
-
-    // Agent vsock listener survived the snapshot — connect and reconfigure guest
-    await this.reconfigureRestoredGuest();
-
-    log.info({ sandboxId: this.sandboxId }, "VM restored from snapshot");
-  }
-
-  private async reconfigureRestoredGuest(): Promise<void> {
-    if (!this.network) {
-      throw new Error("Network not initialized");
-    }
-
-    const newIp = this.network.ipAddress;
-    const gateway = this.network.gateway;
-
-    // Step 1: Network reconfig (must be first)
-    // Includes: IPv4 flush+add, route, ARP/neighbor cache flush, DNS config
-    // Per Firecracker docs: stale ARP entries from the snapshot can cause
-    // packets to use old link-layer addresses until cache timeout.
-    const dnsServers = config.network.dnsServers;
-    const dnsCommands = dnsServers
-      .map((dns: string) => `echo 'nameserver ${dns}' >> /etc/resolv.conf`)
-      .join(" && ");
-
-    const networkCmd = [
-      "ip -4 addr flush dev eth0",
-      `ip addr add ${newIp}/24 dev eth0`,
-      "ip link set eth0 up",
-      `ip route replace default via ${gateway} dev eth0`,
-      "ip -family inet neigh flush any",
-      "ip -family inet6 neigh flush any",
-      `> /etc/resolv.conf && ${dnsCommands}`,
-    ].join(" && ");
-
-    const maxRetries = 3;
-    let lastError: string | undefined;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const result = await this.deps.agentClient.exec(
-        this.sandboxId,
-        networkCmd,
-        { timeout: 5000 },
-      );
-
-      if (result.exitCode === 0) {
-        lastError = undefined;
-        break;
-      }
-
-      lastError = result.stderr || `exit code ${result.exitCode}`;
-      log.warn(
-        {
-          sandboxId: this.sandboxId,
-          attempt,
-          exitCode: result.exitCode,
-          stderr: result.stderr,
-        },
-        "Guest network reconfiguration failed, retrying",
-      );
-
-      if (attempt < maxRetries) {
-        await Bun.sleep(200 * attempt);
-      }
-    }
-
-    if (lastError) {
-      throw new Error(
-        `Guest network reconfiguration failed after ${maxRetries} attempts: ${lastError}`,
-      );
-    }
-
-    // Step 1b: Gratuitous ARP + gateway reachability check
-    // gARP announces our MAC→IP binding to the bridge/host so the first
-    // real packet doesn't have to wait for ARP resolution.
-    const verifyResult = await this.deps.agentClient.exec(
-      this.sandboxId,
-      `(arping -U -c 1 -I eth0 ${newIp} &) 2>/dev/null; ping -c 1 -W 2 ${gateway} >/dev/null 2>&1`,
-      { timeout: 5000 },
-    );
-
-    if (verifyResult.exitCode !== 0) {
-      log.warn(
-        {
-          sandboxId: this.sandboxId,
-          exitCode: verifyResult.exitCode,
-          stderr: verifyResult.stderr,
-        },
-        "Gateway ping failed after network reconfig (non-fatal)",
-      );
-    }
-    log.info(
-      { sandboxId: this.sandboxId, newIp },
-      "Guest network reconfigured",
-    );
-
-    // Step 2: Push fresh sandbox config (agent start is idempotent — kills stale processes)
-    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
-    await this.deps.provisionService.pushSandboxConfig(
-      this.sandboxId,
-      this.buildSandboxConfig(),
-    );
-
-    // Step 3: Everything else in parallel (all independent after network is up)
-    const parallelOps: Promise<void>[] = [
-      this.deps.provisionService.syncClock(this.sandboxId),
-      this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
-        ATELIER_SANDBOX_ID: this.sandboxId,
-      }),
-      this.deps.provisionService.setHostname(
-        this.sandboxId,
-        `sandbox-${this.sandboxId}`,
-      ),
-      (async () => {
-        const imageInfo = await SharedStorageService.getBinariesImageInfo();
-        if (imageInfo.exists) {
-          const mountResult = await this.deps.agentClient.exec(
-            this.sandboxId,
-            `mountpoint -q /opt/shared || { mknod -m 444 /dev/vdb b 254 16 2>/dev/null; mkdir -p /opt/shared && mount -o ro /dev/vdb /opt/shared; }`,
-            { timeout: 5000 },
-          );
-          if (mountResult.exitCode === 0) {
-            log.info(
-              { sandboxId: this.sandboxId },
-              "Shared binaries mounted in restored guest",
-            );
-          } else {
-            log.warn(
-              { sandboxId: this.sandboxId, stderr: mountResult.stderr },
-              "Failed to mount shared binaries in restored guest",
-            );
-          }
-        }
-      })(),
-      this.pushAuthAndConfigs(),
-    ];
-
-    if (!this.isSystem) {
-      parallelOps.push(
-        this.pushSecretsPostBoot(),
-        this.pushGitCredentialsPostBoot(),
-        this.pushFileSecretsPostBoot(),
-      );
-    }
-
-    await Promise.all(parallelOps);
-
-    // Step 4: Start services fresh with new config
-    await this.deps.provisionService.startServices(
-      this.sandboxId,
-      serviceNames,
-    );
-    log.info({ sandboxId: this.sandboxId }, "Post-restore services launched");
+    log.debug({ sandboxId: this.sandboxId }, "VM booted and agent ready");
   }
 
   private async waitForBoot(timeoutMs = 30000): Promise<void> {
@@ -658,72 +386,40 @@ class SpawnContext {
     throw new Error(`VM boot timeout after ${timeoutMs}ms`);
   }
 
-  private async waitForAgentAndSetup(): Promise<void> {
+  private async setupAgent(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
-
-    // Skip for snapshot restore - reconfigureRestoredGuest() already handled everything
-    if (this.hasVmSnapshot) {
-      return;
-    }
-
-    const agentReady = await this.deps.agentClient.waitForAgent(
-      this.sandboxId,
-      { timeout: 60000 },
-    );
-
-    if (!agentReady) {
-      log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
-      return;
-    }
 
     // Kernel ip= already configured eth0 — only push DNS (resolv.conf)
     await this.deps.provisionService.configureDns(this.sandboxId);
-
     await this.deps.provisionService.syncClock(this.sandboxId);
-
     await this.expandFilesystem();
-
-    if (this.isSystem) {
-      await this.provisionSystemPostBoot();
-      await this.pushAuthAndConfigs();
-      return;
-    }
-
     await this.provisionPostBoot();
 
-    await this.setupSwap();
+    if (!this.isSystem) {
+      await this.setupSwap();
 
-    if (this.needsRepoClone()) {
-      await this.cloneRepositories();
+      if (!this.usedPrebuild && this.workspace?.config.repos?.length) {
+        for (const repo of this.workspace.config.repos) {
+          await this.cloneRepository(repo);
+        }
+      }
     }
 
     await this.pushAuthAndConfigs();
   }
 
-  private async provisionSystemPostBoot(): Promise<void> {
-    const sandboxConfig = this.buildSandboxConfig();
-    await this.deps.provisionService.pushSandboxConfig(
-      this.sandboxId,
-      sandboxConfig,
-    );
-    await this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
-      ATELIER_SANDBOX_ID: this.sandboxId,
-    });
-    await this.deps.provisionService.setHostname(
-      this.sandboxId,
-      `sandbox-${this.sandboxId}`,
-    );
-  }
-
   private async provisionPostBoot(): Promise<void> {
-    const sandboxConfig = this.buildSandboxConfig();
+    const sandboxConfig = buildSandboxConfig(
+      this.sandboxId,
+      this.workspace,
+      this.sandbox?.runtime.opencodePassword,
+    );
     await this.deps.provisionService.pushSandboxConfig(
       this.sandboxId,
       sandboxConfig,
     );
 
-    // These are all independent — parallelize
-    await Promise.all([
+    const tasks: Promise<void>[] = [
       this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
         ATELIER_SANDBOX_ID: this.sandboxId,
       }),
@@ -731,84 +427,19 @@ class SpawnContext {
         this.sandboxId,
         `sandbox-${this.sandboxId}`,
       ),
-      this.pushSecretsPostBoot(),
-      this.pushGitCredentialsPostBoot(),
-      this.pushFileSecretsPostBoot(),
-      this.pushOhMyOpenCodeCachePostBoot(),
-      this.pushSandboxMdPostBoot(),
-    ]);
-  }
+    ];
 
-  private buildSandboxConfig(): SandboxConfig {
-    const repos = (this.workspace?.config.repos ?? []).map((r) => ({
-      clonePath: r.clonePath,
-      branch: r.branch,
-    }));
+    if (!this.isSystem) {
+      tasks.push(
+        this.pushSecretsPostBoot(),
+        this.pushGitCredentialsPostBoot(),
+        this.pushFileSecretsPostBoot(),
+        this.pushOhMyOpenCodeCachePostBoot(),
+        this.pushSandboxMdPostBoot(),
+      );
+    }
 
-    const workspaceDir =
-      repos.length === 1 && repos[0]?.clonePath
-        ? `${VM.HOME}${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
-        : VM.WORKSPACE_DIR;
-
-    const dashboardDomain = config.domain.dashboard;
-    const vsPort = config.advanced.vm.vscode.port;
-    const ocPort = config.advanced.vm.opencode.port;
-    const browserPort = config.advanced.vm.browser.port;
-    const terminalPort = config.advanced.vm.terminal.port;
-
-    return {
-      sandboxId: this.sandboxId,
-      workspaceId: this.workspace?.id,
-      workspaceName: this.workspace?.name,
-      repos,
-      createdAt: new Date().toISOString(),
-      network: {
-        dashboardDomain,
-        managerInternalUrl: `http://${config.network.bridgeIp}:${config.server.port}/internal`,
-      },
-      services: {
-        vscode: {
-          port: vsPort,
-          command: `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vsPort} --auth none --disable-telemetry ${workspaceDir}`,
-          user: "dev" as const,
-          autoStart: true,
-        },
-        opencode: {
-          port: ocPort,
-          command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
-          user: "dev" as const,
-          autoStart: true,
-          env: {
-            ...(this.sandbox?.runtime.opencodePassword && {
-              OPENCODE_SERVER_PASSWORD: this.sandbox.runtime.opencodePassword,
-            }),
-          },
-        },
-        terminal: {
-          port: terminalPort,
-          enabled: true,
-        },
-        kasmvnc: {
-          port: browserPort,
-          command: `Xvnc :99 -geometry 1280x900 -depth 24 -websocketPort ${browserPort} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -DisableBasicAuth -UseIPv6 0 -interface 0.0.0.0 -httpd /usr/share/kasmvnc/www -FrameRate 60 -DynamicQualityMin 7 -DynamicQualityMax 9 -RectThreads 0 -CompareFB 2 -DetectScrolling -sslOnly 0`,
-          user: "root" as const,
-          autoStart: false,
-        },
-        openbox: {
-          command: "openbox",
-          user: "dev" as const,
-          autoStart: false,
-          env: { DISPLAY: ":99" },
-        },
-        chromium: {
-          command:
-            "chromium --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-first-run --disable-session-crashed-bubble --disable-infobars --disable-translate --disable-features=TranslateUI --password-store=basic --disable-background-networking --disable-sync --disable-extensions --disable-default-apps --disable-breakpad --disable-component-extensions-with-background-pages --disable-background-timer-throttling --force-device-scale-factor=1 --disable-lcd-text --renderer-process-limit=2 --disk-cache-size=104857600 --user-data-dir=/tmp/chromium-profile about:blank",
-          user: "dev" as const,
-          autoStart: false,
-          env: { DISPLAY: ":99" },
-        },
-      },
-    };
+    await Promise.all(tasks);
   }
 
   private async pushSecretsPostBoot(): Promise<void> {
@@ -909,75 +540,11 @@ class SpawnContext {
   }
 
   private async pushSandboxMdPostBoot(): Promise<void> {
-    const content = this.generateSandboxMd();
+    const content = generateSandboxMd(this.sandboxId, this.workspace);
     await this.deps.provisionService.pushSandboxMd(this.sandboxId, content);
   }
 
-  private generateSandboxMd(): string {
-    const ws = this.workspace;
-    const reposSection = ws?.config.repos.length
-      ? ws.config.repos
-          .map((r) => {
-            const name = "url" in r ? r.url : r.repo;
-            return `- **${name}** (branch: \`${r.branch}\`, path: \`${VM.HOME}${r.clonePath}\`)`;
-          })
-          .join("\n")
-      : "No repositories configured";
-
-    const vsPort = config.advanced.vm.vscode.port;
-    const ocPort = config.advanced.vm.opencode.port;
-
-    const devCommandsSection = ws?.config.devCommands?.length
-      ? ws.config.devCommands
-          .map((cmd) => {
-            const parts = [`\`${cmd.command}\``];
-            if (cmd.workdir) parts.push(`workdir: \`${cmd.workdir}\``);
-            if (cmd.port) parts.push(`port: ${cmd.port}`);
-            return `- **${cmd.name}**: ${parts.join(", ")}`;
-          })
-          .join("\n")
-      : "None configured";
-
-    const secretsSection =
-      ws?.config.secrets && Object.keys(ws.config.secrets).length > 0
-        ? `Available in \`/etc/sandbox/secrets/.env\` (source with: \`source /etc/sandbox/secrets/.env\`)\nKeys: ${Object.keys(ws.config.secrets).join(", ")}`
-        : "None configured";
-
-    const fileSecretsSection = ws?.config.fileSecrets?.length
-      ? ws.config.fileSecrets
-          .map((s) => `- **${s.name}**: \`${s.path.replace(/^~/, VM.HOME)}\``)
-          .join("\n")
-      : "";
-
-    return `# Sandbox: ${this.sandboxId}${ws ? ` (${ws.name})` : ""}
-
-## Repositories
-${reposSection}
-
-## Services
-| Service | Port | Logs |
-|---------|------|------|
-| code-server (VSCode) | ${vsPort} | \`/var/log/sandbox/vscode.log\` |
-| opencode | ${ocPort} | \`/var/log/sandbox/opencode.log\` |
-| sshd | 22 | — |
-
-## Dev Commands
-${devCommandsSection}
-
-## Environment Secrets
-${secretsSection}
-${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
-## Paths
-- Workspace: \`${VM.WORKSPACE_DIR}\`
-- Config: \`/etc/sandbox/config.json\`
-- Logs: \`/var/log/sandbox/\`
-`;
-  }
-
   private async configurePostBoot(): Promise<void> {
-    if (this.hasVmSnapshot) {
-      return;
-    }
     const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
     await this.deps.provisionService.startServices(
       this.sandboxId,
@@ -1066,22 +633,6 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
         { sandboxId: this.sandboxId, error },
         "Swap setup failed (non-critical)",
       );
-    }
-  }
-
-  private needsRepoClone(): boolean {
-    return (
-      !this.usedPrebuild &&
-      !!this.workspace?.config.repos &&
-      this.workspace.config.repos.length > 0
-    );
-  }
-
-  private async cloneRepositories(): Promise<void> {
-    if (!this.workspace?.config.repos) return;
-
-    for (const repo of this.workspace.config.repos) {
-      await this.cloneRepository(repo);
     }
   }
 
@@ -1203,32 +754,16 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       },
     });
 
-    const totalTime = Math.round(performance.now() - this.startTime);
-    const finalTimings: SpawnTimings = {
-      total: totalTime,
-      loadWorkspace: this.timings.loadWorkspace ?? 0,
-      networkAndVolume: this.timings.networkAndVolume ?? 0,
-      resizeVolume: this.timings.resizeVolume ?? 0,
-      initializeSandbox: this.timings.initializeSandbox ?? 0,
-      createTap: this.timings.createTap ?? 0,
-      launchFirecracker: this.timings.launchFirecracker ?? 0,
-      configureOrRestore: this.timings.configureOrRestore ?? 0,
-      agentSetup: this.timings.agentSetup ?? 0,
-      postBoot: this.timings.postBoot ?? 0,
-      registerRoutes: this.timings.registerRoutes ?? 0,
-    };
-
     log.info(
       {
         sandboxId: this.sandboxId,
         pid: this.pid,
         useLvm: this.paths?.useLvm,
-        timings: finalTimings,
       },
       "Sandbox created successfully",
     );
 
-    return { ...this.sandbox, timings: finalTimings };
+    return this.sandbox;
   }
 
   private async rollback(): Promise<void> {

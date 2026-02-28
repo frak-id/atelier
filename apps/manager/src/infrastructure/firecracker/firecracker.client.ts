@@ -121,29 +121,6 @@ export class FirecrackerClient {
     });
   }
 
-  async pause(): Promise<void> {
-    await this.request("/vm", {
-      method: "PATCH",
-      body: { state: "Paused" },
-    });
-  }
-
-  async resume(): Promise<void> {
-    await this.request("/vm", {
-      method: "PATCH",
-      body: { state: "Resumed" },
-    });
-  }
-
-  async getVmState(): Promise<"Running" | "Paused" | "Not started"> {
-    try {
-      const response = await this.request<{ state: string }>("/vm");
-      return response.state as "Running" | "Paused" | "Not started";
-    } catch {
-      return "Not started";
-    }
-  }
-
   async isRunning(): Promise<boolean> {
     try {
       const state = await this.getState();
@@ -151,53 +128,6 @@ export class FirecrackerClient {
     } catch {
       return false;
     }
-  }
-
-  async isPaused(): Promise<boolean> {
-    try {
-      const vmState = await this.getVmState();
-      return vmState === "Paused";
-    } catch {
-      return false;
-    }
-  }
-
-  async createSnapshot(
-    snapshotPath: string,
-    memFilePath: string,
-  ): Promise<void> {
-    await this.pause();
-    await this.request("/snapshot/create", {
-      method: "PUT",
-      body: {
-        snapshot_type: "Full",
-        snapshot_path: snapshotPath,
-        mem_file_path: memFilePath,
-      },
-    });
-  }
-
-  async loadSnapshot(
-    snapshotPath: string,
-    memFilePath: string,
-    options?: {
-      enableDiffSnapshots?: boolean;
-      networkOverrides?: { iface_id: string; host_dev_name: string }[];
-    },
-  ): Promise<void> {
-    await this.request("/snapshot/load", {
-      method: "PUT",
-      body: {
-        snapshot_path: snapshotPath,
-        mem_backend: {
-          backend_path: memFilePath,
-          backend_type: "File",
-        },
-        enable_diff_snapshots: options?.enableDiffSnapshots ?? false,
-        resume_vm: true,
-        network_overrides: options?.networkOverrides,
-      },
-    });
   }
 
   async setVsock(guestCid: number, udsPath: string): Promise<void> {

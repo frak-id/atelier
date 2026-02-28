@@ -98,7 +98,6 @@ sandbox-vg/
 | `/var/lib/sandbox/sockets/` | Firecracker UDS sockets |
 | `/var/log/sandbox/` | Sandbox logs |
 | `/var/lib/sandbox/overlays/` | Non-LVM overlay fallback (`<id>.ext4`) |
-| `/var/lib/sandbox/snapshots/` | Firecracker snapshots |
 
 ## Server CLI
 

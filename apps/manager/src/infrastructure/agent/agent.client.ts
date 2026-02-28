@@ -32,9 +32,9 @@ const log = createChildLogger("agent");
 
 const DEFAULT_TIMEOUT = 10000;
 const VSOCK_GUEST_PORT = 9998;
-const VSOCK_CONNECT_TIMEOUT = 5000;
+const VSOCK_CONNECT_TIMEOUT = 1000;
 
-// When Firecracker is resuming a snapshot or restarting a VM, the vsock UDS can
+// When Firecracker is restarting a VM, the vsock UDS can
 // briefly disappear and reappear. Waiting a little avoids spurious 503s.
 const VSOCK_READY_TIMEOUT = 2000;
 const VSOCK_READY_INTERVAL = 50;
@@ -234,7 +234,11 @@ export class AgentClient {
       : new Error(`Vsock connect failed: ${String(lastError)}`);
   }
 
-  private connectVsock(vsockPath: string, guestPort: number): Promise<Socket> {
+  private connectVsock(
+    vsockPath: string,
+    guestPort: number,
+    connectTimeout = VSOCK_CONNECT_TIMEOUT,
+  ): Promise<Socket> {
     return new Promise((resolve, reject) => {
       let settled = false;
       const settle = (fn: () => void) => {
@@ -270,11 +274,16 @@ export class AgentClient {
       socket.on("error", (err) => {
         settle(() => reject(err));
       });
+      socket.on("end", () => {
+        settle(() =>
+          reject(new Error("Vsock connection closed before handshake")),
+        );
+      });
 
       const timer = setTimeout(() => {
         socket.destroy();
         settle(() => reject(new Error("Vsock connection timed out")));
-      }, VSOCK_CONNECT_TIMEOUT);
+      }, connectTimeout);
     });
   }
 
@@ -284,23 +293,50 @@ export class AgentClient {
 
   async waitForAgent(
     sandboxId: string,
-    options: { timeout?: number; interval?: number } = {},
+    options: { timeout?: number } = {},
   ): Promise<boolean> {
     const timeout = options.timeout ?? 60000;
-    const interval = options.interval ?? 500;
     const deadline = Date.now() + timeout;
+    const vsockPath = getVsockPath(sandboxId);
+
+    // Tight polling loop with short connect timeout (kata-containers pattern).
+    // During early boot the guest kernel hasn't initialised the virtio-vsock
+    // driver so CONNECT requests hang silently.  A short per-attempt timeout
+    // (50 ms) lets us retry fast instead of burning 1 s on the first attempt.
+    const FAST_CONNECT_TIMEOUT = 50;
 
     while (Date.now() < deadline) {
-      try {
-        const health = await this.health(sandboxId);
-        if (health.status === "healthy") {
-          log.info({ sandboxId }, "Agent is healthy");
-          return true;
-        }
-      } catch (error) {
-        log.debug({ sandboxId, error }, "Agent health check failed");
+      if (!isSocketFile(vsockPath)) {
+        await Bun.sleep(50);
+        continue;
       }
-      await Bun.sleep(interval);
+
+      try {
+        const socket = await this.connectVsock(
+          vsockPath,
+          VSOCK_GUEST_PORT,
+          FAST_CONNECT_TIMEOUT,
+        );
+
+        try {
+          const health = await this.rawHttp<AgentHealth>(
+            socket,
+            "/health",
+            {},
+            5000,
+          );
+          if (health.status === "healthy") {
+            log.info({ sandboxId }, "Agent is healthy");
+            return true;
+          }
+        } finally {
+          socket.destroy();
+        }
+      } catch {
+        // Tight loop — no sleep between retries. Each failed connect
+        // attempt costs only ~50 ms (the connect timeout), which
+        // naturally rate-limits to ~20 attempts/s.
+      }
     }
 
     log.warn({ sandboxId, timeout }, "Agent did not become healthy in time");
@@ -596,6 +632,7 @@ function isRetryableConnectError(error: unknown): boolean {
     const msg = error.message;
     if (msg.includes("Vsock connection timed out")) return true;
     if (msg.includes("Vsock handshake failed")) return true;
+    if (msg.includes("Vsock connection closed")) return true;
   }
 
   return false;

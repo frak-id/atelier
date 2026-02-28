@@ -34,18 +34,3 @@ export function getVsockPath(sandboxId: string): string {
 export function getSocketPath(sandboxId: string): string {
   return `${PATHS.SOCKET_DIR}/${sandboxId}.sock`;
 }
-
-export interface PrebuildSnapshotPaths {
-  snapshotFile: string;
-  memFile: string;
-}
-
-export function getPrebuildSnapshotPaths(
-  workspaceId: string,
-): PrebuildSnapshotPaths {
-  const snapshotDir = `${PATHS.SANDBOX_DIR}/snapshots`;
-  return {
-    snapshotFile: `${snapshotDir}/prebuild-${workspaceId}.snap`,
-    memFile: `${snapshotDir}/prebuild-${workspaceId}.mem`,
-  };
-}

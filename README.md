@@ -1,6 +1,6 @@
 # L'Atelier
 
-Isolated dev environments that boot in milliseconds, not minutes.
+Isolated dev environments that boot in seconds, not minutes.
 
 **Self-hosted Firecracker microVM sandboxes — real VM isolation, instant snapshots, one CLI.**
 
@@ -36,11 +36,11 @@ Review the results from your phone on the ski lift — or wherever you happen to
 
 ## Why L'Atelier?
 
-Most sandbox tools use containers — fast, but with weak isolation boundaries. L'Atelier uses [Firecracker](https://firecracker-microvm.github.io/) microVMs (the technology behind AWS Lambda) to give each sandbox **hardware-level isolation** while keeping boot times under 200ms via LVM copy-on-write snapshots.
+Most sandbox tools use containers — fast, but with weak isolation boundaries. L'Atelier uses [Firecracker](https://firecracker-microvm.github.io/) microVMs (the technology behind AWS Lambda) to give each sandbox **hardware-level isolation** while keeping boot times fast via LVM copy-on-write snapshots.
 
 - **VM isolation** — each sandbox is a real virtual machine, not a container namespace
-- **Instant startup** — LVM thin snapshots clone a full environment in <5ms
-- **Prebuilds** — run expensive setup once, snapshot it, spawn instantly from there
+- **Instant cloning** — LVM thin snapshots clone a full environment in <5ms
+- **Prebuilds** — run expensive setup once, snapshot the filesystem, spawn instantly from there
 - **Simple operations** — single CLI, no Kubernetes, no complex orchestration
 
 ## Quickstart
