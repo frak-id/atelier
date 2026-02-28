@@ -28,10 +28,6 @@ mount -t tmpfs tmpfs /dev/shm >> "$LOG_DIR/init.log" 2>&1
 mount -t tmpfs tmpfs /run >> "$LOG_DIR/init.log" 2>&1
 mount -t tmpfs tmpfs /tmp >> "$LOG_DIR/init.log" 2>&1
 
-log "Setting up swap..."
-/etc/sandbox/setup-swap.sh >> "$LOG_DIR/init.log" 2>&1
-log "Swap setup result: $?"
-
 # Read config values using jq
 if [ -f "$CONFIG_FILE" ]; then
     DASHBOARD_DOMAIN=$(jq -r '.network.dashboardDomain // empty' "$CONFIG_FILE" 2>/dev/null)
@@ -213,6 +209,11 @@ if [ -x /usr/sbin/sshd ]; then
 else
     log "ERROR: sshd not found"
 fi
+
+# Swap setup — deferred to avoid blocking agent startup.
+# Run in background so the agent is reachable as soon as possible.
+log "Setting up swap (background)..."
+/etc/sandbox/setup-swap.sh >> "$LOG_DIR/init.log" 2>&1 &
 
 WORKSPACE_DIR_FILE="/etc/sandbox/workspace-dir"
 if [ -f "$WORKSPACE_DIR_FILE" ]; then
