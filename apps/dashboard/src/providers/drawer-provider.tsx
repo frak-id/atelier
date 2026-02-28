@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { sandboxListQuery, taskListQuery } from "@/api/queries";
 import { SandboxDrawer } from "@/components/sandbox-drawer";
 import { TaskDrawer } from "@/components/task-drawer";
 
@@ -21,6 +29,30 @@ export function DrawerProvider({ children }: { children: React.ReactNode }) {
 
   const openTask = useCallback((id: string) => setTaskId(id), []);
   const openSandbox = useCallback((id: string) => setSandboxId(id), []);
+
+  const { data: sandboxes } = useQuery({
+    ...sandboxListQuery(),
+    enabled: !!sandboxId,
+  });
+  const { data: tasks } = useQuery({
+    ...taskListQuery(),
+    enabled: !!taskId,
+  });
+
+  // Auto-close drawer when entity disappears from list
+  useEffect(() => {
+    if (!sandboxId || !sandboxes) return;
+    if (!sandboxes.some((s) => s.id === sandboxId)) {
+      setSandboxId(null);
+    }
+  }, [sandboxId, sandboxes]);
+
+  useEffect(() => {
+    if (!taskId || !tasks) return;
+    if (!tasks.some((t) => t.id === taskId)) {
+      setTaskId(null);
+    }
+  }, [taskId, tasks]);
 
   return (
     <DrawerContext.Provider value={{ openTask, openSandbox }}>

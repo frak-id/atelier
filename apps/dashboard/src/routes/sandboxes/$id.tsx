@@ -21,6 +21,7 @@ import { registerOpencodePassword } from "@/api/opencode";
 import {
   deriveBrowserStatus,
   sandboxDetailQuery,
+  sandboxListQuery,
   taskListQuery,
   useRestartSandbox,
   useSandboxServices,
@@ -225,6 +226,16 @@ function SandboxImmersionPage() {
   const stopMutation = useStopSandbox();
   const startMutation = useStartSandbox();
   const restartMutation = useRestartSandbox();
+
+  const { data: sandboxes } = useQuery(sandboxListQuery());
+
+  // Navigate to dashboard if this sandbox is deleted
+  useEffect(() => {
+    if (!sandboxes) return;
+    if (!sandboxes.some((s) => s.id === id)) {
+      navigate({ to: "/" });
+    }
+  }, [sandboxes, id, navigate]);
 
   if (!sandbox) {
     return (
