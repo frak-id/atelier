@@ -1,10 +1,6 @@
-import { DEFAULTS, VM } from "@frak/atelier-shared/constants";
-import { $ } from "bun";
+import { DEFAULTS } from "@frak/atelier-shared/constants";
 import { customAlphabet } from "nanoid";
-import type {
-  AgentClient,
-  AgentOperations,
-} from "../infrastructure/agent/index.ts";
+import type { AgentOperations } from "../infrastructure/agent/index.ts";
 import { eventBus } from "../infrastructure/events/index.ts";
 import {
   configureVm,
@@ -22,47 +18,26 @@ import {
   SshPiperService,
 } from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
-import type { ConfigFileService } from "../modules/config-file/index.ts";
-import type { GitSourceService } from "../modules/git-source/index.ts";
-import type { InternalService } from "../modules/internal/index.ts";
-import type {
-  SandboxProvisionService,
-  SandboxRepository,
-} from "../modules/sandbox/index.ts";
-import type { SshKeyService } from "../modules/ssh-key/index.ts";
-import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   CreateSandboxBody,
   CreateSandboxResponse,
-  RepoConfig,
   Sandbox,
   Workspace,
 } from "../schemas/index.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { killProcess } from "../shared/lib/shell.ts";
+import { cleanupSandboxResources, waitForBoot } from "./kernel/index.ts";
+import type { SandboxPorts } from "./ports/sandbox-ports.ts";
 import {
-  resolveProfile,
-  type SandboxIntent,
-  type SandboxProfile,
-} from "./sandbox-profile.ts";
-import {
-  buildAuthenticatedGitUrl,
-  provisionGuest,
-} from "./sandbox-provisioning.ts";
+  provisionSystemCreate,
+  provisionWorkspaceCreate,
+} from "./workflows/index.ts";
 
 const log = createChildLogger("sandbox-spawner");
 
 interface SandboxSpawnerDependencies {
-  sandboxService: SandboxRepository;
-  workspaceService: WorkspaceService;
-  gitSourceService: GitSourceService;
-  configFileService: ConfigFileService;
-  sshKeyService: SshKeyService;
-  internalService: InternalService;
-  provisionService: SandboxProvisionService;
-  agentClient: AgentClient;
+  ports: SandboxPorts;
   agentOperations: AgentOperations;
 }
 
@@ -77,8 +52,6 @@ export class SandboxSpawner {
 
 class SpawnContext {
   private sandboxId: string;
-  private readonly intent: SandboxIntent;
-  private profile?: SandboxProfile;
   private workspace?: Workspace;
   private sandbox?: Sandbox;
   private network?: NetworkAllocation;
@@ -92,17 +65,9 @@ class SpawnContext {
     private readonly options: CreateSandboxBody,
   ) {
     this.sandboxId = safeNanoid();
-    if (options.system) {
-      this.intent = { kind: "system" };
-      return;
-    }
-
-    const workspaceId = options.workspaceId;
-    if (!workspaceId) {
+    if (!options.system && !options.workspaceId) {
       throw new Error("workspaceId is required for workspace sandbox");
     }
-
-    this.intent = { kind: "workspace", workspaceId };
   }
 
   async execute(): Promise<CreateSandboxResponse> {
@@ -113,11 +78,6 @@ class SpawnContext {
         this.createVolume(),
         isMock() ? Promise.resolve() : this.createTapDevice(),
       ]);
-      this.profile = resolveProfile(
-        this.intent,
-        this.workspace,
-        this.usedPrebuild,
-      );
       await this.resizeVolumeBeforeBoot();
       await this.initializeSandbox();
 
@@ -146,8 +106,8 @@ class SpawnContext {
   }
 
   private async loadWorkspace(): Promise<void> {
-    if (this.options.workspaceId && this.intent.kind === "workspace") {
-      this.workspace = this.deps.workspaceService.getById(
+    if (this.options.workspaceId && !this.options.system) {
+      this.workspace = this.deps.ports.workspaces.getById(
         this.options.workspaceId,
       );
     }
@@ -168,7 +128,7 @@ class SpawnContext {
 
     if (
       this.options.workspaceId &&
-      (this.intent.kind === "system" ||
+      (this.options.system ||
         this.workspace?.config.prebuild?.status === "ready")
     ) {
       this.usedPrebuild = await StorageService.hasPrebuild(
@@ -198,7 +158,6 @@ class SpawnContext {
 
   private async resizeVolumeBeforeBoot(): Promise<void> {
     if (!this.paths?.useLvm) return;
-    if (!this.profile?.resizeVolume) return;
 
     // Prebuild volumes are already at target size - skip resize
     if (this.usedPrebuild) {
@@ -289,7 +248,7 @@ class SpawnContext {
       updatedAt: new Date().toISOString(),
     };
 
-    this.deps.sandboxService.create(this.sandbox);
+    this.deps.ports.sandbox.create(this.sandbox);
     log.info({ sandboxId: this.sandboxId }, "Sandbox initialized");
   }
 
@@ -300,7 +259,7 @@ class SpawnContext {
     const sshCmd = await SshPiperService.registerRoute(
       this.sandboxId,
       this.network.ipAddress,
-      this.deps.sshKeyService.getValidPublicKeys(),
+      this.deps.ports.sshKeys.getValidPublicKeys(),
     );
 
     this.sandbox.runtime.urls = {
@@ -311,7 +270,7 @@ class SpawnContext {
     this.sandbox.status = "running";
     this.sandbox.runtime.pid = Math.floor(Math.random() * 100000);
 
-    this.deps.sandboxService.update(this.sandboxId, this.sandbox);
+    this.deps.ports.sandbox.update(this.sandboxId, this.sandbox);
     eventBus.emit({
       type: "sandbox.created",
       properties: {
@@ -367,8 +326,8 @@ class SpawnContext {
     // cheaply during early boot (~50 ms each) and succeed once the kernel
     // driver + agent are ready.
     const [, agentReady] = await Promise.all([
-      this.waitForBoot(),
-      this.deps.agentClient.waitForAgent(this.sandboxId, { timeout: 60000 }),
+      this.client ? waitForBoot(this.client) : Promise.resolve(),
+      this.deps.ports.agent.waitForAgent(this.sandboxId, { timeout: 60000 }),
     ]);
 
     if (!agentReady) {
@@ -378,191 +337,43 @@ class SpawnContext {
     log.debug({ sandboxId: this.sandboxId }, "VM booted and agent ready");
   }
 
-  private async waitForBoot(timeoutMs = 30000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-
-    while (Date.now() < deadline) {
-      if (this.pid) {
-        const alive = await $`kill -0 ${this.pid}`.quiet().nothrow();
-        if (alive.exitCode !== 0) {
-          const logContent = this.paths
-            ? await Bun.file(this.paths.log)
-                .text()
-                .catch(() => "")
-            : "";
-          const lastLines = logContent.split("\n").slice(-20).join("\n");
-          throw new Error(
-            `Firecracker process died during boot:\n${lastLines}`,
-          );
-        }
-      }
-
-      try {
-        if (await this.client?.isRunning()) return;
-      } catch {}
-      await Bun.sleep(50);
-    }
-
-    throw new Error(`VM boot timeout after ${timeoutMs}ms`);
-  }
-
   private async setupAgent(): Promise<void> {
-    if (!this.network || !this.profile) {
-      throw new Error("Network or sandbox profile not initialized");
-    }
-
-    await provisionGuest(
-      this.sandboxId,
-      this.profile,
-      "create",
-      {
-        provisionService: this.deps.provisionService,
-        agentClient: this.deps.agentClient,
-        agentOperations: this.deps.agentOperations,
-        internalService: this.deps.internalService,
-        workspaceService: this.deps.workspaceService,
-        gitSourceService: this.deps.gitSourceService,
-        configFileService: this.deps.configFileService,
-      },
-      this.sandbox?.runtime.opencodePassword,
-    );
-
-    if (this.profile.setupSwap) {
-      await this.setupSwap();
-    }
-
-    if (this.profile.cloneRepos && this.workspace?.config.repos?.length) {
-      for (const repo of this.workspace.config.repos) {
-        await this.cloneRepository(repo);
-      }
-    }
-
-    if (this.profile.pushGitCredentials) {
-      await this.sanitizeGitRemoteUrls();
-    }
-  }
-
-  private async sanitizeGitRemoteUrls(): Promise<void> {
-    const repos = this.workspace?.config.repos ?? [];
-    if (repos.length === 0) return;
-
-    for (const repo of repos) {
-      const clonePath = `${VM.HOME}${repo.clonePath}`;
-      const result = await this.deps.agentClient.exec(
+    if (this.options.system) {
+      await provisionSystemCreate(
         this.sandboxId,
-        `git -C '${clonePath}' remote get-url origin 2>/dev/null`,
-        { timeout: 5000, user: "dev" },
+        this.usedPrebuild,
+        this.sandbox?.runtime.opencodePassword,
+        this.deps.ports,
       );
-
-      if (result.exitCode !== 0) continue;
-
-      const currentUrl = result.stdout.trim();
-      const cleanUrl = currentUrl.replace(/^(https?:\/\/)[^@]+@/, "$1");
-
-      if (cleanUrl !== currentUrl) {
-        await this.deps.agentClient.exec(
-          this.sandboxId,
-          `git -C '${clonePath}' remote set-url origin '${cleanUrl}'`,
-          { timeout: 5000, user: "dev" },
-        );
-        log.debug(
-          { sandboxId: this.sandboxId, clonePath },
-          "Sanitized git remote URL",
-        );
-      }
-    }
-  }
-
-  private async setupSwap(): Promise<void> {
-    if (!this.paths?.useLvm) {
-      log.debug({ sandboxId: this.sandboxId }, "Skipping swap setup (no LVM)");
       return;
     }
 
-    try {
-      const result = await this.deps.agentClient.exec(
-        this.sandboxId,
-        "/etc/sandbox/setup-swap.sh",
-        { timeout: 30000 },
-      );
-
-      if (result.exitCode === 0) {
-        log.info(
-          { sandboxId: this.sandboxId, output: result.stdout.trim() },
-          "Swap setup completed",
-        );
-      } else {
-        log.warn(
-          { sandboxId: this.sandboxId, stderr: result.stderr },
-          "Swap setup failed (non-critical)",
-        );
-      }
-    } catch (error) {
-      log.warn(
-        { sandboxId: this.sandboxId, error },
-        "Swap setup failed (non-critical)",
+    if (!this.workspace) {
+      throw new Error(
+        "Workspace not loaded for workspace sandbox provisioning",
       );
     }
-  }
 
-  private async cloneRepository(repo: RepoConfig): Promise<void> {
-    if (!this.network) throw new Error("Network not allocated");
-
-    const clonePath = `${VM.HOME}${repo.clonePath}`;
-    const gitUrl =
-      "url" in repo
-        ? repo.url
-        : await buildAuthenticatedGitUrl(repo, this.deps.gitSourceService);
-    const branch = repo.branch;
-
-    log.info(
-      { sandboxId: this.sandboxId, branch, clonePath },
-      "Cloning repository",
-    );
-
-    await this.deps.agentClient.exec(this.sandboxId, `rm -rf ${clonePath}`);
-
-    const result = await this.deps.agentClient.exec(
+    await provisionWorkspaceCreate(
       this.sandboxId,
-      `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
-      { timeout: 120000 },
-    );
-
-    if (result.exitCode !== 0) {
-      log.error(
-        { sandboxId: this.sandboxId, stderr: result.stderr },
-        "Git clone failed",
-      );
-      throw new Error(`Git clone failed: ${result.stderr}`);
-    }
-
-    await this.deps.agentClient.exec(
-      this.sandboxId,
-      `chown -R dev:dev ${clonePath}`,
-    );
-    await this.deps.agentClient.exec(
-      this.sandboxId,
-      `git config --global --add safe.directory ${clonePath}`,
-      { user: "dev" },
-    );
-    log.info(
-      { sandboxId: this.sandboxId, clonePath },
-      "Repository cloned successfully",
+      this.workspace,
+      this.usedPrebuild,
+      this.sandbox?.runtime.opencodePassword,
+      this.deps.ports,
     );
   }
 
   private async registerRoutes(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
     if (!this.sandbox) throw new Error("Sandbox not initialized");
-    if (!this.profile) throw new Error("Sandbox profile not initialized");
 
     const sshCmd = await SshPiperService.registerRoute(
       this.sandboxId,
       this.network.ipAddress,
-      this.deps.sshKeyService.getValidPublicKeys(),
+      this.deps.ports.sshKeys.getValidPublicKeys(),
     );
 
-    if (this.profile.routePattern === "opencode-only") {
+    if (this.options.system) {
       const opencodeUrl = await proxyService.registerOpenCodeRoute(
         this.sandboxId,
         this.network.ipAddress,
@@ -596,7 +407,7 @@ class SpawnContext {
     this.sandbox.status = "running";
     this.sandbox.runtime.pid = this.pid;
 
-    this.deps.sandboxService.update(this.sandboxId, this.sandbox);
+    this.deps.ports.sandbox.update(this.sandboxId, this.sandbox);
     eventBus.emit({
       type: "sandbox.created",
       properties: {
@@ -620,32 +431,14 @@ class SpawnContext {
   private async rollback(): Promise<void> {
     log.warn({ sandboxId: this.sandboxId }, "Rolling back sandbox creation");
 
-    if (this.pid) {
-      await killProcess(this.pid);
-    }
-
-    if (this.paths) {
-      await $`rm -f ${this.paths.socket} ${this.paths.vsock} ${this.paths.pid} ${this.paths.log}`
-        .quiet()
-        .nothrow();
-
-      if (this.paths.useLvm) {
-        await StorageService.deleteSandboxVolume(this.sandboxId);
-      } else {
-        await $`rm -f ${this.paths.overlay}`.quiet().nothrow();
-      }
-    }
-
-    if (this.network) {
-      await networkService.deleteTap(this.network.tapDevice);
-      networkService.release(this.network.ipAddress);
-    }
-
-    await proxyService.removeRoutes(this.sandboxId);
-    await SshPiperService.removeRoute(this.sandboxId);
+    await cleanupSandboxResources(this.sandboxId, {
+      pid: this.pid,
+      paths: this.paths,
+      network: this.network,
+    });
 
     try {
-      this.deps.sandboxService.updateStatus(
+      this.deps.ports.sandbox.updateStatus(
         this.sandboxId,
         "error",
         "Build failed",

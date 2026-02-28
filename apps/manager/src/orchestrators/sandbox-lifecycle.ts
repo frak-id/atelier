@@ -1,6 +1,5 @@
 import { LVM } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
-import type { AgentClient } from "../infrastructure/agent/index.ts";
 import { eventBus } from "../infrastructure/events/index.ts";
 import {
   configureVm,
@@ -13,32 +12,22 @@ import {
 import { networkService } from "../infrastructure/network/index.ts";
 import { proxyService } from "../infrastructure/proxy/index.ts";
 import { StorageService } from "../infrastructure/storage/index.ts";
-import type { ConfigFileService } from "../modules/config-file/index.ts";
-import type { GitSourceService } from "../modules/git-source/index.ts";
-import type { InternalService } from "../modules/internal/index.ts";
-import type {
-  SandboxProvisionService,
-  SandboxRepository,
-} from "../modules/sandbox/index.ts";
-import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type { Sandbox } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { cleanupSandboxFiles, killProcess } from "../shared/lib/shell.ts";
-import { resolveProfile } from "./sandbox-profile.ts";
-import { type ProvisionDeps, provisionGuest } from "./sandbox-provisioning.ts";
+import { waitForBoot } from "./kernel/boot-waiter.ts";
+import type { SandboxPorts } from "./ports/sandbox-ports.ts";
+import {
+  provisionSystemRestart,
+  provisionWorkspaceRestart,
+} from "./workflows/index.ts";
 
 const log = createChildLogger("sandbox-lifecycle");
 
 interface SandboxLifecycleDependencies {
-  sandboxService: SandboxRepository;
-  agentClient: AgentClient;
-  internalService: InternalService;
-  provisionService: SandboxProvisionService;
-  workspaceService: WorkspaceService;
-  gitSourceService: GitSourceService;
-  configFileService: ConfigFileService;
+  ports: SandboxPorts;
 }
 
 export class SandboxLifecycle {
@@ -76,7 +65,7 @@ export class SandboxLifecycle {
   }
 
   async stop(sandboxId: string): Promise<Sandbox> {
-    const sandbox = this.deps.sandboxService.getById(sandboxId);
+    const sandbox = this.deps.ports.sandbox.getById(sandboxId);
     if (!sandbox) {
       throw new NotFoundError("Sandbox", sandboxId);
     }
@@ -101,14 +90,14 @@ export class SandboxLifecycle {
       await proxyService.removeRoutes(sandboxId);
     }
 
-    this.deps.sandboxService.updateStatus(sandboxId, "stopped");
+    this.deps.ports.sandbox.updateStatus(sandboxId, "stopped");
     eventBus.emit({
       type: "sandbox.updated",
       properties: { id: sandboxId, status: "stopped" },
     });
     log.info({ sandboxId }, "Sandbox stopped");
 
-    const updated = this.deps.sandboxService.getById(sandboxId);
+    const updated = this.deps.ports.sandbox.getById(sandboxId);
     if (!updated) {
       throw new Error(`Sandbox not found after stop: ${sandboxId}`);
     }
@@ -123,7 +112,7 @@ export class SandboxLifecycle {
    * reboots — only ephemeral resources need rebuilding.
    */
   async recover(sandboxId: string): Promise<Sandbox> {
-    const sandbox = this.deps.sandboxService.getById(sandboxId);
+    const sandbox = this.deps.ports.sandbox.getById(sandboxId);
     if (!sandbox) {
       throw new NotFoundError("Sandbox", sandboxId);
     }
@@ -150,7 +139,7 @@ export class SandboxLifecycle {
     }
 
     // Transition to stopped so start() can take over
-    this.deps.sandboxService.updateStatus(sandboxId, "stopped");
+    this.deps.ports.sandbox.updateStatus(sandboxId, "stopped");
     eventBus.emit({
       type: "sandbox.updated",
       properties: { id: sandboxId, status: "stopped" },
@@ -162,7 +151,7 @@ export class SandboxLifecycle {
   }
 
   async start(sandboxId: string): Promise<Sandbox> {
-    const sandbox = this.deps.sandboxService.getById(sandboxId);
+    const sandbox = this.deps.ports.sandbox.getById(sandboxId);
     if (!sandbox) {
       throw new NotFoundError("Sandbox", sandboxId);
     }
@@ -176,12 +165,12 @@ export class SandboxLifecycle {
     log.info({ sandboxId }, "Starting sandbox");
 
     if (isMock()) {
-      this.deps.sandboxService.updateStatus(sandboxId, "running");
+      this.deps.ports.sandbox.updateStatus(sandboxId, "running");
       eventBus.emit({
         type: "sandbox.updated",
         properties: { id: sandboxId, status: "running" },
       });
-      const updated = this.deps.sandboxService.getById(sandboxId);
+      const updated = this.deps.ports.sandbox.getById(sandboxId);
       if (!updated)
         throw new Error(`Sandbox not found after start: ${sandboxId}`);
       return updated;
@@ -215,10 +204,10 @@ export class SandboxLifecycle {
     log.debug({ sandboxId }, "VM configured");
 
     await client.start();
-    await this.waitForBoot(client);
+    await waitForBoot(client);
     log.debug({ sandboxId }, "VM booted");
 
-    const agentReady = await this.deps.agentClient.waitForAgent(sandboxId, {
+    const agentReady = await this.deps.ports.agent.waitForAgent(sandboxId, {
       timeout: 60000,
     });
 
@@ -226,24 +215,13 @@ export class SandboxLifecycle {
       log.warn({ sandboxId }, "Agent did not become ready after restart");
     } else {
       const workspace = sandbox.workspaceId
-        ? this.deps.workspaceService.getById(sandbox.workspaceId)
+        ? this.deps.ports.workspaces.getById(sandbox.workspaceId)
         : undefined;
-      const profile = resolveProfile(
-        sandbox.workspaceId
-          ? { kind: "workspace", workspaceId: sandbox.workspaceId }
-          : { kind: "system" },
-        workspace,
-        false,
-      );
-      const provisionDeps: ProvisionDeps = {
-        provisionService: this.deps.provisionService,
-        agentClient: this.deps.agentClient,
-        internalService: this.deps.internalService,
-        workspaceService: this.deps.workspaceService,
-        gitSourceService: this.deps.gitSourceService,
-        configFileService: this.deps.configFileService,
-      };
-      await provisionGuest(sandboxId, profile, "restart", provisionDeps);
+      if (workspace) {
+        await provisionWorkspaceRestart(sandboxId, workspace, this.deps.ports);
+      } else {
+        await provisionSystemRestart(sandboxId, this.deps.ports);
+      }
     }
 
     await proxyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
@@ -261,7 +239,7 @@ export class SandboxLifecycle {
       updatedAt: new Date().toISOString(),
     };
 
-    this.deps.sandboxService.update(sandboxId, updatedSandbox);
+    this.deps.ports.sandbox.update(sandboxId, updatedSandbox);
     eventBus.emit({
       type: "sandbox.updated",
       properties: { id: sandboxId, status: "running" },
@@ -271,24 +249,8 @@ export class SandboxLifecycle {
     return updatedSandbox;
   }
 
-  private async waitForBoot(
-    client: FirecrackerClient,
-    timeoutMs = 30000,
-  ): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-
-    while (Date.now() < deadline) {
-      try {
-        if (await client.isRunning()) return;
-      } catch {}
-      await Bun.sleep(50);
-    }
-
-    throw new Error(`VM boot timeout after ${timeoutMs}ms`);
-  }
-
   async getStatus(sandboxId: string): Promise<Sandbox | undefined> {
-    const sandbox = this.deps.sandboxService.getById(sandboxId);
+    const sandbox = this.deps.ports.sandbox.getById(sandboxId);
     if (!sandbox) {
       return undefined;
     }
@@ -323,7 +285,7 @@ export class SandboxLifecycle {
         },
         "Firecracker process dead, marking as error",
       );
-      this.deps.sandboxService.updateStatus(
+      this.deps.ports.sandbox.updateStatus(
         sandboxId,
         "error",
         "Firecracker process is not running",
@@ -361,22 +323,22 @@ export class SandboxLifecycle {
       await this.healIpIfNeeded(sandboxId, sandbox);
     }
 
-    return this.deps.sandboxService.getById(sandboxId) ?? sandbox;
+    return this.deps.ports.sandbox.getById(sandboxId) ?? sandbox;
   }
 
   private setRuntimeError(sandboxId: string, error: string): void {
-    const current = this.deps.sandboxService.getById(sandboxId);
+    const current = this.deps.ports.sandbox.getById(sandboxId);
     if (!current) return;
-    this.deps.sandboxService.update(sandboxId, {
+    this.deps.ports.sandbox.update(sandboxId, {
       runtime: { ...current.runtime, error },
     });
   }
 
   private clearRuntimeError(sandboxId: string, sandbox?: Sandbox): void {
-    const current = sandbox ?? this.deps.sandboxService.getById(sandboxId);
+    const current = sandbox ?? this.deps.ports.sandbox.getById(sandboxId);
     if (!current?.runtime.error) return;
     const { error: _removed, ...cleanRuntime } = current.runtime;
-    this.deps.sandboxService.update(sandboxId, {
+    this.deps.ports.sandbox.update(sandboxId, {
       runtime: cleanRuntime,
     });
     log.info({ sandboxId }, "Cleared stale runtime error");
@@ -394,7 +356,7 @@ export class SandboxLifecycle {
     if (!expectedIp) return;
 
     try {
-      const result = await this.deps.agentClient.exec(
+      const result = await this.deps.ports.agent.exec(
         sandboxId,
         "ip -4 addr show dev eth0 | grep -oP 'inet \\K[\\d.]+'",
         { timeout: 3000 },
@@ -419,7 +381,7 @@ export class SandboxLifecycle {
         "ip -family inet neigh flush any",
       ].join(" && ");
 
-      const fixResult = await this.deps.agentClient.exec(sandboxId, fixCmd, {
+      const fixResult = await this.deps.ports.agent.exec(sandboxId, fixCmd, {
         timeout: 5000,
       });
 
@@ -435,7 +397,7 @@ export class SandboxLifecycle {
           },
           "IP mismatch auto-fix failed, marking as error",
         );
-        this.deps.sandboxService.updateStatus(
+        this.deps.ports.sandbox.updateStatus(
           sandboxId,
           "error",
           `IP mismatch: expected ${expectedIp}, got ${guestIp}`,
