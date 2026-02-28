@@ -1,0 +1,97 @@
+import { VM } from "@frak/atelier-shared/constants";
+import type { AgentClient } from "../../infrastructure/agent/index.ts";
+import type { GitSourceService } from "../../modules/git-source/index.ts";
+import type { RepoConfig } from "../../schemas/index.ts";
+import { createChildLogger } from "../../shared/lib/logger.ts";
+
+const log = createChildLogger("guest-repo");
+
+export async function buildAuthenticatedGitUrl(
+  repo: { sourceId: string; repo: string },
+  gitSourceService: GitSourceService,
+): Promise<string> {
+  const source = gitSourceService.getById(repo.sourceId);
+  if (!source) {
+    log.warn({ sourceId: repo.sourceId }, "Git source not found");
+    return `https://github.com/${repo.repo}.git`;
+  }
+
+  if (source.type === "github") {
+    const accessToken = (source.config as { accessToken?: string }).accessToken;
+    if (accessToken) {
+      return `https://x-access-token:${accessToken}@github.com/${repo.repo}.git`;
+    }
+  }
+
+  return `https://github.com/${repo.repo}.git`;
+}
+
+export async function cloneRepository(
+  agent: AgentClient,
+  sandboxId: string,
+  repo: RepoConfig,
+  gitSourceService: GitSourceService,
+): Promise<void> {
+  const clonePath = `${VM.HOME}${repo.clonePath}`;
+  const gitUrl =
+    "url" in repo
+      ? repo.url
+      : await buildAuthenticatedGitUrl(repo, gitSourceService);
+  const branch = repo.branch;
+
+  log.info({ sandboxId, branch, clonePath }, "Cloning repository");
+
+  await agent.exec(sandboxId, `rm -rf ${clonePath}`);
+
+  const result = await agent.exec(
+    sandboxId,
+    `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
+    { timeout: 120000 },
+  );
+
+  if (result.exitCode !== 0) {
+    log.error({ sandboxId, stderr: result.stderr }, "Git clone failed");
+    throw new Error(`Git clone failed: ${result.stderr}`);
+  }
+
+  await agent.exec(sandboxId, `chown -R dev:dev ${clonePath}`);
+  await agent.exec(
+    sandboxId,
+    `git config --global --add safe.directory ${clonePath}`,
+    { user: "dev" },
+  );
+
+  log.info({ sandboxId, clonePath }, "Repository cloned successfully");
+}
+
+export async function sanitizeGitRemoteUrls(
+  agent: AgentClient,
+  sandboxId: string,
+  repos: RepoConfig[],
+): Promise<void> {
+  if (repos.length === 0) return;
+
+  for (const repo of repos) {
+    const clonePath = `${VM.HOME}${repo.clonePath}`;
+    const result = await agent.exec(
+      sandboxId,
+      `git -C '${clonePath}' remote get-url origin 2>/dev/null`,
+      { timeout: 5000, user: "dev" },
+    );
+
+    if (result.exitCode !== 0) continue;
+
+    const currentUrl = result.stdout.trim();
+    const cleanUrl = currentUrl.replace(/^(https?:\/\/)[^@]+@/, "$1");
+
+    if (cleanUrl !== currentUrl) {
+      await agent.exec(
+        sandboxId,
+        `git -C '${clonePath}' remote set-url origin '${cleanUrl}'`,
+        { timeout: 5000, user: "dev" },
+      );
+
+      log.debug({ sandboxId, clonePath }, "Sanitized git remote URL");
+    }
+  }
+}

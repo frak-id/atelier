@@ -2,6 +2,7 @@ import { DEFAULTS } from "@frak/atelier-shared/constants";
 import type { CreateSandboxBody, Sandbox } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import {
+  type BootResult,
   bootNewSandbox,
   cleanupSandboxResources,
   finalizeNewSandbox,
@@ -17,20 +18,21 @@ export async function createSystemSandbox(
   options: CreateSandboxBody,
   ports: SandboxPorts,
 ): Promise<Sandbox> {
-  const boot = await bootNewSandbox(
-    sandboxId,
-    {
-      workspaceId: options.workspaceId,
-      system: true,
-      baseImage: options.baseImage,
-      vcpus: options.vcpus ?? DEFAULTS.VCPUS,
-      memoryMb: options.memoryMb ?? DEFAULTS.MEMORY_MB,
-      prebuildReady: false,
-    },
-    ports,
-  );
+  let boot: BootResult | undefined;
 
   try {
+    boot = await bootNewSandbox(
+      sandboxId,
+      {
+        workspaceId: options.workspaceId,
+        system: true,
+        baseImage: options.baseImage,
+        vcpus: options.vcpus ?? DEFAULTS.VCPUS,
+        memoryMb: options.memoryMb ?? DEFAULTS.MEMORY_MB,
+        prebuildReady: false,
+      },
+      ports,
+    );
     // --- Guest provisioning (linear, no branching) ---
     await guestOps.configureDns(ports.agent, sandboxId);
     await guestOps.syncClock(ports.agent, sandboxId);
@@ -91,11 +93,13 @@ export async function createSystemSandbox(
       },
       "Failed to create system sandbox",
     );
-    await cleanupSandboxResources(sandboxId, {
-      pid: boot.pid,
-      paths: boot.paths,
-      network: boot.network,
-    });
+    if (boot) {
+      await cleanupSandboxResources(sandboxId, {
+        pid: boot.pid,
+        paths: boot.paths,
+        network: boot.network,
+      });
+    }
     try {
       ports.sandbox.updateStatus(sandboxId, "error", "Build failed");
     } catch {}

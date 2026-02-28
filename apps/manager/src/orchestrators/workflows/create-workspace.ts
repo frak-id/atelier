@@ -6,6 +6,7 @@ import type {
 } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import {
+  type BootResult,
   bootNewSandbox,
   cleanupSandboxResources,
   finalizeNewSandbox,
@@ -22,20 +23,21 @@ export async function createWorkspaceSandbox(
   options: CreateSandboxBody,
   ports: SandboxPorts,
 ): Promise<Sandbox> {
-  const boot = await bootNewSandbox(
-    sandboxId,
-    {
-      workspaceId: workspace.id,
-      baseImage: options.baseImage ?? workspace.config.baseImage,
-      vcpus: options.vcpus ?? workspace.config.vcpus ?? DEFAULTS.VCPUS,
-      memoryMb:
-        options.memoryMb ?? workspace.config.memoryMb ?? DEFAULTS.MEMORY_MB,
-      prebuildReady: workspace.config.prebuild?.status === "ready",
-    },
-    ports,
-  );
+  let boot: BootResult | undefined;
 
   try {
+    boot = await bootNewSandbox(
+      sandboxId,
+      {
+        workspaceId: workspace.id,
+        baseImage: options.baseImage ?? workspace.config.baseImage,
+        vcpus: options.vcpus ?? workspace.config.vcpus ?? DEFAULTS.VCPUS,
+        memoryMb:
+          options.memoryMb ?? workspace.config.memoryMb ?? DEFAULTS.MEMORY_MB,
+        prebuildReady: workspace.config.prebuild?.status === "ready",
+      },
+      ports,
+    );
     // --- Guest provisioning (linear, no branching) ---
     await guestOps.configureDns(ports.agent, sandboxId);
     await guestOps.syncClock(ports.agent, sandboxId);
@@ -139,11 +141,14 @@ export async function createWorkspaceSandbox(
       },
       "Failed to create workspace sandbox",
     );
-    await cleanupSandboxResources(sandboxId, {
-      pid: boot.pid,
-      paths: boot.paths,
-      network: boot.network,
-    });
+    // Only cleanup if boot completed (boot handles its own rollback)
+    if (boot) {
+      await cleanupSandboxResources(sandboxId, {
+        pid: boot.pid,
+        paths: boot.paths,
+        network: boot.network,
+      });
+    }
     try {
       ports.sandbox.updateStatus(sandboxId, "error", "Build failed");
     } catch {}

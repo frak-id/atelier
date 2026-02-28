@@ -21,6 +21,7 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 import { waitForBoot } from "./boot-waiter.ts";
+import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
 
@@ -64,76 +65,102 @@ export async function bootNewSandbox(
   options: BootNewOptions,
   ports: SandboxPorts,
 ): Promise<BootResult> {
-  // 1. Check prebuild availability
-  let usedPrebuild = false;
-  if (options.workspaceId && (options.system || options.prebuildReady)) {
-    usedPrebuild = await StorageService.hasPrebuild(options.workspaceId);
-  }
+  // Track allocated resources for rollback on failure
+  let network: NetworkAllocation | undefined;
+  let volumePaths: SandboxPaths | undefined;
+  let pid: number | undefined;
 
-  // 2. Allocate network + create volume + create TAP in parallel
-  const [network, volume] = await Promise.all([
-    networkService.allocate(sandboxId),
-    createVolume(sandboxId, options, usedPrebuild),
-    networkService.createTap(`tap-${sandboxId.slice(0, 8)}`),
-  ]);
+  try {
+    // 1. Check prebuild availability
+    let usedPrebuild = false;
+    if (options.workspaceId && (options.system || options.prebuildReady)) {
+      usedPrebuild = await StorageService.hasPrebuild(options.workspaceId);
+    }
 
-  // 3. Resize volume before boot if needed
-  await resizeVolumeBeforeBoot(sandboxId, volume.paths, usedPrebuild);
+    // 2. Allocate network + create volume + create TAP in parallel
+    const [networkAlloc, volume] = await Promise.all([
+      networkService.allocate(sandboxId),
+      createVolume(sandboxId, options, usedPrebuild),
+      networkService.createTap(`tap-${sandboxId.slice(0, 8)}`),
+    ]);
+    network = networkAlloc;
+    volumePaths = volume.paths;
 
-  // 4. Initialize sandbox record
-  const opencodePassword = generatePassword(32);
-  const sandbox: Sandbox = {
-    id: sandboxId,
-    status: "creating",
-    workspaceId: options.workspaceId,
-    runtime: {
-      ipAddress: network.ipAddress,
+    // 3. Resize volume before boot if needed
+    await resizeVolumeBeforeBoot(sandboxId, volumePaths, usedPrebuild);
+
+    // 4. Initialize sandbox record
+    const opencodePassword = generatePassword(32);
+    const sandbox: Sandbox = {
+      id: sandboxId,
+      status: "creating",
+      workspaceId: options.workspaceId,
+      runtime: {
+        ipAddress: network.ipAddress,
+        macAddress: network.macAddress,
+        urls: { vscode: "", opencode: "", ssh: "" },
+        vcpus: options.vcpus,
+        memoryMb: options.memoryMb,
+        opencodePassword,
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    ports.sandbox.create(sandbox);
+    log.info({ sandboxId }, "Sandbox initialized");
+
+    // 5. Launch Firecracker
+    const launch = await launchFirecracker(volumePaths);
+    pid = launch.pid;
+    log.debug({ sandboxId, pid }, "Firecracker process started");
+
+    // 6. Configure VM
+    await configureVm(launch.client, {
+      paths: volumePaths,
       macAddress: network.macAddress,
-      urls: { vscode: "", opencode: "", ssh: "" },
+      tapDevice: network.tapDevice,
       vcpus: options.vcpus,
       memoryMb: options.memoryMb,
-      opencodePassword,
-    },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  ports.sandbox.create(sandbox);
-  log.info({ sandboxId }, "Sandbox initialized");
+      ipAddress: network.ipAddress,
+      gateway: network.gateway,
+    });
+    log.debug({ sandboxId }, "VM configured");
 
-  // 5. Launch Firecracker
-  const { pid, client } = await launchFirecracker(volume.paths);
-  log.debug({ sandboxId, pid }, "Firecracker process started");
+    // 7. Boot + wait for agent
+    await launch.client.start();
+    const [, agentReady] = await Promise.all([
+      waitForBoot(launch.client),
+      ports.agent.waitForAgent(sandboxId, {
+        timeout: 60000,
+      }),
+    ]);
+    if (!agentReady) {
+      log.warn({ sandboxId }, "Agent did not become ready");
+    }
+    log.debug({ sandboxId }, "VM booted and agent ready");
 
-  // 6. Configure VM
-  await configureVm(client, {
-    paths: volume.paths,
-    macAddress: network.macAddress,
-    tapDevice: network.tapDevice,
-    vcpus: options.vcpus,
-    memoryMb: options.memoryMb,
-    ipAddress: network.ipAddress,
-    gateway: network.gateway,
-  });
-  log.debug({ sandboxId }, "VM configured");
-
-  // 7. Boot + wait for agent
-  await client.start();
-  const [, agentReady] = await Promise.all([
-    waitForBoot(client),
-    ports.agent.waitForAgent(sandboxId, { timeout: 60000 }),
-  ]);
-  if (!agentReady) {
-    log.warn({ sandboxId }, "Agent did not become ready");
+    return {
+      sandbox,
+      pid,
+      paths: volumePaths,
+      network,
+      usedPrebuild,
+    };
+  } catch (error) {
+    log.error(
+      {
+        sandboxId,
+        error: error instanceof Error ? error.message : error,
+      },
+      "Boot failed, cleaning up allocated resources",
+    );
+    await cleanupSandboxResources(sandboxId, {
+      pid,
+      paths: volumePaths,
+      network,
+    });
+    throw error;
   }
-  log.debug({ sandboxId }, "VM booted and agent ready");
-
-  return {
-    sandbox,
-    pid,
-    paths: volume.paths,
-    network,
-    usedPrebuild,
-  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -253,11 +280,20 @@ export async function finalizeRestartedSandbox(
   sandbox: Sandbox,
   pid: number,
   ports: SandboxPorts,
+  options: { system?: boolean },
 ): Promise<Sandbox> {
-  await proxyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
-    vscode: config.advanced.vm.vscode.port,
-    opencode: config.advanced.vm.opencode.port,
-  });
+  if (options.system) {
+    await proxyService.registerOpenCodeRoute(
+      sandboxId,
+      sandbox.runtime.ipAddress,
+      config.advanced.vm.opencode.port,
+    );
+  } else {
+    await proxyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
+      vscode: config.advanced.vm.vscode.port,
+      opencode: config.advanced.vm.opencode.port,
+    });
+  }
 
   const updatedSandbox: Sandbox = {
     ...sandbox,
