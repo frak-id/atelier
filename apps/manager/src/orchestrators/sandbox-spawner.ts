@@ -39,7 +39,6 @@ import type {
   GitHubSourceConfig,
   RepoConfig,
   Sandbox,
-  SpawnTimings,
   Workspace,
 } from "../schemas/index.ts";
 import { config, isMock } from "../shared/lib/config.ts";
@@ -80,10 +79,6 @@ class SpawnContext {
   private client?: FirecrackerClient;
   private usedPrebuild = false;
   private isSystem: boolean;
-  private agentReadyPromise?: Promise<boolean>;
-
-  private startTime = performance.now();
-  private timings: Partial<SpawnTimings> = {};
 
   constructor(
     private readonly deps: SandboxSpawnerDependencies,
@@ -93,45 +88,27 @@ class SpawnContext {
     this.isSystem = options.system ?? false;
   }
 
-  private async time<T>(
-    key: Exclude<keyof SpawnTimings, "agentSetupDetails">,
-    fn: () => Promise<T>,
-  ): Promise<T> {
-    const start = performance.now();
-    const result = await fn();
-    (this.timings as Record<string, number>)[key] = Math.round(
-      performance.now() - start,
-    );
-    return result;
-  }
-
   async execute(): Promise<CreateSandboxResponse> {
     try {
-      await this.time("loadWorkspace", () => this.loadWorkspace());
-      await this.time("networkAndVolume", () =>
-        Promise.all([
-          this.allocateNetwork(),
-          this.createVolume(),
-          isMock() ? Promise.resolve() : this.createTapDevice(),
-        ]),
-      );
-      await this.time("resizeVolume", () => this.resizeVolumeBeforeBoot());
-      await this.time("initializeSandbox", () => this.initializeSandbox());
+      await this.loadWorkspace();
+      await Promise.all([
+        this.allocateNetwork(),
+        this.createVolume(),
+        isMock() ? Promise.resolve() : this.createTapDevice(),
+      ]);
+      await this.resizeVolumeBeforeBoot();
+      await this.initializeSandbox();
 
       if (isMock()) {
         return await this.finalizeMock();
       }
 
-      await this.time("launchFirecracker", () => this.launchFirecracker());
-
-      await this.time("configureAndBoot", async () => {
-        await this.configureVm();
-        await this.boot();
-      });
-
-      await this.time("agentSetup", () => this.waitForAgentAndSetup());
-      await this.time("postBoot", () => this.configurePostBoot());
-      await this.time("registerRoutes", () => this.registerRoutes());
+      await this.launchFirecracker();
+      await this.configureVm();
+      await this.boot();
+      await this.setupAgent();
+      await this.configurePostBoot();
+      await this.registerRoutes();
 
       return this.finalize();
     } catch (error) {
@@ -323,26 +300,8 @@ class SpawnContext {
       },
     });
 
-    const totalTime = Math.round(performance.now() - this.startTime);
-    const finalTimings: SpawnTimings = {
-      total: totalTime,
-      loadWorkspace: this.timings.loadWorkspace ?? 0,
-      networkAndVolume: this.timings.networkAndVolume ?? 0,
-      resizeVolume: this.timings.resizeVolume ?? 0,
-      initializeSandbox: this.timings.initializeSandbox ?? 0,
-      createTap: 0,
-      launchFirecracker: 0,
-      configureAndBoot: 0,
-      agentSetup: 0,
-      postBoot: 0,
-      registerRoutes: 0,
-    };
-
-    log.info(
-      { sandboxId: this.sandboxId, timings: finalTimings },
-      "Mock sandbox created",
-    );
-    return { ...this.sandbox, timings: finalTimings };
+    log.info({ sandboxId: this.sandboxId }, "Mock sandbox created");
+    return this.sandbox;
   }
 
   private async createTapDevice(): Promise<void> {
@@ -384,16 +343,19 @@ class SpawnContext {
   private async boot(): Promise<void> {
     await this.client?.start();
 
-    // Start agent polling immediately after InstanceStart, overlapping with
-    // the boot check.  The vsock attempts fail cheaply during early boot
-    // (~50 ms each) and succeed the moment the kernel driver + agent are ready.
-    this.agentReadyPromise = this.deps.agentClient.waitForAgent(
-      this.sandboxId,
-      { timeout: 60000 },
-    );
+    // Boot check and agent polling run concurrently — vsock attempts fail
+    // cheaply during early boot (~50 ms each) and succeed once the kernel
+    // driver + agent are ready.
+    const [, agentReady] = await Promise.all([
+      this.waitForBoot(),
+      this.deps.agentClient.waitForAgent(this.sandboxId, { timeout: 60000 }),
+    ]);
 
-    await this.waitForBoot();
-    log.debug({ sandboxId: this.sandboxId }, "VM booted");
+    if (!agentReady) {
+      log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
+    }
+
+    log.debug({ sandboxId: this.sandboxId }, "VM booted and agent ready");
   }
 
   private async waitForBoot(timeoutMs = 30000): Promise<void> {
@@ -424,60 +386,28 @@ class SpawnContext {
     throw new Error(`VM boot timeout after ${timeoutMs}ms`);
   }
 
-  private async waitForAgentAndSetup(): Promise<void> {
+  private async setupAgent(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
 
-    const details: Record<string, number> = {};
-    const step = async (name: string, fn: () => Promise<void>) => {
-      const start = performance.now();
-      await fn();
-      details[name] = Math.round(performance.now() - start);
-    };
-
-    await step("waitForAgent", async () => {
-      // Promise was started during boot() to overlap with waitForBoot.
-      const agentReady = this.agentReadyPromise
-        ? await this.agentReadyPromise
-        : await this.deps.agentClient.waitForAgent(this.sandboxId, {
-            timeout: 60000,
-          });
-      if (!agentReady) {
-        log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
-      }
-    });
-
     // Kernel ip= already configured eth0 — only push DNS (resolv.conf)
-    await step("configureDns", () =>
-      this.deps.provisionService.configureDns(this.sandboxId),
-    );
-
-    await step("syncClock", () =>
-      this.deps.provisionService.syncClock(this.sandboxId),
-    );
-
-    await step("expandFilesystem", () => this.expandFilesystem());
+    await this.deps.provisionService.configureDns(this.sandboxId);
+    await this.deps.provisionService.syncClock(this.sandboxId);
+    await this.expandFilesystem();
 
     if (this.isSystem) {
-      await step("provision", () => this.provisionSystemPostBoot());
-      await step("pushAuthAndConfigs", () => this.pushAuthAndConfigs());
-      this.timings.agentSetupDetails =
-        details as SpawnTimings["agentSetupDetails"];
+      await this.provisionSystemPostBoot();
+      await this.pushAuthAndConfigs();
       return;
     }
 
-    await step("provision", () => this.provisionPostBoot());
-    await step("setupSwap", () => this.setupSwap());
+    await this.provisionPostBoot();
+    await this.setupSwap();
 
     if (this.needsRepoClone()) {
-      await step("cloneRepositories", async () => {
-        await this.cloneRepositories();
-      });
+      await this.cloneRepositories();
     }
 
-    await step("pushAuthAndConfigs", () => this.pushAuthAndConfigs());
-
-    this.timings.agentSetupDetails =
-      details as SpawnTimings["agentSetupDetails"];
+    await this.pushAuthAndConfigs();
   }
 
   private async provisionSystemPostBoot(): Promise<void> {
@@ -980,33 +910,16 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
       },
     });
 
-    const totalTime = Math.round(performance.now() - this.startTime);
-    const finalTimings: SpawnTimings = {
-      total: totalTime,
-      loadWorkspace: this.timings.loadWorkspace ?? 0,
-      networkAndVolume: this.timings.networkAndVolume ?? 0,
-      resizeVolume: this.timings.resizeVolume ?? 0,
-      initializeSandbox: this.timings.initializeSandbox ?? 0,
-      createTap: this.timings.createTap ?? 0,
-      launchFirecracker: this.timings.launchFirecracker ?? 0,
-      configureAndBoot: this.timings.configureAndBoot ?? 0,
-      agentSetup: this.timings.agentSetup ?? 0,
-      agentSetupDetails: this.timings.agentSetupDetails,
-      postBoot: this.timings.postBoot ?? 0,
-      registerRoutes: this.timings.registerRoutes ?? 0,
-    };
-
     log.info(
       {
         sandboxId: this.sandboxId,
         pid: this.pid,
         useLvm: this.paths?.useLvm,
-        timings: finalTimings,
       },
       "Sandbox created successfully",
     );
 
-    return { ...this.sandbox, timings: finalTimings };
+    return this.sandbox;
   }
 
   private async rollback(): Promise<void> {
