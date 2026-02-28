@@ -17,10 +17,7 @@ import {
   InternalService,
   SharedAuthRepository,
 } from "./modules/internal/index.ts";
-import {
-  SandboxProvisionService,
-  SandboxRepository,
-} from "./modules/sandbox/index.ts";
+import { SandboxRepository } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import {
@@ -67,7 +64,6 @@ const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = sandboxRepository;
 
 const agentClient = new AgentClient();
-const sandboxProvisionService = new SandboxProvisionService(agentClient);
 
 const authSyncService = new AuthSyncService(
   sharedAuthRepository,
@@ -80,7 +76,6 @@ const internalService = new InternalService(
   configFileService,
   agentClient,
   sandboxService,
-  sandboxProvisionService,
 );
 
 const agentOperations = new AgentOperations(agentClient);
@@ -105,14 +100,7 @@ const sessionTemplateService = new SessionTemplateService(
 /*                                Orchestrators                               */
 /* -------------------------------------------------------------------------- */
 
-/* -------------------------------------------------------------------------- */
-/*                             System Sandbox + AI                            */
-/* -------------------------------------------------------------------------- */
-
-const sandboxSpawner = new SandboxSpawner({
-  ports: sandboxPorts,
-  agentOperations,
-});
+const sandboxSpawner = new SandboxSpawner(sandboxPorts);
 
 const sandboxDestroyer = new SandboxDestroyer({
   sandboxService,
@@ -136,9 +124,7 @@ const systemAiService = new SystemAiService(
 );
 const taskService = new TaskService(taskRepository);
 
-const sandboxLifecycle = new SandboxLifecycle({
-  ports: sandboxPorts,
-});
+const sandboxLifecycle = new SandboxLifecycle(sandboxPorts);
 
 const prebuildRunner = new PrebuildRunner({
   sandboxSpawner,

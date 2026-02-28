@@ -1,55 +1,104 @@
+import { DEFAULTS } from "@frak/atelier-shared/constants";
+import type { CreateSandboxBody, Sandbox } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import {
+  bootNewSandbox,
+  cleanupSandboxResources,
+  finalizeNewSandbox,
+} from "../kernel/index.ts";
 import * as guestOps from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 import { buildSandboxConfig } from "../sandbox-config.ts";
 
 const log = createChildLogger("wf-create-system");
 
-export async function provisionSystemCreate(
+export async function createSystemSandbox(
   sandboxId: string,
-  usedPrebuild: boolean,
-  opencodePassword: string | undefined,
+  options: CreateSandboxBody,
   ports: SandboxPorts,
-): Promise<void> {
-  await guestOps.configureDns(ports.agent, sandboxId);
-  await guestOps.syncClock(ports.agent, sandboxId);
-
-  if (!usedPrebuild) {
-    const resized = await guestOps.resizeStorage(ports.agent, sandboxId);
-    if (resized.success) {
-      log.info(
-        { sandboxId, disk: resized.disk },
-        "Filesystem expanded successfully",
-      );
-    } else {
-      log.warn(
-        { sandboxId, error: resized.error },
-        "Failed to expand filesystem inside VM",
-      );
-    }
-  }
-
-  const sandboxConfig = buildSandboxConfig(
+): Promise<Sandbox> {
+  const boot = await bootNewSandbox(
     sandboxId,
-    undefined,
-    opencodePassword,
-  );
-  await guestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig);
-  await guestOps.pushRuntimeEnv(ports.agent, sandboxId, {
-    ATELIER_SANDBOX_ID: sandboxId,
-  });
-  await guestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
-
-  const result = await ports.internal.syncAllToSandbox(sandboxId);
-  log.info(
     {
-      sandboxId,
-      authSynced: result.auth.synced,
-      configsSynced: result.configs.synced,
-      registry: result.registry,
+      workspaceId: options.workspaceId,
+      system: true,
+      baseImage: options.baseImage,
+      vcpus: options.vcpus ?? DEFAULTS.VCPUS,
+      memoryMb: options.memoryMb ?? DEFAULTS.MEMORY_MB,
+      prebuildReady: false,
     },
-    "Internal sync complete",
+    ports,
   );
 
-  await guestOps.startServices(ports.agent, sandboxId, ["opencode"]);
+  try {
+    // --- Guest provisioning (linear, no branching) ---
+    await guestOps.configureDns(ports.agent, sandboxId);
+    await guestOps.syncClock(ports.agent, sandboxId);
+
+    if (!boot.usedPrebuild) {
+      const resized = await guestOps.resizeStorage(ports.agent, sandboxId);
+      if (resized.success) {
+        log.info(
+          { sandboxId, disk: resized.disk },
+          "Filesystem expanded successfully",
+        );
+      } else {
+        log.warn(
+          { sandboxId, error: resized.error },
+          "Failed to expand filesystem inside VM",
+        );
+      }
+    }
+
+    const sandboxConfig = buildSandboxConfig(
+      sandboxId,
+      undefined,
+      boot.sandbox.runtime.opencodePassword,
+    );
+    await guestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig);
+    await guestOps.pushRuntimeEnv(ports.agent, sandboxId, {
+      ATELIER_SANDBOX_ID: sandboxId,
+    });
+    await guestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
+
+    const result = await ports.internal.syncAllToSandbox(sandboxId);
+    log.info(
+      {
+        sandboxId,
+        authSynced: result.auth.synced,
+        configsSynced: result.configs.synced,
+        registry: result.registry,
+      },
+      "Internal sync complete",
+    );
+
+    await guestOps.startServices(ports.agent, sandboxId, ["opencode"]);
+
+    // --- Finalize: register routes + update status ---
+    return await finalizeNewSandbox(
+      sandboxId,
+      boot.sandbox,
+      boot.network,
+      boot.pid,
+      ports,
+      { system: true },
+    );
+  } catch (error) {
+    log.error(
+      {
+        sandboxId,
+        error: error instanceof Error ? error.message : error,
+      },
+      "Failed to create system sandbox",
+    );
+    await cleanupSandboxResources(sandboxId, {
+      pid: boot.pid,
+      paths: boot.paths,
+      network: boot.network,
+    });
+    try {
+      ports.sandbox.updateStatus(sandboxId, "error", "Build failed");
+    } catch {}
+    throw error;
+  }
 }
