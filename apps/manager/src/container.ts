@@ -41,6 +41,7 @@ import {
   SandboxSpawner,
   TaskSpawner,
 } from "./orchestrators/index.ts";
+import type { SandboxPorts } from "./orchestrators/ports/sandbox-ports.ts";
 import { config } from "./shared/lib/config.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -84,6 +85,16 @@ const internalService = new InternalService(
 
 const agentOperations = new AgentOperations(agentClient);
 
+const sandboxPorts: SandboxPorts = {
+  agent: agentClient,
+  sandbox: sandboxService,
+  workspaces: workspaceService,
+  gitSources: gitSourceService,
+  configFiles: configFileService,
+  sshKeys: sshKeyService,
+  internal: internalService,
+};
+
 const sessionTemplateService = new SessionTemplateService(
   configFileService,
   workspaceService,
@@ -99,14 +110,7 @@ const sessionTemplateService = new SessionTemplateService(
 /* -------------------------------------------------------------------------- */
 
 const sandboxSpawner = new SandboxSpawner({
-  sandboxService,
-  workspaceService,
-  gitSourceService,
-  configFileService,
-  sshKeyService,
-  internalService,
-  provisionService: sandboxProvisionService,
-  agentClient,
+  ports: sandboxPorts,
   agentOperations,
 });
 
@@ -133,13 +137,7 @@ const systemAiService = new SystemAiService(
 const taskService = new TaskService(taskRepository);
 
 const sandboxLifecycle = new SandboxLifecycle({
-  sandboxService,
-  agentClient,
-  internalService,
-  provisionService: sandboxProvisionService,
-  workspaceService,
-  gitSourceService,
-  configFileService,
+  ports: sandboxPorts,
 });
 
 const prebuildRunner = new PrebuildRunner({

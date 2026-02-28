@@ -14,7 +14,7 @@ import type {
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
-import { waitForOpencode } from "./sandbox-provisioning.ts";
+import { waitForOpencode } from "./kernel/boot-waiter.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("task-spawner");

@@ -1,6 +1,6 @@
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2";
+import { waitForOpencode } from "../../orchestrators/kernel/boot-waiter.ts";
 import type { SandboxDestroyer } from "../../orchestrators/sandbox-destroyer.ts";
-import { waitForOpencode } from "../../orchestrators/sandbox-provisioning.ts";
 import type { SandboxSpawner } from "../../orchestrators/sandbox-spawner.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";

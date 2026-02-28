@@ -15,8 +15,8 @@ import type {
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { ensureDir } from "../shared/lib/shell.ts";
+import { waitForOpencode } from "./kernel/boot-waiter.ts";
 import type { SandboxDestroyer } from "./sandbox-destroyer.ts";
-import { waitForOpencode } from "./sandbox-provisioning.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("prebuild-runner");
