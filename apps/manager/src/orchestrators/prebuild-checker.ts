@@ -3,14 +3,14 @@ import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type { GitHubSourceConfig, RepoConfig } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import type { WorkspacePrebuildRunner } from "./workspace-prebuild-runner.ts";
+import type { PrebuildRunner } from "./prebuild-runner.ts";
 
 const log = createChildLogger("prebuild-checker");
 
 interface PrebuildCheckerDependencies {
   workspaceService: WorkspaceService;
   gitSourceService: GitSourceService;
-  prebuildRunner: WorkspacePrebuildRunner;
+  prebuildRunner: PrebuildRunner;
 }
 
 export class PrebuildChecker {
