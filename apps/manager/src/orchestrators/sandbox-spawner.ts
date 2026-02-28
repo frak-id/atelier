@@ -80,6 +80,7 @@ class SpawnContext {
   private client?: FirecrackerClient;
   private usedPrebuild = false;
   private isSystem: boolean;
+  private agentReadyPromise?: Promise<boolean>;
 
   private startTime = performance.now();
   private timings: Partial<SpawnTimings> = {};
@@ -382,6 +383,15 @@ class SpawnContext {
 
   private async boot(): Promise<void> {
     await this.client?.start();
+
+    // Start agent polling immediately after InstanceStart, overlapping with
+    // the boot check.  The vsock attempts fail cheaply during early boot
+    // (~50 ms each) and succeed the moment the kernel driver + agent are ready.
+    this.agentReadyPromise = this.deps.agentClient.waitForAgent(
+      this.sandboxId,
+      { timeout: 60000 },
+    );
+
     await this.waitForBoot();
     log.debug({ sandboxId: this.sandboxId }, "VM booted");
   }
@@ -425,10 +435,12 @@ class SpawnContext {
     };
 
     await step("waitForAgent", async () => {
-      const agentReady = await this.deps.agentClient.waitForAgent(
-        this.sandboxId,
-        { timeout: 60000 },
-      );
+      // Promise was started during boot() to overlap with waitForBoot.
+      const agentReady = this.agentReadyPromise
+        ? await this.agentReadyPromise
+        : await this.deps.agentClient.waitForAgent(this.sandboxId, {
+            timeout: 60000,
+          });
       if (!agentReady) {
         log.warn({ sandboxId: this.sandboxId }, "Agent did not become ready");
       }
