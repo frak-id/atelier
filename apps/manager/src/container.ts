@@ -108,6 +108,7 @@ const sandboxSpawner = new SandboxSpawner({
   internalService,
   provisionService: sandboxProvisionService,
   agentClient,
+  agentOperations,
 });
 
 const sandboxDestroyer = new SandboxDestroyer({

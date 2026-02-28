@@ -409,10 +409,6 @@ export class AuthSyncService {
     return { synced };
   }
 
-  collectAuthFiles(): { path: string; content: string }[] {
-    return this.getAuthFilesToPush().files;
-  }
-
   private getAuthFilesToPush(): {
     files: { path: string; content: string }[];
     synced: number;

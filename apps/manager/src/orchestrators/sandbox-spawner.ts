@@ -1,7 +1,10 @@
 import { DEFAULTS, VM, VM_PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { customAlphabet } from "nanoid";
-import type { AgentClient, FileWrite } from "../infrastructure/agent/index.ts";
+import type {
+  AgentClient,
+  AgentOperations,
+} from "../infrastructure/agent/index.ts";
 import { eventBus } from "../infrastructure/events/index.ts";
 import {
   configureVm,
@@ -41,7 +44,10 @@ import { config, isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { killProcess } from "../shared/lib/shell.ts";
-import { buildSandboxConfig, generateSandboxMd } from "./sandbox-config.ts";
+import {
+  buildSandboxConfig,
+  generateSandboxMd,
+} from "./sandbox-config.ts";
 
 const log = createChildLogger("sandbox-spawner");
 
@@ -54,6 +60,7 @@ interface SandboxSpawnerDependencies {
   internalService: InternalService;
   provisionService: SandboxProvisionService;
   agentClient: AgentClient;
+  agentOperations: AgentOperations;
 }
 
 export class SandboxSpawner {
@@ -103,6 +110,7 @@ class SpawnContext {
       await this.configureVm();
       await this.boot();
       await this.setupAgent();
+      await this.configurePostBoot();
       await this.registerRoutes();
 
       return this.finalize();
@@ -378,12 +386,29 @@ class SpawnContext {
     throw new Error(`VM boot timeout after ${timeoutMs}ms`);
   }
 
-  // ── Post-boot provisioning (batched) ──────────────────────────────
-
   private async setupAgent(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
 
-    // Phase 0: Push sandbox config (agent reads this for service definitions)
+    // Kernel ip= already configured eth0 — only push DNS (resolv.conf)
+    await this.deps.provisionService.configureDns(this.sandboxId);
+    await this.deps.provisionService.syncClock(this.sandboxId);
+    await this.expandFilesystem();
+    await this.provisionPostBoot();
+
+    if (!this.isSystem) {
+      await this.setupSwap();
+
+      if (!this.usedPrebuild && this.workspace?.config.repos?.length) {
+        for (const repo of this.workspace.config.repos) {
+          await this.cloneRepository(repo);
+        }
+      }
+    }
+
+    await this.pushAuthAndConfigs();
+  }
+
+  private async provisionPostBoot(): Promise<void> {
     const sandboxConfig = buildSandboxConfig(
       this.sandboxId,
       this.workspace,
@@ -394,175 +419,39 @@ class SpawnContext {
       sandboxConfig,
     );
 
-    // Phase 1+2: Collect all files & commands, flush in 2 vsock calls
-    const { files, commands } = await this.collectProvisionBatch();
-
-    if (files.length > 0) {
-      await this.deps.agentClient.writeFiles(this.sandboxId, files);
-      log.debug(
-        { sandboxId: this.sandboxId, fileCount: files.length },
-        "Provision files written",
-      );
-    }
-
-    if (commands.length > 0) {
-      const batchResult = await this.deps.agentClient.batchExec(
-        this.sandboxId,
-        commands,
-        { timeout: 90000 },
-      );
-      for (const r of batchResult.results) {
-        if (r.exitCode !== 0) {
-          log.warn(
-            { sandboxId: this.sandboxId, command: r.id, stderr: r.stderr },
-            "Batch command failed (non-blocking)",
-          );
-        }
-      }
-    }
-
-    // Phase 3: Clone repositories (needs DNS + creds + expanded FS)
-    if (
-      !this.isSystem &&
-      !this.usedPrebuild &&
-      this.workspace?.config.repos?.length
-    ) {
-      for (const repo of this.workspace.config.repos) {
-        await this.cloneRepository(repo);
-      }
-    }
-
-    // Phase 4: Start services
-    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
-    await this.deps.provisionService.startServices(
-      this.sandboxId,
-      serviceNames,
-    );
-    log.info({ sandboxId: this.sandboxId }, "Post-boot services started");
-  }
-
-  /**
-   * Collect every file and command needed for post-boot provisioning.
-   *
-   * Dependency ordering:
-   *   Phase 1 (files): DNS (resolv.conf), git creds, env, secrets, configs
-   *   Phase 2 (commands): hostname, chronyd, resize2fs+swap
-   *   Files are flushed before commands, so chronyd gets DNS and swap
-   *   gets an expanded FS when resize2fs is chained.
-   */
-  private async collectProvisionBatch(): Promise<{
-    files: FileWrite[];
-    commands: { id: string; command: string; timeout?: number }[];
-  }> {
-    const ps = this.deps.provisionService;
-    const files: FileWrite[] = [];
-    const commands: { id: string; command: string; timeout?: number }[] = [];
-
-    // ── Files ────────────────────────────────────────────────────────
-
-    // DNS (resolv.conf) — enables name resolution for chronyd + git clone
-    files.push(...ps.collectDnsFiles());
-
-    // Hostname
-    files.push(ps.collectHostnameFile(`sandbox-${this.sandboxId}`));
-
-    // Runtime environment
-    files.push(
-      ...ps.collectRuntimeEnvFiles({
+    const tasks: Promise<void>[] = [
+      this.deps.provisionService.pushRuntimeEnv(this.sandboxId, {
         ATELIER_SANDBOX_ID: this.sandboxId,
       }),
-    );
+      this.deps.provisionService.setHostname(
+        this.sandboxId,
+        `sandbox-${this.sandboxId}`,
+      ),
+    ];
 
     if (!this.isSystem) {
-      // Secrets
-      const secrets = this.workspace?.config.secrets;
-      if (secrets && Object.keys(secrets).length > 0) {
-        const decrypted = await SecretsService.decryptSecrets(secrets);
-        const envFile = SecretsService.generateEnvFile(decrypted);
-        files.push(...ps.collectSecretsFiles(envFile));
-      }
-
-      // Git credentials
-      const credentials = this.collectGitCredentials();
-      files.push(...ps.collectGitConfigFiles(credentials));
-
-      // File secrets
-      const fileSecrets = this.workspace?.config.fileSecrets;
-      if (fileSecrets?.length) {
-        const decrypted = await SecretsService.decryptFileSecrets(fileSecrets);
-        files.push(
-          ...ps.collectFileSecretsFiles(
-            decrypted.map((s) => ({
-              path: s.path,
-              content: s.content,
-              mode: s.mode,
-            })),
-          ),
-        );
-      }
-
-      // OhMyOpenCode provider cache
-      const providers = this.collectOhMyOpenCodeProviders();
-      files.push(...ps.collectOhMyOpenCodeCacheFiles(providers));
-
-      // SANDBOX.md
-      const sandboxMd = generateSandboxMd(this.sandboxId, this.workspace);
-      files.push(ps.collectSandboxMdFile(sandboxMd));
+      tasks.push(
+        this.pushSecretsPostBoot(),
+        this.pushGitCredentialsPostBoot(),
+        this.pushFileSecretsPostBoot(),
+        this.pushOhMyOpenCodeCachePostBoot(),
+        this.pushSandboxMdPostBoot(),
+      );
     }
 
-    // Auth + configs (applies to all sandboxes)
-    files.push(
-      ...this.deps.internalService.collectSyncFiles(this.workspace?.id),
-    );
-
-    // Registry config
-    files.push(...ps.collectRegistryConfigFiles());
-
-    // ── Commands (run in parallel via batchExec) ─────────────────────
-
-    // Hostname (kernel — file already written above)
-    commands.push({
-      id: "hostname",
-      command: `hostname "sandbox-${this.sandboxId}"`,
-    });
-
-    // Clock sync (needs DNS from resolv.conf written in files phase)
-    commands.push({
-      id: "clock",
-      command:
-        "pkill chronyd 2>/dev/null; chronyd -f /etc/chrony/chrony.conf 2>/dev/null || true",
-      timeout: 5000,
-    });
-
-    // Filesystem expand + swap (chained so swap gets expanded disk)
-    if (this.paths?.useLvm) {
-      if (!this.usedPrebuild) {
-        const expandAndSwap = [
-          "test -e /dev/vda || mknod /dev/vda b 254 0",
-          "resize2fs /dev/vda",
-        ];
-        if (!this.isSystem) {
-          expandAndSwap.push("/etc/sandbox/setup-swap.sh");
-        }
-        commands.push({
-          id: "expand-and-swap",
-          command: expandAndSwap.join(" && "),
-          timeout: 60000,
-        });
-      } else if (!this.isSystem) {
-        // Prebuild: FS already expanded, just reactivate swap
-        commands.push({
-          id: "swap",
-          command: "/etc/sandbox/setup-swap.sh",
-          timeout: 30000,
-        });
-      }
-    }
-
-    return { files, commands };
+    await Promise.all(tasks);
   }
 
-  private collectGitCredentials(): string[] {
+  private async pushSecretsPostBoot(): Promise<void> {
+    const secrets = this.workspace?.config.secrets;
+    if (!secrets || Object.keys(secrets).length === 0) return;
+
+    const decrypted = await SecretsService.decryptSecrets(secrets);
+    const envFile = SecretsService.generateEnvFile(decrypted);
+    await this.deps.provisionService.pushSecrets(this.sandboxId, envFile);
+  }
+
+  private async pushGitCredentialsPostBoot(): Promise<void> {
     const sources = this.deps.gitSourceService.getAll();
     const credentials: string[] = [];
 
@@ -577,26 +466,175 @@ class SpawnContext {
       }
     }
 
-    return credentials;
+    await this.deps.provisionService.pushGitConfig(this.sandboxId, credentials);
+
+    await this.sanitizeGitRemoteUrls();
   }
 
-  private collectOhMyOpenCodeProviders(): string[] {
+  private async sanitizeGitRemoteUrls(): Promise<void> {
+    const repos = this.workspace?.config.repos ?? [];
+    if (repos.length === 0) return;
+
+    for (const repo of repos) {
+      const clonePath = `${VM.HOME}${repo.clonePath}`;
+      const result = await this.deps.agentClient.exec(
+        this.sandboxId,
+        `git -C '${clonePath}' remote get-url origin 2>/dev/null`,
+        { timeout: 5000, user: "dev" },
+      );
+
+      if (result.exitCode !== 0) continue;
+
+      const currentUrl = result.stdout.trim();
+      const cleanUrl = currentUrl.replace(/^(https?:\/\/)[^@]+@/, "$1");
+
+      if (cleanUrl !== currentUrl) {
+        await this.deps.agentClient.exec(
+          this.sandboxId,
+          `git -C '${clonePath}' remote set-url origin '${cleanUrl}'`,
+          { timeout: 5000, user: "dev" },
+        );
+        log.debug(
+          { sandboxId: this.sandboxId, clonePath },
+          "Sanitized git remote URL",
+        );
+      }
+    }
+  }
+
+  private async pushFileSecretsPostBoot(): Promise<void> {
+    const fileSecrets = this.workspace?.config.fileSecrets;
+    if (!fileSecrets || fileSecrets.length === 0) return;
+
+    const decrypted = await SecretsService.decryptFileSecrets(fileSecrets);
+    await this.deps.provisionService.pushFileSecrets(
+      this.sandboxId,
+      decrypted.map((s) => ({
+        path: s.path,
+        content: s.content,
+        mode: s.mode,
+      })),
+    );
+  }
+
+  private async pushOhMyOpenCodeCachePostBoot(): Promise<void> {
     const configs = this.deps.configFileService.getMergedForSandbox(
       this.workspace?.id,
     );
     const authConfig = configs.find((c) => c.path === VM_PATHS.opencodeAuth);
-    if (!authConfig) return [];
+
+    let providers: string[] = [];
+    if (authConfig) {
+      try {
+        const authJson = JSON.parse(authConfig.content);
+        providers = Object.keys(authJson);
+      } catch {
+        log.warn("Failed to parse auth.json for oh-my-opencode cache seed");
+      }
+    }
+
+    await this.deps.provisionService.pushOhMyOpenCodeCache(
+      this.sandboxId,
+      providers,
+    );
+  }
+
+  private async pushSandboxMdPostBoot(): Promise<void> {
+    const content = generateSandboxMd(this.sandboxId, this.workspace);
+    await this.deps.provisionService.pushSandboxMd(this.sandboxId, content);
+  }
+
+  private async configurePostBoot(): Promise<void> {
+    const serviceNames = this.isSystem ? ["opencode"] : ["vscode", "opencode"];
+    await this.deps.provisionService.startServices(
+      this.sandboxId,
+      serviceNames,
+    );
+    log.info({ sandboxId: this.sandboxId }, "Post-boot services started");
+  }
+
+  private async pushAuthAndConfigs(): Promise<void> {
+    const result = await this.deps.internalService.syncAllToSandbox(
+      this.sandboxId,
+    );
+    log.info(
+      {
+        sandboxId: this.sandboxId,
+        authSynced: result.auth.synced,
+        configsSynced: result.configs.synced,
+        registry: result.registry,
+      },
+      "Auth, configs, and registry pushed to sandbox",
+    );
+  }
+
+  private async expandFilesystem(): Promise<void> {
+    if (!this.network || !this.paths?.useLvm) return;
+
+    // Prebuild filesystems are already expanded - skip
+    if (this.usedPrebuild) {
+      log.debug(
+        { sandboxId: this.sandboxId },
+        "Skipping filesystem expansion (using prebuild)",
+      );
+      return;
+    }
 
     try {
-      const authJson = JSON.parse(authConfig.content);
-      return Object.keys(authJson);
-    } catch {
-      log.warn("Failed to parse auth.json for oh-my-opencode cache seed");
-      return [];
+      const agentResult = await this.deps.agentOperations.resizeStorage(
+        this.sandboxId,
+      );
+
+      if (agentResult.success) {
+        log.info(
+          { sandboxId: this.sandboxId, disk: agentResult.disk },
+          "Filesystem expanded successfully",
+        );
+      } else {
+        log.warn(
+          { sandboxId: this.sandboxId, error: agentResult.error },
+          "Failed to expand filesystem inside VM",
+        );
+      }
+    } catch (error) {
+      log.warn(
+        { sandboxId: this.sandboxId, error },
+        "Filesystem expansion failed",
+      );
     }
   }
 
-  // ── Git clone ─────────────────────────────────────────────────────
+  private async setupSwap(): Promise<void> {
+    if (!this.paths?.useLvm) {
+      log.debug({ sandboxId: this.sandboxId }, "Skipping swap setup (no LVM)");
+      return;
+    }
+
+    try {
+      const result = await this.deps.agentClient.exec(
+        this.sandboxId,
+        "/etc/sandbox/setup-swap.sh",
+        { timeout: 30000 },
+      );
+
+      if (result.exitCode === 0) {
+        log.info(
+          { sandboxId: this.sandboxId, output: result.stdout.trim() },
+          "Swap setup completed",
+        );
+      } else {
+        log.warn(
+          { sandboxId: this.sandboxId, stderr: result.stderr },
+          "Swap setup failed (non-critical)",
+        );
+      }
+    } catch (error) {
+      log.warn(
+        { sandboxId: this.sandboxId, error },
+        "Swap setup failed (non-critical)",
+      );
+    }
+  }
 
   private async cloneRepository(repo: RepoConfig): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");
@@ -611,14 +649,11 @@ class SpawnContext {
       "Cloning repository",
     );
 
-    // Single exec: rm + clone + chown (as root)
+    await this.deps.agentClient.exec(this.sandboxId, `rm -rf ${clonePath}`);
+
     const result = await this.deps.agentClient.exec(
       this.sandboxId,
-      [
-        `rm -rf ${clonePath}`,
-        `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
-        `chown -R dev:dev ${clonePath}`,
-      ].join(" && "),
+      `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
       { timeout: 120000 },
     );
 
@@ -630,7 +665,10 @@ class SpawnContext {
       throw new Error(`Git clone failed: ${result.stderr}`);
     }
 
-    // Safe directory config (must run as dev user)
+    await this.deps.agentClient.exec(
+      this.sandboxId,
+      `chown -R dev:dev ${clonePath}`,
+    );
     await this.deps.agentClient.exec(
       this.sandboxId,
       `git config --global --add safe.directory ${clonePath}`,
@@ -661,8 +699,6 @@ class SpawnContext {
 
     return `https://github.com/${repo.repo}.git`;
   }
-
-  // ── Routes + finalize ─────────────────────────────────────────────
 
   private async registerRoutes(): Promise<void> {
     if (!this.network) throw new Error("Network not allocated");

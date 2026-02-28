@@ -207,27 +207,6 @@ export class InternalService {
     return null;
   }
 
-  /**
-   * Collect auth + config + registry files for batched provisioning.
-   * No vsock calls — just returns the files to write.
-   */
-  collectSyncFiles(
-    workspaceId?: string,
-  ): { path: string; content: string; owner?: "dev" | "root" }[] {
-    const files: { path: string; content: string; owner?: "dev" | "root" }[] =
-      [];
-
-    for (const f of this.authSyncService.collectAuthFiles()) {
-      files.push({ ...f, owner: "dev" });
-    }
-
-    for (const f of this.getConfigFilesToPush(workspaceId).files) {
-      files.push({ ...f, owner: "dev" });
-    }
-
-    return files;
-  }
-
   async syncAllToSandbox(sandboxId: string): Promise<{
     auth: { synced: number };
     configs: { synced: number };
