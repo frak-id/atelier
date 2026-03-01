@@ -37,9 +37,12 @@ export type IngressOptions = {
 export type KanikoJobOptions = {
   name: string;
   namespace?: string;
-  contextUrl: string;
+  contextUrl?: string;
+  configMapName?: string;
   destinationImage: string;
   dockerfilePath?: string;
+  insecure?: boolean;
+  buildArgs?: Record<string, string>;
   labels?: Record<string, string>;
   serviceAccountName?: string;
 };
@@ -235,6 +238,45 @@ export function buildDevCommandIngress(
 
 export function buildKanikoJob(options: KanikoJobOptions): KubeResource {
   const namespace = options.namespace ?? "atelier-system";
+  if (!options.configMapName && !options.contextUrl) {
+    throw new Error("Kaniko job requires contextUrl or configMapName");
+  }
+
+  const contextArg = options.configMapName
+    ? "--context=dir:///kaniko/context"
+    : `--context=${options.contextUrl}`;
+
+  const args = [
+    contextArg,
+    `--dockerfile=${options.dockerfilePath ?? "Dockerfile"}`,
+    `--destination=${options.destinationImage}`,
+  ];
+
+  if (options.insecure) {
+    args.push("--insecure");
+  }
+
+  for (const [key, value] of Object.entries(options.buildArgs ?? {})) {
+    args.push(`--build-arg ${key}=${value}`);
+  }
+
+  const volumeMounts = options.configMapName
+    ? [
+        {
+          name: "context",
+          mountPath: "/kaniko/context",
+        },
+      ]
+    : undefined;
+
+  const volumes = options.configMapName
+    ? [
+        {
+          name: "context",
+          configMap: { name: options.configMapName },
+        },
+      ]
+    : undefined;
 
   return {
     apiVersion: "batch/v1",
@@ -261,13 +303,11 @@ export function buildKanikoJob(options: KanikoJobOptions): KubeResource {
             {
               name: "kaniko",
               image: "gcr.io/kaniko-project/executor:latest",
-              args: [
-                `--context=${options.contextUrl}`,
-                `--dockerfile=${options.dockerfilePath ?? "Dockerfile"}`,
-                `--destination=${options.destinationImage}`,
-              ],
+              args,
+              volumeMounts,
             },
           ],
+          volumes,
         },
       },
     },

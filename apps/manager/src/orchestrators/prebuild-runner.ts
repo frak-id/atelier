@@ -1,29 +1,33 @@
-import { PATHS, VM } from "@frak/atelier-shared/constants";
-import type { AgentClient } from "../infrastructure/agent/index.ts";
+import { VM } from "@frak/atelier-shared/constants";
+import { $ } from "bun";
 import { eventBus } from "../infrastructure/events/index.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
-import type { InternalService } from "../modules/internal/internal.service.ts";
-import type { SandboxRepository } from "../modules/sandbox/index.ts";
+import {
+  buildConfigMap,
+  buildKanikoJob,
+  type KubeClient,
+} from "../infrastructure/kubernetes/index.ts";
+import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { SystemAiService } from "../modules/system-sandbox/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
+  GitHubSourceConfig,
   PrebuildStatus,
+  RepoConfig,
   Workspace,
   WorkspaceConfig,
 } from "../schemas/index.ts";
-import { config } from "../shared/lib/config.ts";
+import { isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { ensureDir } from "../shared/lib/shell.ts";
-import { waitForOpencode } from "./kernel/boot-waiter.ts";
-import type { SandboxDestroyer } from "./sandbox-destroyer.ts";
-import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("prebuild-runner");
 
+const REGISTRY_URL = "zot.atelier-system.svc:5000";
+const KANIKO_NAMESPACE = "atelier-system";
+const JOB_POLL_INTERVAL_MS = 2000;
+const JOB_TIMEOUT_MS = 600000;
 const WORKSPACE_DIR = VM.WORKSPACE_DIR;
-const AGENT_READY_TIMEOUT = 60000;
-const COMMAND_TIMEOUT = 300000;
+const GIT_TOKEN_PLACEHOLDER = "$" + "{GIT_TOKEN}";
 
 export type PrebuildScenario =
   | {
@@ -37,37 +41,29 @@ export type PrebuildScenario =
       ) => void;
       aiService?: SystemAiService;
     }
-  | {
-      kind: "system";
-      getMetadataPath: () => string;
-    };
+  | { kind: "system" };
 
 export interface PrebuildRunnerDependencies {
-  sandboxSpawner: SandboxSpawner;
-  sandboxDestroyer: SandboxDestroyer;
-  sandboxService: SandboxRepository;
-  agentClient: AgentClient;
-  internalService: InternalService;
   workspaceService: WorkspaceService;
+  gitSourceService: GitSourceService;
+  kubeClient: KubeClient;
   aiService?: SystemAiService;
 }
 
+type ActiveBuild = { jobName: string; configMapName: string };
+
 export class PrebuildRunner {
-  protected readonly activeBuilds = new Map<string, { sandboxId?: string }>();
+  protected readonly activeBuilds = new Map<string, ActiveBuild>();
 
   constructor(protected readonly deps: PrebuildRunnerDependencies) {}
 
   async run(workspaceId?: string): Promise<void> {
-    if (!workspaceId) {
-      throw new Error("Workspace ID is required");
-    }
+    if (!workspaceId) throw new Error("Workspace ID is required");
 
     const workspace = this.deps.workspaceService.getById(workspaceId);
-    if (!workspace) {
-      throw new Error(`Workspace '${workspaceId}' not found`);
-    }
+    if (!workspace) throw new Error(`Workspace '${workspaceId}' not found`);
 
-    const scenario: PrebuildScenario = {
+    await this.runScenario({
       kind: "workspace",
       workspaceId,
       getWorkspace: () => this.deps.workspaceService.getById(workspaceId),
@@ -83,17 +79,11 @@ export class PrebuildRunner {
         );
       },
       aiService: this.deps.aiService,
-    };
-
-    await this.runScenario(scenario);
+    });
   }
 
   async runSystem(): Promise<void> {
-    const scenario: PrebuildScenario = {
-      kind: "system",
-      getMetadataPath: () => this.metadataPath,
-    };
-    await this.runScenario(scenario);
+    await this.runScenario({ kind: "system" });
   }
 
   runInBackground(workspaceId?: string): void {
@@ -113,97 +103,49 @@ export class PrebuildRunner {
   }
 
   async cancel(workspaceId?: string): Promise<void> {
-    if (!workspaceId) {
-      throw new Error("Workspace ID is required");
-    }
-
-    const activeBuild = this.activeBuilds.get(workspaceId);
-    if (activeBuild) {
-      log.info({ workspaceId }, "Cancelling active prebuild");
-      if (activeBuild.sandboxId) {
-        await this.deps.sandboxDestroyer
-          .destroy(activeBuild.sandboxId)
-          .catch((err) => {
-            log.warn(
-              { workspaceId, error: err },
-              "Failed to destroy prebuild sandbox during cancel",
-            );
-          });
-      }
-      return;
-    }
+    if (!workspaceId) throw new Error("Workspace ID is required");
 
     const workspace = this.deps.workspaceService.getById(workspaceId);
-    if (!workspace) {
-      throw new Error(`Workspace '${workspaceId}' not found`);
+    if (!workspace) throw new Error(`Workspace '${workspaceId}' not found`);
+
+    if (this.activeBuilds.has(workspaceId)) {
+      await this.deleteKanikoJob(workspaceId);
+      return;
     }
 
     if (workspace.config.prebuild?.status !== "building") {
       throw new Error(`Workspace '${workspaceId}' has no prebuild to cancel`);
     }
 
-    log.info({ workspaceId }, "Force-resetting stuck prebuild status");
+    await this.deleteKanikoJob(workspaceId);
     this.updatePrebuildStatus(workspaceId, workspace, "none");
   }
 
   async cancelSystem(): Promise<void> {
-    const key = SYSTEM_WORKSPACE_ID;
-    const activeBuild = this.activeBuilds.get(key);
-    if (activeBuild) {
-      log.info("Cancelling active system prebuild");
-      if (activeBuild.sandboxId) {
-        await this.deps.sandboxDestroyer
-          .destroy(activeBuild.sandboxId)
-          .catch((err) => {
-            log.warn(
-              { error: err },
-              "Failed to destroy prebuild sandbox during system cancel",
-            );
-          });
-      }
-      return;
-    }
-
     if (!this.isSystemBuilding()) {
       throw new Error("No system prebuild in progress to cancel");
     }
+    await this.deleteKanikoJob(SYSTEM_WORKSPACE_ID);
   }
 
   async delete(workspaceId?: string): Promise<void> {
-    if (!workspaceId) {
-      throw new Error("Workspace ID is required");
-    }
+    if (!workspaceId) throw new Error("Workspace ID is required");
 
     const workspace = this.deps.workspaceService.getById(workspaceId);
-    if (!workspace) {
-      throw new Error(`Workspace '${workspaceId}' not found`);
-    }
+    if (!workspace) throw new Error(`Workspace '${workspaceId}' not found`);
 
     await this.cleanupStorage(workspaceId);
     this.updatePrebuildStatus(workspaceId, workspace, "none");
-    log.info({ workspaceId }, "Prebuild deleted");
   }
 
   async deleteSystem(): Promise<void> {
     await this.cleanupStorage(SYSTEM_WORKSPACE_ID);
-
-    try {
-      const file = Bun.file(this.metadataPath);
-      if (await file.exists()) {
-        const { unlink } = await import("node:fs/promises");
-        await unlink(this.metadataPath);
-      }
-    } catch (error) {
-      log.warn({ error }, "Failed to remove system prebuild metadata");
-    }
-
-    log.info("System prebuild deleted");
   }
 
   async ensureSystemPrebuild(): Promise<void> {
-    const hasLvm = await StorageService.hasPrebuild(SYSTEM_WORKSPACE_ID);
-    if (hasLvm) {
-      log.info("System prebuild already exists, skipping");
+    const exists = await this.hasPrebuild(SYSTEM_WORKSPACE_ID);
+    if (exists) {
+      log.info("System prebuild image exists, skipping");
       return;
     }
     await this.runSystem();
@@ -213,112 +155,53 @@ export class PrebuildRunner {
     latestId: string;
     builtAt: string;
   } | null> {
-    try {
-      const file = Bun.file(this.metadataPath);
-      if (!(await file.exists())) return null;
-      return (await file.json()) as { latestId: string; builtAt: string };
-    } catch {
-      return null;
-    }
+    const exists = await this.hasPrebuild(SYSTEM_WORKSPACE_ID);
+    if (!exists) return null;
+    return {
+      latestId: this.imageRefForKey(SYSTEM_WORKSPACE_ID),
+      builtAt: new Date().toISOString(),
+    };
   }
 
   isBuilding(key?: string): boolean {
-    if (!key) return false;
-    return this.activeBuilds.has(key);
+    return key ? this.activeBuilds.has(key) : false;
   }
 
   isSystemBuilding(): boolean {
     return this.activeBuilds.has(SYSTEM_WORKSPACE_ID);
   }
 
-  getSystemStatus(): { hasPrebuild: boolean; building: boolean } {
+  async getSystemStatus(): Promise<{
+    hasPrebuild: boolean;
+    building: boolean;
+  }> {
     return {
-      hasPrebuild: false,
+      hasPrebuild: await this.hasPrebuild(SYSTEM_WORKSPACE_ID),
       building: this.isSystemBuilding(),
     };
   }
 
   async hasPrebuild(key: string): Promise<boolean> {
-    return StorageService.hasPrebuild(key);
+    if (isMock()) return false;
+
+    const imageName = this.imageNameForKey(key);
+    try {
+      const response = await fetch(
+        `http://${REGISTRY_URL}/v2/${imageName}/tags/list`,
+        {
+          signal: AbortSignal.timeout(3000),
+        },
+      );
+      if (!response.ok) return false;
+      const data = (await response.json()) as { tags?: string[] };
+      return (data.tags?.length ?? 0) > 0;
+    } catch {
+      return false;
+    }
   }
 
   async cleanupStorage(key: string): Promise<void> {
-    await StorageService.deletePrebuild(key);
-  }
-
-  protected async pushLatestAuthAndConfigs(sandboxId: string): Promise<void> {
-    const result = await this.deps.internalService.syncToSandbox(sandboxId);
-    log.info(
-      {
-        sandboxId,
-        authSynced: result.auth.synced,
-        configsSynced: result.configs.synced,
-      },
-      "Auth and configs baked into prebuild",
-    );
-  }
-
-  protected async syncFilesystem(sandboxId: string): Promise<void> {
-    await this.deps.agentClient.exec(sandboxId, "sync", { timeout: 5000 });
-  }
-
-  protected async warmupOpencode(
-    sandboxId: string,
-    prebuildKey: string,
-    ipAddress: string,
-    opencodePassword?: string,
-  ): Promise<void> {
-    log.info({ prebuildKey }, "Warming up opencode server");
-
-    const port = config.advanced.vm.opencode.port;
-    const startResult = await this.deps.agentClient.exec(
-      sandboxId,
-      `nohup setsid opencode serve --hostname 0.0.0.0 --port ${port} </dev/null >/tmp/opencode-warmup.log 2>&1 &`,
-      { timeout: 10000, user: "dev", workdir: WORKSPACE_DIR },
-    );
-
-    if (startResult.exitCode !== 0) {
-      log.warn(
-        { prebuildKey, stderr: startResult.stderr },
-        "Failed to start opencode for warmup, continuing anyway",
-      );
-      return;
-    }
-
-    try {
-      await waitForOpencode(ipAddress, opencodePassword);
-      log.info({ prebuildKey }, "Opencode server is healthy");
-    } catch {
-      log.warn(
-        { prebuildKey },
-        "Opencode did not become healthy within timeout, continuing anyway",
-      );
-    }
-
-    await this.deps.agentClient.exec(sandboxId, "pkill -f 'opencode serve'", {
-      timeout: 5000,
-    });
-
-    log.info({ prebuildKey }, "Opencode warmup completed");
-  }
-
-  private get metadataPath(): string {
-    return `${PATHS.SANDBOX_DIR}/system-prebuild.json`;
-  }
-
-  private async writeMetadata(latestId: string): Promise<void> {
-    await ensureDir(PATHS.SANDBOX_DIR);
-    await Bun.write(
-      this.metadataPath,
-      JSON.stringify(
-        {
-          latestId,
-          builtAt: new Date().toISOString(),
-        },
-        null,
-        2,
-      ),
-    );
+    void key;
   }
 
   private async runScenario(scenario: PrebuildScenario): Promise<void> {
@@ -326,127 +209,66 @@ export class PrebuildRunner {
       scenario.kind === "workspace"
         ? scenario.workspaceId
         : SYSTEM_WORKSPACE_ID;
-
     if (this.activeBuilds.has(key)) {
-      if (scenario.kind === "workspace") {
-        throw new Error(
-          `Workspace '${scenario.workspaceId}' already has a prebuild in progress`,
-        );
-      }
-      throw new Error("System prebuild already in progress");
+      throw new Error(
+        scenario.kind === "workspace"
+          ? `Workspace '${scenario.workspaceId}' already has a prebuild in progress`
+          : "System prebuild already in progress",
+      );
     }
 
     if (scenario.kind === "workspace") {
-      const workspace = scenario.getWorkspace();
-      if (!workspace) {
-        throw new Error(`Workspace '${scenario.workspaceId}' not found`);
-      }
+      const workspace = this.requireWorkspace(scenario);
       if (workspace.config.prebuild?.status === "building") {
         throw new Error(
           `Workspace '${scenario.workspaceId}' already has a prebuild in progress`,
         );
       }
-    }
-
-    this.activeBuilds.set(key, {});
-
-    if (scenario.kind === "workspace") {
       scenario.updateStatus("building");
-      const workspace = scenario.getWorkspace();
-      log.info(
-        {
-          workspaceId: scenario.workspaceId,
-          workspaceName: workspace?.name,
-        },
-        "Starting prebuild",
-      );
-    } else {
-      log.info("Starting system sandbox prebuild");
     }
 
-    if (await StorageService.hasPrebuild(key)) {
-      await StorageService.deletePrebuild(key);
-      if (scenario.kind === "workspace") {
-        log.info(
-          { workspaceId: scenario.workspaceId },
-          "Deleted existing prebuild",
-        );
-      } else {
-        log.info("Deleted existing system prebuild before regeneration");
-      }
-    }
-
-    let sandboxId: string | undefined;
+    const resourceName = this.resourceNameForKey(key);
+    this.activeBuilds.set(key, {
+      jobName: resourceName,
+      configMapName: resourceName,
+    });
 
     try {
-      const workspace =
-        scenario.kind === "workspace" ? scenario.getWorkspace() : undefined;
-      if (scenario.kind === "workspace" && !workspace) {
-        throw new Error(`Workspace '${scenario.workspaceId}' not found`);
+      const { dockerfile, buildArgs } = await this.generateDockerfile(scenario);
+      const destinationImage = this.imageRefForKey(key);
+
+      if (!isMock()) {
+        await this.deps.kubeClient.createResource(
+          buildConfigMap(
+            resourceName,
+            { Dockerfile: dockerfile },
+            KANIKO_NAMESPACE,
+            { "atelier.dev/sandbox": key },
+          ),
+          KANIKO_NAMESPACE,
+        );
+
+        await this.deps.kubeClient.createResource(
+          buildKanikoJob({
+            name: resourceName,
+            namespace: KANIKO_NAMESPACE,
+            configMapName: resourceName,
+            destinationImage,
+            dockerfilePath: "Dockerfile",
+            labels: { "atelier.dev/sandbox": key },
+            insecure: true,
+            buildArgs,
+          }),
+          KANIKO_NAMESPACE,
+        );
+
+        await this.waitForKanikoJob(resourceName);
       }
 
-      const sandbox = await this.deps.sandboxSpawner.spawn(
-        scenario.kind === "workspace"
-          ? {
-              workspaceId: scenario.workspaceId,
-              baseImage: workspace?.config.baseImage,
-              vcpus: workspace?.config.vcpus,
-              memoryMb: workspace?.config.memoryMb,
-            }
-          : {
-              workspaceId: SYSTEM_WORKSPACE_ID,
-              system: true,
-              vcpus: 1,
-              memoryMb: 1024,
-            },
-      );
-
-      sandboxId = sandbox.id;
-      const activeBuild = this.activeBuilds.get(key);
-      if (activeBuild) {
-        activeBuild.sandboxId = sandboxId;
-      }
-
-      log.info({ prebuildSandboxId: sandbox.id }, "Prebuild sandbox spawned");
-
-      const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
-        timeout: AGENT_READY_TIMEOUT,
-      });
-
-      if (!agentReady) {
-        throw new Error("Agent failed to become ready");
-      }
-
-      let commitHashes: Record<string, string> | undefined;
-
-      if (scenario.kind === "workspace" && workspace) {
-        await this.runInitCommands(sandbox.id, workspace);
-
-        commitHashes = await this.captureCommitHashes(sandbox.id, workspace);
-      }
-
-      await this.warmupOpencode(
-        sandbox.id,
-        key,
-        sandbox.runtime.ipAddress,
-        sandbox.runtime.opencodePassword,
-      );
-
-      await this.pushLatestAuthAndConfigs(sandbox.id);
-      await this.syncFilesystem(sandbox.id);
-      await StorageService.createPrebuild(key, sandbox.id);
-
-      if (scenario.kind === "system") {
-        await this.writeMetadata(sandbox.id);
-      }
-
-      log.info({ sandboxId: sandbox.id }, "Prebuild snapshot created (LVM)");
-
-      await this.deps.sandboxDestroyer.destroy(sandbox.id);
-
-      if (scenario.kind === "workspace" && workspace) {
-        scenario.updateStatus("ready", sandbox.id, commitHashes);
-        log.info({ workspaceId: scenario.workspaceId }, "Prebuild completed");
+      if (scenario.kind === "workspace") {
+        const workspace = this.requireWorkspace(scenario);
+        const commitHashes = await this.captureCommitHashes(workspace);
+        scenario.updateStatus("ready", destinationImage, commitHashes);
 
         scenario.aiService?.generateDescriptionInBackground(
           workspace,
@@ -457,44 +279,223 @@ export class PrebuildRunner {
             });
           },
         );
-      } else {
-        log.info("System prebuild completed successfully");
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-
       if (scenario.kind === "workspace") {
-        log.error(
-          { workspaceId: scenario.workspaceId, error: errorMessage },
-          "Prebuild failed",
-        );
-      } else {
-        log.error({ error: errorMessage }, "System prebuild failed");
+        const workspace = scenario.getWorkspace();
+        if (workspace) scenario.updateStatus("failed");
       }
-
-      if (sandboxId) {
-        await this.deps.sandboxDestroyer
-          .destroy(sandboxId)
-          .catch((cleanupError) => {
-            log.warn(
-              { sandboxId, error: cleanupError },
-              "Failed to cleanup prebuild sandbox",
-            );
-          });
-      }
-
-      if (scenario.kind === "workspace") {
-        const current = scenario.getWorkspace();
-        if (current) {
-          scenario.updateStatus("failed");
-        }
-      }
-
       throw error;
     } finally {
+      await this.cleanupBuildResources(resourceName);
       this.activeBuilds.delete(key);
     }
+  }
+
+  private requireWorkspace(
+    scenario: Extract<PrebuildScenario, { kind: "workspace" }>,
+  ): Workspace {
+    const workspace = scenario.getWorkspace();
+    if (!workspace) {
+      throw new Error(`Workspace '${scenario.workspaceId}' not found`);
+    }
+    return workspace;
+  }
+
+  private async cleanupBuildResources(resourceName: string): Promise<void> {
+    if (isMock()) return;
+
+    try {
+      await this.deps.kubeClient.deleteResource(
+        "jobs",
+        resourceName,
+        KANIKO_NAMESPACE,
+      );
+    } catch (error) {
+      log.debug({ resourceName, error }, "Failed to cleanup Kaniko job");
+    }
+
+    try {
+      await this.deps.kubeClient.deleteResource(
+        "configmaps",
+        resourceName,
+        KANIKO_NAMESPACE,
+      );
+    } catch (error) {
+      log.debug({ resourceName, error }, "Failed to cleanup build ConfigMap");
+    }
+  }
+
+  private async waitForKanikoJob(jobName: string): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < JOB_TIMEOUT_MS) {
+      const status = await this.deps.kubeClient.getJobStatus(
+        jobName,
+        KANIKO_NAMESPACE,
+      );
+      if (status === "succeeded") return;
+      if (status === "failed") {
+        const logs = await this.getKanikoLogs(jobName);
+        throw new Error(
+          logs
+            ? `Kaniko job '${jobName}' failed:\n${logs}`
+            : `Kaniko job '${jobName}' failed`,
+        );
+      }
+      await Bun.sleep(JOB_POLL_INTERVAL_MS);
+    }
+
+    const logs = await this.getKanikoLogs(jobName);
+    throw new Error(
+      logs
+        ? `Kaniko job '${jobName}' timed out:\n${logs}`
+        : `Kaniko job '${jobName}' timed out`,
+    );
+  }
+
+  private async getKanikoLogs(jobName: string): Promise<string> {
+    try {
+      const pods = await this.deps.kubeClient.listPods(
+        `job-name=${jobName}`,
+        KANIKO_NAMESPACE,
+      );
+      const podName = pods[0]?.metadata?.name;
+      if (!podName) return "";
+      return await this.deps.kubeClient.getPodLogs(podName, KANIKO_NAMESPACE);
+    } catch {
+      return "";
+    }
+  }
+
+  private async deleteKanikoJob(key: string): Promise<void> {
+    if (isMock()) return;
+
+    const jobName = this.resourceNameForKey(key);
+    try {
+      await this.deps.kubeClient.delete(
+        `/apis/batch/v1/namespaces/${KANIKO_NAMESPACE}/jobs/${jobName}?propagationPolicy=Background`,
+      );
+    } catch {}
+  }
+
+  private imageNameForKey(key: string): string {
+    return key === SYSTEM_WORKSPACE_ID ? "system-sandbox" : `workspace-${key}`;
+  }
+
+  private imageRefForKey(key: string): string {
+    return `${REGISTRY_URL}/${this.imageNameForKey(key)}:latest`;
+  }
+
+  private resourceNameForKey(key: string): string {
+    const normalized = key
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+    return `prebuild-${normalized || "system"}`;
+  }
+
+  private async generateDockerfile(scenario: PrebuildScenario): Promise<{
+    dockerfile: string;
+    buildArgs?: Record<string, string>;
+  }> {
+    if (scenario.kind === "system") {
+      return {
+        dockerfile: [
+          `FROM ${REGISTRY_URL}/dev-base:latest`,
+          "USER dev",
+          `WORKDIR ${WORKSPACE_DIR}`,
+          "RUN timeout 5 opencode serve --hostname 127.0.0.1 --port 4200 2>/dev/null || true",
+        ].join("\n"),
+      };
+    }
+
+    const workspace = this.requireWorkspace(scenario);
+    const lines: string[] = [
+      `FROM ${REGISTRY_URL}/${workspace.config.baseImage}:latest`,
+      "USER root",
+    ];
+
+    let gitToken: string | undefined;
+    for (const repo of workspace.config.repos) {
+      const gitUrl = await this.buildGitUrl(repo);
+      gitToken ??= this.getGitToken(repo);
+      const clonePath = repo.clonePath.startsWith("/")
+        ? repo.clonePath
+        : `/${repo.clonePath}`;
+      lines.push(
+        `RUN git clone --depth=1 --branch ${repo.branch} ${gitUrl} ${VM.HOME}${clonePath}`,
+      );
+    }
+
+    lines.push(`RUN chown -R dev:dev ${WORKSPACE_DIR}`);
+    lines.push("USER dev");
+    lines.push(`WORKDIR ${WORKSPACE_DIR}`);
+    for (const command of workspace.config.initCommands) {
+      lines.push(`RUN ${command}`);
+    }
+    lines.push(
+      "RUN timeout 5 opencode serve --hostname 127.0.0.1 --port 4200 2>/dev/null || true",
+    );
+
+    if (!gitToken) return { dockerfile: lines.join("\n") };
+    lines.splice(1, 0, "ARG GIT_TOKEN");
+    return { dockerfile: lines.join("\n"), buildArgs: { GIT_TOKEN: gitToken } };
+  }
+
+  private async buildGitUrl(repo: RepoConfig): Promise<string> {
+    if ("url" in repo) return repo.url;
+
+    const source = this.deps.gitSourceService.getById(repo.sourceId);
+    if (!source) {
+      log.warn({ sourceId: repo.sourceId }, "Git source not found");
+      return `https://github.com/${repo.repo}.git`;
+    }
+
+    if (source.type === "github") {
+      const config = source.config as GitHubSourceConfig;
+      if (config.accessToken) {
+        return `https://x-access-token:${GIT_TOKEN_PLACEHOLDER}@github.com/${repo.repo}.git`;
+      }
+    }
+
+    return `https://github.com/${repo.repo}.git`;
+  }
+
+  private getGitToken(repo: RepoConfig): string | undefined {
+    if ("url" in repo) return undefined;
+    const source = this.deps.gitSourceService.getById(repo.sourceId);
+    if (!source || source.type !== "github") return undefined;
+    const config = source.config as GitHubSourceConfig;
+    return config.accessToken || undefined;
+  }
+
+  private async captureCommitHashes(
+    workspace: Workspace,
+  ): Promise<Record<string, string>> {
+    const hashes: Record<string, string> = {};
+    if (!workspace.config.repos.length) return hashes;
+
+    for (const repo of workspace.config.repos) {
+      const gitUrl = await this.buildGitUrl(repo);
+      const token = this.getGitToken(repo);
+      const authUrl = token
+        ? gitUrl.replace(GIT_TOKEN_PLACEHOLDER, token)
+        : gitUrl;
+
+      const result = await $`git ls-remote ${authUrl} refs/heads/${repo.branch}`
+        .quiet()
+        .nothrow();
+      if (result.exitCode !== 0) continue;
+
+      const output = result.stdout.toString().trim();
+      if (!output) continue;
+
+      const hash = output.split("\t")[0];
+      if (hash) hashes[repo.clonePath] = hash;
+    }
+
+    return hashes;
   }
 
   private updatePrebuildStatus(
@@ -522,108 +523,5 @@ export class PrebuildRunner {
       type: "prebuild.updated",
       properties: { workspaceId, status },
     });
-  }
-
-  private async captureCommitHashes(
-    sandboxId: string,
-    workspace: Workspace,
-  ): Promise<Record<string, string>> {
-    const hashes: Record<string, string> = {};
-
-    if (!workspace.config.repos?.length) {
-      return hashes;
-    }
-
-    for (const repo of workspace.config.repos) {
-      const clonePath = repo.clonePath.startsWith("/")
-        ? repo.clonePath
-        : `/${repo.clonePath}`;
-      const fullPath = `${VM.HOME}${clonePath}`;
-
-      const result = await this.deps.agentClient.exec(
-        sandboxId,
-        `git -C ${fullPath} rev-parse HEAD`,
-        { timeout: 10000, user: "dev" },
-      );
-
-      if (result.exitCode === 0 && result.stdout.trim()) {
-        hashes[repo.clonePath] = result.stdout.trim();
-        log.debug(
-          {
-            workspaceId: workspace.id,
-            clonePath: repo.clonePath,
-            hash: hashes[repo.clonePath],
-          },
-          "Captured commit hash",
-        );
-      } else {
-        log.warn(
-          {
-            workspaceId: workspace.id,
-            clonePath: repo.clonePath,
-            exitCode: result.exitCode,
-          },
-          "Failed to capture commit hash",
-        );
-      }
-    }
-
-    return hashes;
-  }
-
-  private async runInitCommands(
-    sandboxId: string,
-    workspace: Workspace,
-  ): Promise<void> {
-    const initCommands = workspace.config.initCommands;
-    if (!initCommands || initCommands.length === 0) {
-      log.info({ workspaceId: workspace.id }, "No init commands to run");
-      return;
-    }
-
-    log.info(
-      { workspaceId: workspace.id, commandCount: initCommands.length },
-      "Running init commands",
-    );
-
-    for (const command of initCommands) {
-      log.info(
-        { workspaceId: workspace.id, command },
-        "Executing init command",
-      );
-
-      const result = await this.deps.agentClient.exec(sandboxId, command, {
-        timeout: COMMAND_TIMEOUT,
-        user: "dev",
-        workdir: WORKSPACE_DIR,
-      });
-
-      if (result.exitCode !== 0) {
-        log.error(
-          {
-            workspaceId: workspace.id,
-            command,
-            exitCode: result.exitCode,
-            stderr: result.stderr,
-          },
-          "Init command failed",
-        );
-        throw new Error(`Init command failed: ${command}\n${result.stderr}`);
-      }
-
-      log.debug(
-        { workspaceId: workspace.id, command, stdout: result.stdout },
-        "Init command completed",
-      );
-    }
-
-    log.info({ workspaceId: workspace.id }, "All init commands completed");
-
-    log.info({ workspaceId: workspace.id }, "Fixing workspace ownership");
-    await this.deps.agentClient.exec(
-      sandboxId,
-      `chown -R dev:dev ${WORKSPACE_DIR}`,
-      { timeout: COMMAND_TIMEOUT },
-    );
   }
 }

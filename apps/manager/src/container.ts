@@ -1,4 +1,5 @@
 import { AgentClient, AgentOperations } from "./infrastructure/agent/index.ts";
+import { KubeClient } from "./infrastructure/kubernetes/index.ts";
 import {
   ConfigFileRepository,
   ConfigFileService,
@@ -125,14 +126,12 @@ const systemAiService = new SystemAiService(
 const taskService = new TaskService(taskRepository);
 
 const sandboxLifecycle = new SandboxLifecycle(sandboxPorts);
+const kubeClient = new KubeClient();
 
 const prebuildRunner = new PrebuildRunner({
-  sandboxSpawner,
-  sandboxDestroyer,
-  sandboxService,
-  agentClient,
-  internalService,
   workspaceService,
+  gitSourceService,
+  kubeClient,
   aiService: systemAiService,
 });
 
