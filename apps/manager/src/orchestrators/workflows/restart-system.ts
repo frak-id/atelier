@@ -48,7 +48,13 @@ export async function restartSystemSandbox(
     await GuestOps.startServices(ports.agent, sandboxId, ["opencode"]);
   }
 
-  return await finalizeRestartedSandbox(sandboxId, sandbox, boot.pid, ports, {
-    system: true,
-  });
+  return await finalizeRestartedSandbox(
+    sandboxId,
+    sandbox,
+    boot.podName,
+    ports,
+    {
+      system: true,
+    },
+  );
 }

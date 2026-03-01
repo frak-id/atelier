@@ -89,8 +89,7 @@ export async function createSystemSandbox(
     return await finalizeNewSandbox(
       sandboxId,
       boot.sandbox,
-      boot.network,
-      boot.pid,
+      boot.podName,
       ports,
       { system: true },
     );
@@ -104,9 +103,7 @@ export async function createSystemSandbox(
     );
     if (boot) {
       await cleanupSandboxResources(sandboxId, {
-        pid: boot.pid,
-        paths: boot.paths,
-        network: boot.network,
+        podName: boot.podName,
       });
     }
     try {

@@ -62,7 +62,13 @@ export async function restartWorkspaceSandbox(
     ]);
   }
 
-  return await finalizeRestartedSandbox(sandboxId, sandbox, boot.pid, ports, {
-    system: false,
-  });
+  return await finalizeRestartedSandbox(
+    sandboxId,
+    sandbox,
+    boot.podName,
+    ports,
+    {
+      system: false,
+    },
+  );
 }

@@ -1,72 +1,51 @@
-import { $ } from "bun";
-import type { SandboxPaths } from "../../infrastructure/firecracker/index.ts";
-import {
-  type NetworkAllocation,
-  networkService,
-} from "../../infrastructure/network/index.ts";
-import {
-  proxyService,
-  SshPiperService,
-} from "../../infrastructure/proxy/index.ts";
-import { StorageService } from "../../infrastructure/storage/index.ts";
+import { KubeClient } from "../../infrastructure/kubernetes/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { killProcess } from "../../shared/lib/shell.ts";
 
 const log = createChildLogger("cleanup-coordinator");
 
-interface CleanupResources {
+export interface CleanupResources {
+  podName?: string;
   pid?: number;
-  paths?: SandboxPaths;
-  network?: NetworkAllocation;
+  paths?: {
+    socket?: string;
+    vsock?: string;
+    pid?: string;
+    log?: string;
+    overlay?: string;
+    useLvm?: boolean;
+  };
+  network?: {
+    ipAddress?: string;
+    macAddress?: string;
+    tapDevice?: string;
+    gateway?: string;
+  };
 }
 
 export async function cleanupSandboxResources(
   sandboxId: string,
   resources: CleanupResources,
 ): Promise<void> {
-  const { pid, paths, network } = resources;
+  const kube = new KubeClient();
+  const selector = `atelier.dev/sandbox=${sandboxId}`;
 
-  if (pid) {
-    await killProcess(pid).catch((error) => {
-      log.warn({ sandboxId, pid, error }, "Failed to kill sandbox process");
-    });
-  }
+  try {
+    await kube.deleteLabeledResources(selector);
 
-  if (paths) {
-    await $`rm -f ${paths.socket} ${paths.vsock} ${paths.pid} ${paths.log}`
-      .quiet()
-      .nothrow();
-
-    if (paths.useLvm) {
-      await StorageService.deleteSandboxVolume(sandboxId).catch((error) => {
-        log.warn({ sandboxId, error }, "Failed to delete sandbox volume");
-      });
-    } else {
-      await $`rm -f ${paths.overlay}`.quiet().nothrow();
+    if (resources.podName) {
+      await kube
+        .deleteResource("Pod", resources.podName)
+        .catch(() => undefined);
     }
-  }
 
-  if (network) {
-    await networkService.deleteTap(network.tapDevice).catch((error) => {
-      log.warn(
-        { sandboxId, tapDevice: network.tapDevice, error },
-        "Failed to delete TAP device",
-      );
-    });
-    try {
-      networkService.release(network.ipAddress);
-    } catch (error) {
-      log.warn(
-        { sandboxId, ipAddress: network.ipAddress, error },
-        "Release failed",
-      );
-    }
+    log.info({ sandboxId }, "Sandbox resources cleaned up");
+  } catch (error) {
+    log.warn(
+      {
+        sandboxId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Failed to cleanup sandbox resources",
+    );
   }
-
-  await proxyService.removeRoutes(sandboxId).catch((error) => {
-    log.warn({ sandboxId, error }, "Failed to remove proxy routes");
-  });
-  await SshPiperService.removeRoute(sandboxId).catch((error) => {
-    log.warn({ sandboxId, error }, "Failed to remove SSH route");
-  });
 }

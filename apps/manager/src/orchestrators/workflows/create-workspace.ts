@@ -149,8 +149,7 @@ export async function createWorkspaceSandbox(
     return await finalizeNewSandbox(
       sandboxId,
       boot.sandbox,
-      boot.network,
-      boot.pid,
+      boot.podName,
       ports,
       { system: false },
     );
@@ -164,9 +163,7 @@ export async function createWorkspaceSandbox(
     );
     if (boot) {
       await cleanupSandboxResources(sandboxId, {
-        pid: boot.pid,
-        paths: boot.paths,
-        network: boot.network,
+        podName: boot.podName,
       });
     }
     try {
