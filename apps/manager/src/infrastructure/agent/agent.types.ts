@@ -48,6 +48,12 @@ export interface ExecResult {
   stderr: string;
 }
 
+export interface Command {
+  id: string;
+  command: string;
+  timeout?: number;
+}
+
 export interface BatchExecResult {
   results: (ExecResult & { id: string })[];
 }

@@ -18,25 +18,40 @@ export async function restartWorkspaceSandbox(
   const boot = await bootExistingSandbox(sandboxId, sandbox, ports);
 
   if (boot.agentReady) {
-    await GuestOps.configureDns(ports.agent, sandboxId);
-    await GuestOps.syncClock(ports.agent, sandboxId);
-    await GuestOps.mountSharedBinaries(ports.agent, sandboxId);
-    await GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
-      ATELIER_SANDBOX_ID: sandboxId,
-    });
-    await GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
+    // --- Batch: DNS + clock + mount in one call ---
+    const mountCmd = await GuestOps.buildMountSharedBinariesCommand();
+    await ports.agent.batchExec(sandboxId, [
+      GuestOps.buildDnsCommand(),
+      GuestOps.buildClockSyncCommand(),
+      ...(mountCmd ? [mountCmd] : []),
+    ]);
 
-    await GuestOps.syncSecrets(ports.agent, sandboxId, workspace);
-    await GuestOps.syncGitCredentials(ports.agent, sandboxId, ports.gitSources);
-    await GuestOps.syncFileSecrets(ports.agent, sandboxId, workspace);
+    // --- Collect files (parallel async prep) ---
+    const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
+      GuestOps.collectSecretFiles(workspace),
+      GuestOps.collectGitCredentialFiles(ports.gitSources),
+      GuestOps.collectFileSecretFiles(workspace),
+    ]);
 
-    const result = await ports.internal.syncAllToSandbox(sandboxId);
+    // --- Parallel batch: writeFiles + hostname + internal sync ---
+    const [syncResult] = await Promise.all([
+      ports.internal.syncAllToSandbox(sandboxId),
+      ports.agent.writeFiles(sandboxId, [
+        ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
+        ...secretFiles,
+        ...gitCredFiles,
+        ...fileSecretFiles,
+      ]),
+      ports.agent.batchExec(sandboxId, [
+        GuestOps.buildHostnameCommand(`sandbox-${sandboxId}`),
+      ]),
+    ]);
     log.info(
       {
         sandboxId,
-        authSynced: result.auth.synced,
-        configsSynced: result.configs.synced,
-        registry: result.registry,
+        authSynced: syncResult.auth.synced,
+        configsSynced: syncResult.configs.synced,
+        registry: syncResult.registry,
       },
       "Internal sync complete",
     );

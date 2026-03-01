@@ -38,9 +38,12 @@ export async function createWorkspaceSandbox(
       },
       ports,
     );
-    // --- Guest provisioning (linear, no branching) ---
-    await GuestOps.configureDns(ports.agent, sandboxId);
-    await GuestOps.syncClock(ports.agent, sandboxId);
+
+    // --- Early sequential: DNS + clock ---
+    await ports.agent.batchExec(sandboxId, [
+      GuestOps.buildDnsCommand(),
+      GuestOps.buildClockSyncCommand(),
+    ]);
 
     if (!boot.usedPrebuild) {
       const resized = await GuestOps.resizeStorage(ports.agent, sandboxId);
@@ -57,7 +60,7 @@ export async function createWorkspaceSandbox(
       }
     }
 
-    // --- Prepare configs synchronously ---
+    // --- Prepare configs + collect files (parallel async prep) ---
     const sandboxConfig = buildSandboxConfig(
       sandboxId,
       workspace,
@@ -80,19 +83,29 @@ export async function createWorkspaceSandbox(
     }
     const mdContent = generateSandboxMd(sandboxId, workspace);
 
-    // --- Parallel batch: independent agent writes ---
+    const [secretFiles, gitCredFiles, fileSecretFiles, swapCmd] =
+      await Promise.all([
+        GuestOps.collectSecretFiles(workspace),
+        GuestOps.collectGitCredentialFiles(ports.gitSources),
+        GuestOps.collectFileSecretFiles(workspace),
+        GuestOps.buildSwapCommand(),
+      ]);
+
+    // --- Parallel batch: 4 vsock calls instead of 9 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
-      GuestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig),
-      GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
-        ATELIER_SANDBOX_ID: sandboxId,
-      }),
-      GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`),
-      GuestOps.syncSecrets(ports.agent, sandboxId, workspace),
-      GuestOps.syncGitCredentials(ports.agent, sandboxId, ports.gitSources),
-      GuestOps.syncFileSecrets(ports.agent, sandboxId, workspace),
-      GuestOps.pushOhMyOpenCodeCache(ports.agent, sandboxId, providers),
-      GuestOps.pushSandboxMd(ports.agent, sandboxId, mdContent),
+      ports.agent.writeFiles(sandboxId, [
+        ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
+        ...GuestOps.buildOhMyOpenCodeCacheFiles(providers),
+        ...GuestOps.buildSandboxMdFile(mdContent),
+        ...secretFiles,
+        ...gitCredFiles,
+        ...fileSecretFiles,
+      ]),
+      ports.agent.batchExec(sandboxId, [
+        GuestOps.buildHostnameCommand(`sandbox-${sandboxId}`),
+      ]),
+      ports.agent.setConfig(sandboxId, sandboxConfig),
     ]);
     log.info(
       {
@@ -104,7 +117,12 @@ export async function createWorkspaceSandbox(
       "Internal sync complete",
     );
 
-    await GuestOps.setupSwap(ports.agent, sandboxId);
+    // --- Sequential: swap → clone → services ---
+    if (swapCmd) {
+      await ports.agent.exec(sandboxId, swapCmd.command, {
+        timeout: swapCmd.timeout,
+      });
+    }
 
     if (!boot.usedPrebuild && workspace.config.repos?.length) {
       for (const repo of workspace.config.repos) {
@@ -144,7 +162,6 @@ export async function createWorkspaceSandbox(
       },
       "Failed to create workspace sandbox",
     );
-    // Only cleanup if boot completed (boot handles its own rollback)
     if (boot) {
       await cleanupSandboxResources(sandboxId, {
         pid: boot.pid,

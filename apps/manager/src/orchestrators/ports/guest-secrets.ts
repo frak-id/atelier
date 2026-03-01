@@ -1,21 +1,15 @@
 import { VM } from "@frak/atelier-shared/constants";
-import type { AgentClient } from "../../infrastructure/agent/index.ts";
+import type { FileWrite } from "../../infrastructure/agent/agent.types.ts";
 import { SecretsService } from "../../infrastructure/secrets/index.ts";
 import type { GitSourceService } from "../../modules/git-source/index.ts";
 import type { Workspace } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
 
-const log = createChildLogger("guest-secrets");
+// --- Pure file builders ---
 
-export async function pushSecrets(
-  agent: AgentClient,
-  sandboxId: string,
-  envContent: string,
-): Promise<void> {
-  if (!envContent) return;
-
-  await agent.writeFiles(sandboxId, [
+export function buildSecretFiles(envContent: string): FileWrite[] {
+  if (!envContent) return [];
+  return [
     {
       path: "/etc/sandbox/secrets/.env",
       content: envContent,
@@ -27,40 +21,30 @@ export async function pushSecrets(
       content:
         '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n',
     },
-  ]);
-
-  log.debug({ sandboxId }, "Secrets pushed");
+  ];
 }
 
-export async function pushGitConfig(
-  agent: AgentClient,
-  sandboxId: string,
-  credentials: string[],
-): Promise<void> {
-  const gitconfigSections = [
+export function buildGitConfigFiles(credentials: string[]): FileWrite[] {
+  const sections = [
     "[user]",
     `\temail = ${config.sandbox.git.email}`,
     `\tname = ${config.sandbox.git.name}`,
   ];
-
   if (credentials.length > 0) {
-    gitconfigSections.unshift(
+    sections.unshift(
       "[credential]",
       "\thelper = store --file=/etc/sandbox/secrets/git-credentials",
     );
   }
+  sections.push("");
 
-  gitconfigSections.push("");
-  const gitconfigContent = gitconfigSections.join("\n");
-
-  const files: Parameters<AgentClient["writeFiles"]>[1] = [
+  const files: FileWrite[] = [
     {
       path: "/etc/gitconfig",
-      content: gitconfigContent,
+      content: sections.join("\n"),
       owner: "root",
     },
   ];
-
   if (credentials.length > 0) {
     files.push({
       path: "/etc/sandbox/secrets/git-credentials",
@@ -69,81 +53,59 @@ export async function pushGitConfig(
       owner: "dev",
     });
   }
-
-  await agent.writeFiles(sandboxId, files);
-  log.debug(
-    { sandboxId, credentialCount: credentials.length },
-    "Git config pushed",
-  );
+  return files;
 }
 
-export async function pushFileSecrets(
-  agent: AgentClient,
-  sandboxId: string,
+export function buildFileSecretFiles(
   fileSecrets: { path: string; content: string; mode?: string }[],
-): Promise<void> {
-  if (fileSecrets.length === 0) return;
-
-  const files = fileSecrets.map((secret) => ({
-    path: secret.path.replace(/^~/, VM.HOME),
-    content: secret.content,
-    mode: secret.mode || "0600",
+): FileWrite[] {
+  if (fileSecrets.length === 0) return [];
+  return fileSecrets.map((s) => ({
+    path: s.path.replace(/^~/, VM.HOME),
+    content: s.content,
+    mode: s.mode || "0600",
     owner: "dev" as const,
   }));
-
-  await agent.writeFiles(sandboxId, files);
-  log.debug({ sandboxId, fileCount: files.length }, "File secrets pushed");
 }
 
-export async function syncSecrets(
-  agent: AgentClient,
-  sandboxId: string,
-  workspace: Workspace | undefined,
-): Promise<void> {
-  const secrets = workspace?.config.secrets;
-  if (!secrets || Object.keys(secrets).length === 0) return;
+// --- Async collectors (prep + build) ---
 
+export async function collectSecretFiles(
+  workspace: Workspace | undefined,
+): Promise<FileWrite[]> {
+  const secrets = workspace?.config.secrets;
+  if (!secrets || Object.keys(secrets).length === 0) return [];
   const decrypted = await SecretsService.decryptSecrets(secrets);
   const envFile = SecretsService.generateEnvFile(decrypted);
-  await pushSecrets(agent, sandboxId, envFile);
+  return buildSecretFiles(envFile);
 }
 
-export async function syncGitCredentials(
-  agent: AgentClient,
-  sandboxId: string,
+export async function collectGitCredentialFiles(
   gitSourceService: GitSourceService,
-): Promise<void> {
+): Promise<FileWrite[]> {
   const sources = gitSourceService.getAll();
   const credentials: string[] = [];
-
   for (const source of sources) {
     if (source.type !== "github") continue;
-
-    const accessToken = (source.config as { accessToken?: string }).accessToken;
-    if (!accessToken) continue;
-
-    credentials.push(`https://x-access-token:${accessToken}@github.com`);
+    const token = (source.config as { accessToken?: string }).accessToken;
+    if (token) {
+      credentials.push(`https://x-access-token:${token}@github.com`);
+    }
   }
-
-  await pushGitConfig(agent, sandboxId, credentials);
+  return buildGitConfigFiles(credentials);
 }
 
-export async function syncFileSecrets(
-  agent: AgentClient,
-  sandboxId: string,
+export async function collectFileSecretFiles(
   workspace: Workspace | undefined,
-): Promise<void> {
+): Promise<FileWrite[]> {
   const fileSecrets = workspace?.config.fileSecrets;
-  if (!fileSecrets || fileSecrets.length === 0) return;
-
+  if (!fileSecrets || fileSecrets.length === 0) return [];
   const decrypted = await SecretsService.decryptFileSecrets(fileSecrets);
-  await pushFileSecrets(
-    agent,
-    sandboxId,
-    decrypted.map((secret) => ({
-      path: secret.path,
-      content: secret.content,
-      mode: secret.mode,
+  return buildFileSecretFiles(
+    decrypted.map((s) => ({
+      path: s.path,
+      content: s.content,
+      mode: s.mode,
     })),
   );
 }

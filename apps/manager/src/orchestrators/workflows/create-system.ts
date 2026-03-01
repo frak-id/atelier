@@ -33,9 +33,12 @@ export async function createSystemSandbox(
       },
       ports,
     );
-    // --- Guest provisioning (linear, no branching) ---
-    await GuestOps.configureDns(ports.agent, sandboxId);
-    await GuestOps.syncClock(ports.agent, sandboxId);
+
+    // --- Early sequential: DNS + clock ---
+    await ports.agent.batchExec(sandboxId, [
+      GuestOps.buildDnsCommand(),
+      GuestOps.buildClockSyncCommand(),
+    ]);
 
     if (!boot.usedPrebuild) {
       const resized = await GuestOps.resizeStorage(ports.agent, sandboxId);
@@ -52,21 +55,23 @@ export async function createSystemSandbox(
       }
     }
 
-    // --- Prepare config synchronously ---
+    // --- Prepare config ---
     const sandboxConfig = buildSandboxConfig(
       sandboxId,
       undefined,
       boot.sandbox.runtime.opencodePassword,
     );
 
-    // --- Parallel batch: independent agent writes ---
+    // --- Parallel batch: 4 vsock calls instead of 5 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
-      GuestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig),
-      GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
-        ATELIER_SANDBOX_ID: sandboxId,
-      }),
-      GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`),
+      ports.agent.writeFiles(sandboxId, [
+        ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
+      ]),
+      ports.agent.batchExec(sandboxId, [
+        GuestOps.buildHostnameCommand(`sandbox-${sandboxId}`),
+      ]),
+      ports.agent.setConfig(sandboxId, sandboxConfig),
     ]);
     log.info(
       {
