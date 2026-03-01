@@ -102,10 +102,6 @@ export async function createWorkspaceSandbox(
       "Internal sync complete",
     );
 
-    await GuestOps.startServices(ports.agent, sandboxId, [
-      "vscode",
-      "opencode",
-    ]);
     await GuestOps.setupSwap(ports.agent, sandboxId);
 
     if (!boot.usedPrebuild && workspace.config.repos?.length) {
@@ -123,6 +119,11 @@ export async function createWorkspaceSandbox(
         workspace.config.repos,
       );
     }
+
+    await GuestOps.startServices(ports.agent, sandboxId, [
+      "vscode",
+      "opencode",
+    ]);
 
     // --- Finalize: register routes + update status ---
     return await finalizeNewSandbox(

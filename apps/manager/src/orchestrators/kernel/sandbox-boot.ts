@@ -129,7 +129,7 @@ export async function bootNewSandbox(
     // 7. Boot + wait for agent
     await launch.client.start();
     const [, agentReady] = await Promise.all([
-      waitForBoot(launch.client),
+      waitForBoot(launch.client, { pid, logPath: volumePaths.log }),
       ports.agent.waitForAgent(sandboxId, {
         timeout: 60000,
       }),
@@ -199,7 +199,7 @@ export async function bootExistingSandbox(
   log.debug({ sandboxId }, "VM configured");
 
   await client.start();
-  await waitForBoot(client);
+  await waitForBoot(client, { pid, logPath: paths.log });
   log.debug({ sandboxId }, "VM booted");
 
   const agentReady = await ports.agent.waitForAgent(sandboxId, {
