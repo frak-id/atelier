@@ -53,10 +53,7 @@ export interface PrebuildRunnerDependencies {
 }
 
 export class PrebuildRunner {
-  protected readonly activeBuilds = new Map<
-    string,
-    { abortController: AbortController; sandboxId?: string }
-  >();
+  protected readonly activeBuilds = new Map<string, { sandboxId?: string }>();
 
   constructor(protected readonly deps: PrebuildRunnerDependencies) {}
 
@@ -123,7 +120,16 @@ export class PrebuildRunner {
     const activeBuild = this.activeBuilds.get(workspaceId);
     if (activeBuild) {
       log.info({ workspaceId }, "Cancelling active prebuild");
-      activeBuild.abortController.abort();
+      if (activeBuild.sandboxId) {
+        await this.deps.sandboxDestroyer
+          .destroy(activeBuild.sandboxId)
+          .catch((err) => {
+            log.warn(
+              { workspaceId, error: err },
+              "Failed to destroy prebuild sandbox during cancel",
+            );
+          });
+      }
       return;
     }
 
@@ -145,7 +151,16 @@ export class PrebuildRunner {
     const activeBuild = this.activeBuilds.get(key);
     if (activeBuild) {
       log.info("Cancelling active system prebuild");
-      activeBuild.abortController.abort();
+      if (activeBuild.sandboxId) {
+        await this.deps.sandboxDestroyer
+          .destroy(activeBuild.sandboxId)
+          .catch((err) => {
+            log.warn(
+              { error: err },
+              "Failed to destroy prebuild sandbox during system cancel",
+            );
+          });
+      }
       return;
     }
 
@@ -229,15 +244,6 @@ export class PrebuildRunner {
 
   async cleanupStorage(key: string): Promise<void> {
     await StorageService.deletePrebuild(key);
-  }
-
-  protected throwIfAborted(key: string): void {
-    const activeBuild = this.activeBuilds.get(key);
-    if (activeBuild?.abortController.signal.aborted) {
-      const error = new Error("Prebuild cancelled");
-      error.name = "AbortError";
-      throw error;
-    }
   }
 
   protected async pushLatestAuthAndConfigs(sandboxId: string): Promise<void> {
@@ -342,8 +348,7 @@ export class PrebuildRunner {
       }
     }
 
-    const abortController = new AbortController();
-    this.activeBuilds.set(key, { abortController });
+    this.activeBuilds.set(key, {});
 
     if (scenario.kind === "workspace") {
       scenario.updateStatus("building");
@@ -374,8 +379,6 @@ export class PrebuildRunner {
     let sandboxId: string | undefined;
 
     try {
-      this.throwIfAborted(key);
-
       const workspace =
         scenario.kind === "workspace" ? scenario.getWorkspace() : undefined;
       if (scenario.kind === "workspace" && !workspace) {
@@ -406,8 +409,6 @@ export class PrebuildRunner {
 
       log.info({ prebuildSandboxId: sandbox.id }, "Prebuild sandbox spawned");
 
-      this.throwIfAborted(key);
-
       const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
         timeout: AGENT_READY_TIMEOUT,
       });
@@ -419,14 +420,11 @@ export class PrebuildRunner {
       let commitHashes: Record<string, string> | undefined;
 
       if (scenario.kind === "workspace" && workspace) {
-        this.throwIfAborted(key);
         await this.runInitCommands(sandbox.id, workspace);
 
-        this.throwIfAborted(key);
         commitHashes = await this.captureCommitHashes(sandbox.id, workspace);
       }
 
-      this.throwIfAborted(key);
       await this.warmupOpencode(
         sandbox.id,
         key,
@@ -434,7 +432,6 @@ export class PrebuildRunner {
         sandbox.runtime.opencodePassword,
       );
 
-      this.throwIfAborted(key);
       await this.pushLatestAuthAndConfigs(sandbox.id);
       await this.syncFilesystem(sandbox.id);
       await StorageService.createPrebuild(key, sandbox.id);
@@ -464,21 +461,14 @@ export class PrebuildRunner {
         log.info("System prebuild completed successfully");
       }
     } catch (error) {
-      const isCancelled = error instanceof Error && error.name === "AbortError";
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
       if (scenario.kind === "workspace") {
-        if (isCancelled) {
-          log.info({ workspaceId: scenario.workspaceId }, "Prebuild cancelled");
-        } else {
-          log.error(
-            { workspaceId: scenario.workspaceId, error: errorMessage },
-            "Prebuild failed",
-          );
-        }
-      } else if (isCancelled) {
-        log.info("System prebuild cancelled");
+        log.error(
+          { workspaceId: scenario.workspaceId, error: errorMessage },
+          "Prebuild failed",
+        );
       } else {
         log.error({ error: errorMessage }, "System prebuild failed");
       }
@@ -497,13 +487,11 @@ export class PrebuildRunner {
       if (scenario.kind === "workspace") {
         const current = scenario.getWorkspace();
         if (current) {
-          scenario.updateStatus(isCancelled ? "none" : "failed");
+          scenario.updateStatus("failed");
         }
       }
 
-      if (!isCancelled) {
-        throw error;
-      }
+      throw error;
     } finally {
       this.activeBuilds.delete(key);
     }
