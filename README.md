@@ -1,4 +1,4 @@
-# L'Atelier
+# Atelier
 
 Isolated dev environments that boot in seconds, not minutes.
 
@@ -29,14 +29,14 @@ Review the results from your phone on the ski lift — or wherever you happen to
 - **Package cache** — [Verdaccio](https://github.com/verdaccio/verdaccio) runs on the host as a shared npm registry, caching packages for npm, bun, pnpm, and yarn across all sandboxes
 - **SSH access** — use your regular workflow: SSH, VS Code Remote SSH, JetBrains remote — the sandbox is a real Linux VM
 - **Multi-dev per sandbox** — nothing stops multiple developers from working in the same sandbox simultaneously
-- **Task dispatch** — create coding tasks from the dashboard, L'Atelier spawns a sandbox, creates a git branch, launches OpenCode with your prompt, and tracks progress. An AI task queue for your team
+- **Task dispatch** — create coding tasks from the dashboard, Atelier spawns a sandbox, creates a git branch, launches OpenCode with your prompt, and tracks progress. An AI task queue for your team
 - **Session templates** — 4 built-in AI workflows (Implementation, Best Practices Review, Security Review, Simplification) with customizable models, effort levels, and prompt templates per workspace
 - **Dashboard** — mission control for all your sandboxes: real-time task progress, running dev servers, and an attention feed aggregating OpenCode permission and question requests across every session
 - **Dev commands with auto HTTPS** — define dev commands in your workspace config (e.g. `npm run dev` on port 3000) and get a public `https://dev-{name}-{id}.your-domain.com` URL with streaming logs
 
-## Why L'Atelier?
+## Why Atelier?
 
-Most sandbox tools use containers — fast, but with weak isolation boundaries. L'Atelier uses [Firecracker](https://firecracker-microvm.github.io/) microVMs (the technology behind AWS Lambda) to give each sandbox **hardware-level isolation** while keeping boot times fast via LVM copy-on-write snapshots.
+Most sandbox tools use containers — fast, but with weak isolation boundaries. Atelier uses [Firecracker](https://firecracker-microvm.github.io/) microVMs (the technology behind AWS Lambda) to give each sandbox **hardware-level isolation** while keeping boot times fast via LVM copy-on-write snapshots.
 
 - **VM isolation** — each sandbox is a real virtual machine, not a container namespace
 - **Instant cloning** — LVM thin snapshots clone a full environment in <5ms

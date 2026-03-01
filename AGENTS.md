@@ -1,4 +1,4 @@
-# L'atelier
+# Atelier
 
 Firecracker microVM orchestrator for isolated dev environments. Bun monorepo.
 

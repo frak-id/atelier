@@ -155,7 +155,7 @@ function SandboxImmersionPage() {
     const context = task?.title ?? sandbox?.id;
     document.title = context ? `A | ${tabPart} · ${context}` : `A | ${tabPart}`;
     return () => {
-      document.title = "L'atelier";
+      document.title = "Atelier";
     };
   }, [tab1, tab2, buildTabSegment, task?.title, sandbox?.id]);
 

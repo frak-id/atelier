@@ -41,7 +41,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           <div className="flex justify-center mb-2">
             <Box className="h-10 w-10 text-primary" />
           </div>
-          <CardTitle className="text-xl">L'atelier</CardTitle>
+          <CardTitle className="text-xl">Atelier</CardTitle>
           <p className="text-sm text-muted-foreground">
             Sign in with GitHub to continue
           </p>

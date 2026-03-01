@@ -1,5 +1,5 @@
 /**
- * Unified configuration schema for L'atelier.
+ * Unified configuration schema for Atelier.
  * Configuration priority: ENV vars > config file > defaults
  *
  * Sections:
