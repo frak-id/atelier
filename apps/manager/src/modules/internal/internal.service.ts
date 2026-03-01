@@ -1,9 +1,10 @@
 import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
+import { RegistryService } from "../../infrastructure/registry/index.ts";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
-import type { SandboxProvisionService } from "../sandbox/sandbox-provision.service.ts";
 import {
   SYSTEM_AGENTS_CONFIG,
   SYSTEM_WORKSPACE_ID,
@@ -18,7 +19,6 @@ export class InternalService {
     private readonly configFileService: ConfigFileService,
     private readonly agentClient: AgentClient,
     private readonly sandboxService: SandboxRepository,
-    private readonly provisionService: SandboxProvisionService,
   ) {}
 
   async syncConfigsToSandboxes(): Promise<{ synced: number }> {
@@ -41,11 +41,7 @@ export class InternalService {
       if (files.length === 0) continue;
 
       for (const sandboxId of sandboxIds) {
-        await this.provisionService.pushFilesToSandbox(
-          sandboxId,
-          files,
-          "config",
-        );
+        await this.pushFilesToSandbox(sandboxId, files, "config");
       }
       totalSynced += files.length;
     }
@@ -92,7 +88,7 @@ export class InternalService {
     const { files } = this.getConfigFilesToPush(workspaceId);
     if (files.length === 0) return { synced: 0 };
 
-    await this.provisionService.pushFilesToSandbox(sandboxId, files, "config");
+    await this.pushFilesToSandbox(sandboxId, files, "config");
     log.info({ synced: files.length, sandboxId }, "Configs pushed to sandbox");
     return { synced: files.length };
   }
@@ -129,7 +125,11 @@ export class InternalService {
   }
 
   private injectSystemAgents(
-    merged: { path: string; content: string; contentType: string }[],
+    merged: {
+      path: string;
+      content: string;
+      contentType: string;
+    }[],
   ): void {
     const configPath = "~/.config/opencode/opencode.json";
     const existing = merged.find((c) => c.path === configPath);
@@ -164,7 +164,7 @@ export class InternalService {
 
     if (enabled) {
       for (const sandboxId of sandboxIds) {
-        await this.provisionService.pushRegistryConfig(sandboxId);
+        await this.pushRegistryConfig(sandboxId);
       }
     } else {
       const commands = [
@@ -177,7 +177,9 @@ export class InternalService {
 
       const results = await Promise.allSettled(
         sandboxIds.map((sandboxId) =>
-          this.agentClient.batchExec(sandboxId, commands, { timeout: 10000 }),
+          this.agentClient.batchExec(sandboxId, commands, {
+            timeout: 10000,
+          }),
         ),
       );
 
@@ -214,8 +216,7 @@ export class InternalService {
   }> {
     const [authConfigs, registry] = await Promise.all([
       this.syncToSandbox(sandboxId),
-      this.provisionService
-        .pushRegistryConfig(sandboxId)
+      this.pushRegistryConfig(sandboxId)
         .then(() => true)
         .catch(() => false),
     ]);
@@ -225,5 +226,59 @@ export class InternalService {
       configs: authConfigs.configs,
       registry,
     };
+  }
+
+  private async pushFilesToSandbox(
+    sandboxId: string,
+    files: {
+      path: string;
+      content: string;
+      owner?: "dev" | "root";
+    }[],
+    label: string,
+  ): Promise<void> {
+    const fileWrites = files.map((f) => ({
+      path: f.path,
+      content: f.content,
+      owner: f.owner ?? ("dev" as const),
+    }));
+
+    try {
+      await this.agentClient.writeFiles(sandboxId, fileWrites);
+      log.debug({ label, sandboxId, files: files.length }, "Files pushed");
+    } catch (error) {
+      log.warn({ label, sandboxId, error }, "Failed to push files to sandbox");
+      throw error;
+    }
+  }
+
+  private async pushRegistryConfig(sandboxId: string): Promise<void> {
+    const settings = RegistryService.getSettings();
+    if (!settings.enabled) return;
+
+    const registryUrl = RegistryService.getRegistryUrl();
+    const bridgeIp = config.network.bridgeIp;
+
+    const files = [
+      {
+        path: "/etc/profile.d/registry.sh",
+        content: `export NPM_CONFIG_REGISTRY="${registryUrl}"`,
+      },
+      {
+        path: "/etc/npmrc",
+        content: `registry=${registryUrl}`,
+      },
+      {
+        path: `${VM.HOME}/.bunfig.toml`,
+        content: `[install]\nregistry = "${registryUrl}"`,
+      },
+      {
+        path: `${VM.HOME}/.yarnrc.yml`,
+        content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${bridgeIp}"`,
+      },
+    ];
+
+    await this.pushFilesToSandbox(sandboxId, files, "registry");
+    log.debug({ sandboxId }, "Registry config pushed");
   }
 }

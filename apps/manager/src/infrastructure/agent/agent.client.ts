@@ -8,6 +8,7 @@ import type {
   AgentHealth,
   AgentMetrics,
   BatchExecResult,
+  Command,
   DevCommandListResult,
   DevLogsResult,
   DevStartResult,
@@ -392,7 +393,7 @@ export class AgentClient {
 
   async batchExec(
     sandboxId: string,
-    commands: { id: string; command: string; timeout?: number }[],
+    commands: Command[],
     options: { timeout?: number } = {},
   ): Promise<BatchExecResult> {
     const maxCmdTimeout = Math.max(...commands.map((c) => c.timeout ?? 30000));

@@ -4,6 +4,7 @@ export type {
   AgentHealth,
   AgentMetrics,
   BatchExecResult,
+  Command,
   DevCommandListResult,
   DevCommandStatus,
   DevLogsResult,

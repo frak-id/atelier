@@ -1,4 +1,5 @@
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2";
+import { waitForOpencode } from "../../orchestrators/kernel/boot-waiter.ts";
 import type { SandboxDestroyer } from "../../orchestrators/sandbox-destroyer.ts";
 import type { SandboxSpawner } from "../../orchestrators/sandbox-spawner.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
@@ -11,7 +12,6 @@ import type { SystemSandboxEventListener } from "./system-sandbox-event-listener
 const log = createChildLogger("system-sandbox");
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
 const SYSTEM_SANDBOX_VCPUS = 1;
 const SYSTEM_SANDBOX_MEMORY_MB = 1024;
 const MAX_LIFETIME_MS = 6 * 60 * 60 * 1000;
@@ -79,10 +79,12 @@ export class SystemSandboxService {
     // Try to reclaim the newest one
     if (candidate && candidate.status === "running") {
       try {
-        await this.waitForOpencode(
-          candidate.runtime.ipAddress,
-          candidate.runtime.opencodePassword,
-        );
+        if (!isMock()) {
+          await waitForOpencode(
+            candidate.runtime.ipAddress,
+            candidate.runtime.opencodePassword,
+          );
+        }
         this.sandboxId = candidate.id;
         this.opencodePassword = candidate.runtime.opencodePassword ?? null;
         this.bootedAt = new Date(candidate.createdAt).getTime();
@@ -318,7 +320,9 @@ export class SystemSandboxService {
       "System sandbox booted",
     );
 
-    await this.waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
+    if (!isMock()) {
+      await waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
+    }
     await this.registerMcpServer(ipAddress, sandbox.runtime.opencodePassword);
     this.deps.eventListener.start(sandbox.id, sandbox.runtime.opencodePassword);
     this.startMaxLifetimeTimer();
@@ -360,37 +364,6 @@ export class SystemSandboxService {
         "Failed to register MCP server with system sandbox",
       );
     }
-  }
-
-  private async waitForOpencode(
-    ipAddress: string,
-    password?: string,
-  ): Promise<void> {
-    if (isMock()) return;
-
-    const startTime = Date.now();
-    const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
-    let delay = 250;
-
-    while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT_MS) {
-      try {
-        const client = createOpencodeClient({
-          baseUrl: url,
-          headers: buildOpenCodeAuthHeaders(password),
-        });
-        const { data } = await client.global.health();
-        if (data?.healthy) {
-          log.info({ ipAddress }, "System sandbox opencode is healthy");
-          return;
-        }
-      } catch {}
-      await Bun.sleep(delay);
-      delay = Math.min(delay * 2, 2000);
-    }
-
-    throw new Error(
-      "System sandbox opencode did not become healthy within timeout",
-    );
   }
 
   private startIdleTimer(): void {
