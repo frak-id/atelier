@@ -25,11 +25,9 @@ export const HealthStatusSchema = t.Object({
   uptime: t.Number(),
   timestamp: t.Number(),
   checks: t.Object({
-    firecracker: HealthCheckStatusSchema,
-    proxy: HealthCheckStatusSchema,
-    network: HealthCheckStatusSchema,
-    storage: HealthCheckStatusSchema,
-    lvm: t.Union([t.Literal("ok"), t.Literal("unavailable")]),
+    kubernetes: HealthCheckStatusSchema,
+    kata: HealthCheckStatusSchema,
+    registry: HealthCheckStatusSchema,
   }),
 });
 export type HealthStatus = Static<typeof HealthStatusSchema>;

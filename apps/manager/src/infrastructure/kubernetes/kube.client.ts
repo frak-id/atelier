@@ -359,6 +359,33 @@ export class KubeClient {
     return response.text();
   }
 
+  /**
+   * Check if the K8s API server is reachable.
+   */
+  async checkApiHealth(): Promise<boolean> {
+    if (isMock()) return true;
+    try {
+      await this.get("/api/v1/namespaces");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Check if the Kata Containers RuntimeClass exists.
+   */
+  async checkRuntimeClass(name = "kata"): Promise<boolean> {
+    if (isMock()) return true;
+    try {
+      const path = `/apis/node.k8s.io/v1/runtimeclasses/${name}`;
+      await this.get(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async request<T = unknown>(
     path: string,
     options: {
