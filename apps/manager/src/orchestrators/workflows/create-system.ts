@@ -34,27 +34,6 @@ export async function createSystemSandbox(
       ports,
     );
 
-    // --- Early sequential: DNS + clock ---
-    await ports.agent.batchExec(sandboxId, [
-      GuestOps.buildDnsCommand(),
-      GuestOps.buildClockSyncCommand(),
-    ]);
-
-    if (!boot.usedPrebuild) {
-      const resized = await GuestOps.resizeStorage(ports.agent, sandboxId);
-      if (resized.success) {
-        log.info(
-          { sandboxId, disk: resized.disk },
-          "Filesystem expanded successfully",
-        );
-      } else {
-        log.warn(
-          { sandboxId, error: resized.error },
-          "Failed to expand filesystem inside VM",
-        );
-      }
-    }
-
     // --- Prepare config ---
     const sandboxConfig = buildSandboxConfig(
       sandboxId,
@@ -62,14 +41,11 @@ export async function createSystemSandbox(
       boot.sandbox.runtime.opencodePassword,
     );
 
-    // --- Parallel batch: 4 vsock calls instead of 5 ---
+    // --- Parallel batch: 3 vsock calls instead of 5 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
         ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
-      ]),
-      ports.agent.batchExec(sandboxId, [
-        GuestOps.buildHostnameCommand(`sandbox-${sandboxId}`),
       ]),
       ports.agent.setConfig(sandboxId, sandboxConfig),
     ]);

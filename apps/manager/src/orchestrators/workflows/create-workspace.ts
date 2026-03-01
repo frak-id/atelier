@@ -39,27 +39,6 @@ export async function createWorkspaceSandbox(
       ports,
     );
 
-    // --- Early sequential: DNS + clock ---
-    await ports.agent.batchExec(sandboxId, [
-      GuestOps.buildDnsCommand(),
-      GuestOps.buildClockSyncCommand(),
-    ]);
-
-    if (!boot.usedPrebuild) {
-      const resized = await GuestOps.resizeStorage(ports.agent, sandboxId);
-      if (resized.success) {
-        log.info(
-          { sandboxId, disk: resized.disk },
-          "Filesystem expanded successfully",
-        );
-      } else {
-        log.warn(
-          { sandboxId, error: resized.error },
-          "Failed to expand filesystem inside VM",
-        );
-      }
-    }
-
     // --- Prepare configs + collect files (parallel async prep) ---
     const sandboxConfig = buildSandboxConfig(
       sandboxId,
@@ -83,15 +62,13 @@ export async function createWorkspaceSandbox(
     }
     const mdContent = generateSandboxMd(sandboxId, workspace);
 
-    const [secretFiles, gitCredFiles, fileSecretFiles, swapCmd] =
-      await Promise.all([
-        GuestOps.collectSecretFiles(workspace),
-        GuestOps.collectGitCredentialFiles(ports.gitSources),
-        GuestOps.collectFileSecretFiles(workspace),
-        GuestOps.buildSwapCommand(),
-      ]);
+    const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
+      GuestOps.collectSecretFiles(workspace),
+      GuestOps.collectGitCredentialFiles(ports.gitSources),
+      GuestOps.collectFileSecretFiles(workspace),
+    ]);
 
-    // --- Parallel batch: 4 vsock calls instead of 9 ---
+    // --- Parallel batch: 3 vsock calls instead of 9 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
@@ -101,9 +78,6 @@ export async function createWorkspaceSandbox(
         ...secretFiles,
         ...gitCredFiles,
         ...fileSecretFiles,
-      ]),
-      ports.agent.batchExec(sandboxId, [
-        GuestOps.buildHostnameCommand(`sandbox-${sandboxId}`),
       ]),
       ports.agent.setConfig(sandboxId, sandboxConfig),
     ]);
@@ -116,13 +90,6 @@ export async function createWorkspaceSandbox(
       },
       "Internal sync complete",
     );
-
-    // --- Sequential: swap → clone → services ---
-    if (swapCmd) {
-      await ports.agent.exec(sandboxId, swapCmd.command, {
-        timeout: swapCmd.timeout,
-      });
-    }
 
     if (!boot.usedPrebuild && workspace.config.repos?.length) {
       for (const repo of workspace.config.repos) {

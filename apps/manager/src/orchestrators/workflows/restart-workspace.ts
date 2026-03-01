@@ -18,14 +18,6 @@ export async function restartWorkspaceSandbox(
   const boot = await bootExistingSandbox(sandboxId, sandbox, ports);
 
   if (boot.agentReady) {
-    // --- Batch: DNS + clock + mount in one call ---
-    const mountCmd = await GuestOps.buildMountSharedBinariesCommand();
-    await ports.agent.batchExec(sandboxId, [
-      GuestOps.buildDnsCommand(),
-      GuestOps.buildClockSyncCommand(),
-      ...(mountCmd ? [mountCmd] : []),
-    ]);
-
     // --- Collect files (parallel async prep) ---
     const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
       GuestOps.collectSecretFiles(workspace),
@@ -33,7 +25,7 @@ export async function restartWorkspaceSandbox(
       GuestOps.collectFileSecretFiles(workspace),
     ]);
 
-    // --- Parallel batch: writeFiles + hostname + internal sync ---
+    // --- Parallel batch: writeFiles + internal sync ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
@@ -41,9 +33,6 @@ export async function restartWorkspaceSandbox(
         ...secretFiles,
         ...gitCredFiles,
         ...fileSecretFiles,
-      ]),
-      ports.agent.batchExec(sandboxId, [
-        GuestOps.buildHostnameCommand(`sandbox-${sandboxId}`),
       ]),
     ]);
     log.info(
