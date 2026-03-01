@@ -5,11 +5,15 @@ import {
   sandboxService,
   workspaceService,
 } from "../../container.ts";
-import { proxyService } from "../../infrastructure/proxy/index.ts";
+import {
+  buildDevCommandIngress,
+  KubeClient,
+} from "../../infrastructure/kubernetes/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("mcp-dev-commands");
+const kubeClient = new KubeClient();
 
 function buildDevUrl(sandboxId: string, cmdName: string): string {
   return `https://dev-${cmdName}-${sandboxId}.${config.domain.baseDomain}`;
@@ -190,16 +194,18 @@ export function registerDevCommandTools(server: McpServer): void {
 
             if (devCommand.port) {
               try {
-                const urls = await proxyService.registerDevRoute(
-                  sandbox.id,
-                  sandbox.runtime.ipAddress,
-                  name,
-                  devCommand.port,
-                  devCommand.isDefault ?? false,
-                  devCommand.extraPorts,
+                await kubeClient.createResource(
+                  buildDevCommandIngress(
+                    sandbox.id,
+                    name,
+                    devCommand.port,
+                    config.domain.baseDomain,
+                  ),
                 );
-                devUrl = urls.namedUrl;
-                defaultDevUrl = urls.defaultUrl;
+                devUrl = buildDevUrl(sandbox.id, name);
+                if (devCommand.isDefault) {
+                  defaultDevUrl = buildDefaultDevUrl(sandbox.id);
+                }
               } catch (err) {
                 log.warn(
                   { sandboxId, name, error: err },
@@ -221,11 +227,9 @@ export function registerDevCommandTools(server: McpServer): void {
 
             if (devCommand.port) {
               try {
-                await proxyService.removeDevRoute(
-                  sandbox.id,
-                  name,
-                  devCommand.isDefault ?? false,
-                  devCommand.extraPorts,
+                await kubeClient.deleteResource(
+                  "ingresses",
+                  `dev-${name}-${sandbox.id}`,
                 );
               } catch (err) {
                 log.warn(

@@ -1,6 +1,9 @@
 import { Elysia } from "elysia";
 import { agentClient, workspaceService } from "../../container";
-import { proxyService } from "../../infrastructure/proxy";
+import {
+  buildDevCommandIngress,
+  KubeClient,
+} from "../../infrastructure/kubernetes/index.ts";
 import {
   DevCommandListResponseSchema,
   DevCommandLogsQuerySchema,
@@ -16,6 +19,7 @@ import { createChildLogger } from "../../shared/lib/logger";
 import { sandboxIdGuard } from "./guard";
 
 const log = createChildLogger("sandbox-routes");
+const kubeClient = new KubeClient();
 
 export const devRoutes = new Elysia()
   .use(sandboxIdGuard)
@@ -108,17 +112,25 @@ export const devRoutes = new Elysia()
 
       if (devCommand.port) {
         try {
-          const urls = await proxyService.registerDevRoute(
-            sandbox.id,
-            sandbox.runtime.ipAddress,
-            params.name,
-            devCommand.port,
-            devCommand.isDefault ?? false,
-            devCommand.extraPorts,
+          await kubeClient.createResource(
+            buildDevCommandIngress(
+              sandbox.id,
+              params.name,
+              devCommand.port,
+              config.domain.baseDomain,
+            ),
           );
-          devUrl = urls.namedUrl;
-          defaultDevUrl = urls.defaultUrl;
-          extraDevUrls = urls.extraDevUrls;
+          devUrl = `https://dev-${params.name}-${sandbox.id}.${config.domain.baseDomain}`;
+          if (devCommand.isDefault) {
+            defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.baseDomain}`;
+          }
+          if (devCommand.extraPorts?.length) {
+            extraDevUrls = devCommand.extraPorts.map((ep) => ({
+              alias: ep.alias,
+              port: ep.port,
+              url: `https://dev-${params.name}-${ep.alias}-${sandbox.id}.${config.domain.baseDomain}`,
+            }));
+          }
         } catch (err) {
           log.warn(
             { sandboxId: sandbox.id, name: params.name, error: err },
@@ -158,11 +170,9 @@ export const devRoutes = new Elysia()
 
       if (devCommand?.port) {
         try {
-          await proxyService.removeDevRoute(
-            sandbox.id,
-            params.name,
-            devCommand.isDefault ?? false,
-            devCommand.extraPorts,
+          await kubeClient.deleteResource(
+            "ingresses",
+            `dev-${params.name}-${sandbox.id}`,
           );
         } catch (err) {
           log.warn(

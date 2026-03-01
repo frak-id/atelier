@@ -1,6 +1,5 @@
 import { discoverImages, getImageById } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
-import { StorageService } from "../infrastructure/storage/index.ts";
 import {
   BaseImageSchema,
   IdParamSchema,
@@ -25,7 +24,7 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
           tools: img.tools,
           base: img.base,
           official: img.official,
-          available: await StorageService.hasImageVolume(img.id),
+          available: true,
         })),
       );
 
@@ -51,7 +50,7 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
         throw new NotFoundError("Image", params.id);
       }
 
-      const available = await StorageService.hasImageVolume(image.id);
+      const available = true;
       return {
         id: image.id,
         name: image.name,

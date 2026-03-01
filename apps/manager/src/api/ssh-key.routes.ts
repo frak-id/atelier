@@ -1,6 +1,5 @@
 import { Elysia } from "elysia";
 import { sshKeyService } from "../container.ts";
-import { SshPiperService } from "../infrastructure/proxy/index.ts";
 import {
   CreateSshKeyBodySchema,
   HasSshKeysResponseSchema,
@@ -50,10 +49,6 @@ export const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
         expiresAt: body.expiresAt,
       });
 
-      await SshPiperService.updateAuthorizedKeys(
-        sshKeyService.getValidPublicKeys(),
-      );
-
       return sshKey;
     },
     {
@@ -67,9 +62,6 @@ export const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
       const user = getUser(store as { user?: AuthUser });
       try {
         sshKeyService.delete(params.id, user.id);
-        await SshPiperService.updateAuthorizedKeys(
-          sshKeyService.getValidPublicKeys(),
-        );
         set.status = 204;
         return null;
       } catch (error) {

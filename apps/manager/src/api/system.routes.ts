@@ -1,4 +1,3 @@
-import { PATHS } from "@frak/atelier-shared/constants";
 import { $ } from "bun";
 import { Elysia } from "elysia";
 import {
@@ -6,17 +5,10 @@ import {
   sandboxService,
   systemSandboxService,
 } from "../container.ts";
-import { networkService } from "../infrastructure/network/index.ts";
-import {
-  proxyService,
-  SshPiperService,
-} from "../infrastructure/proxy/index.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
 import {
   type CleanupResult,
   CleanupResultSchema,
-  StorageStatusSchema,
   SystemSandboxStatusSchema,
   type SystemStats,
   SystemStatsSchema,
@@ -85,161 +77,15 @@ async function getSystemStats(): Promise<SystemStats> {
 
 async function performCleanup(): Promise<CleanupResult> {
   log.info("Starting system cleanup");
-
-  let socketsRemoved = 0;
-  let overlaysRemoved = 0;
-  let tapDevicesRemoved = 0;
-  let lvmVolumesRemoved = 0;
-  let logsRemoved = 0;
-  let caddyRoutesRemoved = 0;
-  let sshRoutesRemoved = 0;
-  const spaceFreed = 0;
-
-  if (!isMock()) {
-    const knownSandboxIds = new Set(sandboxService.getAll().map((s) => s.id));
-
-    // Build a set of realpath targets for known sandbox vsock files so we
-    // never delete a symlink target that a running sandbox still references
-    // (covers pre-fix sandboxes that still use the old symlink approach).
-    const protectedRealPaths = new Set<string>();
-    for (const sid of knownSandboxIds) {
-      const vsockFile = `${PATHS.SOCKET_DIR}/${sid}.vsock`;
-      const resolved = await $`realpath ${vsockFile} 2>/dev/null`
-        .quiet()
-        .nothrow();
-      const resolvedPath = resolved.stdout.toString().trim();
-      if (resolved.exitCode === 0 && resolvedPath) {
-        protectedRealPaths.add(resolvedPath);
-      }
-    }
-
-    const orphanSocketResult =
-      await $`find ${PATHS.SOCKET_DIR} -maxdepth 1 \( -name "*.sock" -o -name "*.vsock" -o -name "*.pid" \) 2>/dev/null`
-        .quiet()
-        .nothrow();
-    const socketFiles = orphanSocketResult.stdout
-      .toString()
-      .trim()
-      .split("\n")
-      .filter(Boolean);
-    for (const file of socketFiles) {
-      const basename = file.split("/").pop() || "";
-      const sandboxId = basename.replace(/\.(sock|vsock|pid)$/, "");
-      if (!knownSandboxIds.has(sandboxId)) {
-        if (protectedRealPaths.has(file)) continue;
-        await $`rm -f ${file}`.quiet().nothrow();
-        socketsRemoved++;
-      }
-    }
-
-    const orphanLogResult =
-      await $`find ${PATHS.LOG_DIR} -maxdepth 1 -name "*.log" 2>/dev/null`
-        .quiet()
-        .nothrow();
-    const logFiles = orphanLogResult.stdout
-      .toString()
-      .trim()
-      .split("\n")
-      .filter(Boolean);
-    for (const file of logFiles) {
-      const basename = file.split("/").pop() || "";
-      const sandboxId = basename.replace(/\.log$/, "");
-      if (!knownSandboxIds.has(sandboxId)) {
-        await $`rm -f ${file}`.quiet().nothrow();
-        logsRemoved++;
-      }
-    }
-
-    const overlayResult =
-      await $`find ${PATHS.OVERLAY_DIR} -maxdepth 1 -name "*.ext4" 2>/dev/null`
-        .quiet()
-        .nothrow();
-    const overlayFiles = overlayResult.stdout
-      .toString()
-      .trim()
-      .split("\n")
-      .filter(Boolean);
-    for (const file of overlayFiles) {
-      const basename = file.split("/").pop() || "";
-      const sandboxId = basename.replace(/\.ext4$/, "");
-      if (!knownSandboxIds.has(sandboxId)) {
-        log.info({ file }, "Removing orphaned overlay file");
-        await $`rm -f ${file}`.quiet().nothrow();
-        overlaysRemoved++;
-      }
-    }
-
-    const tapDevices = await networkService.listTapDevices();
-    for (const tap of tapDevices) {
-      const sandboxId = tap.replace("tap-", "");
-      const matchingSandbox = sandboxService
-        .getAll()
-        .find((s) => s.id.startsWith(sandboxId));
-      if (!matchingSandbox) {
-        await networkService.deleteTap(tap);
-        tapDevicesRemoved++;
-      }
-    }
-
-    if (await StorageService.isAvailable()) {
-      const lvmVolumes = await StorageService.listSandboxVolumes();
-      for (const vol of lvmVolumes) {
-        if (!knownSandboxIds.has(vol.name)) {
-          log.info({ volumeName: vol.name }, "Removing orphaned LVM volume");
-          await StorageService.deleteSandboxVolume(vol.name);
-          lvmVolumesRemoved++;
-        }
-      }
-    }
-
-    const domains = await proxyService.getRegisteredDomains();
-    for (const domain of domains) {
-      const sandboxIdMatch = [...knownSandboxIds].find((sid: string) =>
-        domain.endsWith(`${sid}.${config.domain.baseDomain}`),
-      );
-      if (!sandboxIdMatch) {
-        if (domain.endsWith(`.${config.domain.baseDomain}`)) {
-          await proxyService.removeRoute(domain);
-          caddyRoutesRemoved++;
-        }
-      }
-    }
-
-    const sshSandboxIds = await SshPiperService.listRouteSandboxIds();
-    for (const sshId of sshSandboxIds) {
-      if (!knownSandboxIds.has(sshId)) {
-        await SshPiperService.removeRoute(sshId);
-        sshRoutesRemoved++;
-      }
-    }
-  }
-
-  // Reconcile IP pool — rebuild from DB to fix any stale allocations
-  const activeIps = sandboxService.getAll().map((s) => s.runtime.ipAddress);
-  networkService.reconcile(activeIps);
-
-  log.info(
-    {
-      socketsRemoved,
-      overlaysRemoved,
-      tapDevicesRemoved,
-      lvmVolumesRemoved,
-      logsRemoved,
-      caddyRoutesRemoved,
-      sshRoutesRemoved,
-    },
-    "Cleanup completed",
-  );
-
   return {
-    socketsRemoved,
-    overlaysRemoved,
-    tapDevicesRemoved,
-    lvmVolumesRemoved,
-    logsRemoved,
-    caddyRoutesRemoved,
-    sshRoutesRemoved,
-    spaceFreed,
+    socketsRemoved: 0,
+    overlaysRemoved: 0,
+    tapDevicesRemoved: 0,
+    lvmVolumesRemoved: 0,
+    logsRemoved: 0,
+    caddyRoutesRemoved: 0,
+    sshRoutesRemoved: 0,
+    spaceFreed: 0,
   };
 }
 
@@ -251,26 +97,6 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
     },
     {
       response: SystemStatsSchema,
-      detail: { tags: ["system"] },
-    },
-  )
-  .get(
-    "/storage",
-    async () => {
-      const [available, hasDefaultImage, pool] = await Promise.all([
-        StorageService.isAvailable(),
-        StorageService.hasImageVolume("dev-base"),
-        StorageService.getPoolStats(),
-      ]);
-
-      return {
-        available,
-        hasDefaultImage,
-        pool,
-      };
-    },
-    {
-      response: StorageStatusSchema,
       detail: { tags: ["system"] },
     },
   )

@@ -44,23 +44,6 @@ export const CleanupResultSchema = t.Object({
 });
 export type CleanupResult = Static<typeof CleanupResultSchema>;
 
-export const StoragePoolStatsSchema = t.Object({
-  exists: t.Boolean(),
-  dataPercent: t.Number(),
-  metadataPercent: t.Number(),
-  totalSize: t.String(),
-  usedSize: t.String(),
-  volumeCount: t.Number(),
-});
-export type StoragePoolStats = Static<typeof StoragePoolStatsSchema>;
-
-export const StorageStatusSchema = t.Object({
-  available: t.Boolean(),
-  hasDefaultImage: t.Boolean(),
-  pool: StoragePoolStatsSchema,
-});
-export type StorageStatus = Static<typeof StorageStatusSchema>;
-
 export const LiveStatusSchema = t.Object({
   status: t.Literal("ok"),
 });

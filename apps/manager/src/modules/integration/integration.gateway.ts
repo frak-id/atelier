@@ -1,6 +1,9 @@
 import { createOpencodeClient, type Part } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../../infrastructure/agent/index.ts";
-import { proxyService } from "../../infrastructure/proxy/proxy.service.ts";
+import {
+  buildDevCommandIngress,
+  KubeClient,
+} from "../../infrastructure/kubernetes/index.ts";
 import type { SandboxLifecycle } from "../../orchestrators/sandbox-lifecycle.ts";
 import type { TaskSpawner } from "../../orchestrators/task-spawner.ts";
 import type { Task } from "../../schemas/index.ts";
@@ -28,6 +31,7 @@ import {
 } from "./integration-commands.ts";
 
 const log = createChildLogger("integration-gateway");
+const kubeClient = new KubeClient();
 
 const WORKING_EMOJI = "hourglass_flowing_sand";
 
@@ -325,14 +329,20 @@ export class IntegrationGateway {
           );
 
           if (devCommand.port && sandbox.runtime?.ipAddress) {
-            const urls = await proxyService.registerDevRoute(
-              sandbox.id,
-              sandbox.runtime.ipAddress,
-              devCommand.name,
-              devCommand.port,
-              devCommand.isDefault ?? false,
-              devCommand.extraPorts,
+            await kubeClient.createResource(
+              buildDevCommandIngress(
+                sandbox.id,
+                devCommand.name,
+                devCommand.port,
+                config.domain.baseDomain,
+              ),
             );
+            const urls = {
+              namedUrl: `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.baseDomain}`,
+              defaultUrl: devCommand.isDefault
+                ? `https://dev-${sandbox.id}.${config.domain.baseDomain}`
+                : undefined,
+            };
 
             await adapter.postMessage(
               event,
@@ -363,11 +373,9 @@ export class IntegrationGateway {
         try {
           await this.deps.agentClient.devStop(sandbox.id, devCommand.name);
           if (devCommand.port) {
-            await proxyService.removeDevRoute(
-              sandbox.id,
-              devCommand.name,
-              devCommand.isDefault ?? false,
-              devCommand.extraPorts,
+            await kubeClient.deleteResource(
+              "ingresses",
+              `dev-${devCommand.name}-${sandbox.id}`,
             );
           }
           await adapter.postMessage(event, `Stopped \`${devCommand.name}\``);
