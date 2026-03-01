@@ -476,14 +476,12 @@ function TabPanel({
   sandbox,
   browserUrl,
   browserStarting,
-  isActive,
   onTerminalSessionChange,
 }: {
   tabId: TabId;
   sandbox: Sandbox;
   browserUrl?: string;
   browserStarting?: boolean;
-  isActive: boolean;
   onTerminalSessionChange?: (title: string | null) => void;
 }) {
   const urlMap: Record<TabId, string | undefined> = {
@@ -495,7 +493,7 @@ function TabPanel({
 
   if (tabId === "terminal") {
     return (
-      <div className={cn("absolute inset-0", !isActive && "hidden")}>
+      <div className="absolute inset-0">
         <MultiTerminal
           sandboxId={sandbox.id}
           className="w-full h-full"
@@ -508,12 +506,7 @@ function TabPanel({
   const url = urlMap[tabId];
   if (!url) {
     return (
-      <div
-        className={cn(
-          "absolute inset-0 flex items-center justify-center bg-muted/30",
-          !isActive && "hidden",
-        )}
-      >
+      <div className="absolute inset-0 flex items-center justify-center bg-muted/30">
         <div className="text-center space-y-3">
           <Globe className="h-8 w-8 mx-auto text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
@@ -534,10 +527,7 @@ function TabPanel({
   return (
     <iframe
       src={url}
-      className={cn(
-        "absolute inset-0 w-full h-full border-0",
-        !isActive && "hidden",
-      )}
+      className="absolute inset-0 w-full h-full border-0"
       title={tabLabel}
       allow={tabId === "web" ? "clipboard-write" : undefined}
     />
@@ -564,61 +554,53 @@ function ImmersionContent({
 
   const isSplit = !!tab2;
 
-  if (!isSplit) {
-    return (
-      <div className="flex-1 relative">
-        {tabs.map((tab) => (
-          <TabPanel
-            key={tab.id}
-            tabId={tab.id}
-            sandbox={sandbox}
-            browserUrl={browserUrl}
-            browserStarting={browserStarting}
-            isActive={tab.id === tab1}
-            onTerminalSessionChange={onTerminalSessionChange}
-          />
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div ref={containerRef} className="flex-1 flex min-h-0">
-      <div style={{ width: `${splitPercent}%` }} className="min-w-0 relative">
-        {tabs.map((tab) => (
-          <TabPanel
-            key={tab.id}
-            tabId={tab.id}
-            sandbox={sandbox}
-            browserUrl={browserUrl}
-            browserStarting={browserStarting}
-            isActive={tab.id === tab1}
-            onTerminalSessionChange={onTerminalSessionChange}
-          />
-        ))}
-      </div>
+    <div ref={containerRef} className="flex-1 relative min-h-0">
+      {isSplit && (
+        <div
+          ref={dividerRef}
+          onPointerDown={onPointerDown}
+          className="absolute top-0 bottom-0 z-10 w-2 cursor-col-resize bg-transparent hover:bg-border/50 active:bg-border transition-colors flex items-center justify-center select-none touch-none"
+          style={{ left: `${splitPercent}%` }}
+        >
+          <div className="w-1 h-8 rounded-full bg-border" />
+        </div>
+      )}
 
-      <div
-        ref={dividerRef}
-        onPointerDown={onPointerDown}
-        className="w-2 shrink-0 cursor-col-resize bg-transparent hover:bg-border/50 active:bg-border transition-colors flex items-center justify-center select-none touch-none"
-      >
-        <div className="w-1 h-8 rounded-full bg-border" />
-      </div>
+      {/* Each tab rendered once — hidden tabs stay mounted to
+         preserve iframe state and avoid reload on switch */}
+      {tabs.map((tab) => {
+        const isLeft = tab.id === tab1;
+        const isRight = isSplit && tab.id === tab2;
+        const isVisible = isLeft || isRight;
 
-      <div className="flex-1 min-w-0 relative">
-        {tabs.map((tab) => (
-          <TabPanel
+        const panelStyle = !isVisible
+          ? { display: "none" as const }
+          : isRight
+            ? {
+                left: `calc(${splitPercent}% + 0.5rem)`,
+                right: 0,
+              }
+            : isSplit
+              ? { left: 0, width: `${splitPercent}%` }
+              : { left: 0, right: 0 };
+
+        return (
+          <div
             key={tab.id}
-            tabId={tab.id}
-            sandbox={sandbox}
-            browserUrl={browserUrl}
-            browserStarting={browserStarting}
-            isActive={tab.id === tab2}
-            onTerminalSessionChange={onTerminalSessionChange}
-          />
-        ))}
-      </div>
+            className={cn("absolute top-0 bottom-0", !isVisible && "hidden")}
+            style={panelStyle}
+          >
+            <TabPanel
+              tabId={tab.id}
+              sandbox={sandbox}
+              browserUrl={browserUrl}
+              browserStarting={browserStarting}
+              onTerminalSessionChange={onTerminalSessionChange}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
