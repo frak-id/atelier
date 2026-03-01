@@ -32,7 +32,7 @@ export function buildSandboxConfig(
     createdAt: new Date().toISOString(),
     network: {
       dashboardDomain,
-      managerInternalUrl: `http://${config.network.bridgeIp}:${config.server.port}/internal`,
+      managerInternalUrl: "http://manager.atelier-system.svc:4000/internal",
     },
     services: {
       vscode: {

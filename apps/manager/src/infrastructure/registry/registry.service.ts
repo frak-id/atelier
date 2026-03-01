@@ -437,7 +437,7 @@ export const RegistryService = {
   },
 
   getRegistryUrl(): string {
-    return `http://${config.network.bridgeIp}:${config.advanced.server.verdaccio.port}`;
+    return "http://verdaccio.atelier-system.svc:4873";
   },
 
   async waitForHealthy(timeoutMs: number): Promise<boolean> {

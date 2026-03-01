@@ -335,7 +335,7 @@ export class SystemSandboxService {
     password?: string,
   ): Promise<void> {
     const mcpToken = config.server.mcpToken;
-    const mcpUrl = `http://${config.network.bridgeIp}:${config.server.port}/mcp`;
+    const mcpUrl = "http://manager.atelier-system.svc:4000/mcp";
 
     const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
     const client = createOpencodeClient({

@@ -1,7 +1,6 @@
 import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
-import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
@@ -257,7 +256,7 @@ export class InternalService {
     if (!settings.enabled) return;
 
     const registryUrl = RegistryService.getRegistryUrl();
-    const bridgeIp = config.network.bridgeIp;
+    const registryHost = new URL(registryUrl).hostname;
 
     const files = [
       {
@@ -274,7 +273,7 @@ export class InternalService {
       },
       {
         path: `${VM.HOME}/.yarnrc.yml`,
-        content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${bridgeIp}"`,
+        content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${registryHost}"`,
       },
     ];
 

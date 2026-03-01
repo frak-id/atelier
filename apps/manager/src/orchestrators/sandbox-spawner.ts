@@ -1,7 +1,5 @@
 import { customAlphabet } from "nanoid";
 import { eventBus } from "../infrastructure/events/index.ts";
-import { networkService } from "../infrastructure/network/index.ts";
-import { SshPiperService } from "../infrastructure/proxy/index.ts";
 import type {
   CreateSandboxBody,
   CreateSandboxResponse,
@@ -54,7 +52,6 @@ export class SandboxSpawner {
     workspace: Workspace | undefined,
     options: CreateSandboxBody,
   ): Promise<Sandbox> {
-    const network = await networkService.allocate(sandboxId);
     const generatePassword = customAlphabet(
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
     );
@@ -64,21 +61,16 @@ export class SandboxSpawner {
       status: "running",
       workspaceId: options.workspaceId,
       runtime: {
-        ipAddress: network.ipAddress,
-        macAddress: network.macAddress,
+        ipAddress: "10.42.0.99",
+        macAddress: "",
         urls: {
           vscode: `https://sandbox-${sandboxId}.${config.domain.baseDomain}`,
           opencode: `https://opencode-${sandboxId}.${config.domain.baseDomain}`,
-          ssh: await SshPiperService.registerRoute(
-            sandboxId,
-            network.ipAddress,
-            this.ports.sshKeys.getValidPublicKeys(),
-          ),
+          ssh: "",
         },
         vcpus: options.vcpus ?? workspace?.config.vcpus ?? 2,
         memoryMb: options.memoryMb ?? workspace?.config.memoryMb ?? 2048,
         opencodePassword: generatePassword(32),
-        pid: Math.floor(Math.random() * 100000),
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
