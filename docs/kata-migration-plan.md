@@ -1,6 +1,6 @@
 # Kata Containers Migration Plan
 
-_Last updated: 2026-03-01 — Phase 1 validated on production VPS_
+_Last updated: 2026-03-01 — Phase 2 updated with guest-ops analysis, internal service layer, and service discovery_
 
 ## Overview
 
@@ -37,10 +37,10 @@ Bare metal server (root required)
 │   │   │   ├── sandbox-boot.ts    bootNew/bootExisting/finalize
 │   │   │   ├── boot-waiter.ts     FC process polling
 │   │   │   └── cleanup-coordinator.ts  ordered teardown
-│   │   ├── ports/           (404 LOC) ← STAYS UNCHANGED
+│   │   ├── ports/           (404 LOC) ← MINOR CLEANUP
 │   │   │   ├── sandbox-ports.ts   SandboxPorts DI interface
 │   │   │   └── guest-*.ts         GuestOps (DNS, git, secrets, services)
-│   │   ├── workflows/       (420 LOC) ← STAYS UNCHANGED
+│   │   ├── workflows/       (420 LOC) ← MINOR CLEANUP
 │   │   │   ├── create-workspace/system.ts
 │   │   │   └── restart-workspace/system.ts
 │   │   └── sandbox-spawner.ts (99 LOC, thin dispatcher)
@@ -67,8 +67,8 @@ k3s cluster (single or multi-node)
 │   │   │   ├── sandbox-boot.ts    create/delete Pod + Service + Ingress
 │   │   │   ├── boot-waiter.ts     pod readiness polling
 │   │   │   └── cleanup-coordinator.ts  kubectl delete pod,svc,ingress
-│   │   ├── ports/           (~395 LOC) ← MINOR CLEANUP (FC device commands removed)
-│   │   ├── workflows/       (420 LOC) ← UNCHANGED
+│   │   ├── ports/           (~330 LOC) ← CLEANUP (FC guest ops removed)
+│   │   ├── workflows/       (~380 LOC) ← MINOR CLEANUP (deleted ops removed)
 │   │   ├── prebuild-runner.ts (~200 LOC) ← REWRITTEN (Kaniko Job orchestrator)
 │   │   ├── sandbox-lifecycle.ts (~150 LOC) ← REWRITTEN (pod status monitoring)
 │   │   └── sandbox-spawner.ts (99 LOC) ← UNCHANGED
@@ -107,19 +107,37 @@ Workflows call `bootNewSandbox()`, `bootExistingSandbox()`, `cleanupSandboxResou
 
 Same lifecycle state machine, same restart logic, different health detection mechanism.
 
-### Ports layer — MINOR CLEANUP (404 → ~395 LOC)
+### Ports layer — CLEANUP (404 → ~330 LOC)
 
-`SandboxPorts` interface and `GuestOps` functions stay. Guest operations push commands/files via `ports.agent` — works identically over TCP as it did over vsock.
+`SandboxPorts` interface stays. `GuestOps` functions need significant cleanup — most post-boot operations exist only because of Firecracker caveats that K8s + Kata + Cloud Hypervisor handles natively.
 
-**FC-specific commands removed from `guest-base.ts`:**
-- `mknod /dev/vdb && mount /opt/shared` — shared-binaries virtio block device mount (binaries now baked into base image)
-- `mknod /dev/vda && resize2fs /dev/vda` — FC root disk resize (OCI images handle rootfs natively)
+**Deleted from `guest-base.ts` (~74 LOC removed):**
 
-Everything else (DNS, hostname, clock sync, swap, services, secrets) stays unchanged.
+| Operation | Why it exists | Why K8s handles it |
+|---|---|---|
+| `buildDnsCommand()` | FC VMs boot with empty `/etc/resolv.conf` | CoreDNS auto-populates pod DNS via kubelet |
+| `buildClockSyncCommand()` | FC VMs need manual `chronyd` startup | Cloud Hypervisor provides `kvmclock` — **validated: no drift in Phase 1** |
+| `buildHostnameCommand()` | FC VMs have no hostname set | K8s pod spec `hostname` field |
+| `buildSwapCommand()` | Manually creates swapfile inside FC VM | K8s memory requests/limits; swap discouraged (`--fail-swap-on`) |
+| `buildMountSharedBinariesCommand()` | ext4 image mounted as virtio block device | Binaries baked into base OCI image |
+| `resizeStorage()` + `mknod` | LVM thin volumes need `resize2fs` after grow | OCI images define rootfs; PVCs handle dynamic storage |
 
-### Workflows layer — UNCHANGED (420 LOC)
+**Stays unchanged:**
+- `buildRuntimeEnvFiles()` — dynamic per-sandbox env (sandbox ID). Could move to K8s Downward API, but `writeFiles()` is simpler and already wired.
+- `buildOhMyOpenCodeCacheFiles()` — seeds OpenCode provider cache, dynamic per-sandbox
+- `buildSandboxMdFile()` — generated markdown, dynamic per-sandbox
+- `startServices()` — agent manages process lifecycle inside the pod
+- `guest-repo.ts` — git cloning and credential injection (unchanged)
+- `guest-secrets.ts` — secret file collection and injection (unchanged)
 
-Compose kernel + ports. Zero infrastructure imports. Untouched.
+### Workflows layer — MINOR CLEANUP (420 → ~380 LOC)
+
+Workflows compose kernel + ports with zero infrastructure imports. They need minor cleanup to remove calls to deleted guest-ops functions (~10 LOC per workflow file):
+- Remove `buildDnsCommand()`, `buildClockSyncCommand()`, `buildHostnameCommand()` from boot sequences
+- Remove `buildSwapCommand()` and `resizeStorage()` from provisioning steps
+- Remove `agent.setConfig()` calls (replaced by ConfigMap mounted at pod creation)
+
+Remaining workflow logic (auth/config sync, secret injection, git clone, service start) is unchanged.
 
 ### Infrastructure — DELETE (except agent client)
 
@@ -162,7 +180,7 @@ The Rust agent stays inside each sandbox but shrinks from ~3,040 to ~1,500 LOC:
 | Feature | Keep? | Why |
 |---|---|---|
 | **Terminal/PTY (WebSocket)** | YES | Dashboard needs WebSocket terminals with session persistence, output buffering, reconnection. `kubectl exec` can't do this. |
-| **Exec (used by GuestOps)** | YES | GuestOps calls `agent.exec()` / `agent.batchExec()` for DNS, clock sync, hostname, swap, git clone. Application-level provisioning commands, not generic exec. |
+| **Exec (used by GuestOps)** | YES | GuestOps calls `agent.exec()` / `agent.batchExec()` for git clone and custom init commands. FC-specific ops (DNS, clock, hostname, swap, resize) deleted — K8s handles them natively. |
 | **File writing (used by GuestOps)** | YES | GuestOps calls `agent.writeFiles()` to push secrets, env files, git credentials, SANDBOX.md. Dynamic per-sandbox files, not static config. |
 | **Services management** | YES | K8s manages containers, not processes inside containers. Sandboxes run multiple services (LSP, dev server, etc.). |
 | **Dev commands** | YES | Same — per-process management inside sandbox. |
@@ -172,7 +190,39 @@ The Rust agent stays inside each sandbox but shrinks from ~3,040 to ~1,500 LOC:
 | **Config push/get** | DELETE | `agent.setConfig()` replaced by ConfigMap mounted via virtio-fs. |
 | **vsock transport** | DELETE | Pod has normal IP. Agent listens on TCP instead. |
 
-**Key distinction:** GuestOps uses `agent.exec()`, `agent.writeFiles()`, and `agent.batchExec()` — these stay. What gets deleted are the agent-side routes that K8s replaces natively (health checks, static config injection). The GuestOps layer (~395 LOC) is mostly unchanged — it builds commands and files, pushes them through `ports.agent`, and doesn't care whether the transport is vsock or TCP.
+**Key distinction:** GuestOps uses `agent.exec()`, `agent.writeFiles()`, and `agent.batchExec()` — these stay. What gets deleted are: (1) agent-side routes that K8s replaces (health, config), and (2) FC-specific guest ops that K8s handles natively (DNS, clock, hostname, swap, resize). The remaining GuestOps layer (~330 LOC) builds commands and files, pushes them through `ports.agent`, and doesn't care whether the transport is vsock or TCP.
+
+## Internal Service Layer & Auto-Sync
+
+The manager runs three continuous synchronization systems that push state to all running sandboxes. This architecture is **transport-agnostic** — the sync logic doesn't change for K8s. Only service discovery URLs need updating.
+
+### Sync Systems
+
+| System | File | Mechanism | Interval |
+|---|---|---|---|
+| **Auth sync** | `auth-sync.service.ts` (431 LOC) | Bidirectional: poll auth from all sandboxes → aggregate → push back to stale | Every 5s |
+| **Config + registry sync** | `internal.service.ts` (284 LOC) | Push: merge global + workspace configs → push to all; inject npm registry URLs | On boot + on-demand via API |
+| **Service + git polling** | `sandbox-poller.ts` (168 LOC) | Poll: hash service/git status → emit SSE events on change | Every 10s |
+
+**Auth sync detail:** Reads auth files (`~/.local/share/opencode/auth.json`, `~/.config/opencode/antigravity-accounts.json`) from every running sandbox via `batchExec(stat + cat)`. For OAuth tokens, picks the entry with the newest expiry across all sandboxes. For opaque providers, last-edit-wins by mtime. Stores aggregated "best auth" in SQLite, pushes to every stale sandbox via `writeFiles()`. This is how "authenticate once in any sandbox, all others get it within 5 seconds" works.
+
+**Config sync detail:** `ConfigFileService` stores global and workspace-scoped config files in SQLite. `InternalService.syncConfigsToSandboxes()` merges them (workspace overrides global, JSON deep-merged), then pushes to all running sandboxes grouped by workspace. Also handles npm registry URL injection (`/etc/npmrc`, `~/.bunfig.toml`, `~/.yarnrc.yml`).
+
+**Event flow:** Config/workspace changes → `eventBus.emit()` → SSE to dashboard clients. Service mutations → `internalBus` → optimistic 2s re-poll → hash comparison → SSE event if changed.
+
+### K8s Migration Impact
+
+**Sync logic: zero changes.** Auth aggregation, config merging, polling, event bus, SSE — all pure business logic, transport-agnostic. Works identically over TCP.
+
+**Service discovery URLs: ~20 LOC change.** All sandbox-to-host communication currently routes through `config.network.bridgeIp` (172.16.0.1). In K8s, this becomes K8s Service DNS:
+
+| Current (bridgeIp) | K8s equivalent | Affected code |
+|---|---|---|
+| `http://172.16.0.1:7777` (Verdaccio) | `http://verdaccio.atelier-system.svc:4873` | `RegistryService.getRegistryUrl()`, `pushRegistryConfig()` |
+| `http://172.16.0.1:4000` (Manager) | `http://manager.atelier-system.svc:4000` | `SandboxConfig.managerUrl` |
+| Manual DNS in `/etc/resolv.conf` | CoreDNS handles automatically | `buildDnsCommand()` — deleted |
+
+The `config.network.bridgeIp` config key is replaced by K8s service DNS names. Configuration change, not architectural.
 
 ## OCI Prebuild System
 
@@ -529,22 +579,46 @@ Validated on production VPS (Ubuntu 22.04, 62GB RAM, 5.15.0-171-generic) alongsi
 ### Phase 2: Rewrite Core (2-3 weeks)
 
 - Add `@kubernetes/client-node` to manager
-- Rewrite `kernel/sandbox-boot.ts` — `bootNewSandbox()` creates Pod + Service + Ingress via K8s API, pod image pulled from Zot
-- Rewrite `kernel/boot-waiter.ts` — watch pod status instead of polling FC process
-- Rewrite `kernel/cleanup-coordinator.ts` — label-based bulk delete
-- Rewrite `sandbox-lifecycle.ts` — pod status monitoring replaces `kill -0` process checks, socket checks, vsock repair
-- Rewrite `prebuild-runner.ts` — generates Dockerfile, creates ConfigMap + Kaniko Job, watches Job completion, updates workspace config with image ref
-- Adapt `prebuild-checker.ts` — same trigger logic, calls Kaniko-based runner instead of VM-based runner
-- Update `agent.client.ts` — replace vsock transport with TCP (pod IP from K8s API)
-- Slim agent: remove health, config, vsock endpoints
-- Remove FC-specific commands from `guest-base.ts` (`mknod /dev/vdb`, `mount /opt/shared`, `resize2fs /dev/vda`)
-- Rewrite `health.routes.ts` — check K8s API, Zot, Kata RuntimeClass instead of FC/LVM/Caddy
-- Rewrite system stats in `system.routes.ts` + `mcp/tools/system.ts` — K8s metrics API instead of `top`/`free`/`df`
-- Delete `shared/lib/shell.ts` — all FC/host-specific helpers
-- **Workflows, spawner: ZERO CHANGES**
-- Test end-to-end: API → pod created → ingress works → agent reachable → terminal works
-- Test prebuild: trigger → Kaniko Job → image in Zot → new sandbox uses prebuilt image
-- **Exit criteria**: Full sandbox lifecycle + prebuild works on K8s, zero host-level operations
+- **Kernel layer rewrite:**
+  - Rewrite `kernel/sandbox-boot.ts` — `bootNewSandbox()` creates Pod + Service + Ingress via K8s API, pod image pulled from Zot
+  - Rewrite `kernel/boot-waiter.ts` — watch pod status instead of polling FC process
+  - Rewrite `kernel/cleanup-coordinator.ts` — label-based bulk delete
+- **Sandbox lifecycle rewrite:**
+  - Rewrite `sandbox-lifecycle.ts` — pod status monitoring replaces `kill -0` process checks, socket checks, vsock repair
+- **Prebuild rewrite:**
+  - Rewrite `prebuild-runner.ts` — generates Dockerfile, creates ConfigMap + Kaniko Job, watches Job completion, updates workspace config with image ref
+  - Adapt `prebuild-checker.ts` — same trigger logic, calls Kaniko-based runner instead of VM-based runner
+- **Agent transport:**
+  - Update `agent.client.ts` — replace vsock transport with TCP (pod IP from K8s API)
+  - Slim agent: remove health, config, vsock endpoints
+- **Guest ops cleanup (FC-specific operations deleted — K8s handles natively):**
+  - Delete `buildDnsCommand()` — CoreDNS handles pod DNS
+  - Delete `buildClockSyncCommand()` — Cloud Hypervisor `kvmclock` validated in Phase 1 (no drift)
+  - Delete `buildHostnameCommand()` — K8s pod spec `hostname` field
+  - Delete `buildSwapCommand()` — K8s memory requests/limits replace manual swap
+  - Delete `resizeStorage()` + `mknod` commands — OCI images handle rootfs natively
+  - Delete `buildMountSharedBinariesCommand()` — binaries baked into base OCI image
+- **Workflow cleanup (~10 LOC per file, 4 files):**
+  - Remove deleted guest-ops calls from `create-workspace.ts`, `create-system.ts`, `restart-workspace.ts`, `restart-system.ts`
+  - Remove `agent.setConfig()` calls — replaced by ConfigMap mounted at pod creation
+- **Service discovery URL migration (~20 LOC):**
+  - Replace `config.network.bridgeIp` references with K8s service DNS names
+  - Update `RegistryService.getRegistryUrl()` → `http://verdaccio.atelier-system.svc:4873`
+  - Update `SandboxConfig.managerUrl` → `http://manager.atelier-system.svc:4000`
+  - Update `pushRegistryConfig()` — npm/bun/yarn configs point to K8s Verdaccio service
+- **Health & system stats:**
+  - Rewrite `health.routes.ts` — check K8s API, Zot, Kata RuntimeClass instead of FC/LVM/Caddy
+  - Rewrite system stats in `system.routes.ts` + `mcp/tools/system.ts` — K8s metrics API instead of `top`/`free`/`df`
+- **Cleanup:**
+  - Delete `shared/lib/shell.ts` — all FC/host-specific helpers
+- **Internal service layer: NO CHANGES** — auth sync, config sync, registry sync, poller all transport-agnostic
+- **Testing:**
+  - Test end-to-end: API → pod created → ingress works → agent reachable → terminal works
+  - Test prebuild: trigger → Kaniko Job → image in Zot → new sandbox uses prebuilt image
+  - Test auth sync: authenticate in sandbox A → verify token appears in sandbox B within 5s
+  - Test config sync: update config from dashboard → verify pushed to all running sandboxes
+  - Test registry sync: enable/disable registry → verify npm config updated in all sandboxes
+- **Exit criteria**: Full sandbox lifecycle + prebuild + auth/config sync works on K8s, zero host-level operations
 
 ### Phase 3: Helm + Cleanup (1-2 weeks)
 
