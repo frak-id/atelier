@@ -1,5 +1,5 @@
 [Unit]
-Description=L'atelier Manager API
+Description=Atelier Manager API
 Documentation=https://github.com/frak-id/frak-sandbox
 After=network-online.target atelier-network.service
 Wants=atelier-network.service

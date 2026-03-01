@@ -209,7 +209,7 @@ const app = new Elysia()
       path: "/swagger",
       documentation: {
         info: {
-          title: "L'atelier Manager API",
+          title: "Atelier Manager API",
           version: "0.1.0",
           description:
             "API for managing Firecracker-based sandbox environments",
@@ -299,7 +299,7 @@ const app = new Elysia()
       ),
   )
   .get("/", () => ({
-    name: "L'atelier Manager",
+    name: "Atelier Manager",
     version: "0.1.0",
     mode: config.server.mode,
     docs: "/swagger",
@@ -326,7 +326,7 @@ app.listen(
         mode: config.server.mode,
         swagger: `http://${hostname}:${port}/swagger`,
       },
-      "L'atelier Manager started",
+      "Atelier Manager started",
     );
   },
 );

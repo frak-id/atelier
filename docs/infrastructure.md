@@ -2,7 +2,7 @@
 
 ## Configuration
 
-L'atelier uses a unified configuration system. Values can be set via:
+Atelier uses a unified configuration system. Values can be set via:
 
 1. **Environment variables** (highest priority)
 2. **Config file** (`/etc/atelier/sandbox.config.json` or `ATELIER_CONFIG` env var)

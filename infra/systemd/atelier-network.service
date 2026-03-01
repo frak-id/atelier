@@ -1,5 +1,5 @@
 [Unit]
-Description=L'atelier Network Bridge
+Description=Atelier Network Bridge
 Documentation=https://github.com/frak-id/frak-sandbox
 After=network-online.target
 Wants=network-online.target

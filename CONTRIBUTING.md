@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve L'atelier.
+Thanks for helping improve Atelier.
 
 ## Quick start
 

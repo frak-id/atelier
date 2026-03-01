@@ -1,4 +1,4 @@
-# L'atelier - dev-base image
+# Atelier - dev-base image
 # Minimal development environment with Bun and Git
 # code-server and opencode are served via NFS from /opt/shared/bin
 #

@@ -1,4 +1,4 @@
-# L'atelier - dev-cloud image
+# Atelier - dev-cloud image
 # Extends dev-base with cloud CLI tools: AWS CLI, Google Cloud SDK, kubectl
 #
 # Build: docker build -t atelier/dev-cloud .
