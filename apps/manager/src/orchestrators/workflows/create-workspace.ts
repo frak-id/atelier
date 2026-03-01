@@ -57,20 +57,12 @@ export async function createWorkspaceSandbox(
       }
     }
 
+    // --- Prepare configs synchronously ---
     const sandboxConfig = buildSandboxConfig(
       sandboxId,
       workspace,
       boot.sandbox.runtime.opencodePassword,
     );
-    await GuestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig);
-    await GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
-      ATELIER_SANDBOX_ID: sandboxId,
-    });
-    await GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
-
-    await GuestOps.syncSecrets(ports.agent, sandboxId, workspace);
-    await GuestOps.syncGitCredentials(ports.agent, sandboxId, ports.gitSources);
-    await GuestOps.syncFileSecrets(ports.agent, sandboxId, workspace);
 
     const configs = ports.configFiles.getMergedForSandbox(workspace.id);
     const authConfig = configs.find((c) => c.path === VM_PATHS.opencodeAuth);
@@ -86,18 +78,28 @@ export async function createWorkspaceSandbox(
         log.warn("Failed to parse auth.json for oh-my-opencode cache seed");
       }
     }
-    await GuestOps.pushOhMyOpenCodeCache(ports.agent, sandboxId, providers);
-
     const mdContent = generateSandboxMd(sandboxId, workspace);
-    await GuestOps.pushSandboxMd(ports.agent, sandboxId, mdContent);
 
-    const result = await ports.internal.syncAllToSandbox(sandboxId);
+    // --- Parallel batch: independent agent writes ---
+    const [syncResult] = await Promise.all([
+      ports.internal.syncAllToSandbox(sandboxId),
+      GuestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig),
+      GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
+        ATELIER_SANDBOX_ID: sandboxId,
+      }),
+      GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`),
+      GuestOps.syncSecrets(ports.agent, sandboxId, workspace),
+      GuestOps.syncGitCredentials(ports.agent, sandboxId, ports.gitSources),
+      GuestOps.syncFileSecrets(ports.agent, sandboxId, workspace),
+      GuestOps.pushOhMyOpenCodeCache(ports.agent, sandboxId, providers),
+      GuestOps.pushSandboxMd(ports.agent, sandboxId, mdContent),
+    ]);
     log.info(
       {
         sandboxId,
-        authSynced: result.auth.synced,
-        configsSynced: result.configs.synced,
-        registry: result.registry,
+        authSynced: syncResult.auth.synced,
+        configsSynced: syncResult.configs.synced,
+        registry: syncResult.registry,
       },
       "Internal sync complete",
     );

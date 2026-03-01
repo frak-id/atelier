@@ -52,24 +52,28 @@ export async function createSystemSandbox(
       }
     }
 
+    // --- Prepare config synchronously ---
     const sandboxConfig = buildSandboxConfig(
       sandboxId,
       undefined,
       boot.sandbox.runtime.opencodePassword,
     );
-    await GuestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig);
-    await GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
-      ATELIER_SANDBOX_ID: sandboxId,
-    });
-    await GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`);
 
-    const result = await ports.internal.syncAllToSandbox(sandboxId);
+    // --- Parallel batch: independent agent writes ---
+    const [syncResult] = await Promise.all([
+      ports.internal.syncAllToSandbox(sandboxId),
+      GuestOps.pushSandboxConfig(ports.agent, sandboxId, sandboxConfig),
+      GuestOps.pushRuntimeEnv(ports.agent, sandboxId, {
+        ATELIER_SANDBOX_ID: sandboxId,
+      }),
+      GuestOps.setHostname(ports.agent, sandboxId, `sandbox-${sandboxId}`),
+    ]);
     log.info(
       {
         sandboxId,
-        authSynced: result.auth.synced,
-        configsSynced: result.configs.synced,
-        registry: result.registry,
+        authSynced: syncResult.auth.synced,
+        configsSynced: syncResult.configs.synced,
+        registry: syncResult.registry,
       },
       "Internal sync complete",
     );
