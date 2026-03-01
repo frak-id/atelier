@@ -126,6 +126,25 @@ const app = new Elysia()
       );
     }
 
+    // Reset prebuilds stuck in "building" state from a previous crash
+    const allWorkspaces = workspaceService.getAll();
+    for (const workspace of allWorkspaces) {
+      if (workspace.config.prebuild?.status === "building") {
+        workspaceService.update(workspace.id, {
+          config: {
+            prebuild: {
+              ...workspace.config.prebuild,
+              status: "failed",
+            },
+          },
+        });
+        logger.warn(
+          { workspaceId: workspace.id, workspaceName: workspace.name },
+          "Startup: reset stuck building prebuild to failed",
+        );
+      }
+    }
+
     // Wait for Caddy to become ready before rehydrating routes
     const caddyDeadline = Date.now() + 30_000;
     let caddyReady = false;
