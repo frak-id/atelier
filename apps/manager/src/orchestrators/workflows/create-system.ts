@@ -28,7 +28,8 @@ export async function createSystemSandbox(
         baseImage: options.baseImage,
         vcpus: options.vcpus ?? DEFAULTS.VCPUS,
         memoryMb: options.memoryMb ?? DEFAULTS.MEMORY_MB,
-        prebuildReady: false,
+        prebuildReady: options.prebuildSnapshotName != null,
+        prebuildSnapshotName: options.prebuildSnapshotName,
       },
       ports,
     );
@@ -51,7 +52,6 @@ export async function createSystemSandbox(
 
     await GuestOps.startServices(ports.agent, sandboxId, ["opencode"]);
 
-    // --- Finalize: register routes + update status ---
     return await finalizeNewSandbox(
       sandboxId,
       boot.sandbox,

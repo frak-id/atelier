@@ -131,6 +131,7 @@ const prebuildRunner = new PrebuildRunner({
   workspaceService,
   gitSourceService,
   kubeClient,
+  agentClient,
   aiService: systemAiService,
 });
 

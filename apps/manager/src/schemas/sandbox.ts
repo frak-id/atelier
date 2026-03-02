@@ -45,6 +45,7 @@ export const CreateSandboxBodySchema = t.Object({
   vcpus: t.Optional(t.Number({ minimum: 1, maximum: 8 })),
   memoryMb: t.Optional(t.Number({ minimum: 512, maximum: 16384 })),
   system: t.Optional(t.Boolean()),
+  prebuildSnapshotName: t.Optional(t.String()),
 });
 export type CreateSandboxBody = Static<typeof CreateSandboxBodySchema>;
 

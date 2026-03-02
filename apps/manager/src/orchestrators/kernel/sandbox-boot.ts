@@ -2,6 +2,7 @@ import { customAlphabet } from "nanoid";
 import { eventBus } from "../../infrastructure/events/index.ts";
 import {
   buildConfigMap,
+  buildPvc,
   buildSandboxIngress,
   buildSandboxPod,
   buildSandboxService,
@@ -30,12 +31,17 @@ export interface BootNewOptions {
   vcpus: number;
   memoryMb: number;
   prebuildReady: boolean;
+  /** VolumeSnapshot name to clone PVC from (set when prebuild is ready) */
+  prebuildSnapshotName?: string;
+  /** PVC size override (K8s quantity, e.g. "10Gi") */
+  volumeSize?: string;
   workspace?: Workspace;
 }
 
 export interface BootResult {
   sandbox: Sandbox;
   podName: string;
+  pvcName: string;
   usedPrebuild: boolean;
 }
 
@@ -50,12 +56,13 @@ export async function bootNewSandbox(
   ports: SandboxPorts,
 ): Promise<BootResult> {
   const podName = `sandbox-${sandboxId}`;
-  const usedPrebuild = Boolean(options.workspaceId && options.prebuildReady);
-  const image = resolveSandboxImage({
-    workspaceId: options.workspaceId,
-    prebuildReady: usedPrebuild,
-    baseImage: options.baseImage,
-  });
+  const pvcName = `sandbox-${sandboxId}`;
+  const configMapName = `sandbox-config-${sandboxId}`;
+  const usedPrebuild = Boolean(
+    options.prebuildReady && options.prebuildSnapshotName,
+  );
+  const image = resolveSandboxImage(options.baseImage);
+  const volumeSize = options.volumeSize ?? config.kubernetes.defaultVolumeSize;
 
   const opencodePassword = generatePassword(32);
   const sandbox: Sandbox = {
@@ -77,7 +84,27 @@ export async function bootNewSandbox(
   ports.sandbox.create(sandbox);
 
   try {
-    const configMapName = `sandbox-config-${sandboxId}`;
+    const sandboxLabels = {
+      "atelier.dev/sandbox": sandboxId,
+      "atelier.dev/component": "sandbox",
+    };
+
+    await kubeClient.createResource(
+      buildPvc({
+        name: pvcName,
+        size: volumeSize,
+        snapshotName: usedPrebuild ? options.prebuildSnapshotName : undefined,
+        labels: sandboxLabels,
+      }),
+    );
+
+    const pvcBound = await kubeClient.waitForPvcBound(pvcName, {
+      timeout: 120_000,
+    });
+    if (!pvcBound) {
+      throw new Error(`PVC ${pvcName} did not become bound`);
+    }
+
     await Promise.all([
       kubeClient.createResource(
         buildConfigMap(
@@ -92,10 +119,7 @@ export async function bootNewSandbox(
             ),
           },
           undefined,
-          {
-            "atelier.dev/sandbox": sandboxId,
-            "atelier.dev/component": "sandbox",
-          },
+          sandboxLabels,
         ),
       ),
       kubeClient.createResource(
@@ -104,6 +128,7 @@ export async function bootNewSandbox(
           image,
           opencodePassword,
           workspaceId: options.workspaceId,
+          pvcName,
           configMapName,
           requests: {
             cpu: `${Math.max(250, options.vcpus * 250)}m`,
@@ -122,25 +147,25 @@ export async function bootNewSandbox(
     ]);
 
     const podReady = await kubeClient.waitForPodReady(podName, {
-      timeout: 120000,
+      timeout: 120_000,
     });
     if (!podReady) {
       throw new Error(`Sandbox pod ${podName} did not become ready`);
     }
 
-    const podIp = await waitForPodIp(kubeClient, podName, 60000);
+    const podIp = await waitForPodIp(kubeClient, podName, 60_000);
     if (podIp) {
       sandbox.runtime.ipAddress = podIp;
     }
 
     const agentReady = await ports.agent.waitForAgent(sandboxId, {
-      timeout: 60000,
+      timeout: 60_000,
     });
     if (!agentReady) {
       log.warn({ sandboxId }, "Agent did not become ready");
     }
 
-    return { sandbox, podName, usedPrebuild };
+    return { sandbox, podName, pvcName, usedPrebuild };
   } catch (error) {
     log.error(
       {
@@ -160,21 +185,21 @@ export async function bootExistingSandbox(
   ports: SandboxPorts,
 ): Promise<RestartResult> {
   const podName = `sandbox-${sandboxId}`;
+  const pvcName = `sandbox-${sandboxId}`;
+  const configMapName = `sandbox-config-${sandboxId}`;
 
   const workspace = sandbox.workspaceId
     ? ports.workspaces.getById(sandbox.workspaceId)
     : undefined;
-  const hasPrebuild = workspace?.config.prebuild?.status === "ready";
-  const image = resolveSandboxImage({
-    workspaceId: sandbox.workspaceId,
-    prebuildReady: hasPrebuild,
-    baseImage: workspace?.config.baseImage,
-  });
+  const image = resolveSandboxImage(workspace?.config.baseImage);
   const opencodePassword =
     sandbox.runtime.opencodePassword ?? generatePassword(32);
 
   try {
     await kubeClient.deleteResource("Pod", podName);
+  } catch {}
+  try {
+    await kubeClient.deleteResource("ConfigMap", configMapName);
   } catch {}
 
   const sandboxConfig = buildSandboxConfig(
@@ -182,11 +207,6 @@ export async function bootExistingSandbox(
     workspace,
     opencodePassword,
   );
-  const configMapName = `sandbox-config-${sandboxId}`;
-
-  try {
-    await kubeClient.deleteResource("ConfigMap", configMapName);
-  } catch {}
 
   await Promise.all([
     kubeClient.createResource(
@@ -206,6 +226,7 @@ export async function bootExistingSandbox(
         image,
         opencodePassword,
         workspaceId: sandbox.workspaceId,
+        pvcName,
         configMapName,
         requests: {
           cpu: `${Math.max(250, sandbox.runtime.vcpus * 250)}m`,
@@ -220,19 +241,19 @@ export async function bootExistingSandbox(
   ]);
 
   const podReady = await kubeClient.waitForPodReady(podName, {
-    timeout: 120000,
+    timeout: 120_000,
   });
   if (!podReady) {
     throw new Error(`Sandbox pod ${podName} did not become ready`);
   }
 
-  const podIp = await waitForPodIp(kubeClient, podName, 60000);
+  const podIp = await waitForPodIp(kubeClient, podName, 60_000);
   if (podIp) {
     sandbox.runtime.ipAddress = podIp;
   }
 
   const agentReady = await ports.agent.waitForAgent(sandboxId, {
-    timeout: 60000,
+    timeout: 60_000,
   });
   if (!agentReady) {
     log.warn({ sandboxId }, "Agent did not become ready after restart");
@@ -294,16 +315,8 @@ export async function finalizeRestartedSandbox(
   return updatedSandbox;
 }
 
-function resolveSandboxImage(options: {
-  workspaceId?: string;
-  prebuildReady: boolean;
-  baseImage?: string;
-}): string {
-  if (options.workspaceId && options.prebuildReady) {
-    return `${config.kubernetes.registryUrl}/workspace-${options.workspaceId}:latest`;
-  }
-
-  return `${config.kubernetes.registryUrl}/${options.baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
+function resolveSandboxImage(baseImage?: string): string {
+  return `${config.kubernetes.registryUrl}/${baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
 }
 
 function buildUrls(

@@ -26,6 +26,7 @@ export async function createWorkspaceSandbox(
   let boot: BootResult | undefined;
 
   try {
+    const prebuildReady = workspace.config.prebuild?.status === "ready";
     boot = await bootNewSandbox(
       sandboxId,
       {
@@ -35,7 +36,10 @@ export async function createWorkspaceSandbox(
         vcpus: options.vcpus ?? workspace.config.vcpus ?? DEFAULTS.VCPUS,
         memoryMb:
           options.memoryMb ?? workspace.config.memoryMb ?? DEFAULTS.MEMORY_MB,
-        prebuildReady: workspace.config.prebuild?.status === "ready",
+        prebuildReady,
+        prebuildSnapshotName: prebuildReady
+          ? workspace.config.prebuild?.latestId
+          : undefined,
       },
       ports,
     );
@@ -104,7 +108,6 @@ export async function createWorkspaceSandbox(
       "opencode",
     ]);
 
-    // --- Finalize: register routes + update status ---
     return await finalizeNewSandbox(
       sandboxId,
       boot.sandbox,

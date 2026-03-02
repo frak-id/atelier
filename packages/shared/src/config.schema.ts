@@ -113,6 +113,20 @@ export const KubernetesConfigSchema = Type.Object(
     verdaccioImage: Type.String({
       default: "verdaccio/verdaccio:6",
     }),
+    /**
+     * StorageClass for sandbox PVCs.
+     * Recommend LVM thin provisioning (e.g. openebs-lvmpv) for
+     * efficient disk usage. Empty string uses the cluster default.
+     */
+    storageClass: Type.String({ default: "" }),
+    /**
+     * VolumeSnapshotClass for prebuild snapshots.
+     * Required for instant sandbox cloning from prebuilds.
+     * Empty string uses the cluster default.
+     */
+    volumeSnapshotClass: Type.String({ default: "" }),
+    /** Default PVC size for sandbox volumes (K8s quantity) */
+    defaultVolumeSize: Type.String({ default: "10Gi" }),
   },
   { default: {} },
 );
@@ -437,6 +451,9 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
   ATELIER_K8S_VERDACCIO_IMAGE: "kubernetes.verdaccioImage",
+  ATELIER_K8S_STORAGE_CLASS: "kubernetes.storageClass",
+  ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
+  ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",
 
   ATELIER_BRIDGE_NAME: "network.bridgeName",
   ATELIER_BRIDGE_IP: "network.bridgeIp",

@@ -223,23 +223,44 @@ export class KubeClient {
     }
 
     const selector = encodeURIComponent(labelSelector);
-    const collections = ["pods", "services", "ingresses"] as const;
+    const collections = [
+      { path: "pods", api: "core" },
+      { path: "services", api: "core" },
+      { path: "configmaps", api: "core" },
+      {
+        path: "persistentvolumeclaims",
+        api: "core",
+      },
+      { path: "ingresses", api: "networking" },
+      {
+        path: "volumesnapshots",
+        api: "snapshot",
+      },
+    ] as const;
 
-    for (const collection of collections) {
-      const base =
-        collection === "ingresses"
-          ? `/apis/networking.k8s.io/v1/namespaces/${namespace}/${collection}`
-          : `/api/v1/namespaces/${namespace}/${collection}`;
+    for (const col of collections) {
+      let base: string;
+      if (col.api === "networking") {
+        base = `/apis/networking.k8s.io/v1/namespaces/${namespace}/${col.path}`;
+      } else if (col.api === "snapshot") {
+        base = `/apis/snapshot.storage.k8s.io/v1/namespaces/${namespace}/${col.path}`;
+      } else {
+        base = `/api/v1/namespaces/${namespace}/${col.path}`;
+      }
 
-      const list = await this.list<{
-        items?: Array<{ metadata?: { name?: string } }>;
-      }>(`${base}?labelSelector=${selector}`);
+      try {
+        const list = await this.list<{
+          items?: Array<{ metadata?: { name?: string } }>;
+        }>(`${base}?labelSelector=${selector}`);
 
-      const items = list.items ?? [];
-      for (const item of items) {
-        const name = item.metadata?.name;
-        if (!name) continue;
-        await this.delete(`${base}/${name}`);
+        const items = list.items ?? [];
+        for (const item of items) {
+          const name = item.metadata?.name;
+          if (!name) continue;
+          await this.delete(`${base}/${name}`);
+        }
+      } catch {
+        // VolumeSnapshot CRD may not be installed — skip
       }
     }
   }
@@ -309,6 +330,57 @@ export class KubeClient {
       }
 
       await Bun.sleep(1000);
+    }
+
+    return false;
+  }
+
+  async waitForPvcBound(
+    name: string,
+    options: { timeout?: number; namespace?: string } = {},
+  ): Promise<boolean> {
+    if (isMock()) {
+      return true;
+    }
+
+    const timeout = options.timeout ?? 60_000;
+    const namespace = options.namespace ?? this.namespace;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeout) {
+      const pvc = await this.get<KubeStatusResponse>(
+        `/api/v1/namespaces/${namespace}/persistentvolumeclaims/${name}`,
+      );
+      const phase = pvc.status?.phase;
+      if (phase === "Bound") return true;
+      if (phase === "Lost") return false;
+      await Bun.sleep(1000);
+    }
+
+    return false;
+  }
+
+  async waitForVolumeSnapshotReady(
+    name: string,
+    options: { timeout?: number; namespace?: string } = {},
+  ): Promise<boolean> {
+    if (isMock()) {
+      return true;
+    }
+
+    const timeout = options.timeout ?? 120_000;
+    const namespace = options.namespace ?? this.namespace;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeout) {
+      const snap = await this.get<{
+        status?: { readyToUse?: boolean; error?: { message?: string } };
+      }>(
+        `/apis/snapshot.storage.k8s.io/v1/namespaces/${namespace}/volumesnapshots/${name}`,
+      );
+      if (snap.status?.readyToUse === true) return true;
+      if (snap.status?.error?.message) return false;
+      await Bun.sleep(2000);
     }
 
     return false;
@@ -560,17 +632,18 @@ function decodeBase64(value: string): string {
 function resourceCollectionPath(kind: string, namespace: string): string {
   const normalized = kind.toLowerCase();
   if (normalized === "pod") return `/api/v1/namespaces/${namespace}/pods`;
-  if (normalized === "service") {
+  if (normalized === "service")
     return `/api/v1/namespaces/${namespace}/services`;
-  }
-  if (normalized === "ingress") {
-    return `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
-  }
-  if (normalized === "job") {
-    return `/apis/batch/v1/namespaces/${namespace}/jobs`;
-  }
-  if (normalized === "configmap") {
+  if (normalized === "configmap")
     return `/api/v1/namespaces/${namespace}/configmaps`;
+  if (normalized === "persistentvolumeclaim")
+    return `/api/v1/namespaces/${namespace}/persistentvolumeclaims`;
+  if (normalized === "ingress")
+    return `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
+  if (normalized === "job")
+    return `/apis/batch/v1/namespaces/${namespace}/jobs`;
+  if (normalized === "volumesnapshot") {
+    return `/apis/snapshot.storage.k8s.io/v1/namespaces/${namespace}/volumesnapshots`;
   }
 
   throw new KubeApiError(`Unsupported Kubernetes kind: ${kind}`, 400);

@@ -1,4 +1,4 @@
-import { REGISTRY } from "@frak/atelier-shared/constants";
+import { REGISTRY, VM } from "@frak/atelier-shared/constants";
 import { config } from "../../shared/lib/config.ts";
 
 export type KubeResource = {
@@ -25,6 +25,7 @@ export type SandboxPodOptions = {
   opencodePassword: string;
   workspaceId?: string;
   namespace?: string;
+  pvcName?: string;
   configMapName?: string;
   requests?: Partial<ResourceSpec>;
   limits?: Partial<ResourceSpec>;
@@ -66,6 +67,32 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
   const labels = sandboxLabels(options.sandboxId, options.workspaceId);
 
+  const volumeMounts: Array<Record<string, unknown>> = [];
+  const volumes: Array<Record<string, unknown>> = [];
+
+  if (options.pvcName) {
+    volumeMounts.push({
+      name: "workspace",
+      mountPath: VM.HOME,
+    });
+    volumes.push({
+      name: "workspace",
+      persistentVolumeClaim: { claimName: options.pvcName },
+    });
+  }
+
+  if (options.configMapName) {
+    volumeMounts.push({
+      name: "sandbox-config",
+      mountPath: "/etc/sandbox",
+      readOnly: true,
+    });
+    volumes.push({
+      name: "sandbox-config",
+      configMap: { name: options.configMapName },
+    });
+  }
+
   return {
     apiVersion: "v1",
     kind: "Pod",
@@ -106,25 +133,10 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
               memory: options.limits?.memory ?? "2Gi",
             },
           },
-          ...(options.configMapName && {
-            volumeMounts: [
-              {
-                name: "sandbox-config",
-                mountPath: "/etc/sandbox",
-                readOnly: true,
-              },
-            ],
-          }),
+          ...(volumeMounts.length > 0 && { volumeMounts }),
         },
       ],
-      ...(options.configMapName && {
-        volumes: [
-          {
-            name: "sandbox-config",
-            configMap: { name: options.configMapName },
-          },
-        ],
-      }),
+      ...(volumes.length > 0 && { volumes }),
     },
   };
 }
@@ -437,5 +449,93 @@ export function buildVerdaccioService(
       },
       ports: [{ name: "http", port, targetPort: port }],
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PVC & VolumeSnapshot builders
+// ---------------------------------------------------------------------------
+
+export type PvcOptions = {
+  name: string;
+  namespace?: string;
+  size: string;
+  storageClassName?: string;
+  snapshotName?: string;
+  labels?: Record<string, string>;
+};
+
+export function buildPvc(options: PvcOptions): KubeResource {
+  const namespace = options.namespace ?? config.kubernetes.namespace;
+  const storageClassName =
+    options.storageClassName || config.kubernetes.storageClass || undefined;
+
+  const spec: Record<string, unknown> = {
+    accessModes: ["ReadWriteOnce"],
+    resources: {
+      requests: { storage: options.size },
+    },
+  };
+
+  if (storageClassName) {
+    spec.storageClassName = storageClassName;
+  }
+
+  if (options.snapshotName) {
+    spec.dataSource = {
+      name: options.snapshotName,
+      kind: "VolumeSnapshot",
+      apiGroup: "snapshot.storage.k8s.io",
+    };
+  }
+
+  return {
+    apiVersion: "v1",
+    kind: "PersistentVolumeClaim",
+    metadata: {
+      name: options.name,
+      namespace,
+      labels: options.labels,
+    },
+    spec,
+  };
+}
+
+export type VolumeSnapshotOptions = {
+  name: string;
+  namespace?: string;
+  pvcName: string;
+  volumeSnapshotClassName?: string;
+  labels?: Record<string, string>;
+};
+
+export function buildVolumeSnapshot(
+  options: VolumeSnapshotOptions,
+): KubeResource {
+  const namespace = options.namespace ?? config.kubernetes.namespace;
+  const volumeSnapshotClassName =
+    options.volumeSnapshotClassName ||
+    config.kubernetes.volumeSnapshotClass ||
+    undefined;
+
+  const spec: Record<string, unknown> = {
+    source: {
+      persistentVolumeClaimName: options.pvcName,
+    },
+  };
+
+  if (volumeSnapshotClassName) {
+    spec.volumeSnapshotClassName = volumeSnapshotClassName;
+  }
+
+  return {
+    apiVersion: "snapshot.storage.k8s.io/v1",
+    kind: "VolumeSnapshot",
+    metadata: {
+      name: options.name,
+      namespace,
+      labels: options.labels,
+    },
+    spec,
   };
 }
