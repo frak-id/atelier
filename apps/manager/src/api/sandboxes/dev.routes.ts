@@ -2,7 +2,7 @@ import { Elysia } from "elysia";
 import { agentClient, workspaceService } from "../../container";
 import {
   buildDevCommandIngress,
-  KubeClient,
+  kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
 import {
   DevCommandListResponseSchema,
@@ -19,7 +19,6 @@ import { createChildLogger } from "../../shared/lib/logger";
 import { sandboxIdGuard } from "./guard";
 
 const log = createChildLogger("sandbox-routes");
-const kubeClient = new KubeClient();
 
 export const devRoutes = new Elysia()
   .use(sandboxIdGuard)

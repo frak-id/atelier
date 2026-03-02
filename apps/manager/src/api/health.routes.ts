@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { CronService } from "../infrastructure/cron/index.ts";
-import { KubeClient } from "../infrastructure/kubernetes/index.ts";
+import { kubeClient } from "../infrastructure/kubernetes/index.ts";
 import {
   CronJobInfoSchema,
   type HealthStatus,
@@ -8,10 +8,9 @@ import {
   LiveStatusSchema,
   ReadyStatusSchema,
 } from "../schemas/index.ts";
-import { isMock } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 
 const startTime = Date.now();
-const kubeClient = new KubeClient();
 
 /**
  * Check if the Zot OCI registry is reachable.
@@ -19,7 +18,7 @@ const kubeClient = new KubeClient();
 async function checkZotHealth(): Promise<boolean> {
   if (isMock()) return true;
   try {
-    const res = await fetch("http://zot.atelier-system.svc:5000/v2/", {
+    const res = await fetch(`http://${config.kubernetes.registryUrl}/v2/`, {
       signal: AbortSignal.timeout(3000),
     });
     return res.ok;

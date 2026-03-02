@@ -2,7 +2,7 @@ import { createOpencodeClient, type Part } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../../infrastructure/agent/index.ts";
 import {
   buildDevCommandIngress,
-  KubeClient,
+  kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
 import type { SandboxLifecycle } from "../../orchestrators/sandbox-lifecycle.ts";
 import type { TaskSpawner } from "../../orchestrators/task-spawner.ts";
@@ -31,7 +31,6 @@ import {
 } from "./integration-commands.ts";
 
 const log = createChildLogger("integration-gateway");
-const kubeClient = new KubeClient();
 
 const WORKING_EMOJI = "hourglass_flowing_sand";
 

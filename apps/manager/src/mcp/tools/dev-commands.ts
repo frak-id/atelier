@@ -7,13 +7,12 @@ import {
 } from "../../container.ts";
 import {
   buildDevCommandIngress,
-  KubeClient,
+  kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("mcp-dev-commands");
-const kubeClient = new KubeClient();
 
 function buildDevUrl(sandboxId: string, cmdName: string): string {
   return `https://dev-${cmdName}-${sandboxId}.${config.domain.baseDomain}`;

@@ -1,7 +1,7 @@
 import type { SandboxConfig } from "@frak/atelier-shared";
 import { SandboxError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { KubeClient } from "../kubernetes/index.ts";
+import { kubeClient } from "../kubernetes/index.ts";
 import type {
   AgentHealth,
   AgentMetrics,
@@ -50,7 +50,7 @@ interface RequestOptions {
 }
 
 export class AgentClient {
-  constructor(private readonly kube: KubeClient = new KubeClient()) {}
+  constructor(private readonly kube: typeof kubeClient = kubeClient) {}
 
   private async getAgentUrl(sandboxId: string): Promise<string> {
     const podIp = await this.kube.getPodIp(`sandbox-${sandboxId}`);
