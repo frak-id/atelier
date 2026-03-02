@@ -1,4 +1,5 @@
 import { VM } from "@frak/atelier-shared/constants";
+import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import { eventBus } from "../infrastructure/events/index.ts";
@@ -22,6 +23,7 @@ import type {
 } from "../schemas/index.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
 import { GuestOps } from "./ports/guest-ops.ts";
 
 const log = createChildLogger("prebuild-runner");
@@ -30,7 +32,9 @@ const POLL_INTERVAL_MS = 2000;
 const POD_TIMEOUT_MS = 120_000;
 const AGENT_TIMEOUT_MS = 60_000;
 const SNAPSHOT_TIMEOUT_MS = 300_000;
-const OPENCODE_WARMUP_TIMEOUT = 10;
+const INIT_COMMAND_TIMEOUT_MS = 300_000;
+const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
+const OPENCODE_WARMUP_PORT = 4200;
 const GIT_TOKEN_PLACEHOLDER = "$" + "{GIT_TOKEN}";
 
 export type PrebuildScenario =
@@ -331,7 +335,13 @@ export class PrebuildRunner {
       }
 
       // Step 4: Run prebuild steps via agent
-      await this.runPrebuildSteps(sandboxId, scenario);
+      const commitHashes = await this.runPrebuildSteps(sandboxId, scenario);
+
+      // Flush writes to PVC before snapshot
+      log.info({ key }, "Flushing writes before snapshot");
+      await this.deps.agentClient.exec(sandboxId, "sync", {
+        timeout: 10_000,
+      });
 
       // Step 5: Stop the pod (to flush writes)
       log.info({ key, podName }, "Stopping prebuild pod before snapshot");
@@ -384,19 +394,20 @@ export class PrebuildRunner {
 
       // Step 8: Update status
       if (scenario.kind === "workspace") {
-        const workspace = this.requireWorkspace(scenario);
-        const commitHashes = await this.captureCommitHashes(workspace);
         scenario.updateStatus("ready", snapshotName, commitHashes);
 
-        scenario.aiService?.generateDescriptionInBackground(
-          workspace,
-          "updated",
-          (description) => {
-            this.deps.workspaceService.update(scenario.workspaceId, {
-              config: { description },
-            });
-          },
-        );
+        const ws = scenario.getWorkspace();
+        if (ws) {
+          scenario.aiService?.generateDescriptionInBackground(
+            ws,
+            "updated",
+            (description) => {
+              this.deps.workspaceService.update(scenario.workspaceId, {
+                config: { description },
+              });
+            },
+          );
+        }
       }
     } catch (error) {
       if (scenario.kind === "workspace") {
@@ -417,8 +428,9 @@ export class PrebuildRunner {
   private async runPrebuildSteps(
     sandboxId: string,
     scenario: PrebuildScenario,
-  ): Promise<void> {
+  ): Promise<Record<string, string>> {
     const agent = this.deps.agentClient;
+    let commitHashes: Record<string, string> = {};
 
     if (scenario.kind === "workspace") {
       const workspace = this.requireWorkspace(scenario);
@@ -440,32 +452,156 @@ export class PrebuildRunner {
           sandboxId,
           workspace.config.repos,
         );
+
+        // Capture commit hashes from inside the pod
+        commitHashes = await this.captureCommitHashesFromPod(
+          sandboxId,
+          workspace,
+        );
       }
 
       // Run init commands
       for (const command of workspace.config.initCommands) {
         log.info({ sandboxId, command }, "Running init command");
         const result = await agent.exec(sandboxId, command, {
-          timeout: 300_000,
+          timeout: INIT_COMMAND_TIMEOUT_MS,
           user: "dev",
           workdir: VM.WORKSPACE_DIR,
         });
         if (result.exitCode !== 0) {
-          log.warn(
-            { sandboxId, command, stderr: result.stderr },
-            "Init command failed (non-blocking)",
-          );
+          throw new Error(`Init command failed: ${command}\n${result.stderr}`);
         }
       }
+
+      // Fix ownership after init commands
+      log.info({ sandboxId }, "Fixing workspace ownership");
+      await agent.exec(sandboxId, `chown -R dev:dev ${VM.WORKSPACE_DIR}`, {
+        timeout: INIT_COMMAND_TIMEOUT_MS,
+      });
     }
 
     // OpenCode warmup (both workspace and system)
-    log.info({ sandboxId }, "Running OpenCode warmup");
-    await agent.exec(
+    const warmupDir =
+      scenario.kind === "workspace" ? VM.WORKSPACE_DIR : VM.HOME;
+    await this.warmupOpencode(sandboxId, warmupDir);
+
+    return commitHashes;
+  }
+
+  private async warmupOpencode(
+    sandboxId: string,
+    workdir: string,
+  ): Promise<void> {
+    const agent = this.deps.agentClient;
+    const port = OPENCODE_WARMUP_PORT;
+    const namespace = config.kubernetes.systemNamespace;
+    const podName = `sandbox-${sandboxId}`;
+
+    log.info({ sandboxId }, "Warming up OpenCode server");
+
+    // Start opencode in background inside the pod
+    const startResult = await agent.exec(
       sandboxId,
-      `timeout ${OPENCODE_WARMUP_TIMEOUT} opencode serve --hostname 127.0.0.1 --port 4200 2>/dev/null || true`,
-      { timeout: (OPENCODE_WARMUP_TIMEOUT + 5) * 1000, user: "dev" },
+      `nohup setsid opencode serve --hostname 0.0.0.0 --port ${port} </dev/null >/tmp/opencode-warmup.log 2>&1 &`,
+      { timeout: 10_000, user: "dev", workdir },
     );
+    if (startResult.exitCode !== 0) {
+      log.warn(
+        { sandboxId, stderr: startResult.stderr },
+        "Failed to start OpenCode for warmup, continuing",
+      );
+      return;
+    }
+
+    // Get pod IP to connect to OpenCode health endpoint
+    let podIp: string | undefined;
+    try {
+      const pod = await this.deps.kubeClient.get<{
+        status?: { podIP?: string };
+      }>(`/api/v1/namespaces/${namespace}/pods/${podName}`);
+      podIp = pod.status?.podIP;
+    } catch {
+      log.warn({ sandboxId }, "Failed to get pod IP for warmup health check");
+    }
+
+    if (podIp) {
+      const url = `http://${podIp}:${port}`;
+      const startTime = Date.now();
+      let healthy = false;
+
+      while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT_MS) {
+        try {
+          const client = createOpencodeClient({
+            baseUrl: url,
+            headers: buildOpenCodeAuthHeaders("prebuild"),
+          });
+          const { data } = await client.global.health();
+          if (data?.healthy) {
+            healthy = true;
+            log.info({ sandboxId }, "OpenCode server is healthy");
+            break;
+          }
+        } catch {}
+        await Bun.sleep(2_000);
+      }
+
+      if (!healthy) {
+        log.warn(
+          { sandboxId },
+          "OpenCode did not become healthy within timeout, continuing",
+        );
+      }
+    }
+
+    // Kill opencode after warmup
+    await agent.exec(sandboxId, "pkill -f 'opencode serve'", {
+      timeout: 5_000,
+    });
+    log.info({ sandboxId }, "OpenCode warmup completed");
+  }
+
+  private async captureCommitHashesFromPod(
+    sandboxId: string,
+    workspace: Workspace,
+  ): Promise<Record<string, string>> {
+    const hashes: Record<string, string> = {};
+    if (!workspace.config.repos?.length) return hashes;
+
+    for (const repo of workspace.config.repos) {
+      const clonePath = repo.clonePath.startsWith("/")
+        ? repo.clonePath
+        : `/${repo.clonePath}`;
+      const fullPath = `${VM.HOME}${clonePath}`;
+
+      const result = await this.deps.agentClient.exec(
+        sandboxId,
+        `git -C ${fullPath} rev-parse HEAD`,
+        { timeout: 10_000, user: "dev" },
+      );
+
+      if (result.exitCode === 0 && result.stdout.trim()) {
+        hashes[repo.clonePath] = result.stdout.trim();
+        log.debug(
+          {
+            workspaceId: workspace.id,
+            clonePath: repo.clonePath,
+            hash: hashes[repo.clonePath],
+          },
+          "Captured commit hash",
+        );
+      } else {
+        log.warn(
+          {
+            workspaceId: workspace.id,
+            clonePath: repo.clonePath,
+            exitCode: result.exitCode,
+          },
+          "Failed to capture commit hash",
+        );
+      }
+    }
+
+    return hashes;
   }
 
   // ---------------------------------------------------------------------------
@@ -551,6 +687,7 @@ export class PrebuildRunner {
     return normalized || "system";
   }
 
+  /** Used in mock mode only — captures hashes from remote via git ls-remote */
   private async captureCommitHashes(
     workspace: Workspace,
   ): Promise<Record<string, string>> {
