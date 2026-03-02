@@ -62,42 +62,16 @@ export class AgentOperations {
     return this.client.gitPush(sandboxId, repoPath);
   }
 
-  async resizeStorage(sandboxId: string): Promise<{
+  async resizeStorage(_sandboxId: string): Promise<{
     success: boolean;
     disk?: { total: number; used: number; free: number };
     error?: string;
   }> {
-    try {
-      const result = await this.client.exec(
-        sandboxId,
-        [
-          "test -e /dev/vda || mknod /dev/vda b 254 0",
-          "resize2fs /dev/vda",
-          "df -B1 / | tail -1",
-        ].join(" && "),
-        { timeout: 60000 },
-      );
-
-      if (result.exitCode !== 0) {
-        return { success: false, error: result.stderr };
-      }
-
-      const lastLine = result.stdout.split("\n").pop() ?? "";
-      const [, total, used, free] = lastLine.split(/\s+/);
-      return {
-        success: true,
-        disk: {
-          total: parseInt(total || "0", 10),
-          used: parseInt(used || "0", 10),
-          free: parseInt(free || "0", 10),
-        },
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
+    // TODO: Implement K8s PVC resize when storage augmentation is needed.
+    return {
+      success: false,
+      error: "Storage resize is not yet supported in K8s mode",
+    };
   }
 
   async getInstalledExtensions(sandboxId: string): Promise<string[]> {
@@ -118,7 +92,13 @@ export class AgentOperations {
   async installExtensions(
     sandboxId: string,
     extensions: string[],
-  ): Promise<{ extension: string; success: boolean; error?: string }[]> {
+  ): Promise<
+    {
+      extension: string;
+      success: boolean;
+      error?: string;
+    }[]
+  > {
     const { results } = await this.client.batchExec(
       sandboxId,
       extensions.map((ext) => ({

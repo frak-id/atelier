@@ -289,31 +289,19 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       )
       .post(
         "/:id/storage/resize",
-        async ({ params, body, sandbox }) => {
-          if (sandbox.status !== "running") {
-            return {
-              success: false,
-              previousSize: 0,
-              newSize: 0,
-              error: "Sandbox must be running to resize storage",
-            };
-          }
-
-          log.info(
+        async ({ params, body, sandbox: _sandbox }) => {
+          // TODO: Implement K8s PVC storage resize.
+          // In K8s, storage augmentation requires expanding the sandbox
+          // PersistentVolumeClaim — this is not yet implemented.
+          log.warn(
             { sandboxId: params.id, sizeGb: body.sizeGb },
-            "Resizing sandbox storage",
+            "Storage resize not yet implemented for K8s",
           );
-
-          const agentResult = await agentOperations.resizeStorage(sandbox.id);
-
           return {
-            success: agentResult.success,
+            success: false,
             previousSize: 0,
             newSize: body.sizeGb,
-            ...(agentResult.disk && { disk: agentResult.disk }),
-            ...(!agentResult.success && {
-              error: agentResult.error ?? "Resize failed",
-            }),
+            error: "Storage resize is not yet supported in K8s mode",
           };
         },
         {
