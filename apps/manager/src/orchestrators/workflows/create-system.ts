@@ -41,7 +41,7 @@ export async function createSystemSandbox(
       boot.sandbox.runtime.opencodePassword,
     );
 
-    // --- Parallel batch: 3 vsock calls instead of 5 ---
+    // --- Parallel batch: 3 TCP calls instead of 5 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [

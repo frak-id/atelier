@@ -229,7 +229,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     }
 
     // If sandbox has a password, inject Basic Auth header
-    // for Caddy to forward to OpenCode. Otherwise let the
+    // for Ingress to forward to OpenCode. Otherwise let the
     // request through without auth (legacy sandboxes started
     // before password support was added).
     if (sandbox.runtime.opencodePassword) {

@@ -5,21 +5,6 @@ const log = createChildLogger("cleanup-coordinator");
 
 export interface CleanupResources {
   podName?: string;
-  pid?: number;
-  paths?: {
-    socket?: string;
-    vsock?: string;
-    pid?: string;
-    log?: string;
-    overlay?: string;
-    useLvm?: boolean;
-  };
-  network?: {
-    ipAddress?: string;
-    macAddress?: string;
-    tapDevice?: string;
-    gateway?: string;
-  };
 }
 
 export async function cleanupSandboxResources(

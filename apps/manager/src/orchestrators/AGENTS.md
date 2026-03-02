@@ -6,16 +6,16 @@ Complex multi-step workflows coordinating services and infrastructure. Use conte
 
 | Orchestrator | Purpose |
 |--------------|---------|
-| `SandboxSpawner` | Full VM creation (network → volume → FC → agent → routes) |
+| `SandboxSpawner` | Full sandbox creation (K8s pod + service + ingress → agent → provision) |
 | `TaskSpawner` | Task execution (sandbox → git branch → prompt → session) |
-| `PrebuildRunner` | Prebuild snapshot creation |
-| `SandboxLifecycle` | Health monitoring and state management |
+| `PrebuildRunner` | Prebuild image creation via Kaniko + Zot |
+| `SandboxLifecycle` | Health monitoring and state management (pod status) |
 | `PrebuildChecker` | Staleness detection and rebuild triggers |
-| `SandboxDestroyer` | Cleanup in reverse order of creation |
+| `SandboxDestroyer` | K8s resource cleanup (label-based delete) |
 
 ## Key Pattern
 
-Orchestrators create a `Context` object that tracks allocated resources. On failure, `rollback()` releases resources in **reverse order** (PID → socket → LVM → TAP → IP → Caddy).
+Orchestrators create a `Context` object that tracks allocated resources. On failure, `rollback()` cleans up K8s resources via label-based deletion.
 
 ## When to Add an Orchestrator
 

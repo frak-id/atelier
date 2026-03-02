@@ -68,7 +68,7 @@ export async function createWorkspaceSandbox(
       GuestOps.collectFileSecretFiles(workspace),
     ]);
 
-    // --- Parallel batch: 3 vsock calls instead of 9 ---
+    // --- Parallel batch: 3 TCP calls instead of 9 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
