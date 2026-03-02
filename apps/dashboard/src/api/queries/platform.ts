@@ -22,11 +22,6 @@ export const systemStatsQuery = queryOptions({
   queryFn: async () => unwrap(await api.api.system.stats.get()),
 });
 
-export const systemStorageQuery = queryOptions({
-  queryKey: queryKeys.system.storage,
-  queryFn: async () => unwrap(await api.api.system.storage.get()),
-});
-
 export const systemSandboxQuery = queryOptions({
   queryKey: queryKeys.system.sandbox,
   queryFn: async () => unwrap(await api.api.system.sandbox.get()),
@@ -114,7 +109,6 @@ export function useSystemCleanup() {
     mutationFn: async () => unwrap(await api.api.system.cleanup.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
-      queryClient.invalidateQueries({ queryKey: queryKeys.system.storage });
     },
   });
 }
@@ -382,33 +376,6 @@ export function useGitHubReauthorize() {
 
 // --- Shared Storage ---
 
-export const sharedStorageQuery = queryOptions({
-  queryKey: queryKeys.sharedStorage.all,
-  queryFn: async () => unwrap(await api.api.storage.get()),
-});
-
-export function useInstallBinary() {
-  return useMutation({
-    mutationKey: ["sharedStorage", "installBinary"],
-    mutationFn: async (id: string) =>
-      unwrap(await api.api.storage.binaries({ id }).install.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
-    },
-  });
-}
-
-export function useRemoveBinary() {
-  return useMutation({
-    mutationKey: ["sharedStorage", "removeBinary"],
-    mutationFn: async (id: string) =>
-      unwrap(await api.api.storage.binaries({ id }).delete()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sharedStorage.all });
-    },
-  });
-}
-
 // --- Registry ---
 
 export const registryStatusQuery = queryOptions({
@@ -453,7 +420,6 @@ export function usePurgeRegistryCache() {
     mutationFn: async () => unwrap(await api.api.registry.purge.post({})),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
-      queryClient.invalidateQueries({ queryKey: queryKeys.system.storage });
     },
   });
 }
@@ -464,7 +430,6 @@ export function useRunRegistryEviction() {
     mutationFn: async () => unwrap(await api.api.registry.evict.post({})),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
-      queryClient.invalidateQueries({ queryKey: queryKeys.system.storage });
     },
   });
 }

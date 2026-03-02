@@ -7,10 +7,6 @@ export function unwrap<T>(result: { data: T; error: unknown }): T {
 
 export const queryKeys = {
   health: ["health"] as const,
-  sharedStorage: {
-    all: ["sharedStorage"] as const,
-    binaries: ["sharedStorage", "binaries"] as const,
-  },
   registry: {
     status: ["registry", "status"] as const,
   },
@@ -62,7 +58,6 @@ export const queryKeys = {
   },
   system: {
     stats: ["system", "stats"] as const,
-    storage: ["system", "storage"] as const,
     sandbox: ["system", "sandbox"] as const,
   },
   configFiles: {

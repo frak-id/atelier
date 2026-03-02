@@ -24,7 +24,6 @@ export type {
   ManagerEvent,
   Sandbox,
   SshKey,
-  StorageStatus,
   SystemStats,
   Task,
   Workspace,
