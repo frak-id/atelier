@@ -9,18 +9,12 @@ const RegistryStatusSchema = t.Object({
   enabled: t.Boolean(),
   online: t.Boolean(),
   packageCount: t.Number(),
-  disk: t.Object({
-    usedBytes: t.Number(),
-    totalBytes: t.Number(),
-    usedPercent: t.Number(),
-  }),
   uplink: t.Object({
     url: t.String(),
     healthy: t.Boolean(),
   }),
   settings: t.Object({
     evictionDays: t.Number(),
-    storagePath: t.String(),
   }),
 });
 
@@ -79,7 +73,6 @@ export const registryRoutes = new Elysia({ prefix: "/registry" })
       response: t.Object({
         enabled: t.Boolean(),
         evictionDays: t.Number(),
-        storagePath: t.String(),
       }),
       detail: {
         tags: ["system"],
@@ -91,12 +84,15 @@ export const registryRoutes = new Elysia({ prefix: "/registry" })
     "/purge",
     async () => {
       const result = await RegistryService.purgeCache();
-      return { message: "Cache purged", freedBytes: result.freedBytes };
+      return {
+        message: "Cache purged",
+        deletedCount: result.deletedCount,
+      };
     },
     {
       response: t.Object({
         message: t.String(),
-        freedBytes: t.Number(),
+        deletedCount: t.Number(),
       }),
       detail: {
         tags: ["system"],
