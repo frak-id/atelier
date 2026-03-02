@@ -1,3 +1,5 @@
+import { config } from "../../shared/lib/config.ts";
+
 export type KubeResource = {
   apiVersion: string;
   kind: string;
@@ -10,8 +12,6 @@ export type KubeResource = {
   spec?: unknown;
   [key: string]: unknown;
 };
-
-const DEFAULT_NAMESPACE = "atelier-sandboxes";
 
 type ResourceSpec = {
   cpu: string;
@@ -61,7 +61,7 @@ function sandboxLabels(sandboxId: string, workspaceId?: string) {
 }
 
 export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
-  const namespace = options.namespace ?? DEFAULT_NAMESPACE;
+  const namespace = options.namespace ?? config.kubernetes.namespace;
   const labels = sandboxLabels(options.sandboxId, options.workspaceId);
 
   return {
@@ -73,7 +73,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
       labels,
     },
     spec: {
-      runtimeClassName: "kata-clh",
+      runtimeClassName: config.kubernetes.runtimeClass,
       hostname: options.sandboxId.slice(0, 8),
       terminationGracePeriodSeconds: 5,
       containers: [
@@ -112,7 +112,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
 
 export function buildSandboxService(
   sandboxId: string,
-  namespace = DEFAULT_NAMESPACE,
+  namespace = config.kubernetes.namespace,
 ): KubeResource {
   return {
     apiVersion: "v1",
@@ -144,7 +144,7 @@ export function buildSandboxIngress(
   baseDomain: string,
   options: IngressOptions = {},
 ): KubeResource {
-  const namespace = options.namespace ?? DEFAULT_NAMESPACE;
+  const namespace = options.namespace ?? config.kubernetes.namespace;
 
   return {
     apiVersion: "networking.k8s.io/v1",
@@ -202,7 +202,7 @@ export function buildDevCommandIngress(
   name: string,
   port: number,
   baseDomain: string,
-  namespace = DEFAULT_NAMESPACE,
+  namespace = config.kubernetes.namespace,
 ): KubeResource {
   return {
     apiVersion: "networking.k8s.io/v1",
@@ -237,7 +237,7 @@ export function buildDevCommandIngress(
 }
 
 export function buildKanikoJob(options: KanikoJobOptions): KubeResource {
-  const namespace = options.namespace ?? "atelier-system";
+  const namespace = options.namespace ?? config.kubernetes.systemNamespace;
   if (!options.configMapName && !options.contextUrl) {
     throw new Error("Kaniko job requires contextUrl or configMapName");
   }
@@ -317,7 +317,7 @@ export function buildKanikoJob(options: KanikoJobOptions): KubeResource {
 export function buildConfigMap(
   name: string,
   data: Record<string, string>,
-  namespace = DEFAULT_NAMESPACE,
+  namespace = config.kubernetes.namespace,
   labels: Record<string, string> = {},
 ): KubeResource {
   return {

@@ -1,14 +1,12 @@
 import { Buffer } from "node:buffer";
 import { SandboxError } from "../../shared/errors.ts";
-import { isMock } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { KubeResource } from "./kube.resources.ts";
 import type { JobStatus, PodPhase, WatchEvent } from "./kube.watcher.ts";
 
 const log = createChildLogger("kube-client");
 
-const DEFAULT_NAMESPACE = "atelier-sandboxes";
-const DEFAULT_KUBECONFIG = "/etc/rancher/k3s/k3s.yaml";
 const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 200;
 
@@ -75,9 +73,9 @@ export class KubeClient {
   private readonly kubeconfigPath: string;
   private authConfigPromise?: Promise<KubeAuthConfig>;
 
-  constructor(config: KubeClientConfig = {}) {
-    this.namespace = config.namespace ?? DEFAULT_NAMESPACE;
-    this.kubeconfigPath = config.kubeconfig ?? DEFAULT_KUBECONFIG;
+  constructor(options: KubeClientConfig = {}) {
+    this.namespace = options.namespace ?? config.kubernetes.namespace;
+    this.kubeconfigPath = options.kubeconfig ?? config.kubernetes.kubeconfig;
   }
 
   async get<T>(path: string): Promise<T> {
