@@ -1,4 +1,8 @@
-import { REGISTRY, VM } from "@frak/atelier-shared/constants";
+import {
+  REGISTRY,
+  type SharedBinaryInfo,
+  VM,
+} from "@frak/atelier-shared/constants";
 import { config } from "../../shared/lib/config.ts";
 
 export type KubeResource = {
@@ -92,6 +96,19 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
       configMap: { name: options.configMapName },
     });
   }
+
+  volumeMounts.push({
+    name: "shared-binaries",
+    mountPath: SHARED_BINARIES_MOUNT_PATH,
+    readOnly: true,
+  });
+  volumes.push({
+    name: "shared-binaries",
+    persistentVolumeClaim: {
+      claimName: "shared-binaries",
+      readOnly: true,
+    },
+  });
 
   return {
     apiVersion: "v1",
@@ -539,3 +556,167 @@ export function buildVolumeSnapshot(
     spec,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Shared binaries PV / PVC / updater Job
+// ---------------------------------------------------------------------------
+
+const SHARED_BINARIES_LABELS: Record<string, string> = {
+  "atelier.dev/component": "shared-binaries",
+};
+
+const SHARED_BINARIES_MOUNT_PATH = "/opt/shared";
+
+export function buildSharedBinariesPv(
+  name: string,
+  namespace: string,
+): KubeResource {
+  return {
+    apiVersion: "v1",
+    kind: "PersistentVolume",
+    metadata: {
+      name,
+      labels: SHARED_BINARIES_LABELS,
+    },
+    spec: {
+      capacity: { storage: "2Gi" },
+      accessModes: ["ReadWriteOnce", "ReadOnlyMany"],
+      persistentVolumeReclaimPolicy: "Retain",
+      storageClassName: "",
+      claimRef: {
+        namespace,
+        name,
+      },
+      local: { path: "/opt/atelier/shared-binaries" },
+      nodeAffinity: {
+        required: {
+          nodeSelectorTerms: [
+            {
+              matchExpressions: [
+                {
+                  key: "kubernetes.io/hostname",
+                  operator: "Exists",
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+export function buildSharedBinariesPvc(
+  name: string,
+  namespace: string,
+): KubeResource {
+  return {
+    apiVersion: "v1",
+    kind: "PersistentVolumeClaim",
+    metadata: {
+      name,
+      namespace,
+      labels: SHARED_BINARIES_LABELS,
+    },
+    spec: {
+      storageClassName: "",
+      accessModes: ["ReadWriteOnce", "ReadOnlyMany"],
+      resources: { requests: { storage: "2Gi" } },
+      volumeName: name,
+    },
+  };
+}
+
+export type SharedBinariesJobOptions = {
+  name: string;
+  namespace: string;
+  pvcName: string;
+  binaries: SharedBinaryInfo[];
+};
+
+/**
+ * Build an updater Job that downloads + extracts shared binaries into the PVC.
+ * Each binary gets its own init container that downloads & extracts, then the
+ * main container sets up the final `/shared/bin` symlink directory.
+ */
+export function buildSharedBinariesJob(
+  options: SharedBinariesJobOptions,
+): KubeResource {
+  // Build a shell script that downloads & extracts each binary,
+  // then creates a unified /shared/bin directory with symlinks.
+  const steps = options.binaries.map((bin) => {
+    const dir = `/shared/${bin.name}`;
+    return [
+      `echo "[shared-binaries] Installing ${bin.name} v${bin.version}"`,
+      `mkdir -p ${dir}`,
+      `cd /tmp`,
+      `curl -fsSL -o archive-${bin.name} "${bin.url}"`,
+      `${bin.extractCommand} archive-${bin.name} -C ${dir} --strip-components=1`,
+      `rm -f archive-${bin.name}`,
+    ].join(" && ");
+  });
+
+  // After all binaries are extracted, create /shared/bin with symlinks
+  // so PATH only needs one entry.
+  const symlinkLines = options.binaries.map((bin) => {
+    const target = `/shared/${bin.name}/${bin.binaryPath}`;
+    return `[ -f "${target}" ] && ln -sf "${target}" /shared/bin/${bin.name}`;
+  });
+
+  // code-server also has a bin/ wrapper
+  const codeServerBin = "/shared/code-server/bin/code-server";
+  symlinkLines.push(
+    `[ -f "${codeServerBin}" ] && ln -sf "${codeServerBin}" /shared/bin/code-server`,
+  );
+
+  const script = [
+    "set -e",
+    ...steps,
+    "mkdir -p /shared/bin",
+    ...symlinkLines,
+    'echo "[shared-binaries] Done"',
+  ].join("\n");
+
+  return {
+    apiVersion: "batch/v1",
+    kind: "Job",
+    metadata: {
+      name: options.name,
+      namespace: options.namespace,
+      labels: SHARED_BINARIES_LABELS,
+    },
+    spec: {
+      backoffLimit: 2,
+      ttlSecondsAfterFinished: 300,
+      template: {
+        metadata: { labels: SHARED_BINARIES_LABELS },
+        spec: {
+          restartPolicy: "Never",
+          containers: [
+            {
+              name: "updater",
+              image: "curlimages/curl:latest",
+              command: ["/bin/sh", "-c", script],
+              volumeMounts: [
+                {
+                  name: "shared-binaries",
+                  mountPath: "/shared",
+                },
+              ],
+            },
+          ],
+          volumes: [
+            {
+              name: "shared-binaries",
+              persistentVolumeClaim: {
+                claimName: options.pvcName,
+              },
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+export { SHARED_BINARIES_LABELS, SHARED_BINARIES_MOUNT_PATH };

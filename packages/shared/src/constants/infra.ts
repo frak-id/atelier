@@ -54,7 +54,8 @@ export const REGISTRY = {
 } as const;
 
 export const SHARED_STORAGE = {
-  BINARIES_DIR: "/var/lib/sandbox/shared-binaries",
+  MOUNT_PATH: "/opt/shared",
+  BIN_DIR: "/opt/shared/bin",
 } as const;
 
 export const CADDY = {

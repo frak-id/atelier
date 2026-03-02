@@ -1,6 +1,6 @@
 # Kata Containers Migration Plan
 
-_Last updated: 2026-03-02 — Prebuild approach pivoted from OCI workspace images to PVC snapshots (TopoLVM)_
+_Last updated: 2026-03-02 — Added shared binaries PVC (Local PV + ReadOnlyMany for code-server/OpenCode)_
 
 ## Overview
 
@@ -83,8 +83,9 @@ k3s cluster (single or multi-node)
 │   ├── Base image (dev-base or dev-cloud, from Zot)
 │   ├── Workspace PVC (cloned from VolumeSnapshot via TopoLVM, per-workspace)
 │   └── Slim agent (~1,500 LOC) → terminal, services, dev, git
+├── Shared binaries PV (Local PV, ReadOnlyMany, code-server + OpenCode)
+│   └── Mounted read-only at /opt/shared in all sandbox pods via Kata virtio-fs
 └── VolumeSnapshots (per-workspace prebuilds, CoW via TopoLVM thin pool)
-```
 
 ## What Changes Per Layer
 
@@ -121,7 +122,7 @@ Same lifecycle state machine, same restart logic, different health detection mec
 | `buildClockSyncCommand()` | FC VMs need manual `chronyd` startup | Cloud Hypervisor provides `kvmclock` — **validated: no drift in Phase 1** |
 | `buildHostnameCommand()` | FC VMs have no hostname set | K8s pod spec `hostname` field |
 | `buildSwapCommand()` | Manually creates swapfile inside FC VM | K8s memory requests/limits; swap discouraged (`--fail-swap-on`) |
-| `buildMountSharedBinariesCommand()` | ext4 image mounted as virtio block device | Binaries baked into base OCI image |
+| `buildMountSharedBinariesCommand()` | ext4 image mounted as virtio block device | Shared binaries PV (Local PV + ReadOnlyMany) mounted at `/opt/shared` via Kata virtio-fs |
 | `resizeStorage()` + `mknod` | LVM thin volumes need `resize2fs` after grow | PVC resize handled by TopoLVM CSI + `kubectl patch pvc` (no guest-side commands) |
 
 **Stays unchanged:**
@@ -234,7 +235,7 @@ Replaces the current LVM snapshot-based prebuild with **CSI VolumeSnapshots** vi
 
 ```
 Layer 1 — Base OCI image (shared, rarely rebuilt, stored in Zot)
-  ├── dev-base:latest    Node 22, Bun, code-server, OpenCode, common tooling
+  ├── dev-base:latest    Node 22, Bun, common tooling (binaries on shared PV)
   └── dev-cloud:latest   dev-base + AWS CLI, gcloud, kubectl
 
 Layer 2 — Workspace PVC snapshot (per-workspace, re-snapshotted on trigger)
@@ -509,6 +510,117 @@ spec:
 
 Manager keeps a thin HTTP client for registry stats/management (~50 LOC). All process lifecycle, `bun add verdaccio`, filesystem eviction — deleted. Verdaccio manages its own storage in the PVC. Package eviction becomes a K8s CronJob or Verdaccio's built-in config.
 
+### Shared Binaries PVC
+
+Large static binaries (code-server ~130MB, OpenCode ~90MB) are moved out of the base OCI image and into a **shared Local PersistentVolume** mounted read-only in all sandbox pods. This mirrors the current system's `shared-storage.service.ts` (ext4 image mounted as virtio block device) but uses K8s-native primitives.
+
+**Why not bake into the base image?**
+- Base image stays small (~300MB instead of ~520MB) → faster pulls, less Zot storage
+- Workspace PVC snapshots stay smaller — binaries aren't duplicated per snapshot
+- Binary updates are instant: update the PV content, all pods see new version on next mount (no image rebuild + re-snapshot)
+- Docker layer deduplication doesn't help when binaries change — each update is a new 130MB+ layer
+
+**Architecture (single-node):**
+
+```
+Host filesystem: /opt/atelier/shared-binaries/
+├── code-server/    (~130MB)
+└── opencode/       (~90MB)
+
+K8s resources:
+├── PersistentVolume (Local PV, hostPath: /opt/atelier/shared-binaries/)
+├── PersistentVolumeClaim (ReadOnlyMany, bound to the PV)
+└── All sandbox pods mount the PVC at /opt/shared (read-only)
+```
+
+```yaml
+# Local PV for shared binaries (created by Helm chart)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: shared-binaries
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes: ["ReadOnlyMany"]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""  # no dynamic provisioning
+  local:
+    path: /opt/atelier/shared-binaries
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: Exists
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shared-binaries
+  namespace: atelier-sandboxes
+spec:
+  storageClassName: ""
+  accessModes: ["ReadOnlyMany"]
+  resources:
+    requests:
+      storage: 1Gi
+  volumeName: shared-binaries
+```
+
+**Sandbox pod mount:**
+
+```yaml
+# Added to every sandbox pod spec by kernel/sandbox-boot.ts
+volumes:
+  - name: shared-binaries
+    persistentVolumeClaim:
+      claimName: shared-binaries
+      readOnly: true
+containers:
+  - volumeMounts:
+      - name: shared-binaries
+        mountPath: /opt/shared
+        readOnly: true
+```
+
+**Binary updates via Job:**
+
+```yaml
+# Triggered by manager or CI when new binary versions are released
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: update-shared-binaries
+  namespace: atelier-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: updater
+          image: curlimages/curl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              curl -fsSL https://github.com/coder/code-server/releases/download/v$VERSION/code-server-$VERSION-linux-amd64.tar.gz | tar xz -C /shared/code-server --strip-components=1
+              curl -fsSL https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-amd64 -o /shared/opencode/opencode && chmod +x /shared/opencode/opencode
+          volumeMounts:
+            - name: shared-binaries
+              mountPath: /shared
+      volumes:
+        - name: shared-binaries
+          persistentVolumeClaim:
+            claimName: shared-binaries
+      restartPolicy: Never
+```
+
+**Kata virtio-fs note:** Cloud Hypervisor exposes host-mounted volumes to the guest VM via virtio-fs. ReadOnlyMany works because virtio-fs supports shared read-only mounts across multiple VMs on the same node. For multi-node, each node needs its own Local PV with the same binaries (synced via DaemonSet or shared NFS).
+
+**Impact on other components:**
+- Base image Dockerfile: remove code-server and OpenCode install steps → smaller image
+- Workspace PVC snapshots: don't contain binaries → smaller snapshots, faster clones
+- `buildMountSharedBinariesCommand()` in guest-base.ts: deleted (K8s volume mount replaces it)
+- PATH setup: base image entrypoint adds `/opt/shared/code-server/bin:/opt/shared/opencode` to PATH
 ### Why Cloud Hypervisor over Firecracker
 
 | Feature | Firecracker | Cloud Hypervisor |
@@ -532,11 +644,10 @@ Cloud Hypervisor is Kata's default VMM. The ~75ms boot penalty is negligible —
 | `prebuild-runner.ts` — PVC + temp Pod + VolumeSnapshot orchestrator | ~250 | TypeScript |
 | `health.routes.ts` — K8s health checks | ~50 | TypeScript |
 | `system.routes.ts` — K8s metrics stats | ~30 | TypeScript |
-| Helm chart (manager, TopoLVM config, Zot, Verdaccio, RBAC, RuntimeClass, Ingress, VolumeSnapshotClass) | ~450 | YAML |
-| Base image Dockerfile (dev-base rootfs, with code-server + OpenCode baked in) | ~80 | Dockerfile |
+| Helm chart (manager, TopoLVM config, Zot, Verdaccio, shared binaries PV, RBAC, RuntimeClass, Ingress, VolumeSnapshotClass) | ~480 | YAML |
+| Base image Dockerfile (dev-base rootfs, slimmer — binaries on shared PV) | ~60 | Dockerfile |
 | Agent transport (vsock→TCP, ~50 LOC net change) | ~50 | TypeScript |
-| **Total new** | **~1,330-1,380** |
-
+| **Total new** | **~1,340-1,390** |
 ## K8s Overhead on Single VPS
 
 | Component | Idle RAM | Idle CPU |
@@ -653,7 +764,7 @@ Code deletion already completed in Phase 2. Remaining work:
 
 ## Future Unlocks
 
-- **Warm pool**: Pre-create 1 PVC per workspace from its prebuild snapshot. On spawn, pod claims the pre-cloned PVC instead of creating one on the fly. Combine with `InPlacePodVerticalScaling` (K8s 1.35+, Cloud Hypervisor) for hot-plug CPU + memory. Reduces spawn time from ~200-300ms to near-instant. Requires: pool controller (~150 LOC), replenishment logic. Nice-to-have once core migration is stable.
+- **Warm pool**: Pre-create 1 PVC per workspace from its prebuild snapshot. On spawn, pod claims the pre-cloned PVC instead of creating one on the fly. Combine with `InPlacePodVerticalScaling` (K8s 1.35+, Cloud Hypervisor) for hot-plug CPU + memory. Reduces spawn time from ~2-3s to near-instant. Requires: pool controller (~150 LOC), replenishment logic. Nice-to-have once core migration is stable.
 - **SSH proxy pod**: If devs need `ssh sandbox-id@host` with key rotation (current sshpiper feature), deploy sshpiper as a small K8s Deployment that proxies SSH to sandbox pods. For now, `kubectl exec` + dashboard WebSocket terminals cover the use case.
 - **Multi-node**: Join a second k3s node. K8s scheduler places sandboxes automatically. Zot already handles image distribution — nodes pull from it.
 - **Operator (if needed)**: Extract sandbox lifecycle into CRD + reconciler when manager-as-controller pattern breaks down (HA, complex warm pools, `kubectl get sandboxes` observability).
@@ -704,20 +815,20 @@ Updated numbers from current main (`d0738bc`):
 | Prebuild runner (PVC snapshot orchestrator) | ~250 |
 | Health routes + system stats (K8s API) | ~80 |
 | Registry client (HTTP to Verdaccio) | ~50 |
-| Helm chart (manager + TopoLVM config + Zot + Verdaccio + RBAC) | ~450 |
-| Dockerfiles (base image template) | ~80 |
+| Helm chart (manager + TopoLVM config + Zot + Verdaccio + shared binaries PV + RBAC) | ~480 |
+| Dockerfiles (base image template, slimmer — binaries on shared PV) | ~60 |
 | Agent transport change | ~50 |
-| **Total new** | **~1,410** |
+| **Total new** | **~1,420** |
 
 ### Net result
 
 | | Before | After | Delta |
 |---|---|---|---|
-| Manager (infra + orchestrators) | ~7,555 | ~3,754 | -3,801 |
+| Manager (infra + orchestrators) | ~7,555 | ~3,764 | -3,791 |
 | CLI | 3,141 | 0 | -3,141 |
 | Agent | 3,040 | ~1,500 | -1,540 |
 | Infra scripts | 480 | ~250 | -230 |
-| **Total** | **~14,216** | **~5,504** | **-8,712** |
+| **Total** | **~14,216** | **~5,514** | **-8,702** |
 
 ### Key insight
 

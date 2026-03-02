@@ -456,6 +456,41 @@ export class KubeClient {
     }
   }
 
+  async resourceExists(
+    kind: string,
+    name: string,
+    namespace = this.namespace,
+  ): Promise<boolean> {
+    if (isMock()) return false;
+    try {
+      const path = resourceItemPath(kind, name, namespace);
+      await this.get(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async waitForJobComplete(
+    name: string,
+    options: { timeout?: number; namespace?: string } = {},
+  ): Promise<"succeeded" | "failed" | "timeout"> {
+    if (isMock()) return "succeeded";
+
+    const timeout = options.timeout ?? 300_000;
+    const namespace = options.namespace ?? this.namespace;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeout) {
+      const status = await this.getJobStatus(name, namespace);
+      if (status === "succeeded") return "succeeded";
+      if (status === "failed") return "failed";
+      await Bun.sleep(3000);
+    }
+
+    return "timeout";
+  }
+
   private async request<T = unknown>(
     path: string,
     options: {
@@ -638,6 +673,7 @@ function resourceCollectionPath(kind: string, namespace: string): string {
     return `/api/v1/namespaces/${namespace}/configmaps`;
   if (normalized === "persistentvolumeclaim")
     return `/api/v1/namespaces/${namespace}/persistentvolumeclaims`;
+  if (normalized === "persistentvolume") return "/api/v1/persistentvolumes";
   if (normalized === "ingress")
     return `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
   if (normalized === "job")
