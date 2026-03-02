@@ -2,13 +2,6 @@ import type { Static } from "elysia";
 import { t } from "elysia";
 
 export const SystemStatsSchema = t.Object({
-  cpuUsage: t.Number(),
-  memoryUsed: t.Number(),
-  memoryTotal: t.Number(),
-  memoryPercent: t.Number(),
-  diskUsed: t.Number(),
-  diskTotal: t.Number(),
-  diskPercent: t.Number(),
   activeSandboxes: t.Number(),
   maxSandboxes: t.Number(),
   uptime: t.Number(),
@@ -33,14 +26,9 @@ export const HealthStatusSchema = t.Object({
 export type HealthStatus = Static<typeof HealthStatusSchema>;
 
 export const CleanupResultSchema = t.Object({
-  socketsRemoved: t.Number(),
-  overlaysRemoved: t.Number(),
-  tapDevicesRemoved: t.Number(),
-  lvmVolumesRemoved: t.Number(),
-  logsRemoved: t.Number(),
-  caddyRoutesRemoved: t.Number(),
-  sshRoutesRemoved: t.Number(),
-  spaceFreed: t.Number(),
+  podsRemoved: t.Number(),
+  servicesRemoved: t.Number(),
+  ingressesRemoved: t.Number(),
 });
 export type CleanupResult = Static<typeof CleanupResultSchema>;
 
