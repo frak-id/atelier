@@ -109,6 +109,10 @@ export const KubernetesConfigSchema = Type.Object(
     registryUrl: Type.String({
       default: "zot.atelier-system.svc:5000",
     }),
+    /** Verdaccio container image for the npm registry pod */
+    verdaccioImage: Type.String({
+      default: "verdaccio/verdaccio:6",
+    }),
   },
   { default: {} },
 );
@@ -432,6 +436,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_KUBECONFIG: "kubernetes.kubeconfig",
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
+  ATELIER_K8S_VERDACCIO_IMAGE: "kubernetes.verdaccioImage",
 
   ATELIER_BRIDGE_NAME: "network.bridgeName",
   ATELIER_BRIDGE_IP: "network.bridgeIp",
