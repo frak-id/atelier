@@ -13,7 +13,6 @@ import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
   AgentHealthSchema,
-  AgentMetricsSchema,
   AllServicesResponseSchema,
   BrowserStartResponseSchema,
   BrowserStopResponseSchema,
@@ -197,16 +196,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         {
           params: IdParamSchema,
           response: AgentHealthSchema,
-        },
-      )
-      .get(
-        "/:id/metrics",
-        async ({ sandbox }) => {
-          return agentClient.metrics(sandbox.id);
-        },
-        {
-          params: IdParamSchema,
-          response: AgentMetricsSchema,
         },
       )
       .get(

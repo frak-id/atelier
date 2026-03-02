@@ -9,7 +9,6 @@ import {
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
-import { buildSandboxConfig } from "../sandbox-config.ts";
 
 const log = createChildLogger("wf-create-system");
 
@@ -34,20 +33,11 @@ export async function createSystemSandbox(
       ports,
     );
 
-    // --- Prepare config ---
-    const sandboxConfig = buildSandboxConfig(
-      sandboxId,
-      undefined,
-      boot.sandbox.runtime.opencodePassword,
-    );
-
-    // --- Parallel batch: 3 TCP calls instead of 5 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
         ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
       ]),
-      ports.agent.setConfig(sandboxId, sandboxConfig),
     ]);
     log.info(
       {

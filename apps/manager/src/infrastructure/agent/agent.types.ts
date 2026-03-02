@@ -4,13 +4,6 @@ export interface AgentHealth {
   uptime: number;
 }
 
-export interface AgentMetrics {
-  cpu: number;
-  memory: { total: number; used: number; free: number };
-  disk: { total: number; used: number; free: number };
-  timestamp: string;
-}
-
 export interface ServiceStatus {
   name: string;
   status: "running" | "stopped" | "error";
@@ -137,10 +130,6 @@ export interface DevLogsResult {
   name: string;
   content: string;
   nextOffset: number;
-}
-
-export interface SetConfigResult {
-  success: boolean;
 }
 
 export interface FileWrite {

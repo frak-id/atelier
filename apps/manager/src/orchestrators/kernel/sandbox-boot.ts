@@ -1,15 +1,17 @@
 import { customAlphabet } from "nanoid";
 import { eventBus } from "../../infrastructure/events/index.ts";
 import {
+  buildConfigMap,
   buildSandboxIngress,
   buildSandboxPod,
   buildSandboxService,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import type { Sandbox } from "../../schemas/index.ts";
+import type { Sandbox, Workspace } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
+import { buildSandboxConfig } from "../sandbox-config.ts";
 import { waitForPodIp } from "./boot-waiter.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
@@ -28,6 +30,7 @@ export interface BootNewOptions {
   vcpus: number;
   memoryMb: number;
   prebuildReady: boolean;
+  workspace?: Workspace;
 }
 
 export interface BootResult {
@@ -74,13 +77,34 @@ export async function bootNewSandbox(
   ports.sandbox.create(sandbox);
 
   try {
+    const configMapName = `sandbox-config-${sandboxId}`;
     await Promise.all([
+      kubeClient.createResource(
+        buildConfigMap(
+          configMapName,
+          {
+            "config.json": JSON.stringify(
+              buildSandboxConfig(
+                sandboxId,
+                options.workspace,
+                opencodePassword,
+              ),
+            ),
+          },
+          undefined,
+          {
+            "atelier.dev/sandbox": sandboxId,
+            "atelier.dev/component": "sandbox",
+          },
+        ),
+      ),
       kubeClient.createResource(
         buildSandboxPod({
           sandboxId,
           image,
           opencodePassword,
           workspaceId: options.workspaceId,
+          configMapName,
           requests: {
             cpu: `${Math.max(250, options.vcpus * 250)}m`,
             memory: `${options.memoryMb}Mi`,
@@ -153,22 +177,47 @@ export async function bootExistingSandbox(
     await kubeClient.deleteResource("Pod", podName);
   } catch {}
 
-  await kubeClient.createResource(
-    buildSandboxPod({
-      sandboxId,
-      image,
-      opencodePassword,
-      workspaceId: sandbox.workspaceId,
-      requests: {
-        cpu: `${Math.max(250, sandbox.runtime.vcpus * 250)}m`,
-        memory: `${sandbox.runtime.memoryMb}Mi`,
-      },
-      limits: {
-        cpu: `${sandbox.runtime.vcpus * 1000}m`,
-        memory: `${sandbox.runtime.memoryMb}Mi`,
-      },
-    }),
+  const sandboxConfig = buildSandboxConfig(
+    sandboxId,
+    workspace,
+    opencodePassword,
   );
+  const configMapName = `sandbox-config-${sandboxId}`;
+
+  try {
+    await kubeClient.deleteResource("ConfigMap", configMapName);
+  } catch {}
+
+  await Promise.all([
+    kubeClient.createResource(
+      buildConfigMap(
+        configMapName,
+        { "config.json": JSON.stringify(sandboxConfig) },
+        undefined,
+        {
+          "atelier.dev/sandbox": sandboxId,
+          "atelier.dev/component": "sandbox",
+        },
+      ),
+    ),
+    kubeClient.createResource(
+      buildSandboxPod({
+        sandboxId,
+        image,
+        opencodePassword,
+        workspaceId: sandbox.workspaceId,
+        configMapName,
+        requests: {
+          cpu: `${Math.max(250, sandbox.runtime.vcpus * 250)}m`,
+          memory: `${sandbox.runtime.memoryMb}Mi`,
+        },
+        limits: {
+          cpu: `${sandbox.runtime.vcpus * 1000}m`,
+          memory: `${sandbox.runtime.memoryMb}Mi`,
+        },
+      }),
+    ),
+  ]);
 
   const podReady = await kubeClient.waitForPodReady(podName, {
     timeout: 120000,

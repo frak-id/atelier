@@ -25,6 +25,7 @@ export type SandboxPodOptions = {
   opencodePassword: string;
   workspaceId?: string;
   namespace?: string;
+  configMapName?: string;
   requests?: Partial<ResourceSpec>;
   limits?: Partial<ResourceSpec>;
 };
@@ -105,8 +106,25 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
               memory: options.limits?.memory ?? "2Gi",
             },
           },
+          ...(options.configMapName && {
+            volumeMounts: [
+              {
+                name: "sandbox-config",
+                mountPath: "/etc/sandbox",
+                readOnly: true,
+              },
+            ],
+          }),
         },
       ],
+      ...(options.configMapName && {
+        volumes: [
+          {
+            name: "sandbox-config",
+            configMap: { name: options.configMapName },
+          },
+        ],
+      }),
     },
   };
 }

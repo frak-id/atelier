@@ -1,10 +1,8 @@
-import type { SandboxConfig } from "@frak/atelier-shared";
 import { SandboxError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { kubeClient } from "../kubernetes/index.ts";
 import type {
   AgentHealth,
-  AgentMetrics,
   BatchExecResult,
   Command,
   DevCommandListResult,
@@ -145,21 +143,6 @@ export class AgentClient {
 
     log.warn({ sandboxId, timeout }, "Agent did not become healthy in time");
     return false;
-  }
-
-  async metrics(sandboxId: string): Promise<AgentMetrics> {
-    return this.request<AgentMetrics>(sandboxId, "/metrics");
-  }
-
-  async config(sandboxId: string): Promise<Record<string, unknown>> {
-    return this.request<Record<string, unknown>>(sandboxId, "/config");
-  }
-
-  async setConfig(
-    sandboxId: string,
-    config: SandboxConfig,
-  ): Promise<{ success: boolean }> {
-    return this.post<{ success: boolean }>(sandboxId, "/config", config, 10000);
   }
 
   async writeFiles(

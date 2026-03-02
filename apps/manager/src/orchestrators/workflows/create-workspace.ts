@@ -13,7 +13,7 @@ import {
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
-import { buildSandboxConfig, generateSandboxMd } from "../sandbox-config.ts";
+import { generateSandboxMd } from "../sandbox-config.ts";
 
 const log = createChildLogger("wf-create-workspace");
 
@@ -30,6 +30,7 @@ export async function createWorkspaceSandbox(
       sandboxId,
       {
         workspaceId: workspace.id,
+        workspace,
         baseImage: options.baseImage ?? workspace.config.baseImage,
         vcpus: options.vcpus ?? workspace.config.vcpus ?? DEFAULTS.VCPUS,
         memoryMb:
@@ -37,13 +38,6 @@ export async function createWorkspaceSandbox(
         prebuildReady: workspace.config.prebuild?.status === "ready",
       },
       ports,
-    );
-
-    // --- Prepare configs + collect files (parallel async prep) ---
-    const sandboxConfig = buildSandboxConfig(
-      sandboxId,
-      workspace,
-      boot.sandbox.runtime.opencodePassword,
     );
 
     const configs = ports.configFiles.getMergedForSandbox(workspace.id);
@@ -68,7 +62,6 @@ export async function createWorkspaceSandbox(
       GuestOps.collectFileSecretFiles(workspace),
     ]);
 
-    // --- Parallel batch: 3 TCP calls instead of 9 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
@@ -79,7 +72,6 @@ export async function createWorkspaceSandbox(
         ...gitCredFiles,
         ...fileSecretFiles,
       ]),
-      ports.agent.setConfig(sandboxId, sandboxConfig),
     ]);
     log.info(
       {

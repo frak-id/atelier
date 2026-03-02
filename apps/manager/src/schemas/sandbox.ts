@@ -124,22 +124,6 @@ export const AgentHealthSchema = t.Object({
 });
 export type AgentHealth = Static<typeof AgentHealthSchema>;
 
-export const AgentMetricsSchema = t.Object({
-  cpu: t.Number(),
-  memory: t.Object({
-    total: t.Number(),
-    used: t.Number(),
-    free: t.Number(),
-  }),
-  disk: t.Object({
-    total: t.Number(),
-    used: t.Number(),
-    free: t.Number(),
-  }),
-  timestamp: t.String(),
-});
-export type AgentMetrics = Static<typeof AgentMetricsSchema>;
-
 export const RepoGitStatusSchema = t.Object({
   path: t.String(),
   branch: t.Union([t.String(), t.Null()]),

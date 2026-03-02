@@ -5,7 +5,6 @@ use tokio::sync::Semaphore;
 pub const MAX_REQUEST_BODY_BYTES: usize = 15 * 1024 * 1024;
 pub const MAX_COMMAND_OUTPUT_BYTES: usize = 15 * 1024 * 1024;
 
-// Keep these conservative. Vsock clients may spike (pollers, batch ops).
 pub const MAX_CONCURRENT_EXEC: usize = 8;
 pub const MAX_CONCURRENT_GIT: usize = 4;
 pub const MAX_CONCURRENT_FILES: usize = 4;

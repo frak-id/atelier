@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
-pub const VSOCK_PORT: u32 = 9998;
+pub const AGENT_PORT: u16 = 9998;
 pub const LOG_DIR: &str = "/var/log/sandbox";
 pub const WORKSPACE_DIR: &str = "/home/dev/workspace";
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 30_000;
@@ -59,19 +59,7 @@ pub static SANDBOX_CONFIG: LazyLock<RwLock<Option<SandboxConfig>>> = LazyLock::n
     RwLock::new(config)
 });
 
-/// Set config from JSON and write to disk
-pub fn set_config(config: SandboxConfig) -> Result<(), String> {
-    let content =
-        serde_json::to_string_pretty(&config).map_err(|e| format!("Failed to serialize: {}", e))?;
-    std::fs::write(CONFIG_PATH, &content).map_err(|e| format!("Failed to write config: {}", e))?;
-    let mut guard = SANDBOX_CONFIG
-        .write()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
-    *guard = Some(config);
-    Ok(())
-}
 
-/// Get a clone of current config
 pub fn get_config() -> Option<SandboxConfig> {
     SANDBOX_CONFIG.read().ok().and_then(|g| g.clone())
 }

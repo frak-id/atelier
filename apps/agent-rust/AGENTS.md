@@ -1,6 +1,6 @@
 # Sandbox Agent
 
-Lightweight HTTP agent running INSIDE Firecracker VMs. Rust runtime — no Bun/Node APIs.
+Lightweight HTTP agent running INSIDE Kata Containers sandbox pods. Rust runtime — no Bun/Node APIs.
 
 ## Build
 
@@ -12,7 +12,7 @@ Release profile optimized for size: `opt-level=z`, LTO, stripped. Produces ~2MB 
 
 ## Transport
 
-Vsock only (port 9998).
+HTTP over TCP, port 9998. Config loaded from `/etc/sandbox/config.json` (K8s ConfigMap mount).
 
 ## Conventions
 
