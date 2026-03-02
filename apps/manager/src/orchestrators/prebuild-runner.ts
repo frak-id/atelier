@@ -17,12 +17,11 @@ import type {
   Workspace,
   WorkspaceConfig,
 } from "../schemas/index.ts";
-import { isMock } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("prebuild-runner");
 
-const REGISTRY_URL = "zot.atelier-system.svc:5000";
 const KANIKO_NAMESPACE = "atelier-system";
 const JOB_POLL_INTERVAL_MS = 2000;
 const JOB_TIMEOUT_MS = 600000;
@@ -187,7 +186,7 @@ export class PrebuildRunner {
     const imageName = this.imageNameForKey(key);
     try {
       const response = await fetch(
-        `http://${REGISTRY_URL}/v2/${imageName}/tags/list`,
+        `http://${config.kubernetes.registryUrl}/v2/${imageName}/tags/list`,
         {
           signal: AbortSignal.timeout(3000),
         },
@@ -383,7 +382,7 @@ export class PrebuildRunner {
   }
 
   private imageRefForKey(key: string): string {
-    return `${REGISTRY_URL}/${this.imageNameForKey(key)}:latest`;
+    return `${config.kubernetes.registryUrl}/${this.imageNameForKey(key)}:latest`;
   }
 
   private resourceNameForKey(key: string): string {
@@ -402,7 +401,7 @@ export class PrebuildRunner {
     if (scenario.kind === "system") {
       return {
         dockerfile: [
-          `FROM ${REGISTRY_URL}/dev-base:latest`,
+          `FROM ${config.kubernetes.registryUrl}/dev-base:latest`,
           "USER dev",
           `WORKDIR ${WORKSPACE_DIR}`,
           "RUN timeout 5 opencode serve --hostname 127.0.0.1 --port 4200 2>/dev/null || true",
@@ -412,7 +411,7 @@ export class PrebuildRunner {
 
     const workspace = this.requireWorkspace(scenario);
     const lines: string[] = [
-      `FROM ${REGISTRY_URL}/${workspace.config.baseImage}:latest`,
+      `FROM ${config.kubernetes.registryUrl}/${workspace.config.baseImage}:latest`,
       "USER root",
     ];
 

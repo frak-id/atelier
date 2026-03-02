@@ -4,7 +4,7 @@ import {
   buildSandboxIngress,
   buildSandboxPod,
   buildSandboxService,
-  KubeClient,
+  kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
 import type { Sandbox } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
@@ -19,7 +19,6 @@ const generatePassword = customAlphabet(
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
 );
 
-const REGISTRY_URL = "zot.atelier-system.svc:5000";
 const DEFAULT_BASE_IMAGE = "dev-base";
 
 export interface BootNewOptions {
@@ -47,7 +46,6 @@ export async function bootNewSandbox(
   options: BootNewOptions,
   ports: SandboxPorts,
 ): Promise<BootResult> {
-  const kube = new KubeClient();
   const podName = `sandbox-${sandboxId}`;
   const usedPrebuild = Boolean(options.workspaceId && options.prebuildReady);
   const image = resolveSandboxImage({
@@ -77,7 +75,7 @@ export async function bootNewSandbox(
 
   try {
     await Promise.all([
-      kube.createResource(
+      kubeClient.createResource(
         buildSandboxPod({
           sandboxId,
           image,
@@ -93,18 +91,20 @@ export async function bootNewSandbox(
           },
         }),
       ),
-      kube.createResource(buildSandboxService(sandboxId)),
-      kube.createResource(
+      kubeClient.createResource(buildSandboxService(sandboxId)),
+      kubeClient.createResource(
         buildSandboxIngress(sandboxId, config.domain.baseDomain),
       ),
     ]);
 
-    const podReady = await kube.waitForPodReady(podName, { timeout: 120000 });
+    const podReady = await kubeClient.waitForPodReady(podName, {
+      timeout: 120000,
+    });
     if (!podReady) {
       throw new Error(`Sandbox pod ${podName} did not become ready`);
     }
 
-    const podIp = await waitForPodIp(kube, podName, 60000);
+    const podIp = await waitForPodIp(kubeClient, podName, 60000);
     if (podIp) {
       sandbox.runtime.ipAddress = podIp;
     }
@@ -135,7 +135,6 @@ export async function bootExistingSandbox(
   sandbox: Sandbox,
   ports: SandboxPorts,
 ): Promise<RestartResult> {
-  const kube = new KubeClient();
   const podName = `sandbox-${sandboxId}`;
 
   const workspace = sandbox.workspaceId
@@ -151,10 +150,10 @@ export async function bootExistingSandbox(
     sandbox.runtime.opencodePassword ?? generatePassword(32);
 
   try {
-    await kube.deleteResource("Pod", podName);
+    await kubeClient.deleteResource("Pod", podName);
   } catch {}
 
-  await kube.createResource(
+  await kubeClient.createResource(
     buildSandboxPod({
       sandboxId,
       image,
@@ -171,12 +170,14 @@ export async function bootExistingSandbox(
     }),
   );
 
-  const podReady = await kube.waitForPodReady(podName, { timeout: 120000 });
+  const podReady = await kubeClient.waitForPodReady(podName, {
+    timeout: 120000,
+  });
   if (!podReady) {
     throw new Error(`Sandbox pod ${podName} did not become ready`);
   }
 
-  const podIp = await waitForPodIp(kube, podName, 60000);
+  const podIp = await waitForPodIp(kubeClient, podName, 60000);
   if (podIp) {
     sandbox.runtime.ipAddress = podIp;
   }
@@ -250,10 +251,10 @@ function resolveSandboxImage(options: {
   baseImage?: string;
 }): string {
   if (options.workspaceId && options.prebuildReady) {
-    return `${REGISTRY_URL}/workspace-${options.workspaceId}:latest`;
+    return `${config.kubernetes.registryUrl}/workspace-${options.workspaceId}:latest`;
   }
 
-  return `${REGISTRY_URL}/${options.baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
+  return `${config.kubernetes.registryUrl}/${options.baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
 }
 
 function buildUrls(

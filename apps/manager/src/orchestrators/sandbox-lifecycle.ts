@@ -1,5 +1,5 @@
 import { eventBus } from "../infrastructure/events/index.ts";
-import { KubeClient } from "../infrastructure/kubernetes/index.ts";
+import { kubeClient } from "../infrastructure/kubernetes/index.ts";
 import type { Sandbox } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { isMock } from "../shared/lib/config.ts";
@@ -30,10 +30,9 @@ export class SandboxLifecycle {
     log.info({ sandboxId }, "Stopping sandbox");
 
     if (!isMock()) {
-      const kube = new KubeClient();
       const podName = `sandbox-${sandboxId}`;
       try {
-        await kube.deleteResource("Pod", podName);
+        await kubeClient.deleteResource("Pod", podName);
       } catch (err) {
         log.warn({ sandboxId, err }, "Failed to delete pod during stop");
       }
@@ -68,8 +67,9 @@ export class SandboxLifecycle {
     log.info({ sandboxId }, "Recovering sandbox from error state");
 
     if (!isMock()) {
-      const kube = new KubeClient();
-      await kube.deleteLabeledResources(`atelier.dev/sandbox=${sandboxId}`);
+      await kubeClient.deleteLabeledResources(
+        `atelier.dev/sandbox=${sandboxId}`,
+      );
     }
 
     this.ports.sandbox.updateStatus(sandboxId, "stopped");
@@ -131,11 +131,10 @@ export class SandboxLifecycle {
     }
 
     // Check pod status via K8s API
-    const kube = new KubeClient();
     const podName = `sandbox-${sandboxId}`;
 
     try {
-      const phase = await kube.getPodStatus(podName);
+      const phase = await kubeClient.getPodStatus(podName);
 
       if (phase === "Running") {
         if (sandbox.status !== "running") {

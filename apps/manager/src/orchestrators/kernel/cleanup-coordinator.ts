@@ -1,4 +1,4 @@
-import { KubeClient } from "../../infrastructure/kubernetes/index.ts";
+import { kubeClient } from "../../infrastructure/kubernetes/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("cleanup-coordinator");
@@ -11,14 +11,13 @@ export async function cleanupSandboxResources(
   sandboxId: string,
   resources: CleanupResources,
 ): Promise<void> {
-  const kube = new KubeClient();
   const selector = `atelier.dev/sandbox=${sandboxId}`;
 
   try {
-    await kube.deleteLabeledResources(selector);
+    await kubeClient.deleteLabeledResources(selector);
 
     if (resources.podName) {
-      await kube
+      await kubeClient
         .deleteResource("Pod", resources.podName)
         .catch(() => undefined);
     }
