@@ -1,6 +1,6 @@
 # Kata Containers Migration Plan
 
-_Last updated: 2026-03-02 — Phase 2 completed (11 commits, manager fully rewritten for K8s)_
+_Last updated: 2026-03-02 — Prebuild approach pivoted from OCI workspace images to PVC snapshots (TopoLVM)_
 
 ## Overview
 
@@ -69,19 +69,21 @@ k3s cluster (single or multi-node)
 │   │   │   └── cleanup-coordinator.ts  kubectl delete pod,svc,ingress
 │   │   ├── ports/           (~330 LOC) ← CLEANUP (FC guest ops removed)
 │   │   ├── workflows/       (~380 LOC) ← MINOR CLEANUP (deleted ops removed)
-│   │   ├── prebuild-runner.ts (~200 LOC) ← REWRITTEN (Kaniko Job orchestrator)
+│   │   ├── prebuild-runner.ts (~250 LOC) ← REWRITTEN (PVC snapshot orchestrator)
 │   │   ├── sandbox-lifecycle.ts (~150 LOC) ← REWRITTEN (pod status monitoring)
 │   │   └── sandbox-spawner.ts (99 LOC) ← UNCHANGED
 │   └── infrastructure/
 │       └── agent/            (~700 LOC, TCP transport)
 ├── Ingress controller (Traefik bundled with k3s, or nginx)
-├── Zot registry (Deployment + PVC, cluster-internal OCI store)
+├── TopoLVM (CSI driver, LVM thin provisioning + VolumeSnapshots)
+├── Zot registry (Deployment + PVC, base images only)
 ├── Verdaccio (Deployment + PVC, npm package cache)
-├── Kaniko (Job pods, in-cluster image builds — no Docker daemon)
+├── Kaniko (Job pods, base image builds only — not workspace prebuilds)
 ├── Sandbox pods (runtimeClassName: kata-clh)
-│   ├── Workspace image (base + prebuild baked in, per-workspace)
+│   ├── Base image (dev-base or dev-cloud, from Zot)
+│   ├── Workspace PVC (cloned from VolumeSnapshot via TopoLVM, per-workspace)
 │   └── Slim agent (~1,500 LOC) → terminal, services, dev, git
-└── Base images (dev-base, dev-cloud — OCI, with code-server + OpenCode baked in)
+└── VolumeSnapshots (per-workspace prebuilds, CoW via TopoLVM thin pool)
 ```
 
 ## What Changes Per Layer
@@ -92,7 +94,7 @@ The kernel layer is the **only orchestrator code that touches Firecracker**. We 
 
 | Current kernel file | What it does now | What it does after |
 |---|---|---|
-| `sandbox-boot.ts` (399) | allocate network → create LVM volume → launch FC → configure VM → boot → wait for agent → register Caddy/SSH routes | create Pod manifest → apply Pod + Service + Ingress → wait for pod Ready |
+| `sandbox-boot.ts` (399) | allocate network → create LVM volume → launch FC → configure VM → boot → wait for agent → register Caddy/SSH routes | create PVC from VolumeSnapshot → create Pod + Service + Ingress → wait for pod Ready |
 | `boot-waiter.ts` (79) | Poll `kill -0 $PID` + FC `isRunning()` every 50ms | Watch pod status via K8s API, read pod events on failure |
 | `cleanup-coordinator.ts` (72) | Kill PID → rm sockets → delete LVM → delete TAP → release IP → remove Caddy → remove SSH | `kubectl delete pod,svc,ingress -l atelier.dev/sandbox=$id` |
 
@@ -120,7 +122,7 @@ Same lifecycle state machine, same restart logic, different health detection mec
 | `buildHostnameCommand()` | FC VMs have no hostname set | K8s pod spec `hostname` field |
 | `buildSwapCommand()` | Manually creates swapfile inside FC VM | K8s memory requests/limits; swap discouraged (`--fail-swap-on`) |
 | `buildMountSharedBinariesCommand()` | ext4 image mounted as virtio block device | Binaries baked into base OCI image |
-| `resizeStorage()` + `mknod` | LVM thin volumes need `resize2fs` after grow | OCI images define rootfs; PVCs handle dynamic storage |
+| `resizeStorage()` + `mknod` | LVM thin volumes need `resize2fs` after grow | PVC resize handled by TopoLVM CSI + `kubectl patch pvc` (no guest-side commands) |
 
 **Stays unchanged:**
 - `buildRuntimeEnvFiles()` — dynamic per-sandbox env (sandbox ID). Could move to K8s Downward API, but `writeFiles()` is simpler and already wired.
@@ -146,7 +148,7 @@ Remaining workflow logic (auth/config sync, secret injection, git clone, service
 | `firecracker/` — FC client, launcher, paths | 277 | kernel/ K8s implementation |
 | `network/` — TAP, bridge, IP allocation | 274 | K8s CNI (automatic) |
 | `proxy/` — Caddy admin API, SSH proxy | 827 | K8s Ingress + Services |
-| `storage/` — LVM, shared storage, ext4 image builder | 642 | Zot + OCI images (shared-binaries baked into base image) |
+| `storage/` — LVM, shared storage, ext4 image builder | 642 | TopoLVM CSI (PVC snapshots for workspace prebuilds) + Zot (base images only) |
 | `registry/` — Verdaccio host process management | 451 | Verdaccio K8s Deployment (manager keeps HTTP client for settings/stats) |
 | **Total deleted** | **2,471** | |
 
@@ -224,87 +226,183 @@ The manager runs three continuous synchronization systems that push state to all
 
 The `config.network.bridgeIp` config key is replaced by K8s service DNS names. Configuration change, not architectural.
 
-## OCI Prebuild System
+## PVC Snapshot Prebuild System
 
-Replaces the current LVM snapshot-based prebuild with a **two-layer OCI image** architecture. Prebuilds are baked into workspace images — no runtime init cost. The entire build pipeline runs inside the cluster via **Kaniko** — zero host-level tooling.
+Replaces the current LVM snapshot-based prebuild with **CSI VolumeSnapshots** via TopoLVM. Same conceptual flow as current — temp environment → run init → snapshot → clone for new sandboxes — but through K8s API instead of direct LVM commands. Zero host-level tooling.
 
-### Two-Layer Image Architecture
+### Two-Layer Architecture
 
 ```
-Layer 1 — Base image (shared, rarely rebuilt)
+Layer 1 — Base OCI image (shared, rarely rebuilt, stored in Zot)
   ├── dev-base:latest    Node 22, Bun, code-server, OpenCode, common tooling
   └── dev-cloud:latest   dev-base + AWS CLI, gcloud, kubectl
 
-Layer 2 — Workspace image (per-workspace, rebuilt on trigger)
-  └── workspace-{id}:{commit-hash}
-      FROM dev-base:latest (or dev-cloud)
-      → git clone repos at pinned commits
+Layer 2 — Workspace PVC snapshot (per-workspace, re-snapshotted on trigger)
+  └── prebuild-{workspace-id}
+      Boot temp pod from dev-base + temp PVC
+      → clone repos at pinned commits
       → run init commands (npm install, build, etc.)
-      → fix ownership, cleanup caches
+      → VolumeSnapshot the PVC → delete temp pod + PVC
 ```
 
-**Image size:** code-server (~120MB) and OpenCode are baked into the base image. Since all workspace images `FROM dev-base`, containerd's layer deduplication stores the base layer only once on disk. Each workspace image only adds workspace-specific content (repos, deps). No explicit shared volume needed — OCI layer sharing handles it for free.
+**Key advantage over OCI workspace images:** PVCs can be **resized** (`kubectl patch pvc`), support **CoW** via LVM thin provisioning (only changed blocks stored), and allow **incremental updates** (`git pull && npm install` on existing snapshot, then re-snapshot). No fixed rootfs size — storage grows with the workspace.
 
 ### Prebuild Flow: Current vs After
 
-| Step | Current (LVM) | After (OCI + Kaniko) |
+| Step | Current (direct LVM) | After (CSI VolumeSnapshot) |
 |---|---|---|
-| **1. Start** | Spawn temp Firecracker VM | Generate Dockerfile from workspace config |
-| **2. Build context** | Wait for agent, clone repos | Create ConfigMap with Dockerfile + K8s Secret with git auth |
-| **3. Build** | Run init commands via agent exec | Create Kaniko Job pod → builds image inside cluster |
-| **4. Store** | LVM snapshot of VM's volume | Kaniko pushes image to Zot registry |
-| **5. Capture** | Record commit hashes from inside VM | Record commit hashes at build time (from Kaniko Job output) |
-| **6. Cleanup** | Destroy temp VM | Job pod auto-cleaned by K8s (TTL) |
-| **On spawn** | Clone LVM snapshot → boot FC from it (1.5-2.5s) | Create pod from workspace image in Zot (~200-300ms) |
+| **1. Start** | Spawn temp Firecracker VM | Create temp PVC (e.g., 20Gi via TopoLVM) |
+| **2. Boot** | Wait for FC process, configure VM | Create temp Pod (base image + PVC at `/home/dev`) → wait for agent |
+| **3. Build** | Run init commands via agent exec | Same — run init commands via agent exec (clone repos, `npm install`) |
+| **4. Store** | `lvcreate --snapshot` (direct LVM) | Create CSI `VolumeSnapshot` from temp PVC (TopoLVM thin snapshot, <100ms) |
+| **5. Capture** | Record commit hashes from inside VM | Same — record commit hashes from agent exec output |
+| **6. Cleanup** | Destroy temp VM + delete temp volume | Delete temp Pod + temp PVC (snapshot persists independently) |
+| **On spawn** | `lvcreate --snapshot` clone → boot FC (1.5-2.5s) | Create PVC from VolumeSnapshot (CoW clone, <100ms) → boot pod with it |
 
-Key differences:
-- **Zero host access** — no Docker daemon, no shell-outs, no FFI. Manager only talks K8s API.
-- **Reproducible** — same Dockerfile = same image. No "works on my snapshot" issues.
-- **Cacheable** — Kaniko supports layer caching via a cache repo in Zot. If only code changed (new commit) but deps didn't, `npm install` layer is cached.
-- **No runtime init cost** — deps already installed, code already cloned. Pod boots straight into ready state.
+Key differences from current system:
+- **Zero host access** — no `lvcreate`, no `sudo`, no shell-outs. Manager only talks K8s API.
+- **Same flow** — structurally identical to current prebuild. Temp env → init → snapshot → clone. Minimal conceptual change.
+- **Resizable** — PVCs can be expanded after creation. `kubectl patch pvc` → filesystem grows.
+- **Incremental updates** — New commits? Boot from existing snapshot → `git pull && npm install` → re-snapshot. Only delta blocks stored.
 
 ### Prebuild Triggers
 
-Same triggers as current system, adapted for OCI:
+Same triggers as current system:
 
 | Trigger | Detection | Action |
 |---|---|---|
-| **Commit hash change** | Cron polling via `git ls-remote` (every 30min, same as current `PrebuildChecker`) | Create Kaniko Job to rebuild workspace image with new commits |
-| **Base image update** | Detect when `dev-base` or `dev-cloud` is rebuilt (image digest change in Zot) | Rebuild all workspace images that depend on it |
-| **Manual trigger** | `POST /:id/prebuild` API endpoint (same as current) | Create Kaniko Job to rebuild workspace image on demand |
+| **Commit hash change** | Cron polling via `git ls-remote` (every 30min, same as current `PrebuildChecker`) | Create temp Pod + PVC → run init → VolumeSnapshot |
+| **Base image update** | Detect when `dev-base` or `dev-cloud` is rebuilt (image digest change in Zot) | Re-snapshot all workspace PVCs that depend on it |
+| **Manual trigger** | `POST /:id/prebuild` API endpoint (same as current) | Create temp Pod + PVC → run init → VolumeSnapshot on demand |
 
-The `PrebuildChecker` stays mostly unchanged — it still polls `git ls-remote` and compares hashes. The difference is that on stale detection, it triggers a Kaniko Job instead of a VM-based snapshot.
+The `PrebuildChecker` stays mostly unchanged — same `git ls-remote` polling, same staleness logic. On stale detection, triggers a PVC-based prebuild instead of a VM-based snapshot.
 
-### Generated Dockerfile (example)
+### VolumeSnapshot Resources (example)
 
-```dockerfile
-FROM zot.atelier-system.svc:5000/dev-base:latest
-
-# Clone repos at specific commits
-RUN --mount=type=secret,id=git_token \
-    git clone --branch main https://x-access-token:$(cat /run/secrets/git_token)@github.com/org/repo.git /home/dev/workspace/repo \
-    && cd /home/dev/workspace/repo \
-    && git checkout abc123def
-
-# Run init commands from workspace config
-WORKDIR /home/dev/workspace
-RUN npm install
-RUN npm run build
-
-# Fix ownership
-RUN chown -R dev:dev /home/dev
+```yaml
+# VolumeSnapshotClass (created once by Helm chart)
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: topolvm-snapshot
+driver: topolvm.io
+deletionPolicy: Delete
+---
+# Created by prebuild-runner.ts after init commands complete
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: prebuild-{workspace-id}-{short-hash}
+  namespace: atelier-sandboxes
+  labels:
+    atelier.dev/component: prebuild
+    atelier.dev/workspace: "{workspace-id}"
+spec:
+  volumeSnapshotClassName: topolvm-snapshot
+  source:
+    persistentVolumeClaimName: prebuild-temp-{workspace-id}
+---
+# Created for each new sandbox (PVC from snapshot = CoW clone)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sandbox-{id}-data
+  namespace: atelier-sandboxes
+spec:
+  storageClassName: topolvm-provisioner
+  dataSource:
+    name: prebuild-{workspace-id}-{short-hash}
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi  # resizable via kubectl patch
 ```
 
-Auth tokens are passed as build secrets (`--secret`), never baked into image layers.
+### Wiring — how the manager orchestrates a prebuild:
+
+```
+1. Trigger fires (commit change / base image / manual)
+         │
+2. Manager creates temp PVC (20Gi, storageClass: topolvm-provisioner)
+         │
+3. Manager creates temp Pod (base image from Zot + PVC at /home/dev)
+         │
+4. Wait for agent ready → run init via agent exec:
+   ├── Clone repos (git clone, git checkout)
+   ├── Run init commands (npm install, build, etc.)
+   └── Capture commit hashes
+         │
+5. Delete temp Pod (PVC stays)
+         │
+6. Create VolumeSnapshot from temp PVC
+         │
+7. Wait for snapshot readyToUse=true
+   ├── Update workspace config with snapshot ref + commit hashes
+   ├── Mark prebuild status "ready"
+   └── Delete temp PVC (snapshot persists independently)
+         │
+   On failure: read pod logs, mark "failed", cleanup temp resources
+         │
+8. New sandboxes: create PVC from snapshot (CoW clone) → mount in pod
+```
+
+All steps are pure K8s API calls. No host access, no LVM commands, no shell-outs.
+
+### Prebuild Runner Rewrite
+
+The current `PrebuildRunner` (641 LOC) gets rewritten (~250 LOC):
+
+| Current responsibility | After |
+|---|---|
+| Spawn temp VM via `SandboxSpawner` | Create temp PVC + Pod (base image + PVC) |
+| Run init commands via agent exec | Same — agent exec (structurally identical) |
+| Capture commit hashes via agent exec | Same — agent exec (structurally identical) |
+| Warmup OpenCode inside VM | Warmup at pod boot (or skipped) |
+| Push auth/configs via agent | Auth as K8s Secret mounted in pod, configs via agent writeFiles |
+| `StorageService.createPrebuild()` (direct LVM) | Create CSI VolumeSnapshot → wait for readyToUse |
+| Cleanup: destroy temp VM | Delete temp Pod + PVC (snapshot persists) |
+
+The `PrebuildChecker` (133 LOC) stays mostly unchanged — same `git ls-remote` polling, same staleness logic. Only the action on stale changes: create PVC-based prebuild instead of spawning a VM.
 
 ### Build & Registry Infrastructure
 
-#### Zot Registry (cluster-internal OCI store)
+#### TopoLVM (CSI storage driver)
 
-[Zot](https://zotregistry.dev/) is an OCI-native registry (~15MB binary, ~30MB idle RAM). Deployed as a Deployment + PVC inside the cluster.
+[TopoLVM](https://github.com/topolvm/topolvm) provides LVM thin provisioning as a CSI driver. Deployed as DaemonSet + controller via Helm.
 
 ```yaml
-# Deployed via Helm chart in atelier-system namespace
+# StorageClass for sandbox PVCs (created by Helm chart)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: topolvm-provisioner
+provisioner: topolvm.io
+parameters:
+  topolvm.io/device-class: "thin"
+allowVolumeExpansion: true  # enables PVC resize
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+```
+
+**What TopoLVM manages:**
+
+| Resource | Purpose |
+|---|---|
+| Sandbox PVCs | Per-sandbox data volume (repos, deps, artifacts). Resizable. |
+| Prebuild temp PVCs | Temp volumes for prebuild init. Deleted after snapshot. |
+| VolumeSnapshots | Prebuild snapshots. CoW clones for new sandbox PVCs. |
+| Thin pool | LVM thin pool on each node. Auto-extends if configured. |
+
+**Prerequisites:** LVM volume group (VG) must exist on each node. Same as current system — the VG already exists for Firecracker LVM volumes.
+
+#### Zot Registry (base images only)
+
+[Zot](https://zotregistry.dev/) stores **base OCI images only** (not workspace prebuilds). ~15MB binary, ~30MB idle RAM.
+
+```yaml
+# Same Zot deployment, scoped to base images
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -325,7 +423,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: zot-data  # local-path or hostPath PVC
+            claimName: zot-data
 ---
 apiVersion: v1
 kind: Service
@@ -340,117 +438,28 @@ spec:
       targetPort: 5000
 ```
 
-Cluster-internal only — no external exposure, no auth needed. Accessible at `zot.atelier-system.svc:5000`.
-
-k3s containerd must be configured to pull from it as an insecure (HTTP) registry:
-
-```yaml
-# /etc/rancher/k3s/registries.yaml (part of Helm chart setup)
-mirrors:
-  "zot.atelier-system.svc:5000":
-    endpoint:
-      - "http://zot.atelier-system.svc:5000"
-```
-
 **What lives in Zot:**
 
 | Image | Tag | Rebuilt when |
 |---|---|---|
 | `dev-base` | `latest` + date tag | Base image updated (manual or CI) |
 | `dev-cloud` | `latest` + date tag | Base image updated (manual or CI) |
-| `workspace-{id}` | `{short-commit-hash}` | Prebuild triggered |
-| `cache` | (layer blobs) | Automatically by Kaniko `--cache-repo` |
 
-#### Kaniko (in-cluster image builder)
+Workspace prebuilds are VolumeSnapshots, not OCI images — they don't go through Zot.
 
-[Kaniko](https://github.com/GoogleContainerTools/kaniko) builds OCI images inside a K8s pod — no Docker daemon, no privileged mode, no host access. The manager creates a **Job** for each prebuild.
+k3s containerd must be configured to pull from Zot:
 
 ```yaml
-# Created by manager's prebuild-runner.ts via K8s API
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: prebuild-{workspace-id}-{short-hash}
-  namespace: atelier-system
-  labels:
-    atelier.dev/component: prebuild
-    atelier.dev/workspace: "{workspace-id}"
-spec:
-  ttlSecondsAfterFinished: 300  # auto-cleanup after 5min
-  backoffLimit: 0                # no retries — fail fast
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: kaniko
-          image: gcr.io/kaniko-project/executor:latest
-          args:
-            - "--dockerfile=/workspace/Dockerfile"
-            - "--context=dir:///workspace"
-            - "--destination=zot.atelier-system.svc:5000/workspace-{id}:{hash}"
-            - "--cache=true"
-            - "--cache-repo=zot.atelier-system.svc:5000/cache"
-            - "--insecure"          # Zot is HTTP-only (cluster-internal)
-            - "--skip-tls-verify"
-          volumeMounts:
-            - name: dockerfile
-              mountPath: /workspace
-            - name: git-secret
-              mountPath: /kaniko/.docker/
-              readOnly: true
-      volumes:
-        - name: dockerfile
-          configMap:
-            name: prebuild-{workspace-id}-{short-hash}  # contains generated Dockerfile
-        - name: git-secret
-          secret:
-            secretName: atelier-git-credentials  # git auth for private repos
+# /etc/rancher/k3s/registries.yaml
+mirrors:
+  "zot.atelier-system.svc:5000":
+    endpoint:
+      - "http://zot.atelier-system.svc:5000"
 ```
 
-**Wiring — how the manager orchestrates a prebuild:**
+#### Kaniko (base image builds only)
 
-```
-1. Trigger fires (commit change / base image / manual)
-         │
-2. Manager generates Dockerfile from workspace config
-   (repos, branches, init commands, base image)
-         │
-3. Manager creates ConfigMap with Dockerfile content
-   (kubectl apply configmap prebuild-{id}-{hash})
-         │
-4. Manager creates Kaniko Job (spec above)
-   (kubectl apply job prebuild-{id}-{hash})
-         │
-5. Manager watches Job status via K8s API
-   ├── Job succeeds → image is in Zot at workspace-{id}:{hash}
-   │   ├── Update workspace config with new image ref + commit hashes
-   │   ├── Mark prebuild status "ready"
-   │   └── Cleanup: delete ConfigMap (Job auto-deletes via TTL)
-   │
-   └── Job fails → read pod logs for error details
-       ├── Mark prebuild status "failed"
-       └── Emit prebuild.failed event with error context
-         │
-6. New sandboxes use: image: zot.atelier-system.svc:5000/workspace-{id}:{hash}
-```
-
-All steps are pure K8s API calls. No host access, no Docker socket, no shell-outs.
-
-### Prebuild Runner Rewrite
-
-The current `PrebuildRunner` (641 LOC) gets rewritten (~200 LOC):
-
-| Current responsibility | After |
-|---|---|
-| Spawn temp VM via `SandboxSpawner` | Generate Dockerfile + create ConfigMap |
-| Run init commands via agent exec | Init commands are Dockerfile RUN steps |
-| Capture commit hashes via agent exec | Resolve via `git ls-remote` before build, tag image with hash |
-| Warmup OpenCode inside VM | Warmup happens at pod boot (or skipped — pod starts fast enough) |
-| Push auth/configs via agent | Auth as K8s Secret mounted in Kaniko, configs as ConfigMap |
-| `StorageService.createPrebuild()` (LVM snapshot) | Create Kaniko Job → image pushed to Zot |
-| Cleanup: destroy temp VM | Job auto-deletes via TTL, ConfigMap deleted on completion |
-
-The `PrebuildChecker` (133 LOC) stays mostly unchanged — same `git ls-remote` polling, same staleness logic. Only the action on stale changes: create Kaniko Job instead of spawning a VM.
+[Kaniko](https://github.com/GoogleContainerTools/kaniko) builds base OCI images (dev-base, dev-cloud) inside a K8s pod. Only used for **base image rebuilds** (tooling updates, new runtime versions), **not** for workspace prebuilds. Base image builds are infrequent and can alternatively be done externally via CI and pushed to Zot.
 
 ### Verdaccio (npm package cache)
 
@@ -510,7 +519,7 @@ Manager keeps a thin HTTP client for registry stats/management (~50 LOC). All pr
 | Boot time | ~125ms | ~200ms |
 | Kata default | No | YES (since 3.x) |
 
-Cloud Hypervisor is Kata's default VMM. The ~75ms boot penalty is negligible — sandbox pods boot from pre-built workspace images with everything already installed.
+Cloud Hypervisor is Kata's default VMM. The ~75ms boot penalty is negligible — sandbox pods boot from base images with workspace data on a PVC (cloned from snapshot).
 
 ## New Code Required
 
@@ -520,23 +529,24 @@ Cloud Hypervisor is Kata's default VMM. The ~75ms boot penalty is negligible —
 | `kernel/boot-waiter.ts` — pod readiness | ~40 | TypeScript |
 | `kernel/cleanup-coordinator.ts` — pod deletion | ~30 | TypeScript |
 | `sandbox-lifecycle.ts` — pod status monitoring | ~150 | TypeScript |
-| `prebuild-runner.ts` — Dockerfile generator + Kaniko Job orchestrator | ~200 | TypeScript |
+| `prebuild-runner.ts` — PVC + temp Pod + VolumeSnapshot orchestrator | ~250 | TypeScript |
 | `health.routes.ts` — K8s health checks | ~50 | TypeScript |
 | `system.routes.ts` — K8s metrics stats | ~30 | TypeScript |
-| Helm chart (manager, Zot, Verdaccio, RBAC, RuntimeClass, Ingress, Kaniko RBAC) | ~400 | YAML |
-| Base image Dockerfile (from dev-base rootfs, with code-server + OpenCode baked in) | ~80 | Dockerfile |
+| Helm chart (manager, TopoLVM config, Zot, Verdaccio, RBAC, RuntimeClass, Ingress, VolumeSnapshotClass) | ~450 | YAML |
+| Base image Dockerfile (dev-base rootfs, with code-server + OpenCode baked in) | ~80 | Dockerfile |
 | Agent transport (vsock→TCP, ~50 LOC net change) | ~50 | TypeScript |
-| **Total new** | **~1,230-1,280** | |
+| **Total new** | **~1,330-1,380** |
 
 ## K8s Overhead on Single VPS
 
 | Component | Idle RAM | Idle CPU |
 |---|---|---|
 | **k3s (stripped)** | ~1,200-1,400MB | 5% of 1 core |
+| **TopoLVM** (lvmd DaemonSet + controller) | ~130MB | negligible |
 | **Zot registry** | ~30MB | negligible |
 | **Verdaccio** | ~80MB | negligible |
-| **Kaniko** | 0 (Job pods, only runs during builds) | 0 |
-| **Total overhead** | ~1,310-1,510MB | ~5% of 1 core |
+| **Kaniko** | 0 (Job pods, only runs for base image builds) | 0 |
+| **Total overhead** | ~1,440-1,640MB | ~5% of 1 core |
 
 On a 32GB VPS, total overhead = ~4.7% RAM. Roughly 1 sandbox worth of memory.
 
@@ -600,6 +610,7 @@ Completed in 11 incremental commits on branch `task/task_cub8c7l17pqy`:
 - ✅ **Kernel layer rewrite:** sandbox-boot, boot-waiter, cleanup-coordinator — all K8s pod lifecycle
 - ✅ **Sandbox lifecycle rewrite:** pod status monitoring via K8s API replaces process checks
 - ✅ **Prebuild rewrite:** Kaniko Job orchestrator + Zot registry (~527 LOC) replaces LVM snapshots
+- ⚠️ **Prebuild pivot:** Kaniko-based OCI workspace images (commit 8) being replaced with PVC snapshot approach (TopoLVM + CSI VolumeSnapshots). Prebuild runner will be rewritten to orchestrate temp Pod + PVC → VolumeSnapshot instead of Kaniko Job. See updated "PVC Snapshot Prebuild System" section.
 - ✅ **Agent transport:** vsock → TCP fetch (pod IP from K8s Service DNS)
 - ✅ **Guest ops cleanup:** deleted DNS, clock, hostname, swap, mount, resize (K8s handles natively)
 - ✅ **Workflow cleanup:** removed deleted guest-ops calls, updated comments
@@ -623,7 +634,7 @@ Completed in 11 incremental commits on branch `task/task_cub8c7l17pqy`:
 
 Code deletion already completed in Phase 2. Remaining work:
 
-- Write Helm chart: manager Deployment + PVC, RBAC, RuntimeClass, Ingress defaults, Zot Deployment + PVC + Service, Verdaccio Deployment + PVC + Service + ConfigMap, Kaniko ServiceAccount + RBAC, containerd registries.yaml config
+- Write Helm chart: manager Deployment + PVC, RBAC, RuntimeClass, Ingress defaults, Zot Deployment + PVC + Service, Verdaccio Deployment + PVC + Service + ConfigMap, TopoLVM StorageClass + VolumeSnapshotClass, containerd registries.yaml config
 - Delete remaining old code:
   - `infrastructure/registry/` (451 LOC) — host process management (keep HTTP client)
   - `apps/cli/` (3,141 LOC) — replaced by `helm install`
@@ -642,7 +653,7 @@ Code deletion already completed in Phase 2. Remaining work:
 
 ## Future Unlocks
 
-- **Warm pool**: Pre-spawn 1 pod per workspace from its workspace image. Pod sits idle with minimal resources (0.5 CPU, 512Mi). On claim, hot-plug CPU + memory via `InPlacePodVerticalScaling` (K8s 1.35+, Cloud Hypervisor). Reduces spawn time from ~200-300ms cold boot to ~50-100ms claim. Requires: pool controller (~150 LOC), replenishment logic, resource scaling. Nice-to-have once core migration is stable.
+- **Warm pool**: Pre-create 1 PVC per workspace from its prebuild snapshot. On spawn, pod claims the pre-cloned PVC instead of creating one on the fly. Combine with `InPlacePodVerticalScaling` (K8s 1.35+, Cloud Hypervisor) for hot-plug CPU + memory. Reduces spawn time from ~200-300ms to near-instant. Requires: pool controller (~150 LOC), replenishment logic. Nice-to-have once core migration is stable.
 - **SSH proxy pod**: If devs need `ssh sandbox-id@host` with key rotation (current sshpiper feature), deploy sshpiper as a small K8s Deployment that proxies SSH to sandbox pods. For now, `kubectl exec` + dashboard WebSocket terminals cover the use case.
 - **Multi-node**: Join a second k3s node. K8s scheduler places sandboxes automatically. Zot already handles image distribution — nodes pull from it.
 - **Operator (if needed)**: Extract sandbox lifecycle into CRD + reconciler when manager-as-controller pattern breaks down (HA, complex warm pools, `kubectl get sandboxes` observability).
@@ -652,13 +663,14 @@ Code deletion already completed in Phase 2. Remaining work:
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Boot time regression with Kata | LOW | Current boot is 1.5-2s with full LVM + FC setup. Kata cold boot from prebuilt workspace image: ~200-300ms — a significant improvement. |
+| Boot time regression with Kata | LOW | Current boot is 1.5-2s with full LVM + FC setup. Kata pod with PVC from snapshot: ~200-300ms — a significant improvement. |
 | K8s overhead on small VPS | LOW | k3s stripped + Zot + Verdaccio = ~1.5GB. Acceptable on 16GB+. |
 | Network policy limitations (Kata TC model) | LOW | Test with chosen CNI. Basic routing works fine. |
 | Cloud Hypervisor less battle-tested than FC | LOW | It's Kata's default. Northflank uses it in production. |
-| Image build time for large workspaces | LOW | Kaniko layer caching via Zot cache repo. Code-only changes (new commit, same deps) rebuild in seconds. |
-| Kaniko build failures | LOW | Manager reads Job pod logs on failure, surfaces error in prebuild status. `backoffLimit: 0` means fail fast, no silent retries. |
-| Zot registry data loss | LOW | PVC on local-path storage. For critical setups, back up PVC or rebuild images from Dockerfiles (reproducible). |
+| Prebuild init time for large workspaces | LOW | Structurally identical to current system (agent exec). Incremental updates possible: boot from existing snapshot, `git pull && npm install`, re-snapshot. |
+| VolumeSnapshot data loss | LOW | TopoLVM snapshots live on LVM thin pool. Same durability as current LVM approach. Back up VG for critical setups. |
+| TopoLVM maturity | LOW | Production-grade CSI driver, CNCF sandbox project. Used by CyberAgent, Yahoo Japan at scale. |
+| Zot registry data loss | LOW | PVC on local-path storage. Base images only — rebuild from Dockerfiles if lost. |
 | Manager DB loss on pod restart | LOW | PVC for SQLite. Small volume, local-path storage. Backup via k8s CronJob if needed. |
 | Gitpod left K8s for similar use case | MEDIUM | Gitpod operates at massive multi-tenant scale. Single/few-tenant is different. |
 
@@ -689,13 +701,13 @@ Updated numbers from current main (`d0738bc`):
 |---|---|
 | kernel/ K8s implementation | ~300 |
 | sandbox-lifecycle.ts (pod monitoring) | ~150 |
-| Prebuild runner (Kaniko orchestrator) | ~200 |
+| Prebuild runner (PVC snapshot orchestrator) | ~250 |
 | Health routes + system stats (K8s API) | ~80 |
 | Registry client (HTTP to Verdaccio) | ~50 |
-| Helm chart (manager + Zot + Verdaccio + RBAC + Kaniko) | ~400 |
-| Dockerfiles (base + workspace template) | ~80 |
+| Helm chart (manager + TopoLVM config + Zot + Verdaccio + RBAC) | ~450 |
+| Dockerfiles (base image template) | ~80 |
 | Agent transport change | ~50 |
-| **Total new** | **~1,310** |
+| **Total new** | **~1,410** |
 
 ### Net result
 
@@ -709,4 +721,4 @@ Updated numbers from current main (`d0738bc`):
 
 ### Key insight
 
-The hexagonal refactor isolated all FC-specific code into `kernel/` (561 LOC). Workflows (420 LOC) require zero changes. The ports layer gets a minor cleanup (remove FC device commands). `sandbox-lifecycle.ts`, health routes, and system stats need rewrites but keep the same shape. The prebuild system changes form (LVM snapshots → Kaniko + Zot) but keeps the same trigger logic. Verdaccio moves from a managed host process to its own K8s Deployment. The manager never touches the host — everything is K8s API calls. No `sudo`, no shell-outs, no FFI.
+The hexagonal refactor isolated all FC-specific code into `kernel/` (561 LOC). Workflows (420 LOC) require minor cleanup only. The ports layer deletes FC-specific guest ops. `sandbox-lifecycle.ts`, health routes, and system stats need rewrites but keep the same shape. The prebuild system keeps the same flow (temp env → init → snapshot → clone) but uses CSI VolumeSnapshots via TopoLVM instead of direct LVM commands — structurally identical, K8s-native API. Verdaccio moves from a managed host process to its own K8s Deployment. The manager never touches the host — everything is K8s API calls. No `sudo`, no shell-outs, no FFI.
