@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatBytes, formatDuration } from "@/lib/utils";
+import { formatDuration } from "@/lib/utils";
 
 export const Route = createFileRoute("/system/")({
   component: SystemPage,
@@ -219,27 +219,13 @@ function SystemPage() {
 
                 {registry.enabled && (
                   <>
-                    <div className="grid grid-cols-2 gap-4 pt-2">
+                    <div className="grid grid-cols-1 gap-4 pt-2">
                       <div>
                         <div className="text-xs text-muted-foreground">
-                          Packages
+                          Cached Packages
                         </div>
                         <div className="text-xl font-bold">
                           {registry.packageCount}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground">
-                          Disk Usage
-                        </div>
-                        <div className="text-xl font-bold">
-                          {formatBytes(registry.disk.usedBytes)}
-                        </div>
-                        <div className="h-1 bg-secondary rounded-full overflow-hidden mt-1">
-                          <div
-                            className="h-full bg-primary"
-                            style={{ width: `${registry.disk.usedPercent}%` }}
-                          />
                         </div>
                       </div>
                     </div>

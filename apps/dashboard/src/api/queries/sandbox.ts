@@ -201,23 +201,6 @@ export function useStopDevCommand(sandboxId: string) {
   });
 }
 
-export function useResizeStorage(sandboxId: string) {
-  return useMutation({
-    mutationKey: ["sandboxes", "resizeStorage", sandboxId],
-    mutationFn: async (sizeGb: number) =>
-      unwrap(
-        await api.api.sandboxes({ id: sandboxId }).storage.resize.post({
-          sizeGb,
-        }),
-      ),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.metrics(sandboxId),
-      });
-    },
-  });
-}
-
 export const sandboxGitDiffQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.gitDiff(id),
