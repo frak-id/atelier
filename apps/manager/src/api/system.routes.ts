@@ -6,16 +6,12 @@ import {
 } from "../container.ts";
 import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
 import {
-  type CleanupResult,
-  CleanupResultSchema,
   SystemSandboxStatusSchema,
   type SystemStats,
   SystemStatsSchema,
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
-import { createChildLogger } from "../shared/lib/logger.ts";
 
-const log = createChildLogger("system-routes");
 const startTime = Date.now();
 
 async function getSystemStats(): Promise<SystemStats> {
@@ -27,15 +23,6 @@ async function getSystemStats(): Promise<SystemStats> {
     activeSandboxes: userRunning.length,
     maxSandboxes: config.server.maxSandboxes,
     uptime: Math.floor((Date.now() - startTime) / 1000),
-  };
-}
-
-async function performCleanup(): Promise<CleanupResult> {
-  log.info("Starting system cleanup");
-  return {
-    podsRemoved: 0,
-    servicesRemoved: 0,
-    ingressesRemoved: 0,
   };
 }
 
@@ -173,16 +160,6 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
       return { success: true, message: "System sandbox restarted" };
     },
     {
-      detail: { tags: ["system"] },
-    },
-  )
-  .post(
-    "/cleanup",
-    async () => {
-      return performCleanup();
-    },
-    {
-      response: CleanupResultSchema,
       detail: { tags: ["system"] },
     },
   );

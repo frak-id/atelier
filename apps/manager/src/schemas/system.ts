@@ -25,13 +25,6 @@ export const HealthStatusSchema = t.Object({
 });
 export type HealthStatus = Static<typeof HealthStatusSchema>;
 
-export const CleanupResultSchema = t.Object({
-  podsRemoved: t.Number(),
-  servicesRemoved: t.Number(),
-  ingressesRemoved: t.Number(),
-});
-export type CleanupResult = Static<typeof CleanupResultSchema>;
-
 export const LiveStatusSchema = t.Object({
   status: t.Literal("ok"),
 });

@@ -62,18 +62,6 @@ export class AgentOperations {
     return this.client.gitPush(sandboxId, repoPath);
   }
 
-  async resizeStorage(_sandboxId: string): Promise<{
-    success: boolean;
-    disk?: { total: number; used: number; free: number };
-    error?: string;
-  }> {
-    // TODO: Implement K8s PVC resize when storage augmentation is needed.
-    return {
-      success: false,
-      error: "Storage resize is not yet supported in K8s mode",
-    };
-  }
-
   async getInstalledExtensions(sandboxId: string): Promise<string[]> {
     try {
       const result = await this.client.exec(

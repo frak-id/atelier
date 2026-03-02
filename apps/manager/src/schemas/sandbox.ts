@@ -186,26 +186,6 @@ export const GitPushResponseSchema = t.Object({
 });
 export type GitPushResponse = Static<typeof GitPushResponseSchema>;
 
-export const ResizeStorageBodySchema = t.Object({
-  sizeGb: t.Number({ minimum: 1, maximum: 100 }),
-});
-export type ResizeStorageBody = Static<typeof ResizeStorageBodySchema>;
-
-export const ResizeStorageResponseSchema = t.Object({
-  success: t.Boolean(),
-  previousSize: t.Number(),
-  newSize: t.Number(),
-  disk: t.Optional(
-    t.Object({
-      total: t.Number(),
-      used: t.Number(),
-      free: t.Number(),
-    }),
-  ),
-  error: t.Optional(t.String()),
-});
-export type ResizeStorageResponse = Static<typeof ResizeStorageResponseSchema>;
-
 export const PromoteToPrebuildResponseSchema = t.Object({
   success: t.Boolean(),
   message: t.String(),

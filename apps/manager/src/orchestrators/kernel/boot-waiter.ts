@@ -8,13 +8,6 @@ const log = createChildLogger("boot-waiter");
 
 const OPENCODE_HEALTH_TIMEOUT_MS = 120000;
 
-export async function waitForBoot(
-  _client?: unknown,
-  _options: { pid?: number; logPath?: string; timeoutMs?: number } = {},
-): Promise<void> {
-  return;
-}
-
 export async function waitForPodIp(
   kube: KubeClient,
   podName: string,

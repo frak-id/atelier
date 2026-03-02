@@ -1,6 +1,6 @@
 # Architecture
 
-> Firecracker microVM orchestrator built as a Bun monorepo
+> K8s + Kata Containers orchestrator built as a Bun monorepo
 
 ## Technology Stack
 
@@ -20,11 +20,12 @@
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| MicroVM | **Firecracker** | Fast, secure VM isolation |
-| Storage | **LVM Thin Provisioning** | CoW snapshots for fast clones |
-| Reverse Proxy | **Caddy** | Dynamic routing, auto HTTPS |
-| Process Manager | **systemd** | Service lifecycle |
-| Container Build | **Docker** | Rootfs image building only |
+| Isolation | **Kata Containers** (Cloud Hypervisor) | VM-level sandbox isolation via K8s pods |
+| Orchestration | **k3s** | Lightweight Kubernetes distribution |
+| Storage | **TopoLVM** (CSI) | LVM thin provisioning, PVC snapshots |
+| Reverse Proxy | **K8s Ingress** + **Caddy** (TLS termination) | Dynamic routing, HTTPS |
+| Base Image Builds | **Kaniko** | Base OCI image builds inside K8s (triggered from dashboard) |
+| Registry | **Zot** | Lightweight OCI registry for base images |
 | Database | **SQLite** (Drizzle ORM) | Sandbox, workspace, task, config, and auth state |
 
 ---
@@ -36,15 +37,12 @@ atelier/
 ├── apps/
 │   ├── manager/          # Sandbox orchestration API (ElysiaJS)
 │   ├── dashboard/        # Admin web interface (React + Vite)
-│   ├── cli/              # Server provisioning CLI (Bun compiled binary)
-│   └── agent-rust/       # In-VM agent (Rust — lightweight, no AVX)
+│   └── agent-rust/       # In-pod agent (Rust — lightweight, no AVX)
 ├── packages/
 │   └── shared/           # Shared types, constants, errors
 ├── infra/
-│   ├── caddy/            # Caddyfile for static routes
-│   ├── images/           # Rootfs Dockerfiles
-│   ├── scripts/          # Install scripts
-│   └── systemd/          # Service definitions
+│   ├── images/           # Base image Dockerfiles
+│   └── scripts/          # Install scripts
 └── scripts/
     └── deploy.ts         # SSH deployment (manager + agent + dashboard)
 ```
@@ -64,9 +62,9 @@ atelier/
 │       └──────────┘       └──────────┘       └──────────┘       └──────────┘  │
 │                                                                             │
 │  States:                                                                    │
-│  • CREATING - VM booting, services starting                                 │
+│  • CREATING - Pod booting, services starting                                │
 │  • RUNNING  - Fully operational                                             │
-│  • STOPPED  - VM process killed, disk preserved                             │
+│  • STOPPED  - Pod terminated, PVC preserved                                 │
 │  • ERROR    - Failed to start or crashed                                    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -75,20 +73,20 @@ atelier/
 
 ```
 Without Prebuilds (slow, ~2-5 minutes):
-  Boot VM  →  Clone Repo  →  run workspace init commands  →  Ready
+  Boot Pod  →  Clone Repo  →  run workspace init commands  →  Ready
 
 With Prebuilds (fast, ~1-3 seconds):
 
   One-time (background):
-  Boot VM  →  Clone Repo  →  run workspace init commands  →  LVM Snapshot
+  Boot temp Pod + PVC  →  Clone Repo  →  run init commands  →  VolumeSnapshot
 
   Every spawn:
-  Clone LVM Snapshot (<5ms)  →  Boot VM  →  Start Services  →  Ready
+  PVC from VolumeSnapshot (CoW clone)  →  Boot Pod  →  Start Services  →  Ready
 ```
 
 Prebuilds run expensive initialization (git clone, dependency install, build)
-**once** and snapshot the filesystem as an LVM thin volume. Subsequent
-sandboxes clone from this volume instantly via copy-on-write and boot fresh.
+**once** and snapshot the PVC as a CSI VolumeSnapshot via TopoLVM. Subsequent
+sandboxes clone from this snapshot instantly via copy-on-write and boot fresh.
 
 ---
 
@@ -96,100 +94,97 @@ sandboxes clone from this volume instantly via copy-on-write and boot fresh.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Host Network                              │
-│                                                                  │
-│  ┌──────────────┐                                                │
-│  │   eth0       │◄─── Public IP                                  │
-│  │   (WAN)      │                                                │
-│  └──────┬───────┘                                                │
-│         │                                                        │
-│         │ NAT (iptables MASQUERADE)                              │
-│         │                                                        │
-│  ┌──────▼───────┐                                                │
-│  │    br0       │◄─── 172.16.0.1/24 (Bridge)                    │
-│  │  (Bridge)    │                                                │
-│  └──────┬───────┘                                                │
-│         │                                                        │
-│    ┌────┴────┬────────┬────────┐                                 │
-│    │         │        │        │                                 │
-│ ┌──▼──┐  ┌──▼──┐  ┌──▼──┐  ┌──▼──┐                             │
-│ │tap-1│  │tap-2│  │tap-3│  │tap-n│  TAP devices                │
-│ └──┬──┘  └──┬──┘  └──┬──┘  └──┬──┘                             │
-│    │        │        │        │                                  │
-│ ┌──▼──┐  ┌──▼──┐  ┌──▼──┐  ┌──▼──┐                             │
-│ │VM 1 │  │VM 2 │  │VM 3 │  │VM n │  Firecracker VMs            │
-│ │.10  │  │.11  │  │.12  │  │.x   │  172.16.0.x                 │
-│ └─────┘  └─────┘  └─────┘  └─────┘                             │
+│                      k3s Cluster Network                        │
+│                                                                 │
+│  ┌──────────────┐                                               │
+│  │   eth0       │◄── Public IP                                  │
+│  │   (WAN)      │                                               │
+│  └──────┬───────┘                                               │
+│         │                                                       │
+│         │ Caddy (TLS termination) → K8s Ingress                 │
+│         │                                                       │
+│  ┌──────▼───────┐                                               │
+│  │  K8s Service │◄── 10.43.x.x (ClusterIP)                     │
+│  │   + Ingress  │                                               │
+│  └──────┬───────┘                                               │
+│         │                                                       │
+│    ┌────┴────┬────────┬────────┐                                │
+│    │         │        │        │                                │
+│ ┌──▼───┐ ┌──▼───┐ ┌──▼───┐ ┌──▼───┐                           │
+│ │Pod 1 │ │Pod 2 │ │Pod 3 │ │Pod n │  Kata sandbox pods        │
+│ │10.42 │ │10.42 │ │10.42 │ │10.42 │  (runtimeClass: kata-clh) │
+│ └──────┘ └──────┘ └──────┘ └──────┘                            │
 └─────────────────────────────────────────────────────────────────┘
 
 External traffic:
-  Internet → Caddy (:443) → br0 → tap-x → VM:port
+  Internet → Caddy (:443) → K8s Ingress → Service → Pod:port
 ```
 
 ---
 
-## Caddy Reverse Proxy
+## K8s Ingress Routing
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Caddy                                   │
+│                     K8s Ingress                                 │
 │                                                                 │
-│  Static Routes (Caddyfile):                                     │
+│  Static Routes (Caddy, migrating to Ingress in Phase 3):       │
 │  └── {DOMAIN}                                                   │
 │      ├── /api/*, /auth/*, /config, /health, /swagger*           │
-│      │   → localhost:4000 (Manager)                             │
+│      │   → manager.atelier-system.svc:4000                      │
 │      └── * → Static Files (Dashboard SPA)                       │
 │                                                                 │
-│  Dynamic Routes (Admin API, protected via forward-auth):        │
-│  ├── sandbox-{id}.{DOMAIN}  → 172.16.0.x:8080 (VSCode)          │
-│  ├── opencode-{id}.{DOMAIN} → 172.16.0.x:3000 (OpenCode)        │
-│  ├── dev-{name}-{id}.{DOMAIN} → 172.16.0.x:{port} (Dev)         │
-│  └── browser-{id}.{DOMAIN}  → 172.16.0.x:7681 (KasmVNC)         │
+│  Dynamic Routes (K8s Ingress, created by manager):              │
+│  ├── sandbox-{id}.{DOMAIN}    → svc/sandbox-{id}:8080 (VSCode) │
+│  ├── opencode-{id}.{DOMAIN}   → svc/sandbox-{id}:3000 (OC)     │
+│  ├── dev-{name}-{id}.{DOMAIN} → svc/sandbox-{id}:{port} (Dev)  │
+│  └── browser-{id}.{DOMAIN}    → svc/sandbox-{id}:7681 (Kasm)   │
 │                                                                 │
 │  Features:                                                      │
-│  ├── Automatic HTTPS (ACME HTTP-01)                             │
-│  ├── Manual TLS (certPath/keyPath)                              │
-│  └── Zero-downtime route updates via Admin API                  │
+│  ├── TLS via Caddy (Phase 3: cert-manager or Traefik ACME)      │
+│  └── Host-based routing via K8s Ingress resources               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Firecracker VM Anatomy
+## Kata Sandbox Pod Anatomy
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Firecracker MicroVM                          │
+│                    Kata Sandbox Pod                              │
+│                    (runtimeClassName: kata-clh)                  │
 │                                                                 │
 │  Resources (configurable per sandbox):                          │
-│  ├── vCPUs: 1-8                                                 │
-│  ├── RAM: 512MB - 16GB                                          │
-│  └── Boot time: ~125ms                                          │
+│  ├── CPU: 500m-2000m (requests/limits)                          │
+│  ├── RAM: 1Gi-4Gi (requests/limits)                             │
+│  └── Boot time: ~1-2s (Cloud Hypervisor)                        │
 │                                                                 │
-│  Storage:                                                       │
-│  ├── /dev/vda → LVM thin volume (CoW clone of base/prebuild)    │
-│  └── /dev/vdb → /opt/shared (ro ext4 image: tools & binaries)   │
+│  Volumes:                                                       │
+│  ├── workspace-pvc → /home/dev (CoW clone from VolumeSnapshot)  │
+│  ├── shared-binaries-pvc → /opt/shared (ReadOnlyMany)           │
+│  └── config-configmap → /etc/sandbox/config.json                │
 │                                                                 │
 │  Filesystem:                                                    │
 │  /                                                              │
 │  ├── usr/local/bin/                                             │
-│  │   └── sandbox-agent      # In-VM agent binary                │
+│  │   └── sandbox-agent      # In-pod agent binary               │
 │  ├── opt/shared/bin/                                            │
 │  │   ├── code-server        # VSCode Server                     │
 │  │   ├── opencode           # OpenCode CLI                      │
 │  │   └── node, bun, git     # Dev tools                         │
 │  ├── home/dev/                                                  │
-│  │   ├── workspace/         # Project code                      │
+│  │   ├── workspace/         # Project code (on PVC)             │
 │  │   └── SANDBOX.md         # Agent skill file                  │
 │  ├── etc/sandbox/                                               │
-│  │   ├── config.json        # Sandbox metadata                  │
+│  │   ├── config.json        # Sandbox metadata (ConfigMap)      │
 │  │   └── secrets/.env       # Injected secrets                  │
 │  └── var/log/sandbox/       # Service logs                      │
 │                                                                 │
 │  Services:                                                      │
 │  ├── sandbox-init starts sshd + sandbox-agent                   │
 │  ├── agent starts services after manager pushes config:         │
-│  │   ├── sandbox-agent (vsock:9998)                             │
+│  │   ├── sandbox-agent (TCP:9998)                               │
 │  │   ├── code-server (:8080)                                    │
 │  │   ├── opencode serve (:3000)                                 │
 │  │   ├── terminal (:7681)   # WebSocket PTY                     │
@@ -197,7 +192,7 @@ External traffic:
 │  └── sshd (:22)                                                 │
 │                                                                 │
 │  Network:                                                       │
-│  └── eth0 → 172.16.0.x/24, gateway 172.16.0.1                  │
+│  └── Pod IP (10.42.x.x), routed via K8s CNI                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -205,36 +200,35 @@ External traffic:
 
 ## Storage Architecture
 
-### Why LVM Thin Provisioning
+### PVC Snapshots via TopoLVM
 
-| Approach | Snapshot Time | Space Efficiency | Firecracker Ready |
-|----------|---------------|------------------|-------------------|
-| Sparse ext4 files | ~200ms (mkfs) | Poor | ✅ |
-| **LVM Thin** | **<5ms** | **Excellent (CoW)** | **✅** |
-| Btrfs subvolumes | <5ms | Excellent | ❌ (not block device) |
-| ZFS zvols | <5ms | Excellent | ✅ |
+| Approach | Snapshot Time | Space Efficiency | K8s Native |
+|----------|---------------|------------------|------------|
+| **TopoLVM Thin** | **<100ms** | **Excellent (CoW)** | **✅ CSI** |
+| Longhorn | ~1s | Good | ✅ |
+| OpenEBS | ~1s | Good | ✅ |
 
 ### Storage Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    LVM Thin Pool                                │
-│                    (atelier-vg/thin-pool)                       │
+│                    TopoLVM Thin Pool                             │
+│                    (LVM VG on each node)                         │
 │                                                                 │
-│  Base Images (read-only templates):                             │
+│  Base Images (in Zot registry, not on disk):                    │
 │  ┌──────────────────────────┐  ┌──────────────────────────┐     │
-│  │ image-dev-base (5GB)     │  │ image-dev-cloud (7GB)    │     │
+│  │ dev-base:latest          │  │ dev-cloud:latest         │     │
 │  │ Debian Bookworm + Node22 │  │ dev-base + Cloud SDKs    │     │
 │  └──────────────────────────┘  └──────────────────────────┘     │
 │                                                                 │
-│  Prebuild Volumes (per-workspace snapshots):                    │
+│  Prebuild VolumeSnapshots (per-workspace):                      │
 │  ┌──────────────────────┐  ┌──────────────────────┐             │
 │  │ prebuild-myproject   │  │ prebuild-backend     │             │
-│  │ (clone of image +    │  │ (clone of image +    │             │
+│  │ (snapshot of PVC +   │  │ (snapshot of PVC +   │             │
 │  │  repo + init deps)   │  │  repo + init deps)   │             │
 │  └──────────────────────┘  └──────────────────────┘             │
 │           │                          │                          │
-│           │ instant clone            │ instant clone            │
+│           │ PVC from snapshot        │ PVC from snapshot        │
 │           ▼                          ▼                          │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
 │  │ sandbox-abc │  │ sandbox-def │  │ sandbox-ghi │              │
@@ -250,17 +244,16 @@ External traffic:
 
 ## Sandbox Agent
 
-A lightweight Rust binary running inside each VM, communicating with the manager
-via Firecracker vsock.
+A lightweight Rust binary running inside each sandbox pod, communicating with
+the manager via TCP on port 9998.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Sandbox Agent (vsock:9998)                   │
+│                    Sandbox Agent (TCP:9998)                      │
 │                                                                 │
 │  Core Responsibilities:                                         │
-│  ├── vsock HTTP API for manager orchestration                   │
+│  ├── TCP HTTP API for manager orchestration                     │
 │  ├── Service & dev process lifecycle management                 │
-│  ├── Workspace config application                               │
 │  ├── File system operations (writes, git helpers)               │
 │  ├── Command execution (/exec)                                  │
 │  ├── Interactive terminal sessions (WebSocket PTY)              │
@@ -268,9 +261,9 @@ via Firecracker vsock.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Why Rust?** Bun crashes inside Firecracker VMs due to AVX instruction issues
-(SIGILL). The agent is compiled as a static musl binary for maximum
-compatibility.
+**Why Rust?** Bun crashes inside Firecracker/Cloud Hypervisor VMs due to AVX
+instruction issues (SIGILL). The agent is compiled as a static musl binary
+for maximum compatibility.
 
 ---
 
@@ -288,12 +281,12 @@ The Manager exposes a REST API on port 4000:
 | Git | `/api/git-sources` | Repository management |
 | Config | `/api/config-files` | Global and workspace config files |
 | Auth | `/api/shared-auth` | OAuth token synchronization |
-| Storage | `/api/storage`, `/api/binaries` | LVM and tool image management |
+| Storage | `/api/binaries` | Shared binaries management |
 | Registry | `/api/registry` | Shared npm registry (Verdaccio) |
 | SSH | `/api/ssh-keys` | User SSH key management |
 | Events | `/api/events` | System-wide event stream |
 | GitHub | `/api/github` | GitHub App integration |
-| Images | `/api/images` | Base image listing |
-| System | `/api/system/stats`, `/cleanup` | Monitoring and maintenance |
+| Images | `/api/images` | Base image listing and builds |
+| System | `/api/system/stats` | Monitoring and maintenance |
 
 Full API documentation available at `/swagger` when the manager is running.

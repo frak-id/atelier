@@ -26,8 +26,6 @@ import {
   GitStatusResponseSchema,
   IdParamSchema,
   PromoteToPrebuildResponseSchema,
-  ResizeStorageBodySchema,
-  ResizeStorageResponseSchema,
   SandboxListQuerySchema,
   SandboxListResponseSchema,
   SandboxSchema,
@@ -274,29 +272,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           params: IdParamSchema,
           body: GitPushBodySchema,
           response: GitPushResponseSchema,
-        },
-      )
-      .post(
-        "/:id/storage/resize",
-        async ({ params, body, sandbox: _sandbox }) => {
-          // TODO: Implement K8s PVC storage resize.
-          // In K8s, storage augmentation requires expanding the sandbox
-          // PersistentVolumeClaim — this is not yet implemented.
-          log.warn(
-            { sandboxId: params.id, sizeGb: body.sizeGb },
-            "Storage resize not yet implemented for K8s",
-          );
-          return {
-            success: false,
-            previousSize: 0,
-            newSize: body.sizeGb,
-            error: "Storage resize is not yet supported in K8s mode",
-          };
-        },
-        {
-          params: IdParamSchema,
-          body: ResizeStorageBodySchema,
-          response: ResizeStorageResponseSchema,
         },
       )
       .post(

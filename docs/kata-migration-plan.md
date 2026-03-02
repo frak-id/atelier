@@ -458,9 +458,9 @@ mirrors:
       - "http://zot.atelier-system.svc:5000"
 ```
 
-#### Kaniko (base image builds only)
+#### Kaniko (base image builds from dashboard)
 
-[Kaniko](https://github.com/GoogleContainerTools/kaniko) builds base OCI images (dev-base, dev-cloud) inside a K8s pod. Only used for **base image rebuilds** (tooling updates, new runtime versions), **not** for workspace prebuilds. Base image builds are infrequent and can alternatively be done externally via CI and pushed to Zot.
+[Kaniko](https://github.com/GoogleContainerTools/kaniko) builds base OCI images (dev-base, dev-cloud) inside a K8s pod. Used for **base image rebuilds** (tooling updates, new runtime versions), **not** for workspace prebuilds. With the CLI being removed in Phase 3, base image build responsibility shifts from the CLI to the **manager + dashboard** — the dashboard triggers Kaniko Jobs via the manager API, replacing `atelier images build`. Base image builds can also be triggered externally via CI and pushed to Zot.
 
 ### Verdaccio (npm package cache)
 
@@ -720,8 +720,8 @@ Completed in 11 incremental commits on branch `task/task_cub8c7l17pqy`:
 - ✅ Custom fetch()-based K8s client (not `@kubernetes/client-node` — Bun compat issues, see decision D1)
 - ✅ **Kernel layer rewrite:** sandbox-boot, boot-waiter, cleanup-coordinator — all K8s pod lifecycle
 - ✅ **Sandbox lifecycle rewrite:** pod status monitoring via K8s API replaces process checks
-- ✅ **Prebuild rewrite:** Kaniko Job orchestrator + Zot registry (~527 LOC) replaces LVM snapshots
-- ⚠️ **Prebuild pivot:** Kaniko-based OCI workspace images (commit 8) being replaced with PVC snapshot approach (TopoLVM + CSI VolumeSnapshots). Prebuild runner will be rewritten to orchestrate temp Pod + PVC → VolumeSnapshot instead of Kaniko Job. See updated "PVC Snapshot Prebuild System" section.
+- ✅ **Prebuild rewrite:** PVC snapshot approach (temp Pod + PVC → VolumeSnapshot via TopoLVM CSI). Initially implemented as Kaniko-based OCI workspace images (commit 8), then pivoted to PVC snapshots for resizability, CoW efficiency, and incremental updates.
+- ✅ **Kaniko retained:** `buildKanikoJob()` kept in kube.resources.ts for base image builds (dev-base, dev-cloud) triggered from the dashboard. Not used for workspace prebuilds.
 - ✅ **Agent transport:** vsock → TCP fetch (pod IP from K8s Service DNS)
 - ✅ **Guest ops cleanup:** deleted DNS, clock, hostname, swap, mount, resize (K8s handles natively)
 - ✅ **Workflow cleanup:** removed deleted guest-ops calls, updated comments
@@ -746,9 +746,11 @@ Completed in 11 incremental commits on branch `task/task_cub8c7l17pqy`:
 Code deletion already completed in Phase 2. Remaining work:
 
 - Write Helm chart: manager Deployment + PVC, RBAC, RuntimeClass, Ingress defaults, Zot Deployment + PVC + Service, Verdaccio Deployment + PVC + Service + ConfigMap, TopoLVM StorageClass + VolumeSnapshotClass, containerd registries.yaml config
+- **Complete Caddy removal:** Replace Caddy TLS termination with K8s-native TLS (cert-manager + ClusterIssuer, or Traefik's built-in ACME). Move dashboard routing from Caddyfile to K8s Ingress. Delete `infra/caddy/`, Caddy setup from CLI, Caddyfile rendering from deploy script.
+- **CLI → Manager/Dashboard responsibility shift:** Base image builds (`atelier images build`) move to manager API + dashboard UI (Kaniko Jobs). Server provisioning (`atelier init`) replaced by `helm install`. Debug VM replaced by `kubectl run`. The CLI (`apps/cli/`, 3,141 LOC) is deleted entirely.
 - Delete remaining old code:
   - `infrastructure/registry/` (451 LOC) — host process management (keep HTTP client)
-  - `apps/cli/` (3,141 LOC) — replaced by `helm install`
+  - `apps/cli/` (3,141 LOC) — replaced by `helm install` + dashboard
 - End-to-end testing on live K8s cluster
 - Write migration guide for existing bare-metal users
 - **Exit criteria**: `helm install` on fresh k3s cluster, everything works
