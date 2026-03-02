@@ -1,16 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  Activity,
   AlertCircle,
   Bot,
   Check,
   CheckCircle,
   ChevronUp,
   Copy,
-  Cpu,
-  Database,
   ExternalLink,
-  HardDrive,
   Loader2,
   Pause,
   Play,
@@ -28,7 +24,6 @@ import {
   sandboxListQuery,
   systemSandboxQuery,
   systemStatsQuery,
-  systemStorageQuery,
   useCancelSystemSandboxPrebuild,
   useDeleteSystemSandboxPrebuild,
   useRestartSystemSandbox,
@@ -40,7 +35,6 @@ import { SSH_HOST_ALIAS } from "@/components/ssh-keys-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
-import { formatBytes } from "@/lib/utils";
 
 export function SystemStatusFooter() {
   const [expanded, setExpanded] = useState(false);
@@ -49,7 +43,6 @@ export function SystemStatusFooter() {
   const { data: health } = useQuery(healthQuery);
   const { data: systemSandbox } = useQuery(systemSandboxQuery);
   const { data: stats } = useQuery(systemStatsQuery);
-  const { data: storage } = useQuery(systemStorageQuery);
   const { data: sandboxes } = useQuery(sandboxListQuery());
   const { mutate: rebuild, isPending: isRebuilding } =
     useSystemSandboxPrebuild();
@@ -85,14 +78,6 @@ export function SystemStatusFooter() {
         className="w-full px-4 py-2 flex items-center justify-between text-sm hover:bg-accent/50 transition-colors"
       >
         <div className="flex items-center gap-4 text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <Cpu className="h-3.5 w-3.5" />
-            {stats?.cpuUsage.toFixed(0) ?? "--"}%
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Activity className="h-3.5 w-3.5" />
-            {stats?.memoryPercent.toFixed(0) ?? "--"}%
-          </span>
           <span className="flex items-center gap-1.5">
             <Server className="h-3.5 w-3.5" />
             {runningSandboxes}/{maxSandboxes} VMs
@@ -131,100 +116,20 @@ export function SystemStatusFooter() {
 
       {expanded && (
         <div className="px-4 py-4 border-t space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Cpu className="h-4 w-4" />
-                CPU Usage
-              </div>
-              <div className="text-2xl font-bold">
-                {stats?.cpuUsage.toFixed(1) ?? "--"}%
-              </div>
-              <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all"
-                  style={{ width: `${stats?.cpuUsage ?? 0}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Activity className="h-4 w-4" />
-                Memory
-              </div>
-              <div className="text-2xl font-bold">
-                {stats?.memoryPercent.toFixed(1) ?? "--"}%
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {stats
-                  ? `${formatBytes(stats.memoryUsed)} / ${formatBytes(stats.memoryTotal)}`
-                  : "--"}
-              </div>
-              <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all"
-                  style={{ width: `${stats?.memoryPercent ?? 0}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Database className="h-4 w-4" />
-                Disk
-              </div>
-              <div className="text-2xl font-bold">
-                {stats?.diskPercent.toFixed(1) ?? "--"}%
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {stats
-                  ? `${formatBytes(stats.diskUsed)} / ${formatBytes(stats.diskTotal)}`
-                  : "--"}
-              </div>
-              <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all"
-                  style={{ width: `${stats?.diskPercent ?? 0}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <HardDrive className="h-4 w-4" />
-                Storage Pool
-              </div>
-              <div className="text-2xl font-bold">
-                {storage?.pool.dataPercent.toFixed(1) ?? "--"}%
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {storage?.pool.exists
-                  ? `${storage.pool.usedSize} / ${storage.pool.totalSize}`
-                  : "Not configured"}
-              </div>
-              <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all"
-                  style={{ width: `${storage?.pool.dataPercent ?? 0}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-2 border-t">
+          <div>
             <div className="text-sm font-medium mb-2">Health Checks</div>
             <div className="flex flex-wrap gap-2">
               {health && (
                 <>
                   <HealthBadge
-                    name="Firecracker"
-                    status={health.checks.firecracker}
+                    name="Kubernetes"
+                    status={health.checks.kubernetes}
                   />
-                  <HealthBadge name="Proxy" status={health.checks.proxy} />
-                  <HealthBadge name="Network" status={health.checks.network} />
-                  <HealthBadge name="Storage" status={health.checks.storage} />
-                  <HealthBadge name="LVM" status={health.checks.lvm} />
+                  <HealthBadge name="Kata" status={health.checks.kata} />
+                  <HealthBadge
+                    name="Registry"
+                    status={health.checks.registry}
+                  />
                 </>
               )}
             </div>
