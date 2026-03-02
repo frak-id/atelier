@@ -92,6 +92,30 @@ export const AuthConfigSchema = Type.Object(
 export type AuthConfig = Static<typeof AuthConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Kubernetes
+// ---------------------------------------------------------------------------
+
+export const KubernetesConfigSchema = Type.Object(
+  {
+    /** Namespace for sandbox pods */
+    namespace: Type.String({ default: "atelier-sandboxes" }),
+    /** Namespace for system components (Zot, Verdaccio, Kaniko jobs) */
+    systemNamespace: Type.String({ default: "atelier-system" }),
+    /** Path to kubeconfig file (ignored when running in-cluster) */
+    kubeconfig: Type.String({ default: "/etc/rancher/k3s/k3s.yaml" }),
+    /** Kata Containers runtime class name */
+    runtimeClass: Type.String({ default: "kata-clh" }),
+    /** OCI registry hostname for sandbox and prebuild images (Zot) */
+    registryUrl: Type.String({
+      default: "zot.atelier-system.svc:5000",
+    }),
+  },
+  { default: {} },
+);
+
+export type KubernetesConfig = Static<typeof KubernetesConfigSchema>;
+
+// ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 
@@ -365,6 +389,7 @@ export const AtelierConfigSchema = Type.Object({
   domain: DomainConfigSchema,
   auth: AuthConfigSchema,
   server: ServerConfigSchema,
+  kubernetes: KubernetesConfigSchema,
   network: NetworkConfigSchema,
   sandbox: SandboxDefaultsSchema,
   setup: SetupConfigSchema,
@@ -401,6 +426,12 @@ export const ENV_VAR_MAPPING = {
   ATELIER_MAX_SANDBOXES: "server.maxSandboxes",
   ATELIER_MAX_ACTIVE_TASKS: "server.maxActiveTasks",
   ATELIER_MCP_TOKEN: "server.mcpToken",
+
+  ATELIER_K8S_NAMESPACE: "kubernetes.namespace",
+  ATELIER_K8S_SYSTEM_NAMESPACE: "kubernetes.systemNamespace",
+  ATELIER_K8S_KUBECONFIG: "kubernetes.kubeconfig",
+  ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
+  ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
 
   ATELIER_BRIDGE_NAME: "network.bridgeName",
   ATELIER_BRIDGE_IP: "network.bridgeIp",
