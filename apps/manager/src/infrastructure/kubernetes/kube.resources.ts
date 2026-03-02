@@ -1,3 +1,4 @@
+import { REGISTRY } from "@frak/atelier-shared/constants";
 import { config } from "../../shared/lib/config.ts";
 
 export type KubeResource = {
@@ -332,5 +333,91 @@ export function buildConfigMap(
       },
     },
     data,
+  };
+}
+
+export function buildVerdaccioPod(
+  namespace = config.kubernetes.systemNamespace,
+): KubeResource {
+  const port = config.advanced.server.verdaccio.port;
+  return {
+    apiVersion: "v1",
+    kind: "Pod",
+    metadata: {
+      name: "verdaccio",
+      namespace,
+      labels: {
+        "atelier.dev/component": "registry",
+        "atelier.dev/service": "verdaccio",
+      },
+    },
+    spec: {
+      containers: [
+        {
+          name: "verdaccio",
+          image: config.kubernetes.verdaccioImage,
+          ports: [{ name: "http", containerPort: port }],
+          volumeMounts: [
+            {
+              name: "config",
+              mountPath: "/verdaccio/conf",
+            },
+            {
+              name: "storage",
+              mountPath: "/verdaccio/storage",
+            },
+          ],
+          readinessProbe: {
+            httpGet: { path: "/-/ping", port },
+            initialDelaySeconds: 5,
+            periodSeconds: 10,
+          },
+          livenessProbe: {
+            httpGet: { path: "/-/ping", port },
+            initialDelaySeconds: 15,
+            periodSeconds: 30,
+          },
+        },
+      ],
+      volumes: [
+        {
+          name: "config",
+          configMap: { name: "verdaccio-config" },
+        },
+        {
+          name: "storage",
+          hostPath: {
+            path: REGISTRY.STORAGE_DIR,
+            type: "DirectoryOrCreate",
+          },
+        },
+      ],
+    },
+  };
+}
+
+export function buildVerdaccioService(
+  namespace = config.kubernetes.systemNamespace,
+): KubeResource {
+  const port = config.advanced.server.verdaccio.port;
+  return {
+    apiVersion: "v1",
+    kind: "Service",
+    metadata: {
+      name: "verdaccio",
+      namespace,
+      labels: {
+        "atelier.dev/component": "registry",
+        "atelier.dev/service": "verdaccio",
+      },
+    },
+    spec: {
+      type: "ClusterIP",
+      selector: {
+        "atelier.dev/component": "registry",
+        "atelier.dev/service": "verdaccio",
+      },
+      ports: [{ name: "http", port, targetPort: port }],
+    },
   };
 }
