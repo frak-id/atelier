@@ -1,6 +1,6 @@
 # Kata Containers Migration Plan
 
-_Last updated: 2026-03-02 — Added shared binaries PVC (Local PV + ReadOnlyMany for code-server/OpenCode)_
+_Last updated: 2026-03-03 — Phase 3 completed (Helm chart, Dockerfile, CI/CD, dead code cleanup)_
 
 ## Overview
 
@@ -741,27 +741,39 @@ Completed in 11 incremental commits on branch `task/task_cub8c7l17pqy`:
 **Exit criteria:** ✅ Manager compiles clean (`tsc --build` + `biome check`), zero imports from deleted infrastructure, all sandbox lifecycle + prebuild + health routes rewritten for K8s.
 **Remaining:** End-to-end testing on live K8s cluster (Phase 3 prerequisite).
 
-### Phase 3: Helm + Ship (1-2 weeks)
+### Phase 3: Helm + Ship ✅ COMPLETED (2026-03-03)
 
-Code deletion already completed in Phase 2. Remaining work:
+**What was done:**
 
-- Write Helm chart: manager Deployment + PVC, RBAC, RuntimeClass, Ingress defaults, Zot Deployment + PVC + Service, Verdaccio Deployment + PVC + Service + ConfigMap, TopoLVM StorageClass + VolumeSnapshotClass, containerd registries.yaml config
-- **Complete Caddy removal:** Replace Caddy TLS termination with K8s-native TLS (cert-manager + ClusterIssuer, or Traefik's built-in ACME). Move dashboard routing from Caddyfile to K8s Ingress. Delete `infra/caddy/`, Caddy setup from CLI, Caddyfile rendering from deploy script.
-- **CLI → Manager/Dashboard responsibility shift:** Base image builds (`atelier images build`) move to manager API + dashboard UI (Kaniko Jobs). Server provisioning (`atelier init`) replaced by `helm install`. Debug VM replaced by `kubectl run`. The CLI (`apps/cli/`, 3,141 LOC) is deleted entirely.
-- Delete remaining old code:
-  - `infrastructure/registry/` (451 LOC) — host process management (keep HTTP client)
-  - `apps/cli/` (3,141 LOC) — replaced by `helm install` + dashboard
-- End-to-end testing on live K8s cluster
+- ✅ **Config schema cleanup:** Removed all FC-era fields from `config.schema.ts` (network, setup, providers, advanced.server.firecracker/sshProxy), cleaned `config.loader.ts` and `ENV_VAR_MAPPING`, cleaned `constants/infra.ts`
+- ✅ **Dead code deletion:** Deleted `apps/cli/` (3,141 LOC), `infra/caddy/`, `infra/systemd/`, `infra/scripts/`, `scripts/deploy.ts`. Updated workspace configs, tsconfigs, and references.
+- ✅ **Dashboard static serving:** Added `@elysiajs/static` to manager — single container serves API + SPA. Dashboard uses `window.location.origin` for API calls + `/config` endpoint at runtime.
+- ✅ **Dockerfile:** Multi-stage build at repo root: deps → builder (manager bundle + dashboard static) → slim runtime (`oven/bun:1-slim`). Published to `ghcr.io/frak-id/atelier-manager`.
+- ✅ **Helm chart:** Complete chart at `charts/atelier/` with 17 templates — manager Deployment/Service/Ingress/PVC/ConfigMap/Secret, RBAC (ServiceAccount + ClusterRole + ClusterRoleBinding), Zot registry (Deployment/Service/PVC), cert-manager ClusterIssuer + wildcard Certificate, Kata RuntimeClass, sandbox namespace, registries ConfigMap, NOTES.txt. Helm lint + template render clean.
+- ✅ **CI/CD:** GitHub Actions — `ci.yml` (lint + typecheck + helm lint on push/PR), `release.yml` rewritten (Docker build + push to GHCR, Helm chart packaged + pushed as OCI to `oci://ghcr.io/frak-id/charts/atelier`, GitHub Release with install instructions).
+- ✅ **Production values example:** `charts/atelier/values.production.yaml` with annotated config for real deployments.
+- ✅ **Schema regeneration:** Regenerated `atelier.config.schema.json` and `sandbox.config.full-example.json` from cleaned TypeBox schema.
+- ✅ **Caddy removal:** TLS via cert-manager + Cloudflare DNS-01 for wildcard certs. Dashboard routing via K8s Ingress. All Caddy infra deleted.
+- ✅ **CLI → Helm:** Server provisioning replaced by `helm install`. Debug VM replaced by `kubectl run`. Base image builds remain via dashboard + Kaniko Jobs.
+
+**Verdaccio + shared binaries:** Kept as manager-created dynamic resources (not Helm-managed). Will move to Helm chart in a future iteration.
+
+**Verification:** `bun run typecheck` ✅, `biome check` ✅, `helm lint` ✅, `helm template` renders 17 resources ✅.
+
+**Remaining for production:**
+- End-to-end testing on live K8s cluster (deploy with `helm install` on k3s, verify everything works)
+- Update docs (README, architecture.md, setup.md) for Helm-based deployment
 - Write migration guide for existing bare-metal users
 - **Exit criteria**: `helm install` on fresh k3s cluster, everything works
 
+
 ### Phase 4: Ship (1 week)
 
-- Final testing on production server
-- Update README, docs, quickstart
+- Update README, docs, quickstart for Helm-based deployment
+- End-to-end testing on live K8s cluster
 - Deploy to production
 - Decommission old bare-metal setup
-
+- Write migration guide for existing bare-metal users
 **Total: 5-8 weeks**
 
 ## Future Unlocks

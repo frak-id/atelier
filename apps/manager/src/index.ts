@@ -1,4 +1,5 @@
 import { cors } from "@elysiajs/cors";
+import { staticPlugin } from "@elysiajs/static";
 import { swagger } from "@elysiajs/swagger";
 import { validateConfig } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
@@ -229,13 +230,30 @@ const app = new Elysia()
           .use(eventsRoutes)
           .use(systemModelConfigRoutes),
       ),
-  )
-  .get("/", () => ({
+  );
+
+// In production, serve dashboard static files with SPA fallback.
+// In dev, Vite dev server handles the dashboard on port 5173.
+const dashboardDir = process.env.DASHBOARD_DIR || "./public";
+if (isProduction()) {
+  app.use(
+    staticPlugin({
+      assets: dashboardDir,
+      prefix: "/",
+      indexHTML: true,
+      headers: {
+        "Cache-Control": "public, max-age=3600",
+      },
+    }),
+  );
+} else {
+  app.get("/", () => ({
     name: "Atelier Manager",
     version: "0.1.0",
     mode: config.server.mode,
     docs: "/swagger",
   }));
+}
 
 await systemSandboxService.recoverFromRestart();
 

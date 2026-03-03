@@ -14,7 +14,8 @@
 Must be run as root.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/frak-id/atelier/main/infra/scripts/install.sh | sudo bash
+# Legacy install script removed in K8s migration.
+# Use Helm-based installation instead.
 ```
 
 Optional: set `ATELIER_VERSION=vX.Y.Z` to pin CLI version.

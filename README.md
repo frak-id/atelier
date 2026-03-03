@@ -2,7 +2,7 @@
 
 Isolated dev environments that boot in seconds, not minutes.
 
-**Self-hosted Firecracker microVM sandboxes — real VM isolation, instant snapshots, one CLI.**
+**Self-hosted Kata Containers sandboxes with K8s orchestration.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 
@@ -36,17 +36,18 @@ Review the results from your phone on the ski lift — or wherever you happen to
 
 ## Why Atelier?
 
-Most sandbox tools use containers — fast, but with weak isolation boundaries. Atelier uses [Firecracker](https://firecracker-microvm.github.io/) microVMs (the technology behind AWS Lambda) to give each sandbox **hardware-level isolation** while keeping boot times fast via LVM copy-on-write snapshots.
+Atelier runs isolated development sandboxes on Kubernetes with Kata Containers.
 
 - **VM isolation** — each sandbox is a real virtual machine, not a container namespace
 - **Instant cloning** — LVM thin snapshots clone a full environment in <5ms
 - **Prebuilds** — run expensive setup once, snapshot the filesystem, spawn instantly from there
-- **Simple operations** — single CLI, no Kubernetes, no complex orchestration
+- **Simple operations** — Kubernetes-native workflows with Helm deployment
 
 ## Quickstart
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/frak-id/atelier/main/infra/scripts/install.sh | bash
+# Legacy install script removed in K8s migration.
+# Use Helm-based installation instead.
 ```
 
 After install:

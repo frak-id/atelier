@@ -1,0 +1,6 @@
+apiVersion: v2
+name: atelier
+description: Isolated dev environments on Kubernetes with Kata Containers
+version: 0.1.0
+appVersion: "0.1.3"
+type: application

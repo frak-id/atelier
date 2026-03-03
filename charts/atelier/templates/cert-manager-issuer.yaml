@@ -1,0 +1,23 @@
+{{- if .Values.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.certManager.issuer.name }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  acme:
+    email: {{ .Values.domain.tls.email | quote }}
+    server: {{ .Values.certManager.issuer.server | quote }}
+    privateKeySecretRef:
+      name: {{ .Values.certManager.issuer.name }}-account-key
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.name }}
+              key: {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.key }}
+{{- end }}

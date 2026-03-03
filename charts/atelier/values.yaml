@@ -1,0 +1,130 @@
+# -- Manager configuration
+manager:
+  image:
+    repository: ghcr.io/frak-id/atelier-manager
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    size: 1Gi
+    storageClass: ""
+
+# -- Domain & TLS
+domain:
+  # REQUIRED: base domain for all services (e.g., example.com)
+  baseDomain: ""
+  # Dashboard domain — defaults to sandbox.{baseDomain}
+  dashboard: ""
+  tls:
+    # Email for cert-manager ACME (required if certManager.enabled)
+    email: ""
+
+# -- Authentication (REQUIRED for production)
+auth:
+  github:
+    clientId: ""
+    clientSecret: ""
+  # JWT signing secret — auto-generated if empty
+  jwtSecret: ""
+  # Required GitHub organization (optional)
+  allowedOrg: ""
+  # Allowed GitHub usernames (optional, comma-separated)
+  allowedUsers: []
+
+# -- Server settings
+server:
+  port: 4000
+  maxSandboxes: 20
+  maxActiveTasks: 10
+  # Bearer token for MCP server auth (empty = disabled)
+  mcpToken: ""
+
+# -- Kubernetes settings (used by manager for sandbox orchestration)
+kubernetes:
+  # Namespace for sandbox pods (created by this chart)
+  namespace: atelier-sandboxes
+  # Runtime class for Kata Containers
+  runtimeClass: kata-clh
+  # StorageClass for sandbox PVCs (empty = cluster default)
+  storageClass: ""
+  # VolumeSnapshotClass for prebuilds (empty = cluster default)
+  volumeSnapshotClass: ""
+  # Default PVC size for new sandboxes
+  defaultVolumeSize: "10Gi"
+
+# -- Sandbox defaults
+sandbox:
+  defaultImage: dev-base
+  git:
+    email: sandbox@atelier.dev
+    name: Sandbox User
+
+# -- Advanced VM service ports/versions
+advanced:
+  vm:
+    vscode:
+      port: 8080
+      version: "4.109.2"
+    opencode:
+      port: 3000
+      version: "1.2.10"
+    browser:
+      port: 6080
+    terminal:
+      port: 7681
+    agent:
+      port: 9999
+  server:
+    verdaccio:
+      port: 4873
+      version: "6.2.5"
+
+# -- Integrations
+integrations:
+  slack:
+    enabled: false
+    botToken: ""
+    signingSecret: ""
+
+# -- Zot OCI registry (base images)
+zot:
+  enabled: true
+  image:
+    repository: ghcr.io/project-zot/zot-linux-amd64
+    tag: latest
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 20Gi
+    storageClass: ""
+  port: 5000
+
+# -- cert-manager integration
+certManager:
+  enabled: true
+  issuer:
+    # "letsencrypt-prod" or "letsencrypt-staging"
+    name: letsencrypt-prod
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # DNS-01 solver for wildcard certs
+    solver: cloudflare
+    cloudflare:
+      # Name of existing K8s Secret containing Cloudflare API token
+      apiTokenSecretRef:
+        name: cloudflare-api-token
+        key: api-token
+
+# -- Kata Containers runtime class
+kata:
+  # Create RuntimeClass resource (set false if already exists)
+  createRuntimeClass: true
+  handler: kata-clh
+
+# -- Sandbox secrets encryption key
+secrets:
+  encryptionKey: ""

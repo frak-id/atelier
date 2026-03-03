@@ -1,0 +1,22 @@
+{{- if .Values.domain.baseDomain }}
+Atelier dashboard URL:
+  https://{{ include "atelier.dashboardDomain" . }}
+{{- else }}
+Set `domain.baseDomain` in values and reinstall/upgrade to expose the dashboard.
+{{- end }}
+
+Manager health checks:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=manager
+  kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "atelier.fullname" . }}-manager 4000:4000
+  curl http://127.0.0.1:4000/health/ready
+
+IMPORTANT (k3s nodes): apply the generated registries content manually:
+  kubectl -n {{ .Release.Namespace }} get configmap {{ include "atelier.fullname" . }}-registries -o jsonpath='{.data.registries\.yaml}'
+  # write output to /etc/rancher/k3s/registries.yaml on every node
+  sudo systemctl restart k3s
+
+{{- if .Values.certManager.enabled }}
+cert-manager is enabled:
+  - Ensure Secret {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.name }} exists in namespace {{ .Release.Namespace }}.
+  - Key required: {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.key }}
+{{- end }}

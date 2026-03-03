@@ -1,0 +1,22 @@
+{{- if .Values.zot.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: zot
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: zot
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: zot
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.zot.port }}
+      targetPort: http
+{{- end }}

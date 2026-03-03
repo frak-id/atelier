@@ -121,39 +121,44 @@
         }
       }
     },
-    "network": {
+    "kubernetes": {
       "default": {},
       "type": "object",
       "properties": {
-        "bridgeIp": {
-          "default": "172.16.0.1",
+        "namespace": {
+          "default": "atelier-sandboxes",
           "type": "string"
         },
-        "bridgeName": {
-          "default": "br0",
+        "systemNamespace": {
+          "default": "atelier-system",
           "type": "string"
         },
-        "dnsServers": {
-          "default": ["8.8.8.8", "8.8.4.4"],
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "guestIpStart": {
-          "default": 10,
-          "type": "number"
-        },
-        "guestSubnet": {
-          "default": "172.16.0",
+        "kubeconfig": {
+          "default": "/etc/rancher/k3s/k3s.yaml",
           "type": "string"
         },
-        "bridgeCidr": {
-          "default": "172.16.0.0/24",
+        "runtimeClass": {
+          "default": "kata-clh",
           "type": "string"
         },
-        "bridgeNetmask": {
-          "default": "24",
+        "registryUrl": {
+          "default": "zot.atelier-system.svc:5000",
+          "type": "string"
+        },
+        "verdaccioImage": {
+          "default": "verdaccio/verdaccio:6",
+          "type": "string"
+        },
+        "storageClass": {
+          "default": "",
+          "type": "string"
+        },
+        "volumeSnapshotClass": {
+          "default": "",
+          "type": "string"
+        },
+        "defaultVolumeSize": {
+          "default": "10Gi",
           "type": "string"
         }
       }
@@ -181,53 +186,6 @@
             "name": {
               "default": "Sandbox User",
               "type": "string"
-            }
-          }
-        }
-      }
-    },
-    "setup": {
-      "default": {},
-      "type": "object",
-      "properties": {
-        "storage": {
-          "type": "object",
-          "properties": {
-            "method": {
-              "anyOf": [
-                {
-                  "const": "loop",
-                  "type": "string"
-                },
-                {
-                  "const": "device",
-                  "type": "string"
-                }
-              ]
-            },
-            "loopSizeGb": {
-              "minimum": 10,
-              "type": "number"
-            },
-            "device": {
-              "type": "string"
-            }
-          }
-        },
-        "network": {
-          "type": "object",
-          "properties": {
-            "onExists": {
-              "anyOf": [
-                {
-                  "const": "status",
-                  "type": "string"
-                },
-                {
-                  "const": "recreate",
-                  "type": "string"
-                }
-              ]
             }
           }
         }
@@ -315,26 +273,6 @@
                 },
                 "version": {
                   "default": "6.2.5",
-                  "type": "string"
-                }
-              }
-            },
-            "sshProxy": {
-              "default": {},
-              "type": "object",
-              "properties": {
-                "version": {
-                  "default": "1.5.2",
-                  "type": "string"
-                }
-              }
-            },
-            "firecracker": {
-              "default": {},
-              "type": "object",
-              "properties": {
-                "version": {
-                  "default": "1.14.1",
                   "type": "string"
                 }
               }

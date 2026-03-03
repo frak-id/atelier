@@ -6,9 +6,7 @@
  *   domain   — Where this runs (base domain, TLS, SSH)
  *   auth     — Who can access (GitHub OAuth, JWT, ACLs)
  *   server   — Manager API settings (mode, port, limits)
- *   network  — Bridge/guest networking
  *   sandbox  — Defaults for new sandboxes (image, git identity)
- *   setup    — One-time init options (storage, network bootstrap)
  *   advanced — Power-user overrides (VM service ports, versions)
  */
 import { type Static, Type } from "@sinclair/typebox";
@@ -165,34 +163,6 @@ export const ServerConfigSchema = Type.Object(
 export type ServerConfig = Static<typeof ServerConfigSchema>;
 
 // ---------------------------------------------------------------------------
-// Network
-// ---------------------------------------------------------------------------
-
-export const NetworkConfigSchema = Type.Object(
-  {
-    /** Bridge IP address (host-side, e.g., 172.16.0.1) */
-    bridgeIp: Type.String({ default: "172.16.0.1" }),
-    /** Bridge device name */
-    bridgeName: Type.String({ default: "br0" }),
-    /** DNS servers for guest VMs */
-    dnsServers: Type.Array(Type.String(), { default: ["8.8.8.8", "8.8.4.4"] }),
-    /** First guest IP last octet — guests get .10, .11, etc. */
-    guestIpStart: Type.Number({ default: 10 }),
-
-    // Derived fields (computed from bridgeIp by the loader — do not set manually)
-    /** @internal Guest subnet prefix without last octet (e.g., 172.16.0) */
-    guestSubnet: Type.String({ default: "172.16.0" }),
-    /** @internal Bridge network CIDR (e.g., 172.16.0.0/24) */
-    bridgeCidr: Type.String({ default: "172.16.0.0/24" }),
-    /** @internal Bridge netmask (e.g., 24) */
-    bridgeNetmask: Type.String({ default: "24" }),
-  },
-  { default: {} },
-);
-
-export type NetworkConfig = Static<typeof NetworkConfigSchema>;
-
-// ---------------------------------------------------------------------------
 // Sandbox defaults
 // ---------------------------------------------------------------------------
 
@@ -221,42 +191,6 @@ export const SandboxDefaultsSchema = Type.Object(
 );
 
 export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
-
-// ---------------------------------------------------------------------------
-// Setup (one-time init)
-// ---------------------------------------------------------------------------
-
-export const StorageSetupSchema = Type.Object({
-  /** Storage backend for setup */
-  method: Type.Optional(
-    Type.Union([Type.Literal("loop"), Type.Literal("device")]),
-  ),
-  /** Loop file size in GB (when method=loop) */
-  loopSizeGb: Type.Optional(Type.Number({ minimum: 10 })),
-  /** Block device path (when method=device) */
-  device: Type.Optional(Type.String()),
-});
-
-export type StorageSetup = Static<typeof StorageSetupSchema>;
-
-export const NetworkSetupSchema = Type.Object({
-  /** Behavior when the bridge already exists */
-  onExists: Type.Optional(
-    Type.Union([Type.Literal("status"), Type.Literal("recreate")]),
-  ),
-});
-
-export type NetworkSetup = Static<typeof NetworkSetupSchema>;
-
-export const SetupConfigSchema = Type.Object(
-  {
-    storage: Type.Optional(StorageSetupSchema),
-    network: Type.Optional(NetworkSetupSchema),
-  },
-  { default: {} },
-);
-
-export type SetupConfig = Static<typeof SetupConfigSchema>;
 
 // ---------------------------------------------------------------------------
 // Advanced — VM services (inside sandbox)
@@ -302,18 +236,6 @@ export const AdvancedServerConfigSchema = Type.Object(
       {
         port: Type.Number({ default: 4873 }),
         version: Type.String({ default: "6.2.5" }),
-      },
-      { default: {} },
-    ),
-    sshProxy: Type.Object(
-      {
-        version: Type.String({ default: "1.5.2" }),
-      },
-      { default: {} },
-    ),
-    firecracker: Type.Object(
-      {
-        version: Type.String({ default: "1.14.1" }),
       },
       { default: {} },
     ),
@@ -365,40 +287,6 @@ export const IntegrationsConfigSchema = Type.Object(
 
 export type IntegrationsConfig = Static<typeof IntegrationsConfigSchema>;
 
-export const ProxyProviderConfigSchema = Type.Object(
-  {
-    type: Type.Union([Type.Literal("caddy"), Type.Literal("none")], {
-      default: "caddy",
-    }),
-  },
-  { default: {} },
-);
-
-export type ProxyProviderSchemaType = Static<typeof ProxyProviderConfigSchema>;
-
-export const NetworkProviderConfigSchema = Type.Object(
-  {
-    type: Type.Union([Type.Literal("default"), Type.Literal("none")], {
-      default: "default",
-    }),
-  },
-  { default: {} },
-);
-
-export type NetworkProviderSchemaType = Static<
-  typeof NetworkProviderConfigSchema
->;
-
-export const ProvidersConfigSchema = Type.Object(
-  {
-    proxy: ProxyProviderConfigSchema,
-    network: NetworkProviderConfigSchema,
-  },
-  { default: {} },
-);
-
-export type ProvidersConfig = Static<typeof ProvidersConfigSchema>;
-
 // ---------------------------------------------------------------------------
 // Root config
 // ---------------------------------------------------------------------------
@@ -408,12 +296,9 @@ export const AtelierConfigSchema = Type.Object({
   auth: AuthConfigSchema,
   server: ServerConfigSchema,
   kubernetes: KubernetesConfigSchema,
-  network: NetworkConfigSchema,
   sandbox: SandboxDefaultsSchema,
-  setup: SetupConfigSchema,
   advanced: AdvancedConfigSchema,
   integrations: IntegrationsConfigSchema,
-  providers: ProvidersConfigSchema,
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;
@@ -455,11 +340,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
   ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",
 
-  ATELIER_BRIDGE_NAME: "network.bridgeName",
-  ATELIER_BRIDGE_IP: "network.bridgeIp",
-  ATELIER_GUEST_IP_START: "network.guestIpStart",
-  ATELIER_DNS_SERVERS: "network.dnsServers",
-
   ATELIER_IMAGES_DIR: "sandbox.imagesDirectory",
   ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",
   ATELIER_GIT_EMAIL: "sandbox.git.email",
@@ -472,14 +352,9 @@ export const ENV_VAR_MAPPING = {
   ATELIER_AGENT_PORT: "advanced.vm.agent.port",
   ATELIER_VERDACCIO_PORT: "advanced.server.verdaccio.port",
 
-  ATELIER_VERSION_FIRECRACKER: "advanced.server.firecracker.version",
   ATELIER_VERSION_OPENCODE: "advanced.vm.opencode.version",
   ATELIER_VERSION_CODE_SERVER: "advanced.vm.vscode.version",
-  ATELIER_VERSION_SSH_PROXY: "advanced.server.sshProxy.version",
   ATELIER_VERSION_VERDACCIO: "advanced.server.verdaccio.version",
-
-  ATELIER_PROXY_PROVIDER: "providers.proxy.type",
-  ATELIER_NETWORK_PROVIDER: "providers.network.type",
 
   ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
   ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",

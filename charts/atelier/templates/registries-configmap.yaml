@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "atelier.fullname" . }}-registries
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  registries.yaml: |
+    mirrors:
+      "zot.{{ .Release.Namespace }}.svc:{{ .Values.zot.port }}":
+        endpoint:
+          - "http://zot.{{ .Release.Namespace }}.svc:{{ .Values.zot.port }}"

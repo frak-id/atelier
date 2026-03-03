@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "atelier.fullname" . }}-manager
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "atelier.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: manager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "atelier.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: manager
+    spec:
+      serviceAccountName: {{ include "atelier.fullname" . }}-manager
+      containers:
+        - name: manager
+          image: {{ include "atelier.managerImage" . }}
+          imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
+          command: ["bun", "server.js"]
+          ports:
+            - name: http
+              containerPort: 4000
+          env:
+            - name: ATELIER_SERVER_MODE
+              value: production
+            - name: DATA_DIR
+              value: /app/data
+            - name: MIGRATIONS_DIR
+              value: /app/drizzle
+            - name: DASHBOARD_DIR
+              value: ./public
+            - name: ATELIER_GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  key: ATELIER_GITHUB_CLIENT_ID
+            - name: ATELIER_GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  key: ATELIER_GITHUB_CLIENT_SECRET
+            - name: ATELIER_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  key: ATELIER_JWT_SECRET
+            - name: SANDBOX_SECRETS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  key: SANDBOX_SECRETS_KEY
+            {{- if .Values.server.mcpToken }}
+            - name: ATELIER_MCP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  key: ATELIER_MCP_TOKEN
+            {{- end }}
+            {{- if .Values.integrations.slack.enabled }}
+            - name: ATELIER_SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  key: ATELIER_SLACK_BOT_TOKEN
+            - name: ATELIER_SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  key: ATELIER_SLACK_SIGNING_SECRET
+            {{- end }}
+          resources:
+            {{- toYaml .Values.manager.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: manager-data
+              mountPath: /app/data
+            - name: manager-config
+              mountPath: /etc/atelier/sandbox.config.json
+              subPath: sandbox.config.json
+              readOnly: true
+      volumes:
+        - name: manager-data
+          persistentVolumeClaim:
+            claimName: {{ include "atelier.fullname" . }}-manager-data
+        - name: manager-config
+          configMap:
+            name: {{ include "atelier.fullname" . }}-manager-config

@@ -1,0 +1,39 @@
+{{- if .Values.zot.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zot
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: zot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: zot
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: zot
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: zot
+          image: {{ printf "%s:%s" .Values.zot.image.repository .Values.zot.image.tag }}
+          imagePullPolicy: {{ .Values.zot.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.zot.port }}
+          volumeMounts:
+            - name: zot-data
+              mountPath: /var/lib/zot
+      volumes:
+        - name: zot-data
+          persistentVolumeClaim:
+            claimName: zot-data
+{{- end }}

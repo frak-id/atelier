@@ -1,0 +1,21 @@
+{{- if and .Values.certManager.enabled .Values.domain.baseDomain }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "atelier.fullname" . }}-wildcard
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  secretName: {{ include "atelier.wildcardTlsSecretName" . }}
+  issuerRef:
+    kind: ClusterIssuer
+    name: {{ .Values.certManager.issuer.name }}
+  commonName: {{ printf "*.%s" .Values.domain.baseDomain | quote }}
+  dnsNames:
+    - {{ printf "*.%s" .Values.domain.baseDomain | quote }}
+    - {{ include "atelier.dashboardDomain" . | quote }}
+{{- end }}
