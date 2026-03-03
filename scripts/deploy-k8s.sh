@@ -13,25 +13,26 @@ set -euo pipefail
 #   Server: k3s, helm, kubectl
 #
 # Usage:
-#   DEPLOY_HOST=1.2.3.4 ./scripts/deploy-k8s.sh
+#   SSH_HOST=1.2.3.4 ./scripts/deploy-k8s.sh
 #
 #   # With a custom values file:
-#   DEPLOY_HOST=1.2.3.4 VALUES_FILE=my-values.yaml ./scripts/deploy-k8s.sh
+#   SSH_HOST=1.2.3.4 VALUES_FILE=my-values.yaml ./scripts/deploy-k8s.sh
 #
 #   # With extra Helm --set flags:
-#   DEPLOY_HOST=1.2.3.4 \
+#   SSH_HOST=1.2.3.4 \
 #     HELM_SET="--set auth.github.clientId=xxx --set auth.github.clientSecret=yyy" \
 #     ./scripts/deploy-k8s.sh
 #
 #   # Skip image build (chart-only update):
-#   DEPLOY_HOST=1.2.3.4 SKIP_BUILD=1 ./scripts/deploy-k8s.sh
+#   SSH_HOST=1.2.3.4 SKIP_BUILD=1 ./scripts/deploy-k8s.sh
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-DEPLOY_HOST="${DEPLOY_HOST:?Set DEPLOY_HOST to your server IP or hostname}"
-DEPLOY_USER="${DEPLOY_USER:-root}"
-DEPLOY_KEY="${DEPLOY_KEY:-}"
+SSH_HOST="${SSH_HOST:?Set SSH_HOST to your server IP or hostname}"
+SSH_USER="${SSH_USER:-root}"
+SSH_KEY_PATH="${SSH_KEY_PATH:-}"
+SSH_KEY_PASSPHRASE="${SSH_KEY_PASSPHRASE:-}"
 
 IMAGE_REPO="${IMAGE_REPO:-ghcr.io/frak-id/atelier-manager}"
 IMAGE_TAG="${IMAGE_TAG:-dev-$(git rev-parse --short HEAD)}"
@@ -51,9 +52,15 @@ IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 ssh_opts=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
-[[ -n "$DEPLOY_KEY" ]] && ssh_opts+=(-i "$DEPLOY_KEY")
+[[ -n "$SSH_KEY_PATH" ]] && ssh_opts+=(-i "$SSH_KEY_PATH")
 
-remote() { ssh "${ssh_opts[@]}" "${DEPLOY_USER}@${DEPLOY_HOST}" "$@"; }
+# If passphrase is set, use sshpass to feed it (requires sshpass installed)
+if [[ -n "$SSH_KEY_PASSPHRASE" ]]; then
+  command -v sshpass >/dev/null 2>&1 || { err "sshpass is required for SSH_KEY_PASSPHRASE (brew install sshpass / apt install sshpass)"; exit 1; }
+  remote() { SSHPASS="$SSH_KEY_PASSPHRASE" sshpass -e -P "Enter passphrase" ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "$@"; }
+else
+  remote() { ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "$@"; }
+fi
 info()   { printf "\n\033[1;34m==> %s\033[0m\n" "$*"; }
 ok()     { printf "\033[1;32m    ✓ %s\033[0m\n" "$*"; }
 warn()   { printf "\033[1;33m    ⚠ %s\033[0m\n" "$*"; }
@@ -71,8 +78,8 @@ fi
 command -v rsync >/dev/null 2>&1 || { err "rsync is required"; exit 1; }
 ok "rsync"
 
-remote "true" 2>/dev/null || { err "Cannot SSH to ${DEPLOY_USER}@${DEPLOY_HOST}"; exit 1; }
-ok "ssh → ${DEPLOY_USER}@${DEPLOY_HOST}"
+remote "true" 2>/dev/null || { err "Cannot SSH to ${SSH_USER}@${SSH_HOST}"; exit 1; }
+ok "ssh → ${SSH_USER}@${SSH_HOST}"
 
 remote "command -v helm >/dev/null 2>&1" || { err "helm not found on server"; exit 1; }
 ok "helm on server"
@@ -126,14 +133,14 @@ fi
 
 # ── Step 4: Copy Helm chart ─────────────────────────────────────────────────
 
-info "Syncing Helm chart to ${DEPLOY_HOST}:${REMOTE_DIR}"
+info "Syncing Helm chart to ${SSH_HOST}:${REMOTE_DIR}"
 
 remote "mkdir -p ${REMOTE_DIR}"
 
 rsync -az --delete \
   -e "ssh ${ssh_opts[*]}" \
   "${REPO_ROOT}/charts/atelier/" \
-  "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_DIR}/atelier/"
+  "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/atelier/"
 
 ok "Chart synced"
 
@@ -141,7 +148,7 @@ if [[ -n "$VALUES_FILE" && -f "$VALUES_FILE" ]]; then
   rsync -az \
     -e "ssh ${ssh_opts[*]}" \
     "$VALUES_FILE" \
-    "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_DIR}/values-override.yaml"
+    "${SSH_USER}@${SSH_HOST}:${REMOTE_DIR}/values-override.yaml"
   ok "Values file copied: ${VALUES_FILE}"
 fi
 
@@ -197,20 +204,20 @@ echo ""
 echo "  ┌─ VPC testing ──────────────────────────────────────────────────────┐"
 echo "  │                                                                    │"
 echo "  │  # Start port-forward (use 4001 to avoid conflict with FC on 4000)│"
-echo "  │  ssh ${DEPLOY_USER}@${DEPLOY_HOST} \\                             │"
+echo "  │  ssh ${SSH_USER}@${SSH_HOST} \\                             │"
 echo "  │    'kubectl -n ${NAMESPACE} port-forward \\                       │"
 echo "  │     svc/${SVC_NAME} 4001:4000 --address=0.0.0.0 &'               │"
 echo "  │                                                                    │"
 echo "  │  # Health checks (from VPC)                                        │"
-echo "  │  curl http://${DEPLOY_HOST}:4001/health/ready                      │"
-echo "  │  curl http://${DEPLOY_HOST}:4001/health/live                       │"
+echo "  │  curl http://${SSH_HOST}:4001/health/ready                      │"
+echo "  │  curl http://${SSH_HOST}:4001/health/live                       │"
 echo "  │                                                                    │"
 echo "  │  # Logs                                                            │"
-echo "  │  ssh ${DEPLOY_USER}@${DEPLOY_HOST} \\                             │"
+echo "  │  ssh ${SSH_USER}@${SSH_HOST} \\                             │"
 echo "  │    'kubectl -n ${NAMESPACE} logs -f deploy/${SVC_NAME}'            │"
 echo "  │                                                                    │"
 echo "  │  # Rollback (removes k8s deployment, FC untouched)                 │"
-echo "  │  ssh ${DEPLOY_USER}@${DEPLOY_HOST} \\                             │"
+echo "  │  ssh ${SSH_USER}@${SSH_HOST} \\                             │"
 echo "  │    'helm uninstall ${RELEASE_NAME} -n ${NAMESPACE}'                │"
 echo "  │                                                                    │"
 echo "  └───────────────────────────────────────────────────────────────────-┘"
