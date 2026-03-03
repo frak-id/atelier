@@ -237,7 +237,7 @@ const app = new Elysia()
 const dashboardDir = process.env.DASHBOARD_DIR || "./public";
 if (isProduction()) {
   app.use(
-    staticPlugin({
+    await staticPlugin({
       assets: dashboardDir,
       prefix: "/",
       indexHTML: true,
