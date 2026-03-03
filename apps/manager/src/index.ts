@@ -272,7 +272,7 @@ await systemSandboxService.recoverFromRestart();
 
 setImmediate(() => {
   prebuildRunner.ensureSystemPrebuild().catch((error) => {
-    logger.warn({ error }, "System prebuild auto-build failed");
+    logger.warn({ err: error }, "System prebuild auto-build failed");
   });
 });
 

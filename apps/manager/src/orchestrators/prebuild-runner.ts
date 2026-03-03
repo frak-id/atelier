@@ -255,6 +255,7 @@ export class PrebuildRunner {
     const podName = resourceName;
     const configMapName = `${resourceName}-config`;
     this.activeBuilds.set(key, { podName, pvcName });
+    const labelValue = this.normalizeKey(key);
 
     try {
       if (isMock()) {
@@ -276,7 +277,7 @@ export class PrebuildRunner {
           name: pvcName,
           namespace,
           size: volumeSize,
-          labels: { "atelier.dev/prebuild": key },
+          labels: { "atelier.dev/prebuild": labelValue },
         }),
         namespace,
       );
@@ -299,7 +300,7 @@ export class PrebuildRunner {
           configMapName,
           { "config.json": JSON.stringify({ prebuild: true }) },
           namespace,
-          { "atelier.dev/prebuild": key },
+          { "atelier.dev/prebuild": labelValue },
         ),
         namespace,
       );
@@ -376,7 +377,7 @@ export class PrebuildRunner {
           name: snapshotName,
           namespace,
           pvcName,
-          labels: { "atelier.dev/prebuild": key },
+          labels: { "atelier.dev/prebuild": labelValue },
         }),
         namespace,
       );
