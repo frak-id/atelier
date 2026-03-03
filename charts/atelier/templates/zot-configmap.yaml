@@ -1,0 +1,28 @@
+{{- if .Values.zot.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zot-config
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: zot
+data:
+  config.json: |
+    {
+      "storage": {
+        "rootDirectory": "/var/lib/registry",
+        "dedupe": false
+      },
+      "http": {
+        "address": "0.0.0.0",
+        "port": "{{ .Values.zot.port }}"
+      },
+      "log": {
+        "level": "info"
+      }
+    }
+{{- end }}

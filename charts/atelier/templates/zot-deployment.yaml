@@ -23,12 +23,11 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
+        fsGroup: 100
       containers:
         - name: zot
           image: {{ printf "%s:%s" .Values.zot.image.repository .Values.zot.image.tag }}
+          args: ["serve", "/etc/zot/config.json"]
           imagePullPolicy: {{ .Values.zot.image.pullPolicy }}
           ports:
             - name: http
@@ -53,9 +52,14 @@ spec:
             {{- toYaml .Values.zot.resources | nindent 12 }}
           volumeMounts:
             - name: zot-data
-              mountPath: /var/lib/zot
+              mountPath: /var/lib/registry
+            - name: zot-config
+              mountPath: /etc/zot
       volumes:
         - name: zot-data
           persistentVolumeClaim:
             claimName: zot-data
+        - name: zot-config
+          configMap:
+            name: zot-config
 {{- end }}
