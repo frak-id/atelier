@@ -198,7 +198,7 @@ export class PrebuildRunner {
       const snap = await this.deps.kubeClient.get<{
         status?: { readyToUse?: boolean };
       }>(
-        `/apis/snapshot.storage.k8s.io/v1/namespaces/${config.kubernetes.systemNamespace}/volumesnapshots/${snapshotName}`,
+        `/apis/snapshot.storage.k8s.io/v1/namespaces/${config.kubernetes.namespace}/volumesnapshots/${snapshotName}`,
       );
       return snap.status?.readyToUse === true;
     } catch {
@@ -214,7 +214,7 @@ export class PrebuildRunner {
       await this.deps.kubeClient.deleteResource(
         "VolumeSnapshot",
         snapshotName,
-        config.kubernetes.systemNamespace,
+        config.kubernetes.namespace,
       );
       log.info({ key, snapshotName }, "Deleted prebuild snapshot");
     } catch {
@@ -249,7 +249,7 @@ export class PrebuildRunner {
       scenario.updateStatus("building");
     }
 
-    const namespace = config.kubernetes.systemNamespace;
+    const namespace = config.kubernetes.namespace;
     const resourceName = this.resourceNameForKey(key);
     const pvcName = resourceName;
     const podName = resourceName;
@@ -489,7 +489,7 @@ export class PrebuildRunner {
   ): Promise<void> {
     const agent = this.deps.agentClient;
     const port = OPENCODE_WARMUP_PORT;
-    const namespace = config.kubernetes.systemNamespace;
+    const namespace = config.kubernetes.namespace;
     const podName = `sandbox-${sandboxId}`;
 
     log.info({ sandboxId }, "Warming up OpenCode server");
@@ -616,7 +616,7 @@ export class PrebuildRunner {
   private async cleanupBuildResources(key: string): Promise<void> {
     if (isMock()) return;
 
-    const namespace = config.kubernetes.systemNamespace;
+    const namespace = config.kubernetes.namespace;
     const resourceName = this.resourceNameForKey(key);
     const podName = `sandbox-${resourceName}`;
     const pvcName = resourceName;
