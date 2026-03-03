@@ -67,6 +67,11 @@ logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");
 
+// Dashboard SPA index — pre-resolved for the NOT_FOUND fallback
+const dashboardIndex = isProduction()
+  ? Bun.file(`${process.env.DASHBOARD_DIR || "./public"}/index.html`)
+  : null;
+
 const app = new Elysia()
   .on("start", async () => {
     CronService.add("prebuildStaleness", {
@@ -165,7 +170,7 @@ const app = new Elysia()
       },
     }),
   )
-  .onError(({ code, error, set }) => {
+  .onError(({ code, error, set, request }) => {
     if (error instanceof SandboxError) {
       set.status = error.statusCode;
       return {
@@ -185,12 +190,28 @@ const app = new Elysia()
         };
       }
 
-      case "NOT_FOUND":
+      case "NOT_FOUND": {
+        // SPA fallback: serve index.html for non-API GET requests in production
+        if (dashboardIndex && request.method === "GET") {
+          const p = new URL(request.url).pathname;
+          const isBackendRoute =
+            p.startsWith("/api/") ||
+            p.startsWith("/health/") ||
+            p === "/config" ||
+            p.startsWith("/swagger") ||
+            p.startsWith("/.well-known") ||
+            p.startsWith("/mcp");
+          if (!isBackendRoute) {
+            set.headers["content-type"] = "text/html; charset=utf-8";
+            return dashboardIndex;
+          }
+        }
         set.status = 404;
         return {
           error: "NOT_FOUND",
           message: "Endpoint not found",
         };
+      }
 
       default: {
         const errorMessage =
@@ -232,15 +253,15 @@ const app = new Elysia()
       ),
   );
 
-// In production, serve dashboard static files with SPA fallback.
+// In production, serve dashboard static files.
+// SPA fallback (index.html for unmatched routes) is handled by onError NOT_FOUND above.
 // In dev, Vite dev server handles the dashboard on port 5173.
 const dashboardDir = process.env.DASHBOARD_DIR || "./public";
-if (isProduction()) {
+  if (isProduction()) {
   app.use(
     await staticPlugin({
       assets: dashboardDir,
       prefix: "/",
-      indexHTML: true,
       headers: {
         "Cache-Control": "public, max-age=3600",
       },
