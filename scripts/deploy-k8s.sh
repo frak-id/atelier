@@ -51,7 +51,9 @@ IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
 
 # ── SSH setup ────────────────────────────────────────────────────────────────
 
+SSH_CONTROL_PATH="/tmp/ssh-atelier-deploy-%%r@%%h:%%p"
 ssh_opts=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+ssh_opts+=(-o ControlMaster=auto -o "ControlPath=${SSH_CONTROL_PATH}" -o ControlPersist=120)
 [[ -n "$SSH_KEY_PATH" ]] && ssh_opts+=(-i "$SSH_KEY_PATH")
 
 # If passphrase is provided, add the key to ssh-agent so all SSH-based
@@ -60,7 +62,7 @@ if [[ -n "$SSH_KEY_PASSPHRASE" && -n "$SSH_KEY_PATH" ]]; then
   # Start agent if not already running
   if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
     eval "$(ssh-agent -s)" >/dev/null
-    trap 'ssh-agent -k >/dev/null 2>&1' EXIT
+    trap 'ssh-agent -k >/dev/null 2>&1; ssh -o "ControlPath=${SSH_CONTROL_PATH}" -O exit "${SSH_USER}@${SSH_HOST}" 2>/dev/null' EXIT
   fi
   # Feed passphrase via SSH_ASKPASS (no sshpass dependency)
   _askpass="$(mktemp)"
@@ -70,6 +72,8 @@ if [[ -n "$SSH_KEY_PASSPHRASE" && -n "$SSH_KEY_PATH" ]]; then
     || DISPLAY=none SSH_ASKPASS="$_askpass" ssh-add "$SSH_KEY_PATH" </dev/null 2>/dev/null \
     || { err "Could not add SSH key to agent"; rm -f "$_askpass"; exit 1; }
   rm -f "$_askpass"
+else
+  trap 'ssh -o "ControlPath=${SSH_CONTROL_PATH}" -O exit "${SSH_USER}@${SSH_HOST}" 2>/dev/null' EXIT
 fi
 
 remote() { ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "$@"; }
