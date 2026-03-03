@@ -49,18 +49,32 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REMOTE_DIR="/tmp/atelier-helm-deploy"
 IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── SSH setup ────────────────────────────────────────────────────────────────
 
 ssh_opts=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 [[ -n "$SSH_KEY_PATH" ]] && ssh_opts+=(-i "$SSH_KEY_PATH")
 
-# If passphrase is set, use sshpass to feed it (requires sshpass installed)
-if [[ -n "$SSH_KEY_PASSPHRASE" ]]; then
-  command -v sshpass >/dev/null 2>&1 || { err "sshpass is required for SSH_KEY_PASSPHRASE (brew install sshpass / apt install sshpass)"; exit 1; }
-  remote() { SSHPASS="$SSH_KEY_PASSPHRASE" sshpass -e -P "Enter passphrase" ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "$@"; }
-else
-  remote() { ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "$@"; }
+# If passphrase is provided, add the key to ssh-agent so all SSH-based
+# tools (ssh, rsync, docker-save-pipe) can use it without prompts.
+if [[ -n "$SSH_KEY_PASSPHRASE" && -n "$SSH_KEY_PATH" ]]; then
+  # Start agent if not already running
+  if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
+    eval "$(ssh-agent -s)" >/dev/null
+    trap 'ssh-agent -k >/dev/null 2>&1' EXIT
+  fi
+  # Feed passphrase via SSH_ASKPASS (no sshpass dependency)
+  _askpass="$(mktemp)"
+  printf '#!/bin/sh\necho "%s"\n' "$SSH_KEY_PASSPHRASE" > "$_askpass"
+  chmod +x "$_askpass"
+  SSH_ASKPASS="$_askpass" SSH_ASKPASS_REQUIRE=force ssh-add "$SSH_KEY_PATH" </dev/null 2>/dev/null \
+    || DISPLAY=none SSH_ASKPASS="$_askpass" ssh-add "$SSH_KEY_PATH" </dev/null 2>/dev/null \
+    || { err "Could not add SSH key to agent"; rm -f "$_askpass"; exit 1; }
+  rm -f "$_askpass"
 fi
+
+remote() { ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "$@"; }
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 info()   { printf "\n\033[1;34m==> %s\033[0m\n" "$*"; }
 ok()     { printf "\033[1;32m    ✓ %s\033[0m\n" "$*"; }
 warn()   { printf "\033[1;33m    ⚠ %s\033[0m\n" "$*"; }
