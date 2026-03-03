@@ -43,12 +43,12 @@ import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { SharedBinariesService } from "./infrastructure/shared-binaries/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
-
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
+import { spaFallback } from "./shared/plugins/spa.ts";
 
 const configErrors = validateConfig(config);
 if (configErrors.length > 0 && isProduction()) {
@@ -66,12 +66,6 @@ if (configErrors.length > 0 && isProduction()) {
 logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");
-
-// Dashboard SPA index — pre-resolved for the NOT_FOUND fallback
-const dashboardIndex = isProduction()
-  ? Bun.file(`${process.env.DASHBOARD_DIR || "./public"}/index.html`)
-  : null;
-
 const app = new Elysia()
   .on("start", async () => {
     CronService.add("prebuildStaleness", {
@@ -170,7 +164,7 @@ const app = new Elysia()
       },
     }),
   )
-  .onError(({ code, error, set, request }) => {
+  .onError(({ code, error, set }) => {
     if (error instanceof SandboxError) {
       set.status = error.statusCode;
       return {
@@ -191,21 +185,6 @@ const app = new Elysia()
       }
 
       case "NOT_FOUND": {
-        // SPA fallback: serve index.html for non-API GET requests in production
-        if (dashboardIndex && request.method === "GET") {
-          const p = new URL(request.url).pathname;
-          const isBackendRoute =
-            p.startsWith("/api/") ||
-            p.startsWith("/health/") ||
-            p === "/config" ||
-            p.startsWith("/swagger") ||
-            p.startsWith("/.well-known") ||
-            p.startsWith("/mcp");
-          if (!isBackendRoute) {
-            set.headers["content-type"] = "text/html; charset=utf-8";
-            return dashboardIndex;
-          }
-        }
         set.status = 404;
         return {
           error: "NOT_FOUND",
@@ -253,20 +232,33 @@ const app = new Elysia()
       ),
   );
 
-// In production, serve dashboard static files.
-// SPA fallback (index.html for unmatched routes) is handled by onError NOT_FOUND above.
+// In production, serve dashboard static files + SPA fallback.
 // In dev, Vite dev server handles the dashboard on port 5173.
 const dashboardDir = process.env.DASHBOARD_DIR || "./public";
-  if (isProduction()) {
-  app.use(
-    await staticPlugin({
-      assets: dashboardDir,
-      prefix: "/",
-      headers: {
-        "Cache-Control": "public, max-age=3600",
-      },
-    }),
-  );
+if (isProduction()) {
+  app
+    .use(
+      await staticPlugin({
+        assets: dashboardDir,
+        prefix: "/",
+        headers: {
+          "Cache-Control": "public, max-age=3600",
+        },
+      }),
+    )
+    .use(
+      spaFallback({
+        assets: dashboardDir,
+        exclude: [
+          "/api/",
+          "/health/",
+          "/swagger",
+          "/.well-known",
+          "/mcp",
+          "/config",
+        ],
+      }),
+    );
 } else {
   app.get("/", () => ({
     name: "Atelier Manager",
