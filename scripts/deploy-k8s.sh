@@ -76,7 +76,7 @@ else
   trap 'ssh -o "ControlPath=${SSH_CONTROL_PATH}" -O exit "${SSH_USER}@${SSH_HOST}" 2>/dev/null' EXIT
 fi
 
-remote() { ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "$@"; }
+remote() { ssh "${ssh_opts[@]}" "${SSH_USER}@${SSH_HOST}" "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && $*"; }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 info()   { printf "\n\033[1;34m==> %s\033[0m\n" "$*"; }
