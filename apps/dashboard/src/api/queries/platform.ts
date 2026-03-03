@@ -103,16 +103,6 @@ export function useRestartSystemSandbox() {
   });
 }
 
-export function useSystemCleanup() {
-  return useMutation({
-    mutationKey: ["system", "cleanup"],
-    mutationFn: async () => unwrap(await api.api.system.cleanup.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
-    },
-  });
-}
-
 // --- Session Templates ---
 
 export type SessionTemplateInput = {

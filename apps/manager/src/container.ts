@@ -32,6 +32,7 @@ import {
   WorkspaceService,
 } from "./modules/workspace/index.ts";
 import {
+  BaseImageBuilder,
   PrebuildChecker,
   PrebuildRunner,
   SandboxDestroyer,
@@ -135,6 +136,8 @@ const prebuildRunner = new PrebuildRunner({
   aiService: systemAiService,
 });
 
+const baseImageBuilder = new BaseImageBuilder(kubeClient);
+
 const taskSpawner = new TaskSpawner({
   sandboxSpawner,
   sandboxService,
@@ -180,6 +183,7 @@ export {
   agentClient,
   agentOperations,
   authSyncService,
+  baseImageBuilder,
   configFileService,
   gitSourceService,
   internalService,

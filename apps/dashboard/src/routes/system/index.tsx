@@ -1,7 +1,6 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  AlertCircle,
   Package,
   Play,
   Power,
@@ -18,7 +17,6 @@ import {
   useEnableRegistry,
   usePurgeRegistryCache,
   useRunRegistryEviction,
-  useSystemCleanup,
   useUpdateRegistrySettings,
 } from "@/api/queries";
 import { RouteErrorComponent } from "@/components/route-error";
@@ -52,7 +50,6 @@ export const Route = createFileRoute("/system/")({
 function SystemPage() {
   const { data: stats } = useSuspenseQuery(systemStatsQuery);
   const { data: registry } = useQuery(registryStatusQuery);
-  const cleanupMutation = useSystemCleanup();
 
   const enableRegistry = useEnableRegistry();
   const disableRegistry = useDisableRegistry();
@@ -72,60 +69,14 @@ function SystemPage() {
     );
   }
 
-  const handleCleanup = () => {
-    if (confirm("Run system cleanup? This will remove orphaned resources.")) {
-      cleanupMutation.mutate();
-    }
-  };
-
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold sm:text-3xl">System</h1>
-          <p className="text-muted-foreground">
-            System statistics and maintenance
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          onClick={handleCleanup}
-          disabled={cleanupMutation.isPending}
-          className="w-full sm:w-auto"
-        >
-          {cleanupMutation.isPending ? (
-            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Trash2 className="h-4 w-4 mr-2" />
-          )}
-          Run Cleanup
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold sm:text-3xl">System</h1>
+        <p className="text-muted-foreground">
+          System statistics and maintenance
+        </p>
       </div>
-
-      {cleanupMutation.isSuccess && cleanupMutation.data && (
-        <Card className="border-green-500">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-2 text-green-500 mb-2">
-              <AlertCircle className="h-4 w-4" />
-              Cleanup completed
-            </div>
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Pods</span>
-                <p>{cleanupMutation.data.podsRemoved}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Services</span>
-                <p>{cleanupMutation.data.servicesRemoved}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Ingresses</span>
-                <p>{cleanupMutation.data.ingressesRemoved}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>

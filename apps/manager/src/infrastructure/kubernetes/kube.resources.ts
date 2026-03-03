@@ -362,6 +362,122 @@ export function buildKanikoJob(options: KanikoJobOptions): KubeResource {
   };
 }
 
+export type BaseImageBuildJobOptions = {
+  name: string;
+  imageId: string;
+  configMapName: string;
+  configMapItems?: Array<{ key: string; path: string }>;
+  destinationImage: string;
+  agentBinaryPath: string;
+  namespace?: string;
+  buildArgs?: Record<string, string>;
+};
+
+export function buildBaseImageBuildJob(
+  options: BaseImageBuildJobOptions,
+): KubeResource {
+  const namespace = options.namespace ?? config.kubernetes.systemNamespace;
+
+  const args = [
+    "--context=dir:///workspace",
+    "--dockerfile=Dockerfile",
+    `--destination=${options.destinationImage}`,
+    "--insecure",
+  ];
+
+  for (const [key, value] of Object.entries(options.buildArgs ?? {})) {
+    args.push(`--build-arg=${key}=${value}`);
+  }
+
+  return {
+    apiVersion: "batch/v1",
+    kind: "Job",
+    metadata: {
+      name: options.name,
+      namespace,
+      labels: {
+        "atelier.dev/component": "base-image-build",
+        "atelier.dev/image": options.imageId,
+      },
+    },
+    spec: {
+      backoffLimit: 0,
+      ttlSecondsAfterFinished: 3600,
+      template: {
+        metadata: {
+          labels: {
+            "atelier.dev/component": "base-image-build",
+            "atelier.dev/image": options.imageId,
+          },
+        },
+        spec: {
+          restartPolicy: "Never",
+          initContainers: [
+            {
+              name: "prepare-context",
+              image: "busybox:1.37",
+              command: [
+                "sh",
+                "-c",
+                "cp -r /config/* /workspace/ && cp /agent-bin/sandbox-agent /workspace/sandbox-agent && chmod +x /workspace/sandbox-agent",
+              ],
+              volumeMounts: [
+                {
+                  name: "config",
+                  mountPath: "/config",
+                  readOnly: true,
+                },
+                {
+                  name: "agent-bin",
+                  mountPath: "/agent-bin",
+                  readOnly: true,
+                },
+                {
+                  name: "workspace",
+                  mountPath: "/workspace",
+                },
+              ],
+            },
+          ],
+          containers: [
+            {
+              name: "kaniko",
+              image: "gcr.io/kaniko-project/executor:latest",
+              args,
+              volumeMounts: [
+                {
+                  name: "workspace",
+                  mountPath: "/workspace",
+                },
+              ],
+            },
+          ],
+          volumes: [
+            {
+              name: "config",
+              configMap: {
+                name: options.configMapName,
+                items: options.configMapItems,
+              },
+            },
+            {
+              name: "agent-bin",
+              hostPath: {
+                path: options.agentBinaryPath,
+                type: "Directory",
+              },
+            },
+            {
+              name: "workspace",
+              emptyDir: {},
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
 export function buildConfigMap(
   name: string,
   data: Record<string, string>,

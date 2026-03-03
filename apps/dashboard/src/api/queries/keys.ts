@@ -55,6 +55,8 @@ export const queryKeys = {
     all: ["images"] as const,
     list: (all?: boolean) => ["images", "list", { all }] as const,
     detail: (id: string) => ["images", "detail", id] as const,
+    builds: ["images", "builds"] as const,
+    buildStatus: (id: string) => ["images", id, "buildStatus"] as const,
   },
   system: {
     stats: ["system", "stats"] as const,
