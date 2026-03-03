@@ -807,6 +807,7 @@ export function buildSharedBinariesJob(
       template: {
         metadata: { labels: SHARED_BINARIES_LABELS },
         spec: {
+          securityContext: { runAsUser: 0 },
           restartPolicy: "Never",
           containers: [
             {
