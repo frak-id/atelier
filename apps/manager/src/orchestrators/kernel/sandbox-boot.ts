@@ -98,13 +98,8 @@ export async function bootNewSandbox(
       }),
     );
 
-    const pvcBound = await kubeClient.waitForPvcBound(pvcName, {
-      timeout: 120_000,
-    });
-    if (!pvcBound) {
-      throw new Error(`PVC ${pvcName} did not become bound`);
-    }
-
+    // Note: no waitForPvcBound — local-path uses WaitForFirstConsumer,
+    // so the PVC binds only when a pod referencing it is scheduled.
     await Promise.all([
       kubeClient.createResource(
         buildConfigMap(

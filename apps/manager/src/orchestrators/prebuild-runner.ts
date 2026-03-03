@@ -282,14 +282,8 @@ export class PrebuildRunner {
         namespace,
       );
 
-      const pvcBound = await this.deps.kubeClient.waitForPvcBound(pvcName, {
-        timeout: POD_TIMEOUT_MS,
-        namespace,
-      });
-      if (!pvcBound) {
-        throw new Error(`Prebuild PVC ${pvcName} did not become bound`);
-      }
-
+      // Note: no waitForPvcBound — local-path uses WaitForFirstConsumer,
+      // so the PVC binds only when a pod referencing it is scheduled.
       // Step 2: Spawn temp pod with base image + PVC at /home/dev
       const image = this.resolveBaseImage(scenario);
       const sandboxId = resourceName;
