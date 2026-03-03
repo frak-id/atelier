@@ -4,20 +4,84 @@ metadata:
   name: {{ include "atelier.fullname" . }}-manager
   namespace: {{ include "atelier.systemNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
 ---
+# Cluster-scoped resources: PVs, RuntimeClasses, Namespaces
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ include "atelier.fullname" . }}-manager
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+  - apiGroups: ["node.k8s.io"]
+    resources: ["runtimeclasses"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "atelier.fullname" . }}-manager
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "atelier.fullname" . }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "atelier.fullname" . }}-manager
+    namespace: {{ include "atelier.systemNamespace" . }}
+---
+# System namespace: Verdaccio, Kaniko, shared-binaries (pods, services, configmaps, PVCs, jobs)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "atelier.fullname" . }}-manager
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["create", "get", "list", "delete", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "persistentvolumeclaims"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "atelier.fullname" . }}-manager
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "atelier.fullname" . }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "atelier.fullname" . }}-manager
+    namespace: {{ include "atelier.systemNamespace" . }}
+---
+# Sandbox namespace: sandbox pods, services, PVCs, ingresses, jobs, snapshots, events
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "atelier.fullname" . }}-manager
+  namespace: {{ include "atelier.sandboxNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["pods", "pods/log"]
@@ -26,13 +90,7 @@ rules:
     resources: ["services", "configmaps", "persistentvolumeclaims"]
     verbs: ["create", "get", "list", "delete"]
   - apiGroups: [""]
-    resources: ["persistentvolumes"]
-    verbs: ["create", "get", "list", "delete"]
-  - apiGroups: [""]
     resources: ["events"]
-    verbs: ["get", "list"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
     verbs: ["get", "list"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
@@ -43,22 +101,17 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshots"]
     verbs: ["create", "get", "list", "delete"]
-  - apiGroups: ["node.k8s.io"]
-    resources: ["runtimeclasses"]
-    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: {{ include "atelier.fullname" . }}-manager
+  namespace: {{ include "atelier.sandboxNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: {{ include "atelier.fullname" . }}-manager
 subjects:
   - kind: ServiceAccount

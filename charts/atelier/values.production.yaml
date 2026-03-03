@@ -53,6 +53,12 @@ manager:
     size: 1Gi
     # storageClass: "local-path"
 
+# -- Ingress
+ingress:
+  className: traefik
+  # annotations:
+  #   traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+
 # -- Kubernetes settings
 kubernetes:
   namespace: atelier-sandboxes

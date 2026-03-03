@@ -15,6 +15,13 @@ manager:
     size: 1Gi
     storageClass: ""
 
+# -- Ingress configuration
+ingress:
+  # Ingress class name (e.g., traefik, nginx)
+  className: traefik
+  # Custom annotations for the manager ingress
+  annotations: {}
+
 # -- Domain & TLS
 domain:
   # REQUIRED: base domain for all services (e.g., example.com)
@@ -103,6 +110,13 @@ zot:
     size: 20Gi
     storageClass: ""
   port: 5000
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
 
 # -- cert-manager integration
 certManager:

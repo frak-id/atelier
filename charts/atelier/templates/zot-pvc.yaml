@@ -12,7 +12,9 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  {{- if .Values.zot.persistence.storageClass }}
   storageClassName: {{ .Values.zot.persistence.storageClass | quote }}
+  {{- end }}
   resources:
     requests:
       storage: {{ .Values.zot.persistence.size }}

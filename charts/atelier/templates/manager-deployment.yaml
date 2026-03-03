@@ -23,6 +23,10 @@ spec:
         app.kubernetes.io/component: manager
     spec:
       serviceAccountName: {{ include "atelier.fullname" . }}-manager
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: manager
           image: {{ include "atelier.managerImage" . }}
@@ -79,6 +83,10 @@ spec:
                   name: {{ include "atelier.fullname" . }}-manager-secret
                   key: ATELIER_SLACK_SIGNING_SECRET
             {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           resources:
             {{- toYaml .Values.manager.resources | nindent 12 }}
           livenessProbe:

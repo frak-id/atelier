@@ -22,6 +22,10 @@ spec:
         app.kubernetes.io/component: zot
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: zot
           image: {{ printf "%s:%s" .Values.zot.image.repository .Values.zot.image.tag }}
@@ -29,6 +33,24 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.zot.port }}
+          livenessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.zot.resources | nindent 12 }}
           volumeMounts:
             - name: zot-data
               mountPath: /var/lib/zot

@@ -11,7 +11,9 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  {{- if .Values.manager.persistence.storageClass }}
   storageClassName: {{ .Values.manager.persistence.storageClass | quote }}
+  {{- end }}
   resources:
     requests:
       storage: {{ .Values.manager.persistence.size }}
