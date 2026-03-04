@@ -27,6 +27,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s:%s" .Values.manager.image.repository (default .Chart.AppVersion .Values.manager.image.tag) -}}
 {{- end -}}
 
+{{- define "atelier.dashboardImage" -}}
+{{- printf "%s:%s" .Values.dashboard.image.repository (default .Chart.AppVersion .Values.dashboard.image.tag) -}}
+{{- end -}}
+
 {{- define "atelier.systemNamespace" -}}
 {{- .Release.Namespace -}}
 {{- end -}}

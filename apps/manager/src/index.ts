@@ -1,5 +1,4 @@
 import { cors } from "@elysiajs/cors";
-import { staticPlugin } from "@elysiajs/static";
 import { swagger } from "@elysiajs/swagger";
 import { validateConfig } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
@@ -48,7 +47,6 @@ import { authGuard } from "./shared/lib/auth.ts";
 import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
-import { spaFallback } from "./shared/plugins/spa.ts";
 
 const configErrors = validateConfig(config);
 if (configErrors.length > 0 && isProduction()) {
@@ -164,7 +162,7 @@ const app = new Elysia()
       },
     }),
   )
-  .onError(({ code, error, set, request }) => {
+  .onError(({ code, error, set }) => {
     if (error instanceof SandboxError) {
       set.status = error.statusCode;
       return {
@@ -185,25 +183,6 @@ const app = new Elysia()
       }
 
       case "NOT_FOUND": {
-        // In production, serve SPA for non-API GET requests
-        if (isProduction() && request.method === "GET") {
-          const pathname = new URL(request.url).pathname;
-          const spaExclude = [
-            "/api/",
-            "/health/",
-            "/swagger",
-            "/.well-known",
-            "/mcp",
-            "/config",
-          ];
-          if (!spaExclude.some((p) => pathname.startsWith(p))) {
-            set.headers["content-type"] = "text/html; charset=utf-8";
-            set.headers["cache-control"] = "no-cache";
-            return Bun.file(
-              `${process.env.DASHBOARD_DIR || "./public"}/index.html`,
-            );
-          }
-        }
         set.status = 404;
         return {
           error: "NOT_FOUND",
@@ -251,41 +230,12 @@ const app = new Elysia()
       ),
   );
 
-// In production, serve dashboard static files + SPA fallback.
-// In dev, Vite dev server handles the dashboard on port 5173.
-const dashboardDir = process.env.DASHBOARD_DIR || "./public";
-if (isProduction()) {
-  app
-    .use(
-      await staticPlugin({
-        assets: dashboardDir,
-        prefix: "/",
-        headers: {
-          "Cache-Control": "public, max-age=3600",
-        },
-      }),
-    )
-    .use(
-      spaFallback({
-        assets: dashboardDir,
-        exclude: [
-          "/api/",
-          "/health/",
-          "/swagger",
-          "/.well-known",
-          "/mcp",
-          "/config",
-        ],
-      }),
-    );
-} else {
-  app.get("/", () => ({
-    name: "Atelier Manager",
-    version: "0.1.0",
-    mode: config.server.mode,
-    docs: "/swagger",
-  }));
-}
+app.get("/", () => ({
+  name: "Atelier Manager",
+  version: "0.1.0",
+  mode: config.server.mode,
+  docs: "/swagger",
+}));
 
 await systemSandboxService.recoverFromRestart();
 

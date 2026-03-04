@@ -27,7 +27,7 @@ spec:
               service:
                 name: {{ include "atelier.fullname" . }}-manager
                 port:
-                  number: 4000
+                  number: 8080
   tls:
     - secretName: {{ include "atelier.wildcardTlsSecretName" . }}
       hosts:

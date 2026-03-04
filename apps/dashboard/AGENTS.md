@@ -1,6 +1,6 @@
 # Dashboard
 
-React 19 web interface for sandbox management. Deployed as static files via Caddy.
+React 19 web interface for sandbox management. Deployed as static files via nginx sidecar in the manager pod.
 
 ## Stack
 

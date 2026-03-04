@@ -15,6 +15,13 @@ manager:
     size: 1Gi
     storageClass: ""
 
+# -- Dashboard (nginx sidecar serving the SPA)
+dashboard:
+  image:
+    repository: ghcr.io/frak-id/atelier-dashboard
+    tag: ""
+    pullPolicy: IfNotPresent
+
 # -- Ingress configuration
 ingress:
   # Ingress class name (e.g., traefik, nginx)

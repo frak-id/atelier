@@ -4,8 +4,8 @@ set -euo pipefail
 # ─────────────────────────────────────────────────────────────────────────────
 # deploy-k8s.sh — Build, push, and deploy Atelier to a remote k3s server
 #
-# Builds the manager+dashboard Docker image for linux/amd64, pushes to GHCR,
-# imports it directly into k3s containerd (no pull auth needed), copies the
+# Builds the manager and dashboard Docker images (multi-target Dockerfile)
+# for linux/amd64, pushes to GHCR, imports into k3s containerd, copies the
 # Helm chart, and runs helm upgrade --install.
 #
 # Prerequisites:
@@ -36,7 +36,8 @@ SSH_USER="${SSH_USER:-root}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-}"
 SSH_KEY_PASSPHRASE="${SSH_KEY_PASSPHRASE:-}"
 
-IMAGE_REPO="${IMAGE_REPO:-ghcr.io/frak-id/atelier-manager}"
+MANAGER_IMAGE_REPO="${IMAGE_REPO:-ghcr.io/frak-id/atelier-manager}"
+DASHBOARD_IMAGE_REPO="${DASHBOARD_IMAGE_REPO:-ghcr.io/frak-id/atelier-dashboard}"
 IMAGE_TAG="${IMAGE_TAG:-dev-$(git rev-parse --short HEAD)}"
 
 RELEASE_NAME="${RELEASE_NAME:-atelier}"
@@ -49,7 +50,8 @@ SKIP_BUILD="${SKIP_BUILD:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REMOTE_DIR="/tmp/atelier-helm-deploy"
-IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
+MANAGER_IMAGE="${MANAGER_IMAGE_REPO}:${IMAGE_TAG}"
+DASHBOARD_IMAGE="${DASHBOARD_IMAGE_REPO}:${IMAGE_TAG}"
 
 # ── SSH setup ────────────────────────────────────────────────────────────────
 
@@ -107,46 +109,59 @@ ok "helm on server"
 remote "command -v kubectl >/dev/null 2>&1" || { err "kubectl not found on server"; exit 1; }
 ok "kubectl on server"
 
-# ── Step 1: Build Docker image ───────────────────────────────────────────────
+# ── Step 1: Build Docker images ──────────────────────────────────────────────
 
-if [[ -z "$SKIP_BUILD" ]]; then
-  info "Building image: ${IMAGE} (linux/amd64)"
+build_image() {
+  local target="$1" image="$2"
+  info "Building ${target}: ${image} (linux/amd64)"
 
   if docker buildx version >/dev/null 2>&1; then
     docker buildx build \
       --platform linux/amd64 \
-      -t "${IMAGE}" \
+      --target "${target}" \
+      -t "${image}" \
       --load \
       "${REPO_ROOT}"
   else
     warn "docker buildx not available, using regular build (host must be amd64)"
-    docker build -t "${IMAGE}" "${REPO_ROOT}"
+    docker build --target "${target}" -t "${image}" "${REPO_ROOT}"
   fi
 
-  ok "Image built"
+  ok "${target} image built"
+}
+
+if [[ -z "$SKIP_BUILD" ]]; then
+  build_image manager "${MANAGER_IMAGE}"
+  build_image dashboard "${DASHBOARD_IMAGE}"
 
   # ── Step 2: Push to GHCR ─────────────────────────────────────────────────
 
   info "Pushing to GHCR"
 
-  # Verify GHCR auth
-  if ! docker push "${IMAGE}" 2>/dev/null; then
+  if ! docker push "${MANAGER_IMAGE}" 2>/dev/null; then
     err "docker push failed — are you logged into GHCR?"
     echo ""
     echo "    Run: echo \$GITHUB_TOKEN | docker login ghcr.io -u YOUR_USERNAME --password-stdin"
     echo ""
     exit 1
   fi
+  ok "Pushed ${MANAGER_IMAGE}"
 
-  ok "Pushed ${IMAGE}"
+  if ! docker push "${DASHBOARD_IMAGE}" 2>/dev/null; then
+    err "docker push failed for dashboard image"
+    exit 1
+  fi
+  ok "Pushed ${DASHBOARD_IMAGE}"
 
   # ── Step 3: Import into k3s containerd ───────────────────────────────────
 
-  info "Importing image into k3s containerd (avoids GHCR pull auth on server)"
+  info "Importing images into k3s containerd"
 
-  docker save "${IMAGE}" | remote 'k3s ctr -n k8s.io images import -'
+  docker save "${MANAGER_IMAGE}" | remote 'k3s ctr -n k8s.io images import -'
+  ok "Manager image imported"
 
-  ok "Image imported into k3s"
+  docker save "${DASHBOARD_IMAGE}" | remote 'k3s ctr -n k8s.io images import -'
+  ok "Dashboard image imported"
 else
   info "Skipping image build (SKIP_BUILD=1)"
 fi
@@ -179,13 +194,12 @@ info "Running helm upgrade --install"
 HELM_CMD="helm upgrade --install ${RELEASE_NAME} ${REMOTE_DIR}/atelier"
 HELM_CMD+=" --namespace ${NAMESPACE} --create-namespace"
 HELM_CMD+=" --set manager.image.tag=${IMAGE_TAG}"
+HELM_CMD+=" --set dashboard.image.tag=${IMAGE_TAG}"
 
-# Use values override file if provided
 if [[ -n "$VALUES_FILE" ]]; then
   HELM_CMD+=" --values ${REMOTE_DIR}/values-override.yaml"
 fi
 
-# Append extra --set flags
 if [[ -n "$HELM_SET" ]]; then
   HELM_CMD+=" ${HELM_SET}"
 fi
@@ -223,14 +237,14 @@ info "Deployment complete!"
 echo ""
 echo "  ┌─ VPC testing ──────────────────────────────────────────────────────┐"
 echo "  │                                                                    │"
-echo "  │  # Start port-forward (use 4001 to avoid conflict with FC on 4000)│"
+echo "  │  # Start port-forward (nginx on 8080)                              │"
 echo "  │  ssh ${SSH_USER}@${SSH_HOST} \\                             │"
 echo "  │    'kubectl -n ${NAMESPACE} port-forward \\                       │"
-echo "  │     svc/${SVC_NAME} 4001:4000 --address=0.0.0.0 &'               │"
+echo "  │     svc/${SVC_NAME} 8080:8080 --address=0.0.0.0 &'               │"
 echo "  │                                                                    │"
 echo "  │  # Health checks (from VPC)                                        │"
-echo "  │  curl http://${SSH_HOST}:4001/health/ready                      │"
-echo "  │  curl http://${SSH_HOST}:4001/health/live                       │"
+echo "  │  curl http://${SSH_HOST}:8080/health/ready                      │"
+echo "  │  curl http://${SSH_HOST}:8080/health/live                       │"
 echo "  │                                                                    │"
 echo "  │  # Logs                                                            │"
 echo "  │  ssh ${SSH_USER}@${SSH_HOST} \\                             │"
