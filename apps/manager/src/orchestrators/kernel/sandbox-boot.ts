@@ -333,9 +333,7 @@ function buildUrls(
   const sandboxDomain = config.domain.dashboard;
 
   return {
-    vscode: system
-      ? ""
-      : `https://vscode-${sandboxId}.${sandboxDomain}`,
+    vscode: system ? "" : `https://vscode-${sandboxId}.${sandboxDomain}`,
     opencode: `https://opencode-${sandboxId}.${sandboxDomain}`,
     ssh: "",
   };

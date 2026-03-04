@@ -1,0 +1,10 @@
+{{- if .Values.snapshots.createSnapshotClass }}
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: {{ include "atelier.fullname" . }}-snapshots
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+driver: {{ required "snapshots.driver is required when createSnapshotClass is true" .Values.snapshots.driver }}
+deletionPolicy: {{ .Values.snapshots.deletionPolicy | default "Delete" }}
+{{- end }}

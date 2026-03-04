@@ -501,6 +501,44 @@ export class KubeClient {
     }
   }
 
+  /**
+   * Check if the snapshot.storage.k8s.io API group is available
+   * (i.e. the CSI snapshot controller is installed).
+   */
+  async checkSnapshotApi(): Promise<boolean> {
+    if (isMock()) return false;
+    try {
+      await this.get("/apis/snapshot.storage.k8s.io/v1");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Check if a VolumeSnapshotClass exists.
+   * When `name` is provided, checks that specific class.
+   * Otherwise checks that at least one VolumeSnapshotClass exists.
+   */
+  async checkVolumeSnapshotClass(name?: string): Promise<boolean> {
+    if (isMock()) return false;
+    try {
+      if (name) {
+        await this.get(
+          `/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/${name}`,
+        );
+      } else {
+        const list = await this.list<{ items?: unknown[] }>(
+          "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses",
+        );
+        return (list.items?.length ?? 0) > 0;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async resourceExists(
     kind: string,
     name: string,

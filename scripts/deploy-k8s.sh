@@ -120,6 +120,14 @@ remote "kubectl get runtimeclass kata-clh >/dev/null 2>&1" \
        exit 1; }
 ok "kata-clh RuntimeClass"
 
+# Check for CSI snapshot controller (optional — prebuilds require it)
+if remote "kubectl get crd volumesnapshots.snapshot.storage.k8s.io >/dev/null 2>&1"; then
+  ok "CSI snapshot controller (prebuilds enabled)"
+else
+  warn "CSI snapshot controller not found — prebuilds will be disabled"
+  warn "To enable prebuilds, install the CSI snapshot controller and a CSI driver (e.g., TopoLVM)"
+fi
+
 # ── Step 1: Build Docker images ──────────────────────────────────────────────
 
 build_image() {

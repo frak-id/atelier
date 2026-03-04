@@ -268,6 +268,9 @@ export class PrebuildRunner {
         return;
       }
 
+      // Pre-flight: verify snapshot capability
+      await this.verifySnapshotCapability();
+
       // Step 1: Create temp PVC
       const volumeSize = config.kubernetes.defaultVolumeSize;
       log.info({ key, pvcName, volumeSize }, "Creating prebuild PVC");
@@ -602,6 +605,31 @@ export class PrebuildRunner {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  private async verifySnapshotCapability(): Promise<void> {
+    const hasApi = await this.deps.kubeClient.checkSnapshotApi();
+    if (!hasApi) {
+      throw new Error(
+        "Prebuilds require the CSI snapshot controller " +
+          "(snapshot.storage.k8s.io API not available). " +
+          "Install the snapshot controller and a VolumeSnapshotClass " +
+          "to enable prebuilds.",
+      );
+    }
+
+    const configuredClass = config.kubernetes.volumeSnapshotClass || undefined;
+    const hasClass =
+      await this.deps.kubeClient.checkVolumeSnapshotClass(configuredClass);
+    if (!hasClass) {
+      throw new Error(
+        configuredClass
+          ? `VolumeSnapshotClass '${configuredClass}' not found. ` +
+              "Prebuilds cannot proceed without a valid snapshot class."
+          : "No VolumeSnapshotClass found in the cluster. " +
+              "Create one for your CSI driver to enable prebuilds.",
+      );
+    }
+  }
 
   private requireWorkspace(
     scenario: Extract<PrebuildScenario, { kind: "workspace" }>,

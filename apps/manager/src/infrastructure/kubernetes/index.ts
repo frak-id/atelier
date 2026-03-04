@@ -19,9 +19,9 @@ export {
   buildOpenCodeIngress,
   buildPvc,
   buildSandboxPod,
-  buildVsCodeIngress,
   buildSandboxService,
   buildVolumeSnapshot,
+  buildVsCodeIngress,
   SHARED_BINARIES_MOUNT_PATH,
 } from "./kube.resources.ts";
 export type {

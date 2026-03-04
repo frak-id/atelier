@@ -32,3 +32,30 @@ cert-manager:
   Key required: {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.key }}
   {{- end }}
 {{- end }}
+
+Prebuilds (optional — requires CSI snapshot support):
+  Prebuilds use VolumeSnapshots to clone workspace filesystems instantly.
+  If snapshot.storage.k8s.io API is not detected, prebuilds are disabled.
+
+  Recommended setup for bare-metal (TopoLVM):
+    1. Install CSI snapshot controller CRDs + controller:
+         kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+         kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
+         kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+         kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
+         kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
+
+    2. Install TopoLVM (LVM thin provisioning + snapshots):
+         helm repo add topolvm https://topolvm.github.io/topolvm
+         helm install topolvm topolvm/topolvm \
+           --namespace topolvm-system --create-namespace
+
+    3. Enable snapshot class in this chart:
+         --set snapshots.createSnapshotClass=true \
+         --set snapshots.driver=topolvm.io
+
+    4. Set storage classes:
+         --set kubernetes.storageClass=topolvm-provisioner \
+         --set kubernetes.volumeSnapshotClass={{ include "atelier.fullname" . }}-snapshots
+
+  Verify: kubectl -n {{ include "atelier.sandboxNamespace" . }} get volumesnapshots

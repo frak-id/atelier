@@ -60,6 +60,17 @@ server:
   mcpToken: ""
 
 # -- Kubernetes settings (used by manager for sandbox orchestration)
+#
+# Prebuild prerequisites (optional — sandboxes work without prebuilds):
+#   1. CSI snapshot controller:
+#        kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
+#        kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
+#   2. A CSI driver with snapshot support (e.g., TopoLVM for bare-metal LVM thin provisioning):
+#        helm repo add topolvm https://topolvm.github.io/topolvm
+#        helm install topolvm topolvm/topolvm --namespace topolvm-system --create-namespace
+#   3. A VolumeSnapshotClass matching your CSI driver
+#
+# Without these, prebuilds are automatically disabled at startup.
 kubernetes:
   # Namespace for sandbox pods (created by this chart)
   namespace: atelier-sandboxes
@@ -186,6 +197,19 @@ certManager:
 kata:
   createRuntimeClass: false
   handler: kata-clh
+
+# -- Snapshot support (for workspace prebuilds)
+#
+# Prebuilds use CSI VolumeSnapshots to clone workspace filesystems instantly.
+# Set createSnapshotClass=true and provide a CSI driver name to have the chart
+# create a VolumeSnapshotClass automatically.
+snapshots:
+  # Create a VolumeSnapshotClass resource
+  createSnapshotClass: false
+  # CSI driver name (e.g., "topolvm.io", "ebs.csi.aws.com")
+  driver: ""
+  # Deletion policy: Delete or Retain
+  deletionPolicy: Delete
 
 # -- Sandbox secrets encryption key
 secrets:

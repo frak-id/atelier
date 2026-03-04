@@ -37,6 +37,7 @@ import {
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
+import { kubeClient } from "./infrastructure/kubernetes/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
@@ -236,7 +237,15 @@ app.get("/", () => ({
 
 await systemSandboxService.recoverFromRestart();
 
-setImmediate(() => {
+setImmediate(async () => {
+  const snapshotReady = await kubeClient.checkSnapshotApi();
+  if (!snapshotReady) {
+    logger.info(
+      "Snapshot API not available \u2014 skipping system prebuild. " +
+        "Install the CSI snapshot controller to enable prebuilds.",
+    );
+    return;
+  }
   prebuildRunner.ensureSystemPrebuild().catch((error) => {
     logger.warn({ err: error }, "System prebuild auto-build failed");
   });

@@ -119,10 +119,8 @@ export const devRoutes = new Elysia()
               config.domain.dashboard,
               {
                 ingressClassName:
-                  config.kubernetes.ingressClassName ||
-                  undefined,
-              tlsSecretName:
-                  "atelier-sandbox-wildcard-tls",
+                  config.kubernetes.ingressClassName || undefined,
+                tlsSecretName: "atelier-sandbox-wildcard-tls",
               },
             ),
           );

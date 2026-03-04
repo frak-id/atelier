@@ -21,6 +21,7 @@ export const HealthStatusSchema = t.Object({
     kubernetes: HealthCheckStatusSchema,
     kata: HealthCheckStatusSchema,
     registry: HealthCheckStatusSchema,
+    snapshots: HealthCheckStatusSchema,
   }),
 });
 export type HealthStatus = Static<typeof HealthStatusSchema>;

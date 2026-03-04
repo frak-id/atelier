@@ -31,10 +31,11 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
   .get(
     "/",
     async (): Promise<HealthStatus> => {
-      const [kubernetes, kata, registry] = await Promise.all([
+      const [kubernetes, kata, registry, snapshots] = await Promise.all([
         kubeClient.checkApiHealth(),
         kubeClient.checkRuntimeClass(),
         checkZotHealth(),
+        kubeClient.checkSnapshotApi(),
       ]);
 
       const allHealthy = kubernetes && kata && registry;
@@ -47,6 +48,7 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
           kubernetes: kubernetes ? "ok" : "error",
           kata: kata ? "ok" : "error",
           registry: registry ? "ok" : "error",
+          snapshots: snapshots ? "ok" : "error",
         },
       };
     },
