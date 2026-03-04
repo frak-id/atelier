@@ -5,36 +5,26 @@ import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { appPaths } from "../../shared/lib/paths.ts";
 import { CronService } from "../cron/index.ts";
-import { kubeClient } from "../kubernetes/index.ts";
-import {
-  buildConfigMap,
-  buildVerdaccioPod,
-  buildVerdaccioService,
-} from "../kubernetes/kube.resources.ts";
 
 const log = createChildLogger("registry");
 
 // ---------------------------------------------------------------------------
-// K8s resource names
+// K8s resource names (Verdaccio is deployed by the Helm chart)
 // ---------------------------------------------------------------------------
 
-const POD_NAME = "verdaccio";
 const SERVICE_NAME = "verdaccio";
-const CONFIGMAP_NAME = "verdaccio-config";
 
 // ---------------------------------------------------------------------------
-// Settings persistence (local JSON — simple, survives pod restarts)
+// Settings persistence (local JSON — eviction config only)
 // ---------------------------------------------------------------------------
 
 const SETTINGS_FILE = () => path.join(appPaths.data, "registry-settings.json");
 
 export interface RegistrySettings {
-  enabled: boolean;
   evictionDays: number;
 }
 
 const DEFAULT_SETTINGS: RegistrySettings = {
-  enabled: false,
   evictionDays: REGISTRY.EVICTION_DAYS,
 };
 
@@ -63,7 +53,7 @@ function saveSettings(settings: RegistrySettings): void {
 }
 
 // ---------------------------------------------------------------------------
-// Verdaccio K8s helpers
+// Verdaccio URL helper
 // ---------------------------------------------------------------------------
 
 function namespace(): string {
@@ -75,143 +65,22 @@ function verdaccioUrl(): string {
   return `http://${SERVICE_NAME}.${namespace()}.svc:${port}`;
 }
 
-/** Build Verdaccio config.yaml content for the ConfigMap. */
-function buildVerdaccioConfigYaml(): string {
-  const port = config.advanced.server.verdaccio.port;
-  return [
-    "storage: /verdaccio/storage/packages",
-    "",
-    "auth:",
-    "  htpasswd:",
-    "    file: /verdaccio/storage/htpasswd",
-    "    max_users: 1000",
-    "",
-    "uplinks:",
-    "  npmjs:",
-    "    url: https://registry.npmjs.org/",
-    "    cache: true",
-    "    maxage: 30m",
-    "    fail_timeout: 5m",
-    "    timeout: 30s",
-    "",
-    "packages:",
-    '  "@*/*":',
-    "    access: $all",
-    "    proxy: npmjs",
-    '  "**":',
-    "    access: $all",
-    "    proxy: npmjs",
-    "",
-    "server:",
-    "  keepAliveTimeout: 60",
-    "",
-    `listen: 0.0.0.0:${port}`,
-    "",
-    "log:",
-    "  type: stdout",
-    "  format: pretty",
-    "  level: warn",
-    "",
-    "max_body_size: 500mb",
-  ].join("\n");
-}
-
 // ---------------------------------------------------------------------------
-// Service
+// Service (thin HTTP client — lifecycle managed by Helm chart)
 // ---------------------------------------------------------------------------
 
 export const RegistryService = {
-  async initialize(): Promise<void> {
+  initialize(): void {
     state.settings = loadSettings();
-
-    if (state.settings.enabled) {
-      log.info("Registry enabled, starting on boot");
-      await this.start().catch((err) => {
-        log.error({ err }, "Failed to start registry on boot");
-      });
-    }
-  },
-
-  // -- Lifecycle ------------------------------------------------------------
-
-  async start(): Promise<void> {
-    if (isMock()) {
-      log.info("Mock: Registry start skipped");
-      state.settings.enabled = true;
-      saveSettings(state.settings);
-      return;
-    }
-
-    const ns = namespace();
-    const labels = { "atelier.dev/component": "registry" };
-
-    // 1. ConfigMap with Verdaccio config
-    const configYaml = buildVerdaccioConfigYaml();
-    await kubeClient.createResource(
-      buildConfigMap(CONFIGMAP_NAME, { "config.yaml": configYaml }, ns, labels),
-      ns,
-    );
-
-    // 2. Pod
-    await kubeClient.createResource(buildVerdaccioPod(ns), ns);
-
-    // 3. Service
-    await kubeClient.createResource(buildVerdaccioService(ns), ns);
-
-    // 4. Wait for health (120s — cold image pull can take a while)
-    log.info("Waiting for Verdaccio pod to become healthy…");
-    const healthy = await this.waitForHealthy(120_000);
-    if (!healthy) {
-      await this.deleteResources();
-      throw new Error("Verdaccio pod failed to become healthy within 120 s");
-    }
-
-    state.settings.enabled = true;
-    saveSettings(state.settings);
     this.registerEvictionCron();
-
-    log.info("Registry started successfully");
-  },
-
-  async stop(): Promise<void> {
-    if (isMock()) {
-      log.info("Mock: Registry stop");
-      state.settings.enabled = false;
-      saveSettings(state.settings);
-      return;
-    }
-
-    await this.deleteResources();
-
-    state.settings.enabled = false;
-    saveSettings(state.settings);
-
-    log.info("Registry stopped");
-  },
-
-  kill(): void {
-    // In K8s mode the pod is managed externally — nothing to force-close.
-  },
-
-  /** Delete all K8s resources created by start(). */
-  async deleteResources(): Promise<void> {
-    const ns = namespace();
-    try {
-      await kubeClient.deleteResource("Pod", POD_NAME, ns);
-    } catch {}
-    try {
-      await kubeClient.deleteResource("Service", SERVICE_NAME, ns);
-    } catch {}
-    try {
-      await kubeClient.deleteResource("ConfigMap", CONFIGMAP_NAME, ns);
-    } catch {}
+    log.info("Registry service initialized (pod managed by Helm)");
   },
 
   // -- Settings -------------------------------------------------------------
 
-  async updateSettings(
+  updateSettings(
     update: Partial<Pick<RegistrySettings, "evictionDays">>,
-  ): Promise<RegistrySettings> {
+  ): RegistrySettings {
     if (update.evictionDays !== undefined) {
       state.settings.evictionDays = update.evictionDays;
     }
@@ -223,14 +92,10 @@ export const RegistryService = {
     return { ...state.settings };
   },
 
-  isRunning(): boolean {
-    return state.settings.enabled;
-  },
-
   // -- Health ---------------------------------------------------------------
 
   async checkHealth(): Promise<boolean> {
-    if (isMock()) return state.settings.enabled;
+    if (isMock()) return true;
     try {
       const res = await fetch(`${verdaccioUrl()}/-/ping`, {
         signal: AbortSignal.timeout(3000),
@@ -241,19 +106,10 @@ export const RegistryService = {
     }
   },
 
-  async waitForHealthy(timeoutMs: number): Promise<boolean> {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (await this.checkHealth()) return true;
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    return false;
-  },
-
   // -- Stats (via Verdaccio HTTP API) ---------------------------------------
 
   async getPackageCount(): Promise<number> {
-    if (isMock()) return state.settings.enabled ? 42 : 0;
+    if (isMock()) return 42;
     try {
       const res = await fetch(`${verdaccioUrl()}/-/v1/search?text=&size=250`, {
         signal: AbortSignal.timeout(5000),
@@ -288,7 +144,6 @@ export const RegistryService = {
     ]);
 
     return {
-      enabled: state.settings.enabled,
       online,
       packageCount,
       uplink: {

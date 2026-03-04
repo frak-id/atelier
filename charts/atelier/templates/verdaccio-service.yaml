@@ -1,0 +1,22 @@
+{{- if .Values.verdaccio.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: verdaccio
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: verdaccio
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: verdaccio
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.advanced.server.verdaccio.port }}
+      targetPort: http
+{{- end }}

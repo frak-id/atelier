@@ -153,51 +153,6 @@ export class InternalService {
     }
   }
 
-  async syncRegistryToSandboxes(enabled: boolean): Promise<{ synced: number }> {
-    const runningSandboxes = this.sandboxService
-      .getAll()
-      .filter((s) => s.status === "running");
-    if (runningSandboxes.length === 0) return { synced: 0 };
-
-    const sandboxIds = runningSandboxes.map((s) => s.id);
-
-    if (enabled) {
-      for (const sandboxId of sandboxIds) {
-        await this.pushRegistryConfig(sandboxId);
-      }
-    } else {
-      const commands = [
-        {
-          id: "registry-remove",
-          command: `rm -f /etc/profile.d/registry.sh /etc/npmrc ${VM.HOME}/.bunfig.toml ${VM.HOME}/.yarnrc.yml`,
-          timeout: 5000,
-        },
-      ];
-
-      const results = await Promise.allSettled(
-        sandboxIds.map((sandboxId) =>
-          this.agentClient.batchExec(sandboxId, commands, {
-            timeout: 10000,
-          }),
-        ),
-      );
-
-      const failures = results.filter((r) => r.status === "rejected");
-      if (failures.length > 0) {
-        log.warn(
-          { failures: failures.length, total: results.length },
-          "Some registry config removals failed",
-        );
-      }
-    }
-
-    log.info(
-      { enabled, sandboxes: sandboxIds.length },
-      "Registry sync to sandboxes complete",
-    );
-    return { synced: sandboxIds.length };
-  }
-
   private getVmPathForConfig(configPath: string): string | null {
     if (configPath.startsWith("~/")) {
       return `${VM.HOME}/${configPath.slice(2)}`;
@@ -252,8 +207,8 @@ export class InternalService {
   }
 
   private async pushRegistryConfig(sandboxId: string): Promise<void> {
-    const settings = RegistryService.getSettings();
-    if (!settings.enabled) return;
+    const isHealthy = await RegistryService.checkHealth();
+    if (!isHealthy) return;
 
     const registryUrl = RegistryService.getRegistryUrl();
     const registryHost = new URL(registryUrl).hostname;

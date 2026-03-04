@@ -125,6 +125,24 @@ zot:
       memory: "512Mi"
       cpu: "500m"
 
+# -- Verdaccio npm registry cache (shared across sandboxes)
+verdaccio:
+  enabled: true
+  image:
+    repository: verdaccio/verdaccio
+    tag: "6"
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
 # -- cert-manager integration
 certManager:
   enabled: true

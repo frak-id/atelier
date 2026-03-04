@@ -107,10 +107,6 @@ export const KubernetesConfigSchema = Type.Object(
     registryUrl: Type.String({
       default: "zot.atelier-system.svc:5000",
     }),
-    /** Verdaccio container image for the npm registry pod */
-    verdaccioImage: Type.String({
-      default: "verdaccio/verdaccio:6",
-    }),
     /**
      * StorageClass for sandbox PVCs.
      * Recommend LVM thin provisioning (e.g. openebs-lvmpv) for
@@ -335,7 +331,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_KUBECONFIG: "kubernetes.kubeconfig",
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
-  ATELIER_K8S_VERDACCIO_IMAGE: "kubernetes.verdaccioImage",
   ATELIER_K8S_STORAGE_CLASS: "kubernetes.storageClass",
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
   ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",

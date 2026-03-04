@@ -1,20 +1,10 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  Package,
-  Play,
-  Power,
-  RefreshCw,
-  Save,
-  Server,
-  Trash2,
-} from "lucide-react";
+import { Package, Play, Save, Server, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
   registryStatusQuery,
   systemStatsQuery,
-  useDisableRegistry,
-  useEnableRegistry,
   usePurgeRegistryCache,
   useRunRegistryEviction,
   useUpdateRegistrySettings,
@@ -51,8 +41,6 @@ function SystemPage() {
   const { data: stats } = useSuspenseQuery(systemStatsQuery);
   const { data: registry } = useQuery(registryStatusQuery);
 
-  const enableRegistry = useEnableRegistry();
-  const disableRegistry = useDisableRegistry();
   const updateRegistrySettings = useUpdateRegistrySettings();
   const purgeRegistryCache = usePurgeRegistryCache();
   const runRegistryEviction = useRunRegistryEviction();
@@ -116,59 +104,14 @@ function SystemPage() {
           <CardContent className="space-y-4">
             {registry ? (
               <>
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">Status</span>
-                    <Badge
-                      variant={
-                        registry.enabled
-                          ? registry.online
-                            ? "success"
-                            : "warning"
-                          : "secondary"
-                      }
-                    >
-                      {registry.enabled
-                        ? registry.online
-                          ? "Online"
-                          : "Starting..."
-                        : "Disabled"}
-                    </Badge>
-                  </div>
-                  {registry.enabled ? (
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={disableRegistry.isPending}
-                      onClick={() =>
-                        confirm("Disable registry cache?") &&
-                        disableRegistry.mutate()
-                      }
-                    >
-                      {disableRegistry.isPending ? (
-                        <RefreshCw className="h-3 w-3 animate-spin mr-2" />
-                      ) : (
-                        <Power className="h-3 w-3 mr-2" />
-                      )}
-                      Disable
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      disabled={enableRegistry.isPending}
-                      onClick={() => enableRegistry.mutate()}
-                    >
-                      {enableRegistry.isPending ? (
-                        <RefreshCw className="h-3 w-3 animate-spin mr-2" />
-                      ) : (
-                        <Power className="h-3 w-3 mr-2" />
-                      )}
-                      Enable
-                    </Button>
-                  )}
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Status</span>
+                  <Badge variant={registry.online ? "success" : "destructive"}>
+                    {registry.online ? "Online" : "Offline"}
+                  </Badge>
                 </div>
 
-                {registry.enabled && (
+                {registry.online ? (
                   <>
                     <div className="grid grid-cols-1 gap-4 pt-2">
                       <div>
@@ -208,7 +151,9 @@ function SystemPage() {
                             }
                             onClick={() => {
                               if (evictionDays !== undefined) {
-                                updateRegistrySettings.mutate({ evictionDays });
+                                updateRegistrySettings.mutate({
+                                  evictionDays,
+                                });
                                 setEvictionDays(undefined);
                               }
                             }}
@@ -258,6 +203,10 @@ function SystemPage() {
                       </Button>
                     </div>
                   </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Registry is unreachable
+                  </p>
                 )}
               </>
             ) : (

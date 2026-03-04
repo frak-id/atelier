@@ -132,7 +132,7 @@ const app = new Elysia()
       }
     }
 
-    await RegistryService.initialize();
+    RegistryService.initialize();
     await SharedBinariesService.initialize(kubeClient);
   })
   .use(

@@ -1,0 +1,49 @@
+{{- if .Values.verdaccio.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: verdaccio-config
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: verdaccio
+data:
+  config.yaml: |
+    storage: /verdaccio/storage/packages
+
+    auth:
+      htpasswd:
+        file: /verdaccio/storage/htpasswd
+        max_users: 1000
+
+    uplinks:
+      npmjs:
+        url: https://registry.npmjs.org/
+        cache: true
+        maxage: 30m
+        fail_timeout: 5m
+        timeout: 30s
+
+    packages:
+      "@*/*":
+        access: $all
+        proxy: npmjs
+      "**":
+        access: $all
+        proxy: npmjs
+
+    server:
+      keepAliveTimeout: 60
+
+    listen: 0.0.0.0:{{ .Values.advanced.server.verdaccio.port }}
+
+    log:
+      type: stdout
+      format: pretty
+      level: warn
+
+    max_body_size: 500mb
+{{- end }}

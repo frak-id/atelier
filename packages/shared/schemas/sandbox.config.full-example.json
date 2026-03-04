@@ -35,7 +35,6 @@
     "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
     "runtimeClass": "kata-clh",
     "registryUrl": "zot.atelier-system.svc:5000",
-    "verdaccioImage": "verdaccio/verdaccio:6",
     "storageClass": "",
     "volumeSnapshotClass": "",
     "defaultVolumeSize": "10Gi"

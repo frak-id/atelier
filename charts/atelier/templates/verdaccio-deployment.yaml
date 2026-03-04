@@ -1,0 +1,58 @@
+{{- if .Values.verdaccio.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verdaccio
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: verdaccio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: verdaccio
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: verdaccio
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: verdaccio
+          image: {{ printf "%s:%s" .Values.verdaccio.image.repository .Values.verdaccio.image.tag }}
+          imagePullPolicy: {{ .Values.verdaccio.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.advanced.server.verdaccio.port }}
+          readinessProbe:
+            httpGet:
+              path: /-/ping
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/ping
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.verdaccio.resources | nindent 12 }}
+          volumeMounts:
+            - name: verdaccio-config
+              mountPath: /verdaccio/conf
+            - name: verdaccio-storage
+              mountPath: /verdaccio/storage
+      volumes:
+        - name: verdaccio-config
+          configMap:
+            name: verdaccio-config
+        - name: verdaccio-storage
+          persistentVolumeClaim:
+            claimName: verdaccio-data
+{{- end }}

@@ -1,0 +1,21 @@
+{{- if .Values.verdaccio.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: verdaccio-data
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "atelier.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.verdaccio.persistence.storageClass }}
+  storageClassName: {{ .Values.verdaccio.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.verdaccio.persistence.size }}
+{{- end }}

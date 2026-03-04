@@ -81,6 +81,13 @@ zot:
     size: 50Gi
     # storageClass: "local-path"
 
+# -- Verdaccio npm registry cache
+verdaccio:
+  enabled: true
+  persistence:
+    size: 20Gi
+    # storageClass: "local-path"
+
 # -- cert-manager (wildcard certs via Cloudflare DNS-01)
 certManager:
   enabled: true

@@ -71,12 +71,11 @@ export class BaseImageBuilder {
     const destination = `${registryUrl}/${imageId}:latest`;
 
     /* ── 1. Collect all build context files ──────────────── */
-    const contextFiles = await this.collectContextFiles(image.path);
-
-    log.info(
-      { imageId, files: Object.keys(contextFiles).length },
-      "Collected build context files",
+    const { data: contextData, items } = await this.collectContextFiles(
+      image.path,
     );
+
+    log.info({ imageId, files: items.length }, "Collected build context files");
 
     /* ── 2. Create ConfigMap with items[].path mapping ──── */
     const labels = {
@@ -85,15 +84,10 @@ export class BaseImageBuilder {
     };
     const configMap = buildConfigMap(
       configMapName,
-      contextFiles,
+      contextData,
       namespace,
       labels,
     );
-
-    const items = Object.keys(contextFiles).map((key) => ({
-      key,
-      path: key,
-    }));
 
     await this.kubeClient.createResource(configMap, namespace);
     log.info({ configMapName, namespace }, "Created build context ConfigMap");
@@ -194,11 +188,19 @@ export class BaseImageBuilder {
     return results;
   }
 
-  /** Rewrite FROM atelier/* → FROM {registryUrl}/* for Zot-internal refs. */
-  private async collectContextFiles(
-    imagePath: string,
-  ): Promise<Record<string, string>> {
-    const files: Record<string, string> = {};
+  /**
+   * Collect build context files and encode paths for ConfigMap compatibility.
+   * ConfigMap keys cannot contain '/' — we encode them and use items[].path
+   * to restore the original directory structure when mounted.
+   *
+   * Also rewrites FROM atelier/* → FROM {registryUrl}/* for Zot-internal refs.
+   */
+  private async collectContextFiles(imagePath: string): Promise<{
+    data: Record<string, string>;
+    items: Array<{ key: string; path: string }>;
+  }> {
+    const data: Record<string, string> = {};
+    const items: Array<{ key: string; path: string }> = [];
     const registryUrl = config.kubernetes.registryUrl;
 
     const walk = async (dir: string) => {
@@ -227,13 +229,16 @@ export class BaseImageBuilder {
             );
           }
 
-          files[relPath] = content;
+          // ConfigMap keys must match [-._a-zA-Z0-9]+
+          const encodedKey = relPath.replaceAll("/", "__");
+          data[encodedKey] = content;
+          items.push({ key: encodedKey, path: relPath });
         }
       }
     };
 
     await walk(imagePath);
-    return files;
+    return { data, items };
   }
 
   private async resolveJobStatus(build: BuildState): Promise<ImageBuildStatus> {

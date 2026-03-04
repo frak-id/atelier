@@ -373,26 +373,6 @@ export const registryStatusQuery = queryOptions({
   queryFn: async () => unwrap(await api.api.registry.get()),
 });
 
-export function useEnableRegistry() {
-  return useMutation({
-    mutationKey: ["registry", "enable"],
-    mutationFn: async () => unwrap(await api.api.registry.enable.post({})),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
-    },
-  });
-}
-
-export function useDisableRegistry() {
-  return useMutation({
-    mutationKey: ["registry", "disable"],
-    mutationFn: async () => unwrap(await api.api.registry.disable.post({})),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
-    },
-  });
-}
-
 export function useUpdateRegistrySettings() {
   return useMutation({
     mutationKey: ["registry", "settings"],
