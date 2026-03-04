@@ -368,7 +368,6 @@ export type BaseImageBuildJobOptions = {
   configMapName: string;
   configMapItems?: Array<{ key: string; path: string }>;
   destinationImage: string;
-  agentBinaryPath: string;
   namespace?: string;
   buildArgs?: Record<string, string>;
 };
@@ -419,17 +418,12 @@ export function buildBaseImageBuildJob(
               command: [
                 "sh",
                 "-c",
-                "cp -r /config/* /workspace/ && cp /agent-bin/sandbox-agent /workspace/sandbox-agent && chmod +x /workspace/sandbox-agent",
+                "cp -r /config/* /workspace/",
               ],
               volumeMounts: [
                 {
                   name: "config",
                   mountPath: "/config",
-                  readOnly: true,
-                },
-                {
-                  name: "agent-bin",
-                  mountPath: "/agent-bin",
                   readOnly: true,
                 },
                 {
@@ -458,13 +452,6 @@ export function buildBaseImageBuildJob(
               configMap: {
                 name: options.configMapName,
                 items: options.configMapItems,
-              },
-            },
-            {
-              name: "agent-bin",
-              hostPath: {
-                path: options.agentBinaryPath,
-                type: "Directory",
               },
             },
             {

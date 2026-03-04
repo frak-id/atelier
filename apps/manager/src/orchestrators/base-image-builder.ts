@@ -104,7 +104,6 @@ export class BaseImageBuilder {
       configMapName,
       configMapItems: items,
       destinationImage: destination,
-      agentBinaryPath: imagesDir,
       namespace,
     });
 
@@ -221,6 +220,10 @@ export class BaseImageBuilder {
             content = content.replace(
               /^FROM\s+atelier\/([^:\s]+)/gm,
               `FROM ${registryUrl}/$1`,
+            );
+            content = content.replace(
+              /--from=atelier\/([^:\s]+)/g,
+              `--from=${registryUrl}/$1`,
             );
           }
 

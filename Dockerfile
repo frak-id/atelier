@@ -65,10 +65,6 @@ COPY apps/manager/drizzle ./drizzle
 # Base image definitions (image.json + Dockerfile for dev-base, dev-cloud)
 COPY infra/images ./images
 
-# Pre-compiled sandbox-agent binary (Rust, static-linked, ~1.4MB)
-# Served via /internal/agent-binary for Kaniko base image builds
-COPY apps/agent-rust/dist/sandbox-agent ./agent-binary/sandbox-agent
-
 # Runtime environment
 ENV NODE_ENV=production \
     ATELIER_SERVER_MODE=production \
@@ -86,6 +82,11 @@ CMD ["bun", "server.js"]
 # ── Target: dashboard (nginx sidecar) ────────────────────────────────────
 FROM nginx:alpine AS dashboard
 
+# Pod runs as UID 1000 (non-root). Pre-create writable dirs for nginx
+# and redirect PID file to /tmp (K8s mounts /run as root-owned tmpfs).
+RUN mkdir -p /var/cache/nginx /tmp && \
+    chown -R 1000:1000 /var/cache/nginx && \
+    sed -i 's|/run/nginx.pid|/tmp/nginx.pid|g' /etc/nginx/nginx.conf
 
 RUN rm /etc/nginx/conf.d/default.conf
 

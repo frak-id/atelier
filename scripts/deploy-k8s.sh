@@ -38,6 +38,7 @@ SSH_KEY_PASSPHRASE="${SSH_KEY_PASSPHRASE:-}"
 
 MANAGER_IMAGE_REPO="${IMAGE_REPO:-ghcr.io/frak-id/atelier-manager}"
 DASHBOARD_IMAGE_REPO="${DASHBOARD_IMAGE_REPO:-ghcr.io/frak-id/atelier-dashboard}"
+AGENT_IMAGE_REPO="${AGENT_IMAGE_REPO:-ghcr.io/frak-id/sandbox-agent}"
 IMAGE_TAG="${IMAGE_TAG:-dev-$(git rev-parse --short HEAD)}"
 
 RELEASE_NAME="${RELEASE_NAME:-atelier}"
@@ -52,6 +53,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REMOTE_DIR="/tmp/atelier-helm-deploy"
 MANAGER_IMAGE="${MANAGER_IMAGE_REPO}:${IMAGE_TAG}"
 DASHBOARD_IMAGE="${DASHBOARD_IMAGE_REPO}:${IMAGE_TAG}"
+AGENT_IMAGE="${AGENT_IMAGE_REPO}:${IMAGE_TAG}"
 
 # ── SSH setup ────────────────────────────────────────────────────────────────
 
@@ -134,6 +136,19 @@ if [[ -z "$SKIP_BUILD" ]]; then
   build_image manager "${MANAGER_IMAGE}"
   build_image dashboard "${DASHBOARD_IMAGE}"
 
+  info "Building agent: ${AGENT_IMAGE} (linux/amd64)"
+  if docker buildx version >/dev/null 2>&1; then
+    docker buildx build \
+      --platform linux/amd64 \
+      -t "${AGENT_IMAGE}" \
+      --load \
+      -f "${REPO_ROOT}/apps/agent-rust/Dockerfile" \
+      "${REPO_ROOT}/apps/agent-rust"
+  else
+    docker build -t "${AGENT_IMAGE}" -f "${REPO_ROOT}/apps/agent-rust/Dockerfile" "${REPO_ROOT}/apps/agent-rust"
+  fi
+  ok "Agent image built"
+
   # ── Step 2: Push to GHCR ─────────────────────────────────────────────────
 
   info "Pushing to GHCR"
@@ -153,6 +168,9 @@ if [[ -z "$SKIP_BUILD" ]]; then
   fi
   ok "Pushed ${DASHBOARD_IMAGE}"
 
+  docker push "${AGENT_IMAGE}" 2>/dev/null || warn "Could not push agent image to GHCR (non-fatal)"
+  ok "Pushed ${AGENT_IMAGE}"
+
   # ── Step 3: Import into k3s containerd ───────────────────────────────────
 
   info "Importing images into k3s containerd"
@@ -162,6 +180,9 @@ if [[ -z "$SKIP_BUILD" ]]; then
 
   docker save "${DASHBOARD_IMAGE}" | remote 'k3s ctr -n k8s.io images import -'
   ok "Dashboard image imported"
+
+  docker save "${AGENT_IMAGE}" | remote 'k3s ctr -n k8s.io images import -'
+  ok "Agent image imported"
 else
   info "Skipping image build (SKIP_BUILD=1)"
 fi
@@ -229,6 +250,18 @@ ok "Manager pod is running"
 echo ""
 remote "kubectl -n ${NAMESPACE} get pods"
 
+# ── Step 7: Sync agent image to Zot (for Kaniko base image builds) ────────
+
+if [[ -z "$SKIP_BUILD" ]]; then
+  info "Pushing agent image to Zot registry"
+  ZOT_IP=$(remote "kubectl get svc -n ${NAMESPACE} zot -o jsonpath='{.spec.clusterIP}'")
+  if [[ -n "$ZOT_IP" ]]; then
+    remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:5000/sandbox-agent:latest 2>/dev/null || true"
+    remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:5000/sandbox-agent:latest 2>&1" && ok "Agent image pushed to Zot" || warn "Could not push agent to Zot (non-fatal)"
+  else
+    warn "Zot service not found — skipping agent sync"
+  fi
+fi
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 SVC_NAME="${RELEASE_NAME}-atelier-manager"
