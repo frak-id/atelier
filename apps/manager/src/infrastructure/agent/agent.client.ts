@@ -113,7 +113,7 @@ export class AgentClient {
   async waitForAgent(
     sandboxId: string,
     options: { timeout?: number } = {},
-  ): Promise<boolean> {
+  ): Promise<{ ready: boolean; podIp: string | null }> {
     const timeout = options.timeout ?? 60000;
     const deadline = Date.now() + timeout;
     const podName = `sandbox-${sandboxId}`;
@@ -122,7 +122,7 @@ export class AgentClient {
       try {
         const ip = await this.kube.getPodIp(podName);
         if (!ip) {
-          await Bun.sleep(500);
+          await Bun.sleep(200);
           continue;
         }
 
@@ -132,17 +132,17 @@ export class AgentClient {
         if (response.ok) {
           const health = (await response.json()) as AgentHealth;
           if (health.status === "healthy") {
-            log.info({ sandboxId }, "Agent is healthy");
-            return true;
+            log.info({ sandboxId, podIp: ip }, "Agent is healthy");
+            return { ready: true, podIp: ip };
           }
         }
       } catch {}
 
-      await Bun.sleep(500);
+      await Bun.sleep(200);
     }
 
     log.warn({ sandboxId, timeout }, "Agent did not become healthy in time");
-    return false;
+    return { ready: false, podIp: null };
   }
 
   async writeFiles(

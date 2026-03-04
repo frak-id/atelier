@@ -51,6 +51,18 @@ export type KanikoJobOptions = {
   serviceAccountName?: string;
 };
 
+/**
+ * Sanitize a string for use as a K8s label value.
+ * Labels must start/end with alphanumeric and contain only [a-zA-Z0-9._-].
+ */
+function sanitizeLabelValue(value: string): string {
+  return value
+    .replace(/[^a-zA-Z0-9._-]/g, "")
+    .replace(/^[^a-zA-Z0-9]+/, "")
+    .replace(/[^a-zA-Z0-9]+$/, "")
+    .slice(0, 63);
+}
+
 function sandboxLabels(sandboxId: string, workspaceId?: string) {
   const labels: Record<string, string> = {
     "atelier.dev/component": "sandbox",
@@ -58,7 +70,7 @@ function sandboxLabels(sandboxId: string, workspaceId?: string) {
   };
 
   if (workspaceId) {
-    labels["atelier.dev/workspace"] = workspaceId;
+    labels["atelier.dev/workspace"] = sanitizeLabelValue(workspaceId);
   }
 
   return labels;

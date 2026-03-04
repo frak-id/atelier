@@ -317,17 +317,11 @@ export class PrebuildRunner {
       );
 
       // Step 3: Wait for pod + agent ready
-      const podReady = await this.deps.kubeClient.waitForPodReady(
-        `sandbox-${sandboxId}`,
-        { timeout: POD_TIMEOUT_MS, namespace },
-      );
-      if (!podReady) {
-        throw new Error(`Prebuild pod ${podName} did not become ready`);
-      }
-
-      const agentReady = await this.deps.agentClient.waitForAgent(sandboxId, {
-        timeout: AGENT_TIMEOUT_MS,
-      });
+      // Single wait: agent health check implies pod is ready and has an IP
+      const { ready: agentReady } =
+        await this.deps.agentClient.waitForAgent(sandboxId, {
+          timeout: AGENT_TIMEOUT_MS,
+        });
       if (!agentReady) {
         throw new Error(`Agent in prebuild pod ${podName} did not start`);
       }

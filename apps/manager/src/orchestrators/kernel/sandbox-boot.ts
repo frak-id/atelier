@@ -14,7 +14,6 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 import { buildSandboxConfig } from "../sandbox-config.ts";
-import { waitForPodIp } from "./boot-waiter.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
@@ -153,23 +152,18 @@ export async function bootNewSandbox(
       ),
     ]);
 
-    const podReady = await kubeClient.waitForPodReady(podName, {
-      timeout: 120_000,
-    });
-    if (!podReady) {
-      throw new Error(`Sandbox pod ${podName} did not become ready`);
+    // Single wait: agent health check implies pod is ready and has an IP
+    const { ready: agentReady, podIp } = await ports.agent.waitForAgent(
+      sandboxId,
+      { timeout: 120_000 },
+    );
+    if (!agentReady) {
+      throw new Error(
+        `Sandbox pod ${podName} agent did not become ready`,
+      );
     }
-
-    const podIp = await waitForPodIp(kubeClient, podName, 60_000);
     if (podIp) {
       sandbox.runtime.ipAddress = podIp;
-    }
-
-    const agentReady = await ports.agent.waitForAgent(sandboxId, {
-      timeout: 60_000,
-    });
-    if (!agentReady) {
-      log.warn({ sandboxId }, "Agent did not become ready");
     }
 
     return { sandbox, podName, pvcName, usedPrebuild };
@@ -247,23 +241,18 @@ export async function bootExistingSandbox(
     ),
   ]);
 
-  const podReady = await kubeClient.waitForPodReady(podName, {
-    timeout: 120_000,
-  });
-  if (!podReady) {
-    throw new Error(`Sandbox pod ${podName} did not become ready`);
+  // Single wait: agent health check implies pod is ready and has an IP
+  const { ready: agentReady, podIp } = await ports.agent.waitForAgent(
+    sandboxId,
+    { timeout: 120_000 },
+  );
+  if (!agentReady) {
+    throw new Error(
+      `Sandbox pod ${podName} agent did not become ready after restart`,
+    );
   }
-
-  const podIp = await waitForPodIp(kubeClient, podName, 60_000);
   if (podIp) {
     sandbox.runtime.ipAddress = podIp;
-  }
-
-  const agentReady = await ports.agent.waitForAgent(sandboxId, {
-    timeout: 60_000,
-  });
-  if (!agentReady) {
-    log.warn({ sandboxId }, "Agent did not become ready after restart");
   }
 
   return { podName, agentReady };
