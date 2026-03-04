@@ -107,6 +107,8 @@ spec:
                   name: {{ include "atelier.fullname" . }}-manager-secret
                   key: ATELIER_SLACK_SIGNING_SECRET
             {{- end }}
+            - name: ATELIER_K8S_INGRESS_CLASS
+              value: {{ .Values.ingress.className | quote }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

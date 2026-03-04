@@ -138,7 +138,7 @@ export async function bootNewSandbox(
       kubeClient.createResource(buildSandboxService(sandboxId)),
       kubeClient.createResource(
         buildSandboxIngress(sandboxId, config.domain.dashboard, {
-          ingressClassName: "traefik",
+          ingressClassName: config.kubernetes.ingressClassName || undefined,
           tlsSecretName: "atelier-sandbox-wildcard-tls",
         }),
       ),

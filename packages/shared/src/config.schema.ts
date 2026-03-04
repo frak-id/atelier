@@ -103,6 +103,8 @@ export const KubernetesConfigSchema = Type.Object(
     kubeconfig: Type.String({ default: "/etc/rancher/k3s/k3s.yaml" }),
     /** Kata Containers runtime class name */
     runtimeClass: Type.String({ default: "kata-clh" }),
+    /** Ingress class name for dynamically created ingresses (e.g., traefik, nginx) */
+    ingressClassName: Type.String({ default: "" }),
     /** OCI registry hostname for sandbox and prebuild images (Zot) */
     registryUrl: Type.String({
       default: "zot.atelier-system.svc:5000",
@@ -324,6 +326,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_STORAGE_CLASS: "kubernetes.storageClass",
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
   ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",
+  ATELIER_K8S_INGRESS_CLASS: "kubernetes.ingressClassName",
 
   ATELIER_IMAGES_DIR: "sandbox.imagesDirectory",
   ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",

@@ -335,6 +335,9 @@ export class IntegrationGateway {
                 devCommand.port,
                 config.domain.dashboard,
                 {
+                  ingressClassName:
+                    config.kubernetes.ingressClassName ||
+                    undefined,
                   tlsSecretName:
                     "atelier-sandbox-wildcard-tls",
                 },
