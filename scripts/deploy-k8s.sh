@@ -4,27 +4,19 @@ set -euo pipefail
 # ─────────────────────────────────────────────────────────────────────────────
 # deploy-k8s.sh — Build, push, and deploy Atelier to a remote k3s server
 #
-# Builds the manager and dashboard Docker images (multi-target Dockerfile)
-# for linux/amd64, pushes to GHCR, imports into k3s containerd, copies the
-# Helm chart, and runs helm upgrade --install.
-#
-# Prerequisites:
-#   Local:  docker (with buildx), ssh, rsync
-#   Server: k3s, helm, kubectl
+# Prerequisites on the server:
+#   - k3s with helm
+#   - cert-manager (helm install cert-manager jetstack/cert-manager ...)
+#   - kata-deploy  (helm install kata-deploy kata-containers/kata-deploy)
 #
 # Usage:
-#   SSH_HOST=1.2.3.4 ./scripts/deploy-k8s.sh
-#
-#   # With a custom values file:
-#   SSH_HOST=1.2.3.4 VALUES_FILE=my-values.yaml ./scripts/deploy-k8s.sh
-#
-#   # With extra Helm --set flags:
-#   SSH_HOST=1.2.3.4 \
-#     HELM_SET="--set auth.github.clientId=xxx --set auth.github.clientSecret=yyy" \
-#     ./scripts/deploy-k8s.sh
+#   VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
 #
 #   # Skip image build (chart-only update):
-#   SSH_HOST=1.2.3.4 SKIP_BUILD=1 ./scripts/deploy-k8s.sh
+#   SKIP_BUILD=1 VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
+#
+#   # Restore a database backup after deploy:
+#   DB_RESTORE_PATH=/root/manager.db VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -47,6 +39,7 @@ NAMESPACE="${NAMESPACE:-atelier-system}"
 VALUES_FILE="${VALUES_FILE:-}"
 HELM_SET="${HELM_SET:-}"
 SKIP_BUILD="${SKIP_BUILD:-}"
+DB_RESTORE_PATH="${DB_RESTORE_PATH:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -62,15 +55,11 @@ ssh_opts=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 ssh_opts+=(-o ControlMaster=auto -o "ControlPath=${SSH_CONTROL_PATH}" -o ControlPersist=120)
 [[ -n "$SSH_KEY_PATH" ]] && ssh_opts+=(-i "$SSH_KEY_PATH")
 
-# If passphrase is provided, add the key to ssh-agent so all SSH-based
-# tools (ssh, rsync, docker-save-pipe) can use it without prompts.
 if [[ -n "$SSH_KEY_PASSPHRASE" && -n "$SSH_KEY_PATH" ]]; then
-  # Start agent if not already running
   if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
     eval "$(ssh-agent -s)" >/dev/null
     trap 'ssh-agent -k >/dev/null 2>&1; ssh -o "ControlPath=${SSH_CONTROL_PATH}" -O exit "${SSH_USER}@${SSH_HOST}" 2>/dev/null' EXIT
   fi
-  # Feed passphrase via SSH_ASKPASS (no sshpass dependency)
   _askpass="$(mktemp)"
   printf '#!/bin/sh\necho "%s"\n' "$SSH_KEY_PASSPHRASE" > "$_askpass"
   chmod +x "$_askpass"
@@ -110,6 +99,26 @@ ok "helm on server"
 
 remote "command -v kubectl >/dev/null 2>&1" || { err "kubectl not found on server"; exit 1; }
 ok "kubectl on server"
+
+# ── Prerequisites ────────────────────────────────────────────────────────────
+
+info "Checking prerequisites"
+
+remote "kubectl get crd certificates.cert-manager.io >/dev/null 2>&1" \
+  || { err "cert-manager is not installed. Install it first:"; \
+       echo "    helm repo add jetstack https://charts.jetstack.io"; \
+       echo "    helm install cert-manager jetstack/cert-manager \\"; \
+       echo "      --namespace cert-manager --create-namespace --set crds.enabled=true"; \
+       exit 1; }
+ok "cert-manager"
+
+remote "kubectl get runtimeclass kata-clh >/dev/null 2>&1" \
+  || { err "Kata Containers (kata-clh) not found. Install kata-deploy first:"; \
+       echo "    git clone --depth 1 https://github.com/kata-containers/kata-containers.git /tmp/kata-src"; \
+       echo "    helm install kata-deploy /tmp/kata-src/tools/packaging/kata-deploy/helm-chart/kata-deploy \\"; \
+       echo "      --set k8sDistribution=k3s --set env.createRuntimeClasses=true --set env.createDefaultRuntimeClass=true"; \
+       exit 1; }
+ok "kata-clh RuntimeClass"
 
 # ── Step 1: Build Docker images ──────────────────────────────────────────────
 
@@ -230,7 +239,41 @@ remote "${HELM_CMD}"
 
 ok "Helm release deployed"
 
-# ── Step 6: Wait and verify ─────────────────────────────────────────────────
+# ── Step 6: Configure k3s registries for Zot ────────────────────────────────
+
+info "Configuring k3s registries for Zot"
+
+ZOT_IP=$(remote "kubectl get svc -n ${NAMESPACE} zot -o jsonpath='{.spec.clusterIP}' 2>/dev/null" || echo "")
+
+if [[ -n "$ZOT_IP" ]]; then
+  NEW_REGISTRIES="mirrors:
+  \"zot.${NAMESPACE}.svc:5000\":
+    endpoint:
+      - \"http://${ZOT_IP}:5000\""
+
+  CURRENT_REGISTRIES=$(remote "cat /etc/rancher/k3s/registries.yaml 2>/dev/null" || echo "")
+
+  if [[ "$NEW_REGISTRIES" != "$CURRENT_REGISTRIES" ]]; then
+    remote "cat > /etc/rancher/k3s/registries.yaml << 'REGEOF'
+mirrors:
+  \"zot.${NAMESPACE}.svc:5000\":
+    endpoint:
+      - \"http://${ZOT_IP}:5000\"
+REGEOF"
+    ok "registries.yaml updated (Zot ClusterIP: ${ZOT_IP})"
+
+    info "Restarting k3s to apply registries config"
+    remote "systemctl restart k3s"
+    sleep 15
+    ok "k3s restarted"
+  else
+    ok "registries.yaml already up to date"
+  fi
+else
+  warn "Zot service not found — skipping registries config"
+fi
+
+# ── Step 7: Wait and verify ─────────────────────────────────────────────────
 
 info "Waiting for rollout"
 
@@ -250,11 +293,10 @@ ok "Manager pod is running"
 echo ""
 remote "kubectl -n ${NAMESPACE} get pods"
 
-# ── Step 7: Sync agent image to Zot (for Kaniko base image builds) ────────
+# ── Step 8: Sync agent image to Zot ──────────────────────────────────────────
 
 if [[ -z "$SKIP_BUILD" ]]; then
   info "Pushing agent image to Zot registry"
-  ZOT_IP=$(remote "kubectl get svc -n ${NAMESPACE} zot -o jsonpath='{.spec.clusterIP}'")
   if [[ -n "$ZOT_IP" ]]; then
     remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:5000/sandbox-agent:latest 2>/dev/null || true"
     remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:5000/sandbox-agent:latest 2>&1" && ok "Agent image pushed to Zot" || warn "Could not push agent to Zot (non-fatal)"
@@ -262,30 +304,38 @@ if [[ -z "$SKIP_BUILD" ]]; then
     warn "Zot service not found — skipping agent sync"
   fi
 fi
+
+# ── Step 9: Restore database backup (optional) ──────────────────────────────
+
+if [[ -n "$DB_RESTORE_PATH" ]]; then
+  info "Restoring database from ${DB_RESTORE_PATH}"
+
+  MANAGER_POD=$(remote "kubectl -n ${NAMESPACE} get pod -l app.kubernetes.io/component=manager -o jsonpath='{.items[0].metadata.name}'")
+
+  if [[ -n "$MANAGER_POD" ]]; then
+    remote "kubectl cp ${DB_RESTORE_PATH} ${NAMESPACE}/${MANAGER_POD}:/app/data/manager.db -c manager"
+    ok "Database copied to ${MANAGER_POD}:/app/data/manager.db"
+
+    remote "kubectl -n ${NAMESPACE} rollout restart deployment/${RELEASE_NAME}-atelier-manager"
+    remote "kubectl -n ${NAMESPACE} rollout status deployment/${RELEASE_NAME}-atelier-manager --timeout=60s"
+    ok "Manager restarted with restored database"
+  else
+    warn "Could not find manager pod — skipping DB restore"
+  fi
+fi
+
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 SVC_NAME="${RELEASE_NAME}-atelier-manager"
 
 info "Deployment complete!"
 echo ""
-echo "  ┌─ VPC testing ──────────────────────────────────────────────────────┐"
-echo "  │                                                                    │"
-echo "  │  # Start port-forward (nginx on 8080)                              │"
-echo "  │  ssh ${SSH_USER}@${SSH_HOST} \\                             │"
-echo "  │    'kubectl -n ${NAMESPACE} port-forward \\                       │"
-echo "  │     svc/${SVC_NAME} 8080:8080 --address=0.0.0.0 &'               │"
-echo "  │                                                                    │"
-echo "  │  # Health checks (from VPC)                                        │"
-echo "  │  curl http://${SSH_HOST}:8080/health/ready                      │"
-echo "  │  curl http://${SSH_HOST}:8080/health/live                       │"
-echo "  │                                                                    │"
-echo "  │  # Logs                                                            │"
-echo "  │  ssh ${SSH_USER}@${SSH_HOST} \\                             │"
-echo "  │    'kubectl -n ${NAMESPACE} logs -f deploy/${SVC_NAME}'            │"
-echo "  │                                                                    │"
-echo "  │  # Rollback (removes k8s deployment, FC untouched)                 │"
-echo "  │  ssh ${SSH_USER}@${SSH_HOST} \\                             │"
-echo "  │    'helm uninstall ${RELEASE_NAME} -n ${NAMESPACE}'                │"
-echo "  │                                                                    │"
-echo "  └───────────────────────────────────────────────────────────────────-┘"
+echo "  Dashboard: https://sandbox.$(remote "kubectl -n ${NAMESPACE} get configmap ${RELEASE_NAME}-atelier-manager-config -o jsonpath='{.data.sandbox\\.config\\.json}' 2>/dev/null" | grep -o '"baseDomain":"[^"]*"' | cut -d'"' -f4 || echo "your-domain.com")"
+echo ""
+echo "  Health:    kubectl -n ${NAMESPACE} port-forward svc/${SVC_NAME} 4000:4000"
+echo "             curl http://127.0.0.1:4000/health/ready"
+echo ""
+echo "  Logs:      kubectl -n ${NAMESPACE} logs -f deploy/${SVC_NAME} -c manager"
+echo ""
+echo "  Rollback:  helm uninstall ${RELEASE_NAME} -n ${NAMESPACE}"
 echo ""

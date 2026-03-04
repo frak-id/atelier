@@ -144,16 +144,22 @@ verdaccio:
 sharedBinaries:
   enabled: true
   storage: 2Gi
-  hostPath: /opt/atelier/shared-binaries
-  # image: curlimages/curl:latest
+  storageClass: ""
   opencode:
     version: "1.2.10"
   codeServer:
     version: "4.109.2"
 
 # -- cert-manager integration
+#
+# Prerequisites: cert-manager must be installed in the cluster.
+#   helm repo add jetstack https://charts.jetstack.io
+#   helm install cert-manager jetstack/cert-manager \
+#     --namespace cert-manager --create-namespace --set crds.enabled=true
 certManager:
   enabled: true
+  # Namespace where cert-manager is installed (for secret creation)
+  namespace: cert-manager
   issuer:
     # "letsencrypt-prod" or "letsencrypt-staging"
     name: letsencrypt-prod
@@ -161,15 +167,24 @@ certManager:
     # DNS-01 solver for wildcard certs
     solver: cloudflare
     cloudflare:
-      # Name of existing K8s Secret containing Cloudflare API token
+      # Cloudflare API token (if set, the chart creates the K8s Secret)
+      apiToken: ""
+      # Reference to the K8s Secret containing the token
       apiTokenSecretRef:
         name: cloudflare-api-token
         key: api-token
 
 # -- Kata Containers runtime class
+#
+# Prerequisites: kata-deploy must be installed in the cluster.
+#   git clone --depth 1 https://github.com/kata-containers/kata-containers.git /tmp/kata-src
+#   helm install kata-deploy /tmp/kata-src/tools/packaging/kata-deploy/helm-chart/kata-deploy \
+#     --set k8sDistribution=k3s --set env.createRuntimeClasses=true --set env.createDefaultRuntimeClass=true
+#
+# kata-deploy creates the RuntimeClass automatically, so createRuntimeClass
+# defaults to false to avoid conflicts.
 kata:
-  # Create RuntimeClass resource (set false if already exists)
-  createRuntimeClass: true
+  createRuntimeClass: false
   handler: kata-clh
 
 # -- Sandbox secrets encryption key

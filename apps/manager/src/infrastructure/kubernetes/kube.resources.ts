@@ -73,7 +73,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
   if (options.pvcName) {
     volumeMounts.push({
       name: "workspace",
-      mountPath: VM.HOME,
+      mountPath: VM.WORKSPACE_DIR,
     });
     volumes.push({
       name: "workspace",
@@ -122,6 +122,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
         {
           name: "sandbox",
           image: options.image,
+          command: ["/usr/local/bin/sandbox-agent"],
           ports: [
             { name: "agent", containerPort: 9998 },
             { name: "vscode", containerPort: 8080 },

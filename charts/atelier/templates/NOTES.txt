@@ -10,13 +10,25 @@ Manager health checks:
   kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "atelier.fullname" . }}-manager 4000:4000
   curl http://127.0.0.1:4000/health/ready
 
-IMPORTANT (k3s nodes): apply the generated registries content manually:
-  kubectl -n {{ .Release.Namespace }} get configmap {{ include "atelier.fullname" . }}-registries -o jsonpath='{.data.registries\.yaml}'
-  # write output to /etc/rancher/k3s/registries.yaml on every node
-  sudo systemctl restart k3s
+IMPORTANT — k3s registries configuration:
+  The deploy script automatically configures /etc/rancher/k3s/registries.yaml
+  for the Zot registry. If deploying manually, run:
+
+    ZOT_IP=$(kubectl -n {{ .Release.Namespace }} get svc zot -o jsonpath='{.spec.clusterIP}')
+    cat > /etc/rancher/k3s/registries.yaml <<EOF
+    mirrors:
+      "zot.{{ .Release.Namespace }}.svc:{{ .Values.zot.port }}":
+        endpoint:
+          - "http://${ZOT_IP}:{{ .Values.zot.port }}"
+    EOF
+    systemctl restart k3s
 
 {{- if .Values.certManager.enabled }}
-cert-manager is enabled:
-  - Ensure Secret {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.name }} exists in namespace {{ .Release.Namespace }}.
-  - Key required: {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.key }}
+cert-manager:
+  {{- if .Values.certManager.issuer.cloudflare.apiToken }}
+  Cloudflare API token Secret created automatically from values.
+  {{- else }}
+  Ensure Secret {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.name }} exists in namespace {{ .Values.certManager.namespace | default "cert-manager" }}.
+  Key required: {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.key }}
+  {{- end }}
 {{- end }}

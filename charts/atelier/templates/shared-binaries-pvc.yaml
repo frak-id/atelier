@@ -8,12 +8,12 @@ metadata:
     {{- include "atelier.labels" . | nindent 4 }}
     atelier.dev/component: shared-binaries
 spec:
-  storageClassName: ""
   accessModes:
     - ReadWriteOnce
-    - ReadOnlyMany
+  {{- if .Values.sharedBinaries.storageClass }}
+  storageClassName: {{ .Values.sharedBinaries.storageClass | quote }}
+  {{- end }}
   resources:
     requests:
       storage: {{ .Values.sharedBinaries.storage }}
-  volumeName: shared-binaries
 {{- end }}

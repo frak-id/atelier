@@ -26,6 +26,11 @@ spec:
         - name: verdaccio
           image: {{ printf "%s:%s" .Values.verdaccio.image.repository .Values.verdaccio.image.tag }}
           imagePullPolicy: {{ .Values.verdaccio.image.pullPolicy }}
+          env:
+            # Override K8s auto-injected VERDACCIO_PORT (from service named 'verdaccio')
+            # which sets it to 'tcp://10.x.x.x:4873' and breaks verdaccio's address parsing
+            - name: VERDACCIO_PORT
+              value: {{ .Values.advanced.server.verdaccio.port | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.advanced.server.verdaccio.port }}
