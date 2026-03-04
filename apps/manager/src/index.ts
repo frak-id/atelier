@@ -27,7 +27,6 @@ import {
 import {
   agentOperations,
   authSyncService,
-  kubeClient,
   prebuildChecker,
   prebuildRunner,
   sandboxLifecycle,
@@ -40,7 +39,6 @@ import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
-import { SharedBinariesService } from "./infrastructure/shared-binaries/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
@@ -133,7 +131,6 @@ const app = new Elysia()
     }
 
     RegistryService.initialize();
-    await SharedBinariesService.initialize(kubeClient);
   })
   .use(
     cors({

@@ -79,15 +79,13 @@ sandbox:
     email: sandbox@atelier.dev
     name: Sandbox User
 
-# -- Advanced VM service ports/versions
+# -- Advanced VM service ports
 advanced:
   vm:
     vscode:
       port: 8080
-      version: "4.109.2"
     opencode:
       port: 3000
-      version: "1.2.10"
     browser:
       port: 6080
     terminal:
@@ -97,7 +95,6 @@ advanced:
   server:
     verdaccio:
       port: 4873
-      version: "6.2.5"
 
 # -- Integrations
 integrations:
@@ -142,6 +139,17 @@ verdaccio:
     limits:
       memory: "512Mi"
       cpu: "500m"
+
+# -- Shared binaries (opencode + code-server, mounted into sandboxes)
+sharedBinaries:
+  enabled: true
+  storage: 2Gi
+  hostPath: /opt/atelier/shared-binaries
+  # image: curlimages/curl:latest
+  opencode:
+    version: "1.2.10"
+  codeServer:
+    version: "4.109.2"
 
 # -- cert-manager integration
 certManager:

@@ -9,7 +9,6 @@ export type {
   KubeResource,
   PvcOptions,
   SandboxPodOptions,
-  SharedBinariesJobOptions,
   VolumeSnapshotOptions,
 } from "./kube.resources.ts";
 export {
@@ -21,11 +20,7 @@ export {
   buildSandboxIngress,
   buildSandboxPod,
   buildSandboxService,
-  buildSharedBinariesJob,
-  buildSharedBinariesPv,
-  buildSharedBinariesPvc,
   buildVolumeSnapshot,
-  SHARED_BINARIES_LABELS,
   SHARED_BINARIES_MOUNT_PATH,
 } from "./kube.resources.ts";
 export type {

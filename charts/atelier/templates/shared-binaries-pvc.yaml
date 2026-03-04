@@ -1,0 +1,19 @@
+{{- if .Values.sharedBinaries.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shared-binaries
+  namespace: {{ include "atelier.sandboxNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    atelier.dev/component: shared-binaries
+spec:
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: {{ .Values.sharedBinaries.storage }}
+  volumeName: shared-binaries
+{{- end }}

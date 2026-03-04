@@ -192,15 +192,6 @@ export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
 // Advanced — VM services (inside sandbox)
 // ---------------------------------------------------------------------------
 
-const VmServiceWithVersion = (defaultPort: number, defaultVersion: string) =>
-  Type.Object(
-    {
-      port: Type.Number({ default: defaultPort }),
-      version: Type.String({ default: defaultVersion }),
-    },
-    { default: {} },
-  );
-
 const VmService = (defaultPort: number) =>
   Type.Object(
     {
@@ -211,8 +202,8 @@ const VmService = (defaultPort: number) =>
 
 export const AdvancedVmConfigSchema = Type.Object(
   {
-    vscode: VmServiceWithVersion(8080, "4.109.2"),
-    opencode: VmServiceWithVersion(3000, "1.2.10"),
+    vscode: VmService(8080),
+    opencode: VmService(3000),
     browser: VmService(6080),
     terminal: VmService(7681),
     agent: VmService(9999),
@@ -231,7 +222,6 @@ export const AdvancedServerConfigSchema = Type.Object(
     verdaccio: Type.Object(
       {
         port: Type.Number({ default: 4873 }),
-        version: Type.String({ default: "6.2.5" }),
       },
       { default: {} },
     ),
@@ -346,10 +336,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_TERMINAL_PORT: "advanced.vm.terminal.port",
   ATELIER_AGENT_PORT: "advanced.vm.agent.port",
   ATELIER_VERDACCIO_PORT: "advanced.server.verdaccio.port",
-
-  ATELIER_VERSION_OPENCODE: "advanced.vm.opencode.version",
-  ATELIER_VERSION_CODE_SERVER: "advanced.vm.vscode.version",
-  ATELIER_VERSION_VERDACCIO: "advanced.server.verdaccio.version",
 
   ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
   ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",

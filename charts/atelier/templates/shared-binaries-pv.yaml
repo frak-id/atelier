@@ -1,0 +1,28 @@
+{{- if .Values.sharedBinaries.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: shared-binaries
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    atelier.dev/component: shared-binaries
+spec:
+  capacity:
+    storage: {{ .Values.sharedBinaries.storage }}
+  accessModes:
+    - ReadWriteOnce
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  claimRef:
+    namespace: {{ include "atelier.sandboxNamespace" . }}
+    name: shared-binaries
+  local:
+    path: {{ .Values.sharedBinaries.hostPath }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: Exists
+{{- end }}
