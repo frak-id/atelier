@@ -33,10 +33,13 @@ data:
         "namespace" .Values.kubernetes.namespace
         "systemNamespace" .Release.Namespace
         "runtimeClass" .Values.kubernetes.runtimeClass
+        "ingressClassName" .Values.ingress.className
         "registryUrl" (printf "zot.%s.svc:%v" .Release.Namespace .Values.zot.port)
         "storageClass" .Values.kubernetes.storageClass
         "volumeSnapshotClass" .Values.kubernetes.volumeSnapshotClass
         "defaultVolumeSize" .Values.kubernetes.defaultVolumeSize
+        "vsCodeIngressAnnotations" (include "atelier.vsCodeIngressAnnotations" . | fromJson)
+        "openCodeIngressAnnotations" (include "atelier.openCodeIngressAnnotations" . | fromJson)
       )
       "sandbox" (dict
         "defaultImage" .Values.sandbox.defaultImage

@@ -185,22 +185,19 @@ export function buildSandboxService(
   };
 }
 
-export function buildSandboxIngress(
+export function buildVsCodeIngress(
   sandboxId: string,
   sandboxDomain: string,
   options: IngressOptions = {},
 ): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
-  const hosts = [
-    `vscode-${sandboxId}.${sandboxDomain}`,
-    `opencode-${sandboxId}.${sandboxDomain}`,
-  ];
+  const host = `vscode-${sandboxId}.${sandboxDomain}`;
 
   return {
     apiVersion: "networking.k8s.io/v1",
     kind: "Ingress",
     metadata: {
-      name: `sandbox-${sandboxId}`,
+      name: `sandbox-vscode-${sandboxId}`,
       namespace,
       labels: sandboxLabels(sandboxId),
       annotations: options.annotations,
@@ -208,11 +205,11 @@ export function buildSandboxIngress(
     spec: {
       ingressClassName: options.ingressClassName,
       ...(options.tlsSecretName && {
-        tls: [{ secretName: options.tlsSecretName, hosts }],
+        tls: [{ secretName: options.tlsSecretName, hosts: [host] }],
       }),
       rules: [
         {
-          host: hosts[0],
+          host,
           http: {
             paths: [
               {
@@ -228,8 +225,36 @@ export function buildSandboxIngress(
             ],
           },
         },
+      ],
+    },
+  };
+}
+
+export function buildOpenCodeIngress(
+  sandboxId: string,
+  sandboxDomain: string,
+  options: IngressOptions = {},
+): KubeResource {
+  const namespace = options.namespace ?? config.kubernetes.namespace;
+  const host = `opencode-${sandboxId}.${sandboxDomain}`;
+
+  return {
+    apiVersion: "networking.k8s.io/v1",
+    kind: "Ingress",
+    metadata: {
+      name: `sandbox-opencode-${sandboxId}`,
+      namespace,
+      labels: sandboxLabels(sandboxId),
+      annotations: options.annotations,
+    },
+    spec: {
+      ingressClassName: options.ingressClassName,
+      ...(options.tlsSecretName && {
+        tls: [{ secretName: options.tlsSecretName, hosts: [host] }],
+      }),
+      rules: [
         {
-          host: hosts[1],
+          host,
           http: {
             paths: [
               {

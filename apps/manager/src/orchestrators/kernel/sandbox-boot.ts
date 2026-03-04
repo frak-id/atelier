@@ -2,10 +2,11 @@ import { customAlphabet } from "nanoid";
 import { eventBus } from "../../infrastructure/events/index.ts";
 import {
   buildConfigMap,
+  buildOpenCodeIngress,
   buildPvc,
-  buildSandboxIngress,
   buildSandboxPod,
   buildSandboxService,
+  buildVsCodeIngress,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
 import type { Sandbox, Workspace } from "../../schemas/index.ts";
@@ -137,8 +138,16 @@ export async function bootNewSandbox(
       ),
       kubeClient.createResource(buildSandboxService(sandboxId)),
       kubeClient.createResource(
-        buildSandboxIngress(sandboxId, config.domain.dashboard, {
+        buildVsCodeIngress(sandboxId, config.domain.dashboard, {
           ingressClassName: config.kubernetes.ingressClassName || undefined,
+          annotations: config.kubernetes.vsCodeIngressAnnotations,
+          tlsSecretName: "atelier-sandbox-wildcard-tls",
+        }),
+      ),
+      kubeClient.createResource(
+        buildOpenCodeIngress(sandboxId, config.domain.dashboard, {
+          ingressClassName: config.kubernetes.ingressClassName || undefined,
+          annotations: config.kubernetes.openCodeIngressAnnotations,
           tlsSecretName: "atelier-sandbox-wildcard-tls",
         }),
       ),

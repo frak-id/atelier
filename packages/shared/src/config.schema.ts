@@ -123,6 +123,14 @@ export const KubernetesConfigSchema = Type.Object(
     volumeSnapshotClass: Type.String({ default: "" }),
     /** Default PVC size for sandbox volumes (K8s quantity) */
     defaultVolumeSize: Type.String({ default: "10Gi" }),
+    /** Annotations to apply to VS Code ingresses (e.g., forward-auth middleware) */
+    vsCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
+      default: {},
+    }),
+    /** Annotations to apply to OpenCode ingresses (e.g., forward-auth + header injection) */
+    openCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
+      default: {},
+    }),
   },
   { default: {} },
 );

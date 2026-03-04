@@ -50,3 +50,33 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "atelier.wildcardTlsSecretName" -}}
 {{- printf "%s-wildcard-tls" (include "atelier.fullname" .) -}}
 {{- end -}}
+
+{{/*
+Ingress annotations for VS Code sandbox ingresses.
+When ingress.className is "traefik", emits the Traefik forwardAuth middleware annotation.
+Otherwise emits an empty dict so the manager receives no extra annotations.
+*/}}
+{{- define "atelier.vsCodeIngressAnnotations" -}}
+{{- if eq .Values.ingress.className "traefik" -}}
+{{- $ns := include "atelier.sandboxNamespace" . -}}
+{{- $name := printf "%s-auth-verify" (include "atelier.fullname" .) -}}
+{{- dict "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-%s@kubernetescrd" $ns $name) | toJson -}}
+{{- else -}}
+{}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Ingress annotations for OpenCode sandbox ingresses.
+When ingress.className is "traefik", emits the Traefik forwardAuth middleware annotation.
+Otherwise emits an empty dict so the manager receives no extra annotations.
+*/}}
+{{- define "atelier.openCodeIngressAnnotations" -}}
+{{- if eq .Values.ingress.className "traefik" -}}
+{{- $ns := include "atelier.sandboxNamespace" . -}}
+{{- $name := printf "%s-auth-opencode" (include "atelier.fullname" .) -}}
+{{- dict "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-%s@kubernetescrd" $ns $name) | toJson -}}
+{{- else -}}
+{}
+{{- end -}}
+{{- end -}}
