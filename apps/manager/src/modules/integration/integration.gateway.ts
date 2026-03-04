@@ -333,13 +333,17 @@ export class IntegrationGateway {
                 sandbox.id,
                 devCommand.name,
                 devCommand.port,
-                config.domain.baseDomain,
+                config.domain.dashboard,
+                {
+                  tlsSecretName:
+                    "atelier-sandbox-wildcard-tls",
+                },
               ),
             );
             const urls = {
-              namedUrl: `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.baseDomain}`,
+              namedUrl: `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.dashboard}`,
               defaultUrl: devCommand.isDefault
-                ? `https://dev-${sandbox.id}.${config.domain.baseDomain}`
+                ? `https://dev-${sandbox.id}.${config.domain.dashboard}`
                 : undefined,
             };
 
@@ -419,9 +423,9 @@ export class IntegrationGateway {
           return;
         }
 
-        const namedUrl = `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.baseDomain}`;
+        const namedUrl = `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.dashboard}`;
         const defaultUrl = devCommand.isDefault
-          ? `https://dev-${sandbox.id}.${config.domain.baseDomain}`
+          ? `https://dev-${sandbox.id}.${config.domain.dashboard}`
           : undefined;
 
         await adapter.postMessage(
@@ -441,7 +445,7 @@ export class IntegrationGateway {
               runtime?.status === "running" ? "running" : "stopped";
             const url =
               status === "running" && command.port
-                ? `https://dev-${command.name}-${sandbox.id}.${config.domain.baseDomain}`
+                ? `https://dev-${command.name}-${sandbox.id}.${config.domain.dashboard}`
                 : "";
             return `- \`${command.name}\` - ${status}${url ? ` -> ${url}` : ""}`;
           });

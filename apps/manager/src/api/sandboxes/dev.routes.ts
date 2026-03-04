@@ -46,9 +46,9 @@ export const devRoutes = new Elysia()
             | undefined;
 
           if (isRunning && cmd.port) {
-            devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.domain.baseDomain}`;
+            devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.domain.dashboard}`;
             if (cmd.isDefault) {
-              defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.baseDomain}`;
+              defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.dashboard}`;
             }
           }
 
@@ -56,7 +56,7 @@ export const devRoutes = new Elysia()
             extraDevUrls = cmd.extraPorts.map((ep) => ({
               alias: ep.alias,
               port: ep.port,
-              url: `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.domain.baseDomain}`,
+              url: `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.domain.dashboard}`,
             }));
           }
 
@@ -116,18 +116,22 @@ export const devRoutes = new Elysia()
               sandbox.id,
               params.name,
               devCommand.port,
-              config.domain.baseDomain,
+              config.domain.dashboard,
+              {
+                tlsSecretName:
+                  "atelier-sandbox-wildcard-tls",
+              },
             ),
           );
-          devUrl = `https://dev-${params.name}-${sandbox.id}.${config.domain.baseDomain}`;
+          devUrl = `https://dev-${params.name}-${sandbox.id}.${config.domain.dashboard}`;
           if (devCommand.isDefault) {
-            defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.baseDomain}`;
+            defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.dashboard}`;
           }
           if (devCommand.extraPorts?.length) {
             extraDevUrls = devCommand.extraPorts.map((ep) => ({
               alias: ep.alias,
               port: ep.port,
-              url: `https://dev-${params.name}-${ep.alias}-${sandbox.id}.${config.domain.baseDomain}`,
+              url: `https://dev-${params.name}-${ep.alias}-${sandbox.id}.${config.domain.dashboard}`,
             }));
           }
         } catch (err) {

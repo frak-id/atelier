@@ -35,6 +35,7 @@ export type IngressOptions = {
   namespace?: string;
   ingressClassName?: string;
   annotations?: Record<string, string>;
+  tlsSecretName?: string;
 };
 
 export type KanikoJobOptions = {
@@ -186,10 +187,14 @@ export function buildSandboxService(
 
 export function buildSandboxIngress(
   sandboxId: string,
-  baseDomain: string,
+  sandboxDomain: string,
   options: IngressOptions = {},
 ): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
+  const hosts = [
+    `vscode-${sandboxId}.${sandboxDomain}`,
+    `opencode-${sandboxId}.${sandboxDomain}`,
+  ];
 
   return {
     apiVersion: "networking.k8s.io/v1",
@@ -202,9 +207,12 @@ export function buildSandboxIngress(
     },
     spec: {
       ingressClassName: options.ingressClassName,
+      ...(options.tlsSecretName && {
+        tls: [{ secretName: options.tlsSecretName, hosts }],
+      }),
       rules: [
         {
-          host: `sandbox-${sandboxId}.${baseDomain}`,
+          host: hosts[0],
           http: {
             paths: [
               {
@@ -221,7 +229,7 @@ export function buildSandboxIngress(
           },
         },
         {
-          host: `opencode-${sandboxId}.${baseDomain}`,
+          host: hosts[1],
           http: {
             paths: [
               {
@@ -246,9 +254,12 @@ export function buildDevCommandIngress(
   sandboxId: string,
   name: string,
   port: number,
-  baseDomain: string,
-  namespace = config.kubernetes.namespace,
+  sandboxDomain: string,
+  options: IngressOptions = {},
 ): KubeResource {
+  const namespace = options.namespace ?? config.kubernetes.namespace;
+  const host = `dev-${name}-${sandboxId}.${sandboxDomain}`;
+
   return {
     apiVersion: "networking.k8s.io/v1",
     kind: "Ingress",
@@ -258,9 +269,12 @@ export function buildDevCommandIngress(
       labels: sandboxLabels(sandboxId),
     },
     spec: {
+      ...(options.tlsSecretName && {
+        tls: [{ secretName: options.tlsSecretName, hosts: [host] }],
+      }),
       rules: [
         {
-          host: `dev-${name}-${sandboxId}.${baseDomain}`,
+          host,
           http: {
             paths: [
               {

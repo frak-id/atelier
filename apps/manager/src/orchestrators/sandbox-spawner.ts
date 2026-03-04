@@ -64,8 +64,8 @@ export class SandboxSpawner {
         ipAddress: "10.42.0.99",
         macAddress: "",
         urls: {
-          vscode: `https://sandbox-${sandboxId}.${config.domain.baseDomain}`,
-          opencode: `https://opencode-${sandboxId}.${config.domain.baseDomain}`,
+          vscode: `https://vscode-${sandboxId}.${config.domain.dashboard}`,
+          opencode: `https://opencode-${sandboxId}.${config.domain.dashboard}`,
           ssh: "",
         },
         vcpus: options.vcpus ?? workspace?.config.vcpus ?? 2,

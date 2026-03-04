@@ -1,7 +1,7 @@
 {{- if .Values.sharedBinaries.enabled }}
 {{- $ocVersion := .Values.sharedBinaries.opencode.version -}}
 {{- $csVersion := .Values.sharedBinaries.codeServer.version -}}
-{{- $fingerprint := printf "code-server@%s,opencode@%s" $csVersion $ocVersion -}}
+{{- $fingerprint := printf "v2:code-server@%s,opencode@%s" $csVersion $ocVersion -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -44,7 +44,7 @@ spec:
               mkdir -p /shared/opencode
               cd /tmp
               curl -fsSL -o archive-opencode "https://github.com/anomalyco/opencode/releases/download/v{{ $ocVersion }}/opencode-linux-x64-baseline.tar.gz"
-              tar -xzf archive-opencode -C /shared/opencode --strip-components=1
+              tar -xzf archive-opencode -C /shared/opencode
               rm -f archive-opencode
 
               echo "[shared-binaries] Installing code-server v{{ $csVersion }}"
@@ -55,8 +55,8 @@ spec:
               rm -f archive-code-server
 
               mkdir -p /shared/bin
-              [ -f "/shared/opencode/opencode" ] && ln -sf "/shared/opencode/opencode" /shared/bin/opencode
-              [ -f "/shared/code-server/bin/code-server" ] && ln -sf "/shared/code-server/bin/code-server" /shared/bin/code-server
+              [ -f "/shared/opencode/opencode" ] && ln -sf ../opencode/opencode /shared/bin/opencode
+              [ -f "/shared/code-server/bin/code-server" ] && ln -sf ../code-server/bin/code-server /shared/bin/code-server
 
               echo "$FINGERPRINT" > "$MARKER"
               echo "[shared-binaries] Done"

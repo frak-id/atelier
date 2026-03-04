@@ -15,11 +15,11 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 const log = createChildLogger("mcp-dev-commands");
 
 function buildDevUrl(sandboxId: string, cmdName: string): string {
-  return `https://dev-${cmdName}-${sandboxId}.${config.domain.baseDomain}`;
+  return `https://dev-${cmdName}-${sandboxId}.${config.domain.dashboard}`;
 }
 
 function buildDefaultDevUrl(sandboxId: string): string {
-  return `https://dev-${sandboxId}.${config.domain.baseDomain}`;
+  return `https://dev-${sandboxId}.${config.domain.dashboard}`;
 }
 
 export function registerDevCommandTools(server: McpServer): void {
@@ -198,7 +198,11 @@ export function registerDevCommandTools(server: McpServer): void {
                     sandbox.id,
                     name,
                     devCommand.port,
-                    config.domain.baseDomain,
+                    config.domain.dashboard,
+                    {
+                      tlsSecretName:
+                        "atelier-sandbox-wildcard-tls",
+                    },
                   ),
                 );
                 devUrl = buildDevUrl(sandbox.id, name);

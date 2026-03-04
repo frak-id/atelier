@@ -359,7 +359,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             );
           });
 
-          const browserUrl = `https://browser-${sandbox.id}.${config.domain.baseDomain}`;
+          const browserUrl = `https://browser-${sandbox.id}.${config.domain.dashboard}`;
 
           sandboxService.update(sandbox.id, {
             runtime: {

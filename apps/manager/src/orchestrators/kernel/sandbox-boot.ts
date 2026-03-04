@@ -137,7 +137,10 @@ export async function bootNewSandbox(
       ),
       kubeClient.createResource(buildSandboxService(sandboxId)),
       kubeClient.createResource(
-        buildSandboxIngress(sandboxId, config.domain.baseDomain),
+        buildSandboxIngress(sandboxId, config.domain.dashboard, {
+          ingressClassName: "traefik",
+          tlsSecretName: "atelier-sandbox-wildcard-tls",
+        }),
       ),
     ]);
 
@@ -318,11 +321,13 @@ function buildUrls(
   sandboxId: string,
   system?: boolean,
 ): { vscode: string; opencode: string; ssh: string } {
-  const baseDomain = config.domain.baseDomain;
+  const sandboxDomain = config.domain.dashboard;
 
   return {
-    vscode: system ? "" : `https://sandbox-${sandboxId}.${baseDomain}`,
-    opencode: `https://opencode-${sandboxId}.${baseDomain}`,
+    vscode: system
+      ? ""
+      : `https://vscode-${sandboxId}.${sandboxDomain}`,
+    opencode: `https://opencode-${sandboxId}.${sandboxDomain}`,
     ssh: "",
   };
 }
