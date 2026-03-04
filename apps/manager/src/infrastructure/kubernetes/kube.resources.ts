@@ -290,14 +290,17 @@ export function buildKanikoJob(options: KanikoJobOptions): KubeResource {
     ? "--context=dir:///kaniko/context"
     : `--context=${options.contextUrl}`;
 
+  const cacheRepo = `${config.kubernetes.registryUrl}/cache`;
   const args = [
     contextArg,
     `--dockerfile=${options.dockerfilePath ?? "Dockerfile"}`,
     `--destination=${options.destinationImage}`,
+    "--cache=true",
+    `--cache-repo=${cacheRepo}`,
   ];
 
   if (options.insecure) {
-    args.push("--insecure");
+    args.push("--insecure", "--insecure-pull", "--cache-copy-layers");
   }
 
   for (const [key, value] of Object.entries(options.buildArgs ?? {})) {
@@ -373,12 +376,16 @@ export function buildBaseImageBuildJob(
 ): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.systemNamespace;
 
+  const cacheRepo = `${config.kubernetes.registryUrl}/cache`;
   const args = [
     "--context=dir:///workspace",
     "--dockerfile=Dockerfile",
     `--destination=${options.destinationImage}`,
     "--insecure",
     "--insecure-pull",
+    "--cache=true",
+    `--cache-repo=${cacheRepo}`,
+    "--cache-copy-layers",
   ];
 
   for (const [key, value] of Object.entries(options.buildArgs ?? {})) {
