@@ -158,12 +158,12 @@ export const RegistryService = {
     // 3. Service
     await kubeClient.createResource(buildVerdaccioService(ns), ns);
 
-    // 4. Wait for health
+    // 4. Wait for health (120s — cold image pull can take a while)
     log.info("Waiting for Verdaccio pod to become healthy…");
-    const healthy = await this.waitForHealthy(30_000);
+    const healthy = await this.waitForHealthy(120_000);
     if (!healthy) {
       await this.deleteResources();
-      throw new Error("Verdaccio pod failed to become healthy within 30 s");
+      throw new Error("Verdaccio pod failed to become healthy within 120 s");
     }
 
     state.settings.enabled = true;

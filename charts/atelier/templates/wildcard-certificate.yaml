@@ -17,5 +17,4 @@ spec:
   commonName: {{ printf "*.%s" .Values.domain.baseDomain | quote }}
   dnsNames:
     - {{ printf "*.%s" .Values.domain.baseDomain | quote }}
-    - {{ include "atelier.dashboardDomain" . | quote }}
 {{- end }}

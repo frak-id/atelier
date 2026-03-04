@@ -19,7 +19,7 @@ COPY packages/shared/package.json packages/shared/
 COPY apps/manager/package.json apps/manager/
 COPY apps/dashboard/package.json apps/dashboard/
 
-RUN bun install --frozen-lockfile --production=false
+RUN bun install --frozen-lockfile
 
 # ── Stage 2: build manager + dashboard ────────────────────────────────────
 FROM oven/bun:1 AS builder
@@ -61,12 +61,16 @@ COPY --from=builder /build/apps/dashboard/dist ./public
 # Drizzle migrations
 COPY apps/manager/drizzle ./drizzle
 
+# Base image definitions (image.json + Dockerfile for dev-base, dev-cloud)
+COPY infra/images ./images
+
 # Runtime environment
 ENV NODE_ENV=production \
     ATELIER_SERVER_MODE=production \
     DATA_DIR=/app/data \
     MIGRATIONS_DIR=/app/drizzle \
-    DASHBOARD_DIR=./public
+    DASHBOARD_DIR=./public \
+    ATELIER_IMAGES_DIR=/app/images
 
 # Data directory for SQLite database
 RUN mkdir -p /app/data

@@ -164,7 +164,7 @@ const app = new Elysia()
       },
     }),
   )
-  .onError(({ code, error, set }) => {
+  .onError(({ code, error, set, request }) => {
     if (error instanceof SandboxError) {
       set.status = error.statusCode;
       return {
@@ -185,6 +185,25 @@ const app = new Elysia()
       }
 
       case "NOT_FOUND": {
+        // In production, serve SPA for non-API GET requests
+        if (isProduction() && request.method === "GET") {
+          const pathname = new URL(request.url).pathname;
+          const spaExclude = [
+            "/api/",
+            "/health/",
+            "/swagger",
+            "/.well-known",
+            "/mcp",
+            "/config",
+          ];
+          if (!spaExclude.some((p) => pathname.startsWith(p))) {
+            set.headers["content-type"] = "text/html; charset=utf-8";
+            set.headers["cache-control"] = "no-cache";
+            return Bun.file(
+              `${process.env.DASHBOARD_DIR || "./public"}/index.html`,
+            );
+          }
+        }
         set.status = 404;
         return {
           error: "NOT_FOUND",

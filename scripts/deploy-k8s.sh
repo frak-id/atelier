@@ -29,6 +29,8 @@ set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
+source .env
+
 SSH_HOST="${SSH_HOST:?Set SSH_HOST to your server IP or hostname}"
 SSH_USER="${SSH_USER:-root}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-}"
