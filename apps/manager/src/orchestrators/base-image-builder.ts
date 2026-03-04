@@ -1,6 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { getImageById } from "@frak/atelier-shared";
+import { discoverImages, getImageById } from "@frak/atelier-shared";
 import {
   buildBaseImageBuildJob,
   buildConfigMap,
@@ -17,18 +17,7 @@ const COMPONENT_LABEL = "base-image-build";
 const CONFIGMAP_PREFIX = "base-image-ctx";
 const JOB_PREFIX = "base-image-build";
 
-type BuildState = {
-  imageId: string;
-  jobName: string;
-  configMapName: string;
-  startedAt: number;
-  finishedAt?: number;
-  error?: string;
-};
-
 export class BaseImageBuilder {
-  private builds = new Map<string, BuildState>();
-
   constructor(private kubeClient: KubeClient) {}
 
   async triggerBuild(imageId: string): Promise<{
@@ -51,16 +40,14 @@ export class BaseImageBuilder {
       );
     }
 
-    const existing = this.builds.get(imageId);
-    if (existing) {
-      const status = await this.resolveJobStatus(existing);
-      if (status === "building") {
-        throw new SandboxError(
-          `Build already in progress for '${imageId}'`,
-          "CONFLICT",
-          409,
-        );
-      }
+    /* ── Check for active build via K8s job ────────────── */
+    const activeJob = await this.findActiveJob(imageId);
+    if (activeJob) {
+      throw new SandboxError(
+        `Build already in progress for '${imageId}'`,
+        "CONFLICT",
+        409,
+      );
     }
 
     const ts = Date.now();
@@ -92,6 +79,7 @@ export class BaseImageBuilder {
     await this.kubeClient.createResource(configMap, namespace);
     log.info({ configMapName, namespace }, "Created build context ConfigMap");
 
+    /* ── 3. Create Kaniko build Job ──────────────────────── */
     const job = buildBaseImageBuildJob({
       name: jobName,
       imageId,
@@ -107,14 +95,6 @@ export class BaseImageBuilder {
       "Created base image build Job",
     );
 
-    /* ── 4. Track build state ────────────────────────────── */
-    this.builds.set(imageId, {
-      imageId,
-      jobName,
-      configMapName,
-      startedAt: ts,
-    });
-
     return {
       imageId,
       jobName,
@@ -124,68 +104,142 @@ export class BaseImageBuilder {
   }
 
   async getBuildStatus(imageId: string): Promise<ImageBuild> {
-    const build = this.builds.get(imageId);
-    if (!build) {
-      return {
+    if (isMock()) {
+      return { imageId, status: "idle" };
+    }
+
+    const namespace = config.kubernetes.systemNamespace;
+    const jobs = await this.kubeClient.listJobs(
+      `atelier.dev/component=${COMPONENT_LABEL},atelier.dev/image=${imageId}`,
+      namespace,
+    );
+
+    /* ── Find the most recent job ──────────────────────── */
+    const latest = this.latestJob(jobs);
+
+    if (latest) {
+      const status = this.deriveJobStatus(latest.status);
+      const build: ImageBuild = {
         imageId,
-        status: "idle",
+        status,
+        jobName: latest.metadata?.name,
+        startedAt: latest.metadata?.creationTimestamp
+          ? new Date(latest.metadata.creationTimestamp).getTime()
+          : undefined,
+        finishedAt: latest.status?.completionTime
+          ? new Date(latest.status.completionTime).getTime()
+          : undefined,
       };
-    }
 
-    const status = await this.resolveJobStatus(build);
-
-    if ((status === "succeeded" || status === "failed") && !build.finishedAt) {
-      build.finishedAt = Date.now();
       if (status === "failed") {
-        build.error = await this.tryGetLogs(build);
+        build.error = await this.tryGetLogs(imageId);
       }
+
+      return build;
     }
 
+    /* ── No job found — check if image exists in Zot ──── */
+    const exists = await this.checkImageExists(imageId);
     return {
       imageId,
-      status,
-      jobName: build.jobName,
-      startedAt: build.startedAt,
-      finishedAt: build.finishedAt,
-      error: build.error,
+      status: exists ? "succeeded" : "idle",
     };
   }
 
   async cancelBuild(imageId: string): Promise<void> {
-    const build = this.builds.get(imageId);
-    if (!build) return;
-
     const namespace = config.kubernetes.systemNamespace;
+    const labelSelector = `atelier.dev/component=${COMPONENT_LABEL},atelier.dev/image=${imageId}`;
 
-    try {
-      await this.kubeClient.deleteResource("Job", build.jobName, namespace);
-    } catch {
-      log.warn({ jobName: build.jobName }, "Failed to delete build Job");
+    /* ── Delete jobs ──────────────────────────────────── */
+    const jobs = await this.kubeClient.listJobs(labelSelector, namespace);
+    for (const job of jobs) {
+      const jobName = job.metadata?.name;
+      if (!jobName) continue;
+
+      try {
+        await this.kubeClient.deleteResource("Job", jobName, namespace);
+      } catch {
+        log.warn({ jobName }, "Failed to delete build Job");
+      }
     }
 
+    /* ── Clean up associated resources (ConfigMaps, Pods) */
     try {
-      await this.kubeClient.deleteResource(
-        "ConfigMap",
-        build.configMapName,
-        namespace,
-      );
+      await this.kubeClient.deleteLabeledResources(labelSelector, namespace);
     } catch {
-      log.warn(
-        { configMapName: build.configMapName },
-        "Failed to delete build ConfigMap",
-      );
+      log.warn({ imageId }, "Failed to clean up build resources");
     }
 
-    this.builds.delete(imageId);
     log.info({ imageId }, "Cancelled and cleaned up build");
   }
 
   async listBuilds(): Promise<ImageBuild[]> {
-    const results: ImageBuild[] = [];
-    for (const imageId of this.builds.keys()) {
-      results.push(await this.getBuildStatus(imageId));
+    const images = await discoverImages(config.sandbox.imagesDirectory);
+    const buildable = images.filter((img) => img.hasDockerfile);
+    return Promise.all(buildable.map((img) => this.getBuildStatus(img.id)));
+  }
+
+  /**
+   * Check if an image exists in the Zot OCI registry.
+   * HEAD /v2/{imageId}/manifests/latest → 200=exists, 404=not found.
+   */
+  private async checkImageExists(imageId: string): Promise<boolean> {
+    if (isMock()) return false;
+    try {
+      const res = await fetch(
+        `http://${config.kubernetes.registryUrl}/v2/${imageId}/manifests/latest`,
+        {
+          method: "HEAD",
+          signal: AbortSignal.timeout(3000),
+        },
+      );
+      return res.ok;
+    } catch {
+      return false;
     }
-    return results;
+  }
+
+  private async findActiveJob(imageId: string): Promise<string | null> {
+    if (isMock()) return null;
+
+    const namespace = config.kubernetes.systemNamespace;
+    const jobs = await this.kubeClient.listJobs(
+      `atelier.dev/component=${COMPONENT_LABEL},atelier.dev/image=${imageId}`,
+      namespace,
+    );
+
+    for (const job of jobs) {
+      const s = job.status;
+      if ((s?.succeeded ?? 0) === 0 && (s?.failed ?? 0) === 0) {
+        return job.metadata?.name ?? null;
+      }
+    }
+
+    return null;
+  }
+
+  private deriveJobStatus(status?: {
+    succeeded?: number;
+    failed?: number;
+    active?: number;
+  }): ImageBuildStatus {
+    if (!status) return "building";
+    if ((status.succeeded ?? 0) > 0) return "succeeded";
+    if ((status.failed ?? 0) > 0) return "failed";
+    return "building";
+  }
+
+  private latestJob<
+    T extends {
+      metadata?: { creationTimestamp?: string };
+    },
+  >(jobs: T[]): T | undefined {
+    if (jobs.length === 0) return undefined;
+    return jobs.sort((a, b) => {
+      const tA = a.metadata?.creationTimestamp ?? "";
+      const tB = b.metadata?.creationTimestamp ?? "";
+      return tB.localeCompare(tA);
+    })[0];
   }
 
   /**
@@ -241,35 +295,11 @@ export class BaseImageBuilder {
     return { data, items };
   }
 
-  private async resolveJobStatus(build: BuildState): Promise<ImageBuildStatus> {
-    if (isMock()) return "succeeded";
-
-    try {
-      const status = await this.kubeClient.getJobStatus(
-        build.jobName,
-        config.kubernetes.systemNamespace,
-      );
-
-      switch (status) {
-        case "succeeded":
-          return "succeeded";
-        case "failed":
-          return "failed";
-        case "active":
-          return "building";
-        default:
-          return "building";
-      }
-    } catch {
-      return "failed";
-    }
-  }
-
-  private async tryGetLogs(build: BuildState): Promise<string | undefined> {
+  private async tryGetLogs(imageId: string): Promise<string | undefined> {
     try {
       const namespace = config.kubernetes.systemNamespace;
       const pods = await this.kubeClient.listPods(
-        `atelier.dev/image=${build.imageId},atelier.dev/component=${COMPONENT_LABEL}`,
+        `atelier.dev/image=${imageId},atelier.dev/component=${COMPONENT_LABEL}`,
         namespace,
       );
 

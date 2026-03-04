@@ -189,6 +189,51 @@ export class KubeClient {
     return response.items ?? [];
   }
 
+  /**
+   * List K8s Jobs matching a label selector.
+   */
+  async listJobs(
+    labelSelector: string,
+    namespace = this.namespace,
+  ): Promise<
+    Array<{
+      metadata?: {
+        name?: string;
+        creationTimestamp?: string;
+        labels?: Record<string, string>;
+      };
+      status?: {
+        succeeded?: number;
+        failed?: number;
+        active?: number;
+        completionTime?: string;
+      };
+    }>
+  > {
+    if (isMock()) {
+      return [];
+    }
+
+    const selector = encodeURIComponent(labelSelector);
+    const path = `/apis/batch/v1/namespaces/${namespace}/jobs?labelSelector=${selector}`;
+    const response = await this.list<{
+      items?: Array<{
+        metadata?: {
+          name?: string;
+          creationTimestamp?: string;
+          labels?: Record<string, string>;
+        };
+        status?: {
+          succeeded?: number;
+          failed?: number;
+          active?: number;
+          completionTime?: string;
+        };
+      }>;
+    }>(path);
+    return response.items ?? [];
+  }
+
   async createResource(
     resource: KubeResource,
     namespace = this.namespace,
