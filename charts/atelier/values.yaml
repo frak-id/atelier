@@ -300,3 +300,27 @@ cliproxy:
   #       - api-key: "AIzaSy..."
   #     proxy-url: "socks5://proxy:1080"
   extraConfig: {}
+
+# -- sshpiper SSH proxy (username-based SSH routing to sandboxes)
+# Deploys sshpiper as a K8s Deployment with CRD-based Pipe routing.
+# The manager creates/deletes Pipe CRDs as sandboxes boot/stop.
+# See https://github.com/tg123/sshpiper
+sshpiper:
+  enabled: true
+  image:
+    repository: farmer1992/sshpiperd
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  # SSH listen port (exposed via NodePort)
+  port: 2222
+  # NodePort for external SSH access (30022 default, set 0 for auto-assign)
+  nodePort: 30022
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "10m"
+    limits:
+      memory: "128Mi"
+      cpu: "200m"
+  # Log level: trace, debug, info, warn, error
+  logLevel: "info"
