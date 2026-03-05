@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+      - kubernetes
 
 permissions:
   contents: write
@@ -13,6 +16,7 @@ env:
   REGISTRY: ghcr.io
   MANAGER_IMAGE: ghcr.io/frak-id/atelier-manager
   DASHBOARD_IMAGE: ghcr.io/frak-id/atelier-dashboard
+  AGENT_IMAGE: ghcr.io/frak-id/sandbox-agent
 
 jobs:
   check:
@@ -49,9 +53,75 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata (tag release)
+        id: meta-tag
+        if: github.ref_type == 'tag'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env[matrix.image_env] }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+            type=sha,prefix=
+
+      - name: Docker metadata (nightly)
+        id: meta-nightly
+        if: github.ref_type == 'branch'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env[matrix.image_env] }}
+          tags: |
+            type=raw,value=nightly
+            type=sha,prefix=nightly-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.tags || steps.meta-nightly.outputs.tags }}
+          labels: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.labels || steps.meta-nightly.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  agent:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl cross-compiler
+        run: sudo apt-get install -y musl-tools
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/agent-rust
+
+      - name: Build agent binary
+        working-directory: apps/agent-rust
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-musl/release/sandbox-agent dist/sandbox-agent
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -63,29 +133,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata
-        id: meta
+      - name: Docker metadata (tag release)
+        id: meta-tag
+        if: github.ref_type == 'tag'
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env[matrix.image_env] }}
+          images: ${{ env.AGENT_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
             type=sha,prefix=
+
+      - name: Docker metadata (nightly)
+        id: meta-nightly
+        if: github.ref_type == 'branch'
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.AGENT_IMAGE }}
+          tags: |
+            type=raw,value=nightly
+            type=sha,prefix=nightly-
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          target: ${{ matrix.target }}
+          context: apps/agent-rust
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.tags || steps.meta-nightly.outputs.tags }}
+          labels: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.labels || steps.meta-nightly.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   helm:
     needs: check
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -113,7 +195,8 @@ jobs:
         run: helm push atelier-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/frak-id/charts
 
   release:
-    needs: [docker, helm]
+    needs: [docker, agent, helm]
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -138,8 +221,9 @@ jobs:
             ```
 
             ## Docker Images
-            
+
             ```bash
             docker pull ghcr.io/frak-id/atelier-manager:${{ steps.version.outputs.version }}
             docker pull ghcr.io/frak-id/atelier-dashboard:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/frak-id/sandbox-agent:${{ steps.version.outputs.version }}
             ```
