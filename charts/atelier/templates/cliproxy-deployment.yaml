@@ -21,8 +21,6 @@ spec:
     spec:
       {{- include "atelier.imagePullSecrets" . | nindent 6 }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
         fsGroup: 1000
       containers:
         - name: cliproxy
@@ -32,8 +30,8 @@ spec:
           args:
             - |
               sed "s|__CLIPROXY_MANAGEMENT_KEY__|${CLIPROXY_MANAGEMENT_KEY}|g" \
-                /etc/cliproxy/config.yaml > /CLIProxyAPI/config.yaml
-              exec ./CLIProxyAPI
+                /etc/cliproxy/config.yaml > /data/config.yaml
+              exec /CLIProxyAPI/CLIProxyAPI -config /data/config.yaml
           env:
             - name: CLIPROXY_MANAGEMENT_KEY
               valueFrom:
@@ -57,10 +55,6 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.cliproxy.resources | nindent 12 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
           volumeMounts:
             - name: cliproxy-config
               mountPath: /etc/cliproxy
