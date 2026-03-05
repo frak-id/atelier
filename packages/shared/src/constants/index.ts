@@ -11,13 +11,6 @@ export {
   type SessionTemplate,
 } from "./session-templates.ts";
 export {
-  CODE_SERVER,
-  getSharedBinaries,
-  OPENCODE,
-  type SharedBinaryId,
-  type SharedBinaryInfo,
-} from "./shared-binaries.ts";
-export {
   DEFAULT_SYSTEM_MODEL_CONFIG,
   SYSTEM_MODEL_CONFIG_PATH,
   type SystemModelAction,
