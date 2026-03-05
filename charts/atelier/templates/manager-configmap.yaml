@@ -51,6 +51,9 @@ data:
         "slack" (dict
           "enabled" .Values.integrations.slack.enabled
         )
+        "cliproxy" (dict
+          "url" (ternary (printf "http://%s-cliproxy.%s.svc:%v" (include "atelier.fullname" .) .Release.Namespace .Values.cliproxy.port) "" .Values.cliproxy.enabled)
+        )
       )
     -}}
 {{ $config | toPrettyJson | nindent 4 }}
