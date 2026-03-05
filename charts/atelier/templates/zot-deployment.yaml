@@ -1,0 +1,63 @@
+{{- if .Values.zot.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "atelier.fullname" . }}-zot
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: zot
+  template:
+    metadata:
+      labels:
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: zot
+    spec:
+      {{- include "atelier.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        fsGroup: 100
+      containers:
+        - name: zot
+          image: {{ printf "%s:%s" .Values.zot.image.repository .Values.zot.image.tag }}
+          args: ["serve", "/etc/zot/config.json"]
+          imagePullPolicy: {{ .Values.zot.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.zot.port }}
+          livenessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.zot.resources | nindent 12 }}
+          volumeMounts:
+            - name: zot-data
+              mountPath: /var/lib/registry
+            - name: zot-config
+              mountPath: /etc/zot
+      volumes:
+        - name: zot-data
+          persistentVolumeClaim:
+            claimName: {{ include "atelier.fullname" . }}-zot-data
+        - name: zot-config
+          configMap:
+            name: {{ include "atelier.fullname" . }}-zot-config
+{{- end }}

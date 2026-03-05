@@ -19,10 +19,10 @@ export function buildSandboxConfig(
       : VM.WORKSPACE_DIR;
 
   const dashboardDomain = config.domain.dashboard;
-  const vsPort = config.advanced.vm.vscode.port;
-  const ocPort = config.advanced.vm.opencode.port;
-  const browserPort = config.advanced.vm.browser.port;
-  const terminalPort = config.advanced.vm.terminal.port;
+  const vsPort = config.ports.vscode;
+  const ocPort = config.ports.opencode;
+  const browserPort = config.ports.browser;
+  const terminalPort = config.ports.terminal;
 
   return {
     sandboxId,
@@ -32,7 +32,7 @@ export function buildSandboxConfig(
     createdAt: new Date().toISOString(),
     network: {
       dashboardDomain,
-      managerInternalUrl: `http://${config.network.bridgeIp}:${config.server.port}/internal`,
+      managerInternalUrl: "http://manager.atelier-system.svc:4000/internal",
     },
     services: {
       vscode: {
@@ -93,8 +93,8 @@ export function generateSandboxMd(
         .join("\n")
     : "No repositories configured";
 
-  const vsPort = config.advanced.vm.vscode.port;
-  const ocPort = config.advanced.vm.opencode.port;
+  const vsPort = config.ports.vscode;
+  const ocPort = config.ports.opencode;
 
   const devCommandsSection = ws?.config.devCommands?.length
     ? ws.config.devCommands

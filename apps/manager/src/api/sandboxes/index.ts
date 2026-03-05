@@ -9,13 +9,10 @@ import {
   workspaceService,
 } from "../../container.ts";
 import { internalBus } from "../../infrastructure/events/internal-bus.ts";
-import { proxyService } from "../../infrastructure/proxy/index.ts";
-import { StorageService } from "../../infrastructure/storage/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
   AgentHealthSchema,
-  AgentMetricsSchema,
   AllServicesResponseSchema,
   BrowserStartResponseSchema,
   BrowserStopResponseSchema,
@@ -29,8 +26,6 @@ import {
   GitStatusResponseSchema,
   IdParamSchema,
   PromoteToPrebuildResponseSchema,
-  ResizeStorageBodySchema,
-  ResizeStorageResponseSchema,
   SandboxListQuerySchema,
   SandboxListResponseSchema,
   SandboxSchema,
@@ -202,16 +197,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         },
       )
       .get(
-        "/:id/metrics",
-        async ({ sandbox }) => {
-          return agentClient.metrics(sandbox.id);
-        },
-        {
-          params: IdParamSchema,
-          response: AgentMetricsSchema,
-        },
-      )
-      .get(
         "/:id/git/status",
         async ({ sandbox }) => {
           const workspace = sandbox.workspaceId
@@ -290,53 +275,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         },
       )
       .post(
-        "/:id/storage/resize",
-        async ({ params, body, sandbox }) => {
-          if (sandbox.status !== "running") {
-            return {
-              success: false,
-              previousSize: 0,
-              newSize: 0,
-              error: "Sandbox must be running to resize storage",
-            };
-          }
-
-          log.info(
-            { sandboxId: params.id, sizeGb: body.sizeGb },
-            "Resizing sandbox storage",
-          );
-
-          const lvResult = await StorageService.resizeSandboxVolume(
-            params.id,
-            body.sizeGb,
-          );
-
-          if (!lvResult.success) {
-            return lvResult;
-          }
-
-          const agentResult = await agentOperations.resizeStorage(sandbox.id);
-
-          if (!agentResult.success) {
-            return {
-              ...lvResult,
-              success: false,
-              error: `Volume extended but filesystem resize failed: ${agentResult.error}`,
-            };
-          }
-
-          return {
-            ...lvResult,
-            disk: agentResult.disk,
-          };
-        },
-        {
-          params: IdParamSchema,
-          body: ResizeStorageBodySchema,
-          response: ResizeStorageResponseSchema,
-        },
-      )
-      .post(
         "/:id/promote",
         async ({ params, sandbox }) => {
           if (sandbox.status !== "running") {
@@ -361,7 +299,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
           await agentClient.exec(sandbox.id, "sync");
           await sandboxLifecycle.stop(params.id);
-          await StorageService.createPrebuild(sandbox.workspaceId, params.id);
           await sandboxLifecycle.start(params.id);
 
           workspaceService.update(sandbox.workspaceId, {
@@ -407,8 +344,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             return { status: "running" as const, url: browserUrl };
           }
 
-          const browserPort = config.advanced.vm.browser.port;
-
           const startBrowser = async () => {
             await agentClient.serviceStart(sandbox.id, "kasmvnc");
             await new Promise((r) => setTimeout(r, 500));
@@ -424,11 +359,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             );
           });
 
-          const browserUrl = await proxyService.registerBrowserRoute(
-            sandbox.id,
-            sandbox.runtime.ipAddress,
-            browserPort,
-          );
+          const browserUrl = `https://browser-${sandbox.id}.${config.domain.dashboard}`;
 
           sandboxService.update(sandbox.id, {
             runtime: {
@@ -457,8 +388,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             agentClient.serviceStop(sandbox.id, "openbox").catch(() => {}),
             agentClient.serviceStop(sandbox.id, "kasmvnc").catch(() => {}),
           ]).catch(() => {});
-
-          await proxyService.removeBrowserRoute(sandbox.id);
 
           sandboxService.update(sandbox.id, {
             runtime: {

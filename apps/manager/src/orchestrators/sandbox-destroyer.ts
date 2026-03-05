@@ -1,7 +1,4 @@
-import { LVM } from "@frak/atelier-shared/constants";
 import { eventBus } from "../infrastructure/events/index.ts";
-import { getSandboxPaths } from "../infrastructure/firecracker/index.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { isMock } from "../shared/lib/config.ts";
@@ -26,21 +23,8 @@ export class SandboxDestroyer {
     log.info({ sandboxId }, "Destroying sandbox");
 
     if (!isMock()) {
-      const lvmAvailable = await StorageService.isAvailable();
-      const volumePath = lvmAvailable
-        ? `/dev/${LVM.VG_NAME}/${LVM.SANDBOX_PREFIX}${sandboxId}`
-        : undefined;
-      const paths = getSandboxPaths(sandboxId, volumePath);
-
       await cleanupSandboxResources(sandboxId, {
-        pid: sandbox.runtime.pid,
-        paths,
-        network: {
-          ipAddress: sandbox.runtime.ipAddress,
-          macAddress: sandbox.runtime.macAddress,
-          tapDevice: `tap-${sandboxId.slice(0, 8)}`,
-          gateway: "",
-        },
+        podName: `sandbox-${sandboxId}`,
       });
     }
 

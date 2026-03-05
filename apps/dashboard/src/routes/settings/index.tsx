@@ -16,6 +16,7 @@ import {
 import { McpConnectionSection } from "@/components/mcp-connection-section";
 import {
   AddConfigFileDialog,
+  CLIProxySection,
   ConfigFileCard,
   RestartSandboxesDialog,
   SessionTemplatesSection,
@@ -247,6 +248,7 @@ function SettingsPage() {
 
         {/* Agent & Models — session templates + system model config */}
         <TabsContent value="agent" className="mt-6 space-y-6">
+          <CLIProxySection />
           <SessionTemplatesSection />
           <SystemModelConfigSection />
         </TabsContent>

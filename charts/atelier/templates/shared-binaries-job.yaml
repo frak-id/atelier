@@ -1,0 +1,72 @@
+{{- if .Values.sharedBinaries.enabled }}
+{{- $ocVersion := .Values.sharedBinaries.opencode.version -}}
+{{- $csVersion := .Values.sharedBinaries.codeServer.version -}}
+{{- $fingerprint := printf "v2:code-server@%s,opencode@%s" $csVersion $ocVersion -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: shared-binaries-update-{{ adler32sum $fingerprint }}
+  namespace: {{ include "atelier.sandboxNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    atelier.dev/component: shared-binaries
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+    "helm.sh/hook-weight": "0"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        atelier.dev/component: shared-binaries
+    spec:
+      securityContext:
+        runAsUser: 0
+      restartPolicy: Never
+      containers:
+        - name: updater
+          image: {{ .Values.sharedBinaries.image }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              FINGERPRINT="{{ $fingerprint }}"
+              MARKER="/shared/.version"
+
+              if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$FINGERPRINT" ]; then
+                echo "[shared-binaries] Already up to date ($FINGERPRINT)"
+                exit 0
+              fi
+
+              echo "[shared-binaries] Installing opencode v{{ $ocVersion }}"
+              mkdir -p /shared/opencode
+              cd /tmp
+              # TODO: Add SHA256 checksum verification for downloaded binaries
+              curl -fsSL -o archive-opencode "https://github.com/anomalyco/opencode/releases/download/v{{ $ocVersion }}/opencode-linux-x64-baseline.tar.gz"
+              tar -xzf archive-opencode -C /shared/opencode
+              rm -f archive-opencode
+
+              echo "[shared-binaries] Installing code-server v{{ $csVersion }}"
+              mkdir -p /shared/code-server
+              cd /tmp
+              # TODO: Add SHA256 checksum verification for downloaded binaries
+              curl -fsSL -o archive-code-server "https://github.com/coder/code-server/releases/download/v{{ $csVersion }}/code-server-{{ $csVersion }}-linux-amd64.tar.gz"
+              tar -xzf archive-code-server -C /shared/code-server --strip-components=1
+              rm -f archive-code-server
+
+              mkdir -p /shared/bin
+              [ -f "/shared/opencode/opencode" ] && ln -sf ../opencode/opencode /shared/bin/opencode
+              [ -f "/shared/code-server/bin/code-server" ] && ln -sf ../code-server/bin/code-server /shared/bin/code-server
+
+              echo "$FINGERPRINT" > "$MARKER"
+              echo "[shared-binaries] Done"
+          volumeMounts:
+            - name: shared-binaries
+              mountPath: /shared
+      volumes:
+        - name: shared-binaries
+          persistentVolumeClaim:
+            claimName: shared-binaries
+{{- end }}

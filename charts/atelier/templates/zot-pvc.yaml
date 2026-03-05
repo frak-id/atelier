@@ -1,0 +1,20 @@
+{{- if .Values.zot.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "atelier.fullname" . }}-zot-data
+  namespace: {{ include "atelier.systemNamespace" . }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.zot.persistence.storageClass }}
+  storageClassName: {{ .Values.zot.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.zot.persistence.size }}
+{{- end }}

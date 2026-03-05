@@ -1,7 +1,6 @@
 import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
-import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
@@ -10,6 +9,9 @@ import {
   SYSTEM_WORKSPACE_ID,
 } from "../system-sandbox/index.ts";
 import type { AuthSyncService } from "./auth-sync.service.ts";
+
+const CLIPROXY_PROVIDER_PATH = "/.atelier/cliproxy-opencode-provider.json";
+const CLIPROXY_SETTINGS_PATH = "/.atelier/cliproxy-settings.json";
 
 const log = createChildLogger("internal-service");
 
@@ -103,6 +105,8 @@ export class InternalService {
       this.injectSystemAgents(merged);
     }
 
+    this.injectCliProxyProvider(merged);
+
     const files: { path: string; content: string }[] = [];
 
     for (const cfg of merged) {
@@ -154,49 +158,62 @@ export class InternalService {
     }
   }
 
-  async syncRegistryToSandboxes(enabled: boolean): Promise<{ synced: number }> {
-    const runningSandboxes = this.sandboxService
-      .getAll()
-      .filter((s) => s.status === "running");
-    if (runningSandboxes.length === 0) return { synced: 0 };
+  private injectCliProxyProvider(
+    merged: { path: string; content: string; contentType: string }[],
+  ): void {
+    const settingsFile = this.configFileService.getByPath(
+      CLIPROXY_SETTINGS_PATH,
+      "global",
+    );
+    if (!settingsFile) return;
 
-    const sandboxIds = runningSandboxes.map((s) => s.id);
+    let enabled = false;
+    try {
+      enabled =
+        (JSON.parse(settingsFile.content) as { enabled?: boolean }).enabled ===
+        true;
+    } catch {
+      return;
+    }
+    if (!enabled) return;
 
-    if (enabled) {
-      for (const sandboxId of sandboxIds) {
-        await this.pushRegistryConfig(sandboxId);
-      }
-    } else {
-      const commands = [
-        {
-          id: "registry-remove",
-          command: `rm -f /etc/profile.d/registry.sh /etc/npmrc ${VM.HOME}/.bunfig.toml ${VM.HOME}/.yarnrc.yml`,
-          timeout: 5000,
-        },
-      ];
+    const providerFile = this.configFileService.getByPath(
+      CLIPROXY_PROVIDER_PATH,
+      "global",
+    );
+    if (!providerFile) return;
 
-      const results = await Promise.allSettled(
-        sandboxIds.map((sandboxId) =>
-          this.agentClient.batchExec(sandboxId, commands, {
-            timeout: 10000,
-          }),
-        ),
-      );
-
-      const failures = results.filter((r) => r.status === "rejected");
-      if (failures.length > 0) {
-        log.warn(
-          { failures: failures.length, total: results.length },
-          "Some registry config removals failed",
-        );
-      }
+    let providerConfig: Record<string, unknown>;
+    try {
+      providerConfig = JSON.parse(providerFile.content) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      log.warn("Failed to parse CLIProxy provider config");
+      return;
     }
 
-    log.info(
-      { enabled, sandboxes: sandboxIds.length },
-      "Registry sync to sandboxes complete",
-    );
-    return { synced: sandboxIds.length };
+    const configPath = "~/.config/opencode/opencode.json";
+    const existing = merged.find((c) => c.path === configPath);
+
+    if (existing && existing.contentType === "json") {
+      try {
+        const parsed = JSON.parse(existing.content) as Record<string, unknown>;
+        const existingProvider =
+          (parsed.provider as Record<string, unknown>) ?? {};
+        parsed.provider = { ...existingProvider, cliproxy: providerConfig };
+        existing.content = JSON.stringify(parsed);
+      } catch {
+        log.warn("Failed to merge CLIProxy provider into opencode config");
+      }
+    } else if (!existing) {
+      merged.push({
+        path: configPath,
+        content: JSON.stringify({ provider: { cliproxy: providerConfig } }),
+        contentType: "json",
+      });
+    }
   }
 
   private getVmPathForConfig(configPath: string): string | null {
@@ -253,11 +270,11 @@ export class InternalService {
   }
 
   private async pushRegistryConfig(sandboxId: string): Promise<void> {
-    const settings = RegistryService.getSettings();
-    if (!settings.enabled) return;
+    const isHealthy = await RegistryService.checkHealth();
+    if (!isHealthy) return;
 
     const registryUrl = RegistryService.getRegistryUrl();
-    const bridgeIp = config.network.bridgeIp;
+    const registryHost = new URL(registryUrl).hostname;
 
     const files = [
       {
@@ -274,7 +291,7 @@ export class InternalService {
       },
       {
         path: `${VM.HOME}/.yarnrc.yml`,
-        content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${bridgeIp}"`,
+        content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${registryHost}"`,
       },
     ];
 

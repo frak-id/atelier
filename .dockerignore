@@ -1,0 +1,10 @@
+node_modules
+.git
+.deploy-staging
+*.tar.gz
+apps/agent-rust/target
+apps/cli
+infra/caddy
+infra/systemd
+sandbox.config.json
+values.production.yaml

@@ -1,0 +1,25 @@
+{{- if .Values.zot.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "atelier.fullname" . }}-zot-config
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zot
+data:
+  config.json: |
+    {
+      "storage": {
+        "rootDirectory": "/var/lib/registry",
+        "dedupe": false
+      },
+      "http": {
+        "address": "0.0.0.0",
+        "port": "{{ .Values.zot.port }}"
+      },
+      "log": {
+        "level": "info"
+      }
+    }
+{{- end }}

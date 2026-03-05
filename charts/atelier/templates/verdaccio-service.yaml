@@ -1,0 +1,19 @@
+{{- if .Values.verdaccio.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "atelier.fullname" . }}-verdaccio
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: verdaccio
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "atelier.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: verdaccio
+  ports:
+    - name: http
+      port: {{ .Values.ports.verdaccio }}
+      targetPort: http
+{{- end }}

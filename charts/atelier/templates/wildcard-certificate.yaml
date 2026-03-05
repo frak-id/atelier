@@ -1,0 +1,17 @@
+{{- if and .Values.certManager.enabled .Values.domain.baseDomain }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "atelier.fullname" . }}-wildcard
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "atelier.wildcardTlsSecretName" . }}
+  issuerRef:
+    kind: ClusterIssuer
+    name: {{ .Values.certManager.issuerName }}
+  commonName: {{ printf "*.%s" .Values.domain.baseDomain | quote }}
+  dnsNames:
+    - {{ printf "*.%s" .Values.domain.baseDomain | quote }}
+{{- end }}

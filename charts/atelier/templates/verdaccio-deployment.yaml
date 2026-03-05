@@ -1,0 +1,69 @@
+{{- if .Values.verdaccio.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "atelier.fullname" . }}-verdaccio
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: verdaccio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: verdaccio
+  template:
+    metadata:
+      labels:
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: verdaccio
+    spec:
+      {{- include "atelier.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: verdaccio
+          image: {{ printf "%s:%s" .Values.verdaccio.image.repository .Values.verdaccio.image.tag }}
+          imagePullPolicy: {{ .Values.verdaccio.image.pullPolicy }}
+          env:
+            # Override K8s auto-injected VERDACCIO_PORT (from service named 'verdaccio')
+            # which sets it to 'tcp://10.x.x.x:4873' and breaks verdaccio's address parsing
+            - name: VERDACCIO_PORT
+              value: {{ .Values.ports.verdaccio | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.verdaccio }}
+          readinessProbe:
+            httpGet:
+              path: /-/ping
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/ping
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.verdaccio.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: verdaccio-config
+              mountPath: /verdaccio/conf
+            - name: verdaccio-storage
+              mountPath: /verdaccio/storage
+      volumes:
+        - name: verdaccio-config
+          configMap:
+            name: {{ include "atelier.fullname" . }}-verdaccio-config
+        - name: verdaccio-storage
+          persistentVolumeClaim:
+            claimName: {{ include "atelier.fullname" . }}-verdaccio-data
+{{- end }}

@@ -1,0 +1,50 @@
+{{- if .Values.verdaccio.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "atelier.fullname" . }}-verdaccio-config
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: verdaccio
+data:
+  config.yaml: |
+    storage: /verdaccio/storage/packages
+
+    auth:
+      htpasswd:
+        file: /verdaccio/storage/htpasswd
+        max_users: 1000
+
+    uplinks:
+      npmjs:
+        url: https://registry.npmjs.org/
+        cache: true
+        maxage: 7d
+        fail_timeout: 5m
+        timeout: 60s
+        max_fails: 5
+        agent_options:
+          keepAlive: true
+          maxSockets: 40
+
+    packages:
+      "@*/*":
+        access: $all
+        proxy: npmjs
+      "**":
+        access: $all
+        proxy: npmjs
+
+    server:
+      keepAliveTimeout: 60
+
+    listen: 0.0.0.0:{{ .Values.ports.verdaccio }}
+
+    log:
+      type: stdout
+      format: pretty
+      level: warn
+
+    max_body_size: 500mb
+{{- end }}

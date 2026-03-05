@@ -1,10 +1,6 @@
-import { PATHS } from "@frak/atelier-shared/constants";
 import { Elysia, t } from "elysia";
 import { CronService } from "../infrastructure/cron/index.ts";
-import { FirecrackerClient } from "../infrastructure/firecracker/index.ts";
-import { networkService } from "../infrastructure/network/index.ts";
-import { proxyService } from "../infrastructure/proxy/index.ts";
-import { StorageService } from "../infrastructure/storage/index.ts";
+import { kubeClient } from "../infrastructure/kubernetes/index.ts";
 import {
   CronJobInfoSchema,
   type HealthStatus,
@@ -12,36 +8,47 @@ import {
   LiveStatusSchema,
   ReadyStatusSchema,
 } from "../schemas/index.ts";
-import { dirExists } from "../shared/lib/shell.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 
 const startTime = Date.now();
+
+/**
+ * Check if the Zot OCI registry is reachable.
+ */
+async function checkZotHealth(): Promise<boolean> {
+  if (isMock()) return true;
+  try {
+    const res = await fetch(`http://${config.kubernetes.registryUrl}/v2/`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export const healthRoutes = new Elysia({ prefix: "/health" })
   .get(
     "/",
     async (): Promise<HealthStatus> => {
-      const [firecracker, proxy, network, storageDir, lvmAvailable] =
-        await Promise.all([
-          FirecrackerClient.isHealthy(),
-          proxyService.isHealthy(),
-          networkService.getBridgeStatus().then((s) => s.exists),
-          dirExists(PATHS.SANDBOX_DIR),
-          StorageService.isAvailable(),
-        ]);
+      const [kubernetes, kata, registry, snapshots] = await Promise.all([
+        kubeClient.checkApiHealth(),
+        kubeClient.checkRuntimeClass(),
+        checkZotHealth(),
+        kubeClient.checkSnapshotApi(),
+      ]);
 
-      const storage = storageDir || lvmAvailable;
-      const allHealthy = firecracker && proxy && network && storage;
+      const allHealthy = kubernetes && kata && registry;
 
       return {
         status: allHealthy ? "ok" : "degraded",
         uptime: Math.floor((Date.now() - startTime) / 1000),
         timestamp: Date.now(),
         checks: {
-          firecracker: firecracker ? "ok" : "error",
-          proxy: proxy ? "ok" : "error",
-          network: network ? "ok" : "error",
-          storage: storage ? "ok" : "error",
-          lvm: lvmAvailable ? "ok" : "unavailable",
+          kubernetes: kubernetes ? "ok" : "error",
+          kata: kata ? "ok" : "error",
+          registry: registry ? "ok" : "error",
+          snapshots: snapshots ? "ok" : "error",
         },
       };
     },
@@ -55,12 +62,12 @@ export const healthRoutes = new Elysia({ prefix: "/health" })
   .get(
     "/ready",
     async ({ set }) => {
-      const firecracker = await FirecrackerClient.isHealthy();
-      if (!firecracker) {
+      const kubernetes = await kubeClient.checkApiHealth();
+      if (!kubernetes) {
         set.status = 503;
         return {
           status: "not ready" as const,
-          reason: "firecracker unavailable",
+          reason: "kubernetes api unavailable",
         };
       }
       return { status: "ready" as const };

@@ -45,6 +45,7 @@ export const CreateSandboxBodySchema = t.Object({
   vcpus: t.Optional(t.Number({ minimum: 1, maximum: 8 })),
   memoryMb: t.Optional(t.Number({ minimum: 512, maximum: 16384 })),
   system: t.Optional(t.Boolean()),
+  prebuildSnapshotName: t.Optional(t.String()),
 });
 export type CreateSandboxBody = Static<typeof CreateSandboxBodySchema>;
 
@@ -124,22 +125,6 @@ export const AgentHealthSchema = t.Object({
 });
 export type AgentHealth = Static<typeof AgentHealthSchema>;
 
-export const AgentMetricsSchema = t.Object({
-  cpu: t.Number(),
-  memory: t.Object({
-    total: t.Number(),
-    used: t.Number(),
-    free: t.Number(),
-  }),
-  disk: t.Object({
-    total: t.Number(),
-    used: t.Number(),
-    free: t.Number(),
-  }),
-  timestamp: t.String(),
-});
-export type AgentMetrics = Static<typeof AgentMetricsSchema>;
-
 export const RepoGitStatusSchema = t.Object({
   path: t.String(),
   branch: t.Union([t.String(), t.Null()]),
@@ -200,26 +185,6 @@ export const GitPushResponseSchema = t.Object({
   error: t.Optional(t.String()),
 });
 export type GitPushResponse = Static<typeof GitPushResponseSchema>;
-
-export const ResizeStorageBodySchema = t.Object({
-  sizeGb: t.Number({ minimum: 1, maximum: 100 }),
-});
-export type ResizeStorageBody = Static<typeof ResizeStorageBodySchema>;
-
-export const ResizeStorageResponseSchema = t.Object({
-  success: t.Boolean(),
-  previousSize: t.Number(),
-  newSize: t.Number(),
-  disk: t.Optional(
-    t.Object({
-      total: t.Number(),
-      used: t.Number(),
-      free: t.Number(),
-    }),
-  ),
-  error: t.Optional(t.String()),
-});
-export type ResizeStorageResponse = Static<typeof ResizeStorageResponseSchema>;
 
 export const PromoteToPrebuildResponseSchema = t.Object({
   success: t.Boolean(),

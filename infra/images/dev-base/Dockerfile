@@ -88,7 +88,7 @@ RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony \
     && echo 'dev ALL=(root) NOPASSWD: /usr/sbin/chronyd, /usr/bin/chronyc' > /etc/sudoers.d/chrony \
     && chmod 440 /etc/sudoers.d/chrony
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
-COPY --chown=root:root sandbox-agent /usr/local/bin/sandbox-agent
+COPY --from=atelier/sandbox-agent:latest /sandbox-agent /usr/local/bin/sandbox-agent
 RUN chmod +x /usr/local/bin/sandbox-agent
 
 WORKDIR /home/dev/workspace

@@ -44,4 +44,5 @@ apps/manager/server.js
 
 # Sandbox config (contains deployment-specific values)
 sandbox.config.json
+values.production.yaml
 apps/agent-rust/target/

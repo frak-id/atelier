@@ -1,4 +1,6 @@
 import { AgentClient, AgentOperations } from "./infrastructure/agent/index.ts";
+import { kubeClient } from "./infrastructure/kubernetes/index.ts";
+import { CLIProxyService } from "./modules/cliproxy/index.ts";
 import {
   ConfigFileRepository,
   ConfigFileService,
@@ -31,6 +33,7 @@ import {
   WorkspaceService,
 } from "./modules/workspace/index.ts";
 import {
+  BaseImageBuilder,
   PrebuildChecker,
   PrebuildRunner,
   SandboxDestroyer,
@@ -90,6 +93,8 @@ const sandboxPorts: SandboxPorts = {
   internal: internalService,
 };
 
+const cliProxyService = new CLIProxyService(configFileService, internalService);
+
 const sessionTemplateService = new SessionTemplateService(
   configFileService,
   workspaceService,
@@ -127,14 +132,14 @@ const taskService = new TaskService(taskRepository);
 const sandboxLifecycle = new SandboxLifecycle(sandboxPorts);
 
 const prebuildRunner = new PrebuildRunner({
-  sandboxSpawner,
-  sandboxDestroyer,
-  sandboxService,
-  agentClient,
-  internalService,
   workspaceService,
+  gitSourceService,
+  kubeClient,
+  agentClient,
   aiService: systemAiService,
 });
+
+const baseImageBuilder = new BaseImageBuilder(kubeClient);
 
 const taskSpawner = new TaskSpawner({
   sandboxSpawner,
@@ -181,6 +186,8 @@ export {
   agentClient,
   agentOperations,
   authSyncService,
+  baseImageBuilder,
+  cliProxyService,
   configFileService,
   gitSourceService,
   internalService,
@@ -193,6 +200,7 @@ export {
   integrationEventBridge,
   integrationGateway,
   slackAdapter,
+  kubeClient,
   sshKeyService,
   systemAiService,
   systemSandboxEventListener,

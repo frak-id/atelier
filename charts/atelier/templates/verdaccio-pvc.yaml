@@ -1,0 +1,18 @@
+{{- if .Values.verdaccio.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "atelier.fullname" . }}-verdaccio-data
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.verdaccio.persistence.storageClass }}
+  storageClassName: {{ .Values.verdaccio.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.verdaccio.persistence.size }}
+{{- end }}

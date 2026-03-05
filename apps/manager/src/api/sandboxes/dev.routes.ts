@@ -1,6 +1,9 @@
 import { Elysia } from "elysia";
 import { agentClient, workspaceService } from "../../container";
-import { proxyService } from "../../infrastructure/proxy";
+import {
+  buildDevCommandIngress,
+  kubeClient,
+} from "../../infrastructure/kubernetes/index.ts";
 import {
   DevCommandListResponseSchema,
   DevCommandLogsQuerySchema,
@@ -43,9 +46,9 @@ export const devRoutes = new Elysia()
             | undefined;
 
           if (isRunning && cmd.port) {
-            devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.domain.baseDomain}`;
+            devUrl = `https://dev-${cmd.name}-${sandbox.id}.${config.domain.dashboard}`;
             if (cmd.isDefault) {
-              defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.baseDomain}`;
+              defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.dashboard}`;
             }
           }
 
@@ -53,7 +56,7 @@ export const devRoutes = new Elysia()
             extraDevUrls = cmd.extraPorts.map((ep) => ({
               alias: ep.alias,
               port: ep.port,
-              url: `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.domain.baseDomain}`,
+              url: `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.domain.dashboard}`,
             }));
           }
 
@@ -108,17 +111,30 @@ export const devRoutes = new Elysia()
 
       if (devCommand.port) {
         try {
-          const urls = await proxyService.registerDevRoute(
-            sandbox.id,
-            sandbox.runtime.ipAddress,
-            params.name,
-            devCommand.port,
-            devCommand.isDefault ?? false,
-            devCommand.extraPorts,
+          await kubeClient.createResource(
+            buildDevCommandIngress(
+              sandbox.id,
+              params.name,
+              devCommand.port,
+              config.domain.dashboard,
+              {
+                ingressClassName:
+                  config.kubernetes.ingressClassName || undefined,
+                tlsSecretName: "atelier-sandbox-wildcard-tls",
+              },
+            ),
           );
-          devUrl = urls.namedUrl;
-          defaultDevUrl = urls.defaultUrl;
-          extraDevUrls = urls.extraDevUrls;
+          devUrl = `https://dev-${params.name}-${sandbox.id}.${config.domain.dashboard}`;
+          if (devCommand.isDefault) {
+            defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.dashboard}`;
+          }
+          if (devCommand.extraPorts?.length) {
+            extraDevUrls = devCommand.extraPorts.map((ep) => ({
+              alias: ep.alias,
+              port: ep.port,
+              url: `https://dev-${params.name}-${ep.alias}-${sandbox.id}.${config.domain.dashboard}`,
+            }));
+          }
         } catch (err) {
           log.warn(
             { sandboxId: sandbox.id, name: params.name, error: err },
@@ -158,11 +174,9 @@ export const devRoutes = new Elysia()
 
       if (devCommand?.port) {
         try {
-          await proxyService.removeDevRoute(
-            sandbox.id,
-            params.name,
-            devCommand.isDefault ?? false,
-            devCommand.extraPorts,
+          await kubeClient.deleteResource(
+            "ingresses",
+            `dev-${params.name}-${sandbox.id}`,
           );
         } catch (err) {
           log.warn(

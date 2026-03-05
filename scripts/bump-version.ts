@@ -17,7 +17,6 @@ const PACKAGE_JSON_PATHS = [
   "package.json",
   "apps/manager/package.json",
   "apps/dashboard/package.json",
-  "apps/cli/package.json",
   "packages/shared/package.json",
 ];
 

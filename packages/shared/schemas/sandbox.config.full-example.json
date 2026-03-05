@@ -29,14 +29,15 @@
     "maxActiveTasks": 10,
     "mcpToken": ""
   },
-  "network": {
-    "bridgeIp": "172.16.0.1",
-    "bridgeName": "br0",
-    "dnsServers": ["8.8.8.8", "8.8.4.4"],
-    "guestIpStart": 10,
-    "guestSubnet": "172.16.0",
-    "bridgeCidr": "172.16.0.0/24",
-    "bridgeNetmask": "24"
+  "kubernetes": {
+    "namespace": "atelier-sandboxes",
+    "systemNamespace": "atelier-system",
+    "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
+    "runtimeClass": "kata-clh",
+    "registryUrl": "zot.atelier-system.svc:5000",
+    "storageClass": "",
+    "volumeSnapshotClass": "",
+    "defaultVolumeSize": "10Gi"
   },
   "sandbox": {
     "defaultImage": "dev-base",
@@ -46,25 +47,13 @@
       "name": "Sandbox User"
     }
   },
-  "setup": {
-    "storage": {
-      "method": "loop",
-      "loopSizeGb": 0,
-      "device": ""
-    },
-    "network": {
-      "onExists": "status"
-    }
-  },
   "advanced": {
     "vm": {
       "vscode": {
-        "port": 8080,
-        "version": "4.109.2"
+        "port": 8080
       },
       "opencode": {
-        "port": 3000,
-        "version": "1.2.10"
+        "port": 3000
       },
       "browser": {
         "port": 6080
@@ -78,14 +67,7 @@
     },
     "server": {
       "verdaccio": {
-        "port": 4873,
-        "version": "6.2.5"
-      },
-      "sshProxy": {
-        "version": "1.5.2"
-      },
-      "firecracker": {
-        "version": "1.14.1"
+        "port": 4873
       }
     }
   },

@@ -6,7 +6,6 @@ export * from "./image.ts";
 export * from "./public-config.ts";
 export * from "./sandbox.ts";
 export * from "./session-template.ts";
-export * from "./shared-storage.ts";
 export * from "./ssh-key.ts";
 export * from "./system.ts";
 export * from "./system-model-config.ts";

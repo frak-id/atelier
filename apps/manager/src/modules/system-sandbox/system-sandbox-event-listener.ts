@@ -47,7 +47,7 @@ export class SystemSandboxEventListener {
           throw new Error("System sandbox missing IP address");
         }
         return createOpencodeClient({
-          baseUrl: `http://${ipAddress}:${config.advanced.vm.opencode.port}`,
+          baseUrl: `http://${ipAddress}:${config.ports.opencode}`,
           headers: buildOpenCodeAuthHeaders(opencodePassword),
         });
       },

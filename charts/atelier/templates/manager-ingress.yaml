@@ -1,0 +1,32 @@
+{{- if .Values.domain.baseDomain }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "atelier.fullname" . }}-manager
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  rules:
+    - host: {{ include "atelier.dashboardDomain" . }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "atelier.fullname" . }}-manager
+                port:
+                  number: 8080
+  tls:
+    - secretName: {{ include "atelier.wildcardTlsSecretName" . }}
+      hosts:
+        - {{ include "atelier.dashboardDomain" . }}
+{{- end }}

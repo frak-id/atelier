@@ -5,18 +5,21 @@ import {
   sandboxService,
   workspaceService,
 } from "../../container.ts";
-import { proxyService } from "../../infrastructure/proxy/index.ts";
+import {
+  buildDevCommandIngress,
+  kubeClient,
+} from "../../infrastructure/kubernetes/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("mcp-dev-commands");
 
 function buildDevUrl(sandboxId: string, cmdName: string): string {
-  return `https://dev-${cmdName}-${sandboxId}.${config.domain.baseDomain}`;
+  return `https://dev-${cmdName}-${sandboxId}.${config.domain.dashboard}`;
 }
 
 function buildDefaultDevUrl(sandboxId: string): string {
-  return `https://dev-${sandboxId}.${config.domain.baseDomain}`;
+  return `https://dev-${sandboxId}.${config.domain.dashboard}`;
 }
 
 export function registerDevCommandTools(server: McpServer): void {
@@ -190,16 +193,23 @@ export function registerDevCommandTools(server: McpServer): void {
 
             if (devCommand.port) {
               try {
-                const urls = await proxyService.registerDevRoute(
-                  sandbox.id,
-                  sandbox.runtime.ipAddress,
-                  name,
-                  devCommand.port,
-                  devCommand.isDefault ?? false,
-                  devCommand.extraPorts,
+                await kubeClient.createResource(
+                  buildDevCommandIngress(
+                    sandbox.id,
+                    name,
+                    devCommand.port,
+                    config.domain.dashboard,
+                    {
+                      ingressClassName:
+                        config.kubernetes.ingressClassName || undefined,
+                      tlsSecretName: "atelier-sandbox-wildcard-tls",
+                    },
+                  ),
                 );
-                devUrl = urls.namedUrl;
-                defaultDevUrl = urls.defaultUrl;
+                devUrl = buildDevUrl(sandbox.id, name);
+                if (devCommand.isDefault) {
+                  defaultDevUrl = buildDefaultDevUrl(sandbox.id);
+                }
               } catch (err) {
                 log.warn(
                   { sandboxId, name, error: err },
@@ -221,11 +231,9 @@ export function registerDevCommandTools(server: McpServer): void {
 
             if (devCommand.port) {
               try {
-                await proxyService.removeDevRoute(
-                  sandbox.id,
-                  name,
-                  devCommand.isDefault ?? false,
-                  devCommand.extraPorts,
+                await kubeClient.deleteResource(
+                  "ingresses",
+                  `dev-${name}-${sandbox.id}`,
                 );
               } catch (err) {
                 log.warn(

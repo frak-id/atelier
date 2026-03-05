@@ -1,12 +1,8 @@
 export {
-  CADDY,
   DEFAULTS,
-  FIRECRACKER,
-  LVM,
   PATHS,
   REGISTRY,
   SHARED_STORAGE,
-  SSH_PROXY,
   VM,
 } from "./infra.ts";
 export {

@@ -17,22 +17,11 @@ export async function restartSystemSandbox(
   const boot = await bootExistingSandbox(sandboxId, sandbox, ports);
 
   if (boot.agentReady) {
-    // --- Batch: DNS + clock + mount in one call ---
-    const mountCmd = await GuestOps.buildMountSharedBinariesCommand();
-    await ports.agent.batchExec(sandboxId, [
-      GuestOps.buildDnsCommand(),
-      GuestOps.buildClockSyncCommand(),
-      ...(mountCmd ? [mountCmd] : []),
-    ]);
-
-    // --- Parallel batch: writeFiles + hostname + internal sync ---
+    // --- Parallel batch: writeFiles + internal sync ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
         ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
-      ]),
-      ports.agent.batchExec(sandboxId, [
-        GuestOps.buildHostnameCommand(`sandbox-${sandboxId}`),
       ]),
     ]);
     log.info(
@@ -48,7 +37,13 @@ export async function restartSystemSandbox(
     await GuestOps.startServices(ports.agent, sandboxId, ["opencode"]);
   }
 
-  return await finalizeRestartedSandbox(sandboxId, sandbox, boot.pid, ports, {
-    system: true,
-  });
+  return await finalizeRestartedSandbox(
+    sandboxId,
+    sandbox,
+    boot.podName,
+    ports,
+    {
+      system: true,
+    },
+  );
 }

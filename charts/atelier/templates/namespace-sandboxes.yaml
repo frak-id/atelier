@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "atelier.sandboxNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    atelier.dev/type: sandbox

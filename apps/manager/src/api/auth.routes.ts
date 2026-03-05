@@ -185,9 +185,15 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     return { ok: true, user: user.username };
   })
   .get("/opencode/verify", async ({ cookie, set, headers }) => {
+    // If request already carries an Authorization header (CLI / MCP clients),
+    // let it through — no cookie check, no header injection.
+    if (headers.authorization) {
+      return { ok: true };
+    }
+
     if (isMock()) {
       const mockAuth = Buffer.from("opencode:mock-password").toString("base64");
-      set.headers["X-Inject-Authorization"] = `Basic ${mockAuth}`;
+      set.headers.authorization = `Basic ${mockAuth}`;
       return { ok: true };
     }
 
@@ -228,15 +234,13 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       };
     }
 
-    // If sandbox has a password, inject Basic Auth header
-    // for Caddy to forward to OpenCode. Otherwise let the
-    // request through without auth (legacy sandboxes started
-    // before password support was added).
+    // Inject Basic Auth header for Ingress to forward to OpenCode.
+    // Traefik's authResponseHeaders copies this to the upstream request.
     if (sandbox.runtime.opencodePassword) {
       const basicAuth = Buffer.from(
         `opencode:${sandbox.runtime.opencodePassword}`,
       ).toString("base64");
-      set.headers["X-Inject-Authorization"] = `Basic ${basicAuth}`;
+      set.headers.authorization = `Basic ${basicAuth}`;
     }
 
     return { ok: true, user: user.username };

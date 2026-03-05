@@ -2,13 +2,6 @@ import type { Static } from "elysia";
 import { t } from "elysia";
 
 export const SystemStatsSchema = t.Object({
-  cpuUsage: t.Number(),
-  memoryUsed: t.Number(),
-  memoryTotal: t.Number(),
-  memoryPercent: t.Number(),
-  diskUsed: t.Number(),
-  diskTotal: t.Number(),
-  diskPercent: t.Number(),
   activeSandboxes: t.Number(),
   maxSandboxes: t.Number(),
   uptime: t.Number(),
@@ -25,43 +18,13 @@ export const HealthStatusSchema = t.Object({
   uptime: t.Number(),
   timestamp: t.Number(),
   checks: t.Object({
-    firecracker: HealthCheckStatusSchema,
-    proxy: HealthCheckStatusSchema,
-    network: HealthCheckStatusSchema,
-    storage: HealthCheckStatusSchema,
-    lvm: t.Union([t.Literal("ok"), t.Literal("unavailable")]),
+    kubernetes: HealthCheckStatusSchema,
+    kata: HealthCheckStatusSchema,
+    registry: HealthCheckStatusSchema,
+    snapshots: HealthCheckStatusSchema,
   }),
 });
 export type HealthStatus = Static<typeof HealthStatusSchema>;
-
-export const CleanupResultSchema = t.Object({
-  socketsRemoved: t.Number(),
-  overlaysRemoved: t.Number(),
-  tapDevicesRemoved: t.Number(),
-  lvmVolumesRemoved: t.Number(),
-  logsRemoved: t.Number(),
-  caddyRoutesRemoved: t.Number(),
-  sshRoutesRemoved: t.Number(),
-  spaceFreed: t.Number(),
-});
-export type CleanupResult = Static<typeof CleanupResultSchema>;
-
-export const StoragePoolStatsSchema = t.Object({
-  exists: t.Boolean(),
-  dataPercent: t.Number(),
-  metadataPercent: t.Number(),
-  totalSize: t.String(),
-  usedSize: t.String(),
-  volumeCount: t.Number(),
-});
-export type StoragePoolStats = Static<typeof StoragePoolStatsSchema>;
-
-export const StorageStatusSchema = t.Object({
-  available: t.Boolean(),
-  hasDefaultImage: t.Boolean(),
-  pool: StoragePoolStatsSchema,
-});
-export type StorageStatus = Static<typeof StorageStatusSchema>;
 
 export const LiveStatusSchema = t.Object({
   status: t.Literal("ok"),

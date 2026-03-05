@@ -1,0 +1,34 @@
+{{- if eq .Values.ingress.className "traefik" }}
+# Forward-auth middleware for VS Code ingresses.
+# Validates the sandbox_token JWT cookie against the manager API.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "atelier.fullname" . }}-auth-verify
+  namespace: {{ include "atelier.sandboxNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+spec:
+  forwardAuth:
+    address: http://{{ include "atelier.fullname" . }}-manager.{{ include "atelier.systemNamespace" . }}.svc:{{ .Values.server.port }}/auth/verify
+    trustForwardHeader: true
+---
+# Forward-auth middleware for OpenCode ingresses.
+# Validates the sandbox_token JWT cookie, then injects the per-sandbox
+# Basic Auth header (Authorization) so OpenCode accepts the request.
+# If the request already carries an Authorization header (CLI/MCP clients),
+# the auth endpoint returns 200 without injecting — preserving the original.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "atelier.fullname" . }}-auth-opencode
+  namespace: {{ include "atelier.sandboxNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+spec:
+  forwardAuth:
+    address: http://{{ include "atelier.fullname" . }}-manager.{{ include "atelier.systemNamespace" . }}.svc:{{ .Values.server.port }}/auth/opencode/verify
+    trustForwardHeader: true
+    authResponseHeaders:
+      - Authorization
+{{- end }}

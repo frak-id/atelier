@@ -67,9 +67,9 @@ export const internalWellKnownRoutes = new Elysia({
       for (const cmd of workspace?.config.devCommands ?? []) {
         if (cmd.port) {
           named[cmd.name] =
-            `https://dev-${cmd.name}-${sandbox.id}.${config.domain.baseDomain}`;
+            `https://dev-${cmd.name}-${sandbox.id}.${config.domain.dashboard}`;
           if (cmd.isDefault) {
-            defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.baseDomain}`;
+            defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.dashboard}`;
           }
         }
 
@@ -78,7 +78,7 @@ export const internalWellKnownRoutes = new Elysia({
           for (const ep of extraPorts) {
             const name = `${cmd.name}-${ep.alias}`;
             named[name] =
-              `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.domain.baseDomain}`;
+              `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.domain.dashboard}`;
           }
         }
       }

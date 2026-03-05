@@ -29,9 +29,6 @@
     },
     "apps/agent": {
       "project": ["src/**/*.ts"]
-    },
-    "apps/cli": {
-      "project": ["src/**/*.ts"]
     }
   }
 }

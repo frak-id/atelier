@@ -43,7 +43,7 @@ This description helps an AI agent pick the right workspace when dispatching tas
 ## Examples
 
 Good:
-"Atelier — Firecracker microVM orchestrator for isolated dev environments. Bun/TypeScript monorepo: manager API (Elysia), React dashboard, Rust sandbox agent. Manages VM lifecycle, git integration, OpenCode sessions."
+"Atelier — K8s (Kata Containers) orchestrator for isolated dev environments. Bun/TypeScript monorepo: manager API (Elysia), React dashboard, Rust sandbox agent. Manages pod lifecycle, git integration, OpenCode sessions."
 
 Bad:
 "This is a project that does various things with VMs and development."

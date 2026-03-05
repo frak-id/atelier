@@ -12,7 +12,6 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
 
     match (method.clone(), path.as_str()) {
         (Method::GET, "/health") => routes::health::handle_health().await,
-        (Method::GET, "/metrics") => routes::health::handle_metrics().await,
 
         (Method::POST, "/exec") => routes::exec::handle_exec(req).await,
         (Method::POST, "/exec/batch") => routes::exec::handle_exec_batch(req).await,
@@ -22,8 +21,6 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::POST, "/git/commit") => routes::git::handle_git_commit(req).await,
         (Method::POST, "/git/push") => routes::git::handle_git_push(req).await,
 
-        (Method::GET, "/config") => routes::config::handle_config(),
-        (Method::POST, "/config") => routes::config::handle_set_config(req).await,
 
         (Method::POST, "/files/write") => routes::files::handle_write_files(req).await,
 

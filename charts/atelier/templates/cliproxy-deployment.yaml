@@ -1,0 +1,71 @@
+{{- if .Values.cliproxy.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "atelier.fullname" . }}-cliproxy
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cliproxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: cliproxy
+  template:
+    metadata:
+      labels:
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: cliproxy
+    spec:
+      {{- include "atelier.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: cliproxy
+          image: {{ include "atelier.cliproxyImage" . }}
+          imagePullPolicy: {{ .Values.cliproxy.image.pullPolicy }}
+          command: ['sh', '-c']
+          args:
+            - |
+              sed "s|__CLIPROXY_MANAGEMENT_KEY__|${CLIPROXY_MANAGEMENT_KEY}|g" \
+                /etc/cliproxy/config.yaml > /data/config.yaml
+              exec /CLIProxyAPI/CLIProxyAPI -config /data/config.yaml
+          env:
+            - name: CLIPROXY_MANAGEMENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-cliproxy-secret
+                  key: management-key
+          ports:
+            - name: http
+              containerPort: {{ .Values.cliproxy.port }}
+          livenessProbe:
+            httpGet:
+              path: /v1/models
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.cliproxy.resources | nindent 12 }}
+          volumeMounts:
+            - name: cliproxy-config
+              mountPath: /etc/cliproxy
+              readOnly: true
+            - name: cliproxy-data
+              mountPath: /data
+      volumes:
+        - name: cliproxy-config
+          configMap:
+            name: {{ include "atelier.fullname" . }}-cliproxy-config
+        - name: cliproxy-data
+          persistentVolumeClaim:
+            claimName: {{ include "atelier.fullname" . }}-cliproxy-data
+{{- end }}

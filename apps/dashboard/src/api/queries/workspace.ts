@@ -49,6 +49,45 @@ export const imageListQuery = (all?: boolean) =>
       unwrap(await api.api.images.get({ query: { all: all ?? undefined } })),
   });
 
+export const imageBuildStatusQuery = (imageId: string) =>
+  queryOptions({
+    queryKey: queryKeys.images.buildStatus(imageId),
+    queryFn: async () =>
+      unwrap(await api.api.images({ id: imageId }).build.get()),
+  });
+
+export function useTriggerImageBuild() {
+  return useMutation({
+    mutationKey: ["images", "triggerBuild"],
+    mutationFn: async (imageId: string) =>
+      unwrap(await api.api.images({ id: imageId }).build.post()),
+    onSuccess: (_data, imageId, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.images.all,
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.images.buildStatus(imageId),
+      });
+    },
+  });
+}
+
+export function useCancelImageBuild() {
+  return useMutation({
+    mutationKey: ["images", "cancelBuild"],
+    mutationFn: async (imageId: string) =>
+      unwrap(await api.api.images({ id: imageId }).build.delete()),
+    onSuccess: (_data, imageId, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.images.all,
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.images.buildStatus(imageId),
+      });
+    },
+  });
+}
+
 export function useCreateWorkspace() {
   return useMutation({
     mutationKey: ["workspaces", "create"],

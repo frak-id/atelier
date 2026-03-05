@@ -88,7 +88,7 @@ export class IntegrationEventBridge {
 
     const event = this.buildEventFromMetadata(task.data.integration);
     const opcClient = createOpencodeClient({
-      baseUrl: `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+      baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
       headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
     });
 

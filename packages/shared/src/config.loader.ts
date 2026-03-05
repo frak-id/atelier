@@ -25,7 +25,7 @@ function setNestedValue(
 }
 
 function parseEnvValue(value: string, path: string): unknown {
-  if (path.includes("dnsServers") || path.includes("allowedUsers")) {
+  if (path.includes("allowedUsers")) {
     return value
       .split(",")
       .map((s) => s.trim())
@@ -40,6 +40,9 @@ function loadFromEnv(): Record<string, unknown> {
   for (const [envVar, configPath] of Object.entries(ENV_VAR_MAPPING)) {
     const value = process.env[envVar];
     if (value !== undefined && value !== "") {
+      // Skip Kubernetes auto-injected service discovery values
+      // (e.g. ATELIER_VERDACCIO_PORT=tcp://10.43.x.x:4873)
+      if (/^(tcp|udp):\/\//.test(value)) continue;
       setNestedValue(config, configPath, parseEnvValue(value, configPath));
     }
   }
@@ -97,14 +100,6 @@ function deepMerge(
 
 export const CONFIG_FILE_NAME = "sandbox.config.json";
 
-function deriveNetworkFields(config: AtelierConfig): void {
-  const octets = config.network.bridgeIp.split(".");
-  const subnet = octets.slice(0, 3).join(".");
-  config.network.guestSubnet = config.network.guestSubnet ?? subnet;
-  config.network.bridgeNetmask = config.network.bridgeNetmask ?? "24";
-  config.network.bridgeCidr = config.network.bridgeCidr ?? `${subnet}.0/24`;
-}
-
 function deriveDomainFields(config: AtelierConfig): void {
   const base = config.domain.baseDomain;
   if (!config.domain.dashboard) {
@@ -129,7 +124,6 @@ export function getDefaultConfig(): AtelierConfig {
   const converted = Value.Convert(AtelierConfigSchema, withDefaults);
   const cleaned = Value.Clean(AtelierConfigSchema, converted);
   const config = cleaned as AtelierConfig;
-  deriveNetworkFields(config);
   deriveDomainFields(config);
   return config;
 }
@@ -149,7 +143,6 @@ export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {
   const converted = Value.Convert(AtelierConfigSchema, withDefaults);
   const cleaned = Value.Clean(AtelierConfigSchema, converted);
   const config = cleaned as AtelierConfig;
-  deriveNetworkFields(config);
   deriveDomainFields(config);
   return config;
 }

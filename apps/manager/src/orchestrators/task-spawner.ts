@@ -89,9 +89,12 @@ export class TaskSpawner {
         "Sandbox spawned for task",
       );
 
-      const agentReady = await this.deps.agentClient.waitForAgent(sandbox.id, {
-        timeout: AGENT_READY_TIMEOUT,
-      });
+      const { ready: agentReady } = await this.deps.agentClient.waitForAgent(
+        sandbox.id,
+        {
+          timeout: AGENT_READY_TIMEOUT,
+        },
+      );
 
       if (!agentReady) {
         throw new Error("Agent failed to become ready");
@@ -177,7 +180,7 @@ export class TaskSpawner {
     const sandbox = this.deps.sandboxService.getById(task.data.sandboxId);
     if (!sandbox?.runtime?.ipAddress) return;
 
-    const url = `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`;
+    const url = `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`;
     const client = createOpencodeClient({
       baseUrl: url,
       headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
@@ -275,7 +278,7 @@ export class TaskSpawner {
       throw new Error(`Workspace '${task.workspaceId}' not found`);
     }
 
-    const opencodeUrl = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+    const opencodeUrl = `http://${ipAddress}:${config.ports.opencode}`;
     const sessionConfig = this.resolveSessionConfig(
       sessionTemplateId,
       workspace.id,
@@ -416,7 +419,7 @@ export class TaskSpawner {
         attempt === 0 ? baseBranchName : `${baseBranchName}_v${attempt + 1}`;
 
       const checkoutBase = await gitExec(
-        `git fetch origin && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
+        `git fetch origin ${baseBranch} && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
       );
 
       if (checkoutBase.exitCode !== 0) {
@@ -476,7 +479,7 @@ export class TaskSpawner {
         sandbox: {
           id: sandboxId ?? "undefined",
           ip: ipAddress,
-          url: `http://${ipAddress}:${config.advanced.vm.opencode.port}`,
+          url: `http://${ipAddress}:${config.ports.opencode}`,
         },
       };
 

@@ -17,9 +17,9 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use tokio_vsock::{VsockAddr, VsockListener};
+use tokio::net::TcpListener;
 
-use config::VSOCK_PORT;
+use config::AGENT_PORT;
 
 pub fn utc_rfc3339() -> String {
     let dur = SystemTime::now()
@@ -61,15 +61,15 @@ async fn main() {
 
     watchdog::start();
 
-    let addr = VsockAddr::new(libc::VMADDR_CID_ANY, VSOCK_PORT);
-    let listener = match VsockListener::bind(addr) {
+    let addr = format!("0.0.0.0:{AGENT_PORT}");
+    let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("Failed to bind vsock port {VSOCK_PORT}: {e}");
+            eprintln!("Failed to bind TCP port {AGENT_PORT}: {e}");
             return;
         }
     };
-    println!("Listening on vsock port {VSOCK_PORT}");
+    println!("Listening on {addr}");
 
     // Services are started by the manager after config push via POST /services/{name}/start
     // tokio::spawn(async {
@@ -84,7 +84,7 @@ async fn main() {
         let (stream, _addr) = match listener.accept().await {
             Ok(conn) => conn,
             Err(e) => {
-                eprintln!("vsock accept error: {e}");
+                eprintln!("TCP accept error: {e}");
                 continue;
             }
         };

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "atelier.fullname" . }}-registries
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+data:
+  registries.yaml: |
+    mirrors:
+      "{{ include "atelier.fullname" . }}-zot.{{ .Release.Namespace }}.svc:{{ .Values.zot.port }}":
+        endpoint:
+          - "http://{{ include "atelier.fullname" . }}-zot.{{ .Release.Namespace }}.svc:{{ .Values.zot.port }}"

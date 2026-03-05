@@ -1,0 +1,302 @@
+# -- Global settings
+global:
+  # -- Docker registry pull secrets
+  imagePullSecrets: []
+  # - name: regcred
+
+# -- Override chart name / fullname
+nameOverride: ""
+fullnameOverride: ""
+
+# -- ServiceAccount configuration
+serviceAccount:
+  # -- Create a ServiceAccount for the manager
+  create: true
+  # -- ServiceAccount name (defaults to fullname-manager)
+  name: ""
+  # -- Annotations to add to the ServiceAccount
+  annotations: {}
+
+# -- RBAC configuration
+rbac:
+  # -- Create ClusterRole/Role and bindings for the manager
+  create: true
+
+# -- Manager configuration
+manager:
+  image:
+    repository: ghcr.io/frak-id/atelier-manager
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    size: 1Gi
+    storageClass: ""
+  # -- Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # -- Extra pod annotations
+  podAnnotations: {}
+  # -- Extra pod labels
+  podLabels: {}
+  # -- Deployment update strategy
+  updateStrategy:
+    type: RollingUpdate
+
+# -- Dashboard (nginx sidecar serving the SPA)
+dashboard:
+  image:
+    repository: ghcr.io/frak-id/atelier-dashboard
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "10m"
+    limits:
+      memory: "64Mi"
+      cpu: "100m"
+
+# -- Ingress configuration
+ingress:
+  # Ingress class name (e.g., traefik, nginx)
+  className: traefik
+  # Custom annotations for the manager ingress
+  annotations: {}
+
+# -- Domain & TLS
+domain:
+  # REQUIRED: base domain for all services (e.g., example.com)
+  baseDomain: ""
+  # Dashboard domain — defaults to sandbox.{baseDomain}
+  dashboard: ""
+  tls:
+    # Email for cert-manager ACME (required if certManager.enabled)
+    email: ""
+
+# -- Authentication (REQUIRED for production)
+auth:
+  github:
+    clientId: ""
+    clientSecret: ""
+  # JWT signing secret — auto-generated if empty
+  jwtSecret: ""
+  # Required GitHub organization (optional)
+  allowedOrg: ""
+  # Allowed GitHub usernames (optional, comma-separated)
+  allowedUsers: []
+  # -- Use an existing K8s Secret instead of creating one from values.
+  # The secret must contain keys: ATELIER_GITHUB_CLIENT_ID,
+  # ATELIER_GITHUB_CLIENT_SECRET, ATELIER_JWT_SECRET, SANDBOX_SECRETS_KEY.
+  # Optionally: ATELIER_MCP_TOKEN, ATELIER_SLACK_BOT_TOKEN, ATELIER_SLACK_SIGNING_SECRET.
+  existingSecret: ""
+
+# -- Server settings
+server:
+  port: 4000
+  maxSandboxes: 20
+  maxActiveTasks: 10
+  # Bearer token for MCP server auth (empty = disabled)
+  mcpToken: ""
+
+# -- Kubernetes settings (used by manager for sandbox orchestration)
+#
+# Prebuild prerequisites (optional — sandboxes work without prebuilds):
+#   1. CSI snapshot controller:
+#        kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
+#        kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
+#   2. A CSI driver with snapshot support (e.g., TopoLVM for bare-metal LVM thin provisioning):
+#        helm repo add topolvm https://topolvm.github.io/topolvm
+#        helm install topolvm topolvm/topolvm --namespace topolvm-system --create-namespace
+#   3. A VolumeSnapshotClass matching your CSI driver
+#
+# Without these, prebuilds are automatically disabled at startup.
+kubernetes:
+  # Namespace for sandbox pods (created by this chart)
+  namespace: atelier-sandboxes
+  # Runtime class for Kata Containers
+  runtimeClass: kata-clh
+  # StorageClass for sandbox PVCs (empty = cluster default)
+  storageClass: ""
+  # VolumeSnapshotClass for prebuilds (empty = cluster default)
+  volumeSnapshotClass: ""
+  # Default PVC size for new sandboxes
+  defaultVolumeSize: "10Gi"
+
+# -- Sandbox defaults
+sandbox:
+  defaultImage: dev-base
+  git:
+    email: sandbox@atelier.dev
+    name: Sandbox User
+
+# -- Service ports used by sandbox VMs and host services.
+# These are internal implementation details — change only if you
+# know the corresponding images use different ports.
+ports:
+  vscode: 8080
+  opencode: 3000
+  browser: 6080
+  terminal: 7681
+  agent: 9999
+  verdaccio: 4873
+
+# -- Integrations
+integrations:
+  slack:
+    enabled: false
+    botToken: ""
+    signingSecret: ""
+
+# -- Zot OCI registry (base images)
+zot:
+  enabled: true
+  image:
+    repository: ghcr.io/project-zot/zot-linux-amd64
+    tag: "v2.1.14"
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 20Gi
+    storageClass: ""
+  port: 5000
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# -- Verdaccio npm registry cache (shared across sandboxes)
+verdaccio:
+  enabled: true
+  image:
+    repository: verdaccio/verdaccio
+    tag: "6"
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+# -- Shared binaries (opencode + code-server, mounted into sandboxes)
+sharedBinaries:
+  enabled: true
+  storage: 2Gi
+  storageClass: ""
+  # -- Image used by the download Job
+  image: curlimages/curl:8.17.0
+  opencode:
+    version: "1.2.10"
+  codeServer:
+    version: "4.109.2"
+
+# -- cert-manager integration
+#
+# Prerequisites: cert-manager must be installed in the cluster.
+#   helm repo add jetstack https://charts.jetstack.io
+#   helm install cert-manager jetstack/cert-manager \
+#     --namespace cert-manager --create-namespace --set crds.enabled=true
+#
+# NOTE: Currently only Cloudflare DNS-01 solver is supported.
+# TODO: Support additional DNS providers (Route53, Google Cloud DNS, etc.)
+certManager:
+  enabled: true
+  # Namespace where cert-manager is installed (for secret creation)
+  namespace: cert-manager
+  # -- Create the ClusterIssuer resource (set false if you manage issuers externally)
+  createIssuer: true
+  # "letsencrypt-prod" or "letsencrypt-staging"
+  issuerName: letsencrypt-prod
+  # ACME server URL
+  server: https://acme-v02.api.letsencrypt.org/directory
+  # Cloudflare DNS-01 solver configuration
+  cloudflare:
+    # Cloudflare API token (if set, the chart creates the K8s Secret)
+    apiToken: ""
+    # Reference to the K8s Secret containing the token
+    apiTokenSecretRef:
+      name: cloudflare-api-token
+      key: api-token
+
+# -- Kata Containers runtime class
+#
+# Prerequisites: kata-deploy must be installed in the cluster.
+#   git clone --depth 1 https://github.com/kata-containers/kata-containers.git /tmp/kata-src
+#   helm install kata-deploy /tmp/kata-src/tools/packaging/kata-deploy/helm-chart/kata-deploy \
+#     --set k8sDistribution=k3s --set env.createRuntimeClasses=true --set env.createDefaultRuntimeClass=true
+#
+# kata-deploy creates the RuntimeClass automatically, so createRuntimeClass
+# defaults to false to avoid conflicts.
+kata:
+  # -- Create the RuntimeClass resource (set false if kata-deploy manages it)
+  createRuntimeClass: false
+  handler: kata-clh
+
+# -- Snapshot support (for workspace prebuilds)
+#
+# Prebuilds use CSI VolumeSnapshots to clone workspace filesystems instantly.
+# Set createSnapshotClass=true and provide a CSI driver name to have the chart
+# create a VolumeSnapshotClass automatically.
+snapshots:
+  # -- Create a VolumeSnapshotClass resource (set false if managed externally)
+  createSnapshotClass: false
+  # CSI driver name (e.g., "topolvm.io", "ebs.csi.aws.com")
+  driver: ""
+  # Deletion policy: Delete or Retain
+  deletionPolicy: Delete
+
+# -- Sandbox secrets encryption key
+secrets:
+  encryptionKey: ""
+
+# -- CLIProxyAPI (AI model proxy with multi-provider OAuth support)
+# Wraps Claude Code, Gemini CLI, Codex, Qwen, etc. into OpenAI-compatible API endpoints.
+# Includes a built-in Management UI at /management.html for provider config, API keys, and usage stats.
+# See https://github.com/router-for-me/CLIProxyAPI
+cliproxy:
+  enabled: true
+  image:
+    repository: eceasy/cli-proxy-api
+    tag: "latest"
+    pullPolicy: Always
+  port: 8317
+  persistence:
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # -- Management API secret key for /management.html access.
+  # Auto-generated if empty. Preserved across helm upgrades.
+  managementKey: ""
+  # -- API keys for proxy client authentication.
+  # Clients send these as Bearer tokens to use the proxy endpoints.
+  # Can also be managed via the built-in Management UI.
+  apiKeys: []
+  # -- Additional config.yaml entries merged with defaults.
+  # Use this to add LLM provider keys, model aliases, payload rules, etc.
+  # See https://github.com/router-for-me/CLIProxyAPI/blob/main/config.example.yaml
+  # Example:
+  #   extraConfig:
+  #     gemini-api-key:
+  #       - api-key: "AIzaSy..."
+  #     proxy-url: "socks5://proxy:1080"
+  extraConfig: {}

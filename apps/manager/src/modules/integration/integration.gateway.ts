@@ -1,6 +1,9 @@
 import { createOpencodeClient, type Part } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../../infrastructure/agent/index.ts";
-import { proxyService } from "../../infrastructure/proxy/proxy.service.ts";
+import {
+  buildDevCommandIngress,
+  kubeClient,
+} from "../../infrastructure/kubernetes/index.ts";
 import type { SandboxLifecycle } from "../../orchestrators/sandbox-lifecycle.ts";
 import type { TaskSpawner } from "../../orchestrators/task-spawner.ts";
 import type { Task } from "../../schemas/index.ts";
@@ -209,7 +212,7 @@ export class IntegrationGateway {
         );
 
       const opcClient = createOpencodeClient({
-        baseUrl: `http://${runningSandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+        baseUrl: `http://${runningSandbox.runtime.ipAddress}:${config.ports.opencode}`,
         headers: buildOpenCodeAuthHeaders(
           runningSandbox.runtime.opencodePassword,
         ),
@@ -325,14 +328,25 @@ export class IntegrationGateway {
           );
 
           if (devCommand.port && sandbox.runtime?.ipAddress) {
-            const urls = await proxyService.registerDevRoute(
-              sandbox.id,
-              sandbox.runtime.ipAddress,
-              devCommand.name,
-              devCommand.port,
-              devCommand.isDefault ?? false,
-              devCommand.extraPorts,
+            await kubeClient.createResource(
+              buildDevCommandIngress(
+                sandbox.id,
+                devCommand.name,
+                devCommand.port,
+                config.domain.dashboard,
+                {
+                  ingressClassName:
+                    config.kubernetes.ingressClassName || undefined,
+                  tlsSecretName: "atelier-sandbox-wildcard-tls",
+                },
+              ),
             );
+            const urls = {
+              namedUrl: `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.dashboard}`,
+              defaultUrl: devCommand.isDefault
+                ? `https://dev-${sandbox.id}.${config.domain.dashboard}`
+                : undefined,
+            };
 
             await adapter.postMessage(
               event,
@@ -363,11 +377,9 @@ export class IntegrationGateway {
         try {
           await this.deps.agentClient.devStop(sandbox.id, devCommand.name);
           if (devCommand.port) {
-            await proxyService.removeDevRoute(
-              sandbox.id,
-              devCommand.name,
-              devCommand.isDefault ?? false,
-              devCommand.extraPorts,
+            await kubeClient.deleteResource(
+              "ingresses",
+              `dev-${devCommand.name}-${sandbox.id}`,
             );
           }
           await adapter.postMessage(event, `Stopped \`${devCommand.name}\``);
@@ -412,9 +424,9 @@ export class IntegrationGateway {
           return;
         }
 
-        const namedUrl = `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.baseDomain}`;
+        const namedUrl = `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.dashboard}`;
         const defaultUrl = devCommand.isDefault
-          ? `https://dev-${sandbox.id}.${config.domain.baseDomain}`
+          ? `https://dev-${sandbox.id}.${config.domain.dashboard}`
           : undefined;
 
         await adapter.postMessage(
@@ -434,7 +446,7 @@ export class IntegrationGateway {
               runtime?.status === "running" ? "running" : "stopped";
             const url =
               status === "running" && command.port
-                ? `https://dev-${command.name}-${sandbox.id}.${config.domain.baseDomain}`
+                ? `https://dev-${command.name}-${sandbox.id}.${config.domain.dashboard}`
                 : "";
             return `- \`${command.name}\` - ${status}${url ? ` -> ${url}` : ""}`;
           });
@@ -473,7 +485,7 @@ export class IntegrationGateway {
 
     try {
       const opcClient = createOpencodeClient({
-        baseUrl: `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+        baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
         headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
       });
       await opcClient.session.abort({
@@ -504,7 +516,7 @@ export class IntegrationGateway {
     }
 
     const opcClient = createOpencodeClient({
-      baseUrl: `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+      baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
       headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
     });
 
@@ -567,7 +579,7 @@ export class IntegrationGateway {
     if (sandbox?.runtime?.ipAddress && sandbox.status === "running") {
       try {
         const opcClient = createOpencodeClient({
-          baseUrl: `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+          baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
           headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
         });
         const { data: statuses } = await opcClient.session.status();
@@ -951,7 +963,7 @@ export class IntegrationGateway {
       contextMarkdown,
     ].join("\n");
 
-    const url = `http://${updatedSandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`;
+    const url = `http://${updatedSandbox.runtime.ipAddress}:${config.ports.opencode}`;
     const opcClient = createOpencodeClient({
       baseUrl: url,
       headers: buildOpenCodeAuthHeaders(

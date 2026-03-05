@@ -1,26 +1,19 @@
-import { DEFAULTS, LVM } from "@frak/atelier-shared/constants";
 import { customAlphabet } from "nanoid";
 import { eventBus } from "../../infrastructure/events/index.ts";
 import {
-  configureVm,
-  getSandboxPaths,
-  launchFirecracker,
-  type SandboxPaths,
-} from "../../infrastructure/firecracker/index.ts";
-import {
-  type NetworkAllocation,
-  networkService,
-} from "../../infrastructure/network/index.ts";
-import {
-  proxyService,
-  SshPiperService,
-} from "../../infrastructure/proxy/index.ts";
-import { StorageService } from "../../infrastructure/storage/index.ts";
-import type { Sandbox } from "../../schemas/index.ts";
+  buildConfigMap,
+  buildOpenCodeIngress,
+  buildPvc,
+  buildSandboxPod,
+  buildSandboxService,
+  buildVsCodeIngress,
+  kubeClient,
+} from "../../infrastructure/kubernetes/index.ts";
+import type { Sandbox, Workspace } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
-import { waitForBoot } from "./boot-waiter.ts";
+import { buildSandboxConfig } from "../sandbox-config.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
@@ -29,9 +22,7 @@ const generatePassword = customAlphabet(
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
 );
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                             */
-/* ------------------------------------------------------------------ */
+const DEFAULT_BASE_IMAGE = "dev-base";
 
 export interface BootNewOptions {
   workspaceId?: string;
@@ -40,220 +31,243 @@ export interface BootNewOptions {
   vcpus: number;
   memoryMb: number;
   prebuildReady: boolean;
+  /** VolumeSnapshot name to clone PVC from (set when prebuild is ready) */
+  prebuildSnapshotName?: string;
+  /** PVC size override (K8s quantity, e.g. "10Gi") */
+  volumeSize?: string;
+  workspace?: Workspace;
 }
 
 export interface BootResult {
   sandbox: Sandbox;
-  pid: number;
-  paths: SandboxPaths;
-  network: NetworkAllocation;
+  podName: string;
+  pvcName: string;
   usedPrebuild: boolean;
 }
 
 export interface RestartResult {
-  pid: number;
-  paths: SandboxPaths;
+  podName: string;
   agentReady: boolean;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Boot a brand-new sandbox (create flow)                            */
-/* ------------------------------------------------------------------ */
 
 export async function bootNewSandbox(
   sandboxId: string,
   options: BootNewOptions,
   ports: SandboxPorts,
 ): Promise<BootResult> {
-  // Track allocated resources for rollback on failure
-  let network: NetworkAllocation | undefined;
-  let volumePaths: SandboxPaths | undefined;
-  let pid: number | undefined;
+  const podName = `sandbox-${sandboxId}`;
+  const pvcName = `sandbox-${sandboxId}`;
+  const configMapName = `sandbox-config-${sandboxId}`;
+  const usedPrebuild = Boolean(
+    options.prebuildReady && options.prebuildSnapshotName,
+  );
+  const image = resolveSandboxImage(options.baseImage);
+  const volumeSize = options.volumeSize ?? config.kubernetes.defaultVolumeSize;
 
-  try {
-    // 1. Check prebuild availability
-    let usedPrebuild = false;
-    if (options.workspaceId && (options.system || options.prebuildReady)) {
-      usedPrebuild = await StorageService.hasPrebuild(options.workspaceId);
-    }
-
-    // 2. Allocate network + create volume + create TAP in parallel
-    const [networkAlloc, volume] = await Promise.all([
-      networkService.allocate(sandboxId),
-      createVolume(sandboxId, options, usedPrebuild),
-      networkService.createTap(`tap-${sandboxId.slice(0, 8)}`),
-    ]);
-    network = networkAlloc;
-    volumePaths = volume.paths;
-
-    // 3. Resize volume before boot if needed
-    await resizeVolumeBeforeBoot(sandboxId, volumePaths, usedPrebuild);
-
-    // 4. Initialize sandbox record
-    const opencodePassword = generatePassword(32);
-    const sandbox: Sandbox = {
-      id: sandboxId,
-      status: "creating",
-      workspaceId: options.workspaceId,
-      runtime: {
-        ipAddress: network.ipAddress,
-        macAddress: network.macAddress,
-        urls: { vscode: "", opencode: "", ssh: "" },
-        vcpus: options.vcpus,
-        memoryMb: options.memoryMb,
-        opencodePassword,
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    ports.sandbox.create(sandbox);
-    log.info({ sandboxId }, "Sandbox initialized");
-
-    // 5. Launch Firecracker
-    const launch = await launchFirecracker(volumePaths);
-    pid = launch.pid;
-    log.debug({ sandboxId, pid }, "Firecracker process started");
-
-    // 6. Configure VM
-    await configureVm(launch.client, {
-      paths: volumePaths,
-      macAddress: network.macAddress,
-      tapDevice: network.tapDevice,
+  const opencodePassword = generatePassword(32);
+  const sandbox: Sandbox = {
+    id: sandboxId,
+    status: "creating",
+    workspaceId: options.workspaceId,
+    runtime: {
+      ipAddress: "",
+      macAddress: "",
+      urls: { vscode: "", opencode: "", ssh: "" },
       vcpus: options.vcpus,
       memoryMb: options.memoryMb,
-      ipAddress: network.ipAddress,
-      gateway: network.gateway,
-    });
-    log.debug({ sandboxId }, "VM configured");
+      opencodePassword,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
 
-    // 7. Boot + wait for agent
-    await launch.client.start();
-    const [, agentReady] = await Promise.all([
-      waitForBoot(launch.client, { pid, logPath: volumePaths.log }),
-      ports.agent.waitForAgent(sandboxId, {
-        timeout: 60000,
-      }),
-    ]);
-    if (!agentReady) {
-      log.warn({ sandboxId }, "Agent did not become ready");
-    }
-    log.debug({ sandboxId }, "VM booted and agent ready");
+  ports.sandbox.create(sandbox);
 
-    return {
-      sandbox,
-      pid,
-      paths: volumePaths,
-      network,
-      usedPrebuild,
+  try {
+    const sandboxLabels = {
+      "atelier.dev/sandbox": sandboxId,
+      "atelier.dev/component": "sandbox",
     };
+
+    await kubeClient.createResource(
+      buildPvc({
+        name: pvcName,
+        size: volumeSize,
+        snapshotName: usedPrebuild ? options.prebuildSnapshotName : undefined,
+        labels: sandboxLabels,
+      }),
+    );
+
+    // Note: no waitForPvcBound — local-path uses WaitForFirstConsumer,
+    // so the PVC binds only when a pod referencing it is scheduled.
+    await Promise.all([
+      kubeClient.createResource(
+        buildConfigMap(
+          configMapName,
+          {
+            "config.json": JSON.stringify(
+              buildSandboxConfig(
+                sandboxId,
+                options.workspace,
+                opencodePassword,
+              ),
+            ),
+          },
+          undefined,
+          sandboxLabels,
+        ),
+      ),
+      kubeClient.createResource(
+        buildSandboxPod({
+          sandboxId,
+          image,
+          opencodePassword,
+          workspaceId: options.workspaceId,
+          pvcName,
+          configMapName,
+          requests: {
+            cpu: `${Math.max(250, options.vcpus * 250)}m`,
+            memory: `${options.memoryMb}Mi`,
+          },
+          limits: {
+            cpu: `${options.vcpus * 1000}m`,
+            memory: `${options.memoryMb}Mi`,
+          },
+        }),
+      ),
+      kubeClient.createResource(buildSandboxService(sandboxId)),
+      kubeClient.createResource(
+        buildVsCodeIngress(sandboxId, config.domain.dashboard, {
+          ingressClassName: config.kubernetes.ingressClassName || undefined,
+          annotations: config.kubernetes.vsCodeIngressAnnotations,
+          tlsSecretName: "atelier-sandbox-wildcard-tls",
+        }),
+      ),
+      kubeClient.createResource(
+        buildOpenCodeIngress(sandboxId, config.domain.dashboard, {
+          ingressClassName: config.kubernetes.ingressClassName || undefined,
+          annotations: config.kubernetes.openCodeIngressAnnotations,
+          tlsSecretName: "atelier-sandbox-wildcard-tls",
+        }),
+      ),
+    ]);
+
+    // Single wait: agent health check implies pod is ready and has an IP
+    const { ready: agentReady, podIp } = await ports.agent.waitForAgent(
+      sandboxId,
+      { timeout: 120_000 },
+    );
+    if (!agentReady) {
+      throw new Error(`Sandbox pod ${podName} agent did not become ready`);
+    }
+    if (podIp) {
+      sandbox.runtime.ipAddress = podIp;
+    }
+
+    return { sandbox, podName, pvcName, usedPrebuild };
   } catch (error) {
     log.error(
       {
         sandboxId,
-        error: error instanceof Error ? error.message : error,
+        error: error instanceof Error ? error.message : String(error),
       },
       "Boot failed, cleaning up allocated resources",
     );
-    await cleanupSandboxResources(sandboxId, {
-      pid,
-      paths: volumePaths,
-      network,
-    });
+    await cleanupSandboxResources(sandboxId, { podName });
     throw error;
   }
 }
-
-/* ------------------------------------------------------------------ */
-/*  Boot an existing sandbox (restart flow)                           */
-/* ------------------------------------------------------------------ */
 
 export async function bootExistingSandbox(
   sandboxId: string,
   sandbox: Sandbox,
   ports: SandboxPorts,
 ): Promise<RestartResult> {
-  const volumeInfo = await StorageService.getVolumeInfo(sandboxId);
-  if (!volumeInfo) {
+  const podName = `sandbox-${sandboxId}`;
+  const pvcName = `sandbox-${sandboxId}`;
+  const configMapName = `sandbox-config-${sandboxId}`;
+
+  const workspace = sandbox.workspaceId
+    ? ports.workspaces.getById(sandbox.workspaceId)
+    : undefined;
+  const image = resolveSandboxImage(workspace?.config.baseImage);
+  const opencodePassword =
+    sandbox.runtime.opencodePassword ?? generatePassword(32);
+
+  try {
+    await kubeClient.deleteResource("Pod", podName);
+  } catch {}
+  try {
+    await kubeClient.deleteResource("ConfigMap", configMapName);
+  } catch {}
+
+  const sandboxConfig = buildSandboxConfig(
+    sandboxId,
+    workspace,
+    opencodePassword,
+  );
+
+  await Promise.all([
+    kubeClient.createResource(
+      buildConfigMap(
+        configMapName,
+        { "config.json": JSON.stringify(sandboxConfig) },
+        undefined,
+        {
+          "atelier.dev/sandbox": sandboxId,
+          "atelier.dev/component": "sandbox",
+        },
+      ),
+    ),
+    kubeClient.createResource(
+      buildSandboxPod({
+        sandboxId,
+        image,
+        opencodePassword,
+        workspaceId: sandbox.workspaceId,
+        pvcName,
+        configMapName,
+        requests: {
+          cpu: `${Math.max(250, sandbox.runtime.vcpus * 250)}m`,
+          memory: `${sandbox.runtime.memoryMb}Mi`,
+        },
+        limits: {
+          cpu: `${sandbox.runtime.vcpus * 1000}m`,
+          memory: `${sandbox.runtime.memoryMb}Mi`,
+        },
+      }),
+    ),
+  ]);
+
+  // Single wait: agent health check implies pod is ready and has an IP
+  const { ready: agentReady, podIp } = await ports.agent.waitForAgent(
+    sandboxId,
+    { timeout: 120_000 },
+  );
+  if (!agentReady) {
     throw new Error(
-      `Cannot start sandbox '${sandboxId}': LVM volume not found.`,
+      `Sandbox pod ${podName} agent did not become ready after restart`,
     );
   }
-
-  const volumePath = `/dev/${LVM.VG_NAME}/${LVM.SANDBOX_PREFIX}${sandboxId}`;
-  const paths = getSandboxPaths(sandboxId, volumePath);
-  const tapDevice = `tap-${sandboxId.slice(0, 8)}`;
-  await networkService.createTap(tapDevice);
-
-  const { pid, client } = await launchFirecracker(paths);
-  log.debug({ sandboxId, pid }, "Firecracker process started");
-
-  await configureVm(client, {
-    paths,
-    macAddress: sandbox.runtime.macAddress,
-    tapDevice,
-    vcpus: sandbox.runtime.vcpus,
-    memoryMb: sandbox.runtime.memoryMb,
-    ipAddress: sandbox.runtime.ipAddress,
-    gateway: config.network.bridgeIp,
-  });
-  log.debug({ sandboxId }, "VM configured");
-
-  await client.start();
-  await waitForBoot(client, { pid, logPath: paths.log });
-  log.debug({ sandboxId }, "VM booted");
-
-  const agentReady = await ports.agent.waitForAgent(sandboxId, {
-    timeout: 60000,
-  });
-  if (!agentReady) {
-    log.warn({ sandboxId }, "Agent did not become ready after restart");
+  if (podIp) {
+    sandbox.runtime.ipAddress = podIp;
   }
 
-  return { pid, paths, agentReady };
+  return { podName, agentReady };
 }
-
-/* ------------------------------------------------------------------ */
-/*  Finalize: register routes + update status (create flow)           */
-/* ------------------------------------------------------------------ */
 
 export async function finalizeNewSandbox(
   sandboxId: string,
   sandbox: Sandbox,
-  network: NetworkAllocation,
-  pid: number,
+  podName: string,
   ports: SandboxPorts,
   options: { system?: boolean },
 ): Promise<Sandbox> {
-  const sshCmd = await SshPiperService.registerRoute(
-    sandboxId,
-    network.ipAddress,
-    ports.sshKeys.getValidPublicKeys(),
-  );
-
-  let urls: { vscode: string; opencode: string; ssh: string };
-
-  if (options.system) {
-    const opencodeUrl = await proxyService.registerOpenCodeRoute(
-      sandboxId,
-      network.ipAddress,
-      config.advanced.vm.opencode.port,
-    );
-    urls = { vscode: "", opencode: opencodeUrl, ssh: sshCmd };
-  } else {
-    const routeUrls = await proxyService.registerRoutes(
-      sandboxId,
-      network.ipAddress,
-      {
-        vscode: config.advanced.vm.vscode.port,
-        opencode: config.advanced.vm.opencode.port,
-      },
-    );
-    urls = { ...routeUrls, ssh: sshCmd };
-  }
+  const urls = buildUrls(sandboxId, options.system);
 
   sandbox.status = "running";
-  sandbox.runtime.pid = pid;
   sandbox.runtime.urls = urls;
+  sandbox.updatedAt = new Date().toISOString();
 
   ports.sandbox.update(sandboxId, sandbox);
   eventBus.emit({
@@ -264,41 +278,24 @@ export async function finalizeNewSandbox(
     },
   });
 
-  log.info(
-    { sandboxId, pid, useLvm: sandbox.runtime },
-    "Sandbox created successfully",
-  );
+  log.info({ sandboxId, podName }, "Sandbox created successfully");
   return sandbox;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Finalize: register routes + update status (restart flow)          */
-/* ------------------------------------------------------------------ */
 
 export async function finalizeRestartedSandbox(
   sandboxId: string,
   sandbox: Sandbox,
-  pid: number,
+  podName: string,
   ports: SandboxPorts,
   options: { system?: boolean },
 ): Promise<Sandbox> {
-  if (options.system) {
-    await proxyService.registerOpenCodeRoute(
-      sandboxId,
-      sandbox.runtime.ipAddress,
-      config.advanced.vm.opencode.port,
-    );
-  } else {
-    await proxyService.registerRoutes(sandboxId, sandbox.runtime.ipAddress, {
-      vscode: config.advanced.vm.vscode.port,
-      opencode: config.advanced.vm.opencode.port,
-    });
-  }
-
   const updatedSandbox: Sandbox = {
     ...sandbox,
     status: "running",
-    runtime: { ...sandbox.runtime, pid },
+    runtime: {
+      ...sandbox.runtime,
+      urls: buildUrls(sandboxId, options.system),
+    },
     updatedAt: new Date().toISOString(),
   };
 
@@ -307,93 +304,24 @@ export async function finalizeRestartedSandbox(
     type: "sandbox.updated",
     properties: { id: sandboxId, status: "running" },
   });
-  log.info({ sandboxId, pid }, "Sandbox started");
+  log.info({ sandboxId, podName }, "Sandbox started");
 
   return updatedSandbox;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Internal helpers                                                  */
-/* ------------------------------------------------------------------ */
-
-async function createVolume(
-  sandboxId: string,
-  options: BootNewOptions,
-  usedPrebuild: boolean,
-): Promise<{ paths: SandboxPaths }> {
-  const baseImage = options.baseImage;
-  const lvmAvailable = await StorageService.isAvailable();
-
-  let lvmVolumePath: string | undefined;
-  if (lvmAvailable) {
-    lvmVolumePath = await StorageService.createSandboxVolume(sandboxId, {
-      workspaceId: options.workspaceId,
-      baseImage,
-      usePrebuild: usedPrebuild,
-    });
-  }
-
-  const paths = getSandboxPaths(sandboxId, lvmVolumePath);
-  log.debug(
-    { sandboxId, useLvm: paths.useLvm, usedPrebuild },
-    "Volume created",
-  );
-
-  return { paths };
+function resolveSandboxImage(baseImage?: string): string {
+  return `${config.kubernetes.registryUrl}/${baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
 }
 
-async function resizeVolumeBeforeBoot(
+function buildUrls(
   sandboxId: string,
-  paths: SandboxPaths,
-  usedPrebuild: boolean,
-): Promise<void> {
-  if (!paths.useLvm) return;
-  if (usedPrebuild) {
-    log.debug({ sandboxId }, "Skipping volume resize (using prebuild)");
-    return;
-  }
+  system?: boolean,
+): { vscode: string; opencode: string; ssh: string } {
+  const sandboxDomain = config.domain.dashboard;
 
-  const targetSizeGb = DEFAULTS.VOLUME_SIZE_GB;
-
-  try {
-    const currentSize = await StorageService.getVolumeSizeBytes(sandboxId);
-    const targetSizeBytes = targetSizeGb * 1024 * 1024 * 1024;
-
-    if (currentSize >= targetSizeBytes) {
-      log.debug(
-        {
-          sandboxId,
-          currentSizeGb: Math.round(currentSize / 1024 / 1024 / 1024),
-        },
-        "Volume already at target size",
-      );
-      return;
-    }
-
-    const result = await StorageService.resizeSandboxVolume(
-      sandboxId,
-      targetSizeGb,
-    );
-
-    if (result.success) {
-      log.info(
-        {
-          sandboxId,
-          previousSizeGb: Math.round(result.previousSize / 1024 / 1024 / 1024),
-          newSizeGb: targetSizeGb,
-        },
-        "Volume resized before boot",
-      );
-    } else {
-      log.warn(
-        { sandboxId, error: result.error },
-        "Failed to resize volume before boot",
-      );
-    }
-  } catch (error) {
-    log.warn(
-      { sandboxId, error },
-      "Volume resize failed, continuing with original size",
-    );
-  }
+  return {
+    vscode: system ? "" : `https://vscode-${sandboxId}.${sandboxDomain}`,
+    opencode: `https://opencode-${sandboxId}.${sandboxDomain}`,
+    ssh: "",
+  };
 }

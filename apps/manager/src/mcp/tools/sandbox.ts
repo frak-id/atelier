@@ -16,7 +16,7 @@ function findTaskForSandbox(sandboxId: string): Task | undefined {
 }
 
 function buildDevUrl(sandboxId: string, cmdName: string): string {
-  return `https://dev-${cmdName}-${sandboxId}.${config.domain.baseDomain}`;
+  return `https://dev-${cmdName}-${sandboxId}.${config.domain.dashboard}`;
 }
 
 function formatSandbox(sandbox: Sandbox) {

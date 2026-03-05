@@ -1,6 +1,5 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import { $ } from "bun";
-import type { FirecrackerClient } from "../../infrastructure/firecracker/index.ts";
+import type { KubeClient } from "../../infrastructure/kubernetes/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
@@ -9,45 +8,23 @@ const log = createChildLogger("boot-waiter");
 
 const OPENCODE_HEALTH_TIMEOUT_MS = 120000;
 
-export async function waitForBoot(
-  client: FirecrackerClient,
-  options: { pid?: number; logPath?: string; timeoutMs?: number } = {},
-): Promise<void> {
-  const { pid, logPath, timeoutMs = 30000 } = options;
-  const deadline = Date.now() + timeoutMs;
+export async function waitForPodIp(
+  kube: KubeClient,
+  podName: string,
+  timeout = 60000,
+): Promise<string | null> {
+  const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
-    if (pid) {
-      const alive = await $`kill -0 ${pid}`.quiet().nothrow();
-      if (alive.exitCode !== 0) {
-        const lastLines = await readLogTail(logPath);
-        throw new Error(`Firecracker process died during boot:\n${lastLines}`);
-      }
+    const ip = await kube.getPodIp(podName);
+    if (ip) {
+      return ip;
     }
-
-    try {
-      if (await client.isRunning()) return;
-    } catch {}
-    await Bun.sleep(50);
+    await Bun.sleep(500);
   }
 
-  const lastLines = await readLogTail(logPath);
-  if (lastLines) {
-    log.warn({ pid }, "Boot timed out \u2014 collecting FC logs");
-    throw new Error(`VM boot timeout after ${timeoutMs}ms:\n${lastLines}`);
-  }
-
-  throw new Error(`VM boot timeout after ${timeoutMs}ms`);
-}
-
-async function readLogTail(logPath?: string): Promise<string> {
-  if (!logPath) return "";
-  try {
-    const content = await Bun.file(logPath).text();
-    return content.split("\n").slice(-20).join("\n");
-  } catch {
-    return "";
-  }
+  log.warn({ podName, timeout }, "Pod did not get IP in time");
+  return null;
 }
 
 export async function waitForOpencode(
@@ -56,7 +33,7 @@ export async function waitForOpencode(
   timeout = OPENCODE_HEALTH_TIMEOUT_MS,
 ): Promise<void> {
   const startTime = Date.now();
-  const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+  const url = `http://${ipAddress}:${config.ports.opencode}`;
   let delay = 250;
 
   while (Date.now() - startTime < timeout) {

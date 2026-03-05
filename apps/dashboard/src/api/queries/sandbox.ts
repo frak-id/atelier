@@ -22,14 +22,6 @@ export const sandboxDetailQuery = (id: string) =>
     queryFn: async () => unwrap(await api.api.sandboxes({ id }).get()),
   });
 
-export const sandboxMetricsQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.metrics(id),
-    queryFn: async () => unwrap(await api.api.sandboxes({ id }).metrics.get()),
-    refetchInterval: 10000,
-    refetchIntervalInBackground: false,
-  });
-
 export const allSandboxServicesQuery = queryOptions({
   queryKey: queryKeys.sandboxes.allServices,
   queryFn: async () => unwrap(await api.api.sandboxes["all-services"].get()),
@@ -196,23 +188,6 @@ export function useStopDevCommand(sandboxId: string) {
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.devCommands(sandboxId),
-      });
-    },
-  });
-}
-
-export function useResizeStorage(sandboxId: string) {
-  return useMutation({
-    mutationKey: ["sandboxes", "resizeStorage", sandboxId],
-    mutationFn: async (sizeGb: number) =>
-      unwrap(
-        await api.api.sandboxes({ id: sandboxId }).storage.resize.post({
-          sizeGb,
-        }),
-      ),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.metrics(sandboxId),
       });
     },
   });

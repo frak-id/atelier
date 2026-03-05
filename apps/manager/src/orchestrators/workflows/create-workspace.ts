@@ -13,7 +13,7 @@ import {
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
-import { buildSandboxConfig, generateSandboxMd } from "../sandbox-config.ts";
+import { generateSandboxMd } from "../sandbox-config.ts";
 
 const log = createChildLogger("wf-create-workspace");
 
@@ -26,45 +26,22 @@ export async function createWorkspaceSandbox(
   let boot: BootResult | undefined;
 
   try {
+    const prebuildReady = workspace.config.prebuild?.status === "ready";
     boot = await bootNewSandbox(
       sandboxId,
       {
         workspaceId: workspace.id,
+        workspace,
         baseImage: options.baseImage ?? workspace.config.baseImage,
         vcpus: options.vcpus ?? workspace.config.vcpus ?? DEFAULTS.VCPUS,
         memoryMb:
           options.memoryMb ?? workspace.config.memoryMb ?? DEFAULTS.MEMORY_MB,
-        prebuildReady: workspace.config.prebuild?.status === "ready",
+        prebuildReady,
+        prebuildSnapshotName: prebuildReady
+          ? workspace.config.prebuild?.latestId
+          : undefined,
       },
       ports,
-    );
-
-    // --- Early sequential: DNS + clock ---
-    await ports.agent.batchExec(sandboxId, [
-      GuestOps.buildDnsCommand(),
-      GuestOps.buildClockSyncCommand(),
-    ]);
-
-    if (!boot.usedPrebuild) {
-      const resized = await GuestOps.resizeStorage(ports.agent, sandboxId);
-      if (resized.success) {
-        log.info(
-          { sandboxId, disk: resized.disk },
-          "Filesystem expanded successfully",
-        );
-      } else {
-        log.warn(
-          { sandboxId, error: resized.error },
-          "Failed to expand filesystem inside VM",
-        );
-      }
-    }
-
-    // --- Prepare configs + collect files (parallel async prep) ---
-    const sandboxConfig = buildSandboxConfig(
-      sandboxId,
-      workspace,
-      boot.sandbox.runtime.opencodePassword,
     );
 
     const configs = ports.configFiles.getMergedForSandbox(workspace.id);
@@ -83,15 +60,12 @@ export async function createWorkspaceSandbox(
     }
     const mdContent = generateSandboxMd(sandboxId, workspace);
 
-    const [secretFiles, gitCredFiles, fileSecretFiles, swapCmd] =
-      await Promise.all([
-        GuestOps.collectSecretFiles(workspace),
-        GuestOps.collectGitCredentialFiles(ports.gitSources),
-        GuestOps.collectFileSecretFiles(workspace),
-        GuestOps.buildSwapCommand(),
-      ]);
+    const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
+      GuestOps.collectSecretFiles(workspace),
+      GuestOps.collectGitCredentialFiles(ports.gitSources),
+      GuestOps.collectFileSecretFiles(workspace),
+    ]);
 
-    // --- Parallel batch: 4 vsock calls instead of 9 ---
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
@@ -102,10 +76,6 @@ export async function createWorkspaceSandbox(
         ...gitCredFiles,
         ...fileSecretFiles,
       ]),
-      ports.agent.batchExec(sandboxId, [
-        GuestOps.buildHostnameCommand(`sandbox-${sandboxId}`),
-      ]),
-      ports.agent.setConfig(sandboxId, sandboxConfig),
     ]);
     log.info(
       {
@@ -116,13 +86,6 @@ export async function createWorkspaceSandbox(
       },
       "Internal sync complete",
     );
-
-    // --- Sequential: swap → clone → services ---
-    if (swapCmd) {
-      await ports.agent.exec(sandboxId, swapCmd.command, {
-        timeout: swapCmd.timeout,
-      });
-    }
 
     if (!boot.usedPrebuild && workspace.config.repos?.length) {
       for (const repo of workspace.config.repos) {
@@ -145,12 +108,10 @@ export async function createWorkspaceSandbox(
       "opencode",
     ]);
 
-    // --- Finalize: register routes + update status ---
     return await finalizeNewSandbox(
       sandboxId,
       boot.sandbox,
-      boot.network,
-      boot.pid,
+      boot.podName,
       ports,
       { system: false },
     );
@@ -164,9 +125,7 @@ export async function createWorkspaceSandbox(
     );
     if (boot) {
       await cleanupSandboxResources(sandboxId, {
-        pid: boot.pid,
-        paths: boot.paths,
-        network: boot.network,
+        podName: boot.podName,
       });
     }
     try {

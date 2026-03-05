@@ -1,8 +1,8 @@
 #!/bin/bash
-# Sandbox init script - runs as PID 1 in Firecracker VM
+# Sandbox init script - runs as PID 1 inside Kata Containers VM
 #
 # Boot-time is critical — the host blocks on waitForAgent until the agent
-# responds to a health check over vsock.  Structure:
+# responds to a health check over TCP.  Structure:
 #   Phase 1: Minimal mounts + device nodes (required for agent + exec)
 #   Phase 2: Start agent immediately (host can begin talking)
 #   Phase 3: Non-critical setup (/etc/hosts, SSH)
@@ -45,7 +45,6 @@ mknod -m 666 /dev/urandom c 1 9
 mknod -m 666 /dev/tty c 5 0
 mknod -m 600 /dev/console c 5 1
 mknod -m 666 /dev/ptmx c 5 2
-mknod -m 666 /dev/vsock c 10 123
 ln -sf /proc/self/fd /dev/fd 2>/dev/null
 ln -sf /proc/self/fd/0 /dev/stdin 2>/dev/null
 ln -sf /proc/self/fd/1 /dev/stdout 2>/dev/null
@@ -62,8 +61,8 @@ else
 fi
 
 # ── Phase 2: Start agent IMMEDIATELY ──────────────────────────────────
-# Agent only needs /dev/vsock + basic fs.  Everything above is sufficient.
-# Host-side waitForAgent polls health over vsock — respond ASAP.
+# Agent only needs basic fs.  Everything above is sufficient.
+# Host-side waitForAgent polls health over TCP — respond ASAP.
 
 log "Starting sandbox-agent"
 if [ -x /usr/local/bin/sandbox-agent ]; then
@@ -170,7 +169,7 @@ fi
 # be talking to the agent while these complete — that's fine because all
 # required mounts and devices are already in place.
 # NOTE: hostname, DNS, swap, secrets, and services are managed by the
-# manager over vsock — only /etc/hosts and sshd belong here.
+# manager over TCP — only /etc/hosts and sshd belong here.
 
 # /etc/hosts (not included in Docker export)
 cat > /etc/hosts << 'EOF'

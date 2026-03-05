@@ -1,3 +1,4 @@
+export { BaseImageBuilder } from "./base-image-builder.ts";
 export * from "./kernel/index.ts";
 export * from "./ports/index.ts";
 export { PrebuildChecker } from "./prebuild-checker.ts";

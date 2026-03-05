@@ -7,10 +7,6 @@ export function unwrap<T>(result: { data: T; error: unknown }): T {
 
 export const queryKeys = {
   health: ["health"] as const,
-  sharedStorage: {
-    all: ["sharedStorage"] as const,
-    binaries: ["sharedStorage", "binaries"] as const,
-  },
   registry: {
     status: ["registry", "status"] as const,
   },
@@ -59,10 +55,11 @@ export const queryKeys = {
     all: ["images"] as const,
     list: (all?: boolean) => ["images", "list", { all }] as const,
     detail: (id: string) => ["images", "detail", id] as const,
+    builds: ["images", "builds"] as const,
+    buildStatus: (id: string) => ["images", id, "buildStatus"] as const,
   },
   system: {
     stats: ["system", "stats"] as const,
-    storage: ["system", "storage"] as const,
     sandbox: ["system", "sandbox"] as const,
   },
   configFiles: {
@@ -101,5 +98,10 @@ export const queryKeys = {
   systemModelConfig: {
     all: ["systemModelConfig"] as const,
     config: ["systemModelConfig", "config"] as const,
+  },
+  cliproxy: {
+    all: ["cliproxy"] as const,
+    status: ["cliproxy", "status"] as const,
+    export: ["cliproxy", "export"] as const,
   },
 };

@@ -4,6 +4,7 @@ import { validateConfig } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
 import {
   authRoutes,
+  cliproxyRoutes,
   configFileRoutes,
   eventsRoutes,
   githubApiRoutes,
@@ -18,7 +19,6 @@ import {
   sandboxRoutes,
   sessionTemplateRoutes,
   sharedAuthRoutes,
-  sharedStorageRoutes,
   sshKeyRoutes,
   systemModelConfigRoutes,
   systemRoutes,
@@ -28,6 +28,7 @@ import {
 import {
   agentOperations,
   authSyncService,
+  cliProxyService,
   prebuildChecker,
   prebuildRunner,
   sandboxLifecycle,
@@ -38,12 +39,10 @@ import {
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
-import { networkService } from "./infrastructure/network/index.ts";
+import { kubeClient } from "./infrastructure/kubernetes/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
-import { proxyService, SshPiperService } from "./infrastructure/proxy/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
-
 import { SandboxError } from "./shared/errors.ts";
 import { authGuard } from "./shared/lib/auth.ts";
 import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
@@ -66,13 +65,20 @@ if (configErrors.length > 0 && isProduction()) {
 logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");
-
 const app = new Elysia()
   .on("start", async () => {
     CronService.add("prebuildStaleness", {
       name: "Prebuild Staleness Check",
       pattern: "*/30 * * * *",
       handler: () => prebuildChecker.checkAllAndRebuildStale(),
+    });
+
+    CronService.add("cliproxyRefresh", {
+      name: "CLIProxy Config Refresh",
+      pattern: "*/10 * * * *",
+      handler: async () => {
+        await cliProxyService.refresh();
+      },
     });
 
     CronService.add("sandboxSelfHeal", {
@@ -95,16 +101,6 @@ const app = new Elysia()
     authSyncService.startAuthWatcher();
 
     const allSandboxes = sandboxService.getAll();
-    networkService.reconcile(allSandboxes.map((s) => s.runtime.ipAddress));
-    if (allSandboxes.length > 0) {
-      logger.info(
-        {
-          count: allSandboxes.length,
-          allocatedIps: networkService.getAllocatedCount(),
-        },
-        "Startup: IP pool reconciled from DB",
-      );
-    }
 
     // Reconcile stale "creating" sandboxes from a previous crash
     const staleTtlMs = 10 * 60 * 1000;
@@ -145,58 +141,7 @@ const app = new Elysia()
       }
     }
 
-    // Wait for Caddy to become ready before rehydrating routes
-    const caddyDeadline = Date.now() + 30_000;
-    let caddyReady = false;
-    while (Date.now() < caddyDeadline) {
-      if (await proxyService.isHealthy()) {
-        caddyReady = true;
-        break;
-      }
-      logger.warn("Startup: waiting for Caddy to become ready");
-      await Bun.sleep(1000);
-    }
-    if (!caddyReady) {
-      logger.error(
-        "Startup: Caddy not ready after 30s — route rehydration may fail",
-      );
-    }
-    const runningSandboxes = allSandboxes.filter((s) => s.status === "running");
-    for (const sandbox of runningSandboxes) {
-      try {
-        await proxyService.registerRoutes(
-          sandbox.id,
-          sandbox.runtime.ipAddress,
-          {
-            vscode: config.advanced.vm.vscode.port,
-            opencode: config.advanced.vm.opencode.port,
-          },
-        );
-        await SshPiperService.registerRoute(
-          sandbox.id,
-          sandbox.runtime.ipAddress,
-        );
-      } catch (err) {
-        logger.error(
-          { sandboxId: sandbox.id, error: err },
-          "Failed to re-register routes",
-        );
-      }
-    }
-
-    const validKeys = sshKeyService.getValidPublicKeys();
-    if (validKeys.length > 0) {
-      await SshPiperService.updateAuthorizedKeys(validKeys);
-    }
-
-    if (runningSandboxes.length > 0) {
-      logger.info(
-        { count: runningSandboxes.length },
-        "Startup: routes re-registered",
-      );
-    }
-
-    await RegistryService.initialize();
+    RegistryService.initialize();
   })
   .use(
     cors({
@@ -211,8 +156,7 @@ const app = new Elysia()
         info: {
           title: "Atelier Manager API",
           version: "0.1.0",
-          description:
-            "API for managing Firecracker-based sandbox environments",
+          description: "API for managing Kata-based sandbox environments",
         },
         tags: [
           { name: "health", description: "Health check endpoints" },
@@ -221,11 +165,6 @@ const app = new Elysia()
           { name: "sources", description: "Git source connections" },
           { name: "config", description: "Config file management" },
           { name: "system", description: "System monitoring and management" },
-          {
-            name: "storage",
-            description: "Shared storage management (binaries)",
-          },
-          { name: "images", description: "Base image management" },
           { name: "github", description: "GitHub integration" },
         ],
       },
@@ -251,12 +190,13 @@ const app = new Elysia()
         };
       }
 
-      case "NOT_FOUND":
+      case "NOT_FOUND": {
         set.status = 404;
         return {
           error: "NOT_FOUND",
           message: "Endpoint not found",
         };
+      }
 
       default: {
         const errorMessage =
@@ -290,26 +230,35 @@ const app = new Elysia()
           .use(sharedAuthRoutes)
           .use(sshKeyRoutes)
           .use(systemRoutes)
-          .use(sharedStorageRoutes)
           .use(registryRoutes)
           .use(imageRoutes)
           .use(githubApiRoutes)
           .use(eventsRoutes)
-          .use(systemModelConfigRoutes),
+          .use(systemModelConfigRoutes)
+          .use(cliproxyRoutes),
       ),
-  )
-  .get("/", () => ({
-    name: "Atelier Manager",
-    version: "0.1.0",
-    mode: config.server.mode,
-    docs: "/swagger",
-  }));
+  );
+
+app.get("/", () => ({
+  name: "Atelier Manager",
+  version: "0.1.0",
+  mode: config.server.mode,
+  docs: "/swagger",
+}));
 
 await systemSandboxService.recoverFromRestart();
 
-setImmediate(() => {
+setImmediate(async () => {
+  const snapshotReady = await kubeClient.checkSnapshotApi();
+  if (!snapshotReady) {
+    logger.info(
+      "Snapshot API not available \u2014 skipping system prebuild. " +
+        "Install the CSI snapshot controller to enable prebuilds.",
+    );
+    return;
+  }
   prebuildRunner.ensureSystemPrebuild().catch((error) => {
-    logger.warn({ error }, "System prebuild auto-build failed");
+    logger.warn({ err: error }, "System prebuild auto-build failed");
   });
 });
 
