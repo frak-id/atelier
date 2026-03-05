@@ -99,4 +99,8 @@ export const queryKeys = {
     all: ["systemModelConfig"] as const,
     config: ["systemModelConfig", "config"] as const,
   },
+  cliproxy: {
+    all: ["cliproxy"] as const,
+    status: ["cliproxy", "status"] as const,
+  },
 };

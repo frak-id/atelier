@@ -462,3 +462,36 @@ export function useUpdateSystemModelConfig() {
     },
   });
 }
+
+// --- CLIProxy ---
+
+export const cliproxyStatusQuery = queryOptions({
+  queryKey: queryKeys.cliproxy.status,
+  queryFn: async () => unwrap(await api.api.cliproxy.get()),
+  refetchInterval: 30000,
+});
+
+export function useToggleCliProxy() {
+  return useMutation({
+    mutationKey: ["cliproxy", "toggle"],
+    mutationFn: async (enabled: boolean) =>
+      unwrap(await api.api.cliproxy.put({ enabled })),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.cliproxy.all,
+      });
+    },
+  });
+}
+
+export function useRefreshCliProxy() {
+  return useMutation({
+    mutationKey: ["cliproxy", "refresh"],
+    mutationFn: async () => unwrap(await api.api.cliproxy.refresh.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.cliproxy.all,
+      });
+    },
+  });
+}
