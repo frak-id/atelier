@@ -13,7 +13,7 @@ data:
         "baseDomain" .Values.domain.baseDomain
         "dashboard" $dashboardDomain
         "tls" (dict "email" .Values.domain.tls.email)
-        "ssh" (dict "port" 2222)
+        "ssh" (dict "port" (.Values.sshpiper.nodePort | default 2222) "hostname" (include "atelier.sshHostname" .))
       )
       "auth" (dict
         "allowedOrg" .Values.auth.allowedOrg
