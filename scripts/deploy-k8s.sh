@@ -31,8 +31,6 @@ SSH_KEY_PASSPHRASE="${SSH_KEY_PASSPHRASE:-}"
 MANAGER_IMAGE_REPO="${IMAGE_REPO:-ghcr.io/frak-id/atelier-manager}"
 DASHBOARD_IMAGE_REPO="${DASHBOARD_IMAGE_REPO:-ghcr.io/frak-id/atelier-dashboard}"
 AGENT_IMAGE_REPO="${AGENT_IMAGE_REPO:-ghcr.io/frak-id/sandbox-agent}"
-IMAGE_TAG="${IMAGE_TAG:-dev-$(git rev-parse --short HEAD)}"
-
 RELEASE_NAME="${RELEASE_NAME:-atelier}"
 NAMESPACE="${NAMESPACE:-atelier-system}"
 CHART_NAME="atelier"
@@ -40,12 +38,16 @@ ZOT_PORT="${ZOT_PORT:-5000}"
 
 VALUES_FILE="${VALUES_FILE:-}"
 HELM_SET="${HELM_SET:-}"
-SKIP_BUILD="${SKIP_BUILD:-}"
 DB_RESTORE_PATH="${DB_RESTORE_PATH:-}"
+SKIP_BUILD="${SKIP_BUILD:-}"
 
 # When skipping build, default to the nightly GHCR image
-if [[ -n "${SKIP_BUILD}" ]]; then
-  IMAGE_TAG="${IMAGE_TAG:-nightly}"
+if [[ -z "${IMAGE_TAG:-}" ]]; then
+  if [[ -n "${SKIP_BUILD}" ]]; then
+    IMAGE_TAG="nightly"
+  else
+    IMAGE_TAG="dev-$(git rev-parse --short HEAD)"
+  fi
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

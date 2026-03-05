@@ -422,19 +422,38 @@ export class CLIProxyService {
     const baseUrl = this.getManagementBaseUrl();
     if (!baseUrl) return false;
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${managementKey}`,
+    };
+
     try {
-      const res = await fetch(`${baseUrl}/api-keys`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${managementKey}`,
-        },
-        body: JSON.stringify({ index: 999, value: apiKey }),
+      // GET current keys, append new one, PUT the full list
+      const getRes = await fetch(`${baseUrl}/api-keys`, {
+        headers: { Authorization: `Bearer ${managementKey}` },
         signal: AbortSignal.timeout(10_000),
       });
-      if (!res.ok) {
+      if (!getRes.ok) {
         log.error(
-          { status: res.status },
+          { status: getRes.status },
+          "Failed to fetch API keys from management API",
+        );
+        return false;
+      }
+
+      const data = (await getRes.json()) as { "api-keys"?: string[] };
+      const keys = data["api-keys"] ?? [];
+      keys.push(apiKey);
+
+      const putRes = await fetch(`${baseUrl}/api-keys`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(keys),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!putRes.ok) {
+        log.error(
+          { status: putRes.status },
           "Failed to add API key via management API",
         );
         return false;
