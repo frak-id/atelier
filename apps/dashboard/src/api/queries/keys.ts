@@ -102,5 +102,6 @@ export const queryKeys = {
   cliproxy: {
     all: ["cliproxy"] as const,
     status: ["cliproxy", "status"] as const,
+    export: ["cliproxy", "export"] as const,
   },
 };

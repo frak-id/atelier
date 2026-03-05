@@ -471,6 +471,12 @@ export const cliproxyStatusQuery = queryOptions({
   refetchInterval: 30000,
 });
 
+export const cliproxyExportQuery = queryOptions({
+  queryKey: queryKeys.cliproxy.export,
+  queryFn: async () => unwrap(await api.api.cliproxy.export.get()),
+  staleTime: 30000,
+});
+
 export function useToggleCliProxy() {
   return useMutation({
     mutationKey: ["cliproxy", "toggle"],

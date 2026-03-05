@@ -69,6 +69,12 @@ export interface CLIProxyStatus {
   modelCount: number;
 }
 
+export interface CLIProxyExportConfig {
+  provider: {
+    cliproxy: Record<string, unknown>;
+  };
+}
+
 export class CLIProxyService {
   private modelsDevCache: ModelsDevData | null = null;
   private modelsDevCacheTime = 0;
@@ -168,6 +174,34 @@ export class CLIProxyService {
       );
 
     return { modelCount };
+  }
+
+  getExportableConfig(): CLIProxyExportConfig | null {
+    const file = this.getGeneratedProvider();
+    if (!file) return null;
+
+    try {
+      const raw = JSON.parse(file.content) as Record<string, unknown>;
+      const baseDomain = config.domain.baseDomain;
+      const isLocal = baseDomain === "localhost";
+      const externalBaseURL = isLocal
+        ? `http://localhost:${config.integrations.cliproxy.url.match(/:(\d+)/)?.[1] ?? "8317"}/v1`
+        : `https://cliproxy.${baseDomain}/v1`;
+
+      return {
+        provider: {
+          cliproxy: {
+            ...raw,
+            options: {
+              baseURL: externalBaseURL,
+              apiKey: "<your-api-key>",
+            },
+          },
+        },
+      };
+    } catch {
+      return null;
+    }
   }
 
   getGeneratedProvider() {

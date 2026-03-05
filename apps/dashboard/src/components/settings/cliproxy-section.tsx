@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Check, Copy, Loader2, RefreshCw } from "lucide-react";
 import {
+  cliproxyExportQuery,
   cliproxyStatusQuery,
   useRefreshCliProxy,
   useToggleCliProxy,
@@ -10,11 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 
 export function CLIProxySection() {
   const { data: status, isLoading } = useQuery(cliproxyStatusQuery);
+  const { data: exportConfig } = useQuery(cliproxyExportQuery);
   const toggleMutation = useToggleCliProxy();
   const refreshMutation = useRefreshCliProxy();
+  const { copy, isCopied } = useCopyToClipboard();
 
   if (isLoading) {
     return (
@@ -113,6 +117,42 @@ export function CLIProxySection() {
                     <code className="font-mono bg-muted px-1 py-0.5 rounded">
                       {status.url}
                     </code>
+                  </p>
+                </div>
+              )}
+
+              {exportConfig && (
+                <div className="border-t pt-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Local OpenCode Config</Label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() =>
+                        copy(JSON.stringify(exportConfig, null, 2), "export")
+                      }
+                    >
+                      {isCopied("export") ? (
+                        <span className="text-green-500 flex items-center gap-1">
+                          <Check className="h-3 w-3" /> Copied
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <Copy className="h-3 w-3" /> Copy JSON
+                        </span>
+                      )}
+                    </Button>
+                  </div>
+                  <pre className="bg-muted p-3 rounded text-xs font-mono overflow-x-auto max-h-[300px]">
+                    {JSON.stringify(exportConfig, null, 2)}
+                  </pre>
+                  <p className="text-xs text-muted-foreground">
+                    Merge into{" "}
+                    <code className="font-mono bg-muted px-1 py-0.5 rounded">
+                      ~/.config/opencode/opencode.json
+                    </code>{" "}
+                    to use CLIProxy models locally.
                   </p>
                 </div>
               )}

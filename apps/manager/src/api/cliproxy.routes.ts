@@ -60,4 +60,10 @@ export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
       summary: "Manually refresh CLIProxy model config",
     },
     response: CLIProxyRefreshResultSchema,
+  })
+  .get("/export", () => cliProxyService.getExportableConfig(), {
+    detail: {
+      tags: ["system"],
+      summary: "Get exportable OpenCode provider config with external URL",
+    },
   });
