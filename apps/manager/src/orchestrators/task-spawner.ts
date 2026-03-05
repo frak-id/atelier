@@ -419,7 +419,7 @@ export class TaskSpawner {
         attempt === 0 ? baseBranchName : `${baseBranchName}_v${attempt + 1}`;
 
       const checkoutBase = await gitExec(
-        `git fetch origin && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
+        `git fetch origin ${baseBranch} && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
       );
 
       if (checkoutBase.exitCode !== 0) {
