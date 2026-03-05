@@ -4,25 +4,34 @@ metadata:
   name: {{ include "atelier.fullname" . }}-manager
   namespace: {{ include "atelier.systemNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
 spec:
   replicas: 1
+  {{- with .Values.manager.updateStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "atelier.name" . }}
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: manager
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/manager-configmap.yaml") . | sha256sum }}
+        {{- with .Values.manager.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       labels:
-        app.kubernetes.io/name: {{ include "atelier.name" . }}
-        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: manager
+        {{- with .Values.manager.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
-      serviceAccountName: {{ include "atelier.fullname" . }}-manager
+      {{- include "atelier.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "atelier.serviceAccountName" . }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -46,21 +55,18 @@ spec:
             initialDelaySeconds: 2
             periodSeconds: 5
           resources:
-            requests:
-              memory: "32Mi"
-              cpu: "10m"
-            limits:
-              memory: "64Mi"
-              cpu: "100m"
+            {{- .Values.dashboard.resources | toYaml | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
         - name: manager
           image: {{ include "atelier.managerImage" . }}
           imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
           command: ["bun", "server.js"]
           ports:
             - name: api
-              containerPort: 4000
+              containerPort: {{ .Values.server.port }}
           env:
             - name: ATELIER_SERVER_MODE
               value: production
@@ -71,40 +77,40 @@ spec:
             - name: ATELIER_GITHUB_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  name: {{ include "atelier.managerSecretName" . }}
                   key: ATELIER_GITHUB_CLIENT_ID
             - name: ATELIER_GITHUB_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  name: {{ include "atelier.managerSecretName" . }}
                   key: ATELIER_GITHUB_CLIENT_SECRET
             - name: ATELIER_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  name: {{ include "atelier.managerSecretName" . }}
                   key: ATELIER_JWT_SECRET
             - name: SANDBOX_SECRETS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  name: {{ include "atelier.managerSecretName" . }}
                   key: SANDBOX_SECRETS_KEY
             {{- if .Values.server.mcpToken }}
             - name: ATELIER_MCP_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  name: {{ include "atelier.managerSecretName" . }}
                   key: ATELIER_MCP_TOKEN
             {{- end }}
             {{- if .Values.integrations.slack.enabled }}
             - name: ATELIER_SLACK_BOT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  name: {{ include "atelier.managerSecretName" . }}
                   key: ATELIER_SLACK_BOT_TOKEN
             - name: ATELIER_SLACK_SIGNING_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "atelier.fullname" . }}-manager-secret
+                  name: {{ include "atelier.managerSecretName" . }}
                   key: ATELIER_SLACK_SIGNING_SECRET
             {{- end }}
             - name: ATELIER_K8S_INGRESS_CLASS
@@ -134,6 +140,18 @@ spec:
               mountPath: /etc/atelier/sandbox.config.json
               subPath: sandbox.config.json
               readOnly: true
+      {{- with .Values.manager.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: manager-data
           persistentVolumeClaim:

@@ -111,14 +111,8 @@ export const RegistryService = {
   async getPackageCount(): Promise<number> {
     if (isMock()) return 42;
     try {
-      const res = await fetch(`${verdaccioUrl()}/-/v1/search?text=&size=250`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!res.ok) return 0;
-      const data = (await res.json()) as {
-        objects?: unknown[];
-      };
-      return data.objects?.length ?? 0;
+      const packages = await this.listPackages();
+      return packages.length;
     } catch {
       return 0;
     }

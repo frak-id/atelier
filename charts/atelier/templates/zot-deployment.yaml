@@ -2,26 +2,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: zot
+  name: {{ include "atelier.fullname" . }}-zot
   namespace: {{ include "atelier.systemNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
     app.kubernetes.io/component: zot
 spec:
   replicas: 1
   selector:
     matchLabels:
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: zot
-      app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: zot
-        app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      {{- include "atelier.imagePullSecrets" . | nindent 6 }}
       securityContext:
         fsGroup: 100
       containers:
@@ -58,8 +56,8 @@ spec:
       volumes:
         - name: zot-data
           persistentVolumeClaim:
-            claimName: zot-data
+            claimName: {{ include "atelier.fullname" . }}-zot-data
         - name: zot-config
           configMap:
-            name: zot-config
+            name: {{ include "atelier.fullname" . }}-zot-config
 {{- end }}

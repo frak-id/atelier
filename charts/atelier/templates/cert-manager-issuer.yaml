@@ -1,23 +1,20 @@
-{{- if .Values.certManager.enabled }}
+{{- if and .Values.certManager.enabled .Values.certManager.createIssuer }}
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: {{ .Values.certManager.issuer.name }}
+  name: {{ .Values.certManager.issuerName }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
 spec:
   acme:
     email: {{ .Values.domain.tls.email | quote }}
-    server: {{ .Values.certManager.issuer.server | quote }}
+    server: {{ .Values.certManager.server | quote }}
     privateKeySecretRef:
-      name: {{ .Values.certManager.issuer.name }}-account-key
+      name: {{ .Values.certManager.issuerName }}-account-key
     solvers:
       - dns01:
           cloudflare:
             apiTokenSecretRef:
-              name: {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.name }}
-              key: {{ .Values.certManager.issuer.cloudflare.apiTokenSecretRef.key }}
+              name: {{ .Values.certManager.cloudflare.apiTokenSecretRef.name }}
+              key: {{ .Values.certManager.cloudflare.apiTokenSecretRef.key }}
 {{- end }}

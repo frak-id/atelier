@@ -7,10 +7,10 @@ metadata:
   labels:
     {{- include "atelier.labels" . | nindent 4 }}
 spec:
-  secretName: atelier-sandbox-wildcard-tls
+  secretName: {{ include "atelier.sandboxWildcardTlsSecretName" . }}
   issuerRef:
     kind: ClusterIssuer
-    name: {{ .Values.certManager.issuer.name }}
+    name: {{ .Values.certManager.issuerName }}
   commonName: {{ printf "*.%s" (include "atelier.dashboardDomain" .) | quote }}
   dnsNames:
     - {{ printf "*.%s" (include "atelier.dashboardDomain" .) | quote }}

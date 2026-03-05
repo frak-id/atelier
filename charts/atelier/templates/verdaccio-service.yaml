@@ -2,21 +2,18 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: verdaccio
+  name: {{ include "atelier.fullname" . }}-verdaccio
   namespace: {{ include "atelier.systemNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
     app.kubernetes.io/component: verdaccio
 spec:
   type: ClusterIP
   selector:
+    {{- include "atelier.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: verdaccio
-    app.kubernetes.io/instance: {{ .Release.Name }}
   ports:
     - name: http
-      port: {{ .Values.advanced.server.verdaccio.port }}
+      port: {{ .Values.ports.verdaccio }}
       targetPort: http
 {{- end }}

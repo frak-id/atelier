@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: shared-binaries
+  name: {{ include "atelier.fullname" . }}-shared-binaries
   namespace: {{ include "atelier.sandboxNamespace" . }}
   labels:
     {{- include "atelier.labels" . | nindent 4 }}

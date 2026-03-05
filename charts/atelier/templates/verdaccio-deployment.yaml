@@ -2,26 +2,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: verdaccio
+  name: {{ include "atelier.fullname" . }}-verdaccio
   namespace: {{ include "atelier.systemNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
     app.kubernetes.io/component: verdaccio
 spec:
   replicas: 1
   selector:
     matchLabels:
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: verdaccio
-      app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: verdaccio
-        app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      {{- include "atelier.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
       containers:
         - name: verdaccio
           image: {{ printf "%s:%s" .Values.verdaccio.image.repository .Values.verdaccio.image.tag }}
@@ -30,10 +32,10 @@ spec:
             # Override K8s auto-injected VERDACCIO_PORT (from service named 'verdaccio')
             # which sets it to 'tcp://10.x.x.x:4873' and breaks verdaccio's address parsing
             - name: VERDACCIO_PORT
-              value: {{ .Values.advanced.server.verdaccio.port | quote }}
+              value: {{ .Values.ports.verdaccio | quote }}
           ports:
             - name: http
-              containerPort: {{ .Values.advanced.server.verdaccio.port }}
+              containerPort: {{ .Values.ports.verdaccio }}
           readinessProbe:
             httpGet:
               path: /-/ping
@@ -48,6 +50,10 @@ spec:
             periodSeconds: 30
           resources:
             {{- toYaml .Values.verdaccio.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: verdaccio-config
               mountPath: /verdaccio/conf
@@ -56,8 +62,8 @@ spec:
       volumes:
         - name: verdaccio-config
           configMap:
-            name: verdaccio-config
+            name: {{ include "atelier.fullname" . }}-verdaccio-config
         - name: verdaccio-storage
           persistentVolumeClaim:
-            claimName: verdaccio-data
+            claimName: {{ include "atelier.fullname" . }}-verdaccio-data
 {{- end }}

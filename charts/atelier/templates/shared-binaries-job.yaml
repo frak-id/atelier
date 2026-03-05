@@ -27,7 +27,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: updater
-          image: {{ .Values.sharedBinaries.image | default "curlimages/curl:latest" }}
+          image: {{ .Values.sharedBinaries.image }}
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -43,6 +43,7 @@ spec:
               echo "[shared-binaries] Installing opencode v{{ $ocVersion }}"
               mkdir -p /shared/opencode
               cd /tmp
+              # TODO: Add SHA256 checksum verification for downloaded binaries
               curl -fsSL -o archive-opencode "https://github.com/anomalyco/opencode/releases/download/v{{ $ocVersion }}/opencode-linux-x64-baseline.tar.gz"
               tar -xzf archive-opencode -C /shared/opencode
               rm -f archive-opencode
@@ -50,6 +51,7 @@ spec:
               echo "[shared-binaries] Installing code-server v{{ $csVersion }}"
               mkdir -p /shared/code-server
               cd /tmp
+              # TODO: Add SHA256 checksum verification for downloaded binaries
               curl -fsSL -o archive-code-server "https://github.com/coder/code-server/releases/download/v{{ $csVersion }}/code-server-{{ $csVersion }}-linux-amd64.tar.gz"
               tar -xzf archive-code-server -C /shared/code-server --strip-components=1
               rm -f archive-code-server
@@ -66,5 +68,5 @@ spec:
       volumes:
         - name: shared-binaries
           persistentVolumeClaim:
-            claimName: shared-binaries
+            claimName: {{ include "atelier.fullname" . }}-shared-binaries
 {{- end }}

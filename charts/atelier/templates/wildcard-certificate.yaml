@@ -5,15 +5,12 @@ metadata:
   name: {{ include "atelier.fullname" . }}-wildcard
   namespace: {{ include "atelier.systemNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
 spec:
   secretName: {{ include "atelier.wildcardTlsSecretName" . }}
   issuerRef:
     kind: ClusterIssuer
-    name: {{ .Values.certManager.issuer.name }}
+    name: {{ .Values.certManager.issuerName }}
   commonName: {{ printf "*.%s" .Values.domain.baseDomain | quote }}
   dnsNames:
     - {{ printf "*.%s" .Values.domain.baseDomain | quote }}

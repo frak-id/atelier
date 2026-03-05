@@ -302,6 +302,17 @@ export class PrebuildRunner {
         namespace,
       );
 
+      // Use workspace resource config if available, with generous defaults for prebuild
+      const memoryMb =
+        scenario.kind === "workspace"
+          ? Math.max(
+              this.requireWorkspace(scenario).config.memoryMb ?? 4096,
+              4096,
+            )
+          : 4096;
+      const memoryLimit = `${memoryMb}Mi`;
+      const cpuLimit = memoryMb >= 8192 ? "4000m" : "2000m";
+
       await this.deps.kubeClient.createResource(
         buildSandboxPod({
           sandboxId,
@@ -311,7 +322,7 @@ export class PrebuildRunner {
           configMapName,
           namespace,
           requests: { cpu: "500m", memory: "2Gi" },
-          limits: { cpu: "2000m", memory: "4Gi" },
+          limits: { cpu: cpuLimit, memory: memoryLimit },
         }),
         namespace,
       );

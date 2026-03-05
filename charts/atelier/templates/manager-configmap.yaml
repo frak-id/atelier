@@ -4,10 +4,7 @@ metadata:
   name: {{ include "atelier.fullname" . }}-manager-config
   namespace: {{ include "atelier.systemNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
 data:
   sandbox.config.json: |
     {{- $dashboardDomain := include "atelier.dashboardDomain" . -}}
@@ -34,7 +31,7 @@ data:
         "systemNamespace" .Release.Namespace
         "runtimeClass" .Values.kubernetes.runtimeClass
         "ingressClassName" .Values.ingress.className
-        "registryUrl" (printf "zot.%s.svc:%v" .Release.Namespace .Values.zot.port)
+        "registryUrl" (printf "%s-zot.%s.svc:%v" (include "atelier.fullname" .) .Release.Namespace .Values.zot.port)
         "storageClass" .Values.kubernetes.storageClass
         "volumeSnapshotClass" .Values.kubernetes.volumeSnapshotClass
         "defaultVolumeSize" .Values.kubernetes.defaultVolumeSize
@@ -48,7 +45,7 @@ data:
           "name" .Values.sandbox.git.name
         )
       )
-      "advanced" .Values.advanced
+      "ports" .Values.ports
       "integrations" (dict
         "slack" (dict
           "enabled" .Values.integrations.slack.enabled

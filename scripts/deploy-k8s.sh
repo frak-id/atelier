@@ -35,6 +35,8 @@ IMAGE_TAG="${IMAGE_TAG:-dev-$(git rev-parse --short HEAD)}"
 
 RELEASE_NAME="${RELEASE_NAME:-atelier}"
 NAMESPACE="${NAMESPACE:-atelier-system}"
+CHART_NAME="atelier"
+ZOT_PORT="${ZOT_PORT:-5000}"
 
 VALUES_FILE="${VALUES_FILE:-}"
 HELM_SET="${HELM_SET:-}"
@@ -47,6 +49,14 @@ REMOTE_DIR="/tmp/atelier-helm-deploy"
 MANAGER_IMAGE="${MANAGER_IMAGE_REPO}:${IMAGE_TAG}"
 DASHBOARD_IMAGE="${DASHBOARD_IMAGE_REPO}:${IMAGE_TAG}"
 AGENT_IMAGE="${AGENT_IMAGE_REPO}:${IMAGE_TAG}"
+
+# Replicate Helm's atelier.fullname logic: avoid "release-chartname" duplication
+if [[ "${RELEASE_NAME}" == *"${CHART_NAME}"* ]]; then
+  FULLNAME="${RELEASE_NAME}"
+else
+  FULLNAME="${RELEASE_NAME}-${CHART_NAME}"
+fi
+ZOT_SVC="${FULLNAME}-zot"
 
 # ── SSH setup ────────────────────────────────────────────────────────────────
 
@@ -251,22 +261,22 @@ ok "Helm release deployed"
 
 info "Configuring k3s registries for Zot"
 
-ZOT_IP=$(remote "kubectl get svc -n ${NAMESPACE} zot -o jsonpath='{.spec.clusterIP}' 2>/dev/null" || echo "")
+ZOT_IP=$(remote "kubectl get svc -n ${NAMESPACE} ${ZOT_SVC} -o jsonpath='{.spec.clusterIP}' 2>/dev/null" || echo "")
 
 if [[ -n "$ZOT_IP" ]]; then
   NEW_REGISTRIES="mirrors:
-  \"zot.${NAMESPACE}.svc:5000\":
+  \"${ZOT_SVC}.${NAMESPACE}.svc:${ZOT_PORT}\":
     endpoint:
-      - \"http://${ZOT_IP}:5000\""
+      - \"http://${ZOT_IP}:${ZOT_PORT}\""
 
   CURRENT_REGISTRIES=$(remote "cat /etc/rancher/k3s/registries.yaml 2>/dev/null" || echo "")
 
   if [[ "$NEW_REGISTRIES" != "$CURRENT_REGISTRIES" ]]; then
-    remote "cat > /etc/rancher/k3s/registries.yaml << 'REGEOF'
+    remote "cat > /etc/rancher/k3s/registries.yaml << REGEOF
 mirrors:
-  \"zot.${NAMESPACE}.svc:5000\":
+  \"${ZOT_SVC}.${NAMESPACE}.svc:${ZOT_PORT}\":
     endpoint:
-      - \"http://${ZOT_IP}:5000\"
+      - \"http://${ZOT_IP}:${ZOT_PORT}\"
 REGEOF"
     ok "registries.yaml updated (Zot ClusterIP: ${ZOT_IP})"
 
@@ -285,7 +295,7 @@ fi
 
 info "Waiting for rollout"
 
-if ! remote "kubectl -n ${NAMESPACE} rollout status deployment/${RELEASE_NAME}-atelier-manager --timeout=120s"; then
+if ! remote "kubectl -n ${NAMESPACE} rollout status deployment/${FULLNAME}-manager --timeout=120s"; then
   warn "Rollout didn't complete in time — dumping diagnostics"
   echo ""
   remote "kubectl -n ${NAMESPACE} get pods -l app.kubernetes.io/component=manager" || true
@@ -306,8 +316,8 @@ remote "kubectl -n ${NAMESPACE} get pods"
 if [[ -z "$SKIP_BUILD" ]]; then
   info "Pushing agent image to Zot registry"
   if [[ -n "$ZOT_IP" ]]; then
-    remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:5000/sandbox-agent:latest 2>/dev/null || true"
-    remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:5000/sandbox-agent:latest 2>&1" && ok "Agent image pushed to Zot" || warn "Could not push agent to Zot (non-fatal)"
+    remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>/dev/null || true"
+    remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>&1" && ok "Agent image pushed to Zot" || warn "Could not push agent to Zot (non-fatal)"
   else
     warn "Zot service not found — skipping agent sync"
   fi
@@ -324,8 +334,8 @@ if [[ -n "$DB_RESTORE_PATH" ]]; then
     remote "kubectl cp ${DB_RESTORE_PATH} ${NAMESPACE}/${MANAGER_POD}:/app/data/manager.db -c manager"
     ok "Database copied to ${MANAGER_POD}:/app/data/manager.db"
 
-    remote "kubectl -n ${NAMESPACE} rollout restart deployment/${RELEASE_NAME}-atelier-manager"
-    remote "kubectl -n ${NAMESPACE} rollout status deployment/${RELEASE_NAME}-atelier-manager --timeout=60s"
+    remote "kubectl -n ${NAMESPACE} rollout restart deployment/${FULLNAME}-manager"
+    remote "kubectl -n ${NAMESPACE} rollout status deployment/${FULLNAME}-manager --timeout=60s"
     ok "Manager restarted with restored database"
   else
     warn "Could not find manager pod — skipping DB restore"
@@ -334,11 +344,11 @@ fi
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
-SVC_NAME="${RELEASE_NAME}-atelier-manager"
+SVC_NAME="${FULLNAME}-manager"
 
 info "Deployment complete!"
 echo ""
-echo "  Dashboard: https://sandbox.$(remote "kubectl -n ${NAMESPACE} get configmap ${RELEASE_NAME}-atelier-manager-config -o jsonpath='{.data.sandbox\\.config\\.json}' 2>/dev/null" | grep -o '"baseDomain":"[^"]*"' | cut -d'"' -f4 || echo "your-domain.com")"
+echo "  Dashboard: https://sandbox.$(remote "kubectl -n ${NAMESPACE} get configmap ${FULLNAME}-manager-config -o jsonpath='{.data.sandbox\\.config\\.json}' 2>/dev/null" | grep -o '"baseDomain":"[^"]*"' | cut -d'"' -f4 || echo "your-domain.com")"
 echo ""
 echo "  Health:    kubectl -n ${NAMESPACE} port-forward svc/${SVC_NAME} 4000:4000"
 echo "             curl http://127.0.0.1:4000/health/ready"

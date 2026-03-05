@@ -1,3 +1,27 @@
+# -- Global settings
+global:
+  # -- Docker registry pull secrets
+  imagePullSecrets: []
+  # - name: regcred
+
+# -- Override chart name / fullname
+nameOverride: ""
+fullnameOverride: ""
+
+# -- ServiceAccount configuration
+serviceAccount:
+  # -- Create a ServiceAccount for the manager
+  create: true
+  # -- ServiceAccount name (defaults to fullname-manager)
+  name: ""
+  # -- Annotations to add to the ServiceAccount
+  annotations: {}
+
+# -- RBAC configuration
+rbac:
+  # -- Create ClusterRole/Role and bindings for the manager
+  create: true
+
 # -- Manager configuration
 manager:
   image:
@@ -14,6 +38,17 @@ manager:
   persistence:
     size: 1Gi
     storageClass: ""
+  # -- Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # -- Extra pod annotations
+  podAnnotations: {}
+  # -- Extra pod labels
+  podLabels: {}
+  # -- Deployment update strategy
+  updateStrategy:
+    type: RollingUpdate
 
 # -- Dashboard (nginx sidecar serving the SPA)
 dashboard:
@@ -21,6 +56,13 @@ dashboard:
     repository: ghcr.io/frak-id/atelier-dashboard
     tag: ""
     pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "10m"
+    limits:
+      memory: "64Mi"
+      cpu: "100m"
 
 # -- Ingress configuration
 ingress:
@@ -50,6 +92,11 @@ auth:
   allowedOrg: ""
   # Allowed GitHub usernames (optional, comma-separated)
   allowedUsers: []
+  # -- Use an existing K8s Secret instead of creating one from values.
+  # The secret must contain keys: ATELIER_GITHUB_CLIENT_ID,
+  # ATELIER_GITHUB_CLIENT_SECRET, ATELIER_JWT_SECRET, SANDBOX_SECRETS_KEY.
+  # Optionally: ATELIER_MCP_TOKEN, ATELIER_SLACK_BOT_TOKEN, ATELIER_SLACK_SIGNING_SECRET.
+  existingSecret: ""
 
 # -- Server settings
 server:
@@ -90,22 +137,16 @@ sandbox:
     email: sandbox@atelier.dev
     name: Sandbox User
 
-# -- Advanced VM service ports
-advanced:
-  vm:
-    vscode:
-      port: 8080
-    opencode:
-      port: 3000
-    browser:
-      port: 6080
-    terminal:
-      port: 7681
-    agent:
-      port: 9999
-  server:
-    verdaccio:
-      port: 4873
+# -- Service ports used by sandbox VMs and host services.
+# These are internal implementation details — change only if you
+# know the corresponding images use different ports.
+ports:
+  vscode: 8080
+  opencode: 3000
+  browser: 6080
+  terminal: 7681
+  agent: 9999
+  verdaccio: 4873
 
 # -- Integrations
 integrations:
@@ -119,7 +160,7 @@ zot:
   enabled: true
   image:
     repository: ghcr.io/project-zot/zot-linux-amd64
-    tag: latest
+    tag: "v2.1.14"
     pullPolicy: IfNotPresent
   persistence:
     size: 20Gi
@@ -156,6 +197,8 @@ sharedBinaries:
   enabled: true
   storage: 2Gi
   storageClass: ""
+  # -- Image used by the download Job
+  image: curlimages/curl:8.17.0
   opencode:
     version: "1.2.10"
   codeServer:
@@ -167,23 +210,27 @@ sharedBinaries:
 #   helm repo add jetstack https://charts.jetstack.io
 #   helm install cert-manager jetstack/cert-manager \
 #     --namespace cert-manager --create-namespace --set crds.enabled=true
+#
+# NOTE: Currently only Cloudflare DNS-01 solver is supported.
+# TODO: Support additional DNS providers (Route53, Google Cloud DNS, etc.)
 certManager:
   enabled: true
   # Namespace where cert-manager is installed (for secret creation)
   namespace: cert-manager
-  issuer:
-    # "letsencrypt-prod" or "letsencrypt-staging"
-    name: letsencrypt-prod
-    server: https://acme-v02.api.letsencrypt.org/directory
-    # DNS-01 solver for wildcard certs
-    solver: cloudflare
-    cloudflare:
-      # Cloudflare API token (if set, the chart creates the K8s Secret)
-      apiToken: ""
-      # Reference to the K8s Secret containing the token
-      apiTokenSecretRef:
-        name: cloudflare-api-token
-        key: api-token
+  # -- Create the ClusterIssuer resource (set false if you manage issuers externally)
+  createIssuer: true
+  # "letsencrypt-prod" or "letsencrypt-staging"
+  issuerName: letsencrypt-prod
+  # ACME server URL
+  server: https://acme-v02.api.letsencrypt.org/directory
+  # Cloudflare DNS-01 solver configuration
+  cloudflare:
+    # Cloudflare API token (if set, the chart creates the K8s Secret)
+    apiToken: ""
+    # Reference to the K8s Secret containing the token
+    apiTokenSecretRef:
+      name: cloudflare-api-token
+      key: api-token
 
 # -- Kata Containers runtime class
 #
@@ -195,6 +242,7 @@ certManager:
 # kata-deploy creates the RuntimeClass automatically, so createRuntimeClass
 # defaults to false to avoid conflicts.
 kata:
+  # -- Create the RuntimeClass resource (set false if kata-deploy manages it)
   createRuntimeClass: false
   handler: kata-clh
 
@@ -204,7 +252,7 @@ kata:
 # Set createSnapshotClass=true and provide a CSI driver name to have the chart
 # create a VolumeSnapshotClass automatically.
 snapshots:
-  # Create a VolumeSnapshotClass resource
+  # -- Create a VolumeSnapshotClass resource (set false if managed externally)
   createSnapshotClass: false
   # CSI driver name (e.g., "topolvm.io", "ebs.csi.aws.com")
   driver: ""

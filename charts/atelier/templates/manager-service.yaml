@@ -4,20 +4,17 @@ metadata:
   name: {{ include "atelier.fullname" . }}-manager
   namespace: {{ include "atelier.systemNamespace" . }}
   labels:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: {{ include "atelier.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "atelier.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: manager
   ports:
     - name: http
       port: 8080
       targetPort: http
     - name: api
-      port: 4000
+      port: {{ .Values.server.port }}
       targetPort: api
