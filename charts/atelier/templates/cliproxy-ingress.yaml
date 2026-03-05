@@ -1,0 +1,33 @@
+{{- if and .Values.cliproxy.enabled .Values.domain.baseDomain }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "atelier.fullname" . }}-cliproxy
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cliproxy
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  rules:
+    - host: {{ include "atelier.cliproxyDomain" . }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "atelier.fullname" . }}-cliproxy
+                port:
+                  number: {{ .Values.cliproxy.port }}
+  tls:
+    - secretName: {{ include "atelier.wildcardTlsSecretName" . }}
+      hosts:
+        - {{ include "atelier.cliproxyDomain" . }}
+{{- end }}

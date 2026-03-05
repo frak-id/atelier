@@ -1,0 +1,20 @@
+{{- if .Values.cliproxy.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "atelier.fullname" . }}-cliproxy-data
+  namespace: {{ include "atelier.systemNamespace" . }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.cliproxy.persistence.storageClass }}
+  storageClassName: {{ .Values.cliproxy.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.cliproxy.persistence.size }}
+{{- end }}
