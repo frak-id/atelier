@@ -1,0 +1,67 @@
+{{- if .Values.sshpiper.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "atelier.fullname" . }}-sshpiper
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sshpiper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sshpiper
+  template:
+    metadata:
+      labels:
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: sshpiper
+    spec:
+      {{- include "atelier.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "atelier.serviceAccountName" . }}
+      containers:
+        - name: sshpiper
+          image: {{ include "atelier.sshpiperImage" . }}
+          imagePullPolicy: {{ .Values.sshpiper.image.pullPolicy }}
+          env:
+            - name: PLUGIN
+              value: kubernetes
+            - name: SSHPIPERD_SERVER_KEY
+              value: /serverkey/ssh_host_ed25519_key
+            - name: SSHPIPERD_LOG_LEVEL
+              value: {{ .Values.sshpiper.logLevel | quote }}
+            - name: SSHPIPERD_KUBERNETES_ALL_NAMESPACES
+              value: "true"
+          ports:
+            - name: ssh
+              containerPort: {{ .Values.sshpiper.port }}
+          livenessProbe:
+            tcpSocket:
+              port: ssh
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: ssh
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.sshpiper.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+          volumeMounts:
+            - name: server-key
+              mountPath: /serverkey
+              readOnly: true
+      volumes:
+        - name: server-key
+          secret:
+            secretName: {{ include "atelier.fullname" . }}-sshpiper-server-key
+            items:
+              - key: server_key
+                path: ssh_host_ed25519_key
+{{- end }}
