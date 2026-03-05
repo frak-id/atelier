@@ -87,6 +87,64 @@ export class CLIProxyService {
     private readonly internalService: InternalService,
   ) {}
 
+  /**
+   * Initialize the manager API key on startup.
+   * Registers the configured manager API key in CLIProxy if not already present.
+   */
+  async initialize(): Promise<void> {
+    const apiKey = config.integrations.cliproxy.apiKey;
+    const managementKey = config.integrations.cliproxy.managementKey;
+
+    if (!apiKey) {
+      log.debug("No manager API key configured, skipping initialization");
+      return;
+    }
+
+    if (!managementKey) {
+      log.warn(
+        "CLIProxy management key not configured, cannot register manager API key",
+      );
+      return;
+    }
+
+    // Check if already registered
+    const baseUrl = this.getManagementBaseUrl();
+    if (!baseUrl) return;
+
+    try {
+      const res = await fetch(`${baseUrl}/api-keys`, {
+        headers: { Authorization: `Bearer ${managementKey}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!res.ok) {
+        log.error(
+          { status: res.status },
+          "Failed to fetch API keys for manager initialization",
+        );
+        return;
+      }
+
+      const data = (await res.json()) as { "api-keys"?: string[] };
+      const keys = data["api-keys"] ?? [];
+
+      if (keys.includes(apiKey)) {
+        log.info("Manager API key already registered in CLIProxy");
+        return;
+      }
+
+      // Add the manager API key
+      const ok = await this.managementAddKey(apiKey, managementKey);
+      if (ok) {
+        log.info("Registered manager API key in CLIProxy");
+      } else {
+        log.error("Failed to register manager API key in CLIProxy");
+      }
+    } catch (err) {
+      log.error({ err }, "Failed to initialize manager API key");
+    }
+  }
+
   getStatus(): CLIProxyStatus {
     const settings = this.getSettings();
     const provider = this.getGeneratedProvider();

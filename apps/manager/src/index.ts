@@ -65,6 +65,10 @@ if (configErrors.length > 0 && isProduction()) {
 logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Database ready");
+
+// Initialize CLIProxy manager API key if configured
+await cliProxyService.initialize();
+
 const app = new Elysia()
   .on("start", async () => {
     CronService.add("prebuildStaleness", {

@@ -64,8 +64,7 @@ spec:
             - name: http
               containerPort: {{ .Values.cliproxy.port }}
           livenessProbe:
-            httpGet:
-              path: /v1/models
+            tcpSocket:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 30

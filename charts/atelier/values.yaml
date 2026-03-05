@@ -295,6 +295,9 @@ cliproxy:
   # -- Management API secret key for /management.html access.
   # Auto-generated if empty. Preserved across helm upgrades.
   managementKey: ""
+  # -- API key for the manager to authenticate to CLIProxy when fetching models.
+  # Auto-generated if empty. Used by the manager to register itself on startup.
+  managerApiKey: ""
   # -- API keys for proxy client authentication.
   # Clients send these as Bearer tokens to use the proxy endpoints.
   # Can also be managed via the built-in Management UI.
