@@ -262,3 +262,41 @@ snapshots:
 # -- Sandbox secrets encryption key
 secrets:
   encryptionKey: ""
+
+# -- CLIProxyAPI (AI model proxy with multi-provider OAuth support)
+# Wraps Claude Code, Gemini CLI, Codex, Qwen, etc. into OpenAI-compatible API endpoints.
+# Includes a built-in Management UI at /management.html for provider config, API keys, and usage stats.
+# See https://github.com/router-for-me/CLIProxyAPI
+cliproxy:
+  enabled: true
+  image:
+    repository: eceasy/cli-proxy-api
+    tag: "latest"
+    pullPolicy: Always
+  port: 8317
+  persistence:
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # -- Management API secret key for /management.html access.
+  # Auto-generated if empty. Preserved across helm upgrades.
+  managementKey: ""
+  # -- API keys for proxy client authentication.
+  # Clients send these as Bearer tokens to use the proxy endpoints.
+  # Can also be managed via the built-in Management UI.
+  apiKeys: []
+  # -- Additional config.yaml entries merged with defaults.
+  # Use this to add LLM provider keys, model aliases, payload rules, etc.
+  # See https://github.com/router-for-me/CLIProxyAPI/blob/main/config.example.yaml
+  # Example:
+  #   extraConfig:
+  #     gemini-api-key:
+  #       - api-key: "AIzaSy..."
+  #     proxy-url: "socks5://proxy:1080"
+  extraConfig: {}

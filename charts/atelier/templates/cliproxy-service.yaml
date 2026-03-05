@@ -1,0 +1,19 @@
+{{- if .Values.cliproxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "atelier.fullname" . }}-cliproxy
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cliproxy
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "atelier.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: cliproxy
+  ports:
+    - name: http
+      port: {{ .Values.cliproxy.port }}
+      targetPort: http
+{{- end }}

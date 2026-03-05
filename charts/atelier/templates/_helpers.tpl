@@ -155,3 +155,17 @@ Otherwise emits an empty dict so the manager receives no extra annotations.
 {}
 {{- end -}}
 {{- end -}}
+
+{{/*
+CLIProxy domain, defaulting to cliproxy.{baseDomain}.
+*/}}
+{{- define "atelier.cliproxyDomain" -}}
+{{- printf "cliproxy.%s" .Values.domain.baseDomain -}}
+{{- end -}}
+
+{{/*
+CLIProxy container image.
+*/}}
+{{- define "atelier.cliproxyImage" -}}
+{{- printf "%s:%s" .Values.cliproxy.image.repository .Values.cliproxy.image.tag -}}
+{{- end -}}

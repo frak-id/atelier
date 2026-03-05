@@ -1,0 +1,42 @@
+{{- if .Values.cliproxy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "atelier.fullname" . }}-cliproxy-config
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cliproxy
+data:
+  config.yaml: |
+    # CLIProxyAPI configuration — managed by Atelier Helm chart.
+    # Provider keys and API keys can be managed via the Management UI
+    # at /management.html, or via extraConfig in values.yaml.
+
+    host: "0.0.0.0"
+    port: {{ .Values.cliproxy.port }}
+
+    remote-management:
+      allow-remote: true
+      secret-key: "__CLIPROXY_MANAGEMENT_KEY__"
+
+    auth-dir: "/data/auths"
+
+    debug: false
+    logging-to-file: false
+    usage-statistics-enabled: true
+    request-retry: 3
+
+    api-keys:
+    {{- if .Values.cliproxy.apiKeys }}
+    {{- range .Values.cliproxy.apiKeys }}
+      - {{ . | quote }}
+    {{- end }}
+    {{- else }}
+      []
+    {{- end }}
+
+    {{- with .Values.cliproxy.extraConfig }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
