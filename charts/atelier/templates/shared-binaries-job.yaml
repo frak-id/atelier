@@ -68,5 +68,5 @@ spec:
       volumes:
         - name: shared-binaries
           persistentVolumeClaim:
-            claimName: {{ include "atelier.fullname" . }}-shared-binaries
+            claimName: shared-binaries
 {{- end }}

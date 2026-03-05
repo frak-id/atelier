@@ -199,59 +199,22 @@ export const SandboxDefaultsSchema = Type.Object(
 export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
 
 // ---------------------------------------------------------------------------
-// Advanced — VM services (inside sandbox)
+// Ports — service ports inside sandbox VMs and on the host
 // ---------------------------------------------------------------------------
 
-const VmService = (defaultPort: number) =>
-  Type.Object(
-    {
-      port: Type.Number({ default: defaultPort }),
-    },
-    { default: {} },
-  );
-
-export const AdvancedVmConfigSchema = Type.Object(
+export const PortsConfigSchema = Type.Object(
   {
-    vscode: VmService(8080),
-    opencode: VmService(3000),
-    browser: VmService(6080),
-    terminal: VmService(7681),
-    agent: VmService(9999),
+    vscode: Type.Number({ default: 8080 }),
+    opencode: Type.Number({ default: 3000 }),
+    browser: Type.Number({ default: 6080 }),
+    terminal: Type.Number({ default: 7681 }),
+    agent: Type.Number({ default: 9999 }),
+    verdaccio: Type.Number({ default: 4873 }),
   },
   { default: {} },
 );
 
-export type AdvancedVmConfig = Static<typeof AdvancedVmConfigSchema>;
-
-// ---------------------------------------------------------------------------
-// Advanced — Server services (on host)
-// ---------------------------------------------------------------------------
-
-export const AdvancedServerConfigSchema = Type.Object(
-  {
-    verdaccio: Type.Object(
-      {
-        port: Type.Number({ default: 4873 }),
-      },
-      { default: {} },
-    ),
-  },
-  { default: {} },
-);
-
-export type AdvancedServerConfig = Static<typeof AdvancedServerConfigSchema>;
-
-export const AdvancedConfigSchema = Type.Object(
-  {
-    /** Services running inside each sandbox VM */
-    vm: AdvancedVmConfigSchema,
-    /** Services running on the host server */
-    server: AdvancedServerConfigSchema,
-  },
-  { default: {} },
-);
-
-export type AdvancedConfig = Static<typeof AdvancedConfigSchema>;
+export type PortsConfig = Static<typeof PortsConfigSchema>;
 
 // ---------------------------------------------------------------------------
 // Integrations
@@ -293,7 +256,7 @@ export const AtelierConfigSchema = Type.Object({
   server: ServerConfigSchema,
   kubernetes: KubernetesConfigSchema,
   sandbox: SandboxDefaultsSchema,
-  advanced: AdvancedConfigSchema,
+  ports: PortsConfigSchema,
   integrations: IntegrationsConfigSchema,
 });
 
@@ -341,12 +304,12 @@ export const ENV_VAR_MAPPING = {
   ATELIER_GIT_EMAIL: "sandbox.git.email",
   ATELIER_GIT_NAME: "sandbox.git.name",
 
-  ATELIER_VSCODE_PORT: "advanced.vm.vscode.port",
-  ATELIER_OPENCODE_PORT: "advanced.vm.opencode.port",
-  ATELIER_BROWSER_PORT: "advanced.vm.browser.port",
-  ATELIER_TERMINAL_PORT: "advanced.vm.terminal.port",
-  ATELIER_AGENT_PORT: "advanced.vm.agent.port",
-  ATELIER_VERDACCIO_PORT: "advanced.server.verdaccio.port",
+  ATELIER_VSCODE_PORT: "ports.vscode",
+  ATELIER_OPENCODE_PORT: "ports.opencode",
+  ATELIER_BROWSER_PORT: "ports.browser",
+  ATELIER_TERMINAL_PORT: "ports.terminal",
+  ATELIER_AGENT_PORT: "ports.agent",
+  ATELIER_VERDACCIO_PORT: "ports.verdaccio",
 
   ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
   ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",

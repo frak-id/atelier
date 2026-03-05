@@ -139,7 +139,7 @@ export class SystemSandboxService {
     // stays balanced and the idle timer can still fire.
     this.activeCount++;
 
-    const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+    const url = `http://${ipAddress}:${config.ports.opencode}`;
     const client = createOpencodeClient({
       baseUrl: url,
       headers: buildOpenCodeAuthHeaders(this.opencodePassword ?? undefined),
@@ -337,7 +337,7 @@ export class SystemSandboxService {
     const mcpToken = config.server.mcpToken;
     const mcpUrl = "http://manager.atelier-system.svc:4000/mcp";
 
-    const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+    const url = `http://${ipAddress}:${config.ports.opencode}`;
     const client = createOpencodeClient({
       baseUrl: url,
       headers: buildOpenCodeAuthHeaders(password),

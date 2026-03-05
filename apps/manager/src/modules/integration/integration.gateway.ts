@@ -212,7 +212,7 @@ export class IntegrationGateway {
         );
 
       const opcClient = createOpencodeClient({
-        baseUrl: `http://${runningSandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+        baseUrl: `http://${runningSandbox.runtime.ipAddress}:${config.ports.opencode}`,
         headers: buildOpenCodeAuthHeaders(
           runningSandbox.runtime.opencodePassword,
         ),
@@ -485,7 +485,7 @@ export class IntegrationGateway {
 
     try {
       const opcClient = createOpencodeClient({
-        baseUrl: `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+        baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
         headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
       });
       await opcClient.session.abort({
@@ -516,7 +516,7 @@ export class IntegrationGateway {
     }
 
     const opcClient = createOpencodeClient({
-      baseUrl: `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+      baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
       headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
     });
 
@@ -579,7 +579,7 @@ export class IntegrationGateway {
     if (sandbox?.runtime?.ipAddress && sandbox.status === "running") {
       try {
         const opcClient = createOpencodeClient({
-          baseUrl: `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`,
+          baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
           headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
         });
         const { data: statuses } = await opcClient.session.status();
@@ -963,7 +963,7 @@ export class IntegrationGateway {
       contextMarkdown,
     ].join("\n");
 
-    const url = `http://${updatedSandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`;
+    const url = `http://${updatedSandbox.runtime.ipAddress}:${config.ports.opencode}`;
     const opcClient = createOpencodeClient({
       baseUrl: url,
       headers: buildOpenCodeAuthHeaders(

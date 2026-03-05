@@ -178,7 +178,7 @@ export class TaskSpawner {
     const sandbox = this.deps.sandboxService.getById(task.data.sandboxId);
     if (!sandbox?.runtime?.ipAddress) return;
 
-    const url = `http://${sandbox.runtime.ipAddress}:${config.advanced.vm.opencode.port}`;
+    const url = `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`;
     const client = createOpencodeClient({
       baseUrl: url,
       headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
@@ -276,7 +276,7 @@ export class TaskSpawner {
       throw new Error(`Workspace '${task.workspaceId}' not found`);
     }
 
-    const opencodeUrl = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+    const opencodeUrl = `http://${ipAddress}:${config.ports.opencode}`;
     const sessionConfig = this.resolveSessionConfig(
       sessionTemplateId,
       workspace.id,
@@ -477,7 +477,7 @@ export class TaskSpawner {
         sandbox: {
           id: sandboxId ?? "undefined",
           ip: ipAddress,
-          url: `http://${ipAddress}:${config.advanced.vm.opencode.port}`,
+          url: `http://${ipAddress}:${config.ports.opencode}`,
         },
       };
 

@@ -61,7 +61,7 @@ function namespace(): string {
 }
 
 function verdaccioUrl(): string {
-  const port = config.advanced.server.verdaccio.port;
+  const port = config.ports.verdaccio;
   return `http://${SERVICE_NAME}.${namespace()}.svc:${port}`;
 }
 

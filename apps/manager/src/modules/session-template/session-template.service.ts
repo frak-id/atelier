@@ -262,7 +262,7 @@ export class SessionTemplateService {
 
     try {
       const client = createOpencodeClient({
-        baseUrl: `http://${ipAddress}:${config.advanced.vm.opencode.port}`,
+        baseUrl: `http://${ipAddress}:${config.ports.opencode}`,
         headers: buildOpenCodeAuthHeaders(sandbox.runtime?.opencodePassword),
       });
 

@@ -13,7 +13,7 @@ export const publicConfigRoutes = new Elysia().get(
     return {
       sshHostname: config.domain.ssh.hostname,
       sshPort: config.domain.ssh.port,
-      opencodePort: config.advanced.vm.opencode.port,
+      opencodePort: config.ports.opencode,
       mcp: {
         url: mcpUrl,
         hasToken: !!config.server.mcpToken,

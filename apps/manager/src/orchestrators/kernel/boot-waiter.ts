@@ -33,7 +33,7 @@ export async function waitForOpencode(
   timeout = OPENCODE_HEALTH_TIMEOUT_MS,
 ): Promise<void> {
   const startTime = Date.now();
-  const url = `http://${ipAddress}:${config.advanced.vm.opencode.port}`;
+  const url = `http://${ipAddress}:${config.ports.opencode}`;
   let delay = 250;
 
   while (Date.now() - startTime < timeout) {
