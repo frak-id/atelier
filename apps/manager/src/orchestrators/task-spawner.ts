@@ -89,10 +89,12 @@ export class TaskSpawner {
         "Sandbox spawned for task",
       );
 
-      const { ready: agentReady } =
-        await this.deps.agentClient.waitForAgent(sandbox.id, {
+      const { ready: agentReady } = await this.deps.agentClient.waitForAgent(
+        sandbox.id,
+        {
           timeout: AGENT_READY_TIMEOUT,
-        });
+        },
+      );
 
       if (!agentReady) {
         throw new Error("Agent failed to become ready");
@@ -417,7 +419,7 @@ export class TaskSpawner {
         attempt === 0 ? baseBranchName : `${baseBranchName}_v${attempt + 1}`;
 
       const checkoutBase = await gitExec(
-        `git fetch origin && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
+        `git fetch origin ${baseBranch} && git checkout ${baseBranch} && git pull origin ${baseBranch}`,
       );
 
       if (checkoutBase.exitCode !== 0) {

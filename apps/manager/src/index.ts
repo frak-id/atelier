@@ -47,7 +47,6 @@ import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 
-
 const configErrors = validateConfig(config);
 if (configErrors.length > 0 && isProduction()) {
   for (const err of configErrors) {
