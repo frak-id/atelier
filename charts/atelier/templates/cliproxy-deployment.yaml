@@ -29,22 +29,30 @@ spec:
           command: ['sh', '-c']
           args:
             - |
-              # Compute checksum of the Helm-managed config template.
+              SEED_CONFIG() {
+                echo "Seeding /data/config.yaml from Helm template"
+                sed "s|__CLIPROXY_MANAGEMENT_KEY__|${CLIPROXY_MANAGEMENT_KEY}|g" \
+                  /etc/cliproxy/config.yaml > /data/config.yaml
+              }
+              {{- if eq (.Values.cliproxy.configSeedStrategy | default "seed-once") "hash-sync" }}
+              # hash-sync: re-seed when Helm-managed ConfigMap changes.
               CURRENT_HASH=$(sha256sum /etc/cliproxy/config.yaml | cut -d' ' -f1)
               STORED_HASH=""
               [ -f /data/.config-checksum ] && STORED_HASH=$(cat /data/.config-checksum)
-              
-              # Only re-seed config when Helm values change (or first run).
-              # This preserves management UI changes across pod restarts.
               if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
-                echo "Config template changed — re-seeding /data/config.yaml"
-                sed "s|__CLIPROXY_MANAGEMENT_KEY__|${CLIPROXY_MANAGEMENT_KEY}|g" \
-                  /etc/cliproxy/config.yaml > /data/config.yaml
+                SEED_CONFIG
                 echo "$CURRENT_HASH" > /data/.config-checksum
               else
                 echo "Config template unchanged — keeping existing /data/config.yaml"
               fi
-              
+              {{- else }}
+              # seed-once: only write config on first run.
+              if [ ! -f /data/config.yaml ]; then
+                SEED_CONFIG
+              else
+                echo "Config already exists — keeping existing /data/config.yaml"
+              fi
+              {{- end }}
               exec /CLIProxyAPI/CLIProxyAPI -config /data/config.yaml
           env:
             - name: CLIPROXY_MANAGEMENT_KEY

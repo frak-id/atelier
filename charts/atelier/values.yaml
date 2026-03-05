@@ -274,6 +274,14 @@ cliproxy:
     tag: "latest"
     pullPolicy: Always
   port: 8317
+  # -- Config seeding strategy for /data/config.yaml on pod startup.
+  # "seed-once": Only write config on first run (when /data/config.yaml doesn't exist).
+  #   Management UI changes are always preserved. Helm value changes (apiKeys, extraConfig)
+  #   are ignored until the PVC is wiped or config manually deleted.
+  # "hash-sync": Re-seed config when Helm values change (detected via ConfigMap checksum).
+  #   ⚠️  WARNING: A helm upgrade that changes apiKeys, extraConfig, or port WILL OVERWRITE
+  #   any config changes made via the management UI.
+  configSeedStrategy: "seed-once"
   persistence:
     size: 1Gi
     storageClass: ""
