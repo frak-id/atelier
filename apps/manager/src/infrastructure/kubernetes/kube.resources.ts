@@ -97,7 +97,8 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
   if (options.configMapName) {
     volumeMounts.push({
       name: "sandbox-config",
-      mountPath: "/etc/sandbox",
+      mountPath: "/etc/sandbox/config.json",
+      subPath: "config.json",
       readOnly: true,
     });
     volumes.push({
@@ -136,6 +137,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           name: "sandbox",
           image: options.image,
           command: ["/usr/local/bin/sandbox-agent"],
+          securityContext: { runAsUser: 0 },
           ports: [
             { name: "agent", containerPort: 9998 },
             { name: "vscode", containerPort: 8080 },

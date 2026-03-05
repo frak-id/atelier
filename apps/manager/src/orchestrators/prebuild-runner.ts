@@ -329,10 +329,12 @@ export class PrebuildRunner {
 
       // Step 3: Wait for pod + agent ready
       // Single wait: agent health check implies pod is ready and has an IP
-      const { ready: agentReady } =
-        await this.deps.agentClient.waitForAgent(sandboxId, {
+      const { ready: agentReady } = await this.deps.agentClient.waitForAgent(
+        sandboxId,
+        {
           timeout: AGENT_TIMEOUT_MS,
-        });
+        },
+      );
       if (!agentReady) {
         throw new Error(`Agent in prebuild pod ${podName} did not start`);
       }
@@ -464,17 +466,12 @@ export class PrebuildRunner {
       }
 
       // Write secrets and file secrets (needed by init commands)
-      const [secretFiles, gitCredFiles, fileSecretFiles] =
-        await Promise.all([
-          GuestOps.collectSecretFiles(workspace),
-          GuestOps.collectGitCredentialFiles(this.deps.gitSourceService),
-          GuestOps.collectFileSecretFiles(workspace),
-        ]);
-      const allFiles = [
-        ...secretFiles,
-        ...gitCredFiles,
-        ...fileSecretFiles,
-      ];
+      const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
+        GuestOps.collectSecretFiles(workspace),
+        GuestOps.collectGitCredentialFiles(this.deps.gitSourceService),
+        GuestOps.collectFileSecretFiles(workspace),
+      ]);
+      const allFiles = [...secretFiles, ...gitCredFiles, ...fileSecretFiles];
       if (allFiles.length > 0) {
         log.info(
           { sandboxId, fileCount: allFiles.length },

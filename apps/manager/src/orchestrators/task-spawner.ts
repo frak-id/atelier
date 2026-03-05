@@ -89,10 +89,12 @@ export class TaskSpawner {
         "Sandbox spawned for task",
       );
 
-      const { ready: agentReady } =
-        await this.deps.agentClient.waitForAgent(sandbox.id, {
+      const { ready: agentReady } = await this.deps.agentClient.waitForAgent(
+        sandbox.id,
+        {
           timeout: AGENT_READY_TIMEOUT,
-        });
+        },
+      );
 
       if (!agentReady) {
         throw new Error("Agent failed to become ready");

@@ -158,9 +158,7 @@ export async function bootNewSandbox(
       { timeout: 120_000 },
     );
     if (!agentReady) {
-      throw new Error(
-        `Sandbox pod ${podName} agent did not become ready`,
-      );
+      throw new Error(`Sandbox pod ${podName} agent did not become ready`);
     }
     if (podIp) {
       sandbox.runtime.ipAddress = podIp;
