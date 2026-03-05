@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - kubernetes
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -167,15 +168,22 @@ jobs:
 
   helm:
     needs: check
-    if: github.ref_type == 'tag'
+
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract version from tag
+      - name: Resolve chart version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "app_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-nightly" >> "$GITHUB_OUTPUT"
+            echo "app_version=nightly" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
@@ -189,7 +197,7 @@ jobs:
         run: |
           helm package charts/atelier \
             --version "${{ steps.version.outputs.version }}" \
-            --app-version "${{ steps.version.outputs.version }}"
+            --app-version "${{ steps.version.outputs.app_version }}"
 
       - name: Push chart to GHCR
         run: helm push atelier-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/frak-id/charts
