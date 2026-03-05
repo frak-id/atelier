@@ -1,0 +1,22 @@
+{{- if .Values.sshpiper.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "atelier.fullname" . }}-sshpiper
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sshpiper
+spec:
+  type: NodePort
+  selector:
+    {{- include "atelier.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sshpiper
+  ports:
+    - name: ssh
+      port: {{ .Values.sshpiper.port }}
+      targetPort: ssh
+      {{- if .Values.sshpiper.nodePort }}
+      nodePort: {{ .Values.sshpiper.nodePort }}
+      {{- end }}
+{{- end }}
