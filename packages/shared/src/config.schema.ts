@@ -246,6 +246,8 @@ export const CLIProxyIntegrationConfigSchema = Type.Object(
     url: Type.String({ default: "" }),
     /** API key for authenticating to the CLIProxy (Bearer token) */
     apiKey: Type.String({ default: "" }),
+    /** Management API secret key for programmatic key management */
+    managementKey: Type.String({ default: "" }),
   },
   { default: {} },
 );
@@ -338,6 +340,7 @@ export const ENV_VAR_MAPPING = {
 
   ATELIER_CLIPROXY_URL: "integrations.cliproxy.url",
   ATELIER_CLIPROXY_API_KEY: "integrations.cliproxy.apiKey",
+  ATELIER_CLIPROXY_MANAGEMENT_KEY: "integrations.cliproxy.managementKey",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;

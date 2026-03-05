@@ -2,6 +2,7 @@ import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { CLIProxyService } from "../cliproxy/cliproxy.service.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import {
@@ -16,12 +17,18 @@ const CLIPROXY_SETTINGS_PATH = "/.atelier/cliproxy-settings.json";
 const log = createChildLogger("internal-service");
 
 export class InternalService {
+  private cliProxyService: CLIProxyService | null = null;
+
   constructor(
     private readonly authSyncService: AuthSyncService,
     private readonly configFileService: ConfigFileService,
     private readonly agentClient: AgentClient,
     private readonly sandboxService: SandboxRepository,
   ) {}
+
+  setCliProxyService(service: CLIProxyService): void {
+    this.cliProxyService = service;
+  }
 
   async syncConfigsToSandboxes(): Promise<{ synced: number }> {
     const runningSandboxes = this.sandboxService
@@ -39,13 +46,12 @@ export class InternalService {
 
     let totalSynced = 0;
     for (const [workspaceId, sandboxIds] of byWorkspace) {
-      const { files } = this.getConfigFilesToPush(workspaceId);
-      if (files.length === 0) continue;
-
       for (const sandboxId of sandboxIds) {
+        const { files } = this.getConfigFilesToPush(workspaceId, sandboxId);
+        if (files.length === 0) continue;
         await this.pushFilesToSandbox(sandboxId, files, "config");
+        totalSynced += files.length;
       }
-      totalSynced += files.length;
     }
 
     log.info(
@@ -87,7 +93,7 @@ export class InternalService {
   async syncConfigsToSandbox(sandboxId: string): Promise<{ synced: number }> {
     const sandbox = this.sandboxService.getById(sandboxId);
     const workspaceId = sandbox?.workspaceId ?? undefined;
-    const { files } = this.getConfigFilesToPush(workspaceId);
+    const { files } = this.getConfigFilesToPush(workspaceId, sandboxId);
     if (files.length === 0) return { synced: 0 };
 
     await this.pushFilesToSandbox(sandboxId, files, "config");
@@ -95,7 +101,10 @@ export class InternalService {
     return { synced: files.length };
   }
 
-  private getConfigFilesToPush(workspaceId?: string): {
+  private getConfigFilesToPush(
+    workspaceId?: string,
+    sandboxId?: string,
+  ): {
     files: { path: string; content: string }[];
   } {
     const authManagedPaths = new Set<string>(AUTH_PROVIDERS.map((p) => p.path));
@@ -105,7 +114,7 @@ export class InternalService {
       this.injectSystemAgents(merged);
     }
 
-    this.injectCliProxyProvider(merged);
+    this.injectCliProxyProvider(merged, sandboxId);
 
     const files: { path: string; content: string }[] = [];
 
@@ -160,6 +169,7 @@ export class InternalService {
 
   private injectCliProxyProvider(
     merged: { path: string; content: string; contentType: string }[],
+    sandboxId?: string,
   ): void {
     const settingsFile = this.configFileService.getByPath(
       CLIPROXY_SETTINGS_PATH,
@@ -192,6 +202,14 @@ export class InternalService {
     } catch {
       log.warn("Failed to parse CLIProxy provider config");
       return;
+    }
+
+    if (sandboxId && this.cliProxyService) {
+      const sandboxKey = this.cliProxyService.getSandboxApiKey(sandboxId);
+      if (sandboxKey) {
+        const opts = (providerConfig.options as Record<string, unknown>) ?? {};
+        providerConfig.options = { ...opts, apiKey: sandboxKey };
+      }
     }
 
     const configPath = "~/.config/opencode/opencode.json";

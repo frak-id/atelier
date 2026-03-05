@@ -1,4 +1,5 @@
 import type { AgentClient } from "../../infrastructure/agent/index.ts";
+import type { CLIProxyService } from "../../modules/cliproxy/index.ts";
 import type { ConfigFileService } from "../../modules/config-file/index.ts";
 import type { GitSourceService } from "../../modules/git-source/index.ts";
 import type { InternalService } from "../../modules/internal/index.ts";
@@ -14,4 +15,5 @@ export interface SandboxPorts {
   configFiles: ConfigFileService;
   sshKeys: SshKeyService;
   internal: InternalService;
+  cliproxy: CLIProxyService;
 }

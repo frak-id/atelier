@@ -34,6 +34,12 @@ export async function createSystemSandbox(
       ports,
     );
 
+    await ports.cliproxy
+      .createSandboxKey(sandboxId)
+      .catch((err: unknown) =>
+        log.warn({ err, sandboxId }, "Failed to create CLIProxy sandbox key"),
+      );
+
     const [syncResult] = await Promise.all([
       ports.internal.syncAllToSandbox(sandboxId),
       ports.agent.writeFiles(sandboxId, [
