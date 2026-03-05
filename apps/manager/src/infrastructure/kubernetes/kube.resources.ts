@@ -144,6 +144,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
             { name: "opencode", containerPort: 3000 },
             { name: "browser", containerPort: 6080 },
             { name: "terminal", containerPort: 7681 },
+            { name: "ssh", containerPort: 22 },
           ],
           env: [
             { name: "SANDBOX_ID", value: options.sandboxId },
@@ -194,6 +195,7 @@ export function buildSandboxService(
         { name: "opencode", port: 3000, targetPort: 3000 },
         { name: "browser", port: 6080, targetPort: 6080 },
         { name: "terminal", port: 7681, targetPort: 7681 },
+        { name: "ssh", port: 22, targetPort: 22 },
       ],
     },
   };
@@ -625,6 +627,50 @@ export function buildVolumeSnapshot(
       labels: options.labels,
     },
     spec,
+  };
+}
+
+export type SshPipeOptions = {
+  sandboxId: string;
+  targetHost: string;
+  authorizedKeysData?: string;
+  namespace?: string;
+  workspaceId?: string;
+};
+
+export function buildSshPipe(options: SshPipeOptions): KubeResource {
+  const namespace = options.namespace ?? config.kubernetes.namespace;
+  const labels: Record<string, string> = {
+    "atelier.dev/component": "ssh-pipe",
+    "atelier.dev/sandbox": options.sandboxId,
+  };
+  if (options.workspaceId) {
+    labels["atelier.dev/workspace"] = sanitizeLabelValue(options.workspaceId);
+  }
+
+  return {
+    apiVersion: "sshpiper.com/v1beta1",
+    kind: "Pipe",
+    metadata: {
+      name: `ssh-${options.sandboxId}`,
+      namespace,
+      labels,
+    },
+    spec: {
+      from: [
+        {
+          username: options.sandboxId,
+          ...(options.authorizedKeysData && {
+            authorized_keys_data: options.authorizedKeysData,
+          }),
+        },
+      ],
+      to: {
+        host: `${options.targetHost}:22`,
+        username: "dev",
+        ignore_hostkey: true,
+      },
+    },
   };
 }
 
