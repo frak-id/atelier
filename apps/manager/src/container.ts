@@ -1,5 +1,6 @@
 import { AgentClient, AgentOperations } from "./infrastructure/agent/index.ts";
 import { kubeClient } from "./infrastructure/kubernetes/index.ts";
+import { CLIProxyService } from "./modules/cliproxy/index.ts";
 import {
   ConfigFileRepository,
   ConfigFileService,
@@ -91,6 +92,8 @@ const sandboxPorts: SandboxPorts = {
   sshKeys: sshKeyService,
   internal: internalService,
 };
+
+const cliProxyService = new CLIProxyService(configFileService, internalService);
 
 const sessionTemplateService = new SessionTemplateService(
   configFileService,
@@ -184,6 +187,7 @@ export {
   agentOperations,
   authSyncService,
   baseImageBuilder,
+  cliProxyService,
   configFileService,
   gitSourceService,
   internalService,
