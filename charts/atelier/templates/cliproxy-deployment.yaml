@@ -29,8 +29,22 @@ spec:
           command: ['sh', '-c']
           args:
             - |
-              sed "s|__CLIPROXY_MANAGEMENT_KEY__|${CLIPROXY_MANAGEMENT_KEY}|g" \
-                /etc/cliproxy/config.yaml > /data/config.yaml
+              # Compute checksum of the Helm-managed config template.
+              CURRENT_HASH=$(sha256sum /etc/cliproxy/config.yaml | cut -d' ' -f1)
+              STORED_HASH=""
+              [ -f /data/.config-checksum ] && STORED_HASH=$(cat /data/.config-checksum)
+              
+              # Only re-seed config when Helm values change (or first run).
+              # This preserves management UI changes across pod restarts.
+              if [ "$CURRENT_HASH" != "$STORED_HASH" ]; then
+                echo "Config template changed — re-seeding /data/config.yaml"
+                sed "s|__CLIPROXY_MANAGEMENT_KEY__|${CLIPROXY_MANAGEMENT_KEY}|g" \
+                  /etc/cliproxy/config.yaml > /data/config.yaml
+                echo "$CURRENT_HASH" > /data/.config-checksum
+              else
+                echo "Config template unchanged — keeping existing /data/config.yaml"
+              fi
+              
               exec /CLIProxyAPI/CLIProxyAPI -config /data/config.yaml
           env:
             - name: CLIPROXY_MANAGEMENT_KEY
