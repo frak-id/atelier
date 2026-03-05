@@ -9,12 +9,6 @@ import { CronService } from "../cron/index.ts";
 const log = createChildLogger("registry");
 
 // ---------------------------------------------------------------------------
-// K8s resource names (Verdaccio is deployed by the Helm chart)
-// ---------------------------------------------------------------------------
-
-const SERVICE_NAME = "verdaccio";
-
-// ---------------------------------------------------------------------------
 // Settings persistence (local JSON — eviction config only)
 // ---------------------------------------------------------------------------
 
@@ -56,13 +50,8 @@ function saveSettings(settings: RegistrySettings): void {
 // Verdaccio URL helper
 // ---------------------------------------------------------------------------
 
-function namespace(): string {
-  return config.kubernetes.systemNamespace;
-}
-
 function verdaccioUrl(): string {
-  const port = config.ports.verdaccio;
-  return `http://${SERVICE_NAME}.${namespace()}.svc:${port}`;
+  return config.kubernetes.verdaccioUrl;
 }
 
 // ---------------------------------------------------------------------------

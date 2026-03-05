@@ -32,6 +32,7 @@ data:
         "runtimeClass" .Values.kubernetes.runtimeClass
         "ingressClassName" .Values.ingress.className
         "registryUrl" (printf "%s-zot.%s.svc:%v" (include "atelier.fullname" .) .Release.Namespace .Values.zot.port)
+        "verdaccioUrl" (printf "http://%s-verdaccio.%s.svc:%v" (include "atelier.fullname" .) .Release.Namespace .Values.ports.verdaccio)
         "storageClass" .Values.kubernetes.storageClass
         "volumeSnapshotClass" .Values.kubernetes.volumeSnapshotClass
         "defaultVolumeSize" .Values.kubernetes.defaultVolumeSize
