@@ -170,3 +170,17 @@ CLIProxy container image.
 {{- define "atelier.cliproxyImage" -}}
 {{- printf "%s:%s" .Values.cliproxy.image.repository .Values.cliproxy.image.tag -}}
 {{- end -}}
+
+{{/*
+sshpiper container image.
+*/}}
+{{- define "atelier.sshpiperImage" -}}
+{{- printf "%s:%s" .Values.sshpiper.image.repository .Values.sshpiper.image.tag -}}
+{{- end -}}
+
+{{/*
+SSH hostname for dashboard display, defaulting to ssh.{baseDomain}.
+*/}}
+{{- define "atelier.sshHostname" -}}
+{{- printf "ssh.%s" .Values.domain.baseDomain -}}
+{{- end -}}
