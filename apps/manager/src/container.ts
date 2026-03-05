@@ -83,6 +83,9 @@ const internalService = new InternalService(
 
 const agentOperations = new AgentOperations(agentClient);
 
+const cliProxyService = new CLIProxyService(configFileService, internalService);
+internalService.setCliProxyService(cliProxyService);
+
 const sandboxPorts: SandboxPorts = {
   agent: agentClient,
   sandbox: sandboxService,
@@ -91,9 +94,8 @@ const sandboxPorts: SandboxPorts = {
   configFiles: configFileService,
   sshKeys: sshKeyService,
   internal: internalService,
+  cliproxy: cliProxyService,
 };
-
-const cliProxyService = new CLIProxyService(configFileService, internalService);
 
 const sessionTemplateService = new SessionTemplateService(
   configFileService,
@@ -109,6 +111,7 @@ const sandboxSpawner = new SandboxSpawner(sandboxPorts);
 
 const sandboxDestroyer = new SandboxDestroyer({
   sandboxService,
+  cliProxyService,
 });
 
 const systemSandboxEventListener = new SystemSandboxEventListener({

@@ -60,6 +60,12 @@ export async function createWorkspaceSandbox(
     }
     const mdContent = generateSandboxMd(sandboxId, workspace);
 
+    await ports.cliproxy
+      .createSandboxKey(sandboxId)
+      .catch((err: unknown) =>
+        log.warn({ err, sandboxId }, "Failed to create CLIProxy sandbox key"),
+      );
+
     const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
       GuestOps.collectSecretFiles(workspace),
       GuestOps.collectGitCredentialFiles(ports.gitSources),

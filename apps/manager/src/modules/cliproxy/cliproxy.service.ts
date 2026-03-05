@@ -7,9 +7,11 @@ const log = createChildLogger("cliproxy");
 
 const SETTINGS_PATH = "/.atelier/cliproxy-settings.json";
 const OPENCODE_PROVIDER_PATH = "/.atelier/cliproxy-opencode-provider.json";
+const SANDBOX_KEYS_PATH = "/.atelier/cliproxy-sandbox-keys.json";
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const MODELS_DEV_CACHE_TTL_MS = 10 * 60 * 1000;
+const KEY_PREFIX = "atelier-sbx";
 
 interface CLIProxySettings {
   enabled: boolean;
@@ -174,6 +176,50 @@ export class CLIProxyService {
       );
 
     return { modelCount };
+  }
+
+  getSandboxApiKey(sandboxId: string): string | null {
+    const keys = this.loadSandboxKeys();
+    return keys[sandboxId] ?? null;
+  }
+
+  async createSandboxKey(sandboxId: string): Promise<string | null> {
+    const settings = this.getSettings();
+    if (!settings.enabled) return null;
+
+    const managementKey = config.integrations.cliproxy.managementKey;
+    if (!managementKey) {
+      log.warn("No CLIProxy management key configured, skipping key creation");
+      return null;
+    }
+
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const apiKey = `${KEY_PREFIX}-${sandboxId}-${suffix}`;
+
+    const ok = await this.managementAddKey(apiKey, managementKey);
+    if (!ok) return null;
+
+    const keys = this.loadSandboxKeys();
+    keys[sandboxId] = apiKey;
+    this.saveSandboxKeys(keys);
+
+    log.info({ sandboxId }, "Created per-sandbox CLIProxy API key");
+    return apiKey;
+  }
+
+  async revokeSandboxKey(sandboxId: string): Promise<void> {
+    const keys = this.loadSandboxKeys();
+    const apiKey = keys[sandboxId];
+    if (!apiKey) return;
+
+    const managementKey = config.integrations.cliproxy.managementKey;
+    if (managementKey) {
+      await this.managementDeleteKey(apiKey, managementKey);
+    }
+
+    delete keys[sandboxId];
+    this.saveSandboxKeys(keys);
+    log.info({ sandboxId }, "Revoked per-sandbox CLIProxy API key");
   }
 
   getExportableConfig(): CLIProxyExportConfig | null {
@@ -348,5 +394,92 @@ export class CLIProxyService {
       },
       models,
     } as unknown as { models: Record<string, OpenCodeModelConfig> };
+  }
+
+  private loadSandboxKeys(): Record<string, string> {
+    const file = this.configFileService.getByPath(SANDBOX_KEYS_PATH, "global");
+    if (!file) return {};
+    try {
+      return JSON.parse(file.content) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  private saveSandboxKeys(keys: Record<string, string>): void {
+    this.configFileService.upsert(
+      undefined,
+      SANDBOX_KEYS_PATH,
+      JSON.stringify(keys),
+      "json",
+    );
+  }
+
+  private async managementAddKey(
+    apiKey: string,
+    managementKey: string,
+  ): Promise<boolean> {
+    const baseUrl = this.getManagementBaseUrl();
+    if (!baseUrl) return false;
+
+    try {
+      const res = await fetch(`${baseUrl}/api-keys`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${managementKey}`,
+        },
+        body: JSON.stringify({ index: 999, value: apiKey }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        log.error(
+          { status: res.status },
+          "Failed to add API key via management API",
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
+      log.error({ err }, "Failed to call CLIProxy management API");
+      return false;
+    }
+  }
+
+  private async managementDeleteKey(
+    apiKey: string,
+    managementKey: string,
+  ): Promise<boolean> {
+    const baseUrl = this.getManagementBaseUrl();
+    if (!baseUrl) return false;
+
+    try {
+      const res = await fetch(
+        `${baseUrl}/api-keys?value=${encodeURIComponent(apiKey)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${managementKey}` },
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      if (!res.ok) {
+        log.error(
+          { status: res.status },
+          "Failed to delete API key via management API",
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
+      log.error({ err }, "Failed to call CLIProxy management API");
+      return false;
+    }
+  }
+
+  private getManagementBaseUrl(): string | null {
+    const cliproxyUrl = config.integrations.cliproxy.url;
+    if (!cliproxyUrl) return null;
+    const url = cliproxyUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
+    return `${url}/v0/management`;
   }
 }

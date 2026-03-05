@@ -1,4 +1,5 @@
 import { eventBus } from "../infrastructure/events/index.ts";
+import type { CLIProxyService } from "../modules/cliproxy/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { isMock } from "../shared/lib/config.ts";
@@ -9,6 +10,7 @@ const log = createChildLogger("sandbox-destroyer");
 
 interface SandboxDestroyerDependencies {
   sandboxService: SandboxRepository;
+  cliProxyService: CLIProxyService;
 }
 
 export class SandboxDestroyer {
@@ -21,6 +23,12 @@ export class SandboxDestroyer {
     }
 
     log.info({ sandboxId }, "Destroying sandbox");
+
+    await this.deps.cliProxyService
+      .revokeSandboxKey(sandboxId)
+      .catch((err) =>
+        log.warn({ err, sandboxId }, "Failed to revoke CLIProxy sandbox key"),
+      );
 
     if (!isMock()) {
       await cleanupSandboxResources(sandboxId, {

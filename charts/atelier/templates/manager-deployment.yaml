@@ -113,6 +113,13 @@ spec:
                   name: {{ include "atelier.managerSecretName" . }}
                   key: ATELIER_SLACK_SIGNING_SECRET
             {{- end }}
+            {{- if .Values.cliproxy.enabled }}
+            - name: ATELIER_CLIPROXY_MANAGEMENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-cliproxy-secret
+                  key: management-key
+            {{- end }}
             - name: ATELIER_K8S_INGRESS_CLASS
               value: {{ .Values.ingress.className | quote }}
           securityContext:
