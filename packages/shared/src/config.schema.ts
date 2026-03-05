@@ -240,10 +240,26 @@ export type SlackIntegrationConfig = Static<
   typeof SlackIntegrationConfigSchema
 >;
 
+export const CLIProxyIntegrationConfigSchema = Type.Object(
+  {
+    /** Internal URL of the CLIProxy service (K8s service URL) */
+    url: Type.String({ default: "" }),
+    /** API key for authenticating to the CLIProxy (Bearer token) */
+    apiKey: Type.String({ default: "" }),
+  },
+  { default: {} },
+);
+
+export type CLIProxyIntegrationConfig = Static<
+  typeof CLIProxyIntegrationConfigSchema
+>;
+
 export const IntegrationsConfigSchema = Type.Object(
   {
     /** Slack bot integration */
     slack: SlackIntegrationConfigSchema,
+    /** CLIProxy AI model proxy integration */
+    cliproxy: CLIProxyIntegrationConfigSchema,
   },
   { default: {} },
 );
@@ -319,6 +335,9 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
   ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",
   ATELIER_SLACK_SIGNING_SECRET: "integrations.slack.signingSecret",
+
+  ATELIER_CLIPROXY_URL: "integrations.cliproxy.url",
+  ATELIER_CLIPROXY_API_KEY: "integrations.cliproxy.apiKey",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;
