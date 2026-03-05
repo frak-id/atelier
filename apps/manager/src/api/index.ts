@@ -2,6 +2,7 @@
 // All routes import from container.ts, breaking circular dependencies
 
 export { authRoutes } from "./auth.routes.ts";
+export { cliproxyRoutes } from "./cliproxy.routes.ts";
 export { configFileRoutes } from "./config-file.routes.ts";
 export { eventsRoutes } from "./events.routes.ts";
 export { gitSourceRoutes } from "./git-source.routes.ts";

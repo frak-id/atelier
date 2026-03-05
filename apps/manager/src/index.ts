@@ -4,6 +4,7 @@ import { validateConfig } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
 import {
   authRoutes,
+  cliproxyRoutes,
   configFileRoutes,
   eventsRoutes,
   githubApiRoutes,
@@ -27,6 +28,7 @@ import {
 import {
   agentOperations,
   authSyncService,
+  cliProxyService,
   prebuildChecker,
   prebuildRunner,
   sandboxLifecycle,
@@ -69,6 +71,14 @@ const app = new Elysia()
       name: "Prebuild Staleness Check",
       pattern: "*/30 * * * *",
       handler: () => prebuildChecker.checkAllAndRebuildStale(),
+    });
+
+    CronService.add("cliproxyRefresh", {
+      name: "CLIProxy Config Refresh",
+      pattern: "*/10 * * * *",
+      handler: async () => {
+        await cliProxyService.refresh();
+      },
     });
 
     CronService.add("sandboxSelfHeal", {
@@ -224,7 +234,8 @@ const app = new Elysia()
           .use(imageRoutes)
           .use(githubApiRoutes)
           .use(eventsRoutes)
-          .use(systemModelConfigRoutes),
+          .use(systemModelConfigRoutes)
+          .use(cliproxyRoutes),
       ),
   );
 

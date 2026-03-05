@@ -10,6 +10,9 @@ import {
 } from "../system-sandbox/index.ts";
 import type { AuthSyncService } from "./auth-sync.service.ts";
 
+const CLIPROXY_PROVIDER_PATH = "/.atelier/cliproxy-opencode-provider.json";
+const CLIPROXY_SETTINGS_PATH = "/.atelier/cliproxy-settings.json";
+
 const log = createChildLogger("internal-service");
 
 export class InternalService {
@@ -102,6 +105,8 @@ export class InternalService {
       this.injectSystemAgents(merged);
     }
 
+    this.injectCliProxyProvider(merged);
+
     const files: { path: string; content: string }[] = [];
 
     for (const cfg of merged) {
@@ -148,6 +153,64 @@ export class InternalService {
       merged.push({
         path: configPath,
         content: JSON.stringify(SYSTEM_AGENTS_CONFIG),
+        contentType: "json",
+      });
+    }
+  }
+
+  private injectCliProxyProvider(
+    merged: { path: string; content: string; contentType: string }[],
+  ): void {
+    const settingsFile = this.configFileService.getByPath(
+      CLIPROXY_SETTINGS_PATH,
+      "global",
+    );
+    if (!settingsFile) return;
+
+    let enabled = false;
+    try {
+      enabled =
+        (JSON.parse(settingsFile.content) as { enabled?: boolean }).enabled ===
+        true;
+    } catch {
+      return;
+    }
+    if (!enabled) return;
+
+    const providerFile = this.configFileService.getByPath(
+      CLIPROXY_PROVIDER_PATH,
+      "global",
+    );
+    if (!providerFile) return;
+
+    let providerConfig: Record<string, unknown>;
+    try {
+      providerConfig = JSON.parse(providerFile.content) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      log.warn("Failed to parse CLIProxy provider config");
+      return;
+    }
+
+    const configPath = "~/.config/opencode/opencode.json";
+    const existing = merged.find((c) => c.path === configPath);
+
+    if (existing && existing.contentType === "json") {
+      try {
+        const parsed = JSON.parse(existing.content) as Record<string, unknown>;
+        const existingProvider =
+          (parsed.provider as Record<string, unknown>) ?? {};
+        parsed.provider = { ...existingProvider, cliproxy: providerConfig };
+        existing.content = JSON.stringify(parsed);
+      } catch {
+        log.warn("Failed to merge CLIProxy provider into opencode config");
+      }
+    } else if (!existing) {
+      merged.push({
+        path: configPath,
+        content: JSON.stringify({ provider: { cliproxy: providerConfig } }),
         contentType: "json",
       });
     }
