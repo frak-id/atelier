@@ -23,9 +23,13 @@ data:
       npmjs:
         url: https://registry.npmjs.org/
         cache: true
-        maxage: 30m
+        maxage: 7d
         fail_timeout: 5m
-        timeout: 30s
+        timeout: 60s
+        max_fails: 5
+        agent_options:
+          keepAlive: true
+          maxSockets: 40
 
     packages:
       "@*/*":

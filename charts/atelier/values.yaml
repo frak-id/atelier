@@ -145,11 +145,11 @@ verdaccio:
     storageClass: ""
   resources:
     requests:
-      memory: "64Mi"
+      memory: "128Mi"
       cpu: "50m"
     limits:
-      memory: "512Mi"
-      cpu: "500m"
+      memory: "1Gi"
+      cpu: "1000m"
 
 # -- Shared binaries (opencode + code-server, mounted into sandboxes)
 sharedBinaries:

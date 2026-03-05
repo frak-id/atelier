@@ -452,6 +452,26 @@ export class PrebuildRunner {
         );
       }
 
+      // Write secrets and file secrets (needed by init commands)
+      const [secretFiles, gitCredFiles, fileSecretFiles] =
+        await Promise.all([
+          GuestOps.collectSecretFiles(workspace),
+          GuestOps.collectGitCredentialFiles(this.deps.gitSourceService),
+          GuestOps.collectFileSecretFiles(workspace),
+        ]);
+      const allFiles = [
+        ...secretFiles,
+        ...gitCredFiles,
+        ...fileSecretFiles,
+      ];
+      if (allFiles.length > 0) {
+        log.info(
+          { sandboxId, fileCount: allFiles.length },
+          "Writing secrets to prebuild pod",
+        );
+        await agent.writeFiles(sandboxId, allFiles);
+      }
+
       // Run init commands
       for (const command of workspace.config.initCommands) {
         log.info({ sandboxId, command }, "Running init command");
