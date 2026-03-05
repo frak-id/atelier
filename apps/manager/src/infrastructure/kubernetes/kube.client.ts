@@ -281,6 +281,10 @@ export class KubeClient {
         path: "volumesnapshots",
         api: "snapshot",
       },
+      {
+        path: "pipes",
+        api: "sshpiper",
+      },
     ] as const;
 
     for (const col of collections) {
@@ -289,6 +293,8 @@ export class KubeClient {
         base = `/apis/networking.k8s.io/v1/namespaces/${namespace}/${col.path}`;
       } else if (col.api === "snapshot") {
         base = `/apis/snapshot.storage.k8s.io/v1/namespaces/${namespace}/${col.path}`;
+      } else if (col.api === "sshpiper") {
+        base = `/apis/sshpiper.com/v1beta1/namespaces/${namespace}/${col.path}`;
       } else {
         base = `/api/v1/namespaces/${namespace}/${col.path}`;
       }
@@ -890,6 +896,9 @@ function resourceCollectionPath(kind: string, namespace: string): string {
     return `/apis/batch/v1/namespaces/${namespace}/jobs`;
   if (normalized === "volumesnapshot") {
     return `/apis/snapshot.storage.k8s.io/v1/namespaces/${namespace}/volumesnapshots`;
+  }
+  if (normalized === "pipe") {
+    return `/apis/sshpiper.com/v1beta1/namespaces/${namespace}/pipes`;
   }
 
   throw new KubeApiError(`Unsupported Kubernetes kind: ${kind}`, 400);
