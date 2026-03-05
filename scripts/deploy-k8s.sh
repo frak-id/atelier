@@ -43,6 +43,11 @@ HELM_SET="${HELM_SET:-}"
 SKIP_BUILD="${SKIP_BUILD:-}"
 DB_RESTORE_PATH="${DB_RESTORE_PATH:-}"
 
+# When skipping build, default to the latest GHCR image
+if [[ -n "${SKIP_BUILD}" ]]; then
+  IMAGE_TAG="${IMAGE_TAG:-latest}"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REMOTE_DIR="/tmp/atelier-helm-deploy"
