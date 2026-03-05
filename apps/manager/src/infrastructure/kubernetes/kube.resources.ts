@@ -192,6 +192,7 @@ export function buildSandboxService(
     { name: "opencode", port: 3000, targetPort: 3000 },
     { name: "browser", port: 6080, targetPort: 6080 },
     { name: "terminal", port: 7681, targetPort: 7681 },
+    { name: "ssh", port: 22, targetPort: 22 },
   ];
 
   const basePortNumbers = new Set(basePorts.map((p) => p.port));
@@ -214,7 +215,6 @@ export function buildSandboxService(
         "atelier.dev/component": "sandbox",
       },
       ports: [...basePorts, ...extraPorts],
-        { name: "ssh", port: 22, targetPort: 22 },
     },
   };
 }

@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { customAlphabet } from "nanoid";
 import { eventBus } from "../../infrastructure/events/index.ts";
 import {
@@ -6,6 +7,7 @@ import {
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
+  buildSshPipe,
   buildVsCodeIngress,
   collectDevPorts,
   kubeClient,
@@ -153,6 +155,16 @@ export async function bootNewSandbox(
           ingressClassName: config.kubernetes.ingressClassName || undefined,
           annotations: config.kubernetes.openCodeIngressAnnotations,
           tlsSecretName: "atelier-sandbox-wildcard-tls",
+        }),
+      ),
+      kubeClient.createResource(
+        buildSshPipe({
+          sandboxId,
+          targetHost: `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`,
+          authorizedKeysData: encodeSshAuthorizedKeys(
+            ports.sshKeys.getValidPublicKeys(),
+          ),
+          workspaceId: options.workspaceId,
         }),
       ),
     ]);
@@ -351,10 +363,22 @@ function buildUrls(
   system?: boolean,
 ): { vscode: string; opencode: string; ssh: string } {
   const sandboxDomain = config.domain.dashboard;
+  const sshHost =
+    config.domain.ssh.hostname || `ssh.${config.domain.baseDomain}`;
+  const sshPort = config.domain.ssh.port;
 
   return {
     vscode: system ? "" : `https://vscode-${sandboxId}.${sandboxDomain}`,
     opencode: `https://opencode-${sandboxId}.${sandboxDomain}`,
-    ssh: "",
+    ssh:
+      sshPort === 22
+        ? `ssh ${sandboxId}@${sshHost}`
+        : `ssh ${sandboxId}@${sshHost} -p ${sshPort}`,
   };
+}
+
+function encodeSshAuthorizedKeys(publicKeys: string[]): string | undefined {
+  if (publicKeys.length === 0) return undefined;
+  const authorizedKeys = publicKeys.map((key) => key.trim()).join("\n");
+  return Buffer.from(authorizedKeys).toString("base64");
 }
