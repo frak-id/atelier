@@ -10,7 +10,7 @@ import {
 } from "../system-sandbox/index.ts";
 import type { AuthSyncService } from "./auth-sync.service.ts";
 
-const CLIPROXY_PROVIDER_PATH = "/.atelier/cliproxy-opencode-provider.json";
+const CLIPROXY_PROVIDER_PATH = "/.atelier/cliproxy-opencode-providers.json";
 const CLIPROXY_SETTINGS_PATH = "/.atelier/cliproxy-settings.json";
 
 const log = createChildLogger("internal-service");
@@ -183,9 +183,9 @@ export class InternalService {
     );
     if (!providerFile) return;
 
-    let providerConfig: Record<string, unknown>;
+    let providerConfigs: Record<string, unknown>;
     try {
-      providerConfig = JSON.parse(providerFile.content) as Record<
+      providerConfigs = JSON.parse(providerFile.content) as Record<
         string,
         unknown
       >;
@@ -202,7 +202,7 @@ export class InternalService {
         const parsed = JSON.parse(existing.content) as Record<string, unknown>;
         const existingProvider =
           (parsed.provider as Record<string, unknown>) ?? {};
-        parsed.provider = { ...existingProvider, cliproxy: providerConfig };
+        parsed.provider = { ...existingProvider, ...providerConfigs };
         existing.content = JSON.stringify(parsed);
       } catch {
         log.warn("Failed to merge CLIProxy provider into opencode config");
@@ -210,7 +210,7 @@ export class InternalService {
     } else if (!existing) {
       merged.push({
         path: configPath,
-        content: JSON.stringify({ provider: { cliproxy: providerConfig } }),
+        content: JSON.stringify({ provider: providerConfigs }),
         contentType: "json",
       });
     }

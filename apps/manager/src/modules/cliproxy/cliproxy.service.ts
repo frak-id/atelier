@@ -6,10 +6,18 @@ import type { InternalService } from "../internal/internal.service.ts";
 const log = createChildLogger("cliproxy");
 
 const SETTINGS_PATH = "/.atelier/cliproxy-settings.json";
-const OPENCODE_PROVIDER_PATH = "/.atelier/cliproxy-opencode-provider.json";
+const OPENCODE_PROVIDERS_PATH = "/.atelier/cliproxy-opencode-providers.json";
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const MODELS_DEV_CACHE_TTL_MS = 10 * 60 * 1000;
+
+const NATIVE_PROVIDERS: Record<string, { baseUrlSuffix: string }> = {
+  anthropic: { baseUrlSuffix: "/v1" },
+  openai: { baseUrlSuffix: "/v1" },
+  google: { baseUrlSuffix: "/v1beta" },
+};
+
+const ANTIGRAVITY_OWNER = "antigravity";
 
 interface CLIProxySettings {
   enabled: boolean;
@@ -45,8 +53,7 @@ interface ModelsDevProvider {
 type ModelsDevData = Record<string, ModelsDevProvider>;
 
 interface OpenCodeModelConfig {
-  id?: string;
-  name: string;
+  name?: string;
   attachment?: boolean;
   reasoning?: boolean;
   tool_call?: boolean;
@@ -58,8 +65,26 @@ interface OpenCodeModelConfig {
     cache_read?: number;
     cache_write?: number;
   };
-  limit?: { context: number; output: number };
+  limit?: { context?: number; output?: number };
 }
+
+interface NativeProviderOutput {
+  options: { baseURL: string; apiKey?: string };
+  whitelist: string[];
+  models?: Record<string, OpenCodeModelConfig>;
+}
+
+interface FallbackProviderOutput {
+  npm: string;
+  name: string;
+  options: { baseURL: string; apiKey?: string };
+  models: Record<string, OpenCodeModelConfig>;
+}
+
+type ProvidersOutput = Record<
+  string,
+  NativeProviderOutput | FallbackProviderOutput
+>;
 
 export interface CLIProxyStatus {
   enabled: boolean;
@@ -70,9 +95,7 @@ export interface CLIProxyStatus {
 }
 
 export interface CLIProxyExportConfig {
-  provider: {
-    cliproxy: Record<string, unknown>;
-  };
+  provider: Record<string, unknown>;
 }
 
 export class CLIProxyService {
@@ -87,11 +110,12 @@ export class CLIProxyService {
 
   getStatus(): CLIProxyStatus {
     const settings = this.getSettings();
-    const provider = this.getGeneratedProvider();
-    const modelCount = provider
-      ? Object.keys(
-          (JSON.parse(provider.content) as { models?: object }).models ?? {},
-        ).length
+    const providers = this.getGeneratedProvidersConfig();
+    const cliproxy = providers?.cliproxy as
+      | { models?: Record<string, unknown> }
+      | undefined;
+    const modelCount = cliproxy?.models
+      ? Object.keys(cliproxy.models).length
       : 0;
 
     return {
@@ -150,7 +174,7 @@ export class CLIProxyService {
     }
 
     const modelsDevLookup = this.buildModelsDevLookup(modelsDevData);
-    const providerConfig = this.buildProviderConfig(
+    const providerConfigs = this.buildProviderConfigs(
       cliproxyUrl,
       cliproxyModels,
       modelsDevLookup,
@@ -158,13 +182,15 @@ export class CLIProxyService {
 
     this.configFileService.upsert(
       undefined,
-      OPENCODE_PROVIDER_PATH,
-      JSON.stringify(providerConfig),
+      OPENCODE_PROVIDERS_PATH,
+      JSON.stringify(providerConfigs),
       "json",
     );
 
     this.lastRefresh = new Date();
-    const modelCount = Object.keys(providerConfig.models).length;
+    const modelCount = Object.keys(
+      providerConfigs.cliproxy?.models ?? {},
+    ).length;
     log.info({ modelCount }, "CLIProxy OpenCode config refreshed");
 
     await this.internalService
@@ -177,39 +203,45 @@ export class CLIProxyService {
   }
 
   getExportableConfig(): CLIProxyExportConfig | null {
-    const file = this.getGeneratedProvider();
-    if (!file) return null;
+    const providers = this.getGeneratedProvidersConfig();
+    if (!providers) return null;
 
     try {
-      const raw = JSON.parse(file.content) as Record<string, unknown>;
       const baseDomain = config.domain.baseDomain;
       const isLocal = baseDomain === "localhost";
-      const externalBaseURL = isLocal
-        ? `http://localhost:${config.integrations.cliproxy.url.match(/:(\d+)/)?.[1] ?? "8317"}/v1`
-        : `https://cliproxy.${baseDomain}/v1`;
+      const localPort =
+        config.integrations.cliproxy.url.match(/:(\d+)/)?.[1] ?? "8317";
+      const externalBase = isLocal
+        ? `http://localhost:${localPort}`
+        : `https://cliproxy.${baseDomain}`;
 
-      return {
-        provider: {
-          cliproxy: {
-            ...raw,
-            options: {
-              baseURL: externalBaseURL,
-              apiKey: "<your-api-key>",
-            },
+      const exported: Record<string, unknown> = {};
+
+      for (const [key, value] of Object.entries(providers)) {
+        const raw = value as Record<string, unknown>;
+        const suffix = NATIVE_PROVIDERS[key]?.baseUrlSuffix ?? "/v1";
+
+        exported[key] = {
+          ...raw,
+          options: {
+            baseURL: `${externalBase}${suffix}`,
+            apiKey: "<your-api-key>",
           },
-        },
-      };
+        };
+      }
+
+      return { provider: exported };
     } catch {
       return null;
     }
   }
 
-  getGeneratedProvider() {
-    return this.configFileService.getByPath(OPENCODE_PROVIDER_PATH, "global");
+  getGeneratedProviders() {
+    return this.configFileService.getByPath(OPENCODE_PROVIDERS_PATH, "global");
   }
 
-  getGeneratedProviderConfig(): Record<string, unknown> | null {
-    const file = this.getGeneratedProvider();
+  getGeneratedProvidersConfig(): Record<string, unknown> | null {
+    const file = this.getGeneratedProviders();
     if (!file) return null;
     try {
       return JSON.parse(file.content) as Record<string, unknown>;
@@ -219,7 +251,10 @@ export class CLIProxyService {
   }
 
   private removeGeneratedProvider() {
-    const file = this.getGeneratedProvider();
+    const file = this.configFileService.getByPath(
+      OPENCODE_PROVIDERS_PATH,
+      "global",
+    );
     if (file) {
       this.configFileService.delete(file.id);
       log.info("Removed CLIProxy generated provider config");
@@ -302,14 +337,89 @@ export class CLIProxyService {
     return lookup;
   }
 
-  private buildProviderConfig(
+  private resolveBaseUrl(rawUrl: string, suffix: string): string {
+    const url = rawUrl.replace(/\/+$/, "");
+    return url.endsWith("/v1")
+      ? url.replace(/\/v1$/, suffix)
+      : `${url}${suffix}`;
+  }
+
+  private buildApiKeyOption(): { apiKey: string } | undefined {
+    const apiKey = config.integrations.cliproxy.apiKey;
+    return apiKey ? { apiKey } : undefined;
+  }
+
+  private classifyNativeProvider(cm: CLIProxyModel): string | null {
+    if (NATIVE_PROVIDERS[cm.owned_by]) return cm.owned_by;
+    if (cm.owned_by === ANTIGRAVITY_OWNER) return "google";
+    return null;
+  }
+
+  private buildProviderConfigs(
     cliproxyUrl: string,
     cliproxyModels: CLIProxyModel[],
     modelsDevLookup: Map<string, ModelsDevModel>,
-  ): { models: Record<string, OpenCodeModelConfig> } {
-    const url = cliproxyUrl.replace(/\/+$/, "");
-    const baseURL = url.endsWith("/v1") ? url : `${url}/v1`;
+  ): ProvidersOutput & { cliproxy: FallbackProviderOutput } {
+    const apiKeyOpt = this.buildApiKeyOption();
 
+    const nativeBuckets = new Map<string, CLIProxyModel[]>();
+    for (const cm of cliproxyModels) {
+      const provider = this.classifyNativeProvider(cm);
+      if (!provider) continue;
+      const bucket = nativeBuckets.get(provider);
+      if (bucket) {
+        bucket.push(cm);
+      } else {
+        nativeBuckets.set(provider, [cm]);
+      }
+    }
+
+    const providers: ProvidersOutput & {
+      cliproxy: FallbackProviderOutput;
+    } = {
+      cliproxy: {
+        npm: "@ai-sdk/openai-compatible",
+        name: "CLIProxy",
+        options: {
+          baseURL: this.resolveBaseUrl(cliproxyUrl, "/v1"),
+          ...apiKeyOpt,
+        },
+        models: this.buildAllModels(cliproxyModels, modelsDevLookup),
+      },
+    };
+
+    for (const [providerKey, providerCfg] of Object.entries(NATIVE_PROVIDERS)) {
+      const models = nativeBuckets.get(providerKey);
+      if (!models?.length) continue;
+
+      const overrides = this.buildNativeOverrides(
+        models,
+        modelsDevLookup,
+        providerKey,
+      );
+
+      const entry: NativeProviderOutput = {
+        options: {
+          baseURL: this.resolveBaseUrl(cliproxyUrl, providerCfg.baseUrlSuffix),
+          ...apiKeyOpt,
+        },
+        whitelist: models.map((m) => m.id),
+      };
+
+      if (Object.keys(overrides).length > 0) {
+        entry.models = overrides;
+      }
+
+      providers[providerKey] = entry;
+    }
+
+    return providers;
+  }
+
+  private buildAllModels(
+    cliproxyModels: CLIProxyModel[],
+    modelsDevLookup: Map<string, ModelsDevModel>,
+  ): Record<string, OpenCodeModelConfig> {
     const models: Record<string, OpenCodeModelConfig> = {};
 
     for (const cm of cliproxyModels) {
@@ -331,22 +441,68 @@ export class CLIProxyService {
         if (enrichment.modalities)
           modelConfig.modalities = enrichment.modalities;
         if (enrichment.cost) modelConfig.cost = enrichment.cost;
-        if (enrichment.limit) modelConfig.limit = enrichment.limit;
+        if (enrichment.limit) modelConfig.limit = { ...enrichment.limit };
       }
 
       models[cm.id] = modelConfig;
     }
 
-    return {
-      npm: "@ai-sdk/openai-compatible",
-      name: "CLIProxy",
-      options: {
-        baseURL,
-        ...(config.integrations.cliproxy.apiKey && {
-          apiKey: config.integrations.cliproxy.apiKey,
-        }),
-      },
-      models,
-    } as unknown as { models: Record<string, OpenCodeModelConfig> };
+    return models;
+  }
+
+  private buildNativeOverrides(
+    models: CLIProxyModel[],
+    modelsDevLookup: Map<string, ModelsDevModel>,
+    providerKey: string,
+  ): Record<string, OpenCodeModelConfig> {
+    const overrides: Record<string, OpenCodeModelConfig> = {};
+
+    for (const cm of models) {
+      const override = this.getModelOverride(cm, modelsDevLookup, providerKey);
+      if (override) {
+        overrides[cm.id] = override;
+      }
+    }
+
+    return overrides;
+  }
+
+  private getModelOverride(
+    cm: CLIProxyModel,
+    modelsDevLookup: Map<string, ModelsDevModel>,
+    providerKey: string,
+  ): OpenCodeModelConfig | null {
+    if (
+      providerKey === "anthropic" &&
+      (cm.id.includes("opus-4-6") || cm.id.includes("sonnet-4-6"))
+    ) {
+      return { limit: { context: 200_000 } };
+    }
+
+    if (providerKey === "google" && cm.owned_by === ANTIGRAVITY_OWNER) {
+      const enrichment = modelsDevLookup.get(cm.id);
+      const modelConfig: OpenCodeModelConfig = {
+        name: enrichment?.name ?? cm.id,
+      };
+
+      if (enrichment) {
+        if (enrichment.attachment !== undefined)
+          modelConfig.attachment = enrichment.attachment;
+        if (enrichment.reasoning !== undefined)
+          modelConfig.reasoning = enrichment.reasoning;
+        if (enrichment.tool_call !== undefined)
+          modelConfig.tool_call = enrichment.tool_call;
+        if (enrichment.temperature !== undefined)
+          modelConfig.temperature = enrichment.temperature;
+        if (enrichment.modalities)
+          modelConfig.modalities = enrichment.modalities;
+        if (enrichment.cost) modelConfig.cost = enrichment.cost;
+        if (enrichment.limit) modelConfig.limit = { ...enrichment.limit };
+      }
+
+      return modelConfig;
+    }
+
+    return null;
   }
 }
