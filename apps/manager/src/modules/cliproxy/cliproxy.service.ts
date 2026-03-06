@@ -21,6 +21,85 @@ const NATIVE_PROVIDERS: Record<string, { baseUrlSuffix: string }> = {
 
 const ANTIGRAVITY_OWNER = "antigravity";
 
+/**
+ * Hardcoded metadata for Antigravity models not found in models.dev.
+ * Inspired by https://github.com/NoeFabris/opencode-antigravity-auth
+ */
+const ANTIGRAVITY_HARDCODED_MODELS: Record<string, OpenCodeModelConfig> = {
+  "gemini-3.1-pro-high": {
+    name: "Gemini 3.1 Pro High",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+    limit: { context: 1_048_576, output: 65_535 },
+  },
+  "gemini-3.1-pro-low": {
+    name: "Gemini 3.1 Pro Low",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+    limit: { context: 1_048_576, output: 65_535 },
+  },
+  "gemini-3-pro-high": {
+    name: "Gemini 3 Pro High",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+    limit: { context: 1_048_576, output: 65_535 },
+  },
+  "gemini-3-pro-low": {
+    name: "Gemini 3 Pro Low",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+    limit: { context: 1_048_576, output: 65_535 },
+  },
+  "gemini-3.1-flash-image": {
+    name: "Gemini 3.1 Flash Image",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+    limit: { context: 1_048_576, output: 65_536 },
+  },
+  "gpt-oss-120b-medium": {
+    name: "GPT-OSS 120B Medium",
+    attachment: false,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text"], output: ["text"] },
+    limit: { context: 128_000, output: 100_000 },
+  },
+  "antigravity-sonnet-4-6": {
+    name: "Claude Sonnet 4.6 (Antigravity)",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+    limit: { context: 200_000, output: 64_000 },
+  },
+  "antigravity-opus-4-6": {
+    name: "Claude Opus 4.6 (Antigravity)",
+    attachment: true,
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
+    limit: { context: 200_000, output: 64_000 },
+  },
+};
+
 interface CLIProxySettings {
   enabled: boolean;
 }
@@ -525,33 +604,46 @@ export class CLIProxyService {
     modelsDevLookup: Map<string, ModelsDevModel>,
   ): Record<string, OpenCodeModelConfig> {
     const models: Record<string, OpenCodeModelConfig> = {};
-
     for (const cm of cliproxyModels) {
-      const enrichment = modelsDevLookup.get(cm.id);
+      models[cm.id] = this.enrichModelConfig(cm.id, modelsDevLookup);
+    }
+    return models;
+  }
 
-      const modelConfig: OpenCodeModelConfig = {
-        name: enrichment?.name ?? cm.id,
+  /**
+   * Build an OpenCodeModelConfig from models.dev enrichment data,
+   * falling back to ANTIGRAVITY_HARDCODED_MODELS for unknown models.
+   */
+  private enrichModelConfig(
+    modelId: string,
+    modelsDevLookup: Map<string, ModelsDevModel>,
+  ): OpenCodeModelConfig {
+    const enrichment = modelsDevLookup.get(modelId);
+
+    if (enrichment) {
+      const cfg: OpenCodeModelConfig = {
+        name: enrichment.name ?? modelId,
       };
-
-      if (enrichment) {
-        if (enrichment.attachment !== undefined)
-          modelConfig.attachment = enrichment.attachment;
-        if (enrichment.reasoning !== undefined)
-          modelConfig.reasoning = enrichment.reasoning;
-        if (enrichment.tool_call !== undefined)
-          modelConfig.tool_call = enrichment.tool_call;
-        if (enrichment.temperature !== undefined)
-          modelConfig.temperature = enrichment.temperature;
-        if (enrichment.modalities)
-          modelConfig.modalities = enrichment.modalities;
-        if (enrichment.cost) modelConfig.cost = enrichment.cost;
-        if (enrichment.limit) modelConfig.limit = { ...enrichment.limit };
-      }
-
-      models[cm.id] = modelConfig;
+      if (enrichment.attachment !== undefined)
+        cfg.attachment = enrichment.attachment;
+      if (enrichment.reasoning !== undefined)
+        cfg.reasoning = enrichment.reasoning;
+      if (enrichment.tool_call !== undefined)
+        cfg.tool_call = enrichment.tool_call;
+      if (enrichment.temperature !== undefined)
+        cfg.temperature = enrichment.temperature;
+      if (enrichment.modalities) cfg.modalities = enrichment.modalities;
+      if (enrichment.cost) cfg.cost = enrichment.cost;
+      if (enrichment.limit) cfg.limit = { ...enrichment.limit };
+      return cfg;
     }
 
-    return models;
+    const hardcoded = ANTIGRAVITY_HARDCODED_MODELS[modelId];
+    if (hardcoded) {
+      return { ...hardcoded };
+    }
+
+    return { name: modelId };
   }
 
   private loadSandboxKeys(): Record<string, string> {
@@ -682,35 +774,12 @@ export class CLIProxyService {
     modelsDevLookup: Map<string, ModelsDevModel>,
     providerKey: string,
   ): OpenCodeModelConfig | null {
-    if (
-      providerKey === "anthropic" &&
-      (cm.id.includes("opus-4-6") || cm.id.includes("sonnet-4-6"))
-    ) {
-      return { limit: { context: 200_000 } };
+    if (providerKey === "anthropic" && cm.id.includes("opus-4-6")) {
+      return { limit: { context: 200_000, output: 128_000 } };
     }
 
     if (providerKey === "google" && cm.owned_by === ANTIGRAVITY_OWNER) {
-      const enrichment = modelsDevLookup.get(cm.id);
-      const modelConfig: OpenCodeModelConfig = {
-        name: enrichment?.name ?? cm.id,
-      };
-
-      if (enrichment) {
-        if (enrichment.attachment !== undefined)
-          modelConfig.attachment = enrichment.attachment;
-        if (enrichment.reasoning !== undefined)
-          modelConfig.reasoning = enrichment.reasoning;
-        if (enrichment.tool_call !== undefined)
-          modelConfig.tool_call = enrichment.tool_call;
-        if (enrichment.temperature !== undefined)
-          modelConfig.temperature = enrichment.temperature;
-        if (enrichment.modalities)
-          modelConfig.modalities = enrichment.modalities;
-        if (enrichment.cost) modelConfig.cost = enrichment.cost;
-        if (enrichment.limit) modelConfig.limit = { ...enrichment.limit };
-      }
-
-      return modelConfig;
+      return this.enrichModelConfig(cm.id, modelsDevLookup);
     }
 
     return null;
