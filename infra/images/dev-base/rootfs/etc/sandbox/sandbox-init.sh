@@ -60,6 +60,18 @@ else
     log "No shared binaries drive found (/dev/vdb)"
 fi
 
+# ── Phase 1b: Bootstrap /home/dev from skeleton if PVC is empty ───────
+# When a fresh PVC is mounted at /home/dev (no prebuild), the image
+# contents are hidden.  Restore dotfiles, .bun, etc. from the tarball
+# created at image build time.
+SKEL_TARBALL="/etc/skel/home-dev.tar.gz"
+if [ -f "$SKEL_TARBALL" ] && [ ! -d "/home/dev/.bun" ]; then
+    log "Empty home detected — extracting skeleton"
+    tar xzf "$SKEL_TARBALL" -C /home/dev
+    chown -R 1000:1000 /home/dev
+    log "Skeleton extracted"
+fi
+
 # ── Phase 2: Start agent IMMEDIATELY ──────────────────────────────────
 # Agent only needs basic fs.  Everything above is sufficient.
 # Host-side waitForAgent polls health over TCP — respond ASAP.

@@ -92,6 +92,11 @@ RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
 COPY --from=atelier/sandbox-agent:latest /sandbox-agent /usr/local/bin/sandbox-agent
 RUN chmod +x /usr/local/bin/sandbox-agent
 
+# Snapshot /home/dev as a skeleton tarball so that fresh PVC mounts
+# (no prebuild) can be bootstrapped from it at boot time.
+RUN mkdir -p /etc/skel \
+    && tar czf /etc/skel/home-dev.tar.gz -C /home/dev .
+
 WORKDIR /home/dev/workspace
 USER dev
 CMD ["/bin/bash"]
