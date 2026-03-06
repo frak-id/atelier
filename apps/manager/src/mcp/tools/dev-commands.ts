@@ -6,6 +6,7 @@ import {
   workspaceService,
 } from "../../container.ts";
 import {
+  buildDefaultDevIngress,
   buildDevCommandIngress,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
@@ -193,22 +194,45 @@ export function registerDevCommandTools(server: McpServer): void {
 
             if (devCommand.port) {
               try {
+                const ingressOpts = {
+                  ingressClassName:
+                    config.kubernetes.ingressClassName || undefined,
+                  tlsSecretName: "atelier-sandbox-wildcard-tls",
+                };
+
                 await kubeClient.createResource(
                   buildDevCommandIngress(
                     sandbox.id,
                     name,
                     devCommand.port,
                     config.domain.dashboard,
-                    {
-                      ingressClassName:
-                        config.kubernetes.ingressClassName || undefined,
-                      tlsSecretName: "atelier-sandbox-wildcard-tls",
-                    },
+                    ingressOpts,
                   ),
                 );
                 devUrl = buildDevUrl(sandbox.id, name);
+
                 if (devCommand.isDefault) {
+                  await kubeClient.createResource(
+                    buildDefaultDevIngress(
+                      sandbox.id,
+                      devCommand.port,
+                      config.domain.dashboard,
+                      ingressOpts,
+                    ),
+                  );
                   defaultDevUrl = buildDefaultDevUrl(sandbox.id);
+                }
+
+                for (const ep of devCommand.extraPorts ?? []) {
+                  await kubeClient.createResource(
+                    buildDevCommandIngress(
+                      sandbox.id,
+                      `${name}-${ep.alias}`,
+                      ep.port,
+                      config.domain.dashboard,
+                      ingressOpts,
+                    ),
+                  );
                 }
               } catch (err) {
                 log.warn(
@@ -240,6 +264,21 @@ export function registerDevCommandTools(server: McpServer): void {
                   { sandboxId, name, error: err },
                   "Failed to remove dev route",
                 );
+              }
+
+              if (devCommand.isDefault) {
+                kubeClient
+                  .deleteResource("ingresses", `dev-default-${sandbox.id}`)
+                  .catch(() => {});
+              }
+
+              for (const ep of devCommand.extraPorts ?? []) {
+                kubeClient
+                  .deleteResource(
+                    "ingresses",
+                    `dev-${name}-${ep.alias}-${sandbox.id}`,
+                  )
+                  .catch(() => {});
               }
             }
 

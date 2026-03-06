@@ -1,6 +1,7 @@
 import { createOpencodeClient, type Part } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../../infrastructure/agent/index.ts";
 import {
+  buildDefaultDevIngress,
   buildDevCommandIngress,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
@@ -328,19 +329,44 @@ export class IntegrationGateway {
           );
 
           if (devCommand.port && sandbox.runtime?.ipAddress) {
+            const ingressOpts = {
+              ingressClassName: config.kubernetes.ingressClassName || undefined,
+              tlsSecretName: "atelier-sandbox-wildcard-tls",
+            };
+
             await kubeClient.createResource(
               buildDevCommandIngress(
                 sandbox.id,
                 devCommand.name,
                 devCommand.port,
                 config.domain.dashboard,
-                {
-                  ingressClassName:
-                    config.kubernetes.ingressClassName || undefined,
-                  tlsSecretName: "atelier-sandbox-wildcard-tls",
-                },
+                ingressOpts,
               ),
             );
+
+            if (devCommand.isDefault) {
+              await kubeClient.createResource(
+                buildDefaultDevIngress(
+                  sandbox.id,
+                  devCommand.port,
+                  config.domain.dashboard,
+                  ingressOpts,
+                ),
+              );
+            }
+
+            for (const ep of devCommand.extraPorts ?? []) {
+              await kubeClient.createResource(
+                buildDevCommandIngress(
+                  sandbox.id,
+                  `${devCommand.name}-${ep.alias}`,
+                  ep.port,
+                  config.domain.dashboard,
+                  ingressOpts,
+                ),
+              );
+            }
+
             const urls = {
               namedUrl: `https://dev-${devCommand.name}-${sandbox.id}.${config.domain.dashboard}`,
               defaultUrl: devCommand.isDefault
@@ -381,6 +407,21 @@ export class IntegrationGateway {
               "ingresses",
               `dev-${devCommand.name}-${sandbox.id}`,
             );
+
+            if (devCommand.isDefault) {
+              kubeClient
+                .deleteResource("ingresses", `dev-default-${sandbox.id}`)
+                .catch(() => {});
+            }
+
+            for (const ep of devCommand.extraPorts ?? []) {
+              kubeClient
+                .deleteResource(
+                  "ingresses",
+                  `dev-${devCommand.name}-${ep.alias}-${sandbox.id}`,
+                )
+                .catch(() => {});
+            }
           }
           await adapter.postMessage(event, `Stopped \`${devCommand.name}\``);
         } catch (error) {
