@@ -21,6 +21,7 @@ import {
 } from "./modules/internal/index.ts";
 import { SandboxRepository } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
+import { SettingsRepository } from "./modules/settings/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import {
   SystemAiService,
@@ -50,6 +51,7 @@ import { config } from "./shared/lib/config.ts";
 
 const configFileRepository = new ConfigFileRepository();
 const gitSourceRepository = new GitSourceRepository();
+const settingsRepository = new SettingsRepository();
 const sshKeyRepository = new SshKeyRepository();
 const taskRepository = new TaskRepository();
 const workspaceRepository = new WorkspaceRepository();
@@ -77,13 +79,17 @@ const authSyncService = new AuthSyncService(
 const internalService = new InternalService(
   authSyncService,
   configFileService,
+  settingsRepository,
   agentClient,
   sandboxService,
 );
 
 const agentOperations = new AgentOperations(agentClient);
 
-const cliProxyService = new CLIProxyService(configFileService, internalService);
+const cliProxyService = new CLIProxyService(
+  settingsRepository,
+  internalService,
+);
 internalService.setCliProxyService(cliProxyService);
 
 const sandboxPorts: SandboxPorts = {
@@ -98,7 +104,7 @@ const sandboxPorts: SandboxPorts = {
 };
 
 const sessionTemplateService = new SessionTemplateService(
-  configFileService,
+  settingsRepository,
   workspaceService,
   sandboxService,
 );
@@ -128,7 +134,7 @@ const systemSandboxService = new SystemSandboxService({
 
 const systemAiService = new SystemAiService(
   systemSandboxService,
-  configFileService,
+  settingsRepository,
 );
 const taskService = new TaskService(taskRepository);
 
