@@ -204,6 +204,19 @@ export function TaskDrawer({
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      {taskData.data.createdBy && (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <img
+                              src={taskData.data.createdBy.avatarUrl}
+                              alt={taskData.data.createdBy.username}
+                              className="h-4 w-4 rounded-full"
+                            />
+                            <span>{taskData.data.createdBy.username}</span>
+                          </div>
+                          <span>•</span>
+                        </>
+                      )}
                       {workspace && (
                         <>
                           <Link
