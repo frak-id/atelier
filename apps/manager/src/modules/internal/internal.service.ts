@@ -5,14 +5,15 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { CLIProxyService } from "../cliproxy/cliproxy.service.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
+import type { SettingsRepository } from "../settings/index.ts";
 import {
   SYSTEM_AGENTS_CONFIG,
   SYSTEM_WORKSPACE_ID,
 } from "../system-sandbox/index.ts";
 import type { AuthSyncService } from "./auth-sync.service.ts";
 
-const CLIPROXY_PROVIDER_PATH = "/.atelier/cliproxy-opencode-providers.json";
-const CLIPROXY_SETTINGS_PATH = "/.atelier/cliproxy-settings.json";
+const CLIPROXY_SETTINGS_KEY = "cliproxy.settings";
+const CLIPROXY_PROVIDERS_KEY = "cliproxy.providers";
 
 const log = createChildLogger("internal-service");
 
@@ -22,6 +23,7 @@ export class InternalService {
   constructor(
     private readonly authSyncService: AuthSyncService,
     private readonly configFileService: ConfigFileService,
+    private readonly settingsRepository: SettingsRepository,
     private readonly agentClient: AgentClient,
     private readonly sandboxService: SandboxRepository,
   ) {}
@@ -171,43 +173,26 @@ export class InternalService {
     merged: { path: string; content: string; contentType: string }[],
     sandboxId?: string,
   ): void {
-    const settingsFile = this.configFileService.getByPath(
-      CLIPROXY_SETTINGS_PATH,
-      "global",
+    const settings = this.settingsRepository.get<{ enabled?: boolean }>(
+      CLIPROXY_SETTINGS_KEY,
     );
-    if (!settingsFile) return;
+    if (!settings?.enabled) return;
 
-    let enabled = false;
-    try {
-      enabled =
-        (JSON.parse(settingsFile.content) as { enabled?: boolean }).enabled ===
-        true;
-    } catch {
-      return;
-    }
-    if (!enabled) return;
+    const providerConfigs = this.settingsRepository.get<
+      Record<string, unknown>
+    >(CLIPROXY_PROVIDERS_KEY);
+    if (!providerConfigs) return;
 
-    const providerFile = this.configFileService.getByPath(
-      CLIPROXY_PROVIDER_PATH,
-      "global",
-    );
-    if (!providerFile) return;
-
-    let providerConfigs: Record<string, unknown>;
-    try {
-      providerConfigs = JSON.parse(providerFile.content) as Record<
-        string,
-        unknown
-      >;
-    } catch {
-      log.warn("Failed to parse CLIProxy provider config");
-      return;
-    }
+    // Deep clone to avoid mutating stored settings
+    const configs = JSON.parse(JSON.stringify(providerConfigs)) as Record<
+      string,
+      unknown
+    >;
 
     if (sandboxId && this.cliProxyService) {
       const sandboxKey = this.cliProxyService.getSandboxApiKey(sandboxId);
       if (sandboxKey) {
-        for (const provider of Object.values(providerConfigs)) {
+        for (const provider of Object.values(configs)) {
           const p = provider as Record<string, unknown>;
           const opts = (p.options as Record<string, unknown>) ?? {};
           p.options = { ...opts, apiKey: sandboxKey };
@@ -223,7 +208,7 @@ export class InternalService {
         const parsed = JSON.parse(existing.content) as Record<string, unknown>;
         const existingProvider =
           (parsed.provider as Record<string, unknown>) ?? {};
-        parsed.provider = { ...existingProvider, ...providerConfigs };
+        parsed.provider = { ...existingProvider, ...configs };
         existing.content = JSON.stringify(parsed);
       } catch {
         log.warn("Failed to merge CLIProxy provider into opencode config");
@@ -231,7 +216,7 @@ export class InternalService {
     } else if (!existing) {
       merged.push({
         path: configPath,
-        content: JSON.stringify({ provider: providerConfigs }),
+        content: JSON.stringify({ provider: configs }),
         contentType: "json",
       });
     }

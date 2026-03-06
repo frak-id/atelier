@@ -16,8 +16,6 @@ export interface SystemModelConfig {
 
 export type SystemModelAction = "title" | "description" | "dispatcher";
 
-export const SYSTEM_MODEL_CONFIG_PATH = "/.atelier/system-model-config.json";
-
 export const DEFAULT_SYSTEM_MODEL_CONFIG: SystemModelConfig = {
   default: null,
   title: null,

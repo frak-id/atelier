@@ -119,5 +119,3 @@ Make the code as simple as possible while maintaining functionality.`,
     defaultVariantIndex: 0,
   },
 ];
-
-export const SESSION_TEMPLATES_CONFIG_PATH = "/.atelier/session-templates.json";

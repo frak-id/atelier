@@ -1,13 +1,13 @@
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import type { ConfigFileService } from "../config-file/index.ts";
 import type { InternalService } from "../internal/internal.service.ts";
+import type { SettingsRepository } from "../settings/index.ts";
 
 const log = createChildLogger("cliproxy");
 
-const SETTINGS_PATH = "/.atelier/cliproxy-settings.json";
-const SANDBOX_KEYS_PATH = "/.atelier/cliproxy-sandbox-keys.json";
-const OPENCODE_PROVIDERS_PATH = "/.atelier/cliproxy-opencode-providers.json";
+const SETTINGS_KEY = "cliproxy.settings";
+const SANDBOX_KEYS_KEY = "cliproxy.sandbox-keys";
+const PROVIDERS_KEY = "cliproxy.providers";
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const MODELS_DEV_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -185,7 +185,7 @@ export class CLIProxyService {
   private lastRefresh: Date | null = null;
 
   constructor(
-    private readonly configFileService: ConfigFileService,
+    private readonly settingsRepository: SettingsRepository,
     private readonly internalService: InternalService,
   ) {}
 
@@ -267,24 +267,16 @@ export class CLIProxyService {
   }
 
   getSettings(): CLIProxySettings {
-    const file = this.configFileService.getByPath(SETTINGS_PATH, "global");
-    if (!file) return { enabled: false };
-
-    try {
-      return JSON.parse(file.content) as CLIProxySettings;
-    } catch {
-      return { enabled: false };
-    }
+    return (
+      this.settingsRepository.get<CLIProxySettings>(SETTINGS_KEY) ?? {
+        enabled: false,
+      }
+    );
   }
 
   setEnabled(enabled: boolean): CLIProxySettings {
     const settings: CLIProxySettings = { enabled };
-    this.configFileService.upsert(
-      undefined,
-      SETTINGS_PATH,
-      JSON.stringify(settings),
-      "json",
-    );
+    this.settingsRepository.set(SETTINGS_KEY, settings);
     log.info({ enabled }, "CLIProxy auto-config toggled");
     return settings;
   }
@@ -319,12 +311,7 @@ export class CLIProxyService {
       modelsDevLookup,
     );
 
-    this.configFileService.upsert(
-      undefined,
-      OPENCODE_PROVIDERS_PATH,
-      JSON.stringify(providerConfigs),
-      "json",
-    );
+    this.settingsRepository.set(PROVIDERS_KEY, providerConfigs);
 
     this.lastRefresh = new Date();
     const modelCount = Object.keys(
@@ -419,27 +406,16 @@ export class CLIProxyService {
     }
   }
 
-  getGeneratedProviders() {
-    return this.configFileService.getByPath(OPENCODE_PROVIDERS_PATH, "global");
-  }
-
   getGeneratedProvidersConfig(): Record<string, unknown> | null {
-    const file = this.getGeneratedProviders();
-    if (!file) return null;
-    try {
-      return JSON.parse(file.content) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
+    return (
+      this.settingsRepository.get<Record<string, unknown>>(PROVIDERS_KEY) ??
+      null
+    );
   }
 
   private removeGeneratedProvider() {
-    const file = this.configFileService.getByPath(
-      OPENCODE_PROVIDERS_PATH,
-      "global",
-    );
-    if (file) {
-      this.configFileService.delete(file.id);
+    if (this.settingsRepository.get(PROVIDERS_KEY)) {
+      this.settingsRepository.delete(PROVIDERS_KEY);
       log.info("Removed CLIProxy generated provider config");
     }
   }
@@ -647,22 +623,14 @@ export class CLIProxyService {
   }
 
   private loadSandboxKeys(): Record<string, string> {
-    const file = this.configFileService.getByPath(SANDBOX_KEYS_PATH, "global");
-    if (!file) return {};
-    try {
-      return JSON.parse(file.content) as Record<string, string>;
-    } catch {
-      return {};
-    }
+    return (
+      this.settingsRepository.get<Record<string, string>>(SANDBOX_KEYS_KEY) ??
+      {}
+    );
   }
 
   private saveSandboxKeys(keys: Record<string, string>): void {
-    this.configFileService.upsert(
-      undefined,
-      SANDBOX_KEYS_PATH,
-      JSON.stringify(keys),
-      "json",
-    );
+    this.settingsRepository.set(SANDBOX_KEYS_KEY, keys);
   }
 
   private async managementAddKey(
