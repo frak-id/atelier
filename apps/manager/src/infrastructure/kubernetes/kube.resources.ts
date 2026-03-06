@@ -87,7 +87,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
   if (options.pvcName) {
     volumeMounts.push({
       name: "workspace",
-      mountPath: VM.WORKSPACE_DIR,
+      mountPath: VM.HOME,
     });
     volumes.push({
       name: "workspace",
