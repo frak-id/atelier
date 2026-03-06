@@ -85,6 +85,12 @@ export const sshKeys = sqliteTable(
   (t) => [index("idx_ssh_keys_user_id").on(t.userId)],
 );
 
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value", { mode: "json" }).notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
 // Task status is plain text (not enum) to avoid DB migrations when adding new statuses
 export const tasks = sqliteTable(
   "tasks",
