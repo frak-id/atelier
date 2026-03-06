@@ -1,0 +1,11 @@
+{
+  "name": "@atelier/opencode-workspace",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {},
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  }
+}
