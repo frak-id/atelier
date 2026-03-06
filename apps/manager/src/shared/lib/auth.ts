@@ -7,6 +7,7 @@ export interface AuthUser {
   id: string;
   username: string;
   avatarUrl: string;
+  email: string;
 }
 
 export async function verifyJwt(token: string): Promise<AuthUser | null> {
@@ -15,6 +16,7 @@ export async function verifyJwt(token: string): Promise<AuthUser | null> {
       id: "12345",
       username: "mock-user",
       avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      email: "12345+mock-user@users.noreply.github.com",
     };
   }
 
@@ -27,6 +29,7 @@ export async function verifyJwt(token: string): Promise<AuthUser | null> {
       id: payload.sub,
       username: payload.username as string,
       avatarUrl: (payload.avatarUrl as string) || "",
+      email: (payload.email as string) || "",
     };
   } catch {
     return null;
