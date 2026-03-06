@@ -7,6 +7,7 @@ import {
   buildSandboxPod,
   buildSandboxService,
   buildVsCodeIngress,
+  collectDevPorts,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
 import type { Sandbox, Workspace } from "../../schemas/index.ts";
@@ -89,6 +90,9 @@ export async function bootNewSandbox(
       "atelier.dev/component": "sandbox",
     };
 
+    const devPorts = collectDevPorts(options.workspace?.config.devCommands);
+    const devPortNumbers = devPorts.map((dp) => dp.port);
+
     await kubeClient.createResource(
       buildPvc({
         name: pvcName,
@@ -125,6 +129,7 @@ export async function bootNewSandbox(
           workspaceId: options.workspaceId,
           pvcName,
           configMapName,
+          devPorts: devPortNumbers,
           requests: {
             cpu: `${Math.max(250, options.vcpus * 250)}m`,
             memory: `${options.memoryMb}Mi`,
@@ -135,7 +140,7 @@ export async function bootNewSandbox(
           },
         }),
       ),
-      kubeClient.createResource(buildSandboxService(sandboxId)),
+      kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
       kubeClient.createResource(
         buildVsCodeIngress(sandboxId, config.domain.dashboard, {
           ingressClassName: config.kubernetes.ingressClassName || undefined,
@@ -194,11 +199,17 @@ export async function bootExistingSandbox(
   const opencodePassword =
     sandbox.runtime.opencodePassword ?? generatePassword(32);
 
+  const devPorts = collectDevPorts(workspace?.config.devCommands);
+  const devPortNumbers = devPorts.map((dp) => dp.port);
+
   try {
     await kubeClient.deleteResource("Pod", podName);
   } catch {}
   try {
     await kubeClient.deleteResource("ConfigMap", configMapName);
+  } catch {}
+  try {
+    await kubeClient.deleteResource("Service", `sandbox-${sandboxId}`);
   } catch {}
 
   const sandboxConfig = buildSandboxConfig(
@@ -227,6 +238,7 @@ export async function bootExistingSandbox(
         workspaceId: sandbox.workspaceId,
         pvcName,
         configMapName,
+        devPorts: devPortNumbers,
         requests: {
           cpu: `${Math.max(250, sandbox.runtime.vcpus * 250)}m`,
           memory: `${sandbox.runtime.memoryMb}Mi`,
@@ -237,6 +249,7 @@ export async function bootExistingSandbox(
         },
       }),
     ),
+    kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
   ]);
 
   // Single wait: agent health check implies pod is ready and has an IP
