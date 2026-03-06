@@ -137,7 +137,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
         {
           name: "sandbox",
           image: options.image,
-          command: ["/usr/local/bin/sandbox-agent"],
+          command: ["/etc/sandbox/sandbox-boot.sh"],
           securityContext: { runAsUser: 0 },
           ports: [
             { name: "agent", containerPort: 9998 },

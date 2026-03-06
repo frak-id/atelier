@@ -31,13 +31,11 @@ RUN curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google
 # Pulumi CLI (used by SST for infrastructure deployments)
 RUN curl -fsSL https://get.pulumi.com | sh -s -- --install-root /usr/local
 
-# Create cloud config directories for dev user
-RUN mkdir -p /home/dev/.aws /home/dev/.config/gcloud /home/dev/.kube \
-    && chown -R dev:dev /home/dev/.aws /home/dev/.config/gcloud /home/dev/.kube
+# Cloud config directories — added directly to /home/skel from dev-base
+RUN mkdir -p /home/skel/.aws /home/skel/.config/gcloud /home/skel/.kube \
+    && chown -R dev:dev /home/skel
 
-# Add gcloud to PATH for all users
 RUN echo 'export PATH="/opt/google-cloud-sdk/bin:$PATH"' > /etc/profile.d/gcloud.sh
 
 USER dev
-WORKDIR /home/dev/workspace
 CMD ["/bin/bash"]
