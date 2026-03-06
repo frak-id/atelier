@@ -18,9 +18,15 @@ import {
   TaskSchema,
   UpdateTaskBodySchema,
 } from "../schemas/index.ts";
+import type { AuthUser } from "../shared/lib/auth.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("task-routes");
+
+function getUser(store: { user?: AuthUser }): AuthUser {
+  if (!store.user) throw new Error("User not authenticated");
+  return store.user;
+}
 
 export const taskRoutes = new Elysia({ prefix: "/tasks" })
   .get(
@@ -50,13 +56,22 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
   )
   .post(
     "/",
-    ({ body, set }) => {
+    ({ body, set, store }) => {
+      const user = getUser(store as { user?: AuthUser });
       const title =
         body.title?.trim() || systemAiService.fallbackTitle(body.description);
 
       log.info({ title, workspaceId: body.workspaceId }, "Creating task");
 
-      const task = taskService.create({ ...body, title });
+      const task = taskService.create({
+        ...body,
+        title,
+        createdBy: {
+          username: user.username,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+        },
+      });
 
       if (!body.title?.trim()) {
         systemAiService.generateTitleInBackground(

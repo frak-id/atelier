@@ -2,6 +2,7 @@ import { eventBus } from "../../infrastructure/events/index.ts";
 import type {
   CreateTaskBody,
   Task,
+  TaskCreator,
   TaskSession,
   UpdateTaskBody,
 } from "../../schemas/index.ts";
@@ -34,7 +35,9 @@ export class TaskService {
     return task;
   }
 
-  create(body: CreateTaskBody & { title: string }): Task {
+  create(
+    body: CreateTaskBody & { title: string; createdBy?: TaskCreator },
+  ): Task {
     const now = new Date().toISOString();
     const order = this.repository.getNextOrder(body.workspaceId, "draft");
 
@@ -50,6 +53,7 @@ export class TaskService {
         order,
         baseBranch: body.baseBranch,
         targetRepoIndices: body.targetRepoIndices,
+        createdBy: body.createdBy,
         sessions: [],
       },
       createdAt: now,
