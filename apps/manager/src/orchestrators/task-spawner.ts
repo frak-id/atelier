@@ -100,6 +100,14 @@ export class TaskSpawner {
         throw new Error("Agent failed to become ready");
       }
 
+      if (task.data.createdBy) {
+        await this.configureGitIdentity(
+          sandbox.id,
+          task.data.createdBy.username,
+          task.data.createdBy.email,
+        );
+      }
+
       await waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
 
       const targetRepos = this.getTargetRepos(task, workspace);
@@ -452,6 +460,46 @@ export class TaskSpawner {
 
     log.warn({ taskId }, "Exhausted branch name attempts");
     return undefined;
+  }
+
+  private async configureGitIdentity(
+    sandboxId: string,
+    username: string,
+    email: string,
+  ): Promise<void> {
+    const commitTemplate = `\n\nCo-authored-by: ${config.sandbox.git.name} <${config.sandbox.git.email}>\n`;
+
+    await this.deps.agentClient.writeFiles(sandboxId, [
+      {
+        path: "/etc/sandbox/git-commit-template",
+        content: commitTemplate,
+        owner: "root",
+      },
+    ]);
+
+    const cmds = [
+      `git config --global user.name '${username.replace(/'/g, "'\\''")}'`,
+      `git config --global user.email '${email.replace(/'/g, "'\\''")}'`,
+      "git config --global commit.template /etc/sandbox/git-commit-template",
+    ].join(" && ");
+
+    const result = await this.deps.agentClient.exec(sandboxId, cmds, {
+      timeout: 10000,
+      user: "root",
+    });
+
+    if (result.exitCode !== 0) {
+      log.warn(
+        { sandboxId, stderr: result.stderr },
+        "Failed to configure git identity, falling back to defaults",
+      );
+      return;
+    }
+
+    log.info(
+      { sandboxId, username, email },
+      "Git identity configured for task creator",
+    );
   }
 
   private buildPrompt(
