@@ -79,6 +79,7 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
 
 # Layer 6: Profile scripts + config files (most likely to change)
 RUN echo 'export PATH="/opt/shared/bin:$PATH"' > /etc/profile.d/shared-binaries.sh \
+    && printf 'export LANG=en_US.UTF-8\nexport LC_ALL=en_US.UTF-8\n' > /etc/profile.d/locale.sh \
     && printf '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n' > /etc/profile.d/99-sandbox-secrets.sh
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 COPY --chown=dev:dev rootfs/etc/sandbox/ /etc/sandbox/
