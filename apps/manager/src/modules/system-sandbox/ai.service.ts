@@ -1,6 +1,5 @@
 import {
   DEFAULT_SYSTEM_MODEL_CONFIG,
-  SYSTEM_MODEL_CONFIG_PATH,
   type SystemModelAction,
   type SystemModelConfig,
   type SystemModelRef,
@@ -8,12 +7,13 @@ import {
 import type { Workspace } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { withRetry } from "../../shared/lib/retry.ts";
-import type { ConfigFileService } from "../config-file/index.ts";
+import type { SettingsRepository } from "../settings/index.ts";
 import type { SystemSandboxService } from "./system-sandbox.service.ts";
 
 const log = createChildLogger("system-ai");
 
 const MAX_TITLE_LENGTH = 80;
+const SETTINGS_KEY = "system-model-config";
 
 const GENERATION_RETRY = {
   maxAttempts: 3,
@@ -32,34 +32,18 @@ interface PromptOptions {
 export class SystemAiService {
   constructor(
     private readonly systemSandbox: SystemSandboxService,
-    private readonly configFileService: ConfigFileService,
+    private readonly settingsRepository: SettingsRepository,
   ) {}
 
   getModelConfig(): SystemModelConfig {
-    const configFile = this.configFileService.getByPath(
-      SYSTEM_MODEL_CONFIG_PATH,
-      "global",
+    return (
+      this.settingsRepository.get<SystemModelConfig>(SETTINGS_KEY) ??
+      DEFAULT_SYSTEM_MODEL_CONFIG
     );
-
-    if (!configFile) {
-      return DEFAULT_SYSTEM_MODEL_CONFIG;
-    }
-
-    try {
-      return JSON.parse(configFile.content) as SystemModelConfig;
-    } catch {
-      log.warn("Failed to parse system model config, using defaults");
-      return DEFAULT_SYSTEM_MODEL_CONFIG;
-    }
   }
 
   setModelConfig(config: SystemModelConfig): void {
-    this.configFileService.upsert(
-      undefined,
-      SYSTEM_MODEL_CONFIG_PATH,
-      JSON.stringify(config, null, 2),
-      "json",
-    );
+    this.settingsRepository.set(SETTINGS_KEY, config);
   }
 
   resolveModel(

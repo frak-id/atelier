@@ -1,7 +1,4 @@
-import {
-  DEFAULT_SESSION_TEMPLATES,
-  SESSION_TEMPLATES_CONFIG_PATH,
-} from "@frak/atelier-shared/constants";
+import { DEFAULT_SESSION_TEMPLATES } from "@frak/atelier-shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type {
   SessionTemplate,
@@ -11,11 +8,13 @@ import type {
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
-import type { ConfigFileService } from "../config-file/index.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
+import type { SettingsRepository } from "../settings/index.ts";
 import type { WorkspaceService } from "../workspace/index.ts";
 
 const log = createChildLogger("session-template-service");
+
+const SETTINGS_KEY = "session-templates";
 
 interface ResolvedSessionConfig {
   model: { providerID: string; modelID: string };
@@ -26,44 +25,24 @@ interface ResolvedSessionConfig {
 
 export class SessionTemplateService {
   constructor(
-    private readonly configFileService: ConfigFileService,
+    private readonly settingsRepository: SettingsRepository,
     private readonly workspaceService: WorkspaceService,
     private readonly sandboxService: SandboxRepository,
   ) {}
 
   getGlobalTemplates(): { templates: SessionTemplates; isDefault: boolean } {
-    const configFile = this.configFileService.getByPath(
-      SESSION_TEMPLATES_CONFIG_PATH,
-      "global",
-    );
+    const templates =
+      this.settingsRepository.get<SessionTemplates>(SETTINGS_KEY);
 
-    if (!configFile) {
+    if (!templates || templates.length === 0) {
       return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
     }
 
-    try {
-      const templates = JSON.parse(configFile.content) as SessionTemplates;
-      if (templates.length > 0) {
-        return { templates, isDefault: false };
-      }
-      return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
-    } catch (error) {
-      log.warn(
-        { error },
-        "Failed to parse global session templates, using defaults",
-      );
-      return { templates: DEFAULT_SESSION_TEMPLATES, isDefault: true };
-    }
+    return { templates, isDefault: false };
   }
 
   setGlobalTemplates(templates: SessionTemplates): void {
-    const content = JSON.stringify(templates, null, 2);
-    this.configFileService.upsert(
-      undefined,
-      SESSION_TEMPLATES_CONFIG_PATH,
-      content,
-      "json",
-    );
+    this.settingsRepository.set(SETTINGS_KEY, templates);
   }
 
   getWorkspaceTemplates(workspaceId: string): SessionTemplates | undefined {
