@@ -207,8 +207,11 @@ export class InternalService {
     if (sandboxId && this.cliProxyService) {
       const sandboxKey = this.cliProxyService.getSandboxApiKey(sandboxId);
       if (sandboxKey) {
-        const opts = (providerConfig.options as Record<string, unknown>) ?? {};
-        providerConfig.options = { ...opts, apiKey: sandboxKey };
+        for (const provider of Object.values(providerConfigs)) {
+          const p = provider as Record<string, unknown>;
+          const opts = (p.options as Record<string, unknown>) ?? {};
+          p.options = { ...opts, apiKey: sandboxKey };
+        }
       }
     }
 
