@@ -24,17 +24,27 @@ export function buildSecretFiles(envContent: string): FileWrite[] {
   ];
 }
 
-export function buildGitConfigFiles(credentials: string[]): FileWrite[] {
-  const sections = [
-    "[user]",
-    `\temail = ${config.sandbox.git.email}`,
-    `\tname = ${config.sandbox.git.name}`,
-  ];
+export interface GitUserIdentity {
+  name: string;
+  email: string;
+}
+
+export function buildGitConfigFiles(
+  credentials: string[],
+  userIdentity?: GitUserIdentity,
+): FileWrite[] {
+  const gitName = userIdentity?.name ?? config.sandbox.git.name;
+  const gitEmail = userIdentity?.email ?? config.sandbox.git.email;
+
+  const sections = ["[user]", `\temail = ${gitEmail}`, `\tname = ${gitName}`];
   if (credentials.length > 0) {
     sections.unshift(
       "[credential]",
       "\thelper = store --file=/etc/sandbox/secrets/git-credentials",
     );
+  }
+  if (userIdentity) {
+    sections.push("[commit]", "\ttemplate = /etc/sandbox/git-commit-template");
   }
   sections.push("");
 
@@ -45,6 +55,16 @@ export function buildGitConfigFiles(credentials: string[]): FileWrite[] {
       owner: "root",
     },
   ];
+
+  if (userIdentity) {
+    const coAuthorTrailer = `\n\nCo-authored-by: ${config.sandbox.git.name} <${config.sandbox.git.email}>\n`;
+    files.push({
+      path: "/etc/sandbox/git-commit-template",
+      content: coAuthorTrailer,
+      owner: "root",
+    });
+  }
+
   if (credentials.length > 0) {
     files.push({
       path: "/etc/sandbox/secrets/git-credentials",
@@ -82,6 +102,7 @@ export async function collectSecretFiles(
 
 export async function collectGitCredentialFiles(
   gitSourceService: GitSourceService,
+  userIdentity?: GitUserIdentity,
 ): Promise<FileWrite[]> {
   const sources = gitSourceService.getAll();
   const credentials: string[] = [];
@@ -92,7 +113,7 @@ export async function collectGitCredentialFiles(
       credentials.push(`https://x-access-token:${token}@github.com`);
     }
   }
-  return buildGitConfigFiles(credentials);
+  return buildGitConfigFiles(credentials, userIdentity);
 }
 
 export async function collectFileSecretFiles(

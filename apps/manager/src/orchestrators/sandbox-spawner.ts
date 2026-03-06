@@ -9,6 +9,7 @@ import type {
 import { config, isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import type { GitUserIdentity } from "./ports/guest-secrets.ts";
 import type { SandboxPorts } from "./ports/sandbox-ports.ts";
 import {
   createSystemSandbox,
@@ -20,7 +21,10 @@ const log = createChildLogger("sandbox-spawner");
 export class SandboxSpawner {
   constructor(private readonly ports: SandboxPorts) {}
 
-  async spawn(options: CreateSandboxBody = {}): Promise<CreateSandboxResponse> {
+  async spawn(
+    options: CreateSandboxBody = {},
+    gitUserIdentity?: GitUserIdentity,
+  ): Promise<CreateSandboxResponse> {
     const sandboxId = safeNanoid();
 
     if (!options.system && !options.workspaceId) {
@@ -44,7 +48,13 @@ export class SandboxSpawner {
       throw new Error("Workspace not found for workspace sandbox");
     }
 
-    return createWorkspaceSandbox(sandboxId, workspace, options, this.ports);
+    return createWorkspaceSandbox(
+      sandboxId,
+      workspace,
+      options,
+      this.ports,
+      gitUserIdentity,
+    );
   }
 
   private async spawnMock(

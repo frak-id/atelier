@@ -15,6 +15,7 @@ import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
 import { waitForOpencode } from "./kernel/boot-waiter.ts";
+import type { GitUserIdentity } from "./ports/guest-secrets.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("task-spawner");
@@ -73,13 +74,20 @@ export class TaskSpawner {
 
     let sandboxId: string | undefined;
 
+    const gitUserIdentity: GitUserIdentity | undefined = task.data.createdBy
+      ? { name: task.data.createdBy.username, email: task.data.createdBy.email }
+      : undefined;
+
     try {
-      const sandbox = await this.deps.sandboxSpawner.spawn({
-        workspaceId: task.workspaceId,
-        baseImage: workspace.config.baseImage,
-        vcpus: workspace.config.vcpus,
-        memoryMb: workspace.config.memoryMb,
-      });
+      const sandbox = await this.deps.sandboxSpawner.spawn(
+        {
+          workspaceId: task.workspaceId,
+          baseImage: workspace.config.baseImage,
+          vcpus: workspace.config.vcpus,
+          memoryMb: workspace.config.memoryMb,
+        },
+        gitUserIdentity,
+      );
 
       sandboxId = sandbox.id;
       const ipAddress = sandbox.runtime.ipAddress;

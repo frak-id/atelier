@@ -12,6 +12,7 @@ import {
   finalizeNewSandbox,
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
+import type { GitUserIdentity } from "../ports/guest-secrets.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 import { generateSandboxMd } from "../sandbox-config.ts";
 
@@ -22,6 +23,7 @@ export async function createWorkspaceSandbox(
   workspace: Workspace,
   options: CreateSandboxBody,
   ports: SandboxPorts,
+  gitUserIdentity?: GitUserIdentity,
 ): Promise<Sandbox> {
   let boot: BootResult | undefined;
 
@@ -68,7 +70,7 @@ export async function createWorkspaceSandbox(
 
     const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
       GuestOps.collectSecretFiles(workspace),
-      GuestOps.collectGitCredentialFiles(ports.gitSources),
+      GuestOps.collectGitCredentialFiles(ports.gitSources, gitUserIdentity),
       GuestOps.collectFileSecretFiles(workspace),
     ]);
 

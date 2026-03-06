@@ -41,13 +41,20 @@ export type TaskIntegrationMetadata = Static<
   typeof TaskIntegrationMetadataSchema
 >;
 
+export const TaskCreatorSchema = t.Object({
+  username: t.String(),
+  email: t.String(),
+  avatarUrl: t.String(),
+});
+export type TaskCreator = Static<typeof TaskCreatorSchema>;
+
 export const TaskDataSchema = t.Object({
   description: t.String(),
   workflowId: t.Optional(t.String()),
   variantIndex: t.Optional(t.Number()),
   sandboxId: t.Optional(t.String()),
   sessions: t.Optional(t.Array(TaskSessionSchema)),
-  createdBy: t.Optional(t.String()),
+  createdBy: t.Optional(TaskCreatorSchema),
   startedAt: t.Optional(t.String()),
   completedAt: t.Optional(t.String()),
   order: t.Number({ default: 0 }),

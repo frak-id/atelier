@@ -38,6 +38,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         sub: "12345",
         username: "mock-user",
         avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+        email: "12345+mock-user@users.noreply.github.com",
       });
 
       cookie.sandbox_token?.set({
@@ -122,6 +123,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
           sub: String(user.id),
           username: user.login,
           avatarUrl: user.avatar_url,
+          email: `${user.id}+${user.login}@users.noreply.github.com`,
         });
 
         cookie.sandbox_token?.set({
@@ -167,6 +169,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       id: user.id,
       username: user.username,
       avatarUrl: user.avatarUrl,
+      email: user.email,
     };
   })
   .get("/verify", async ({ cookie, set }) => {

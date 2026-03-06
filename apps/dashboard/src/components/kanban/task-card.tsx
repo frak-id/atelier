@@ -140,6 +140,20 @@ export function TaskCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
+              {task.data.createdBy?.avatarUrl && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <img
+                      src={task.data.createdBy.avatarUrl}
+                      alt={task.data.createdBy.username}
+                      className="h-5 w-5 rounded-full shrink-0"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {task.data.createdBy.username}
+                  </TooltipContent>
+                </Tooltip>
+              )}
               <button
                 type="button"
                 onClick={onClick}
