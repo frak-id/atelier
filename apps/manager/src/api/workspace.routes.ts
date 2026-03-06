@@ -12,6 +12,8 @@ import {
   PrebuildTriggerResponseSchema,
   UpdateWorkspaceBodySchema,
   WorkspaceListResponseSchema,
+  WorkspaceMatchQuerySchema,
+  WorkspaceMatchResponseSchema,
   WorkspaceSchema,
 } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
@@ -27,6 +29,23 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
     },
     {
       response: WorkspaceListResponseSchema,
+    },
+  )
+  .get(
+    "/match",
+    ({ query }) => {
+      const match = workspaceService.matchByRemoteUrl(query.remoteUrl);
+      if (!match) {
+        throw new NotFoundError(
+          "Workspace matching remote URL",
+          query.remoteUrl,
+        );
+      }
+      return match;
+    },
+    {
+      query: WorkspaceMatchQuerySchema,
+      response: WorkspaceMatchResponseSchema,
     },
   )
   .post(

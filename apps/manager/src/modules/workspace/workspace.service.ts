@@ -1,7 +1,12 @@
 import { eventBus } from "../../infrastructure/events/index.ts";
-import type { Workspace, WorkspaceConfig } from "../../schemas/index.ts";
+import type {
+  RepoConfig,
+  Workspace,
+  WorkspaceConfig,
+} from "../../schemas/index.ts";
 import { DEFAULT_WORKSPACE_CONFIG } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
+import { resolveRepoRemoteUrl } from "../../shared/lib/git-url.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { WorkspaceRepository } from "./workspace.repository.ts";
@@ -27,12 +32,35 @@ export class WorkspaceService {
     return workspace;
   }
 
+  matchByRemoteUrl(remoteUrl: string):
+    | {
+        workspace: Workspace;
+        matchedRepo: RepoConfig;
+      }
+    | undefined {
+    const normalizedInput = resolveRepoRemoteUrl({ url: remoteUrl });
+    const allWorkspaces = this.workspaceRepository.getAll();
+
+    for (const workspace of allWorkspaces) {
+      for (const repo of workspace.config.repos) {
+        const resolved = repo.resolvedRemoteUrl ?? resolveRepoRemoteUrl(repo);
+        if (resolved === normalizedInput) {
+          return { workspace, matchedRepo: repo };
+        }
+      }
+    }
+
+    return undefined;
+  }
+
   create(name: string, partialConfig?: Partial<WorkspaceConfig>): Workspace {
     const now = new Date().toISOString();
     const workspaceConfig: WorkspaceConfig = {
       ...DEFAULT_WORKSPACE_CONFIG,
       ...partialConfig,
     };
+
+    workspaceConfig.repos = this.enrichRepos(workspaceConfig.repos);
 
     const workspace: Workspace = {
       id: safeNanoid(12),
@@ -68,10 +96,16 @@ export class WorkspaceService {
       workspaceUpdates.name = updates.name;
     }
     if (updates.config !== undefined) {
-      workspaceUpdates.config = {
+      const mergedConfig = {
         ...existing.config,
         ...updates.config,
       } as WorkspaceConfig;
+
+      if (updates.config.repos) {
+        mergedConfig.repos = this.enrichRepos(mergedConfig.repos);
+      }
+
+      workspaceUpdates.config = mergedConfig;
     }
 
     const updated = this.workspaceRepository.update(id, workspaceUpdates);
@@ -94,5 +128,12 @@ export class WorkspaceService {
 
   count(): number {
     return this.workspaceRepository.count();
+  }
+
+  private enrichRepos(repos: RepoConfig[]): RepoConfig[] {
+    return repos.map((repo) => ({
+      ...repo,
+      resolvedRemoteUrl: resolveRepoRemoteUrl(repo),
+    }));
   }
 }
