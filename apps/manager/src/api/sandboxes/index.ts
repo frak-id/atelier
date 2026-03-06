@@ -9,6 +9,10 @@ import {
   workspaceService,
 } from "../../container.ts";
 import { internalBus } from "../../infrastructure/events/internal-bus.ts";
+import {
+  buildBrowserIngress,
+  kubeClient,
+} from "../../infrastructure/kubernetes/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
@@ -361,6 +365,22 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
           const browserUrl = `https://browser-${sandbox.id}.${config.domain.dashboard}`;
 
+          try {
+            await kubeClient.createResource(
+              buildBrowserIngress(sandbox.id, config.domain.dashboard, {
+                ingressClassName:
+                  config.kubernetes.ingressClassName || undefined,
+                annotations: config.kubernetes.vsCodeIngressAnnotations,
+                tlsSecretName: "atelier-sandbox-wildcard-tls",
+              }),
+            );
+          } catch (err) {
+            log.warn(
+              { sandboxId: sandbox.id, error: err },
+              "Failed to create browser ingress",
+            );
+          }
+
           sandboxService.update(sandbox.id, {
             runtime: {
               ...sandbox.runtime,
@@ -388,6 +408,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             agentClient.serviceStop(sandbox.id, "openbox").catch(() => {}),
             agentClient.serviceStop(sandbox.id, "kasmvnc").catch(() => {}),
           ]).catch(() => {});
+
+          kubeClient
+            .deleteResource("ingresses", `sandbox-browser-${sandbox.id}`)
+            .catch(() => {});
 
           sandboxService.update(sandbox.id, {
             runtime: {

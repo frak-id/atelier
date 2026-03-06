@@ -13,7 +13,9 @@ export type {
 } from "./kube.resources.ts";
 export {
   buildBaseImageBuildJob,
+  buildBrowserIngress,
   buildConfigMap,
+  buildDefaultDevIngress,
   buildDevCommandIngress,
   buildKanikoJob,
   buildOpenCodeIngress,
@@ -22,6 +24,7 @@ export {
   buildSandboxService,
   buildVolumeSnapshot,
   buildVsCodeIngress,
+  collectDevPorts,
   SHARED_BINARIES_MOUNT_PATH,
 } from "./kube.resources.ts";
 export type {

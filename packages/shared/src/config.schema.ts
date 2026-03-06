@@ -212,7 +212,7 @@ export const PortsConfigSchema = Type.Object(
     opencode: Type.Number({ default: 3000 }),
     browser: Type.Number({ default: 6080 }),
     terminal: Type.Number({ default: 7681 }),
-    agent: Type.Number({ default: 9999 }),
+    agent: Type.Number({ default: 9998 }),
     verdaccio: Type.Number({ default: 4873 }),
   },
   { default: {} },
