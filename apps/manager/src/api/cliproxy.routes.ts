@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
-import { cliProxyService } from "../container.ts";
+import { cliProxyService, kubeClient } from "../container.ts";
+import { config } from "../shared/lib/config.ts";
 
 const CLIProxyStatusSchema = t.Object({
   enabled: t.Boolean(),
@@ -66,4 +67,24 @@ export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
       tags: ["system"],
       summary: "Get exportable OpenCode provider config with external URL",
     },
-  });
+  })
+  .post(
+    "/restart",
+    async () => {
+      const result = await kubeClient.restartDeployment(
+        "app.kubernetes.io/component=cliproxy",
+        config.kubernetes.systemNamespace,
+      );
+      return { message: "CLIProxy restart triggered", name: result.name };
+    },
+    {
+      response: t.Object({
+        message: t.String(),
+        name: t.String(),
+      }),
+      detail: {
+        tags: ["system"],
+        summary: "Rollout restart CLIProxy deployment",
+      },
+    },
+  );
