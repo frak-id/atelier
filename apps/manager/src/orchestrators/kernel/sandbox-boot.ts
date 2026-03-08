@@ -211,6 +211,12 @@ export async function bootExistingSandbox(
   try {
     await kubeClient.deleteResource("Service", `sandbox-${sandboxId}`);
   } catch {}
+  try {
+    await kubeClient.deleteResource("Ingress", `sandbox-vscode-${sandboxId}`);
+  } catch {}
+  try {
+    await kubeClient.deleteResource("Ingress", `sandbox-opencode-${sandboxId}`);
+  } catch {}
 
   const sandboxConfig = buildSandboxConfig(
     sandboxId,
@@ -250,6 +256,20 @@ export async function bootExistingSandbox(
       }),
     ),
     kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
+    kubeClient.createResource(
+      buildVsCodeIngress(sandboxId, config.domain.dashboard, {
+        ingressClassName: config.kubernetes.ingressClassName || undefined,
+        annotations: config.kubernetes.vsCodeIngressAnnotations,
+        tlsSecretName: "atelier-sandbox-wildcard-tls",
+      }),
+    ),
+    kubeClient.createResource(
+      buildOpenCodeIngress(sandboxId, config.domain.dashboard, {
+        ingressClassName: config.kubernetes.ingressClassName || undefined,
+        annotations: config.kubernetes.openCodeIngressAnnotations,
+        tlsSecretName: "atelier-sandbox-wildcard-tls",
+      }),
+    ),
   ]);
 
   // Single wait: agent health check implies pod is ready and has an IP
