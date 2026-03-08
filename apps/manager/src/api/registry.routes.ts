@@ -1,5 +1,7 @@
 import { Elysia, t } from "elysia";
+import { kubeClient } from "../container.ts";
 import { RegistryService } from "../infrastructure/registry/index.ts";
+import { config } from "../shared/lib/config.ts";
 
 const RegistryStatusSchema = t.Object({
   online: t.Boolean(),
@@ -74,6 +76,26 @@ export const registryRoutes = new Elysia({ prefix: "/registry" })
       detail: {
         tags: ["system"],
         summary: "Run cache eviction now (removes stale packages)",
+      },
+    },
+  )
+  .post(
+    "/restart",
+    async () => {
+      const result = await kubeClient.restartDeployment(
+        "app.kubernetes.io/component=verdaccio",
+        config.kubernetes.systemNamespace,
+      );
+      return { message: "Verdaccio restart triggered", name: result.name };
+    },
+    {
+      response: t.Object({
+        message: t.String(),
+        name: t.String(),
+      }),
+      detail: {
+        tags: ["system"],
+        summary: "Rollout restart Verdaccio deployment",
       },
     },
   );

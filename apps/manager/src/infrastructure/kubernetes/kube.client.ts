@@ -539,6 +539,133 @@ export class KubeClient {
     }
   }
 
+  /**
+   * Rollout-restart a Deployment matched by label selector.
+   */
+  async restartDeployment(
+    labelSelector: string,
+    namespace = this.namespace,
+  ): Promise<{ name: string; restarted: boolean }> {
+    if (isMock()) {
+      return { name: "mock-deployment", restarted: true };
+    }
+
+    const selector = encodeURIComponent(labelSelector);
+    const listPath = `/apis/apps/v1/namespaces/${namespace}/deployments?labelSelector=${selector}`;
+    const result = await this.list<{
+      items?: Array<{ metadata?: { name?: string } }>;
+    }>(listPath);
+    const deployments = result.items ?? [];
+
+    if (deployments.length === 0) {
+      throw new KubeApiError(
+        `No deployment found matching ${labelSelector}`,
+        404,
+      );
+    }
+
+    const name = deployments[0]?.metadata?.name;
+    if (!name) {
+      throw new KubeApiError("Deployment has no name", 500);
+    }
+
+    const patchPath = `/apis/apps/v1/namespaces/${namespace}/deployments/${name}`;
+    await this.patch(patchPath, {
+      spec: {
+        template: {
+          metadata: {
+            annotations: {
+              "kubectl.kubernetes.io/restartedAt": new Date().toISOString(),
+            },
+          },
+        },
+      },
+    });
+
+    return { name, restarted: true };
+  }
+
+  async listPodMetrics(namespace = this.namespace): Promise<
+    Array<{
+      podName: string;
+      containers: Array<{
+        name: string;
+        cpu: string;
+        memory: string;
+      }>;
+    }>
+  > {
+    if (isMock()) {
+      return [];
+    }
+
+    try {
+      const path = `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods`;
+      const result = await this.list<{
+        items?: Array<{
+          metadata?: { name?: string };
+          containers?: Array<{
+            name?: string;
+            usage?: { cpu?: string; memory?: string };
+          }>;
+        }>;
+      }>(path);
+
+      return (result.items ?? []).map((item) => ({
+        podName: item.metadata?.name ?? "",
+        containers: (item.containers ?? []).map((c) => ({
+          name: c.name ?? "",
+          cpu: c.usage?.cpu ?? "0",
+          memory: c.usage?.memory ?? "0",
+        })),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async listPvcs(
+    namespace = this.namespace,
+    labelSelector?: string,
+  ): Promise<
+    Array<{
+      name: string;
+      capacity: string;
+      phase: string;
+    }>
+  > {
+    if (isMock()) {
+      return [{ name: "mock-pvc", capacity: "10Gi", phase: "Bound" }];
+    }
+
+    let path = `/api/v1/namespaces/${namespace}/persistentvolumeclaims`;
+    if (labelSelector) {
+      path += `?labelSelector=${encodeURIComponent(labelSelector)}`;
+    }
+
+    const result = await this.list<{
+      items?: Array<{
+        metadata?: { name?: string };
+        status?: {
+          phase?: string;
+          capacity?: { storage?: string };
+        };
+        spec?: {
+          resources?: { requests?: { storage?: string } };
+        };
+      }>;
+    }>(path);
+
+    return (result.items ?? []).map((item) => ({
+      name: item.metadata?.name ?? "",
+      capacity:
+        item.status?.capacity?.storage ??
+        item.spec?.resources?.requests?.storage ??
+        "unknown",
+      phase: item.status?.phase ?? "unknown",
+    }));
+  }
+
   async resourceExists(
     kind: string,
     name: string,

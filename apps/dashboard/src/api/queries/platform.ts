@@ -28,6 +28,17 @@ export const systemSandboxQuery = queryOptions({
   refetchInterval: 30000,
 });
 
+export const systemServicesQuery = queryOptions({
+  queryKey: queryKeys.system.services,
+  queryFn: async () => unwrap(await api.api.system.services.get()),
+  refetchInterval: 30000,
+});
+
+export const sharedBinariesQuery = queryOptions({
+  queryKey: queryKeys.system.sharedBinaries,
+  queryFn: async () => unwrap(await api.api.system["shared-binaries"].get()),
+});
+
 export function useSystemSandboxPrebuild() {
   return useMutation({
     mutationKey: ["system", "sandbox", "prebuild"],
@@ -494,6 +505,30 @@ export function useRefreshCliProxy() {
   return useMutation({
     mutationKey: ["cliproxy", "refresh"],
     mutationFn: async () => unwrap(await api.api.cliproxy.refresh.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.cliproxy.all,
+      });
+    },
+  });
+}
+
+export function useRestartVerdaccio() {
+  return useMutation({
+    mutationKey: ["registry", "restart"],
+    mutationFn: async () => unwrap(await api.api.registry.restart.post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.registry.status,
+      });
+    },
+  });
+}
+
+export function useRestartCliProxy() {
+  return useMutation({
+    mutationKey: ["cliproxy", "restart"],
+    mutationFn: async () => unwrap(await api.api.cliproxy.restart.post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.cliproxy.all,
