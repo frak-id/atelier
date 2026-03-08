@@ -188,9 +188,8 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
     return { ok: true, user: user.username };
   })
   .get("/opencode/verify", async ({ cookie, set, headers }) => {
-    // If request already carries an Authorization header (CLI / MCP clients),
-    // let it through — no cookie check, no header injection.
     if (headers.authorization) {
+      set.headers.authorization = headers.authorization;
       return { ok: true };
     }
 
