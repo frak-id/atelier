@@ -1,4 +1,33 @@
 {{- if eq .Values.ingress.className "traefik" }}
+# CORS middleware for OpenCode ingresses.
+# Traefik answers browser preflight requests directly so OPTIONS never hits
+# forwardAuth, which would otherwise reject unauthenticated preflight traffic.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "atelier.fullname" . }}-cors-opencode
+  namespace: {{ include "atelier.sandboxNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+spec:
+  headers:
+    accessControlAllowOriginList:
+      - https://{{ include "atelier.dashboardDomain" . }}
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    accessControlAllowHeaders:
+      - Authorization
+      - Content-Type
+      - X-Opencode-Workspace
+      - X-Opencode-Directory
+    accessControlAllowCredentials: true
+    accessControlMaxAge: 3600
+    addVaryHeader: true
+---
 # Forward-auth middleware for VS Code ingresses.
 # Validates the sandbox_token JWT cookie against the manager API.
 apiVersion: traefik.io/v1alpha1

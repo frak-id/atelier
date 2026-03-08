@@ -143,14 +143,15 @@ Otherwise emits an empty dict so the manager receives no extra annotations.
 
 {{/*
 Ingress annotations for OpenCode sandbox ingresses.
-When ingress.className is "traefik", emits the Traefik forwardAuth middleware annotation.
+When ingress.className is "traefik", emits the Traefik CORS + forwardAuth middleware chain.
 Otherwise emits an empty dict so the manager receives no extra annotations.
 */}}
 {{- define "atelier.openCodeIngressAnnotations" -}}
 {{- if eq .Values.ingress.className "traefik" -}}
 {{- $ns := include "atelier.sandboxNamespace" . -}}
-{{- $name := printf "%s-auth-opencode" (include "atelier.fullname" .) -}}
-{{- dict "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-%s@kubernetescrd" $ns $name) | toJson -}}
+{{- $cors := printf "%s-cors-opencode" (include "atelier.fullname" .) -}}
+{{- $auth := printf "%s-auth-opencode" (include "atelier.fullname" .) -}}
+{{- dict "traefik.ingress.kubernetes.io/router.middlewares" (printf "%s-%s@kubernetescrd,%s-%s@kubernetescrd" $ns $cors $ns $auth) | toJson -}}
 {{- else -}}
 {}
 {{- end -}}
