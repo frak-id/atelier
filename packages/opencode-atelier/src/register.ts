@@ -8,7 +8,7 @@ export async function registerAdaptor(adaptor: Adaptor): Promise<boolean> {
   const install = await resolveInstallFn();
   if (install) {
     install(ADAPTOR_TYPE, adaptor);
-    console.log("[atelier-plugin] Registered via installAdaptor");
+    console.log("[atelier] Registered via installAdaptor");
     return true;
   }
 
@@ -20,7 +20,7 @@ export async function registerAdaptor(adaptor: Adaptor): Promise<boolean> {
   registry[ADAPTOR_TYPE] = adaptor;
 
   console.warn(
-    "[atelier-plugin] installAdaptor not found — " +
+    "[atelier] installAdaptor not found — " +
       "registered on globalThis.__opencode_custom_adaptors__. " +
       "Patch opencode's getAdaptor() to check this.",
   );

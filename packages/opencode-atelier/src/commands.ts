@@ -1,7 +1,7 @@
 import type { Hooks } from "@opencode-ai/plugin";
 import type { Config } from "@opencode-ai/sdk";
-import type { AtelierClient } from "./atelier-api.ts";
-import { createClient, unwrap } from "./atelier-api.ts";
+import type { AtelierClient } from "./client.ts";
+import { createClient, unwrap } from "./client.ts";
 import type { AtelierPluginConfig } from "./types.ts";
 
 const COMMANDS: Record<string, { template: string; description: string }> = {
@@ -58,7 +58,7 @@ export function createCommandHook(
       (output.parts as unknown[]).push({
         type: "text",
         text:
-          `[atelier-plugin] Error fetching data: ` +
+          `[atelier] Error fetching data: ` +
           `${err instanceof Error ? err.message : String(err)}`,
       });
     }

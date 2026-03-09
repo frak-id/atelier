@@ -26,8 +26,7 @@
     { "path": "./apps/manager" },
     { "path": "./apps/dashboard" },
     { "path": "./packages/shared" },
-    { "path": "./packages/opencode-atelier" },
-    { "path": "./packages/opencode-plugin" }
+    { "path": "./packages/opencode-atelier" }
   ],
   "files": []
 }

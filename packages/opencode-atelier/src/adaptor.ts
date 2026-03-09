@@ -1,157 +1,176 @@
-import type { AtelierConfig } from "./client";
-import { AtelierClient } from "./client";
+import {
+  type AtelierClient,
+  createClient,
+  unwrap,
+  waitForTaskSandbox,
+} from "./client.ts";
+import type {
+  Adaptor,
+  AtelierExtra,
+  AtelierPluginConfig,
+  Sandbox,
+  WorkspaceInfo,
+} from "./types.ts";
 
-interface WorkspaceInfo {
-  id: string;
-  type: string;
-  branch?: string;
-  name?: string;
-  directory?: string;
-  extra?: unknown;
-  projectID: string;
-}
+const sandboxCache = new Map<string, { sandbox: Sandbox; fetchedAt: number }>();
+const CACHE_TTL_MS = 30_000;
 
-interface Adaptor {
-  configure(input: WorkspaceInfo): WorkspaceInfo | Promise<WorkspaceInfo>;
-  create(input: WorkspaceInfo, from?: WorkspaceInfo): Promise<void>;
-  remove(config: WorkspaceInfo): Promise<void>;
-  fetch(
-    config: WorkspaceInfo,
-    input: FetchInput,
-    init?: RequestInit,
-  ): Promise<Response>;
-}
-
-type FetchInput = string | URL | Request;
-
-interface AtelierExtra {
-  sandboxId: string;
-  workspaceId: string;
-  opencodeUrl: string;
-  password?: string;
-}
-
-interface AtelierCreateExtra {
-  remoteUrl?: string;
-  branch?: string;
-}
-
-export interface AtelierAdaptorConfig extends AtelierConfig {
-  remoteUrl?: string;
-  branch?: string;
-  defaultName?: string;
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  if (typeof value === "object" && value !== null) {
-    return value as Record<string, unknown>;
-  }
-  return {};
-}
-
-function toRequestUrl(input: FetchInput): URL {
-  if (input instanceof URL) {
-    return input;
-  }
-  if (input instanceof Request) {
-    return new URL(input.url);
-  }
-  return new URL(input, "http://opencode.internal");
-}
-
-function toBasicAuth(password: string): string {
-  const raw = `opencode:${password}`;
-  if (typeof btoa === "function") {
-    return `Basic ${btoa(raw)}`;
-  }
-  return `Basic ${Buffer.from(raw).toString("base64")}`;
-}
-
-function parseExtra(
-  value: unknown,
-): Partial<AtelierExtra & AtelierCreateExtra> {
-  return toRecord(value) as Partial<AtelierExtra & AtelierCreateExtra>;
-}
-
-export function createAtelierAdaptor(config: AtelierAdaptorConfig): Adaptor {
-  const client = new AtelierClient(config);
-
+export function createAtelierAdaptor(
+  pluginConfig: AtelierPluginConfig,
+): Adaptor {
   return {
-    configure(input) {
-      const baseExtra = toRecord(input.extra);
-      const nextExtra: Record<string, unknown> = { ...baseExtra };
-      if (config.remoteUrl && typeof nextExtra.remoteUrl !== "string") {
-        nextExtra.remoteUrl = config.remoteUrl;
-      }
-      if (config.branch && typeof nextExtra.branch !== "string") {
-        nextExtra.branch = config.branch;
-      }
+    async configure(info: WorkspaceInfo): Promise<WorkspaceInfo> {
+      const raw = (info.extra ?? {}) as Partial<AtelierExtra>;
+      const extra: AtelierExtra = {
+        managerUrl: raw.managerUrl ?? pluginConfig.managerUrl,
+        atelierWorkspaceId:
+          raw.atelierWorkspaceId ?? pluginConfig.defaultWorkspaceId ?? "",
+        description: raw.description ?? "OpenCode workspace",
+        baseBranch: raw.baseBranch ?? undefined,
+      };
+
       return {
-        ...input,
-        type: "atelier",
-        name: input.name ?? config.defaultName ?? "atelier-sandbox",
-        extra: nextExtra,
+        ...info,
+        name: info.name ?? `atelier-${info.id}`,
+        directory: "/home/dev/workspace",
+        extra,
       };
     },
 
-    async create(input) {
-      const extra = parseExtra(input.extra);
-      const remoteUrl = extra.remoteUrl ?? config.remoteUrl;
-      if (!remoteUrl) {
-        throw new Error("Atelier remoteUrl is required");
-      }
-      const branch = input.branch ?? extra.branch ?? config.branch;
-      const spawned = await client.spawn(remoteUrl, branch);
-      input.extra = {
-        ...toRecord(input.extra),
-        remoteUrl,
-        branch,
-        sandboxId: spawned.sandboxId,
-        workspaceId: spawned.workspaceId,
-        opencodeUrl: spawned.opencodeUrl,
-        password: spawned.password,
-      };
-      input.name = input.name ?? spawned.workspaceName;
-      input.type = "atelier";
-    },
-
-    async remove(input) {
-      const extra = parseExtra(input.extra);
-      if (!extra.sandboxId) {
-        return;
-      }
-      await client.destroySandbox(extra.sandboxId);
-    },
-
-    async fetch(info, input, init) {
-      const extra = parseExtra(info.extra);
-      if (!extra.opencodeUrl) {
-        throw new Error("Atelier opencodeUrl is missing");
+    async create(info: WorkspaceInfo): Promise<void> {
+      const extra = info.extra as AtelierExtra;
+      if (!extra.atelierWorkspaceId) {
+        throw new Error(
+          "[atelier] atelierWorkspaceId is required " +
+            "in workspace extra or ATELIER_WORKSPACE_ID env",
+        );
       }
 
-      const source = toRequestUrl(input);
-      const target = new URL(
-        `${source.pathname}${source.search}${source.hash}`,
-        extra.opencodeUrl,
+      const client = createClient(extra.managerUrl, pluginConfig.token);
+
+      const task = unwrap(
+        await client.api.tasks.post({
+          workspaceId: extra.atelierWorkspaceId,
+          description: extra.description,
+          baseBranch: extra.baseBranch,
+        }),
       );
 
-      let request =
-        input instanceof Request
-          ? new Request(target.toString(), input)
-          : new Request(target.toString(), init);
-      if (input instanceof Request && init) {
-        request = new Request(request, init);
+      extra.taskId = task.id;
+
+      unwrap(await client.api.tasks({ id: task.id }).start.post());
+
+      const { sandbox } = await waitForTaskSandbox(client, task.id, {
+        intervalMs: pluginConfig.pollIntervalMs,
+        timeoutMs: pluginConfig.pollTimeoutMs,
+      });
+
+      extra.sandboxId = sandbox.id;
+      extra.sandboxOpencodeUrl = sandbox.runtime.urls.opencode;
+      extra.opencodePassword = sandbox.runtime.opencodePassword;
+
+      sandboxCache.set(info.id, {
+        sandbox,
+        fetchedAt: Date.now(),
+      });
+    },
+
+    async remove(info: WorkspaceInfo): Promise<void> {
+      const extra = info.extra as AtelierExtra;
+      if (!extra.taskId) return;
+
+      const client = createClient(extra.managerUrl, pluginConfig.token);
+      try {
+        unwrap(
+          await client.api.tasks({ id: extra.taskId }).delete(undefined, {
+            query: { sandboxAction: "destroy" },
+          }),
+        );
+      } catch (err) {
+        console.warn(`[atelier] Failed to delete task ${extra.taskId}: ${err}`);
       }
 
-      const headers = new Headers(request.headers);
-      if (extra.password) {
-        headers.set("Authorization", toBasicAuth(extra.password));
+      sandboxCache.delete(info.id);
+    },
+
+    async fetch(
+      info: WorkspaceInfo,
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> {
+      const extra = info.extra as AtelierExtra;
+
+      const opencodeUrl = await resolveOpencodeUrl(
+        info.id,
+        extra,
+        pluginConfig.token,
+      );
+      if (!opencodeUrl) {
+        return new Response("Sandbox not available", {
+          status: 503,
+        });
       }
 
-      request = new Request(request, { headers });
-      return fetch(request);
+      const inputUrl = input instanceof Request ? input.url : input.toString();
+      const targetUrl = new URL(inputUrl, opencodeUrl);
+
+      const headers = new Headers(
+        init?.headers ?? (input instanceof Request ? input.headers : undefined),
+      );
+
+      headers.set(
+        "x-opencode-directory",
+        info.directory ?? "/home/dev/workspace",
+      );
+      headers.set("x-opencode-workspace", info.id);
+
+      if (extra.opencodePassword) {
+        const encoded = btoa(`opencode:${extra.opencodePassword}`);
+        headers.set("Authorization", `Basic ${encoded}`);
+      }
+
+      return fetch(targetUrl, {
+        ...init,
+        headers,
+        body:
+          init?.method === "GET" || init?.method === "HEAD"
+            ? undefined
+            : init?.body,
+      });
     },
   };
 }
 
-export type { Adaptor, AtelierExtra, WorkspaceInfo };
+async function resolveOpencodeUrl(
+  workspaceId: string,
+  extra: AtelierExtra,
+  token?: string,
+): Promise<string | null> {
+  if (extra.sandboxOpencodeUrl) {
+    const cached = sandboxCache.get(workspaceId);
+    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+      return extra.sandboxOpencodeUrl;
+    }
+  }
+
+  if (!extra.sandboxId) return null;
+
+  try {
+    const client = createClient(extra.managerUrl, token);
+    const sandbox = unwrap(
+      await client.api.sandboxes({ id: extra.sandboxId }).get(),
+    );
+    if (sandbox.status !== "running") return null;
+
+    sandboxCache.set(workspaceId, {
+      sandbox: sandbox as Sandbox,
+      fetchedAt: Date.now(),
+    });
+
+    extra.sandboxOpencodeUrl = sandbox.runtime.urls.opencode;
+    extra.opencodePassword = sandbox.runtime.opencodePassword;
+    return sandbox.runtime.urls.opencode;
+  } catch {
+    return extra.sandboxOpencodeUrl ?? null;
+  }
+}

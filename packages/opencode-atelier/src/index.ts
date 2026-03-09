@@ -1,100 +1,66 @@
-import {
-  type Adaptor,
-  type AtelierAdaptorConfig,
-  createAtelierAdaptor,
-} from "./adaptor";
+import type { Plugin } from "@opencode-ai/plugin";
+import { createAtelierAdaptor } from "./adaptor.ts";
+import { createCommandHook, injectCommands } from "./commands.ts";
+import { registerAdaptor } from "./register.ts";
+import type { AtelierPluginConfig } from "./types.ts";
 
-export type { AtelierAdaptorConfig } from "./adaptor";
-export { createAtelierAdaptor } from "./adaptor";
-export type { AtelierConfig } from "./client";
-export { AtelierClient } from "./client";
+function resolveConfig(): AtelierPluginConfig {
+  const managerUrl =
+    process.env["ATELIER_MANAGER_URL"] ?? "http://localhost:4000";
 
-export function setupAtelier(
-  installAdaptor: (type: string, adaptor: Adaptor) => void,
-  config: AtelierAdaptorConfig,
-): void {
-  installAdaptor("atelier", createAtelierAdaptor(config));
-}
-
-type PluginInput = {
-  directory: string;
-  $: (
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ) => {
-    text(): Promise<string>;
-    quiet(): { text(): Promise<string> };
-  };
-};
-
-type Hooks = Record<string, unknown>;
-
-async function resolveRemoteUrl(
-  $: PluginInput["$"],
-  directory: string,
-): Promise<string | undefined> {
-  try {
-    const result = await $`git -C ${directory} remote get-url origin`
-      .quiet()
-      .text();
-    const url = result.trim();
-    return url || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function loadConfig(): AtelierAdaptorConfig | undefined {
-  const managerUrl = process.env.ATELIER_MANAGER_URL ?? process.env.ATELIER_URL;
-  if (!managerUrl) return undefined;
   return {
     managerUrl,
-    apiKey: process.env.ATELIER_API_KEY,
+    defaultWorkspaceId: process.env["ATELIER_WORKSPACE_ID"],
+    token: process.env["ATELIER_API_TOKEN"],
+    pollIntervalMs: Number(process.env["ATELIER_POLL_INTERVAL_MS"] ?? "3000"),
+    pollTimeoutMs: Number(process.env["ATELIER_POLL_TIMEOUT_MS"] ?? "120000"),
   };
 }
 
-async function tryInstallAdaptor(adaptor: Adaptor): Promise<boolean> {
-  const candidates = [
-    "opencode/src/control-plane/adaptors",
-    "@opencode-ai/opencode/src/control-plane/adaptors",
-  ];
-  for (const candidate of candidates) {
-    try {
-      const mod = await import(candidate);
-      if (typeof mod.installAdaptor === "function") {
-        mod.installAdaptor("atelier", adaptor);
-        return true;
+function mergeUserConfig(
+  target: AtelierPluginConfig,
+  source: Record<string, unknown>,
+) {
+  if (typeof source["url"] === "string") {
+    target.managerUrl = source["url"];
+  }
+  if (typeof source["workspaceId"] === "string") {
+    target.defaultWorkspaceId = source["workspaceId"];
+  }
+  if (typeof source["pollIntervalMs"] === "number") {
+    target.pollIntervalMs = source["pollIntervalMs"];
+  }
+  if (typeof source["pollTimeoutMs"] === "number") {
+    target.pollTimeoutMs = source["pollTimeoutMs"];
+  }
+  if (typeof source["token"] === "string") {
+    target.token = source["token"];
+  }
+}
+
+const atelierPlugin: Plugin = async (_input) => {
+  const pluginConfig = resolveConfig();
+  const adaptor = createAtelierAdaptor(pluginConfig);
+
+  await registerAdaptor(adaptor);
+
+  console.log(`[atelier] Initialized (manager: ${pluginConfig.managerUrl})`);
+
+  return {
+    async config(openCodeConfig) {
+      const userConfig = (openCodeConfig as Record<string, unknown>).atelier;
+      if (userConfig && typeof userConfig === "object") {
+        mergeUserConfig(pluginConfig, userConfig as Record<string, unknown>);
+        console.log(
+          `[atelier] Config updated from opencode.json ` +
+            `(manager: ${pluginConfig.managerUrl})`,
+        );
       }
-    } catch {}
-  }
-  return false;
-}
 
-const plugin = async (input: PluginInput): Promise<Hooks> => {
-  const envConfig = loadConfig();
-  if (!envConfig) {
-    console.warn("[atelier] ATELIER_MANAGER_URL not set, skipping");
-    return {};
-  }
-
-  const remoteUrl = await resolveRemoteUrl(input.$, input.directory);
-  const config: AtelierAdaptorConfig = {
-    ...envConfig,
-    remoteUrl,
+      injectCommands(openCodeConfig);
+    },
+    "command.execute.before": createCommandHook(pluginConfig),
   };
-
-  const adaptor = createAtelierAdaptor(config);
-  const installed = await tryInstallAdaptor(adaptor);
-
-  if (!installed) {
-    console.warn(
-      "[atelier] Could not register adaptor — " +
-        "installAdaptor not found in OpenCode internals. " +
-        "Workspace type 'atelier' will not be available.",
-    );
-  }
-
-  return {};
 };
 
-export default plugin;
+export default atelierPlugin;
