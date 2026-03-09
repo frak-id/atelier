@@ -1,7 +1,7 @@
 import type { Hooks } from "@opencode-ai/plugin";
 import type { Config } from "@opencode-ai/sdk";
 import type { AtelierClient } from "./client.ts";
-import { createClient, unwrap } from "./client.ts";
+import { unwrap } from "./client.ts";
 import type { AtelierPluginConfig } from "./types.ts";
 
 const COMMANDS: Record<string, { template: string; description: string }> = {
@@ -45,12 +45,13 @@ export function injectCommands(config: Config) {
 
 export function createCommandHook(
   pluginConfig: AtelierPluginConfig,
+  getClient: () => AtelierClient,
 ): NonNullable<Hooks["command.execute.before"]> {
   return async (input, output) => {
     const handler = handlers[input.command];
     if (!handler) return;
 
-    const client = createClient(pluginConfig.managerUrl, pluginConfig.token);
+    const client = getClient();
     try {
       const text = await handler(client, pluginConfig, input.arguments);
       (output.parts as unknown[]).push({ type: "text", text });

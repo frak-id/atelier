@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { createAtelierAdaptor } from "./adaptor.ts";
+import { createClientGetter, resetClient } from "./client.ts";
 import { createCommandHook, injectCommands } from "./commands.ts";
 import { registerAdaptor } from "./register.ts";
 import type { AtelierPluginConfig } from "./types.ts";
@@ -40,7 +41,8 @@ function mergeUserConfig(
 
 const atelierPlugin: Plugin = async (_input) => {
   const pluginConfig = resolveConfig();
-  const adaptor = createAtelierAdaptor(pluginConfig);
+  const getClient = createClientGetter(pluginConfig);
+  const adaptor = createAtelierAdaptor(pluginConfig, getClient);
 
   await registerAdaptor(adaptor);
 
@@ -51,6 +53,7 @@ const atelierPlugin: Plugin = async (_input) => {
       const userConfig = (openCodeConfig as Record<string, unknown>).atelier;
       if (userConfig && typeof userConfig === "object") {
         mergeUserConfig(pluginConfig, userConfig as Record<string, unknown>);
+        resetClient();
         console.log(
           `[atelier] Config updated from opencode.json ` +
             `(manager: ${pluginConfig.managerUrl})`,
@@ -59,7 +62,7 @@ const atelierPlugin: Plugin = async (_input) => {
 
       injectCommands(openCodeConfig);
     },
-    "command.execute.before": createCommandHook(pluginConfig),
+    "command.execute.before": createCommandHook(pluginConfig, getClient),
   };
 };
 
