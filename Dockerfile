@@ -19,6 +19,7 @@ WORKDIR /build
 
 # Copy workspace root files needed for dependency resolution
 COPY package.json bun.lock ./
+COPY packages/opencode-atelier/package.json packages/opencode-atelier/
 COPY packages/shared/package.json packages/shared/
 COPY apps/manager/package.json apps/manager/
 COPY apps/dashboard/package.json apps/dashboard/
@@ -33,11 +34,13 @@ WORKDIR /build
 # Copy installed node_modules from deps stage
 COPY --from=deps /build/node_modules node_modules
 COPY --from=deps /build/packages/shared/node_modules packages/shared/node_modules
+COPY --from=deps /build/packages/opencode-atelier/node_modules packages/opencode-atelier/node_modules
 COPY --from=deps /build/apps/manager/node_modules apps/manager/node_modules
 COPY --from=deps /build/apps/dashboard/node_modules apps/dashboard/node_modules
 
 # Copy source
 COPY packages/shared packages/shared
+COPY packages/opencode-atelier packages/opencode-atelier
 COPY apps/manager apps/manager
 COPY apps/dashboard apps/dashboard
 COPY tsconfig.json ./
