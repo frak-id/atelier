@@ -1,14 +1,32 @@
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@frak/atelier-manager";
-import type { Sandbox, Task } from "./types.ts";
+import type { AtelierPluginConfig, Sandbox, Task } from "./types.ts";
 
 export type AtelierClient = ReturnType<typeof treaty<App>>;
 
-export function createClient(baseUrl: string, token?: string): AtelierClient {
-  return treaty<App>(
-    baseUrl,
-    token ? { headers: { authorization: `Bearer ${token}` } } : undefined,
-  );
+type ClientGetter = () => AtelierClient;
+
+let _client: AtelierClient | null = null;
+let _baseUrl: string | null = null;
+
+export function createClientGetter(config: AtelierPluginConfig): ClientGetter {
+  return () => {
+    if (!_client || _baseUrl !== config.managerUrl) {
+      _baseUrl = config.managerUrl;
+      _client = treaty<App>(config.managerUrl, {
+        headers: () => {
+          const token = config.token;
+          return token ? { authorization: `Bearer ${token}` } : {};
+        },
+      });
+    }
+    return _client;
+  };
+}
+
+export function resetClient(): void {
+  _client = null;
+  _baseUrl = null;
 }
 
 export function unwrap<T>(result: { data: T; error: unknown }): NonNullable<T> {
@@ -43,9 +61,6 @@ export async function waitForSandboxReady(
   );
 }
 
-/**
- * Poll until a task has a sandbox assigned and that sandbox is ready.
- */
 export async function waitForTaskSandbox(
   client: AtelierClient,
   taskId: string,

@@ -6,13 +6,7 @@ const result = await Bun.build({
   target: "bun",
   format: "esm",
   minify: false,
-  external: [
-    "zod",
-    "@opencode-ai/plugin",
-    "@opencode-ai/sdk",
-    "@elysiajs/eden",
-    "elysia",
-  ],
+  external: ["zod", "@opencode-ai/plugin", "@opencode-ai/sdk"],
 });
 
 if (!result.success) {
