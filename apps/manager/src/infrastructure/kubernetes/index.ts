@@ -9,6 +9,7 @@ export type {
   KubeResource,
   PvcOptions,
   SandboxPodOptions,
+  SshPipeOptions,
   VolumeSnapshotOptions,
 } from "./kube.resources.ts";
 export {
@@ -22,6 +23,7 @@ export {
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
+  buildSshPipe,
   buildVolumeSnapshot,
   buildVsCodeIngress,
   collectDevPorts,

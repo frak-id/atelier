@@ -15,6 +15,23 @@ CLIProxyAPI (AI model proxy):
     OPENAI_BASE_URL=http://{{ include "atelier.fullname" . }}-cliproxy.{{ .Release.Namespace }}.svc:{{ .Values.cliproxy.port }}/v1
 {{- end }}
 
+{{- if .Values.sshpiper.enabled }}
+SSH access (sshpiper):
+  Connect to any sandbox via SSH:
+    ssh <sandbox-id>@{{ include "atelier.sshHostname" . }} -p {{ .Values.sshpiper.nodePort | default .Values.sshpiper.port }}
+
+  Add to ~/.ssh/config:
+    Host atelier
+        HostName {{ include "atelier.sshHostname" . }}
+        Port {{ .Values.sshpiper.nodePort | default .Values.sshpiper.port }}
+        StrictHostKeyChecking no
+        UserKnownHostsFile /dev/null
+
+  Then: ssh <sandbox-id>@atelier
+
+  Manage SSH keys in the dashboard Settings page.
+{{- end }}
+
 Manager health checks:
   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=manager
   kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "atelier.fullname" . }}-manager {{ .Values.server.port }}:{{ .Values.server.port }}
