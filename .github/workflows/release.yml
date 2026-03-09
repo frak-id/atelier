@@ -22,6 +22,7 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,6 +43,7 @@ jobs:
 
   docker:
     needs: check
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -99,6 +101,7 @@ jobs:
 
   agent:
     needs: check
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -167,6 +170,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   helm:
+    timeout-minutes: 10
     needs: check
 
     runs-on: ubuntu-latest
