@@ -258,4 +258,27 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       maxAge: 0,
     });
     return { ok: true };
+  })
+  .post("/api-token", async ({ cookie, jwt, set }) => {
+    const token = cookie.sandbox_token?.value as string | undefined;
+    if (!token) {
+      set.status = 401;
+      return { error: "UNAUTHORIZED", message: "Missing authentication" };
+    }
+
+    const user = await verifyJwt(token);
+    if (!user) {
+      set.status = 401;
+      return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
+    }
+
+    const apiToken = await jwt.sign({
+      sub: user.id,
+      username: user.username,
+      avatarUrl: user.avatarUrl,
+      email: user.email,
+    });
+
+    log.info({ username: user.username }, "API token generated");
+    return { token: apiToken };
   });

@@ -1,0 +1,22 @@
+{
+  "name": "@atelier/opencode-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "bun run build.ts",
+    "dev": "bun run build.ts --watch"
+  },
+  "dependencies": {
+    "@elysiajs/eden": "^1.4.6",
+    "@opencode-ai/plugin": "^1.2.16",
+    "@opencode-ai/sdk": "^1.2.17"
+  },
+  "devDependencies": {
+    "@frak/atelier-manager": "workspace:*",
+    "@types/bun": "latest"
+  }
+}

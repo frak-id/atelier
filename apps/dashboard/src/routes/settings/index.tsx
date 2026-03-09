@@ -13,6 +13,7 @@ import {
   useUpdateConfigFile,
   workspaceListQuery,
 } from "@/api/queries";
+import { ApiTokenSection } from "@/components/api-token-section";
 import { McpConnectionSection } from "@/components/mcp-connection-section";
 import {
   AddConfigFileDialog,
@@ -115,6 +116,7 @@ function SettingsPage() {
         {/* Connection — MCP server details + SSH keys */}
         <TabsContent value="connection" className="mt-6 space-y-6">
           <McpConnectionSection />
+          <ApiTokenSection />
           <SshKeysSection />
         </TabsContent>
 

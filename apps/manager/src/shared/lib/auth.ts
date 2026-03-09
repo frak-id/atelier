@@ -40,13 +40,23 @@ export async function authGuard({
   cookie,
   set,
   store,
+  headers,
 }: {
   // biome-ignore lint/suspicious/noExplicitAny: Elysia cookie type is Cookie<unknown>
   cookie: Record<string, any>;
   set: { status?: number | string };
   store: { user?: AuthUser } & Record<string, unknown>;
+  headers: Record<string, string | undefined>;
 }): Promise<{ error: string; message: string } | undefined> {
-  const token = cookie.sandbox_token?.value as string | undefined;
+  let token = cookie.sandbox_token?.value as string | undefined;
+
+  if (!token) {
+    const authHeader = headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      token = authHeader.slice(7);
+    }
+  }
+
   if (!token || typeof token !== "string") {
     set.status = 401;
     return {

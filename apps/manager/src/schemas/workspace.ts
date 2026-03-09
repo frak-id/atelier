@@ -15,6 +15,8 @@ export const RepoConfigUrlSchema = t.Object({
   url: t.String(),
   branch: t.String(),
   clonePath: t.String(),
+  resolvedRemoteUrl: t.Optional(t.String()),
+  rootCommitHash: t.Optional(t.String()),
 });
 
 export const RepoConfigSourceSchema = t.Object({
@@ -22,6 +24,8 @@ export const RepoConfigSourceSchema = t.Object({
   repo: t.String(),
   branch: t.String(),
   clonePath: t.String(),
+  resolvedRemoteUrl: t.Optional(t.String()),
+  rootCommitHash: t.Optional(t.String()),
 });
 
 export const RepoConfigSchema = t.Union([
@@ -138,3 +142,31 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
   repos: [],
   exposedPorts: [],
 };
+
+export const WorkspaceMatchQuerySchema = t.Object({
+  remoteUrl: t.String({ minLength: 1 }),
+});
+export type WorkspaceMatchQuery = Static<typeof WorkspaceMatchQuerySchema>;
+
+export const WorkspaceMatchResponseSchema = t.Object({
+  workspace: WorkspaceSchema,
+  matchedRepo: RepoConfigSchema,
+});
+export type WorkspaceMatchResponse = Static<
+  typeof WorkspaceMatchResponseSchema
+>;
+
+export const OpencodeSpawnBodySchema = t.Object({
+  remoteUrl: t.String({ minLength: 1 }),
+  branch: t.Optional(t.String()),
+});
+export type OpencodeSpawnBody = Static<typeof OpencodeSpawnBodySchema>;
+
+export const OpencodeSpawnResponseSchema = t.Object({
+  sandboxId: t.String(),
+  workspaceId: t.String(),
+  workspaceName: t.String(),
+  opencodeUrl: t.String(),
+  password: t.Optional(t.String()),
+});
+export type OpencodeSpawnResponse = Static<typeof OpencodeSpawnResponseSchema>;
