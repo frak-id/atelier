@@ -200,7 +200,7 @@ sharedBinaries:
   # -- Image used by the download Job
   image: curlimages/curl:8.17.0
   opencode:
-    version: "1.2.18"
+    version: "1.2.24"
   codeServer:
     version: "4.109.5"
 

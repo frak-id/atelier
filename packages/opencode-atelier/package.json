@@ -13,7 +13,7 @@
   "dependencies": {
     "@elysiajs/eden": "^1.4.6",
     "@opencode-ai/plugin": "^1.2.16",
-    "@opencode-ai/sdk": "^1.2.17"
+    "@opencode-ai/sdk": "1.2.24"
   },
   "devDependencies": {
     "@frak/atelier-manager": "workspace:*",
