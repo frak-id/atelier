@@ -11,6 +11,7 @@ function resolveConfig(): AtelierPluginConfig {
   return {
     managerUrl,
     defaultWorkspaceId: process.env["ATELIER_WORKSPACE_ID"],
+    token: process.env["ATELIER_API_TOKEN"],
     pollIntervalMs: Number(process.env["ATELIER_POLL_INTERVAL_MS"] ?? "3000"),
     pollTimeoutMs: Number(process.env["ATELIER_POLL_TIMEOUT_MS"] ?? "120000"),
   };
@@ -31,6 +32,9 @@ function mergeUserConfig(
   }
   if (typeof source["pollTimeoutMs"] === "number") {
     target.pollTimeoutMs = source["pollTimeoutMs"];
+  }
+  if (typeof source["token"] === "string") {
+    target.token = source["token"];
   }
 }
 

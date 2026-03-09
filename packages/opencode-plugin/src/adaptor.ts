@@ -46,7 +46,7 @@ export function createAtelierAdaptor(
         );
       }
 
-      const client = createClient(extra.managerUrl);
+      const client = createClient(extra.managerUrl, pluginConfig.token);
 
       const task = unwrap(
         await client.api.tasks.post({
@@ -79,7 +79,7 @@ export function createAtelierAdaptor(
       const extra = info.extra as AtelierExtra;
       if (!extra.taskId) return;
 
-      const client = createClient(extra.managerUrl);
+      const client = createClient(extra.managerUrl, pluginConfig.token);
       try {
         unwrap(
           await client.api.tasks({ id: extra.taskId }).delete(undefined, {
@@ -102,7 +102,11 @@ export function createAtelierAdaptor(
     ): Promise<Response> {
       const extra = info.extra as AtelierExtra;
 
-      const opencodeUrl = await resolveOpencodeUrl(info.id, extra);
+      const opencodeUrl = await resolveOpencodeUrl(
+        info.id,
+        extra,
+        pluginConfig.token,
+      );
       if (!opencodeUrl) {
         return new Response("Sandbox not available", {
           status: 503,
@@ -142,6 +146,7 @@ export function createAtelierAdaptor(
 async function resolveOpencodeUrl(
   workspaceId: string,
   extra: AtelierExtra,
+  token?: string,
 ): Promise<string | null> {
   if (extra.sandboxOpencodeUrl) {
     const cached = sandboxCache.get(workspaceId);
@@ -153,7 +158,7 @@ async function resolveOpencodeUrl(
   if (!extra.sandboxId) return null;
 
   try {
-    const client = createClient(extra.managerUrl);
+    const client = createClient(extra.managerUrl, token);
     const sandbox = unwrap(
       await client.api.sandboxes({ id: extra.sandboxId }).get(),
     );

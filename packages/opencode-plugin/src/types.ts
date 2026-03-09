@@ -43,6 +43,7 @@ export interface AtelierExtra {
 export interface AtelierPluginConfig {
   managerUrl: string;
   defaultWorkspaceId?: string;
+  token?: string;
   pollIntervalMs: number;
   pollTimeoutMs: number;
 }

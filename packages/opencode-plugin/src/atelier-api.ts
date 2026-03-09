@@ -4,8 +4,11 @@ import type { Sandbox, Task } from "./types.ts";
 
 export type AtelierClient = ReturnType<typeof treaty<App>>;
 
-export function createClient(baseUrl: string): AtelierClient {
-  return treaty<App>(baseUrl);
+export function createClient(baseUrl: string, token?: string): AtelierClient {
+  return treaty<App>(
+    baseUrl,
+    token ? { headers: { authorization: `Bearer ${token}` } } : undefined,
+  );
 }
 
 export function unwrap<T>(result: { data: T; error: unknown }): NonNullable<T> {

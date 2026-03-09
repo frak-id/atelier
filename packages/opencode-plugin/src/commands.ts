@@ -50,7 +50,7 @@ export function createCommandHook(
     const handler = handlers[input.command];
     if (!handler) return;
 
-    const client = createClient(pluginConfig.managerUrl);
+    const client = createClient(pluginConfig.managerUrl, pluginConfig.token);
     try {
       const text = await handler(client, pluginConfig, input.arguments);
       (output.parts as unknown[]).push({ type: "text", text });
