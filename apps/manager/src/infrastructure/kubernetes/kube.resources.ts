@@ -30,6 +30,7 @@ export type SandboxPodOptions = {
   requests?: Partial<ResourceSpec>;
   limits?: Partial<ResourceSpec>;
   devPorts?: Array<number>;
+  sshPipeKeySecret?: string;
 };
 
 export type IngressOptions = {
@@ -121,19 +122,21 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
     },
   });
 
-  volumeMounts.push({
-    name: "ssh-pipe-key",
-    mountPath: "/etc/sandbox/ssh",
-    readOnly: true,
-  });
-  volumes.push({
-    name: "ssh-pipe-key",
-    secret: {
-      secretName: SSH_PIPE_KEY_SECRET,
-      items: [{ key: "ssh-publickey", path: "authorized_keys" }],
-      defaultMode: 0o644,
-    },
-  });
+  if (options.sshPipeKeySecret) {
+    volumeMounts.push({
+      name: "ssh-pipe-key",
+      mountPath: "/etc/sandbox/ssh",
+      readOnly: true,
+    });
+    volumes.push({
+      name: "ssh-pipe-key",
+      secret: {
+        secretName: options.sshPipeKeySecret,
+        items: [{ key: "ssh-publickey", path: "authorized_keys" }],
+        defaultMode: 0o644,
+      },
+    });
+  }
 
   return {
     apiVersion: "v1",
@@ -808,8 +811,6 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
 // ---------------------------------------------------------------------------
 
 const SHARED_BINARIES_MOUNT_PATH = "/opt/shared";
-
-const SSH_PIPE_KEY_SECRET = "atelier-ssh-pipe-key";
 
 export { SHARED_BINARIES_MOUNT_PATH };
 

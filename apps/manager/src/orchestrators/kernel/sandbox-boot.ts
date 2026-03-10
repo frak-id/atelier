@@ -135,6 +135,7 @@ export async function bootNewSandbox(
           pvcName,
           configMapName,
           devPorts: devPortNumbers,
+          sshPipeKeySecret: sharedKey.secretName,
           requests: {
             cpu: `${Math.max(250, options.vcpus * 250)}m`,
             memory: `${options.memoryMb}Mi`,
@@ -266,6 +267,7 @@ export async function bootExistingSandbox(
         pvcName,
         configMapName,
         devPorts: devPortNumbers,
+        sshPipeKeySecret: sharedKey.secretName,
         requests: {
           cpu: `${Math.max(250, sandbox.runtime.vcpus * 250)}m`,
           memory: `${sandbox.runtime.memoryMb}Mi`,
