@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import { VM } from "@frak/atelier-shared/constants";
 import { config } from "../../shared/lib/config.ts";
 

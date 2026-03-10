@@ -320,14 +320,18 @@ remote "kubectl -n ${NAMESPACE} get pods"
 
 # ── Step 8: Sync agent image to Zot ──────────────────────────────────────────
 
-if [[ -z "$SKIP_BUILD" ]]; then
-  info "Pushing agent image to Zot registry"
-  if [[ -n "$ZOT_IP" ]]; then
-    remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>/dev/null || true"
-    remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>&1" && ok "Agent image pushed to Zot" || warn "Could not push agent to Zot (non-fatal)"
-  else
-    warn "Zot service not found — skipping agent sync"
+info "Syncing agent image to Zot registry"
+if [[ -n "$ZOT_IP" ]]; then
+  # When build was skipped, the agent image isn't in containerd yet — pull from GHCR
+  if [[ -n "$SKIP_BUILD" ]]; then
+    remote "k3s ctr -n k8s.io images pull ${AGENT_IMAGE}" \
+      || { warn "Could not pull ${AGENT_IMAGE} from GHCR — agent in Zot may be stale"; }
   fi
+
+  remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>/dev/null || true"
+  remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>&1" && ok "Agent image pushed to Zot" || warn "Could not push agent to Zot (non-fatal)"
+else
+  warn "Zot service not found — skipping agent sync"
 fi
 
 # ── Step 9: Restore database backup (optional) ──────────────────────────────
