@@ -322,14 +322,21 @@ remote "kubectl -n ${NAMESPACE} get pods"
 
 info "Syncing agent image to Zot registry"
 if [[ -n "$ZOT_IP" ]]; then
-  # When build was skipped, the agent image isn't in containerd yet — pull from GHCR
   if [[ -n "$SKIP_BUILD" ]]; then
-    remote "k3s ctr -n k8s.io images pull ${AGENT_IMAGE}" \
-      || { warn "Could not pull ${AGENT_IMAGE} from GHCR — agent in Zot may be stale"; }
+    # GHCR images from buildx contain a multi-platform OCI index with attestation
+    # manifests that containerd cannot push to Zot. Use crane for single-platform copy.
+    remote "command -v crane >/dev/null 2>&1 || \
+      (curl -sL 'https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Linux_x86_64.tar.gz' \
+        | tar xzf - -C /usr/local/bin crane)"
+    remote "crane copy --platform linux/amd64 --insecure ${AGENT_IMAGE} ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest" \
+      && ok "Agent image synced to Zot" \
+      || warn "Could not sync agent to Zot (non-fatal)"
+  else
+    remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>/dev/null || true"
+    remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>&1" \
+      && ok "Agent image pushed to Zot" \
+      || warn "Could not push agent to Zot (non-fatal)"
   fi
-
-  remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>/dev/null || true"
-  remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>&1" && ok "Agent image pushed to Zot" || warn "Could not push agent to Zot (non-fatal)"
 else
   warn "Zot service not found — skipping agent sync"
 fi
