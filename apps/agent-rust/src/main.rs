@@ -5,6 +5,7 @@ mod limits;
 mod response;
 mod router;
 mod routes;
+mod ssh;
 mod terminal;
 mod watchdog;
 
@@ -78,6 +79,10 @@ async fn main() {
 
     tokio::spawn(async {
         terminal::ensure_terminal_from_config().await;
+    });
+
+    tokio::task::spawn_blocking(|| {
+        ssh::setup_ssh();
     });
 
     loop {

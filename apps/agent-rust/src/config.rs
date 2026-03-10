@@ -50,6 +50,8 @@ pub struct SandboxConfig {
     pub created_at: String,
     pub network: NetworkConfig,
     pub services: SandboxServices,
+    #[serde(default)]
+    pub ssh_authorized_keys: Vec<String>,
 }
 
 pub static SANDBOX_CONFIG: LazyLock<RwLock<Option<SandboxConfig>>> = LazyLock::new(|| {
@@ -58,7 +60,6 @@ pub static SANDBOX_CONFIG: LazyLock<RwLock<Option<SandboxConfig>>> = LazyLock::n
         .and_then(|s| serde_json::from_str(&s).ok());
     RwLock::new(config)
 });
-
 
 pub fn get_config() -> Option<SandboxConfig> {
     SANDBOX_CONFIG.read().ok().and_then(|g| g.clone())

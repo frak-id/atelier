@@ -121,7 +121,7 @@ rules:
     verbs: ["create", "get", "list", "delete"]
   - apiGroups: ["sshpiper.com"]
     resources: ["pipes"]
-    verbs: ["create", "get", "list", "delete", "update"]
+    verbs: ["create", "get", "list", "delete", "update", "patch"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create", "get", "delete", "update"]
