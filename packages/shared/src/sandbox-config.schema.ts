@@ -34,7 +34,6 @@ export const SandboxConfigSchema = Type.Object({
     managerInternalUrl: Type.String(),
   }),
   services: Type.Record(Type.String(), SandboxServiceEntrySchema),
-  sshAuthorizedKeys: Type.Optional(Type.Array(Type.String())),
 });
 
 export type SandboxConfig = Static<typeof SandboxConfigSchema>;

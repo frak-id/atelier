@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { kubeClient } from "./index.ts";
+import { KubeApiError } from "./kube.client.ts";
 
 const log = createChildLogger("ssh-pipe-key");
 
@@ -68,22 +69,40 @@ export async function ensureSharedSshPipeKey(): Promise<SharedSshPipeKey> {
   log.info("Generating new shared SSH pipe key");
   const { privateKeyPem, publicKeyOpenSSH } = generateEd25519KeyPair();
 
-  await kubeClient.createResource({
-    apiVersion: "v1",
-    kind: "Secret",
-    metadata: {
-      name: SECRET_NAME,
-      namespace,
-      labels: {
-        "atelier.dev/component": "ssh-pipe-key-shared",
+  try {
+    await kubeClient.createResource({
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: {
+        name: SECRET_NAME,
+        namespace,
+        labels: {
+          "atelier.dev/component": "ssh-pipe-key-shared",
+        },
       },
-    },
-    type: "Opaque",
-    data: {
-      "ssh-privatekey": Buffer.from(privateKeyPem).toString("base64"),
-      "ssh-publickey": Buffer.from(publicKeyOpenSSH).toString("base64"),
-    },
-  });
+      type: "Opaque",
+      data: {
+        "ssh-privatekey": Buffer.from(privateKeyPem).toString("base64"),
+        "ssh-publickey": Buffer.from(publicKeyOpenSSH).toString("base64"),
+      },
+    });
+  } catch (err) {
+    if (err instanceof KubeApiError && err.status === 409) {
+      log.info("Shared SSH pipe key created by concurrent request, loading");
+      const existing = await kubeClient.get<{
+        data?: Record<string, string>;
+      }>(path);
+      const pubKeyB64 = existing.data?.["ssh-publickey"];
+      if (pubKeyB64) {
+        cached = {
+          secretName: SECRET_NAME,
+          publicKeyOpenSSH: Buffer.from(pubKeyB64, "base64").toString("utf-8"),
+        };
+        return cached;
+      }
+    }
+    throw err;
+  }
 
   cached = { secretName: SECRET_NAME, publicKeyOpenSSH };
   return cached;

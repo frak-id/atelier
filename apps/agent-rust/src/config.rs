@@ -50,8 +50,6 @@ pub struct SandboxConfig {
     pub created_at: String,
     pub network: NetworkConfig,
     pub services: SandboxServices,
-    #[serde(default)]
-    pub ssh_authorized_keys: Vec<String>,
 }
 
 pub static SANDBOX_CONFIG: LazyLock<RwLock<Option<SandboxConfig>>> = LazyLock::new(|| {

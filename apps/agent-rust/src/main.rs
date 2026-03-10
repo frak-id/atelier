@@ -5,7 +5,6 @@ mod limits;
 mod response;
 mod router;
 mod routes;
-mod ssh;
 mod terminal;
 mod watchdog;
 
@@ -18,6 +17,8 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
+use nix::sys::wait::{waitpid, WaitPidFlag};
+use nix::unistd::Pid;
 use tokio::net::TcpListener;
 
 use config::AGENT_PORT;
@@ -56,11 +57,34 @@ async fn handle(req: Request<hyper::body::Incoming>) -> Result<Response<Full<Byt
     Ok(router::route(req).await)
 }
 
+fn reap_zombies() {
+    loop {
+        match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
+            Ok(nix::sys::wait::WaitStatus::StillAlive) => break,
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+}
+
+fn start_zombie_reaper() {
+    tokio::spawn(async {
+        let mut sigchld =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::child())
+                .expect("failed to register SIGCHLD handler");
+        loop {
+            sigchld.recv().await;
+            reap_zombies();
+        }
+    });
+}
+
 #[tokio::main]
 async fn main() {
     println!("Sandbox agent starting...");
 
     watchdog::start();
+    start_zombie_reaper();
 
     let addr = format!("0.0.0.0:{AGENT_PORT}");
     let listener = match TcpListener::bind(&addr).await {
@@ -79,10 +103,6 @@ async fn main() {
 
     tokio::spawn(async {
         terminal::ensure_terminal_from_config().await;
-    });
-
-    tokio::task::spawn_blocking(|| {
-        ssh::setup_ssh();
     });
 
     loop {

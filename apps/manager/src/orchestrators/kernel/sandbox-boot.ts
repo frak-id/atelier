@@ -119,7 +119,6 @@ export async function bootNewSandbox(
                 sandboxId,
                 options.workspace,
                 opencodePassword,
-                [sharedKey.publicKeyOpenSSH],
               ),
             ),
           },
@@ -244,7 +243,6 @@ export async function bootExistingSandbox(
     sandboxId,
     workspace,
     opencodePassword,
-    [sharedKey.publicKeyOpenSSH],
   );
 
   await Promise.all([
