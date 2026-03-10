@@ -24,7 +24,6 @@ export {
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
-  buildSshPipeKeySecret,
   buildVolumeSnapshot,
   buildVsCodeIngress,
   collectDevPorts,
@@ -37,6 +36,7 @@ export type {
   WatchEvent,
 } from "./kube.watcher.ts";
 export { pollPodReady, readPodEvents, watchPodStatus } from "./kube.watcher.ts";
+export { ensureSharedSshPipeKey } from "./ssh-pipe-key.ts";
 
 /**
  * Shared KubeClient singleton — configured from `config.kubernetes`.

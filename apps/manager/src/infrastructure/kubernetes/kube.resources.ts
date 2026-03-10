@@ -791,33 +791,6 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
 }
 
 // ---------------------------------------------------------------------------
-// SSH Pipe key secret (private key for sshpiper → sandbox auth)
-// ---------------------------------------------------------------------------
-
-export function buildSshPipeKeySecret(
-  sandboxId: string,
-  privateKeyPem: string,
-  namespace = config.kubernetes.namespace,
-): KubeResource {
-  return {
-    apiVersion: "v1",
-    kind: "Secret",
-    metadata: {
-      name: `ssh-pipe-key-${sandboxId}`,
-      namespace,
-      labels: {
-        "atelier.dev/component": "ssh-pipe-key",
-        "atelier.dev/sandbox": sandboxId,
-      },
-    },
-    type: "Opaque",
-    data: {
-      "ssh-privatekey": Buffer.from(privateKeyPem).toString("base64"),
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Shared binaries mount path (used by sandbox pod builder)
 // ---------------------------------------------------------------------------
 

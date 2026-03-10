@@ -320,7 +320,7 @@ sshpiper:
   enabled: true
   image:
     repository: farmer1992/sshpiperd
-    tag: "latest"
+    tag: "v1.5.3"
     pullPolicy: IfNotPresent
   # SSH listen port (exposed via NodePort)
   port: 2222
