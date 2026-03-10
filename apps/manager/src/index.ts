@@ -40,7 +40,7 @@ import {
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
-import { kubeClient } from "./infrastructure/kubernetes/index.ts";
+import { kubeClient, ensureSharedSshPipeKey } from "./infrastructure/kubernetes/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
@@ -251,6 +251,8 @@ app.get("/", () => ({
   mode: config.server.mode,
   docs: "/swagger",
 }));
+
+await ensureSharedSshPipeKey();
 
 await systemSandboxService.recoverFromRestart();
 
