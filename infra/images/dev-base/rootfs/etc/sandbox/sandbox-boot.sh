@@ -17,6 +17,9 @@ fi
 # authenticate as the "dev" user when proxying SSH connections.
 SSH_KEY_MOUNT="/etc/sandbox/ssh/authorized_keys"
 if [ -f "$SSH_KEY_MOUNT" ]; then
+    # PVC mounts may leave /home/dev world-writable; sshd StrictModes
+    # rejects authorized_keys when the home directory is group/other-writable.
+    chmod 755 /home/dev
     mkdir -p /home/dev/.ssh
     cp "$SSH_KEY_MOUNT" /home/dev/.ssh/authorized_keys
     chmod 700 /home/dev/.ssh

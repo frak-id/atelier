@@ -784,6 +784,9 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
       name: `ssh-${options.sandboxId}`,
       namespace,
       labels,
+      annotations: {
+        "sshpiper.com/no_ca_publickey": "true",
+      },
     },
     spec: {
       from: [
