@@ -7,6 +7,7 @@ export function buildSandboxConfig(
   sandboxId: string,
   workspace: Workspace | undefined,
   opencodePassword: string | undefined,
+  sshAuthorizedKeys?: string[],
 ): SandboxConfig {
   const repos = (workspace?.config.repos ?? []).map((r) => ({
     clonePath: r.clonePath,
@@ -76,6 +77,7 @@ export function buildSandboxConfig(
         env: { DISPLAY: ":99" },
       },
     },
+    ...(sshAuthorizedKeys?.length && { sshAuthorizedKeys }),
   };
 }
 

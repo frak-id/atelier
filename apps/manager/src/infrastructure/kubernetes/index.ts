@@ -24,6 +24,7 @@ export {
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
+  buildSshPipeKeySecret,
   buildVolumeSnapshot,
   buildVsCodeIngress,
   collectDevPorts,

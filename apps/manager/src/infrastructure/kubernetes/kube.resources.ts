@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { VM } from "@frak/atelier-shared/constants";
 import { config } from "../../shared/lib/config.ts";
 
@@ -745,6 +746,7 @@ export type SshPipeOptions = {
   sandboxId: string;
   targetHost: string;
   authorizedKeysData?: string;
+  privateKeySecretName?: string;
   namespace?: string;
   workspaceId?: string;
 };
@@ -780,7 +782,37 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
         host: `${options.targetHost}:22`,
         username: "dev",
         ignore_hostkey: true,
+        ...(options.privateKeySecretName && {
+          private_key_secret: { name: options.privateKeySecretName },
+        }),
       },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SSH Pipe key secret (private key for sshpiper → sandbox auth)
+// ---------------------------------------------------------------------------
+
+export function buildSshPipeKeySecret(
+  sandboxId: string,
+  privateKeyPem: string,
+  namespace = config.kubernetes.namespace,
+): KubeResource {
+  return {
+    apiVersion: "v1",
+    kind: "Secret",
+    metadata: {
+      name: `ssh-pipe-key-${sandboxId}`,
+      namespace,
+      labels: {
+        "atelier.dev/component": "ssh-pipe-key",
+        "atelier.dev/sandbox": sandboxId,
+      },
+    },
+    type: "Opaque",
+    data: {
+      "ssh-privatekey": Buffer.from(privateKeyPem).toString("base64"),
     },
   };
 }

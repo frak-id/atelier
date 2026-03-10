@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { generateKeyPairSync } from "node:crypto";
 import { customAlphabet } from "nanoid";
 import { eventBus } from "../../infrastructure/events/index.ts";
 import {
@@ -8,6 +9,7 @@ import {
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
+  buildSshPipeKeySecret,
   buildVsCodeIngress,
   collectDevPorts,
   kubeClient,
@@ -95,6 +97,9 @@ export async function bootNewSandbox(
     const devPorts = collectDevPorts(options.workspace?.config.devCommands);
     const devPortNumbers = devPorts.map((dp) => dp.port);
 
+    const pipeKeyPair = generateSshPipeKeyPair();
+    const pipeKeySecretName = `ssh-pipe-key-${sandboxId}`;
+
     await kubeClient.createResource(
       buildPvc({
         name: pvcName,
@@ -116,6 +121,7 @@ export async function bootNewSandbox(
                 sandboxId,
                 options.workspace,
                 opencodePassword,
+                [pipeKeyPair.publicKeySsh],
               ),
             ),
           },
@@ -158,12 +164,16 @@ export async function bootNewSandbox(
         }),
       ),
       kubeClient.createResource(
+        buildSshPipeKeySecret(sandboxId, pipeKeyPair.privateKeyPem),
+      ),
+      kubeClient.createResource(
         buildSshPipe({
           sandboxId,
           targetHost: `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`,
           authorizedKeysData: encodeSshAuthorizedKeys(
             ports.sshKeys.getValidPublicKeys(),
           ),
+          privateKeySecretName: pipeKeySecretName,
           workspaceId: options.workspaceId,
         }),
       ),
@@ -229,11 +239,21 @@ export async function bootExistingSandbox(
   try {
     await kubeClient.deleteResource("Ingress", `sandbox-opencode-${sandboxId}`);
   } catch {}
+  try {
+    await kubeClient.deleteResource("Pipe", `ssh-${sandboxId}`);
+  } catch {}
+  try {
+    await kubeClient.deleteResource("Secret", `ssh-pipe-key-${sandboxId}`);
+  } catch {}
+
+  const pipeKeyPair = generateSshPipeKeyPair();
+  const pipeKeySecretName = `ssh-pipe-key-${sandboxId}`;
 
   const sandboxConfig = buildSandboxConfig(
     sandboxId,
     workspace,
     opencodePassword,
+    [pipeKeyPair.publicKeySsh],
   );
 
   await Promise.all([
@@ -280,6 +300,20 @@ export async function bootExistingSandbox(
         ingressClassName: config.kubernetes.ingressClassName || undefined,
         annotations: config.kubernetes.openCodeIngressAnnotations,
         tlsSecretName: "atelier-sandbox-wildcard-tls",
+      }),
+    ),
+    kubeClient.createResource(
+      buildSshPipeKeySecret(sandboxId, pipeKeyPair.privateKeyPem),
+    ),
+    kubeClient.createResource(
+      buildSshPipe({
+        sandboxId,
+        targetHost: `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`,
+        authorizedKeysData: encodeSshAuthorizedKeys(
+          ports.sshKeys.getValidPublicKeys(),
+        ),
+        privateKeySecretName: pipeKeySecretName,
+        workspaceId: sandbox.workspaceId,
       }),
     ),
   ]);
@@ -381,4 +415,32 @@ function encodeSshAuthorizedKeys(publicKeys: string[]): string | undefined {
   if (publicKeys.length === 0) return undefined;
   const authorizedKeys = publicKeys.map((key) => key.trim()).join("\n");
   return Buffer.from(authorizedKeys).toString("base64");
+}
+
+function generateSshPipeKeyPair(): {
+  privateKeyPem: string;
+  publicKeySsh: string;
+} {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const privateKeyPem = privateKey.export({
+    type: "pkcs8",
+    format: "pem",
+  }) as string;
+
+  const publicKeyDer = publicKey.export({
+    type: "spki",
+    format: "der",
+  }) as Buffer;
+  const rawPubKey = publicKeyDer.subarray(publicKeyDer.length - 32);
+
+  const keyTypeStr = "ssh-ed25519";
+  const keyTypeBytes = Buffer.from(keyTypeStr);
+  const blob = Buffer.alloc(4 + keyTypeBytes.length + 4 + rawPubKey.length);
+  blob.writeUInt32BE(keyTypeBytes.length, 0);
+  keyTypeBytes.copy(blob, 4);
+  blob.writeUInt32BE(rawPubKey.length, 4 + keyTypeBytes.length);
+  rawPubKey.copy(blob, 4 + keyTypeBytes.length + 4);
+
+  const publicKeySsh = `ssh-ed25519 ${blob.toString("base64")} sshpiper`;
+  return { privateKeyPem, publicKeySsh };
 }

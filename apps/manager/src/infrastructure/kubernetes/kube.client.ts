@@ -276,6 +276,7 @@ export class KubeClient {
         path: "persistentvolumeclaims",
         api: "core",
       },
+      { path: "secrets", api: "core" },
       { path: "ingresses", api: "networking" },
       {
         path: "volumesnapshots",
@@ -899,6 +900,9 @@ function resourceCollectionPath(kind: string, namespace: string): string {
   }
   if (normalized === "pipe") {
     return `/apis/sshpiper.com/v1beta1/namespaces/${namespace}/pipes`;
+  }
+  if (normalized === "secret") {
+    return `/api/v1/namespaces/${namespace}/secrets`;
   }
 
   throw new KubeApiError(`Unsupported Kubernetes kind: ${kind}`, 400);
