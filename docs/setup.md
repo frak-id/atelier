@@ -1,110 +1,184 @@
-# Setup (Debian + KVM)
+# Setup
+
+Atelier runs on a bare-metal Kubernetes cluster using k3s and Kata Containers. This guide covers the installation and configuration process using Helm.
 
 ## Requirements
 
-- Debian (tested on 12/bookworm) with systemd
-- x86_64 CPU with virtualization enabled
-- `/dev/kvm` available (bare metal)
-- Wildcard DNS for sandbox subdomains
-- Ports `80` and `443` open
-- Port `2222` open for SSH proxy access
+### Hardware
+- Bare-metal server (KVM virtualization is required).
+- x86_64 CPU with VT-x or AMD-V enabled.
+- Minimum 8GB RAM and 40GB storage.
 
-## Install
+### Software
+- Debian 12 (Bookworm) or Ubuntu 22.04+.
+- `/dev/kvm` must be accessible.
 
-Must be run as root.
+### Networking
+- A domain with wildcard DNS support.
+- `*.your-domain.com` and `your-domain.com` must point to the server IP.
+- Ports `80` (HTTP) and `443` (HTTPS) open for web traffic.
+- Port `2222` open for the SSH proxy.
 
-```bash
-# Legacy install script removed in K8s migration.
-# Use Helm-based installation instead.
-```
+## Prerequisites
 
-Optional: set `ATELIER_VERSION=vX.Y.Z` to pin CLI version.
+Before installing Atelier, your cluster needs several system components.
 
-The installer prompts for:
-
-- Domain suffix
-- Dashboard domain
-- SSH proxy domain
-- TLS email for automatic HTTPS
-- GitHub Client ID
-- GitHub Client Secret
-- Allowed GitHub org (optional)
-- Allowed GitHub users (comma-separated, optional)
-- JWT secret (auto-generated)
-
-Set the Authorization callback URL in your GitHub OAuth App to `https://<dashboard-domain>/auth/callback`
-
-## Config Location
-
-By default, the config is read from:
-
-```
-/etc/atelier/sandbox.config.json
-```
-
-You can override this with `ATELIER_CONFIG=/path/to/sandbox.config.json`.
-
-If no config exists (or you choose not to use the existing one), it writes `/etc/atelier/sandbox.config.json`, runs the full setup,
-downloads the server bundle, and can build the base image.
-
-## Post‑Install
-
-`atelier init` will prompt to set up LVM thin provisioning (recommended). Skipping prevents image builds and LVM-based snapshots.
-
-After storage setup, build the base image:
+### 1. k3s
+Install k3s with the default Traefik ingress controller:
 
 ```bash
-atelier images dev-base
+curl -sfL https://get.k3s.io | sh -
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 ```
 
-Check manager health:
+### 2. cert-manager
+Atelier uses cert-manager for automatic TLS certificates via Let's Encrypt.
 
 ```bash
-atelier manager status
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm install cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --set crds.enabled=true
 ```
 
-## Update
+### 3. Kata Containers
+Kata Containers provides the VM isolation for sandboxes. Use `kata-deploy` to install the runtime:
 
 ```bash
-atelier update
+git clone --depth 1 https://github.com/kata-containers/kata-containers.git /tmp/kata-src
+helm install kata-deploy /tmp/kata-src/tools/packaging/kata-deploy/helm-chart/kata-deploy \
+  --set k8sDistribution=k3s \
+  --set env.createRuntimeClasses=true \
+  --set env.createDefaultRuntimeClass=true
 ```
 
-If the agent changed, the CLI will prompt to rebuild the base image.
+Verify the installation by checking for the `kata-clh` RuntimeClass:
+
+```bash
+kubectl get runtimeclass kata-clh
+```
+
+### 4. Storage and Snapshots (Optional)
+To enable instant sandbox cloning and prebuilds, you need a CSI driver that supports snapshots. TopoLVM is recommended for bare-metal LVM thin provisioning.
+
+```bash
+# Install CSI snapshot controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
+
+# Install TopoLVM
+helm repo add topolvm https://topolvm.github.io/topolvm
+helm install topolvm topolvm/topolvm --namespace topolvm-system --create-namespace
+```
+
+## Installation
+
+### 1. Create a GitHub OAuth App
+Atelier requires GitHub OAuth for authentication.
+- **Homepage URL**: `https://sandbox.your-domain.com`
+- **Authorization callback URL**: `https://sandbox.your-domain.com/auth/callback`
+
+### 2. Prepare values.yaml
+Create a `values.yaml` file with your specific configuration. Use `charts/atelier/values.yaml` as a reference.
+
+```yaml
+domain:
+  baseDomain: your-domain.com
+  tls:
+    email: admin@your-domain.com
+
+auth:
+  github:
+    clientId: "your-client-id"
+    clientSecret: "your-client-secret"
+  allowedOrg: "your-github-org" # Optional
+
+certManager:
+  cloudflare:
+    apiToken: "your-cloudflare-token" # Required for DNS-01 challenge
+```
+
+### 3. Deploy with Helm
+Run the following command from the repository root:
+
+```bash
+helm upgrade --install atelier ./charts/atelier \
+  --namespace atelier-system \
+  --create-namespace \
+  --values values.yaml
+```
+
+## Configuration
+
+Key configuration sections in `values.yaml`:
+
+- **domain**: Sets the base domain and TLS contact email.
+- **auth**: Configures GitHub OAuth and JWT secrets. You can restrict access to specific organizations or users.
+- **kubernetes**: Defines the namespace for sandboxes and the runtime class (defaults to `kata-clh`).
+- **certManager**: Configures the ACME issuer. Currently, the chart supports Cloudflare DNS-01 for wildcard certificates.
+- **zot**: Enables the internal OCI registry for base images.
+- **sshpiper**: Enables the SSH proxy on port 2222.
+
+## Post-install
+
+### Verify Deployment
+Check that all pods are running in the `atelier-system` namespace:
+
+```bash
+kubectl get pods -n atelier-system
+```
+
+### Access the Dashboard
+The dashboard is available at `https://sandbox.your-domain.com`. Log in using your GitHub account.
+
+### Build Base Images
+Atelier uses the internal Zot registry to store sandbox base images. Build the default `dev-base` image from the dashboard (Settings > Images) or verify it exists:
+
+```bash
+kubectl logs -n atelier-system -l app.kubernetes.io/component=manager -c manager | grep -i image
+```
+
+## Updating
+
+To update Atelier to a new version, pull the latest changes and run the Helm upgrade command again:
+
+```bash
+helm upgrade atelier ./charts/atelier \
+  --namespace atelier-system \
+  --values values.yaml
+```
 
 ## Manual TLS
 
-For manual TLS, set `domain.tls.certPath` and `domain.tls.keyPath` in config.
-
-## Optional: Preconfigure Storage
-
-If you add `setup.storage` to `/etc/atelier/sandbox.config.json`, the CLI
-will skip storage method selection during `atelier init` (it may still prompt for missing details like device or size). Example:
-
-```json
-{
-  "setup": {
-    "storage": {
-      "method": "loop",
-      "loopSizeGb": 100
-    }
-  }
-}
-```
-
-You can also preconfigure network behavior (used by `atelier init`):
-
-```json
-{
-  "setup": {
-    "network": {
-      "onExists": "status"
-    }
-  }
-}
-```
+If you prefer to manage certificates manually instead of using cert-manager:
+1. Set `certManager.enabled: false` in your `values.yaml`.
+2. Create a TLS secret named `atelier-tls` in the `atelier-system` namespace containing your wildcard certificate.
+3. Update the ingress configuration to reference this secret.
 
 ## Troubleshooting
 
-- **No `/dev/kvm`**: ensure virtualization is enabled and use bare‑metal.
-- **Caddy not issuing certs**: confirm DNS wildcard and open ports 80/443. Check logs: `journalctl -u caddy -n 200 --no-pager`
-- **Manager unhealthy**: `journalctl -u atelier-manager -n 200 --no-pager`
+### Check Manager Logs
+If the dashboard is unreachable or sandboxes fail to start, check the manager logs:
+
+```bash
+kubectl logs -n atelier-system -l app.kubernetes.io/component=manager -c manager
+```
+
+### Inspect Sandbox Pods
+Sandboxes run in the `atelier-sandboxes` namespace. If a sandbox fails to boot, describe the pod to see the events:
+
+```bash
+kubectl describe pod -n atelier-sandboxes <pod-name>
+```
+
+### Common Issues
+- **Kata Containers not starting**: Ensure `/dev/kvm` is available on the host and the `kata-clh` RuntimeClass exists.
+- **TLS Certificate pending**: Check the cert-manager logs and certificate resources:
+  ```bash
+  kubectl get certificates -n atelier-system
+  kubectl get challenges --all-namespaces
+  kubectl logs -n cert-manager -l app.kubernetes.io/component=controller
+  ```
+- **DNS Resolution**: Verify that your wildcard DNS record correctly points to the server's public IP.
