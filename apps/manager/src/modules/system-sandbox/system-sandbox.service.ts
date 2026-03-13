@@ -335,7 +335,7 @@ export class SystemSandboxService {
     password?: string,
   ): Promise<void> {
     const mcpToken = config.server.mcpToken;
-    const mcpUrl = "http://manager.atelier-system.svc:4000/mcp";
+    const mcpUrl = `${config.kubernetes.managerUrl}/mcp`;
 
     const url = `http://${ipAddress}:${config.ports.opencode}`;
     const client = createOpencodeClient({
