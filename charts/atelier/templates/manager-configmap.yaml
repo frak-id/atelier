@@ -38,6 +38,7 @@ data:
         "defaultVolumeSize" .Values.kubernetes.defaultVolumeSize
         "vsCodeIngressAnnotations" (include "atelier.vsCodeIngressAnnotations" . | fromJson)
         "openCodeIngressAnnotations" (include "atelier.openCodeIngressAnnotations" . | fromJson)
+        "managerUrl" (printf "http://%s-manager.%s.svc:%v" (include "atelier.fullname" .) .Release.Namespace .Values.server.port)
       )
       "sandbox" (dict
         "defaultImage" .Values.sandbox.defaultImage

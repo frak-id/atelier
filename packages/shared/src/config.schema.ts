@@ -135,6 +135,14 @@ export const KubernetesConfigSchema = Type.Object(
     openCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
       default: {},
     }),
+    /**
+     * Internal base URL of the manager K8s Service.
+     * Used by system sandboxes (MCP registration) and sandbox pods
+     * (callbacks).
+     * Set by the Helm chart — e.g.
+     * http://atelier-manager.atelier-system.svc:4000
+     */
+    managerUrl: Type.String({ default: "" }),
   },
   { default: {} },
 );
@@ -321,6 +329,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
   ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",
   ATELIER_K8S_INGRESS_CLASS: "kubernetes.ingressClassName",
+  ATELIER_K8S_MANAGER_URL: "kubernetes.managerUrl",
 
   ATELIER_IMAGES_DIR: "sandbox.imagesDirectory",
   ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",
