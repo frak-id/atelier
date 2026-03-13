@@ -4,7 +4,10 @@ import {
   organizations,
   orgMembers,
 } from "../../infrastructure/database/index.ts";
-import type { Organization } from "../../schemas/index.ts";
+import type {
+  Organization,
+  OrganizationWithRole,
+} from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("organization-repository");
@@ -50,14 +53,17 @@ export class OrganizationRepository {
     return row ? rowToOrganization(row) : undefined;
   }
 
-  getByUserId(userId: string): Organization[] {
+  getByUserId(userId: string): OrganizationWithRole[] {
     const rows = getDatabase()
       .select()
       .from(organizations)
       .innerJoin(orgMembers, eq(organizations.id, orgMembers.orgId))
       .where(eq(orgMembers.userId, userId))
       .all();
-    return rows.map((row) => rowToOrganization(row.organizations));
+    return rows.map((row) => ({
+      ...rowToOrganization(row.organizations),
+      role: row.org_members.role,
+    }));
   }
 
   create(org: Organization): Organization {

@@ -1,5 +1,8 @@
 import { eventBus } from "../../infrastructure/events/index.ts";
-import type { Organization } from "../../schemas/index.ts";
+import type {
+  Organization,
+  OrganizationWithRole,
+} from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -40,7 +43,7 @@ export class OrganizationService {
     return organization;
   }
 
-  getByUserId(userId: string): Organization[] {
+  getByUserId(userId: string): OrganizationWithRole[] {
     return this.organizationRepository.getByUserId(userId);
   }
 
