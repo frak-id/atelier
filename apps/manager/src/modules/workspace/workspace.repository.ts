@@ -111,4 +111,39 @@ export class WorkspaceRepository {
       .get();
     return result?.count ?? 0;
   }
+
+  transferOrg(workspaceId: string, newOrgId: string): Workspace {
+    const existing = this.getById(workspaceId);
+    if (!existing) throw new Error(`Workspace '${workspaceId}' not found`);
+
+    const now = new Date().toISOString();
+    const db = getDatabase();
+
+    db.update(workspaces)
+      .set({ orgId: newOrgId, updatedAt: now })
+      .where(eq(workspaces.id, workspaceId))
+      .run();
+
+    db.update(tasks)
+      .set({ orgId: newOrgId })
+      .where(eq(tasks.workspaceId, workspaceId))
+      .run();
+
+    db.update(sandboxes)
+      .set({ orgId: newOrgId })
+      .where(eq(sandboxes.workspaceId, workspaceId))
+      .run();
+
+    db.update(configFiles)
+      .set({ orgId: newOrgId })
+      .where(eq(configFiles.workspaceId, workspaceId))
+      .run();
+
+    log.info(
+      { workspaceId, newOrgId },
+      "Workspace transferred to new organization",
+    );
+
+    return { ...existing, orgId: newOrgId, updatedAt: now };
+  }
 }

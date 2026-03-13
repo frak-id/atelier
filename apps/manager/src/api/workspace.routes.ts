@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import {
+  orgMemberService,
   prebuildRunner,
   sandboxService,
   systemAiService,
@@ -10,13 +11,15 @@ import {
   IdParamSchema,
   PrebuildCancelResponseSchema,
   PrebuildTriggerResponseSchema,
+  TransferWorkspaceBodySchema,
   UpdateWorkspaceBodySchema,
   WorkspaceListResponseSchema,
   WorkspaceMatchQuerySchema,
   WorkspaceMatchResponseSchema,
   WorkspaceSchema,
 } from "../schemas/index.ts";
-import { NotFoundError } from "../shared/errors.ts";
+import { ForbiddenError, NotFoundError } from "../shared/errors.ts";
+import type { AuthUser } from "../shared/lib/auth.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("workspace-routes");
@@ -233,5 +236,39 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
     },
     {
       params: IdParamSchema,
+    },
+  )
+  .post(
+    "/:id/transfer",
+    ({ params, body, store }) => {
+      const user = (store as { user: AuthUser }).user;
+      const workspace = workspaceService.getByIdOrThrow(params.id);
+
+      if (workspace.orgId) {
+        orgMemberService.requireRole(workspace.orgId, user.id, [
+          "owner",
+          "admin",
+        ]);
+      }
+
+      orgMemberService.requireRole(body.orgId, user.id, ["owner", "admin"]);
+
+      if (workspace.orgId === body.orgId) {
+        throw new ForbiddenError(
+          "Workspace already belongs to this organization",
+        );
+      }
+
+      log.info(
+        { workspaceId: params.id, targetOrgId: body.orgId },
+        "Transferring workspace",
+      );
+
+      return workspaceService.transfer(params.id, body.orgId);
+    },
+    {
+      params: IdParamSchema,
+      body: TransferWorkspaceBodySchema,
+      response: WorkspaceSchema,
     },
   );

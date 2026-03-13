@@ -139,6 +139,23 @@ export class WorkspaceService {
     return this.workspaceRepository.count();
   }
 
+  transfer(id: string, newOrgId: string): Workspace {
+    const workspace = this.getByIdOrThrow(id);
+
+    log.info(
+      { workspaceId: id, fromOrgId: workspace.orgId, toOrgId: newOrgId },
+      "Transferring workspace",
+    );
+
+    const updated = this.workspaceRepository.transferOrg(id, newOrgId);
+    eventBus.emit({
+      type: "workspace.updated",
+      properties: { id },
+    });
+
+    return updated;
+  }
+
   private enrichRepos(repos: RepoConfig[]): RepoConfig[] {
     return repos.map((repo) => ({
       ...repo,
