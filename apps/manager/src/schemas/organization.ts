@@ -41,6 +41,24 @@ export type OrganizationListResponse = Static<
   typeof OrganizationListResponseSchema
 >;
 
+export const OrganizationWithRoleSchema = t.Intersect([
+  OrganizationSchema,
+  t.Object({ role: OrgMemberRoleSchema }),
+]);
+export type OrganizationWithRole = Static<typeof OrganizationWithRoleSchema>;
+
+export const OrganizationWithRoleListResponseSchema = t.Array(
+  OrganizationWithRoleSchema,
+);
+export type OrganizationWithRoleListResponse = Static<
+  typeof OrganizationWithRoleListResponseSchema
+>;
+
+export const TransferWorkspaceBodySchema = t.Object({
+  orgId: t.String({ minLength: 1 }),
+});
+export type TransferWorkspaceBody = Static<typeof TransferWorkspaceBodySchema>;
+
 export const OrgMemberSchema = t.Object({
   id: t.String(),
   orgId: t.String(),

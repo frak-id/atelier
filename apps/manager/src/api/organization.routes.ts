@@ -3,8 +3,8 @@ import { organizationService, orgMemberService } from "../container.ts";
 import {
   AddOrgMemberBodySchema,
   CreateOrganizationBodySchema,
-  OrganizationListResponseSchema,
   OrganizationSchema,
+  OrganizationWithRoleListResponseSchema,
   OrgMemberIdParamSchema,
   OrgMemberListResponseSchema,
   OrgSlugParamSchema,
@@ -27,7 +27,7 @@ export const organizationRoutes = new Elysia({
       return organizationService.getByUserId(user.id);
     },
     {
-      response: OrganizationListResponseSchema,
+      response: OrganizationWithRoleListResponseSchema,
     },
   )
   .post(
