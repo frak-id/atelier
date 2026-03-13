@@ -23,6 +23,7 @@ export type {
   HealthStatus,
   ManagerEvent,
   Organization,
+  OrganizationWithRole,
   OrgMember,
   OrgMemberRole,
   Sandbox,
