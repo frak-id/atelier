@@ -9,15 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root"
-import { Route as ImagesIndexRouteImport } from "./routes/images/index"
 import { Route as IndexRouteImport } from "./routes/index"
-import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id"
-import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index"
-import { Route as SettingsIndexRouteImport } from "./routes/settings/index"
-import { Route as SystemIndexRouteImport } from "./routes/system/index"
-import { Route as TasksIndexRouteImport } from "./routes/tasks/index"
-import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id"
 import { Route as WorkspacesIndexRouteImport } from "./routes/workspaces/index"
+import { Route as TasksIndexRouteImport } from "./routes/tasks/index"
+import { Route as SystemIndexRouteImport } from "./routes/system/index"
+import { Route as SettingsIndexRouteImport } from "./routes/settings/index"
+import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index"
+import { Route as OrganizationsIndexRouteImport } from "./routes/organizations/index"
+import { Route as ImagesIndexRouteImport } from "./routes/images/index"
+import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id"
+import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id"
+import { Route as OrganizationsOrgSlugRouteImport } from "./routes/organizations/$orgSlug"
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
@@ -49,6 +51,11 @@ const SandboxesIndexRoute = SandboxesIndexRouteImport.update({
   path: "/sandboxes/",
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrganizationsIndexRoute = OrganizationsIndexRouteImport.update({
+  id: "/organizations/",
+  path: "/organizations/",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ImagesIndexRoute = ImagesIndexRouteImport.update({
   id: "/images/",
   path: "/images/",
@@ -64,12 +71,19 @@ const SandboxesIdRoute = SandboxesIdRouteImport.update({
   path: "/sandboxes/$id",
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrganizationsOrgSlugRoute = OrganizationsOrgSlugRouteImport.update({
+  id: "/organizations/$orgSlug",
+  path: "/organizations/$orgSlug",
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
+  "/organizations/$orgSlug": typeof OrganizationsOrgSlugRoute
   "/sandboxes/$id": typeof SandboxesIdRoute
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images/": typeof ImagesIndexRoute
+  "/organizations/": typeof OrganizationsIndexRoute
   "/sandboxes/": typeof SandboxesIndexRoute
   "/settings/": typeof SettingsIndexRoute
   "/system/": typeof SystemIndexRoute
@@ -78,9 +92,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
+  "/organizations/$orgSlug": typeof OrganizationsOrgSlugRoute
   "/sandboxes/$id": typeof SandboxesIdRoute
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images": typeof ImagesIndexRoute
+  "/organizations": typeof OrganizationsIndexRoute
   "/sandboxes": typeof SandboxesIndexRoute
   "/settings": typeof SettingsIndexRoute
   "/system": typeof SystemIndexRoute
@@ -90,9 +106,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
+  "/organizations/$orgSlug": typeof OrganizationsOrgSlugRoute
   "/sandboxes/$id": typeof SandboxesIdRoute
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images/": typeof ImagesIndexRoute
+  "/organizations/": typeof OrganizationsIndexRoute
   "/sandboxes/": typeof SandboxesIndexRoute
   "/settings/": typeof SettingsIndexRoute
   "/system/": typeof SystemIndexRoute
@@ -103,9 +121,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | "/"
+    | "/organizations/$orgSlug"
     | "/sandboxes/$id"
     | "/workspaces/$id"
     | "/images/"
+    | "/organizations/"
     | "/sandboxes/"
     | "/settings/"
     | "/system/"
@@ -114,9 +134,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/"
+    | "/organizations/$orgSlug"
     | "/sandboxes/$id"
     | "/workspaces/$id"
     | "/images"
+    | "/organizations"
     | "/sandboxes"
     | "/settings"
     | "/system"
@@ -125,9 +147,11 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/organizations/$orgSlug"
     | "/sandboxes/$id"
     | "/workspaces/$id"
     | "/images/"
+    | "/organizations/"
     | "/sandboxes/"
     | "/settings/"
     | "/system/"
@@ -137,9 +161,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  OrganizationsOrgSlugRoute: typeof OrganizationsOrgSlugRoute
   SandboxesIdRoute: typeof SandboxesIdRoute
   WorkspacesIdRoute: typeof WorkspacesIdRoute
   ImagesIndexRoute: typeof ImagesIndexRoute
+  OrganizationsIndexRoute: typeof OrganizationsIndexRoute
   SandboxesIndexRoute: typeof SandboxesIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   SystemIndexRoute: typeof SystemIndexRoute
@@ -191,6 +217,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SandboxesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/organizations/": {
+      id: "/organizations/"
+      path: "/organizations"
+      fullPath: "/organizations/"
+      preLoaderRoute: typeof OrganizationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/images/": {
       id: "/images/"
       path: "/images"
@@ -212,14 +245,23 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SandboxesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/organizations/$orgSlug": {
+      id: "/organizations/$orgSlug"
+      path: "/organizations/$orgSlug"
+      fullPath: "/organizations/$orgSlug"
+      preLoaderRoute: typeof OrganizationsOrgSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  OrganizationsOrgSlugRoute: OrganizationsOrgSlugRoute,
   SandboxesIdRoute: SandboxesIdRoute,
   WorkspacesIdRoute: WorkspacesIdRoute,
   ImagesIndexRoute: ImagesIndexRoute,
+  OrganizationsIndexRoute: OrganizationsIndexRoute,
   SandboxesIndexRoute: SandboxesIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   SystemIndexRoute: SystemIndexRoute,

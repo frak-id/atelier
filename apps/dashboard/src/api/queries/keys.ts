@@ -106,4 +106,10 @@ export const queryKeys = {
     status: ["cliproxy", "status"] as const,
     export: ["cliproxy", "export"] as const,
   },
+  organizations: {
+    all: ["organizations"] as const,
+    list: () => ["organizations", "list"] as const,
+    detail: (slug: string) => ["organizations", "detail", slug] as const,
+    members: (slug: string) => ["organizations", slug, "members"] as const,
+  },
 };

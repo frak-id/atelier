@@ -20,6 +20,10 @@ export class WorkspaceService {
     return this.workspaceRepository.getAll();
   }
 
+  getByOrgId(orgId: string): Workspace[] {
+    return this.workspaceRepository.getByOrgId(orgId);
+  }
+
   getById(id: string): Workspace | undefined {
     return this.workspaceRepository.getById(id);
   }
@@ -53,7 +57,11 @@ export class WorkspaceService {
     return undefined;
   }
 
-  create(name: string, partialConfig?: Partial<WorkspaceConfig>): Workspace {
+  create(
+    name: string,
+    partialConfig?: Partial<WorkspaceConfig>,
+    orgId?: string,
+  ): Workspace {
     const now = new Date().toISOString();
     const workspaceConfig: WorkspaceConfig = {
       ...DEFAULT_WORKSPACE_CONFIG,
@@ -64,6 +72,7 @@ export class WorkspaceService {
 
     const workspace: Workspace = {
       id: safeNanoid(12),
+      orgId,
       name,
       config: workspaceConfig,
       createdAt: now,

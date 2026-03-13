@@ -8,6 +8,7 @@ const log = createChildLogger("task-repository");
 function rowToTask(row: typeof tasks.$inferSelect): Task {
   return {
     id: row.id,
+    orgId: row.orgId ?? undefined,
     workspaceId: row.workspaceId,
     title: row.title,
     status: row.status,
@@ -59,6 +60,7 @@ export class TaskRepository {
       .insert(tasks)
       .values({
         id: task.id,
+        orgId: task.orgId ?? null,
         workspaceId: task.workspaceId,
         title: task.title,
         status: task.status,

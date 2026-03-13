@@ -14,6 +14,7 @@ const log = createChildLogger("workspace-repository");
 function rowToWorkspace(row: typeof workspaces.$inferSelect): Workspace {
   return {
     id: row.id,
+    orgId: row.orgId ?? undefined,
     name: row.name,
     config: row.config,
     createdAt: row.createdAt,
@@ -24,6 +25,15 @@ function rowToWorkspace(row: typeof workspaces.$inferSelect): Workspace {
 export class WorkspaceRepository {
   getAll(): Workspace[] {
     return getDatabase().select().from(workspaces).all().map(rowToWorkspace);
+  }
+
+  getByOrgId(orgId: string): Workspace[] {
+    return getDatabase()
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.orgId, orgId))
+      .all()
+      .map(rowToWorkspace);
   }
 
   getById(id: string): Workspace | undefined {
@@ -40,6 +50,7 @@ export class WorkspaceRepository {
       .insert(workspaces)
       .values({
         id: workspace.id,
+        orgId: workspace.orgId ?? null,
         name: workspace.name,
         config: workspace.config,
         createdAt: workspace.createdAt,
@@ -68,6 +79,7 @@ export class WorkspaceRepository {
     getDatabase()
       .update(workspaces)
       .set({
+        orgId: updated.orgId ?? null,
         name: updated.name,
         config: updated.config,
         updatedAt: updated.updatedAt,

@@ -92,6 +92,7 @@ export type WorkspaceConfig = Static<typeof WorkspaceConfigSchema>;
 
 export const WorkspaceSchema = t.Object({
   id: t.String(),
+  orgId: t.Optional(t.String()),
   name: t.String(),
   config: WorkspaceConfigSchema,
   createdAt: t.String(),

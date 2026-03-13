@@ -163,6 +163,32 @@ export const ConfigEventSchema = t.Union([
 export type ConfigEvent = Static<typeof ConfigEventSchema>;
 
 /* -------------------------------------------------------------------------- */
+/*                           Organization Events                             */
+/* -------------------------------------------------------------------------- */
+
+const OrganizationCreatedSchema = t.Object({
+  type: t.Literal("organization.created"),
+  properties: t.Object({ id: t.String() }),
+});
+
+const OrganizationUpdatedSchema = t.Object({
+  type: t.Literal("organization.updated"),
+  properties: t.Object({ id: t.String() }),
+});
+
+const OrganizationDeletedSchema = t.Object({
+  type: t.Literal("organization.deleted"),
+  properties: t.Object({ id: t.String() }),
+});
+
+export const OrganizationEventSchema = t.Union([
+  OrganizationCreatedSchema,
+  OrganizationUpdatedSchema,
+  OrganizationDeletedSchema,
+]);
+export type OrganizationEvent = Static<typeof OrganizationEventSchema>;
+
+/* -------------------------------------------------------------------------- */
 /*                             Manager Event                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -171,6 +197,7 @@ export const ManagerEventSchema = t.Union([
   ...TaskEventSchema.anyOf,
   ...WorkspaceEventSchema.anyOf,
   ...ConfigEventSchema.anyOf,
+  ...OrganizationEventSchema.anyOf,
   PrebuildEventSchema,
 ]);
 export type ManagerEvent = Static<typeof ManagerEventSchema>;

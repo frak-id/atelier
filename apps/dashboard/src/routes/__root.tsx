@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Box,
   Boxes,
+  Building2,
   ChevronDown,
   FolderGit2,
   HardDrive,
@@ -96,7 +97,13 @@ function RootErrorFallback({ error, reset }: ErrorComponentProps) {
   );
 }
 
-const ADMIN_ROUTES = ["/workspaces", "/images", "/system", "/settings"];
+const ADMIN_ROUTES = [
+  "/organizations",
+  "/workspaces",
+  "/images",
+  "/system",
+  "/settings",
+];
 
 function useCollapsed() {
   const [collapsed, setCollapsed] = useState(() => {
@@ -198,6 +205,9 @@ function SidebarContent({
           <div className="flex justify-center py-1">
             <Shield className="h-3.5 w-3.5 text-muted-foreground/50" />
           </div>
+          <NavLink to="/organizations" icon={Building2} collapsed>
+            Organizations
+          </NavLink>
           <NavLink to="/workspaces" icon={FolderGit2} collapsed>
             Workspaces
           </NavLink>
@@ -219,6 +229,9 @@ function SidebarContent({
               <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-1 space-y-1 pl-2">
+              <NavLink to="/organizations" icon={Building2}>
+                Organizations
+              </NavLink>
               <NavLink to="/workspaces" icon={FolderGit2}>
                 Workspaces
               </NavLink>

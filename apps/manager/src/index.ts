@@ -15,6 +15,7 @@ import {
   integrationRoutes,
   internalWellKnownRoutes,
   opencodeRoutes,
+  organizationRoutes,
   publicConfigRoutes,
   registryRoutes,
   sandboxRoutes,
@@ -40,7 +41,10 @@ import {
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
-import { kubeClient, ensureSharedSshPipeKey } from "./infrastructure/kubernetes/index.ts";
+import {
+  ensureSharedSshPipeKey,
+  kubeClient,
+} from "./infrastructure/kubernetes/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
@@ -241,7 +245,8 @@ const app = new Elysia()
           .use(githubApiRoutes)
           .use(eventsRoutes)
           .use(systemModelConfigRoutes)
-          .use(cliproxyRoutes),
+          .use(cliproxyRoutes)
+          .use(organizationRoutes),
       ),
   );
 

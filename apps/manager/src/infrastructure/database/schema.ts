@@ -1,4 +1,4 @@
-import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type {
   GitSourceConfig,
   SandboxRuntime,
@@ -6,24 +6,74 @@ import type {
   WorkspaceConfig,
 } from "../../schemas/index.ts";
 
+export const organizations = sqliteTable("organizations", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  avatarUrl: text("avatar_url"),
+  /** "true"/"false" text — marks auto-created personal orgs (one per user) */
+  personal: text("personal").notNull().default("false"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  email: text("email").notNull(),
+  avatarUrl: text("avatar_url"),
+  personalOrgId: text("personal_org_id"),
+  createdAt: text("created_at").notNull(),
+  lastLoginAt: text("last_login_at").notNull(),
+});
+
+const orgMemberRoleValues = ["owner", "admin", "member", "viewer"] as const;
+export type OrgMemberRole = (typeof orgMemberRoleValues)[number];
+
+export const orgMembers = sqliteTable(
+  "org_members",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    role: text("role", { enum: orgMemberRoleValues }).notNull(),
+    joinedAt: text("joined_at").notNull(),
+  },
+  (t) => [
+    index("idx_org_members_org_id").on(t.orgId),
+    index("idx_org_members_user_id").on(t.userId),
+    uniqueIndex("idx_org_members_org_user").on(t.orgId, t.userId),
+  ],
+);
+
 const gitSourceTypeValues = ["github", "gitlab", "custom"] as const;
 
-export const gitSources = sqliteTable("git_sources", {
-  id: text("id").primaryKey(),
-  type: text("type", { enum: gitSourceTypeValues }).notNull(),
-  name: text("name").notNull(),
-  config: text("config", { mode: "json" }).notNull().$type<GitSourceConfig>(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
+export const gitSources = sqliteTable(
+  "git_sources",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id"),
+    type: text("type", { enum: gitSourceTypeValues }).notNull(),
+    name: text("name").notNull(),
+    config: text("config", { mode: "json" }).notNull().$type<GitSourceConfig>(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("idx_git_sources_org_id").on(t.orgId)],
+);
 
-export const workspaces = sqliteTable("workspaces", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  config: text("config", { mode: "json" }).notNull().$type<WorkspaceConfig>(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
+export const workspaces = sqliteTable(
+  "workspaces",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id"),
+    name: text("name").notNull(),
+    config: text("config", { mode: "json" }).notNull().$type<WorkspaceConfig>(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("idx_workspaces_org_id").on(t.orgId)],
+);
 
 const sandboxStatusValues = [
   "creating",
@@ -33,29 +83,47 @@ const sandboxStatusValues = [
 ] as const;
 export type SandboxStatus = (typeof sandboxStatusValues)[number];
 
-export const sandboxes = sqliteTable("sandboxes", {
-  id: text("id").primaryKey(),
-  workspaceId: text("workspace_id"),
-  status: text("status", { enum: sandboxStatusValues }).notNull(),
-  runtime: text("runtime", { mode: "json" }).notNull().$type<SandboxRuntime>(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
+export const sandboxes = sqliteTable(
+  "sandboxes",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id"),
+    workspaceId: text("workspace_id"),
+    createdBy: text("created_by"),
+    status: text("status", { enum: sandboxStatusValues }).notNull(),
+    runtime: text("runtime", { mode: "json" })
+      .notNull()
+      .$type<SandboxRuntime>(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [
+    index("idx_sandboxes_org_id").on(t.orgId),
+    index("idx_sandboxes_created_by").on(t.createdBy),
+  ],
+);
 
 const configFileContentTypes = ["json", "text", "binary"] as const;
 
 const configFileScopes = ["global", "workspace"] as const;
 
-export const configFiles = sqliteTable("config_files", {
-  id: text("id").primaryKey(),
-  path: text("path").notNull(),
-  content: text("content").notNull(),
-  contentType: text("content_type", { enum: configFileContentTypes }).notNull(),
-  scope: text("scope", { enum: configFileScopes }).notNull(),
-  workspaceId: text("workspace_id"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
+export const configFiles = sqliteTable(
+  "config_files",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id"),
+    path: text("path").notNull(),
+    content: text("content").notNull(),
+    contentType: text("content_type", {
+      enum: configFileContentTypes,
+    }).notNull(),
+    scope: text("scope", { enum: configFileScopes }).notNull(),
+    workspaceId: text("workspace_id"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("idx_config_files_org_id").on(t.orgId)],
+);
 
 export const sharedAuth = sqliteTable("shared_auth", {
   id: text("id").primaryKey(),
@@ -91,11 +159,11 @@ export const settings = sqliteTable("settings", {
   updatedAt: text("updated_at").notNull(),
 });
 
-// Task status is plain text (not enum) to avoid DB migrations when adding new statuses
 export const tasks = sqliteTable(
   "tasks",
   {
     id: text("id").primaryKey(),
+    orgId: text("org_id"),
     workspaceId: text("workspace_id").notNull(),
     title: text("title").notNull(),
     status: text("status").notNull().default("draft"),
@@ -103,5 +171,8 @@ export const tasks = sqliteTable(
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
-  (t) => [index("idx_tasks_workspace_id").on(t.workspaceId)],
+  (t) => [
+    index("idx_tasks_workspace_id").on(t.workspaceId),
+    index("idx_tasks_org_id").on(t.orgId),
+  ],
 );

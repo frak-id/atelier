@@ -67,6 +67,7 @@ export type TaskData = Static<typeof TaskDataSchema>;
 
 export const TaskSchema = t.Object({
   id: t.String(),
+  orgId: t.Optional(t.String()),
   workspaceId: t.String(),
   title: t.String(),
   status: t.String(),

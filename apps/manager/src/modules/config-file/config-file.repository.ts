@@ -16,6 +16,7 @@ const log = createChildLogger("config-file-repository");
 function rowToConfigFile(row: typeof configFiles.$inferSelect): ConfigFile {
   return {
     id: row.id,
+    orgId: row.orgId ?? undefined,
     path: row.path,
     content: row.content,
     contentType: row.contentType,

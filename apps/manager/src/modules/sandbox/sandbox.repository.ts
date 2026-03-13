@@ -12,7 +12,9 @@ const log = createChildLogger("sandbox-repository");
 function rowToSandbox(row: typeof sandboxes.$inferSelect): Sandbox {
   return {
     id: row.id,
+    orgId: row.orgId ?? undefined,
     workspaceId: row.workspaceId ?? undefined,
+    createdBy: row.createdBy ?? undefined,
     status: row.status,
     runtime: row.runtime,
     createdAt: row.createdAt,
@@ -52,12 +54,23 @@ export class SandboxRepository {
       .map(rowToSandbox);
   }
 
+  getByOrgId(orgId: string): Sandbox[] {
+    return getDatabase()
+      .select()
+      .from(sandboxes)
+      .where(eq(sandboxes.orgId, orgId))
+      .all()
+      .map(rowToSandbox);
+  }
+
   create(sandbox: Sandbox): Sandbox {
     getDatabase()
       .insert(sandboxes)
       .values({
         id: sandbox.id,
+        orgId: sandbox.orgId ?? null,
         workspaceId: sandbox.workspaceId ?? null,
+        createdBy: sandbox.createdBy ?? null,
         status: sandbox.status,
         runtime: sandbox.runtime,
         createdAt: sandbox.createdAt,
@@ -83,7 +96,9 @@ export class SandboxRepository {
     getDatabase()
       .update(sandboxes)
       .set({
+        orgId: updated.orgId ?? null,
         workspaceId: updated.workspaceId ?? null,
+        createdBy: updated.createdBy ?? null,
         status: updated.status,
         runtime: updated.runtime,
         updatedAt: updated.updatedAt,

@@ -1,7 +1,12 @@
 import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
-import { sandboxService } from "../container.ts";
+import {
+  organizationService,
+  orgMemberService,
+  sandboxService,
+  userService,
+} from "../container.ts";
 import { isUserAuthorized } from "../modules/auth/auth.service.ts";
 import { verifyJwt } from "../shared/lib/auth.ts";
 import {
@@ -51,6 +56,31 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
       });
 
       log.info("Mock: user auto-logged in as mock-user");
+
+      const mockDbUser = userService.upsertFromLogin(
+        "12345",
+        "mock-user",
+        "12345+mock-user@users.noreply.github.com",
+        "https://avatars.githubusercontent.com/u/1?v=4",
+      );
+      if (!mockDbUser.personalOrgId) {
+        const personalOrg = organizationService.create(
+          "mock-user",
+          "mock-user",
+          true,
+        );
+        userService.setPersonalOrg("12345", personalOrg.id);
+        orgMemberService.addMember(personalOrg.id, "12345", "owner");
+      }
+
+      const defaultOrg = organizationService.getBySlug("default");
+      if (
+        defaultOrg &&
+        !orgMemberService.getMembership(defaultOrg.id, "12345")
+      ) {
+        orgMemberService.addMember(defaultOrg.id, "12345", "admin");
+      }
+
       return redirect("/");
     }
 
@@ -117,6 +147,30 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
             "Unauthorized user attempted login",
           );
           return redirect(`${dashboardUrl}?login_error=unauthorized`);
+        }
+
+        const dbUser = userService.upsertFromLogin(
+          String(user.id),
+          user.login,
+          `${user.id}+${user.login}@users.noreply.github.com`,
+          user.avatar_url,
+        );
+        if (!dbUser.personalOrgId) {
+          const personalOrg = organizationService.create(
+            user.login,
+            user.login.toLowerCase(),
+            true,
+          );
+          userService.setPersonalOrg(String(user.id), personalOrg.id);
+          orgMemberService.addMember(personalOrg.id, String(user.id), "owner");
+        }
+
+        const defaultOrg = organizationService.getBySlug("default");
+        if (
+          defaultOrg &&
+          !orgMemberService.getMembership(defaultOrg.id, String(user.id))
+        ) {
+          orgMemberService.addMember(defaultOrg.id, String(user.id), "admin");
         }
 
         const token = await jwt.sign({

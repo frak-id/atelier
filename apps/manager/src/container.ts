@@ -19,6 +19,14 @@ import {
   InternalService,
   SharedAuthRepository,
 } from "./modules/internal/index.ts";
+import {
+  OrgMemberRepository,
+  OrgMemberService,
+} from "./modules/org-member/index.ts";
+import {
+  OrganizationRepository,
+  OrganizationService,
+} from "./modules/organization/index.ts";
 import { SandboxRepository } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SettingsRepository } from "./modules/settings/index.ts";
@@ -29,6 +37,7 @@ import {
   SystemSandboxService,
 } from "./modules/system-sandbox/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
+import { UserRepository, UserService } from "./modules/user/index.ts";
 import {
   WorkspaceRepository,
   WorkspaceService,
@@ -51,9 +60,12 @@ import { config } from "./shared/lib/config.ts";
 
 const configFileRepository = new ConfigFileRepository();
 const gitSourceRepository = new GitSourceRepository();
+const organizationRepository = new OrganizationRepository();
+const orgMemberRepository = new OrgMemberRepository();
 const settingsRepository = new SettingsRepository();
 const sshKeyRepository = new SshKeyRepository();
 const taskRepository = new TaskRepository();
+const userRepository = new UserRepository();
 const workspaceRepository = new WorkspaceRepository();
 const sandboxRepository = new SandboxRepository();
 const sharedAuthRepository = new SharedAuthRepository();
@@ -64,7 +76,10 @@ const sharedAuthRepository = new SharedAuthRepository();
 
 const configFileService = new ConfigFileService(configFileRepository);
 const gitSourceService = new GitSourceService(gitSourceRepository);
+const organizationService = new OrganizationService(organizationRepository);
+const orgMemberService = new OrgMemberService(orgMemberRepository);
 const sshKeyService = new SshKeyService(sshKeyRepository);
+const userService = new UserService(userRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = sandboxRepository;
 
@@ -199,23 +214,26 @@ export {
   cliProxyService,
   configFileService,
   gitSourceService,
+  integrationEventBridge,
+  integrationGateway,
   internalService,
+  kubeClient,
+  orgMemberService,
+  organizationService,
   prebuildChecker,
   prebuildRunner,
   sandboxDestroyer,
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
-  integrationEventBridge,
-  integrationGateway,
+  sessionTemplateService,
   slackAdapter,
-  kubeClient,
   sshKeyService,
   systemAiService,
   systemSandboxEventListener,
   systemSandboxService,
   taskService,
   taskSpawner,
-  sessionTemplateService,
+  userService,
   workspaceService,
 };

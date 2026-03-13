@@ -16,6 +16,13 @@ export class NotFoundError extends SandboxError {
   }
 }
 
+export class ForbiddenError extends SandboxError {
+  constructor(message = "Insufficient permissions") {
+    super(message, "FORBIDDEN", 403);
+    this.name = "ForbiddenError";
+  }
+}
+
 export class ResourceExhaustedError extends SandboxError {
   constructor(resource: string) {
     super(`${resource} limit reached`, "RESOURCE_EXHAUSTED", 429);
