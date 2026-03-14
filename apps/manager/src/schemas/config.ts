@@ -16,6 +16,7 @@ export type ConfigFileScope = Static<typeof ConfigFileScopeSchema>;
 
 export const ConfigFileSchema = t.Object({
   id: t.String(),
+  orgId: t.Optional(t.String()),
   path: t.String(),
   content: t.String(),
   contentType: ConfigFileContentTypeSchema,

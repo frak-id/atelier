@@ -1,8 +1,9 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRightLeft,
   Clock,
   Edit,
   FileCode,
@@ -17,6 +18,7 @@ import { useState } from "react";
 import type { ConfigFile } from "@/api/client";
 import {
   configFilesListQuery,
+  organizationListQuery,
   sandboxListQuery,
   useCancelPrebuild,
   useCreateConfigFile,
@@ -25,6 +27,7 @@ import {
   useDeletePrebuild,
   useDeleteWorkspace,
   useGenerateDescription,
+  useTransferWorkspace,
   useTriggerPrebuild,
   useUpdateConfigFile,
   workspaceDetailQuery,
@@ -89,6 +92,7 @@ function WorkspaceDetailPage() {
   const { openSandbox } = useDrawer();
 
   const deleteMutation = useDeleteWorkspace();
+  const transferMutation = useTransferWorkspace();
   const createSandboxMutation = useCreateSandbox();
   const prebuildMutation = useTriggerPrebuild();
   const deletePrebuildMutation = useDeletePrebuild();
@@ -97,6 +101,15 @@ function WorkspaceDetailPage() {
   const createConfigMutation = useCreateConfigFile();
   const updateConfigMutation = useUpdateConfigFile();
   const deleteConfigMutation = useDeleteConfigFile();
+
+  const { data: organizations } = useQuery(organizationListQuery());
+  const [transferOrgId, setTransferOrgId] = useState<string>("");
+
+  const transferTargets = (organizations ?? []).filter(
+    (org) =>
+      (org.role === "owner" || org.role === "admin") &&
+      org.id !== workspace?.orgId,
+  );
 
   if (!workspace) {
     return <div>Workspace not found</div>;
@@ -457,6 +470,58 @@ function WorkspaceDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {transferTargets.length > 0 && (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium">Transfer workspace</p>
+                <p className="text-sm text-muted-foreground">
+                  Move this workspace and all its tasks, sandboxes, and config
+                  files to another organization.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Select value={transferOrgId} onValueChange={setTransferOrgId}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Select organization" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {transferTargets.map((org) => (
+                      <SelectItem key={org.id} value={org.id}>
+                        {org.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const target = transferTargets.find(
+                      (o) => o.id === transferOrgId,
+                    );
+                    if (
+                      target &&
+                      confirm(
+                        `Transfer "${workspace.name}" to "${target.name}"?`,
+                      )
+                    ) {
+                      transferMutation.mutate(
+                        { id, orgId: transferOrgId },
+                        {
+                          onSuccess: () => setTransferOrgId(""),
+                        },
+                      );
+                    }
+                  }}
+                  disabled={!transferOrgId || transferMutation.isPending}
+                  className="shrink-0"
+                >
+                  <ArrowRightLeft className="h-4 w-4 mr-2" />
+                  {transferMutation.isPending ? "Transferring…" : "Transfer"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-medium">Delete this workspace</p>

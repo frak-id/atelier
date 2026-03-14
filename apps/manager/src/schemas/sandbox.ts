@@ -31,7 +31,9 @@ export type SandboxRuntime = Static<typeof SandboxRuntimeSchema>;
 
 export const SandboxSchema = t.Object({
   id: t.String(),
+  orgId: t.Optional(t.String()),
   workspaceId: t.Optional(t.String()),
+  createdBy: t.Optional(t.String()),
   status: SandboxStatusSchema,
   runtime: SandboxRuntimeSchema,
   createdAt: t.String(),

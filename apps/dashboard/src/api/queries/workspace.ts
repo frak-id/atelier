@@ -159,6 +159,20 @@ export function useDeletePrebuild() {
   });
 }
 
+export function useTransferWorkspace() {
+  return useMutation({
+    mutationKey: ["workspaces", "transfer"],
+    mutationFn: async ({ id, orgId }: { id: string; orgId: string }) =>
+      unwrap(await api.api.workspaces({ id }).transfer.post({ orgId })),
+    onSuccess: (_data, variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.detail(variables.id),
+      });
+    },
+  });
+}
+
 export function useGenerateDescription() {
   return useMutation({
     mutationKey: ["workspaces", "generateDescription"],

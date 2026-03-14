@@ -39,6 +39,7 @@ export type GitSourceConfig = Static<typeof GitSourceConfigSchema>;
 
 export const GitSourceSchema = t.Object({
   id: t.String(),
+  orgId: t.Optional(t.String()),
   type: GitSourceTypeSchema,
   name: t.String(),
   config: GitSourceConfigSchema,

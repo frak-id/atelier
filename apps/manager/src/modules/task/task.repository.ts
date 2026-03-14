@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { getDatabase, tasks } from "../../infrastructure/database/index.ts";
 import type { Task, TaskData, TaskStatus } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -8,6 +8,7 @@ const log = createChildLogger("task-repository");
 function rowToTask(row: typeof tasks.$inferSelect): Task {
   return {
     id: row.id,
+    orgId: row.orgId ?? undefined,
     workspaceId: row.workspaceId,
     title: row.title,
     status: row.status,
@@ -27,6 +28,19 @@ export class TaskRepository {
       .select()
       .from(tasks)
       .where(eq(tasks.workspaceId, workspaceId))
+      .all()
+      .map(rowToTask);
+  }
+
+  getByOrgIds(orgIds: string[]): Task[] {
+    const conditions = [isNull(tasks.orgId)];
+    if (orgIds.length > 0) {
+      conditions.push(inArray(tasks.orgId, orgIds));
+    }
+    return getDatabase()
+      .select()
+      .from(tasks)
+      .where(or(...conditions))
       .all()
       .map(rowToTask);
   }
@@ -59,6 +73,7 @@ export class TaskRepository {
       .insert(tasks)
       .values({
         id: task.id,
+        orgId: task.orgId ?? null,
         workspaceId: task.workspaceId,
         title: task.title,
         status: task.status,

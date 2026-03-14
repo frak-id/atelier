@@ -12,6 +12,7 @@ export { imageRoutes } from "./image.routes.ts";
 export { integrationRoutes } from "./integration.routes.ts";
 export { internalWellKnownRoutes } from "./internal-well-known.routes.ts";
 export { opencodeRoutes } from "./opencode.routes.ts";
+export { organizationRoutes } from "./organization.routes.ts";
 export { publicConfigRoutes } from "./public-config.routes.ts";
 export { registryRoutes } from "./registry.routes.ts";
 export { sandboxRoutes } from "./sandboxes/index.ts";

@@ -11,6 +11,7 @@ const log = createChildLogger("git-source-repository");
 function rowToGitSource(row: typeof gitSources.$inferSelect): GitSource {
   return {
     id: row.id,
+    orgId: row.orgId ?? undefined,
     type: row.type,
     name: row.name,
     config: row.config,
@@ -22,6 +23,15 @@ function rowToGitSource(row: typeof gitSources.$inferSelect): GitSource {
 export class GitSourceRepository {
   getAll(): GitSource[] {
     return getDatabase().select().from(gitSources).all().map(rowToGitSource);
+  }
+
+  getByOrgId(orgId: string): GitSource[] {
+    return getDatabase()
+      .select()
+      .from(gitSources)
+      .where(eq(gitSources.orgId, orgId))
+      .all()
+      .map(rowToGitSource);
   }
 
   getById(id: string): GitSource | undefined {
@@ -38,6 +48,7 @@ export class GitSourceRepository {
       .insert(gitSources)
       .values({
         id: source.id,
+        orgId: source.orgId ?? null,
         type: source.type,
         name: source.name,
         config: source.config,
@@ -64,6 +75,7 @@ export class GitSourceRepository {
     getDatabase()
       .update(gitSources)
       .set({
+        orgId: updated.orgId ?? null,
         name: updated.name,
         config: updated.config,
         updatedAt: updated.updatedAt,
