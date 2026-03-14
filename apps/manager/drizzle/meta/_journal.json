@@ -78,13 +78,6 @@
       "when": 1773583200000,
       "tag": "0010_organizations",
       "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "6",
-      "when": 1773669600000,
-      "tag": "0011_default_organization",
-      "breakpoints": true
     }
   ]
 }
