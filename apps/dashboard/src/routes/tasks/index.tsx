@@ -14,10 +14,12 @@ import {
 } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import {
+  organizationListQuery,
   sandboxDetailQuery,
   taskListQuery,
   useCompleteTask,
   useDeleteTask,
+  useOrganizationMap,
   useStartTask,
   useWorkspaceMap,
   workspaceListQuery,
@@ -77,8 +79,10 @@ function TasksPage() {
   const [editingTask, setEditingTask] = useState<Task | undefined>();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
   const [filterWorkspaceId, setFilterWorkspaceId] = useState<string>("all");
+  const [filterOrgId, setFilterOrgId] = useState<string>("all");
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
   const deleteMutation = useDeleteTask();
+  const { data: organizations } = useQuery(organizationListQuery());
 
   useEffect(() => {
     localStorage.setItem("atelier_task_view", view);
@@ -164,6 +168,20 @@ function TasksPage() {
             </SelectContent>
           </Select>
 
+          <Select value={filterOrgId} onValueChange={setFilterOrgId}>
+            <SelectTrigger className="w-[150px] sm:w-[180px]">
+              <SelectValue placeholder="All Organizations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Organizations</SelectItem>
+              {(organizations ?? []).map((org) => (
+                <SelectItem key={org.id} value={org.id}>
+                  {org.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Button onClick={() => handleCreateTask()} className="gap-2">
             <Plus className="h-4 w-4" />
             New Task
@@ -189,51 +207,57 @@ function TasksPage() {
           workspaceId={
             filterWorkspaceId === "all" ? undefined : filterWorkspaceId
           }
+          orgId={filterOrgId === "all" ? undefined : filterOrgId}
           onTaskClick={handleTaskClick}
           onEditTask={handleEditTask}
           onDeleteTask={handleDeleteTask}
         />
       ) : (
         <div className="space-y-8">
-          {workspaceList.map((workspace) => {
-            const isExpanded = expandedIds.includes(workspace.id);
+          {workspaceList
+            .filter(
+              (ws) =>
+                filterOrgId === "all" || !ws.orgId || ws.orgId === filterOrgId,
+            )
+            .map((workspace) => {
+              const isExpanded = expandedIds.includes(workspace.id);
 
-            return (
-              <section key={workspace.id}>
-                <button
-                  type="button"
-                  onClick={() => toggleExpanded(workspace.id)}
-                  className="flex items-center justify-between w-full text-left pb-3 border-b"
-                >
-                  <div className="flex items-center gap-2">
-                    {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                    )}
-                    <h2 className="font-semibold">{workspace.name}</h2>
-                  </div>
-                  <WorkspaceTaskCount workspaceId={workspace.id} />
-                </button>
+              return (
+                <section key={workspace.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(workspace.id)}
+                    className="flex items-center justify-between w-full text-left pb-3 border-b"
+                  >
+                    <div className="flex items-center gap-2">
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <h2 className="font-semibold">{workspace.name}</h2>
+                    </div>
+                    <WorkspaceTaskCount workspaceId={workspace.id} />
+                  </button>
 
-                {isExpanded && (
-                  <div className="pt-4">
-                    <Suspense fallback={<KanbanSkeleton />}>
-                      <WorkspaceKanban
-                        workspaceId={workspace.id}
-                        onCreateTask={() => handleCreateTask(workspace.id)}
-                        onTaskClick={handleTaskClick}
-                        onEditTask={(task) =>
-                          handleEditTask(task, workspace.id)
-                        }
-                        onDeleteTask={handleDeleteTask}
-                      />
-                    </Suspense>
-                  </div>
-                )}
-              </section>
-            );
-          })}
+                  {isExpanded && (
+                    <div className="pt-4">
+                      <Suspense fallback={<KanbanSkeleton />}>
+                        <WorkspaceKanban
+                          workspaceId={workspace.id}
+                          onCreateTask={() => handleCreateTask(workspace.id)}
+                          onTaskClick={handleTaskClick}
+                          onEditTask={(task) =>
+                            handleEditTask(task, workspace.id)
+                          }
+                          onDeleteTask={handleDeleteTask}
+                        />
+                      </Suspense>
+                    </div>
+                  )}
+                </section>
+              );
+            })}
         </div>
       )}
 
@@ -341,6 +365,7 @@ function KanbanSkeleton() {
 
 interface TasksListViewProps {
   workspaceId?: string;
+  orgId?: string;
   onTaskClick: (task: Task) => void;
   onEditTask: (task: Task, workspaceId: string) => void;
   onDeleteTask: (task: Task) => void;
@@ -348,6 +373,7 @@ interface TasksListViewProps {
 
 function TasksListView({
   workspaceId,
+  orgId,
   onTaskClick,
   onEditTask,
   onDeleteTask,
@@ -355,14 +381,20 @@ function TasksListView({
   const { data: allTasks } = useQuery({
     ...taskListQuery(workspaceId),
   });
+  const { data: organizations } = useQuery(organizationListQuery());
 
   const workspaceMap = useWorkspaceMap();
+  const orgMap = useOrganizationMap();
 
   if (!allTasks) {
     return <TasksSkeleton />;
   }
 
-  const sortedTasks = [...allTasks].sort((a, b) => {
+  const filtered = orgId
+    ? allTasks.filter((t) => !t.orgId || t.orgId === orgId)
+    : allTasks;
+
+  const sortedTasks = [...filtered].sort((a, b) => {
     // Sort by status (active first)
     if (a.status === "active" && b.status !== "active") return -1;
     if (a.status !== "active" && b.status === "active") return 1;
@@ -382,6 +414,11 @@ function TasksListView({
               <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[15%] hidden md:table-cell">
                 Workspace
               </th>
+              {organizations && organizations.length > 1 && (
+                <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[12%] hidden md:table-cell">
+                  Organization
+                </th>
+              )}
               <th className="h-10 px-4 text-left font-medium text-muted-foreground w-[10%]">
                 Status
               </th>
@@ -414,6 +451,8 @@ function TasksListView({
                   workspaceName={
                     workspaceMap.get(task.workspaceId) ?? "Unknown"
                   }
+                  orgName={orgMap.get(task.orgId ?? "")}
+                  showOrgColumn={!!(organizations && organizations.length > 1)}
                   onClick={() => onTaskClick(task)}
                   onEdit={() => onEditTask(task, task.workspaceId)}
                   onDelete={() => onDeleteTask(task)}
@@ -430,12 +469,16 @@ function TasksListView({
 function TaskRow({
   task,
   workspaceName,
+  orgName,
+  showOrgColumn,
   onClick,
   onEdit,
   onDelete,
 }: {
   task: Task;
   workspaceName: string;
+  orgName?: string;
+  showOrgColumn?: boolean;
   onClick: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -500,6 +543,11 @@ function TaskRow({
       <td className="p-4 align-top text-muted-foreground hidden md:table-cell">
         {workspaceName}
       </td>
+      {showOrgColumn && (
+        <td className="p-4 align-top text-muted-foreground hidden md:table-cell">
+          {orgName ?? "—"}
+        </td>
+      )}
       <td className="p-4 align-top">
         <Badge
           variant={

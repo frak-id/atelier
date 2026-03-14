@@ -1,4 +1,4 @@
-import { queryOptions, useMutation } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import type { OrgMemberRole } from "../client";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
@@ -8,6 +8,20 @@ export const organizationListQuery = () =>
     queryKey: queryKeys.organizations.list(),
     queryFn: async () => unwrap(await api.api.organizations.get()),
   });
+
+export function useOrganizationMap() {
+  const { data } = useQuery({
+    ...organizationListQuery(),
+    select: (orgs) => {
+      const map = new Map<string, string>();
+      for (const org of orgs ?? []) {
+        map.set(org.id, org.name);
+      }
+      return map;
+    },
+  });
+  return data ?? new Map<string, string>();
+}
 
 export const organizationDetailQuery = (slug: string) =>
   queryOptions({

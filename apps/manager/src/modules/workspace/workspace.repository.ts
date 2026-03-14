@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   configFiles,
   getDatabase,
@@ -32,6 +32,19 @@ export class WorkspaceRepository {
       .select()
       .from(workspaces)
       .where(eq(workspaces.orgId, orgId))
+      .all()
+      .map(rowToWorkspace);
+  }
+
+  getByOrgIds(orgIds: string[]): Workspace[] {
+    const conditions = [isNull(workspaces.orgId)];
+    if (orgIds.length > 0) {
+      conditions.push(inArray(workspaces.orgId, orgIds));
+    }
+    return getDatabase()
+      .select()
+      .from(workspaces)
+      .where(or(...conditions))
       .all()
       .map(rowToWorkspace);
   }

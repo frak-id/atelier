@@ -24,6 +24,10 @@ export class WorkspaceService {
     return this.workspaceRepository.getByOrgId(orgId);
   }
 
+  getByOrgIds(orgIds: string[]): Workspace[] {
+    return this.workspaceRepository.getByOrgIds(orgIds);
+  }
+
   getById(id: string): Workspace | undefined {
     return this.workspaceRepository.getById(id);
   }

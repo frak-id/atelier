@@ -1,14 +1,25 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { FolderGit2, Plus } from "lucide-react";
 import { useState } from "react";
 import type { Workspace } from "@/api/client";
-import { workspaceListQuery } from "@/api/queries";
+import {
+  organizationListQuery,
+  useOrganizationMap,
+  workspaceListQuery,
+} from "@/api/queries";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 import { RouteErrorComponent } from "@/components/route-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +44,15 @@ export const Route = createFileRoute("/workspaces/")({
 
 function WorkspacesPage() {
   const [createOpen, setCreateOpen] = useState(false);
+  const [orgFilter, setOrgFilter] = useState<string>("all");
   const { data: workspaces } = useSuspenseQuery(workspaceListQuery());
+  const { data: organizations } = useQuery(organizationListQuery());
+  const orgMap = useOrganizationMap();
+
+  const filtered =
+    orgFilter === "all"
+      ? workspaces
+      : workspaces?.filter((w) => !w.orgId || w.orgId === orgFilter);
 
   return (
     <div className="p-6 space-y-6">
@@ -44,16 +63,31 @@ function WorkspacesPage() {
             Configure development environments
           </p>
         </div>
-        <Button
-          onClick={() => setCreateOpen(true)}
-          className="w-full sm:w-auto"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Workspace
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select value={orgFilter} onValueChange={setOrgFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="All Organizations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Organizations</SelectItem>
+              {(organizations ?? []).map((org) => (
+                <SelectItem key={org.id} value={org.id}>
+                  {org.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="w-full sm:w-auto"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Workspace
+          </Button>
+        </div>
       </div>
 
-      {!workspaces || workspaces.length === 0 ? (
+      {!filtered || filtered.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <FolderGit2 className="h-12 w-12 text-muted-foreground mb-4" />
@@ -68,8 +102,16 @@ function WorkspacesPage() {
         </Card>
       ) : (
         <div className="grid gap-4">
-          {workspaces.map((workspace) => (
-            <WorkspaceCard key={workspace.id} workspace={workspace} />
+          {filtered.map((workspace) => (
+            <WorkspaceCard
+              key={workspace.id}
+              workspace={workspace}
+              orgName={
+                organizations && organizations.length > 1
+                  ? orgMap.get(workspace.orgId ?? "")
+                  : undefined
+              }
+            />
           ))}
         </div>
       )}
@@ -79,7 +121,13 @@ function WorkspacesPage() {
   );
 }
 
-function WorkspaceCard({ workspace }: { workspace: Workspace }) {
+function WorkspaceCard({
+  workspace,
+  orgName,
+}: {
+  workspace: Workspace;
+  orgName?: string;
+}) {
   const prebuildStatus = workspace.config.prebuild?.status ?? "none";
   const prebuildVariant = {
     none: "secondary",
@@ -100,6 +148,7 @@ function WorkspaceCard({ workspace }: { workspace: Workspace }) {
           <Badge variant={prebuildVariant[prebuildStatus]}>
             Prebuild: {prebuildStatus}
           </Badge>
+          {orgName && <Badge variant="outline">{orgName}</Badge>}
         </div>
         {workspace.config.description && (
           <ExpandableDescription text={workspace.config.description} />

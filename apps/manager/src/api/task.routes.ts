@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import {
+  orgMemberService,
   sandboxDestroyer,
   sandboxLifecycle,
   systemAiService,
@@ -31,11 +32,17 @@ function getUser(store: { user?: AuthUser }): AuthUser {
 export const taskRoutes = new Elysia({ prefix: "/tasks" })
   .get(
     "/",
-    ({ query }) => {
+    ({ query, store }) => {
+      const user = getUser(store as { user?: AuthUser });
+      const memberships = orgMemberService.getByUserId(user.id);
+      const orgIds = memberships.map((m) => m.orgId);
+
       if (query.workspaceId) {
-        return taskService.getByWorkspaceId(query.workspaceId);
+        return taskService
+          .getByWorkspaceId(query.workspaceId)
+          .filter((t) => !t.orgId || orgIds.includes(t.orgId));
       }
-      return taskService.getAll();
+      return taskService.getByOrgIds(orgIds);
     },
     {
       query: t.Object({

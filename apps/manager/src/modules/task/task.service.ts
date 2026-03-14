@@ -25,6 +25,10 @@ export class TaskService {
     return this.repository.getByWorkspaceId(workspaceId);
   }
 
+  getByOrgIds(orgIds: string[]): Task[] {
+    return this.repository.getByOrgIds(orgIds);
+  }
+
   getById(id: string): Task | undefined {
     return this.repository.getById(id);
   }

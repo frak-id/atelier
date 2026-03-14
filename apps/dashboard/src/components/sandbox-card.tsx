@@ -21,8 +21,10 @@ import type { Sandbox, Workspace } from "@/api/client";
 import {
   deriveBrowserStatus,
   opencodeSessionsQuery,
+  organizationListQuery,
   sandboxDevCommandsQuery,
   sandboxGitStatusQuery,
+  useOrganizationMap,
   useSandboxServices,
   useStartBrowser,
 } from "@/api/queries";
@@ -81,6 +83,12 @@ export function SandboxCard({
     sandbox.status === "running",
   );
   const browserStatus = deriveBrowserStatus(services, sandbox);
+  const orgMap = useOrganizationMap();
+  const { data: organizations } = useQuery(organizationListQuery());
+  const orgName =
+    organizations && organizations.length > 1 && sandbox.orgId
+      ? orgMap.get(sandbox.orgId)
+      : undefined;
 
   const statusVariant = {
     running: "success",
@@ -122,6 +130,11 @@ export function SandboxCard({
                 >
                   {sandbox.status}
                 </Badge>
+                {orgName && (
+                  <Badge variant="outline" className="text-xs">
+                    {orgName}
+                  </Badge>
+                )}
               </div>
               {(sandbox.workspaceId || task) && (
                 <p className="text-sm text-muted-foreground truncate flex items-center gap-1.5">

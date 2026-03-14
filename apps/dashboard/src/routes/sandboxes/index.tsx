@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useState } from "react";
 import type { Sandbox } from "@/api/client";
 import {
+  organizationListQuery,
   sandboxListQuery,
   sshKeysListQuery,
   taskListQuery,
@@ -51,12 +52,14 @@ export const Route = createFileRoute("/sandboxes/")({
 
 function SandboxesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [orgFilter, setOrgFilter] = useState<string>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const { openSandbox, openTask } = useDrawer();
   const [recreatingId, setRecreatingId] = useState<string | null>(null);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
   const { data: sshKeys } = useQuery(sshKeysListQuery);
   const { data: tasks } = useQuery(taskListQuery());
+  const { data: organizations } = useQuery(organizationListQuery());
   const workspaceDataMap = useWorkspaceDataMap();
   const deleteMutation = useDeleteSandbox();
   const createMutation = useCreateSandbox();
@@ -64,10 +67,11 @@ function SandboxesPage() {
   const startMutation = useStartSandbox();
   const recoverMutation = useRecoverSandbox();
 
-  const filteredSandboxes =
-    statusFilter === "all"
-      ? (sandboxes ?? [])
-      : (sandboxes ?? []).filter((s) => s.status === statusFilter);
+  const filteredSandboxes = (sandboxes ?? []).filter((s) => {
+    if (statusFilter !== "all" && s.status !== statusFilter) return false;
+    if (orgFilter !== "all" && s.orgId && s.orgId !== orgFilter) return false;
+    return true;
+  });
 
   const handleDelete = (id: string) => {
     if (confirm(`Delete sandbox ${id}?`)) {
@@ -127,6 +131,19 @@ function SandboxesPage() {
             <SelectItem value="creating">Creating</SelectItem>
             <SelectItem value="stopped">Stopped</SelectItem>
             <SelectItem value="error">Error</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={orgFilter} onValueChange={setOrgFilter}>
+          <SelectTrigger className="w-full sm:w-[180px]">
+            <SelectValue placeholder="All Organizations" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Organizations</SelectItem>
+            {(organizations ?? []).map((org) => (
+              <SelectItem key={org.id} value={org.id}>
+                {org.name}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <span className="text-sm text-muted-foreground">

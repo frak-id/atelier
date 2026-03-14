@@ -10,8 +10,9 @@ import {
   Loader2,
   Server,
 } from "lucide-react";
-import { Component, type ReactNode, Suspense } from "react";
+import { Component, type ReactNode, Suspense, useState } from "react";
 import {
+  organizationListQuery,
   sandboxDevCommandsQuery,
   sandboxListQuery,
   taskListQuery,
@@ -36,6 +37,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAttentionData } from "@/hooks/use-attention-data";
 import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
@@ -80,14 +88,31 @@ export const Route = createFileRoute("/")({
 
 function MissionControlPage() {
   const { openTask, openSandbox } = useDrawer();
+  const [orgFilter, setOrgFilter] = useState<string>("all");
+  const { data: organizations } = useQuery(organizationListQuery());
 
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Mission Control</h1>
-        <p className="text-muted-foreground">
-          Overview of all active operations across your sandboxes.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight">Mission Control</h1>
+          <p className="text-muted-foreground">
+            Overview of all active operations across your sandboxes.
+          </p>
+        </div>
+        <Select value={orgFilter} onValueChange={setOrgFilter}>
+          <SelectTrigger className="w-full sm:w-[180px]">
+            <SelectValue placeholder="All Organizations" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Organizations</SelectItem>
+            {(organizations ?? []).map((org) => (
+              <SelectItem key={org.id} value={org.id}>
+                {org.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-8">
@@ -105,7 +130,7 @@ function MissionControlPage() {
 
         <SectionErrorBoundary>
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            <ActiveTasksSection onSelectTask={openTask} />
+            <ActiveTasksSection onSelectTask={openTask} orgFilter={orgFilter} />
           </Suspense>
         </SectionErrorBoundary>
 
@@ -114,6 +139,7 @@ function MissionControlPage() {
             <RunningSandboxesSection
               onSelectSandbox={openSandbox}
               onSelectTask={openTask}
+              orgFilter={orgFilter}
             />
           </Suspense>
         </SectionErrorBoundary>
@@ -180,12 +206,19 @@ function AttentionSection() {
 
 function ActiveTasksSection({
   onSelectTask,
+  orgFilter,
 }: {
   onSelectTask: (id: string) => void;
+  orgFilter: string;
 }) {
   const { data: tasks } = useQuery({
     ...taskListQuery(),
-    select: (tasks) => tasks?.filter((t) => t.status === "active"),
+    select: (tasks) =>
+      tasks?.filter(
+        (t) =>
+          t.status === "active" &&
+          (orgFilter === "all" || !t.orgId || t.orgId === orgFilter),
+      ),
   });
   const workspaceMap = useWorkspaceMap();
 
@@ -299,14 +332,19 @@ function ActiveTaskCard({
 function RunningSandboxesSection({
   onSelectSandbox,
   onSelectTask,
+  orgFilter,
 }: {
   onSelectSandbox: (id: string) => void;
   onSelectTask: (id: string) => void;
+  orgFilter: string;
 }) {
   const { data: sandboxes } = useQuery(sandboxListQuery());
   const { data: tasks } = useQuery(taskListQuery());
-  const runningSandboxes =
-    sandboxes?.filter((s) => s.status === "running") ?? [];
+  const runningSandboxes = (sandboxes ?? []).filter(
+    (s) =>
+      s.status === "running" &&
+      (orgFilter === "all" || !s.orgId || s.orgId === orgFilter),
+  );
   const workspaceDataMap = useQuery({
     ...workspaceListQuery(),
     select: (workspaces) => {

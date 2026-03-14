@@ -27,8 +27,11 @@ const log = createChildLogger("workspace-routes");
 export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
   .get(
     "/",
-    () => {
-      return workspaceService.getAll();
+    ({ store }) => {
+      const user = (store as { user: AuthUser }).user;
+      const memberships = orgMemberService.getByUserId(user.id);
+      const orgIds = memberships.map((m) => m.orgId);
+      return workspaceService.getByOrgIds(orgIds);
     },
     {
       response: WorkspaceListResponseSchema,

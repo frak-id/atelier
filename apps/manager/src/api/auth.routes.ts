@@ -73,14 +73,6 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         orgMemberService.addMember(personalOrg.id, "12345", "owner");
       }
 
-      const defaultOrg = organizationService.getBySlug("default");
-      if (
-        defaultOrg &&
-        !orgMemberService.getMembership(defaultOrg.id, "12345")
-      ) {
-        orgMemberService.addMember(defaultOrg.id, "12345", "admin");
-      }
-
       return redirect("/");
     }
 
@@ -163,14 +155,6 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
           );
           userService.setPersonalOrg(String(user.id), personalOrg.id);
           orgMemberService.addMember(personalOrg.id, String(user.id), "owner");
-        }
-
-        const defaultOrg = organizationService.getBySlug("default");
-        if (
-          defaultOrg &&
-          !orgMemberService.getMembership(defaultOrg.id, String(user.id))
-        ) {
-          orgMemberService.addMember(defaultOrg.id, String(user.id), "admin");
         }
 
         const token = await jwt.sign({

@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   getDatabase,
   type SandboxStatus,
@@ -59,6 +59,19 @@ export class SandboxRepository {
       .select()
       .from(sandboxes)
       .where(eq(sandboxes.orgId, orgId))
+      .all()
+      .map(rowToSandbox);
+  }
+
+  getByOrgIds(orgIds: string[]): Sandbox[] {
+    const conditions = [isNull(sandboxes.orgId)];
+    if (orgIds.length > 0) {
+      conditions.push(inArray(sandboxes.orgId, orgIds));
+    }
+    return getDatabase()
+      .select()
+      .from(sandboxes)
+      .where(or(...conditions))
       .all()
       .map(rowToSandbox);
   }

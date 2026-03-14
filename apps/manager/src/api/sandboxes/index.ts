@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import {
   agentClient,
   agentOperations,
+  orgMemberService,
   sandboxDestroyer,
   sandboxLifecycle,
   sandboxService,
@@ -35,6 +36,7 @@ import {
   SandboxSchema,
 } from "../../schemas/index.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
+import type { AuthUser } from "../../shared/lib/auth.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { devRoutes } from "./dev.routes.ts";
@@ -47,9 +49,13 @@ const log = createChildLogger("sandbox-routes");
 export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/",
-    ({ query }) => {
+    ({ query, store }) => {
+      const user = (store as { user: AuthUser }).user;
+      const memberships = orgMemberService.getByUserId(user.id);
+      const orgIds = memberships.map((m) => m.orgId);
+
       let sandboxes = sandboxService
-        .getAll()
+        .getByOrgIds(orgIds)
         .filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
 
       if (query.status) {
