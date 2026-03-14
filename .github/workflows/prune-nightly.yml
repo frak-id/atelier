@@ -1,0 +1,63 @@
+name: Prune nightly images
+
+on:
+  schedule:
+    - cron: "0 4 * * *" # Daily at 4 AM UTC
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        package:
+          - atelier-manager
+          - atelier-dashboard
+          - sandbox-agent
+    steps:
+      - name: Prune old nightly versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          set -euo pipefail
+
+          CUTOFF=$(date -d '7 days ago' -u +%Y-%m-%dT%H:%M:%SZ)
+          DELETED=0
+
+          echo "Pruning $PACKAGE — removing nightly-* and untagged versions older than $CUTOFF"
+
+          PAGE=1
+          while :; do
+            RESPONSE=$(gh api "/orgs/frak-id/packages/container/$PACKAGE/versions?per_page=100&page=$PAGE" 2>/dev/null || echo "[]")
+
+            COUNT=$(echo "$RESPONSE" | jq length)
+            [ "$COUNT" -eq 0 ] && break
+
+            # Delete versions that are:
+            #   - older than the cutoff, AND
+            #   - either completely untagged, or tagged ONLY with nightly-* prefixed tags
+            # This preserves: semver releases, "latest", and the rolling "nightly" tag
+            IDS=$(echo "$RESPONSE" | jq -r --arg cutoff "$CUTOFF" '
+              .[] |
+              select(.updated_at < $cutoff) |
+              select(
+                (.metadata.container.tags | length == 0) or
+                (.metadata.container.tags | all(startswith("nightly-")))
+              ) |
+              .id
+            ')
+
+            for ID in $IDS; do
+              echo "  Deleting version $ID"
+              gh api --method DELETE "/orgs/frak-id/packages/container/$PACKAGE/versions/$ID" --silent 2>/dev/null && DELETED=$((DELETED + 1)) || echo "  Failed to delete $ID"
+            done
+
+            PAGE=$((PAGE + 1))
+          done
+
+          echo "Pruned $DELETED version(s) from $PACKAGE"
