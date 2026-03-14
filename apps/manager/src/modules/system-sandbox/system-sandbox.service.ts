@@ -88,10 +88,6 @@ export class SystemSandboxService {
         this.sandboxId = candidate.id;
         this.opencodePassword = candidate.runtime.opencodePassword ?? null;
         this.bootedAt = new Date(candidate.createdAt).getTime();
-        await this.registerMcpServer(
-          candidate.runtime.ipAddress,
-          candidate.runtime.opencodePassword,
-        );
         this.deps.eventListener.start(
           candidate.id,
           candidate.runtime.opencodePassword,
@@ -323,47 +319,10 @@ export class SystemSandboxService {
     if (!isMock()) {
       await waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
     }
-    await this.registerMcpServer(ipAddress, sandbox.runtime.opencodePassword);
     this.deps.eventListener.start(sandbox.id, sandbox.runtime.opencodePassword);
     this.startMaxLifetimeTimer();
 
     return ipAddress;
-  }
-
-  private async registerMcpServer(
-    ipAddress: string,
-    password?: string,
-  ): Promise<void> {
-    const mcpToken = config.server.mcpToken;
-    const mcpUrl = `${config.kubernetes.managerUrl}/mcp`;
-
-    const url = `http://${ipAddress}:${config.ports.opencode}`;
-    const client = createOpencodeClient({
-      baseUrl: url,
-      headers: buildOpenCodeAuthHeaders(password),
-    });
-
-    try {
-      await client.mcp.add({
-        name: "atelier-manager",
-        config: {
-          type: "remote" as const,
-          url: mcpUrl,
-          enabled: true,
-          ...(mcpToken && {
-            headers: { Authorization: `Bearer ${mcpToken}` },
-          }),
-          oauth: false,
-          timeout: 10000,
-        },
-      });
-      log.info({ ipAddress }, "MCP server registered with system sandbox");
-    } catch (error) {
-      log.warn(
-        { error, ipAddress },
-        "Failed to register MCP server with system sandbox",
-      );
-    }
   }
 
   private startIdleTimer(): void {

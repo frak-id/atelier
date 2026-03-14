@@ -1,6 +1,7 @@
 import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { CLIProxyService } from "../cliproxy/cliproxy.service.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
@@ -114,6 +115,7 @@ export class InternalService {
 
     if (workspaceId === SYSTEM_WORKSPACE_ID) {
       this.injectSystemAgents(merged);
+      this.injectMcpServer(merged);
     }
 
     this.injectCliProxyProvider(merged, sandboxId);
@@ -164,6 +166,51 @@ export class InternalService {
       merged.push({
         path: configPath,
         content: JSON.stringify(SYSTEM_AGENTS_CONFIG),
+        contentType: "json",
+      });
+    }
+  }
+
+  private injectMcpServer(
+    merged: {
+      path: string;
+      content: string;
+      contentType: string;
+    }[],
+  ): void {
+    const managerUrl = config.kubernetes.managerUrl;
+    if (!managerUrl) return;
+
+    const mcpToken = config.server.mcpToken;
+    const mcpConfig: Record<string, unknown> = {
+      "atelier-manager": {
+        type: "remote",
+        url: `${managerUrl}/mcp`,
+        enabled: true,
+        ...(mcpToken && {
+          headers: { Authorization: `Bearer ${mcpToken}` },
+        }),
+        oauth: false,
+        timeout: 10000,
+      },
+    };
+
+    const configPath = "~/.config/opencode/opencode.json";
+    const existing = merged.find((c) => c.path === configPath);
+
+    if (existing && existing.contentType === "json") {
+      try {
+        const parsed = JSON.parse(existing.content) as Record<string, unknown>;
+        const existingMcp = (parsed.mcp as Record<string, unknown>) ?? {};
+        parsed.mcp = { ...existingMcp, ...mcpConfig };
+        existing.content = JSON.stringify(parsed);
+      } catch {
+        log.warn("Failed to merge MCP server into opencode config");
+      }
+    } else if (!existing) {
+      merged.push({
+        path: configPath,
+        content: JSON.stringify({ mcp: mcpConfig }),
         contentType: "json",
       });
     }
