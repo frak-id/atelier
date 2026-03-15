@@ -19,16 +19,16 @@ import {
   WorkspaceSchema,
 } from "../schemas/index.ts";
 import { ForbiddenError, NotFoundError } from "../shared/errors.ts";
-import type { AuthUser } from "../shared/lib/auth.ts";
+import { authPlugin } from "../shared/lib/auth.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("workspace-routes");
 
 export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
+  .use(authPlugin)
   .get(
     "/",
-    ({ store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ user }) => {
       const memberships = orgMemberService.getByUserId(user.id);
       const orgIds = memberships.map((m) => m.orgId);
       return workspaceService.getByOrgIds(orgIds);
@@ -243,8 +243,7 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
   )
   .post(
     "/:id/transfer",
-    ({ params, body, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ params, body, user }) => {
       const workspace = workspaceService.getByIdOrThrow(params.id);
 
       if (workspace.orgId) {

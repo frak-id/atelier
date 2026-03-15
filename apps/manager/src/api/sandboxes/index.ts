@@ -36,7 +36,7 @@ import {
   SandboxSchema,
 } from "../../schemas/index.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
-import type { AuthUser } from "../../shared/lib/auth.ts";
+import { authPlugin } from "../../shared/lib/auth.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { devRoutes } from "./dev.routes.ts";
@@ -47,10 +47,10 @@ import { terminalRoutes } from "./terminal.routes.ts";
 const log = createChildLogger("sandbox-routes");
 
 export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
+  .use(authPlugin)
   .get(
     "/",
-    ({ query, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ query, user }) => {
       const memberships = orgMemberService.getByUserId(user.id);
       const orgIds = memberships.map((m) => m.orgId);
 

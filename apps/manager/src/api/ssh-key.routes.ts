@@ -9,7 +9,7 @@ import {
   SshKeyListResponseSchema,
   SshKeySchema,
 } from "../schemas/index.ts";
-import type { AuthUser } from "../shared/lib/auth.ts";
+import { authPlugin } from "../shared/lib/auth.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
@@ -99,16 +99,11 @@ async function syncAuthorizedKeysToPipes(): Promise<void> {
   }
 }
 
-function getUser(store: { user?: AuthUser }): AuthUser {
-  if (!store.user) throw new Error("User not authenticated");
-  return store.user;
-}
-
 export const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
+  .use(authPlugin)
   .get(
     "/",
-    ({ store }) => {
-      const user = getUser(store as { user?: AuthUser });
+    ({ user }) => {
       return sshKeyService.listByUserId(user.id);
     },
     {
@@ -117,8 +112,7 @@ export const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
   )
   .get(
     "/has-keys",
-    ({ store }) => {
-      const user = getUser(store as { user?: AuthUser });
+    ({ user }) => {
       return { hasKeys: sshKeyService.hasKeysForUser(user.id) };
     },
     {
@@ -127,9 +121,7 @@ export const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
   )
   .post(
     "/",
-    async ({ body, store }) => {
-      const user = getUser(store as { user?: AuthUser });
-
+    async ({ body, user }) => {
       const sshKey = sshKeyService.create({
         userId: user.id,
         username: user.username,
@@ -150,8 +142,7 @@ export const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
   )
   .delete(
     "/:id",
-    async ({ params, store, set }) => {
-      const user = getUser(store as { user?: AuthUser });
+    async ({ params, user, set }) => {
       try {
         sshKeyService.delete(params.id, user.id);
         void syncAuthorizedKeysToPipes();

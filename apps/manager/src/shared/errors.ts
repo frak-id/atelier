@@ -30,6 +30,13 @@ export class ResourceExhaustedError extends SandboxError {
   }
 }
 
+export class UnauthorizedError extends SandboxError {
+  constructor(message = "Missing authentication") {
+    super(message, "UNAUTHORIZED", 401);
+    this.name = "UnauthorizedError";
+  }
+}
+
 export class ValidationError extends SandboxError {
   constructor(message: string) {
     super(message, "VALIDATION_ERROR", 400);

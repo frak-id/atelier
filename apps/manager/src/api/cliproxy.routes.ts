@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { cliProxyService, kubeClient } from "../container.ts";
-import type { AuthUser } from "../shared/lib/auth.ts";
+import { authPlugin } from "../shared/lib/auth.ts";
 import { config } from "../shared/lib/config.ts";
 
 const CLIProxyStatusSchema = t.Object({
@@ -24,6 +24,7 @@ const CLIProxyRefreshResultSchema = t.Object({
 });
 
 export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
+  .use(authPlugin)
   .get("/", () => cliProxyService.getStatus(), {
     detail: {
       tags: ["system"],
@@ -91,8 +92,7 @@ export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
   )
   .get(
     "/user-api-key",
-    async ({ store }) => {
-      const user = (store as { user: AuthUser }).user;
+    async ({ user }) => {
       const existing = cliProxyService.getUserApiKey(user.username);
       const apiKey =
         existing ?? (await cliProxyService.createUserKey(user.username));
@@ -110,8 +110,7 @@ export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
   )
   .post(
     "/user-api-key",
-    async ({ store }) => {
-      const user = (store as { user: AuthUser }).user;
+    async ({ user }) => {
       const apiKey = await cliProxyService.createUserKey(user.username);
       return { apiKey };
     },

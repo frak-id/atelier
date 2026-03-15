@@ -1,4 +1,6 @@
+import { Elysia } from "elysia";
 import * as jose from "jose";
+import { UnauthorizedError } from "../errors.ts";
 import { config, isMock } from "./config.ts";
 
 const JWT_SECRET = new TextEncoder().encode(config.auth.jwtSecret);
@@ -36,43 +38,29 @@ export async function verifyJwt(token: string): Promise<AuthUser | null> {
   }
 }
 
-export async function authGuard({
-  cookie,
-  set,
-  store,
-  headers,
-}: {
-  // biome-ignore lint/suspicious/noExplicitAny: Elysia cookie type is Cookie<unknown>
-  cookie: Record<string, any>;
-  set: { status?: number | string };
-  store: { user?: AuthUser } & Record<string, unknown>;
-  headers: Record<string, string | undefined>;
-}): Promise<{ error: string; message: string } | undefined> {
-  let token = cookie.sandbox_token?.value as string | undefined;
+export const authPlugin = new Elysia({ name: "auth-guard" })
+  .resolve(async ({ cookie, headers }) => {
+    // biome-ignore lint/suspicious/noExplicitAny: Elysia cookie type is Cookie<unknown>
+    let token = (cookie as Record<string, any>).sandbox_token?.value as
+      | string
+      | undefined;
 
-  if (!token) {
-    const authHeader = headers.authorization;
-    if (authHeader?.startsWith("Bearer ")) {
-      token = authHeader.slice(7);
+    if (!token) {
+      const authHeader = headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        token = authHeader.slice(7);
+      }
     }
-  }
 
-  if (!token || typeof token !== "string") {
-    set.status = 401;
-    return {
-      error: "UNAUTHORIZED",
-      message: "Missing authentication",
-    };
-  }
+    if (!token || typeof token !== "string") {
+      throw new UnauthorizedError();
+    }
 
-  const user = await verifyJwt(token);
-  if (!user) {
-    set.status = 401;
-    return {
-      error: "UNAUTHORIZED",
-      message: "Invalid or expired token",
-    };
-  }
+    const user = await verifyJwt(token);
+    if (!user) {
+      throw new UnauthorizedError("Invalid or expired token");
+    }
 
-  store.user = user;
-}
+    return { user };
+  })
+  .as("scoped");

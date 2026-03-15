@@ -49,7 +49,6 @@ import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
 import { SandboxError } from "./shared/errors.ts";
-import { authGuard } from "./shared/lib/auth.ts";
 import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
@@ -228,26 +227,23 @@ const app = new Elysia()
   .group("/api", (app) =>
     app
       .use(githubOAuthRoutes)
-      .guard({ beforeHandle: authGuard }, (app) =>
-        app
-          .use(sandboxRoutes)
-          .use(workspaceRoutes)
-          .use(opencodeRoutes)
-          .use(taskRoutes)
-          .use(sessionTemplateRoutes)
-          .use(gitSourceRoutes)
-          .use(configFileRoutes)
-          .use(sharedAuthRoutes)
-          .use(sshKeyRoutes)
-          .use(systemRoutes)
-          .use(registryRoutes)
-          .use(imageRoutes)
-          .use(githubApiRoutes)
-          .use(eventsRoutes)
-          .use(systemModelConfigRoutes)
-          .use(cliproxyRoutes)
-          .use(organizationRoutes),
-      ),
+      .use(sandboxRoutes)
+      .use(workspaceRoutes)
+      .use(opencodeRoutes)
+      .use(taskRoutes)
+      .use(sessionTemplateRoutes)
+      .use(gitSourceRoutes)
+      .use(configFileRoutes)
+      .use(sharedAuthRoutes)
+      .use(sshKeyRoutes)
+      .use(systemRoutes)
+      .use(registryRoutes)
+      .use(imageRoutes)
+      .use(githubApiRoutes)
+      .use(eventsRoutes)
+      .use(systemModelConfigRoutes)
+      .use(cliproxyRoutes)
+      .use(organizationRoutes),
   );
 
 app.get("/", () => ({

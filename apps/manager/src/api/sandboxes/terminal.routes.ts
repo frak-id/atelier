@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { agentClient, sandboxService } from "../../container.ts";
-import type { AuthUser } from "../../shared/lib/auth.ts";
+import { type AuthUser, authPlugin } from "../../shared/lib/auth.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { sandboxIdGuard } from "./guard.ts";
@@ -8,11 +8,6 @@ import { sandboxIdGuard } from "./guard.ts";
 const log = createChildLogger("terminal-routes");
 
 const TERMINAL_WS_PORT = config.ports.terminal;
-
-function getUser(store: { user?: AuthUser }): AuthUser {
-  if (!store.user) throw new Error("User not authenticated");
-  return store.user;
-}
 
 const TerminalSessionSchema = t.Object({
   id: t.String(),
@@ -28,11 +23,11 @@ const CreateSessionBodySchema = t.Object({
 });
 
 export const terminalRoutes = new Elysia()
+  .use(authPlugin)
   .use(sandboxIdGuard)
   .get(
     "/:id/terminal/sessions",
-    async ({ params, store }) => {
-      const user = getUser(store as { user?: AuthUser });
+    async ({ params, user }) => {
       const sandbox = sandboxService.getById(params.id);
       if (!sandbox || sandbox.status !== "running") {
         return [];
@@ -52,8 +47,7 @@ export const terminalRoutes = new Elysia()
   )
   .post(
     "/:id/terminal/sessions",
-    async ({ params, body, store, set }) => {
-      const user = getUser(store as { user?: AuthUser });
+    async ({ params, body, user, set }) => {
       const sandbox = sandboxService.getById(params.id);
       if (!sandbox || sandbox.status !== "running") {
         set.status = 400;
@@ -81,8 +75,7 @@ export const terminalRoutes = new Elysia()
       body: CreateSessionBodySchema,
     },
   )
-  .get("/:id/terminal/sessions/:sessionId", async ({ params, store, set }) => {
-    const user = getUser(store as { user?: AuthUser });
+  .get("/:id/terminal/sessions/:sessionId", async ({ params, user, set }) => {
     const sandbox = sandboxService.getById(params.id);
     if (!sandbox || sandbox.status !== "running") {
       set.status = 404;
@@ -106,8 +99,7 @@ export const terminalRoutes = new Elysia()
   })
   .delete(
     "/:id/terminal/sessions/:sessionId",
-    async ({ params, store, set }) => {
-      const user = getUser(store as { user?: AuthUser });
+    async ({ params, user, set }) => {
       const sandbox = sandboxService.getById(params.id);
       if (!sandbox || sandbox.status !== "running") {
         set.status = 404;
@@ -146,7 +138,7 @@ export const terminalRoutes = new Elysia()
       const id = (ws.data.params as { id: string; sessionId: string }).id;
       const sessionId = (ws.data.params as { id: string; sessionId: string })
         .sessionId;
-      const user = (ws.data as { store: { user?: AuthUser } }).store?.user;
+      const user = (ws.data as { user?: AuthUser }).user;
 
       if (!user) {
         log.warn({ sandboxId: id }, "No user in WebSocket context");
