@@ -27,7 +27,7 @@ export function CLIProxySection() {
     if (!exportConfig) return null;
     if (!userApiKeyData?.apiKey) return exportConfig;
 
-    const config = JSON.stringify(exportConfig).replace(
+    const config = JSON.stringify(exportConfig).replaceAll(
       "<your-api-key>",
       userApiKeyData.apiKey,
     );
