@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { InternalService } from "../internal/internal.service.ts";
@@ -388,13 +389,7 @@ export class CLIProxyService {
     const existing = this.getUserApiKey(username);
     if (existing) return existing;
 
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-    let suffix = "";
-    const randomBytes = crypto.getRandomValues(new Uint8Array(16));
-    for (const byte of randomBytes) {
-      suffix += chars[byte % chars.length];
-    }
-    const apiKey = `${username}-${suffix}`;
+    const apiKey = `${username}-${nanoid(16)}`;
 
     const ok = await this.managementAddKey(apiKey, managementKey);
     if (!ok) return null;
