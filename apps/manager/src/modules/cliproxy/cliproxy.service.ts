@@ -147,6 +147,15 @@ interface RawUsageApiStats {
   models?: Record<string, RawUsageModelStats>;
 }
 
+type DeveloperStatsMap = Map<
+  string,
+  {
+    requests: number;
+    tokens: number;
+    models: Map<string, { requests: number; tokens: number }>;
+  }
+>;
+
 interface RawUsageResponse {
   failed_requests: number;
   usage: {
@@ -547,14 +556,7 @@ export class CLIProxyService {
       { requests: number; tokens: number }
     >();
     const sandboxes: Record<string, CLIProxySandboxUsage> = {};
-    const devMap = new Map<
-      string,
-      {
-        requests: number;
-        tokens: number;
-        models: Map<string, { requests: number; tokens: number }>;
-      }
-    >();
+    const devMap: DeveloperStatsMap = new Map();
 
     const userKeysReverse = new Map<string, string>();
     for (const [username, apiKey] of Object.entries(this.loadUserKeys())) {
@@ -664,14 +666,7 @@ export class CLIProxyService {
   }
 
   private accumulateDeveloper(
-    devMap: Map<
-      string,
-      {
-        requests: number;
-        tokens: number;
-        models: Map<string, { requests: number; tokens: number }>;
-      }
-    >,
+    devMap: DeveloperStatsMap,
     username: string,
     apiStats: RawUsageApiStats,
     perKeyModels: CLIProxyModelUsage[],
