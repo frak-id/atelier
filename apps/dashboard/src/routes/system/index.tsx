@@ -2,7 +2,6 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Box,
-  ChevronRight,
   Cpu,
   HardDrive,
   Loader2,
@@ -12,11 +11,9 @@ import {
   Save,
   Server,
   Trash2,
-  Zap,
 } from "lucide-react";
 import { useState } from "react";
 import {
-  cliproxyUsageQuery,
   registryStatusQuery,
   sharedBinariesQuery,
   systemServicesQuery,
@@ -28,12 +25,13 @@ import {
   useUpdateRegistrySettings,
 } from "@/api/queries";
 import { RouteErrorComponent } from "@/components/route-error";
+import { TokenUsageCard } from "@/components/token-usage-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCompact, formatDuration } from "@/lib/utils";
+import { formatDuration } from "@/lib/utils";
 
 export const Route = createFileRoute("/system/")({
   component: SystemPage,
@@ -42,7 +40,6 @@ export const Route = createFileRoute("/system/")({
     context.queryClient.ensureQueryData(registryStatusQuery);
     context.queryClient.ensureQueryData(systemServicesQuery);
     context.queryClient.ensureQueryData(sharedBinariesQuery);
-    context.queryClient.ensureQueryData(cliproxyUsageQuery);
   },
   pendingComponent: () => (
     <div className="p-6 space-y-6">
@@ -72,8 +69,6 @@ function SystemPage() {
   const { data: registry } = useQuery(registryStatusQuery);
   const { data: services } = useQuery(systemServicesQuery);
   const { data: binaries } = useQuery(sharedBinariesQuery);
-  const { data: cliproxyUsage, isLoading: isCliProxyLoading } =
-    useQuery(cliproxyUsageQuery);
 
   const updateRegistrySettings = useUpdateRegistrySettings();
   const purgeRegistryCache = usePurgeRegistryCache();
@@ -84,38 +79,6 @@ function SystemPage() {
   const [evictionDays, setEvictionDays] = useState<number | undefined>(
     undefined,
   );
-
-  const [expandedDevelopers, setExpandedDevelopers] = useState<Set<string>>(
-    new Set(),
-  );
-
-  const toggleDeveloper = (username: string) => {
-    setExpandedDevelopers((prev) => {
-      const next = new Set(prev);
-      if (next.has(username)) {
-        next.delete(username);
-      } else {
-        next.add(username);
-      }
-      return next;
-    });
-  };
-
-  const [expandedSandboxes, setExpandedSandboxes] = useState<Set<string>>(
-    new Set(),
-  );
-
-  const toggleSandbox = (sandboxId: string) => {
-    setExpandedSandboxes((prev) => {
-      const next = new Set(prev);
-      if (next.has(sandboxId)) {
-        next.delete(sandboxId);
-      } else {
-        next.add(sandboxId);
-      }
-      return next;
-    });
-  };
 
   const restartMutations: Record<
     string,
@@ -242,242 +205,7 @@ function SystemPage() {
         </Card>
       </div>
 
-      {isCliProxyLoading ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="h-5 w-5" />
-              Token Usage
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-            </div>
-          </CardContent>
-        </Card>
-      ) : cliproxyUsage ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap className="h-5 w-5" />
-              Token Usage
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <div>
-                <div className="text-xs text-muted-foreground">
-                  Total Tokens
-                </div>
-                <div className="text-xl font-bold">
-                  {formatCompact(cliproxyUsage.global.totalTokens)}
-                </div>
-                {cliproxyUsage.global.today && (
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Today: {formatCompact(cliproxyUsage.global.today.tokens)}
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">
-                  Total Requests
-                </div>
-                <div className="text-xl font-bold">
-                  {formatCompact(cliproxyUsage.global.totalRequests)}
-                </div>
-                {cliproxyUsage.global.today && (
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Today: {formatCompact(cliproxyUsage.global.today.requests)}
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Success</div>
-                <div className="text-xl font-bold">
-                  {formatCompact(cliproxyUsage.global.successCount)}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Failed</div>
-                <div className="text-xl font-bold">
-                  {formatCompact(cliproxyUsage.global.failureCount)}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
-                <div>Model</div>
-                <div>Requests</div>
-                <div>Tokens</div>
-              </div>
-              {[...cliproxyUsage.global.models]
-                .sort((a, b) => b.tokens - a.tokens)
-                .map((model) => (
-                  <div
-                    key={model.model}
-                    className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2.5 text-sm items-center hover:bg-muted/50 rounded"
-                  >
-                    <div className="font-medium truncate" title={model.model}>
-                      {model.model}
-                    </div>
-                    <div className="text-xs text-muted-foreground font-mono">
-                      {formatCompact(model.requests)}
-                    </div>
-                    <div className="text-xs text-muted-foreground font-mono">
-                      {formatCompact(model.tokens)}
-                    </div>
-                  </div>
-                ))}
-            </div>
-
-            {cliproxyUsage.developers &&
-              cliproxyUsage.developers.length > 0 && (
-                <div className="mt-4 border-t pt-4">
-                  <h4 className="text-sm font-medium text-muted-foreground mb-3">
-                    Per Developer
-                  </h4>
-                  <div className="space-y-1">
-                    <div className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
-                      <div>Developer</div>
-                      <div>Requests</div>
-                      <div>Tokens</div>
-                    </div>
-                    {[...cliproxyUsage.developers]
-                      .sort((a, b) => b.totalTokens - a.totalTokens)
-                      .map((dev) => {
-                        const isExpanded = expandedDevelopers.has(dev.username);
-                        return (
-                          <div key={dev.username} className="space-y-1">
-                            <button
-                              type="button"
-                              className="w-full grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2.5 text-sm items-center hover:bg-muted/50 rounded cursor-pointer text-left"
-                              onClick={() => toggleDeveloper(dev.username)}
-                            >
-                              <div
-                                className="font-medium truncate flex items-center gap-1"
-                                title={dev.username}
-                              >
-                                <ChevronRight
-                                  className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-                                />
-                                {dev.username}
-                              </div>
-                              <div className="text-xs text-muted-foreground font-mono">
-                                {formatCompact(dev.totalRequests)}
-                              </div>
-                              <div className="text-xs text-muted-foreground font-mono">
-                                {formatCompact(dev.totalTokens)}
-                              </div>
-                            </button>
-                            {isExpanded && (
-                              <div className="space-y-1 pb-2">
-                                {[...dev.models]
-                                  .sort((a, b) => b.tokens - a.tokens)
-                                  .map((model) => (
-                                    <div
-                                      key={model.model}
-                                      className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2 text-xs items-center bg-muted/30 rounded pl-6"
-                                    >
-                                      <div
-                                        className="truncate text-muted-foreground"
-                                        title={model.model}
-                                      >
-                                        {model.model}
-                                      </div>
-                                      <div className="text-muted-foreground font-mono">
-                                        {formatCompact(model.requests)}
-                                      </div>
-                                      <div className="text-muted-foreground font-mono">
-                                        {formatCompact(model.tokens)}
-                                      </div>
-                                    </div>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-
-            {cliproxyUsage.sandboxes &&
-              Object.keys(cliproxyUsage.sandboxes).length > 0 && (
-                <div className="mt-4 border-t pt-4">
-                  <h4 className="text-sm font-medium text-muted-foreground mb-3">
-                    Per Sandbox
-                  </h4>
-                  <div className="space-y-1">
-                    <div className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
-                      <div>Sandbox</div>
-                      <div>Requests</div>
-                      <div>Tokens</div>
-                    </div>
-                    {Object.entries(cliproxyUsage.sandboxes)
-                      .sort(([, a], [, b]) => b.totalTokens - a.totalTokens)
-                      .map(([sandboxId, sandbox]) => {
-                        const isExpanded = expandedSandboxes.has(sandboxId);
-                        return (
-                          <div key={sandboxId} className="space-y-1">
-                            <button
-                              type="button"
-                              className="w-full grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2.5 text-sm items-center hover:bg-muted/50 rounded cursor-pointer text-left"
-                              onClick={() => toggleSandbox(sandboxId)}
-                            >
-                              <div
-                                className="font-medium font-mono truncate flex items-center gap-1"
-                                title={sandboxId}
-                              >
-                                <ChevronRight
-                                  className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-                                />
-                                {sandboxId}
-                              </div>
-                              <div className="text-xs text-muted-foreground font-mono">
-                                {formatCompact(sandbox.totalRequests)}
-                              </div>
-                              <div className="text-xs text-muted-foreground font-mono">
-                                {formatCompact(sandbox.totalTokens)}
-                              </div>
-                            </button>
-                            {isExpanded && (
-                              <div className="space-y-1 pb-2">
-                                {[...sandbox.models]
-                                  .sort((a, b) => b.tokens - a.tokens)
-                                  .map((model) => (
-                                    <div
-                                      key={model.model}
-                                      className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2 text-xs items-center bg-muted/30 rounded pl-6"
-                                    >
-                                      <div
-                                        className="truncate text-muted-foreground"
-                                        title={model.model}
-                                      >
-                                        {model.model}
-                                      </div>
-                                      <div className="text-muted-foreground font-mono">
-                                        {formatCompact(model.requests)}
-                                      </div>
-                                      <div className="text-muted-foreground font-mono">
-                                        {formatCompact(model.tokens)}
-                                      </div>
-                                    </div>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-          </CardContent>
-        </Card>
-      ) : null}
+      <TokenUsageCard />
 
       <Card>
         <CardHeader>
