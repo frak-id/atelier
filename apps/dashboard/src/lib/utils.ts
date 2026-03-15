@@ -18,6 +18,18 @@ export function formatBytes(bytes: number, decimals = 2): string {
   return `${parseFloat((bytes / k ** i).toFixed(dm))} ${sizes[i]}`;
 }
 
+export function formatCompact(value: number): string {
+  if (value >= 1_000_000) {
+    const v = value / 1_000_000;
+    return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(2)}M`;
+  }
+  if (value >= 1_000) {
+    const v = value / 1_000;
+    return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(2)}k`;
+  }
+  return value.toString();
+}
+
 export function formatDuration(seconds: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
