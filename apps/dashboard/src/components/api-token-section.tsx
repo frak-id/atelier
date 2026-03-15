@@ -98,7 +98,7 @@ export function ApiTokenSection() {
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-xs"
-                  onClick={() => copy(opencodeConfig!, "config")}
+                  onClick={() => copy(opencodeConfig ?? "", "config")}
                 >
                   {isCopied("config") ? (
                     <span className="text-green-500 flex items-center gap-1">

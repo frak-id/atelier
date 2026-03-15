@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Key, Loader2, RefreshCw } from "lucide-react";
+import { useMemo } from "react";
 import {
   cliproxyExportQuery,
   cliproxyStatusQuery,
@@ -13,7 +14,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
-import { useMemo } from "react";
 
 export function CLIProxySection() {
   const { data: status, isLoading } = useQuery(cliproxyStatusQuery);
@@ -148,7 +148,9 @@ export function CLIProxySection() {
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={() => copy(userApiKeyData.apiKey!, "userApiKey")}
+                      onClick={() =>
+                        copy(userApiKeyData.apiKey ?? "", "userApiKey")
+                      }
                     >
                       {isCopied("userApiKey") ? (
                         <Check className="h-4 w-4 text-green-500" />

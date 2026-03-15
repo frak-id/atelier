@@ -29,7 +29,7 @@ export async function registerAdaptor(adaptor: Adaptor): Promise<boolean> {
 
 async function resolveInstallFn(): Promise<InstallFn | null> {
   const candidates = [
-    process.env["OPENCODE_ADAPTORS_PATH"],
+    process.env.OPENCODE_ADAPTORS_PATH,
     "opencode/src/control-plane/adaptors/index.ts",
     "opencode/src/control-plane/adaptors",
   ].filter(Boolean) as string[];

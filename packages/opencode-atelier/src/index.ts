@@ -6,15 +6,14 @@ import { registerAdaptor } from "./register.ts";
 import type { AtelierPluginConfig } from "./types.ts";
 
 function resolveConfig(): AtelierPluginConfig {
-  const managerUrl =
-    process.env["ATELIER_MANAGER_URL"] ?? "http://localhost:4000";
+  const managerUrl = process.env.ATELIER_MANAGER_URL ?? "http://localhost:4000";
 
   return {
     managerUrl,
-    defaultWorkspaceId: process.env["ATELIER_WORKSPACE_ID"],
-    token: process.env["ATELIER_API_TOKEN"],
-    pollIntervalMs: Number(process.env["ATELIER_POLL_INTERVAL_MS"] ?? "3000"),
-    pollTimeoutMs: Number(process.env["ATELIER_POLL_TIMEOUT_MS"] ?? "120000"),
+    defaultWorkspaceId: process.env.ATELIER_WORKSPACE_ID,
+    token: process.env.ATELIER_API_TOKEN,
+    pollIntervalMs: Number(process.env.ATELIER_POLL_INTERVAL_MS ?? "3000"),
+    pollTimeoutMs: Number(process.env.ATELIER_POLL_TIMEOUT_MS ?? "120000"),
   };
 }
 
@@ -22,20 +21,20 @@ function mergeUserConfig(
   target: AtelierPluginConfig,
   source: Record<string, unknown>,
 ) {
-  if (typeof source["url"] === "string") {
-    target.managerUrl = source["url"];
+  if (typeof source.url === "string") {
+    target.managerUrl = source.url;
   }
-  if (typeof source["workspaceId"] === "string") {
-    target.defaultWorkspaceId = source["workspaceId"];
+  if (typeof source.workspaceId === "string") {
+    target.defaultWorkspaceId = source.workspaceId;
   }
-  if (typeof source["pollIntervalMs"] === "number") {
-    target.pollIntervalMs = source["pollIntervalMs"];
+  if (typeof source.pollIntervalMs === "number") {
+    target.pollIntervalMs = source.pollIntervalMs;
   }
-  if (typeof source["pollTimeoutMs"] === "number") {
-    target.pollTimeoutMs = source["pollTimeoutMs"];
+  if (typeof source.pollTimeoutMs === "number") {
+    target.pollTimeoutMs = source.pollTimeoutMs;
   }
-  if (typeof source["token"] === "string") {
-    target.token = source["token"];
+  if (typeof source.token === "string") {
+    target.token = source.token;
   }
 }
 
