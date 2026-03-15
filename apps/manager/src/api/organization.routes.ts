@@ -12,7 +12,7 @@ import {
   UpdateOrgMemberBodySchema,
 } from "../schemas/index.ts";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
-import type { AuthUser } from "../shared/lib/auth.ts";
+import { authPlugin } from "../shared/lib/auth.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("organization-routes");
@@ -20,10 +20,10 @@ const log = createChildLogger("organization-routes");
 export const organizationRoutes = new Elysia({
   prefix: "/organizations",
 })
+  .use(authPlugin)
   .get(
     "/",
-    ({ store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ user }) => {
       return organizationService.getByUserId(user.id);
     },
     {
@@ -32,8 +32,7 @@ export const organizationRoutes = new Elysia({
   )
   .post(
     "/",
-    ({ body, set, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ body, set, user }) => {
       log.info({ name: body.name, slug: body.slug }, "Creating organization");
 
       const existing = organizationService.getBySlug(body.slug);
@@ -54,8 +53,7 @@ export const organizationRoutes = new Elysia({
   )
   .get(
     "/:orgSlug",
-    ({ params, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ params, user }) => {
       const org = organizationService.getBySlugOrThrow(params.orgSlug);
       orgMemberService.requireMembership(org.id, user.id);
       return org;
@@ -67,8 +65,7 @@ export const organizationRoutes = new Elysia({
   )
   .put(
     "/:orgSlug",
-    ({ params, body, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ params, body, user }) => {
       log.info({ orgSlug: params.orgSlug }, "Updating organization");
 
       const org = organizationService.getBySlugOrThrow(params.orgSlug);
@@ -88,8 +85,7 @@ export const organizationRoutes = new Elysia({
   )
   .delete(
     "/:orgSlug",
-    ({ params, set, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ params, set, user }) => {
       log.info({ orgSlug: params.orgSlug }, "Deleting organization");
 
       const org = organizationService.getBySlugOrThrow(params.orgSlug);
@@ -110,8 +106,7 @@ export const organizationRoutes = new Elysia({
   )
   .get(
     "/:orgSlug/members",
-    ({ params, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ params, user }) => {
       const org = organizationService.getBySlugOrThrow(params.orgSlug);
       orgMemberService.requireMembership(org.id, user.id);
       return orgMemberService.getByOrgId(org.id);
@@ -123,8 +118,7 @@ export const organizationRoutes = new Elysia({
   )
   .post(
     "/:orgSlug/members",
-    ({ params, body, set, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ params, body, set, user }) => {
       log.info(
         { orgSlug: params.orgSlug, userId: body.userId },
         "Adding organization member",
@@ -149,8 +143,7 @@ export const organizationRoutes = new Elysia({
   )
   .put(
     "/:orgSlug/members/:memberId",
-    ({ params, body, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ params, body, user }) => {
       log.info(
         { orgSlug: params.orgSlug, memberId: params.memberId },
         "Updating organization member role",
@@ -179,8 +172,7 @@ export const organizationRoutes = new Elysia({
   )
   .delete(
     "/:orgSlug/members/:memberId",
-    ({ params, set, store }) => {
-      const user = (store as { user: AuthUser }).user;
+    ({ params, set, user }) => {
       log.info(
         { orgSlug: params.orgSlug, memberId: params.memberId },
         "Removing organization member",

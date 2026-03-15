@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, Loader2, RefreshCw } from "lucide-react";
+import { Check, Copy, Key, Loader2, RefreshCw } from "lucide-react";
 import {
   cliproxyExportQuery,
   cliproxyStatusQuery,
+  cliproxyUserApiKeyQuery,
   useRefreshCliProxy,
   useToggleCliProxy,
 } from "@/api/queries";
@@ -16,6 +17,7 @@ import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 export function CLIProxySection() {
   const { data: status, isLoading } = useQuery(cliproxyStatusQuery);
   const { data: exportConfig } = useQuery(cliproxyExportQuery);
+  const { data: userApiKeyData } = useQuery(cliproxyUserApiKeyQuery);
   const toggleMutation = useToggleCliProxy();
   const refreshMutation = useRefreshCliProxy();
   const { copy, isCopied } = useCopyToClipboard();
@@ -120,6 +122,33 @@ export function CLIProxySection() {
                   </p>
                 </div>
               )}
+
+              <div className="border-t pt-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Key className="h-4 w-4 text-muted-foreground" />
+                  <Label>Your API Key</Label>
+                </div>
+                {userApiKeyData?.apiKey ? (
+                  <div className="flex gap-2">
+                    <code className="flex-1 bg-muted px-3 py-2 rounded text-sm font-mono flex items-center overflow-x-auto">
+                      {userApiKeyData.apiKey}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copy(userApiKeyData.apiKey!, "userApiKey")}
+                    >
+                      {isCopied("userApiKey") ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="animate-pulse h-10 bg-muted rounded" />
+                )}
+              </div>
 
               {exportConfig && (
                 <div className="border-t pt-4 space-y-2">

@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { cliProxyService, kubeClient } from "../container.ts";
+import { authPlugin } from "../shared/lib/auth.ts";
 import { config } from "../shared/lib/config.ts";
 
 const CLIProxyStatusSchema = t.Object({
@@ -23,6 +24,7 @@ const CLIProxyRefreshResultSchema = t.Object({
 });
 
 export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
+  .use(authPlugin)
   .get("/", () => cliProxyService.getStatus(), {
     detail: {
       tags: ["system"],
@@ -86,5 +88,39 @@ export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
         tags: ["system"],
         summary: "Rollout restart CLIProxy deployment",
       },
+    },
+  )
+  .get(
+    "/user-api-key",
+    async ({ user }) => {
+      const existing = cliProxyService.getUserApiKey(user.username);
+      const apiKey =
+        existing ?? (await cliProxyService.createUserKey(user.username));
+      return { apiKey };
+    },
+    {
+      detail: {
+        tags: ["cliproxy"],
+        summary: "Get current user's CLIProxy API key",
+      },
+      response: t.Object({
+        apiKey: t.Nullable(t.String()),
+      }),
+    },
+  )
+  .post(
+    "/user-api-key",
+    async ({ user }) => {
+      const apiKey = await cliProxyService.createUserKey(user.username);
+      return { apiKey };
+    },
+    {
+      detail: {
+        tags: ["cliproxy"],
+        summary: "Create CLIProxy API key for current user",
+      },
+      response: t.Object({
+        apiKey: t.Nullable(t.String()),
+      }),
     },
   );

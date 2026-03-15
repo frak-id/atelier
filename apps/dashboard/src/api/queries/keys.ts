@@ -105,6 +105,7 @@ export const queryKeys = {
     all: ["cliproxy"] as const,
     status: ["cliproxy", "status"] as const,
     export: ["cliproxy", "export"] as const,
+    userApiKey: ["cliproxy", "userApiKey"] as const,
   },
   organizations: {
     all: ["organizations"] as const,

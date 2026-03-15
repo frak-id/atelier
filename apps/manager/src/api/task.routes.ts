@@ -19,21 +19,16 @@ import {
   TaskSchema,
   UpdateTaskBodySchema,
 } from "../schemas/index.ts";
-import type { AuthUser } from "../shared/lib/auth.ts";
+import { authPlugin } from "../shared/lib/auth.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("task-routes");
 
-function getUser(store: { user?: AuthUser }): AuthUser {
-  if (!store.user) throw new Error("User not authenticated");
-  return store.user;
-}
-
 export const taskRoutes = new Elysia({ prefix: "/tasks" })
+  .use(authPlugin)
   .get(
     "/",
-    ({ query, store }) => {
-      const user = getUser(store as { user?: AuthUser });
+    ({ query, user }) => {
       const memberships = orgMemberService.getByUserId(user.id);
       const orgIds = memberships.map((m) => m.orgId);
 
@@ -63,8 +58,7 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
   )
   .post(
     "/",
-    ({ body, set, store }) => {
-      const user = getUser(store as { user?: AuthUser });
+    ({ body, set, user }) => {
       const title =
         body.title?.trim() || systemAiService.fallbackTitle(body.description);
 
@@ -180,7 +174,6 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
         } else if (sandboxAction === "destroy") {
           await sandboxDestroyer.destroy(task.data.sandboxId);
         }
-        // "detach" = do nothing, sandbox keeps running
       }
 
       return taskService.resetToDraft(params.id);
