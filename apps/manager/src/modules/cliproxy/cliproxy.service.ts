@@ -220,6 +220,13 @@ export interface CLIProxySandboxUsage {
   models: CLIProxyModelUsage[];
 }
 
+export interface CLIProxyDeveloperUsage {
+  username: string;
+  totalRequests: number;
+  totalTokens: number;
+  models: CLIProxyModelUsage[];
+}
+
 export interface CLIProxyUsage {
   global: {
     totalRequests: number;
@@ -230,6 +237,7 @@ export interface CLIProxyUsage {
     today: { requests: number; tokens: number } | null;
   };
   sandboxes: Record<string, CLIProxySandboxUsage>;
+  developers: CLIProxyDeveloperUsage[];
 }
 
 export class CLIProxyService {
@@ -539,6 +547,19 @@ export class CLIProxyService {
       { requests: number; tokens: number }
     >();
     const sandboxes: Record<string, CLIProxySandboxUsage> = {};
+    const devMap = new Map<
+      string,
+      {
+        requests: number;
+        tokens: number;
+        models: Map<string, { requests: number; tokens: number }>;
+      }
+    >();
+
+    const userKeysReverse = new Map<string, string>();
+    for (const [username, apiKey] of Object.entries(this.loadUserKeys())) {
+      userKeysReverse.set(apiKey, username);
+    }
 
     for (const [apiKey, apiStats] of Object.entries(usage.apis ?? {})) {
       const perKeyModels: CLIProxyModelUsage[] = [];
@@ -569,6 +590,40 @@ export class CLIProxyService {
           models: perKeyModels,
         };
       }
+
+      const username = userKeysReverse.get(apiKey);
+      if (username) {
+        const dev = devMap.get(username);
+        if (dev) {
+          dev.requests += apiStats.total_requests;
+          dev.tokens += apiStats.total_tokens;
+          for (const m of perKeyModels) {
+            const em = dev.models.get(m.model);
+            if (em) {
+              em.requests += m.requests;
+              em.tokens += m.tokens;
+            } else {
+              dev.models.set(m.model, {
+                requests: m.requests,
+                tokens: m.tokens,
+              });
+            }
+          }
+        } else {
+          const models = new Map<
+            string,
+            { requests: number; tokens: number }
+          >();
+          for (const m of perKeyModels) {
+            models.set(m.model, { requests: m.requests, tokens: m.tokens });
+          }
+          devMap.set(username, {
+            requests: apiStats.total_requests,
+            tokens: apiStats.total_tokens,
+            models,
+          });
+        }
+      }
     }
 
     const todayKey = new Date().toISOString().split("T")[0] as string;
@@ -594,6 +649,20 @@ export class CLIProxyService {
             : null,
       },
       sandboxes,
+      developers: [...devMap.entries()]
+        .map(([username, stats]) => ({
+          username,
+          totalRequests: stats.requests,
+          totalTokens: stats.tokens,
+          models: [...stats.models.entries()]
+            .map(([model, m]) => ({
+              model,
+              requests: m.requests,
+              tokens: m.tokens,
+            }))
+            .sort((a, b) => b.tokens - a.tokens),
+        }))
+        .sort((a, b) => b.totalTokens - a.totalTokens),
     };
   }
 

@@ -35,6 +35,13 @@ const CLIProxySandboxUsageSchema = t.Object({
   models: t.Array(CLIProxyModelUsageSchema),
 });
 
+const CLIProxyDeveloperUsageSchema = t.Object({
+  username: t.String(),
+  totalRequests: t.Number(),
+  totalTokens: t.Number(),
+  models: t.Array(CLIProxyModelUsageSchema),
+});
+
 const CLIProxyUsageSchema = t.Object({
   global: t.Object({
     totalRequests: t.Number(),
@@ -50,6 +57,7 @@ const CLIProxyUsageSchema = t.Object({
     ),
   }),
   sandboxes: t.Record(t.String(), CLIProxySandboxUsageSchema),
+  developers: t.Array(CLIProxyDeveloperUsageSchema),
 });
 
 export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })

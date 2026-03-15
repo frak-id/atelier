@@ -1,4 +1,5 @@
 export type {
+  CLIProxyDeveloperUsage,
   CLIProxyModelUsage,
   CLIProxySandboxUsage,
   CLIProxyStatus,
