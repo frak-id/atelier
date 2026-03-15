@@ -60,7 +60,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useOpencodeData } from "@/hooks/use-opencode-data";
-import { formatDate, getWorkspaceDirectory } from "@/lib/utils";
+import { formatCompact, formatDate, getWorkspaceDirectory } from "@/lib/utils";
 import { BrowserButton } from "./browser-button";
 import { QuickConnectCard } from "./quick-connect-card";
 import { RepositoriesTab } from "./repositories-tab";
@@ -487,17 +487,13 @@ export function SandboxDrawer({
                               <span className="text-muted-foreground mr-1">
                                 Tokens:
                               </span>
-                              {new Intl.NumberFormat().format(
-                                tokenUsage.totalTokens,
-                              )}
+                              {formatCompact(tokenUsage.totalTokens)}
                             </div>
                             <div>
                               <span className="text-muted-foreground mr-1">
                                 Requests:
                               </span>
-                              {new Intl.NumberFormat().format(
-                                tokenUsage.totalRequests,
-                              )}
+                              {formatCompact(tokenUsage.totalRequests)}
                             </div>
                           </div>
                           {tokenUsage.models.length > 0 && (
@@ -511,7 +507,7 @@ export function SandboxDrawer({
                                     {m.model}
                                   </span>
                                   <span className="font-mono">
-                                    {new Intl.NumberFormat().format(m.tokens)}
+                                    {formatCompact(m.tokens)}
                                   </span>
                                 </div>
                               ))}

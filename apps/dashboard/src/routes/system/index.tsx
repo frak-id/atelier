@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDuration } from "@/lib/utils";
+import { formatCompact, formatDuration } from "@/lib/utils";
 
 export const Route = createFileRoute("/system/")({
   component: SystemPage,
@@ -96,6 +96,22 @@ function SystemPage() {
         next.delete(username);
       } else {
         next.add(username);
+      }
+      return next;
+    });
+  };
+
+  const [expandedSandboxes, setExpandedSandboxes] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const toggleSandbox = (sandboxId: string) => {
+    setExpandedSandboxes((prev) => {
+      const next = new Set(prev);
+      if (next.has(sandboxId)) {
+        next.delete(sandboxId);
+      } else {
+        next.add(sandboxId);
       }
       return next;
     });
@@ -257,16 +273,11 @@ function SystemPage() {
                   Total Tokens
                 </div>
                 <div className="text-xl font-bold">
-                  {new Intl.NumberFormat().format(
-                    cliproxyUsage.global.totalTokens,
-                  )}
+                  {formatCompact(cliproxyUsage.global.totalTokens)}
                 </div>
                 {cliproxyUsage.global.today && (
                   <div className="text-xs text-muted-foreground mt-1">
-                    Today:{" "}
-                    {new Intl.NumberFormat().format(
-                      cliproxyUsage.global.today.tokens,
-                    )}
+                    Today: {formatCompact(cliproxyUsage.global.today.tokens)}
                   </div>
                 )}
               </div>
@@ -275,33 +286,24 @@ function SystemPage() {
                   Total Requests
                 </div>
                 <div className="text-xl font-bold">
-                  {new Intl.NumberFormat().format(
-                    cliproxyUsage.global.totalRequests,
-                  )}
+                  {formatCompact(cliproxyUsage.global.totalRequests)}
                 </div>
                 {cliproxyUsage.global.today && (
                   <div className="text-xs text-muted-foreground mt-1">
-                    Today:{" "}
-                    {new Intl.NumberFormat().format(
-                      cliproxyUsage.global.today.requests,
-                    )}
+                    Today: {formatCompact(cliproxyUsage.global.today.requests)}
                   </div>
                 )}
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Success</div>
                 <div className="text-xl font-bold">
-                  {new Intl.NumberFormat().format(
-                    cliproxyUsage.global.successCount,
-                  )}
+                  {formatCompact(cliproxyUsage.global.successCount)}
                 </div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Failed</div>
                 <div className="text-xl font-bold">
-                  {new Intl.NumberFormat().format(
-                    cliproxyUsage.global.failureCount,
-                  )}
+                  {formatCompact(cliproxyUsage.global.failureCount)}
                 </div>
               </div>
             </div>
@@ -323,10 +325,10 @@ function SystemPage() {
                       {model.model}
                     </div>
                     <div className="text-xs text-muted-foreground font-mono">
-                      {new Intl.NumberFormat().format(model.requests)}
+                      {formatCompact(model.requests)}
                     </div>
                     <div className="text-xs text-muted-foreground font-mono">
-                      {new Intl.NumberFormat().format(model.tokens)}
+                      {formatCompact(model.tokens)}
                     </div>
                   </div>
                 ))}
@@ -365,14 +367,10 @@ function SystemPage() {
                                 {dev.username}
                               </div>
                               <div className="text-xs text-muted-foreground font-mono">
-                                {new Intl.NumberFormat().format(
-                                  dev.totalRequests,
-                                )}
+                                {formatCompact(dev.totalRequests)}
                               </div>
                               <div className="text-xs text-muted-foreground font-mono">
-                                {new Intl.NumberFormat().format(
-                                  dev.totalTokens,
-                                )}
+                                {formatCompact(dev.totalTokens)}
                               </div>
                             </button>
                             {isExpanded && (
@@ -391,14 +389,81 @@ function SystemPage() {
                                         {model.model}
                                       </div>
                                       <div className="text-muted-foreground font-mono">
-                                        {new Intl.NumberFormat().format(
-                                          model.requests,
-                                        )}
+                                        {formatCompact(model.requests)}
                                       </div>
                                       <div className="text-muted-foreground font-mono">
-                                        {new Intl.NumberFormat().format(
-                                          model.tokens,
-                                        )}
+                                        {formatCompact(model.tokens)}
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+            {cliproxyUsage.sandboxes &&
+              Object.keys(cliproxyUsage.sandboxes).length > 0 && (
+                <div className="mt-4 border-t pt-4">
+                  <h4 className="text-sm font-medium text-muted-foreground mb-3">
+                    Per Sandbox
+                  </h4>
+                  <div className="space-y-1">
+                    <div className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+                      <div>Sandbox</div>
+                      <div>Requests</div>
+                      <div>Tokens</div>
+                    </div>
+                    {Object.entries(cliproxyUsage.sandboxes)
+                      .sort(([, a], [, b]) => b.totalTokens - a.totalTokens)
+                      .map(([sandboxId, sandbox]) => {
+                        const isExpanded = expandedSandboxes.has(sandboxId);
+                        return (
+                          <div key={sandboxId} className="space-y-1">
+                            <button
+                              type="button"
+                              className="w-full grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2.5 text-sm items-center hover:bg-muted/50 rounded cursor-pointer text-left"
+                              onClick={() => toggleSandbox(sandboxId)}
+                            >
+                              <div
+                                className="font-medium font-mono truncate flex items-center gap-1"
+                                title={sandboxId}
+                              >
+                                <ChevronRight
+                                  className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                                />
+                                {sandboxId}
+                              </div>
+                              <div className="text-xs text-muted-foreground font-mono">
+                                {formatCompact(sandbox.totalRequests)}
+                              </div>
+                              <div className="text-xs text-muted-foreground font-mono">
+                                {formatCompact(sandbox.totalTokens)}
+                              </div>
+                            </button>
+                            {isExpanded && (
+                              <div className="space-y-1 pb-2">
+                                {[...sandbox.models]
+                                  .sort((a, b) => b.tokens - a.tokens)
+                                  .map((model) => (
+                                    <div
+                                      key={model.model}
+                                      className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2 text-xs items-center bg-muted/30 rounded pl-6"
+                                    >
+                                      <div
+                                        className="truncate text-muted-foreground"
+                                        title={model.model}
+                                      >
+                                        {model.model}
+                                      </div>
+                                      <div className="text-muted-foreground font-mono">
+                                        {formatCompact(model.requests)}
+                                      </div>
+                                      <div className="text-muted-foreground font-mono">
+                                        {formatCompact(model.tokens)}
                                       </div>
                                     </div>
                                   ))}
