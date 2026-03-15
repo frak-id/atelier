@@ -13,14 +13,26 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
+import { useMemo } from "react";
 
 export function CLIProxySection() {
   const { data: status, isLoading } = useQuery(cliproxyStatusQuery);
-  const { data: exportConfig } = useQuery(cliproxyExportQuery);
   const { data: userApiKeyData } = useQuery(cliproxyUserApiKeyQuery);
+  const { data: exportConfig } = useQuery(cliproxyExportQuery);
   const toggleMutation = useToggleCliProxy();
   const refreshMutation = useRefreshCliProxy();
   const { copy, isCopied } = useCopyToClipboard();
+
+  const userAwareConfig = useMemo(() => {
+    if (!exportConfig) return null;
+    if (!userApiKeyData?.apiKey) return exportConfig;
+
+    const config = JSON.stringify(exportConfig).replace(
+      "<your-api-key>",
+      userApiKeyData.apiKey,
+    );
+    return JSON.parse(config);
+  }, [exportConfig, userApiKeyData]);
 
   if (isLoading) {
     return (
@@ -150,7 +162,7 @@ export function CLIProxySection() {
                 )}
               </div>
 
-              {exportConfig && (
+              {userAwareConfig && (
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Local OpenCode Config</Label>
@@ -159,7 +171,7 @@ export function CLIProxySection() {
                       size="sm"
                       className="h-6 px-2 text-xs"
                       onClick={() =>
-                        copy(JSON.stringify(exportConfig, null, 2), "export")
+                        copy(JSON.stringify(userAwareConfig, null, 2), "export")
                       }
                     >
                       {isCopied("export") ? (
@@ -174,7 +186,7 @@ export function CLIProxySection() {
                     </Button>
                   </div>
                   <pre className="bg-muted p-3 rounded text-xs font-mono overflow-x-auto max-h-[300px]">
-                    {JSON.stringify(exportConfig, null, 2)}
+                    {JSON.stringify(userAwareConfig, null, 2)}
                   </pre>
                   <p className="text-xs text-muted-foreground">
                     Merge into{" "}
