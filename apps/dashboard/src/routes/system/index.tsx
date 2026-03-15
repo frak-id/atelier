@@ -11,9 +11,11 @@ import {
   Save,
   Server,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { useState } from "react";
 import {
+  cliproxyUsageQuery,
   registryStatusQuery,
   sharedBinariesQuery,
   systemServicesQuery,
@@ -39,6 +41,7 @@ export const Route = createFileRoute("/system/")({
     context.queryClient.ensureQueryData(registryStatusQuery);
     context.queryClient.ensureQueryData(systemServicesQuery);
     context.queryClient.ensureQueryData(sharedBinariesQuery);
+    context.queryClient.ensureQueryData(cliproxyUsageQuery);
   },
   pendingComponent: () => (
     <div className="p-6 space-y-6">
@@ -68,6 +71,8 @@ function SystemPage() {
   const { data: registry } = useQuery(registryStatusQuery);
   const { data: services } = useQuery(systemServicesQuery);
   const { data: binaries } = useQuery(sharedBinariesQuery);
+  const { data: cliproxyUsage, isLoading: isCliProxyLoading } =
+    useQuery(cliproxyUsageQuery);
 
   const updateRegistrySettings = useUpdateRegistrySettings();
   const purgeRegistryCache = usePurgeRegistryCache();
@@ -203,6 +208,115 @@ function SystemPage() {
           </CardContent>
         </Card>
       </div>
+
+      {isCliProxyLoading ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              Token Usage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          </CardContent>
+        </Card>
+      ) : cliproxyUsage ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              Token Usage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div>
+                <div className="text-xs text-muted-foreground">
+                  Total Tokens
+                </div>
+                <div className="text-xl font-bold">
+                  {new Intl.NumberFormat().format(
+                    cliproxyUsage.global.totalTokens,
+                  )}
+                </div>
+                {cliproxyUsage.global.today && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Today:{" "}
+                    {new Intl.NumberFormat().format(
+                      cliproxyUsage.global.today.tokens,
+                    )}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">
+                  Total Requests
+                </div>
+                <div className="text-xl font-bold">
+                  {new Intl.NumberFormat().format(
+                    cliproxyUsage.global.totalRequests,
+                  )}
+                </div>
+                {cliproxyUsage.global.today && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Today:{" "}
+                    {new Intl.NumberFormat().format(
+                      cliproxyUsage.global.today.requests,
+                    )}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Success</div>
+                <div className="text-xl font-bold">
+                  {new Intl.NumberFormat().format(
+                    cliproxyUsage.global.successCount,
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Failed</div>
+                <div className="text-xl font-bold">
+                  {new Intl.NumberFormat().format(
+                    cliproxyUsage.global.failureCount,
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
+                <div>Model</div>
+                <div>Requests</div>
+                <div>Tokens</div>
+              </div>
+              {[...cliproxyUsage.global.models]
+                .sort((a, b) => b.tokens - a.tokens)
+                .map((model) => (
+                  <div
+                    key={model.model}
+                    className="grid grid-cols-[1fr_100px_150px] gap-2 px-3 py-2.5 text-sm items-center hover:bg-muted/50 rounded"
+                  >
+                    <div className="font-medium truncate" title={model.model}>
+                      {model.model}
+                    </div>
+                    <div className="text-xs text-muted-foreground font-mono">
+                      {new Intl.NumberFormat().format(model.requests)}
+                    </div>
+                    <div className="text-xs text-muted-foreground font-mono">
+                      {new Intl.NumberFormat().format(model.tokens)}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

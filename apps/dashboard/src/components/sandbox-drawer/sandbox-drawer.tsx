@@ -13,6 +13,7 @@ import {
   Save,
   Terminal,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ import {
   useRecoverSandbox,
   useRestartSandbox,
   useSandboxServices,
+  useSandboxTokenUsage,
   useSaveAsPrebuild,
   useStartSandbox,
   useStopSandbox,
@@ -103,6 +105,11 @@ export function SandboxDrawer({
   const task = tasks?.find((t) => t.data.sandboxId === sandboxId);
 
   const { data: services } = useSandboxServices(
+    sandboxId ?? "",
+    sandbox?.status === "running",
+  );
+
+  const { data: tokenUsage } = useSandboxTokenUsage(
     sandboxId ?? "",
     sandbox?.status === "running",
   );
@@ -467,6 +474,52 @@ export function SandboxDrawer({
                       opencodePassword={sandbox.runtime.opencodePassword}
                       workspaceDir={workspaceDir}
                     />
+
+                    {tokenUsage && (
+                      <Card>
+                        <CardContent className="flex flex-col gap-2 py-3">
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <Zap className="h-4 w-4 text-muted-foreground" />
+                            Token Usage
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <div>
+                              <span className="text-muted-foreground mr-1">
+                                Tokens:
+                              </span>
+                              {new Intl.NumberFormat().format(
+                                tokenUsage.totalTokens,
+                              )}
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground mr-1">
+                                Requests:
+                              </span>
+                              {new Intl.NumberFormat().format(
+                                tokenUsage.totalRequests,
+                              )}
+                            </div>
+                          </div>
+                          {tokenUsage.models.length > 0 && (
+                            <div className="flex flex-col mt-1">
+                              {tokenUsage.models.map((m) => (
+                                <div
+                                  key={m.model}
+                                  className="flex items-center justify-between py-1 text-xs border-b last:border-0 border-border/50"
+                                >
+                                  <span className="text-muted-foreground truncate mr-2">
+                                    {m.model}
+                                  </span>
+                                  <span className="font-mono">
+                                    {new Intl.NumberFormat().format(m.tokens)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
 
                     <Tabs
                       key={sandbox.id}
