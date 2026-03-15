@@ -3,6 +3,37 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { InternalService } from "../internal/internal.service.ts";
 import type { SettingsRepository } from "../settings/index.ts";
+import {
+  ANTIGRAVITY_HARDCODED_MODELS,
+  ANTIGRAVITY_OWNER,
+} from "./cliproxy.models.ts";
+import type {
+  CLIProxyExportConfig,
+  CLIProxyModel,
+  CLIProxyModelUsage,
+  CLIProxySandboxUsage,
+  CLIProxySettings,
+  CLIProxyStatus,
+  CLIProxyUsage,
+  DeveloperStatsMap,
+  FallbackProviderOutput,
+  ModelsDevData,
+  ModelsDevModel,
+  NativeProviderOutput,
+  OpenCodeModelConfig,
+  ProvidersOutput,
+  RawUsageApiStats,
+  RawUsageResponse,
+} from "./cliproxy.types.ts";
+
+export type {
+  CLIProxyDeveloperUsage,
+  CLIProxyExportConfig,
+  CLIProxyModelUsage,
+  CLIProxySandboxUsage,
+  CLIProxyStatus,
+  CLIProxyUsage,
+} from "./cliproxy.types.ts";
 
 const log = createChildLogger("cliproxy");
 
@@ -20,234 +51,6 @@ const NATIVE_PROVIDERS: Record<string, { baseUrlSuffix: string }> = {
   openai: { baseUrlSuffix: "/v1" },
   google: { baseUrlSuffix: "/v1beta" },
 };
-
-const ANTIGRAVITY_OWNER = "antigravity";
-
-/**
- * Hardcoded metadata for Antigravity models not found in models.dev.
- * Inspired by https://github.com/NoeFabris/opencode-antigravity-auth
- */
-const ANTIGRAVITY_HARDCODED_MODELS: Record<string, OpenCodeModelConfig> = {
-  "gemini-3.1-pro-high": {
-    name: "Gemini 3.1 Pro High",
-    attachment: true,
-    reasoning: true,
-    tool_call: true,
-    temperature: true,
-    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
-    limit: { context: 1_048_576, output: 65_535 },
-  },
-  "gemini-3.1-pro-low": {
-    name: "Gemini 3.1 Pro Low",
-    attachment: true,
-    reasoning: true,
-    tool_call: true,
-    temperature: true,
-    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
-    limit: { context: 1_048_576, output: 65_535 },
-  },
-  "gemini-3-pro-high": {
-    name: "Gemini 3 Pro High",
-    attachment: true,
-    reasoning: true,
-    tool_call: true,
-    temperature: true,
-    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
-    limit: { context: 1_048_576, output: 65_535 },
-  },
-  "gemini-3-pro-low": {
-    name: "Gemini 3 Pro Low",
-    attachment: true,
-    reasoning: true,
-    tool_call: true,
-    temperature: true,
-    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
-    limit: { context: 1_048_576, output: 65_535 },
-  },
-  "gemini-3.1-flash-image": {
-    name: "Gemini 3.1 Flash Image",
-    attachment: true,
-    reasoning: true,
-    tool_call: true,
-    temperature: true,
-    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  "gpt-oss-120b-medium": {
-    name: "GPT-OSS 120B Medium",
-    attachment: false,
-    reasoning: true,
-    tool_call: true,
-    temperature: true,
-    modalities: { input: ["text"], output: ["text"] },
-    limit: { context: 128_000, output: 100_000 },
-  },
-  "antigravity-sonnet-4-6": {
-    name: "Claude Sonnet 4.6 (Antigravity)",
-    attachment: true,
-    reasoning: true,
-    tool_call: true,
-    temperature: true,
-    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
-    limit: { context: 200_000, output: 64_000 },
-  },
-  "antigravity-opus-4-6": {
-    name: "Claude Opus 4.6 (Antigravity)",
-    attachment: true,
-    reasoning: true,
-    tool_call: true,
-    temperature: true,
-    modalities: { input: ["text", "image", "pdf"], output: ["text"] },
-    limit: { context: 200_000, output: 64_000 },
-  },
-};
-
-interface CLIProxySettings {
-  enabled: boolean;
-}
-
-interface CLIProxyModel {
-  id: string;
-  owned_by: string;
-}
-
-interface ModelsDevModel {
-  id: string;
-  name: string;
-  family?: string;
-  attachment?: boolean;
-  reasoning?: boolean;
-  tool_call?: boolean;
-  temperature?: boolean;
-  modalities?: { input: string[]; output: string[] };
-  cost?: {
-    input: number;
-    output: number;
-    cache_read?: number;
-    cache_write?: number;
-  };
-  limit?: { context: number; output: number };
-}
-
-interface ModelsDevProvider {
-  models: Record<string, ModelsDevModel>;
-}
-
-type ModelsDevData = Record<string, ModelsDevProvider>;
-
-interface RawUsageModelStats {
-  total_requests: number;
-  total_tokens: number;
-  details?: unknown[];
-}
-
-interface RawUsageApiStats {
-  total_requests: number;
-  total_tokens: number;
-  models?: Record<string, RawUsageModelStats>;
-}
-
-type DeveloperStatsMap = Map<
-  string,
-  {
-    requests: number;
-    tokens: number;
-    models: Map<string, { requests: number; tokens: number }>;
-  }
->;
-
-interface RawUsageResponse {
-  failed_requests: number;
-  usage: {
-    total_requests: number;
-    success_count: number;
-    failure_count: number;
-    total_tokens: number;
-    apis?: Record<string, RawUsageApiStats>;
-    requests_by_day?: Record<string, number>;
-    tokens_by_day?: Record<string, number>;
-    requests_by_hour?: Record<string, number>;
-    tokens_by_hour?: Record<string, number>;
-  };
-}
-
-interface OpenCodeModelConfig {
-  name?: string;
-  attachment?: boolean;
-  reasoning?: boolean;
-  tool_call?: boolean;
-  temperature?: boolean;
-  modalities?: { input: string[]; output: string[] };
-  cost?: {
-    input: number;
-    output: number;
-    cache_read?: number;
-    cache_write?: number;
-  };
-  limit?: { context?: number; output?: number };
-}
-
-interface NativeProviderOutput {
-  options: { baseURL: string; apiKey?: string };
-  whitelist: string[];
-  models?: Record<string, OpenCodeModelConfig>;
-}
-
-interface FallbackProviderOutput {
-  npm: string;
-  name: string;
-  options: { baseURL: string; apiKey?: string };
-  models: Record<string, OpenCodeModelConfig>;
-}
-
-type ProvidersOutput = Record<
-  string,
-  NativeProviderOutput | FallbackProviderOutput
->;
-
-export interface CLIProxyStatus {
-  enabled: boolean;
-  configured: boolean;
-  url: string;
-  lastRefresh: string | null;
-  modelCount: number;
-}
-
-export interface CLIProxyExportConfig {
-  provider: Record<string, unknown>;
-}
-
-export interface CLIProxyModelUsage {
-  model: string;
-  requests: number;
-  tokens: number;
-}
-
-export interface CLIProxySandboxUsage {
-  totalRequests: number;
-  totalTokens: number;
-  models: CLIProxyModelUsage[];
-}
-
-export interface CLIProxyDeveloperUsage {
-  username: string;
-  totalRequests: number;
-  totalTokens: number;
-  models: CLIProxyModelUsage[];
-}
-
-export interface CLIProxyUsage {
-  global: {
-    totalRequests: number;
-    successCount: number;
-    failureCount: number;
-    totalTokens: number;
-    models: CLIProxyModelUsage[];
-    today: { requests: number; tokens: number } | null;
-  };
-  sandboxes: Record<string, CLIProxySandboxUsage>;
-  developers: CLIProxyDeveloperUsage[];
-}
 
 export class CLIProxyService {
   private modelsDevCache: ModelsDevData | null = null;
