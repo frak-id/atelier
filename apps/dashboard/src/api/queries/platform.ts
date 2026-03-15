@@ -2,7 +2,7 @@ import type {
   OpenCodeConfigResponse,
   SystemModelConfig,
 } from "@frak/atelier-manager/types";
-import { queryOptions, useMutation } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
 
@@ -528,6 +528,21 @@ export function useRefreshCliProxy() {
         queryKey: queryKeys.cliproxy.all,
       });
     },
+  });
+}
+
+export const cliproxyUsageQuery = queryOptions({
+  queryKey: queryKeys.cliproxy.usage,
+  queryFn: async () => unwrap(await api.api.cliproxy.usage.get()),
+  refetchInterval: 30000,
+  refetchIntervalInBackground: false,
+});
+
+export function useSandboxTokenUsage(sandboxId: string, enabled = true) {
+  return useQuery({
+    ...cliproxyUsageQuery,
+    enabled,
+    select: (data) => (data ? (data.sandboxes[sandboxId] ?? null) : null),
   });
 }
 

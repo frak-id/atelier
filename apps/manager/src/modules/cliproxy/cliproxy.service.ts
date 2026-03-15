@@ -135,6 +135,33 @@ interface ModelsDevProvider {
 
 type ModelsDevData = Record<string, ModelsDevProvider>;
 
+interface RawUsageModelStats {
+  total_requests: number;
+  total_tokens: number;
+  details?: unknown[];
+}
+
+interface RawUsageApiStats {
+  total_requests: number;
+  total_tokens: number;
+  models?: Record<string, RawUsageModelStats>;
+}
+
+interface RawUsageResponse {
+  failed_requests: number;
+  usage: {
+    total_requests: number;
+    success_count: number;
+    failure_count: number;
+    total_tokens: number;
+    apis?: Record<string, RawUsageApiStats>;
+    requests_by_day?: Record<string, number>;
+    tokens_by_day?: Record<string, number>;
+    requests_by_hour?: Record<string, number>;
+    tokens_by_hour?: Record<string, number>;
+  };
+}
+
 interface OpenCodeModelConfig {
   name?: string;
   attachment?: boolean;
@@ -179,6 +206,38 @@ export interface CLIProxyStatus {
 
 export interface CLIProxyExportConfig {
   provider: Record<string, unknown>;
+}
+
+export interface CLIProxyModelUsage {
+  model: string;
+  requests: number;
+  tokens: number;
+}
+
+export interface CLIProxySandboxUsage {
+  totalRequests: number;
+  totalTokens: number;
+  models: CLIProxyModelUsage[];
+}
+
+export interface CLIProxyDeveloperUsage {
+  username: string;
+  totalRequests: number;
+  totalTokens: number;
+  models: CLIProxyModelUsage[];
+}
+
+export interface CLIProxyUsage {
+  global: {
+    totalRequests: number;
+    successCount: number;
+    failureCount: number;
+    totalTokens: number;
+    models: CLIProxyModelUsage[];
+    today: { requests: number; tokens: number } | null;
+  };
+  sandboxes: Record<string, CLIProxySandboxUsage>;
+  developers: CLIProxyDeveloperUsage[];
 }
 
 export class CLIProxyService {
@@ -449,6 +508,170 @@ export class CLIProxyService {
     } catch {
       return null;
     }
+  }
+
+  async getUsage(): Promise<CLIProxyUsage | null> {
+    const managementKey = config.integrations.cliproxy.managementKey;
+    if (!managementKey) return null;
+
+    const baseUrl = this.getManagementBaseUrl();
+    if (!baseUrl) return null;
+
+    try {
+      const res = await fetch(`${baseUrl}/usage`, {
+        headers: { Authorization: `Bearer ${managementKey}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!res.ok) {
+        log.error(
+          { status: res.status },
+          "Failed to fetch usage from CLIProxy",
+        );
+        return null;
+      }
+
+      const raw = (await res.json()) as RawUsageResponse;
+      return this.processUsage(raw);
+    } catch (err) {
+      log.error({ err }, "Failed to fetch CLIProxy usage stats");
+      return null;
+    }
+  }
+
+  private processUsage(raw: RawUsageResponse): CLIProxyUsage {
+    const usage = raw.usage;
+
+    const globalModels = new Map<
+      string,
+      { requests: number; tokens: number }
+    >();
+    const sandboxes: Record<string, CLIProxySandboxUsage> = {};
+    const devMap = new Map<
+      string,
+      {
+        requests: number;
+        tokens: number;
+        models: Map<string, { requests: number; tokens: number }>;
+      }
+    >();
+
+    const userKeysReverse = new Map<string, string>();
+    for (const [username, apiKey] of Object.entries(this.loadUserKeys())) {
+      userKeysReverse.set(apiKey, username);
+    }
+
+    for (const [apiKey, apiStats] of Object.entries(usage.apis ?? {})) {
+      const perKeyModels: CLIProxyModelUsage[] = [];
+      for (const [model, modelStats] of Object.entries(apiStats.models ?? {})) {
+        perKeyModels.push({
+          model,
+          requests: modelStats.total_requests,
+          tokens: modelStats.total_tokens,
+        });
+
+        const existing = globalModels.get(model);
+        if (existing) {
+          existing.requests += modelStats.total_requests;
+          existing.tokens += modelStats.total_tokens;
+        } else {
+          globalModels.set(model, {
+            requests: modelStats.total_requests,
+            tokens: modelStats.total_tokens,
+          });
+        }
+      }
+
+      const sandboxId = this.extractSandboxId(apiKey);
+      if (sandboxId) {
+        sandboxes[sandboxId] = {
+          totalRequests: apiStats.total_requests,
+          totalTokens: apiStats.total_tokens,
+          models: perKeyModels,
+        };
+      }
+
+      const username = userKeysReverse.get(apiKey);
+      if (username) {
+        const dev = devMap.get(username);
+        if (dev) {
+          dev.requests += apiStats.total_requests;
+          dev.tokens += apiStats.total_tokens;
+          for (const m of perKeyModels) {
+            const em = dev.models.get(m.model);
+            if (em) {
+              em.requests += m.requests;
+              em.tokens += m.tokens;
+            } else {
+              dev.models.set(m.model, {
+                requests: m.requests,
+                tokens: m.tokens,
+              });
+            }
+          }
+        } else {
+          const models = new Map<
+            string,
+            { requests: number; tokens: number }
+          >();
+          for (const m of perKeyModels) {
+            models.set(m.model, { requests: m.requests, tokens: m.tokens });
+          }
+          devMap.set(username, {
+            requests: apiStats.total_requests,
+            tokens: apiStats.total_tokens,
+            models,
+          });
+        }
+      }
+    }
+
+    const todayKey = new Date().toISOString().split("T")[0] as string;
+    const todayRequests = usage.requests_by_day?.[todayKey] ?? null;
+    const todayTokens = usage.tokens_by_day?.[todayKey] ?? null;
+
+    return {
+      global: {
+        totalRequests: usage.total_requests,
+        successCount: usage.success_count,
+        failureCount: usage.failure_count,
+        totalTokens: usage.total_tokens,
+        models: [...globalModels.entries()]
+          .map(([model, stats]) => ({
+            model,
+            requests: stats.requests,
+            tokens: stats.tokens,
+          }))
+          .sort((a, b) => b.tokens - a.tokens),
+        today:
+          todayRequests !== null
+            ? { requests: todayRequests, tokens: todayTokens ?? 0 }
+            : null,
+      },
+      sandboxes,
+      developers: [...devMap.entries()]
+        .map(([username, stats]) => ({
+          username,
+          totalRequests: stats.requests,
+          totalTokens: stats.tokens,
+          models: [...stats.models.entries()]
+            .map(([model, m]) => ({
+              model,
+              requests: m.requests,
+              tokens: m.tokens,
+            }))
+            .sort((a, b) => b.tokens - a.tokens),
+        }))
+        .sort((a, b) => b.totalTokens - a.totalTokens),
+    };
+  }
+
+  private extractSandboxId(apiKey: string): string | null {
+    if (!apiKey.startsWith(`${KEY_PREFIX}-`)) return null;
+    const withoutPrefix = apiKey.slice(KEY_PREFIX.length + 1);
+    const lastDash = withoutPrefix.lastIndexOf("-");
+    if (lastDash === -1) return null;
+    return withoutPrefix.slice(0, lastDash);
   }
 
   getGeneratedProvidersConfig(): Record<string, unknown> | null {

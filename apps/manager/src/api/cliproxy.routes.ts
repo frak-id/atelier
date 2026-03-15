@@ -23,6 +23,43 @@ const CLIProxyRefreshResultSchema = t.Object({
   modelCount: t.Number(),
 });
 
+const CLIProxyModelUsageSchema = t.Object({
+  model: t.String(),
+  requests: t.Number(),
+  tokens: t.Number(),
+});
+
+const CLIProxySandboxUsageSchema = t.Object({
+  totalRequests: t.Number(),
+  totalTokens: t.Number(),
+  models: t.Array(CLIProxyModelUsageSchema),
+});
+
+const CLIProxyDeveloperUsageSchema = t.Object({
+  username: t.String(),
+  totalRequests: t.Number(),
+  totalTokens: t.Number(),
+  models: t.Array(CLIProxyModelUsageSchema),
+});
+
+const CLIProxyUsageSchema = t.Object({
+  global: t.Object({
+    totalRequests: t.Number(),
+    successCount: t.Number(),
+    failureCount: t.Number(),
+    totalTokens: t.Number(),
+    models: t.Array(CLIProxyModelUsageSchema),
+    today: t.Nullable(
+      t.Object({
+        requests: t.Number(),
+        tokens: t.Number(),
+      }),
+    ),
+  }),
+  sandboxes: t.Record(t.String(), CLIProxySandboxUsageSchema),
+  developers: t.Array(CLIProxyDeveloperUsageSchema),
+});
+
 export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
   .use(authPlugin)
   .get("/", () => cliProxyService.getStatus(), {
@@ -122,5 +159,26 @@ export const cliproxyRoutes = new Elysia({ prefix: "/cliproxy" })
       response: t.Object({
         apiKey: t.Nullable(t.String()),
       }),
+    },
+  )
+  .get(
+    "/usage",
+    async ({ set }) => {
+      const usage = await cliProxyService.getUsage();
+      if (!usage) {
+        set.status = 503;
+        return null;
+      }
+      return usage;
+    },
+    {
+      response: {
+        200: CLIProxyUsageSchema,
+        503: t.Null(),
+      },
+      detail: {
+        tags: ["system"],
+        summary: "Get CLIProxy token usage statistics",
+      },
     },
   );
