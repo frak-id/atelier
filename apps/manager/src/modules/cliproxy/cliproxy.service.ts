@@ -562,25 +562,7 @@ export class CLIProxyService {
     }
 
     for (const [apiKey, apiStats] of Object.entries(usage.apis ?? {})) {
-      const perKeyModels: CLIProxyModelUsage[] = [];
-      for (const [model, modelStats] of Object.entries(apiStats.models ?? {})) {
-        perKeyModels.push({
-          model,
-          requests: modelStats.total_requests,
-          tokens: modelStats.total_tokens,
-        });
-
-        const existing = globalModels.get(model);
-        if (existing) {
-          existing.requests += modelStats.total_requests;
-          existing.tokens += modelStats.total_tokens;
-        } else {
-          globalModels.set(model, {
-            requests: modelStats.total_requests,
-            tokens: modelStats.total_tokens,
-          });
-        }
-      }
+      const perKeyModels = this.buildPerKeyModels(apiStats, globalModels);
 
       const sandboxId = this.extractSandboxId(apiKey);
       if (sandboxId) {
@@ -589,41 +571,14 @@ export class CLIProxyService {
           totalTokens: apiStats.total_tokens,
           models: perKeyModels,
         };
+        continue;
       }
 
-      const username = userKeysReverse.get(apiKey);
-      if (username) {
-        const dev = devMap.get(username);
-        if (dev) {
-          dev.requests += apiStats.total_requests;
-          dev.tokens += apiStats.total_tokens;
-          for (const m of perKeyModels) {
-            const em = dev.models.get(m.model);
-            if (em) {
-              em.requests += m.requests;
-              em.tokens += m.tokens;
-            } else {
-              dev.models.set(m.model, {
-                requests: m.requests,
-                tokens: m.tokens,
-              });
-            }
-          }
-        } else {
-          const models = new Map<
-            string,
-            { requests: number; tokens: number }
-          >();
-          for (const m of perKeyModels) {
-            models.set(m.model, { requests: m.requests, tokens: m.tokens });
-          }
-          devMap.set(username, {
-            requests: apiStats.total_requests,
-            tokens: apiStats.total_tokens,
-            models,
-          });
-        }
-      }
+      const username =
+        userKeysReverse.get(apiKey) ?? this.extractUsername(apiKey);
+      if (!username) continue;
+
+      this.accumulateDeveloper(devMap, username, apiStats, perKeyModels);
     }
 
     const todayKey = new Date().toISOString().split("T")[0] as string;
@@ -672,6 +627,74 @@ export class CLIProxyService {
     const lastDash = withoutPrefix.lastIndexOf("-");
     if (lastDash === -1) return null;
     return withoutPrefix.slice(0, lastDash);
+  }
+
+  private buildPerKeyModels(
+    apiStats: RawUsageApiStats,
+    globalModels: Map<string, { requests: number; tokens: number }>,
+  ): CLIProxyModelUsage[] {
+    const result: CLIProxyModelUsage[] = [];
+    for (const [model, stats] of Object.entries(apiStats.models ?? {})) {
+      result.push({
+        model,
+        requests: stats.total_requests,
+        tokens: stats.total_tokens,
+      });
+      const global = globalModels.get(model);
+      if (global) {
+        global.requests += stats.total_requests;
+        global.tokens += stats.total_tokens;
+      } else {
+        globalModels.set(model, {
+          requests: stats.total_requests,
+          tokens: stats.total_tokens,
+        });
+      }
+    }
+    return result.sort((a, b) => b.tokens - a.tokens);
+  }
+
+  private extractUsername(apiKey: string): string | null {
+    const lastDash = apiKey.lastIndexOf("-");
+    if (lastDash === -1) return null;
+    const suffix = apiKey.slice(lastDash + 1);
+    if (suffix.length !== 16) return null;
+    const username = apiKey.slice(0, lastDash);
+    return username || null;
+  }
+
+  private accumulateDeveloper(
+    devMap: Map<
+      string,
+      {
+        requests: number;
+        tokens: number;
+        models: Map<string, { requests: number; tokens: number }>;
+      }
+    >,
+    username: string,
+    apiStats: RawUsageApiStats,
+    perKeyModels: CLIProxyModelUsage[],
+  ): void {
+    let dev = devMap.get(username);
+    if (!dev) {
+      dev = { requests: 0, tokens: 0, models: new Map() };
+      devMap.set(username, dev);
+    }
+    dev.requests += apiStats.total_requests;
+    dev.tokens += apiStats.total_tokens;
+    for (const m of perKeyModels) {
+      const existing = dev.models.get(m.model);
+      if (existing) {
+        existing.requests += m.requests;
+        existing.tokens += m.tokens;
+      } else {
+        dev.models.set(m.model, {
+          requests: m.requests,
+          tokens: m.tokens,
+        });
+      }
+    }
   }
 
   getGeneratedProvidersConfig(): Record<string, unknown> | null {
