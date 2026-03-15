@@ -2,6 +2,7 @@ import { jwt } from "@elysiajs/jwt";
 import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
 import {
+  cliProxyService,
   organizationService,
   orgMemberService,
   sandboxService,
@@ -72,6 +73,12 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         userService.setPersonalOrg("12345", personalOrg.id);
         orgMemberService.addMember(personalOrg.id, "12345", "owner");
       }
+
+      cliProxyService
+        .createUserKey("mock-user")
+        .catch((err) =>
+          log.warn({ err }, "Failed to create CLIProxy user key"),
+        );
 
       return redirect("/");
     }
@@ -156,6 +163,12 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
           userService.setPersonalOrg(String(user.id), personalOrg.id);
           orgMemberService.addMember(personalOrg.id, String(user.id), "owner");
         }
+
+        cliProxyService
+          .createUserKey(user.login)
+          .catch((err) =>
+            log.warn({ err }, "Failed to create CLIProxy user key"),
+          );
 
         const token = await jwt.sign({
           sub: String(user.id),

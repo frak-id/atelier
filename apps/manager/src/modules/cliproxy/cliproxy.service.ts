@@ -7,6 +7,7 @@ const log = createChildLogger("cliproxy");
 
 const SETTINGS_KEY = "cliproxy.settings";
 const SANDBOX_KEYS_KEY = "cliproxy.sandbox-keys";
+const USER_KEYS_KEY = "cliproxy.user-keys";
 const PROVIDERS_KEY = "cliproxy.providers";
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
@@ -372,6 +373,55 @@ export class CLIProxyService {
     log.info({ sandboxId }, "Revoked per-sandbox CLIProxy API key");
   }
 
+  getUserApiKey(username: string): string | null {
+    const keys = this.loadUserKeys();
+    return keys[username] ?? null;
+  }
+
+  async createUserKey(username: string): Promise<string | null> {
+    const managementKey = config.integrations.cliproxy.managementKey;
+    if (!managementKey) {
+      log.warn("No CLIProxy management key configured, skipping key creation");
+      return null;
+    }
+
+    const existing = this.getUserApiKey(username);
+    if (existing) return existing;
+
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let suffix = "";
+    const randomBytes = crypto.getRandomValues(new Uint8Array(16));
+    for (const byte of randomBytes) {
+      suffix += chars[byte % chars.length];
+    }
+    const apiKey = `${username}-${suffix}`;
+
+    const ok = await this.managementAddKey(apiKey, managementKey);
+    if (!ok) return null;
+
+    const keys = this.loadUserKeys();
+    keys[username] = apiKey;
+    this.saveUserKeys(keys);
+
+    log.info({ username }, "Created per-user CLIProxy API key");
+    return apiKey;
+  }
+
+  async revokeUserKey(username: string): Promise<void> {
+    const keys = this.loadUserKeys();
+    const apiKey = keys[username];
+    if (!apiKey) return;
+
+    const managementKey = config.integrations.cliproxy.managementKey;
+    if (managementKey) {
+      await this.managementDeleteKey(apiKey, managementKey);
+    }
+
+    delete keys[username];
+    this.saveUserKeys(keys);
+    log.info({ username }, "Revoked per-user CLIProxy API key");
+  }
+
   getExportableConfig(): CLIProxyExportConfig | null {
     const providers = this.getGeneratedProvidersConfig();
     if (!providers) return null;
@@ -631,6 +681,16 @@ export class CLIProxyService {
 
   private saveSandboxKeys(keys: Record<string, string>): void {
     this.settingsRepository.set(SANDBOX_KEYS_KEY, keys);
+  }
+
+  private loadUserKeys(): Record<string, string> {
+    return (
+      this.settingsRepository.get<Record<string, string>>(USER_KEYS_KEY) ?? {}
+    );
+  }
+
+  private saveUserKeys(keys: Record<string, string>): void {
+    this.settingsRepository.set(USER_KEYS_KEY, keys);
   }
 
   private async managementAddKey(

@@ -488,6 +488,24 @@ export const cliproxyExportQuery = queryOptions({
   staleTime: 30000,
 });
 
+export const cliproxyUserApiKeyQuery = queryOptions({
+  queryKey: queryKeys.cliproxy.userApiKey,
+  queryFn: async () => unwrap(await api.api.cliproxy["user-api-key"].get()),
+});
+
+export function useCreateCliProxyUserApiKey() {
+  return useMutation({
+    mutationKey: ["cliproxy", "userApiKey", "create"],
+    mutationFn: async () =>
+      unwrap(await api.api.cliproxy["user-api-key"].post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.cliproxy.userApiKey,
+      });
+    },
+  });
+}
+
 export function useToggleCliProxy() {
   return useMutation({
     mutationKey: ["cliproxy", "toggle"],
