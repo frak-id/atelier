@@ -31,6 +31,7 @@ import {
   agentOperations,
   authSyncService,
   cliProxyService,
+  gitSourceService,
   prebuildChecker,
   prebuildRunner,
   sandboxLifecycle,
@@ -146,6 +147,45 @@ const app = new Elysia()
         logger.warn(
           { workspaceId: workspace.id, workspaceName: workspace.name },
           "Startup: reset stuck building prebuild to failed",
+        );
+      }
+    }
+
+    // Fix workspace repo configs with orphaned git source IDs
+    const allGitSources = gitSourceService.getAll();
+    if (allGitSources.length > 0) {
+      const sourceIds = new Set(allGitSources.map((s) => s.id));
+      for (const workspace of allWorkspaces) {
+        const repos = workspace.config.repos;
+        if (!repos?.length) continue;
+
+        const hasOrphan = repos.some(
+          (r) => "sourceId" in r && !sourceIds.has(r.sourceId),
+        );
+        if (!hasOrphan) continue;
+
+        const fallback = allGitSources.find(
+          (s) =>
+            s.type === "github" &&
+            (s.config as { accessToken?: string }).accessToken,
+        );
+        if (!fallback) continue;
+
+        const fixedRepos = repos.map((r) =>
+          "sourceId" in r && !sourceIds.has(r.sourceId)
+            ? { ...r, sourceId: fallback.id }
+            : r,
+        );
+        workspaceService.update(workspace.id, {
+          config: { repos: fixedRepos },
+        });
+        logger.info(
+          {
+            workspaceId: workspace.id,
+            workspaceName: workspace.name,
+            fallbackSourceId: fallback.id,
+          },
+          "Startup: fixed orphaned git source IDs in workspace",
         );
       }
     }

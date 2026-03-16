@@ -37,6 +37,34 @@ export class GitSourceService {
     return this.gitSourceRepository.getById(id);
   }
 
+  /**
+   * Resolves a git source by ID with fallback. When the exact sourceId is
+   * missing (e.g. deleted after re-auth), falls back to any GitHub source
+   * with a valid access token so private repo clones don't silently break.
+   */
+  resolveForRepo(sourceId: string): GitSource | undefined {
+    const source = this.gitSourceRepository.getById(sourceId);
+    if (source) return source;
+
+    const allSources = this.gitSourceRepository.getAll();
+    const fallback = allSources.find(
+      (s) =>
+        s.type === "github" &&
+        (s.config as { accessToken?: string }).accessToken,
+    );
+
+    if (fallback) {
+      log.warn(
+        { sourceId, fallbackId: fallback.id },
+        "Git source not found, using fallback",
+      );
+    } else {
+      log.warn({ sourceId }, "Git source not found, no fallback available");
+    }
+
+    return fallback;
+  }
+
   getByIdOrThrow(id: string): GitSource {
     const source = this.gitSourceRepository.getById(id);
     if (!source) {

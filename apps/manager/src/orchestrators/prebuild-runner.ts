@@ -768,9 +768,8 @@ export class PrebuildRunner {
   private async buildGitUrl(repo: RepoConfig): Promise<string> {
     if ("url" in repo) return repo.url;
 
-    const source = this.deps.gitSourceService.getById(repo.sourceId);
+    const source = this.deps.gitSourceService.resolveForRepo(repo.sourceId);
     if (!source) {
-      log.warn({ sourceId: repo.sourceId }, "Git source not found");
       return `https://github.com/${repo.repo}.git`;
     }
 
@@ -786,7 +785,7 @@ export class PrebuildRunner {
 
   private getGitToken(repo: RepoConfig): string | undefined {
     if ("url" in repo) return undefined;
-    const source = this.deps.gitSourceService.getById(repo.sourceId);
+    const source = this.deps.gitSourceService.resolveForRepo(repo.sourceId);
     if (!source || source.type !== "github") return undefined;
     const ghConfig = source.config as GitHubSourceConfig;
     return ghConfig.accessToken || undefined;

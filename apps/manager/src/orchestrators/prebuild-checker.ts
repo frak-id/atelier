@@ -115,9 +115,8 @@ export class PrebuildChecker {
       return repo.url;
     }
 
-    const source = this.deps.gitSourceService.getById(repo.sourceId);
+    const source = this.deps.gitSourceService.resolveForRepo(repo.sourceId);
     if (!source) {
-      log.warn({ sourceId: repo.sourceId }, "Git source not found");
       return `https://github.com/${repo.repo}.git`;
     }
 

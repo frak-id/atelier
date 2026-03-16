@@ -10,9 +10,8 @@ export async function buildAuthenticatedGitUrl(
   repo: { sourceId: string; repo: string },
   gitSourceService: GitSourceService,
 ): Promise<string> {
-  const source = gitSourceService.getById(repo.sourceId);
+  const source = gitSourceService.resolveForRepo(repo.sourceId);
   if (!source) {
-    log.warn({ sourceId: repo.sourceId }, "Git source not found");
     return `https://github.com/${repo.repo}.git`;
   }
 
