@@ -11,6 +11,12 @@ function getLevel(): LogLevel {
 
 export const logger = pino({
   level: getLevel(),
+  serializers: {
+    // Codebase uses `{ error }` everywhere — register pino's Error
+    // serializer on the `error` key so Error objects stop logging as `{}`.
+    error: pino.stdSerializers.err,
+    err: pino.stdSerializers.err,
+  },
   ...(isProduction()
     ? {}
     : {

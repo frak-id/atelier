@@ -46,6 +46,7 @@ export type PrebuildScenario =
         status: PrebuildStatus,
         latestId?: string,
         commitHashes?: Record<string, string>,
+        errorMessage?: string,
       ) => void;
       aiService?: SystemAiService;
     }
@@ -76,7 +77,7 @@ export class PrebuildRunner {
       kind: "workspace",
       workspaceId,
       getWorkspace: () => this.deps.workspaceService.getById(workspaceId),
-      updateStatus: (status, latestId, commitHashes) => {
+      updateStatus: (status, latestId, commitHashes, errorMessage) => {
         const current = this.deps.workspaceService.getById(workspaceId);
         if (!current) return;
         this.updatePrebuildStatus(
@@ -85,6 +86,7 @@ export class PrebuildRunner {
           status,
           latestId,
           commitHashes,
+          errorMessage,
         );
       },
       aiService: this.deps.aiService,
@@ -417,7 +419,9 @@ export class PrebuildRunner {
     } catch (error) {
       if (scenario.kind === "workspace") {
         const workspace = scenario.getWorkspace();
-        if (workspace) scenario.updateStatus("failed");
+        const message = error instanceof Error ? error.message : String(error);
+        if (workspace)
+          scenario.updateStatus("failed", undefined, undefined, message);
       }
       throw error;
     } finally {
@@ -794,6 +798,7 @@ export class PrebuildRunner {
     status: PrebuildStatus,
     latestId?: string,
     commitHashes?: Record<string, string>,
+    errorMessage?: string,
   ): void {
     const now = new Date().toISOString();
     const prebuild: WorkspaceConfig["prebuild"] = {
@@ -803,6 +808,7 @@ export class PrebuildRunner {
       commitHashes: status === "ready" ? commitHashes : undefined,
       lastCheckedAt: status === "ready" ? now : undefined,
       stale: status === "ready" ? false : undefined,
+      errorMessage: status === "failed" ? errorMessage : undefined,
     };
 
     this.deps.workspaceService.update(workspaceId, {

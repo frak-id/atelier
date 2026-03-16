@@ -139,6 +139,7 @@ const app = new Elysia()
             prebuild: {
               ...workspace.config.prebuild,
               status: "failed",
+              errorMessage: "Prebuild interrupted by manager restart",
             },
           },
         });

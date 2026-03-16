@@ -1,6 +1,6 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { FolderGit2, Plus } from "lucide-react";
+import { AlertTriangle, FolderGit2, Plus } from "lucide-react";
 import { useState } from "react";
 import type { Workspace } from "@/api/client";
 import {
@@ -148,6 +148,13 @@ function WorkspaceCard({
           <Badge variant={prebuildVariant[prebuildStatus]}>
             Prebuild: {prebuildStatus}
           </Badge>
+          {prebuildStatus === "failed" &&
+            workspace.config.prebuild?.errorMessage && (
+              <span className="text-xs text-destructive flex items-center gap-1 max-w-md truncate">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                {workspace.config.prebuild.errorMessage}
+              </span>
+            )}
           {orgName && <Badge variant="outline">{orgName}</Badge>}
         </div>
         {workspace.config.description && (

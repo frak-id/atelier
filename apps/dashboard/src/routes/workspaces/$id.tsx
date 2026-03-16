@@ -212,6 +212,13 @@ function WorkspaceDetailPage() {
             <span>
               {workspace.config.repos.length} repository(ies) configured
             </span>
+            {prebuildStatus === "failed" &&
+              workspace.config.prebuild?.errorMessage && (
+                <span className="flex items-center gap-1 text-destructive">
+                  <AlertTriangle className="h-3 w-3" />
+                  {workspace.config.prebuild.errorMessage}
+                </span>
+              )}
             {prebuildStatus === "ready" && (
               <>
                 {workspace.config.prebuild?.stale && (

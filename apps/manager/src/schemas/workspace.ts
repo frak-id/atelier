@@ -42,6 +42,7 @@ export const PrebuildInfoSchema = t.Object({
   commitHashes: t.Optional(t.Record(t.String(), t.String())),
   lastCheckedAt: t.Optional(t.String()),
   stale: t.Optional(t.Boolean()),
+  errorMessage: t.Optional(t.String()),
 });
 
 export const FileSecretSchema = t.Object({
