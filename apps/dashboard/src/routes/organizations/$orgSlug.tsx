@@ -18,6 +18,7 @@ import {
   useAddOrgMember,
   useDeleteOrganization,
   useRemoveOrgMember,
+  usersListQuery,
   useUpdateOrganization,
   useUpdateOrgMemberRole,
 } from "@/api/queries";
@@ -296,7 +297,7 @@ function MembersTab({
         </CardContent>
       </Card>
 
-      <AddMemberCard orgSlug={orgSlug} />
+      <AddMemberCard orgSlug={orgSlug} members={members} />
     </div>
   );
 }
@@ -386,17 +387,29 @@ function MemberRow({
   );
 }
 
-function AddMemberCard({ orgSlug }: { orgSlug: string }) {
+function AddMemberCard({
+  orgSlug,
+  members,
+}: {
+  orgSlug: string;
+  members: OrgMember[];
+}) {
   const [userId, setUserId] = useState("");
   const [role, setRole] = useState<OrgMemberRole>("member");
   const addMember = useAddOrgMember();
+  const { data: allUsers } = useSuspenseQuery(usersListQuery());
+
+  const existingUserIds = new Set(members.map((m) => m.userId));
+  const availableUsers = (allUsers ?? []).filter(
+    (u) => !existingUserIds.has(u.id),
+  );
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userId.trim()) return;
+    if (!userId) return;
 
     addMember.mutate(
-      { slug: orgSlug, data: { userId: userId.trim(), role } },
+      { slug: orgSlug, data: { userId, role } },
       {
         onSuccess: () => {
           setUserId("");
@@ -414,51 +427,59 @@ function AddMemberCard({ orgSlug }: { orgSlug: string }) {
           Add Member
         </CardTitle>
         <CardDescription>
-          Add a user to this organization by their user ID
+          Add an existing platform user to this organization
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleAdd} className="flex items-end gap-3">
-          <div className="flex-1 space-y-2">
-            <Label htmlFor="user-id">User ID</Label>
-            <Input
-              id="user-id"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="GitHub user ID"
-              required
-            />
-          </div>
+        {availableUsers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            All platform users are already members of this organization.
+          </p>
+        ) : (
+          <form onSubmit={handleAdd} className="flex items-end gap-3">
+            <div className="flex-1 space-y-2">
+              <Label>User</Label>
+              <Select value={userId} onValueChange={setUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableUsers.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.username}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="space-y-2">
-            <Label>Role</Label>
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as OrgMemberRole)}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="member">Member</SelectItem>
-                <SelectItem value="viewer">Viewer</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select
+                value={role}
+                onValueChange={(v) => setRole(v as OrgMemberRole)}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <Button
-            type="submit"
-            disabled={addMember.isPending || !userId.trim()}
-          >
-            {addMember.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4 mr-2" />
-            )}
-            Add
-          </Button>
-        </form>
+            <Button type="submit" disabled={addMember.isPending || !userId}>
+              {addMember.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
+              Add
+            </Button>
+          </form>
+        )}
       </CardContent>
     </Card>
   );

@@ -22,4 +22,5 @@ export { sshKeyRoutes } from "./ssh-key.routes.ts";
 export { systemRoutes } from "./system.routes.ts";
 export { systemModelConfigRoutes } from "./system-model-config.routes.ts";
 export { taskRoutes } from "./task.routes.ts";
+export { userRoutes } from "./user.routes.ts";
 export { workspaceRoutes } from "./workspace.routes.ts";

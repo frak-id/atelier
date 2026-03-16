@@ -53,6 +53,16 @@ export class OrgMemberRepository {
     return row ? rowToOrgMember(row) : undefined;
   }
 
+  /** Check org_members directly without JOIN — catches orphaned rows */
+  existsByOrgAndUser(orgId: string, userId: string): boolean {
+    const row = getDatabase()
+      .select({ id: orgMembers.id })
+      .from(orgMembers)
+      .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)))
+      .get();
+    return !!row;
+  }
+
   create(member: {
     id: string;
     orgId: string;

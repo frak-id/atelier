@@ -77,7 +77,10 @@ const sharedAuthRepository = new SharedAuthRepository();
 const configFileService = new ConfigFileService(configFileRepository);
 const gitSourceService = new GitSourceService(gitSourceRepository);
 const organizationService = new OrganizationService(organizationRepository);
-const orgMemberService = new OrgMemberService(orgMemberRepository);
+const orgMemberService = new OrgMemberService(
+  orgMemberRepository,
+  userRepository,
+);
 const sshKeyService = new SshKeyService(sshKeyRepository);
 const userService = new UserService(userRepository);
 const workspaceService = new WorkspaceService(workspaceRepository);

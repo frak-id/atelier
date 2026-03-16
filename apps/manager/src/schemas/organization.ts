@@ -95,6 +95,8 @@ export const UserSchema = t.Object({
 });
 export type User = Static<typeof UserSchema>;
 
+export const UserListResponseSchema = t.Array(UserSchema);
+
 export const OrgSlugParamSchema = t.Object({
   orgSlug: t.String({ minLength: 1 }),
 });

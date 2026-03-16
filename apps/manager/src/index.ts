@@ -25,6 +25,7 @@ import {
   systemModelConfigRoutes,
   systemRoutes,
   taskRoutes,
+  userRoutes,
   workspaceRoutes,
 } from "./api/index.ts";
 import {
@@ -284,7 +285,8 @@ const app = new Elysia()
       .use(eventsRoutes)
       .use(systemModelConfigRoutes)
       .use(cliproxyRoutes)
-      .use(organizationRoutes),
+      .use(organizationRoutes)
+      .use(userRoutes),
   );
 
 app.get("/", () => ({

@@ -7,12 +7,16 @@ import {
 } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { UserRepository } from "../user/user.repository.ts";
 import type { OrgMemberRepository } from "./org-member.repository.ts";
 
 const log = createChildLogger("org-member-service");
 
 export class OrgMemberService {
-  constructor(private readonly orgMemberRepository: OrgMemberRepository) {}
+  constructor(
+    private readonly orgMemberRepository: OrgMemberRepository,
+    private readonly userRepository: UserRepository,
+  ) {}
 
   getByOrgId(orgId: string): OrgMember[] {
     return this.orgMemberRepository.getByOrgId(orgId);
@@ -51,8 +55,12 @@ export class OrgMemberService {
     userId: string,
     role: OrgMemberRole = "member",
   ): OrgMember {
-    const existing = this.getMembership(orgId, userId);
-    if (existing) {
+    const user = this.userRepository.getById(userId);
+    if (!user) {
+      throw new NotFoundError("User", userId);
+    }
+
+    if (this.orgMemberRepository.existsByOrgAndUser(orgId, userId)) {
       throw new ValidationError("User is already a member");
     }
 

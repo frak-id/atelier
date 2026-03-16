@@ -23,6 +23,12 @@ export function useOrganizationMap() {
   return data ?? new Map<string, string>();
 }
 
+export const usersListQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.users.list(),
+    queryFn: async () => unwrap(await api.api.users.get()),
+  });
+
 export const organizationDetailQuery = (slug: string) =>
   queryOptions({
     queryKey: queryKeys.organizations.detail(slug),

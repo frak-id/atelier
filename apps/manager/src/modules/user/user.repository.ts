@@ -18,6 +18,10 @@ function rowToUser(row: typeof users.$inferSelect): User {
 }
 
 export class UserRepository {
+  getAll(): User[] {
+    return getDatabase().select().from(users).all().map(rowToUser);
+  }
+
   getById(id: string): User | undefined {
     const row = getDatabase()
       .select()

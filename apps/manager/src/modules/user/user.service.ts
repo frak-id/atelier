@@ -8,6 +8,10 @@ const log = createChildLogger("user-service");
 export class UserService {
   constructor(private readonly userRepository: UserRepository) {}
 
+  getAll(): User[] {
+    return this.userRepository.getAll();
+  }
+
   getById(id: string): User | undefined {
     return this.userRepository.getById(id);
   }

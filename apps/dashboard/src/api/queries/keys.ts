@@ -114,4 +114,8 @@ export const queryKeys = {
     detail: (slug: string) => ["organizations", "detail", slug] as const,
     members: (slug: string) => ["organizations", slug, "members"] as const,
   },
+  users: {
+    all: ["users"] as const,
+    list: () => ["users", "list"] as const,
+  },
 };
