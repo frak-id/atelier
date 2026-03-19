@@ -57,6 +57,10 @@ RUN cd apps/dashboard && bun run build
 # ── Target: manager ──────────────────────────────────────────────────────
 FROM oven/bun:1-slim AS manager
 
+# git is needed by PrebuildChecker (git ls-remote for staleness detection)
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Manager bundle
