@@ -32,7 +32,7 @@ export function buildSandboxConfig(
     createdAt: new Date().toISOString(),
     network: {
       dashboardDomain,
-      managerInternalUrl: "http://manager.atelier-system.svc:4000/internal",
+      managerInternalUrl: `${config.kubernetes.managerUrl}/internal`,
     },
     services: {
       vscode: {
