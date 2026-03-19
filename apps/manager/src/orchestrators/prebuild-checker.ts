@@ -63,6 +63,8 @@ export class PrebuildChecker {
       return true;
     }
 
+    let fetchFailures = 0;
+
     for (const repo of workspace.config.repos) {
       const clonePath = repo.clonePath;
       const storedHash = storedHashes[clonePath];
@@ -75,6 +77,7 @@ export class PrebuildChecker {
       const remoteHash = await this.getRemoteCommitHash(repo);
       if (!remoteHash) {
         log.warn({ workspaceId, clonePath }, "Failed to fetch remote hash");
+        fetchFailures++;
         continue;
       }
 
@@ -85,6 +88,13 @@ export class PrebuildChecker {
         );
         return true;
       }
+    }
+
+    if (fetchFailures === workspace.config.repos.length) {
+      throw new Error(
+        `Failed to fetch remote hashes for all ${fetchFailures} repos — ` +
+          "git may not be available in the manager container",
+      );
     }
 
     return false;
