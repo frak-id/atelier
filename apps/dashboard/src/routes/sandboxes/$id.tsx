@@ -529,7 +529,7 @@ function TabPanel({
       src={url}
       className="absolute inset-0 w-full h-full border-0"
       title={tabLabel}
-      allow={tabId === "web" ? "clipboard-write" : undefined}
+      allow="clipboard-read; clipboard-write"
     />
   );
 }
