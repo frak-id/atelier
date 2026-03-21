@@ -248,6 +248,22 @@ export type SlackIntegrationConfig = Static<
   typeof SlackIntegrationConfigSchema
 >;
 
+export const GitHubIntegrationConfigSchema = Type.Object(
+  {
+    /** Enable GitHub integration (webhook-based bot) */
+    enabled: Type.Boolean({ default: false }),
+    /** GitHub access token for API calls (PAT or App installation) */
+    accessToken: Type.String({ default: "" }),
+    /** Webhook secret for verifying X-Hub-Signature-256 */
+    webhookSecret: Type.String({ default: "" }),
+  },
+  { default: {} },
+);
+
+export type GitHubIntegrationConfig = Static<
+  typeof GitHubIntegrationConfigSchema
+>;
+
 export const CLIProxyIntegrationConfigSchema = Type.Object(
   {
     /** Internal URL of the CLIProxy service (K8s service URL) */
@@ -268,6 +284,8 @@ export const IntegrationsConfigSchema = Type.Object(
   {
     /** Slack bot integration */
     slack: SlackIntegrationConfigSchema,
+    /** GitHub bot integration */
+    github: GitHubIntegrationConfigSchema,
     /** CLIProxy AI model proxy integration */
     cliproxy: CLIProxyIntegrationConfigSchema,
   },
@@ -346,6 +364,10 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
   ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",
   ATELIER_SLACK_SIGNING_SECRET: "integrations.slack.signingSecret",
+
+  ATELIER_GITHUB_ENABLED: "integrations.github.enabled",
+  ATELIER_GITHUB_ACCESS_TOKEN: "integrations.github.accessToken",
+  ATELIER_GITHUB_WEBHOOK_SECRET: "integrations.github.webhookSecret",
 
   ATELIER_CLIPROXY_URL: "integrations.cliproxy.url",
   ATELIER_CLIPROXY_API_KEY: "integrations.cliproxy.apiKey",

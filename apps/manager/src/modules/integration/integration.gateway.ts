@@ -93,7 +93,17 @@ export class IntegrationGateway {
           await this.handleStatus(event, existingTask, adapter);
           break;
         case "new":
-          await this.handleNewMention({ ...event, text: parsed.text }, adapter);
+          if (event.source === "github") {
+            await this.handleGitHubNewMention(
+              { ...event, text: parsed.text },
+              adapter,
+            );
+          } else {
+            await this.handleNewMention(
+              { ...event, text: parsed.text },
+              adapter,
+            );
+          }
           break;
         case "dev":
           await this.handleDevCommand(event, existingTask, parsed, adapter);
@@ -111,10 +121,10 @@ export class IntegrationGateway {
           await this.handleSessionCommand(event, existingTask, parsed, adapter);
           break;
         default:
-          // DMs are fire-and-forget — no thread continuation,
-          // always treat as a fresh mention.
           if (existingTask?.data.sandboxId && !event.isDirectMessage) {
             await this.handleRemention(event, existingTask, adapter);
+          } else if (event.source === "github") {
+            await this.handleGitHubNewMention(event, adapter);
           } else {
             await this.handleNewMention(event, adapter);
           }
@@ -724,6 +734,89 @@ export class IntegrationGateway {
     await this.dispatchToSystemSandbox(dispatcherInput, event, adapter);
   }
 
+  private async handleGitHubNewMention(
+    event: IntegrationEvent,
+    adapter: IntegrationAdapter,
+  ): Promise<void> {
+    const raw = event.raw as Record<string, unknown>;
+    const owner = String(raw.owner ?? "");
+    const repo = String(raw.repo ?? "");
+
+    log.info(
+      { owner, repo, threadKey: event.threadKey },
+      "GitHub mention — direct workspace match",
+    );
+
+    const remoteUrl = `https://github.com/${owner}/${repo}`;
+    const match = this.deps.workspaceService.matchByRemoteUrl(remoteUrl);
+
+    if (!match) {
+      await adapter.postMessage(
+        event,
+        `No workspace configured for \`${owner}/${repo}\`. ` +
+          "Create a workspace with this repository first.",
+      );
+      return;
+    }
+
+    const context = await adapter.extractContext(event);
+    const contextMarkdown = adapter.formatContextForPrompt(context);
+
+    const contextType = String(raw.contextType ?? "issue");
+    const headBranch = raw.headBranch ? String(raw.headBranch) : undefined;
+    const baseBranch = headBranch
+      ? raw.baseBranch
+        ? String(raw.baseBranch)
+        : undefined
+      : undefined;
+
+    let description = "";
+    if (contextType === "pr" || contextType === "pr_review") {
+      description += `**PR branch:** \`${headBranch ?? "unknown"}\``;
+      if (baseBranch) description += ` → \`${baseBranch}\``;
+      description += "\n\n";
+    }
+    description += contextMarkdown;
+
+    const title = this.deps.systemAiService.fallbackTitle(event.text);
+    const task = this.deps.taskService.create({
+      workspaceId: match.workspace.id,
+      description,
+      title,
+      baseBranch: baseBranch ?? match.matchedRepo.branch,
+    });
+
+    this.deps.systemAiService.generateTitleInBackground(
+      event.text,
+      (generated) => {
+        this.deps.taskService.updateTitle(task.id, generated);
+        this.deps.taskSpawner
+          .updateSessionTitles(task.id, generated)
+          .catch(() => {});
+      },
+    );
+
+    try {
+      await this.deps.taskService.startTask(task.id);
+      this.deps.taskSpawner.runInBackground(task.id);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      await adapter.postMessage(event, `Failed to start task: ${msg}`);
+      return;
+    }
+
+    await this.attachIntegrationToTask(task.id, event);
+
+    log.info(
+      {
+        taskId: task.id,
+        workspaceId: match.workspace.id,
+        threadKey: event.threadKey,
+      },
+      "GitHub task created via direct dispatch",
+    );
+  }
+
   /**
    * Dispatch a prompt to the system sandbox and collect results.
    *
@@ -913,14 +1006,24 @@ export class IntegrationGateway {
     } else if (event.source === "github") {
       const owner = String(raw.owner ?? "");
       const repo = String(raw.repo ?? "");
-      const prNumber = Number(raw.prNumber ?? 0);
+      const number = Number(raw.number ?? 0);
+      const contextType = String(raw.contextType ?? "issue");
+      const commentId = Number(raw.commentId ?? 0);
       metadata.github = {
         owner,
         repo,
-        prNumber,
+        number,
+        contextType,
+        commentId: commentId || undefined,
       };
-      if (owner && repo && prNumber) {
-        metadata.externalUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
+      if (owner && repo && number) {
+        const urlType =
+          contextType === "discussion"
+            ? "discussions"
+            : contextType === "pr" || contextType === "pr_review"
+              ? "pull"
+              : "issues";
+        metadata.externalUrl = `https://github.com/${owner}/${repo}/${urlType}/${number}`;
       }
     }
 

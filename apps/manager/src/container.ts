@@ -10,6 +10,7 @@ import {
   GitSourceService,
 } from "./modules/git-source/index.ts";
 import {
+  GitHubAdapter,
   IntegrationEventBridge,
   IntegrationGateway,
   SlackAdapter,
@@ -181,6 +182,10 @@ const slackAdapter = config.integrations.slack.enabled
   ? new SlackAdapter()
   : null;
 
+const githubAdapter = config.integrations.github.enabled
+  ? new GitHubAdapter()
+  : null;
+
 const integrationGateway = new IntegrationGateway({
   taskService,
   sandboxService,
@@ -195,6 +200,9 @@ const integrationGateway = new IntegrationGateway({
 });
 if (slackAdapter) {
   integrationGateway.registerAdapter(slackAdapter);
+}
+if (githubAdapter) {
+  integrationGateway.registerAdapter(githubAdapter);
 }
 
 const integrationEventBridge = new IntegrationEventBridge({
@@ -217,6 +225,7 @@ export {
   cliProxyService,
   configFileService,
   gitSourceService,
+  githubAdapter,
   integrationEventBridge,
   integrationGateway,
   internalService,

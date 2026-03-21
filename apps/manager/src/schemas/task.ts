@@ -31,7 +31,8 @@ export const TaskIntegrationMetadataSchema = t.Object({
     t.Object({
       owner: t.String(),
       repo: t.String(),
-      prNumber: t.Number(),
+      number: t.Number(),
+      contextType: t.String(),
       commentId: t.Optional(t.Number()),
       triggeredBy: t.Optional(t.String()),
     }),
