@@ -2,6 +2,7 @@ import type { KnownBlock } from "@slack/web-api";
 import { WebClient } from "@slack/web-api";
 import type { TaskIntegrationMetadata } from "../../../schemas/task.ts";
 import { config } from "../../../shared/lib/config.ts";
+import { hmacSha256Hex } from "../../../shared/lib/crypto.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 import type {
   IntegrationAdapter,
@@ -219,23 +220,8 @@ export class SlackAdapter implements IntegrationAdapter {
     }
 
     const sigBasestring = `v0:${timestamp}:${rawBody}`;
-    const key = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(signingSecret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-    const signatureBytes = await crypto.subtle.sign(
-      "HMAC",
-      key,
-      new TextEncoder().encode(sigBasestring),
-    );
-    const computed = `v0=${Array.from(new Uint8Array(signatureBytes))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")}`;
-
-    return computed === signature;
+    const hex = await hmacSha256Hex(signingSecret, sigBasestring);
+    return `v0=${hex}` === signature;
   }
 
   private async fetchThread(
