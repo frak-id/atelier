@@ -95,7 +95,8 @@ auth:
   # -- Use an existing K8s Secret instead of creating one from values.
   # The secret must contain keys: ATELIER_GITHUB_CLIENT_ID,
   # ATELIER_GITHUB_CLIENT_SECRET, ATELIER_JWT_SECRET, SANDBOX_SECRETS_KEY.
-  # Optionally: ATELIER_MCP_TOKEN, ATELIER_SLACK_BOT_TOKEN, ATELIER_SLACK_SIGNING_SECRET.
+  # Optionally: ATELIER_MCP_TOKEN, ATELIER_SLACK_BOT_TOKEN, ATELIER_SLACK_SIGNING_SECRET,
+  # ATELIER_GITHUB_ACCESS_TOKEN, ATELIER_GITHUB_WEBHOOK_SECRET.
   existingSecret: ""
 
 # -- Server settings
@@ -154,6 +155,10 @@ integrations:
     enabled: false
     botToken: ""
     signingSecret: ""
+  github:
+    enabled: false
+    accessToken: ""
+    webhookSecret: ""
 
 # -- Zot OCI registry (base images)
 zot:

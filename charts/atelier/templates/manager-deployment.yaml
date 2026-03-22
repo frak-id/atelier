@@ -113,6 +113,18 @@ spec:
                   name: {{ include "atelier.managerSecretName" . }}
                   key: ATELIER_SLACK_SIGNING_SECRET
             {{- end }}
+            {{- if .Values.integrations.github.enabled }}
+            - name: ATELIER_GITHUB_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.managerSecretName" . }}
+                  key: ATELIER_GITHUB_ACCESS_TOKEN
+            - name: ATELIER_GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.managerSecretName" . }}
+                  key: ATELIER_GITHUB_WEBHOOK_SECRET
+            {{- end }}
             {{- if .Values.cliproxy.enabled }}
             - name: ATELIER_CLIPROXY_MANAGEMENT_KEY
               valueFrom:
