@@ -1,5 +1,6 @@
 import type { KnownBlock } from "@slack/web-api";
 import { WebClient } from "@slack/web-api";
+import type { TaskIntegrationMetadata } from "../../../schemas/task.ts";
 import { config } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 import type {
@@ -20,6 +21,7 @@ interface SlackRawEvent {
   ts: string;
   threadTs: string;
   channelType?: string;
+  teamId?: string;
 }
 
 interface SlackMessage {
@@ -50,6 +52,31 @@ export class SlackAdapter implements IntegrationAdapter {
       channel: threadKey.slice(0, idx),
       threadTs: threadKey.slice(idx + 1),
     };
+  }
+
+  buildTaskMetadata(event: IntegrationEvent): TaskIntegrationMetadata {
+    const raw = event.raw as SlackRawEvent;
+    const channel = raw.channel ?? "";
+    const threadTs = raw.threadTs ?? "";
+    const teamId = raw.teamId ?? "";
+
+    const metadata: TaskIntegrationMetadata = {
+      source: event.source,
+      threadKey: event.threadKey,
+      slack: {
+        channel,
+        ts: raw.ts ?? "",
+        threadTs,
+        teamId: teamId || undefined,
+      },
+    };
+
+    if (teamId && channel && threadTs) {
+      const tsForUrl = threadTs.replace(".", "");
+      metadata.externalUrl = `https://app.slack.com/client/${teamId}/${channel}/thread/${channel}-${tsForUrl}`;
+    }
+
+    return metadata;
   }
 
   async extractContext(event: IntegrationEvent): Promise<IntegrationContext> {

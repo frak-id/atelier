@@ -1,3 +1,5 @@
+import type { TaskIntegrationMetadata } from "../../schemas/task.ts";
+
 export const INTEGRATION_SOURCES = ["slack", "github"] as const;
 export type IntegrationSource = (typeof INTEGRATION_SOURCES)[number];
 
@@ -82,6 +84,11 @@ export interface IntegrationAdapter {
 
   /** Remove the indicator when work is done. */
   removeReaction(event: IntegrationEvent, emoji: string): Promise<void>;
+
+  /* — Metadata — */
+
+  /** Build platform-specific metadata for task integration tracking. */
+  buildTaskMetadata(event: IntegrationEvent): TaskIntegrationMetadata;
 
   /* — Communication — */
 

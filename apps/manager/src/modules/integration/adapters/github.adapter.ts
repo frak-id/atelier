@@ -1,3 +1,4 @@
+import type { TaskIntegrationMetadata } from "../../../schemas/task.ts";
 import { config } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 import type {
@@ -207,6 +208,35 @@ export class GitHubAdapter implements IntegrationAdapter {
       number: Number.parseInt(numberPart, 10) || 0,
       type: marker === "!" ? "discussion" : "issue",
     };
+  }
+
+  /* ---- IntegrationAdapter — metadata ------------------------------------ */
+
+  buildTaskMetadata(event: IntegrationEvent): TaskIntegrationMetadata {
+    const raw = this.parseRawEvent(event);
+    const metadata: TaskIntegrationMetadata = {
+      source: event.source,
+      threadKey: event.threadKey,
+      github: {
+        owner: raw.owner,
+        repo: raw.repo,
+        number: raw.number,
+        contextType: raw.contextType,
+        commentId: raw.commentId || undefined,
+      },
+    };
+
+    if (raw.owner && raw.repo && raw.number) {
+      const urlType =
+        raw.contextType === "discussion"
+          ? "discussions"
+          : raw.contextType === "pr" || raw.contextType === "pr_review"
+            ? "pull"
+            : "issues";
+      metadata.externalUrl = `https://github.com/${raw.owner}/${raw.repo}/${urlType}/${raw.number}`;
+    }
+
+    return metadata;
   }
 
   /* ---- IntegrationAdapter — context ------------------------------------ */
