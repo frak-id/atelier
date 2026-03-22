@@ -43,6 +43,12 @@ function stripMentionTag(text: string, botLogin: string): string {
   return text.replace(new RegExp(`@${botLogin}\\b`, "gi"), "").trim();
 }
 
+function extractLabelNames(labels?: { name?: string }[]): string[] | undefined {
+  if (!labels?.length) return undefined;
+  const names = labels.map((l) => l.name).filter((n): n is string => !!n);
+  return names.length > 0 ? names : undefined;
+}
+
 export const integrationRoutes = new Elysia({
   prefix: "/integrations",
 })
@@ -219,6 +225,10 @@ export const integrationRoutes = new Elysia({
               number,
               commentId: comment.id,
               contextType,
+              title: issue?.title,
+              body: issue?.body,
+              authorLogin: issue?.user?.login,
+              labels: extractLabelNames(issue?.labels),
             },
           })
           .catch((err: unknown) => {
@@ -229,7 +239,6 @@ export const integrationRoutes = new Elysia({
           });
       });
 
-      set.status = 202;
       set.status = 202;
       return { ok: true };
     }
@@ -261,6 +270,11 @@ export const integrationRoutes = new Elysia({
               diffHunk: comment.diff_hunk,
               path: comment.path,
               line: comment.line ?? comment.original_line,
+              title: pr?.title,
+              body: pr?.body,
+              authorLogin: pr?.user?.login,
+              labels: extractLabelNames(pr?.labels),
+              changedFilesCount: pr?.changed_files,
             },
           })
           .catch((err: unknown) => {
@@ -304,6 +318,11 @@ export const integrationRoutes = new Elysia({
               contextType: "discussion" as const,
               discussionNodeId: discussion?.node_id,
               commentNodeId: comment?.node_id,
+              title: discussion?.title,
+              body: discussion?.body,
+              authorLogin: discussion?.user?.login,
+              labels: extractLabelNames(discussion?.labels),
+              discussionCategory: discussion?.category?.name,
             },
           })
           .catch((err: unknown) => {

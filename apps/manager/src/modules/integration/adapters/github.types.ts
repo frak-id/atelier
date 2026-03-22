@@ -25,6 +25,13 @@ export interface GitHubRawEvent {
   line?: number;
   discussionNodeId?: string;
   commentNodeId?: string;
+  /** Webhook payload fields — avoids redundant API calls. */
+  title?: string;
+  body?: string;
+  authorLogin?: string;
+  labels?: string[];
+  changedFilesCount?: number;
+  discussionCategory?: string;
 }
 
 export interface GitHubUser {

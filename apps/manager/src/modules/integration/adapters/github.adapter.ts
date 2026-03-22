@@ -494,6 +494,12 @@ export class GitHubAdapter implements IntegrationAdapter {
       line: raw.line,
       discussionNodeId: raw.discussionNodeId,
       commentNodeId: raw.commentNodeId,
+      title: raw.title,
+      body: raw.body,
+      authorLogin: raw.authorLogin,
+      labels: raw.labels,
+      changedFilesCount: raw.changedFilesCount,
+      discussionCategory: raw.discussionCategory,
     };
   }
 }

@@ -9,7 +9,6 @@ import type {
   GitHubIntegrationContext,
   GitHubIssueComment,
   GitHubIssueResponse,
-  GitHubLabel,
   GitHubPullFile,
   GitHubPullRequestResponse,
   GitHubPullReviewComment,
@@ -17,7 +16,90 @@ import type {
   LinkedIssueSummary,
 } from "./github.types.ts";
 
-const MAX_LINKED_ISSUES = 5;
+const MAX_LINKED_ISSUES = 3;
+const MAX_LINKED_ISSUE_COMMENTS = 2;
+const MAX_THREAD_COMMENTS = 30;
+const KEEP_FIRST_COMMENTS = 5;
+const MAX_CHANGED_FILES = 50;
+
+const NOISE_WORDS = new Set([
+  "lgtm",
+  "lfg",
+  "gtm",
+  "ship it",
+  "shipit",
+  "+1",
+  "bump",
+  "nice",
+  "noice",
+  "dope",
+  "sweet",
+  "yep",
+  "yup",
+  "nah",
+  "nope",
+  "same",
+  "this",
+  "wow",
+  "cool",
+  "neat",
+  "ty",
+  "thx",
+  "thanks",
+  "thank you",
+]);
+
+const EMOJI_ONLY = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u;
+
+/* ---- Comment filtering ------------------------------------------------- */
+
+function isNoiseBody(body?: string): boolean {
+  if (!body) return true;
+  const trimmed = body.trim();
+  if (!trimmed) return true;
+  const normalized = trimmed.toLowerCase().replace(/[!.]+$/, "");
+  if (NOISE_WORDS.has(normalized)) return true;
+  if (EMOJI_ONLY.test(trimmed)) return true;
+  return false;
+}
+
+function isBotLogin(login?: string): boolean {
+  if (!login) return false;
+  return login.endsWith("[bot]") || login.endsWith("-bot");
+}
+
+function filterAndCap<T>(
+  items: T[],
+  getBody: (item: T) => string | undefined,
+  getUserLogin: (item: T) => string | undefined,
+  getId: (item: T) => number,
+  triggeringId: number,
+): T[] {
+  const filtered = items.filter((item) => {
+    if (getId(item) === triggeringId) return true;
+    if (isBotLogin(getUserLogin(item))) return false;
+    if (isNoiseBody(getBody(item))) return false;
+    return true;
+  });
+
+  if (filtered.length <= MAX_THREAD_COMMENTS) return filtered;
+
+  const keepLast = MAX_THREAD_COMMENTS - KEEP_FIRST_COMMENTS;
+  const first = filtered.slice(0, KEEP_FIRST_COMMENTS);
+  const last = filtered.slice(-keepLast);
+
+  const trigIdx = filtered.findIndex((c) => getId(c) === triggeringId);
+  const inGap =
+    trigIdx >= KEEP_FIRST_COMMENTS && trigIdx < filtered.length - keepLast;
+  if (inGap) {
+    const trigComment = filtered[trigIdx];
+    if (trigComment) {
+      return [...first, trigComment, ...last];
+    }
+  }
+
+  return [...first, ...last];
+}
 
 /* ---- Context extraction ------------------------------------------------ */
 
@@ -26,30 +108,31 @@ export async function extractIssueContext(
   event: IntegrationEvent,
   raw: GitHubRawEvent,
 ): Promise<GitHubIntegrationContext> {
-  const [issue, comments] = await Promise.all([
-    client.fetch<GitHubIssueResponse>(
-      `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}`,
-    ),
-    client
-      .fetch<GitHubIssueComment[]>(
-        `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}/comments`,
-      )
-      .then((r) => r ?? []),
-  ]);
+  const allComments = await client
+    .fetch<GitHubIssueComment[]>(
+      `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}/comments?per_page=100`,
+    )
+    .then((r) => r ?? []);
 
-  const labels = extractLabels(issue?.labels);
+  const comments = filterAndCap(
+    allComments,
+    (c) => c.body,
+    (c) => c.user?.login,
+    (c) => c.id,
+    raw.commentId,
+  );
 
   const messages: IntegrationMessage[] = [];
-  if (issue?.title || issue?.body) {
-    const prefix = issue.title ? `${issue.title}\n\n` : "";
+  if (raw.title || raw.body) {
+    const prefix = raw.title ? `${raw.title}\n\n` : "";
     messages.push({
-      user: issue.user?.login ?? "unknown",
-      text: `${prefix}${issue.body ?? ""}`.trim(),
+      user: raw.authorLogin ?? "unknown",
+      text: `${prefix}${raw.body ?? ""}`.trim(),
     });
   }
-  messages.push(...comments.map((c) => toMessage(c)));
+  messages.push(...comments.map(toMessage));
 
-  const triggering = comments.find((c) => c.id === raw.commentId);
+  const triggering = allComments.find((c) => c.id === raw.commentId);
 
   return {
     messages,
@@ -60,8 +143,8 @@ export async function extractIssueContext(
     github: {
       contextType: "issue",
       number: raw.number,
-      title: issue?.title,
-      labels,
+      title: raw.title,
+      labels: raw.labels,
     },
   };
 }
@@ -71,35 +154,37 @@ export async function extractPrContext(
   event: IntegrationEvent,
   raw: GitHubRawEvent,
 ): Promise<GitHubIntegrationContext> {
+  const repoPath = `/repos/${raw.owner}/${raw.repo}`;
   const [pr, issueComments, reviewComments, files] = await Promise.all([
-    client.fetch<GitHubPullRequestResponse>(
-      `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}`,
-    ),
+    client.fetch<GitHubPullRequestResponse>(`${repoPath}/pulls/${raw.number}`),
     client
       .fetch<GitHubIssueComment[]>(
-        `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}/comments`,
+        `${repoPath}/issues/${raw.number}/comments?per_page=100`,
       )
       .then((r) => r ?? []),
     client
       .fetch<GitHubPullReviewComment[]>(
-        `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}/comments`,
+        `${repoPath}/pulls/${raw.number}/comments?per_page=100`,
       )
       .then((r) => r ?? []),
     client
       .fetch<GitHubPullFile[]>(
-        `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}/files`,
+        `${repoPath}/pulls/${raw.number}/files?per_page=${MAX_CHANGED_FILES}`,
       )
       .then((r) => r ?? []),
   ]);
 
-  const labels = extractLabels(pr?.labels);
+  const title = raw.title ?? pr?.title;
+  const body = raw.body ?? pr?.body;
+  const authorLogin = raw.authorLogin ?? pr?.user?.login;
+  const labels = raw.labels ?? extractLabelNames(pr?.labels);
 
   const messages: IntegrationMessage[] = [];
-  if (pr?.title || pr?.body) {
-    const prefix = pr.title ? `${pr.title}\n\n` : "";
+  if (title || body) {
+    const prefix = title ? `${title}\n\n` : "";
     messages.push({
-      user: pr.user?.login ?? "unknown",
-      text: `${prefix}${pr.body ?? ""}`.trim(),
+      user: authorLogin ?? "unknown",
+      text: `${prefix}${body ?? ""}`.trim(),
     });
   }
 
@@ -108,7 +193,15 @@ export async function extractPrContext(
     const bTs = b.created_at ? Date.parse(b.created_at) : 0;
     return aTs - bTs;
   });
-  messages.push(...merged.map((c) => toMessage(c)));
+
+  const filtered = filterAndCap(
+    merged,
+    (c) => c.body,
+    (c) => c.user?.login,
+    (c) => c.id,
+    raw.commentId,
+  );
+  messages.push(...filtered.map(toMessage));
 
   const triggering = merged.find((c) => c.id === raw.commentId);
 
@@ -117,7 +210,7 @@ export async function extractPrContext(
     raw.owner,
     raw.repo,
     raw.number,
-    pr?.body,
+    body,
   );
 
   const headBranch = raw.headBranch ?? pr?.head?.ref;
@@ -132,7 +225,7 @@ export async function extractPrContext(
     github: {
       contextType: "pr",
       number: raw.number,
-      title: pr?.title,
+      title,
       labels,
       headBranch,
       baseBranch,
@@ -149,16 +242,11 @@ export async function extractPrReviewContext(
   event: IntegrationEvent,
   raw: GitHubRawEvent,
 ): Promise<GitHubIntegrationContext> {
-  const [comments, pr] = await Promise.all([
-    client
-      .fetch<GitHubPullReviewComment[]>(
-        `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}/comments`,
-      )
-      .then((r) => r ?? []),
-    client.fetch<GitHubPullRequestResponse>(
-      `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}`,
-    ),
-  ]);
+  const comments = await client
+    .fetch<GitHubPullReviewComment[]>(
+      `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}/comments?per_page=100`,
+    )
+    .then((r) => r ?? []);
 
   const trigger = comments.find((c) => c.id === raw.commentId);
   const rootId = trigger?.in_reply_to_id ?? trigger?.id;
@@ -174,7 +262,15 @@ export async function extractPrReviewContext(
     return aTs - bTs;
   });
 
-  const messages = threadComments.map((c) => toMessage(c));
+  const filtered = filterAndCap(
+    threadComments,
+    (c) => c.body,
+    (c) => c.user?.login,
+    (c) => c.id,
+    raw.commentId,
+  );
+
+  const messages = filtered.map(toMessage);
 
   return {
     messages,
@@ -185,9 +281,9 @@ export async function extractPrReviewContext(
     github: {
       contextType: "pr_review",
       number: raw.number,
-      title: pr?.title,
-      headBranch: raw.headBranch ?? pr?.head?.ref,
-      baseBranch: raw.baseBranch ?? pr?.base?.ref,
+      title: raw.title,
+      headBranch: raw.headBranch,
+      baseBranch: raw.baseBranch,
       diffHunk: raw.diffHunk ?? trigger?.diff_hunk,
       path: raw.path ?? trigger?.path,
       line: raw.line ?? trigger?.line,
@@ -201,21 +297,14 @@ export async function extractDiscussionContext(
   raw: GitHubRawEvent,
 ): Promise<GitHubIntegrationContext> {
   const result = await client.graphql<DiscussionQueryResult>(
-    `query GetDiscussion(
+    `query GetDiscussionComments(
         $owner: String!
         $repo: String!
         $number: Int!
       ) {
         repository(owner: $owner, name: $repo) {
           discussion(number: $number) {
-            title
-            body
-            author { login }
-            category { name }
-            labels(first: 10) {
-              nodes { name }
-            }
-            comments(first: 50) {
+            comments(first: 100) {
               nodes {
                 id
                 databaseId
@@ -234,21 +323,26 @@ export async function extractDiscussionContext(
     },
   );
 
-  const discussion = result?.repository?.discussion;
-  const labels = (discussion?.labels?.nodes ?? [])
-    .map((l) => l.name)
-    .filter((name): name is string => !!name);
+  const nodes = result?.repository?.discussion?.comments?.nodes ?? [];
+
+  const filteredNodes = filterAndCap(
+    nodes,
+    (n) => n.body,
+    (n) => n.author?.login,
+    (n) => n.databaseId ?? 0,
+    raw.commentId,
+  );
 
   const messages: IntegrationMessage[] = [];
-  if (discussion?.title || discussion?.body) {
-    const prefix = discussion.title ? `${discussion.title}\n\n` : "";
+  if (raw.title || raw.body) {
+    const prefix = raw.title ? `${raw.title}\n\n` : "";
     messages.push({
-      user: discussion.author?.login ?? "unknown",
-      text: `${prefix}${discussion.body ?? ""}`.trim(),
+      user: raw.authorLogin ?? "unknown",
+      text: `${prefix}${raw.body ?? ""}`.trim(),
     });
   }
 
-  for (const node of discussion?.comments?.nodes ?? []) {
+  for (const node of filteredNodes) {
     messages.push({
       user: node.author?.login ?? "unknown",
       text: node.body ?? "",
@@ -256,9 +350,7 @@ export async function extractDiscussionContext(
     });
   }
 
-  const triggering = (discussion?.comments?.nodes ?? []).find(
-    (c) => c.databaseId === raw.commentId,
-  );
+  const triggering = nodes.find((c) => c.databaseId === raw.commentId);
 
   return {
     messages,
@@ -269,9 +361,9 @@ export async function extractDiscussionContext(
     github: {
       contextType: "discussion",
       number: raw.number,
-      title: discussion?.title,
-      labels,
-      category: discussion?.category?.name,
+      title: raw.title,
+      labels: raw.labels,
+      category: raw.discussionCategory,
     },
   };
 }
@@ -285,7 +377,6 @@ async function extractLinkedIssues(
 ): Promise<LinkedIssueSummary[]> {
   if (!prBody) return [];
 
-  // Match patterns: #123, fixes #123, closes #123, resolves #123
   const pattern =
     /(?:(?:fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved)\s+)?#(\d+)/gi;
   const nums = new Set<number>();
@@ -306,7 +397,7 @@ async function extractLinkedIssues(
 
       const recent =
         (await client.fetch<GitHubIssueComment[]>(
-          `/repos/${owner}/${repo}/issues/${num}/comments?per_page=3&direction=desc`,
+          `/repos/${owner}/${repo}/issues/${num}/comments?per_page=${MAX_LINKED_ISSUE_COMMENTS}&direction=desc`,
         )) ?? [];
 
       return {
@@ -314,10 +405,13 @@ async function extractLinkedIssues(
         title: issue.title ?? `Issue #${num}`,
         body: truncate(issue.body ?? "", 300),
         commentCount: issue.comments ?? 0,
-        recentComments: recent.reverse().map((c) => ({
-          user: c.user?.login ?? "unknown",
-          text: truncate(c.body ?? "", 200),
-        })),
+        recentComments: recent
+          .reverse()
+          .filter((c) => !isNoiseBody(c.body))
+          .map((c) => ({
+            user: c.user?.login ?? "unknown",
+            text: truncate(c.body ?? "", 200),
+          })),
       } satisfies LinkedIssueSummary;
     }),
   );
@@ -398,7 +492,16 @@ function formatPrContext(ctx: GitHubIntegrationContext): string {
     lines.push(`**Branches:** \`${gh.headBranch}\` → \`${gh.baseBranch}\``);
   }
   if (gh?.changedFiles?.length) {
-    lines.push(`**Changed files:** ${gh.changedFiles.length}`);
+    const total = gh.changedFiles.length;
+    const shown = gh.changedFiles.slice(0, MAX_CHANGED_FILES);
+    lines.push(`**Changed files (${total}):**`);
+    for (const file of shown) {
+      lines.push(`- \`${file}\``);
+    }
+    if (total > MAX_CHANGED_FILES) {
+      const extra = total - MAX_CHANGED_FILES;
+      lines.push(`- _…and ${extra} more_`);
+    }
   }
   lines.push("");
 
@@ -514,7 +617,7 @@ function appendCurrentRequest(
   lines.push(`**Message:** ${ctx.currentRequest.text}`);
 }
 
-function extractLabels(labels?: GitHubLabel[]): string[] {
+function extractLabelNames(labels?: { name?: string }[]): string[] {
   return (labels ?? [])
     .map((l) => l.name)
     .filter((name): name is string => !!name);
