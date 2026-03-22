@@ -219,8 +219,6 @@ export const integrationRoutes = new Elysia({
               number,
               commentId: comment.id,
               contextType,
-              headBranch: isPr ? issue.pull_request?.head?.ref : undefined,
-              baseBranch: isPr ? issue.pull_request?.base?.ref : undefined,
             },
           })
           .catch((err: unknown) => {
@@ -231,6 +229,8 @@ export const integrationRoutes = new Elysia({
           });
       });
 
+      set.status = 202;
+      set.status = 202;
       return { ok: true };
     }
 
@@ -271,6 +271,7 @@ export const integrationRoutes = new Elysia({
           });
       });
 
+      set.status = 202;
       return { ok: true };
     }
 
@@ -313,6 +314,7 @@ export const integrationRoutes = new Elysia({
           });
       });
 
+      set.status = 202;
       return { ok: true };
     }
 

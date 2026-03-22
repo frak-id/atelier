@@ -21,6 +21,7 @@ import type {
 } from "../system-sandbox/index.ts";
 import type { TaskService } from "../task/index.ts";
 import type { WorkspaceService } from "../workspace/index.ts";
+import type { GitHubIntegrationContext } from "./adapters/github.adapter.ts";
 import type {
   IntegrationAdapter,
   IntegrationEvent,
@@ -760,30 +761,17 @@ export class IntegrationGateway {
     }
 
     const context = await adapter.extractContext(event);
-    const contextMarkdown = adapter.formatContextForPrompt(context);
+    const description = adapter.formatContextForPrompt(context);
 
-    const contextType = String(raw.contextType ?? "issue");
-    const headBranch = raw.headBranch ? String(raw.headBranch) : undefined;
-    const baseBranch = headBranch
-      ? raw.baseBranch
-        ? String(raw.baseBranch)
-        : undefined
-      : undefined;
-
-    let description = "";
-    if (contextType === "pr" || contextType === "pr_review") {
-      description += `**PR branch:** \`${headBranch ?? "unknown"}\``;
-      if (baseBranch) description += ` → \`${baseBranch}\``;
-      description += "\n\n";
-    }
-    description += contextMarkdown;
+    const ghContext = context as GitHubIntegrationContext;
+    const baseBranch = ghContext.github?.baseBranch ?? match.matchedRepo.branch;
 
     const title = this.deps.systemAiService.fallbackTitle(event.text);
     const task = this.deps.taskService.create({
       workspaceId: match.workspace.id,
       description,
       title,
-      baseBranch: baseBranch ?? match.matchedRepo.branch,
+      baseBranch,
     });
 
     this.deps.systemAiService.generateTitleInBackground(
