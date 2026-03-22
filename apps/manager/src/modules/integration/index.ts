@@ -1,4 +1,8 @@
-export { GitHubAdapter, SlackAdapter } from "./adapters/index.ts";
+export {
+  GitHubAdapter,
+  type GitHubIntegrationContext,
+  SlackAdapter,
+} from "./adapters/index.ts";
 export { IntegrationGateway } from "./integration.gateway.ts";
 export type {
   IntegrationAdapter,

@@ -13,6 +13,11 @@ const log = createChildLogger("github-adapter");
 
 const GITHUB_API_BASE = "https://api.github.com";
 const MAX_DISPLAY_TODOS = 15;
+const MAX_LINKED_ISSUES = 5;
+
+/* -------------------------------------------------------------------------- */
+/*                              Internal types                                */
+/* -------------------------------------------------------------------------- */
 
 interface GitHubRawEvent {
   owner: string;
@@ -33,11 +38,17 @@ interface GitHubUser {
   login?: string;
 }
 
+interface GitHubLabel {
+  name?: string;
+}
+
 interface GitHubIssueResponse {
   number: number;
   title?: string;
   body?: string;
   user?: GitHubUser;
+  labels?: GitHubLabel[];
+  comments?: number;
 }
 
 interface GitHubPullRequestResponse {
@@ -47,6 +58,7 @@ interface GitHubPullRequestResponse {
   user?: GitHubUser;
   head?: { ref?: string };
   base?: { ref?: string };
+  labels?: GitHubLabel[];
 }
 
 interface GitHubIssueComment {
@@ -71,31 +83,95 @@ interface GitHubCommentResponse {
   id?: number;
 }
 
-interface GitHubIntegrationContext extends IntegrationContext {
+interface GitHubReactionResponse {
+  id?: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Exported types                                */
+/* -------------------------------------------------------------------------- */
+
+export interface LinkedIssueSummary {
+  number: number;
+  title: string;
+  body: string;
+  commentCount: number;
+  recentComments: { user: string; text: string }[];
+}
+
+export interface GitHubIntegrationContext extends IntegrationContext {
   github?: {
     contextType: GitHubRawEvent["contextType"];
+    number?: number;
+    title?: string;
+    labels?: string[];
     headBranch?: string;
     baseBranch?: string;
     changedFiles?: string[];
+    linkedIssues?: LinkedIssueSummary[];
     diffHunk?: string;
     path?: string;
     line?: number;
+    category?: string;
   };
 }
 
-interface GitHubConfig {
-  enabled: boolean;
-  accessToken: string;
-  webhookSecret: string;
+/* -------------------------------------------------------------------------- */
+/*                          GraphQL response types                            */
+/* -------------------------------------------------------------------------- */
+
+interface GraphQLResponse<T> {
+  data?: T;
+  errors?: { message: string }[];
 }
+
+interface DiscussionQueryResult {
+  repository?: {
+    discussion?: {
+      title?: string;
+      body?: string;
+      author?: { login?: string };
+      category?: { name?: string };
+      labels?: { nodes?: { name?: string }[] };
+      comments?: {
+        nodes?: {
+          id?: string;
+          databaseId?: number;
+          body?: string;
+          author?: { login?: string };
+          createdAt?: string;
+        }[];
+      };
+    };
+  };
+}
+
+interface AddDiscussionCommentResult {
+  addDiscussionComment?: {
+    comment?: {
+      id?: string;
+      databaseId?: number;
+    };
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Adapter class                                */
+/* -------------------------------------------------------------------------- */
 
 export class GitHubAdapter implements IntegrationAdapter {
   readonly source = "github" as const;
 
-  private cachedInstallationToken?: {
-    token: string;
-    expiresAt: number;
-  };
+  /**
+   * In-memory cache: (commentKey:emoji) → reaction ID.
+   *
+   * TODO: Persist reaction IDs to the database so they survive
+   * manager restarts. For v1 the in-memory cache is acceptable
+   * because reactions are cosmetic feedback, not critical state.
+   */
+  private reactionCache = new Map<string, number | string>();
+
+  /* ---- Static helpers -------------------------------------------------- */
 
   static buildThreadKey(
     owner: string,
@@ -133,7 +209,11 @@ export class GitHubAdapter implements IntegrationAdapter {
     };
   }
 
-  async extractContext(event: IntegrationEvent): Promise<IntegrationContext> {
+  /* ---- IntegrationAdapter — context ------------------------------------ */
+
+  async extractContext(
+    event: IntegrationEvent,
+  ): Promise<GitHubIntegrationContext> {
     const raw = this.parseRawEvent(event);
 
     switch (raw.contextType) {
@@ -143,6 +223,8 @@ export class GitHubAdapter implements IntegrationAdapter {
         return this.extractPrContext(event, raw);
       case "pr_review":
         return this.extractPrReviewContext(event, raw);
+      case "discussion":
+        return this.extractDiscussionContext(event, raw);
       default:
         return {
           messages: [],
@@ -150,72 +232,74 @@ export class GitHubAdapter implements IntegrationAdapter {
             user: event.user,
             text: event.text,
           },
-          github: {
-            contextType: "discussion",
-          },
-        } as GitHubIntegrationContext;
+          github: { contextType: "issue" },
+        };
     }
   }
 
   formatContextForPrompt(context: IntegrationContext): string {
-    const ghContext = this.asGitHubContext(context);
-
-    let md = "# GitHub Context\n\n";
-
-    if (ghContext.github?.contextType === "pr") {
-      const head = ghContext.github.headBranch;
-      const base = ghContext.github.baseBranch;
-      if (head && base) {
-        md += `**Branches:** \`${head}\` → \`${base}\`\n`;
-      }
-      if (ghContext.github.changedFiles) {
-        md += `**Changed files:** ${ghContext.github.changedFiles.length}\n`;
-      }
-      md += "\n";
+    const gh = this.asGitHubContext(context);
+    switch (gh.github?.contextType) {
+      case "pr":
+        return this.formatPrContext(gh);
+      case "pr_review":
+        return this.formatPrReviewContext(gh);
+      case "discussion":
+        return this.formatDiscussionContext(gh);
+      default:
+        return this.formatIssueContext(gh);
     }
-
-    if (ghContext.github?.contextType === "pr_review") {
-      const path = ghContext.github.path;
-      const line = ghContext.github.line;
-      if (path) {
-        md += `**File:** \`${path}\`${line ? ` (line ${line})` : ""}\n\n`;
-      }
-      if (ghContext.github.diffHunk) {
-        md += "## Diff Hunk\n\n";
-        md += "```diff\n";
-        md += `${ghContext.github.diffHunk}\n`;
-        md += "```\n\n";
-      }
-    }
-
-    if (context.messages.length > 0) {
-      md += "## Thread Messages\n\n";
-      for (const message of context.messages) {
-        md += `**@${message.user}**: ${message.text}\n\n`;
-      }
-    }
-
-    md += "## Current Request\n\n";
-    md += `**From:** @${context.currentRequest.user}\n`;
-    md += `**Message:** ${context.currentRequest.text}\n`;
-
-    return md;
   }
+
+  /* ---- IntegrationAdapter — reactions ---------------------------------- */
 
   async addReaction(event: IntegrationEvent, emoji: string): Promise<void> {
     const raw = this.parseRawEvent(event);
-    if (!raw.commentId) return;
+    if (!raw.commentId && !raw.commentNodeId) return;
 
     const content = mapReaction(emoji);
 
     try {
-      await this.githubFetch(
-        `/repos/${raw.owner}/${raw.repo}/issues/comments/${raw.commentId}/reactions`,
-        {
+      if (raw.contextType === "discussion" && raw.commentNodeId) {
+        const result = await this.graphqlFetch<{
+          addReaction?: {
+            reaction?: { id?: string };
+          };
+        }>(
+          `mutation AddReaction(
+            $subjectId: ID!
+            $content: ReactionContent!
+          ) {
+            addReaction(
+              input: {
+                subjectId: $subjectId
+                content: $content
+              }
+            ) { reaction { id } }
+          }`,
+          {
+            subjectId: raw.commentNodeId,
+            content: graphqlReactionContent(content),
+          },
+        );
+        const rid = result?.addReaction?.reaction?.id;
+        if (rid) {
+          this.reactionCache.set(reactionCacheKey(raw, emoji), rid);
+        }
+      } else {
+        const endpoint =
+          raw.contextType === "pr_review"
+            ? `/repos/${raw.owner}/${raw.repo}/pulls/comments/${raw.commentId}/reactions`
+            : `/repos/${raw.owner}/${raw.repo}/issues/comments/${raw.commentId}/reactions`;
+
+        const resp = await this.githubFetch<GitHubReactionResponse>(endpoint, {
           method: "POST",
           body: JSON.stringify({ content }),
-        },
-      );
+        });
+        if (resp?.id) {
+          this.reactionCache.set(reactionCacheKey(raw, emoji), resp.id);
+        }
+      }
     } catch (error) {
       log.debug({ error, emoji, content }, "Failed to add GitHub reaction");
     }
@@ -223,21 +307,76 @@ export class GitHubAdapter implements IntegrationAdapter {
 
   async removeReaction(event: IntegrationEvent, emoji: string): Promise<void> {
     const raw = this.parseRawEvent(event);
+    const cacheKey = reactionCacheKey(raw, emoji);
+    const reactionId = this.reactionCache.get(cacheKey);
 
-    log.debug(
-      {
-        owner: raw.owner,
-        repo: raw.repo,
-        number: raw.number,
-        commentId: raw.commentId,
-        emoji,
-      },
-      "GitHub reaction removal is no-op in v1",
-    );
+    if (!reactionId) {
+      log.debug({ emoji, cacheKey }, "No cached reaction ID to remove");
+      return;
+    }
+
+    try {
+      if (
+        raw.contextType === "discussion" &&
+        raw.commentNodeId &&
+        typeof reactionId === "string"
+      ) {
+        await this.graphqlFetch(
+          `mutation RemoveReaction(
+            $subjectId: ID!
+            $content: ReactionContent!
+          ) {
+            removeReaction(
+              input: {
+                subjectId: $subjectId
+                content: $content
+              }
+            ) { reaction { id } }
+          }`,
+          {
+            subjectId: raw.commentNodeId,
+            content: graphqlReactionContent(mapReaction(emoji)),
+          },
+        );
+      } else if (typeof reactionId === "number") {
+        const endpoint =
+          raw.contextType === "pr_review"
+            ? `/repos/${raw.owner}/${raw.repo}/pulls/comments/${raw.commentId}/reactions/${reactionId}`
+            : `/repos/${raw.owner}/${raw.repo}/issues/comments/${raw.commentId}/reactions/${reactionId}`;
+
+        await this.githubFetch(endpoint, {
+          method: "DELETE",
+        });
+      }
+
+      this.reactionCache.delete(cacheKey);
+    } catch (error) {
+      log.debug({ error, emoji }, "Failed to remove GitHub reaction");
+    }
   }
+
+  /* ---- IntegrationAdapter — messaging ---------------------------------- */
 
   async postMessage(event: IntegrationEvent, text: string): Promise<void> {
     const raw = this.parseRawEvent(event);
+
+    if (raw.contextType === "discussion" && raw.discussionNodeId) {
+      await this.graphqlFetch<AddDiscussionCommentResult>(
+        `mutation AddComment(
+          $discussionId: ID!
+          $body: String!
+        ) {
+          addDiscussionComment(
+            input: {
+              discussionId: $discussionId
+              body: $body
+            }
+          ) { comment { id } }
+        }`,
+        { discussionId: raw.discussionNodeId, body: text },
+      );
+      return;
+    }
 
     await this.githubFetch(
       `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}/comments`,
@@ -253,18 +392,39 @@ export class GitHubAdapter implements IntegrationAdapter {
     state: ProgressState,
   ): Promise<string | undefined> {
     const raw = this.parseRawEvent(event);
+    const body = renderProgressMarkdown(state);
 
     try {
-      const response = await this.githubFetch<GitHubCommentResponse>(
+      if (raw.contextType === "discussion" && raw.discussionNodeId) {
+        const result = await this.graphqlFetch<AddDiscussionCommentResult>(
+          `mutation AddComment(
+              $discussionId: ID!
+              $body: String!
+            ) {
+              addDiscussionComment(
+                input: {
+                  discussionId: $discussionId
+                  body: $body
+                }
+              ) { comment { id databaseId } }
+            }`,
+          {
+            discussionId: raw.discussionNodeId,
+            body,
+          },
+        );
+        return result?.addDiscussionComment?.comment?.id ?? undefined;
+      }
+
+      const resp = await this.githubFetch<GitHubCommentResponse>(
         `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}/comments`,
         {
           method: "POST",
-          body: JSON.stringify({ body: renderProgressMarkdown(state) }),
+          body: JSON.stringify({ body }),
         },
       );
-
-      if (!response?.id) return undefined;
-      return String(response.id);
+      if (!resp?.id) return undefined;
+      return String(resp.id);
     } catch (error) {
       log.debug({ error }, "Failed to post GitHub progress message");
       return undefined;
@@ -277,19 +437,41 @@ export class GitHubAdapter implements IntegrationAdapter {
     state: ProgressState,
   ): Promise<void> {
     const raw = this.parseRawEvent(event);
+    const body = renderProgressMarkdown(state);
 
     try {
-      await this.githubFetch(
-        `/repos/${raw.owner}/${raw.repo}/issues/comments/${messageId}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ body: renderProgressMarkdown(state) }),
-        },
-      );
+      const isGraphQLId = messageId.length > 0 && !/^\d+$/.test(messageId);
+
+      if (isGraphQLId) {
+        await this.graphqlFetch(
+          `mutation UpdateComment(
+            $commentId: ID!
+            $body: String!
+          ) {
+            updateDiscussionComment(
+              input: {
+                commentId: $commentId
+                body: $body
+              }
+            ) { comment { id } }
+          }`,
+          { commentId: messageId, body },
+        );
+      } else {
+        await this.githubFetch(
+          `/repos/${raw.owner}/${raw.repo}/issues/comments/${messageId}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ body }),
+          },
+        );
+      }
     } catch (error) {
       log.debug({ error, messageId }, "Failed to update GitHub progress");
     }
   }
+
+  /* ---- IntegrationAdapter — webhook verification ----------------------- */
 
   async verifyWebhook(signature: string, payload: string): Promise<boolean> {
     const webhookSecret = this.githubConfig.webhookSecret;
@@ -315,40 +497,19 @@ export class GitHubAdapter implements IntegrationAdapter {
     return timingSafeEqual(computedSignature, signature);
   }
 
-  private get githubConfig(): GitHubConfig {
-    const integrations = config.integrations as typeof config.integrations & {
-      github?: Partial<GitHubConfig>;
-    };
-    const github = integrations.github;
+  /* ---- Private: config ------------------------------------------------- */
 
-    return {
-      enabled: github?.enabled ?? false,
-      accessToken: github?.accessToken ?? "",
-      webhookSecret: github?.webhookSecret ?? "",
-    };
+  private get githubConfig() {
+    return config.integrations.github;
   }
 
-  private async getInstallationToken(): Promise<string> {
-    const now = Date.now();
-    const cached = this.cachedInstallationToken;
-    if (cached && cached.expiresAt > now + 30_000) {
-      return cached.token;
-    }
-
-    const token = this.githubConfig.accessToken;
-    this.cachedInstallationToken = {
-      token,
-      expiresAt: now + 60 * 60 * 1000,
-    };
-
-    return token;
-  }
+  /* ---- Private: HTTP --------------------------------------------------- */
 
   private async githubFetch<T>(
     path: string,
     init: RequestInit = {},
   ): Promise<T | undefined> {
-    const token = await this.getInstallationToken();
+    const token = this.githubConfig.accessToken;
     if (!token) {
       log.warn({ path }, "GitHub access token missing");
       return undefined;
@@ -388,6 +549,43 @@ export class GitHubAdapter implements IntegrationAdapter {
     return (await response.json()) as T;
   }
 
+  private async graphqlFetch<T>(
+    query: string,
+    variables: Record<string, unknown> = {},
+  ): Promise<T | undefined> {
+    const token = this.githubConfig.accessToken;
+    if (!token) {
+      log.warn("GitHub access token missing for GraphQL");
+      return undefined;
+    }
+
+    const response = await fetch(`${GITHUB_API_BASE}/graphql`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      log.warn(
+        { status: response.status, body: errorBody },
+        "GitHub GraphQL request failed",
+      );
+      return undefined;
+    }
+
+    const result = (await response.json()) as GraphQLResponse<T>;
+    if (result.errors?.length) {
+      log.warn({ errors: result.errors }, "GitHub GraphQL errors");
+    }
+    return result.data;
+  }
+
+  /* ---- Private: parsing ------------------------------------------------ */
+
   private parseRawEvent(event: IntegrationEvent): GitHubRawEvent {
     const raw = event.raw as Partial<GitHubRawEvent>;
     const parsedThread = GitHubAdapter.parseThreadKey(event.threadKey);
@@ -421,31 +619,36 @@ export class GitHubAdapter implements IntegrationAdapter {
     return { ...context };
   }
 
+  /* ---- Private: context extraction ------------------------------------- */
+
   private async extractIssueContext(
     event: IntegrationEvent,
     raw: GitHubRawEvent,
   ): Promise<GitHubIntegrationContext> {
-    const issue = await this.githubFetch<GitHubIssueResponse>(
-      `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}`,
-    );
-    const comments =
-      (await this.githubFetch<GitHubIssueComment[]>(
+    const [issue, comments] = await Promise.all([
+      this.githubFetch<GitHubIssueResponse>(
+        `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}`,
+      ),
+      this.githubFetch<GitHubIssueComment[]>(
         `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}/comments`,
-      )) ?? [];
+      ).then((r) => r ?? []),
+    ]);
+
+    const labels = extractLabels(issue?.labels);
 
     const messages: IntegrationMessage[] = [];
     if (issue?.title || issue?.body) {
-      const titlePrefix = issue.title ? `${issue.title}\n\n` : "";
+      const prefix = issue.title ? `${issue.title}\n\n` : "";
       messages.push({
         user: issue.user?.login ?? "unknown",
-        text: `${titlePrefix}${issue.body ?? ""}`.trim(),
+        text: `${prefix}${issue.body ?? ""}`.trim(),
       });
     }
-    messages.push(...comments.map((comment) => toMessage(comment)));
+    messages.push(...comments.map((c) => toMessage(c)));
 
-    const triggering = comments.find((comment) => comment.id === raw.commentId);
+    const triggering = comments.find((c) => c.id === raw.commentId);
 
-    const context: GitHubIntegrationContext = {
+    return {
       messages,
       currentRequest: {
         user: triggering?.user?.login ?? event.user,
@@ -453,55 +656,63 @@ export class GitHubAdapter implements IntegrationAdapter {
       },
       github: {
         contextType: "issue",
+        number: raw.number,
+        title: issue?.title,
+        labels,
       },
     };
-
-    return context;
   }
 
   private async extractPrContext(
     event: IntegrationEvent,
     raw: GitHubRawEvent,
   ): Promise<GitHubIntegrationContext> {
-    const pr = await this.githubFetch<GitHubPullRequestResponse>(
-      `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}`,
-    );
-    const issueComments =
-      (await this.githubFetch<GitHubIssueComment[]>(
+    const [pr, issueComments, reviewComments, files] = await Promise.all([
+      this.githubFetch<GitHubPullRequestResponse>(
+        `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}`,
+      ),
+      this.githubFetch<GitHubIssueComment[]>(
         `/repos/${raw.owner}/${raw.repo}/issues/${raw.number}/comments`,
-      )) ?? [];
-    const reviewComments =
-      (await this.githubFetch<GitHubPullReviewComment[]>(
+      ).then((r) => r ?? []),
+      this.githubFetch<GitHubPullReviewComment[]>(
         `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}/comments`,
-      )) ?? [];
-    const changedFiles =
-      (await this.githubFetch<GitHubPullFile[]>(
+      ).then((r) => r ?? []),
+      this.githubFetch<GitHubPullFile[]>(
         `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}/files`,
-      )) ?? [];
+      ).then((r) => r ?? []),
+    ]);
+
+    const labels = extractLabels(pr?.labels);
 
     const messages: IntegrationMessage[] = [];
     if (pr?.title || pr?.body) {
-      const titlePrefix = pr.title ? `${pr.title}\n\n` : "";
+      const prefix = pr.title ? `${pr.title}\n\n` : "";
       messages.push({
         user: pr.user?.login ?? "unknown",
-        text: `${titlePrefix}${pr.body ?? ""}`.trim(),
+        text: `${prefix}${pr.body ?? ""}`.trim(),
       });
     }
 
-    const mergedComments = [...issueComments, ...reviewComments].sort(
-      (a, b) => {
-        const aTs = a.created_at ? Date.parse(a.created_at) : 0;
-        const bTs = b.created_at ? Date.parse(b.created_at) : 0;
-        return aTs - bTs;
-      },
-    );
-    messages.push(...mergedComments.map((comment) => toMessage(comment)));
+    const merged = [...issueComments, ...reviewComments].sort((a, b) => {
+      const aTs = a.created_at ? Date.parse(a.created_at) : 0;
+      const bTs = b.created_at ? Date.parse(b.created_at) : 0;
+      return aTs - bTs;
+    });
+    messages.push(...merged.map((c) => toMessage(c)));
 
-    const triggering = mergedComments.find(
-      (comment) => comment.id === raw.commentId,
+    const triggering = merged.find((c) => c.id === raw.commentId);
+
+    const linkedIssues = await this.extractLinkedIssues(
+      raw.owner,
+      raw.repo,
+      raw.number,
+      pr?.body,
     );
 
-    const context: GitHubIntegrationContext = {
+    const headBranch = raw.headBranch ?? pr?.head?.ref;
+    const baseBranch = raw.baseBranch ?? pr?.base?.ref;
+
+    return {
       messages,
       currentRequest: {
         user: triggering?.user?.login ?? event.user,
@@ -509,35 +720,40 @@ export class GitHubAdapter implements IntegrationAdapter {
       },
       github: {
         contextType: "pr",
-        headBranch: raw.headBranch ?? pr?.head?.ref,
-        baseBranch: raw.baseBranch ?? pr?.base?.ref,
-        changedFiles: changedFiles
-          .map((file) => file.filename)
+        number: raw.number,
+        title: pr?.title,
+        labels,
+        headBranch,
+        baseBranch,
+        changedFiles: files
+          .map((f) => f.filename)
           .filter((name): name is string => !!name),
+        linkedIssues: linkedIssues.length > 0 ? linkedIssues : undefined,
       },
     };
-
-    return context;
   }
 
   private async extractPrReviewContext(
     event: IntegrationEvent,
     raw: GitHubRawEvent,
   ): Promise<GitHubIntegrationContext> {
-    const comments =
-      (await this.githubFetch<GitHubPullReviewComment[]>(
+    const [comments, pr] = await Promise.all([
+      this.githubFetch<GitHubPullReviewComment[]>(
         `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}/comments`,
-      )) ?? [];
+      ).then((r) => r ?? []),
+      this.githubFetch<GitHubPullRequestResponse>(
+        `/repos/${raw.owner}/${raw.repo}/pulls/${raw.number}`,
+      ),
+    ]);
 
-    const trigger = comments.find((comment) => comment.id === raw.commentId);
+    const trigger = comments.find((c) => c.id === raw.commentId);
     const rootId = trigger?.in_reply_to_id ?? trigger?.id;
 
     const threadComments =
       rootId === undefined
         ? comments
         : comments.filter(
-            (comment) =>
-              comment.id === rootId || comment.in_reply_to_id === rootId,
+            (c) => c.id === rootId || c.in_reply_to_id === rootId,
           );
 
     threadComments.sort((a, b) => {
@@ -546,9 +762,9 @@ export class GitHubAdapter implements IntegrationAdapter {
       return aTs - bTs;
     });
 
-    const messages = threadComments.map((comment) => toMessage(comment));
+    const messages = threadComments.map((c) => toMessage(c));
 
-    const context: GitHubIntegrationContext = {
+    return {
       messages,
       currentRequest: {
         user: trigger?.user?.login ?? event.user,
@@ -556,15 +772,312 @@ export class GitHubAdapter implements IntegrationAdapter {
       },
       github: {
         contextType: "pr_review",
+        number: raw.number,
+        title: pr?.title,
+        headBranch: raw.headBranch ?? pr?.head?.ref,
+        baseBranch: raw.baseBranch ?? pr?.base?.ref,
         diffHunk: raw.diffHunk ?? trigger?.diff_hunk,
         path: raw.path ?? trigger?.path,
         line: raw.line ?? trigger?.line,
       },
     };
+  }
 
-    return context;
+  private async extractDiscussionContext(
+    event: IntegrationEvent,
+    raw: GitHubRawEvent,
+  ): Promise<GitHubIntegrationContext> {
+    const result = await this.graphqlFetch<DiscussionQueryResult>(
+      `query GetDiscussion(
+          $owner: String!
+          $repo: String!
+          $number: Int!
+        ) {
+          repository(owner: $owner, name: $repo) {
+            discussion(number: $number) {
+              title
+              body
+              author { login }
+              category { name }
+              labels(first: 10) {
+                nodes { name }
+              }
+              comments(first: 50) {
+                nodes {
+                  id
+                  databaseId
+                  body
+                  author { login }
+                  createdAt
+                }
+              }
+            }
+          }
+        }`,
+      {
+        owner: raw.owner,
+        repo: raw.repo,
+        number: raw.number,
+      },
+    );
+
+    const discussion = result?.repository?.discussion;
+    const labels = (discussion?.labels?.nodes ?? [])
+      .map((l) => l.name)
+      .filter((name): name is string => !!name);
+
+    const messages: IntegrationMessage[] = [];
+    if (discussion?.title || discussion?.body) {
+      const prefix = discussion.title ? `${discussion.title}\n\n` : "";
+      messages.push({
+        user: discussion.author?.login ?? "unknown",
+        text: `${prefix}${discussion.body ?? ""}`.trim(),
+      });
+    }
+
+    for (const node of discussion?.comments?.nodes ?? []) {
+      messages.push({
+        user: node.author?.login ?? "unknown",
+        text: node.body ?? "",
+        timestamp: node.createdAt,
+      });
+    }
+
+    const triggering = (discussion?.comments?.nodes ?? []).find(
+      (c) => c.databaseId === raw.commentId,
+    );
+
+    return {
+      messages,
+      currentRequest: {
+        user: triggering?.author?.login ?? event.user,
+        text: triggering?.body ?? event.text,
+      },
+      github: {
+        contextType: "discussion",
+        number: raw.number,
+        title: discussion?.title,
+        labels,
+        category: discussion?.category?.name,
+      },
+    };
+  }
+
+  private async extractLinkedIssues(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    prBody?: string,
+  ): Promise<LinkedIssueSummary[]> {
+    if (!prBody) return [];
+
+    const pattern =
+      /(?:(?:fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved)\s+)?#(\d+)/gi;
+    const nums = new Set<number>();
+    for (const m of prBody.matchAll(pattern)) {
+      const n = Number.parseInt(m[1] ?? "0", 10);
+      if (n > 0 && n !== prNumber) nums.add(n);
+    }
+
+    if (nums.size === 0) return [];
+
+    const limited = [...nums].slice(0, MAX_LINKED_ISSUES);
+    const results = await Promise.allSettled(
+      limited.map(async (num) => {
+        const issue = await this.githubFetch<GitHubIssueResponse>(
+          `/repos/${owner}/${repo}/issues/${num}`,
+        );
+        if (!issue) return null;
+
+        const recent =
+          (await this.githubFetch<GitHubIssueComment[]>(
+            `/repos/${owner}/${repo}/issues/${num}/comments?per_page=3&direction=desc`,
+          )) ?? [];
+
+        return {
+          number: num,
+          title: issue.title ?? `Issue #${num}`,
+          body: truncate(issue.body ?? "", 300),
+          commentCount: issue.comments ?? 0,
+          recentComments: recent.reverse().map((c) => ({
+            user: c.user?.login ?? "unknown",
+            text: truncate(c.body ?? "", 200),
+          })),
+        } satisfies LinkedIssueSummary;
+      }),
+    );
+
+    const summaries: LinkedIssueSummary[] = [];
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) {
+        summaries.push(r.value);
+      }
+    }
+    return summaries;
+  }
+
+  /* ---- Private: context formatting ------------------------------------- */
+
+  private formatIssueContext(ctx: GitHubIntegrationContext): string {
+    const gh = ctx.github;
+    const lines: string[] = [];
+
+    lines.push(`# GitHub Issue #${gh?.number ?? "?"}`);
+    lines.push("");
+    if (gh?.title) {
+      lines.push(`**Title:** ${gh.title}`);
+    }
+    if (ctx.messages[0]?.user) {
+      lines.push(`**Author:** @${ctx.messages[0].user}`);
+    }
+    if (gh?.labels?.length) {
+      lines.push(`**Labels:** ${gh.labels.join(", ")}`);
+    }
+    lines.push("");
+
+    this.appendMessages(lines, "Issue & Comments", ctx.messages);
+    this.appendCurrentRequest(lines, ctx);
+
+    return lines.join("\n");
+  }
+
+  private formatPrContext(ctx: GitHubIntegrationContext): string {
+    const gh = ctx.github;
+    const lines: string[] = [];
+
+    lines.push(`# GitHub PR #${gh?.number ?? "?"}`);
+    lines.push("");
+    if (gh?.title) {
+      lines.push(`**Title:** ${gh.title}`);
+    }
+    if (ctx.messages[0]?.user) {
+      lines.push(`**Author:** @${ctx.messages[0].user}`);
+    }
+    if (gh?.labels?.length) {
+      lines.push(`**Labels:** ${gh.labels.join(", ")}`);
+    }
+    if (gh?.headBranch && gh.baseBranch) {
+      lines.push(`**Branches:** \`${gh.headBranch}\` → \`${gh.baseBranch}\``);
+    }
+    if (gh?.changedFiles?.length) {
+      lines.push(`**Changed files:** ${gh.changedFiles.length}`);
+    }
+    lines.push("");
+
+    if (gh?.linkedIssues?.length) {
+      lines.push("## Linked Issues");
+      lines.push("");
+      for (const issue of gh.linkedIssues) {
+        lines.push(
+          `### #${issue.number} — ${issue.title} (${issue.commentCount} comments)`,
+        );
+        if (issue.body) {
+          lines.push(`> ${issue.body}`);
+        }
+        if (issue.recentComments.length > 0) {
+          lines.push("");
+          lines.push("**Recent:**");
+          for (const c of issue.recentComments) {
+            lines.push(`> **@${c.user}:** ${c.text}`);
+          }
+        }
+        lines.push("");
+      }
+    }
+
+    this.appendMessages(lines, "Thread Messages", ctx.messages);
+    this.appendCurrentRequest(lines, ctx);
+
+    return lines.join("\n");
+  }
+
+  private formatPrReviewContext(ctx: GitHubIntegrationContext): string {
+    const gh = ctx.github;
+    const lines: string[] = [];
+
+    lines.push("# GitHub PR Review Comment");
+    lines.push("");
+    if (gh?.title) {
+      lines.push(`**PR:** #${gh.number} — ${gh.title}`);
+    }
+    if (gh?.path) {
+      const lineInfo = gh.line ? ` (line ${gh.line})` : "";
+      lines.push(`**File:** \`${gh.path}\`${lineInfo}`);
+    }
+    if (gh?.headBranch && gh.baseBranch) {
+      lines.push(`**Branches:** \`${gh.headBranch}\` → \`${gh.baseBranch}\``);
+    }
+    lines.push("");
+
+    if (gh?.diffHunk) {
+      lines.push("## Diff Hunk");
+      lines.push("");
+      lines.push("```diff");
+      lines.push(gh.diffHunk);
+      lines.push("```");
+      lines.push("");
+    }
+
+    this.appendMessages(lines, "Review Thread", ctx.messages);
+    this.appendCurrentRequest(lines, ctx);
+
+    return lines.join("\n");
+  }
+
+  private formatDiscussionContext(ctx: GitHubIntegrationContext): string {
+    const gh = ctx.github;
+    const lines: string[] = [];
+
+    lines.push(`# GitHub Discussion #${gh?.number ?? "?"}`);
+    lines.push("");
+    if (gh?.title) {
+      lines.push(`**Title:** ${gh.title}`);
+    }
+    if (ctx.messages[0]?.user) {
+      lines.push(`**Author:** @${ctx.messages[0].user}`);
+    }
+    if (gh?.category) {
+      lines.push(`**Category:** ${gh.category}`);
+    }
+    if (gh?.labels?.length) {
+      lines.push(`**Labels:** ${gh.labels.join(", ")}`);
+    }
+    lines.push("");
+
+    this.appendMessages(lines, "Discussion & Replies", ctx.messages);
+    this.appendCurrentRequest(lines, ctx);
+
+    return lines.join("\n");
+  }
+
+  private appendMessages(
+    lines: string[],
+    heading: string,
+    messages: IntegrationMessage[],
+  ): void {
+    if (messages.length === 0) return;
+    lines.push(`## ${heading}`);
+    lines.push("");
+    for (const msg of messages) {
+      lines.push(`**@${msg.user}:** ${msg.text}`);
+      lines.push("");
+    }
+  }
+
+  private appendCurrentRequest(
+    lines: string[],
+    ctx: GitHubIntegrationContext,
+  ): void {
+    lines.push("## Current Request");
+    lines.push("");
+    lines.push(`**From:** @${ctx.currentRequest.user}`);
+    lines.push(`**Message:** ${ctx.currentRequest.text}`);
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/*                            Module-level helpers                            */
+/* -------------------------------------------------------------------------- */
 
 const TODO_CHECKBOX: Record<TodoItem["status"], string> = {
   completed: "[x]",
@@ -583,12 +1096,42 @@ function mapReaction(emoji: string): string {
   return map[normalized] ?? "eyes";
 }
 
+function graphqlReactionContent(restContent: string): string {
+  const map: Record<string, string> = {
+    "+1": "THUMBS_UP",
+    "-1": "THUMBS_DOWN",
+    laugh: "LAUGH",
+    confused: "CONFUSED",
+    heart: "HEART",
+    hooray: "HOORAY",
+    rocket: "ROCKET",
+    eyes: "EYES",
+  };
+  return map[restContent] ?? "EYES";
+}
+
+function reactionCacheKey(raw: GitHubRawEvent, emoji: string): string {
+  const id = raw.commentNodeId ?? String(raw.commentId);
+  return `${id}:${emoji}`;
+}
+
+function extractLabels(labels?: GitHubLabel[]): string[] {
+  return (labels ?? [])
+    .map((l) => l.name)
+    .filter((name): name is string => !!name);
+}
+
 function toMessage(comment: GitHubIssueComment): IntegrationMessage {
   return {
     user: comment.user?.login ?? "unknown",
     text: comment.body ?? "",
     timestamp: comment.created_at,
   };
+}
+
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}…`;
 }
 
 function renderProgressMarkdown(state: ProgressState): string {
@@ -623,11 +1166,8 @@ function renderProgressMarkdown(state: ProgressState): string {
 
     const visible = activeTodos.slice(0, MAX_DISPLAY_TODOS);
     for (const todo of visible) {
-      const statusSuffix =
-        todo.status === "in_progress" ? " _(in progress)_" : "";
-      lines.push(
-        `- ${TODO_CHECKBOX[todo.status]} ${todo.content}${statusSuffix}`,
-      );
+      const suffix = todo.status === "in_progress" ? " _(in progress)_" : "";
+      lines.push(`- ${TODO_CHECKBOX[todo.status]} ${todo.content}${suffix}`);
     }
 
     if (activeTodos.length > MAX_DISPLAY_TODOS) {
