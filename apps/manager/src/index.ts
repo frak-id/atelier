@@ -129,8 +129,49 @@ const app = new Elysia()
       );
     }
 
-    // Reset prebuilds stuck in "building" state from a previous crash
+    // Migrate workspace repos from legacy sourceId format to url format
     const allWorkspaces = workspaceService.getAll();
+    for (const workspace of allWorkspaces) {
+      const repos = workspace.config.repos;
+      if (!repos?.length) continue;
+
+      const needsMigration = repos.some((r) => !("url" in r) || !r.url);
+      if (!needsMigration) continue;
+
+      const migratedRepos = repos.map((r) => {
+        if ("url" in r && r.url) return r;
+        const raw = r as Record<string, unknown>;
+        const remoteUrl = raw.resolvedRemoteUrl as string | undefined;
+        const repo = raw.repo as string | undefined;
+        let url: string;
+        if (remoteUrl) {
+          url = remoteUrl.startsWith("http")
+            ? remoteUrl
+            : `https://${remoteUrl}`;
+        } else if (repo) {
+          url = `https://github.com/${repo}.git`;
+        } else {
+          return r;
+        }
+        return {
+          url,
+          branch: r.branch,
+          clonePath: r.clonePath,
+          resolvedRemoteUrl: raw.resolvedRemoteUrl as string | undefined,
+          rootCommitHash: raw.rootCommitHash as string | undefined,
+        };
+      });
+
+      workspaceService.update(workspace.id, {
+        config: { repos: migratedRepos },
+      });
+      logger.info(
+        { workspaceId: workspace.id, workspaceName: workspace.name },
+        "Startup: migrated workspace repos to url format",
+      );
+    }
+
+    // Reset prebuilds stuck in "building" state from a previous crash
     for (const workspace of allWorkspaces) {
       if (workspace.config.prebuild?.status === "building") {
         workspaceService.update(workspace.id, {
