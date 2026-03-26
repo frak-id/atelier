@@ -64,6 +64,12 @@ export const queryKeys = {
     services: ["system", "services"] as const,
     sharedBinaries: ["system", "shared-binaries"] as const,
   },
+  platform: {
+    all: ["platform"] as const,
+    buildkit: ["platform", "buildkit"] as const,
+    runners: ["platform", "runners"] as const,
+    overview: ["platform", "overview"] as const,
+  },
   configFiles: {
     all: ["configFiles"] as const,
     list: (params?: { scope?: string; workspaceId?: string }) =>

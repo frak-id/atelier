@@ -6,6 +6,26 @@ import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
 
+// --- Platform ---
+
+export const platformBuildKitQuery = queryOptions({
+  queryKey: queryKeys.platform.buildkit,
+  queryFn: async () => unwrap(await api.api.platform.buildkit.get()),
+  refetchInterval: 15000,
+});
+
+export const platformRunnersQuery = queryOptions({
+  queryKey: queryKeys.platform.runners,
+  queryFn: async () => unwrap(await api.api.platform.runners.get()),
+  refetchInterval: 15000,
+});
+
+export const platformOverviewQuery = queryOptions({
+  queryKey: queryKeys.platform.overview,
+  queryFn: async () => unwrap(await api.api.platform.overview.get()),
+  refetchInterval: 15000,
+});
+
 // --- Health ---
 
 export const healthQuery = queryOptions({

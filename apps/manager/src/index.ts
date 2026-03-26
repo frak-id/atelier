@@ -16,6 +16,7 @@ import {
   internalWellKnownRoutes,
   opencodeRoutes,
   organizationRoutes,
+  platformRoutes,
   publicConfigRoutes,
   registryRoutes,
   sandboxRoutes,
@@ -286,6 +287,7 @@ const app = new Elysia()
       .use(systemModelConfigRoutes)
       .use(cliproxyRoutes)
       .use(organizationRoutes)
+      .use(platformRoutes)
       .use(userRoutes),
   );
 

@@ -1,0 +1,19 @@
+{{- if .Values.buildkit.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "atelier.fullname" . }}-buildkit
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: buildkit
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "atelier.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: buildkit
+  ports:
+    - name: grpc
+      port: {{ .Values.buildkit.port }}
+      targetPort: grpc
+{{- end }}

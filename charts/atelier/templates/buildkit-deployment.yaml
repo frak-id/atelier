@@ -1,0 +1,67 @@
+{{- if .Values.buildkit.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "atelier.fullname" . }}-buildkit
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: buildkit
+spec:
+  replicas: {{ .Values.buildkit.replicas }}
+  selector:
+    matchLabels:
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: buildkit
+  template:
+    metadata:
+      labels:
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: buildkit
+    spec:
+      {{- include "atelier.imagePullSecrets" . | nindent 6 }}
+      {{- if .Values.buildkit.kata }}
+      runtimeClassName: {{ .Values.kubernetes.runtimeClass }}
+      {{- end }}
+      containers:
+        - name: buildkitd
+          image: {{ include "atelier.buildkitImage" . }}
+          imagePullPolicy: {{ .Values.buildkit.image.pullPolicy }}
+          args:
+            - --addr
+            - unix:///run/buildkit/buildkitd.sock
+            - --addr
+            - tcp://0.0.0.0:{{ .Values.buildkit.port }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.buildkit.port }}
+          securityContext:
+            privileged: true
+          resources:
+            {{- toYaml .Values.buildkit.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["buildctl", "debug", "workers"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["buildctl", "debug", "workers"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - name: buildkit-cache
+              mountPath: /var/lib/buildkit
+      {{- with .Values.buildkit.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.buildkit.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: buildkit-cache
+          persistentVolumeClaim:
+            claimName: {{ include "atelier.fullname" . }}-buildkit-cache
+{{- end }}

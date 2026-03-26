@@ -24,6 +24,7 @@ import {
   Server,
   Settings,
   Shield,
+  Zap,
 } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { Toaster } from "sonner";
@@ -102,6 +103,7 @@ const ADMIN_ROUTES = [
   "/workspaces",
   "/images",
   "/system",
+  "/platform",
   "/settings",
 ];
 
@@ -217,6 +219,9 @@ function SidebarContent({
           <NavLink to="/system" icon={Server} collapsed>
             System
           </NavLink>
+          <NavLink to="/platform" icon={Zap} collapsed>
+            Platform
+          </NavLink>
           <NavLink to="/settings" icon={Settings} collapsed>
             Settings
           </NavLink>
@@ -240,6 +245,9 @@ function SidebarContent({
               </NavLink>
               <NavLink to="/system" icon={Server}>
                 System
+              </NavLink>
+              <NavLink to="/platform" icon={Zap}>
+                Platform
               </NavLink>
               <NavLink to="/settings" icon={Settings}>
                 Settings

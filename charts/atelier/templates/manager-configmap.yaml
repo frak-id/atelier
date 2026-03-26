@@ -57,5 +57,17 @@ data:
           "apiKey" .Values.cliproxy.managerApiKey
         )
       )
+      "platform" (dict
+        "buildkit" (dict
+          "enabled" .Values.buildkit.enabled
+          "namespace" (ternary .Release.Namespace "" .Values.buildkit.enabled)
+          "labelSelector" "app.kubernetes.io/component=buildkit"
+        )
+        "runners" (dict
+          "enabled" .Values.runners.enabled
+          "namespace" .Values.runners.namespace
+          "labelSelector" .Values.runners.labelSelector
+        )
+      )
     -}}
 {{ $config | toPrettyJson | nindent 4 }}

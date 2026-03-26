@@ -179,6 +179,13 @@ sshpiper container image.
 {{- end -}}
 
 {{/*
+BuildKit container image.
+*/}}
+{{- define "atelier.buildkitImage" -}}
+{{- printf "%s:%s" .Values.buildkit.image.repository .Values.buildkit.image.tag -}}
+{{- end -}}
+
+{{/*
 SSH hostname for dashboard display, defaulting to ssh.{baseDomain}.
 */}}
 {{- define "atelier.sshHostname" -}}

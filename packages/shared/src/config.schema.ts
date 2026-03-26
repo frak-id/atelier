@@ -229,6 +229,54 @@ export const PortsConfigSchema = Type.Object(
 export type PortsConfig = Static<typeof PortsConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Platform — BuildKit remote builders & GitHub Actions runners
+// ---------------------------------------------------------------------------
+
+export const BuildKitConfigSchema = Type.Object(
+  {
+    /** Whether BuildKit remote builder is enabled */
+    enabled: Type.Boolean({ default: false }),
+    /** Namespace where BuildKit pods run */
+    namespace: Type.String({ default: "" }),
+    /** Label selector to identify BuildKit pods */
+    labelSelector: Type.String({
+      default: "app.kubernetes.io/component=buildkit",
+    }),
+  },
+  { default: {} },
+);
+
+export type BuildKitConfig = Static<typeof BuildKitConfigSchema>;
+
+export const RunnersConfigSchema = Type.Object(
+  {
+    /** Whether GitHub Actions runner monitoring is enabled */
+    enabled: Type.Boolean({ default: false }),
+    /** Namespace where ARC runner pods run */
+    namespace: Type.String({ default: "arc-runners" }),
+    /** Label selector to identify runner pods */
+    labelSelector: Type.String({
+      default: "app.kubernetes.io/component=runner",
+    }),
+  },
+  { default: {} },
+);
+
+export type RunnersConfig = Static<typeof RunnersConfigSchema>;
+
+export const PlatformConfigSchema = Type.Object(
+  {
+    /** BuildKit remote Docker builder */
+    buildkit: BuildKitConfigSchema,
+    /** GitHub Actions Runner Controller (ARC) */
+    runners: RunnersConfigSchema,
+  },
+  { default: {} },
+);
+
+export type PlatformConfig = Static<typeof PlatformConfigSchema>;
+
+// ---------------------------------------------------------------------------
 // Integrations
 // ---------------------------------------------------------------------------
 
@@ -288,6 +336,7 @@ export const AtelierConfigSchema = Type.Object({
   sandbox: SandboxDefaultsSchema,
   ports: PortsConfigSchema,
   integrations: IntegrationsConfigSchema,
+  platform: PlatformConfigSchema,
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;
@@ -350,6 +399,14 @@ export const ENV_VAR_MAPPING = {
   ATELIER_CLIPROXY_URL: "integrations.cliproxy.url",
   ATELIER_CLIPROXY_API_KEY: "integrations.cliproxy.apiKey",
   ATELIER_CLIPROXY_MANAGEMENT_KEY: "integrations.cliproxy.managementKey",
+
+  ATELIER_BUILDKIT_ENABLED: "platform.buildkit.enabled",
+  ATELIER_BUILDKIT_NAMESPACE: "platform.buildkit.namespace",
+  ATELIER_BUILDKIT_LABEL_SELECTOR: "platform.buildkit.labelSelector",
+
+  ATELIER_RUNNERS_ENABLED: "platform.runners.enabled",
+  ATELIER_RUNNERS_NAMESPACE: "platform.runners.namespace",
+  ATELIER_RUNNERS_LABEL_SELECTOR: "platform.runners.labelSelector",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;

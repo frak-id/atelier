@@ -13,6 +13,7 @@ import { Route as ImagesIndexRouteImport } from "./routes/images/index"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as OrganizationsOrgSlugRouteImport } from "./routes/organizations/$orgSlug"
 import { Route as OrganizationsIndexRouteImport } from "./routes/organizations/index"
+import { Route as PlatformIndexRouteImport } from "./routes/platform/index"
 import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id"
 import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index"
 import { Route as SettingsIndexRouteImport } from "./routes/settings/index"
@@ -51,6 +52,11 @@ const SandboxesIndexRoute = SandboxesIndexRouteImport.update({
   path: "/sandboxes/",
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlatformIndexRoute = PlatformIndexRouteImport.update({
+  id: "/platform/",
+  path: "/platform/",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrganizationsIndexRoute = OrganizationsIndexRouteImport.update({
   id: "/organizations/",
   path: "/organizations/",
@@ -84,6 +90,7 @@ export interface FileRoutesByFullPath {
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images/": typeof ImagesIndexRoute
   "/organizations/": typeof OrganizationsIndexRoute
+  "/platform/": typeof PlatformIndexRoute
   "/sandboxes/": typeof SandboxesIndexRoute
   "/settings/": typeof SettingsIndexRoute
   "/system/": typeof SystemIndexRoute
@@ -97,6 +104,7 @@ export interface FileRoutesByTo {
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images": typeof ImagesIndexRoute
   "/organizations": typeof OrganizationsIndexRoute
+  "/platform": typeof PlatformIndexRoute
   "/sandboxes": typeof SandboxesIndexRoute
   "/settings": typeof SettingsIndexRoute
   "/system": typeof SystemIndexRoute
@@ -111,6 +119,7 @@ export interface FileRoutesById {
   "/workspaces/$id": typeof WorkspacesIdRoute
   "/images/": typeof ImagesIndexRoute
   "/organizations/": typeof OrganizationsIndexRoute
+  "/platform/": typeof PlatformIndexRoute
   "/sandboxes/": typeof SandboxesIndexRoute
   "/settings/": typeof SettingsIndexRoute
   "/system/": typeof SystemIndexRoute
@@ -126,6 +135,7 @@ export interface FileRouteTypes {
     | "/workspaces/$id"
     | "/images/"
     | "/organizations/"
+    | "/platform/"
     | "/sandboxes/"
     | "/settings/"
     | "/system/"
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
     | "/workspaces/$id"
     | "/images"
     | "/organizations"
+    | "/platform"
     | "/sandboxes"
     | "/settings"
     | "/system"
@@ -152,6 +163,7 @@ export interface FileRouteTypes {
     | "/workspaces/$id"
     | "/images/"
     | "/organizations/"
+    | "/platform/"
     | "/sandboxes/"
     | "/settings/"
     | "/system/"
@@ -166,6 +178,7 @@ export interface RootRouteChildren {
   WorkspacesIdRoute: typeof WorkspacesIdRoute
   ImagesIndexRoute: typeof ImagesIndexRoute
   OrganizationsIndexRoute: typeof OrganizationsIndexRoute
+  PlatformIndexRoute: typeof PlatformIndexRoute
   SandboxesIndexRoute: typeof SandboxesIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   SystemIndexRoute: typeof SystemIndexRoute
@@ -217,6 +230,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SandboxesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/platform/": {
+      id: "/platform/"
+      path: "/platform"
+      fullPath: "/platform/"
+      preLoaderRoute: typeof PlatformIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/organizations/": {
       id: "/organizations/"
       path: "/organizations"
@@ -262,6 +282,7 @@ const rootRouteChildren: RootRouteChildren = {
   WorkspacesIdRoute: WorkspacesIdRoute,
   ImagesIndexRoute: ImagesIndexRoute,
   OrganizationsIndexRoute: OrganizationsIndexRoute,
+  PlatformIndexRoute: PlatformIndexRoute,
   SandboxesIndexRoute: SandboxesIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   SystemIndexRoute: SystemIndexRoute,

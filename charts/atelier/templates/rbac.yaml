@@ -141,4 +141,40 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "atelier.serviceAccountName" . }}
     namespace: {{ include "atelier.systemNamespace" . }}
+{{- if .Values.runners.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "atelier.fullname" . }}-runner-monitor
+  namespace: {{ .Values.runners.namespace }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "atelier.fullname" . }}-runner-monitor
+  namespace: {{ .Values.runners.namespace }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "atelier.serviceAccountName" . }}
+    namespace: {{ include "atelier.systemNamespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "atelier.fullname" . }}-runner-monitor
+{{- end }}
 {{- end }}

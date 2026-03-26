@@ -307,10 +307,50 @@ cliproxy:
   # See https://github.com/router-for-me/CLIProxyAPI/blob/main/config.example.yaml
   # Example:
   #   extraConfig:
-  #     gemini-api-key:
-  #       - api-key: "AIzaSy..."
-  #     proxy-url: "socks5://proxy:1080"
+#     gemini-api-key:
+#       - api-key: "AIzaSy..."
+#     proxy-url: "socks5://proxy:1080"
   extraConfig: {}
+
+# -- BuildKit remote Docker builder
+# Deploys a BuildKit daemon for remote container image builds.
+# Developers connect via `docker buildx create --driver remote`.
+buildkit:
+  enabled: false
+  image:
+    repository: moby/buildkit
+    tag: "v0.21.1"
+    pullPolicy: IfNotPresent
+  # gRPC port for buildx remote driver
+  port: 1234
+  replicas: 1
+  persistence:
+    # Layer cache
+    size: 50Gi
+    storageClass: ""
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "1000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+  # Run buildkitd in Kata VM for isolation
+  kata: false
+  # Node scheduling
+  nodeSelector: {}
+  tolerations: []
+
+# -- GitHub Actions Runner Controller (ARC) monitoring
+# ARC must be installed separately. This section configures
+# Atelier to monitor runner pods and provide dashboard metrics.
+# Install ARC: https://github.com/actions/actions-runner-controller
+runners:
+  enabled: false
+  # Namespace where ARC runner pods run (must match ARC helm install)
+  namespace: arc-runners
+  # Label selector for runner pods
+  labelSelector: "app.kubernetes.io/component=runner"
 
 # -- sshpiper SSH proxy (username-based SSH routing to sandboxes)
 # Deploys sshpiper as a K8s Deployment with CRD-based Pipe routing.
