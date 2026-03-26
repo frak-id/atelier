@@ -6,7 +6,7 @@ import type {
 } from "../../schemas/index.ts";
 import { DEFAULT_WORKSPACE_CONFIG } from "../../schemas/index.ts";
 import { NotFoundError } from "../../shared/errors.ts";
-import { resolveRepoRemoteUrl } from "../../shared/lib/git-url.ts";
+import { normalizeGitUrl } from "../../shared/lib/git-url.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { WorkspaceRepository } from "./workspace.repository.ts";
@@ -46,12 +46,12 @@ export class WorkspaceService {
         matchedRepo: RepoConfig;
       }
     | undefined {
-    const normalizedInput = resolveRepoRemoteUrl({ url: remoteUrl });
+    const normalizedInput = normalizeGitUrl(remoteUrl);
     const allWorkspaces = this.workspaceRepository.getAll();
 
     for (const workspace of allWorkspaces) {
       for (const repo of workspace.config.repos) {
-        const resolved = repo.resolvedRemoteUrl ?? resolveRepoRemoteUrl(repo);
+        const resolved = repo.resolvedRemoteUrl ?? normalizeGitUrl(repo.url);
         if (resolved === normalizedInput) {
           return { workspace, matchedRepo: repo };
         }
@@ -163,7 +163,7 @@ export class WorkspaceService {
   private enrichRepos(repos: RepoConfig[]): RepoConfig[] {
     return repos.map((repo) => ({
       ...repo,
-      resolvedRemoteUrl: resolveRepoRemoteUrl(repo),
+      resolvedRemoteUrl: normalizeGitUrl(repo.url),
     }));
   }
 }

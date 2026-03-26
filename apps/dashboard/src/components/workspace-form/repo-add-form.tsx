@@ -1,20 +1,15 @@
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
 import { useState } from "react";
+import { githubStatusQuery } from "@/api/queries";
 import { BranchPicker } from "@/components/branch-picker";
 import { RepositoryPicker } from "@/components/repository-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  createEmptyRepo,
-  type GitSourceInfo,
-  parseRepoFullName,
-  type RepoEntry,
-} from "./types";
+import { createEmptyRepo, parseRepoFullName, type RepoEntry } from "./types";
 
 interface RepoAddFormProps {
-  isGitHubConnected: boolean;
-  gitSources: GitSourceInfo[] | undefined;
   onAdd: (repo: RepoEntry) => void;
   onRepoSelected?: (repoName: string) => void;
   showCancel?: boolean;
@@ -22,25 +17,29 @@ interface RepoAddFormProps {
 }
 
 export function RepoAddForm({
-  isGitHubConnected,
-  gitSources,
   onAdd,
   onRepoSelected,
   showCancel,
   onCancel,
 }: RepoAddFormProps) {
+  const { data: githubStatus } = useQuery(githubStatusQuery);
+  const isGitHubConnected = githubStatus?.connected === true;
+
   const [showManualUrl, setShowManualUrl] = useState(false);
   const [newRepo, setNewRepo] = useState<RepoEntry>(createEmptyRepo());
+  const [selectedRepoFullName, setSelectedRepoFullName] = useState<string>();
 
   const handleAdd = () => {
-    if (newRepo.url || newRepo.repo) {
+    if (newRepo.url) {
       onAdd(newRepo);
       setNewRepo(createEmptyRepo());
+      setSelectedRepoFullName(undefined);
     }
   };
 
   const handleCancel = () => {
     setNewRepo(createEmptyRepo());
+    setSelectedRepoFullName(undefined);
     setShowManualUrl(false);
     onCancel?.();
   };
@@ -64,31 +63,22 @@ export function RepoAddForm({
         <RepositoryPicker
           value={newRepo.url}
           onSelect={(repo) => {
-            const githubSource = gitSources?.find((s) => s.type === "github");
-            if (githubSource) {
-              setNewRepo({
-                sourceId: githubSource.id,
-                repo: repo.fullName,
-                branch: repo.defaultBranch,
-                clonePath: `/workspace/${repo.name}`,
-              });
-            } else {
-              setNewRepo({
-                url: repo.cloneUrl,
-                branch: repo.defaultBranch,
-                clonePath: `/workspace/${repo.name}`,
-              });
-            }
+            setNewRepo({
+              url: repo.cloneUrl,
+              branch: repo.defaultBranch,
+              clonePath: `/workspace/${repo.name}`,
+            });
+            setSelectedRepoFullName(repo.fullName);
             onRepoSelected?.(repo.name);
           }}
         />
-        {newRepo.repo && (
+        {selectedRepoFullName && (
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Branch</Label>
               <BranchPicker
-                owner={parseRepoFullName(newRepo.repo).owner}
-                repo={parseRepoFullName(newRepo.repo).repo}
+                owner={parseRepoFullName(selectedRepoFullName).owner}
+                repo={parseRepoFullName(selectedRepoFullName).repo}
                 value={newRepo.branch}
                 onChange={(branch) => setNewRepo({ ...newRepo, branch })}
               />
@@ -107,7 +97,7 @@ export function RepoAddForm({
           </div>
         )}
         <div className="flex gap-2">
-          {!newRepo.repo && (
+          {!selectedRepoFullName && (
             <Input
               placeholder="Clone path"
               value={newRepo.clonePath}
@@ -119,8 +109,8 @@ export function RepoAddForm({
           <Button
             type="button"
             onClick={handleAdd}
-            disabled={!newRepo.url && !newRepo.repo}
-            className={newRepo.repo ? "w-full" : ""}
+            disabled={!newRepo.url}
+            className={selectedRepoFullName ? "w-full" : ""}
           >
             <Plus className="h-4 w-4 mr-2" />
             Add Repository

@@ -77,7 +77,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   )
   .post(
     "/",
-    async ({ body, set }) => {
+    async ({ body, set, user }) => {
       const allActive = [
         ...sandboxService.getByStatus("running"),
         ...sandboxService.getByStatus("creating"),
@@ -89,7 +89,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
       log.info({ body }, "Creating sandbox");
 
-      const sandbox = await sandboxSpawner.spawn(body);
+      const sandbox = await sandboxSpawner.spawn(body, undefined, user.id);
       set.status = 201;
       return sandbox;
     },

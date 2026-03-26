@@ -14,7 +14,6 @@ Each module follows: `index.ts` (barrel) → `service.ts` (logic) → `repositor
 | `workspace` | Yes | Yes | |
 | `task` | Yes | Yes | |
 | `config-file` | Yes | Yes | |
-| `git-source` | Yes | Yes | |
 | `ssh-key` | Yes | Yes | |
 | `session-template` | Yes | No | Template discovery + merging |
 | `internal` | Yes | No | Facade for `AuthSyncService` + config sync |

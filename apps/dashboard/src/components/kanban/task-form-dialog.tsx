@@ -35,20 +35,10 @@ import { Textarea } from "@/components/ui/textarea";
 function parseGitHubRepo(
   repo: RepoConfig,
 ): { owner: string; repo: string } | null {
-  if ("repo" in repo) {
-    const parts = repo.repo.split("/");
-    if (parts.length === 2 && parts[0] && parts[1]) {
-      return { owner: parts[0], repo: parts[1] };
-    }
+  const match = repo.url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+  if (match?.[1] && match[2]) {
+    return { owner: match[1], repo: match[2] };
   }
-
-  if ("url" in repo) {
-    const match = repo.url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
-    if (match?.[1] && match[2]) {
-      return { owner: match[1], repo: match[2] };
-    }
-  }
-
   return null;
 }
 

@@ -1,18 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
-import {
-  gitSourceService,
-  sessionTemplateService,
-  workspaceService,
-} from "../../container.ts";
+import { sessionTemplateService, workspaceService } from "../../container.ts";
 import type { RepoConfig, Workspace } from "../../schemas/index.ts";
 
 function repoUrl(repo: RepoConfig): string {
-  if ("url" in repo) return repo.url;
-  const source = gitSourceService.getById(repo.sourceId);
-  if (!source) return repo.repo;
-  if (source.type === "github") return `github.com/${repo.repo}`;
-  return repo.repo;
+  return repo.url;
 }
 
 function formatWorkspace(ws: Workspace) {

@@ -341,14 +341,10 @@ function WorkspaceDetailPage() {
               <div className="space-y-2">
                 {workspace.config.repos.map((repo) => (
                   <div
-                    key={
-                      "url" in repo ? repo.url : `${repo.sourceId}:${repo.repo}`
-                    }
+                    key={repo.url}
                     className="p-2 bg-muted rounded text-sm font-mono"
                   >
-                    {"url" in repo
-                      ? repo.url
-                      : `${repo.repo} (source: ${repo.sourceId})`}
+                    {repo.url}
                     <span className="text-muted-foreground ml-2">
                       → {repo.clonePath}
                     </span>

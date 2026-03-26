@@ -115,7 +115,13 @@ export class SandboxLifecycle {
       : undefined;
 
     if (workspace) {
-      return restartWorkspaceSandbox(sandboxId, sandbox, workspace, this.ports);
+      return restartWorkspaceSandbox(
+        sandboxId,
+        sandbox,
+        workspace,
+        this.ports,
+        sandbox.createdBy,
+      );
     }
 
     return restartSystemSandbox(sandboxId, sandbox, this.ports);

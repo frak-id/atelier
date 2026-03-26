@@ -1,11 +1,6 @@
 import { useForm, useStore } from "@tanstack/react-form";
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { api } from "@/api/client";
-import {
-  githubStatusQuery,
-  imageListQuery,
-  useCreateWorkspace,
-} from "@/api/queries";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { imageListQuery, useCreateWorkspace } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import {
   CommandsForm,
   GeneralForm,
-  type GitSourceInfo,
   RepoAddForm,
   type RepoEntry,
   RepoItem,
@@ -36,15 +30,6 @@ export function CreateWorkspaceDialog({
   onOpenChange,
 }: CreateWorkspaceDialogProps) {
   const { data: images } = useSuspenseQuery(imageListQuery());
-  const { data: githubStatus } = useQuery(githubStatusQuery);
-  const { data: gitSources } = useQuery({
-    queryKey: ["git-sources"],
-    queryFn: async () => {
-      const result = await api.api.sources.get();
-      if (result.error) throw result.error;
-      return result.data as GitSourceInfo[];
-    },
-  });
   const createMutation = useCreateWorkspace();
 
   const form = useForm({
@@ -84,7 +69,6 @@ export function CreateWorkspaceDialog({
     },
   });
 
-  const isGitHubConnected = githubStatus?.connected === true;
   const name = useStore(form.store, (s) => s.values.name);
   const description = useStore(form.store, (s) => s.values.description);
   const baseImage = useStore(form.store, (s) => s.values.baseImage);
@@ -129,12 +113,7 @@ export function CreateWorkspaceDialog({
                 <div className="space-y-3 mb-2">
                   {repos.map((repo, idx) => (
                     <RepoItem
-                      key={
-                        repo.url ||
-                        (repo.sourceId && repo.repo
-                          ? `${repo.sourceId}:${repo.repo}`
-                          : `new-${idx}`)
-                      }
+                      key={repo.url || `new-${idx}`}
                       repo={repo}
                       variant="muted"
                       onUpdate={(updates) =>
@@ -161,8 +140,6 @@ export function CreateWorkspaceDialog({
                 </div>
               )}
               <RepoAddForm
-                isGitHubConnected={isGitHubConnected}
-                gitSources={gitSources}
                 onAdd={(repo) => form.setFieldValue("repos", [...repos, repo])}
                 onRepoSelected={(repoName) => {
                   if (!name) {

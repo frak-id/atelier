@@ -89,6 +89,7 @@ export const UserSchema = t.Object({
   username: t.String(),
   email: t.String(),
   avatarUrl: t.Optional(t.String()),
+  githubAccessToken: t.Optional(t.String()),
   personalOrgId: t.Optional(t.String()),
   createdAt: t.String(),
   lastLoginAt: t.String(),

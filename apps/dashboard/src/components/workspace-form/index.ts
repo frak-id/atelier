@@ -13,7 +13,6 @@ export {
 } from "./secrets-form";
 export {
   createEmptyRepo,
-  type GitSourceInfo,
   parseRepoFullName,
   type RepoEntry,
   serializeRepos,

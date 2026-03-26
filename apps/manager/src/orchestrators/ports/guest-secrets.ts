@@ -1,7 +1,6 @@
 import { VM } from "@frak/atelier-shared/constants";
 import type { FileWrite } from "../../infrastructure/agent/agent.types.ts";
 import { SecretsService } from "../../infrastructure/secrets/index.ts";
-import type { GitSourceService } from "../../modules/git-source/index.ts";
 import type { Workspace } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 
@@ -100,18 +99,13 @@ export async function collectSecretFiles(
   return buildSecretFiles(envFile);
 }
 
-export async function collectGitCredentialFiles(
-  gitSourceService: GitSourceService,
+export function collectGitCredentialFiles(
+  githubAccessToken: string | undefined,
   userIdentity?: GitUserIdentity,
-): Promise<FileWrite[]> {
-  const sources = gitSourceService.getAll();
+): FileWrite[] {
   const credentials: string[] = [];
-  for (const source of sources) {
-    if (source.type !== "github") continue;
-    const token = (source.config as { accessToken?: string }).accessToken;
-    if (token) {
-      credentials.push(`https://x-access-token:${token}@github.com`);
-    }
+  if (githubAccessToken) {
+    credentials.push(`https://x-access-token:${githubAccessToken}@github.com`);
   }
   return buildGitConfigFiles(credentials, userIdentity);
 }

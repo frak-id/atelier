@@ -16,12 +16,3 @@ export function normalizeGitUrl(url: string): string {
 
   return normalized;
 }
-
-export function resolveRepoRemoteUrl(
-  repo: { url: string } | { sourceId: string; repo: string },
-): string {
-  if ("url" in repo) {
-    return normalizeGitUrl(repo.url);
-  }
-  return normalizeGitUrl(`https://github.com/${repo.repo}.git`);
-}

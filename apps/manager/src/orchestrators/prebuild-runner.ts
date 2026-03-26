@@ -10,12 +10,11 @@ import {
   buildVolumeSnapshot,
   type KubeClient,
 } from "../infrastructure/kubernetes/index.ts";
-import type { GitSourceService } from "../modules/git-source/index.ts";
 import type { SystemAiService } from "../modules/system-sandbox/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
+import type { UserService } from "../modules/user/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
-  GitHubSourceConfig,
   PrebuildStatus,
   RepoConfig,
   Workspace,
@@ -56,7 +55,7 @@ export type PrebuildScenario =
 
 export interface PrebuildRunnerDependencies {
   workspaceService: WorkspaceService;
-  gitSourceService: GitSourceService;
+  userService: UserService;
   kubeClient: KubeClient;
   agentClient: AgentClient;
   aiService?: SystemAiService;
@@ -475,6 +474,7 @@ export class PrebuildRunner {
     scenario: PrebuildScenario,
   ): Promise<Record<string, string>> {
     const agent = this.deps.agentClient;
+    const githubToken = this.deps.userService.resolveGitHubToken();
     let commitHashes: Record<string, string> = {};
 
     if (scenario.kind === "workspace") {
@@ -483,12 +483,7 @@ export class PrebuildRunner {
       // Clone repositories
       if (workspace.config.repos?.length) {
         for (const repo of workspace.config.repos) {
-          await GuestOps.cloneRepository(
-            agent,
-            sandboxId,
-            repo,
-            this.deps.gitSourceService,
-          );
+          await GuestOps.cloneRepository(agent, sandboxId, repo, githubToken);
         }
 
         // Sanitize git URLs (remove tokens from remote)
@@ -508,7 +503,7 @@ export class PrebuildRunner {
       // Write secrets and file secrets (needed by init commands)
       const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
         GuestOps.collectSecretFiles(workspace),
-        GuestOps.collectGitCredentialFiles(this.deps.gitSourceService),
+        GuestOps.collectGitCredentialFiles(githubToken),
         GuestOps.collectFileSecretFiles(workspace),
       ]);
       const allFiles = [...secretFiles, ...gitCredFiles, ...fileSecretFiles];
@@ -780,8 +775,8 @@ export class PrebuildRunner {
     if (!workspace.config.repos.length) return hashes;
 
     for (const repo of workspace.config.repos) {
-      const gitUrl = await this.buildGitUrl(repo);
-      const token = this.getGitToken(repo);
+      const gitUrl = this.buildGitUrl(repo);
+      const token = this.getGitToken();
       const authUrl = token
         ? gitUrl.replace(GIT_TOKEN_PLACEHOLDER, token)
         : gitUrl;
@@ -801,30 +796,16 @@ export class PrebuildRunner {
     return hashes;
   }
 
-  private async buildGitUrl(repo: RepoConfig): Promise<string> {
-    if ("url" in repo) return repo.url;
-
-    const source = this.deps.gitSourceService.resolveForRepo(repo.sourceId);
-    if (!source) {
-      return `https://github.com/${repo.repo}.git`;
+  private buildGitUrl(repo: RepoConfig): string {
+    const token = this.deps.userService.resolveGitHubToken();
+    if (token && repo.url.includes("github.com")) {
+      return repo.url.replace("https://", `https://x-access-token:${token}@`);
     }
-
-    if (source.type === "github") {
-      const ghConfig = source.config as GitHubSourceConfig;
-      if (ghConfig.accessToken) {
-        return `https://x-access-token:${GIT_TOKEN_PLACEHOLDER}@github.com/${repo.repo}.git`;
-      }
-    }
-
-    return `https://github.com/${repo.repo}.git`;
+    return repo.url;
   }
 
-  private getGitToken(repo: RepoConfig): string | undefined {
-    if ("url" in repo) return undefined;
-    const source = this.deps.gitSourceService.resolveForRepo(repo.sourceId);
-    if (!source || source.type !== "github") return undefined;
-    const ghConfig = source.config as GitHubSourceConfig;
-    return ghConfig.accessToken || undefined;
+  private getGitToken(): string | undefined {
+    return this.deps.userService.resolveGitHubToken();
   }
 
   private updatePrebuildStatus(

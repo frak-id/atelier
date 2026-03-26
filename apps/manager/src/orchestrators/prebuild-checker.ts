@@ -1,7 +1,7 @@
 import { $ } from "bun";
-import type { GitSourceService } from "../modules/git-source/index.ts";
+import type { UserService } from "../modules/user/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
-import type { GitHubSourceConfig, RepoConfig } from "../schemas/index.ts";
+import type { RepoConfig } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { PrebuildRunner } from "./prebuild-runner.ts";
 
@@ -9,7 +9,7 @@ const log = createChildLogger("prebuild-checker");
 
 interface PrebuildCheckerDependencies {
   workspaceService: WorkspaceService;
-  gitSourceService: GitSourceService;
+  userService: UserService;
   prebuildRunner: PrebuildRunner;
 }
 
@@ -120,23 +120,11 @@ export class PrebuildChecker {
     return hash || null;
   }
 
-  private async buildGitUrl(repo: RepoConfig): Promise<string> {
-    if ("url" in repo) {
-      return repo.url;
+  private buildGitUrl(repo: RepoConfig): string {
+    const token = this.deps.userService.resolveGitHubToken();
+    if (token && repo.url.includes("github.com")) {
+      return repo.url.replace("https://", `https://x-access-token:${token}@`);
     }
-
-    const source = this.deps.gitSourceService.resolveForRepo(repo.sourceId);
-    if (!source) {
-      return `https://github.com/${repo.repo}.git`;
-    }
-
-    if (source.type === "github") {
-      const ghConfig = source.config as GitHubSourceConfig;
-      if (ghConfig.accessToken) {
-        return `https://x-access-token:${ghConfig.accessToken}@github.com/${repo.repo}.git`;
-      }
-    }
-
-    return `https://github.com/${repo.repo}.git`;
+    return repo.url;
   }
 }

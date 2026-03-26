@@ -1,6 +1,5 @@
 import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type {
-  GitSourceConfig,
   SandboxRuntime,
   TaskData,
   WorkspaceConfig,
@@ -22,6 +21,7 @@ export const users = sqliteTable("users", {
   username: text("username").notNull().unique(),
   email: text("email").notNull(),
   avatarUrl: text("avatar_url"),
+  githubAccessToken: text("github_access_token"),
   personalOrgId: text("personal_org_id"),
   createdAt: text("created_at").notNull(),
   lastLoginAt: text("last_login_at").notNull(),
@@ -44,22 +44,6 @@ export const orgMembers = sqliteTable(
     index("idx_org_members_user_id").on(t.userId),
     uniqueIndex("idx_org_members_org_user").on(t.orgId, t.userId),
   ],
-);
-
-const gitSourceTypeValues = ["github", "gitlab", "custom"] as const;
-
-export const gitSources = sqliteTable(
-  "git_sources",
-  {
-    id: text("id").primaryKey(),
-    orgId: text("org_id"),
-    type: text("type", { enum: gitSourceTypeValues }).notNull(),
-    name: text("name").notNull(),
-    config: text("config", { mode: "json" }).notNull().$type<GitSourceConfig>(),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (t) => [index("idx_git_sources_org_id").on(t.orgId)],
 );
 
 export const workspaces = sqliteTable(

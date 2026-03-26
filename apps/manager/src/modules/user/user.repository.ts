@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { getDatabase, users } from "../../infrastructure/database/index.ts";
 import type { User } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -11,6 +11,7 @@ function rowToUser(row: typeof users.$inferSelect): User {
     username: row.username,
     email: row.email,
     avatarUrl: row.avatarUrl ?? undefined,
+    githubAccessToken: row.githubAccessToken ?? undefined,
     personalOrgId: row.personalOrgId ?? undefined,
     createdAt: row.createdAt,
     lastLoginAt: row.lastLoginAt,
@@ -48,6 +49,7 @@ export class UserRepository {
         username: user.username,
         email: user.email,
         avatarUrl: user.avatarUrl,
+        githubAccessToken: user.githubAccessToken,
         personalOrgId: user.personalOrgId,
         createdAt: user.createdAt,
         lastLoginAt: user.lastLoginAt,
@@ -58,12 +60,23 @@ export class UserRepository {
           username: user.username,
           email: user.email,
           avatarUrl: user.avatarUrl,
+          githubAccessToken: user.githubAccessToken,
           lastLoginAt: user.lastLoginAt,
           personalOrgId: user.personalOrgId,
         },
       })
       .run();
     return user;
+  }
+
+  findFirstWithToken(): User | undefined {
+    const row = getDatabase()
+      .select()
+      .from(users)
+      .where(isNotNull(users.githubAccessToken))
+      .limit(1)
+      .get();
+    return row ? rowToUser(row) : undefined;
   }
 
   updatePersonalOrgId(userId: string, orgId: string): void {

@@ -278,7 +278,6 @@ The Manager exposes a REST API on port 4000:
 | Workspaces | `/api/workspaces` | Workspace CRUD and prebuilds |
 | Tasks | `/api/tasks` | AI task orchestration |
 | Templates | `/api/session-templates` | AI workflow configurations |
-| Git | `/api/git-sources` | Repository management |
 | Config | `/api/config-files` | Global and workspace config files |
 | Auth | `/api/shared-auth` | OAuth token synchronization |
 | Storage | `/api/binaries` | Shared binaries management |

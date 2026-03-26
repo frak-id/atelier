@@ -77,6 +77,12 @@ export class TaskSpawner {
     const gitUserIdentity: GitUserIdentity | undefined = task.data.createdBy
       ? { name: task.data.createdBy.username, email: task.data.createdBy.email }
       : undefined;
+    const createdByUserId =
+      task.data.createdBy &&
+      "id" in task.data.createdBy &&
+      typeof task.data.createdBy.id === "string"
+        ? task.data.createdBy.id
+        : undefined;
 
     try {
       const sandbox = await this.deps.sandboxSpawner.spawn(
@@ -87,6 +93,7 @@ export class TaskSpawner {
           memoryMb: workspace.config.memoryMb,
         },
         gitUserIdentity,
+        createdByUserId,
       );
 
       sandboxId = sandbox.id;
@@ -479,10 +486,7 @@ export class TaskSpawner {
         },
         workspace: {
           name: workspace.name,
-          reposName: targetRepos.map((r) => {
-            if ("url" in r) return r.url.split("/").pop() ?? r.url;
-            return r.repo;
-          }),
+          reposName: targetRepos.map((r) => r.url.split("/").pop() ?? r.url),
         },
         sandbox: {
           id: sandboxId ?? "undefined",

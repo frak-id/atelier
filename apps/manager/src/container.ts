@@ -6,10 +6,6 @@ import {
   ConfigFileService,
 } from "./modules/config-file/index.ts";
 import {
-  GitSourceRepository,
-  GitSourceService,
-} from "./modules/git-source/index.ts";
-import {
   IntegrationEventBridge,
   IntegrationGateway,
   SlackAdapter,
@@ -59,7 +55,6 @@ import { config } from "./shared/lib/config.ts";
 /* -------------------------------------------------------------------------- */
 
 const configFileRepository = new ConfigFileRepository();
-const gitSourceRepository = new GitSourceRepository();
 const organizationRepository = new OrganizationRepository();
 const orgMemberRepository = new OrgMemberRepository();
 const settingsRepository = new SettingsRepository();
@@ -75,7 +70,6 @@ const sharedAuthRepository = new SharedAuthRepository();
 /* -------------------------------------------------------------------------- */
 
 const configFileService = new ConfigFileService(configFileRepository);
-const gitSourceService = new GitSourceService(gitSourceRepository);
 const organizationService = new OrganizationService(organizationRepository);
 const orgMemberService = new OrgMemberService(
   orgMemberRepository,
@@ -114,7 +108,7 @@ const sandboxPorts: SandboxPorts = {
   agent: agentClient,
   sandbox: sandboxService,
   workspaces: workspaceService,
-  gitSources: gitSourceService,
+  users: userService,
   configFiles: configFileService,
   sshKeys: sshKeyService,
   internal: internalService,
@@ -160,7 +154,7 @@ const sandboxLifecycle = new SandboxLifecycle(sandboxPorts);
 
 const prebuildRunner = new PrebuildRunner({
   workspaceService,
-  gitSourceService,
+  userService,
   kubeClient,
   agentClient,
   aiService: systemAiService,
@@ -205,7 +199,7 @@ const integrationEventBridge = new IntegrationEventBridge({
 
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
-  gitSourceService,
+  userService,
   prebuildRunner,
 });
 
@@ -216,7 +210,6 @@ export {
   baseImageBuilder,
   cliProxyService,
   configFileService,
-  gitSourceService,
   integrationEventBridge,
   integrationGateway,
   internalService,

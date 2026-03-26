@@ -14,14 +14,16 @@ export async function restartWorkspaceSandbox(
   sandbox: Sandbox,
   workspace: Workspace,
   ports: SandboxPorts,
+  createdByUserId?: string,
 ): Promise<Sandbox> {
   const boot = await bootExistingSandbox(sandboxId, sandbox, ports);
+  const githubToken = ports.users.resolveGitHubToken(createdByUserId);
 
   if (boot.agentReady) {
     // --- Collect files (parallel async prep) ---
     const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
       GuestOps.collectSecretFiles(workspace),
-      GuestOps.collectGitCredentialFiles(ports.gitSources),
+      GuestOps.collectGitCredentialFiles(githubToken),
       GuestOps.collectFileSecretFiles(workspace),
     ]);
 

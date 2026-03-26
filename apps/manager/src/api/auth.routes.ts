@@ -63,6 +63,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
         "mock-user",
         "12345+mock-user@users.noreply.github.com",
         "https://avatars.githubusercontent.com/u/1?v=4",
+        "mock-github-token",
       );
       if (!mockDbUser.personalOrgId) {
         const personalOrg = organizationService.create(
@@ -98,7 +99,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
 
     const url = buildOAuthRedirectUrl(
       deriveCallbackUrl("/auth/callback"),
-      "read:user read:org",
+      "repo read:user read:org",
       {
         state: nanoid(16),
         code_challenge: codeChallenge,
@@ -153,6 +154,7 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
           user.login,
           `${user.id}+${user.login}@users.noreply.github.com`,
           user.avatar_url,
+          accessToken,
         );
         if (!dbUser.personalOrgId) {
           const personalOrg = organizationService.create(
