@@ -36,6 +36,8 @@ const INIT_COMMAND_TIMEOUT_MS = 300_000;
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
 const OPENCODE_WARMUP_PORT = 4200;
 const GIT_TOKEN_PLACEHOLDER = "$" + "{GIT_TOKEN}";
+const MAX_PREBUILD_RETRIES = 5;
+const RETRY_DELAY_MS = 5_000;
 
 export type PrebuildScenario =
   | {
@@ -73,28 +75,62 @@ export class PrebuildRunner {
     const workspace = this.deps.workspaceService.getById(workspaceId);
     if (!workspace) throw new Error(`Workspace '${workspaceId}' not found`);
 
-    await this.runScenario({
-      kind: "workspace",
-      workspaceId,
-      getWorkspace: () => this.deps.workspaceService.getById(workspaceId),
-      updateStatus: (status, latestId, commitHashes, errorMessage) => {
-        const current = this.deps.workspaceService.getById(workspaceId);
-        if (!current) return;
-        this.updatePrebuildStatus(
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_PREBUILD_RETRIES; attempt++) {
+      try {
+        await this.runScenario({
+          kind: "workspace",
           workspaceId,
-          current,
-          status,
-          latestId,
-          commitHashes,
-          errorMessage,
-        );
-      },
-      aiService: this.deps.aiService,
-    });
+          getWorkspace: () => this.deps.workspaceService.getById(workspaceId),
+          updateStatus: (status, latestId, commitHashes, errorMessage) => {
+            const current = this.deps.workspaceService.getById(workspaceId);
+            if (!current) return;
+            this.updatePrebuildStatus(
+              workspaceId,
+              current,
+              status,
+              latestId,
+              commitHashes,
+              errorMessage,
+            );
+          },
+          aiService: this.deps.aiService,
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < MAX_PREBUILD_RETRIES) {
+          log.warn(
+            { workspaceId, attempt, maxRetries: MAX_PREBUILD_RETRIES, error },
+            "Prebuild failed, retrying",
+          );
+          await Bun.sleep(RETRY_DELAY_MS);
+        }
+      }
+    }
+
+    throw lastError;
   }
 
   async runSystem(): Promise<void> {
-    await this.runScenario({ kind: "system" });
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_PREBUILD_RETRIES; attempt++) {
+      try {
+        await this.runScenario({ kind: "system" });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < MAX_PREBUILD_RETRIES) {
+          log.warn(
+            { attempt, maxRetries: MAX_PREBUILD_RETRIES, error },
+            "System prebuild failed, retrying",
+          );
+          await Bun.sleep(RETRY_DELAY_MS);
+        }
+      }
+    }
+
+    throw lastError;
   }
 
   runInBackground(workspaceId?: string): void {
