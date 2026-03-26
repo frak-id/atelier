@@ -31,6 +31,7 @@ export class UserService {
     username: string,
     email: string,
     avatarUrl: string,
+    accessToken?: string,
   ): User {
     const existing = this.userRepository.getById(githubId);
     const now = new Date().toISOString();
@@ -40,6 +41,7 @@ export class UserService {
       username,
       email,
       avatarUrl,
+      githubAccessToken: accessToken ?? existing?.githubAccessToken,
       personalOrgId: existing?.personalOrgId,
       createdAt: existing?.createdAt ?? now,
       lastLoginAt: now,
@@ -52,5 +54,13 @@ export class UserService {
 
   setPersonalOrg(userId: string, orgId: string): void {
     this.userRepository.updatePersonalOrgId(userId, orgId);
+  }
+
+  resolveGitHubToken(userId?: string): string | undefined {
+    if (userId) {
+      const token = this.getById(userId)?.githubAccessToken;
+      if (token) return token;
+    }
+    return this.userRepository.findFirstWithToken()?.githubAccessToken;
   }
 }

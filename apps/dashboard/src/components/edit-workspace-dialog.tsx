@@ -1,14 +1,9 @@
 import { useForm, useStore } from "@tanstack/react-form";
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import type { Workspace } from "@/api/client";
-import { api } from "@/api/client";
-import {
-  githubStatusQuery,
-  imageListQuery,
-  useUpdateWorkspace,
-} from "@/api/queries";
+import { imageListQuery, useUpdateWorkspace } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,7 +20,6 @@ import {
   type EnvSecret,
   type FileSecretInput,
   GeneralForm,
-  type GitSourceInfo,
   parseEnvSecrets,
   parseFileSecrets,
   RepoAddForm,
@@ -52,21 +46,11 @@ function parseWorkspaceRepos(
   repos: Workspace["config"]["repos"] | undefined,
 ): RepoEntry[] {
   if (!repos) return [];
-  return repos.map((r) => {
-    if ("sourceId" in r) {
-      return {
-        sourceId: r.sourceId,
-        repo: r.repo,
-        branch: r.branch,
-        clonePath: r.clonePath,
-      };
-    }
-    return {
-      url: r.url,
-      branch: r.branch,
-      clonePath: r.clonePath,
-    };
-  });
+  return repos.map((r) => ({
+    url: "url" in r ? r.url : "",
+    branch: r.branch,
+    clonePath: r.clonePath,
+  }));
 }
 
 interface WorkspaceFormValues {
@@ -89,15 +73,6 @@ export function EditWorkspaceDialog({
   onOpenChange,
 }: EditWorkspaceDialogProps) {
   const { data: images } = useSuspenseQuery(imageListQuery());
-  const { data: githubStatus } = useQuery(githubStatusQuery);
-  const { data: gitSources } = useQuery({
-    queryKey: ["git-sources"],
-    queryFn: async () => {
-      const result = await api.api.sources.get();
-      if (result.error) throw result.error;
-      return result.data as GitSourceInfo[];
-    },
-  });
   const updateMutation = useUpdateWorkspace();
 
   const [showAddRepo, setShowAddRepo] = useState(false);
@@ -150,8 +125,6 @@ export function EditWorkspaceDialog({
       );
     },
   });
-
-  const isGitHubConnected = githubStatus?.connected === true;
 
   const name = useStore(form.store, (s) => s.values.name);
   const description = useStore(form.store, (s) => s.values.description);
@@ -240,12 +213,7 @@ export function EditWorkspaceDialog({
                   <div className="space-y-3">
                     {repos.map((repo, idx) => (
                       <RepoItem
-                        key={
-                          repo.url ||
-                          (repo.sourceId && repo.repo
-                            ? `${repo.sourceId}:${repo.repo}`
-                            : `new-${idx}`)
-                        }
+                        key={repo.url || `new-${idx}`}
                         repo={repo}
                         variant="card"
                         onUpdate={(updates) =>
@@ -275,8 +243,6 @@ export function EditWorkspaceDialog({
                 {showAddRepo && (
                   <div className="border rounded-lg p-3 bg-muted/50">
                     <RepoAddForm
-                      isGitHubConnected={isGitHubConnected}
-                      gitSources={gitSources}
                       showCancel
                       onCancel={() => setShowAddRepo(false)}
                       onAdd={(repo) => {

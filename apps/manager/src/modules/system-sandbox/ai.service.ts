@@ -200,8 +200,7 @@ export class SystemAiService {
 
     const repoList = repos
       .map((repo) => {
-        const ref = "url" in repo ? repo.url : repo.repo;
-        return `  - ${ref} (branch: ${repo.branch})`;
+        return `  - ${repo.url} (branch: ${repo.branch})`;
       })
       .join("\n");
 

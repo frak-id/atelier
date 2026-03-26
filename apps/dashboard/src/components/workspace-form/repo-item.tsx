@@ -3,7 +3,7 @@ import { BranchPicker } from "@/components/branch-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { parseRepoFullName, type RepoEntry } from "./types";
+import type { RepoEntry } from "./types";
 
 interface RepoItemProps {
   repo: RepoEntry;
@@ -12,13 +12,21 @@ interface RepoItemProps {
   variant?: "card" | "muted";
 }
 
+function extractRepoInfo(url: string) {
+  const match = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
+  if (match?.[1] && match?.[2]) {
+    return { owner: match[1], repo: match[2] };
+  }
+  return null;
+}
+
 export function RepoItem({
   repo,
   onUpdate,
   onRemove,
   variant = "card",
 }: RepoItemProps) {
-  const repoInfo = repo.repo ? parseRepoFullName(repo.repo) : null;
+  const repoInfo = extractRepoInfo(repo.url);
   const containerClass =
     variant === "card"
       ? "p-3 border rounded-lg space-y-2"
@@ -28,7 +36,7 @@ export function RepoItem({
     <div className={containerClass}>
       <div className="flex items-center gap-2 min-w-0">
         <span className="flex-1 font-mono text-sm truncate min-w-0">
-          {repo.url || repo.repo}
+          {repo.url}
         </span>
         <Button
           type="button"

@@ -1,47 +1,16 @@
-import { Elysia, t } from "elysia";
-import { nanoid } from "nanoid";
-import { gitSourceService } from "../container.ts";
+import { Elysia } from "elysia";
+import { userService } from "../container.ts";
 import {
   GitHubBranchesQuerySchema,
   GitHubBranchesResponseSchema,
   GitHubReposQuerySchema,
   GitHubReposResponseSchema,
-  type GitHubSourceConfig,
   type GitHubStatusResponse,
-  type GitSource,
-  type GitSourceConfig,
 } from "../schemas/index.ts";
-import {
-  config,
-  dashboardUrl,
-  deriveCallbackUrl,
-  isProduction,
-} from "../shared/lib/config.ts";
-import {
-  buildOAuthRedirectUrl,
-  exchangeCodeForToken,
-  fetchGitHubUser,
-  generateCodeChallenge,
-  generateCodeVerifier,
-} from "../shared/lib/github.ts";
+import { authPlugin } from "../shared/lib/auth.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("github-api");
-
-const GITHUB_SOURCE_TYPE = "github";
-
-function getGitHubSource(): GitSource | undefined {
-  const sources = gitSourceService.getAll();
-  return sources.find((s) => s.type === GITHUB_SOURCE_TYPE);
-}
-
-function getGitHubAccessToken(): string | null {
-  const source = getGitHubSource();
-  if (!source) return null;
-
-  const ghConfig = source.config as GitHubSourceConfig;
-  return ghConfig.accessToken;
-}
 
 interface GitHubRepo {
   id: number;
@@ -79,10 +48,11 @@ interface GitHubApiCommit {
 }
 
 export const githubApiRoutes = new Elysia({ prefix: "/github" })
+  .use(authPlugin)
   .get(
     "/branches",
-    async ({ query }) => {
-      const accessToken = getGitHubAccessToken();
+    async ({ query, user }) => {
+      const accessToken = userService.resolveGitHubToken(user.id) ?? null;
 
       if (!accessToken) {
         return {
@@ -216,8 +186,8 @@ export const githubApiRoutes = new Elysia({ prefix: "/github" })
   )
   .get(
     "/repos",
-    async ({ query }) => {
-      const accessToken = getGitHubAccessToken();
+    async ({ query, user }) => {
+      const accessToken = userService.resolveGitHubToken(user.id) ?? null;
 
       if (!accessToken) {
         return {
@@ -291,170 +261,19 @@ export const githubApiRoutes = new Elysia({ prefix: "/github" })
       detail: { tags: ["github"] },
     },
   )
-  .get("/status", (): GitHubStatusResponse => {
-    const source = getGitHubSource();
+  .get("/status", ({ user }): GitHubStatusResponse => {
+    const dbUser = userService.getById(user.id);
+    const connected = !!dbUser?.githubAccessToken;
 
-    if (!source) {
+    if (!connected) {
       return { connected: false };
     }
 
-    const ghConfig = source.config as GitHubSourceConfig;
     return {
       connected: true,
       user: {
-        login: ghConfig.username,
-        avatarUrl: ghConfig.avatarUrl,
+        login: dbUser.username,
+        avatarUrl: dbUser.avatarUrl,
       },
     };
-  })
-  .post("/disconnect", () => {
-    const source = getGitHubSource();
-
-    if (source) {
-      gitSourceService.delete(source.id);
-      log.info("GitHub disconnected");
-    }
-
-    return {
-      success: true,
-      message:
-        "Disconnected. To revoke access on GitHub: https://github.com/settings/applications",
-    };
-  });
-
-/**
- * GitHub OAuth browser-redirect routes.
- * These are NOT behind the auth guard because they involve browser redirects
- * (window.location.href) where the JWT cannot be sent as a header.
- */
-export const githubOAuthRoutes = new Elysia({ prefix: "/github" })
-  .get("/connect", async ({ redirect, cookie }) => {
-    const codeVerifier = generateCodeVerifier();
-    const codeChallenge = await generateCodeChallenge(codeVerifier);
-
-    cookie.github_code_verifier?.set({
-      value: codeVerifier,
-      httpOnly: true,
-      secure: isProduction(),
-      sameSite: isProduction() ? "none" : "lax",
-      path: "/",
-      domain: `.${config.domain.baseDomain}`,
-      maxAge: 600,
-    });
-
-    const url = buildOAuthRedirectUrl(
-      deriveCallbackUrl("/api/github/callback"),
-      "repo read:user read:org",
-      {
-        state: nanoid(16),
-        code_challenge: codeChallenge,
-        code_challenge_method: "S256",
-      },
-    );
-    return redirect(url);
-  })
-  .get(
-    "/callback",
-    async ({ query, redirect, cookie }) => {
-      if (query.error) {
-        log.error({ error: query.error }, "GitHub OAuth error");
-        return redirect(`${dashboardUrl}?github_error=${query.error}`);
-      }
-
-      if (!query.code) {
-        return redirect(`${dashboardUrl}?github_error=no_code`);
-      }
-
-      try {
-        const codeVerifier = cookie.github_code_verifier?.value as
-          | string
-          | undefined;
-        cookie.github_code_verifier?.set({
-          value: "",
-          httpOnly: true,
-          secure: isProduction(),
-          sameSite: isProduction() ? "none" : "lax",
-          path: "/",
-          domain: `.${config.domain.baseDomain}`,
-          maxAge: 0,
-        });
-
-        const accessToken = await exchangeCodeForToken(
-          query.code,
-          codeVerifier,
-        );
-        const user = await fetchGitHubUser(accessToken);
-
-        const existingSource = getGitHubSource();
-
-        const sourceConfig: GitHubSourceConfig = {
-          accessToken,
-          userId: String(user.id),
-          username: user.login,
-          avatarUrl: user.avatar_url,
-        };
-
-        if (existingSource) {
-          gitSourceService.update(existingSource.id, {
-            config: sourceConfig as unknown as GitSourceConfig,
-          });
-          log.info(
-            { userId: user.id, login: user.login },
-            "GitHub reconnected",
-          );
-        } else {
-          gitSourceService.create(
-            GITHUB_SOURCE_TYPE,
-            `GitHub (${user.login})`,
-            sourceConfig as unknown as GitSourceConfig,
-          );
-          log.info({ userId: user.id, login: user.login }, "GitHub connected");
-        }
-
-        return redirect(`${dashboardUrl}?github_success=true`);
-      } catch (error) {
-        log.error({ error }, "GitHub OAuth callback failed");
-        return redirect(`${dashboardUrl}?github_error=callback_failed`);
-      }
-    },
-    {
-      query: t.Object({
-        code: t.Optional(t.String()),
-        state: t.Optional(t.String()),
-        error: t.Optional(t.String()),
-      }),
-    },
-  )
-  .post("/reauthorize", async ({ redirect, cookie }) => {
-    const source = getGitHubSource();
-
-    if (source) {
-      gitSourceService.delete(source.id);
-      log.info("GitHub connection deleted for reauthorization");
-    }
-
-    const codeVerifier = generateCodeVerifier();
-    const codeChallenge = await generateCodeChallenge(codeVerifier);
-
-    cookie.github_code_verifier?.set({
-      value: codeVerifier,
-      httpOnly: true,
-      secure: isProduction(),
-      sameSite: isProduction() ? "none" : "lax",
-      path: "/",
-      domain: `.${config.domain.baseDomain}`,
-      maxAge: 600,
-    });
-
-    const url = buildOAuthRedirectUrl(
-      deriveCallbackUrl("/api/github/callback"),
-      "repo read:user read:org",
-      {
-        state: nanoid(16),
-        prompt: "consent",
-        code_challenge: codeChallenge,
-        code_challenge_method: "S256",
-      },
-    );
-    return redirect(url);
   });

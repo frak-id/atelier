@@ -356,25 +356,6 @@ export const githubBranchesQuery = (owner: string, repo: string) =>
     staleTime: 60000,
   });
 
-export function useGitHubLogout() {
-  return useMutation({
-    mutationKey: ["github", "logout"],
-    mutationFn: async () => unwrap(await api.api.github.disconnect.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.github.status });
-    },
-  });
-}
-
-export function useGitHubReauthorize() {
-  return useMutation({
-    mutationKey: ["github", "reauthorize"],
-    mutationFn: async () => {
-      window.location.href = "/api/github/reauthorize";
-    },
-  });
-}
-
 // --- Shared Storage ---
 
 // --- Registry ---

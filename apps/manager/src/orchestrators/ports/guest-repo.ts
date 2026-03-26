@@ -1,41 +1,31 @@
 import { VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/index.ts";
-import type { GitSourceService } from "../../modules/git-source/index.ts";
 import type { RepoConfig } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("guest-repo");
 
-export async function buildAuthenticatedGitUrl(
-  repo: { sourceId: string; repo: string },
-  gitSourceService: GitSourceService,
-): Promise<string> {
-  const source = gitSourceService.resolveForRepo(repo.sourceId);
-  if (!source) {
-    return `https://github.com/${repo.repo}.git`;
+export function buildAuthenticatedGitUrl(
+  repoUrl: string,
+  githubAccessToken?: string,
+): string {
+  if (githubAccessToken && repoUrl.includes("github.com")) {
+    return repoUrl.replace(
+      "https://",
+      `https://x-access-token:${githubAccessToken}@`,
+    );
   }
-
-  if (source.type === "github") {
-    const accessToken = (source.config as { accessToken?: string }).accessToken;
-    if (accessToken) {
-      return `https://x-access-token:${accessToken}@github.com/${repo.repo}.git`;
-    }
-  }
-
-  return `https://github.com/${repo.repo}.git`;
+  return repoUrl;
 }
 
 export async function cloneRepository(
   agent: AgentClient,
   sandboxId: string,
   repo: RepoConfig,
-  gitSourceService: GitSourceService,
+  githubAccessToken?: string,
 ): Promise<void> {
   const clonePath = `${VM.HOME}${repo.clonePath}`;
-  const gitUrl =
-    "url" in repo
-      ? repo.url
-      : await buildAuthenticatedGitUrl(repo, gitSourceService);
+  const gitUrl = buildAuthenticatedGitUrl(repo.url, githubAccessToken);
   const branch = repo.branch;
 
   log.info({ sandboxId, branch, clonePath }, "Cloning repository");

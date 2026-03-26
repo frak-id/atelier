@@ -24,6 +24,7 @@ export class SandboxSpawner {
   async spawn(
     options: CreateSandboxBody = {},
     gitUserIdentity?: GitUserIdentity,
+    createdByUserId?: string,
   ): Promise<CreateSandboxResponse> {
     const sandboxId = safeNanoid();
 
@@ -54,6 +55,7 @@ export class SandboxSpawner {
       options,
       this.ports,
       gitUserIdentity,
+      createdByUserId,
     );
   }
 

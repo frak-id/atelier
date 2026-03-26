@@ -87,8 +87,7 @@ export function generateSandboxMd(
   const reposSection = ws?.config.repos.length
     ? ws.config.repos
         .map((r) => {
-          const name = "url" in r ? r.url : r.repo;
-          return `- **${name}** (branch: \`${r.branch}\`, path: \`${VM.HOME}${r.clonePath}\`)`;
+          return `- **${r.url}** (branch: \`${r.branch}\`, path: \`${VM.HOME}${r.clonePath}\`)`;
         })
         .join("\n")
     : "No repositories configured";

@@ -19,19 +19,7 @@ export const RepoConfigUrlSchema = t.Object({
   rootCommitHash: t.Optional(t.String()),
 });
 
-export const RepoConfigSourceSchema = t.Object({
-  sourceId: t.String(),
-  repo: t.String(),
-  branch: t.String(),
-  clonePath: t.String(),
-  resolvedRemoteUrl: t.Optional(t.String()),
-  rootCommitHash: t.Optional(t.String()),
-});
-
-export const RepoConfigSchema = t.Union([
-  RepoConfigUrlSchema,
-  RepoConfigSourceSchema,
-]);
+export const RepoConfigSchema = RepoConfigUrlSchema;
 export type RepoConfig = Static<typeof RepoConfigSchema>;
 
 export const PrebuildInfoSchema = t.Object({
