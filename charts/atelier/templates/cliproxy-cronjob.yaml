@@ -1,0 +1,34 @@
+{{- if and .Values.cliproxy.enabled .Values.cliproxy.autoUpdate.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "atelier.fullname" . }}-cliproxy-reboot
+  namespace: {{ include "atelier.systemNamespace" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cliproxy
+spec:
+  schedule: {{ .Values.cliproxy.autoUpdate.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "atelier.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: cliproxy-reboot
+        spec:
+          {{- include "atelier.imagePullSecrets" . | nindent 10 }}
+          serviceAccountName: {{ include "atelier.serviceAccountName" . }}
+          restartPolicy: OnFailure
+          containers:
+            - name: kubectl
+              image: bitnami/kubectl:1.30
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -c
+                - "kubectl rollout restart deployment/{{ include "atelier.fullname" . }}-cliproxy -n {{ include "atelier.systemNamespace" . }}"
+{{- end }}
