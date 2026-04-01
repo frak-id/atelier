@@ -7,13 +7,14 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check --write .",
-    "typecheck": "tsc --build",
+    "typecheck": "tsgo --noEmit",
     "knip": "knip",
     "version:bump": "bun run scripts/bump-version.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",
     "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20260401.1",
     "autoprefixer": "^10.4.24",
     "knip": "^5.83.0",
     "terser": "^5.46.0"
