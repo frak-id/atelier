@@ -8,7 +8,7 @@
     "ip",
     "bridge",
     "umount",
-    "tsc",
+    "tsgo",
     "tar",
     "ssh-add"
   ],

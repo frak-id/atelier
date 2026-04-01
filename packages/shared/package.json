@@ -12,7 +12,8 @@
     "./sandbox-config-loader": "./src/sandbox-config.loader.ts"
   },
   "scripts": {
-    "generate-schema": "bun run scripts/generate-schema.ts"
+    "generate-schema": "bun run scripts/generate-schema.ts",
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.0"

@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "bun run build.ts",
-    "dev": "bun run build.ts --watch"
+    "dev": "bun run build.ts --watch",
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.9",

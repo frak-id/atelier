@@ -7,7 +7,7 @@
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check --write .",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "bun run --filter '*' typecheck",
     "knip": "knip",
     "version:bump": "bun run scripts/bump-version.ts"
   },

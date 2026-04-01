@@ -11,7 +11,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "check:circular": "npx madge --circular --extensions ts src/"
+    "check:circular": "npx madge --circular --extensions ts src/",
+    "typecheck": "tsgo --noEmit"
   },
   "exports": {
     ".": "./src/index.ts",

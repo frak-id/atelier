@@ -8,7 +8,7 @@ K8s (Kata Containers) orchestrator for isolated dev environments. Bun monorepo.
 bun install          # Install dependencies
 bun run dev          # Dev server (apps/manager, port 4000)
 bun run check        # Biome lint + format
-bun run typecheck    # tsc --build
+bun run typecheck    # tsgo --noEmit (per-workspace via --filter)
 bun run deploy       # Build + SSH deploy to production
 ```
 
