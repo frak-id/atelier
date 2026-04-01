@@ -435,6 +435,35 @@ export function useDeleteSshKey() {
   });
 }
 
+// --- API Keys ---
+
+export const apiKeysListQuery = queryOptions({
+  queryKey: queryKeys.apiKeys.list(),
+  queryFn: async () => unwrap(await api.api["api-keys"].get()),
+});
+
+export function useCreateApiKey() {
+  return useMutation({
+    mutationKey: ["apiKeys", "create"],
+    mutationFn: async (data: { name: string; expiresAt?: string }) =>
+      unwrap(await api.api["api-keys"].post(data)),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
+    },
+  });
+}
+
+export function useDeleteApiKey() {
+  return useMutation({
+    mutationKey: ["apiKeys", "delete"],
+    mutationFn: async (id: string) =>
+      unwrap(await api.api["api-keys"]({ id }).delete()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
+    },
+  });
+}
+
 // --- System Model Config ---
 
 export const systemModelConfigQuery = queryOptions({

@@ -40,12 +40,5 @@ export interface AtelierExtra {
   opencodePassword?: string;
 }
 
-export interface AtelierPluginConfig {
-  managerUrl: string;
-  defaultWorkspaceId?: string;
-  token?: string;
-  pollIntervalMs: number;
-  pollTimeoutMs: number;
-}
-
 export type { Sandbox, Task } from "@frak/atelier-manager/types";
+export type { AtelierConfig as AtelierPluginConfig } from "./config.ts";

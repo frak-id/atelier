@@ -20,7 +20,7 @@ export function createAtelierAdaptor(
       const extra: AtelierExtra = {
         managerUrl: raw.managerUrl ?? pluginConfig.managerUrl,
         atelierWorkspaceId:
-          raw.atelierWorkspaceId ?? pluginConfig.defaultWorkspaceId ?? "",
+          raw.atelierWorkspaceId ?? pluginConfig.workspaceId ?? "",
         description: raw.description ?? "OpenCode workspace",
         baseBranch: raw.baseBranch ?? undefined,
       };

@@ -15,8 +15,8 @@ export function createClientGetter(config: AtelierPluginConfig): ClientGetter {
       _baseUrl = config.managerUrl;
       _client = treaty<App>(config.managerUrl, {
         headers: () => {
-          const token = config.token;
-          return token ? { authorization: `Bearer ${token}` } : {};
+          const key = config.apiKey;
+          return key ? { authorization: `Bearer ${key}` } : {};
         },
       });
     }

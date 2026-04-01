@@ -1,31 +1,29 @@
-import type { Hooks } from "@opencode-ai/plugin";
-import type { Config } from "@opencode-ai/sdk";
+import type { Config, Hooks, PluginInput } from "@opencode-ai/plugin";
 import type { AtelierClient } from "./client.ts";
 import { unwrap } from "./client.ts";
 import type { AtelierPluginConfig } from "./types.ts";
 
+type OcClient = PluginInput["client"];
+
+export class AtelierHandledError extends Error {
+  constructor() {
+    super("Command handled by Atelier plugin");
+    this.name = "AtelierHandledError";
+  }
+}
+
 const COMMANDS: Record<string, { template: string; description: string }> = {
   "atelier-tasks": {
     description: "List tasks in the Atelier workspace",
-    template:
-      "Show the user the current Atelier tasks. " +
-      "The live data is attached below. " +
-      "Format it clearly — group by status.\n\n" +
-      "$ARGUMENTS",
+    template: "",
   },
   "atelier-status": {
     description: "Get detailed status of an Atelier task",
-    template:
-      "Show the user the detailed status of the " +
-      "requested Atelier task. The live data is " +
-      "attached below.\n\n$ARGUMENTS",
+    template: "",
   },
   "atelier-sandboxes": {
     description: "List running Atelier sandboxes",
-    template:
-      "Show the user the current Atelier sandboxes. " +
-      "The live data is attached below. " +
-      "Format it clearly.\n\n$ARGUMENTS",
+    template: "",
   },
 };
 
@@ -46,23 +44,31 @@ export function injectCommands(config: Config) {
 export function createCommandHook(
   pluginConfig: AtelierPluginConfig,
   getClient: () => AtelierClient,
+  ocClient: OcClient,
 ): NonNullable<Hooks["command.execute.before"]> {
-  return async (input, output) => {
+  return async (input, _output) => {
     const handler = handlers[input.command];
     if (!handler) return;
 
     const client = getClient();
+    let text: string;
+
     try {
-      const text = await handler(client, pluginConfig, input.arguments);
-      (output.parts as unknown[]).push({ type: "text", text });
+      text = await handler(client, pluginConfig, input.arguments);
     } catch (err) {
-      (output.parts as unknown[]).push({
-        type: "text",
-        text:
-          `[atelier] Error fetching data: ` +
-          `${err instanceof Error ? err.message : String(err)}`,
-      });
+      const msg = err instanceof Error ? err.message : String(err);
+      text = `[atelier] Error fetching data: ${msg}`;
     }
+
+    await ocClient.session.prompt({
+      path: { id: input.sessionID },
+      body: {
+        noReply: true,
+        parts: [{ type: "text" as const, text, ignored: true }],
+      },
+    });
+
+    throw new AtelierHandledError();
   };
 }
 
@@ -74,7 +80,7 @@ type Handler = (
 
 const handlers: Record<string, Handler> = {
   "atelier-tasks": async (client, config, args) => {
-    const wsId = args.trim() || config.defaultWorkspaceId;
+    const wsId = args.trim() || config.workspaceId;
     if (!wsId) {
       return "No workspace ID. Pass it as argument or set ATELIER_WORKSPACE_ID.";
     }

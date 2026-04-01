@@ -160,3 +160,21 @@ export const tasks = sqliteTable(
     index("idx_tasks_org_id").on(t.orgId),
   ],
 );
+
+export const apiKeys = sqliteTable(
+  "api_keys",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    keyHash: text("key_hash").notNull(),
+    createdAt: text("created_at").notNull(),
+    lastUsedAt: text("last_used_at"),
+    expiresAt: text("expires_at"),
+  },
+  (t) => [
+    index("idx_api_keys_user_id").on(t.userId),
+    uniqueIndex("idx_api_keys_key_hash").on(t.keyHash),
+  ],
+);

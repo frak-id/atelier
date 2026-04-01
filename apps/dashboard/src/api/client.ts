@@ -16,6 +16,7 @@ export async function logout() {
 }
 
 export type {
+  ApiKey,
   BaseImage,
   ConfigFile,
   ConfigFileContentType,

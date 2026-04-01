@@ -82,6 +82,10 @@ export const queryKeys = {
     list: () => ["sshKeys", "list"] as const,
     hasKeys: () => ["sshKeys", "hasKeys"] as const,
   },
+  apiKeys: {
+    all: ["apiKeys"] as const,
+    list: () => ["apiKeys", "list"] as const,
+  },
   sessionTemplates: {
     all: ["sessionTemplates"] as const,
     global: ["sessionTemplates", "global"] as const,

@@ -3,6 +3,7 @@ import { swagger } from "@elysiajs/swagger";
 import { validateConfig } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
 import {
+  apiKeyRoutes,
   authRoutes,
   cliproxyRoutes,
   configFileRoutes,
@@ -241,7 +242,8 @@ const app = new Elysia()
       .use(systemModelConfigRoutes)
       .use(cliproxyRoutes)
       .use(organizationRoutes)
-      .use(userRoutes),
+      .use(userRoutes)
+      .use(apiKeyRoutes),
   );
 
 app.get("/", () => ({

@@ -1,5 +1,6 @@
 import { AgentClient, AgentOperations } from "./infrastructure/agent/index.ts";
 import { kubeClient } from "./infrastructure/kubernetes/index.ts";
+import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import { CLIProxyService } from "./modules/cliproxy/index.ts";
 import {
   ConfigFileRepository,
@@ -48,6 +49,7 @@ import {
   TaskSpawner,
 } from "./orchestrators/index.ts";
 import type { SandboxPorts } from "./orchestrators/ports/sandbox-ports.ts";
+import { initAuthDependencies } from "./shared/lib/auth.ts";
 import { config } from "./shared/lib/config.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -64,6 +66,7 @@ const userRepository = new UserRepository();
 const workspaceRepository = new WorkspaceRepository();
 const sandboxRepository = new SandboxRepository();
 const sharedAuthRepository = new SharedAuthRepository();
+const apiKeyRepository = new ApiKeyRepository();
 
 /* -------------------------------------------------------------------------- */
 /*                                  Services                                  */
@@ -77,6 +80,8 @@ const orgMemberService = new OrgMemberService(
 );
 const sshKeyService = new SshKeyService(sshKeyRepository);
 const userService = new UserService(userRepository);
+const apiKeyService = new ApiKeyService(apiKeyRepository);
+initAuthDependencies({ apiKeyService, userService });
 const workspaceService = new WorkspaceService(workspaceRepository);
 const sandboxService = sandboxRepository;
 
@@ -205,6 +210,7 @@ const prebuildChecker = new PrebuildChecker({
 
 export {
   agentClient,
+  apiKeyService,
   agentOperations,
   authSyncService,
   baseImageBuilder,

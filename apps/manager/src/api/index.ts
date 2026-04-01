@@ -1,6 +1,7 @@
 // API Routes - HTTP layer separated from business logic
 // All routes import from container.ts, breaking circular dependencies
 
+export { apiKeyRoutes } from "./api-key.routes.ts";
 export { authRoutes } from "./auth.routes.ts";
 export { cliproxyRoutes } from "./cliproxy.routes.ts";
 export { configFileRoutes } from "./config-file.routes.ts";

@@ -12,6 +12,33 @@ export interface AuthUser {
   email: string;
 }
 
+// Minimal interfaces to avoid circular import with container.ts
+interface IApiKeyService {
+  validateKey(rawKey: string): { userId: string; apiKeyId: string } | null;
+}
+
+interface IUserService {
+  getById(id: string):
+    | {
+        id: string;
+        username: string;
+        avatarUrl?: string | null | undefined;
+        email: string;
+      }
+    | undefined;
+}
+
+let _apiKeyService: IApiKeyService | null = null;
+let _userService: IUserService | null = null;
+
+export function initAuthDependencies(deps: {
+  apiKeyService: IApiKeyService;
+  userService: IUserService;
+}): void {
+  _apiKeyService = deps.apiKeyService;
+  _userService = deps.userService;
+}
+
 export async function verifyJwt(token: string): Promise<AuthUser | null> {
   if (isMock()) {
     return {
@@ -56,6 +83,29 @@ export const authPlugin = new Elysia({ name: "auth-guard" })
       throw new UnauthorizedError();
     }
 
+    // API key path: tokens prefixed with "atl_"
+    if (token.startsWith("atl_")) {
+      if (!_apiKeyService || !_userService) {
+        throw new UnauthorizedError("API key auth not initialized");
+      }
+      const result = _apiKeyService.validateKey(token);
+      if (!result) {
+        throw new UnauthorizedError("Invalid or expired API key");
+      }
+      const dbUser = _userService.getById(result.userId);
+      if (!dbUser) {
+        throw new UnauthorizedError("User not found for API key");
+      }
+      const user: AuthUser = {
+        id: dbUser.id,
+        username: dbUser.username,
+        avatarUrl: dbUser.avatarUrl ?? "",
+        email: dbUser.email,
+      };
+      return { user };
+    }
+
+    // JWT path
     const user = await verifyJwt(token);
     if (!user) {
       throw new UnauthorizedError("Invalid or expired token");
