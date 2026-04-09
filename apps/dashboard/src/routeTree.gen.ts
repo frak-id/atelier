@@ -9,17 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root"
-import { Route as ImagesIndexRouteImport } from "./routes/images/index"
 import { Route as IndexRouteImport } from "./routes/index"
-import { Route as OrganizationsOrgSlugRouteImport } from "./routes/organizations/$orgSlug"
-import { Route as OrganizationsIndexRouteImport } from "./routes/organizations/index"
-import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id"
-import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index"
-import { Route as SettingsIndexRouteImport } from "./routes/settings/index"
-import { Route as SystemIndexRouteImport } from "./routes/system/index"
-import { Route as TasksIndexRouteImport } from "./routes/tasks/index"
-import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id"
 import { Route as WorkspacesIndexRouteImport } from "./routes/workspaces/index"
+import { Route as TasksIndexRouteImport } from "./routes/tasks/index"
+import { Route as SystemIndexRouteImport } from "./routes/system/index"
+import { Route as SettingsIndexRouteImport } from "./routes/settings/index"
+import { Route as SandboxesIndexRouteImport } from "./routes/sandboxes/index"
+import { Route as OrganizationsIndexRouteImport } from "./routes/organizations/index"
+import { Route as ImagesIndexRouteImport } from "./routes/images/index"
+import { Route as WorkspacesIdRouteImport } from "./routes/workspaces/$id"
+import { Route as SandboxesIdRouteImport } from "./routes/sandboxes/$id"
+import { Route as OrganizationsOrgSlugRouteImport } from "./routes/organizations/$orgSlug"
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",

@@ -220,8 +220,10 @@ export const terminalRoutes = new Elysia()
       if (typeof message === "string") {
         upstream.send(message);
       } else if (Buffer.isBuffer(message)) {
+        // @ts-ignore
         upstream.send(message);
       } else if (message instanceof Uint8Array) {
+        // @ts-ignore
         upstream.send(message);
       } else if (message instanceof ArrayBuffer) {
         upstream.send(new Uint8Array(message));
