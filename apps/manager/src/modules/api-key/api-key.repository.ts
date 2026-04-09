@@ -57,11 +57,9 @@ export class ApiKeyRepository {
 
   delete(id: string, userId: string): boolean {
     const db = getDatabase();
-    const result = db
-      .delete(apiKeys)
+    db.delete(apiKeys)
       .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)))
       .run();
-    if (result.changes === 0) return false;
     log.info({ id }, "API key deleted");
     return true;
   }
