@@ -12,7 +12,6 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
-    "jsx": "react-jsx",
 
     "strict": true,
     "noUncheckedIndexedAccess": true,

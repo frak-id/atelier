@@ -236,6 +236,7 @@ export function SessionTemplateEditDialog({
 
                   return (
                     <div
+                      // biome-ignore lint/suspicious/noArrayIndexKey: index is the key of the template
                       key={`${idx}-${variant.model.providerID}-${variant.model.modelID}-${variant.variant ?? ""}-${variant.agent ?? ""}`}
                       className="p-3 border rounded-md space-y-3"
                     >

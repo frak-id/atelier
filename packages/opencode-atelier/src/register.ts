@@ -12,11 +12,9 @@ export async function registerAdaptor(adaptor: Adaptor): Promise<boolean> {
     return true;
   }
 
-  (globalThis as Record<string, unknown>)["__opencode_custom_adaptors__"] ??=
-    {};
-  const registry = (globalThis as Record<string, unknown>)[
-    "__opencode_custom_adaptors__"
-  ] as Record<string, Adaptor>;
+  (globalThis as Record<string, unknown>).__opencode_custom_adaptors__ ??= {};
+  const registry = (globalThis as Record<string, unknown>)
+    .__opencode_custom_adaptors__ as Record<string, Adaptor>;
   registry[ADAPTOR_TYPE] = adaptor;
 
   console.warn(

@@ -299,6 +299,7 @@ export function WorkspaceSessionTemplatesSection({
                     <div className="px-3 pb-3 space-y-2">
                       {template.variants.map((variant, idx) => (
                         <div
+                          // biome-ignore lint/suspicious/noArrayIndexKey: index is the key of the template
                           key={`global-${template.id}-${idx}`}
                           className={`p-3 rounded-md border ${
                             idx === (template.defaultVariantIndex ?? 0)
