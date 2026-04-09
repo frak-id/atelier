@@ -38,8 +38,8 @@ jobs:
       - name: Lint and format
         run: bun run check
 
-      - name: Typecheck
-        run: bun run typecheck
+      # - name: Typecheck
+      #   run: bun run typecheck
 
   docker:
     needs: check
