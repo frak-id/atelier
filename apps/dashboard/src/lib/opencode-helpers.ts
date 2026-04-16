@@ -1,4 +1,4 @@
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
+import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client";
 import type { SessionStatus } from "@/api/opencode";
 
 export type MappedSessionStatus = "idle" | "busy" | "waiting" | "unknown";

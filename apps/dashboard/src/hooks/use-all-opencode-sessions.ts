@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2";
+import type { Session } from "@opencode-ai/sdk/v2/client";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { opencodeSessionsQuery, sandboxListQuery } from "@/api/queries";
 

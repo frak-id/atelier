@@ -1,5 +1,5 @@
 import type { Workspace } from "@frak/atelier-manager/types";
-import type { Session, Todo } from "@opencode-ai/sdk/v2";
+import type { Session, Todo } from "@opencode-ai/sdk/v2/client";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Bot, Loader2, Plus } from "lucide-react";
 import { useMemo, useState } from "react";

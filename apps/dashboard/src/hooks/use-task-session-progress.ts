@@ -1,5 +1,5 @@
 import type { Task } from "@frak/atelier-manager/types";
-import type { Session, Todo } from "@opencode-ai/sdk/v2";
+import type { Session, Todo } from "@opencode-ai/sdk/v2/client";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { opencodeSessionsQuery, opencodeTodosQuery } from "@/api/queries";

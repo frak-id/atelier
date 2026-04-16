@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2";
+import type { Session } from "@opencode-ai/sdk/v2/client";
 
 export type SessionWithSandboxInfo = Session & {
   sandbox: {

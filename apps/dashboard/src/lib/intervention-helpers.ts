@@ -1,4 +1,4 @@
-import type { QuestionRequest } from "@opencode-ai/sdk/v2";
+import type { QuestionRequest } from "@opencode-ai/sdk/v2/client";
 
 export function getQuestionDisplayText(question: QuestionRequest): string {
   return (

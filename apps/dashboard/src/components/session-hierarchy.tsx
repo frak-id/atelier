@@ -1,4 +1,4 @@
-import type { Todo } from "@opencode-ai/sdk/v2";
+import type { Todo } from "@opencode-ai/sdk/v2/client";
 import {
   AlertTriangle,
   CheckCircle,

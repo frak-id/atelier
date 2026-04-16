@@ -5,7 +5,7 @@ import {
 } from "@/lib/opencode-helpers";
 import { useOpencodeData } from "./use-opencode-data";
 
-export type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
+export type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client";
 
 export function useSessionInteraction(
   opencodeUrl: string | undefined,

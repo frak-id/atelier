@@ -4,7 +4,7 @@ import {
   type QuestionRequest,
   type Session,
   type Todo,
-} from "@opencode-ai/sdk/v2";
+} from "@opencode-ai/sdk/v2/client";
 
 export type SessionStatus =
   | { type: "idle" }

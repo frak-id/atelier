@@ -1,4 +1,4 @@
-import type { Event as OpencodeEvent } from "@opencode-ai/sdk/v2";
+import type { Event as OpencodeEvent } from "@opencode-ai/sdk/v2/client";
 import type { QueryClient } from "@tanstack/react-query";
 import { getOpencodeClient } from "@/api/opencode";
 import { queryKeys } from "@/api/queries";
