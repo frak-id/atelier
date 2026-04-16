@@ -392,7 +392,7 @@ function AddSshKeyDialog({
         <div className="space-y-4">
           <div className="flex gap-2">
             <Button
-              variant={mode === "generate" ? "default" : "outline-solid"}
+              variant={mode === "generate" ? "default" : "outline"}
               onClick={() => setMode("generate")}
               disabled={supportsGeneration === false}
               className="flex-1"
@@ -400,7 +400,7 @@ function AddSshKeyDialog({
               Generate Key
             </Button>
             <Button
-              variant={mode === "upload" ? "default" : "outline-solid"}
+              variant={mode === "upload" ? "default" : "outline"}
               onClick={() => setMode("upload")}
               className="flex-1"
             >

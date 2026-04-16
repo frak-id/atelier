@@ -19,6 +19,6 @@
   },
   "devDependencies": {
     "@frak/atelier-manager": "workspace:*",
-    "@types/bun": "latest"
+    "@types/bun": "^1.3.12"
   }
 }

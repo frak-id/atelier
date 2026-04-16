@@ -180,7 +180,7 @@ function SystemPage() {
                               ? "warning"
                               : binaries.jobStatus === "failed"
                                 ? "destructive"
-                                : "outline-solid"
+                                : "outline"
                         }
                         className="text-[10px] px-1 py-0 h-5"
                       >

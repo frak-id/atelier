@@ -356,7 +356,7 @@ function RepoCommitForm({
         {ahead > 0 && (
           <Button
             size="sm"
-            variant={isDirty ? "outline-solid" : "default"}
+            variant={isDirty ? "outline" : "default"}
             disabled={isAnyLoading}
             onClick={handlePush}
           >

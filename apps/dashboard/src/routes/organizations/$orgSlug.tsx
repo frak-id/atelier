@@ -264,8 +264,8 @@ function GeneralTab({
 const ROLE_VARIANTS: Record<string, string> = {
   owner: "default",
   admin: "secondary",
-  member: "outline-solid",
-  viewer: "outline-solid",
+  member: "outline",
+  viewer: "outline",
 };
 
 function MembersTab({
@@ -363,7 +363,7 @@ function MemberRow({
 
       <Badge
         variant={
-          ROLE_VARIANTS[member.role] as "default" | "secondary" | "outline-solid"
+          ROLE_VARIANTS[member.role] as "default" | "secondary" | "outline"
         }
         className="hidden"
       >
