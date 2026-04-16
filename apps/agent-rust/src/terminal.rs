@@ -11,7 +11,7 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::{Request, Response, StatusCode};
 use nix::sys::signal::{kill, Signal};
-use nix::unistd::{close, dup2, execvp, fork, setgid, setsid, setuid, ForkResult, Gid, Pid, Uid};
+use nix::unistd::{execvp, fork, setgid, setsid, setuid, ForkResult, Gid, Pid, Uid};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, watch, Mutex, RwLock};
@@ -227,11 +227,11 @@ pub async fn create_session(
         Ok(ForkResult::Child) => {
             unsafe { libc::close(master_fd) };
             let _ = setsid();
-            let _ = dup2(slave_fd, 0);
-            let _ = dup2(slave_fd, 1);
-            let _ = dup2(slave_fd, 2);
+            unsafe { libc::dup2(slave_fd, 0) };
+            unsafe { libc::dup2(slave_fd, 1) };
+            unsafe { libc::dup2(slave_fd, 2) };
             if slave_fd > 2 {
-                let _ = close(slave_fd);
+                unsafe { libc::close(slave_fd) };
             }
             unsafe {
                 libc::ioctl(0, libc::TIOCSCTTY as _, 0);
@@ -244,10 +244,12 @@ pub async fn create_session(
                 let empty_set: libc::sigset_t = std::mem::zeroed();
                 libc::sigprocmask(libc::SIG_SETMASK, &empty_set, std::ptr::null_mut());
             }
-            std::env::set_var("TERM", "xterm-256color");
-            std::env::set_var("HOME", "/home/dev");
-            std::env::set_var("USER", "dev");
-            std::env::set_var("SHELL", "/bin/bash");
+            unsafe {
+                std::env::set_var("TERM", "xterm-256color");
+                std::env::set_var("HOME", "/home/dev");
+                std::env::set_var("USER", "dev");
+                std::env::set_var("SHELL", "/bin/bash");
+            }
             let _ = setgid(Gid::from_raw(1000));
             let _ = setuid(Uid::from_raw(1000));
             let _ = std::env::set_current_dir(&workdir_path);
