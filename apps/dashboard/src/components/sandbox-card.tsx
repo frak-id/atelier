@@ -110,7 +110,7 @@ export function SandboxCard({
       <div
         role="button"
         tabIndex={0}
-        className="flex-1 flex flex-col cursor-pointer hover:bg-muted/50 transition-colors focus:outline-none focus:bg-muted/50"
+        className="flex-1 flex flex-col cursor-pointer hover:bg-muted/50 transition-colors focus:outline-hidden focus:bg-muted/50"
         onClick={onShowDetails}
         onKeyDown={handleKeyDown}
       >

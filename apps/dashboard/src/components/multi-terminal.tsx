@@ -436,7 +436,7 @@ const TerminalPane = memo(
                 }
               }}
               placeholder="Search..."
-              className="h-6 w-48 bg-transparent text-sm text-white placeholder-zinc-500 outline-none"
+              className="h-6 w-48 bg-transparent text-sm text-white placeholder-zinc-500 outline-hidden"
             />
             <button
               type="button"

@@ -125,7 +125,7 @@ export function TaskCard({
     <div
       ref={setNodeRef}
       style={style}
-      className="bg-card border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow group"
+      className="bg-card border rounded-lg p-3 shadow-xs hover:shadow-md transition-shadow group"
     >
       <div className="flex items-start gap-2">
         <button

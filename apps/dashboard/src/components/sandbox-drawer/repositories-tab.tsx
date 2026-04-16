@@ -317,7 +317,7 @@ function RepoCommitForm({
       {isDirty && (
         <input
           type="text"
-          className="w-full rounded-md border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full rounded-md border bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-hidden focus:ring-1 focus:ring-ring"
           placeholder="Commit message..."
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -356,7 +356,7 @@ function RepoCommitForm({
         {ahead > 0 && (
           <Button
             size="sm"
-            variant={isDirty ? "outline" : "default"}
+            variant={isDirty ? "outline-solid" : "default"}
             disabled={isAnyLoading}
             onClick={handlePush}
           >

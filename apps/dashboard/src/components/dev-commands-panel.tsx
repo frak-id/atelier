@@ -161,7 +161,7 @@ function DevCommandItem({
           )}
 
           <Button
-            variant={isRunning ? "outline" : "default"}
+            variant={isRunning ? "outline-solid" : "default"}
             size="sm"
             onClick={handleToggle}
             disabled={isPending}

@@ -74,9 +74,9 @@ export function RepositoryPicker({ value, onSelect }: RepositoryPickerProps) {
           {selectedRepo ? (
             <span className="flex items-center gap-2 truncate">
               {selectedRepo.private ? (
-                <Lock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               ) : (
-                <Unlock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                <Unlock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               )}
               <span className="truncate">{selectedRepo.fullName}</span>
             </span>
@@ -150,7 +150,7 @@ function RepoItem({
         isSelected && "bg-accent",
       )}
     >
-      <div className="flex-shrink-0 mt-0.5">
+      <div className="shrink-0 mt-0.5">
         {repo.private ? (
           <Lock className="h-4 w-4 text-amber-500" />
         ) : (
@@ -161,7 +161,7 @@ function RepoItem({
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm truncate">{repo.fullName}</span>
           {isSelected && (
-            <Check className="h-4 w-4 text-primary flex-shrink-0" />
+            <Check className="h-4 w-4 text-primary shrink-0" />
           )}
         </div>
         {repo.description && (

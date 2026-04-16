@@ -397,7 +397,7 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
 
   return (
     <Collapsible defaultOpen={autoExpand} className="group/root">
-      <div className="rounded-lg border bg-card text-card-foreground shadow-sm overflow-hidden">
+      <div className="rounded-lg border bg-card text-card-foreground shadow-xs overflow-hidden">
         <CollapsibleTrigger asChild>
           <button
             type="button"

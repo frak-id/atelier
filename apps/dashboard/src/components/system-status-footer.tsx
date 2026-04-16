@@ -147,7 +147,7 @@ export function SystemStatusFooter() {
                       ? "warning"
                       : systemSandbox.prebuild.exists
                         ? "success"
-                        : "outline"
+                        : "outline-solid"
                   }
                   className="gap-1"
                 >
@@ -362,7 +362,7 @@ function SystemSandboxBadge({ status }: { status: string }) {
         ? "warning"
         : status === "idle"
           ? "default"
-          : "outline";
+          : "outline-solid";
 
   return (
     <Badge variant={variant} className="gap-1">

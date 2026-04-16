@@ -53,7 +53,7 @@ export function SessionsTabBadge({
     <>
       <Badge
         variant="secondary"
-        className="text-[10px] px-1.5 py-0 h-4 min-w-[1.25rem] justify-center"
+        className="text-[10px] px-1.5 py-0 h-4 min-w-5 justify-center"
       >
         {sessions.length}
       </Badge>
