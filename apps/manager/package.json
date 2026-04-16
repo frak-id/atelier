@@ -27,7 +27,7 @@
     "@opencode-ai/sdk": "1.4.6",
     "@slack/web-api": "^7.15.1",
     "async-mutex": "^0.5.0",
-    "croner": "^6.0.7",
+    "croner": "^10.0.1",
     "drizzle-orm": "^0.45.1",
     "elysia": "^1.4.28",
     "env-paths": "^4.0.0",
