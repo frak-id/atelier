@@ -157,7 +157,7 @@ export function SandboxDrawer({
           </div>
         ) : (
           <>
-            <SheetHeader className="p-4 sm:p-6 border-b flex-shrink-0">
+            <SheetHeader className="p-4 sm:p-6 border-b shrink-0">
               <div className="flex items-start justify-between gap-2">
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">

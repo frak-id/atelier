@@ -366,7 +366,7 @@ function QuestionRow({
         <Badge variant="outline" className="shrink-0 text-xs bg-white">
           {formatSessionId(question.sessionID)}
         </Badge>
-        <span className="flex-1 min-w-0 break-words">
+        <span className="flex-1 min-w-0 wrap-break-word">
           {truncateText(getQuestionDisplayText(question), compact ? 120 : 200)}
         </span>
         {isOpen ? (

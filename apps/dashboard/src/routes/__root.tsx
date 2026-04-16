@@ -153,7 +153,7 @@ function NavLink({
           {badge !== undefined && badge > 0 && (
             <Badge
               variant="destructive"
-              className="ml-auto px-1.5 py-0 h-5 min-w-[1.25rem] justify-center text-[10px]"
+              className="ml-auto px-1.5 py-0 h-5 min-w-5 justify-center text-[10px]"
             >
               {badge}
             </Badge>

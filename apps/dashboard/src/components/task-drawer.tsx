@@ -168,7 +168,7 @@ export function TaskDrawer({
           </div>
         ) : (
           <>
-            <SheetHeader className="p-4 sm:p-6 border-b flex-shrink-0">
+            <SheetHeader className="p-4 sm:p-6 border-b shrink-0">
               <div className="space-y-3 sm:space-y-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="space-y-1 min-w-0">
@@ -340,7 +340,7 @@ export function TaskDrawer({
                     <CardTitle>Description</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm whitespace-pre-wrap break-words overflow-hidden">
+                    <p className="text-sm whitespace-pre-wrap wrap-break-word overflow-hidden">
                       {taskData.data.description}
                     </p>
                   </CardContent>
