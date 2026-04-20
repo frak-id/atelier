@@ -12,6 +12,10 @@ import type { TaskIntegrationMetadata } from "../../schemas/task.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
+import {
+  openOpencodeSession,
+  startOpencodeSession,
+} from "../../shared/lib/opencode-session.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SessionTemplateService } from "../session-template/index.ts";
 import type {
@@ -219,24 +223,13 @@ export class IntegrationGateway {
         ),
       });
 
-      const { data: session, error: createError } =
-        await opcClient.session.create({
-          title: task.title,
-        });
-      if (createError || !session?.id) {
-        throw new Error("Failed to create session");
-      }
-
-      const { error: promptError } = await opcClient.session.promptAsync({
-        sessionID: session.id,
-        parts: [{ type: "text", text: parsed.text }],
-        ...(sessionConfig?.model && { model: sessionConfig.model }),
-        ...(sessionConfig?.variant && { variant: sessionConfig.variant }),
-        ...(sessionConfig?.agent && { agent: sessionConfig.agent }),
+      const session = await startOpencodeSession(opcClient, {
+        title: task.title,
+        prompt: parsed.text,
+        model: sessionConfig?.model,
+        variant: sessionConfig?.variant,
+        agent: sessionConfig?.agent,
       });
-      if (promptError) {
-        throw new Error("Failed to start add session prompt");
-      }
 
       this.deps.taskService.addSession(task.id, session.id, templateId);
       latestSessionId = session.id;
@@ -569,20 +562,12 @@ export class IntegrationGateway {
       } catch {}
     }
 
-    const { data: session } = await opcClient.session.create({
+    const session = await startOpencodeSession(opcClient, {
       title: task.title,
+      prompt: text || task.data.description,
     });
-    if (!session?.id) {
-      throw new Error("Failed to create replacement session");
-    }
 
     this.deps.taskService.setIntegrationSessionId(task.id, session.id);
-
-    const prompt = text || task.data.description;
-    await opcClient.session.promptAsync({
-      sessionID: session.id,
-      parts: [{ type: "text", text: prompt }],
-    });
 
     try {
       const { integrationEventBridge } = await import("../../container.ts");
@@ -750,12 +735,7 @@ export class IntegrationGateway {
     let sessionId: string | undefined;
 
     try {
-      const { data: session, error: createError } =
-        await client.session.create();
-      if (createError || !session?.id) {
-        throw new Error("Failed to create system sandbox session");
-      }
-
+      const session = await openOpencodeSession(client);
       sessionId = session.id;
 
       try {
@@ -1065,10 +1045,7 @@ export class IntegrationGateway {
       }
     }
 
-    const { data: session, error } = await client.session.create();
-    if (error || !session?.id) {
-      throw new Error("Failed to create session on task sandbox");
-    }
+    const session = await openOpencodeSession(client);
 
     this.deps.taskService.setIntegrationSessionId(task.id, session.id);
 

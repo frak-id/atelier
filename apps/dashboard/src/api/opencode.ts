@@ -58,6 +58,35 @@ export async function deleteOpenCodeSession(
   }
 }
 
+const SESSION_READY_TIMEOUT_MS = 10_000;
+const SESSION_READY_INITIAL_DELAY_MS = 25;
+const SESSION_READY_MAX_DELAY_MS = 200;
+
+async function waitForOpenCodeSession(
+  baseUrl: string,
+  sessionId: string,
+  timeoutMs = SESSION_READY_TIMEOUT_MS,
+): Promise<void> {
+  const client = getOpencodeClient(baseUrl);
+  const deadline = Date.now() + timeoutMs;
+  let delay = SESSION_READY_INITIAL_DELAY_MS;
+  while (Date.now() < deadline) {
+    try {
+      const { data, error } = await client.session.get({
+        sessionID: sessionId,
+      });
+      if (data?.id && !error) return;
+    } catch {
+      // retry until deadline
+    }
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, SESSION_READY_MAX_DELAY_MS);
+  }
+  throw new Error(
+    `OpenCode session ${sessionId} did not become ready in ${timeoutMs}ms`,
+  );
+}
+
 export async function createOpenCodeSession(
   baseUrl: string,
   directory?: string,
@@ -68,6 +97,7 @@ export async function createOpenCodeSession(
     if (error || !data?.id || !data?.directory) {
       return { error: "Failed to create session" };
     }
+    await waitForOpenCodeSession(baseUrl, data.id);
     return { sessionId: data.id, directory: data.directory };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Unknown error" };
@@ -78,44 +108,6 @@ export interface TemplateConfig {
   model?: { providerID: string; modelID: string };
   variant?: string;
   agent?: string;
-}
-
-export async function sendOpenCodeMessage(
-  baseUrl: string,
-  sessionId: string,
-  message: string,
-  options?: { directory?: string; templateConfig?: TemplateConfig },
-): Promise<{ success: true } | { error: string }> {
-  try {
-    const client = getOpencodeClient(baseUrl);
-
-    const result = await client.session.promptAsync({
-      sessionID: sessionId,
-      directory: options?.directory,
-      parts: [{ type: "text", text: message }],
-      ...(options?.templateConfig && {
-        model: options.templateConfig.model,
-        variant: options.templateConfig.variant,
-        agent: options.templateConfig.agent,
-      }),
-    });
-    if (result.error) {
-      return { error: "Failed to send message" };
-    }
-    return { success: true };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Unknown error" };
-  }
-}
-
-export async function checkOpenCodeHealth(baseUrl: string): Promise<boolean> {
-  try {
-    const client = getOpencodeClient(baseUrl);
-    const { data } = await client.global.health();
-    return data?.healthy ?? false;
-  } catch {
-    return false;
-  }
 }
 
 export async function getOpenCodeSessionStatuses(

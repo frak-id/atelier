@@ -1,3 +1,4 @@
+import type { StartSessionStage } from "@frak/atelier-manager/types";
 import type { SessionTemplate } from "@frak/atelier-shared/constants";
 import { DEFAULT_SESSION_TEMPLATES } from "@frak/atelier-shared/constants";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
@@ -121,6 +122,7 @@ type ChatTabProps = {
 
 function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
   const [message, setMessage] = useState("");
+  const [stage, setStage] = useState<StartSessionStage | null>(null);
   const defaultTemplate = templates[0];
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     defaultTemplate?.id ?? "",
@@ -139,9 +141,11 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
 
   const handleStartSession = () => {
     if (!workspace || !message.trim()) return;
+    setStage(null);
     mutate({
       workspace,
       message: message.trim(),
+      onProgress: setStage,
       templateConfig: selectedVariant
         ? {
             model: selectedVariant.model,
@@ -155,6 +159,7 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
   const handleReset = () => {
     reset();
     setMessage("");
+    setStage(null);
     setSelectedTemplateId(defaultTemplate?.id ?? "");
     setSelectedVariantIndex(defaultTemplate?.defaultVariantIndex ?? 0);
   };
@@ -205,7 +210,7 @@ function ChatTab({ workspace, workspaceId, templates }: ChatTabProps) {
       {isPending && (
         <div className="flex items-center gap-2 p-3 bg-muted rounded-md text-sm">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Starting session...</span>
+          <span>{stageLabel(stage)}</span>
         </div>
       )}
 
@@ -293,4 +298,19 @@ function TaskTab({ workspaceId }: { workspaceId: string }) {
       </p>
     </div>
   );
+}
+
+function stageLabel(stage: StartSessionStage | null): string {
+  switch (stage) {
+    case "spawning-sandbox":
+      return "Spawning sandbox...";
+    case "waiting-for-agent":
+      return "Waiting for agent...";
+    case "waiting-for-opencode":
+      return "Starting OpenCode...";
+    case "creating-session":
+      return "Creating session...";
+    default:
+      return "Starting session...";
+  }
 }

@@ -1,4 +1,5 @@
-import { Elysia } from "elysia";
+import { createOpencodeClient } from "@opencode-ai/sdk/v2";
+import { Elysia, sse } from "elysia";
 import {
   agentClient,
   agentOperations,
@@ -15,6 +16,7 @@ import {
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
+import { waitForOpencode } from "../../orchestrators/kernel/boot-waiter.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
   AgentHealthSchema,
@@ -34,11 +36,14 @@ import {
   SandboxListQuerySchema,
   SandboxListResponseSchema,
   SandboxSchema,
+  StartSandboxSessionBodySchema,
 } from "../../schemas/index.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
 import { authPlugin } from "../../shared/lib/auth.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
+import { startOpencodeSession } from "../../shared/lib/opencode-session.ts";
 import { devRoutes } from "./dev.routes.ts";
 import { sandboxIdGuard } from "./guard.ts";
 import { servicesRoutes } from "./services.routes.ts";
@@ -96,6 +101,103 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       body: CreateSandboxBodySchema,
       response: CreateSandboxResponseSchema,
+    },
+  )
+  .post(
+    "/start-session",
+    async function* ({ body, user }) {
+      const allActive = [
+        ...sandboxService.getByStatus("running"),
+        ...sandboxService.getByStatus("creating"),
+      ].filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
+
+      if (allActive.length >= config.server.maxSandboxes) {
+        throw new ResourceExhaustedError("sandboxes");
+      }
+
+      log.info({ workspaceId: body.workspaceId }, "Starting sandbox + session");
+
+      try {
+        yield sse({ data: { type: "progress", stage: "spawning-sandbox" } });
+        const sandbox = await sandboxSpawner.spawn(
+          { workspaceId: body.workspaceId },
+          undefined,
+          user.id,
+        );
+
+        yield sse({
+          data: {
+            type: "progress",
+            stage: "waiting-for-agent",
+            sandboxId: sandbox.id,
+          },
+        });
+        const { ready: agentReady } = await agentClient.waitForAgent(
+          sandbox.id,
+          { timeout: 60000 },
+        );
+        if (!agentReady) {
+          throw new Error("Agent failed to become ready");
+        }
+
+        yield sse({
+          data: {
+            type: "progress",
+            stage: "waiting-for-opencode",
+            sandboxId: sandbox.id,
+          },
+        });
+        await waitForOpencode(
+          sandbox.runtime.ipAddress,
+          sandbox.runtime.opencodePassword,
+        );
+
+        yield sse({
+          data: {
+            type: "progress",
+            stage: "creating-session",
+            sandboxId: sandbox.id,
+          },
+        });
+        const client = createOpencodeClient({
+          baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
+          headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
+        });
+        const session = await startOpencodeSession(client, {
+          prompt: body.message,
+          model: body.templateConfig?.model,
+          variant: body.templateConfig?.variant,
+          agent: body.templateConfig?.agent,
+        });
+
+        const opencodeUrl = sandbox.runtime.urls.opencode;
+        const encodedDirectory = Buffer.from(session.directory).toString(
+          "base64url",
+        );
+        const sessionUrl = `${opencodeUrl}/${encodedDirectory}/session/${session.id}`;
+
+        yield sse({
+          data: {
+            type: "done",
+            sandboxId: sandbox.id,
+            sessionId: session.id,
+            sessionUrl,
+            directory: session.directory,
+            opencodeUrl,
+          },
+        });
+      } catch (err) {
+        log.error({ error: err }, "start-session stream failed");
+        yield sse({
+          data: {
+            type: "error",
+            message: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+    },
+    {
+      body: StartSandboxSessionBodySchema,
     },
   )
   .get(

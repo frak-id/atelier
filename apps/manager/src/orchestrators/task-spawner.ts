@@ -14,6 +14,7 @@ import type {
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
+import { openOpencodeSession } from "../shared/lib/opencode-session.ts";
 import { waitForOpencode } from "./kernel/boot-waiter.ts";
 import type { GitUserIdentity } from "./ports/guest-secrets.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
@@ -294,26 +295,25 @@ export class TaskSpawner {
     }
 
     const opencodeUrl = `http://${ipAddress}:${config.ports.opencode}`;
+    const client = createOpencodeClient({
+      baseUrl: opencodeUrl,
+      headers: buildOpenCodeAuthHeaders(password),
+    });
+
     const sessionConfig = this.resolveSessionConfig(
       sessionTemplateId,
       workspace.id,
       task.data.variantIndex,
     );
 
-    const sessionResult = await this.createOpencodeSession(
-      opencodeUrl,
-      task.title,
-      opencodeDirectory,
-      password,
-    );
-
-    if ("error" in sessionResult) {
-      throw new Error(`Failed to create session: ${sessionResult.error}`);
-    }
+    const opened = await openOpencodeSession(client, {
+      title: task.title,
+      directory: opencodeDirectory,
+    });
 
     const { session } = this.deps.taskService.addSession(
       taskId,
-      sessionResult.sessionId,
+      opened.id,
       sessionTemplateId,
     );
 
@@ -327,16 +327,15 @@ export class TaskSpawner {
       sessionConfig.promptTemplate,
     );
 
-    const promptResult = await this.sendPrompt(
-      opencodeUrl,
-      session.id,
-      prompt,
-      sessionConfig,
-      password,
-    );
-
-    if ("error" in promptResult) {
-      throw new Error(`Failed to send prompt: ${promptResult.error}`);
+    const { error: promptError } = await client.session.promptAsync({
+      sessionID: session.id,
+      parts: [{ type: "text", text: prompt }],
+      ...(sessionConfig.model && { model: sessionConfig.model }),
+      ...(sessionConfig.variant && { variant: sessionConfig.variant }),
+      ...(sessionConfig.agent && { agent: sessionConfig.agent }),
+    });
+    if (promptError) {
+      throw new Error("Failed to send prompt to OpenCode session");
     }
 
     log.info(
@@ -519,58 +518,5 @@ export class TaskSpawner {
     prompt += task.data.description;
 
     return prompt;
-  }
-
-  private async createOpencodeSession(
-    baseUrl: string,
-    title: string,
-    directory?: string,
-    password?: string,
-  ): Promise<{ sessionId: string } | { error: string }> {
-    try {
-      const client = createOpencodeClient({
-        baseUrl,
-        headers: buildOpenCodeAuthHeaders(password),
-      });
-      const { data, error } = await client.session.create({
-        title,
-        ...(directory && { directory }),
-      });
-      if (error || !data?.id) {
-        return { error: "Failed to create session" };
-      }
-      return { sessionId: data.id };
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : "Unknown error" };
-    }
-  }
-
-  private async sendPrompt(
-    baseUrl: string,
-    sessionId: string,
-    message: string,
-    config?: SessionConfig,
-    password?: string,
-  ): Promise<{ success: true } | { error: string }> {
-    try {
-      const client = createOpencodeClient({
-        baseUrl,
-        headers: buildOpenCodeAuthHeaders(password),
-      });
-
-      const result = await client.session.promptAsync({
-        sessionID: sessionId,
-        parts: [{ type: "text", text: message }],
-        ...(config?.model && { model: config.model }),
-        ...(config?.variant && { variant: config.variant }),
-        ...(config?.agent && { agent: config.agent }),
-      });
-      if (result.error) {
-        return { error: "Failed to send message" };
-      }
-      return { success: true };
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : "Unknown error" };
-    }
   }
 }

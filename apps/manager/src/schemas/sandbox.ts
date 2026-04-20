@@ -297,3 +297,53 @@ export type BrowserStopResponse = Static<typeof BrowserStopResponseSchema>;
 
 export const CreateSandboxResponseSchema = SandboxSchema;
 export type CreateSandboxResponse = Static<typeof CreateSandboxResponseSchema>;
+
+export const StartSandboxSessionBodySchema = t.Object({
+  workspaceId: t.String({ minLength: 1 }),
+  message: t.String({ minLength: 1 }),
+  templateConfig: t.Optional(
+    t.Object({
+      model: t.Optional(
+        t.Object({
+          providerID: t.String(),
+          modelID: t.String(),
+        }),
+      ),
+      variant: t.Optional(t.String()),
+      agent: t.Optional(t.String()),
+    }),
+  ),
+});
+export type StartSandboxSessionBody = Static<
+  typeof StartSandboxSessionBodySchema
+>;
+
+export const StartSessionStageSchema = t.Union([
+  t.Literal("spawning-sandbox"),
+  t.Literal("waiting-for-agent"),
+  t.Literal("waiting-for-opencode"),
+  t.Literal("creating-session"),
+]);
+export type StartSessionStage = Static<typeof StartSessionStageSchema>;
+
+export const StartSessionEventSchema = t.Union([
+  t.Object({
+    type: t.Literal("progress"),
+    stage: StartSessionStageSchema,
+    sandboxId: t.Optional(t.String()),
+  }),
+  t.Object({
+    type: t.Literal("done"),
+    sandboxId: t.String(),
+    sessionId: t.String(),
+    sessionUrl: t.String(),
+    directory: t.String(),
+    opencodeUrl: t.String(),
+  }),
+  t.Object({
+    type: t.Literal("error"),
+    stage: t.Optional(StartSessionStageSchema),
+    message: t.String(),
+  }),
+]);
+export type StartSessionEvent = Static<typeof StartSessionEventSchema>;
