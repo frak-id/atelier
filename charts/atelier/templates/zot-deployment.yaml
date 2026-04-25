@@ -15,6 +15,8 @@ spec:
       app.kubernetes.io/component: zot
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/zot-configmap.yaml") . | sha256sum }}
       labels:
         {{- include "atelier.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: zot
