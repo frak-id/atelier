@@ -18,12 +18,12 @@ data:
 
     uplinks:
       npmjs:
-        url: https://registry.npmjs.org/
+        url: {{ .Values.verdaccio.uplink.url | quote }}
         cache: true
-        maxage: 7d
-        fail_timeout: 5m
-        timeout: 60s
-        max_fails: 5
+        maxage: {{ .Values.verdaccio.uplink.maxage | quote }}
+        fail_timeout: {{ .Values.verdaccio.uplink.failTimeout | quote }}
+        timeout: {{ .Values.verdaccio.uplink.timeout | quote }}
+        max_fails: {{ .Values.verdaccio.uplink.maxFails }}
         agent_options:
           keepAlive: true
           maxSockets: 40
@@ -44,7 +44,7 @@ data:
     log:
       type: stdout
       format: pretty
-      level: warn
+      level: {{ .Values.verdaccio.log.level | quote }}
 
-    max_body_size: 500mb
+    max_body_size: {{ .Values.verdaccio.maxBodySize | quote }}
 {{- end }}

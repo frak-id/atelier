@@ -191,6 +191,25 @@ verdaccio:
     limits:
       memory: "1Gi"
       cpu: "1000m"
+  # -- Upstream npm registry (proxied + cached)
+  uplink:
+    # -- Registry URL to proxy
+    url: "https://registry.npmjs.org/"
+    # -- How long cached package metadata is considered fresh.
+    # Tarballs themselves are immutable and cached forever; this only affects
+    # version listings. Keep low so newly published versions show up quickly.
+    maxage: "2m"
+    # -- Per-request timeout when contacting the upstream
+    timeout: "60s"
+    # -- Backoff window after `maxFails` consecutive upstream errors
+    failTimeout: "5m"
+    # -- Consecutive upstream errors before backing off
+    maxFails: 5
+  # -- Max upload size for a single tarball
+  maxBodySize: "500mb"
+  log:
+    # -- Verdaccio log level (trace, debug, info, http, warn, error, fatal)
+    level: "warn"
 
 # -- Shared binaries (opencode + code-server, mounted into sandboxes)
 sharedBinaries:
