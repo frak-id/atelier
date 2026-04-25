@@ -1,10 +1,11 @@
 import { type AtelierClient, unwrap, waitForTaskSandbox } from "./client.ts";
 import type {
-  Adaptor,
   AtelierExtra,
   AtelierPluginConfig,
   Sandbox,
+  WorkspaceAdaptor,
   WorkspaceInfo,
+  WorkspaceTarget,
 } from "./types.ts";
 
 const sandboxCache = new Map<string, { sandbox: Sandbox; fetchedAt: number }>();
@@ -13,8 +14,11 @@ const CACHE_TTL_MS = 30_000;
 export function createAtelierAdaptor(
   pluginConfig: AtelierPluginConfig,
   getClient: () => AtelierClient,
-): Adaptor {
+): WorkspaceAdaptor {
   return {
+    name: "Atelier",
+    description: "Spawn an Atelier sandbox and run OpenCode inside it",
+
     async configure(info: WorkspaceInfo): Promise<WorkspaceInfo> {
       const raw = (info.extra ?? {}) as Partial<AtelierExtra>;
       const extra: AtelierExtra = {
@@ -89,46 +93,21 @@ export function createAtelierAdaptor(
       sandboxCache.delete(info.id);
     },
 
-    async fetch(
-      info: WorkspaceInfo,
-      input: string | URL | Request,
-      init?: RequestInit,
-    ): Promise<Response> {
+    async target(info: WorkspaceInfo): Promise<WorkspaceTarget> {
       const extra = info.extra as AtelierExtra;
-
-      const opencodeUrl = await resolveOpencodeUrl(info.id, extra, getClient);
-      if (!opencodeUrl) {
-        return new Response("Sandbox not available", {
-          status: 503,
-        });
+      const url = await resolveOpencodeUrl(info.id, extra, getClient);
+      if (!url) {
+        throw new Error(
+          `[atelier] Sandbox not available for workspace ${info.id}`,
+        );
       }
 
-      const inputUrl = input instanceof Request ? input.url : input.toString();
-      const targetUrl = new URL(inputUrl, opencodeUrl);
-
-      const headers = new Headers(
-        init?.headers ?? (input instanceof Request ? input.headers : undefined),
-      );
-
-      headers.set(
-        "x-opencode-directory",
-        info.directory ?? "/home/dev/workspace",
-      );
-      headers.set("x-opencode-workspace", info.id);
-
+      const headers: Record<string, string> = {};
       if (extra.opencodePassword) {
-        const encoded = btoa(`opencode:${extra.opencodePassword}`);
-        headers.set("Authorization", `Basic ${encoded}`);
+        headers.Authorization = `Basic ${btoa(`opencode:${extra.opencodePassword}`)}`;
       }
 
-      return fetch(targetUrl, {
-        ...init,
-        headers,
-        body:
-          init?.method === "GET" || init?.method === "HEAD"
-            ? undefined
-            : init?.body,
-      });
+      return { type: "remote", url, headers };
     },
   };
 }

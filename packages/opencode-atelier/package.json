@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.9",
-    "@opencode-ai/plugin": "^1.4.6",
-    "@opencode-ai/sdk": "1.4.6",
+    "@opencode-ai/plugin": "^1.14.20",
+    "@opencode-ai/sdk": "1.14.20",
     "zod": "^4.3.6"
   },
   "devDependencies": {

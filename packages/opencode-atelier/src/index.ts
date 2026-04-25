@@ -3,7 +3,6 @@ import { createAtelierAdaptor } from "./adaptor.ts";
 import { createClientGetter } from "./client.ts";
 import { createCommandHook, injectCommands } from "./commands.ts";
 import { loadAtelierConfig } from "./config.ts";
-import { registerAdaptor } from "./register.ts";
 import { resolveWorkspaceId } from "./workspace-resolver.ts";
 
 const atelierPlugin: Plugin = async (input) => {
@@ -20,8 +19,10 @@ const atelierPlugin: Plugin = async (input) => {
     pluginConfig.workspaceId = resolvedId;
   }
 
-  const adaptor = createAtelierAdaptor(pluginConfig, getClient);
-  await registerAdaptor(adaptor);
+  input.experimental_workspace.register(
+    "atelier",
+    createAtelierAdaptor(pluginConfig, getClient),
+  );
 
   console.log(
     `[atelier] Initialized (manager: ${pluginConfig.managerUrl}` +

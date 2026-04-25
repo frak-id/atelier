@@ -1,26 +1,8 @@
-// Mirrors of opencode internals (control-plane/types.ts) —
-// not exported by @opencode-ai/plugin, so duplicated here.
-
-export interface WorkspaceInfo {
-  id: string;
-  type: string;
-  branch: string | null;
-  name: string | null;
-  directory: string | null;
-  extra: unknown;
-  projectID: string;
-}
-
-export interface Adaptor {
-  configure(input: WorkspaceInfo): WorkspaceInfo | Promise<WorkspaceInfo>;
-  create(input: WorkspaceInfo, from?: WorkspaceInfo): Promise<void>;
-  remove(config: WorkspaceInfo): Promise<void>;
-  fetch(
-    config: WorkspaceInfo,
-    input: string | URL | Request,
-    init?: RequestInit,
-  ): Promise<Response>;
-}
+export type {
+  WorkspaceAdaptor,
+  WorkspaceInfo,
+  WorkspaceTarget,
+} from "@opencode-ai/plugin";
 
 export interface AtelierExtra {
   /** e.g. "http://localhost:4000" */
