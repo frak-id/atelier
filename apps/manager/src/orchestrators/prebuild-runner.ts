@@ -10,6 +10,7 @@ import {
   buildVolumeSnapshot,
   type KubeClient,
 } from "../infrastructure/kubernetes/index.ts";
+import { RegistryService } from "../infrastructure/registry/index.ts";
 import type { SystemAiService } from "../modules/system-sandbox/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
 import type { UserService } from "../modules/user/index.ts";
@@ -477,6 +478,12 @@ export class PrebuildRunner {
     const githubToken = this.deps.userService.resolveGitHubToken();
     let commitHashes: Record<string, string> = {};
 
+    // Point npm/bun/yarn at our Verdaccio cache before any install runs.
+    // Without this, both `initCommands` and OpenCode's plugin install during
+    // warmup go to the public npm registry — which is the main reason
+    // `oh-my-openagent@x.y.z` takes ~13s instead of <1s on a warm cache.
+    await this.pushRegistryConfig(sandboxId);
+
     if (scenario.kind === "workspace") {
       const workspace = this.requireWorkspace(scenario);
 
@@ -536,29 +543,100 @@ export class PrebuildRunner {
     }
 
     // OpenCode warmup (both workspace and system)
-    const warmupDir =
-      scenario.kind === "workspace" ? VM.WORKSPACE_DIR : VM.HOME;
-    await this.warmupOpencode(sandboxId, warmupDir);
+    const bootstrapDirs = this.resolveWarmupDirs(scenario);
+    await this.warmupOpencode(sandboxId, bootstrapDirs);
 
     return commitHashes;
   }
 
+  /**
+   * Push Verdaccio registry config so npm/bun/yarn use the cluster cache
+   * instead of the public npm registry. Best-effort: if Verdaccio is down,
+   * we silently fall back to the public registry rather than failing the
+   * prebuild.
+   */
+  private async pushRegistryConfig(sandboxId: string): Promise<void> {
+    try {
+      const files = await RegistryService.buildRegistryConfigFiles();
+      if (!files) {
+        log.warn(
+          { sandboxId },
+          "Verdaccio not reachable, prebuild will hit the public npm registry",
+        );
+        return;
+      }
+      await this.deps.agentClient.writeFiles(sandboxId, files);
+      log.info(
+        { sandboxId, fileCount: files.length },
+        "Pushed Verdaccio registry config to prebuild pod",
+      );
+    } catch (error) {
+      log.warn(
+        { sandboxId, error: String(error) },
+        "Failed to push registry config, continuing with public npm",
+      );
+    }
+  }
+
+  private resolveWarmupDirs(scenario: PrebuildScenario): string[] {
+    if (scenario.kind === "system") {
+      return [VM.HOME];
+    }
+    const workspace = scenario.getWorkspace();
+    const repos = workspace?.config.repos ?? [];
+    if (repos.length === 0) {
+      return [VM.WORKSPACE_DIR];
+    }
+    return repos.map((repo) => {
+      const clonePath = repo.clonePath.startsWith("/")
+        ? repo.clonePath
+        : `/${repo.clonePath}`;
+      return `${VM.HOME}${clonePath}`;
+    });
+  }
+
+  /**
+   * Bake the per-directory OpenCode caches into the prebuild snapshot.
+   *
+   * `opencode serve` is just an HTTP control plane: it does not migrate the DB,
+   * install plugins, download ripgrep, or initialize the project until a request
+   * arrives carrying a `directory=` parameter (which triggers
+   * `InstanceMiddleware` -> `InstanceBootstrap.run` in OpenCode). Without that
+   * trigger, none of the heavy startup work lands on the PVC and every
+   * subsequent sandbox pays the full ~30s cold-start cost on its first request.
+   *
+   * To populate the snapshot, we boot opencode against the first repo dir as cwd
+   * and explicitly call `session.list({ directory })` for every workspace repo,
+   * forcing the bootstrap to complete (DB migrations, ripgrep download into
+   * ~/.local/share/opencode/bin/, npm install of plugins into
+   * ~/.local/share/opencode/plugins/, project .opencode/ init) before we kill
+   * the process and snapshot the PVC.
+   */
   private async warmupOpencode(
     sandboxId: string,
-    workdir: string,
+    bootstrapDirs: string[],
   ): Promise<void> {
+    if (bootstrapDirs.length === 0) {
+      log.warn(
+        { sandboxId },
+        "No bootstrap dirs for OpenCode warmup, skipping",
+      );
+      return;
+    }
+
     const agent = this.deps.agentClient;
     const port = OPENCODE_WARMUP_PORT;
     const namespace = config.kubernetes.namespace;
     const podName = `sandbox-${sandboxId}`;
+    const cwd = bootstrapDirs[0] ?? VM.HOME;
 
-    log.info({ sandboxId }, "Warming up OpenCode server");
+    log.info({ sandboxId, bootstrapDirs }, "Warming up OpenCode server");
 
     // Start opencode in background inside the pod
     const startResult = await agent.exec(
       sandboxId,
       `nohup setsid opencode serve --hostname 0.0.0.0 --port ${port} </dev/null >/tmp/opencode-warmup.log 2>&1 &`,
-      { timeout: 10_000, user: "dev", workdir },
+      { timeout: 10_000, user: "dev", workdir: cwd },
     );
     if (startResult.exitCode !== 0) {
       log.warn(
@@ -568,7 +646,7 @@ export class PrebuildRunner {
       return;
     }
 
-    // Get pod IP to connect to OpenCode health endpoint
+    // Get pod IP to connect to OpenCode endpoints
     let podIp: string | undefined;
     try {
       const pod = await this.deps.kubeClient.get<{
@@ -579,40 +657,110 @@ export class PrebuildRunner {
       log.warn({ sandboxId }, "Failed to get pod IP for warmup health check");
     }
 
-    if (podIp) {
-      const url = `http://${podIp}:${port}`;
-      const startTime = Date.now();
-      let healthy = false;
+    if (!podIp) {
+      await this.killWarmupOpencode(sandboxId);
+      return;
+    }
 
-      while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT_MS) {
-        try {
-          const client = createOpencodeClient({
-            baseUrl: url,
-            headers: buildOpenCodeAuthHeaders("prebuild"),
-          });
-          const { data } = await client.global.health();
-          if (data?.healthy) {
-            healthy = true;
-            log.info({ sandboxId }, "OpenCode server is healthy");
-            break;
-          }
-        } catch {}
-        await Bun.sleep(2_000);
-      }
+    const client = createOpencodeClient({
+      baseUrl: `http://${podIp}:${port}`,
+      headers: buildOpenCodeAuthHeaders("prebuild"),
+    });
 
-      if (!healthy) {
+    const healthy = await this.waitForWarmupHealth(client, sandboxId);
+    if (!healthy) {
+      await this.killWarmupOpencode(sandboxId);
+      return;
+    }
+
+    // Trigger InstanceBootstrap for each workspace dir. This is what installs
+    // plugins, downloads ripgrep, applies migrations, and primes the project
+    // .opencode/ directory — the work we want baked into the snapshot.
+    for (const directory of bootstrapDirs) {
+      const ok = await this.bootstrapWarmupDirectory(
+        client,
+        sandboxId,
+        directory,
+      );
+      if (!ok) {
         log.warn(
-          { sandboxId },
-          "OpenCode did not become healthy within timeout, continuing",
+          { sandboxId, directory },
+          "Directory bootstrap did not complete, snapshot may be cold",
         );
       }
     }
 
-    // Kill opencode after warmup
-    await agent.exec(sandboxId, "pkill -f 'opencode serve'", {
-      timeout: 5_000,
-    });
-    log.info({ sandboxId }, "OpenCode warmup completed");
+    // Flush page cache to disk before we kill so the snapshot is consistent.
+    await agent.exec(sandboxId, "sync", { timeout: 10_000 }).catch(() => {});
+
+    await this.killWarmupOpencode(sandboxId);
+    log.info(
+      { sandboxId, bootstrapped: bootstrapDirs.length },
+      "OpenCode warmup completed",
+    );
+  }
+
+  private async waitForWarmupHealth(
+    client: ReturnType<typeof createOpencodeClient>,
+    sandboxId: string,
+  ): Promise<boolean> {
+    const startTime = Date.now();
+    while (Date.now() - startTime < OPENCODE_HEALTH_TIMEOUT_MS) {
+      try {
+        const { data } = await client.global.health();
+        if (data?.healthy) {
+          log.info({ sandboxId }, "OpenCode server is healthy");
+          return true;
+        }
+      } catch {}
+      await Bun.sleep(2_000);
+    }
+    log.warn(
+      { sandboxId },
+      "OpenCode did not become healthy within timeout, continuing",
+    );
+    return false;
+  }
+
+  private async bootstrapWarmupDirectory(
+    client: ReturnType<typeof createOpencodeClient>,
+    sandboxId: string,
+    directory: string,
+  ): Promise<boolean> {
+    log.info(
+      { sandboxId, directory },
+      "Triggering OpenCode instance bootstrap",
+    );
+    const startTime = Date.now();
+    try {
+      // session.list goes through InstanceMiddleware, which boots the project
+      // (DB migrations, plugin install, ripgrep download, etc.) before responding.
+      const { error } = await client.session.list({ directory, limit: 1 });
+      if (error) {
+        log.warn(
+          { sandboxId, directory, error: String(error) },
+          "OpenCode session.list returned an error during bootstrap",
+        );
+        return false;
+      }
+      log.info(
+        { sandboxId, directory, durationMs: Date.now() - startTime },
+        "OpenCode instance bootstrapped",
+      );
+      return true;
+    } catch (error) {
+      log.warn(
+        { sandboxId, directory, error: String(error) },
+        "OpenCode instance bootstrap failed",
+      );
+      return false;
+    }
+  }
+
+  private async killWarmupOpencode(sandboxId: string): Promise<void> {
+    await this.deps.agentClient
+      .exec(sandboxId, "pkill -f 'opencode serve'", { timeout: 5_000 })
+      .catch(() => {});
   }
 
   private async captureCommitHashesFromPod(

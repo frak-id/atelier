@@ -323,30 +323,8 @@ export class InternalService {
   }
 
   private async pushRegistryConfig(sandboxId: string): Promise<void> {
-    const isHealthy = await RegistryService.checkHealth();
-    if (!isHealthy) return;
-
-    const registryUrl = RegistryService.getRegistryUrl();
-    const registryHost = new URL(registryUrl).hostname;
-
-    const files = [
-      {
-        path: "/etc/profile.d/registry.sh",
-        content: `export NPM_CONFIG_REGISTRY="${registryUrl}"`,
-      },
-      {
-        path: "/etc/npmrc",
-        content: `registry=${registryUrl}`,
-      },
-      {
-        path: `${VM.HOME}/.bunfig.toml`,
-        content: `[install]\nregistry = "${registryUrl}"`,
-      },
-      {
-        path: `${VM.HOME}/.yarnrc.yml`,
-        content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${registryHost}"`,
-      },
-    ];
+    const files = await RegistryService.buildRegistryConfigFiles();
+    if (!files) return;
 
     await this.pushFilesToSandbox(sandboxId, files, "registry");
     log.debug({ sandboxId }, "Registry config pushed");

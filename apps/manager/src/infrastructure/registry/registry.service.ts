@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { REGISTRY } from "@frak/atelier-shared/constants";
+import { REGISTRY, VM } from "@frak/atelier-shared/constants";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { appPaths } from "../../shared/lib/paths.ts";
+import type { FileWrite } from "../agent/agent.types.ts";
 import { CronService } from "../cron/index.ts";
 
 const log = createChildLogger("registry");
@@ -278,5 +279,42 @@ export const RegistryService = {
 
   getRegistryUrl(): string {
     return verdaccioUrl();
+  },
+
+  /**
+   * Build the file writes that point npm/bun/yarn at our Verdaccio cache.
+   *
+   * Returns `null` when Verdaccio isn't reachable so callers can decide whether
+   * to skip pushing or fall back to the public registry.
+   */
+  async buildRegistryConfigFiles(): Promise<FileWrite[] | null> {
+    const isHealthy = await this.checkHealth();
+    if (!isHealthy) return null;
+
+    const registryUrl = this.getRegistryUrl();
+    const registryHost = new URL(registryUrl).hostname;
+
+    return [
+      {
+        path: "/etc/profile.d/registry.sh",
+        content: `export NPM_CONFIG_REGISTRY="${registryUrl}"`,
+        owner: "root",
+      },
+      {
+        path: "/etc/npmrc",
+        content: `registry=${registryUrl}`,
+        owner: "root",
+      },
+      {
+        path: `${VM.HOME}/.bunfig.toml`,
+        content: `[install]\nregistry = "${registryUrl}"`,
+        owner: "dev",
+      },
+      {
+        path: `${VM.HOME}/.yarnrc.yml`,
+        content: `npmRegistryServer: "${registryUrl}"\nunsafeHttpWhitelist:\n  - "${registryHost}"`,
+        owner: "dev",
+      },
+    ];
   },
 };
