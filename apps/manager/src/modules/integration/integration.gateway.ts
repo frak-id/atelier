@@ -14,6 +14,7 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
 import {
   openOpencodeSession,
+  sendPromptAndVerify,
   startOpencodeSession,
 } from "../../shared/lib/opencode-session.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
@@ -750,19 +751,19 @@ export class IntegrationGateway {
 
         const dispatcherModel =
           this.deps.systemAiService.resolveModel("dispatcher");
-        const { error: promptError } = await client.session.promptAsync({
-          sessionID: session.id,
-          agent: "dispatcher",
-          ...(dispatcherModel && {
-            model: dispatcherModel,
-          }),
-          parts: [{ type: "text", text: prompt }],
-        });
 
-        if (promptError) {
-          throw new Error("System sandbox prompt failed");
+        try {
+          await sendPromptAndVerify(client, {
+            sessionID: session.id,
+            agent: "dispatcher",
+            ...(dispatcherModel && { model: dispatcherModel }),
+            parts: [{ type: "text", text: prompt }],
+          });
+        } catch (error) {
+          throw new Error(
+            `System sandbox prompt failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
-
         this.deps.systemSandboxService.release();
         released = true;
 
@@ -994,13 +995,15 @@ export class IntegrationGateway {
 
     const sessionId = await this.resolveOrCreateSession(opcClient, task);
 
-    const { error: promptError } = await opcClient.session.promptAsync({
-      sessionID: sessionId,
-      parts: [{ type: "text", text: followUpPrompt }],
-    });
-
-    if (promptError) {
-      throw new Error("Task sandbox prompt failed");
+    try {
+      await sendPromptAndVerify(opcClient, {
+        sessionID: sessionId,
+        parts: [{ type: "text", text: followUpPrompt }],
+      });
+    } catch (error) {
+      throw new Error(
+        `Task sandbox prompt failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     log.info(

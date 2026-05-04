@@ -10,6 +10,7 @@ import {
   bootNewSandbox,
   cleanupSandboxResources,
   finalizeNewSandbox,
+  waitForOpencode,
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { GitUserIdentity } from "../ports/guest-secrets.ts";
@@ -118,6 +119,14 @@ export async function createWorkspaceSandbox(
       "vscode",
       "opencode",
     ]);
+
+    // Wait for OpenCode to be fully ready (HTTP healthy + agent registry loaded)
+    // before finalizing. Otherwise callers receive a `running` sandbox that
+    // would silently drop the first prompt.
+    await waitForOpencode(
+      boot.sandbox.runtime.ipAddress,
+      boot.sandbox.runtime.opencodePassword,
+    );
 
     return await finalizeNewSandbox(
       sandboxId,

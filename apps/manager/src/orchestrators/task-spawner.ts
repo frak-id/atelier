@@ -14,14 +14,14 @@ import type {
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
-import { openOpencodeSession } from "../shared/lib/opencode-session.ts";
-import { waitForOpencode } from "./kernel/boot-waiter.ts";
+import {
+  openOpencodeSession,
+  sendPromptAndVerify,
+} from "../shared/lib/opencode-session.ts";
 import type { GitUserIdentity } from "./ports/guest-secrets.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("task-spawner");
-
-const AGENT_READY_TIMEOUT = 60000;
 
 const WORKSPACE_DIR = VM.HOME;
 
@@ -104,20 +104,8 @@ export class TaskSpawner {
         { taskId, sandboxId, ip: ipAddress },
         "Sandbox spawned for task",
       );
-
-      const { ready: agentReady } = await this.deps.agentClient.waitForAgent(
-        sandbox.id,
-        {
-          timeout: AGENT_READY_TIMEOUT,
-        },
-      );
-
-      if (!agentReady) {
-        throw new Error("Agent failed to become ready");
-      }
-
-      await waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
-
+      // sandboxSpawner.spawn returns only after the workflow has waited for
+      // both the agent and OpenCode to be ready, so no extra polling needed.
       const targetRepos = this.getTargetRepos(task, workspace);
       let branchName: string | undefined;
       let opencodeDirectory: string | undefined;
@@ -327,16 +315,13 @@ export class TaskSpawner {
       sessionConfig.promptTemplate,
     );
 
-    const { error: promptError } = await client.session.promptAsync({
+    await sendPromptAndVerify(client, {
       sessionID: session.id,
       parts: [{ type: "text", text: prompt }],
       ...(sessionConfig.model && { model: sessionConfig.model }),
       ...(sessionConfig.variant && { variant: sessionConfig.variant }),
       ...(sessionConfig.agent && { agent: sessionConfig.agent }),
     });
-    if (promptError) {
-      throw new Error("Failed to send prompt to OpenCode session");
-    }
 
     log.info(
       { taskId, sessionId: session.id, templateId: sessionTemplateId },

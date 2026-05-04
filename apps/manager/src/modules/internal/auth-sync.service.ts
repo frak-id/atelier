@@ -57,6 +57,32 @@ export interface AuthContent {
 
 const AUTH_POLL_INTERVAL_MS = 5_000;
 
+/**
+ * Skip auth pushes for sandboxes that are still in their initial settle window.
+ * The boot workflow already wrote auth.json from the DB; pushing again
+ * immediately after boot can race with OpenCode's startup auth load.
+ */
+const AUTH_SETTLE_MS = 30_000;
+
+function isFreshlyCreated(createdAt: string | undefined | null): boolean {
+  if (!createdAt) return false;
+  const ts = Date.parse(createdAt);
+  if (Number.isNaN(ts)) return false;
+  return Date.now() - ts < AUTH_SETTLE_MS;
+}
+
+/**
+ * Canonicalize JSON so we don't push to a sandbox just because formatting
+ * (key order, whitespace) differs from what we computed locally.
+ */
+function canonicalize(content: string): string {
+  try {
+    return JSON.stringify(JSON.parse(content));
+  } catch {
+    return content;
+  }
+}
+
 export class AuthSyncService {
   private authPollTimer: Timer | null = null;
 
@@ -167,7 +193,7 @@ export class AuthSyncService {
 
   private async aggregateOpencodeAuth(
     sandboxAuths: { sandboxId: string; content: string; mtime: number }[],
-    runningSandboxes: { id: string }[],
+    runningSandboxes: { id: string; createdAt?: string }[],
   ): Promise<void> {
     const dbAuth: AuthJson = this.parseDbAuth();
     const bestAuth: AuthJson = { ...dbAuth };
@@ -200,9 +226,10 @@ export class AuthSyncService {
     }
 
     const bestContent = JSON.stringify(bestAuth, null, 2);
+    const bestCanonical = canonicalize(bestContent);
 
     const existing = this.sharedAuthRepository.getByProvider("opencode");
-    if (existing?.content === bestContent) return;
+    if (existing && canonicalize(existing.content) === bestCanonical) return;
 
     this.sharedAuthRepository.upsert("opencode", bestContent, "sandbox");
     log.info(
@@ -214,13 +241,22 @@ export class AuthSyncService {
     const readSandboxIds = new Set(sandboxAuths.map((a) => a.sandboxId));
 
     for (const { sandboxId, content } of sandboxAuths) {
-      if (content !== bestContent) {
+      if (canonicalize(content) !== bestCanonical) {
         staleSandboxIds.add(sandboxId);
       }
     }
     for (const sandbox of runningSandboxes) {
       if (!readSandboxIds.has(sandbox.id)) {
         staleSandboxIds.add(sandbox.id);
+      }
+    }
+
+    // Skip sandboxes still in their initial settle window: the boot workflow
+    // already wrote auth.json from the DB and we don't want to race with the
+    // OpenCode startup auth load.
+    for (const sandbox of runningSandboxes) {
+      if (isFreshlyCreated(sandbox.createdAt)) {
+        staleSandboxIds.delete(sandbox.id);
       }
     }
 
@@ -251,7 +287,7 @@ export class AuthSyncService {
   private async aggregateOpaqueAuth(
     providerConfig: (typeof AUTH_PROVIDERS)[number],
     sandboxAuths: { sandboxId: string; content: string; mtime: number }[],
-    runningSandboxes: { id: string }[],
+    runningSandboxes: { id: string; createdAt?: string }[],
   ): Promise<void> {
     const newest = sandboxAuths.reduce((best, current) =>
       current.mtime > best.mtime ? current : best,
@@ -274,6 +310,7 @@ export class AuthSyncService {
 
     const staleSandboxIds = runningSandboxes
       .filter((sandbox) => {
+        if (isFreshlyCreated(sandbox.createdAt)) return false;
         const match = sandboxAuths.find((a) => a.sandboxId === sandbox.id);
         return !match || match.content !== newest.content;
       })

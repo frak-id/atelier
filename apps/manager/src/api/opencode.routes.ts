@@ -1,6 +1,5 @@
 import { Elysia } from "elysia";
-import { agentClient, sandboxSpawner, workspaceService } from "../container.ts";
-import { waitForOpencode } from "../orchestrators/kernel/boot-waiter.ts";
+import { sandboxSpawner, workspaceService } from "../container.ts";
 import {
   OpencodeSpawnBodySchema,
   OpencodeSpawnResponseSchema,
@@ -24,19 +23,9 @@ export const opencodeRoutes = new Elysia({ prefix: "/opencode" }).post(
       "Spawning sandbox from OpenCode request",
     );
 
+    // sandboxSpawner.spawn returns only after the workflow has waited for
+    // both the agent and OpenCode to be ready.
     const sandbox = await sandboxSpawner.spawn({ workspaceId: workspace.id });
-
-    const { ready: agentReady } = await agentClient.waitForAgent(sandbox.id, {
-      timeout: 60000,
-    });
-    if (!agentReady) {
-      throw new Error("Agent failed to become ready");
-    }
-
-    await waitForOpencode(
-      sandbox.runtime.ipAddress,
-      sandbox.runtime.opencodePassword,
-    );
 
     return {
       sandboxId: sandbox.id,

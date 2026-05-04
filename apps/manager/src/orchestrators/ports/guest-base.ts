@@ -51,20 +51,52 @@ export function buildSandboxMdFile(content: string): FileWrite[] {
 
 // --- True executors (can't be batched) ---
 
+/**
+ * Service names that block the user-facing flow. A failure to start any of
+ * these is a hard failure: callers should not finalize the sandbox.
+ */
+const CRITICAL_SERVICES = new Set(["opencode"]);
+
 export async function startServices(
   agent: AgentClient,
   sandboxId: string,
   serviceNames: string[],
 ): Promise<void> {
+  const errors: { service: string; error: unknown }[] = [];
   await Promise.all(
-    serviceNames.map((name) =>
-      agent.serviceStart(sandboxId, name).catch((err) => {
-        log.warn(
-          { sandboxId, service: name, error: String(err) },
-          "Service start failed (non-blocking)",
-        );
-      }),
-    ),
+    serviceNames.map(async (name) => {
+      try {
+        await agent.serviceStart(sandboxId, name);
+      } catch (error) {
+        errors.push({ service: name, error });
+        if (!CRITICAL_SERVICES.has(name)) {
+          log.warn(
+            { sandboxId, service: name, error: String(error) },
+            "Service start failed (non-critical)",
+          );
+        }
+      }
+    }),
   );
+
+  const criticalFailure = errors.find((e) => CRITICAL_SERVICES.has(e.service));
+  if (criticalFailure) {
+    log.error(
+      {
+        sandboxId,
+        service: criticalFailure.service,
+        error: String(criticalFailure.error),
+      },
+      "Critical service failed to start",
+    );
+    throw new Error(
+      `Failed to start critical service '${criticalFailure.service}': ${
+        criticalFailure.error instanceof Error
+          ? criticalFailure.error.message
+          : String(criticalFailure.error)
+      }`,
+    );
+  }
+
   log.info({ sandboxId, services: serviceNames }, "Services started");
 }

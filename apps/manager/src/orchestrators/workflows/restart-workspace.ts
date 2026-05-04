@@ -3,6 +3,7 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 import {
   bootExistingSandbox,
   finalizeRestartedSandbox,
+  waitForOpencode,
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
@@ -51,6 +52,11 @@ export async function restartWorkspaceSandbox(
       "vscode",
       "opencode",
     ]);
+
+    await waitForOpencode(
+      sandbox.runtime.ipAddress,
+      sandbox.runtime.opencodePassword,
+    );
   }
 
   return await finalizeRestartedSandbox(

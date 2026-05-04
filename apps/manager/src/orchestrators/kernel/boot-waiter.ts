@@ -27,6 +27,15 @@ export async function waitForPodIp(
   return null;
 }
 
+/**
+ * Wait until the OpenCode server is fully ready to accept prompts.
+ *
+ * `/health` returns `healthy: true` as soon as the HTTP server binds, but the
+ * session/agent subsystems may still be loading. Calling `app.agents` forces
+ * OpenCode to load its agent registry — if the registry isn't ready,
+ * `prompt_async` would silently drop the message. Waiting for both endpoints
+ * gives a much stronger guarantee that subsequent prompts will be processed.
+ */
 export async function waitForOpencode(
   ipAddress: string,
   password?: string,
@@ -34,23 +43,37 @@ export async function waitForOpencode(
 ): Promise<void> {
   const startTime = Date.now();
   const url = `http://${ipAddress}:${config.ports.opencode}`;
+  const client = createOpencodeClient({
+    baseUrl: url,
+    headers: buildOpenCodeAuthHeaders(password),
+  });
   let delay = 250;
 
   while (Date.now() - startTime < timeout) {
-    try {
-      const client = createOpencodeClient({
-        baseUrl: url,
-        headers: buildOpenCodeAuthHeaders(password),
-      });
-      const { data } = await client.global.health();
-      if (data?.healthy) {
-        return;
-      }
-    } catch {}
+    if (await isOpencodeReady(client)) {
+      return;
+    }
 
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, 2000);
   }
 
-  throw new Error("OpenCode server did not become healthy within timeout");
+  throw new Error("OpenCode server did not become ready within timeout");
+}
+
+async function isOpencodeReady(
+  client: ReturnType<typeof createOpencodeClient>,
+): Promise<boolean> {
+  try {
+    const { data: health } = await client.global.health();
+    if (!health?.healthy) return false;
+
+    // /health is just an HTTP liveness check — it doesn't certify the agent
+    // registry is loaded. Verify by listing agents (the prompt path needs them).
+    const { data: agents, error } = await client.app.agents();
+    if (error || !agents) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }

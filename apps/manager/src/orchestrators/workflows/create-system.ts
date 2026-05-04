@@ -6,6 +6,7 @@ import {
   bootNewSandbox,
   cleanupSandboxResources,
   finalizeNewSandbox,
+  waitForOpencode,
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
@@ -57,6 +58,11 @@ export async function createSystemSandbox(
     );
 
     await GuestOps.startServices(ports.agent, sandboxId, ["opencode"]);
+
+    await waitForOpencode(
+      boot.sandbox.runtime.ipAddress,
+      boot.sandbox.runtime.opencodePassword,
+    );
 
     return await finalizeNewSandbox(
       sandboxId,
