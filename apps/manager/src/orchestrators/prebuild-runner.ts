@@ -732,20 +732,57 @@ export class PrebuildRunner {
       "Triggering OpenCode instance bootstrap",
     );
     const startTime = Date.now();
+
     try {
-      // session.list goes through InstanceMiddleware, which boots the project
-      // (DB migrations, plugin install, ripgrep download, etc.) before responding.
-      const { error } = await client.session.list({ directory, limit: 1 });
-      if (error) {
+      // session.list goes through InstanceMiddleware -> InstanceStore.load,
+      // which awaits InstanceBootstrap.run. That kicks off DB migrations and
+      // calls Plugin.init(). It does NOT block on the actual npm install of
+      // plugins or the ripgrep binary download — those are forked async by
+      // their respective service init() functions.
+      const sessionRes = await client.session.list({ directory, limit: 1 });
+      if (sessionRes.error) {
         log.warn(
-          { sandboxId, directory, error: String(error) },
-          "OpenCode session.list returned an error during bootstrap",
+          { sandboxId, directory, error: String(sessionRes.error) },
+          "OpenCode session.list errored during bootstrap",
         );
         return false;
       }
+
+      // Force the plugin install to complete: enumerating agents requires
+      // every plugin to be loaded (plugins register agents at load time), so
+      // this call cannot return until ~/.config/opencode/node_modules/ is
+      // populated.
+      const agentsRes = await client.app.agents({ directory });
+      if (agentsRes.error) {
+        log.warn(
+          { sandboxId, directory, error: String(agentsRes.error) },
+          "OpenCode app.agents errored during bootstrap",
+        );
+      }
+
+      // Force the ripgrep download: any text search invokes the rg binary,
+      // which the File service downloads on first use into
+      // ~/.local/share/opencode/bin/. The pattern is a no-op string we don't
+      // expect to match.
+      const findRes = await client.find.text({
+        directory,
+        pattern: "__atelier_warmup__",
+      });
+      if (findRes.error) {
+        log.warn(
+          { sandboxId, directory, error: String(findRes.error) },
+          "OpenCode find.text errored during ripgrep warmup",
+        );
+      }
+
       log.info(
-        { sandboxId, directory, durationMs: Date.now() - startTime },
-        "OpenCode instance bootstrapped",
+        {
+          sandboxId,
+          directory,
+          totalDurationMs: Date.now() - startTime,
+          agentsCount: agentsRes.data?.length ?? 0,
+        },
+        "OpenCode instance bootstrapped (plugins + ripgrep forced)",
       );
       return true;
     } catch (error) {

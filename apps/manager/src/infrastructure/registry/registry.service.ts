@@ -96,6 +96,23 @@ export const RegistryService = {
     }
   },
 
+  /**
+   * Like `checkHealth`, but waits up to `timeoutMs` for Verdaccio to come up.
+   * Useful around prebuild start where Verdaccio may have just restarted and
+   * a single ping racing with rollout would silently fall back to public npm.
+   */
+  async waitUntilHealthy(timeoutMs = 15_000): Promise<boolean> {
+    if (isMock()) return true;
+    const deadline = Date.now() + timeoutMs;
+    let delay = 500;
+    while (Date.now() < deadline) {
+      if (await this.checkHealth()) return true;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 2, 2_000);
+    }
+    return false;
+  },
+
   // -- Stats (via Verdaccio HTTP API) ---------------------------------------
 
   async getPackageCount(): Promise<number> {
@@ -284,11 +301,13 @@ export const RegistryService = {
   /**
    * Build the file writes that point npm/bun/yarn at our Verdaccio cache.
    *
-   * Returns `null` when Verdaccio isn't reachable so callers can decide whether
-   * to skip pushing or fall back to the public registry.
+   * Waits a few seconds for Verdaccio to be healthy. This avoids silently
+   * falling back to public npm right after a Verdaccio restart — a single
+   * ping racing with rollout would otherwise miss the recovery window.
+   * Returns `null` when Verdaccio still isn't reachable so callers can decide.
    */
   async buildRegistryConfigFiles(): Promise<FileWrite[] | null> {
-    const isHealthy = await this.checkHealth();
+    const isHealthy = await this.waitUntilHealthy();
     if (!isHealthy) return null;
 
     const registryUrl = this.getRegistryUrl();
