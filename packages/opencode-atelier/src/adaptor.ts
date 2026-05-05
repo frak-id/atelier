@@ -1,11 +1,9 @@
+import type { WorkspaceAdapter, WorkspaceInfo, WorkspaceTarget } from "@opencode-ai/plugin";
 import { type AtelierClient, unwrap, waitForTaskSandbox } from "./client.ts";
 import type {
   AtelierExtra,
   AtelierPluginConfig,
   Sandbox,
-  WorkspaceAdaptor,
-  WorkspaceInfo,
-  WorkspaceTarget,
 } from "./types.ts";
 
 const sandboxCache = new Map<string, { sandbox: Sandbox; fetchedAt: number }>();
@@ -14,7 +12,7 @@ const CACHE_TTL_MS = 30_000;
 export function createAtelierAdaptor(
   pluginConfig: AtelierPluginConfig,
   getClient: () => AtelierClient,
-): WorkspaceAdaptor {
+): WorkspaceAdapter {
   return {
     name: "Atelier",
     description: "Spawn an Atelier sandbox and run OpenCode inside it",

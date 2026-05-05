@@ -15,6 +15,10 @@ const VERIFY_INITIAL_DELAY_MS = 50;
 const VERIFY_MAX_DELAY_MS = 400;
 const DEFAULT_PROMPT_RETRIES = 1;
 
+const AGENT_REGISTRY_TIMEOUT_MS = 120_000;
+const AGENT_REGISTRY_INITIAL_DELAY_MS = 100;
+const AGENT_REGISTRY_MAX_DELAY_MS = 500;
+
 /**
  * Poll `session.get` until the OpenCode session is readable.
  *
@@ -56,15 +60,51 @@ export interface OpenOpencodeSessionInput {
 }
 
 /**
+ * Block until OpenCode's agent registry is loaded.
+ *
+ * Spawn workflows now wait only for HTTP healthy, so the registry wait
+ * shifts here — paid lazily by the first session creator on a fresh
+ * sandbox. Without this, `session.create` succeeds but the subsequent
+ * `session.promptAsync` is silently dropped if the registry isn't ready.
+ * Cheap once loaded: `app.agents` is an in-memory hash lookup.
+ */
+export async function waitForOpencodeAgentRegistry(
+  client: OpencodeClient,
+  timeoutMs: number = AGENT_REGISTRY_TIMEOUT_MS,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let delay = AGENT_REGISTRY_INITIAL_DELAY_MS;
+  while (Date.now() < deadline) {
+    try {
+      const { data, error } = await client.app.agents();
+      if (data && !error) return;
+    } catch {
+      // retry until deadline
+    }
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, AGENT_REGISTRY_MAX_DELAY_MS);
+  }
+  throw new Error(
+    `OpenCode agent registry did not load in ${timeoutMs}ms`,
+  );
+}
+
+/**
  * Create an OpenCode session and wait for it to be queryable.
  *
- * Wraps `session.create` + `waitForOpencodeSessionReady` as a single step so
- * callers can register listeners or send prompts safely afterwards.
+ * Wraps `waitForOpencodeAgentRegistry` + `session.create` +
+ * `waitForOpencodeSessionReady` as a single step so callers can register
+ * listeners or send prompts safely afterwards.
  */
 export async function openOpencodeSession(
   client: OpencodeClient,
   input: OpenOpencodeSessionInput = {},
 ): Promise<OpenedOpencodeSession> {
+  // Ensure the agent registry is loaded before creating the session. The
+  // session itself works without it, but the prompt path drops silently
+  // if it isn't ready yet.
+  await waitForOpencodeAgentRegistry(client);
+
   const { data, error } = await client.session.create({
     ...(input.title && { title: input.title }),
     ...(input.directory && { directory: input.directory }),

@@ -6,7 +6,9 @@ import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
 
 const log = createChildLogger("boot-waiter");
 
-const OPENCODE_HEALTH_TIMEOUT_MS = 120000;
+const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
+const POLL_INITIAL_DELAY_MS = 100;
+const POLL_MAX_DELAY_MS = 500;
 
 export async function waitForPodIp(
   kube: KubeClient,
@@ -28,18 +30,53 @@ export async function waitForPodIp(
 }
 
 /**
- * Wait until the OpenCode server is fully ready to accept prompts.
+ * Wait until the OpenCode HTTP server responds healthy.
+ *
+ * This is the fast "is the binary up and listening" check — typically <1s
+ * after `systemctl start opencode` on a warm prebuild. Use this for sandbox
+ * spawn/restart workflows where we just need to confirm the service is alive.
+ *
+ * NOTE: a healthy `/health` does NOT guarantee that the agent registry is
+ * loaded. Calling `session.promptAsync` before the registry is ready will
+ * silently drop the prompt. Either use `waitForOpencodeReady` before issuing
+ * prompts, or rely on the built-in registry wait inside `openOpencodeSession`.
+ */
+export async function waitForOpencodeHealthy(
+  ipAddress: string,
+  password?: string,
+  timeout = OPENCODE_HEALTH_TIMEOUT_MS,
+): Promise<void> {
+  await pollOpencode(ipAddress, password, timeout, isOpencodeHealthy);
+}
+
+/**
+ * Wait until OpenCode is ready to accept prompts.
  *
  * `/health` returns `healthy: true` as soon as the HTTP server binds, but the
  * session/agent subsystems may still be loading. Calling `app.agents` forces
  * OpenCode to load its agent registry — if the registry isn't ready,
- * `prompt_async` would silently drop the message. Waiting for both endpoints
- * gives a much stronger guarantee that subsequent prompts will be processed.
+ * `session.promptAsync` would silently drop the message.
+ *
+ * Prefer `waitForOpencodeHealthy` for sandbox finalize and let the prompt
+ * path enforce its own readiness (via `openOpencodeSession`). This stays
+ * useful for paths that bypass `openOpencodeSession` (e.g. the AI service
+ * uses raw `client.session.create` + `client.session.prompt`).
  */
-export async function waitForOpencode(
+export async function waitForOpencodeReady(
   ipAddress: string,
   password?: string,
   timeout = OPENCODE_HEALTH_TIMEOUT_MS,
+): Promise<void> {
+  await pollOpencode(ipAddress, password, timeout, isOpencodeReady);
+}
+
+type OpencodeClient = ReturnType<typeof createOpencodeClient>;
+
+async function pollOpencode(
+  ipAddress: string,
+  password: string | undefined,
+  timeout: number,
+  predicate: (client: OpencodeClient) => Promise<boolean>,
 ): Promise<void> {
   const startTime = Date.now();
   const url = `http://${ipAddress}:${config.ports.opencode}`;
@@ -47,32 +84,31 @@ export async function waitForOpencode(
     baseUrl: url,
     headers: buildOpenCodeAuthHeaders(password),
   });
-  let delay = 250;
+  let delay = POLL_INITIAL_DELAY_MS;
 
   while (Date.now() - startTime < timeout) {
-    if (await isOpencodeReady(client)) {
-      return;
-    }
-
+    if (await predicate(client)) return;
     await Bun.sleep(delay);
-    delay = Math.min(delay * 2, 2000);
+    delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
   }
 
   throw new Error("OpenCode server did not become ready within timeout");
 }
 
-async function isOpencodeReady(
-  client: ReturnType<typeof createOpencodeClient>,
-): Promise<boolean> {
+async function isOpencodeHealthy(client: OpencodeClient): Promise<boolean> {
   try {
-    const { data: health } = await client.global.health();
-    if (!health?.healthy) return false;
+    const { data } = await client.global.health();
+    return data?.healthy === true;
+  } catch {
+    return false;
+  }
+}
 
-    // /health is just an HTTP liveness check — it doesn't certify the agent
-    // registry is loaded. Verify by listing agents (the prompt path needs them).
-    const { data: agents, error } = await client.app.agents();
-    if (error || !agents) return false;
-    return true;
+async function isOpencodeReady(client: OpencodeClient): Promise<boolean> {
+  if (!(await isOpencodeHealthy(client))) return false;
+  try {
+    const { data, error } = await client.app.agents();
+    return Boolean(!error && data);
   } catch {
     return false;
   }

@@ -1,9 +1,3 @@
-export type {
-  WorkspaceAdaptor,
-  WorkspaceInfo,
-  WorkspaceTarget,
-} from "@opencode-ai/plugin";
-
 export interface AtelierExtra {
   /** e.g. "http://localhost:4000" */
   managerUrl: string;

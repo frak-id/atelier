@@ -219,9 +219,9 @@ sharedBinaries:
   # -- Image used by the download Job
   image: curlimages/curl:8.17.0
   opencode:
-    version: "1.4.6"
+    version: "1.14.37"
   codeServer:
-    version: "4.115.0"
+    version: "4.116.0"
 
 # -- cert-manager integration
 #

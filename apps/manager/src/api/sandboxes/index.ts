@@ -16,7 +16,7 @@ import {
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
-import { waitForOpencode } from "../../orchestrators/kernel/boot-waiter.ts";
+import { waitForOpencodeHealthy } from "../../orchestrators/kernel/boot-waiter.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
   AgentHealthSchema,
@@ -147,7 +147,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             sandboxId: sandbox.id,
           },
         });
-        await waitForOpencode(
+        // Healthy is enough here — `startOpencodeSession` below goes through
+        // `openOpencodeSession`, which waits for the agent registry before
+        // creating the session and issuing the prompt.
+        await waitForOpencodeHealthy(
           sandbox.runtime.ipAddress,
           sandbox.runtime.opencodePassword,
         );

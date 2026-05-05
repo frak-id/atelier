@@ -1,5 +1,5 @@
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2";
-import { waitForOpencode } from "../../orchestrators/kernel/boot-waiter.ts";
+import { waitForOpencodeReady } from "../../orchestrators/kernel/boot-waiter.ts";
 import type { SandboxDestroyer } from "../../orchestrators/sandbox-destroyer.ts";
 import type { SandboxSpawner } from "../../orchestrators/sandbox-spawner.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
@@ -80,7 +80,7 @@ export class SystemSandboxService {
     if (candidate && candidate.status === "running") {
       try {
         if (!isMock()) {
-          await waitForOpencode(
+          await waitForOpencodeReady(
             candidate.runtime.ipAddress,
             candidate.runtime.opencodePassword,
           );
@@ -317,7 +317,7 @@ export class SystemSandboxService {
     );
 
     if (!isMock()) {
-      await waitForOpencode(ipAddress, sandbox.runtime.opencodePassword);
+      await waitForOpencodeReady(ipAddress, sandbox.runtime.opencodePassword);
     }
     this.deps.eventListener.start(sandbox.id, sandbox.runtime.opencodePassword);
     this.startMaxLifetimeTimer();

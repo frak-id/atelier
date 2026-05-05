@@ -6,7 +6,7 @@ import {
   bootNewSandbox,
   cleanupSandboxResources,
   finalizeNewSandbox,
-  waitForOpencode,
+  waitForOpencodeHealthy,
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
@@ -59,7 +59,10 @@ export async function createSystemSandbox(
 
     await GuestOps.startServices(ports.agent, sandboxId, ["opencode"]);
 
-    await waitForOpencode(
+    // Only wait for OpenCode HTTP healthy. The system sandbox itself ensures
+    // full readiness on `acquire()` before handing the client to the AI
+    // service, so we don't need the heavier check here.
+    await waitForOpencodeHealthy(
       boot.sandbox.runtime.ipAddress,
       boot.sandbox.runtime.opencodePassword,
     );

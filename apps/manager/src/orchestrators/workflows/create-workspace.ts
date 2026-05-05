@@ -10,7 +10,7 @@ import {
   bootNewSandbox,
   cleanupSandboxResources,
   finalizeNewSandbox,
-  waitForOpencode,
+  waitForOpencodeHealthy,
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { GitUserIdentity } from "../ports/guest-secrets.ts";
@@ -123,7 +123,10 @@ export async function createWorkspaceSandbox(
     // Wait for OpenCode to be fully ready (HTTP healthy + agent registry loaded)
     // before finalizing. Otherwise callers receive a `running` sandbox that
     // would silently drop the first prompt.
-    await waitForOpencode(
+    // Only wait for OpenCode HTTP to be healthy here. The agent registry
+    // wait (needed before issuing prompts) is handled inside
+    // `openOpencodeSession`, paid lazily by the first session creator.
+    await waitForOpencodeHealthy(
       boot.sandbox.runtime.ipAddress,
       boot.sandbox.runtime.opencodePassword,
     );
