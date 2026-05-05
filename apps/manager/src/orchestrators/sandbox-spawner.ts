@@ -72,6 +72,8 @@ export class SandboxSpawner {
       id: sandboxId,
       status: "running",
       workspaceId: options.workspaceId,
+      name: options.name ?? workspace?.name,
+      origin: options.origin,
       runtime: {
         ipAddress: "10.42.0.99",
         macAddress: "",

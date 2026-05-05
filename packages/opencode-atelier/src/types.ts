@@ -1,20 +1,19 @@
+/**
+ * Persistable per-opencode-workspace config.
+ *
+ * Set in `adaptor.configure()` and stored verbatim in opencode's workspace DB.
+ * Anything mutated outside `configure()`'s return value is discarded — runtime
+ * data (sandbox id, URL, password) lives in the in-memory runtime cache and is
+ * recovered on demand via `GET /sandboxes?originSource=opencode-plugin&originExternalId=<workspaceId>`.
+ */
 export interface AtelierExtra {
   /** e.g. "http://localhost:4000" */
   managerUrl: string;
-  /** Which atelier workspace to create tasks in */
+  /** Which atelier workspace to spawn the sandbox in */
   atelierWorkspaceId: string;
-  /** Task description / AI prompt */
-  description: string;
-  /** Git base branch (defaults to repo default) */
-  baseBranch?: string;
-
-  /** Set after adaptor.create() completes */
-  taskId?: string;
-  sandboxId?: string;
-  /** URL of sandbox's opencode (e.g. http://10.0.0.5:8000) */
-  sandboxOpencodeUrl?: string;
-  opencodePassword?: string;
+  /** Optional branch override (forwarded to `POST /sandboxes`) */
+  branch?: string;
 }
 
-export type { Sandbox, Task } from "@frak/atelier-manager/types";
+export type { Sandbox } from "@frak/atelier-manager/types";
 export type { AtelierConfig as AtelierPluginConfig } from "./config.ts";

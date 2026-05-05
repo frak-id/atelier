@@ -13,7 +13,7 @@ import {
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import type { Sandbox, Workspace } from "../../schemas/index.ts";
+import type { Sandbox, SandboxOrigin, Workspace } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
@@ -40,6 +40,12 @@ export interface BootNewOptions {
   /** PVC size override (K8s quantity, e.g. "10Gi") */
   volumeSize?: string;
   workspace?: Workspace;
+  /** Optional display name shown on the dashboard. Defaults to workspace name. */
+  name?: string;
+  /** Where the sandbox came from (display + integration recovery). */
+  origin?: SandboxOrigin;
+  /** User who triggered the spawn. */
+  createdBy?: string;
 }
 
 export interface BootResult {
@@ -73,6 +79,9 @@ export async function bootNewSandbox(
     id: sandboxId,
     status: "creating",
     workspaceId: options.workspaceId,
+    createdBy: options.createdBy,
+    name: options.name ?? options.workspace?.name,
+    origin: options.origin,
     runtime: {
       ipAddress: "",
       macAddress: "",

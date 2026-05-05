@@ -34,6 +34,7 @@ import {
 } from "@/api/queries";
 import { AttentionBlock } from "@/components/attention-block";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
+import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { MultiTerminal } from "@/components/multi-terminal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -161,13 +162,23 @@ export function SandboxDrawer({
               <div className="flex items-start justify-between gap-2">
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <SheetTitle className="text-lg sm:text-xl font-mono truncate">
-                      {sandbox.id}
+                    <SheetTitle className="text-lg sm:text-xl truncate">
+                      {sandbox.name ? (
+                        <span>{sandbox.name}</span>
+                      ) : (
+                        <span className="font-mono">{sandbox.id}</span>
+                      )}
                     </SheetTitle>
+                    <IntegrationSourceBadge integration={sandbox.origin} />
                     <Badge variant={statusVariant[sandbox.status]}>
                       {sandbox.status}
                     </Badge>
                   </div>
+                  {sandbox.name && (
+                    <div className="font-mono text-xs text-muted-foreground/70 truncate">
+                      {sandbox.id}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     {workspace && (
                       <>

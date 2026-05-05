@@ -1,4 +1,4 @@
-import { eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   getDatabase,
   type SandboxStatus,
@@ -15,6 +15,8 @@ function rowToSandbox(row: typeof sandboxes.$inferSelect): Sandbox {
     orgId: row.orgId ?? undefined,
     workspaceId: row.workspaceId ?? undefined,
     createdBy: row.createdBy ?? undefined,
+    name: row.name ?? undefined,
+    origin: row.origin ?? undefined,
     status: row.status,
     runtime: row.runtime,
     createdAt: row.createdAt,
@@ -84,6 +86,8 @@ export class SandboxRepository {
         orgId: sandbox.orgId ?? null,
         workspaceId: sandbox.workspaceId ?? null,
         createdBy: sandbox.createdBy ?? null,
+        name: sandbox.name ?? null,
+        origin: sandbox.origin ?? null,
         status: sandbox.status,
         runtime: sandbox.runtime,
         createdAt: sandbox.createdAt,
@@ -112,6 +116,8 @@ export class SandboxRepository {
         orgId: updated.orgId ?? null,
         workspaceId: updated.workspaceId ?? null,
         createdBy: updated.createdBy ?? null,
+        name: updated.name ?? null,
+        origin: updated.origin ?? null,
         status: updated.status,
         runtime: updated.runtime,
         updatedAt: updated.updatedAt,
@@ -156,5 +162,28 @@ export class SandboxRepository {
       .where(eq(sandboxes.status, status))
       .get();
     return result?.count ?? 0;
+  }
+
+  /**
+   * Lookup the most recently updated sandbox spawned by a given source
+   * with a given external id. Used by integrations (e.g. opencode-plugin)
+   * to recover their previously created sandbox without persisting our id.
+   */
+  findByOrigin(source: string, externalId: string): Sandbox | undefined {
+    const row = getDatabase()
+      .select()
+      .from(sandboxes)
+      .where(
+        and(
+          eq(sql`json_extract(${sandboxes.origin}, '$.source')`, source),
+          eq(
+            sql`json_extract(${sandboxes.origin}, '$.externalId')`,
+            externalId,
+          ),
+        ),
+      )
+      .orderBy(sql`${sandboxes.updatedAt} desc`)
+      .get();
+    return row ? rowToSandbox(row) : undefined;
   }
 }

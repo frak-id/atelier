@@ -29,11 +29,40 @@ export const SandboxRuntimeSchema = t.Object({
 });
 export type SandboxRuntime = Static<typeof SandboxRuntimeSchema>;
 
+/**
+ * Where a sandbox came from. Set at creation time and never mutated afterward.
+ *
+ * Used purely for display and lookup — no reply / threading semantics. If you
+ * need to track conversations or reply back to an external system, that lives
+ * on `Task.data.integration` instead.
+ */
+export const SandboxOriginSchema = t.Object({
+  /**
+   * The system that triggered the spawn. Free-form to keep the manager
+   * agnostic of which integrations exist; well-known values include
+   * `"dashboard"`, `"opencode-plugin"`, `"task"`, `"slack"`, `"github"`.
+   */
+  source: t.String({ minLength: 1 }),
+  /**
+   * Stable identifier from the source system. Used by integrations to
+   * recover the sandbox they previously spawned (e.g. the opencode-plugin
+   * passes the OpenCode workspace id here).
+   */
+  externalId: t.Optional(t.String()),
+  /** Optional deep-link back to the origin (PR, slack message, etc). */
+  externalUrl: t.Optional(t.String()),
+});
+export type SandboxOrigin = Static<typeof SandboxOriginSchema>;
+
 export const SandboxSchema = t.Object({
   id: t.String(),
   orgId: t.Optional(t.String()),
   workspaceId: t.Optional(t.String()),
   createdBy: t.Optional(t.String()),
+  /** Optional human-readable label, displayed by the dashboard. */
+  name: t.Optional(t.String()),
+  /** Where the sandbox came from (display + integration recovery). */
+  origin: t.Optional(SandboxOriginSchema),
   status: SandboxStatusSchema,
   runtime: SandboxRuntimeSchema,
   createdAt: t.String(),
@@ -48,12 +77,22 @@ export const CreateSandboxBodySchema = t.Object({
   memoryMb: t.Optional(t.Number({ minimum: 512, maximum: 16384 })),
   system: t.Optional(t.Boolean()),
   prebuildSnapshotName: t.Optional(t.String()),
+  /** Display name shown on the dashboard (defaults to workspace name). */
+  name: t.Optional(t.String({ maxLength: 200 })),
+  /** Branch to checkout. Overrides `repo.branch` for single-repo workspaces. */
+  branch: t.Optional(t.String({ maxLength: 200 })),
+  /** Where the sandbox came from. Stored verbatim on the persisted sandbox. */
+  origin: t.Optional(SandboxOriginSchema),
 });
 export type CreateSandboxBody = Static<typeof CreateSandboxBodySchema>;
 
 export const SandboxListQuerySchema = t.Object({
   status: t.Optional(SandboxStatusSchema),
   workspaceId: t.Optional(t.String()),
+  /** Filter by `origin.source` (e.g. `"opencode-plugin"`). */
+  originSource: t.Optional(t.String()),
+  /** Filter by `origin.externalId`. Combine with `originSource` for safety. */
+  originExternalId: t.Optional(t.String()),
 });
 export type SandboxListQuery = Static<typeof SandboxListQuerySchema>;
 

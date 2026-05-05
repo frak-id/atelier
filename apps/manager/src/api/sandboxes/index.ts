@@ -73,6 +73,18 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         );
       }
 
+      if (query.originSource) {
+        sandboxes = sandboxes.filter(
+          (s) => s.origin?.source === query.originSource,
+        );
+      }
+
+      if (query.originExternalId) {
+        sandboxes = sandboxes.filter(
+          (s) => s.origin?.externalId === query.originExternalId,
+        );
+      }
+
       return sandboxes;
     },
     {

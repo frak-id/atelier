@@ -28,6 +28,7 @@ import {
   useSandboxServices,
   useStartBrowser,
 } from "@/api/queries";
+import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,13 +118,22 @@ export function SandboxCard({
         <CardHeader className="pb-3 space-y-2">
           <div className="flex items-start justify-between gap-2">
             <div className="flex flex-col gap-1 min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <CardTitle
-                  className="text-base font-mono truncate"
-                  title={sandbox.id}
+                  className="text-base truncate"
+                  title={
+                    sandbox.name
+                      ? `${sandbox.name} (${sandbox.id})`
+                      : sandbox.id
+                  }
                 >
-                  {sandbox.id}
+                  {sandbox.name ? (
+                    <span>{sandbox.name}</span>
+                  ) : (
+                    <span className="font-mono">{sandbox.id}</span>
+                  )}
                 </CardTitle>
+                <IntegrationSourceBadge integration={sandbox.origin} />
                 <Badge
                   variant={statusVariant[sandbox.status]}
                   className="capitalize"
@@ -136,6 +146,14 @@ export function SandboxCard({
                   </Badge>
                 )}
               </div>
+              {sandbox.name && (
+                <span
+                  className="text-[10px] font-mono text-muted-foreground/70 truncate"
+                  title={sandbox.id}
+                >
+                  {sandbox.id}
+                </span>
+              )}
               {(sandbox.workspaceId || task) && (
                 <p className="text-sm text-muted-foreground truncate flex items-center gap-1.5">
                   {sandbox.workspaceId && (
