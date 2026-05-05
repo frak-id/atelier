@@ -4,7 +4,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Atelier preregister plugin.
+ * Atelier preregister plugin (defensive backup).
  *
  * Why this exists
  * ---------------
@@ -15,34 +15,30 @@ import { join } from "node:path";
  * `POST /sync/replay`, the event payload carries the local-side `project_id`
  * and the remote `INSERT INTO session` violates the foreign key.
  *
- * Two ways the ids can disagree:
- *   1. Atelier shallow-clones repos. Even after the fix to drop `--depth 1`,
- *      git history corruption / partial clones could still cause drift.
- *   2. The remote `Project.fromDirectory` upsert hasn't run yet at warp time
- *      (it only fires on the first interactive session/command in the dir).
+ * Primary fix lives in the manager
+ * --------------------------------
+ * Plugins load LATE in opencode's lifecycle — specifically, AFTER the first
+ * `/sync/history` request triggers `Project.fromDirectory`, which inserts a
+ * project row using whatever id `git rev-list --max-parents=0 HEAD` produces
+ * locally on the remote. By the time this plugin runs, that row already
+ * exists with the wrong id and `/sync/replay` is doomed to FK-fail.
  *
- * What this plugin does
- * ---------------------
- * On opencode boot, INSERT-OR-IGNORE a minimal row into the `project` table
- * directly via `bun:sqlite`, keyed by `ATELIER_SOURCE_PROJECT_ID` (set by
- * the manager's `sandbox-config.ts` from the local CLI's WorkspaceInfo).
+ * The actual fix is to pre-write `<worktree>/.git/opencode` with the local
+ * CLI's project_id BEFORE `opencode serve` starts. The manager does this
+ * via `pinOpencodeProjectIdCache` in `apps/manager/src/orchestrators/ports/
+ * guest-repo.ts`, called from the create-workspace workflow right before
+ * `startServices(['vscode', 'opencode'])`. OpenCode's `Project.fromDirectory`
+ * then reads that cache file and inserts the project row with our id.
  *
- * Why direct SQLite, not the SDK
- * -------------------------------
- * - There is no public OpenCode API to upsert a project row.
- * - Calling `Project.fromDirectory` re-runs git discovery and writes a
- *   `.git/opencode` cache. We pin that cache ourselves (see below) so
- *   when fromDirectory eventually runs in the same worktree it reads our
- *   id back instead of recomputing one that disagrees.
- *
- * Cache file pinning
- * ------------------
- * After the row is in place we also write the local project_id into
- * `<worktree>/.git/opencode`. OpenCode's `Project.fromDirectory`
- * (`project/project.ts:218,244`) checks that file before calling
- * `git rev-list --max-parents=0 HEAD`, so any later interactive session in
- * the same dir lands on the same id we just registered — no risk of a
- * second project row appearing if discovery happens to land differently.
+ * What this plugin still does (defensive backup)
+ * ----------------------------------------------
+ * 1. Pin `<worktree>/.git/opencode` again, idempotently. Cheap belt-and-
+ *    suspenders for environments where the manager-side step somehow
+ *    skipped (older manager image, manual workflow, etc.).
+ * 2. INSERT-OR-IGNORE a project row directly via `bun:sqlite` if one is
+ *    still missing. Only useful if `Project.fromDirectory` hasn't run yet
+ *    by the time this plugin loads (rare — Hooks normally fire after the
+ *    first /sync/history triggers project init).
  *
  * Schema risk
  * -----------
@@ -65,13 +61,18 @@ function log(msg: string, meta?: LogMeta): void {
 
 /**
  * Resolve the SQLite DB path opencode would open. Mirrors XDG layout:
- *   ${XDG_DATA_HOME:-$HOME/.local/share}/opencode/storage/db.sqlite
+ *   ${XDG_DATA_HOME:-$HOME/.local/share}/opencode/opencode.db
+ *
+ * Note: this changed in opencode at some point — older versions used
+ * `<base>/opencode/storage/db.sqlite`. The current path is `<base>/opencode/opencode.db`,
+ * confirmed against `packages/opencode/src/storage/db.ts:32` in opencode v1.14.x
+ * (`path.join(Global.Path.data, "opencode.db")`).
  */
 function resolveDbPath(): string {
   const xdg = process.env.XDG_DATA_HOME;
   const home = process.env.HOME ?? "/home/dev";
   const base = xdg && xdg.length > 0 ? xdg : join(home, ".local", "share");
-  return join(base, "opencode", "storage", "db.sqlite");
+  return join(base, "opencode", "opencode.db");
 }
 
 /**
