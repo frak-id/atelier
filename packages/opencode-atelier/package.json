@@ -1,6 +1,6 @@
 {
   "name": "@konfeature/opencode-atelier",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "OpenCode plugin that dispatches coding tasks to Atelier sandboxes (self-hosted Kata Containers dev environments).",
   "type": "module",
   "main": "./dist/index.js",
