@@ -9,6 +9,8 @@ import type { AtelierExtra, AtelierPluginConfig, Sandbox } from "./types.ts";
 
 const ORIGIN_SOURCE = "opencode-plugin";
 const CACHE_TTL_MS = 30_000;
+const VM_HOME = "/home/dev";
+const VM_WORKSPACE_DIR = `${VM_HOME}/workspace`;
 
 /**
  * Per-opencode-workspace runtime state.
@@ -42,10 +44,21 @@ export function createAtelierAdaptor(
         branch: raw.branch ?? info.branch ?? undefined,
       };
 
+      // The remote sandbox boots OpenCode with `cd <workspaceDir>` where
+      // `workspaceDir` is `/home/dev/workspace/<clonePath>` for single-repo
+      // workspaces, else `/home/dev/workspace`. The remote project_id is
+      // hashed from that path — if we announce a different directory here,
+      // every `/sync/replay` batch fails its FK on insert because the events
+      // carry a project_id the remote DB has never seen.
+      const directory = await resolveWorkspaceDirectory(
+        getClient,
+        extra.atelierWorkspaceId,
+      );
+
       return {
         ...info,
         name: info.name ?? `atelier-${info.id}`,
-        directory: "/home/dev/workspace",
+        directory,
         extra,
       };
     },
@@ -240,4 +253,44 @@ async function findSandboxId(
 
   const sandbox = await findSandboxByExternalId(client, workspaceId);
   return sandbox?.id ?? null;
+}
+
+/**
+ * Resolve the directory the remote sandbox will actually `cd` into before
+ * starting OpenCode. Mirrors the manager's `buildSandboxConfig` logic
+ * (`apps/manager/src/orchestrators/sandbox-config.ts`):
+ *
+ *   - 1 repo  → `/home/dev/workspace/<clonePath>`
+ *   - else    → `/home/dev/workspace`
+ *
+ * The remote OpenCode hashes this path to derive `project_id`; the local
+ * CLI must announce the same path or `/sync/replay` will FK-fail when it
+ * tries to insert events whose project_id doesn't exist on the remote.
+ *
+ * Best-effort: if the workspace lookup fails, we fall back to the parent
+ * `/home/dev/workspace`, which still works for multi-repo setups.
+ */
+async function resolveWorkspaceDirectory(
+  getClient: () => AtelierClient,
+  atelierWorkspaceId: string,
+): Promise<string> {
+  if (!atelierWorkspaceId) return VM_WORKSPACE_DIR;
+  try {
+    const workspace = unwrap(
+      await getClient().api.workspaces({ id: atelierWorkspaceId }).get(),
+    );
+    const repos = workspace.config?.repos ?? [];
+    if (repos.length !== 1 || !repos[0]?.clonePath) {
+      return VM_WORKSPACE_DIR;
+    }
+    const clonePath = repos[0].clonePath;
+    const normalized = clonePath.startsWith("/") ? clonePath : `/${clonePath}`;
+    return `${VM_WORKSPACE_DIR}${normalized}`;
+  } catch (err) {
+    logger.warn(
+      `Failed to resolve workspace directory for ${atelierWorkspaceId}, ` +
+        `falling back to ${VM_WORKSPACE_DIR}: ${err}`,
+    );
+    return VM_WORKSPACE_DIR;
+  }
 }
