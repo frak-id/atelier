@@ -19,6 +19,7 @@ function rowToSandbox(row: typeof sandboxes.$inferSelect): Sandbox {
     origin: row.origin ?? undefined,
     status: row.status,
     runtime: row.runtime,
+    opencodeWorkspaceContext: row.opencodeWorkspaceContext ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -90,6 +91,7 @@ export class SandboxRepository {
         origin: sandbox.origin ?? null,
         status: sandbox.status,
         runtime: sandbox.runtime,
+        opencodeWorkspaceContext: sandbox.opencodeWorkspaceContext ?? null,
         createdAt: sandbox.createdAt,
         updatedAt: sandbox.updatedAt,
       })
@@ -120,6 +122,7 @@ export class SandboxRepository {
         origin: updated.origin ?? null,
         status: updated.status,
         runtime: updated.runtime,
+        opencodeWorkspaceContext: updated.opencodeWorkspaceContext ?? null,
         updatedAt: updated.updatedAt,
       })
       .where(eq(sandboxes.id, id))

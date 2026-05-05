@@ -66,6 +66,27 @@ export function isSystemSandbox(
   return sandbox?.origin?.source === "system";
 }
 
+/**
+ * OpenCode workspace-mode context captured from the local opencode-atelier
+ * plugin at sandbox creation time. Persisted on the sandbox row so the
+ * `bootExistingSandbox` (restart) path can rehydrate the same env block
+ * — without it, restarted sandboxes silently lose workspace mode + the
+ * preregister env until the user spawns a fresh sandbox via the plugin.
+ */
+export const SandboxOpencodeWorkspaceContextSchema = t.Object({
+  /** Filtered env from `WorkspaceAdapter.create(info, env)`'s second arg. */
+  opencodeEnv: t.Optional(t.Record(t.String(), t.String())),
+  /** Local OpenCode project_id — row to alias on the remote. */
+  sourceProjectID: t.Optional(t.String()),
+  /** Local OpenCode workspace_id — informational. */
+  sourceWorkspaceID: t.Optional(t.String()),
+  /** Origin workspace_id when forking. */
+  sourceWorkspaceFromID: t.Optional(t.String()),
+});
+export type SandboxOpencodeWorkspaceContext = Static<
+  typeof SandboxOpencodeWorkspaceContextSchema
+>;
+
 export const SandboxSchema = t.Object({
   id: t.String(),
   orgId: t.Optional(t.String()),
@@ -79,6 +100,12 @@ export const SandboxSchema = t.Object({
   runtime: SandboxRuntimeSchema,
   createdAt: t.String(),
   updatedAt: t.String(),
+  /**
+   * Workspace-mode context captured at create time from the local
+   * opencode-atelier plugin. Stored verbatim so restarts can rehydrate
+   * the same `opencode serve` env without the local CLI being involved.
+   */
+  opencodeWorkspaceContext: t.Optional(SandboxOpencodeWorkspaceContextSchema),
 });
 export type Sandbox = Static<typeof SandboxSchema>;
 
@@ -102,8 +129,9 @@ export const CreateSandboxBodySchema = t.Object({
    * OpenCode-specific env vars forwarded into the remote `opencode serve`
    * process. Set by the opencode-atelier plugin to enable workspace mode
    * (`OPENCODE_EXPERIMENTAL_WORKSPACES`), tag emitted events
-   * (`OPENCODE_WORKSPACE_ID`), and propagate auth (`OPENCODE_AUTH_CONTENT`)
-   * + tracing (`OTEL_*`). Filtered to a known whitelist on the plugin side.
+   * (`OPENCODE_WORKSPACE_ID`), and propagate tracing (`OTEL_*`).
+   * Filtered to a known whitelist on the plugin side; auth tokens are
+   * deliberately NOT forwarded (the sandbox uses its own provisioned auth).
    */
   opencodeEnv: t.Optional(t.Record(t.String(), t.String())),
   /**

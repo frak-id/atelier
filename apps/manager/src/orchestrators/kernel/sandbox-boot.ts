@@ -103,6 +103,9 @@ export async function bootNewSandbox(
       memoryMb: options.memoryMb,
       opencodePassword,
     },
+    // Persisted so the restart path can rehydrate workspace mode without
+    // needing the local opencode-atelier plugin to re-supply the env.
+    opencodeWorkspaceContext: options.opencodeWorkspaceContext,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -263,16 +266,15 @@ export async function bootExistingSandbox(
 
   const sharedKey = await ensureSharedSshPipeKey();
 
-  // Restart path: we don't have access to the original opencode workspace
-  // context (it's only supplied at create-time by the local opencode-atelier
-  // plugin). Restarted sandboxes lose workspace mode + the preregister env
-  // until the user spawns a fresh sandbox via the plugin again. If this
-  // becomes a real friction point, persist `OpencodeWorkspaceContext` on
-  // the `Sandbox` row at create time and rehydrate it here.
+  // Restart path: rehydrate the workspace context that was captured at
+  // create time by the local opencode-atelier plugin. Without this, a
+  // restarted sandbox would lose workspace mode + the preregister env
+  // and `/sync/replay` would FK-fail again.
   const sandboxConfig = buildSandboxConfig(
     sandboxId,
     workspace,
     opencodePassword,
+    sandbox.opencodeWorkspaceContext,
   );
 
   await Promise.all([

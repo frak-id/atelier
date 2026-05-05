@@ -1,6 +1,6 @@
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -31,9 +31,18 @@ import { join } from "node:path";
  * -------------------------------
  * - There is no public OpenCode API to upsert a project row.
  * - Calling `Project.fromDirectory` re-runs git discovery and writes a
- *   `.git/opencode` cache, which can permanently lock in an id that
- *   disagrees with the local CLI's id if discovery happens to land
- *   differently.
+ *   `.git/opencode` cache. We pin that cache ourselves (see below) so
+ *   when fromDirectory eventually runs in the same worktree it reads our
+ *   id back instead of recomputing one that disagrees.
+ *
+ * Cache file pinning
+ * ------------------
+ * After the row is in place we also write the local project_id into
+ * `<worktree>/.git/opencode`. OpenCode's `Project.fromDirectory`
+ * (`project/project.ts:218,244`) checks that file before calling
+ * `git rev-list --max-parents=0 HEAD`, so any later interactive session in
+ * the same dir lands on the same id we just registered — no risk of a
+ * second project row appearing if discovery happens to land differently.
  *
  * Schema risk
  * -----------
@@ -133,6 +142,32 @@ function schemaIsCompatible(db: Database): boolean {
   return true;
 }
 
+/**
+ * Write `<worktree>/.git/opencode` so opencode's project discovery
+ * (`Project.fromDirectory` -> `readCachedProjectId`) returns the id we
+ * just inserted. Best-effort: if `.git` doesn't exist (worktree, bare
+ * repo, non-git) we silently skip — the row already covers the FK case.
+ */
+function pinProjectIdCache(workspaceDir: string, projectID: string): void {
+  const gitDir = join(workspaceDir, ".git");
+  if (!existsSync(gitDir)) {
+    log("no .git directory at workspace, skipping cache pin", {
+      workspaceDir,
+    });
+    return;
+  }
+  try {
+    writeFileSync(join(gitDir, "opencode"), projectID);
+    log("pinned project_id cache file", {
+      path: join(gitDir, "opencode"),
+    });
+  } catch (err) {
+    log("failed to pin project_id cache file", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 const ATELIER_PRE_REGISTER_PLUGIN: Plugin = async (input: PluginInput) => {
   const sourceProjectID = process.env.ATELIER_SOURCE_PROJECT_ID;
   if (!sourceProjectID) {
@@ -149,6 +184,12 @@ const ATELIER_PRE_REGISTER_PLUGIN: Plugin = async (input: PluginInput) => {
     });
     return {};
   }
+
+  // Pin the cache file unconditionally (idempotent) so any future
+  // `Project.fromDirectory` run in this worktree resolves to our id.
+  // Doing this before the DB step means it still happens even if the
+  // DB is missing or the schema check bails.
+  pinProjectIdCache(workspaceDir, sourceProjectID);
 
   const dbPath = resolveDbPath();
   if (!existsSync(dbPath)) {

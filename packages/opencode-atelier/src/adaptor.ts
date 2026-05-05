@@ -20,16 +20,19 @@ const VM_WORKSPACE_DIR = `${VM_HOME}/workspace`;
  *     codepath on the remote.
  *   - OPENCODE_WORKSPACE_ID — lets the remote tag emitted events with the
  *     same workspace id the local CLI knows.
- *   - OPENCODE_AUTH_CONTENT — JSON dump of local auth so the remote
- *     can call LLM providers without separate auth sync.
  *   - OTEL_* — propagates tracing config.
+ *
+ * `OPENCODE_AUTH_CONTENT` is intentionally NOT forwarded: the whole point
+ * of warping into an Atelier sandbox is to use the sandbox's own opencode
+ * credentials (provisioned via the manager's auth-sync + cliproxy), not to
+ * leak the user's local provider tokens into the pod env / kubectl describe
+ * / process listings.
  *
  * Anything else (host paths, local-only flags) is dropped on purpose.
  */
 const FORWARDED_ENV_KEYS = [
   "OPENCODE_EXPERIMENTAL_WORKSPACES",
   "OPENCODE_WORKSPACE_ID",
-  "OPENCODE_AUTH_CONTENT",
   "OTEL_EXPORTER_OTLP_HEADERS",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
   "OTEL_RESOURCE_ATTRIBUTES",

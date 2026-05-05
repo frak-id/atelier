@@ -99,6 +99,13 @@
       "when": 1778004940661,
       "tag": "0013_brown_black_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1778019259181,
+      "tag": "0014_persist_opencode_workspace_context",
+      "breakpoints": true
     }
   ]
 }
