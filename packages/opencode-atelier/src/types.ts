@@ -13,6 +13,24 @@ export interface AtelierExtra {
   atelierWorkspaceId: string;
   /** Optional branch override (forwarded to `POST /sandboxes`) */
   branch?: string;
+  /**
+   * Local OpenCode `project_id` captured at `configure()` time.
+   *
+   * Sessions are FK-bound to `project.id` (`session.sql.ts:23`). Because
+   * sandboxes are shallow-cloned, the remote computes a different
+   * `project_id` than the local CLI — so `/sync/replay` violates the FK
+   * on every batch. We forward this id to the sandbox so the server-side
+   * pre-register plugin can alias it into the remote `project` table
+   * before the warp arrives.
+   */
+  sourceProjectID?: string;
+  /**
+   * Local OpenCode `workspace_id` captured at `configure()` time.
+   * `session.workspace_id` is NOT FK-constrained (`session.sql.ts:25`),
+   * so this is informational — useful for log correlation, not required
+   * for warp correctness.
+   */
+  sourceWorkspaceID?: string;
 }
 
 export type { Sandbox } from "@frak/atelier-manager/types";

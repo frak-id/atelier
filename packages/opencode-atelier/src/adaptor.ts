@@ -13,6 +13,43 @@ const VM_HOME = "/home/dev";
 const VM_WORKSPACE_DIR = `${VM_HOME}/workspace`;
 
 /**
+ * OpenCode-supplied env keys that must reach the remote `opencode serve`
+ * for warp + workspace mode to function. We deliberately whitelist:
+ *
+ *   - OPENCODE_EXPERIMENTAL_WORKSPACES — unlocks the workspace adapter
+ *     codepath on the remote.
+ *   - OPENCODE_WORKSPACE_ID — lets the remote tag emitted events with the
+ *     same workspace id the local CLI knows.
+ *   - OPENCODE_AUTH_CONTENT — JSON dump of local auth so the remote
+ *     can call LLM providers without separate auth sync.
+ *   - OTEL_* — propagates tracing config.
+ *
+ * Anything else (host paths, local-only flags) is dropped on purpose.
+ */
+const FORWARDED_ENV_KEYS = [
+  "OPENCODE_EXPERIMENTAL_WORKSPACES",
+  "OPENCODE_WORKSPACE_ID",
+  "OPENCODE_AUTH_CONTENT",
+  "OTEL_EXPORTER_OTLP_HEADERS",
+  "OTEL_EXPORTER_OTLP_ENDPOINT",
+  "OTEL_RESOURCE_ATTRIBUTES",
+] as const;
+
+function filterOpencodeEnv(
+  env: Record<string, string | undefined> | undefined,
+): Record<string, string> | undefined {
+  if (!env) return undefined;
+  const out: Record<string, string> = {};
+  for (const key of FORWARDED_ENV_KEYS) {
+    const value = env[key];
+    if (typeof value === "string" && value.length > 0) {
+      out[key] = value;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * Per-opencode-workspace runtime state.
  *
  * Opencode only persists the fields in `AtelierExtra`, so anything we learn
@@ -42,6 +79,11 @@ export function createAtelierAdaptor(
         atelierWorkspaceId:
           raw.atelierWorkspaceId ?? pluginConfig.workspaceId ?? "",
         branch: raw.branch ?? info.branch ?? undefined,
+        // Capture local OpenCode identifiers so the remote sandbox can
+        // pre-register the project_id before `/sync/replay` arrives.
+        // See AtelierExtra docs for why this exists.
+        sourceProjectID: info.projectID,
+        sourceWorkspaceID: info.id,
       };
 
       // The remote sandbox boots OpenCode with `cd <workspaceDir>` where
@@ -63,7 +105,11 @@ export function createAtelierAdaptor(
       };
     },
 
-    async create(info: WorkspaceInfo): Promise<void> {
+    async create(
+      info: WorkspaceInfo,
+      env: Record<string, string | undefined>,
+      from?: WorkspaceInfo,
+    ): Promise<void> {
       const extra = info.extra as AtelierExtra;
       if (!extra.atelierWorkspaceId) {
         throw new Error(
@@ -74,10 +120,13 @@ export function createAtelierAdaptor(
 
       const client = getClient();
       const branch = extra.branch ?? info.branch ?? undefined;
+      const opencodeEnv = filterOpencodeEnv(env);
 
       logger.info(
         `Creating sandbox in workspace ${extra.atelierWorkspaceId}` +
-          (branch ? ` (branch: ${branch})` : ""),
+          (branch ? ` (branch: ${branch})` : "") +
+          (from?.id ? ` (forking from: ${from.id})` : "") +
+          (opencodeEnv ? ` (env keys: ${Object.keys(opencodeEnv).join(",")})` : ""),
       );
 
       // POST /sandboxes blocks until the pod is running and OpenCode is
@@ -91,6 +140,14 @@ export function createAtelierAdaptor(
             source: ORIGIN_SOURCE,
             externalId: info.id,
           },
+          // Forwarded so the manager can wire workspace mode + auth into
+          // the remote `opencode serve` command and inject our pre-register
+          // plugin via opencode.json. See manager `sandbox-config.ts` and
+          // `internal.service.ts` for the receiving side.
+          opencodeEnv,
+          sourceProjectID: extra.sourceProjectID,
+          sourceWorkspaceID: extra.sourceWorkspaceID,
+          sourceWorkspaceFromID: from?.id,
         }),
       );
 

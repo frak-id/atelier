@@ -22,7 +22,10 @@ import {
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
-import { buildSandboxConfig } from "../sandbox-config.ts";
+import {
+  buildSandboxConfig,
+  type OpencodeWorkspaceContext,
+} from "../sandbox-config.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
@@ -50,6 +53,12 @@ export interface BootNewOptions {
   origin?: SandboxOrigin;
   /** User who triggered the spawn. */
   createdBy?: string;
+  /**
+   * Workspace-mode context forwarded by the local opencode-atelier plugin.
+   * Required for cross-machine session warp to land its FK-bound rows.
+   * See `OpencodeWorkspaceContext` for the per-field rationale.
+   */
+  opencodeWorkspaceContext?: OpencodeWorkspaceContext;
 }
 
 export interface BootResult {
@@ -132,6 +141,7 @@ export async function bootNewSandbox(
                 sandboxId,
                 options.workspace,
                 opencodePassword,
+                options.opencodeWorkspaceContext,
               ),
             ),
           },
@@ -253,6 +263,12 @@ export async function bootExistingSandbox(
 
   const sharedKey = await ensureSharedSshPipeKey();
 
+  // Restart path: we don't have access to the original opencode workspace
+  // context (it's only supplied at create-time by the local opencode-atelier
+  // plugin). Restarted sandboxes lose workspace mode + the preregister env
+  // until the user spawns a fresh sandbox via the plugin again. If this
+  // becomes a real friction point, persist `OpencodeWorkspaceContext` on
+  // the `Sandbox` row at create time and rehydrate it here.
   const sandboxConfig = buildSandboxConfig(
     sandboxId,
     workspace,

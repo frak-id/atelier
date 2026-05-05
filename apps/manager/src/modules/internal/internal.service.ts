@@ -10,6 +10,10 @@ import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SettingsRepository } from "../settings/index.ts";
 import { SYSTEM_AGENTS_CONFIG } from "../system-sandbox/index.ts";
 import type { AuthSyncService } from "./auth-sync.service.ts";
+import {
+  PLUGIN_SOURCE as ATELIER_PREREGISTER_PLUGIN_SOURCE,
+  PLUGIN_VM_PATH as ATELIER_PREREGISTER_PLUGIN_PATH,
+} from "@frak/opencode-atelier-server";
 
 const CLIPROXY_SETTINGS_KEY = "cliproxy.settings";
 const CLIPROXY_PROVIDERS_KEY = "cliproxy.providers";
@@ -133,6 +137,11 @@ export class InternalService {
     }
 
     this.injectCliProxyProvider(merged, opts.sandboxId);
+    // Always inject for non-system sandboxes — system sandboxes don't run
+    // user warp sessions, so they don't need the project_id alias plugin.
+    if (!opts.isSystem) {
+      this.injectAtelierPreregisterPlugin(merged);
+    }
 
     const files: { path: string; content: string }[] = [];
 
@@ -228,6 +237,42 @@ export class InternalService {
         contentType: "json",
       });
     }
+  }
+
+  /**
+   * Drop the in-sandbox preregister plugin TS file into
+   * `~/.config/opencode/plugins/atelier-preregister.ts`. OpenCode auto-loads
+   * `.ts` files from this directory at boot, so no `opencode.json` mutation
+   * is needed.
+   *
+   * The plugin reads `ATELIER_SOURCE_PROJECT_ID` from env and INSERT-OR-
+   * IGNOREs a row into the local SQLite `project` table, allowing
+   * `/sync/replay` events that reference the local-machine project_id to
+   * pass their FK check.
+   *
+   * See `atelier-preregister-plugin.ts` for the full rationale.
+   */
+  private injectAtelierPreregisterPlugin(
+    merged: { path: string; content: string; contentType: string }[],
+  ): void {
+    // Don't overwrite a hand-rolled plugin from the user's global config.
+    // We're additive: if a file at this path already exists, leave it.
+    const existing = merged.find(
+      (c) => c.path === ATELIER_PREREGISTER_PLUGIN_PATH,
+    );
+    if (existing) {
+      log.debug(
+        { path: ATELIER_PREREGISTER_PLUGIN_PATH },
+        "User-supplied atelier preregister plugin found, skipping inject",
+      );
+      return;
+    }
+
+    merged.push({
+      path: ATELIER_PREREGISTER_PLUGIN_PATH,
+      content: ATELIER_PREREGISTER_PLUGIN_SOURCE,
+      contentType: "typescript",
+    });
   }
 
   private injectCliProxyProvider(

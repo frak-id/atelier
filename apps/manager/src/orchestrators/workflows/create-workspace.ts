@@ -47,6 +47,15 @@ export async function createWorkspaceSandbox(
         name: options.name,
         origin: options.origin,
         createdBy: createdByUserId,
+        // Forward workspace-mode flags from the opencode-atelier plugin
+        // so the remote `opencode serve` boots in workspace mode and the
+        // preregister plugin can alias the local project_id before warp.
+        opencodeWorkspaceContext: {
+          opencodeEnv: options.opencodeEnv,
+          sourceProjectID: options.sourceProjectID,
+          sourceWorkspaceID: options.sourceWorkspaceID,
+          sourceWorkspaceFromID: options.sourceWorkspaceFromID,
+        },
       },
       ports,
     );

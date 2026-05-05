@@ -98,6 +98,32 @@ export const CreateSandboxBodySchema = t.Object({
    * system sandbox.
    */
   origin: t.Optional(SandboxOriginSchema),
+  /**
+   * OpenCode-specific env vars forwarded into the remote `opencode serve`
+   * process. Set by the opencode-atelier plugin to enable workspace mode
+   * (`OPENCODE_EXPERIMENTAL_WORKSPACES`), tag emitted events
+   * (`OPENCODE_WORKSPACE_ID`), and propagate auth (`OPENCODE_AUTH_CONTENT`)
+   * + tracing (`OTEL_*`). Filtered to a known whitelist on the plugin side.
+   */
+  opencodeEnv: t.Optional(t.Record(t.String(), t.String())),
+  /**
+   * Local OpenCode `project_id` (git root commit hash on the user's machine).
+   * The session FK at `session.project_id -> project.id` only resolves on
+   * the remote if a row with this id exists. Stored in the sandbox config
+   * so the in-sandbox preregister plugin can alias it before warp.
+   */
+  sourceProjectID: t.Optional(t.String()),
+  /**
+   * Local OpenCode `workspace_id`. Informational — `session.workspace_id`
+   * is not FK-constrained, so we don't strictly need to pre-create the row.
+   */
+  sourceWorkspaceID: t.Optional(t.String()),
+  /**
+   * If this workspace is being forked from an existing one (warp source),
+   * the original workspace_id. Maps to `from?: WorkspaceInfo` from the
+   * upstream `WorkspaceAdapter.create(info, env, from?)` signature.
+   */
+  sourceWorkspaceFromID: t.Optional(t.String()),
 });
 export type CreateSandboxBody = Static<typeof CreateSandboxBodySchema>;
 

@@ -32,9 +32,17 @@ export async function cloneRepository(
 
   await agent.exec(sandboxId, `rm -rf ${clonePath}`);
 
+  // Full clone (no `--depth 1`) so `git rev-list --max-parents=0 HEAD`
+  // returns the same root commit hash as the user's local clone. OpenCode
+  // hashes that into the project_id (see opencode `project/project.ts`
+  // `fromDirectory`), and `/sync/replay` FK-fails on `session.project_id`
+  // if the local and remote ids differ. Trade-off: bigger initial clone,
+  // but git-pack stays small in practice and the cost only hits once at
+  // sandbox spawn (and is short-circuited entirely when prebuild snapshots
+  // are warm).
   const result = await agent.exec(
     sandboxId,
-    `git clone --depth 1 -b ${branch} ${gitUrl} ${clonePath}`,
+    `git clone -b ${branch} ${gitUrl} ${clonePath}`,
     { timeout: 120000 },
   );
 

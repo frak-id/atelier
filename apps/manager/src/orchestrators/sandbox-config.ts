@@ -3,10 +3,31 @@ import { VM } from "@frak/atelier-shared/constants";
 import type { Workspace } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
 
+/**
+ * Workspace-mode flags forwarded from the local opencode-atelier plugin.
+ *
+ * These come from upstream OpenCode's `WorkspaceAdapter.create(info, env, from?)`
+ * env arg plus our own preregistration metadata. They get merged into the
+ * `opencode serve` env block so the remote opencode boots in workspace mode
+ * and our preregister plugin can alias the local project_id into the
+ * remote `project` table before `/sync/replay` arrives.
+ */
+export interface OpencodeWorkspaceContext {
+  /** Filtered env from `WorkspaceAdapter.create(info, env)`'s second arg. */
+  opencodeEnv?: Record<string, string>;
+  /** Local OpenCode project_id — row to alias on the remote. */
+  sourceProjectID?: string;
+  /** Local OpenCode workspace_id — informational. */
+  sourceWorkspaceID?: string;
+  /** Origin workspace_id when forking. */
+  sourceWorkspaceFromID?: string;
+}
+
 export function buildSandboxConfig(
   sandboxId: string,
   workspace: Workspace | undefined,
   opencodePassword: string | undefined,
+  workspaceContext?: OpencodeWorkspaceContext,
 ): SandboxConfig {
   const repos = (workspace?.config.repos ?? []).map((r) => ({
     clonePath: r.clonePath,
@@ -50,6 +71,28 @@ export function buildSandboxConfig(
           ...(opencodePassword && {
             OPENCODE_SERVER_PASSWORD: opencodePassword,
           }),
+          // Forwarded from the local opencode-atelier plugin. Anything
+          // missing on this side leaves the remote opencode in
+          // non-workspace mode, which is fine for plain VSCode use but
+          // breaks `/sync/replay` because workspace events have nowhere
+          // to land.
+          ...(workspaceContext?.opencodeEnv ?? {}),
+          // Atelier-specific. The in-sandbox preregister plugin reads
+          // these to know which project_id to alias into the local DB.
+          ...(workspaceContext?.sourceProjectID && {
+            ATELIER_SOURCE_PROJECT_ID: workspaceContext.sourceProjectID,
+          }),
+          ...(workspaceContext?.sourceWorkspaceID && {
+            ATELIER_SOURCE_WORKSPACE_ID: workspaceContext.sourceWorkspaceID,
+          }),
+          ...(workspaceContext?.sourceWorkspaceFromID && {
+            ATELIER_SOURCE_WORKSPACE_FROM_ID:
+              workspaceContext.sourceWorkspaceFromID,
+          }),
+          // The plugin uses this to know what directory to register the
+          // project against — must match `workspaceDir` exactly so the
+          // upsert lines up with whatever opencode would compute on its own.
+          ATELIER_WORKSPACE_DIRECTORY: workspaceDir,
         },
       },
       terminal: {
