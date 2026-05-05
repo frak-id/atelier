@@ -1,0 +1,21 @@
+{
+  "name": "@frak/opencode-atelier-server",
+  "description": "In-sandbox OpenCode plugin that pre-registers the local-machine project_id so cross-machine session warps don't FK-fail.",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bun run build.ts",
+    "typecheck": "tsgo --noEmit"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.14.37"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.14.37",
+    "@types/bun": "^1.3.12"
+  }
+}

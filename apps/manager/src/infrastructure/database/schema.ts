@@ -1,5 +1,6 @@
 import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type {
+  SandboxOpencodeWorkspaceContext,
   SandboxOrigin,
   SandboxRuntime,
   TaskData,
@@ -81,6 +82,9 @@ export const sandboxes = sqliteTable(
     runtime: text("runtime", { mode: "json" })
       .notNull()
       .$type<SandboxRuntime>(),
+    opencodeWorkspaceContext: text("opencode_workspace_context", {
+      mode: "json",
+    }).$type<SandboxOpencodeWorkspaceContext | null>(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

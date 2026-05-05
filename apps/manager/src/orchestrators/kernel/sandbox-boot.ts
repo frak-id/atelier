@@ -22,7 +22,10 @@ import {
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
-import { buildSandboxConfig } from "../sandbox-config.ts";
+import {
+  buildSandboxConfig,
+  type OpencodeWorkspaceContext,
+} from "../sandbox-config.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
@@ -50,6 +53,12 @@ export interface BootNewOptions {
   origin?: SandboxOrigin;
   /** User who triggered the spawn. */
   createdBy?: string;
+  /**
+   * Workspace-mode context forwarded by the local opencode-atelier plugin.
+   * Required for cross-machine session warp to land its FK-bound rows.
+   * See `OpencodeWorkspaceContext` for the per-field rationale.
+   */
+  opencodeWorkspaceContext?: OpencodeWorkspaceContext;
 }
 
 export interface BootResult {
@@ -94,6 +103,9 @@ export async function bootNewSandbox(
       memoryMb: options.memoryMb,
       opencodePassword,
     },
+    // Persisted so the restart path can rehydrate workspace mode without
+    // needing the local opencode-atelier plugin to re-supply the env.
+    opencodeWorkspaceContext: options.opencodeWorkspaceContext,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -132,6 +144,7 @@ export async function bootNewSandbox(
                 sandboxId,
                 options.workspace,
                 opencodePassword,
+                options.opencodeWorkspaceContext,
               ),
             ),
           },
@@ -253,10 +266,15 @@ export async function bootExistingSandbox(
 
   const sharedKey = await ensureSharedSshPipeKey();
 
+  // Restart path: rehydrate the workspace context that was captured at
+  // create time by the local opencode-atelier plugin. Without this, a
+  // restarted sandbox would lose workspace mode + the preregister env
+  // and `/sync/replay` would FK-fail again.
   const sandboxConfig = buildSandboxConfig(
     sandboxId,
     workspace,
     opencodePassword,
+    sandbox.opencodeWorkspaceContext,
   );
 
   await Promise.all([
