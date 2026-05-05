@@ -84,9 +84,7 @@ export async function waitForOpencodeAgentRegistry(
     await new Promise((resolve) => setTimeout(resolve, delay));
     delay = Math.min(delay * 2, AGENT_REGISTRY_MAX_DELAY_MS);
   }
-  throw new Error(
-    `OpenCode agent registry did not load in ${timeoutMs}ms`,
-  );
+  throw new Error(`OpenCode agent registry did not load in ${timeoutMs}ms`);
 }
 
 /**

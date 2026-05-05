@@ -99,7 +99,11 @@ function sleep(ms: number): Promise<void> {
  * Starts at `baseMs`, multiplies by 1.5 each attempt, capped at 5s. Logs a
  * heads-up after a few attempts so slow sandboxes don't look hung.
  */
-function backoffDelay(baseMs: number, attempt: number, deadline: number): number {
+function backoffDelay(
+  baseMs: number,
+  attempt: number,
+  deadline: number,
+): number {
   const grown = Math.min(baseMs * 1.5 ** attempt, 5_000);
   if (attempt > 0 && attempt % 5 === 0) {
     logger.info(

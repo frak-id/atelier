@@ -1,4 +1,7 @@
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client";
+import type {
+  PermissionRequest,
+  QuestionRequest,
+} from "@opencode-ai/sdk/v2/client";
 import {
   AlertTriangle,
   Check,

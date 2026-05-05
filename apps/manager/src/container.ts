@@ -211,8 +211,8 @@ const prebuildChecker = new PrebuildChecker({
 
 export {
   agentClient,
-  apiKeyService,
   agentOperations,
+  apiKeyService,
   authSyncService,
   baseImageBuilder,
   cliProxyService,
@@ -221,8 +221,8 @@ export {
   integrationGateway,
   internalService,
   kubeClient,
-  orgMemberService,
   organizationService,
+  orgMemberService,
   prebuildChecker,
   prebuildRunner,
   sandboxDestroyer,

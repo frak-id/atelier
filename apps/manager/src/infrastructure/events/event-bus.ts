@@ -1,13 +1,13 @@
 import type { ManagerEvent } from "../../schemas/events.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
-export type { ManagerEvent };
 export type {
   ConfigEvent,
   SandboxEvent,
   TaskEvent,
   WorkspaceEvent,
 } from "../../schemas/events.ts";
+export type { ManagerEvent };
 
 const log = createChildLogger("event-bus");
 

@@ -1,11 +1,11 @@
-import type { WorkspaceAdapter, WorkspaceInfo, WorkspaceTarget } from "@opencode-ai/plugin";
+import type {
+  WorkspaceAdapter,
+  WorkspaceInfo,
+  WorkspaceTarget,
+} from "@opencode-ai/plugin";
 import { type AtelierClient, unwrap, waitForTaskSandbox } from "./client.ts";
 import { logger } from "./logger.ts";
-import type {
-  AtelierExtra,
-  AtelierPluginConfig,
-  Sandbox,
-} from "./types.ts";
+import type { AtelierExtra, AtelierPluginConfig, Sandbox } from "./types.ts";
 
 const sandboxCache = new Map<string, { sandbox: Sandbox; fetchedAt: number }>();
 const CACHE_TTL_MS = 30_000;
@@ -47,6 +47,10 @@ export function createAtelierAdaptor(
 
       const client = getClient();
 
+      logger.info(
+        `Creating task in workspace ${extra.atelierWorkspaceId}` +
+          (extra.baseBranch ? ` (branch: ${extra.baseBranch})` : ""),
+      );
       const task = unwrap(
         await client.api.tasks.post({
           workspaceId: extra.atelierWorkspaceId,
@@ -56,13 +60,18 @@ export function createAtelierAdaptor(
       );
 
       extra.taskId = task.id;
+      logger.info(`Task ${task.id} created, starting...`);
 
       unwrap(await client.api.tasks({ id: task.id }).start.post());
 
+      const startedAt = Date.now();
       const { sandbox } = await waitForTaskSandbox(client, task.id, {
         intervalMs: pluginConfig.pollIntervalMs,
         timeoutMs: pluginConfig.pollTimeoutMs,
       });
+      logger.info(
+        `Sandbox ${sandbox.id} ready in ${Date.now() - startedAt}ms (task ${task.id})`,
+      );
 
       extra.sandboxId = sandbox.id;
       extra.sandboxOpencodeUrl = sandbox.runtime.urls.opencode;
@@ -79,6 +88,7 @@ export function createAtelierAdaptor(
       if (!extra.taskId) return;
 
       const client = getClient();
+      logger.info(`Removing task ${extra.taskId} (workspace ${info.id})`);
       try {
         unwrap(
           await client.api.tasks({ id: extra.taskId }).delete(undefined, {

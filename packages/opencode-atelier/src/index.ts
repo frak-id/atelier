@@ -35,9 +35,7 @@ const atelierPlugin: Plugin = async (input) => {
   );
   // One console line so users know where to tail logs.
   if (logPath) {
-    console.log(
-      `[atelier] Plugin initialized — logs at ${logPath}`,
-    );
+    console.log(`[atelier] Plugin initialized — logs at ${logPath}`);
   }
 
   return {

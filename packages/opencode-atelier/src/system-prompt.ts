@@ -36,7 +36,10 @@ export function createSystemPromptTransform(
     ];
 
     if (pluginConfig.workspaceId) {
-      lines.push("", `Current Atelier workspace: \`${pluginConfig.workspaceId}\`.`);
+      lines.push(
+        "",
+        `Current Atelier workspace: \`${pluginConfig.workspaceId}\`.`,
+      );
 
       // Best-effort enrichment with workspace name. Failure is non-fatal —
       // we don't want to delay the chat just because manager is briefly down.

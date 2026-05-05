@@ -160,9 +160,7 @@ function RepoItem({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm truncate">{repo.fullName}</span>
-          {isSelected && (
-            <Check className="h-4 w-4 text-primary shrink-0" />
-          )}
+          {isSelected && <Check className="h-4 w-4 text-primary shrink-0" />}
         </div>
         {repo.description && (
           <p className="text-xs text-muted-foreground truncate mt-0.5">

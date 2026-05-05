@@ -35,10 +35,10 @@ export function SecretsForm({
 }
 
 export {
+  type EnvSecret,
+  type FileSecretInput,
   parseEnvSecrets,
   parseFileSecrets,
   serializeEnvSecrets,
   serializeFileSecrets,
-  type EnvSecret,
-  type FileSecretInput,
 };

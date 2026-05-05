@@ -149,9 +149,7 @@ export function loadAtelierConfig(projectDir: string): AtelierConfig {
   let merged: Record<string, unknown> = {};
 
   // 1. Global config (XDG-aware: respects $XDG_CONFIG_HOME, falls back per-OS)
-  const globalDir = xdgConfig
-    ? join(xdgConfig, "opencode")
-    : null;
+  const globalDir = xdgConfig ? join(xdgConfig, "opencode") : null;
   const globalPath = globalDir ? detectConfigFile(globalDir) : null;
 
   if (globalPath) {
