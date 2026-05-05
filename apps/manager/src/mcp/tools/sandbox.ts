@@ -6,7 +6,7 @@ import {
   taskService,
   workspaceService,
 } from "../../container.ts";
-import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
+
 import type { Sandbox, Task } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 
@@ -86,9 +86,7 @@ export function registerSandboxTools(server: McpServer): void {
       }
 
       if (!includeSystem) {
-        sandboxes = sandboxes.filter(
-          (s) => s.workspaceId !== SYSTEM_WORKSPACE_ID,
-        );
+        sandboxes = sandboxes.filter((s) => s.origin?.source !== "system");
       }
 
       const result = sandboxes.map(formatSandbox);

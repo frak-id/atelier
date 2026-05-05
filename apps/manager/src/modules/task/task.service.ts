@@ -225,8 +225,8 @@ export class TaskService {
     return updated;
   }
 
-  findByIntegrationKey(source: string, threadKey: string): Task | undefined {
-    return this.repository.findByIntegrationKey(source, threadKey);
+  findByIntegrationKey(source: string, externalId: string): Task | undefined {
+    return this.repository.findByIntegrationKey(source, externalId);
   }
 
   setIntegrationMetadata(

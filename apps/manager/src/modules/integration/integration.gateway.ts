@@ -874,7 +874,7 @@ export class IntegrationGateway {
     const raw = event.raw as Record<string, unknown>;
     const metadata: TaskIntegrationMetadata = {
       source: event.source,
-      threadKey: event.threadKey,
+      externalId: event.threadKey,
     };
 
     if (event.source === "slack") {
@@ -904,7 +904,6 @@ export class IntegrationGateway {
         metadata.externalUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
       }
     }
-
     this.deps.taskService.setIntegrationMetadata(taskId, metadata);
 
     // Start the event bridge for real-time progress

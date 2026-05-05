@@ -92,6 +92,11 @@ export class TaskSpawner {
           baseImage: workspace.config.baseImage,
           vcpus: workspace.config.vcpus,
           memoryMb: workspace.config.memoryMb,
+          name: task.title,
+          origin: {
+            source: "task",
+            externalId: task.id,
+          },
         },
         gitUserIdentity,
         createdByUserId,

@@ -16,8 +16,6 @@ const SYSTEM_SANDBOX_VCPUS = 1;
 const SYSTEM_SANDBOX_MEMORY_MB = 1024;
 const MAX_LIFETIME_MS = 6 * 60 * 60 * 1000;
 
-export const SYSTEM_WORKSPACE_ID = "__system__";
-
 export type SystemSandboxStatus = "off" | "booting" | "running" | "idle";
 
 interface SystemSandboxDependencies {
@@ -46,7 +44,7 @@ export class SystemSandboxService {
   async recoverFromRestart(): Promise<void> {
     const systemSandboxes = this.deps.sandboxService
       .getAll()
-      .filter((s) => s.workspaceId === SYSTEM_WORKSPACE_ID);
+      .filter((s) => s.origin?.source === "system");
 
     if (systemSandboxes.length === 0) {
       log.info("No system sandboxes found from previous run");
@@ -296,8 +294,8 @@ export class SystemSandboxService {
     const startTime = performance.now();
 
     const sandbox = await this.deps.sandboxSpawner.spawn({
-      workspaceId: SYSTEM_WORKSPACE_ID,
       system: true,
+      origin: { source: "system" },
       vcpus: SYSTEM_SANDBOX_VCPUS,
       memoryMb: SYSTEM_SANDBOX_MEMORY_MB,
     });

@@ -15,7 +15,7 @@ import {
   buildBrowserIngress,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
+
 import { waitForOpencodeHealthy } from "../../orchestrators/kernel/boot-waiter.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
@@ -61,7 +61,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
       let sandboxes = sandboxService
         .getByOrgIds(orgIds)
-        .filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
+        .filter((s) => s.origin?.source !== "system");
 
       if (query.status) {
         sandboxes = sandboxes.filter((s) => s.status === query.status);
@@ -98,7 +98,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       const allActive = [
         ...sandboxService.getByStatus("running"),
         ...sandboxService.getByStatus("creating"),
-      ].filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
+      ].filter((s) => s.origin?.source !== "system");
 
       if (allActive.length >= config.server.maxSandboxes) {
         throw new ResourceExhaustedError("sandboxes");
@@ -121,7 +121,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       const allActive = [
         ...sandboxService.getByStatus("running"),
         ...sandboxService.getByStatus("creating"),
-      ].filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
+      ].filter((s) => s.origin?.source !== "system");
 
       if (allActive.length >= config.server.maxSandboxes) {
         throw new ResourceExhaustedError("sandboxes");
@@ -220,7 +220,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     async () => {
       const running = sandboxService
         .getByStatus("running")
-        .filter((s) => s.workspaceId !== SYSTEM_WORKSPACE_ID);
+        .filter((s) => s.origin?.source !== "system");
 
       const results = await Promise.allSettled(
         running.map(async (s) => ({

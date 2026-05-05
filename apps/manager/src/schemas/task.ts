@@ -13,10 +13,30 @@ export const TaskSessionSchema = t.Object({
 });
 export type TaskSession = Static<typeof TaskSessionSchema>;
 
+/**
+ * Integration metadata attached to a Task, used to:
+ *   - identify the conversation that spawned/owns this task (`source` +
+ *     `externalId` — same shape as `Sandbox.origin`),
+ *   - reply back into that conversation (`slack` / `github` blobs hold the
+ *     adapter-specific reply state),
+ *   - resume the right OpenCode session on follow-ups (`sessionId`).
+ *
+ * For pure provenance / display, prefer `Sandbox.origin` — it carries the
+ * same `source` + `externalId` + `externalUrl` triplet without the reply
+ * state, and is set on every sandbox regardless of how it was spawned.
+ */
 export const TaskIntegrationMetadataSchema = t.Object({
+  /** Source system (e.g. `slack`, `github`). Mirrors `SandboxOrigin.source`. */
   source: t.String(),
-  threadKey: t.String(),
+  /**
+   * Stable identifier from the source system used to look this task up on
+   * follow-up events. Mirrors `SandboxOrigin.externalId`.
+   * Slack: `${channel}:${threadTs}` — GitHub: `${owner}/${repo}:${prNumber}`.
+   */
+  externalId: t.String(),
+  /** Optional deep-link back to the origin (PR, slack thread, etc). */
   externalUrl: t.Optional(t.String()),
+  /** Current OpenCode session id, used to continue the same session on replies. */
   sessionId: t.Optional(t.String()),
   slack: t.Optional(
     t.Object({

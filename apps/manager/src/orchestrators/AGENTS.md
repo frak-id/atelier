@@ -13,6 +13,17 @@ Complex multi-step workflows coordinating services and infrastructure. Use conte
 | `PrebuildChecker` | Staleness detection and rebuild triggers |
 | `SandboxDestroyer` | K8s resource cleanup (label-based delete) |
 
+## Origin Stamping
+
+Every spawned sandbox should carry an `origin: { source, externalId?, externalUrl? }`:
+
+- `SandboxSpawner` accepts `options.origin` and stores it verbatim
+- `TaskSpawner` stamps `{ source: "task", externalId: task.id }`
+- `SystemSandboxService` stamps `{ source: "system" }` and leaves `workspaceId` undefined
+- The opencode-plugin stamps `{ source: "opencode-plugin", externalId: <oc workspaceId> }`
+
+Origin is set at creation time and never mutated. Lookups use `findByOrigin(source, externalId)` so callers don't need to persist their own id→sandbox mapping.
+
 ## Key Pattern
 
 Orchestrators create a `Context` object that tracks allocated resources. On failure, `rollback()` cleans up K8s resources via label-based deletion.
