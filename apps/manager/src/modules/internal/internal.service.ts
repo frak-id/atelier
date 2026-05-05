@@ -93,9 +93,22 @@ export class InternalService {
     return { auth, configs };
   }
 
-  async syncConfigsToSandbox(sandboxId: string): Promise<{ synced: number }> {
-    const sandbox = this.sandboxService.getById(sandboxId);
-    const workspaceId = sandbox?.workspaceId ?? undefined;
+  /**
+   * Push merged config files (opencode config, MCP server, plugin manifests,
+   * etc.) to a sandbox.
+   *
+   * Pass `workspaceIdOverride` when the target sandbox isn't yet a real DB
+   * record — e.g. during prebuild, where we still want the workspace's configs
+   * to land in the snapshot but the prebuild pod has no `Sandbox` row.
+   */
+  async syncConfigsToSandbox(
+    sandboxId: string,
+    workspaceIdOverride?: string,
+  ): Promise<{ synced: number }> {
+    const workspaceId =
+      workspaceIdOverride ??
+      this.sandboxService.getById(sandboxId)?.workspaceId ??
+      undefined;
     const { files } = this.getConfigFilesToPush(workspaceId, sandboxId);
     if (files.length === 0) return { synced: 0 };
 

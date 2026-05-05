@@ -11,6 +11,7 @@ import {
   type KubeClient,
 } from "../infrastructure/kubernetes/index.ts";
 import { RegistryService } from "../infrastructure/registry/index.ts";
+import type { InternalService } from "../modules/internal/index.ts";
 import type { SystemAiService } from "../modules/system-sandbox/index.ts";
 import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
 import type { UserService } from "../modules/user/index.ts";
@@ -59,6 +60,7 @@ export interface PrebuildRunnerDependencies {
   userService: UserService;
   kubeClient: KubeClient;
   agentClient: AgentClient;
+  internalService: InternalService;
   aiService?: SystemAiService;
 }
 
@@ -484,6 +486,14 @@ export class PrebuildRunner {
     // `oh-my-openagent@x.y.z` takes ~13s instead of <1s on a warm cache.
     await this.pushRegistryConfig(sandboxId);
 
+    // Push merged workspace/system config files (opencode.json with plugin
+    // definitions, MCP server, CLIProxy provider, etc.) into the prebuild
+    // pod. Without this, OpenCode warmup boots blind: it never sees external
+    // plugins like `oh-my-openagent`, never downloads them into
+    // ~/.cache/opencode/packages, and the snapshot ships cold — every
+    // runtime sandbox then pays the full plugin install cost on first use.
+    await this.pushWorkspaceConfigs(sandboxId, scenario);
+
     if (scenario.kind === "workspace") {
       const workspace = this.requireWorkspace(scenario);
 
@@ -574,6 +584,41 @@ export class PrebuildRunner {
       log.warn(
         { sandboxId, error: String(error) },
         "Failed to push registry config, continuing with public npm",
+      );
+    }
+  }
+
+  /**
+   * Push the workspace's (or system's) merged config files — opencode
+   * config, MCP server, CLIProxy provider, plugin manifests — into the
+   * prebuild pod so the OpenCode warmup that follows can see external
+   * plugins and bake them into the snapshot.
+   *
+   * Best-effort: a missing config shouldn't fail the prebuild. The runtime
+   * sandbox spawn flow re-syncs configs anyway, so the worst case is a
+   * cold-start on first use rather than a broken sandbox.
+   */
+  private async pushWorkspaceConfigs(
+    sandboxId: string,
+    scenario: PrebuildScenario,
+  ): Promise<void> {
+    const workspaceId =
+      scenario.kind === "workspace"
+        ? scenario.workspaceId
+        : SYSTEM_WORKSPACE_ID;
+    try {
+      const result = await this.deps.internalService.syncConfigsToSandbox(
+        sandboxId,
+        workspaceId,
+      );
+      log.info(
+        { sandboxId, workspaceId, synced: result.synced },
+        "Pushed workspace configs to prebuild pod",
+      );
+    } catch (error) {
+      log.warn(
+        { sandboxId, workspaceId, error: String(error) },
+        "Failed to push workspace configs, opencode warmup may miss plugins",
       );
     }
   }

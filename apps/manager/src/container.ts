@@ -162,6 +162,7 @@ const prebuildRunner = new PrebuildRunner({
   userService,
   kubeClient,
   agentClient,
+  internalService,
   aiService: systemAiService,
 });
 
