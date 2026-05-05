@@ -1,5 +1,6 @@
 import type { WorkspaceAdapter, WorkspaceInfo, WorkspaceTarget } from "@opencode-ai/plugin";
 import { type AtelierClient, unwrap, waitForTaskSandbox } from "./client.ts";
+import { logger } from "./logger.ts";
 import type {
   AtelierExtra,
   AtelierPluginConfig,
@@ -85,7 +86,7 @@ export function createAtelierAdaptor(
           }),
         );
       } catch (err) {
-        console.warn(`[atelier] Failed to delete task ${extra.taskId}: ${err}`);
+        logger.warn(`Failed to delete task ${extra.taskId}: ${err}`);
       }
 
       sandboxCache.delete(info.id);
@@ -95,9 +96,9 @@ export function createAtelierAdaptor(
       const extra = info.extra as AtelierExtra;
       const url = await resolveOpencodeUrl(info.id, extra, getClient);
       if (!url) {
-        throw new Error(
-          `[atelier] Sandbox not available for workspace ${info.id}`,
-        );
+        const msg = `Sandbox not available for workspace ${info.id}`;
+        logger.error(msg);
+        throw new Error(`[atelier] ${msg}`);
       }
 
       const headers: Record<string, string> = {};
@@ -129,7 +130,12 @@ async function resolveOpencodeUrl(
     const sandbox = unwrap(
       await client.api.sandboxes({ id: extra.sandboxId }).get(),
     );
-    if (sandbox.status !== "running") return null;
+    if (sandbox.status !== "running") {
+      logger.warn(
+        `Sandbox ${extra.sandboxId} status=${sandbox.status} (expected running)`,
+      );
+      return null;
+    }
 
     sandboxCache.set(workspaceId, {
       sandbox: sandbox as Sandbox,
@@ -139,7 +145,13 @@ async function resolveOpencodeUrl(
     extra.sandboxOpencodeUrl = sandbox.runtime.urls.opencode;
     extra.opencodePassword = sandbox.runtime.opencodePassword;
     return sandbox.runtime.urls.opencode;
-  } catch {
+  } catch (err) {
+    // Don't swallow — a stale URL hides real backend failures. We do still
+    // return the cached URL as a last resort so transient manager downtime
+    // doesn't tear down a working session.
+    logger.warn(
+      `Failed to refresh sandbox ${extra.sandboxId} from manager: ${err}`,
+    );
     return extra.sandboxOpencodeUrl ?? null;
   }
 }

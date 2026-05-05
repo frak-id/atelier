@@ -15,6 +15,7 @@
     "@elysiajs/eden": "^1.4.9",
     "@opencode-ai/plugin": "^1.14.37",
     "@opencode-ai/sdk": "1.14.37",
+    "xdg-basedir": "^5.1.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

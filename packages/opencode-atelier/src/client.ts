@@ -1,5 +1,6 @@
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@frak/atelier-manager";
+import { logger } from "./logger.ts";
 import type { AtelierPluginConfig, Sandbox, Task } from "./types.ts";
 
 export type AtelierClient = ReturnType<typeof treaty<App>>;
@@ -44,6 +45,7 @@ export async function waitForSandboxReady(
   opts: { intervalMs: number; timeoutMs: number },
 ): Promise<Sandbox> {
   const deadline = Date.now() + opts.timeoutMs;
+  let attempt = 0;
 
   while (Date.now() < deadline) {
     const sandbox = unwrap(await client.api.sandboxes({ id: sandboxId }).get());
@@ -53,7 +55,7 @@ export async function waitForSandboxReady(
       throw new Error(`Sandbox ${sandboxId} entered error state`);
     }
 
-    await sleep(opts.intervalMs);
+    await sleep(backoffDelay(opts.intervalMs, attempt++, deadline));
   }
 
   throw new Error(
@@ -67,6 +69,7 @@ export async function waitForTaskSandbox(
   opts: { intervalMs: number; timeoutMs: number },
 ): Promise<{ task: Task; sandbox: Sandbox }> {
   const deadline = Date.now() + opts.timeoutMs;
+  let attempt = 0;
 
   while (Date.now() < deadline) {
     const task = unwrap(await client.api.tasks({ id: taskId }).get());
@@ -79,7 +82,7 @@ export async function waitForTaskSandbox(
       return { task: task as Task, sandbox };
     }
 
-    await sleep(opts.intervalMs);
+    await sleep(backoffDelay(opts.intervalMs, attempt++, deadline));
   }
 
   throw new Error(
@@ -89,4 +92,19 @@ export async function waitForTaskSandbox(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Exponential backoff with a hard cap, clipped to remaining deadline.
+ * Starts at `baseMs`, multiplies by 1.5 each attempt, capped at 5s. Logs a
+ * heads-up after a few attempts so slow sandboxes don't look hung.
+ */
+function backoffDelay(baseMs: number, attempt: number, deadline: number): number {
+  const grown = Math.min(baseMs * 1.5 ** attempt, 5_000);
+  if (attempt > 0 && attempt % 5 === 0) {
+    logger.info(
+      `Still waiting for sandbox readiness (attempt ${attempt}, next in ${Math.round(grown)}ms)`,
+    );
+  }
+  return Math.max(0, Math.min(grown, deadline - Date.now()));
 }

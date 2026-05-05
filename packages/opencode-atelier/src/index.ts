@@ -3,6 +3,8 @@ import { createAtelierAdaptor } from "./adaptor.ts";
 import { createClientGetter } from "./client.ts";
 import { createCommandHook, injectCommands } from "./commands.ts";
 import { loadAtelierConfig } from "./config.ts";
+import { getLogFilePath, logger } from "./logger.ts";
+import { createSystemPromptTransform } from "./system-prompt.ts";
 import { resolveWorkspaceId } from "./workspace-resolver.ts";
 
 const atelierPlugin: Plugin = async (input) => {
@@ -14,6 +16,7 @@ const atelierPlugin: Plugin = async (input) => {
     pluginConfig,
     getClient,
     input.directory,
+    input.$,
   );
   if (resolvedId) {
     pluginConfig.workspaceId = resolvedId;
@@ -24,11 +27,18 @@ const atelierPlugin: Plugin = async (input) => {
     createAtelierAdaptor(pluginConfig, getClient),
   );
 
-  console.log(
-    `[atelier] Initialized (manager: ${pluginConfig.managerUrl}` +
+  const logPath = getLogFilePath();
+  logger.info(
+    `Initialized (manager: ${pluginConfig.managerUrl}` +
       `${pluginConfig.workspaceId ? `, workspace: ${pluginConfig.workspaceId}` : ""}` +
       `)`,
   );
+  // One console line so users know where to tail logs.
+  if (logPath) {
+    console.log(
+      `[atelier] Plugin initialized — logs at ${logPath}`,
+    );
+  }
 
   return {
     async config(openCodeConfig) {
@@ -38,6 +48,10 @@ const atelierPlugin: Plugin = async (input) => {
       pluginConfig,
       getClient,
       input.client,
+    ),
+    "experimental.chat.system.transform": createSystemPromptTransform(
+      pluginConfig,
+      getClient,
     ),
   };
 };

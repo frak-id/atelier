@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { xdgConfig } from "xdg-basedir";
 import { z } from "zod";
+import { logger } from "./logger.ts";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -9,9 +10,9 @@ import { z } from "zod";
 
 export const AtelierConfigSchema = z.object({
   $schema: z.string().optional(),
-  managerUrl: z.string().default("http://localhost:4000"),
-  apiKey: z.string().optional(),
-  workspaceId: z.string().optional(),
+  managerUrl: z.url().default("http://localhost:4000"),
+  apiKey: z.string().min(1).optional(),
+  workspaceId: z.string().min(1).optional(),
   pollIntervalMs: z.number().int().positive().default(3000),
   pollTimeoutMs: z.number().int().positive().default(120_000),
 });
@@ -98,7 +99,7 @@ function loadFromPath(filePath: string): Record<string, unknown> | null {
     const content = readFileSync(filePath, "utf-8");
     return parseJsonc<Record<string, unknown>>(content);
   } catch (err) {
-    console.warn(`[atelier] Failed to load config from ${filePath}: ${err}`);
+    logger.warn(`Failed to load config from ${filePath}: ${err}`);
     return null;
   }
 }
@@ -147,15 +148,17 @@ function applyEnvOverrides(
 export function loadAtelierConfig(projectDir: string): AtelierConfig {
   let merged: Record<string, unknown> = {};
 
-  // 1. Global config
-  const globalDir = join(homedir(), ".config", "opencode");
-  const globalPath = detectConfigFile(globalDir);
+  // 1. Global config (XDG-aware: respects $XDG_CONFIG_HOME, falls back per-OS)
+  const globalDir = xdgConfig
+    ? join(xdgConfig, "opencode")
+    : null;
+  const globalPath = globalDir ? detectConfigFile(globalDir) : null;
 
   if (globalPath) {
     const global = loadFromPath(globalPath);
     if (global) {
       merged = { ...global };
-      console.log(`[atelier] Loaded global config from ${globalPath}`);
+      logger.info(`Loaded global config from ${globalPath}`);
     }
   }
 
@@ -167,23 +170,25 @@ export function loadAtelierConfig(projectDir: string): AtelierConfig {
     const project = loadFromPath(projectPath);
     if (project) {
       merged = { ...merged, ...project };
-      console.log(`[atelier] Loaded project config from ${projectPath}`);
+      logger.info(`Loaded project config from ${projectPath}`);
     }
   }
 
   // 3. Env overrides (override everything)
   merged = applyEnvOverrides(merged);
 
-  // 4. Validate + apply Zod defaults
+  // 4. Validate. We THROW on validation issues rather than silently falling
+  // back to defaults — silent fallback hides typos like an invalid managerUrl
+  // and routes traffic to localhost when the user clearly intended otherwise.
   const result = AtelierConfigSchema.safeParse(merged);
 
   if (!result.success) {
     const issues = result.error.issues
-      .map((i) => `${i.path.join(".")}: ${i.message}`)
-      .join(", ");
-    console.warn(`[atelier] Config validation issues: ${issues}`);
-    console.warn("[atelier] Falling back to defaults");
-    return AtelierConfigSchema.parse({});
+      .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+      .join("; ");
+    const msg = `[atelier] Invalid configuration: ${issues}`;
+    logger.error(msg);
+    throw new Error(msg);
   }
 
   return result.data;

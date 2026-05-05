@@ -1,6 +1,7 @@
 import type { Config, Hooks, PluginInput } from "@opencode-ai/plugin";
 import type { AtelierClient } from "./client.ts";
 import { unwrap } from "./client.ts";
+import { logger } from "./logger.ts";
 import type { AtelierPluginConfig } from "./types.ts";
 
 type OcClient = PluginInput["client"];
@@ -57,6 +58,7 @@ export function createCommandHook(
       text = await handler(client, pluginConfig, input.arguments);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`Command ${input.command} failed: ${msg}`);
       text = `[atelier] Error fetching data: ${msg}`;
     }
 
