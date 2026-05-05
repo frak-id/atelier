@@ -173,17 +173,35 @@ export class SandboxRepository {
     const row = getDatabase()
       .select()
       .from(sandboxes)
-      .where(
-        and(
-          eq(sql`json_extract(${sandboxes.origin}, '$.source')`, source),
-          eq(
-            sql`json_extract(${sandboxes.origin}, '$.externalId')`,
-            externalId,
-          ),
-        ),
-      )
+      .where(originPredicate(source, externalId))
       .orderBy(sql`${sandboxes.updatedAt} desc`)
       .get();
     return row ? rowToSandbox(row) : undefined;
   }
+
+  /**
+   * List all sandboxes spawned by a given source, optionally narrowed by
+   * external id. Mirrors the `?originSource=&originExternalId=` HTTP query.
+   */
+  findAllByOrigin(source: string, externalId?: string): Sandbox[] {
+    return getDatabase()
+      .select()
+      .from(sandboxes)
+      .where(originPredicate(source, externalId))
+      .orderBy(sql`${sandboxes.updatedAt} desc`)
+      .all()
+      .map(rowToSandbox);
+  }
+}
+
+function originPredicate(source: string, externalId?: string) {
+  const sourceClause = eq(
+    sql`json_extract(${sandboxes.origin}, '$.source')`,
+    source,
+  );
+  if (externalId === undefined) return sourceClause;
+  return and(
+    sourceClause,
+    eq(sql`json_extract(${sandboxes.origin}, '$.externalId')`, externalId),
+  );
 }

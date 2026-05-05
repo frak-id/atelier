@@ -7,6 +7,7 @@ import {
 } from "../container.ts";
 
 import {
+  isSystemSandbox,
   SystemSandboxStatusSchema,
   type SystemStats,
   SystemStatsSchema,
@@ -38,7 +39,7 @@ type RawPod = {
 
 async function getSystemStats(): Promise<SystemStats> {
   const allRunning = sandboxService.getByStatus("running");
-  const userRunning = allRunning.filter((s) => s.origin?.source !== "system");
+  const userRunning = allRunning.filter((s) => !isSystemSandbox(s));
   return {
     activeSandboxes: userRunning.length,
     maxSandboxes: config.server.maxSandboxes,

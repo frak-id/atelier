@@ -4,10 +4,14 @@ export type IntegrationSource = (typeof INTEGRATION_SOURCES)[number];
 export interface IntegrationEvent {
   source: IntegrationSource;
   /**
-   * Unique key for the conversation thread.
-   * Slack: `${channel}:${threadTs}` — GitHub: `${owner}/${repo}:${prNumber}`
+   * Stable identifier for the originating conversation — the same value
+   * stored on `Task.data.integration.externalId` and used to look the task
+   * up on follow-up events.
+   *
+   * Slack: `${channel}:${threadTs}` — GitHub: `${owner}/${repo}:${prNumber}`.
+   * Adapters parse it back into platform-specific pieces.
    */
-  threadKey: string;
+  externalId: string;
   user: string;
   text: string;
   /** Platform-specific payload, only accessed by the matching adapter. */

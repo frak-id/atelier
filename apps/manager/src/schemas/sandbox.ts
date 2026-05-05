@@ -54,6 +54,18 @@ export const SandboxOriginSchema = t.Object({
 });
 export type SandboxOrigin = Static<typeof SandboxOriginSchema>;
 
+/**
+ * `true` when the sandbox is the manager's internal system sandbox
+ * (workspaceId-less, used to host the dispatcher OpenCode session). The
+ * canonical signal is `origin.source === "system"` — keep this in lockstep
+ * with `SystemSandboxService`.
+ */
+export function isSystemSandbox(
+  sandbox: Pick<Sandbox, "origin"> | undefined | null,
+): boolean {
+  return sandbox?.origin?.source === "system";
+}
+
 export const SandboxSchema = t.Object({
   id: t.String(),
   orgId: t.Optional(t.String()),
@@ -75,13 +87,16 @@ export const CreateSandboxBodySchema = t.Object({
   baseImage: t.Optional(t.String()),
   vcpus: t.Optional(t.Number({ minimum: 1, maximum: 8 })),
   memoryMb: t.Optional(t.Number({ minimum: 512, maximum: 16384 })),
-  system: t.Optional(t.Boolean()),
   prebuildSnapshotName: t.Optional(t.String()),
   /** Display name shown on the dashboard (defaults to workspace name). */
   name: t.Optional(t.String({ maxLength: 200 })),
   /** Branch to checkout. Overrides `repo.branch` for single-repo workspaces. */
   branch: t.Optional(t.String({ maxLength: 200 })),
-  /** Where the sandbox came from. Stored verbatim on the persisted sandbox. */
+  /**
+   * Where the sandbox came from. Stored verbatim on the persisted sandbox.
+   * `source: "system"` is the canonical marker for the manager's internal
+   * system sandbox.
+   */
   origin: t.Optional(SandboxOriginSchema),
 });
 export type CreateSandboxBody = Static<typeof CreateSandboxBodySchema>;

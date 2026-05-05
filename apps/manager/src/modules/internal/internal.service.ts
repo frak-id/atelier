@@ -1,6 +1,7 @@
 import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
+import { isSystemSandbox, type SandboxOrigin } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { CLIProxyService } from "../cliproxy/cliproxy.service.ts";
@@ -41,7 +42,7 @@ export class InternalService {
       const { files } = this.getConfigFilesToPush({
         workspaceId: sandbox.workspaceId,
         sandboxId: sandbox.id,
-        system: sandbox.origin?.source === "system",
+        isSystem: isSystemSandbox(sandbox),
       });
       if (files.length === 0) continue;
       await this.pushFilesToSandbox(sandbox.id, files, "config");
@@ -95,17 +96,19 @@ export class InternalService {
    */
   async syncConfigsToSandbox(
     sandboxId: string,
-    override?: { workspaceId?: string; system?: boolean },
+    override?: { workspaceId?: string; origin?: SandboxOrigin },
   ): Promise<{ synced: number }> {
     const sandbox = override
       ? undefined
       : this.sandboxService.getById(sandboxId);
     const workspaceId = override?.workspaceId ?? sandbox?.workspaceId;
-    const system = override?.system ?? sandbox?.origin?.source === "system";
+    const isSystem = override
+      ? override.origin?.source === "system"
+      : isSystemSandbox(sandbox);
     const { files } = this.getConfigFilesToPush({
       workspaceId,
       sandboxId,
-      system,
+      isSystem,
     });
     if (files.length === 0) return { synced: 0 };
 
@@ -117,14 +120,14 @@ export class InternalService {
   private getConfigFilesToPush(opts: {
     workspaceId?: string;
     sandboxId?: string;
-    system?: boolean;
+    isSystem?: boolean;
   }): {
     files: { path: string; content: string }[];
   } {
     const authManagedPaths = new Set<string>(AUTH_PROVIDERS.map((p) => p.path));
     const merged = this.configFileService.getMergedForSandbox(opts.workspaceId);
 
-    if (opts.system) {
+    if (opts.isSystem) {
       this.injectSystemAgents(merged);
       this.injectMcpServer(merged);
     }

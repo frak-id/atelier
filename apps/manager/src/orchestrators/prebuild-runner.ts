@@ -620,7 +620,10 @@ export class PrebuildRunner {
     try {
       const result = await this.deps.internalService.syncConfigsToSandbox(
         sandboxId,
-        { workspaceId, system: isSystem },
+        {
+          workspaceId,
+          ...(isSystem && { origin: { source: "system" } }),
+        },
       );
       log.info(
         { sandboxId, workspaceId, synced: result.synced },

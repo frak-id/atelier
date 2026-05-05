@@ -135,7 +135,7 @@ export class TaskRepository {
     return true;
   }
 
-  findByIntegrationKey(source: string, externalId: string): Task | undefined {
+  findByExternalKey(source: string, externalId: string): Task | undefined {
     const row = getDatabase()
       .select()
       .from(tasks)

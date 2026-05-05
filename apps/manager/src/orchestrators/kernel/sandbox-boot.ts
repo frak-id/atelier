@@ -13,7 +13,12 @@ import {
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import type { Sandbox, SandboxOrigin, Workspace } from "../../schemas/index.ts";
+import {
+  isSystemSandbox,
+  type Sandbox,
+  type SandboxOrigin,
+  type Workspace,
+} from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
@@ -30,7 +35,6 @@ const DEFAULT_BASE_IMAGE = "dev-base";
 
 export interface BootNewOptions {
   workspaceId?: string;
-  system?: boolean;
   baseImage?: string;
   vcpus: number;
   memoryMb: number;
@@ -337,9 +341,8 @@ export async function finalizeNewSandbox(
   sandbox: Sandbox,
   podName: string,
   ports: SandboxPorts,
-  options: { system?: boolean },
 ): Promise<Sandbox> {
-  const urls = buildUrls(sandboxId, options.system);
+  const urls = buildUrls(sandboxId, isSystemSandbox(sandbox));
 
   sandbox.status = "running";
   sandbox.runtime.urls = urls;
@@ -363,14 +366,13 @@ export async function finalizeRestartedSandbox(
   sandbox: Sandbox,
   podName: string,
   ports: SandboxPorts,
-  options: { system?: boolean },
 ): Promise<Sandbox> {
   const updatedSandbox: Sandbox = {
     ...sandbox,
     status: "running",
     runtime: {
       ...sandbox.runtime,
-      urls: buildUrls(sandboxId, options.system),
+      urls: buildUrls(sandboxId, isSystemSandbox(sandbox)),
     },
     updatedAt: new Date().toISOString(),
   };
@@ -391,7 +393,7 @@ function resolveSandboxImage(baseImage?: string): string {
 
 function buildUrls(
   sandboxId: string,
-  system?: boolean,
+  isSystem: boolean,
 ): { vscode: string; opencode: string; ssh: string } {
   const sandboxDomain = config.domain.dashboard;
   const sshHost =
@@ -399,7 +401,7 @@ function buildUrls(
   const sshPort = config.domain.ssh.port;
 
   return {
-    vscode: system ? "" : `https://vscode-${sandboxId}.${sandboxDomain}`,
+    vscode: isSystem ? "" : `https://vscode-${sandboxId}.${sandboxDomain}`,
     opencode: `https://opencode-${sandboxId}.${sandboxDomain}`,
     ssh:
       sshPort === 22

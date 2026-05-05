@@ -150,7 +150,6 @@ export async function createWorkspaceSandbox(
       boot.sandbox,
       boot.podName,
       ports,
-      { system: false },
     );
   } catch (error) {
     log.error(

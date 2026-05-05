@@ -25,6 +25,6 @@ Database must init first → cron jobs → cleanup → listen.
 
 - **Sandbox** is the universal compute primitive. Every spawn path — dashboard, task, opencode-plugin, slack/github, system bootstrap — produces a `Sandbox` row tagged with `origin: { source, externalId?, externalUrl? }`. Use the origin filter (`?originSource=...&originExternalId=...`) to look one up; never persist your own id→sandbox mapping.
 - **Task** is the multi-session work-item with reply semantics (kanban + slack/github thread continuation). Tasks own a sandbox, manage multiple OpenCode sessions, and carry the platform-specific reply state. If you just need a sandbox to run code in, spawn one directly — don't wrap it in a task.
-- **System sandboxes** are flagged via `origin.source: "system"` (no `workspaceId`). Filter them out of user-facing lists with that predicate.
+- **System sandboxes** are flagged via `origin.source: "system"` (no `workspaceId`). Filter them out of user-facing lists with the `isSystemSandbox(s)` helper from `schemas/sandbox.ts`.
 
 For code patterns and examples, see [docs/patterns.md](../../docs/patterns.md).

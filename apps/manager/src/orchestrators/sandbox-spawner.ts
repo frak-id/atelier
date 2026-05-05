@@ -27,13 +27,13 @@ export class SandboxSpawner {
     createdByUserId?: string,
   ): Promise<CreateSandboxResponse> {
     const sandboxId = safeNanoid();
-
-    if (!options.system && !options.workspaceId) {
+    const isSystem = options.origin?.source === "system";
+    if (!isSystem && !options.workspaceId) {
       throw new Error("workspaceId is required for workspace sandbox");
     }
 
     const workspace =
-      options.workspaceId && !options.system
+      options.workspaceId && !isSystem
         ? this.ports.workspaces.getById(options.workspaceId)
         : undefined;
 
@@ -41,7 +41,7 @@ export class SandboxSpawner {
       return this.spawnMock(sandboxId, workspace, options);
     }
 
-    if (options.system) {
+    if (isSystem) {
       return createSystemSandbox(sandboxId, options, this.ports);
     }
 

@@ -53,7 +53,7 @@ export class SlackAdapter implements IntegrationAdapter {
   }
 
   async extractContext(event: IntegrationEvent): Promise<IntegrationContext> {
-    const { channel, threadTs } = SlackAdapter.parseThreadKey(event.threadKey);
+    const { channel, threadTs } = SlackAdapter.parseThreadKey(event.externalId);
     const raw = event.raw as SlackRawEvent;
     const isDirectMessage = raw.channelType === "im";
 
@@ -124,9 +124,9 @@ export class SlackAdapter implements IntegrationAdapter {
   }
 
   async postMessage(event: IntegrationEvent, text: string): Promise<void> {
-    const { channel, threadTs } = SlackAdapter.parseThreadKey(event.threadKey);
+    const { channel, threadTs } = SlackAdapter.parseThreadKey(event.externalId);
     log.debug(
-      { channel, threadTs, threadKey: event.threadKey },
+      { channel, threadTs, externalId: event.externalId },
       "Posting message to thread",
     );
     const result = await this.client.chat.postMessage({
@@ -144,7 +144,7 @@ export class SlackAdapter implements IntegrationAdapter {
     event: IntegrationEvent,
     state: ProgressState,
   ): Promise<string | undefined> {
-    const { channel, threadTs } = SlackAdapter.parseThreadKey(event.threadKey);
+    const { channel, threadTs } = SlackAdapter.parseThreadKey(event.externalId);
     try {
       const result = await this.client.chat.postMessage({
         channel,
@@ -164,7 +164,7 @@ export class SlackAdapter implements IntegrationAdapter {
     messageId: string,
     state: ProgressState,
   ): Promise<void> {
-    const { channel } = SlackAdapter.parseThreadKey(event.threadKey);
+    const { channel } = SlackAdapter.parseThreadKey(event.externalId);
     try {
       await this.client.chat.update({
         channel,

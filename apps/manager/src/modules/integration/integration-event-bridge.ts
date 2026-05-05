@@ -157,7 +157,7 @@ export class IntegrationEventBridge {
 
     return {
       source: integration.source as IntegrationSource,
-      threadKey: integration.externalId,
+      externalId: integration.externalId,
       user: "system",
       text: "",
       raw,
