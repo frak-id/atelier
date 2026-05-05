@@ -77,22 +77,6 @@ export function buildSandboxConfig(
           // breaks `/sync/replay` because workspace events have nowhere
           // to land.
           ...(workspaceContext?.opencodeEnv ?? {}),
-          // Atelier-specific. The in-sandbox preregister plugin reads
-          // these to know which project_id to alias into the local DB.
-          ...(workspaceContext?.sourceProjectID && {
-            ATELIER_SOURCE_PROJECT_ID: workspaceContext.sourceProjectID,
-          }),
-          ...(workspaceContext?.sourceWorkspaceID && {
-            ATELIER_SOURCE_WORKSPACE_ID: workspaceContext.sourceWorkspaceID,
-          }),
-          ...(workspaceContext?.sourceWorkspaceFromID && {
-            ATELIER_SOURCE_WORKSPACE_FROM_ID:
-              workspaceContext.sourceWorkspaceFromID,
-          }),
-          // The plugin uses this to know what directory to register the
-          // project against — must match `workspaceDir` exactly so the
-          // upsert lines up with whatever opencode would compute on its own.
-          ATELIER_WORKSPACE_DIRECTORY: workspaceDir,
         },
       },
       terminal: {
