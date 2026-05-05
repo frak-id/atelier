@@ -64,7 +64,7 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
 
       log.info({ title, workspaceId: body.workspaceId }, "Creating task");
 
-      const task = taskService.create({
+      let task = taskService.create({
         ...body,
         title,
         createdBy: {
@@ -73,6 +73,10 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
           avatarUrl: user.avatarUrl,
         },
       });
+
+      if (body.integration) {
+        task = taskService.setIntegrationMetadata(task.id, body.integration);
+      }
 
       if (!body.title?.trim()) {
         systemAiService.generateTitleInBackground(

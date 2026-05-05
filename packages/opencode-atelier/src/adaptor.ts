@@ -56,6 +56,10 @@ export function createAtelierAdaptor(
           workspaceId: extra.atelierWorkspaceId,
           description: extra.description,
           baseBranch: extra.baseBranch,
+          integration: {
+            source: "opencode-plugin",
+            threadKey: info.id,
+          },
         }),
       );
 

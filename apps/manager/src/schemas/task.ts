@@ -85,6 +85,7 @@ export const CreateTaskBodySchema = t.Object({
   variantIndex: t.Optional(t.Number()),
   baseBranch: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
+  integration: t.Optional(TaskIntegrationMetadataSchema),
 });
 export type CreateTaskBody = Static<typeof CreateTaskBodySchema>;
 

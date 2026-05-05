@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Bot,
+  Code2,
   GitBranch,
   Github,
   GripVertical,
@@ -399,14 +400,17 @@ function IntegrationSourceBadge({
 
   const isSlack = integration.source === "slack";
   const isGithub = integration.source === "github";
-  if (!isSlack && !isGithub) return null;
+  const isOpencode = integration.source === "opencode-plugin";
+  if (!isSlack && !isGithub && !isOpencode) return null;
 
   const icon = isSlack ? (
     <Slack className="h-3 w-3" />
-  ) : (
+  ) : isGithub ? (
     <Github className="h-3 w-3" />
+  ) : (
+    <Code2 className="h-3 w-3" />
   );
-  const label = isSlack ? "Slack" : "GitHub";
+  const label = isSlack ? "Slack" : isGithub ? "GitHub" : "OpenCode";
 
   if (integration.externalUrl) {
     return (

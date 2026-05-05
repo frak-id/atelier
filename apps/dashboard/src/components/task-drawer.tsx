@@ -5,6 +5,7 @@ import {
   Bot,
   Check,
   CheckCircle,
+  Code2,
   Copy,
   ExternalLink,
   GitBranch,
@@ -641,14 +642,21 @@ function IntegrationBadge({
 
   const isSlack = integration.source === "slack";
   const isGithub = integration.source === "github";
-  if (!isSlack && !isGithub) return null;
+  const isOpencode = integration.source === "opencode-plugin";
+  if (!isSlack && !isGithub && !isOpencode) return null;
 
   const icon = isSlack ? (
     <Slack className="h-3 w-3" />
-  ) : (
+  ) : isGithub ? (
     <Github className="h-3 w-3" />
+  ) : (
+    <Code2 className="h-3 w-3" />
   );
-  const label = isSlack ? "via Slack" : "via GitHub";
+  const label = isSlack
+    ? "via Slack"
+    : isGithub
+      ? "via GitHub"
+      : "via OpenCode";
 
   const badge = (
     <Badge variant="outline" className="gap-1 text-xs">
@@ -682,14 +690,17 @@ function IntegrationSourceLink({
 
   const isSlack = integration.source === "slack";
   const isGithub = integration.source === "github";
-  if (!isSlack && !isGithub) return null;
+  const isOpencode = integration.source === "opencode-plugin";
+  if (!isSlack && !isGithub && !isOpencode) return null;
 
   const icon = isSlack ? (
     <Slack className="h-4 w-4" />
-  ) : (
+  ) : isGithub ? (
     <Github className="h-4 w-4" />
+  ) : (
+    <Code2 className="h-4 w-4" />
   );
-  const label = isSlack ? "Slack" : "GitHub";
+  const label = isSlack ? "Slack" : isGithub ? "GitHub" : "OpenCode";
 
   if (integration.externalUrl) {
     return (
