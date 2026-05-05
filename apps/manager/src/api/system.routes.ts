@@ -5,8 +5,9 @@ import {
   sandboxService,
   systemSandboxService,
 } from "../container.ts";
-import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
+
 import {
+  isSystemSandbox,
   SystemSandboxStatusSchema,
   type SystemStats,
   SystemStatsSchema,
@@ -38,9 +39,7 @@ type RawPod = {
 
 async function getSystemStats(): Promise<SystemStats> {
   const allRunning = sandboxService.getByStatus("running");
-  const userRunning = allRunning.filter(
-    (s) => s.workspaceId !== SYSTEM_WORKSPACE_ID,
-  );
+  const userRunning = allRunning.filter((s) => !isSystemSandbox(s));
   return {
     activeSandboxes: userRunning.length,
     maxSandboxes: config.server.maxSandboxes,
@@ -67,7 +66,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
       return {
         ...status,
         prebuild: {
-          exists: await prebuildRunner.hasPrebuild(SYSTEM_WORKSPACE_ID),
+          exists: await prebuildRunner.hasSystemPrebuild(),
           building: prebuildRunner.isSystemBuilding(),
           builtAt: meta?.builtAt ?? null,
         },

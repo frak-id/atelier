@@ -77,7 +77,7 @@ export class IntegrationGateway {
     }
 
     log.info(
-      { source: event.source, threadKey: event.threadKey, user: event.user },
+      { source: event.source, externalId: event.externalId, user: event.user },
       "Handling integration event",
     );
 
@@ -85,9 +85,9 @@ export class IntegrationGateway {
 
     try {
       const parsed = parseMention(event.text);
-      const existingTask = this.deps.taskService.findByIntegrationKey(
+      const existingTask = this.deps.taskService.findByExternalKey(
         event.source,
-        event.threadKey,
+        event.externalId,
       );
 
       switch (parsed.type) {
@@ -127,7 +127,7 @@ export class IntegrationGateway {
       }
     } catch (error) {
       log.error(
-        { source: event.source, threadKey: event.threadKey, error },
+        { source: event.source, externalId: event.externalId, error },
         "Integration event handling failed",
       );
       try {
@@ -683,7 +683,7 @@ export class IntegrationGateway {
     adapter: IntegrationAdapter,
   ): Promise<void> {
     log.info(
-      { source: event.source, threadKey: event.threadKey },
+      { source: event.source, externalId: event.externalId },
       "New mention — dispatching to system sandbox",
     );
 
@@ -774,7 +774,7 @@ export class IntegrationGateway {
         } catch (error) {
           log.warn(
             {
-              threadKey: event.threadKey,
+              externalId: event.externalId,
               sessionId: session.id,
               error,
             },
@@ -784,7 +784,7 @@ export class IntegrationGateway {
 
         if (taskId) {
           log.info(
-            { taskId, threadKey: event.threadKey },
+            { taskId, externalId: event.externalId },
             "Task created via system sandbox",
           );
           await this.attachIntegrationToTask(taskId, event);
@@ -795,7 +795,7 @@ export class IntegrationGateway {
         } catch (error) {
           log.warn(
             {
-              threadKey: event.threadKey,
+              externalId: event.externalId,
               sessionId: session.id,
               error,
             },
@@ -808,7 +808,7 @@ export class IntegrationGateway {
 
           if (taskId) {
             log.info(
-              { taskId, threadKey: event.threadKey },
+              { taskId, externalId: event.externalId },
               "Task found via fallback message inspection",
             );
             await this.attachIntegrationToTask(taskId, event);
@@ -858,7 +858,7 @@ export class IntegrationGateway {
     if (textReply) {
       log.info(
         {
-          threadKey: event.threadKey,
+          externalId: event.externalId,
           hasTask: !!taskId,
         },
         "Forwarding text response to platform",
@@ -874,7 +874,7 @@ export class IntegrationGateway {
     const raw = event.raw as Record<string, unknown>;
     const metadata: TaskIntegrationMetadata = {
       source: event.source,
-      threadKey: event.threadKey,
+      externalId: event.externalId,
     };
 
     if (event.source === "slack") {
@@ -904,7 +904,6 @@ export class IntegrationGateway {
         metadata.externalUrl = `https://github.com/${owner}/${repo}/pull/${prNumber}`;
       }
     }
-
     this.deps.taskService.setIntegrationMetadata(taskId, metadata);
 
     // Start the event bridge for real-time progress
@@ -930,7 +929,7 @@ export class IntegrationGateway {
     log.info(
       {
         source: event.source,
-        threadKey: event.threadKey,
+        externalId: event.externalId,
         taskId: task.id,
         sandboxId,
       },

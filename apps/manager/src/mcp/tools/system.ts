@@ -6,7 +6,8 @@ import {
   taskService,
   workspaceService,
 } from "../../container.ts";
-import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
+
+import { isSystemSandbox } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 
 const startTime = Date.now();
@@ -24,9 +25,7 @@ export function registerSystemTools(server: McpServer): void {
     },
     async () => {
       const allRunning = sandboxService.getByStatus("running");
-      const userRunning = allRunning.filter(
-        (s) => s.workspaceId !== SYSTEM_WORKSPACE_ID,
-      );
+      const userRunning = allRunning.filter((s) => !isSystemSandbox(s));
       const result = {
         activeSandboxes: userRunning.length,
         maxSandboxes: config.server.maxSandboxes,

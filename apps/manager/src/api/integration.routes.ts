@@ -80,14 +80,14 @@ export const integrationRoutes = new Elysia({
       );
 
       // DMs are fire-and-forget: always use event.ts so each message
-      // gets a unique threadKey (no thread continuation).
+      // gets a unique externalId (no thread continuation).
       const threadTs = isDm ? event.ts : (event.thread_ts ?? event.ts);
 
       setImmediate(() => {
         integrationGateway
           .handleEvent({
             source: "slack",
-            threadKey: SlackAdapter.buildThreadKey(event.channel, threadTs),
+            externalId: SlackAdapter.buildThreadKey(event.channel, threadTs),
             user: event.user,
             text: event.text ?? "",
             isDirectMessage: isDm || undefined,

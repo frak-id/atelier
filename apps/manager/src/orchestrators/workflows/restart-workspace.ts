@@ -64,8 +64,5 @@ export async function restartWorkspaceSandbox(
     sandbox,
     boot.podName,
     ports,
-    {
-      system: false,
-    },
   );
 }

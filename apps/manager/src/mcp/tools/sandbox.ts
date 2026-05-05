@@ -6,8 +6,12 @@ import {
   taskService,
   workspaceService,
 } from "../../container.ts";
-import { SYSTEM_WORKSPACE_ID } from "../../modules/system-sandbox/index.ts";
-import type { Sandbox, Task } from "../../schemas/index.ts";
+
+import {
+  isSystemSandbox,
+  type Sandbox,
+  type Task,
+} from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 
 function findTaskForSandbox(sandboxId: string): Task | undefined {
@@ -86,9 +90,7 @@ export function registerSandboxTools(server: McpServer): void {
       }
 
       if (!includeSystem) {
-        sandboxes = sandboxes.filter(
-          (s) => s.workspaceId !== SYSTEM_WORKSPACE_ID,
-        );
+        sandboxes = sandboxes.filter((s) => !isSystemSandbox(s));
       }
 
       const result = sandboxes.map(formatSandbox);

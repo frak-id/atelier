@@ -1,16 +1,14 @@
 import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
+import { isSystemSandbox, type SandboxOrigin } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { CLIProxyService } from "../cliproxy/cliproxy.service.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SettingsRepository } from "../settings/index.ts";
-import {
-  SYSTEM_AGENTS_CONFIG,
-  SYSTEM_WORKSPACE_ID,
-} from "../system-sandbox/index.ts";
+import { SYSTEM_AGENTS_CONFIG } from "../system-sandbox/index.ts";
 import type { AuthSyncService } from "./auth-sync.service.ts";
 
 const CLIPROXY_SETTINGS_KEY = "cliproxy.settings";
@@ -39,22 +37,16 @@ export class InternalService {
       .filter((s) => s.status === "running");
     if (runningSandboxes.length === 0) return { synced: 0 };
 
-    const byWorkspace = new Map<string | undefined, string[]>();
-    for (const sandbox of runningSandboxes) {
-      const key = sandbox.workspaceId ?? undefined;
-      const ids = byWorkspace.get(key) ?? [];
-      ids.push(sandbox.id);
-      byWorkspace.set(key, ids);
-    }
-
     let totalSynced = 0;
-    for (const [workspaceId, sandboxIds] of byWorkspace) {
-      for (const sandboxId of sandboxIds) {
-        const { files } = this.getConfigFilesToPush(workspaceId, sandboxId);
-        if (files.length === 0) continue;
-        await this.pushFilesToSandbox(sandboxId, files, "config");
-        totalSynced += files.length;
-      }
+    for (const sandbox of runningSandboxes) {
+      const { files } = this.getConfigFilesToPush({
+        workspaceId: sandbox.workspaceId,
+        sandboxId: sandbox.id,
+        isSystem: isSystemSandbox(sandbox),
+      });
+      if (files.length === 0) continue;
+      await this.pushFilesToSandbox(sandbox.id, files, "config");
+      totalSynced += files.length;
     }
 
     log.info(
@@ -97,19 +89,27 @@ export class InternalService {
    * Push merged config files (opencode config, MCP server, plugin manifests,
    * etc.) to a sandbox.
    *
-   * Pass `workspaceIdOverride` when the target sandbox isn't yet a real DB
-   * record — e.g. during prebuild, where we still want the workspace's configs
-   * to land in the snapshot but the prebuild pod has no `Sandbox` row.
+   * Pass `override` when the target sandbox isn't yet a real DB record —
+   * e.g. during prebuild, where we still want the workspace's configs (or
+   * system configs) to land in the snapshot but the prebuild pod has no
+   * `Sandbox` row to derive context from.
    */
   async syncConfigsToSandbox(
     sandboxId: string,
-    workspaceIdOverride?: string,
+    override?: { workspaceId?: string; origin?: SandboxOrigin },
   ): Promise<{ synced: number }> {
-    const workspaceId =
-      workspaceIdOverride ??
-      this.sandboxService.getById(sandboxId)?.workspaceId ??
-      undefined;
-    const { files } = this.getConfigFilesToPush(workspaceId, sandboxId);
+    const sandbox = override
+      ? undefined
+      : this.sandboxService.getById(sandboxId);
+    const workspaceId = override?.workspaceId ?? sandbox?.workspaceId;
+    const isSystem = override
+      ? override.origin?.source === "system"
+      : isSystemSandbox(sandbox);
+    const { files } = this.getConfigFilesToPush({
+      workspaceId,
+      sandboxId,
+      isSystem,
+    });
     if (files.length === 0) return { synced: 0 };
 
     await this.pushFilesToSandbox(sandboxId, files, "config");
@@ -117,21 +117,22 @@ export class InternalService {
     return { synced: files.length };
   }
 
-  private getConfigFilesToPush(
-    workspaceId?: string,
-    sandboxId?: string,
-  ): {
+  private getConfigFilesToPush(opts: {
+    workspaceId?: string;
+    sandboxId?: string;
+    isSystem?: boolean;
+  }): {
     files: { path: string; content: string }[];
   } {
     const authManagedPaths = new Set<string>(AUTH_PROVIDERS.map((p) => p.path));
-    const merged = this.configFileService.getMergedForSandbox(workspaceId);
+    const merged = this.configFileService.getMergedForSandbox(opts.workspaceId);
 
-    if (workspaceId === SYSTEM_WORKSPACE_ID) {
+    if (opts.isSystem) {
       this.injectSystemAgents(merged);
       this.injectMcpServer(merged);
     }
 
-    this.injectCliProxyProvider(merged, sandboxId);
+    this.injectCliProxyProvider(merged, opts.sandboxId);
 
     const files: { path: string; content: string }[] = [];
 

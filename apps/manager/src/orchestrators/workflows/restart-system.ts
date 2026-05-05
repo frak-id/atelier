@@ -48,8 +48,5 @@ export async function restartSystemSandbox(
     sandbox,
     boot.podName,
     ports,
-    {
-      system: true,
-    },
   );
 }

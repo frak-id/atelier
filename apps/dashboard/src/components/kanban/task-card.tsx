@@ -5,16 +5,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Bot,
-  Code2,
   GitBranch,
-  Github,
   GripVertical,
   Monitor,
   MoreHorizontal,
-  Slack,
   Terminal,
 } from "lucide-react";
 import { sandboxDetailQuery, sandboxGitStatusQuery } from "@/api/queries";
+import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { SessionTodoInfo } from "@/components/session-todo-info";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
@@ -389,60 +387,4 @@ export function TaskSessionsStatus({
   }
 
   return <SessionStatusIndicator interaction={aggregatedInteraction} compact />;
-}
-
-function IntegrationSourceBadge({
-  integration,
-}: {
-  integration?: Task["data"]["integration"];
-}) {
-  if (!integration) return null;
-
-  const isSlack = integration.source === "slack";
-  const isGithub = integration.source === "github";
-  const isOpencode = integration.source === "opencode-plugin";
-  if (!isSlack && !isGithub && !isOpencode) return null;
-
-  const icon = isSlack ? (
-    <Slack className="h-3 w-3" />
-  ) : isGithub ? (
-    <Github className="h-3 w-3" />
-  ) : (
-    <Code2 className="h-3 w-3" />
-  );
-  const label = isSlack ? "Slack" : isGithub ? "GitHub" : "OpenCode";
-
-  if (integration.externalUrl) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <a
-            href={integration.externalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {icon}
-          </a>
-        </TooltipTrigger>
-        <TooltipContent>
-          <span>Created from {label}</span>
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex items-center text-muted-foreground shrink-0">
-          {icon}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>
-        <span>Created from {label}</span>
-      </TooltipContent>
-    </Tooltip>
-  );
 }

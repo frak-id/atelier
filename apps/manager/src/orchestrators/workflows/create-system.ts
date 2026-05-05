@@ -25,12 +25,14 @@ export async function createSystemSandbox(
       sandboxId,
       {
         workspaceId: options.workspaceId,
-        system: true,
         baseImage: options.baseImage,
         vcpus: options.vcpus ?? DEFAULTS.VCPUS,
         memoryMb: options.memoryMb ?? DEFAULTS.MEMORY_MB,
         prebuildReady: options.prebuildSnapshotName != null,
         prebuildSnapshotName: options.prebuildSnapshotName,
+        // Forward the system origin so the persisted sandbox row carries
+        // `origin.source: "system"` (used by all the system-vs-user filters).
+        origin: options.origin,
       },
       ports,
     );
@@ -72,7 +74,6 @@ export async function createSystemSandbox(
       boot.sandbox,
       boot.podName,
       ports,
-      { system: true },
     );
   } catch (error) {
     log.error(

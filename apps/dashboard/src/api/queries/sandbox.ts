@@ -5,6 +5,14 @@ import { queryKeys, unwrap } from "./keys";
 export const sandboxListQuery = (filters?: {
   status?: string;
   workspaceId?: string;
+  /**
+   * Filter by `Sandbox.origin.source` (e.g. `"task"`, `"opencode-plugin"`).
+   * Pairs with `originExternalId` to recover a specific sandbox without
+   * persisting our own id→sandbox mapping. Mirrors the manager's
+   * `?originSource=&originExternalId=` query.
+   */
+  originSource?: string;
+  originExternalId?: string;
 }) =>
   queryOptions({
     queryKey: queryKeys.sandboxes.list(filters),

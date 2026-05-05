@@ -3,12 +3,27 @@ import type {
   WorkspaceInfo,
   WorkspaceTarget,
 } from "@opencode-ai/plugin";
-import { type AtelierClient, unwrap, waitForTaskSandbox } from "./client.ts";
+import { type AtelierClient, unwrap } from "./client.ts";
 import { logger } from "./logger.ts";
 import type { AtelierExtra, AtelierPluginConfig, Sandbox } from "./types.ts";
 
-const sandboxCache = new Map<string, { sandbox: Sandbox; fetchedAt: number }>();
+const ORIGIN_SOURCE = "opencode-plugin";
 const CACHE_TTL_MS = 30_000;
+
+/**
+ * Per-opencode-workspace runtime state.
+ *
+ * Opencode only persists the fields in `AtelierExtra`, so anything we learn
+ * at create / lookup time lives here, keyed by the opencode workspace id.
+ * Recoverable on demand via:
+ *   GET /sandboxes?originSource=opencode-plugin&originExternalId=<workspaceId>
+ */
+type RuntimeEntry = {
+  sandbox: Sandbox;
+  fetchedAt: number;
+};
+
+const runtimeCache = new Map<string, RuntimeEntry>();
 
 export function createAtelierAdaptor(
   pluginConfig: AtelierPluginConfig,
@@ -24,8 +39,7 @@ export function createAtelierAdaptor(
         managerUrl: raw.managerUrl ?? pluginConfig.managerUrl,
         atelierWorkspaceId:
           raw.atelierWorkspaceId ?? pluginConfig.workspaceId ?? "",
-        description: raw.description ?? "OpenCode workspace",
-        baseBranch: raw.baseBranch ?? undefined,
+        branch: raw.branch ?? info.branch ?? undefined,
       };
 
       return {
@@ -46,126 +60,184 @@ export function createAtelierAdaptor(
       }
 
       const client = getClient();
+      const branch = extra.branch ?? info.branch ?? undefined;
 
       logger.info(
-        `Creating task in workspace ${extra.atelierWorkspaceId}` +
-          (extra.baseBranch ? ` (branch: ${extra.baseBranch})` : ""),
+        `Creating sandbox in workspace ${extra.atelierWorkspaceId}` +
+          (branch ? ` (branch: ${branch})` : ""),
       );
-      const task = unwrap(
-        await client.api.tasks.post({
+
+      // POST /sandboxes blocks until the pod is running and OpenCode is
+      // healthy, so no separate readiness wait is needed on the happy path.
+      const sandbox = unwrap(
+        await client.api.sandboxes.post({
           workspaceId: extra.atelierWorkspaceId,
-          description: extra.description,
-          baseBranch: extra.baseBranch,
-          integration: {
-            source: "opencode-plugin",
-            threadKey: info.id,
+          name: info.name,
+          branch,
+          origin: {
+            source: ORIGIN_SOURCE,
+            externalId: info.id,
           },
         }),
       );
 
-      extra.taskId = task.id;
-      logger.info(`Task ${task.id} created, starting...`);
+      logger.info(`Sandbox ${sandbox.id} ready (workspace ${info.id})`);
 
-      unwrap(await client.api.tasks({ id: task.id }).start.post());
-
-      const startedAt = Date.now();
-      const { sandbox } = await waitForTaskSandbox(client, task.id, {
-        intervalMs: pluginConfig.pollIntervalMs,
-        timeoutMs: pluginConfig.pollTimeoutMs,
-      });
-      logger.info(
-        `Sandbox ${sandbox.id} ready in ${Date.now() - startedAt}ms (task ${task.id})`,
-      );
-
-      extra.sandboxId = sandbox.id;
-      extra.sandboxOpencodeUrl = sandbox.runtime.urls.opencode;
-      extra.opencodePassword = sandbox.runtime.opencodePassword;
-
-      sandboxCache.set(info.id, {
-        sandbox,
+      runtimeCache.set(info.id, {
+        sandbox: sandbox as Sandbox,
         fetchedAt: Date.now(),
       });
     },
 
     async remove(info: WorkspaceInfo): Promise<void> {
-      const extra = info.extra as AtelierExtra;
-      if (!extra.taskId) return;
-
       const client = getClient();
-      logger.info(`Removing task ${extra.taskId} (workspace ${info.id})`);
-      try {
-        unwrap(
-          await client.api.tasks({ id: extra.taskId }).delete(undefined, {
-            query: { sandboxAction: "destroy" },
-          }),
-        );
-      } catch (err) {
-        logger.warn(`Failed to delete task ${extra.taskId}: ${err}`);
+
+      const sandboxId = await findSandboxId(client, info.id);
+      if (!sandboxId) {
+        logger.info(`No sandbox to remove for workspace ${info.id}`);
+        runtimeCache.delete(info.id);
+        return;
       }
 
-      sandboxCache.delete(info.id);
+      logger.info(`Destroying sandbox ${sandboxId} (workspace ${info.id})`);
+      try {
+        unwrap(await client.api.sandboxes({ id: sandboxId }).delete());
+      } catch (err) {
+        logger.warn(`Failed to delete sandbox ${sandboxId}: ${err}`);
+      }
+
+      runtimeCache.delete(info.id);
     },
 
     async target(info: WorkspaceInfo): Promise<WorkspaceTarget> {
-      const extra = info.extra as AtelierExtra;
-      const url = await resolveOpencodeUrl(info.id, extra, getClient);
-      if (!url) {
+      const client = getClient();
+
+      const entry = await getRuntimeEntry(client, info.id);
+      if (!entry || entry.sandbox.status !== "running") {
         const msg = `Sandbox not available for workspace ${info.id}`;
         logger.error(msg);
         throw new Error(`[atelier] ${msg}`);
       }
 
       const headers: Record<string, string> = {};
-      if (extra.opencodePassword) {
-        headers.Authorization = `Basic ${btoa(`opencode:${extra.opencodePassword}`)}`;
+      const password = entry.sandbox.runtime.opencodePassword;
+      if (password) {
+        headers.Authorization = `Basic ${btoa(`opencode:${password}`)}`;
       }
 
-      return { type: "remote", url, headers };
+      return {
+        type: "remote",
+        url: entry.sandbox.runtime.urls.opencode,
+        headers,
+      };
     },
   };
 }
 
-async function resolveOpencodeUrl(
+/**
+ * Resolve the active sandbox for an opencode workspace.
+ *
+ * Priority:
+ *   1. In-memory cache, if fresh.
+ *   2. Refresh via the cached sandbox id (cheap when still valid).
+ *   3. Discover the sandbox by `origin.externalId === info.id`,
+ *      then fetch its full record.
+ *   4. Stale cache as a last resort, so transient manager downtime doesn't
+ *      tear down a working session.
+ */
+async function getRuntimeEntry(
+  client: AtelierClient,
   workspaceId: string,
-  extra: AtelierExtra,
-  getClient: () => AtelierClient,
-): Promise<string | null> {
-  if (extra.sandboxOpencodeUrl) {
-    const cached = sandboxCache.get(workspaceId);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-      return extra.sandboxOpencodeUrl;
+): Promise<RuntimeEntry | null> {
+  const cached = runtimeCache.get(workspaceId);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached;
+  }
+
+  if (cached) {
+    const refreshed = await refreshSandbox(client, cached.sandbox.id);
+    if (refreshed) {
+      const entry: RuntimeEntry = {
+        sandbox: refreshed,
+        fetchedAt: Date.now(),
+      };
+      runtimeCache.set(workspaceId, entry);
+      return entry;
     }
   }
 
-  if (!extra.sandboxId) return null;
+  const discovered = await findSandboxByExternalId(client, workspaceId);
+  if (discovered) {
+    const entry: RuntimeEntry = {
+      sandbox: discovered,
+      fetchedAt: Date.now(),
+    };
+    runtimeCache.set(workspaceId, entry);
+    return entry;
+  }
 
+  return cached ?? null;
+}
+
+async function refreshSandbox(
+  client: AtelierClient,
+  sandboxId: string,
+): Promise<Sandbox | null> {
   try {
-    const client = getClient();
-    const sandbox = unwrap(
-      await client.api.sandboxes({ id: extra.sandboxId }).get(),
-    );
+    const sandbox = unwrap(await client.api.sandboxes({ id: sandboxId }).get());
     if (sandbox.status !== "running") {
       logger.warn(
-        `Sandbox ${extra.sandboxId} status=${sandbox.status} (expected running)`,
+        `Sandbox ${sandboxId} status=${sandbox.status} (expected running)`,
       );
       return null;
     }
-
-    sandboxCache.set(workspaceId, {
-      sandbox: sandbox as Sandbox,
-      fetchedAt: Date.now(),
-    });
-
-    extra.sandboxOpencodeUrl = sandbox.runtime.urls.opencode;
-    extra.opencodePassword = sandbox.runtime.opencodePassword;
-    return sandbox.runtime.urls.opencode;
+    return sandbox as Sandbox;
   } catch (err) {
-    // Don't swallow — a stale URL hides real backend failures. We do still
-    // return the cached URL as a last resort so transient manager downtime
-    // doesn't tear down a working session.
-    logger.warn(
-      `Failed to refresh sandbox ${extra.sandboxId} from manager: ${err}`,
-    );
-    return extra.sandboxOpencodeUrl ?? null;
+    logger.warn(`Failed to refresh sandbox ${sandboxId}: ${err}`);
+    return null;
   }
+}
+
+/**
+ * Look up the most recently updated sandbox tagged with our origin source
+ * and the given external id (= opencode workspace id).
+ */
+async function findSandboxByExternalId(
+  client: AtelierClient,
+  workspaceId: string,
+): Promise<Sandbox | null> {
+  try {
+    const sandboxes = unwrap(
+      await client.api.sandboxes.get({
+        query: {
+          originSource: ORIGIN_SOURCE,
+          originExternalId: workspaceId,
+        },
+      }),
+    );
+    const running = sandboxes.find((s) => s.status === "running");
+    if (running) return running as Sandbox;
+    // Fall back to the most recently updated, even if not running, so the
+    // caller can decide whether to surface the error.
+    const sorted = [...sandboxes].sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    );
+    return (sorted[0] as Sandbox) ?? null;
+  } catch (err) {
+    logger.warn(
+      `Failed to look up sandbox for workspace ${workspaceId}: ${err}`,
+    );
+    return null;
+  }
+}
+
+async function findSandboxId(
+  client: AtelierClient,
+  workspaceId: string,
+): Promise<string | null> {
+  const cached = runtimeCache.get(workspaceId);
+  if (cached) return cached.sandbox.id;
+
+  const sandbox = await findSandboxByExternalId(client, workspaceId);
+  return sandbox?.id ?? null;
 }

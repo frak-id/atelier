@@ -13,7 +13,7 @@ import {
 import { RegistryService } from "../infrastructure/registry/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
 import type { SystemAiService } from "../modules/system-sandbox/index.ts";
-import { SYSTEM_WORKSPACE_ID } from "../modules/system-sandbox/index.ts";
+
 import type { UserService } from "../modules/user/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
@@ -28,6 +28,17 @@ import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
 import { GuestOps } from "./ports/guest-ops.ts";
 
 const log = createChildLogger("prebuild-runner");
+
+/**
+ * Internal key used to namespace system-level prebuild resources (PVC, pod,
+ * snapshot). It's a string identifier, NOT a workspace id — system sandboxes
+ * have `workspaceId: undefined` and `origin.source: "system"`.
+ *
+ * The literal `"__system__"` is kept for snapshot-name backward compat: the
+ * snapshot is named `prebuild-${normalize(key)}` which resolves to
+ * `prebuild-system` either way.
+ */
+const SYSTEM_KEY = "__system__";
 
 const POLL_INTERVAL_MS = 2000;
 // const POD_TIMEOUT_MS = 120_000;
@@ -174,7 +185,7 @@ export class PrebuildRunner {
     if (!this.isSystemBuilding()) {
       throw new Error("No system prebuild in progress to cancel");
     }
-    await this.cleanupBuildResources(SYSTEM_WORKSPACE_ID);
+    await this.cleanupBuildResources(SYSTEM_KEY);
   }
 
   async delete(workspaceId?: string): Promise<void> {
@@ -188,11 +199,11 @@ export class PrebuildRunner {
   }
 
   async deleteSystem(): Promise<void> {
-    await this.cleanupStorage(SYSTEM_WORKSPACE_ID);
+    await this.cleanupStorage(SYSTEM_KEY);
   }
 
   async ensureSystemPrebuild(): Promise<void> {
-    const exists = await this.hasPrebuild(SYSTEM_WORKSPACE_ID);
+    const exists = await this.hasPrebuild(SYSTEM_KEY);
     if (exists) {
       log.info("System prebuild snapshot exists, skipping");
       return;
@@ -204,10 +215,10 @@ export class PrebuildRunner {
     latestId: string;
     builtAt: string;
   } | null> {
-    const exists = await this.hasPrebuild(SYSTEM_WORKSPACE_ID);
+    const exists = await this.hasPrebuild(SYSTEM_KEY);
     if (!exists) return null;
     return {
-      latestId: this.snapshotNameForKey(SYSTEM_WORKSPACE_ID),
+      latestId: this.snapshotNameForKey(SYSTEM_KEY),
       builtAt: new Date().toISOString(),
     };
   }
@@ -217,7 +228,11 @@ export class PrebuildRunner {
   }
 
   isSystemBuilding(): boolean {
-    return this.activeBuilds.has(SYSTEM_WORKSPACE_ID);
+    return this.activeBuilds.has(SYSTEM_KEY);
+  }
+
+  hasSystemPrebuild(): Promise<boolean> {
+    return this.hasPrebuild(SYSTEM_KEY);
   }
 
   async getSystemStatus(): Promise<{
@@ -225,7 +240,7 @@ export class PrebuildRunner {
     building: boolean;
   }> {
     return {
-      hasPrebuild: await this.hasPrebuild(SYSTEM_WORKSPACE_ID),
+      hasPrebuild: await this.hasPrebuild(SYSTEM_KEY),
       building: this.isSystemBuilding(),
     };
   }
@@ -268,9 +283,7 @@ export class PrebuildRunner {
 
   private async runScenario(scenario: PrebuildScenario): Promise<void> {
     const key =
-      scenario.kind === "workspace"
-        ? scenario.workspaceId
-        : SYSTEM_WORKSPACE_ID;
+      scenario.kind === "workspace" ? scenario.workspaceId : SYSTEM_KEY;
     if (this.activeBuilds.has(key)) {
       throw new Error(
         scenario.kind === "workspace"
@@ -602,14 +615,15 @@ export class PrebuildRunner {
     sandboxId: string,
     scenario: PrebuildScenario,
   ): Promise<void> {
-    const workspaceId =
-      scenario.kind === "workspace"
-        ? scenario.workspaceId
-        : SYSTEM_WORKSPACE_ID;
+    const isSystem = scenario.kind === "system";
+    const workspaceId = isSystem ? undefined : scenario.workspaceId;
     try {
       const result = await this.deps.internalService.syncConfigsToSandbox(
         sandboxId,
-        workspaceId,
+        {
+          workspaceId,
+          ...(isSystem && { origin: { source: "system" } }),
+        },
       );
       log.info(
         { sandboxId, workspaceId, synced: result.synced },

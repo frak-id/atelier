@@ -30,9 +30,8 @@ export function createSystemPromptTransform(
       "- Network is sandboxed; outbound traffic uses the sandbox's egress.",
       "",
       "### Available Atelier slash commands",
-      "- `/atelier-tasks [workspaceId]` — list tasks in the current (or given) workspace.",
-      "- `/atelier-status <taskId>` — detailed status of a task and its sandbox.",
-      "- `/atelier-sandboxes [workspaceId]` — list running sandboxes.",
+      "- `/atelier-sandboxes [workspaceId]` — list sandboxes in the current (or given) workspace.",
+      "- `/atelier-status <sandboxId>` — detailed status of a sandbox.",
     ];
 
     if (pluginConfig.workspaceId) {

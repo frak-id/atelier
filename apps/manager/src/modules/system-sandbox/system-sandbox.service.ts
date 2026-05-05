@@ -2,6 +2,7 @@ import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2";
 import { waitForOpencodeReady } from "../../orchestrators/kernel/boot-waiter.ts";
 import type { SandboxDestroyer } from "../../orchestrators/sandbox-destroyer.ts";
 import type { SandboxSpawner } from "../../orchestrators/sandbox-spawner.ts";
+import { isSystemSandbox } from "../../schemas/index.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
@@ -15,8 +16,6 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const SYSTEM_SANDBOX_VCPUS = 1;
 const SYSTEM_SANDBOX_MEMORY_MB = 1024;
 const MAX_LIFETIME_MS = 6 * 60 * 60 * 1000;
-
-export const SYSTEM_WORKSPACE_ID = "__system__";
 
 export type SystemSandboxStatus = "off" | "booting" | "running" | "idle";
 
@@ -46,7 +45,7 @@ export class SystemSandboxService {
   async recoverFromRestart(): Promise<void> {
     const systemSandboxes = this.deps.sandboxService
       .getAll()
-      .filter((s) => s.workspaceId === SYSTEM_WORKSPACE_ID);
+      .filter(isSystemSandbox);
 
     if (systemSandboxes.length === 0) {
       log.info("No system sandboxes found from previous run");
@@ -296,8 +295,7 @@ export class SystemSandboxService {
     const startTime = performance.now();
 
     const sandbox = await this.deps.sandboxSpawner.spawn({
-      workspaceId: SYSTEM_WORKSPACE_ID,
-      system: true,
+      origin: { source: "system" },
       vcpus: SYSTEM_SANDBOX_VCPUS,
       memoryMb: SYSTEM_SANDBOX_MEMORY_MB,
     });

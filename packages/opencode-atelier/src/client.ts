@@ -1,7 +1,7 @@
 import { treaty } from "@elysiajs/eden";
 import type { App } from "@frak/atelier-manager";
 import { logger } from "./logger.ts";
-import type { AtelierPluginConfig, Sandbox, Task } from "./types.ts";
+import type { AtelierPluginConfig, Sandbox } from "./types.ts";
 
 export type AtelierClient = ReturnType<typeof treaty<App>>;
 
@@ -39,6 +39,13 @@ export function unwrap<T>(result: { data: T; error: unknown }): NonNullable<T> {
   return result.data as NonNullable<T>;
 }
 
+/**
+ * Poll the manager until the sandbox transitions to `running`.
+ *
+ * `POST /sandboxes` already blocks until the agent + opencode are healthy,
+ * so this is mostly a safety net for the initial create response and is the
+ * canonical way to revive a stale runtime cache entry.
+ */
 export async function waitForSandboxReady(
   client: AtelierClient,
   sandboxId: string,
@@ -60,33 +67,6 @@ export async function waitForSandboxReady(
 
   throw new Error(
     `Sandbox ${sandboxId} did not become ready within ${opts.timeoutMs}ms`,
-  );
-}
-
-export async function waitForTaskSandbox(
-  client: AtelierClient,
-  taskId: string,
-  opts: { intervalMs: number; timeoutMs: number },
-): Promise<{ task: Task; sandbox: Sandbox }> {
-  const deadline = Date.now() + opts.timeoutMs;
-  let attempt = 0;
-
-  while (Date.now() < deadline) {
-    const task = unwrap(await client.api.tasks({ id: taskId }).get());
-
-    if (task.data.sandboxId) {
-      const sandbox = await waitForSandboxReady(client, task.data.sandboxId, {
-        intervalMs: opts.intervalMs,
-        timeoutMs: Math.max(0, deadline - Date.now()),
-      });
-      return { task: task as Task, sandbox };
-    }
-
-    await sleep(backoffDelay(opts.intervalMs, attempt++, deadline));
-  }
-
-  throw new Error(
-    `Task ${taskId} never received a sandbox within ${opts.timeoutMs}ms`,
   );
 }
 

@@ -225,8 +225,12 @@ export class TaskService {
     return updated;
   }
 
-  findByIntegrationKey(source: string, threadKey: string): Task | undefined {
-    return this.repository.findByIntegrationKey(source, threadKey);
+  /**
+   * Mirror of `SandboxRepository.findByOrigin` for tasks: look one up by
+   * the originating conversation's `(source, externalId)` pair.
+   */
+  findByExternalKey(source: string, externalId: string): Task | undefined {
+    return this.repository.findByExternalKey(source, externalId);
   }
 
   setIntegrationMetadata(

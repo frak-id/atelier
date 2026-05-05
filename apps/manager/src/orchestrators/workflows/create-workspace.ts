@@ -44,6 +44,9 @@ export async function createWorkspaceSandbox(
         prebuildSnapshotName: prebuildReady
           ? workspace.config.prebuild?.latestId
           : undefined,
+        name: options.name,
+        origin: options.origin,
+        createdBy: createdByUserId,
       },
       ports,
     );
@@ -100,7 +103,18 @@ export async function createWorkspaceSandbox(
     );
 
     if (!boot.usedPrebuild && workspace.config.repos?.length) {
-      for (const repo of workspace.config.repos) {
+      // For single-repo workspaces, allow `options.branch` to override the
+      // workspace's default branch. Multi-repo workspaces always use the
+      // configured per-repo branch — overriding one would be ambiguous.
+      const repos =
+        options.branch && workspace.config.repos.length === 1
+          ? workspace.config.repos.map((r) => ({
+              ...r,
+              branch: options.branch as string,
+            }))
+          : workspace.config.repos;
+
+      for (const repo of repos) {
         await GuestOps.cloneRepository(
           ports.agent,
           sandboxId,
@@ -136,7 +150,6 @@ export async function createWorkspaceSandbox(
       boot.sandbox,
       boot.podName,
       ports,
-      { system: false },
     );
   } catch (error) {
     log.error(

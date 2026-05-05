@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Bot, Monitor, Trash2 } from "lucide-react";
 import type { Sandbox } from "@/api/client";
 import { opencodeSessionsQuery, useDeleteSandbox } from "@/api/queries";
+import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +39,7 @@ export function SandboxRow({
     }
   };
 
-  const displayName = workspaceName || sandbox.id;
+  const displayName = sandbox.name || workspaceName || sandbox.id;
 
   return (
     <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
@@ -47,9 +48,10 @@ export function SandboxRow({
           <button
             type="button"
             onClick={() => onSandboxClick?.(sandbox.id)}
-            className="font-semibold text-base hover:underline truncate block text-left"
+            className="font-semibold text-base hover:underline truncate text-left flex items-center gap-2"
           >
-            {displayName}
+            <span className="truncate">{displayName}</span>
+            <IntegrationSourceBadge integration={sandbox.origin} />
           </button>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
             <span className="font-mono">{sandbox.id}</span>

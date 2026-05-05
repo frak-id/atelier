@@ -135,7 +135,7 @@ export class TaskRepository {
     return true;
   }
 
-  findByIntegrationKey(source: string, threadKey: string): Task | undefined {
+  findByExternalKey(source: string, externalId: string): Task | undefined {
     const row = getDatabase()
       .select()
       .from(tasks)
@@ -143,8 +143,8 @@ export class TaskRepository {
         and(
           eq(sql`json_extract(${tasks.data}, '$.integration.source')`, source),
           eq(
-            sql`json_extract(${tasks.data}, '$.integration.threadKey')`,
-            threadKey,
+            sql`json_extract(${tasks.data}, '$.integration.externalId')`,
+            externalId,
           ),
         ),
       )
