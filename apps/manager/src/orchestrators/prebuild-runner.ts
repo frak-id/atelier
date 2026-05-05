@@ -690,6 +690,13 @@ export class PrebuildRunner {
       }
     }
 
+    // Even though `app.agents` and `find.text` returned, OpenCode forks the
+    // actual `Npm.add` reify (Arborist install of plugin packages) into a
+    // background fiber. Killing the warmup pod too quickly aborts that fiber
+    // and the install never lands on disk. Poll the cache until at least one
+    // plugin package.json materializes (or we time out).
+    await this.waitForPluginsInstalled(sandboxId);
+
     // Flush page cache to disk before we kill so the snapshot is consistent.
     await agent.exec(sandboxId, "sync", { timeout: 10_000 }).catch(() => {});
 
@@ -697,6 +704,82 @@ export class PrebuildRunner {
     log.info(
       { sandboxId, bootstrapped: bootstrapDirs.length },
       "OpenCode warmup completed",
+    );
+  }
+
+  /**
+   * Poll until external OpenCode plugins have finished installing to
+   * `~/.cache/opencode/packages/<spec>/node_modules/<name>/`.
+   *
+   * `app.agents` returns once the plugin registry resolves in-memory, but the
+   * actual npm install (`Npm.add` -> Arborist reify) runs in a forked fiber
+   * and may still be writing files when the request completes. We wait for the
+   * filesystem to settle before snapshotting; otherwise the cache slot is
+   * empty and every sandbox spawned from the snapshot pays the full ~16s
+   * `import()` + reify cost on its first request.
+   */
+  private async waitForPluginsInstalled(sandboxId: string): Promise<void> {
+    const POLL_INTERVAL_MS = 2_000;
+    const SETTLE_MS = 3_000;
+    const TIMEOUT_MS = 90_000;
+    // Bail early if no plugin install ever appears — the workspace probably
+    // has no external plugins configured, so there's nothing to wait for.
+    const NO_PLUGIN_BAIL_MS = 12_000;
+    const PROBE = `find /home/dev/.cache/opencode/packages -mindepth 4 -name 'package.json' -type f 2>/dev/null | wc -l`;
+
+    const startTime = Date.now();
+    let lastCount = -1;
+    let stableSince = 0;
+    let everSeenInstall = false;
+
+    while (Date.now() - startTime < TIMEOUT_MS) {
+      const result = await this.deps.agentClient
+        .exec(sandboxId, PROBE, { timeout: 10_000 })
+        .catch(() => ({ exitCode: 1, stdout: "0", stderr: "" }));
+
+      const count = Number.parseInt(result.stdout.trim(), 10) || 0;
+      if (count > 0) everSeenInstall = true;
+
+      if (count > 0 && count === lastCount) {
+        // Count has been stable across polls — install finished.
+        if (Date.now() - stableSince >= SETTLE_MS) {
+          log.info(
+            {
+              sandboxId,
+              pluginCount: count,
+              waitedMs: Date.now() - startTime,
+            },
+            "Plugin install settled",
+          );
+          return;
+        }
+      } else {
+        if (count !== lastCount) {
+          log.debug(
+            { sandboxId, pluginCount: count },
+            "Plugin install progressing",
+          );
+        }
+        lastCount = count;
+        stableSince = Date.now();
+      }
+
+      // Short-circuit: if nothing has appeared after the bail window, the
+      // workspace likely has no external plugins. Don't waste 90s.
+      if (!everSeenInstall && Date.now() - startTime >= NO_PLUGIN_BAIL_MS) {
+        log.info(
+          { sandboxId, waitedMs: Date.now() - startTime },
+          "No external plugins detected, skipping plugin install wait",
+        );
+        return;
+      }
+
+      await Bun.sleep(POLL_INTERVAL_MS);
+    }
+
+    log.warn(
+      { sandboxId, lastPluginCount: lastCount, timeoutMs: TIMEOUT_MS },
+      "Timed out waiting for plugin install \u2014 snapshot may not include plugins",
     );
   }
 

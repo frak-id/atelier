@@ -15,8 +15,12 @@ ENV USER=dev
 ENV SHELL=/bin/bash
 ENV BUN_INSTALL=/home/dev/.bun
 ENV PATH=$BUN_INSTALL/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
+# C.UTF-8 is built into glibc and never needs locale-gen, so it works
+# regardless of which locale data is generated. Avoids the noisy
+# 'setlocale: LC_ALL: cannot change locale' warnings that plagued every
+# bash -l in the sandbox.
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 # Layer 1: System packages (cached unless package list changes)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -33,7 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     iproute2 \
     iputils-ping \
-    locales \
     nfs-common \
     chromium \
     fonts-liberation \
@@ -52,8 +55,7 @@ RUN curl -fsSL -o /tmp/kasmvnc.deb "https://github.com/kasmtech/KasmVNC/releases
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Layer 3: Locale + user setup + SSH config (rarely changes)
-RUN locale-gen en_US.UTF-8 \
-    && usermod -l dev -d /home/dev -m node \
+RUN usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
     && mkdir -p /var/run/sshd \
     && sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config \
@@ -79,7 +81,7 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
 
 # Layer 6: Profile scripts + config files (most likely to change)
 RUN echo 'export PATH="/opt/shared/bin:$PATH"' > /etc/profile.d/shared-binaries.sh \
-    && printf 'export LANG=en_US.UTF-8\nexport LC_ALL=en_US.UTF-8\n' > /etc/profile.d/locale.sh \
+    && printf 'export LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n' > /etc/profile.d/locale.sh \
     && printf '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n' > /etc/profile.d/99-sandbox-secrets.sh
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 COPY --chown=dev:dev rootfs/etc/sandbox/ /etc/sandbox/
