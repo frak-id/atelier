@@ -20,6 +20,7 @@ WORKDIR /build
 # Copy workspace root files needed for dependency resolution
 COPY package.json bun.lock ./
 COPY packages/opencode-atelier/package.json packages/opencode-atelier/
+COPY packages/opencode-atelier-server/package.json packages/opencode-atelier-server/
 COPY packages/shared/package.json packages/shared/
 COPY apps/manager/package.json apps/manager/
 COPY apps/dashboard/package.json apps/dashboard/
@@ -35,12 +36,18 @@ WORKDIR /build
 COPY --from=deps /build/node_modules node_modules
 COPY --from=deps /build/packages/shared/node_modules packages/shared/node_modules
 COPY --from=deps /build/packages/opencode-atelier/node_modules packages/opencode-atelier/node_modules
+COPY --from=deps /build/packages/opencode-atelier-server/node_modules packages/opencode-atelier-server/node_modules
 COPY --from=deps /build/apps/manager/node_modules apps/manager/node_modules
 COPY --from=deps /build/apps/dashboard/node_modules apps/dashboard/node_modules
 
 # Copy source
 COPY packages/shared packages/shared
 COPY packages/opencode-atelier packages/opencode-atelier
+# Manager bundles `PLUGIN_SOURCE` from this package via `internal.service.ts`,
+# so the source must be present for `bun build` to resolve the import. The
+# embedded plugin string is committed (`src/plugin.embedded.ts`), no runtime
+# build step is needed here.
+COPY packages/opencode-atelier-server packages/opencode-atelier-server
 COPY apps/manager apps/manager
 COPY apps/dashboard apps/dashboard
 COPY tsconfig.json ./
