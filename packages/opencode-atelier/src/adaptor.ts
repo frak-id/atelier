@@ -283,9 +283,15 @@ async function resolveWorkspaceDirectory(
     if (repos.length !== 1 || !repos[0]?.clonePath) {
       return VM_WORKSPACE_DIR;
     }
+    // Mirror `buildSandboxConfig` byte-for-byte: the remote OpenCode `cd`s
+    // into this exact string and hashes it for project_id, so any drift
+    // (e.g. "/workspace/wallet" vs "/workspace/workspace/wallet") makes
+    // /sync/replay fail its FK on insert.
     const clonePath = repos[0].clonePath;
-    const normalized = clonePath.startsWith("/") ? clonePath : `/${clonePath}`;
-    return `${VM_WORKSPACE_DIR}${normalized}`;
+    const suffix = clonePath.startsWith("/workspace")
+      ? clonePath
+      : `/workspace${clonePath}`;
+    return `${VM_HOME}${suffix}`;
   } catch (err) {
     logger.warn(
       `Failed to resolve workspace directory for ${atelierWorkspaceId}, ` +
