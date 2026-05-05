@@ -32,8 +32,12 @@ export const TaskIntegrationMetadataSchema = t.Object({
    * Stable identifier from the source system used to look this task up on
    * follow-up events. Mirrors `SandboxOrigin.externalId`.
    * Slack: `${channel}:${threadTs}` — GitHub: `${owner}/${repo}:${prNumber}`.
+   *
+   * Optional because legacy data (and pure-tag use cases like the old
+   * opencode-plugin which only stamped `source: "opencode-plugin"`) may not
+   * carry one. Slack/GitHub follow-ups always populate it.
    */
-  externalId: t.String(),
+  externalId: t.Optional(t.String()),
   /** Optional deep-link back to the origin (PR, slack thread, etc). */
   externalUrl: t.Optional(t.String()),
   /** Current OpenCode session id, used to continue the same session on replies. */

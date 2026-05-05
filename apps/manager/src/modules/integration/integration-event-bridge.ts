@@ -54,14 +54,15 @@ export class IntegrationEventBridge {
     }
 
     const task = this.deps.taskService.getById(taskId);
-    if (!task?.data.integration || !task.data.sandboxId) {
+    if (!task?.data.integration?.externalId || !task.data.sandboxId) {
       log.warn(
         {
           taskId,
           hasIntegration: !!task?.data.integration,
+          hasExternalId: !!task?.data.integration?.externalId,
           hasSandbox: !!task?.data.sandboxId,
         },
-        "Cannot start bridge — missing integration or sandbox",
+        "Cannot start bridge — missing integration externalId or sandbox",
       );
       return;
     }
@@ -142,7 +143,9 @@ export class IntegrationEventBridge {
       ReturnType<TaskService["getById"]>
     >["data"]["integration"],
   ): IntegrationEvent {
-    if (!integration) throw new Error("No integration metadata");
+    if (!integration?.externalId) {
+      throw new Error("No integration metadata or externalId");
+    }
 
     let raw: unknown = {};
     if (integration.slack) {
