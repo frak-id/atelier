@@ -1,5 +1,11 @@
 # @konfeature/opencode-atelier
 
+## 0.2.2
+
+### Patch Changes
+
+- 7cc3d2f: Retrigger release.
+
 ## 0.2.1
 
 ### Patch Changes
