@@ -77,6 +77,13 @@ export function createAtelierAdaptor(
 
     async configure(info: WorkspaceInfo): Promise<WorkspaceInfo> {
       const raw = (info.extra ?? {}) as Partial<AtelierExtra>;
+      // Capture the local CLI cwd before we override `info.directory`
+      // below. The manager uses this to mint a symlink in the sandbox
+      // (local path → workspace dir) so the remote's `Project.fromDirectory`
+      // resolves successfully when the local TUI's SDK auto-injects
+      // `?directory=<local-mac-path>` into proxied requests.
+      const sourceLocalDirectory =
+        raw.sourceLocalDirectory ?? info.directory ?? undefined;
       const extra: AtelierExtra = {
         managerUrl: raw.managerUrl ?? pluginConfig.managerUrl,
         atelierWorkspaceId:
@@ -87,6 +94,7 @@ export function createAtelierAdaptor(
         // See AtelierExtra docs for why this exists.
         sourceProjectID: info.projectID,
         sourceWorkspaceID: info.id,
+        sourceLocalDirectory,
       };
 
       // The remote sandbox boots OpenCode with `cd <workspaceDir>` where
@@ -129,7 +137,9 @@ export function createAtelierAdaptor(
         `Creating sandbox in workspace ${extra.atelierWorkspaceId}` +
           (branch ? ` (branch: ${branch})` : "") +
           (from?.id ? ` (forking from: ${from.id})` : "") +
-          (opencodeEnv ? ` (env keys: ${Object.keys(opencodeEnv).join(",")})` : ""),
+          (opencodeEnv
+            ? ` (env keys: ${Object.keys(opencodeEnv).join(",")})`
+            : ""),
       );
 
       // POST /sandboxes blocks until the pod is running and OpenCode is
@@ -151,6 +161,12 @@ export function createAtelierAdaptor(
           sourceProjectID: extra.sourceProjectID,
           sourceWorkspaceID: extra.sourceWorkspaceID,
           sourceWorkspaceFromID: from?.id,
+          // Local CLI cwd — the manager creates a symlink at this path
+          // pointing to the workspace dir, so the remote's
+          // `Project.fromDirectory` resolves successfully when the TUI's
+          // SDK auto-injects `?directory=<local-mac-path>` into proxied
+          // requests after warp.
+          sourceLocalDirectory: extra.sourceLocalDirectory,
         }),
       );
 
@@ -198,75 +214,14 @@ export function createAtelierAdaptor(
         headers.Authorization = `Basic ${btoa(`opencode:${password}`)}`;
       }
 
-      // ----------------------------------------------------------------
-      // Force the remote to route by workspace.directory, not session.directory
-      // ----------------------------------------------------------------
-      //
-      // Problem
-      // -------
-      // After /warp lands events on the remote, `session.directory` carries
-      // the LOCAL machine's path (e.g. `/Users/quentin/Workspace/Frak/...`).
-      // The remote `opencode serve` runs on the hono server backend by default
-      // (`opencode.server.backend=hono` in the sandbox logs), whose
-      // `InstanceMiddleware` (routes/instance/middleware.ts) does:
-      //
-      //   const dir =
-      //     query.directory || header["x-opencode-directory"] || process.cwd()
-      //
-      // No fallback to `workspace.directory`. So when the local TUI sends
-      // requests using session.directory (= local Mac path), the remote
-      // bootstraps a phantom instance for that non-existent path and the
-      // TUI ends up wired to an empty instance => blank screen.
-      //
-      // Option H — Inject `x-opencode-directory` here
-      // ----------------------------------------------
-      // The local @opencode-ai/sdk has a request interceptor
-      // (`packages/sdk/js/src/client.ts:rewrite`) that:
-      //   1. Reads `x-opencode-directory` from outgoing request headers.
-      //   2. If `?directory=` is missing on a GET/HEAD URL, injects the
-      //      header value as the query param.
-      //
-      // Returning the header here means every API call the local CLI makes
-      // through this WorkspaceTarget carries our directory. The remote
-      // middleware reads `?directory=` and lands on the right instance — the
-      // one already bootstrapped at `cd ${workspaceDir} && opencode serve`.
-      //
-      // Caveat: the SDK only injects when the URL doesn't already have
-      // `?directory=`. If a caller passes `query.directory` explicitly, our
-      // header is ignored. In practice the TUI relies on the interceptor for
-      // most routes, so this is sufficient for the warp scenario today.
-      //
-      // Option E — Long-term: switch to effect-httpapi backend
-      // -------------------------------------------------------
-      // The new backend (`OPENCODE_EXPERIMENTAL_HTTPAPI=true`) has
-      // `WorkspaceRoutingMiddleware` (httpapi/middleware/workspace-routing.ts)
-      // that resolves directory from the chain
-      //
-      //   sessionID -> session.workspace_id -> workspace row -> workspace.directory
-      //
-      // No reliance on per-request `?directory=`, no header tricks. Cleanest
-      // architecture but currently experimental — hono is the stable default
-      // until rollout finishes (per the upstream comment on
-      // `Flag.OPENCODE_EXPERIMENTAL_HTTPAPI`).
-      //
-      // To migrate when ready:
-      //   1. Set `OPENCODE_EXPERIMENTAL_HTTPAPI=true` in the manager's
-      //      `sandbox-config.ts` opencode service env.
-      //   2. In `@frak/opencode-atelier-server`'s plugin.ts, after the
-      //      project-row alias INSERT, also:
-      //        - INSERT OR IGNORE INTO workspace (id, type, name, branch,
-      //          directory, project_id) VALUES (...) using ATELIER_SOURCE_-
-      //          WORKSPACE_ID + ATELIER_WORKSPACE_DIRECTORY + ATELIER_-
-      //          SOURCE_PROJECT_ID.
-      //        - Register a stub `experimental_workspace.register("atelier",
-      //          ...)` whose `target` returns `{type: "local", directory:
-      //          ATELIER_WORKSPACE_DIRECTORY}` so the new middleware's
-      //          getAdapter -> target -> directory resolution lands correctly.
-      //   3. Drop the header injection below; it becomes redundant.
-      // ----------------------------------------------------------------
-      if (info.directory) {
-        headers["x-opencode-directory"] = encodeURIComponent(info.directory);
-      }
+      // Directory routing on the remote is handled out-of-band: the manager
+      // mints a symlink in the sandbox at `<sourceLocalDirectory>` → the
+      // workspace dir, so when the local TUI's SDK auto-injects
+      // `?directory=<local-mac-path>` into proxied requests, the remote's
+      // `Project.fromDirectory` resolves through the symlink to the real
+      // repo. No header injection needed here — query.directory wins on
+      // the remote and the symlink makes it point somewhere real.
+      // See `apps/manager/src/orchestrators/workflows/create-workspace.ts`.
 
       return {
         type: "remote",

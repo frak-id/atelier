@@ -31,6 +31,16 @@ export interface AtelierExtra {
    * for warp correctness.
    */
   sourceWorkspaceID?: string;
+  /**
+   * Local CLI cwd captured at `configure()` time.
+   *
+   * Used by the manager to mint a symlink in the sandbox at the local
+   * path → workspace dir, so that when the local TUI's SDK auto-injects
+   * `?directory=<local-mac-path>` into proxied requests, the remote's
+   * `Project.fromDirectory` resolves through the symlink to a real repo
+   * (instead of bootstrapping a phantom instance for a non-existent path).
+   */
+  sourceLocalDirectory?: string;
 }
 
 export type { Sandbox } from "@frak/atelier-manager/types";

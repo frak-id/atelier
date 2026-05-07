@@ -7,6 +7,7 @@ import {
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
+import { resolveWorkspaceDir } from "../sandbox-config.ts";
 
 const log = createChildLogger("wf-restart-workspace");
 
@@ -47,6 +48,22 @@ export async function restartWorkspaceSandbox(
       },
       "Internal sync complete",
     );
+
+    // Re-mint the source-directory symlink — the sandbox's rootfs was
+    // recreated by `bootExistingSandbox`, so any symlinks from the original
+    // spawn are gone. Sourced from `opencodeWorkspaceContext`, which is
+    // persisted on the Sandbox row exactly so restarts don't need the
+    // local CLI to re-supply this.
+    const sourceLocalDirectory =
+      sandbox.opencodeWorkspaceContext?.sourceLocalDirectory;
+    if (sourceLocalDirectory) {
+      await GuestOps.mintSourceDirectorySymlink(
+        ports.agent,
+        sandboxId,
+        sourceLocalDirectory,
+        resolveWorkspaceDir(workspace),
+      );
+    }
 
     await GuestOps.startServices(ports.agent, sandboxId, [
       "vscode",

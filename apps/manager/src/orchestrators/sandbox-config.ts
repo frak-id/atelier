@@ -21,6 +21,13 @@ export interface OpencodeWorkspaceContext {
   sourceWorkspaceID?: string;
   /** Origin workspace_id when forking. */
   sourceWorkspaceFromID?: string;
+  /**
+   * Local CLI cwd — the spawn workflow mints a symlink at this path
+   * pointing to the workspace dir, so the remote's `Project.fromDirectory`
+   * resolves through the symlink when the local TUI's SDK auto-injects
+   * `?directory=<local path>` into proxied requests after warp.
+   */
+  sourceLocalDirectory?: string;
 }
 
 export function buildSandboxConfig(
@@ -34,10 +41,7 @@ export function buildSandboxConfig(
     branch: r.branch,
   }));
 
-  const workspaceDir =
-    repos.length === 1 && repos[0]?.clonePath
-      ? `${VM.HOME}${repos[0].clonePath.startsWith("/workspace") ? repos[0].clonePath : `/workspace${repos[0].clonePath}`}`
-      : VM.WORKSPACE_DIR;
+  const workspaceDir = resolveWorkspaceDir(workspace);
 
   const dashboardDomain = config.domain.dashboard;
   const vsPort = config.ports.vscode;
@@ -167,4 +171,21 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
 - Config: \`/etc/sandbox/config.json\`
 - Logs: \`/var/log/sandbox/\`
 `;
+}
+
+/**
+ * Mirrors the path the remote `opencode serve` actually `cd`s into before
+ * starting (single-repo → `${HOME}<clonePath>`, else `WORKSPACE_DIR`).
+ * Lifted out of `buildSandboxConfig` so the spawn workflow can reuse it
+ * to mint the source-directory symlink without recomputing the rule.
+ */
+export function resolveWorkspaceDir(workspace: Workspace | undefined): string {
+  const clonePath = workspace?.config.repos?.[0]?.clonePath;
+  if (workspace?.config.repos?.length === 1 && clonePath) {
+    const suffix = clonePath.startsWith("/workspace")
+      ? clonePath
+      : `/workspace${clonePath}`;
+    return `${VM.HOME}${suffix}`;
+  }
+  return VM.WORKSPACE_DIR;
 }
