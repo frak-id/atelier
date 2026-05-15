@@ -276,10 +276,9 @@ export type ImageBuilderTlsConfig = Static<typeof ImageBuilderTlsConfigSchema>;
 export const ImageBuilderConfigSchema = Type.Object(
   {
     /** Which builder strategy to use */
-    kind: Type.Union(
-      [Type.Literal("kaniko"), Type.Literal("buildkit")],
-      { default: "kaniko" },
-    ),
+    kind: Type.Union([Type.Literal("kaniko"), Type.Literal("buildkit")], {
+      default: "kaniko",
+    }),
     /**
      * Override the builder image. Defaults to a sensible value per kind:
      *   - kaniko:   gcr.io/kaniko-project/executor:latest

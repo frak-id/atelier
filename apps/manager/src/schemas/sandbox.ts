@@ -82,14 +82,6 @@ export const SandboxOpencodeWorkspaceContextSchema = t.Object({
   sourceWorkspaceID: t.Optional(t.String()),
   /** Origin workspace_id when forking. */
   sourceWorkspaceFromID: t.Optional(t.String()),
-  /**
-   * Local CLI cwd captured by the opencode-atelier plugin. The spawn
-   * workflow mints a symlink in the sandbox at this path → workspace dir
-   * so the remote's `Project.fromDirectory` resolves successfully when
-   * the local TUI's SDK auto-injects `?directory=<local path>` into
-   * proxied requests after warp.
-   */
-  sourceLocalDirectory: t.Optional(t.String()),
 });
 export type SandboxOpencodeWorkspaceContext = Static<
   typeof SandboxOpencodeWorkspaceContextSchema
@@ -160,14 +152,6 @@ export const CreateSandboxBodySchema = t.Object({
    * upstream `WorkspaceAdapter.create(info, env, from?)` signature.
    */
   sourceWorkspaceFromID: t.Optional(t.String()),
-  /**
-   * Local CLI cwd captured by the opencode-atelier plugin. The manager
-   * mints a symlink in the sandbox at this path → workspace dir so the
-   * remote's `Project.fromDirectory` resolves successfully when the
-   * local TUI's SDK auto-injects `?directory=<local path>` into proxied
-   * requests after warp.
-   */
-  sourceLocalDirectory: t.Optional(t.String()),
 });
 export type CreateSandboxBody = Static<typeof CreateSandboxBodySchema>;
 

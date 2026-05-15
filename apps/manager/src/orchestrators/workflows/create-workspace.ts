@@ -15,7 +15,7 @@ import {
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { GitUserIdentity } from "../ports/guest-secrets.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
-import { generateSandboxMd, resolveWorkspaceDir } from "../sandbox-config.ts";
+import { generateSandboxMd } from "../sandbox-config.ts";
 
 const log = createChildLogger("wf-create-workspace");
 
@@ -55,7 +55,6 @@ export async function createWorkspaceSandbox(
           sourceProjectID: options.sourceProjectID,
           sourceWorkspaceID: options.sourceWorkspaceID,
           sourceWorkspaceFromID: options.sourceWorkspaceFromID,
-          sourceLocalDirectory: options.sourceLocalDirectory,
         },
       },
       ports,
@@ -160,20 +159,6 @@ export async function createWorkspaceSandbox(
         sandboxId,
         workspace.config.repos[0].clonePath,
         options.sourceProjectID,
-      );
-    }
-
-    // Mint a symlink at the local CLI's cwd → workspace dir so the
-    // remote's `Project.fromDirectory` resolves successfully when the
-    // local TUI's SDK auto-injects `?directory=<local path>` into proxied
-    // requests after warp. See `mintSourceDirectorySymlink` for the full
-    // explanation.
-    if (options.sourceLocalDirectory) {
-      await GuestOps.mintSourceDirectorySymlink(
-        ports.agent,
-        sandboxId,
-        options.sourceLocalDirectory,
-        resolveWorkspaceDir(workspace),
       );
     }
 

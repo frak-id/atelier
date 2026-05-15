@@ -77,13 +77,6 @@ export function createAtelierAdaptor(
 
     async configure(info: WorkspaceInfo): Promise<WorkspaceInfo> {
       const raw = (info.extra ?? {}) as Partial<AtelierExtra>;
-      // Capture the local CLI cwd before we override `info.directory`
-      // below. The manager uses this to mint a symlink in the sandbox
-      // (local path → workspace dir) so the remote's `Project.fromDirectory`
-      // resolves successfully when the local TUI's SDK auto-injects
-      // `?directory=<local-mac-path>` into proxied requests.
-      const sourceLocalDirectory =
-        raw.sourceLocalDirectory ?? info.directory ?? undefined;
       const extra: AtelierExtra = {
         managerUrl: raw.managerUrl ?? pluginConfig.managerUrl,
         atelierWorkspaceId:
@@ -94,7 +87,6 @@ export function createAtelierAdaptor(
         // See AtelierExtra docs for why this exists.
         sourceProjectID: info.projectID,
         sourceWorkspaceID: info.id,
-        sourceLocalDirectory,
       };
 
       // The remote sandbox boots OpenCode with `cd <workspaceDir>` where
@@ -161,12 +153,6 @@ export function createAtelierAdaptor(
           sourceProjectID: extra.sourceProjectID,
           sourceWorkspaceID: extra.sourceWorkspaceID,
           sourceWorkspaceFromID: from?.id,
-          // Local CLI cwd — the manager creates a symlink at this path
-          // pointing to the workspace dir, so the remote's
-          // `Project.fromDirectory` resolves successfully when the TUI's
-          // SDK auto-injects `?directory=<local-mac-path>` into proxied
-          // requests after warp.
-          sourceLocalDirectory: extra.sourceLocalDirectory,
         }),
       );
 
@@ -214,18 +200,20 @@ export function createAtelierAdaptor(
         headers.Authorization = `Basic ${btoa(`opencode:${password}`)}`;
       }
 
-      // Directory routing on the remote is handled out-of-band: the manager
-      // mints a symlink in the sandbox at `<sourceLocalDirectory>` → the
-      // workspace dir, so when the local TUI's SDK auto-injects
-      // `?directory=<local-mac-path>` into proxied requests, the remote's
-      // `Project.fromDirectory` resolves through the symlink to the real
-      // repo. No header injection needed here — query.directory wins on
-      // the remote and the symlink makes it point somewhere real.
-      // See `apps/manager/src/orchestrators/workflows/create-workspace.ts`.
+      // Inject `?workspace=<workspaceID>` into the proxy URL so the local
+      // opencode's `WorkspaceRoutingMiddleware` resolves the workspace via
+      // our adapter before falling through to directory-based routing. The
+      // SDK auto-injects `?directory=<local cwd>` on every GET, which would
+      // otherwise route requests via a path that doesn't exist on the VM.
+      // See upstream
+      // `packages/opencode/src/server/routes/instance/httpapi/middleware/workspace-routing.ts`
+      // — `selectedWorkspaceID` prefers `?workspace` over `?directory`.
+      const url = new URL(entry.sandbox.runtime.urls.opencode);
+      url.searchParams.set("workspace", info.id);
 
       return {
         type: "remote",
-        url: entry.sandbox.runtime.urls.opencode,
+        url,
         headers,
       };
     },

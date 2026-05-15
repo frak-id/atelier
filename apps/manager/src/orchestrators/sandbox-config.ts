@@ -21,13 +21,6 @@ export interface OpencodeWorkspaceContext {
   sourceWorkspaceID?: string;
   /** Origin workspace_id when forking. */
   sourceWorkspaceFromID?: string;
-  /**
-   * Local CLI cwd — the spawn workflow mints a symlink at this path
-   * pointing to the workspace dir, so the remote's `Project.fromDirectory`
-   * resolves through the symlink when the local TUI's SDK auto-injects
-   * `?directory=<local path>` into proxied requests after warp.
-   */
-  sourceLocalDirectory?: string;
 }
 
 export function buildSandboxConfig(
@@ -176,8 +169,6 @@ ${fileSecretsSection ? `\n## File Secrets\n${fileSecretsSection}` : ""}
 /**
  * Mirrors the path the remote `opencode serve` actually `cd`s into before
  * starting (single-repo → `${HOME}<clonePath>`, else `WORKSPACE_DIR`).
- * Lifted out of `buildSandboxConfig` so the spawn workflow can reuse it
- * to mint the source-directory symlink without recomputing the rule.
  */
 export function resolveWorkspaceDir(workspace: Workspace | undefined): string {
   const clonePath = workspace?.config.repos?.[0]?.clonePath;
