@@ -173,6 +173,16 @@ imageBuilder:
   # -- Treat destination/cache registry as HTTP / self-signed.
   #    Default true because the bundled Zot runs without TLS.
   insecureRegistry: true
+  # -- mTLS for BuildKit (kind=buildkit only).
+  #    Pre-create a Secret in the system namespace with these keys:
+  #      ca.crt   -- CA bundle used to verify the buildkitd server cert
+  #      tls.crt  -- client certificate presented to buildkitd
+  #      tls.key  -- client private key
+  #    Then set tls.secretName below. Leave empty for plaintext.
+  tls:
+    secretName: ""
+    # Optional: override the SNI/hostname used during TLS verification.
+    serverName: ""
 
 # -- Integrations
 integrations:

@@ -54,6 +54,10 @@ data:
         "endpoint" .Values.imageBuilder.endpoint
         "cacheRepo" .Values.imageBuilder.cacheRepo
         "insecureRegistry" .Values.imageBuilder.insecureRegistry
+        "tls" (dict
+          "secretName" (default "" .Values.imageBuilder.tls.secretName)
+          "serverName" (default "" .Values.imageBuilder.tls.serverName)
+        )
       )
       "integrations" (dict
         "slack" (dict

@@ -2,6 +2,17 @@ import type { KubeResource } from "../kubernetes/index.ts";
 import type { BuildContext, ImageBuilder } from "./types.ts";
 
 const DEFAULT_BUILDKIT_IMAGE = "moby/buildkit:latest";
+const TLS_MOUNT_PATH = "/etc/buildkit/tls";
+
+export type BuildkitBuilderTlsOptions = {
+  /**
+   * K8s Secret name (in the build Job's namespace) holding `ca.crt`,
+   * `tls.crt`, `tls.key`. Empty/undefined disables mTLS.
+   */
+  secretName?: string;
+  /** Override the SNI/hostname used by buildctl (`--tlsservername`). */
+  serverName?: string;
+};
 
 export type BuildkitBuilderOptions = {
   /** gRPC address of the BuildKit daemon (e.g. tcp://buildkitd.ns.svc:1234). */
@@ -10,6 +21,8 @@ export type BuildkitBuilderOptions = {
   image?: string;
   /** Treat destination/cache registry as HTTP/insecure-TLS. */
   insecureRegistry?: boolean;
+  /** Optional mTLS settings for the connection to buildkitd. */
+  tls?: BuildkitBuilderTlsOptions;
 };
 
 /**
@@ -36,6 +49,8 @@ export class BuildkitBuilder implements ImageBuilder {
   buildJob(ctx: BuildContext): KubeResource {
     const image = this.options.image || DEFAULT_BUILDKIT_IMAGE;
     const insecure = this.options.insecureRegistry ?? true;
+    const tlsSecretName = this.options.tls?.secretName?.trim();
+    const tlsServerName = this.options.tls?.serverName?.trim();
 
     const outputOpts = [
       "type=image",
@@ -49,9 +64,26 @@ export class BuildkitBuilder implements ImageBuilder {
     const exportCache = ["type=registry", "mode=max", ...cacheCommon].join(",");
     const importCache = ["type=registry", ...cacheCommon].join(",");
 
+    /* mTLS flags must precede `build` (they're top-level buildctl flags). */
+    const tlsFlags: string[] = [];
+    if (tlsSecretName) {
+      tlsFlags.push(
+        "--tlscacert",
+        `${TLS_MOUNT_PATH}/ca.crt`,
+        "--tlscert",
+        `${TLS_MOUNT_PATH}/tls.crt`,
+        "--tlskey",
+        `${TLS_MOUNT_PATH}/tls.key`,
+      );
+      if (tlsServerName) {
+        tlsFlags.push("--tlsservername", tlsServerName);
+      }
+    }
+
     const args: string[] = [
       "--addr",
       this.options.endpoint,
+      ...tlsFlags,
       "build",
       "--frontend",
       "dockerfile.v0",
@@ -94,6 +126,15 @@ export class BuildkitBuilder implements ImageBuilder {
                 args,
                 volumeMounts: [
                   { name: "context", mountPath: "/context", readOnly: true },
+                  ...(tlsSecretName
+                    ? [
+                        {
+                          name: "buildkit-tls",
+                          mountPath: TLS_MOUNT_PATH,
+                          readOnly: true,
+                        },
+                      ]
+                    : []),
                 ],
               },
             ],
@@ -105,6 +146,14 @@ export class BuildkitBuilder implements ImageBuilder {
                   items: ctx.configMapItems,
                 },
               },
+              ...(tlsSecretName
+                ? [
+                    {
+                      name: "buildkit-tls",
+                      secret: { secretName: tlsSecretName },
+                    },
+                  ]
+                : []),
             ],
           },
         },

@@ -32,6 +32,12 @@ export function createImageBuilder(config: ImageBuilderConfig): ImageBuilder {
         endpoint: config.endpoint,
         image: config.image || undefined,
         insecureRegistry: config.insecureRegistry,
+        tls: config.tls?.secretName
+          ? {
+              secretName: config.tls.secretName,
+              serverName: config.tls.serverName || undefined,
+            }
+          : undefined,
       });
     default: {
       const _exhaustive: never = config.kind;

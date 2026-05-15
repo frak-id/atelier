@@ -250,6 +250,29 @@ export const ImageBuilderKindSchema = Type.Union([
 
 export type ImageBuilderKind = Static<typeof ImageBuilderKindSchema>;
 
+export const ImageBuilderTlsConfigSchema = Type.Object(
+  {
+    /**
+     * Name of a K8s Secret (in `kubernetes.systemNamespace`) containing
+     * the client cert and trusted CA bundle. Expected keys:
+     *   - `ca.crt`  : CA bundle used to verify the buildkitd server cert
+     *   - `tls.crt` : client certificate presented to buildkitd
+     *   - `tls.key` : client private key
+     * Leave empty to talk plaintext to the daemon.
+     */
+    secretName: Type.String({ default: "" }),
+    /**
+     * Override the server name used for TLS hostname verification
+     * (passed as `--tlsservername`). Useful when the daemon's cert
+     * was issued for a different name than the endpoint hostname.
+     */
+    serverName: Type.String({ default: "" }),
+  },
+  { default: {} },
+);
+
+export type ImageBuilderTlsConfig = Static<typeof ImageBuilderTlsConfigSchema>;
+
 export const ImageBuilderConfigSchema = Type.Object(
   {
     /** Which builder strategy to use */
@@ -279,6 +302,11 @@ export const ImageBuilderConfigSchema = Type.Object(
      * Defaults to true because the bundled Zot registry runs without TLS.
      */
     insecureRegistry: Type.Boolean({ default: true }),
+    /**
+     * Optional mTLS configuration for talking to the buildkitd daemon.
+     * Only relevant when `kind="buildkit"`.
+     */
+    tls: ImageBuilderTlsConfigSchema,
   },
   { default: {} },
 );
@@ -406,6 +434,8 @@ export const ENV_VAR_MAPPING = {
   ATELIER_IMAGE_BUILDER_ENDPOINT: "imageBuilder.endpoint",
   ATELIER_IMAGE_BUILDER_CACHE_REPO: "imageBuilder.cacheRepo",
   ATELIER_IMAGE_BUILDER_INSECURE_REGISTRY: "imageBuilder.insecureRegistry",
+  ATELIER_IMAGE_BUILDER_TLS_SECRET_NAME: "imageBuilder.tls.secretName",
+  ATELIER_IMAGE_BUILDER_TLS_SERVER_NAME: "imageBuilder.tls.serverName",
 
   ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
   ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",
