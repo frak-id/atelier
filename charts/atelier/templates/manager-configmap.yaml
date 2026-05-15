@@ -48,6 +48,13 @@ data:
         )
       )
       "ports" .Values.ports
+      "imageBuilder" (dict
+        "kind" .Values.imageBuilder.kind
+        "image" .Values.imageBuilder.image
+        "endpoint" .Values.imageBuilder.endpoint
+        "cacheRepo" .Values.imageBuilder.cacheRepo
+        "insecureRegistry" .Values.imageBuilder.insecureRegistry
+      )
       "integrations" (dict
         "slack" (dict
           "enabled" .Values.integrations.slack.enabled

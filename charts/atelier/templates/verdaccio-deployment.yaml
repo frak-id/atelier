@@ -39,17 +39,9 @@ spec:
             - name: http
               containerPort: {{ .Values.ports.verdaccio }}
           readinessProbe:
-            httpGet:
-              path: /-/ping
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            {{- toYaml .Values.verdaccio.readinessProbe | nindent 12 }}
           livenessProbe:
-            httpGet:
-              path: /-/ping
-              port: http
-            initialDelaySeconds: 15
-            periodSeconds: 30
+            {{- toYaml .Values.verdaccio.livenessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.verdaccio.resources | nindent 12 }}
           securityContext:

@@ -3,9 +3,7 @@ import { KubeClient } from "./kube.client.ts";
 export type { KubePod } from "./kube.client.ts";
 export { KubeApiError, KubeClient } from "./kube.client.ts";
 export type {
-  BaseImageBuildJobOptions,
   IngressOptions,
-  KanikoJobOptions,
   KubeResource,
   PvcOptions,
   SandboxPodOptions,
@@ -13,12 +11,10 @@ export type {
   VolumeSnapshotOptions,
 } from "./kube.resources.ts";
 export {
-  buildBaseImageBuildJob,
   buildBrowserIngress,
   buildConfigMap,
   buildDefaultDevIngress,
   buildDevCommandIngress,
-  buildKanikoJob,
   buildOpenCodeIngress,
   buildPvc,
   buildSandboxPod,

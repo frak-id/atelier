@@ -97,7 +97,7 @@ export const KubernetesConfigSchema = Type.Object(
   {
     /** Namespace for sandbox pods */
     namespace: Type.String({ default: "atelier-sandboxes" }),
-    /** Namespace for system components (Zot, Verdaccio, Kaniko jobs) */
+    /** Namespace for system components (Zot, Verdaccio, image-build Jobs) */
     systemNamespace: Type.String({ default: "atelier-system" }),
     /** Path to kubeconfig file (ignored when running in-cluster) */
     kubeconfig: Type.String({ default: "/etc/rancher/k3s/k3s.yaml" }),
@@ -229,6 +229,63 @@ export const PortsConfigSchema = Type.Object(
 export type PortsConfig = Static<typeof PortsConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Image Builder
+//
+// Strategy for building base images (e.g. dev-base, dev-cloud) from
+// Dockerfiles in `sandbox.imagesDirectory`. Two strategies are supported:
+//
+//   - kaniko:   spawn a K8s Job running gcr.io/kaniko-project/executor
+//               with the build context mounted from a ConfigMap. Default;
+//               works out of the box with no external dependencies.
+//   - buildkit: spawn a tiny `buildctl` client Job that dispatches the
+//               build to an existing BuildKit daemon at `endpoint`. Use
+//               this when the cluster already hosts a buildkitd Pod that
+//               you want to reuse.
+// ---------------------------------------------------------------------------
+
+export const ImageBuilderKindSchema = Type.Union([
+  Type.Literal("kaniko"),
+  Type.Literal("buildkit"),
+]);
+
+export type ImageBuilderKind = Static<typeof ImageBuilderKindSchema>;
+
+export const ImageBuilderConfigSchema = Type.Object(
+  {
+    /** Which builder strategy to use */
+    kind: Type.Union(
+      [Type.Literal("kaniko"), Type.Literal("buildkit")],
+      { default: "kaniko" },
+    ),
+    /**
+     * Override the builder image. Defaults to a sensible value per kind:
+     *   - kaniko:   gcr.io/kaniko-project/executor:latest
+     *   - buildkit: moby/buildkit:latest (used as the buildctl client)
+     */
+    image: Type.String({ default: "" }),
+    /**
+     * Address of an existing BuildKit daemon (e.g.
+     * tcp://buildkitd.buildkit.svc:1234). Required when kind=buildkit;
+     * ignored otherwise.
+     */
+    endpoint: Type.String({ default: "" }),
+    /**
+     * Cache repository used by the builder. Defaults to
+     * `${kubernetes.registryUrl}/cache` when empty.
+     */
+    cacheRepo: Type.String({ default: "" }),
+    /**
+     * Treat the destination/cache registry as insecure (HTTP / self-signed).
+     * Defaults to true because the bundled Zot registry runs without TLS.
+     */
+    insecureRegistry: Type.Boolean({ default: true }),
+  },
+  { default: {} },
+);
+
+export type ImageBuilderConfig = Static<typeof ImageBuilderConfigSchema>;
+
+// ---------------------------------------------------------------------------
 // Integrations
 // ---------------------------------------------------------------------------
 
@@ -287,6 +344,7 @@ export const AtelierConfigSchema = Type.Object({
   kubernetes: KubernetesConfigSchema,
   sandbox: SandboxDefaultsSchema,
   ports: PortsConfigSchema,
+  imageBuilder: ImageBuilderConfigSchema,
   integrations: IntegrationsConfigSchema,
 });
 
@@ -342,6 +400,12 @@ export const ENV_VAR_MAPPING = {
   ATELIER_TERMINAL_PORT: "ports.terminal",
   ATELIER_AGENT_PORT: "ports.agent",
   ATELIER_VERDACCIO_PORT: "ports.verdaccio",
+
+  ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",
+  ATELIER_IMAGE_BUILDER_IMAGE: "imageBuilder.image",
+  ATELIER_IMAGE_BUILDER_ENDPOINT: "imageBuilder.endpoint",
+  ATELIER_IMAGE_BUILDER_CACHE_REPO: "imageBuilder.cacheRepo",
+  ATELIER_IMAGE_BUILDER_INSECURE_REGISTRY: "imageBuilder.insecureRegistry",
 
   ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
   ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",

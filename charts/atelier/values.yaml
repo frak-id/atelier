@@ -148,6 +148,32 @@ ports:
   agent: 9999
   verdaccio: 4873
 
+# -- Image builder for base images (dev-base, dev-cloud, …)
+#
+# Two strategies are supported:
+#   - kaniko   (default): spawns a K8s Job that runs Kaniko. Works
+#                          out of the box; no external deps.
+#   - buildkit          : dispatches builds to an EXISTING BuildKit
+#                          daemon (a Pod you already host). Only a
+#                          small `buildctl` Job is created per build.
+#
+# The cache repo defaults to `${kubernetes.registryUrl}/cache` (the
+# bundled Zot). Override `cacheRepo` to push the layer cache elsewhere.
+imageBuilder:
+  kind: kaniko
+  # -- Builder image. Per-kind defaults are used when empty:
+  #     kaniko   → gcr.io/kaniko-project/executor:latest
+  #     buildkit → moby/buildkit:latest (used as the buildctl client)
+  image: ""
+  # -- BuildKit daemon address. REQUIRED when kind=buildkit.
+  #    Example: tcp://buildkitd.buildkit.svc:1234
+  endpoint: ""
+  # -- Cache repository (empty = ${kubernetes.registryUrl}/cache)
+  cacheRepo: ""
+  # -- Treat destination/cache registry as HTTP / self-signed.
+  #    Default true because the bundled Zot runs without TLS.
+  insecureRegistry: true
+
 # -- Integrations
 integrations:
   slack:
@@ -210,6 +236,20 @@ verdaccio:
   log:
     # -- Verdaccio log level (trace, debug, info, http, warn, error, fatal)
     level: "warn"
+  # -- Readiness probe (overridable). Defaults match prior hardcoded values.
+  readinessProbe:
+    httpGet:
+      path: /-/ping
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  # -- Liveness probe (overridable). Defaults match prior hardcoded values.
+  livenessProbe:
+    httpGet:
+      path: /-/ping
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 30
 
 # -- Shared binaries (opencode + code-server, mounted into sandboxes)
 sharedBinaries:

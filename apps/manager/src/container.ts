@@ -1,4 +1,5 @@
 import { AgentClient, AgentOperations } from "./infrastructure/agent/index.ts";
+import { createImageBuilder } from "./infrastructure/image-builder/index.ts";
 import { kubeClient } from "./infrastructure/kubernetes/index.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import { CLIProxyService } from "./modules/cliproxy/index.ts";
@@ -166,7 +167,8 @@ const prebuildRunner = new PrebuildRunner({
   aiService: systemAiService,
 });
 
-const baseImageBuilder = new BaseImageBuilder(kubeClient);
+const imageBuilder = createImageBuilder(config.imageBuilder);
+const baseImageBuilder = new BaseImageBuilder(kubeClient, imageBuilder);
 
 const taskSpawner = new TaskSpawner({
   sandboxSpawner,

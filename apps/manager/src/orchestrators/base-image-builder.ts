@@ -1,8 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { discoverImages, getImageById } from "@frak/atelier-shared";
+import type { ImageBuilder } from "../infrastructure/image-builder/index.ts";
 import {
-  buildBaseImageBuildJob,
   buildConfigMap,
   type KubeClient,
 } from "../infrastructure/kubernetes/index.ts";
@@ -18,7 +18,10 @@ const CONFIGMAP_PREFIX = "base-image-ctx";
 const JOB_PREFIX = "base-image-build";
 
 export class BaseImageBuilder {
-  constructor(private kubeClient: KubeClient) {}
+  constructor(
+    private kubeClient: KubeClient,
+    private imageBuilder: ImageBuilder,
+  ) {}
 
   async triggerBuild(imageId: string): Promise<{
     imageId: string;
@@ -56,6 +59,7 @@ export class BaseImageBuilder {
     const namespace = config.kubernetes.systemNamespace;
     const registryUrl = config.kubernetes.registryUrl;
     const destination = `${registryUrl}/${imageId}:latest`;
+    const cacheRepo = config.imageBuilder.cacheRepo || `${registryUrl}/cache`;
 
     /* ── 1. Collect all build context files ──────────────── */
     const { data: contextData, items } = await this.collectContextFiles(
@@ -79,19 +83,21 @@ export class BaseImageBuilder {
     await this.kubeClient.createResource(configMap, namespace);
     log.info({ configMapName, namespace }, "Created build context ConfigMap");
 
-    /* ── 3. Create Kaniko build Job ──────────────────────── */
-    const job = buildBaseImageBuildJob({
-      name: jobName,
+    /* ── 3. Dispatch the build via the configured builder ─ */
+    const job = this.imageBuilder.buildJob({
+      jobName,
       imageId,
-      configMapName,
-      configMapItems: items,
       destinationImage: destination,
       namespace,
+      configMapName,
+      configMapItems: items,
+      cacheRepo,
+      labels,
     });
 
     await this.kubeClient.createResource(job, namespace);
     log.info(
-      { jobName, destination, namespace },
+      { jobName, destination, namespace, builder: this.imageBuilder.kind },
       "Created base image build Job",
     );
 

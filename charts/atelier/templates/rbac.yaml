@@ -57,7 +57,7 @@ subjects:
     name: {{ include "atelier.serviceAccountName" . }}
     namespace: {{ include "atelier.systemNamespace" . }}
 ---
-# System namespace: Verdaccio, Kaniko, shared-binaries (pods, services, configmaps, PVCs, jobs)
+# System namespace: Verdaccio, image-build Jobs, shared-binaries (pods, services, configmaps, PVCs, jobs)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

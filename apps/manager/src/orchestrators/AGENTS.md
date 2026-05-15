@@ -8,7 +8,8 @@ Complex multi-step workflows coordinating services and infrastructure. Use conte
 |--------------|---------|
 | `SandboxSpawner` | Full sandbox creation (K8s pod + service + ingress → agent → provision) |
 | `TaskSpawner` | Task execution (sandbox → git branch → prompt → session) |
-| `PrebuildRunner` | Prebuild image creation via Kaniko + Zot |
+| `PrebuildRunner` | Prebuild snapshot creation (sandbox pod → init commands via agent → PVC `VolumeSnapshot`) |
+| `BaseImageBuilder` | Base image build dispatch via the configured `ImageBuilder` (kaniko or buildkit) |
 | `SandboxLifecycle` | Health monitoring and state management (pod status) |
 | `PrebuildChecker` | Staleness detection and rebuild triggers |
 | `SandboxDestroyer` | K8s resource cleanup (label-based delete) |
