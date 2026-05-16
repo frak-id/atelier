@@ -194,6 +194,11 @@ integrations:
 # -- Zot OCI registry (base images)
 zot:
   enabled: true
+  # -- Use an existing OCI registry instead of deploying the bundled Zot.
+  # When set (e.g. `zot.zot.svc:5000`), the in-chart Zot Deployment/Service/PVC/ConfigMap
+  # are skipped and the manager points sandbox image pulls at this address.
+  # Must be a `host:port` reference reachable from the cluster (no scheme).
+  externalUrl: ""
   image:
     repository: ghcr.io/project-zot/zot-linux-amd64
     tag: "v2.1.14"
@@ -213,6 +218,10 @@ zot:
 # -- Verdaccio npm registry cache (shared across sandboxes)
 verdaccio:
   enabled: true
+  # -- Use an existing npm registry instead of deploying the bundled Verdaccio.
+  # When set (e.g. `http://verdaccio.verdaccio.svc:4873`), the in-chart resources are skipped.
+  # Must be a full URL with scheme.
+  externalUrl: ""
   image:
     repository: verdaccio/verdaccio
     tag: "6"

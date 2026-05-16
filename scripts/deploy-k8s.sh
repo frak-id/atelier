@@ -34,7 +34,6 @@ AGENT_IMAGE_REPO="${AGENT_IMAGE_REPO:-ghcr.io/frak-id/sandbox-agent}"
 RELEASE_NAME="${RELEASE_NAME:-atelier}"
 NAMESPACE="${NAMESPACE:-atelier-system}"
 CHART_NAME="atelier"
-ZOT_PORT="${ZOT_PORT:-5000}"
 
 VALUES_FILE="${VALUES_FILE:-}"
 HELM_SET="${HELM_SET:-}"
@@ -63,7 +62,6 @@ if [[ "${RELEASE_NAME}" == *"${CHART_NAME}"* ]]; then
 else
   FULLNAME="${RELEASE_NAME}-${CHART_NAME}"
 fi
-ZOT_SVC="${FULLNAME}-zot"
 
 # ── SSH setup ────────────────────────────────────────────────────────────────
 
@@ -264,38 +262,59 @@ remote "${HELM_CMD}"
 
 ok "Helm release deployed"
 
-# ── Step 6: Configure k3s registries for Zot ────────────────────────────────
+# ── Step 6: Configure k3s registries for the OCI registry ──────────────────
+#
+# Derives the mirror host from the deployed manager config so this step
+# works for both the bundled Zot and any external registry pointed at via
+# `zot.externalUrl` in values.
 
-info "Configuring k3s registries for Zot"
+info "Configuring k3s registries"
 
-ZOT_IP=$(remote "kubectl get svc -n ${NAMESPACE} ${ZOT_SVC} -o jsonpath='{.spec.clusterIP}' 2>/dev/null" || echo "")
+REGISTRY_HOST_PORT=$(remote "kubectl -n ${NAMESPACE} get configmap ${FULLNAME}-manager-config -o jsonpath='{.data.sandbox\.config\.json}' 2>/dev/null | sed -n 's/.*\"registryUrl\": *\"\\([^\"]*\\)\".*/\\1/p'" || echo "")
 
-if [[ -n "$ZOT_IP" ]]; then
-  NEW_REGISTRIES="mirrors:
-  \"${ZOT_SVC}.${NAMESPACE}.svc:${ZOT_PORT}\":
-    endpoint:
-      - \"http://${ZOT_IP}:${ZOT_PORT}\""
-
-  CURRENT_REGISTRIES=$(remote "cat /etc/rancher/k3s/registries.yaml 2>/dev/null" || echo "")
-
-  if [[ "$NEW_REGISTRIES" != "$CURRENT_REGISTRIES" ]]; then
-    remote "cat > /etc/rancher/k3s/registries.yaml << REGEOF
-mirrors:
-  \"${ZOT_SVC}.${NAMESPACE}.svc:${ZOT_PORT}\":
-    endpoint:
-      - \"http://${ZOT_IP}:${ZOT_PORT}\"
-REGEOF"
-    ok "registries.yaml updated (Zot ClusterIP: ${ZOT_IP})"
-
-    info "Restarting k3s to apply registries config"
-    remote "systemctl restart k3s"
-    sleep 15
-    ok "k3s restarted"
-  else
-    ok "registries.yaml already up to date"
-  fi
+if [[ -z "$REGISTRY_HOST_PORT" ]]; then
+  warn "Could not resolve registryUrl from manager-config — skipping registries config"
 else
-  warn "Zot service not found — skipping registries config"
+  REGISTRY_HOST="${REGISTRY_HOST_PORT%:*}"
+  REGISTRY_PORT="${REGISTRY_HOST_PORT##*:}"
+  # Expect host of the form `<svc>.<ns>.svc`. Anything else (e.g. an FQDN
+  # outside the cluster) is left alone — the user is responsible for DNS.
+  if [[ "$REGISTRY_HOST" == *.*.svc ]]; then
+    REGISTRY_SVC="${REGISTRY_HOST%%.*}"
+    REGISTRY_NS="${REGISTRY_HOST#*.}"; REGISTRY_NS="${REGISTRY_NS%.svc}"
+    REGISTRY_IP=$(remote "kubectl get svc -n ${REGISTRY_NS} ${REGISTRY_SVC} -o jsonpath='{.spec.clusterIP}' 2>/dev/null" || echo "")
+  else
+    REGISTRY_IP=""
+  fi
+
+  if [[ -z "$REGISTRY_IP" ]]; then
+    warn "Could not resolve ClusterIP for ${REGISTRY_HOST_PORT} — skipping registries config"
+    warn "Configure /etc/rancher/k3s/registries.yaml manually if you use an out-of-cluster registry."
+  else
+    NEW_REGISTRIES="mirrors:
+  \"${REGISTRY_HOST_PORT}\":
+    endpoint:
+      - \"http://${REGISTRY_IP}:${REGISTRY_PORT}\""
+
+    CURRENT_REGISTRIES=$(remote "cat /etc/rancher/k3s/registries.yaml 2>/dev/null" || echo "")
+
+    if [[ "$NEW_REGISTRIES" != "$CURRENT_REGISTRIES" ]]; then
+      remote "cat > /etc/rancher/k3s/registries.yaml << REGEOF
+mirrors:
+  \"${REGISTRY_HOST_PORT}\":
+    endpoint:
+      - \"http://${REGISTRY_IP}:${REGISTRY_PORT}\"
+REGEOF"
+      ok "registries.yaml updated (${REGISTRY_HOST_PORT} → ${REGISTRY_IP}:${REGISTRY_PORT})"
+
+      info "Restarting k3s to apply registries config"
+      remote "systemctl restart k3s"
+      sleep 15
+      ok "k3s restarted"
+    else
+      ok "registries.yaml already up to date"
+    fi
+  fi
 fi
 
 # ── Step 7: Wait and verify ─────────────────────────────────────────────────
@@ -318,27 +337,27 @@ ok "Manager pod is running"
 echo ""
 remote "kubectl -n ${NAMESPACE} get pods"
 
-# ── Step 8: Sync agent image to Zot ──────────────────────────────────────────
+# ── Step 8: Sync agent image to the OCI registry ───────────────────────
 
-info "Syncing agent image to Zot registry"
-if [[ -n "$ZOT_IP" ]]; then
+info "Syncing agent image to registry"
+if [[ -n "${REGISTRY_IP:-}" ]]; then
   if [[ -n "$SKIP_BUILD" ]]; then
     # GHCR images from buildx contain a multi-platform OCI index with attestation
     # manifests that containerd cannot push to Zot. Use crane for single-platform copy.
     remote "command -v crane >/dev/null 2>&1 || \
       (curl -sL 'https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Linux_x86_64.tar.gz' \
         | tar xzf - -C /usr/local/bin crane)"
-    remote "crane copy --platform linux/amd64 --insecure ${AGENT_IMAGE} ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest" \
-      && ok "Agent image synced to Zot" \
-      || warn "Could not sync agent to Zot (non-fatal)"
+    remote "crane copy --platform linux/amd64 --insecure ${AGENT_IMAGE} ${REGISTRY_IP}:${REGISTRY_PORT}/sandbox-agent:latest" \
+      && ok "Agent image synced to registry" \
+      || warn "Could not sync agent image (non-fatal)"
   else
-    remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>/dev/null || true"
-    remote "k3s ctr -n k8s.io images push --plain-http ${ZOT_IP}:${ZOT_PORT}/sandbox-agent:latest 2>&1" \
-      && ok "Agent image pushed to Zot" \
-      || warn "Could not push agent to Zot (non-fatal)"
+    remote "k3s ctr -n k8s.io images tag ${AGENT_IMAGE} ${REGISTRY_IP}:${REGISTRY_PORT}/sandbox-agent:latest 2>/dev/null || true"
+    remote "k3s ctr -n k8s.io images push --plain-http ${REGISTRY_IP}:${REGISTRY_PORT}/sandbox-agent:latest 2>&1" \
+      && ok "Agent image pushed to registry" \
+      || warn "Could not push agent image (non-fatal)"
   fi
 else
-  warn "Zot service not found — skipping agent sync"
+  warn "Registry ClusterIP not resolved — skipping agent sync"
 fi
 
 # ── Step 9: Restore database backup (optional) ──────────────────────────────

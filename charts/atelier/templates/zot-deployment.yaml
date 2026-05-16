@@ -1,4 +1,4 @@
-{{- if .Values.zot.enabled }}
+{{- if eq (include "atelier.zotBundled" .) "true" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

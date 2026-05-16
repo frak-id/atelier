@@ -7,7 +7,10 @@ metadata:
     {{- include "atelier.labels" . | nindent 4 }}
 data:
   registries.yaml: |
+    {{- $registry := include "atelier.registryUrl" . }}
+    {{- if $registry }}
     mirrors:
-      "{{ include "atelier.fullname" . }}-zot.{{ .Release.Namespace }}.svc:{{ .Values.zot.port }}":
+      "{{ $registry }}":
         endpoint:
-          - "http://{{ include "atelier.fullname" . }}-zot.{{ .Release.Namespace }}.svc:{{ .Values.zot.port }}"
+          - "http://{{ $registry }}"
+    {{- end }}

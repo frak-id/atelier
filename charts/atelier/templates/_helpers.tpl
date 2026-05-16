@@ -184,3 +184,46 @@ SSH hostname for dashboard display, defaulting to ssh.{baseDomain}.
 {{- define "atelier.sshHostname" -}}
 {{- printf "ssh.%s" .Values.domain.baseDomain -}}
 {{- end -}}
+
+{{/*
+Resolved OCI registry URL (host:port, no scheme).
+Returns the bundled Zot service when zot.enabled is true and no override is set,
+or zot.externalUrl when provided (e.g. `zot.zot.svc:5000`).
+Empty when neither is configured.
+*/}}
+{{- define "atelier.registryUrl" -}}
+{{- if .Values.zot.externalUrl -}}
+{{- .Values.zot.externalUrl -}}
+{{- else if .Values.zot.enabled -}}
+{{- printf "%s-zot.%s.svc:%v" (include "atelier.fullname" .) .Release.Namespace .Values.zot.port -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Resolved npm registry (Verdaccio) URL, full URL with scheme.
+Returns verdaccio.externalUrl when set (e.g. `http://verdaccio.verdaccio.svc:4873`),
+or the bundled service URL when verdaccio.enabled is true.
+Empty when neither is configured.
+*/}}
+{{- define "atelier.verdaccioUrl" -}}
+{{- if .Values.verdaccio.externalUrl -}}
+{{- .Values.verdaccio.externalUrl -}}
+{{- else if .Values.verdaccio.enabled -}}
+{{- printf "http://%s-verdaccio.%s.svc:%v" (include "atelier.fullname" .) .Release.Namespace .Values.ports.verdaccio -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Emit "true" when the bundled Zot deployment should be rendered.
+Suppresses the in-chart deployment when an external URL is configured.
+*/}}
+{{- define "atelier.zotBundled" -}}
+{{- if and .Values.zot.enabled (not .Values.zot.externalUrl) -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Emit "true" when the bundled Verdaccio deployment should be rendered.
+*/}}
+{{- define "atelier.verdaccioBundled" -}}
+{{- if and .Values.verdaccio.enabled (not .Values.verdaccio.externalUrl) -}}true{{- end -}}
+{{- end -}}

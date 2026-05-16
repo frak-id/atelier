@@ -1,4 +1,4 @@
-{{- if .Values.verdaccio.enabled }}
+{{- if eq (include "atelier.verdaccioBundled" .) "true" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

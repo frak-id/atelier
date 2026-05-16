@@ -1,4 +1,4 @@
-{{- if .Values.zot.enabled }}
+{{- if eq (include "atelier.zotBundled" .) "true" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
