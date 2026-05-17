@@ -31,9 +31,9 @@ export type BuildkitBuilderOptions = {
  * client which uploads the context and streams progress — the daemon
  * does the actual build.
  *
- * BuildKit can read the context directly from a mounted directory, so
- * (unlike Kaniko) we skip the init-container copy: the ConfigMap is
- * mounted read-only at /context with `items[].path` restoring layout.
+ * An init container materializes the ConfigMap context into an emptyDir,
+ * dereferencing the `..data/...` symlinks that ConfigMap volumes use
+ * (buildctl's `--local` can fail to descend into nested subdirs otherwise).
  */
 export class BuildkitBuilder implements ImageBuilder {
   readonly kind = "buildkit";
@@ -118,6 +118,17 @@ export class BuildkitBuilder implements ImageBuilder {
           metadata: { labels: ctx.labels },
           spec: {
             restartPolicy: "Never",
+            initContainers: [
+              {
+                name: "prepare-context",
+                image: "busybox:1.37",
+                command: ["sh", "-c", "cp -rL /config/. /context/"],
+                volumeMounts: [
+                  { name: "config", mountPath: "/config", readOnly: true },
+                  { name: "context", mountPath: "/context" },
+                ],
+              },
+            ],
             containers: [
               {
                 name: "buildctl",
@@ -140,12 +151,13 @@ export class BuildkitBuilder implements ImageBuilder {
             ],
             volumes: [
               {
-                name: "context",
+                name: "config",
                 configMap: {
                   name: ctx.configMapName,
                   items: ctx.configMapItems,
                 },
               },
+              { name: "context", emptyDir: {} },
               ...(tlsSecretName
                 ? [
                     {
