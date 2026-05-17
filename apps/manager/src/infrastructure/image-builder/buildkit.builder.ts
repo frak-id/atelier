@@ -97,6 +97,14 @@ export class BuildkitBuilder implements ImageBuilder {
       exportCache,
       "--import-cache",
       importCache,
+      /* Disable SBOM/provenance attestations. They wrap the image in an OCI
+       * image-index that some registries (notably Zot <2.2) reject with 415.
+       * Matches Kaniko behaviour (no attestations) so the two builders produce
+       * interchangeable artifacts. */
+      "--opt",
+      "attest:provenance=disabled",
+      "--opt",
+      "attest:sbom=disabled",
     ];
 
     for (const [key, value] of Object.entries(ctx.buildArgs ?? {})) {
