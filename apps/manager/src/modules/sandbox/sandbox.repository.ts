@@ -4,7 +4,7 @@ import {
   type SandboxStatus,
   sandboxes,
 } from "../../infrastructure/database/index.ts";
-import type { Sandbox } from "../../schemas/index.ts";
+import type { Sandbox, SandboxWarning } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("sandbox-repository");
@@ -20,6 +20,7 @@ function rowToSandbox(row: typeof sandboxes.$inferSelect): Sandbox {
     status: row.status,
     runtime: row.runtime,
     opencodeWorkspaceContext: row.opencodeWorkspaceContext ?? undefined,
+    warnings: row.warnings ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -92,6 +93,7 @@ export class SandboxRepository {
         status: sandbox.status,
         runtime: sandbox.runtime,
         opencodeWorkspaceContext: sandbox.opencodeWorkspaceContext ?? null,
+        warnings: sandbox.warnings ?? null,
         createdAt: sandbox.createdAt,
         updatedAt: sandbox.updatedAt,
       })
@@ -123,6 +125,7 @@ export class SandboxRepository {
         status: updated.status,
         runtime: updated.runtime,
         opencodeWorkspaceContext: updated.opencodeWorkspaceContext ?? null,
+        warnings: updated.warnings ?? null,
         updatedAt: updated.updatedAt,
       })
       .where(eq(sandboxes.id, id))
@@ -139,6 +142,36 @@ export class SandboxRepository {
     const runtime = error ? { ...existing.runtime, error } : existing.runtime;
 
     return this.update(id, { status, runtime });
+  }
+
+  /**
+   * Append a warning to the sandbox, deduped by `(code, context.requested)`.
+   *
+   * Same agent missing across multiple sessions collapses to one entry
+   * (latest `createdAt` wins). Other warning codes / different requested
+   * values coexist.
+   */
+  addWarning(id: string, warning: SandboxWarning): Sandbox {
+    const existing = this.getById(id);
+    if (!existing) throw new Error(`Sandbox '${id}' not found`);
+
+    const dedupeKey = (w: SandboxWarning) =>
+      `${w.code}::${(w.context?.requested as string | undefined) ?? ""}`;
+    const key = dedupeKey(warning);
+    const filtered = (existing.warnings ?? []).filter(
+      (w) => dedupeKey(w) !== key,
+    );
+    const warnings = [...filtered, warning];
+
+    log.info(
+      {
+        sandboxId: id,
+        code: warning.code,
+        requested: warning.context?.requested,
+      },
+      "Sandbox warning recorded",
+    );
+    return this.update(id, { warnings });
   }
 
   delete(id: string): boolean {

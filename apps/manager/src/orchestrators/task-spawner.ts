@@ -16,6 +16,7 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
 import {
   openOpencodeSession,
+  resolveAgent,
   sendPromptAndVerify,
 } from "../shared/lib/opencode-session.ts";
 import type { GitUserIdentity } from "./ports/guest-secrets.ts";
@@ -310,6 +311,20 @@ export class TaskSpawner {
       sessionTemplateId,
     );
 
+    // Validate the requested agent against opencode's live registry.
+    // If the agent name has drifted (renamed in opencode, missing in this
+    // build, etc.) we drop the `agent` field so opencode falls back to its
+    // default, and record a warning on the sandbox for the operator.
+    // Without this, `prompt_async` silently drops the prompt in the forked
+    // fiber and `sendPromptAndVerify` only surfaces it as a generic timeout.
+    const { resolvedAgent, warning } = await resolveAgent(
+      client,
+      sessionConfig.agent,
+    );
+    if (warning && task.data.sandboxId) {
+      this.deps.sandboxService.addWarning(task.data.sandboxId, warning);
+    }
+
     const prompt = this.buildPrompt(
       task,
       workspace,
@@ -325,7 +340,7 @@ export class TaskSpawner {
       parts: [{ type: "text", text: prompt }],
       ...(sessionConfig.model && { model: sessionConfig.model }),
       ...(sessionConfig.variant && { variant: sessionConfig.variant }),
-      ...(sessionConfig.agent && { agent: sessionConfig.agent }),
+      ...(resolvedAgent && { agent: resolvedAgent }),
     });
 
     log.info(

@@ -1,4 +1,5 @@
 import type { createOpencodeClient } from "@opencode-ai/sdk/v2";
+import type { SandboxWarning } from "../../schemas/index.ts";
 import { createChildLogger } from "./logger.ts";
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>;
@@ -251,4 +252,68 @@ export async function startOpencodeSession(
     agent: input.agent,
   });
   return session;
+}
+
+export interface ResolveAgentResult {
+  /** The agent name to pass to `prompt`/`promptAsync`, or `undefined` to omit. */
+  resolvedAgent?: string;
+  /** Set when the requested agent was not in opencode's registry. */
+  warning?: SandboxWarning;
+}
+
+/**
+ * Validate that a requested agent exists in opencode's registry; degrade to
+ * the server-side default if it doesn't.
+ *
+ * Returns:
+ *   - `{}` when nothing was requested (caller wasn't going to set `agent`)
+ *   - `{ resolvedAgent: requested }` when the agent exists
+ *   - `{ warning }` when the agent is missing — the caller should record the
+ *     warning on the sandbox and omit the `agent` field from the prompt, so
+ *     opencode falls back to its default agent instead of silently dropping
+ *     the prompt inside the forked `prompt_async` fiber.
+ *
+ * Costs one extra `GET /agent` round-trip per first prompt. Cheap; the
+ * registry response is small and already cached by opencode by the time
+ * `waitForOpencodeAgentRegistry` returned.
+ */
+export async function resolveAgent(
+  client: OpencodeClient,
+  requested: string | undefined,
+): Promise<ResolveAgentResult> {
+  if (!requested) return {};
+
+  let available: string[] = [];
+  try {
+    const { data, error } = await client.app.agents();
+    if (error || !data) {
+      // Registry unreachable — don't synthesise a misleading warning,
+      // just let the caller proceed with the requested agent and let the
+      // existing `sendPromptAndVerify` retry surface the real failure.
+      return { resolvedAgent: requested };
+    }
+    available = data.map((a) => a.name);
+  } catch {
+    return { resolvedAgent: requested };
+  }
+
+  if (available.includes(requested)) {
+    return { resolvedAgent: requested };
+  }
+
+  log.warn(
+    { requested, available },
+    "Requested agent not in opencode registry, falling back to default",
+  );
+  return {
+    warning: {
+      code: "agent_not_found",
+      message: `Configured agent "${requested}" is not available on this opencode binary. Prompt sent without the \`agent\` field; opencode will use its default agent.`,
+      context: {
+        requested,
+        available,
+      },
+      createdAt: new Date().toISOString(),
+    },
+  };
 }

@@ -3,6 +3,7 @@ import type {
   SandboxOpencodeWorkspaceContext,
   SandboxOrigin,
   SandboxRuntime,
+  SandboxWarning,
   TaskData,
   WorkspaceConfig,
 } from "../../schemas/index.ts";
@@ -85,6 +86,9 @@ export const sandboxes = sqliteTable(
     opencodeWorkspaceContext: text("opencode_workspace_context", {
       mode: "json",
     }).$type<SandboxOpencodeWorkspaceContext | null>(),
+    warnings: text("warnings", { mode: "json" }).$type<
+      SandboxWarning[] | null
+    >(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

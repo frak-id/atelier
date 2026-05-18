@@ -87,6 +87,31 @@ export type SandboxOpencodeWorkspaceContext = Static<
   typeof SandboxOpencodeWorkspaceContextSchema
 >;
 
+/**
+ * Recoverable, soft-failure conditions surfaced on a sandbox row.
+ *
+ * Added when the spawn workflow had to degrade something away from the
+ * intended configuration (e.g. session template referenced an agent that
+ * doesn't exist on the current opencode binary, so we sent the prompt
+ * without the `agent` field). The sandbox keeps running — warnings are
+ * for the operator to fix configuration drift, not for the manager to
+ * react to.
+ *
+ * Persist for the lifetime of the sandbox row. Dedupe within the
+ * repository by `(code, context.requested)` so repeated failures across
+ * sessions don't spam the list.
+ */
+export const SandboxWarningCodeSchema = t.Union([t.Literal("agent_not_found")]);
+export type SandboxWarningCode = Static<typeof SandboxWarningCodeSchema>;
+
+export const SandboxWarningSchema = t.Object({
+  code: SandboxWarningCodeSchema,
+  message: t.String(),
+  context: t.Optional(t.Record(t.String(), t.Unknown())),
+  createdAt: t.String(),
+});
+export type SandboxWarning = Static<typeof SandboxWarningSchema>;
+
 export const SandboxSchema = t.Object({
   id: t.String(),
   orgId: t.Optional(t.String()),
@@ -106,6 +131,12 @@ export const SandboxSchema = t.Object({
    * the same `opencode serve` env without the local CLI being involved.
    */
   opencodeWorkspaceContext: t.Optional(SandboxOpencodeWorkspaceContextSchema),
+  /**
+   * Soft-failure conditions surfaced on the sandbox (degraded modes,
+   * config drift). See `SandboxWarningSchema`. Append-only within the
+   * sandbox lifetime, deduped by `(code, context.requested)`.
+   */
+  warnings: t.Optional(t.Array(SandboxWarningSchema)),
 });
 export type Sandbox = Static<typeof SandboxSchema>;
 

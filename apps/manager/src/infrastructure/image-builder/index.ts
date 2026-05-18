@@ -3,9 +3,9 @@ import { BuildkitBuilder } from "./buildkit.builder.ts";
 import { KanikoBuilder } from "./kaniko.builder.ts";
 import type { ImageBuilder } from "./types.ts";
 
-export type { BuildContext, ImageBuilder } from "./types.ts";
 export { BuildkitBuilder } from "./buildkit.builder.ts";
 export { KanikoBuilder } from "./kaniko.builder.ts";
+export type { BuildContext, ImageBuilder } from "./types.ts";
 
 /**
  * Pick the configured image-builder strategy.

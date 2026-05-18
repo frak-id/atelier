@@ -65,6 +65,7 @@ import { formatCompact, formatDate, getWorkspaceDirectory } from "@/lib/utils";
 import { BrowserButton } from "./browser-button";
 import { QuickConnectCard } from "./quick-connect-card";
 import { RepositoriesTab } from "./repositories-tab";
+import { SandboxWarningsBlock } from "./sandbox-warnings-block";
 import { ServicesTab } from "./services-tab";
 import { SessionsTab, SessionsTabBadge } from "./sessions-tab";
 
@@ -438,6 +439,7 @@ export function SandboxDrawer({
 
             <ScrollArea className="flex-1">
               <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-hidden">
+                <SandboxWarningsBlock warnings={sandbox.warnings} />
                 {task && (
                   <Card
                     className="cursor-pointer hover:border-primary/50 transition-colors"
