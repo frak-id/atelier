@@ -4,21 +4,13 @@ import type { Workspace } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
 
 /**
- * Workspace-mode flags forwarded from the local opencode-atelier plugin.
- *
- * These come from upstream OpenCode's `WorkspaceAdapter.create(info, env, from?)`
- * env arg plus our own preregistration metadata. They get merged into the
- * `opencode serve` env block so the remote opencode boots in workspace mode
- * and our preregister plugin can alias the local project_id into the
- * remote `project` table before `/sync/replay` arrives.
+ * Workspace-mode context forwarded from the local opencode-atelier plugin.
+ * Merged into the `opencode serve` env block so the remote opencode boots
+ * in workspace mode (`OPENCODE_EXPERIMENTAL_WORKSPACES` + `OPENCODE_WORKSPACE_ID`).
  */
 export interface OpencodeWorkspaceContext {
   /** Filtered env from `WorkspaceAdapter.create(info, env)`'s second arg. */
   opencodeEnv?: Record<string, string>;
-  /** Local OpenCode project_id — row to alias on the remote. */
-  sourceProjectID?: string;
-  /** Local OpenCode workspace_id — informational. */
-  sourceWorkspaceID?: string;
   /** Origin workspace_id when forking. */
   sourceWorkspaceFromID?: string;
 }

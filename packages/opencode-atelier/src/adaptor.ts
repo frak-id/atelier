@@ -9,8 +9,6 @@ import type { AtelierExtra, AtelierPluginConfig, Sandbox } from "./types.ts";
 
 const ORIGIN_SOURCE = "opencode-plugin";
 const CACHE_TTL_MS = 30_000;
-const VM_HOME = "/home/dev";
-const VM_WORKSPACE_DIR = `${VM_HOME}/workspace`;
 
 /**
  * OpenCode-supplied env keys that must reach the remote `opencode serve`
@@ -75,35 +73,21 @@ export function createAtelierAdaptor(
     name: "Atelier",
     description: "Spawn an Atelier sandbox and run OpenCode inside it",
 
-    async configure(info: WorkspaceInfo): Promise<WorkspaceInfo> {
+    configure(info: WorkspaceInfo): WorkspaceInfo {
       const raw = (info.extra ?? {}) as Partial<AtelierExtra>;
       const extra: AtelierExtra = {
         managerUrl: raw.managerUrl ?? pluginConfig.managerUrl,
         atelierWorkspaceId:
           raw.atelierWorkspaceId ?? pluginConfig.workspaceId ?? "",
         branch: raw.branch ?? info.branch ?? undefined,
-        // Capture local OpenCode identifiers so the remote sandbox can
-        // pre-register the project_id before `/sync/replay` arrives.
-        // See AtelierExtra docs for why this exists.
-        sourceProjectID: info.projectID,
-        sourceWorkspaceID: info.id,
       };
 
-      // The remote sandbox boots OpenCode with `cd <workspaceDir>` where
-      // `workspaceDir` is `/home/dev/workspace/<clonePath>` for single-repo
-      // workspaces, else `/home/dev/workspace`. The remote project_id is
-      // hashed from that path — if we announce a different directory here,
-      // every `/sync/replay` batch fails its FK on insert because the events
-      // carry a project_id the remote DB has never seen.
-      const directory = await resolveWorkspaceDirectory(
-        getClient,
-        extra.atelierWorkspaceId,
-      );
-
+      // No directory: the remote derives its own project + cwd from where
+      // the manager launched `opencode serve`. Since 1.16.2 project_id comes
+      // from the git remote URL, so local and remote match automatically.
       return {
         ...info,
         name: info.name ?? `atelier-${info.id}`,
-        directory,
         extra,
       };
     },
@@ -145,13 +129,10 @@ export function createAtelierAdaptor(
             source: ORIGIN_SOURCE,
             externalId: info.id,
           },
-          // Forwarded so the manager can wire workspace mode + auth into
-          // the remote `opencode serve` command and inject our pre-register
-          // plugin via opencode.json. See manager `sandbox-config.ts` and
-          // `internal.service.ts` for the receiving side.
+          // Forwarded so the manager can boot the remote `opencode serve`
+          // in workspace mode (OPENCODE_EXPERIMENTAL_WORKSPACES +
+          // OPENCODE_WORKSPACE_ID). See manager `sandbox-config.ts`.
           opencodeEnv,
-          sourceProjectID: extra.sourceProjectID,
-          sourceWorkspaceID: extra.sourceWorkspaceID,
           sourceWorkspaceFromID: from?.id,
         }),
       );
@@ -200,20 +181,9 @@ export function createAtelierAdaptor(
         headers.Authorization = `Basic ${btoa(`opencode:${password}`)}`;
       }
 
-      // Inject `?workspace=<workspaceID>` into the proxy URL so the local
-      // opencode's `WorkspaceRoutingMiddleware` resolves the workspace via
-      // our adapter before falling through to directory-based routing. The
-      // SDK auto-injects `?directory=<local cwd>` on every GET, which would
-      // otherwise route requests via a path that doesn't exist on the VM.
-      // See upstream
-      // `packages/opencode/src/server/routes/instance/httpapi/middleware/workspace-routing.ts`
-      // — `selectedWorkspaceID` prefers `?workspace` over `?directory`.
-      const url = new URL(entry.sandbox.runtime.urls.opencode);
-      url.searchParams.set("workspace", info.id);
-
       return {
         type: "remote",
-        url,
+        url: new URL(entry.sandbox.runtime.urls.opencode),
         headers,
       };
     },
@@ -326,50 +296,4 @@ async function findSandboxId(
 
   const sandbox = await findSandboxByExternalId(client, workspaceId);
   return sandbox?.id ?? null;
-}
-
-/**
- * Resolve the directory the remote sandbox will actually `cd` into before
- * starting OpenCode. Mirrors the manager's `buildSandboxConfig` logic
- * (`apps/manager/src/orchestrators/sandbox-config.ts`):
- *
- *   - 1 repo  → `/home/dev/workspace/<clonePath>`
- *   - else    → `/home/dev/workspace`
- *
- * The remote OpenCode hashes this path to derive `project_id`; the local
- * CLI must announce the same path or `/sync/replay` will FK-fail when it
- * tries to insert events whose project_id doesn't exist on the remote.
- *
- * Best-effort: if the workspace lookup fails, we fall back to the parent
- * `/home/dev/workspace`, which still works for multi-repo setups.
- */
-async function resolveWorkspaceDirectory(
-  getClient: () => AtelierClient,
-  atelierWorkspaceId: string,
-): Promise<string> {
-  if (!atelierWorkspaceId) return VM_WORKSPACE_DIR;
-  try {
-    const workspace = unwrap(
-      await getClient().api.workspaces({ id: atelierWorkspaceId }).get(),
-    );
-    const repos = workspace.config?.repos ?? [];
-    if (repos.length !== 1 || !repos[0]?.clonePath) {
-      return VM_WORKSPACE_DIR;
-    }
-    // Mirror `buildSandboxConfig` byte-for-byte: the remote OpenCode `cd`s
-    // into this exact string and hashes it for project_id, so any drift
-    // (e.g. "/workspace/wallet" vs "/workspace/workspace/wallet") makes
-    // /sync/replay fail its FK on insert.
-    const clonePath = repos[0].clonePath;
-    const suffix = clonePath.startsWith("/workspace")
-      ? clonePath
-      : `/workspace${clonePath}`;
-    return `${VM_HOME}${suffix}`;
-  } catch (err) {
-    logger.warn(
-      `Failed to resolve workspace directory for ${atelierWorkspaceId}, ` +
-        `falling back to ${VM_WORKSPACE_DIR}: ${err}`,
-    );
-    return VM_WORKSPACE_DIR;
-  }
 }

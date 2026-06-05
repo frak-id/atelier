@@ -25,16 +25,7 @@ const DEFAULT_PATH = xdgData
   ? join(xdgData, "opencode", "log", "atelier.log")
   : null;
 
-let logFilePath: string | null = DEFAULT_PATH;
-let echoToConsole = false;
-
-export function setLogFilePath(path: string | null): void {
-  logFilePath = path;
-}
-
-export function setEchoToConsole(enabled: boolean): void {
-  echoToConsole = enabled;
-}
+const logFilePath: string | null = DEFAULT_PATH;
 
 export function getLogFilePath(): string | null {
   return logFilePath;
@@ -59,16 +50,6 @@ function rotateIfNeeded(path: string): void {
 }
 
 function write(level: LogLevel, message: string): void {
-  if (echoToConsole) {
-    const fn =
-      level === "ERROR"
-        ? console.error
-        : level === "WARN"
-          ? console.warn
-          : console.log;
-    fn(`[atelier] ${message}`);
-  }
-
   if (!logFilePath) return;
 
   try {

@@ -41,28 +41,16 @@ Then create an `atelier.config.json` (or `.atelier.json`) in your project root, 
 
 The plugin will auto-resolve a workspace from the active git remote when `workspaceId` is omitted.
 
-## Known limitations
+## Remote TUI warp
 
-### TUI warp shows a blank session (phantom-instance bug)
+Warping a TUI session into an Atelier sandbox (`/warp`) works on OpenCode **1.16.2+**. Warp routes sessions through the event-sourced workspace sync protocol (`/sync/replay` + `/sync/steal`) rather than proxying every request by directory: the remote resolves its own project and working directory from the sandbox's `process.cwd()` (where the manager launched `opencode serve`), and since 1.16.2 the `project_id` is derived from the git remote URL — so the local CLI and the sandbox compute the same id automatically even though their filesystem paths differ.
 
-Warping a TUI session into an Atelier sandbox lands the TUI on an empty instance — sessions are missing, replies don't appear. The dashboard (browser) is unaffected.
+Requirements:
 
-**Root cause is upstream, in the OpenCode TUI client — not in Atelier:**
+- Both the local OpenCode CLI **and** the sandbox binary must be **≥ 1.16.2** (pinned via `sharedBinaries.opencode.version` in the Helm values).
+- The plugin forwards `OPENCODE_EXPERIMENTAL_WORKSPACES=true` and `OPENCODE_WORKSPACE_ID` so the remote boots in workspace mode.
 
-1. The TUI configures `@opencode-ai/sdk` with `directory = process.cwd()` (the user's local Mac path, e.g. `/Users/alice/Workspace/Frak/wallet`) — see `packages/opencode/src/cli/cmd/tui/thread.ts:140,240`.
-2. The SDK's request interceptor (`packages/sdk/js/src/v2/client.ts:17-45`) auto-injects `?directory=<local cwd>` into every GET/HEAD request.
-3. After warp, the local opencode proxies these requests to the remote sandbox. The proxy strips `?workspace` but **preserves `?directory`** (`packages/opencode/src/server/shared/workspace-routing.ts:29-36`).
-4. The remote opencode's `WorkspaceRoutingMiddleware` falls back to `defaultDirectory(request, url)` which reads `?directory` from the URL first — returning the user's local Mac path, which doesn't exist on the VM.
-5. `Project.fromDirectory` walks up from the bogus path, finds no `.git`, returns `ProjectID.global`. `InstanceStore` caches a phantom instance keyed by the local path — disconnected from the real workspace at `/home/dev/workspace/<repo>`.
-
-**Why the dashboard works:** the browser SDK is constructed in `apps/dashboard/src/api/opencode.ts` with no `directory` config, so no `?directory=` is injected. The remote opencode then falls back to `process.cwd()`, which is the actual workspace dir (`opencode serve` is launched with `cd <workspaceDir>`).
-
-**Possible upstream fixes** (not implemented here):
-
-- Server-side (~5 lines): in `workspace-routing.ts:165`, short-circuit `defaultDirectory` to `process.cwd()` when `Flag.OPENCODE_WORKSPACE_ID` is set — the server is pinned to a workspace, so the client-supplied `?directory` is meaningless.
-- Client-side: have `thread.ts` pass `directory: undefined` (not `cwd`) to `tui()` when the transport is external/remote (matching what `attach.ts` already does conditionally).
-
-Until then: **use the dashboard for remote sandbox interactions**. SSH/VSCode-Remote/JetBrains-Remote also work fine since they bypass the OpenCode HTTP API entirely.
+The dashboard (browser), SSH, and VSCode/JetBrains Remote also work, since they don't depend on directory-based request routing.
 
 ## Requirements
 

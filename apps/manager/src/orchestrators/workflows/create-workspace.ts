@@ -47,13 +47,10 @@ export async function createWorkspaceSandbox(
         name: options.name,
         origin: options.origin,
         createdBy: createdByUserId,
-        // Forward workspace-mode flags from the opencode-atelier plugin
-        // so the remote `opencode serve` boots in workspace mode and the
-        // preregister plugin can alias the local project_id before warp.
+        // Forward workspace-mode env from the opencode-atelier plugin so
+        // the remote `opencode serve` boots in workspace mode.
         opencodeWorkspaceContext: {
           opencodeEnv: options.opencodeEnv,
-          sourceProjectID: options.sourceProjectID,
-          sourceWorkspaceID: options.sourceWorkspaceID,
           sourceWorkspaceFromID: options.sourceWorkspaceFromID,
         },
       },
@@ -135,30 +132,6 @@ export async function createWorkspaceSandbox(
         ports.agent,
         sandboxId,
         workspace.config.repos,
-      );
-    }
-
-    // Pre-write `.git/opencode` with the local CLI's project_id so
-    // `opencode serve`'s `Project.fromDirectory` call (which fires on the
-    // first `/sync/history` request before any plugin loads) computes the
-    // same id the local CLI uses. Without this, `/sync/replay` FK-fails
-    // because the remote computes a different root-commit hash.
-    //
-    // Single-repo only: multi-repo workspaces use `ProjectID.global` on
-    // both sides, no FK drift to fix.
-    //
-    // Runs for prebuild-restored sandboxes too — the snapshot may carry a
-    // stale id from prebuild time which the user's local id won't match.
-    if (
-      options.sourceProjectID &&
-      workspace.config.repos?.length === 1 &&
-      workspace.config.repos[0]?.clonePath
-    ) {
-      await GuestOps.pinOpencodeProjectIdCache(
-        ports.agent,
-        sandboxId,
-        workspace.config.repos[0].clonePath,
-        options.sourceProjectID,
       );
     }
 

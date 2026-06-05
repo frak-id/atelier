@@ -32,14 +32,7 @@ export async function cloneRepository(
 
   await agent.exec(sandboxId, `rm -rf ${clonePath}`);
 
-  // Full clone (no `--depth 1`) so `git rev-list --max-parents=0 HEAD`
-  // returns the same root commit hash as the user's local clone. OpenCode
-  // hashes that into the project_id (see opencode `project/project.ts`
-  // `fromDirectory`), and `/sync/replay` FK-fails on `session.project_id`
-  // if the local and remote ids differ. Trade-off: bigger initial clone,
-  // but git-pack stays small in practice and the cost only hits once at
-  // sandbox spawn (and is short-circuited entirely when prebuild snapshots
-  // are warm).
+  // Full clone (no `--depth 1`) so the sandbox has full git history/blame.
   const result = await agent.exec(
     sandboxId,
     `git clone -b ${branch} ${gitUrl} ${clonePath}`,
@@ -59,62 +52,6 @@ export async function cloneRepository(
   );
 
   log.info({ sandboxId, clonePath }, "Repository cloned successfully");
-}
-
-/**
- * Pre-write `<clonePath>/.git/opencode` with the local CLI's project_id
- * BEFORE `opencode serve` starts.
- *
- * Why this is needed (and why the in-sandbox preregister plugin alone
- * doesn't cut it):
- *
- * OpenCode's plugin lifecycle loads plugins lazily — specifically, plugins
- * load AFTER the first `/sync/history` request triggers `Project.fromDirectory`
- * (project/project.ts:218). By the time our preregister plugin runs, the
- * project row has already been INSERTed using whatever id `git rev-list
- * --max-parents=0 HEAD` computed on the remote, which doesn't match the
- * local CLI's id. The subsequent `/sync/replay` then FK-fails on
- * `session.project_id`.
- *
- * Writing `.git/opencode` from outside opencode (here, before the service
- * starts) means `Project.fromDirectory`'s `readCachedProjectId(dotgit)` call
- * succeeds and returns OUR id, so the project row gets INSERTed with the
- * id `/sync/replay` will reference.
- *
- * Best-effort: silently no-ops if `<clonePath>/.git` doesn't exist (e.g.
- * the workspace dir isn't a git repo, or it's a multi-repo workspace where
- * opencode resolves to `ProjectID.global` on both sides anyway).
- */
-export async function pinOpencodeProjectIdCache(
-  agent: AgentClient,
-  sandboxId: string,
-  clonePath: string,
-  projectID: string,
-): Promise<void> {
-  const fullPath = `${VM.HOME}${clonePath}`;
-  const cacheFile = `${fullPath}/.git/opencode`;
-  // `[ -d <gitDir> ]` short-circuits the write when there's no git repo;
-  // single quotes around projectID prevent shell expansion of any
-  // unexpected characters (id is a hex hash so this is belt-and-braces).
-  const result = await agent.exec(
-    sandboxId,
-    `if [ -d '${fullPath}/.git' ]; then printf %s '${projectID}' > '${cacheFile}' && chown dev:dev '${cacheFile}'; fi`,
-    { timeout: 5000 },
-  );
-  if (result.exitCode !== 0) {
-    // Don't fail the workflow — the in-sandbox preregister plugin runs
-    // afterwards as a fallback, and worst case the user gets the same
-    // FK error they'd have gotten without this fix.
-    log.warn(
-      { sandboxId, clonePath, stderr: result.stderr },
-      "Failed to pin opencode project_id cache file",
-    );
-    return;
-  }
-  log.info(
-    { sandboxId, clonePath, projectID },
-    "Pinned opencode project_id cache file",
-  );
 }
 
 export async function sanitizeGitRemoteUrls(

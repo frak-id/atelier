@@ -13,8 +13,6 @@ export const AtelierConfigSchema = z.object({
   managerUrl: z.url().default("http://localhost:4000"),
   apiKey: z.string().min(1).optional(),
   workspaceId: z.string().min(1).optional(),
-  pollIntervalMs: z.number().int().positive().default(3000),
-  pollTimeoutMs: z.number().int().positive().default(120_000),
 });
 
 export type AtelierConfig = z.infer<typeof AtelierConfigSchema>;
@@ -123,12 +121,6 @@ function applyEnvOverrides(
   }
   if (env.ATELIER_WORKSPACE_ID) {
     config.workspaceId = env.ATELIER_WORKSPACE_ID;
-  }
-  if (env.ATELIER_POLL_INTERVAL_MS) {
-    config.pollIntervalMs = Number(env.ATELIER_POLL_INTERVAL_MS);
-  }
-  if (env.ATELIER_POLL_TIMEOUT_MS) {
-    config.pollTimeoutMs = Number(env.ATELIER_POLL_TIMEOUT_MS);
   }
 
   return config;
