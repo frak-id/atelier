@@ -1,5 +1,28 @@
 # @konfeature/opencode-atelier
 
+## 0.3.0
+
+### Minor Changes
+
+- 9eb64e3: Require OpenCode `1.16.2+` and drop the TUI-warp workarounds it makes redundant.
+
+  Bump `@opencode-ai/sdk` and `@opencode-ai/plugin` peer ranges to `^1.16.2`. As of 1.16.2 warped sessions route through the event-sourced workspace sync protocol (`/sync/replay` + `/sync/steal`), and `project_id` is derived from the git remote URL — so the local CLI and the remote sandbox resolve the same project automatically even though their filesystem paths differ.
+
+  Removed (now handled upstream):
+
+  - `?workspace=<id>` injection in the adapter `target()` — the proxy/sync paths no longer rely on it.
+  - `resolveWorkspaceDirectory()` directory prediction and the `directory` announced from `configure()` — the remote resolves its own working dir from `process.cwd()`.
+  - `sourceProjectID` / `sourceWorkspaceID` capture + forwarding (and the matching `POST /sandboxes` fields) — the manager's `project_id` pre-register hack is no longer needed.
+  - Dead helpers: `resetClient`, `waitForSandboxReady`, and the `pollIntervalMs` / `pollTimeoutMs` config options.
+
+  ✅ **TUI warp now works for remote Atelier sandboxes** (the previous phantom-instance limitation is resolved), provided both the local OpenCode CLI and the sandbox binary are `≥ 1.16.2`. The plugin still forwards `OPENCODE_EXPERIMENTAL_WORKSPACES` and `OPENCODE_WORKSPACE_ID` so the remote boots in workspace mode.
+
+- b80457b: Bump `@opencode-ai/sdk` and `@opencode-ai/plugin` peer ranges to `^1.15.0`. In v1.15.0 the legacy hono backend is removed and the effect-httpapi server is the only backend, giving slightly better perf and a unified middleware stack.
+
+  Drop the manager-minted symlink (`<sourceLocalDirectory>` → workspace dir) and the `sourceLocalDirectory` field from `AtelierExtra` / `POST /sandboxes` body. The adapter's `target()` now bakes `?workspace=<id>` into the proxy URL so the local opencode's `WorkspaceRoutingMiddleware` resolves through the adapter on the control-plane side.
+
+  ⚠️ **Known limitation — TUI warp:** warping a local OpenCode TUI into an Atelier sandbox lands on a phantom instance (blank session, missing replies). This is an upstream issue in the OpenCode TUI client (`packages/opencode/src/cli/cmd/tui/thread.ts:240`), which configures the SDK with `directory = process.cwd()` (the user's local Mac path) and auto-injects `?directory=<local cwd>` into every GET. The proxy preserves the query string and the remote's `WorkspaceRoutingMiddleware.defaultDirectory()` picks up the bogus path. See `packages/opencode-atelier/README.md#known-limitations`. **Dashboard, SSH, and VSCode-Remote are all unaffected** — use those for remote sandbox interactions until upstream addresses the TUI client.
+
 ## 0.2.2
 
 ### Patch Changes
