@@ -5,6 +5,14 @@ import { authPlugin } from "../shared/lib/auth.ts";
 
 export const userRoutes = new Elysia({ prefix: "/users" })
   .use(authPlugin)
-  .get("/", () => userService.getAll(), {
-    response: UserListResponseSchema,
-  });
+  // Security: strip per-user GitHub tokens — this directory is dashboard-wide.
+  .get(
+    "/",
+    () =>
+      userService
+        .getAll()
+        .map(({ githubAccessToken: _token, ...user }) => user),
+    {
+      response: UserListResponseSchema,
+    },
+  );

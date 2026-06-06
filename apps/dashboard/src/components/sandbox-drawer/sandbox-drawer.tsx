@@ -36,6 +36,7 @@ import { AttentionBlock } from "@/components/attention-block";
 import { DevCommandsPanel } from "@/components/dev-commands-panel";
 import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { MultiTerminal } from "@/components/multi-terminal";
+import { SandboxCreator } from "@/components/sandbox-creator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -211,6 +212,7 @@ export function SandboxDrawer({
                       </>
                     )}
                     <span>Created {formatDate(sandbox.createdAt)}</span>
+                    <SandboxCreator userId={sandbox.createdBy} />
                   </div>
                 </div>
                 <Button variant="outline" size="sm" asChild>

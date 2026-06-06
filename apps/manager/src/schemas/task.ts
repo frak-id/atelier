@@ -14,6 +14,7 @@ export const TaskSessionSchema = t.Object({
 export type TaskSession = Static<typeof TaskSessionSchema>;
 
 export const TaskCreatorSchema = t.Object({
+  id: t.Optional(t.String()),
   username: t.String(),
   email: t.String(),
   avatarUrl: t.String(),

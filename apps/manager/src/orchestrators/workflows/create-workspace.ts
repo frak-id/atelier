@@ -24,7 +24,6 @@ export async function createWorkspaceSandbox(
   workspace: Workspace,
   options: CreateSandboxBody,
   ports: SandboxPorts,
-  gitUserIdentity?: GitUserIdentity,
   createdByUserId?: string,
 ): Promise<Sandbox> {
   let boot: BootResult | undefined;
@@ -79,6 +78,12 @@ export async function createWorkspaceSandbox(
         log.warn({ err, sandboxId }, "Failed to create CLIProxy sandbox key"),
       );
 
+    const creator = createdByUserId
+      ? ports.users.getById(createdByUserId)
+      : undefined;
+    const gitUserIdentity: GitUserIdentity | undefined = creator
+      ? { name: creator.username, email: creator.email }
+      : undefined;
     const githubToken = ports.users.resolveGitHubToken(createdByUserId);
 
     const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([

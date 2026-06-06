@@ -9,7 +9,6 @@ import type {
 import { config, isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import type { GitUserIdentity } from "./ports/guest-secrets.ts";
 import type { SandboxPorts } from "./ports/sandbox-ports.ts";
 import { createWorkspaceSandbox } from "./workflows/index.ts";
 
@@ -20,7 +19,6 @@ export class SandboxSpawner {
 
   async spawn(
     options: CreateSandboxBody = {},
-    gitUserIdentity?: GitUserIdentity,
     createdByUserId?: string,
   ): Promise<CreateSandboxResponse> {
     const sandboxId = safeNanoid();
@@ -43,7 +41,6 @@ export class SandboxSpawner {
       workspace,
       options,
       this.ports,
-      gitUserIdentity,
       createdByUserId,
     );
   }

@@ -67,6 +67,7 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
         ...body,
         title,
         createdBy: {
+          id: user.id,
           username: user.username,
           email: user.email,
           avatarUrl: user.avatarUrl,

@@ -109,7 +109,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
       log.info({ body }, "Creating sandbox");
 
-      const sandbox = await sandboxSpawner.spawn(body, undefined, user.id);
+      const sandbox = await sandboxSpawner.spawn(body, user.id);
       set.status = 201;
       return sandbox;
     },
@@ -136,7 +136,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         yield sse({ data: { type: "progress", stage: "spawning-sandbox" } });
         const sandbox = await sandboxSpawner.spawn(
           { workspaceId: body.workspaceId },
-          undefined,
           user.id,
         );
 
