@@ -6,10 +6,11 @@ import type {
   Sandbox,
   Workspace,
 } from "../schemas/index.ts";
-import { config, isMock } from "../shared/lib/config.ts";
+import { isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxPorts } from "./ports/sandbox-ports.ts";
+import { toolUrl } from "./tools/registry.ts";
 import { createWorkspaceSandbox } from "./workflows/index.ts";
 
 const log = createChildLogger("sandbox-spawner");
@@ -64,8 +65,8 @@ export class SandboxSpawner {
         ipAddress: "10.42.0.99",
         macAddress: "",
         urls: {
-          vscode: `https://vscode-${sandboxId}.${config.domain.dashboard}`,
-          opencode: `https://opencode-${sandboxId}.${config.domain.dashboard}`,
+          vscode: toolUrl("vscode", sandboxId) ?? "",
+          opencode: toolUrl("opencode", sandboxId) ?? "",
           ssh: "",
         },
         vcpus: options.vcpus ?? workspace?.config.vcpus ?? 2,

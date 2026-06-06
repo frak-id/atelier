@@ -7,6 +7,7 @@ import {
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
+import { coreServiceNames } from "../tools/registry.ts";
 
 const log = createChildLogger("wf-restart-workspaceless");
 
@@ -35,7 +36,7 @@ export async function restartWorkspacelessSandbox(
       "Internal sync complete",
     );
 
-    await GuestOps.startServices(ports.agent, sandboxId, ["opencode"]);
+    await GuestOps.startServices(ports.agent, sandboxId, coreServiceNames());
 
     await waitForOpencodeHealthy(
       sandbox.runtime.ipAddress,

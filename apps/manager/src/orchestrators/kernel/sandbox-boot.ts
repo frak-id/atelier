@@ -3,12 +3,10 @@ import { customAlphabet } from "nanoid";
 import { eventBus } from "../../infrastructure/events/index.ts";
 import {
   buildConfigMap,
-  buildOpenCodeIngress,
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
-  buildVsCodeIngress,
   collectDevPorts,
   ensureSharedSshPipeKey,
   kubeClient,
@@ -21,6 +19,11 @@ import {
   buildSandboxConfig,
   type OpencodeWorkspaceContext,
 } from "../sandbox-config.ts";
+import {
+  bootIngressNames,
+  buildBootIngressResources,
+  toolUrl,
+} from "../tools/registry.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
@@ -168,19 +171,8 @@ export async function bootNewSandbox(
         }),
       ),
       kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
-      kubeClient.createResource(
-        buildVsCodeIngress(sandboxId, config.domain.dashboard, {
-          ingressClassName: config.kubernetes.ingressClassName || undefined,
-          annotations: config.kubernetes.vsCodeIngressAnnotations,
-          tlsSecretName: "atelier-sandbox-wildcard-tls",
-        }),
-      ),
-      kubeClient.createResource(
-        buildOpenCodeIngress(sandboxId, config.domain.dashboard, {
-          ingressClassName: config.kubernetes.ingressClassName || undefined,
-          annotations: config.kubernetes.openCodeIngressAnnotations,
-          tlsSecretName: "atelier-sandbox-wildcard-tls",
-        }),
+      ...buildBootIngressResources(sandboxId).map((resource) =>
+        kubeClient.createResource(resource),
       ),
       kubeClient.createResource(
         buildSshPipe({
@@ -249,12 +241,11 @@ export async function bootExistingSandbox(
   try {
     await kubeClient.deleteResource("Service", `sandbox-${sandboxId}`);
   } catch {}
-  try {
-    await kubeClient.deleteResource("Ingress", `sandbox-vscode-${sandboxId}`);
-  } catch {}
-  try {
-    await kubeClient.deleteResource("Ingress", `sandbox-opencode-${sandboxId}`);
-  } catch {}
+  for (const ingressName of bootIngressNames(sandboxId)) {
+    try {
+      await kubeClient.deleteResource("Ingress", ingressName);
+    } catch {}
+  }
   try {
     await kubeClient.deleteResource("Pipe", `ssh-${sandboxId}`);
   } catch {}
@@ -305,19 +296,8 @@ export async function bootExistingSandbox(
       }),
     ),
     kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
-    kubeClient.createResource(
-      buildVsCodeIngress(sandboxId, config.domain.dashboard, {
-        ingressClassName: config.kubernetes.ingressClassName || undefined,
-        annotations: config.kubernetes.vsCodeIngressAnnotations,
-        tlsSecretName: "atelier-sandbox-wildcard-tls",
-      }),
-    ),
-    kubeClient.createResource(
-      buildOpenCodeIngress(sandboxId, config.domain.dashboard, {
-        ingressClassName: config.kubernetes.ingressClassName || undefined,
-        annotations: config.kubernetes.openCodeIngressAnnotations,
-        tlsSecretName: "atelier-sandbox-wildcard-tls",
-      }),
+    ...buildBootIngressResources(sandboxId).map((resource) =>
+      kubeClient.createResource(resource),
     ),
     kubeClient.createResource(
       buildSshPipe({
@@ -409,14 +389,13 @@ function buildUrls(sandboxId: string): {
   opencode: string;
   ssh: string;
 } {
-  const sandboxDomain = config.domain.dashboard;
   const sshHost =
     config.domain.ssh.hostname || `ssh.${config.domain.baseDomain}`;
   const sshPort = config.domain.ssh.port;
 
   return {
-    vscode: `https://vscode-${sandboxId}.${sandboxDomain}`,
-    opencode: `https://opencode-${sandboxId}.${sandboxDomain}`,
+    vscode: toolUrl("vscode", sandboxId) ?? "",
+    opencode: toolUrl("opencode", sandboxId) ?? "",
     ssh:
       sshPort === 22
         ? `ssh ${sandboxId}@${sshHost}`

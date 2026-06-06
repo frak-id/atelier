@@ -16,6 +16,7 @@ import { GuestOps } from "../ports/guest-ops.ts";
 import type { GitUserIdentity } from "../ports/guest-secrets.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 import { generateSandboxMd } from "../sandbox-config.ts";
+import { bootServiceNames } from "../tools/registry.ts";
 
 const log = createChildLogger("wf-create-workspace");
 
@@ -140,10 +141,7 @@ export async function createWorkspaceSandbox(
       );
     }
 
-    await GuestOps.startServices(ports.agent, sandboxId, [
-      "vscode",
-      "opencode",
-    ]);
+    await GuestOps.startServices(ports.agent, sandboxId, bootServiceNames());
 
     // Wait for OpenCode to be fully ready (HTTP healthy + agent registry loaded)
     // before finalizing. Otherwise callers receive a `running` sandbox that

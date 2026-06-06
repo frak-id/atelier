@@ -390,23 +390,38 @@ export const DevCommandLogsQuerySchema = t.Object({
 });
 export type DevCommandLogsQuery = Static<typeof DevCommandLogsQuerySchema>;
 
-export const BrowserStatusSchema = t.Union([
+export const ToolStatusSchema = t.Union([
   t.Literal("off"),
   t.Literal("starting"),
   t.Literal("running"),
 ]);
-export type BrowserStatus = Static<typeof BrowserStatusSchema>;
+export type ToolStatus = Static<typeof ToolStatusSchema>;
 
-export const BrowserStartResponseSchema = t.Object({
-  status: BrowserStatusSchema,
+export const ToolInfoSchema = t.Object({
+  slug: t.String(),
+  name: t.String(),
+  start: t.Union([t.Literal("boot"), t.Literal("lazy")]),
+  core: t.Boolean(),
+  exposed: t.Boolean(),
+  url: t.Optional(t.String()),
+  services: t.Array(t.String()),
+});
+export type ToolInfo = Static<typeof ToolInfoSchema>;
+
+export const ToolListResponseSchema = t.Array(ToolInfoSchema);
+export type ToolListResponse = Static<typeof ToolListResponseSchema>;
+
+export const ToolActionResponseSchema = t.Object({
+  status: ToolStatusSchema,
   url: t.Optional(t.String()),
 });
-export type BrowserStartResponse = Static<typeof BrowserStartResponseSchema>;
+export type ToolActionResponse = Static<typeof ToolActionResponseSchema>;
 
-export const BrowserStopResponseSchema = t.Object({
-  status: BrowserStatusSchema,
+export const ToolSlugParamsSchema = t.Object({
+  id: t.String(),
+  slug: t.String(),
 });
-export type BrowserStopResponse = Static<typeof BrowserStopResponseSchema>;
+export type ToolSlugParams = Static<typeof ToolSlugParamsSchema>;
 
 export const CreateSandboxResponseSchema = SandboxSchema;
 export type CreateSandboxResponse = Static<typeof CreateSandboxResponseSchema>;

@@ -5,28 +5,24 @@ import {
   AlertTriangle,
   Bot,
   ExternalLink,
-  Globe,
   HeartPulse,
   Loader2,
   Maximize2,
-  Monitor,
   Pause,
   Play,
   RotateCcw,
-  Terminal,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
 import type { Sandbox, Workspace } from "@/api/client";
 import {
-  deriveBrowserStatus,
+  deriveToolStatus,
   opencodeSessionsQuery,
   organizationListQuery,
   sandboxDevCommandsQuery,
   sandboxGitStatusQuery,
+  sandboxToolsQuery,
   useOrganizationMap,
   useSandboxServices,
-  useStartBrowser,
 } from "@/api/queries";
 import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { SandboxCreator } from "@/components/sandbox-creator";
@@ -45,7 +41,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useOpencodeData } from "@/hooks/use-opencode-data";
+import { sortToolsForDisplay, toolUiFor } from "@/lib/tools";
 import { formatRelativeTime } from "@/lib/utils";
+import { ToolIconButton } from "./sandbox-drawer/tool-button";
 
 interface SandboxCardProps {
   sandbox: Sandbox;
@@ -84,7 +82,10 @@ export function SandboxCard({
     sandbox.id,
     sandbox.status === "running",
   );
-  const browserStatus = deriveBrowserStatus(services, sandbox);
+  const { data: tools } = useQuery({
+    ...sandboxToolsQuery(sandbox.id),
+    enabled: sandbox.status === "running",
+  });
   const orgMap = useOrganizationMap();
   const { data: organizations } = useQuery(organizationListQuery());
   const orgName =
@@ -210,9 +211,10 @@ export function SandboxCard({
           )}
 
           {sandbox.status === "running" && (
-            <BrowserStatusBadge
+            <RunningToolsBadge
               sandboxId={sandbox.id}
-              browserStatus={browserStatus}
+              tools={tools ?? []}
+              services={services}
             />
           )}
 
@@ -249,73 +251,14 @@ export function SandboxCard({
                 <TooltipContent>Immerse</TooltipContent>
               </Tooltip>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    asChild
-                  >
-                    <Link
-                      to="/sandboxes/$id"
-                      params={{ id: sandbox.id }}
-                      search={{ tab1: "opencode" }}
-                      target="_blank"
-                    >
-                      <Bot className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>OpenCode</TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    asChild
-                  >
-                    <Link
-                      to="/sandboxes/$id"
-                      params={{ id: sandbox.id }}
-                      search={{ tab1: "vscode" }}
-                      target="_blank"
-                    >
-                      <Monitor className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>VSCode</TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    asChild
-                  >
-                    <Link
-                      to="/sandboxes/$id"
-                      params={{ id: sandbox.id }}
-                      search={{ tab1: "terminal" }}
-                      target="_blank"
-                    >
-                      <Terminal className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Terminal</TooltipContent>
-              </Tooltip>
-
-              <CardBrowserButton
-                sandboxId={sandbox.id}
-                browserStatus={browserStatus}
-              />
+              {sortToolsForDisplay(tools ?? []).map((tool) => (
+                <ToolIconButton
+                  key={tool.slug}
+                  sandboxId={sandbox.id}
+                  tool={tool}
+                  status={deriveToolStatus(services, tool)}
+                />
+              ))}
             </div>
           )}
         </CardContent>
@@ -445,103 +388,54 @@ export function SandboxCard({
   );
 }
 
-function BrowserStatusBadge({
+function RunningToolsBadge({
   sandboxId,
-  browserStatus,
+  tools,
+  services,
 }: {
   sandboxId: string;
-  browserStatus: { status: string; url?: string };
+  tools: Array<{
+    slug: string;
+    name: string;
+    start: "boot" | "lazy";
+    exposed: boolean;
+    services: string[];
+  }>;
+  services: { services: Array<{ name: string; running: boolean }> } | undefined;
 }) {
-  if (browserStatus.status === "off") return null;
+  const running = sortToolsForDisplay(tools).filter(
+    (tool) =>
+      tool.start === "lazy" &&
+      tool.exposed &&
+      deriveToolStatus(services, tool) === "running",
+  );
+
+  if (running.length === 0) return null;
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Stop propagation wrapper
     // biome-ignore lint/a11y/useKeyWithClickEvents: Stop propagation wrapper
     <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
-      <Badge
-        variant="outline"
-        className="h-6 gap-1.5 font-normal bg-background/50"
-      >
-        {browserStatus.status === "starting" ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
+      {running.map((tool) => (
+        <Badge
+          key={tool.slug}
+          variant="outline"
+          className="h-6 gap-1.5 font-normal bg-background/50"
+        >
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-        )}
-        {browserStatus.status === "running" && browserStatus.url ? (
           <Link
             to="/sandboxes/$id"
             params={{ id: sandboxId }}
-            search={{ tab1: "web" }}
+            search={{ tab1: toolUiFor(tool.slug).tab }}
             target="_blank"
             className="hover:underline flex items-center gap-1"
           >
-            Browser
+            {tool.name}
             <ExternalLink className="h-3 w-3 opacity-50" />
           </Link>
-        ) : (
-          <span>
-            Browser {browserStatus.status === "starting" ? "starting..." : ""}
-          </span>
-        )}
-      </Badge>
+        </Badge>
+      ))}
     </div>
-  );
-}
-
-function CardBrowserButton({
-  sandboxId,
-  browserStatus,
-}: {
-  sandboxId: string;
-  browserStatus: { status: string; url?: string };
-}) {
-  const startBrowser = useStartBrowser(sandboxId);
-  const pendingOpenRef = useRef(false);
-
-  useEffect(() => {
-    if (
-      pendingOpenRef.current &&
-      browserStatus?.status === "running" &&
-      browserStatus.url
-    ) {
-      pendingOpenRef.current = false;
-      window.open(`/sandboxes/${sandboxId}?tab1=web`, "_blank");
-    }
-  }, [browserStatus?.status, browserStatus?.url, sandboxId]);
-
-  const handleClick = () => {
-    if (browserStatus?.status === "running" && browserStatus.url) {
-      window.open(`/sandboxes/${sandboxId}?tab1=web`, "_blank");
-      return;
-    }
-    pendingOpenRef.current = true;
-    startBrowser.mutate();
-  };
-
-  const isLoading =
-    startBrowser.isPending || browserStatus?.status === "starting";
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          onClick={handleClick}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Globe className="h-4 w-4" />
-          )}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        {browserStatus?.status === "running" ? "Open Browser" : "Start Browser"}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
