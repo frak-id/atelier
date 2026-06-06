@@ -11,12 +11,14 @@ import {
   workspaceService,
 } from "../../container.ts";
 import { internalBus } from "../../infrastructure/events/internal-bus.ts";
-import {
-  buildBrowserIngress,
-  kubeClient,
-} from "../../infrastructure/kubernetes/index.ts";
+import { kubeClient } from "../../infrastructure/kubernetes/index.ts";
 
 import { waitForOpencodeHealthy } from "../../orchestrators/kernel/boot-waiter.ts";
+import {
+  buildToolIngressResource,
+  toolIngressName,
+  toolUrl,
+} from "../../orchestrators/tools/registry.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
   AgentHealthSchema,
@@ -500,22 +502,21 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             );
           });
 
-          const browserUrl = `https://browser-${sandbox.id}.${config.domain.dashboard}`;
+          const browserUrl = toolUrl("browser", sandbox.id);
+          const browserIngress = buildToolIngressResource(
+            "browser",
+            sandbox.id,
+          );
 
-          try {
-            await kubeClient.createResource(
-              buildBrowserIngress(sandbox.id, config.domain.dashboard, {
-                ingressClassName:
-                  config.kubernetes.ingressClassName || undefined,
-                annotations: config.kubernetes.vsCodeIngressAnnotations,
-                tlsSecretName: "atelier-sandbox-wildcard-tls",
-              }),
-            );
-          } catch (err) {
-            log.warn(
-              { sandboxId: sandbox.id, error: err },
-              "Failed to create browser ingress",
-            );
+          if (browserIngress) {
+            try {
+              await kubeClient.createResource(browserIngress);
+            } catch (err) {
+              log.warn(
+                { sandboxId: sandbox.id, error: err },
+                "Failed to create browser ingress",
+              );
+            }
           }
 
           sandboxService.update(sandbox.id, {
@@ -546,9 +547,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             agentClient.serviceStop(sandbox.id, "kasmvnc").catch(() => {}),
           ]).catch(() => {});
 
-          kubeClient
-            .deleteResource("ingresses", `sandbox-browser-${sandbox.id}`)
-            .catch(() => {});
+          const browserIngressName = toolIngressName("browser", sandbox.id);
+          if (browserIngressName) {
+            kubeClient
+              .deleteResource("ingresses", browserIngressName)
+              .catch(() => {});
+          }
 
           sandboxService.update(sandbox.id, {
             runtime: {

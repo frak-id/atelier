@@ -2,6 +2,7 @@ import type { SandboxConfig } from "@frak/atelier-shared";
 import { VM } from "@frak/atelier-shared/constants";
 import type { Workspace } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
+import { buildToolServices } from "./tools/registry.ts";
 
 /**
  * Workspace-mode context forwarded from the local opencode-atelier plugin.
@@ -29,10 +30,6 @@ export function buildSandboxConfig(
   const workspaceDir = resolveWorkspaceDir(workspace);
 
   const dashboardDomain = config.domain.dashboard;
-  const vsPort = config.ports.vscode;
-  const ocPort = config.ports.opencode;
-  const browserPort = config.ports.browser;
-  const terminalPort = config.ports.terminal;
 
   return {
     sandboxId,
@@ -44,54 +41,12 @@ export function buildSandboxConfig(
       dashboardDomain,
       managerInternalUrl: `${config.kubernetes.managerUrl}/internal`,
     },
-    services: {
-      vscode: {
-        port: vsPort,
-        command: `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${vsPort} --auth none --disable-telemetry ${workspaceDir}`,
-        user: "dev" as const,
-        autoStart: true,
-      },
-      opencode: {
-        port: ocPort,
-        command: `cd ${workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${ocPort} --cors https://${dashboardDomain}`,
-        user: "dev" as const,
-        autoStart: true,
-        env: {
-          ...(opencodePassword && {
-            OPENCODE_SERVER_PASSWORD: opencodePassword,
-          }),
-          // Forwarded from the local opencode-atelier plugin. Anything
-          // missing on this side leaves the remote opencode in
-          // non-workspace mode, which is fine for plain VSCode use but
-          // breaks `/sync/replay` because workspace events have nowhere
-          // to land.
-          ...(workspaceContext?.opencodeEnv ?? {}),
-        },
-      },
-      terminal: {
-        port: terminalPort,
-        enabled: true,
-      },
-      kasmvnc: {
-        port: browserPort,
-        command: `Xvnc :99 -geometry 1280x900 -depth 24 -websocketPort ${browserPort} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -DisableBasicAuth -UseIPv6 0 -interface 0.0.0.0 -httpd /usr/share/kasmvnc/www -FrameRate 60 -DynamicQualityMin 7 -DynamicQualityMax 9 -RectThreads 0 -CompareFB 2 -DetectScrolling -sslOnly 0`,
-        user: "root" as const,
-        autoStart: false,
-      },
-      openbox: {
-        command: "openbox",
-        user: "dev" as const,
-        autoStart: false,
-        env: { DISPLAY: ":99" },
-      },
-      chromium: {
-        command:
-          "chromium --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-first-run --disable-session-crashed-bubble --disable-infobars --disable-translate --disable-features=TranslateUI --password-store=basic --disable-background-networking --disable-sync --disable-extensions --disable-default-apps --disable-breakpad --disable-component-extensions-with-background-pages --disable-background-timer-throttling --force-device-scale-factor=1 --disable-lcd-text --renderer-process-limit=2 --disk-cache-size=104857600 --user-data-dir=/tmp/chromium-profile about:blank",
-        user: "dev" as const,
-        autoStart: false,
-        env: { DISPLAY: ":99" },
-      },
-    },
+    services: buildToolServices({
+      workspaceDir,
+      dashboardDomain,
+      opencodePassword,
+      opencodeEnv: workspaceContext?.opencodeEnv,
+    }),
   };
 }
 

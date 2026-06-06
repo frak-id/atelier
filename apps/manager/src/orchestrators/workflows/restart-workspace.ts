@@ -7,6 +7,7 @@ import {
 } from "../kernel/index.ts";
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
+import { bootServiceNames } from "../tools/registry.ts";
 
 const log = createChildLogger("wf-restart-workspace");
 
@@ -48,10 +49,7 @@ export async function restartWorkspaceSandbox(
       "Internal sync complete",
     );
 
-    await GuestOps.startServices(ports.agent, sandboxId, [
-      "vscode",
-      "opencode",
-    ]);
+    await GuestOps.startServices(ports.agent, sandboxId, bootServiceNames());
 
     await waitForOpencodeHealthy(
       sandbox.runtime.ipAddress,

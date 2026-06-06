@@ -8,22 +8,23 @@ export type {
   PvcOptions,
   SandboxPodOptions,
   SshPipeOptions,
+  ToolIngressOptions,
   VolumeSnapshotOptions,
 } from "./kube.resources.ts";
 export {
-  buildBrowserIngress,
   buildConfigMap,
   buildDefaultDevIngress,
   buildDevCommandIngress,
-  buildOpenCodeIngress,
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
+  buildToolIngress,
   buildVolumeSnapshot,
-  buildVsCodeIngress,
   collectDevPorts,
   SHARED_BINARIES_MOUNT_PATH,
+  toolHost,
+  toolIngressName,
 } from "./kube.resources.ts";
 export type {
   JobStatus,

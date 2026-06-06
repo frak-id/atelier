@@ -223,111 +223,44 @@ export function buildSandboxService(
   };
 }
 
-export function buildVsCodeIngress(
+export type ToolIngressOptions = {
+  sandboxId: string;
+  subdomain: string;
+  port: number;
+  sandboxDomain: string;
+  namespace?: string;
+  ingressClassName?: string;
+  annotations?: Record<string, string>;
+  tlsSecretName?: string;
+};
+
+export function toolHost(
+  subdomain: string,
   sandboxId: string,
   sandboxDomain: string,
-  options: IngressOptions = {},
-): KubeResource {
-  const namespace = options.namespace ?? config.kubernetes.namespace;
-  const host = `vscode-${sandboxId}.${sandboxDomain}`;
-
-  return {
-    apiVersion: "networking.k8s.io/v1",
-    kind: "Ingress",
-    metadata: {
-      name: `sandbox-vscode-${sandboxId}`,
-      namespace,
-      labels: sandboxLabels(sandboxId),
-      annotations: options.annotations,
-    },
-    spec: {
-      ingressClassName: options.ingressClassName,
-      ...(options.tlsSecretName && {
-        tls: [{ secretName: options.tlsSecretName, hosts: [host] }],
-      }),
-      rules: [
-        {
-          host,
-          http: {
-            paths: [
-              {
-                path: "/",
-                pathType: "Prefix",
-                backend: {
-                  service: {
-                    name: `sandbox-${sandboxId}`,
-                    port: { number: 8080 },
-                  },
-                },
-              },
-            ],
-          },
-        },
-      ],
-    },
-  };
+): string {
+  return `${subdomain}-${sandboxId}.${sandboxDomain}`;
 }
 
-export function buildOpenCodeIngress(
-  sandboxId: string,
-  sandboxDomain: string,
-  options: IngressOptions = {},
-): KubeResource {
-  const namespace = options.namespace ?? config.kubernetes.namespace;
-  const host = `opencode-${sandboxId}.${sandboxDomain}`;
-
-  return {
-    apiVersion: "networking.k8s.io/v1",
-    kind: "Ingress",
-    metadata: {
-      name: `sandbox-opencode-${sandboxId}`,
-      namespace,
-      labels: sandboxLabels(sandboxId),
-      annotations: options.annotations,
-    },
-    spec: {
-      ingressClassName: options.ingressClassName,
-      ...(options.tlsSecretName && {
-        tls: [{ secretName: options.tlsSecretName, hosts: [host] }],
-      }),
-      rules: [
-        {
-          host,
-          http: {
-            paths: [
-              {
-                path: "/",
-                pathType: "Prefix",
-                backend: {
-                  service: {
-                    name: `sandbox-${sandboxId}`,
-                    port: { number: 3000 },
-                  },
-                },
-              },
-            ],
-          },
-        },
-      ],
-    },
-  };
+export function toolIngressName(subdomain: string, sandboxId: string): string {
+  return `sandbox-${subdomain}-${sandboxId}`;
 }
 
-export function buildBrowserIngress(
-  sandboxId: string,
-  sandboxDomain: string,
-  options: IngressOptions = {},
-): KubeResource {
+export function buildToolIngress(options: ToolIngressOptions): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
-  const host = `browser-${sandboxId}.${sandboxDomain}`;
+  const host = toolHost(
+    options.subdomain,
+    options.sandboxId,
+    options.sandboxDomain,
+  );
 
   return {
     apiVersion: "networking.k8s.io/v1",
     kind: "Ingress",
     metadata: {
-      name: `sandbox-browser-${sandboxId}`,
+      name: toolIngressName(options.subdomain, options.sandboxId),
       namespace,
-      labels: sandboxLabels(sandboxId),
+      labels: sandboxLabels(options.sandboxId),
       annotations: options.annotations,
     },
     spec: {
@@ -345,8 +278,8 @@ export function buildBrowserIngress(
                 pathType: "Prefix",
                 backend: {
                   service: {
-                    name: `sandbox-${sandboxId}`,
-                    port: { number: 6080 },
+                    name: `sandbox-${options.sandboxId}`,
+                    port: { number: options.port },
                   },
                 },
               },
