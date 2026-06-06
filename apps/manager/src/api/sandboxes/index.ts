@@ -37,6 +37,7 @@ import {
   SandboxListResponseSchema,
   SandboxSchema,
   StartSandboxSessionBodySchema,
+  UpdateSandboxBodySchema,
 } from "../../schemas/index.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
 import { authPlugin } from "../../shared/lib/auth.ts";
@@ -252,6 +253,19 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         },
         {
           params: IdParamSchema,
+          response: SandboxSchema,
+        },
+      )
+      .patch(
+        "/:id",
+        ({ params, body, sandbox: _sandbox }) => {
+          const name = body.name?.trim() || undefined;
+          log.info({ sandboxId: params.id, name }, "Renaming sandbox");
+          return sandboxService.update(params.id, { name });
+        },
+        {
+          params: IdParamSchema,
+          body: UpdateSandboxBodySchema,
           response: SandboxSchema,
         },
       )

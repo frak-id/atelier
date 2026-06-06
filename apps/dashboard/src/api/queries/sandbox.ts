@@ -103,6 +103,20 @@ export function useCreateSandbox() {
   });
 }
 
+export function useRenameSandbox() {
+  return useMutation({
+    mutationKey: ["sandboxes", "rename"],
+    mutationFn: async ({ id, name }: { id: string; name: string }) =>
+      unwrap(await api.api.sandboxes({ id }).patch({ name })),
+    onSuccess: (_data, variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sandboxes.detail(variables.id),
+      });
+    },
+  });
+}
+
 export function useDeleteSandbox() {
   return useMutation({
     mutationKey: ["sandboxes", "delete"],

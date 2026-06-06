@@ -151,6 +151,15 @@ export const CreateSandboxBodySchema = t.Object({
 });
 export type CreateSandboxBody = Static<typeof CreateSandboxBodySchema>;
 
+export const UpdateSandboxBodySchema = t.Object({
+  /**
+   * New human-readable display name. Trimmed server-side; an empty or
+   * whitespace-only value clears the name and falls back to the id.
+   */
+  name: t.Optional(t.String({ maxLength: 200 })),
+});
+export type UpdateSandboxBody = Static<typeof UpdateSandboxBodySchema>;
+
 export const SandboxListQuerySchema = t.Object({
   status: t.Optional(SandboxStatusSchema),
   workspaceId: t.Optional(t.String()),

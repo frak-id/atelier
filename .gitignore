@@ -46,3 +46,5 @@ apps/manager/server.js
 sandbox.config.json
 values.production.yaml
 apps/agent-rust/target/
+
+.omo/

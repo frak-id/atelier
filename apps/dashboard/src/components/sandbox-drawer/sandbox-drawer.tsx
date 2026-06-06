@@ -47,12 +47,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
@@ -64,6 +59,7 @@ import { formatDate, getWorkspaceDirectory } from "@/lib/utils";
 import { BrowserButton } from "./browser-button";
 import { QuickConnectCard } from "./quick-connect-card";
 import { RepositoriesTab } from "./repositories-tab";
+import { SandboxNameEditor } from "./sandbox-name-editor";
 import { SandboxWarningsBlock } from "./sandbox-warnings-block";
 import { ServicesTab } from "./services-tab";
 import { SessionsTab, SessionsTabBadge } from "./sessions-tab";
@@ -157,13 +153,7 @@ export function SandboxDrawer({
               <div className="flex items-start justify-between gap-2">
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <SheetTitle className="text-lg sm:text-xl truncate">
-                      {sandbox.name ? (
-                        <span>{sandbox.name}</span>
-                      ) : (
-                        <span className="font-mono">{sandbox.id}</span>
-                      )}
-                    </SheetTitle>
+                    <SandboxNameEditor sandbox={sandbox} />
                     <IntegrationSourceBadge integration={sandbox.origin} />
                     <Badge variant={statusVariant[sandbox.status]}>
                       {sandbox.status}

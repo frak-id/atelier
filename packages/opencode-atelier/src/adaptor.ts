@@ -10,6 +10,15 @@ import type { AtelierExtra, AtelierPluginConfig, Sandbox } from "./types.ts";
 const ORIGIN_SOURCE = "opencode-plugin";
 const CACHE_TTL_MS = 30_000;
 
+// Public-ingress readiness probe: the manager only health-checks opencode on
+// the pod's INTERNAL IP, but opencode warps against the PUBLIC Traefik host the
+// instant `create()` resolves — so we block until that host serves 2xx, else
+// the first warp races the still-reconciling route.
+const READY_POLL_TIMEOUT_MS = 60_000;
+const READY_POLL_INITIAL_DELAY_MS = 250;
+const READY_POLL_MAX_DELAY_MS = 2_000;
+const READY_REQUEST_TIMEOUT_MS = 5_000;
+
 /**
  * OpenCode-supplied env keys that must reach the remote `opencode serve`
  * for warp + workspace mode to function. We deliberately whitelist:
@@ -137,10 +146,19 @@ export function createAtelierAdaptor(
         }),
       );
 
-      logger.info(`Sandbox ${sandbox.id} ready (workspace ${info.id})`);
+      const ready = sandbox as Sandbox;
+      logger.info(`Sandbox ${ready.id} ready (workspace ${info.id})`);
+
+      await waitForOpencodeReachable(
+        ready.runtime.urls.opencode,
+        ready.runtime.opencodePassword,
+      );
+      logger.info(
+        `Sandbox ${ready.id} opencode reachable (workspace ${info.id})`,
+      );
 
       runtimeCache.set(info.id, {
-        sandbox: sandbox as Sandbox,
+        sandbox: ready,
         fetchedAt: Date.now(),
       });
     },
@@ -296,4 +314,61 @@ async function findSandboxId(
 
   const sandbox = await findSandboxByExternalId(client, workspaceId);
   return sandbox?.id ?? null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Probe `/global/health` (same host/auth opencode warps against) until 2xx.
+ * Retries non-2xx + network errors with capped backoff; 401/403 is fatal.
+ */
+async function waitForOpencodeReachable(
+  opencodeUrl: string,
+  password: string | undefined,
+): Promise<void> {
+  const healthUrl = new URL("/global/health", opencodeUrl);
+  const headers: Record<string, string> = password
+    ? { Authorization: `Basic ${btoa(`opencode:${password}`)}` }
+    : {};
+
+  const deadline = Date.now() + READY_POLL_TIMEOUT_MS;
+  let delay = READY_POLL_INITIAL_DELAY_MS;
+  let lastError = "no response";
+
+  while (Date.now() < deadline) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), READY_REQUEST_TIMEOUT_MS);
+    let status: number | undefined;
+    try {
+      const res = await fetch(healthUrl, {
+        method: "GET",
+        headers,
+        signal: controller.signal,
+      });
+      if (res.ok) return;
+      status = res.status;
+      lastError = `HTTP ${res.status}`;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (status === 401 || status === 403) {
+      throw new Error(
+        `[atelier] opencode ingress ${healthUrl.host} rejected auth ` +
+          `(${lastError}) — check the sandbox opencode password`,
+      );
+    }
+
+    await sleep(Math.min(delay, Math.max(0, deadline - Date.now())));
+    delay = Math.min(delay * 2, READY_POLL_MAX_DELAY_MS);
+  }
+
+  throw new Error(
+    `[atelier] opencode ingress ${healthUrl.host} not reachable within ` +
+      `${READY_POLL_TIMEOUT_MS}ms (last: ${lastError})`,
+  );
 }
