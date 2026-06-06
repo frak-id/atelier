@@ -14,19 +14,21 @@ import {
   Square,
   Terminal,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import type { Sandbox } from "@/api/client";
 import { registerOpencodePassword } from "@/api/opencode";
 import {
-  deriveBrowserStatus,
+  deriveToolStatus,
   sandboxDetailQuery,
   sandboxListQuery,
+  sandboxToolsQuery,
+  type ToolStatus,
   taskListQuery,
   useRestartSandbox,
   useSandboxServices,
-  useStartBrowser,
   useStartSandbox,
+  useStartTool,
   useStopSandbox,
   workspaceDetailQuery,
 } from "@/api/queries";
@@ -43,11 +45,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { toolUiFor } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 import { useDrawer } from "@/providers/drawer-provider";
 
 const tabSchema = z.enum(["opencode", "vscode", "terminal", "web"]);
 type TabId = z.infer<typeof tabSchema>;
+
+const TAB_TOOL_SLUG: Record<TabId, string | null> = {
+  opencode: "opencode",
+  vscode: "vscode",
+  terminal: null,
+  web: "browser",
+};
 
 const searchSchema = z.object({
   tab1: tabSchema.optional().catch(undefined),
@@ -122,12 +132,89 @@ function SandboxImmersionPage() {
     id,
     sandbox?.status === "running",
   );
-  const startBrowserMutation = useStartBrowser(id);
+  const { data: tools } = useQuery({
+    ...sandboxToolsQuery(id),
+    enabled: sandbox?.status === "running",
+  });
+  const startToolMutation = useStartTool(id);
 
-  const browserStatus = deriveBrowserStatus(services, sandbox);
-  const browserUrl = browserStatus?.url
-    ? `${browserStatus.url}/?autoconnect=true&resize=remote`
-    : undefined;
+  const toolBySlug = useMemo(
+    () => new Map((tools ?? []).map((t) => [t.slug, t] as const)),
+    [tools],
+  );
+
+  const tabToolStatus = useCallback(
+    (tabId: TabId): ToolStatus => {
+      const slug = TAB_TOOL_SLUG[tabId];
+      if (!slug) return "running";
+      const tool = toolBySlug.get(slug);
+      if (!tool) return tabId === "opencode" ? "running" : "off";
+      if (tool.start === "boot") return "running";
+      return deriveToolStatus(services, tool);
+    },
+    [toolBySlug, services],
+  );
+
+  const tabUrl = useCallback(
+    (tabId: TabId): string | undefined => {
+      const slug = TAB_TOOL_SLUG[tabId];
+      if (!slug) return undefined;
+      if (slug === "opencode") return sandbox?.runtime.urls.opencode;
+      if (tabToolStatus(tabId) !== "running") return undefined;
+      const url = toolBySlug.get(slug)?.url;
+      return url ? `${url}${toolUiFor(slug).urlSuffix ?? ""}` : undefined;
+    },
+    [toolBySlug, tabToolStatus, sandbox],
+  );
+
+  const [startingSlugs, setStartingSlugs] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  const tabStarting = useCallback(
+    (tabId: TabId): boolean => {
+      const slug = TAB_TOOL_SLUG[tabId];
+      return slug ? startingSlugs.has(slug) : false;
+    },
+    [startingSlugs],
+  );
+
+  const startTab = useCallback(
+    (tabId: TabId) => {
+      const slug = TAB_TOOL_SLUG[tabId];
+      if (!slug) return;
+      const tool = toolBySlug.get(slug);
+      if (!tool || tool.start !== "lazy") return;
+      if (deriveToolStatus(services, tool) === "running") return;
+      if (startingSlugs.has(slug)) return;
+      setStartingSlugs((prev) => new Set(prev).add(slug));
+      startToolMutation.mutate(slug, {
+        onError: () =>
+          setStartingSlugs((prev) => {
+            const next = new Set(prev);
+            next.delete(slug);
+            return next;
+          }),
+      });
+    },
+    [toolBySlug, services, startingSlugs, startToolMutation],
+  );
+
+  useEffect(() => {
+    setStartingSlugs((prev) => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Set(prev);
+      for (const slug of prev) {
+        const tool = toolBySlug.get(slug);
+        if (tool && deriveToolStatus(services, tool) === "running") {
+          next.delete(slug);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [services, toolBySlug]);
 
   const tab1 = search.tab1 ?? "opencode";
   const tab2 = isMobile ? undefined : search.tab2;
@@ -170,9 +257,7 @@ function SandboxImmersionPage() {
 
   const handleTabClick = useCallback(
     (tabId: TabId) => {
-      if (tabId === "web" && browserStatus?.status === "off") {
-        startBrowserMutation.mutate();
-      }
+      startTab(tabId);
 
       if (isMobile) {
         setView(tabId);
@@ -194,15 +279,7 @@ function SandboxImmersionPage() {
         }
       }
     },
-    [
-      isMobile,
-      isSplit,
-      tab1,
-      tab2,
-      browserStatus?.status,
-      startBrowserMutation,
-      setView,
-    ],
+    [isMobile, isSplit, tab1, tab2, setView, startTab],
   );
 
   const toggleLayout = useCallback(() => {
@@ -392,8 +469,9 @@ function SandboxImmersionPage() {
           sandbox={sandbox}
           tab1={tab1}
           tab2={tab2}
-          browserUrl={browserUrl}
-          browserStarting={browserStatus?.status === "starting"}
+          tabUrl={tabUrl}
+          tabStarting={tabStarting}
+          tabStart={startTab}
           onTerminalSessionChange={setTerminalSessionTitle}
         />
       ) : (
@@ -474,23 +552,18 @@ function useSplitResize() {
 function TabPanel({
   tabId,
   sandbox,
-  browserUrl,
-  browserStarting,
+  url,
+  starting,
+  onStart,
   onTerminalSessionChange,
 }: {
   tabId: TabId;
   sandbox: Sandbox;
-  browserUrl?: string;
-  browserStarting?: boolean;
+  url?: string;
+  starting?: boolean;
+  onStart?: () => void;
   onTerminalSessionChange?: (title: string | null) => void;
 }) {
-  const urlMap: Record<TabId, string | undefined> = {
-    opencode: sandbox.runtime.urls.opencode,
-    vscode: sandbox.runtime.urls.vscode,
-    terminal: undefined,
-    web: browserUrl,
-  };
-
   if (tabId === "terminal") {
     return (
       <div className="absolute inset-0">
@@ -503,26 +576,37 @@ function TabPanel({
     );
   }
 
-  const url = urlMap[tabId];
+  const tab = tabs.find((t) => t.id === tabId);
+  const tabLabel = tab?.label ?? tabId;
+
   if (!url) {
+    const PlaceholderIcon = tab?.icon ?? Globe;
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-muted/30">
         <div className="text-center space-y-3">
-          <Globe className="h-8 w-8 mx-auto text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            {browserStarting
-              ? "Browser is starting..."
-              : "Click to start browser"}
-          </p>
-          {browserStarting && (
-            <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+          <PlaceholderIcon className="h-8 w-8 mx-auto text-muted-foreground" />
+          {starting ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Starting {tabLabel}…
+              </p>
+              <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Service {tabLabel} is not started
+              </p>
+              <Button variant="outline" size="sm" onClick={onStart}>
+                <PlaceholderIcon className="h-4 w-4 mr-2" />
+                Start {tabLabel}
+              </Button>
+            </>
           )}
         </div>
       </div>
     );
   }
-
-  const tabLabel = tabs.find((t) => t.id === tabId)?.label ?? tabId;
 
   return (
     <iframe
@@ -538,15 +622,17 @@ function ImmersionContent({
   sandbox,
   tab1,
   tab2,
-  browserUrl,
-  browserStarting,
+  tabUrl,
+  tabStarting,
+  tabStart,
   onTerminalSessionChange,
 }: {
   sandbox: Sandbox;
   tab1: TabId;
   tab2?: TabId;
-  browserUrl?: string;
-  browserStarting?: boolean;
+  tabUrl: (tabId: TabId) => string | undefined;
+  tabStarting: (tabId: TabId) => boolean;
+  tabStart: (tabId: TabId) => void;
   onTerminalSessionChange?: (title: string | null) => void;
 }) {
   const { splitPercent, dividerRef, containerRef, onPointerDown } =
@@ -594,8 +680,9 @@ function ImmersionContent({
             <TabPanel
               tabId={tab.id}
               sandbox={sandbox}
-              browserUrl={browserUrl}
-              browserStarting={browserStarting}
+              url={tabUrl(tab.id)}
+              starting={tabStarting(tab.id)}
+              onStart={() => tabStart(tab.id)}
               onTerminalSessionChange={onTerminalSessionChange}
             />
           </div>

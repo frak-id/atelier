@@ -1,12 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  Bot,
   ClipboardList,
   HeartPulse,
   Loader2,
   Maximize2,
-  Monitor,
   Pause,
   Play,
   RotateCcw,
@@ -18,8 +16,9 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { registerOpencodePassword } from "@/api/opencode";
 import {
-  deriveBrowserStatus,
+  deriveToolStatus,
   sandboxDetailQuery,
+  sandboxToolsQuery,
   taskListQuery,
   useDeleteSandbox,
   useRecoverSandbox,
@@ -55,14 +54,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useOpencodeData } from "@/hooks/use-opencode-data";
+import { sortToolsForDisplay } from "@/lib/tools";
 import { formatDate, getWorkspaceDirectory } from "@/lib/utils";
-import { BrowserButton } from "./browser-button";
 import { QuickConnectCard } from "./quick-connect-card";
 import { RepositoriesTab } from "./repositories-tab";
 import { SandboxNameEditor } from "./sandbox-name-editor";
 import { SandboxWarningsBlock } from "./sandbox-warnings-block";
 import { ServicesTab } from "./services-tab";
 import { SessionsTab, SessionsTabBadge } from "./sessions-tab";
+import { ToolButton } from "./tool-button";
 
 interface SandboxDrawerProps {
   sandboxId: string | null;
@@ -106,7 +106,10 @@ export function SandboxDrawer({
     sandbox?.status === "running",
   );
 
-  const browserStatus = deriveBrowserStatus(services, sandbox);
+  const { data: tools } = useQuery({
+    ...sandboxToolsQuery(sandboxId ?? ""),
+    enabled: sandbox?.status === "running",
+  });
 
   const workspaceDir = getWorkspaceDirectory(workspace);
 
@@ -209,44 +212,14 @@ export function SandboxDrawer({
               {sandbox.status === "running" && (
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mt-4">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link
-                        to="/sandboxes/$id"
-                        params={{ id: sandbox.id }}
-                        search={{ tab1: "opencode" }}
-                        target="_blank"
-                      >
-                        <Bot className="h-4 w-4 mr-2" />
-                        OpenCode
-                      </Link>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link
-                        to="/sandboxes/$id"
-                        params={{ id: sandbox.id }}
-                        search={{ tab1: "vscode" }}
-                        target="_blank"
-                      >
-                        <Monitor className="h-4 w-4 mr-2" />
-                        VSCode
-                      </Link>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link
-                        to="/sandboxes/$id"
-                        params={{ id: sandbox.id }}
-                        search={{ tab1: "terminal" }}
-                        target="_blank"
-                      >
-                        <Terminal className="h-4 w-4 mr-2" />
-                        Terminal
-                      </Link>
-                    </Button>
-
-                    <BrowserButton
-                      sandboxId={sandbox.id}
-                      browserStatus={browserStatus}
-                    />
+                    {sortToolsForDisplay(tools ?? []).map((tool) => (
+                      <ToolButton
+                        key={tool.slug}
+                        sandboxId={sandbox.id}
+                        tool={tool}
+                        status={deriveToolStatus(services, tool)}
+                      />
+                    ))}
                   </div>
                   <div className="flex items-center gap-1">
                     <Tooltip>

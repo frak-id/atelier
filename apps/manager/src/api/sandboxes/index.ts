@@ -10,21 +10,11 @@ import {
   sandboxSpawner,
   workspaceService,
 } from "../../container.ts";
-import { internalBus } from "../../infrastructure/events/internal-bus.ts";
-import { kubeClient } from "../../infrastructure/kubernetes/index.ts";
-
 import { waitForOpencodeHealthy } from "../../orchestrators/kernel/boot-waiter.ts";
-import {
-  buildToolIngressResource,
-  toolIngressName,
-  toolUrl,
-} from "../../orchestrators/tools/registry.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
   AgentHealthSchema,
   AllServicesResponseSchema,
-  BrowserStartResponseSchema,
-  BrowserStopResponseSchema,
   CreateSandboxBodySchema,
   CreateSandboxResponseSchema,
   GitCommitBodySchema,
@@ -51,6 +41,7 @@ import { devRoutes } from "./dev.routes.ts";
 import { sandboxIdGuard } from "./guard.ts";
 import { servicesRoutes } from "./services.routes.ts";
 import { terminalRoutes } from "./terminal.routes.ts";
+import { toolsRoutes } from "./tools.routes.ts";
 
 const log = createChildLogger("sandbox-routes");
 
@@ -471,104 +462,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           response: PromoteToPrebuildResponseSchema,
         },
       )
-      .post(
-        "/:id/browser/start",
-        async ({ sandbox }) => {
-          if (sandbox.status !== "running") {
-            return { status: "off" as const };
-          }
-
-          const kasmvnc = await agentClient.serviceStatus(
-            sandbox.id,
-            "kasmvnc",
-          );
-          if (kasmvnc.running) {
-            const browserUrl = sandbox.runtime.urls.browser;
-            return { status: "running" as const, url: browserUrl };
-          }
-
-          const startBrowser = async () => {
-            await agentClient.serviceStart(sandbox.id, "kasmvnc");
-            await new Promise((r) => setTimeout(r, 500));
-            await agentClient.serviceStart(sandbox.id, "openbox");
-            await new Promise((r) => setTimeout(r, 200));
-            await agentClient.serviceStart(sandbox.id, "chromium");
-          };
-
-          startBrowser().catch((err) => {
-            log.warn(
-              { sandboxId: sandbox.id, error: String(err) },
-              "Browser start failed",
-            );
-          });
-
-          const browserUrl = toolUrl("browser", sandbox.id);
-          const browserIngress = buildToolIngressResource(
-            "browser",
-            sandbox.id,
-          );
-
-          if (browserIngress) {
-            try {
-              await kubeClient.createResource(browserIngress);
-            } catch (err) {
-              log.warn(
-                { sandboxId: sandbox.id, error: err },
-                "Failed to create browser ingress",
-              );
-            }
-          }
-
-          sandboxService.update(sandbox.id, {
-            runtime: {
-              ...sandbox.runtime,
-              urls: { ...sandbox.runtime.urls, browser: browserUrl },
-            },
-          });
-
-          internalBus.emit("sandbox.poll-services", sandbox.id);
-          return { status: "starting" as const, url: browserUrl };
-        },
-        {
-          params: IdParamSchema,
-          response: BrowserStartResponseSchema,
-        },
-      )
-      .post(
-        "/:id/browser/stop",
-        async ({ sandbox }) => {
-          if (sandbox.status !== "running") {
-            return { status: "off" as const };
-          }
-
-          Promise.all([
-            agentClient.serviceStop(sandbox.id, "chromium").catch(() => {}),
-            agentClient.serviceStop(sandbox.id, "openbox").catch(() => {}),
-            agentClient.serviceStop(sandbox.id, "kasmvnc").catch(() => {}),
-          ]).catch(() => {});
-
-          const browserIngressName = toolIngressName("browser", sandbox.id);
-          if (browserIngressName) {
-            kubeClient
-              .deleteResource("ingresses", browserIngressName)
-              .catch(() => {});
-          }
-
-          sandboxService.update(sandbox.id, {
-            runtime: {
-              ...sandbox.runtime,
-              urls: { ...sandbox.runtime.urls, browser: undefined },
-            },
-          });
-
-          internalBus.emit("sandbox.poll-services", sandbox.id);
-          return { status: "off" as const };
-        },
-        {
-          params: IdParamSchema,
-          response: BrowserStopResponseSchema,
-        },
-      )
+      .use(toolsRoutes)
       .use(terminalRoutes)
       .use(servicesRoutes)
       .use(devRoutes),

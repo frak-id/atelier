@@ -55,6 +55,8 @@ export interface ToolDefinition {
   core?: boolean;
   /** `boot` = ingress + service started at spawn; `lazy` = on demand. */
   start: ToolStart;
+  /** Delay (ms) between sequential service starts (ordered multi-service tools). */
+  startDelayMs?: number;
   /** Optional HTTP exposure (ingress + dashboard URL). */
   exposure?: ToolExposure;
   /** Agent service entries this tool contributes to `config.json`. */
@@ -69,7 +71,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     slug: "vscode",
     name: "VS Code",
-    start: "boot",
+    start: "lazy",
     exposure: {
       subdomain: "vscode",
       portKey: "vscode",
@@ -137,6 +139,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     slug: "browser",
     name: "Browser",
     start: "lazy",
+    startDelayMs: 500,
     exposure: {
       subdomain: "browser",
       portKey: "browser",
@@ -173,6 +176,28 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
 
 export function getTool(slug: string): ToolDefinition | undefined {
   return BUILTIN_TOOLS.find((tool) => tool.slug === slug);
+}
+
+export interface ToolInfo {
+  slug: string;
+  name: string;
+  start: ToolStart;
+  core: boolean;
+  exposed: boolean;
+  url?: string;
+  services: string[];
+}
+
+export function listToolInfos(sandboxId: string): ToolInfo[] {
+  return BUILTIN_TOOLS.map((tool) => ({
+    slug: tool.slug,
+    name: tool.name,
+    start: tool.start,
+    core: !!tool.core,
+    exposed: !!tool.exposure,
+    url: toolUrl(tool.slug, sandboxId),
+    services: tool.autoStartServices,
+  }));
 }
 
 /** Merge every tool's agent services into the sandbox `config.json` map. */

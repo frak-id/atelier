@@ -256,27 +256,34 @@ export function useGitPush(sandboxId: string) {
   });
 }
 
-export function deriveBrowserStatus(
+export type ToolStatus = "running" | "starting" | "off";
+
+export const sandboxToolsQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.sandboxes.tools(id),
+    queryFn: async () => unwrap(await api.api.sandboxes({ id }).tools.get()),
+  });
+
+export function deriveToolStatus(
   services:
     | { services: Array<{ name: string; running: boolean }> }
     | null
     | undefined,
-  sandbox: { runtime: { urls: { browser?: string } } } | null | undefined,
-): { status: "running" | "starting" | "off"; url?: string } {
-  const browserUrl = sandbox?.runtime?.urls?.browser;
-  if (!browserUrl) return { status: "off" };
-
-  const kasmvnc = services?.services?.find((s) => s.name === "kasmvnc");
-  if (!kasmvnc) return { status: "off" };
-  if (kasmvnc.running) return { status: "running", url: browserUrl };
-  return { status: "starting", url: browserUrl };
+  tool: { services: string[] } | null | undefined,
+): ToolStatus {
+  const primary = tool?.services?.[0];
+  if (!primary) return "off";
+  const svc = services?.services?.find((s) => s.name === primary);
+  return svc?.running ? "running" : "off";
 }
 
-export function useStartBrowser(sandboxId: string) {
+export function useStartTool(sandboxId: string) {
   return useMutation({
-    mutationKey: ["sandboxes", "browser", "start", sandboxId],
-    mutationFn: async () =>
-      unwrap(await api.api.sandboxes({ id: sandboxId }).browser.start.post()),
+    mutationKey: ["sandboxes", "tools", "start", sandboxId],
+    mutationFn: async (slug: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).tools({ slug }).start.post(),
+      ),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.allServices,
@@ -288,11 +295,13 @@ export function useStartBrowser(sandboxId: string) {
   });
 }
 
-export function useStopBrowser(sandboxId: string) {
+export function useStopTool(sandboxId: string) {
   return useMutation({
-    mutationKey: ["sandboxes", "browser", "stop", sandboxId],
-    mutationFn: async () =>
-      unwrap(await api.api.sandboxes({ id: sandboxId }).browser.stop.post()),
+    mutationKey: ["sandboxes", "tools", "stop", sandboxId],
+    mutationFn: async (slug: string) =>
+      unwrap(
+        await api.api.sandboxes({ id: sandboxId }).tools({ slug }).stop.post(),
+      ),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.allServices,
