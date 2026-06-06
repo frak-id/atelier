@@ -155,20 +155,23 @@ function SandboxImmersionPage() {
     [toolBySlug, services],
   );
 
+  const [startingSlugs, setStartingSlugs] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [reloadKeys, setReloadKeys] = useState<Record<string, number>>({});
+
   const tabUrl = useCallback(
     (tabId: TabId): string | undefined => {
       const slug = TAB_TOOL_SLUG[tabId];
       if (!slug) return undefined;
       if (slug === "opencode") return sandbox?.runtime.urls.opencode;
-      if (tabToolStatus(tabId) !== "running") return undefined;
+      const ready =
+        tabToolStatus(tabId) === "running" || startingSlugs.has(slug);
+      if (!ready) return undefined;
       const url = toolBySlug.get(slug)?.url;
       return url ? `${url}${toolUiFor(slug).urlSuffix ?? ""}` : undefined;
     },
-    [toolBySlug, tabToolStatus, sandbox],
-  );
-
-  const [startingSlugs, setStartingSlugs] = useState<Set<string>>(
-    () => new Set(),
+    [toolBySlug, tabToolStatus, sandbox, startingSlugs],
   );
 
   const tabStarting = useCallback(
@@ -177,6 +180,14 @@ function SandboxImmersionPage() {
       return slug ? startingSlugs.has(slug) : false;
     },
     [startingSlugs],
+  );
+
+  const tabReloadKey = useCallback(
+    (tabId: TabId): number => {
+      const slug = TAB_TOOL_SLUG[tabId];
+      return slug ? (reloadKeys[slug] ?? 0) : 0;
+    },
+    [reloadKeys],
   );
 
   const startTab = useCallback(
@@ -201,20 +212,22 @@ function SandboxImmersionPage() {
   );
 
   useEffect(() => {
-    setStartingSlugs((prev) => {
-      if (prev.size === 0) return prev;
-      let changed = false;
-      const next = new Set(prev);
-      for (const slug of prev) {
-        const tool = toolBySlug.get(slug);
-        if (tool && deriveToolStatus(services, tool) === "running") {
-          next.delete(slug);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
+    const nowRunning = [...startingSlugs].filter((slug) => {
+      const tool = toolBySlug.get(slug);
+      return !!tool && deriveToolStatus(services, tool) === "running";
     });
-  }, [services, toolBySlug]);
+    if (nowRunning.length === 0) return;
+    setStartingSlugs((prev) => {
+      const next = new Set(prev);
+      for (const slug of nowRunning) next.delete(slug);
+      return next;
+    });
+    setReloadKeys((prev) => {
+      const next = { ...prev };
+      for (const slug of nowRunning) next[slug] = (next[slug] ?? 0) + 1;
+      return next;
+    });
+  }, [services, toolBySlug, startingSlugs]);
 
   const tab1 = search.tab1 ?? "opencode";
   const tab2 = isMobile ? undefined : search.tab2;
@@ -471,6 +484,7 @@ function SandboxImmersionPage() {
           tab2={tab2}
           tabUrl={tabUrl}
           tabStarting={tabStarting}
+          tabReloadKey={tabReloadKey}
           tabStart={startTab}
           onTerminalSessionChange={setTerminalSessionTitle}
         />
@@ -554,6 +568,7 @@ function TabPanel({
   sandbox,
   url,
   starting,
+  reloadKey,
   onStart,
   onTerminalSessionChange,
 }: {
@@ -561,6 +576,7 @@ function TabPanel({
   sandbox: Sandbox;
   url?: string;
   starting?: boolean;
+  reloadKey?: number;
   onStart?: () => void;
   onTerminalSessionChange?: (title: string | null) => void;
 }) {
@@ -578,9 +594,9 @@ function TabPanel({
 
   const tab = tabs.find((t) => t.id === tabId);
   const tabLabel = tab?.label ?? tabId;
+  const PlaceholderIcon = tab?.icon ?? Globe;
 
   if (!url) {
-    const PlaceholderIcon = tab?.icon ?? Globe;
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-muted/30">
         <div className="text-center space-y-3">
@@ -609,12 +625,26 @@ function TabPanel({
   }
 
   return (
-    <iframe
-      src={url}
-      className="absolute inset-0 w-full h-full border-0"
-      title={tabLabel}
-      allow="clipboard-read; clipboard-write"
-    />
+    <>
+      <iframe
+        key={reloadKey}
+        src={url}
+        className="absolute inset-0 w-full h-full border-0"
+        title={tabLabel}
+        allow="clipboard-read; clipboard-write"
+      />
+      {starting && (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted/30">
+          <div className="text-center space-y-3">
+            <PlaceholderIcon className="h-8 w-8 mx-auto text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              Starting {tabLabel}…
+            </p>
+            <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -624,6 +654,7 @@ function ImmersionContent({
   tab2,
   tabUrl,
   tabStarting,
+  tabReloadKey,
   tabStart,
   onTerminalSessionChange,
 }: {
@@ -632,6 +663,7 @@ function ImmersionContent({
   tab2?: TabId;
   tabUrl: (tabId: TabId) => string | undefined;
   tabStarting: (tabId: TabId) => boolean;
+  tabReloadKey: (tabId: TabId) => number;
   tabStart: (tabId: TabId) => void;
   onTerminalSessionChange?: (title: string | null) => void;
 }) {
@@ -682,6 +714,7 @@ function ImmersionContent({
               sandbox={sandbox}
               url={tabUrl(tab.id)}
               starting={tabStarting(tab.id)}
+              reloadKey={tabReloadKey(tab.id)}
               onStart={() => tabStart(tab.id)}
               onTerminalSessionChange={onTerminalSessionChange}
             />

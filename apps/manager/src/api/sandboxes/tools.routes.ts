@@ -1,12 +1,9 @@
 import Elysia from "elysia";
 import { agentClient } from "../../container";
 import { internalBus } from "../../infrastructure/events";
-import { kubeClient } from "../../infrastructure/kubernetes/index.ts";
 import {
-  buildToolIngressResource,
   getTool,
   listToolInfos,
-  toolIngressName,
   toolUrl,
 } from "../../orchestrators/tools/registry.ts";
 import {
@@ -60,18 +57,6 @@ export const toolsRoutes = new Elysia()
         );
       });
 
-      const ingress = buildToolIngressResource(params.slug, sandbox.id);
-      if (ingress) {
-        try {
-          await kubeClient.createResource(ingress);
-        } catch (err) {
-          log.warn(
-            { sandboxId: sandbox.id, slug: params.slug, error: err },
-            "Failed to create tool ingress",
-          );
-        }
-      }
-
       internalBus.emit("sandbox.poll-services", sandbox.id);
       return { status: "starting" as const, url };
     },
@@ -94,11 +79,6 @@ export const toolsRoutes = new Elysia()
             agentClient.serviceStop(sandbox.id, name).catch(() => {}),
           ),
       ).catch(() => {});
-
-      const ingressName = toolIngressName(params.slug, sandbox.id);
-      if (ingressName) {
-        kubeClient.deleteResource("Ingress", ingressName).catch(() => {});
-      }
 
       internalBus.emit("sandbox.poll-services", sandbox.id);
       return { status: "off" as const };

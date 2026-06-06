@@ -246,42 +246,22 @@ function ingressFor(
   });
 }
 
-/** Ingress resources for every tool exposed at boot (vscode, opencode). */
-export function buildBootIngressResources(sandboxId: string): KubeResource[] {
+// Pre-registered for every exposed tool at spawn, even lazy ones: an ingress
+// with no running backend just 502s, so pre-creating it removes ingress
+// propagation latency from the lazy start path at no cost.
+export function buildToolIngressResources(sandboxId: string): KubeResource[] {
   return BUILTIN_TOOLS.flatMap((tool) => {
-    if (tool.start !== "boot") return [];
     const ingress = ingressFor(tool, sandboxId);
     return ingress ? [ingress] : [];
   });
 }
 
-/** Single tool's ingress resource (e.g. the lazy browser). */
-export function buildToolIngressResource(
-  slug: string,
-  sandboxId: string,
-): KubeResource | undefined {
-  const tool = getTool(slug);
-  if (!tool) return undefined;
-  return ingressFor(tool, sandboxId);
-}
-
-/** Ingress resource names for boot-exposed tools (for cleanup on restart). */
-export function bootIngressNames(sandboxId: string): string[] {
+export function toolIngressNames(sandboxId: string): string[] {
   return BUILTIN_TOOLS.flatMap((tool) =>
-    tool.start === "boot" && tool.exposure
+    tool.exposure
       ? [kubeToolIngressName(tool.exposure.subdomain, sandboxId)]
       : [],
   );
-}
-
-/** Ingress resource name for a single tool, if it is exposed. */
-export function toolIngressName(
-  slug: string,
-  sandboxId: string,
-): string | undefined {
-  const tool = getTool(slug);
-  if (!tool?.exposure) return undefined;
-  return kubeToolIngressName(tool.exposure.subdomain, sandboxId);
 }
 
 /** Public HTTPS URL for an exposed tool. */

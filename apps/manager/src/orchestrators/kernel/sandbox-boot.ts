@@ -20,8 +20,8 @@ import {
   type OpencodeWorkspaceContext,
 } from "../sandbox-config.ts";
 import {
-  bootIngressNames,
-  buildBootIngressResources,
+  buildToolIngressResources,
+  toolIngressNames,
   toolUrl,
 } from "../tools/registry.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
@@ -171,7 +171,7 @@ export async function bootNewSandbox(
         }),
       ),
       kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
-      ...buildBootIngressResources(sandboxId).map((resource) =>
+      ...buildToolIngressResources(sandboxId).map((resource) =>
         kubeClient.createResource(resource),
       ),
       kubeClient.createResource(
@@ -241,7 +241,7 @@ export async function bootExistingSandbox(
   try {
     await kubeClient.deleteResource("Service", `sandbox-${sandboxId}`);
   } catch {}
-  for (const ingressName of bootIngressNames(sandboxId)) {
+  for (const ingressName of toolIngressNames(sandboxId)) {
     try {
       await kubeClient.deleteResource("Ingress", ingressName);
     } catch {}
@@ -296,7 +296,7 @@ export async function bootExistingSandbox(
       }),
     ),
     kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
-    ...buildBootIngressResources(sandboxId).map((resource) =>
+    ...buildToolIngressResources(sandboxId).map((resource) =>
       kubeClient.createResource(resource),
     ),
     kubeClient.createResource(
