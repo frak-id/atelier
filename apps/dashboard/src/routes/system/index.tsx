@@ -8,7 +8,6 @@ import {
   useRestartCliProxy,
 } from "@/api/queries";
 import { RouteErrorComponent } from "@/components/route-error";
-import { TokenUsageCard } from "@/components/token-usage-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -169,8 +168,6 @@ function SystemPage() {
           </CardContent>
         </Card>
       </div>
-
-      <TokenUsageCard />
 
       <Card>
         <CardHeader>
