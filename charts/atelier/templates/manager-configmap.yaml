@@ -60,9 +60,6 @@ data:
         )
       )
       "integrations" (dict
-        "slack" (dict
-          "enabled" .Values.integrations.slack.enabled
-        )
         "cliproxy" (dict
           "url" (ternary (printf "http://%s-cliproxy.%s.svc:%v" (include "atelier.fullname" .) .Release.Namespace .Values.cliproxy.port) "" .Values.cliproxy.enabled)
           "apiKey" .Values.cliproxy.managerApiKey

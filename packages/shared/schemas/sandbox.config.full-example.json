@@ -71,11 +71,6 @@
     }
   },
   "integrations": {
-    "slack": {
-      "enabled": false,
-      "botToken": "",
-      "signingSecret": ""
-    },
     "cliproxy": {
       "url": "",
       "apiKey": "",

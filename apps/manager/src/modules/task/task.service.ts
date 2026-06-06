@@ -14,8 +14,21 @@ import type { TaskRepository } from "./task.repository.ts";
 
 const log = createChildLogger("task-service");
 
+const MAX_TITLE_LENGTH = 80;
+
 export class TaskService {
   constructor(private readonly repository: TaskRepository) {}
+
+  fallbackTitle(description: string): string {
+    const trimmed = description.trim();
+    if (trimmed.length <= MAX_TITLE_LENGTH) return trimmed;
+
+    const truncated = trimmed.slice(0, MAX_TITLE_LENGTH);
+    const lastSpace = truncated.lastIndexOf(" ");
+    return lastSpace > 40
+      ? `${truncated.slice(0, lastSpace)}...`
+      : `${truncated}...`;
+  }
 
   getAll(): Task[] {
     return this.repository.getAll();
@@ -223,42 +236,6 @@ export class TaskService {
       properties: { id, workspaceId: updated.workspaceId },
     });
     return updated;
-  }
-
-  /**
-   * Mirror of `SandboxRepository.findByOrigin` for tasks: look one up by
-   * the originating conversation's `(source, externalId)` pair.
-   */
-  findByExternalKey(source: string, externalId: string): Task | undefined {
-    return this.repository.findByExternalKey(source, externalId);
-  }
-
-  setIntegrationMetadata(
-    id: string,
-    integration: NonNullable<Task["data"]["integration"]>,
-  ): Task {
-    const task = this.getByIdOrThrow(id);
-    const updated = this.repository.update(id, {
-      data: { ...task.data, integration },
-    });
-    log.info(
-      { taskId: id, source: integration.source },
-      "Integration metadata set",
-    );
-    return updated;
-  }
-
-  setIntegrationSessionId(id: string, sessionId: string): Task {
-    const task = this.getByIdOrThrow(id);
-    if (!task.data.integration) {
-      throw new ValidationError("Task has no integration metadata");
-    }
-    return this.repository.update(id, {
-      data: {
-        ...task.data,
-        integration: { ...task.data.integration, sessionId },
-      },
-    });
   }
 
   updateTitle(id: string, title: string): Task {

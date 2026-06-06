@@ -2,7 +2,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
 import {
   sandboxService,
-  systemAiService,
   taskService,
   taskSpawner,
   workspaceService,
@@ -177,8 +176,7 @@ export function registerTaskTools(server: McpServer): void {
         };
       }
 
-      const taskTitle =
-        title?.trim() || systemAiService.fallbackTitle(description);
+      const taskTitle = title?.trim() || taskService.fallbackTitle(description);
 
       const task = taskService.create({
         workspaceId,
@@ -189,18 +187,6 @@ export function registerTaskTools(server: McpServer): void {
         variantIndex,
         targetRepoIndices,
       });
-
-      if (!title?.trim()) {
-        systemAiService.generateTitleInBackground(
-          description,
-          (generatedTitle) => {
-            taskService.updateTitle(task.id, generatedTitle);
-            taskSpawner
-              .updateSessionTitles(task.id, generatedTitle)
-              .catch(() => {});
-          },
-        );
-      }
 
       if (autoStart) {
         try {

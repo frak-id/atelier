@@ -85,9 +85,7 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "properties": {
         "mode": {
           "anyOf": [
@@ -298,24 +296,6 @@
       "default": {},
       "type": "object",
       "properties": {
-        "slack": {
-          "default": {},
-          "type": "object",
-          "properties": {
-            "enabled": {
-              "default": false,
-              "type": "boolean"
-            },
-            "botToken": {
-              "default": "",
-              "type": "string"
-            },
-            "signingSecret": {
-              "default": "",
-              "type": "string"
-            }
-          }
-        },
         "cliproxy": {
           "default": {},
           "type": "object",

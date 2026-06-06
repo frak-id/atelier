@@ -57,7 +57,6 @@ export const queryKeys = {
   },
   system: {
     stats: ["system", "stats"] as const,
-    sandbox: ["system", "sandbox"] as const,
     services: ["system", "services"] as const,
     sharedBinaries: ["system", "shared-binaries"] as const,
   },
@@ -97,10 +96,6 @@ export const queryKeys = {
       "opencodeConfig",
       "global",
     ] as const,
-  },
-  systemModelConfig: {
-    all: ["systemModelConfig"] as const,
-    config: ["systemModelConfig", "config"] as const,
   },
   cliproxy: {
     all: ["cliproxy"] as const,

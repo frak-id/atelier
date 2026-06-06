@@ -1,7 +1,4 @@
-import type {
-  OpenCodeConfigResponse,
-  SystemModelConfig,
-} from "@frak/atelier-manager/types";
+import type { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
@@ -22,12 +19,6 @@ export const systemStatsQuery = queryOptions({
   queryFn: async () => unwrap(await api.api.system.stats.get()),
 });
 
-export const systemSandboxQuery = queryOptions({
-  queryKey: queryKeys.system.sandbox,
-  queryFn: async () => unwrap(await api.api.system.sandbox.get()),
-  refetchInterval: 30000,
-});
-
 export const systemServicesQuery = queryOptions({
   queryKey: queryKeys.system.services,
   queryFn: async () => unwrap(await api.api.system.services.get()),
@@ -38,81 +29,6 @@ export const sharedBinariesQuery = queryOptions({
   queryKey: queryKeys.system.sharedBinaries,
   queryFn: async () => unwrap(await api.api.system["shared-binaries"].get()),
 });
-
-export function useSystemSandboxPrebuild() {
-  return useMutation({
-    mutationKey: ["system", "sandbox", "prebuild"],
-    mutationFn: async () =>
-      unwrap(await api.api.system.sandbox.prebuild.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.system.sandbox,
-      });
-    },
-  });
-}
-
-export function useCancelSystemSandboxPrebuild() {
-  return useMutation({
-    mutationKey: ["system", "sandbox", "prebuild", "cancel"],
-    mutationFn: async () =>
-      unwrap(await api.api.system.sandbox.prebuild.cancel.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.system.sandbox,
-      });
-    },
-  });
-}
-
-export function useDeleteSystemSandboxPrebuild() {
-  return useMutation({
-    mutationKey: ["system", "sandbox", "prebuild", "delete"],
-    mutationFn: async () =>
-      unwrap(await api.api.system.sandbox.prebuild.delete()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.system.sandbox,
-      });
-    },
-  });
-}
-
-export function useStartSystemSandbox() {
-  return useMutation({
-    mutationKey: ["system", "sandbox", "start"],
-    mutationFn: async () => unwrap(await api.api.system.sandbox.start.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.system.sandbox,
-      });
-    },
-  });
-}
-
-export function useStopSystemSandbox() {
-  return useMutation({
-    mutationKey: ["system", "sandbox", "stop"],
-    mutationFn: async () => unwrap(await api.api.system.sandbox.stop.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.system.sandbox,
-      });
-    },
-  });
-}
-
-export function useRestartSystemSandbox() {
-  return useMutation({
-    mutationKey: ["system", "sandbox", "restart"],
-    mutationFn: async () => unwrap(await api.api.system.sandbox.restart.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.system.sandbox,
-      });
-    },
-  });
-}
 
 // --- Session Templates ---
 
@@ -420,26 +336,6 @@ export function useDeleteApiKey() {
       unwrap(await api.api["api-keys"]({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
-    },
-  });
-}
-
-// --- System Model Config ---
-
-export const systemModelConfigQuery = queryOptions({
-  queryKey: queryKeys.systemModelConfig.config,
-  queryFn: async () => unwrap(await api.api["system-model-config"].get()),
-});
-
-export function useUpdateSystemModelConfig() {
-  return useMutation({
-    mutationKey: ["systemModelConfig", "update"],
-    mutationFn: async (config: SystemModelConfig) =>
-      unwrap(await api.api["system-model-config"].put(config)),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.systemModelConfig.all,
-      });
     },
   });
 }

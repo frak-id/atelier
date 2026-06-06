@@ -13,12 +13,7 @@ import {
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import {
-  isSystemSandbox,
-  type Sandbox,
-  type SandboxOrigin,
-  type Workspace,
-} from "../../schemas/index.ts";
+import type { Sandbox, SandboxOrigin, Workspace } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
@@ -360,7 +355,7 @@ export async function finalizeNewSandbox(
   podName: string,
   ports: SandboxPorts,
 ): Promise<Sandbox> {
-  const urls = buildUrls(sandboxId, isSystemSandbox(sandbox));
+  const urls = buildUrls(sandboxId);
 
   sandbox.status = "running";
   sandbox.runtime.urls = urls;
@@ -390,7 +385,7 @@ export async function finalizeRestartedSandbox(
     status: "running",
     runtime: {
       ...sandbox.runtime,
-      urls: buildUrls(sandboxId, isSystemSandbox(sandbox)),
+      urls: buildUrls(sandboxId),
     },
     updatedAt: new Date().toISOString(),
   };
@@ -409,17 +404,18 @@ function resolveSandboxImage(baseImage?: string): string {
   return `${config.kubernetes.registryUrl}/${baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
 }
 
-function buildUrls(
-  sandboxId: string,
-  isSystem: boolean,
-): { vscode: string; opencode: string; ssh: string } {
+function buildUrls(sandboxId: string): {
+  vscode: string;
+  opencode: string;
+  ssh: string;
+} {
   const sandboxDomain = config.domain.dashboard;
   const sshHost =
     config.domain.ssh.hostname || `ssh.${config.domain.baseDomain}`;
   const sshPort = config.domain.ssh.port;
 
   return {
-    vscode: isSystem ? "" : `https://vscode-${sandboxId}.${sandboxDomain}`,
+    vscode: `https://vscode-${sandboxId}.${sandboxDomain}`,
     opencode: `https://opencode-${sandboxId}.${sandboxDomain}`,
     ssh:
       sshPort === 22

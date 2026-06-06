@@ -11,7 +11,6 @@ import {
   githubApiRoutes,
   healthRoutes,
   imageRoutes,
-  integrationRoutes,
   internalWellKnownRoutes,
   opencodeRoutes,
   organizationRoutes,
@@ -20,7 +19,6 @@ import {
   sessionTemplateRoutes,
   sharedAuthRoutes,
   sshKeyRoutes,
-  systemModelConfigRoutes,
   systemRoutes,
   taskRoutes,
   userRoutes,
@@ -31,19 +29,14 @@ import {
   authSyncService,
   cliProxyService,
   prebuildChecker,
-  prebuildRunner,
   sandboxLifecycle,
   sandboxService,
   sshKeyService,
-  systemSandboxService,
   workspaceService,
 } from "./container.ts";
 import { CronService } from "./infrastructure/cron/index.ts";
 import { initDatabase } from "./infrastructure/database/index.ts";
-import {
-  ensureSharedSshPipeKey,
-  kubeClient,
-} from "./infrastructure/kubernetes/index.ts";
+import { ensureSharedSshPipeKey } from "./infrastructure/kubernetes/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
 import { SandboxError } from "./shared/errors.ts";
@@ -88,14 +81,13 @@ const app = new Elysia()
     });
 
     CronService.add("sandboxSelfHeal", {
-      name: "Sandbox + Listener Self Heal",
+      name: "Sandbox Self Heal",
       pattern: "*/1 * * * *",
       handler: async () => {
         const running = sandboxService.getByStatus("running");
         await Promise.allSettled(
           running.map((s) => sandboxLifecycle.getStatus(s.id)),
         );
-        systemSandboxService.healIfNeeded();
       },
     });
     const expiredCount = sshKeyService.cleanupExpired();
@@ -219,7 +211,6 @@ const app = new Elysia()
   .use(internalWellKnownRoutes)
   .use(authRoutes)
   .use(mcpRoutes)
-  .use(integrationRoutes)
   .group("/api", (app) =>
     app
       .use(sandboxRoutes)
@@ -234,7 +225,6 @@ const app = new Elysia()
       .use(imageRoutes)
       .use(githubApiRoutes)
       .use(eventsRoutes)
-      .use(systemModelConfigRoutes)
       .use(cliproxyRoutes)
       .use(organizationRoutes)
       .use(userRoutes)
@@ -249,22 +239,6 @@ app.get("/", () => ({
 }));
 
 await ensureSharedSshPipeKey();
-
-await systemSandboxService.recoverFromRestart();
-
-setImmediate(async () => {
-  const snapshotReady = await kubeClient.checkSnapshotApi();
-  if (!snapshotReady) {
-    logger.info(
-      "Snapshot API not available \u2014 skipping system prebuild. " +
-        "Install the CSI snapshot controller to enable prebuilds.",
-    );
-    return;
-  }
-  prebuildRunner.ensureSystemPrebuild().catch((error) => {
-    logger.warn({ err: error }, "System prebuild auto-build failed");
-  });
-});
 
 app.listen(
   {

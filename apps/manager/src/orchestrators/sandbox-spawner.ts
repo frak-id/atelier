@@ -11,10 +11,7 @@ import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { GitUserIdentity } from "./ports/guest-secrets.ts";
 import type { SandboxPorts } from "./ports/sandbox-ports.ts";
-import {
-  createSystemSandbox,
-  createWorkspaceSandbox,
-} from "./workflows/index.ts";
+import { createWorkspaceSandbox } from "./workflows/index.ts";
 
 const log = createChildLogger("sandbox-spawner");
 
@@ -27,22 +24,14 @@ export class SandboxSpawner {
     createdByUserId?: string,
   ): Promise<CreateSandboxResponse> {
     const sandboxId = safeNanoid();
-    const isSystem = options.origin?.source === "system";
-    if (!isSystem && !options.workspaceId) {
+    if (!options.workspaceId) {
       throw new Error("workspaceId is required for workspace sandbox");
     }
 
-    const workspace =
-      options.workspaceId && !isSystem
-        ? this.ports.workspaces.getById(options.workspaceId)
-        : undefined;
+    const workspace = this.ports.workspaces.getById(options.workspaceId);
 
     if (isMock()) {
       return this.spawnMock(sandboxId, workspace, options);
-    }
-
-    if (isSystem) {
-      return createSystemSandbox(sandboxId, options, this.ports);
     }
 
     if (!workspace) {

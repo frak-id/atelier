@@ -27,7 +27,6 @@ import {
   workspaceDetailQuery,
 } from "@/api/queries";
 import { AttentionBlock } from "@/components/attention-block";
-import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { TaskDeleteDialog } from "@/components/kanban/task-delete-dialog";
 import { TaskResetDialog } from "@/components/kanban/task-reset-dialog";
 import { TaskSessionHierarchy } from "@/components/task-session-hierarchy";
@@ -194,10 +193,6 @@ export function TaskDrawer({
                           Sandbox {sandbox.status}
                         </Badge>
                       )}
-                      <IntegrationSourceBadge
-                        integration={taskData.data.integration}
-                        variant="badge"
-                      />
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       {taskData.data.createdBy && (
@@ -508,16 +503,6 @@ export function TaskDrawer({
                       <span>
                         {new Date(taskData.updatedAt).toLocaleString()}
                       </span>
-
-                      {taskData.data.integration && (
-                        <>
-                          <div className="text-muted-foreground">Source</div>
-                          <IntegrationSourceBadge
-                            integration={taskData.data.integration}
-                            variant="link"
-                          />
-                        </>
-                      )}
                     </div>
                   </CardContent>
                 </Card>

@@ -31,16 +31,13 @@ export type SandboxRuntime = Static<typeof SandboxRuntimeSchema>;
 
 /**
  * Where a sandbox came from. Set at creation time and never mutated afterward.
- *
- * Used purely for display and lookup — no reply / threading semantics. If you
- * need to track conversations or reply back to an external system, that lives
- * on `Task.data.integration` instead.
+ * Used purely for display and lookup.
  */
 export const SandboxOriginSchema = t.Object({
   /**
    * The system that triggered the spawn. Free-form to keep the manager
    * agnostic of which integrations exist; well-known values include
-   * `"dashboard"`, `"opencode-plugin"`, `"task"`, `"slack"`, `"github"`.
+   * `"dashboard"`, `"opencode-plugin"`, `"task"`.
    */
   source: t.String({ minLength: 1 }),
   /**
@@ -49,22 +46,10 @@ export const SandboxOriginSchema = t.Object({
    * passes the OpenCode workspace id here).
    */
   externalId: t.Optional(t.String()),
-  /** Optional deep-link back to the origin (PR, slack message, etc). */
+  /** Optional deep-link back to the origin (e.g. a pull request). */
   externalUrl: t.Optional(t.String()),
 });
 export type SandboxOrigin = Static<typeof SandboxOriginSchema>;
-
-/**
- * `true` when the sandbox is the manager's internal system sandbox
- * (workspaceId-less, used to host the dispatcher OpenCode session). The
- * canonical signal is `origin.source === "system"` — keep this in lockstep
- * with `SystemSandboxService`.
- */
-export function isSystemSandbox(
-  sandbox: Pick<Sandbox, "origin"> | undefined | null,
-): boolean {
-  return sandbox?.origin?.source === "system";
-}
 
 /**
  * OpenCode workspace-mode context captured from the local opencode-atelier
@@ -146,11 +131,7 @@ export const CreateSandboxBodySchema = t.Object({
   name: t.Optional(t.String({ maxLength: 200 })),
   /** Branch to checkout. Overrides `repo.branch` for single-repo workspaces. */
   branch: t.Optional(t.String({ maxLength: 200 })),
-  /**
-   * Where the sandbox came from. Stored verbatim on the persisted sandbox.
-   * `source: "system"` is the canonical marker for the manager's internal
-   * system sandbox.
-   */
+  /** Where the sandbox came from. Stored verbatim on the persisted sandbox. */
   origin: t.Optional(SandboxOriginSchema),
   /**
    * OpenCode-specific env vars forwarded into the remote `opencode serve`

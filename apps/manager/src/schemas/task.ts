@@ -13,58 +13,6 @@ export const TaskSessionSchema = t.Object({
 });
 export type TaskSession = Static<typeof TaskSessionSchema>;
 
-/**
- * Integration metadata attached to a Task, used to:
- *   - identify the conversation that spawned/owns this task (`source` +
- *     `externalId` — same shape as `Sandbox.origin`),
- *   - reply back into that conversation (`slack` / `github` blobs hold the
- *     adapter-specific reply state),
- *   - resume the right OpenCode session on follow-ups (`sessionId`).
- *
- * For pure provenance / display, prefer `Sandbox.origin` — it carries the
- * same `source` + `externalId` + `externalUrl` triplet without the reply
- * state, and is set on every sandbox regardless of how it was spawned.
- */
-export const TaskIntegrationMetadataSchema = t.Object({
-  /** Source system (e.g. `slack`, `github`). Mirrors `SandboxOrigin.source`. */
-  source: t.String(),
-  /**
-   * Stable identifier from the source system used to look this task up on
-   * follow-up events. Mirrors `SandboxOrigin.externalId`.
-   * Slack: `${channel}:${threadTs}` — GitHub: `${owner}/${repo}:${prNumber}`.
-   *
-   * Optional because legacy data (and pure-tag use cases like the old
-   * opencode-plugin which only stamped `source: "opencode-plugin"`) may not
-   * carry one. Slack/GitHub follow-ups always populate it.
-   */
-  externalId: t.Optional(t.String()),
-  /** Optional deep-link back to the origin (PR, slack thread, etc). */
-  externalUrl: t.Optional(t.String()),
-  /** Current OpenCode session id, used to continue the same session on replies. */
-  sessionId: t.Optional(t.String()),
-  slack: t.Optional(
-    t.Object({
-      channel: t.String(),
-      ts: t.String(),
-      threadTs: t.String(),
-      teamId: t.Optional(t.String()),
-      triggeredBy: t.Optional(t.String()),
-    }),
-  ),
-  github: t.Optional(
-    t.Object({
-      owner: t.String(),
-      repo: t.String(),
-      prNumber: t.Number(),
-      commentId: t.Optional(t.Number()),
-      triggeredBy: t.Optional(t.String()),
-    }),
-  ),
-});
-export type TaskIntegrationMetadata = Static<
-  typeof TaskIntegrationMetadataSchema
->;
-
 export const TaskCreatorSchema = t.Object({
   username: t.String(),
   email: t.String(),
@@ -85,7 +33,6 @@ export const TaskDataSchema = t.Object({
   baseBranch: t.Optional(t.String()),
   branchName: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
-  integration: t.Optional(TaskIntegrationMetadataSchema),
 });
 export type TaskData = Static<typeof TaskDataSchema>;
 
@@ -109,7 +56,6 @@ export const CreateTaskBodySchema = t.Object({
   variantIndex: t.Optional(t.Number()),
   baseBranch: t.Optional(t.String()),
   targetRepoIndices: t.Optional(t.Array(t.Number())),
-  integration: t.Optional(TaskIntegrationMetadataSchema),
 });
 export type CreateTaskBody = Static<typeof CreateTaskBodySchema>;
 

@@ -1,14 +1,11 @@
 import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
-import { isSystemSandbox, type SandboxOrigin } from "../../schemas/index.ts";
-import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { CLIProxyService } from "../cliproxy/cliproxy.service.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SettingsRepository } from "../settings/index.ts";
-import { SYSTEM_AGENTS_CONFIG } from "../system-sandbox/index.ts";
 import type { AuthSyncService } from "./auth-sync.service.ts";
 
 const CLIPROXY_SETTINGS_KEY = "cliproxy.settings";
@@ -42,7 +39,6 @@ export class InternalService {
       const { files } = this.getConfigFilesToPush({
         workspaceId: sandbox.workspaceId,
         sandboxId: sandbox.id,
-        isSystem: isSystemSandbox(sandbox),
       });
       if (files.length === 0) continue;
       await this.pushFilesToSandbox(sandbox.id, files, "config");
@@ -96,19 +92,15 @@ export class InternalService {
    */
   async syncConfigsToSandbox(
     sandboxId: string,
-    override?: { workspaceId?: string; origin?: SandboxOrigin },
+    override?: { workspaceId?: string },
   ): Promise<{ synced: number }> {
     const sandbox = override
       ? undefined
       : this.sandboxService.getById(sandboxId);
     const workspaceId = override?.workspaceId ?? sandbox?.workspaceId;
-    const isSystem = override
-      ? override.origin?.source === "system"
-      : isSystemSandbox(sandbox);
     const { files } = this.getConfigFilesToPush({
       workspaceId,
       sandboxId,
-      isSystem,
     });
     if (files.length === 0) return { synced: 0 };
 
@@ -120,17 +112,11 @@ export class InternalService {
   private getConfigFilesToPush(opts: {
     workspaceId?: string;
     sandboxId?: string;
-    isSystem?: boolean;
   }): {
     files: { path: string; content: string }[];
   } {
     const authManagedPaths = new Set<string>(AUTH_PROVIDERS.map((p) => p.path));
     const merged = this.configFileService.getMergedForSandbox(opts.workspaceId);
-
-    if (opts.isSystem) {
-      this.injectSystemAgents(merged);
-      this.injectMcpServer(merged);
-    }
 
     this.injectCliProxyProvider(merged, opts.sandboxId);
 
@@ -153,81 +139,6 @@ export class InternalService {
     }
 
     return { files };
-  }
-
-  private injectSystemAgents(
-    merged: {
-      path: string;
-      content: string;
-      contentType: string;
-    }[],
-  ): void {
-    const configPath = "~/.config/opencode/opencode.json";
-    const existing = merged.find((c) => c.path === configPath);
-
-    if (existing && existing.contentType === "json") {
-      try {
-        const parsed = JSON.parse(existing.content);
-        parsed.agent = {
-          ...parsed.agent,
-          ...SYSTEM_AGENTS_CONFIG.agent,
-        };
-        existing.content = JSON.stringify(parsed);
-      } catch {
-        log.warn("Failed to parse existing opencode config for system agents");
-      }
-    } else if (!existing) {
-      merged.push({
-        path: configPath,
-        content: JSON.stringify(SYSTEM_AGENTS_CONFIG),
-        contentType: "json",
-      });
-    }
-  }
-
-  private injectMcpServer(
-    merged: {
-      path: string;
-      content: string;
-      contentType: string;
-    }[],
-  ): void {
-    const managerUrl = config.kubernetes.managerUrl;
-    if (!managerUrl) return;
-
-    const mcpToken = config.server.mcpToken;
-    const mcpConfig: Record<string, unknown> = {
-      "atelier-manager": {
-        type: "remote",
-        url: `${managerUrl}/mcp`,
-        enabled: true,
-        ...(mcpToken && {
-          headers: { Authorization: `Bearer ${mcpToken}` },
-        }),
-        oauth: false,
-        timeout: 10000,
-      },
-    };
-
-    const configPath = "~/.config/opencode/opencode.json";
-    const existing = merged.find((c) => c.path === configPath);
-
-    if (existing && existing.contentType === "json") {
-      try {
-        const parsed = JSON.parse(existing.content) as Record<string, unknown>;
-        const existingMcp = (parsed.mcp as Record<string, unknown>) ?? {};
-        parsed.mcp = { ...existingMcp, ...mcpConfig };
-        existing.content = JSON.stringify(parsed);
-      } catch {
-        log.warn("Failed to merge MCP server into opencode config");
-      }
-    } else if (!existing) {
-      merged.push({
-        path: configPath,
-        content: JSON.stringify({ mcp: mcpConfig }),
-        contentType: "json",
-      });
-    }
   }
 
   private injectCliProxyProvider(

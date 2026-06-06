@@ -46,7 +46,7 @@ function verifyMcpAuth(request: Request): boolean {
 }
 
 // Single-slot stateful MCP session.
-// Only one client connects at a time (system sandbox), so we keep exactly
+// Only one client connects at a time, so we keep exactly
 // one server + transport pair. Using stateful mode (with sessionIdGenerator)
 // lets the StreamableHTTP multi-step handshake (initialize \u2192 initialized \u2192
 // tools/list) hit the same transport instance, avoiding a ~10 s
