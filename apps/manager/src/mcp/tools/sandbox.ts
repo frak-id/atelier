@@ -7,11 +7,7 @@ import {
   workspaceService,
 } from "../../container.ts";
 
-import {
-  isSystemSandbox,
-  type Sandbox,
-  type Task,
-} from "../../schemas/index.ts";
+import type { Sandbox, Task } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 
 function findTaskForSandbox(sandboxId: string): Task | undefined {
@@ -61,21 +57,16 @@ export function registerSandboxTools(server: McpServer): void {
       title: "List Sandboxes",
       description:
         "List sandboxes with optional filters. Returns sandbox details " +
-        "including status, workspace, associated task, and URLs. " +
-        "System sandboxes are excluded by default.",
+        "including status, workspace, associated task, and URLs.",
       inputSchema: z.object({
         workspaceId: z.string().optional().describe("Filter by workspace ID"),
         status: z
           .enum(["creating", "running", "stopped", "error"])
           .optional()
           .describe("Filter by sandbox status"),
-        includeSystem: z
-          .boolean()
-          .optional()
-          .describe("Include system sandboxes. Defaults to false"),
       }),
     },
-    async ({ workspaceId, status, includeSystem }) => {
+    async ({ workspaceId, status }) => {
       let sandboxes: Sandbox[];
       if (workspaceId) {
         sandboxes = sandboxService.getByWorkspaceId(workspaceId);
@@ -87,10 +78,6 @@ export function registerSandboxTools(server: McpServer): void {
 
       if (status && workspaceId) {
         sandboxes = sandboxes.filter((s) => s.status === status);
-      }
-
-      if (!includeSystem) {
-        sandboxes = sandboxes.filter((s) => !isSystemSandbox(s));
       }
 
       const result = sandboxes.map(formatSandbox);

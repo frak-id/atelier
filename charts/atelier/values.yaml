@@ -95,7 +95,7 @@ auth:
   # -- Use an existing K8s Secret instead of creating one from values.
   # The secret must contain keys: ATELIER_GITHUB_CLIENT_ID,
   # ATELIER_GITHUB_CLIENT_SECRET, ATELIER_JWT_SECRET, SANDBOX_SECRETS_KEY.
-  # Optionally: ATELIER_MCP_TOKEN, ATELIER_SLACK_BOT_TOKEN, ATELIER_SLACK_SIGNING_SECRET.
+  # Optionally: ATELIER_MCP_TOKEN.
   existingSecret: ""
 
 # -- Server settings
@@ -182,13 +182,6 @@ imageBuilder:
     secretName: ""
     # Optional: override the SNI/hostname used during TLS verification.
     serverName: ""
-
-# -- Integrations
-integrations:
-  slack:
-    enabled: false
-    botToken: ""
-    signingSecret: ""
 
 # -- Zot OCI registry (base images)
 zot:

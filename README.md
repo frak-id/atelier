@@ -22,7 +22,7 @@ Review the results from your phone on the ski lift — or wherever you happen to
 
 ## Features
 
-- **Task dispatch** — create coding tasks from the dashboard or Slack. Atelier spawns a sandbox, creates a git branch, launches OpenCode with your prompt, and tracks progress. An AI task queue for your team
+- **Task dispatch** — create coding tasks from the dashboard. Atelier spawns a sandbox, creates a git branch, launches OpenCode with your prompt, and tracks progress. An AI task queue for your team
 - **Session templates** — 4 built-in AI workflows (Implementation, Best Practices Review, Security Review, Simplification) with customizable models, effort levels, and prompt templates per workspace
 - **Dashboard** — mission control for all your sandboxes: real-time task progress, running dev servers, and an attention feed aggregating OpenCode permission and question requests across every session
 - **Prebuilds** — run expensive setup (git clone, dependency install, build) once and snapshot it. Subsequent sandboxes clone from the snapshot instantly via copy-on-write
@@ -35,7 +35,6 @@ Review the results from your phone on the ski lift — or wherever you happen to
 - **Custom npm registry** — point sandboxes at your own npm proxy (Verdaccio, Nexus, Artifactory, …) with a single `npmRegistryUrl` setting; npm/bun/yarn configs are injected automatically. Leave it empty to use the public registry
 - **SSH access** — use your regular workflow: SSH, VS Code Remote SSH, JetBrains remote. [sshpiper](https://github.com/tg123/sshpiper) provides username-based routing so `ssh sandbox-{id}@host -p 2222` just works
 - **MCP server** — AI agents can orchestrate sandboxes, tasks, workspaces, and dev commands programmatically via the Model Context Protocol
-- **Slack integration** — dispatch tasks and receive attention alerts (permission requests, agent questions) directly in Slack
 - **GitHub App integration** — connect your GitHub account for repository discovery and branch listing
 - **Multi-dev per sandbox** — nothing stops multiple developers from working in the same sandbox simultaneously
 - **Config file sync** — manage global and per-workspace config files, automatically synced to sandboxes
@@ -190,13 +189,6 @@ kubernetes:
   storageClass: ""         # cluster default
   volumeSnapshotClass: ""  # for prebuilds
   defaultVolumeSize: "10Gi"
-
-# Integrations
-integrations:
-  slack:
-    enabled: false
-    botToken: ""
-    signingSecret: ""
 
 # Optional npm registry proxy injected into sandboxes
 # (Verdaccio/Nexus/Artifactory). Empty uses the public npm registry.

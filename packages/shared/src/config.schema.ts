@@ -139,8 +139,7 @@ export const KubernetesConfigSchema = Type.Object(
     }),
     /**
      * Internal base URL of the manager K8s Service.
-     * Used by system sandboxes (MCP registration) and sandbox pods
-     * (callbacks).
+     * Used by sandbox pods for callbacks and MCP registration.
      * Set by the Helm chart — e.g.
      * http://atelier-manager.atelier-system.svc:4000
      */
@@ -317,22 +316,6 @@ export type ImageBuilderConfig = Static<typeof ImageBuilderConfigSchema>;
 // Integrations
 // ---------------------------------------------------------------------------
 
-export const SlackIntegrationConfigSchema = Type.Object(
-  {
-    /** Enable Slack integration */
-    enabled: Type.Boolean({ default: false }),
-    /** Slack Bot User OAuth Token (xoxb-...) */
-    botToken: Type.String({ default: "" }),
-    /** Slack app signing secret for webhook verification */
-    signingSecret: Type.String({ default: "" }),
-  },
-  { default: {} },
-);
-
-export type SlackIntegrationConfig = Static<
-  typeof SlackIntegrationConfigSchema
->;
-
 export const CLIProxyIntegrationConfigSchema = Type.Object(
   {
     /** Internal URL of the CLIProxy service (K8s service URL) */
@@ -351,8 +334,6 @@ export type CLIProxyIntegrationConfig = Static<
 
 export const IntegrationsConfigSchema = Type.Object(
   {
-    /** Slack bot integration */
-    slack: SlackIntegrationConfigSchema,
     /** CLIProxy AI model proxy integration */
     cliproxy: CLIProxyIntegrationConfigSchema,
   },
@@ -435,10 +416,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_IMAGE_BUILDER_INSECURE_REGISTRY: "imageBuilder.insecureRegistry",
   ATELIER_IMAGE_BUILDER_TLS_SECRET_NAME: "imageBuilder.tls.secretName",
   ATELIER_IMAGE_BUILDER_TLS_SERVER_NAME: "imageBuilder.tls.serverName",
-
-  ATELIER_SLACK_ENABLED: "integrations.slack.enabled",
-  ATELIER_SLACK_BOT_TOKEN: "integrations.slack.botToken",
-  ATELIER_SLACK_SIGNING_SECRET: "integrations.slack.signingSecret",
 
   ATELIER_CLIPROXY_URL: "integrations.cliproxy.url",
   ATELIER_CLIPROXY_API_KEY: "integrations.cliproxy.apiKey",

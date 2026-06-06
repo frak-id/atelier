@@ -22,7 +22,6 @@ import {
   RestartSandboxesDialog,
   SessionTemplatesSection,
   SharedAuthSection,
-  SystemModelConfigSection,
 } from "@/components/settings";
 import { SshKeysSection } from "@/components/ssh-keys-section";
 import { Button } from "@/components/ui/button";
@@ -248,11 +247,10 @@ function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* Agent & Models — session templates + system model config */}
+        {/* Agent & Models — session templates */}
         <TabsContent value="agent" className="mt-6 space-y-6">
           <CLIProxySection />
           <SessionTemplatesSection />
-          <SystemModelConfigSection />
         </TabsContent>
       </Tabs>
       <RestartSandboxesDialog

@@ -3,7 +3,6 @@ import {
   orgMemberService,
   sandboxDestroyer,
   sandboxLifecycle,
-  systemAiService,
   taskService,
   taskSpawner,
 } from "../container.ts";
@@ -60,35 +59,20 @@ export const taskRoutes = new Elysia({ prefix: "/tasks" })
     "/",
     ({ body, set, user }) => {
       const title =
-        body.title?.trim() || systemAiService.fallbackTitle(body.description);
+        body.title?.trim() || taskService.fallbackTitle(body.description);
 
       log.info({ title, workspaceId: body.workspaceId }, "Creating task");
 
-      let task = taskService.create({
+      const task = taskService.create({
         ...body,
         title,
         createdBy: {
+          id: user.id,
           username: user.username,
           email: user.email,
           avatarUrl: user.avatarUrl,
         },
       });
-
-      if (body.integration) {
-        task = taskService.setIntegrationMetadata(task.id, body.integration);
-      }
-
-      if (!body.title?.trim()) {
-        systemAiService.generateTitleInBackground(
-          body.description,
-          (generatedTitle) => {
-            taskService.updateTitle(task.id, generatedTitle);
-            taskSpawner
-              .updateSessionTitles(task.id, generatedTitle)
-              .catch(() => {});
-          },
-        );
-      }
 
       set.status = 201;
       return task;

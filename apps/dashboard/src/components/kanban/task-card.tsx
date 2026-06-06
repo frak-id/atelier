@@ -12,7 +12,6 @@ import {
   Terminal,
 } from "lucide-react";
 import { sandboxDetailQuery, sandboxGitStatusQuery } from "@/api/queries";
-import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { SessionStatusIndicator } from "@/components/session-status-indicator";
 import { SessionTodoInfo } from "@/components/session-todo-info";
 import { TodoProgressBar } from "@/components/todo-progress-bar";
@@ -160,7 +159,6 @@ export function TaskCard({
               >
                 {task.title}
               </button>
-              <IntegrationSourceBadge integration={task.data.integration} />
             </div>
             <TaskMenu
               task={task}

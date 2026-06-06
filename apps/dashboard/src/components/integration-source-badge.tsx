@@ -1,4 +1,4 @@
-import { Code2, ExternalLink, Github, Slack } from "lucide-react";
+import { Code2, ExternalLink, Github } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -7,9 +7,8 @@ import {
 } from "@/components/ui/tooltip";
 
 /**
- * Common shape of "where did this resource come from" metadata, shared between:
- *   - `task.data.integration` (Task in `@frak/atelier-manager/types`)
- *   - `sandbox.origin`        (Sandbox in `@frak/atelier-manager/types`)
+ * Common shape of "where did this resource come from" metadata, sourced from
+ * `sandbox.origin` (Sandbox in `@frak/atelier-manager/types`).
  *
  * Only the fields actually rendered are required here. `externalUrl` is
  * optional; when present the badge becomes a link.
@@ -20,7 +19,6 @@ export type IntegrationSource = {
 };
 
 const KNOWN_SOURCES = {
-  slack: { label: "Slack", Icon: Slack },
   github: { label: "GitHub", Icon: Github },
   "opencode-plugin": { label: "OpenCode", Icon: Code2 },
 } as const;
@@ -35,8 +33,8 @@ function isKnownSource(source: string): source is KnownSource {
  * Render an integration source.
  *
  *   - `variant="icon"` (default): bare icon, used inline next to a title
- *     (sandbox card / task card). Becomes an `<a>` if `externalUrl` is set.
- *   - `variant="badge"`: pill with icon + "via Slack" / "via GitHub" label.
+ *     (sandbox card). Becomes an `<a>` if `externalUrl` is set.
+ *   - `variant="badge"`: pill with icon + "via GitHub" label.
  *   - `variant="link"`: icon + label + open-in-new-tab arrow, used in
  *     metadata sections.
  */

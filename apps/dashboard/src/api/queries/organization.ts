@@ -29,6 +29,28 @@ export const usersListQuery = () =>
     queryFn: async () => unwrap(await api.api.users.get()),
   });
 
+export interface UserSummary {
+  username: string;
+  avatarUrl?: string;
+}
+
+export function useUserMap() {
+  const { data } = useQuery({
+    ...usersListQuery(),
+    select: (users) => {
+      const map = new Map<string, UserSummary>();
+      for (const user of users ?? []) {
+        map.set(user.id, {
+          username: user.username,
+          avatarUrl: user.avatarUrl,
+        });
+      }
+      return map;
+    },
+  });
+  return data ?? new Map<string, UserSummary>();
+}
+
 export const organizationDetailQuery = (slug: string) =>
   queryOptions({
     queryKey: queryKeys.organizations.detail(slug),

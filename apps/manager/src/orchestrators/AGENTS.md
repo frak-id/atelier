@@ -20,7 +20,6 @@ Every spawned sandbox should carry an `origin: { source, externalId?, externalUr
 
 - `SandboxSpawner` accepts `options.origin` and stores it verbatim
 - `TaskSpawner` stamps `{ source: "task", externalId: task.id }`
-- `SystemSandboxService` stamps `{ source: "system" }` and leaves `workspaceId` undefined
 - The opencode-plugin stamps `{ source: "opencode-plugin", externalId: <oc workspaceId> }`
 
 Origin is set at creation time and never mutated. Lookups use `findByOrigin(source, externalId)` so callers don't need to persist their own id→sandbox mapping.

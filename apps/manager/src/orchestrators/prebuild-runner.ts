@@ -12,8 +12,6 @@ import {
 } from "../infrastructure/kubernetes/index.ts";
 import { RegistryService } from "../infrastructure/registry/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
-import type { SystemAiService } from "../modules/system-sandbox/index.ts";
-
 import type { UserService } from "../modules/user/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
@@ -29,17 +27,6 @@ import { GuestOps } from "./ports/guest-ops.ts";
 
 const log = createChildLogger("prebuild-runner");
 
-/**
- * Internal key used to namespace system-level prebuild resources (PVC, pod,
- * snapshot). It's a string identifier, NOT a workspace id — system sandboxes
- * have `workspaceId: undefined` and `origin.source: "system"`.
- *
- * The literal `"__system__"` is kept for snapshot-name backward compat: the
- * snapshot is named `prebuild-${normalize(key)}` which resolves to
- * `prebuild-system` either way.
- */
-const SYSTEM_KEY = "__system__";
-
 const POLL_INTERVAL_MS = 2000;
 // const POD_TIMEOUT_MS = 120_000;
 const AGENT_TIMEOUT_MS = 60_000;
@@ -51,20 +38,17 @@ const GIT_TOKEN_PLACEHOLDER = "$" + "{GIT_TOKEN}";
 const MAX_PREBUILD_RETRIES = 5;
 const RETRY_DELAY_MS = 5_000;
 
-export type PrebuildScenario =
-  | {
-      kind: "workspace";
-      workspaceId: string;
-      getWorkspace: () => Workspace | undefined;
-      updateStatus: (
-        status: PrebuildStatus,
-        latestId?: string,
-        commitHashes?: Record<string, string>,
-        errorMessage?: string,
-      ) => void;
-      aiService?: SystemAiService;
-    }
-  | { kind: "system" };
+export interface PrebuildScenario {
+  kind: "workspace";
+  workspaceId: string;
+  getWorkspace: () => Workspace | undefined;
+  updateStatus: (
+    status: PrebuildStatus,
+    latestId?: string,
+    commitHashes?: Record<string, string>,
+    errorMessage?: string,
+  ) => void;
+}
 
 export interface PrebuildRunnerDependencies {
   workspaceService: WorkspaceService;
@@ -72,7 +56,6 @@ export interface PrebuildRunnerDependencies {
   kubeClient: KubeClient;
   agentClient: AgentClient;
   internalService: InternalService;
-  aiService?: SystemAiService;
 }
 
 type ActiveBuild = { podName: string; pvcName: string };
@@ -107,7 +90,6 @@ export class PrebuildRunner {
               errorMessage,
             );
           },
-          aiService: this.deps.aiService,
         });
         return;
       } catch (error) {
@@ -125,39 +107,10 @@ export class PrebuildRunner {
     throw lastError;
   }
 
-  async runSystem(): Promise<void> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= MAX_PREBUILD_RETRIES; attempt++) {
-      try {
-        await this.runScenario({ kind: "system" });
-        return;
-      } catch (error) {
-        lastError = error;
-        if (attempt < MAX_PREBUILD_RETRIES) {
-          log.warn(
-            { attempt, maxRetries: MAX_PREBUILD_RETRIES, error },
-            "System prebuild failed, retrying",
-          );
-          await Bun.sleep(RETRY_DELAY_MS);
-        }
-      }
-    }
-
-    throw lastError;
-  }
-
   runInBackground(workspaceId?: string): void {
     setImmediate(() => {
       this.run(workspaceId).catch((error) => {
         log.error({ workspaceId, error }, "Background prebuild failed");
-      });
-    });
-  }
-
-  runSystemInBackground(): void {
-    setImmediate(() => {
-      this.runSystem().catch((error) => {
-        log.error({ error }, "Background system prebuild failed");
       });
     });
   }
@@ -181,13 +134,6 @@ export class PrebuildRunner {
     this.updatePrebuildStatus(workspaceId, workspace, "none");
   }
 
-  async cancelSystem(): Promise<void> {
-    if (!this.isSystemBuilding()) {
-      throw new Error("No system prebuild in progress to cancel");
-    }
-    await this.cleanupBuildResources(SYSTEM_KEY);
-  }
-
   async delete(workspaceId?: string): Promise<void> {
     if (!workspaceId) throw new Error("Workspace ID is required");
 
@@ -196,69 +142,6 @@ export class PrebuildRunner {
 
     await this.cleanupStorage(workspaceId);
     this.updatePrebuildStatus(workspaceId, workspace, "none");
-  }
-
-  async deleteSystem(): Promise<void> {
-    await this.cleanupStorage(SYSTEM_KEY);
-  }
-
-  async ensureSystemPrebuild(): Promise<void> {
-    const exists = await this.hasPrebuild(SYSTEM_KEY);
-    if (exists) {
-      log.info("System prebuild snapshot exists, skipping");
-      return;
-    }
-    await this.runSystem();
-  }
-
-  async readSystemMetadata(): Promise<{
-    latestId: string;
-    builtAt: string;
-  } | null> {
-    const exists = await this.hasPrebuild(SYSTEM_KEY);
-    if (!exists) return null;
-    return {
-      latestId: this.snapshotNameForKey(SYSTEM_KEY),
-      builtAt: new Date().toISOString(),
-    };
-  }
-
-  isBuilding(key?: string): boolean {
-    return key ? this.activeBuilds.has(key) : false;
-  }
-
-  isSystemBuilding(): boolean {
-    return this.activeBuilds.has(SYSTEM_KEY);
-  }
-
-  hasSystemPrebuild(): Promise<boolean> {
-    return this.hasPrebuild(SYSTEM_KEY);
-  }
-
-  async getSystemStatus(): Promise<{
-    hasPrebuild: boolean;
-    building: boolean;
-  }> {
-    return {
-      hasPrebuild: await this.hasPrebuild(SYSTEM_KEY),
-      building: this.isSystemBuilding(),
-    };
-  }
-
-  async hasPrebuild(key: string): Promise<boolean> {
-    if (isMock()) return false;
-
-    const snapshotName = this.snapshotNameForKey(key);
-    try {
-      const snap = await this.deps.kubeClient.get<{
-        status?: { readyToUse?: boolean };
-      }>(
-        `/apis/snapshot.storage.k8s.io/v1/namespaces/${config.kubernetes.namespace}/volumesnapshots/${snapshotName}`,
-      );
-      return snap.status?.readyToUse === true;
-    } catch {
-      return false;
-    }
   }
 
   async cleanupStorage(key: string): Promise<void> {
@@ -282,13 +165,10 @@ export class PrebuildRunner {
   // ---------------------------------------------------------------------------
 
   private async runScenario(scenario: PrebuildScenario): Promise<void> {
-    const key =
-      scenario.kind === "workspace" ? scenario.workspaceId : SYSTEM_KEY;
+    const key = scenario.workspaceId;
     if (this.activeBuilds.has(key)) {
       throw new Error(
-        scenario.kind === "workspace"
-          ? `Workspace '${scenario.workspaceId}' already has a prebuild in progress`
-          : "System prebuild already in progress",
+        `Workspace '${scenario.workspaceId}' already has a prebuild in progress`,
       );
     }
 
@@ -451,22 +331,7 @@ export class PrebuildRunner {
       log.info({ key, snapshotName }, "Prebuild snapshot ready");
 
       // Step 8: Update status
-      if (scenario.kind === "workspace") {
-        scenario.updateStatus("ready", snapshotName, commitHashes);
-
-        const ws = scenario.getWorkspace();
-        if (ws) {
-          scenario.aiService?.generateDescriptionInBackground(
-            ws,
-            "updated",
-            (description) => {
-              this.deps.workspaceService.update(scenario.workspaceId, {
-                config: { description },
-              });
-            },
-          );
-        }
-      }
+      scenario.updateStatus("ready", snapshotName, commitHashes);
     } catch (error) {
       if (scenario.kind === "workspace") {
         const workspace = scenario.getWorkspace();
@@ -604,15 +469,11 @@ export class PrebuildRunner {
     sandboxId: string,
     scenario: PrebuildScenario,
   ): Promise<void> {
-    const isSystem = scenario.kind === "system";
-    const workspaceId = isSystem ? undefined : scenario.workspaceId;
+    const workspaceId = scenario.workspaceId;
     try {
       const result = await this.deps.internalService.syncConfigsToSandbox(
         sandboxId,
-        {
-          workspaceId,
-          ...(isSystem && { origin: { source: "system" } }),
-        },
+        { workspaceId },
       );
       log.info(
         { sandboxId, workspaceId, synced: result.synced },
@@ -627,9 +488,6 @@ export class PrebuildRunner {
   }
 
   private resolveWarmupDirs(scenario: PrebuildScenario): string[] {
-    if (scenario.kind === "system") {
-      return [VM.HOME];
-    }
     const workspace = scenario.getWorkspace();
     const repos = workspace?.config.repos ?? [];
     if (repos.length === 0) {

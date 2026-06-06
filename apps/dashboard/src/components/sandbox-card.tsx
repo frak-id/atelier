@@ -29,6 +29,7 @@ import {
   useStartBrowser,
 } from "@/api/queries";
 import { IntegrationSourceBadge } from "@/components/integration-source-badge";
+import { SandboxCreator } from "@/components/sandbox-creator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -181,9 +182,15 @@ export function SandboxCard({
                 </p>
               )}
             </div>
-            <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-              {formatRelativeTime(sandbox.createdAt)}
-            </span>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                {formatRelativeTime(sandbox.createdAt)}
+              </span>
+              <SandboxCreator
+                userId={sandbox.createdBy}
+                className="max-w-[120px]"
+              />
+            </div>
           </div>
         </CardHeader>
         <CardContent className="py-3 space-y-4">

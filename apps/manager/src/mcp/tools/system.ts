@@ -7,7 +7,6 @@ import {
   workspaceService,
 } from "../../container.ts";
 
-import { isSystemSandbox } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 
 const startTime = Date.now();
@@ -25,9 +24,8 @@ export function registerSystemTools(server: McpServer): void {
     },
     async () => {
       const allRunning = sandboxService.getByStatus("running");
-      const userRunning = allRunning.filter((s) => !isSystemSandbox(s));
       const result = {
-        activeSandboxes: userRunning.length,
+        activeSandboxes: allRunning.length,
         maxSandboxes: config.server.maxSandboxes,
         uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
       };

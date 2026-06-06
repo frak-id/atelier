@@ -3,7 +3,6 @@ import {
   orgMemberService,
   prebuildRunner,
   sandboxService,
-  systemAiService,
   workspaceService,
 } from "../container.ts";
 import {
@@ -64,16 +63,6 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
       if (hasRepos) {
         log.info({ workspaceId: workspace.id }, "Triggering initial prebuild");
         prebuildRunner.runInBackground(workspace.id);
-
-        systemAiService.generateDescriptionInBackground(
-          workspace,
-          "created",
-          (description) => {
-            workspaceService.update(workspace.id, {
-              config: { description },
-            });
-          },
-        );
       }
 
       set.status = 201;
@@ -194,33 +183,6 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
     {
       params: IdParamSchema,
       response: PrebuildCancelResponseSchema,
-    },
-  )
-  .post(
-    "/:id/generate-description",
-    ({ params, set }) => {
-      const workspace = workspaceService.getByIdOrThrow(params.id);
-
-      log.info({ workspaceId: params.id }, "Triggering description generation");
-
-      systemAiService.generateDescriptionInBackground(
-        workspace,
-        workspace.config.description ? "updated" : "created",
-        (description) => {
-          workspaceService.update(params.id, {
-            config: { description },
-          });
-        },
-      );
-
-      set.status = 202;
-      return {
-        message: "Description generation triggered",
-        workspaceId: params.id,
-      };
-    },
-    {
-      params: IdParamSchema,
     },
   )
   .delete(

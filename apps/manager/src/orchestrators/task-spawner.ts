@@ -19,7 +19,6 @@ import {
   resolveAgent,
   sendPromptAndVerify,
 } from "../shared/lib/opencode-session.ts";
-import type { GitUserIdentity } from "./ports/guest-secrets.ts";
 import type { SandboxSpawner } from "./sandbox-spawner.ts";
 
 const log = createChildLogger("task-spawner");
@@ -76,15 +75,7 @@ export class TaskSpawner {
 
     let sandboxId: string | undefined;
 
-    const gitUserIdentity: GitUserIdentity | undefined = task.data.createdBy
-      ? { name: task.data.createdBy.username, email: task.data.createdBy.email }
-      : undefined;
-    const createdByUserId =
-      task.data.createdBy &&
-      "id" in task.data.createdBy &&
-      typeof task.data.createdBy.id === "string"
-        ? task.data.createdBy.id
-        : undefined;
+    const createdByUserId = task.data.createdBy?.id;
 
     try {
       const sandbox = await this.deps.sandboxSpawner.spawn(
@@ -99,7 +90,6 @@ export class TaskSpawner {
             externalId: task.id,
           },
         },
-        gitUserIdentity,
         createdByUserId,
       );
 

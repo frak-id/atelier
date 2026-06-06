@@ -57,7 +57,6 @@ export const queryKeys = {
   },
   system: {
     stats: ["system", "stats"] as const,
-    sandbox: ["system", "sandbox"] as const,
     services: ["system", "services"] as const,
     sharedBinaries: ["system", "shared-binaries"] as const,
   },
@@ -98,16 +97,11 @@ export const queryKeys = {
       "global",
     ] as const,
   },
-  systemModelConfig: {
-    all: ["systemModelConfig"] as const,
-    config: ["systemModelConfig", "config"] as const,
-  },
   cliproxy: {
     all: ["cliproxy"] as const,
     status: ["cliproxy", "status"] as const,
     export: ["cliproxy", "export"] as const,
     userApiKey: ["cliproxy", "userApiKey"] as const,
-    usage: ["cliproxy", "usage"] as const,
   },
   organizations: {
     all: ["organizations"] as const,

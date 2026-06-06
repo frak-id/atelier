@@ -8,9 +8,9 @@ import {
 import { GuestOps } from "../ports/guest-ops.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 
-const log = createChildLogger("wf-restart-system");
+const log = createChildLogger("wf-restart-workspaceless");
 
-export async function restartSystemSandbox(
+export async function restartWorkspacelessSandbox(
   sandboxId: string,
   sandbox: Sandbox,
   ports: SandboxPorts,

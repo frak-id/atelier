@@ -6,7 +6,7 @@ import { isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { SandboxPorts } from "./ports/sandbox-ports.ts";
 import {
-  restartSystemSandbox,
+  restartWorkspacelessSandbox,
   restartWorkspaceSandbox,
 } from "./workflows/index.ts";
 
@@ -124,7 +124,7 @@ export class SandboxLifecycle {
       );
     }
 
-    return restartSystemSandbox(sandboxId, sandbox, this.ports);
+    return restartWorkspacelessSandbox(sandboxId, sandbox, this.ports);
   }
 
   async getStatus(sandboxId: string): Promise<Sandbox | undefined> {

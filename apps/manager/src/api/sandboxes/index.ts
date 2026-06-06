@@ -32,7 +32,6 @@ import {
   GitPushResponseSchema,
   GitStatusResponseSchema,
   IdParamSchema,
-  isSystemSandbox,
   PromoteToPrebuildResponseSchema,
   SandboxListQuerySchema,
   SandboxListResponseSchema,
@@ -63,7 +62,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         s.orgId === undefined || orgIds.has(s.orgId);
 
       // The origin filter goes through the DB directly so the manager
-      // doesn't load every sandbox just to drop the system rows. Org
+      // doesn't load every sandbox just to match on origin. Org
       // membership is still enforced after the DB hit.
       if (query.originSource) {
         return sandboxService
@@ -73,15 +72,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             if (query.status && s.status !== query.status) return false;
             if (query.workspaceId && s.workspaceId !== query.workspaceId)
               return false;
-            // origin filter is authoritative — don't double-filter system
-            // out, callers asking for `originSource=system` get system rows.
             return true;
           });
       }
 
-      let sandboxes = sandboxService
-        .getByOrgIds([...orgIds])
-        .filter((s) => !isSystemSandbox(s));
+      let sandboxes = sandboxService.getByOrgIds([...orgIds]);
 
       if (query.status) {
         sandboxes = sandboxes.filter((s) => s.status === query.status);
@@ -106,7 +101,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       const allActive = [
         ...sandboxService.getByStatus("running"),
         ...sandboxService.getByStatus("creating"),
-      ].filter((s) => !isSystemSandbox(s));
+      ];
 
       if (allActive.length >= config.server.maxSandboxes) {
         throw new ResourceExhaustedError("sandboxes");
@@ -114,7 +109,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
 
       log.info({ body }, "Creating sandbox");
 
-      const sandbox = await sandboxSpawner.spawn(body, undefined, user.id);
+      const sandbox = await sandboxSpawner.spawn(body, user.id);
       set.status = 201;
       return sandbox;
     },
@@ -129,7 +124,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       const allActive = [
         ...sandboxService.getByStatus("running"),
         ...sandboxService.getByStatus("creating"),
-      ].filter((s) => !isSystemSandbox(s));
+      ];
 
       if (allActive.length >= config.server.maxSandboxes) {
         throw new ResourceExhaustedError("sandboxes");
@@ -141,7 +136,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         yield sse({ data: { type: "progress", stage: "spawning-sandbox" } });
         const sandbox = await sandboxSpawner.spawn(
           { workspaceId: body.workspaceId },
-          undefined,
           user.id,
         );
 
@@ -226,9 +220,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
   .get(
     "/all-services",
     async () => {
-      const running = sandboxService
-        .getByStatus("running")
-        .filter((s) => !isSystemSandbox(s));
+      const running = sandboxService.getByStatus("running");
 
       const results = await Promise.allSettled(
         running.map(async (s) => ({

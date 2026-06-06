@@ -8,11 +8,6 @@ import {
   ConfigFileService,
 } from "./modules/config-file/index.ts";
 import {
-  IntegrationEventBridge,
-  IntegrationGateway,
-  SlackAdapter,
-} from "./modules/integration/index.ts";
-import {
   AuthSyncService,
   InternalService,
   SharedAuthRepository,
@@ -29,11 +24,6 @@ import { SandboxRepository } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SettingsRepository } from "./modules/settings/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
-import {
-  SystemAiService,
-  SystemSandboxEventListener,
-  SystemSandboxService,
-} from "./modules/system-sandbox/index.ts";
 import { TaskRepository, TaskService } from "./modules/task/index.ts";
 import { UserRepository, UserService } from "./modules/user/index.ts";
 import {
@@ -138,22 +128,6 @@ const sandboxDestroyer = new SandboxDestroyer({
   cliProxyService,
 });
 
-const systemSandboxEventListener = new SystemSandboxEventListener({
-  sandboxService,
-});
-
-const systemSandboxService = new SystemSandboxService({
-  sandboxSpawner,
-  sandboxDestroyer,
-  sandboxService,
-  internalService,
-  eventListener: systemSandboxEventListener,
-});
-
-const systemAiService = new SystemAiService(
-  systemSandboxService,
-  settingsRepository,
-);
 const taskService = new TaskService(taskRepository);
 
 const sandboxLifecycle = new SandboxLifecycle(sandboxPorts);
@@ -164,7 +138,6 @@ const prebuildRunner = new PrebuildRunner({
   kubeClient,
   agentClient,
   internalService,
-  aiService: systemAiService,
 });
 
 const imageBuilder = createImageBuilder(config.imageBuilder);
@@ -177,32 +150,6 @@ const taskSpawner = new TaskSpawner({
   workspaceService,
   sessionTemplateService,
   agentClient,
-});
-
-const slackAdapter = config.integrations.slack.enabled
-  ? new SlackAdapter()
-  : null;
-
-const integrationGateway = new IntegrationGateway({
-  taskService,
-  sandboxService,
-  sandboxLifecycle,
-  systemSandboxService,
-  systemSandboxEventListener,
-  workspaceService,
-  systemAiService,
-  taskSpawner,
-  agentClient,
-  sessionTemplateService,
-});
-if (slackAdapter) {
-  integrationGateway.registerAdapter(slackAdapter);
-}
-
-const integrationEventBridge = new IntegrationEventBridge({
-  taskService,
-  sandboxService,
-  integrationGateway,
 });
 
 const prebuildChecker = new PrebuildChecker({
@@ -219,8 +166,6 @@ export {
   baseImageBuilder,
   cliProxyService,
   configFileService,
-  integrationEventBridge,
-  integrationGateway,
   internalService,
   kubeClient,
   organizationService,
@@ -232,11 +177,7 @@ export {
   sandboxService,
   sandboxSpawner,
   sessionTemplateService,
-  slackAdapter,
   sshKeyService,
-  systemAiService,
-  systemSandboxEventListener,
-  systemSandboxService,
   taskService,
   taskSpawner,
   userService,

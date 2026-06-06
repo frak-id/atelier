@@ -10,7 +10,6 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Sparkles,
   Square,
   Trash2,
 } from "lucide-react";
@@ -26,7 +25,6 @@ import {
   useDeleteConfigFile,
   useDeletePrebuild,
   useDeleteWorkspace,
-  useGenerateDescription,
   useTransferWorkspace,
   useTriggerPrebuild,
   useUpdateConfigFile,
@@ -97,7 +95,6 @@ function WorkspaceDetailPage() {
   const prebuildMutation = useTriggerPrebuild();
   const deletePrebuildMutation = useDeletePrebuild();
   const cancelPrebuildMutation = useCancelPrebuild();
-  const generateDescriptionMutation = useGenerateDescription();
   const createConfigMutation = useCreateConfigFile();
   const updateConfigMutation = useUpdateConfigFile();
   const deleteConfigMutation = useDeleteConfigFile();
@@ -272,27 +269,6 @@ function WorkspaceDetailPage() {
         >
           {workspace.config.description || "No description"}
         </p>
-        {workspace.config.repos.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 h-6 w-6 p-0 mt-0.5"
-            onClick={() => generateDescriptionMutation.mutate(id)}
-            disabled={generateDescriptionMutation.isPending}
-            title={
-              workspace.config.description
-                ? "Regenerate description with AI"
-                : "Generate description with AI"
-            }
-          >
-            <Sparkles
-              className={cn(
-                "h-3.5 w-3.5",
-                generateDescriptionMutation.isPending && "animate-pulse",
-              )}
-            />
-          </Button>
-        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

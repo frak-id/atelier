@@ -10,29 +10,19 @@ import {
 import type {
   CLIProxyExportConfig,
   CLIProxyModel,
-  CLIProxyModelUsage,
-  CLIProxySandboxUsage,
   CLIProxySettings,
   CLIProxyStatus,
-  CLIProxyUsage,
-  DeveloperStatsMap,
   FallbackProviderOutput,
   ModelsDevData,
   ModelsDevModel,
   NativeProviderOutput,
   OpenCodeModelConfig,
   ProvidersOutput,
-  RawUsageApiStats,
-  RawUsageResponse,
 } from "./cliproxy.types.ts";
 
 export type {
-  CLIProxyDeveloperUsage,
   CLIProxyExportConfig,
-  CLIProxyModelUsage,
-  CLIProxySandboxUsage,
   CLIProxyStatus,
-  CLIProxyUsage,
 } from "./cliproxy.types.ts";
 
 const log = createChildLogger("cliproxy");
@@ -319,179 +309,6 @@ export class CLIProxyService {
       return { provider: exported };
     } catch {
       return null;
-    }
-  }
-
-  async getUsage(): Promise<CLIProxyUsage | null> {
-    const managementKey = config.integrations.cliproxy.managementKey;
-    if (!managementKey) return null;
-
-    const baseUrl = this.getManagementBaseUrl();
-    if (!baseUrl) return null;
-
-    try {
-      const res = await fetch(`${baseUrl}/usage`, {
-        headers: { Authorization: `Bearer ${managementKey}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-
-      if (!res.ok) {
-        log.error(
-          { status: res.status },
-          "Failed to fetch usage from CLIProxy",
-        );
-        return null;
-      }
-
-      const raw = (await res.json()) as RawUsageResponse;
-      return this.processUsage(raw);
-    } catch (err) {
-      log.error({ err }, "Failed to fetch CLIProxy usage stats");
-      return null;
-    }
-  }
-
-  private processUsage(raw: RawUsageResponse): CLIProxyUsage {
-    const usage = raw.usage;
-
-    const globalModels = new Map<
-      string,
-      { requests: number; tokens: number }
-    >();
-    const sandboxes: Record<string, CLIProxySandboxUsage> = {};
-    const devMap: DeveloperStatsMap = new Map();
-
-    const userKeysReverse = new Map<string, string>();
-    for (const [username, apiKey] of Object.entries(this.loadUserKeys())) {
-      userKeysReverse.set(apiKey, username);
-    }
-
-    for (const [apiKey, apiStats] of Object.entries(usage.apis ?? {})) {
-      const perKeyModels = this.buildPerKeyModels(apiStats, globalModels);
-
-      const sandboxId = this.extractSandboxId(apiKey);
-      if (sandboxId) {
-        sandboxes[sandboxId] = {
-          totalRequests: apiStats.total_requests,
-          totalTokens: apiStats.total_tokens,
-          models: perKeyModels,
-        };
-        continue;
-      }
-
-      const username =
-        userKeysReverse.get(apiKey) ?? this.extractUsername(apiKey);
-      if (!username) continue;
-
-      this.accumulateDeveloper(devMap, username, apiStats, perKeyModels);
-    }
-
-    const todayKey = new Date().toISOString().split("T")[0] as string;
-    const todayRequests = usage.requests_by_day?.[todayKey] ?? null;
-    const todayTokens = usage.tokens_by_day?.[todayKey] ?? null;
-
-    return {
-      global: {
-        totalRequests: usage.total_requests,
-        successCount: usage.success_count,
-        failureCount: usage.failure_count,
-        totalTokens: usage.total_tokens,
-        models: [...globalModels.entries()]
-          .map(([model, stats]) => ({
-            model,
-            requests: stats.requests,
-            tokens: stats.tokens,
-          }))
-          .sort((a, b) => b.tokens - a.tokens),
-        today:
-          todayRequests !== null
-            ? { requests: todayRequests, tokens: todayTokens ?? 0 }
-            : null,
-      },
-      sandboxes,
-      developers: [...devMap.entries()]
-        .map(([username, stats]) => ({
-          username,
-          totalRequests: stats.requests,
-          totalTokens: stats.tokens,
-          models: [...stats.models.entries()]
-            .map(([model, m]) => ({
-              model,
-              requests: m.requests,
-              tokens: m.tokens,
-            }))
-            .sort((a, b) => b.tokens - a.tokens),
-        }))
-        .sort((a, b) => b.totalTokens - a.totalTokens),
-    };
-  }
-
-  private extractSandboxId(apiKey: string): string | null {
-    if (!apiKey.startsWith(`${KEY_PREFIX}-`)) return null;
-    const withoutPrefix = apiKey.slice(KEY_PREFIX.length + 1);
-    const lastDash = withoutPrefix.lastIndexOf("-");
-    if (lastDash === -1) return null;
-    return withoutPrefix.slice(0, lastDash);
-  }
-
-  private buildPerKeyModels(
-    apiStats: RawUsageApiStats,
-    globalModels: Map<string, { requests: number; tokens: number }>,
-  ): CLIProxyModelUsage[] {
-    const result: CLIProxyModelUsage[] = [];
-    for (const [model, stats] of Object.entries(apiStats.models ?? {})) {
-      result.push({
-        model,
-        requests: stats.total_requests,
-        tokens: stats.total_tokens,
-      });
-      const global = globalModels.get(model);
-      if (global) {
-        global.requests += stats.total_requests;
-        global.tokens += stats.total_tokens;
-      } else {
-        globalModels.set(model, {
-          requests: stats.total_requests,
-          tokens: stats.total_tokens,
-        });
-      }
-    }
-    return result.sort((a, b) => b.tokens - a.tokens);
-  }
-
-  private extractUsername(apiKey: string): string | null {
-    const lastDash = apiKey.lastIndexOf("-");
-    if (lastDash === -1) return null;
-    const suffix = apiKey.slice(lastDash + 1);
-    if (suffix.length !== 16) return null;
-    const username = apiKey.slice(0, lastDash);
-    return username || null;
-  }
-
-  private accumulateDeveloper(
-    devMap: DeveloperStatsMap,
-    username: string,
-    apiStats: RawUsageApiStats,
-    perKeyModels: CLIProxyModelUsage[],
-  ): void {
-    let dev = devMap.get(username);
-    if (!dev) {
-      dev = { requests: 0, tokens: 0, models: new Map() };
-      devMap.set(username, dev);
-    }
-    dev.requests += apiStats.total_requests;
-    dev.tokens += apiStats.total_tokens;
-    for (const m of perKeyModels) {
-      const existing = dev.models.get(m.model);
-      if (existing) {
-        existing.requests += m.requests;
-        existing.tokens += m.tokens;
-      } else {
-        dev.models.set(m.model, {
-          requests: m.requests,
-          tokens: m.tokens,
-        });
-      }
     }
   }
 

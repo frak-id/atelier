@@ -4,6 +4,7 @@ import { Bot, Monitor, Trash2 } from "lucide-react";
 import type { Sandbox } from "@/api/client";
 import { opencodeSessionsQuery, useDeleteSandbox } from "@/api/queries";
 import { IntegrationSourceBadge } from "@/components/integration-source-badge";
+import { SandboxCreator } from "@/components/sandbox-creator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +77,7 @@ export function SandboxRow({
                 </span>
               </>
             )}
+            <SandboxCreator userId={sandbox.createdBy} />
           </div>
         </div>
       </div>
