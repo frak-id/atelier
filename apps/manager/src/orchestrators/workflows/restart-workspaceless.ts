@@ -16,6 +16,14 @@ export async function restartWorkspacelessSandbox(
   sandbox: Sandbox,
   ports: SandboxPorts,
 ): Promise<Sandbox> {
+  // Re-register the derived CLIProxy key (idempotent) so a CLIProxy that lost
+  // its key store recovers on restart; overlaps boot, awaited before finalize.
+  const cliproxyKeyReg = ports.cliproxy
+    .ensureSandboxKey(sandboxId)
+    .catch((err: unknown) =>
+      log.warn({ err, sandboxId }, "Failed to register CLIProxy sandbox key"),
+    );
+
   const boot = await bootExistingSandbox(sandboxId, sandbox, ports);
 
   if (boot.agentReady) {
@@ -43,6 +51,8 @@ export async function restartWorkspacelessSandbox(
       sandbox.runtime.opencodePassword,
     );
   }
+
+  await cliproxyKeyReg;
 
   return await finalizeRestartedSandbox(
     sandboxId,

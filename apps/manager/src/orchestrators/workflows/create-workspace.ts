@@ -30,6 +30,15 @@ export async function createWorkspaceSandbox(
   let boot: BootResult | undefined;
 
   try {
+    // The CLIProxy key value is derived deterministically, so the config sync
+    // below can bake it without waiting on registration. Fire registration now
+    // so it overlaps VM boot, and await it once before marking the sandbox ready.
+    const cliproxyKeyReg = ports.cliproxy
+      .ensureSandboxKey(sandboxId)
+      .catch((err: unknown) =>
+        log.warn({ err, sandboxId }, "Failed to register CLIProxy sandbox key"),
+      );
+
     const prebuildReady = workspace.config.prebuild?.status === "ready";
     boot = await bootNewSandbox(
       sandboxId,
@@ -72,12 +81,6 @@ export async function createWorkspaceSandbox(
       }
     }
     const mdContent = generateSandboxMd(sandboxId, workspace);
-
-    await ports.cliproxy
-      .createSandboxKey(sandboxId)
-      .catch((err: unknown) =>
-        log.warn({ err, sandboxId }, "Failed to create CLIProxy sandbox key"),
-      );
 
     const creator = createdByUserId
       ? ports.users.getById(createdByUserId)
@@ -153,6 +156,8 @@ export async function createWorkspaceSandbox(
       boot.sandbox.runtime.ipAddress,
       boot.sandbox.runtime.opencodePassword,
     );
+
+    await cliproxyKeyReg;
 
     return await finalizeNewSandbox(
       sandboxId,

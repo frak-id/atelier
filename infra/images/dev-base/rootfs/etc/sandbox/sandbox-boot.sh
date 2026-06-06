@@ -26,9 +26,7 @@ if [ -f "$SSH_KEY_MOUNT" ]; then
     chmod 600 /home/dev/.ssh/authorized_keys
     chown -R 1000:1000 /home/dev/.ssh
 
-    # Generate host keys on first boot
-    [ -f /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -A 2>/dev/null
-
+    # Host keys are baked into the image (ssh-keygen -A at build time).
     # Start sshd as daemon (forks to background)
     mkdir -p /run/sshd
     /usr/sbin/sshd

@@ -55,12 +55,16 @@ RUN curl -fsSL -o /tmp/kasmvnc.deb "https://github.com/kasmtech/KasmVNC/releases
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Layer 3: Locale + user setup + SSH config (rarely changes)
+# ssh-keygen -A bakes host keys into the image so they are not regenerated on
+# every boot. Sandboxes share host keys, which is safe here: SSH only enters via
+# sshpiper, which sets ignore_hostkey: true (no client ever pins a sandbox key).
 RUN usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
     && mkdir -p /var/run/sshd \
     && sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config \
     && sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config \
-    && sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+    && sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config \
+    && ssh-keygen -A
 
 # Layer 4: Bun runtime (cached unless install script changes)
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \

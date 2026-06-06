@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+import { Mutex } from "async-mutex";
 import { nanoid } from "nanoid";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -28,7 +30,6 @@ export type {
 const log = createChildLogger("cliproxy");
 
 const SETTINGS_KEY = "cliproxy.settings";
-const SANDBOX_KEYS_KEY = "cliproxy.sandbox-keys";
 const USER_KEYS_KEY = "cliproxy.user-keys";
 const PROVIDERS_KEY = "cliproxy.providers";
 
@@ -46,6 +47,7 @@ export class CLIProxyService {
   private modelsDevCache: ModelsDevData | null = null;
   private modelsDevCacheTime = 0;
   private lastRefresh: Date | null = null;
+  private readonly addKeyMutex = new Mutex();
 
   constructor(
     private readonly settingsRepository: SettingsRepository,
@@ -191,47 +193,53 @@ export class CLIProxyService {
     return { modelCount };
   }
 
-  getSandboxApiKey(sandboxId: string): string | null {
-    const keys = this.loadSandboxKeys();
-    return keys[sandboxId] ?? null;
+  /**
+   * Derive the per-sandbox CLIProxy key as a domain-separated HMAC over the
+   * server JWT secret. The value is stable and unguessable without the secret,
+   * so it can be baked into the sandbox config with zero CLIProxy round-trip.
+   */
+  private deriveSandboxKey(sandboxId: string): string {
+    const mac = createHmac("sha256", config.auth.jwtSecret)
+      .update(`cliproxy-sandbox-key:${sandboxId}`)
+      .digest("hex")
+      .slice(0, 32);
+    return `${KEY_PREFIX}-${sandboxId}-${mac}`;
   }
 
-  async createSandboxKey(sandboxId: string): Promise<string | null> {
+  getSandboxApiKey(sandboxId: string): string {
+    return this.deriveSandboxKey(sandboxId);
+  }
+
+  async ensureSandboxKey(sandboxId: string): Promise<void> {
     const settings = this.getSettings();
-    if (!settings.enabled) return null;
+    if (!settings.enabled) return;
 
     const managementKey = config.integrations.cliproxy.managementKey;
     if (!managementKey) {
-      log.warn("No CLIProxy management key configured, skipping key creation");
-      return null;
+      log.warn(
+        "No CLIProxy management key configured, skipping key registration",
+      );
+      return;
     }
 
-    const suffix = crypto.randomUUID().slice(0, 8);
-    const apiKey = `${KEY_PREFIX}-${sandboxId}-${suffix}`;
-
+    const apiKey = this.deriveSandboxKey(sandboxId);
     const ok = await this.managementAddKey(apiKey, managementKey);
-    if (!ok) return null;
-
-    const keys = this.loadSandboxKeys();
-    keys[sandboxId] = apiKey;
-    this.saveSandboxKeys(keys);
-
-    log.info({ sandboxId }, "Created per-sandbox CLIProxy API key");
-    return apiKey;
+    if (ok) {
+      log.info({ sandboxId }, "Ensured per-sandbox CLIProxy API key");
+    } else {
+      log.error(
+        { sandboxId },
+        "Failed to register per-sandbox CLIProxy API key",
+      );
+    }
   }
 
   async revokeSandboxKey(sandboxId: string): Promise<void> {
-    const keys = this.loadSandboxKeys();
-    const apiKey = keys[sandboxId];
-    if (!apiKey) return;
-
     const managementKey = config.integrations.cliproxy.managementKey;
-    if (managementKey) {
-      await this.managementDeleteKey(apiKey, managementKey);
-    }
+    if (!managementKey) return;
 
-    delete keys[sandboxId];
-    this.saveSandboxKeys(keys);
+    const apiKey = this.deriveSandboxKey(sandboxId);
+    await this.managementDeleteKey(apiKey, managementKey);
     log.info({ sandboxId }, "Revoked per-sandbox CLIProxy API key");
   }
 
@@ -528,17 +536,6 @@ export class CLIProxyService {
     return { name: modelId };
   }
 
-  private loadSandboxKeys(): Record<string, string> {
-    return (
-      this.settingsRepository.get<Record<string, string>>(SANDBOX_KEYS_KEY) ??
-      {}
-    );
-  }
-
-  private saveSandboxKeys(keys: Record<string, string>): void {
-    this.settingsRepository.set(SANDBOX_KEYS_KEY, keys);
-  }
-
   private loadUserKeys(): Record<string, string> {
     return (
       this.settingsRepository.get<Record<string, string>>(USER_KEYS_KEY) ?? {}
@@ -561,42 +558,46 @@ export class CLIProxyService {
       Authorization: `Bearer ${managementKey}`,
     };
 
-    try {
-      // GET current keys, append new one, PUT the full list
-      const getRes = await fetch(`${baseUrl}/api-keys`, {
-        headers: { Authorization: `Bearer ${managementKey}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!getRes.ok) {
-        log.error(
-          { status: getRes.status },
-          "Failed to fetch API keys from management API",
-        );
+    // The management API only exposes a read-modify-write on the full key list,
+    // so concurrent spawns must serialize or they clobber each other's keys.
+    return this.addKeyMutex.runExclusive(async () => {
+      try {
+        const getRes = await fetch(`${baseUrl}/api-keys`, {
+          headers: { Authorization: `Bearer ${managementKey}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!getRes.ok) {
+          log.error(
+            { status: getRes.status },
+            "Failed to fetch API keys from management API",
+          );
+          return false;
+        }
+
+        const data = (await getRes.json()) as { "api-keys"?: string[] };
+        const keys = data["api-keys"] ?? [];
+        if (keys.includes(apiKey)) return true;
+        keys.push(apiKey);
+
+        const putRes = await fetch(`${baseUrl}/api-keys`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify(keys),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!putRes.ok) {
+          log.error(
+            { status: putRes.status },
+            "Failed to add API key via management API",
+          );
+          return false;
+        }
+        return true;
+      } catch (err) {
+        log.error({ err }, "Failed to call CLIProxy management API");
         return false;
       }
-
-      const data = (await getRes.json()) as { "api-keys"?: string[] };
-      const keys = data["api-keys"] ?? [];
-      keys.push(apiKey);
-
-      const putRes = await fetch(`${baseUrl}/api-keys`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(keys),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!putRes.ok) {
-        log.error(
-          { status: putRes.status },
-          "Failed to add API key via management API",
-        );
-        return false;
-      }
-      return true;
-    } catch (err) {
-      log.error({ err }, "Failed to call CLIProxy management API");
-      return false;
-    }
+    });
   }
 
   private async managementDeleteKey(

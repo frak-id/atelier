@@ -18,6 +18,14 @@ export async function restartWorkspaceSandbox(
   ports: SandboxPorts,
   createdByUserId?: string,
 ): Promise<Sandbox> {
+  // Re-register the derived CLIProxy key (idempotent) so a CLIProxy that lost
+  // its key store recovers on restart; overlaps boot, awaited before finalize.
+  const cliproxyKeyReg = ports.cliproxy
+    .ensureSandboxKey(sandboxId)
+    .catch((err: unknown) =>
+      log.warn({ err, sandboxId }, "Failed to register CLIProxy sandbox key"),
+    );
+
   const boot = await bootExistingSandbox(sandboxId, sandbox, ports);
   const githubToken = ports.users.resolveGitHubToken(createdByUserId);
 
@@ -56,6 +64,8 @@ export async function restartWorkspaceSandbox(
       sandbox.runtime.opencodePassword,
     );
   }
+
+  await cliproxyKeyReg;
 
   return await finalizeRestartedSandbox(
     sandboxId,

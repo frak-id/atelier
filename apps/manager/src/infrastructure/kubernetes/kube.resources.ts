@@ -141,6 +141,9 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
         {
           name: "sandbox",
           image: options.image,
+          // `:latest` would default to imagePullPolicy: Always — a registry
+          // round-trip on every spawn. Pull only when not cached on the node.
+          imagePullPolicy: "IfNotPresent",
           command: ["/etc/sandbox/sandbox-boot.sh"],
           securityContext: { runAsUser: 0 },
           ports: [
