@@ -41,7 +41,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useOpencodeData } from "@/hooks/use-opencode-data";
-import { sortToolsForDisplay, toolUiFor } from "@/lib/tools";
+import { sortToolsForDisplay } from "@/lib/tools";
 import { formatRelativeTime } from "@/lib/utils";
 import { ToolIconButton } from "./sandbox-drawer/tool-button";
 
@@ -426,7 +426,7 @@ function RunningToolsBadge({
           <Link
             to="/sandboxes/$id"
             params={{ id: sandboxId }}
-            search={{ tab1: toolUiFor(tool.slug).tab }}
+            search={{ tab1: tool.slug }}
             target="_blank"
             className="hover:underline flex items-center gap-1"
           >

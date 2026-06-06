@@ -1,28 +1,21 @@
 import { Bot, Globe, type LucideIcon, Monitor, Terminal } from "lucide-react";
 
-export type ToolTab = "opencode" | "vscode" | "terminal" | "web";
-
 export interface ToolUi {
   icon: LucideIcon;
-  tab: ToolTab;
   urlSuffix?: string;
 }
 
 const TOOL_UI: Record<string, ToolUi> = {
-  opencode: { icon: Bot, tab: "opencode" },
-  vscode: { icon: Monitor, tab: "vscode" },
-  terminal: { icon: Terminal, tab: "terminal" },
-  browser: {
-    icon: Globe,
-    tab: "web",
-    urlSuffix: "/?autoconnect=true&resize=remote",
-  },
+  opencode: { icon: Bot },
+  vscode: { icon: Monitor },
+  terminal: { icon: Terminal },
+  browser: { icon: Globe, urlSuffix: "/?autoconnect=true&resize=remote" },
 };
 
 const TOOL_ORDER = ["opencode", "vscode", "terminal", "browser"];
 
 export function toolUiFor(slug: string): ToolUi {
-  return TOOL_UI[slug] ?? { icon: Globe, tab: "web" };
+  return TOOL_UI[slug] ?? { icon: Globe };
 }
 
 export function sortToolsForDisplay<T extends { slug: string }>(

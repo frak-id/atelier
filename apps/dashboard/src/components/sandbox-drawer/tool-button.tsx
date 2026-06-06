@@ -38,7 +38,7 @@ export function ToolButton({
       <Link
         to="/sandboxes/$id"
         params={{ id: sandboxId }}
-        search={{ tab1: ui.tab }}
+        search={{ tab1: tool.slug }}
         target="_blank"
       >
         <Icon className="h-4 w-4 mr-2" />
@@ -94,7 +94,7 @@ export function ToolIconButton({
           <Link
             to="/sandboxes/$id"
             params={{ id: sandboxId }}
-            search={{ tab1: ui.tab }}
+            search={{ tab1: tool.slug }}
             target="_blank"
           >
             <Icon className="h-4 w-4" />

@@ -2,17 +2,14 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
-  Bot,
   Columns2,
   Ellipsis,
-  Globe,
   Loader2,
-  Monitor,
+  type LucideIcon,
   Pause,
   Play,
   RotateCcw,
   Square,
-  Terminal,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
@@ -45,23 +42,18 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { toolUiFor } from "@/lib/tools";
+import { sortToolsForDisplay, toolUiFor } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 import { useDrawer } from "@/providers/drawer-provider";
 
-const tabSchema = z.enum(["opencode", "vscode", "terminal", "web"]);
-type TabId = z.infer<typeof tabSchema>;
-
-const TAB_TOOL_SLUG: Record<TabId, string | null> = {
-  opencode: "opencode",
-  vscode: "vscode",
-  terminal: null,
-  web: "browser",
-};
+// A tab id is a tool slug from the backend registry; opencode is the heart of
+// the product, so it stays the default left view.
+type TabId = string;
+const DEFAULT_TAB = "opencode";
 
 const searchSchema = z.object({
-  tab1: tabSchema.optional().catch(undefined),
-  tab2: tabSchema.optional().catch(undefined),
+  tab1: z.string().optional().catch(undefined),
+  tab2: z.string().optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/sandboxes/$id")({
@@ -82,12 +74,14 @@ const statusVariant = {
   error: "error",
 } as const;
 
-const tabs: { id: TabId; label: string; icon: typeof Monitor }[] = [
-  { id: "opencode", label: "OpenCode", icon: Bot },
-  { id: "vscode", label: "VSCode", icon: Monitor },
-  { id: "terminal", label: "Terminal", icon: Terminal },
-  { id: "web", label: "Web", icon: Globe },
-];
+type TabView = {
+  id: TabId;
+  label: string;
+  icon: LucideIcon;
+  status: ToolStatus;
+  url?: string;
+  canStart: boolean;
+};
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -138,66 +132,41 @@ function SandboxImmersionPage() {
   });
   const startToolMutation = useStartTool(id);
 
-  const toolBySlug = useMemo(
-    () => new Map((tools ?? []).map((t) => [t.slug, t] as const)),
-    [tools],
-  );
-
-  const tabToolStatus = useCallback(
-    (tabId: TabId): ToolStatus => {
-      const slug = TAB_TOOL_SLUG[tabId];
-      if (!slug) return "running";
-      const tool = toolBySlug.get(slug);
-      if (!tool) return tabId === "opencode" ? "running" : "off";
-      if (tool.start === "boot") return "running";
-      return deriveToolStatus(services, tool);
-    },
-    [toolBySlug, services],
-  );
-
   const [startingSlugs, setStartingSlugs] = useState<Set<string>>(
     () => new Set(),
   );
-  const [reloadKeys, setReloadKeys] = useState<Record<string, number>>({});
 
-  const tabUrl = useCallback(
-    (tabId: TabId): string | undefined => {
-      const slug = TAB_TOOL_SLUG[tabId];
-      if (!slug) return undefined;
-      if (slug === "opencode") return sandbox?.runtime.urls.opencode;
-      const ready =
-        tabToolStatus(tabId) === "running" || startingSlugs.has(slug);
-      if (!ready) return undefined;
-      const url = toolBySlug.get(slug)?.url;
-      return url ? `${url}${toolUiFor(slug).urlSuffix ?? ""}` : undefined;
-    },
-    [toolBySlug, tabToolStatus, sandbox, startingSlugs],
-  );
-
-  const tabStarting = useCallback(
-    (tabId: TabId): boolean => {
-      const slug = TAB_TOOL_SLUG[tabId];
-      return slug ? startingSlugs.has(slug) : false;
-    },
-    [startingSlugs],
-  );
-
-  const tabReloadKey = useCallback(
-    (tabId: TabId): number => {
-      const slug = TAB_TOOL_SLUG[tabId];
-      return slug ? (reloadKeys[slug] ?? 0) : 0;
-    },
-    [reloadKeys],
+  // URL is set only when the tool is running, so each iframe mounts once
+  // against a live backend — no reload key needed.
+  const tabViews = useMemo<TabView[]>(
+    () =>
+      sortToolsForDisplay(tools ?? []).map((tool) => {
+        const status: ToolStatus =
+          tool.start === "boot" ||
+          deriveToolStatus(services, tool) === "running"
+            ? "running"
+            : startingSlugs.has(tool.slug)
+              ? "starting"
+              : "off";
+        const ui = toolUiFor(tool.slug);
+        return {
+          id: tool.slug,
+          label: tool.name,
+          icon: ui.icon,
+          status,
+          url:
+            status === "running" && tool.url
+              ? `${tool.url}${ui.urlSuffix ?? ""}`
+              : undefined,
+          canStart: tool.start === "lazy" && status === "off",
+        };
+      }),
+    [tools, services, startingSlugs],
   );
 
   const startTab = useCallback(
-    (tabId: TabId) => {
-      const slug = TAB_TOOL_SLUG[tabId];
-      if (!slug) return;
-      const tool = toolBySlug.get(slug);
-      if (!tool || tool.start !== "lazy") return;
-      if (deriveToolStatus(services, tool) === "running") return;
-      if (startingSlugs.has(slug)) return;
+    (slug: TabId) => {
+      if (!tabViews.find((v) => v.id === slug)?.canStart) return;
       setStartingSlugs((prev) => new Set(prev).add(slug));
       startToolMutation.mutate(slug, {
         onError: () =>
@@ -208,28 +177,24 @@ function SandboxImmersionPage() {
           }),
       });
     },
-    [toolBySlug, services, startingSlugs, startToolMutation],
+    [tabViews, startToolMutation],
   );
 
+  // Prune the starting set once a tool reports running (keeps the "starting"
+  // overlay from sticking if a tool is stopped elsewhere).
   useEffect(() => {
-    const nowRunning = [...startingSlugs].filter((slug) => {
-      const tool = toolBySlug.get(slug);
-      return !!tool && deriveToolStatus(services, tool) === "running";
-    });
-    if (nowRunning.length === 0) return;
+    if (startingSlugs.size === 0) return;
     setStartingSlugs((prev) => {
-      const next = new Set(prev);
-      for (const slug of nowRunning) next.delete(slug);
-      return next;
+      const next = new Set(
+        [...prev].filter(
+          (slug) => tabViews.find((v) => v.id === slug)?.status !== "running",
+        ),
+      );
+      return next.size === prev.size ? prev : next;
     });
-    setReloadKeys((prev) => {
-      const next = { ...prev };
-      for (const slug of nowRunning) next[slug] = (next[slug] ?? 0) + 1;
-      return next;
-    });
-  }, [services, toolBySlug, startingSlugs]);
+  }, [tabViews, startingSlugs]);
 
-  const tab1 = search.tab1 ?? "opencode";
+  const tab1 = search.tab1 ?? DEFAULT_TAB;
   const tab2 = isMobile ? undefined : search.tab2;
   const isSplit = !!tab2;
 
@@ -239,13 +204,13 @@ function SandboxImmersionPage() {
 
   const buildTabSegment = useCallback(
     (tabId: TabId) => {
-      const label = tabs.find((t) => t.id === tabId)?.label ?? tabId;
+      const label = tabViews.find((v) => v.id === tabId)?.label ?? tabId;
       if (tabId === "terminal" && terminalSessionTitle) {
         return `${label}: ${terminalSessionTitle}`;
       }
       return label;
     },
-    [terminalSessionTitle],
+    [tabViews, terminalSessionTitle],
   );
 
   useEffect(() => {
@@ -262,10 +227,18 @@ function SandboxImmersionPage() {
   const setView = useCallback(
     (newTab1: TabId, newTab2?: TabId) => {
       const cleanTab1 =
-        newTab1 === "opencode" && !newTab2 ? undefined : newTab1;
+        newTab1 === DEFAULT_TAB && !newTab2 ? undefined : newTab1;
       navigate({ search: { tab1: cleanTab1, tab2: newTab2 }, replace: true });
     },
     [navigate],
+  );
+
+  const companionFor = useCallback(
+    (tabId: TabId) =>
+      tabId === DEFAULT_TAB
+        ? tabViews.find((v) => v.id !== DEFAULT_TAB)?.id
+        : tabId,
+    [tabViews],
   );
 
   const handleTabClick = useCallback(
@@ -283,16 +256,13 @@ function SandboxImmersionPage() {
         } else {
           setView(tab1, tabId);
         }
+      } else if (tab1 === tabId) {
+        setView(DEFAULT_TAB, companionFor(tabId));
       } else {
-        if (tab1 === tabId) {
-          const rightTab = tabId === "opencode" ? "vscode" : tabId;
-          setView("opencode", rightTab);
-        } else {
-          setView(tabId);
-        }
+        setView(tabId);
       }
     },
-    [isMobile, isSplit, tab1, tab2, setView, startTab],
+    [isMobile, isSplit, tab1, tab2, setView, startTab, companionFor],
   );
 
   const toggleLayout = useCallback(() => {
@@ -300,10 +270,9 @@ function SandboxImmersionPage() {
     if (isSplit) {
       setView(tab1);
     } else {
-      const right = tab1 === "opencode" ? "vscode" : tab1;
-      setView("opencode", right);
+      setView(DEFAULT_TAB, companionFor(tab1));
     }
-  }, [isMobile, isSplit, tab1, setView]);
+  }, [isMobile, isSplit, tab1, setView, companionFor]);
 
   const isTabActive = (tabId: TabId): boolean => {
     if (isSplit) {
@@ -414,7 +383,7 @@ function SandboxImmersionPage() {
 
         {isRunning && (
           <div className="flex items-center gap-1">
-            {tabs.map((tab) => (
+            {tabViews.map((tab) => (
               <Tooltip key={tab.id}>
                 <TooltipTrigger asChild>
                   <button
@@ -480,12 +449,10 @@ function SandboxImmersionPage() {
       {isRunning ? (
         <ImmersionContent
           sandbox={sandbox}
+          tabViews={tabViews}
           tab1={tab1}
           tab2={tab2}
-          tabUrl={tabUrl}
-          tabStarting={tabStarting}
-          tabReloadKey={tabReloadKey}
-          tabStart={startTab}
+          onStart={startTab}
           onTerminalSessionChange={setTerminalSessionTitle}
         />
       ) : (
@@ -564,23 +531,17 @@ function useSplitResize() {
 }
 
 function TabPanel({
-  tabId,
+  view,
   sandbox,
-  url,
-  starting,
-  reloadKey,
   onStart,
   onTerminalSessionChange,
 }: {
-  tabId: TabId;
+  view: TabView;
   sandbox: Sandbox;
-  url?: string;
-  starting?: boolean;
-  reloadKey?: number;
   onStart?: () => void;
   onTerminalSessionChange?: (title: string | null) => void;
 }) {
-  if (tabId === "terminal") {
+  if (view.id === "terminal") {
     return (
       <div className="absolute inset-0">
         <MultiTerminal
@@ -592,30 +553,28 @@ function TabPanel({
     );
   }
 
-  const tab = tabs.find((t) => t.id === tabId);
-  const tabLabel = tab?.label ?? tabId;
-  const PlaceholderIcon = tab?.icon ?? Globe;
+  const Icon = view.icon;
 
-  if (!url) {
+  if (!view.url) {
     return (
       <div className="absolute inset-0 flex items-center justify-center bg-muted/30">
         <div className="text-center space-y-3">
-          <PlaceholderIcon className="h-8 w-8 mx-auto text-muted-foreground" />
-          {starting ? (
+          <Icon className="h-8 w-8 mx-auto text-muted-foreground" />
+          {view.status === "starting" ? (
             <>
               <p className="text-sm text-muted-foreground">
-                Starting {tabLabel}…
+                Starting {view.label}…
               </p>
               <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
             </>
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
-                Service {tabLabel} is not started
+                Service {view.label} is not started
               </p>
               <Button variant="outline" size="sm" onClick={onStart}>
-                <PlaceholderIcon className="h-4 w-4 mr-2" />
-                Start {tabLabel}
+                <Icon className="h-4 w-4 mr-2" />
+                Start {view.label}
               </Button>
             </>
           )}
@@ -625,46 +584,28 @@ function TabPanel({
   }
 
   return (
-    <>
-      <iframe
-        key={reloadKey}
-        src={url}
-        className="absolute inset-0 w-full h-full border-0"
-        title={tabLabel}
-        allow="clipboard-read; clipboard-write"
-      />
-      {starting && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted/30">
-          <div className="text-center space-y-3">
-            <PlaceholderIcon className="h-8 w-8 mx-auto text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              Starting {tabLabel}…
-            </p>
-            <Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" />
-          </div>
-        </div>
-      )}
-    </>
+    <iframe
+      src={view.url}
+      className="absolute inset-0 w-full h-full border-0"
+      title={view.label}
+      allow="clipboard-read; clipboard-write"
+    />
   );
 }
 
 function ImmersionContent({
   sandbox,
+  tabViews,
   tab1,
   tab2,
-  tabUrl,
-  tabStarting,
-  tabReloadKey,
-  tabStart,
+  onStart,
   onTerminalSessionChange,
 }: {
   sandbox: Sandbox;
+  tabViews: TabView[];
   tab1: TabId;
   tab2?: TabId;
-  tabUrl: (tabId: TabId) => string | undefined;
-  tabStarting: (tabId: TabId) => boolean;
-  tabReloadKey: (tabId: TabId) => number;
-  tabStart: (tabId: TabId) => void;
+  onStart: (tabId: TabId) => void;
   onTerminalSessionChange?: (title: string | null) => void;
 }) {
   const { splitPercent, dividerRef, containerRef, onPointerDown } =
@@ -687,9 +628,9 @@ function ImmersionContent({
 
       {/* Each tab rendered once — hidden tabs stay mounted to
          preserve iframe state and avoid reload on switch */}
-      {tabs.map((tab) => {
-        const isLeft = tab.id === tab1;
-        const isRight = isSplit && tab.id === tab2;
+      {tabViews.map((view) => {
+        const isLeft = view.id === tab1;
+        const isRight = isSplit && view.id === tab2;
         const isVisible = isLeft || isRight;
 
         const panelStyle = !isVisible
@@ -705,17 +646,14 @@ function ImmersionContent({
 
         return (
           <div
-            key={tab.id}
+            key={view.id}
             className={cn("absolute top-0 bottom-0", !isVisible && "hidden")}
             style={panelStyle}
           >
             <TabPanel
-              tabId={tab.id}
+              view={view}
               sandbox={sandbox}
-              url={tabUrl(tab.id)}
-              starting={tabStarting(tab.id)}
-              reloadKey={tabReloadKey(tab.id)}
-              onStart={() => tabStart(tab.id)}
+              onStart={() => onStart(view.id)}
               onTerminalSessionChange={onTerminalSessionChange}
             />
           </div>
