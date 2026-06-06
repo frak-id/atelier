@@ -12,7 +12,6 @@ import {
   healthRoutes,
   imageRoutes,
   internalWellKnownRoutes,
-  opencodeRoutes,
   organizationRoutes,
   publicConfigRoutes,
   sandboxRoutes,
@@ -215,7 +214,6 @@ const app = new Elysia()
     app
       .use(sandboxRoutes)
       .use(workspaceRoutes)
-      .use(opencodeRoutes)
       .use(taskRoutes)
       .use(sessionTemplateRoutes)
       .use(configFileRoutes)

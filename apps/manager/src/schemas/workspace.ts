@@ -145,18 +145,3 @@ export const WorkspaceMatchResponseSchema = t.Object({
 export type WorkspaceMatchResponse = Static<
   typeof WorkspaceMatchResponseSchema
 >;
-
-export const OpencodeSpawnBodySchema = t.Object({
-  remoteUrl: t.String({ minLength: 1 }),
-  branch: t.Optional(t.String()),
-});
-export type OpencodeSpawnBody = Static<typeof OpencodeSpawnBodySchema>;
-
-export const OpencodeSpawnResponseSchema = t.Object({
-  sandboxId: t.String(),
-  workspaceId: t.String(),
-  workspaceName: t.String(),
-  opencodeUrl: t.String(),
-  password: t.Optional(t.String()),
-});
-export type OpencodeSpawnResponse = Static<typeof OpencodeSpawnResponseSchema>;

@@ -10,7 +10,6 @@ export { githubApiRoutes } from "./github-api.routes.ts";
 export { healthRoutes } from "./health.routes.ts";
 export { imageRoutes } from "./image.routes.ts";
 export { internalWellKnownRoutes } from "./internal-well-known.routes.ts";
-export { opencodeRoutes } from "./opencode.routes.ts";
 export { organizationRoutes } from "./organization.routes.ts";
 export { publicConfigRoutes } from "./public-config.routes.ts";
 export { sandboxRoutes } from "./sandboxes/index.ts";
