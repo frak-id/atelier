@@ -8,7 +8,7 @@ Low-level services for K8s and external system integration.
 |---------|---------|----------|
 | `KubeClient` | K8s API (pods, services, ingresses, jobs) | fetch()-based REST |
 | `AgentClient` | Communicate with in-pod agent | HTTP over TCP |
-| `RegistryService` | Verdaccio npm registry | HTTP |
+| `RegistryService` | npm registry config injection | n/a |
 | `CronService` | Scheduled jobs (prebuild staleness, self-heal) | In-process |
 
 ## KubeClient Note

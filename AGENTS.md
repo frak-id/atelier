@@ -12,7 +12,7 @@ apps/
 packages/
 ├── shared/                     # TypeBox schemas, config loaders (cross-app)
 └── opencode-atelier/           # OpenCode plugin (npm-published)
-charts/atelier/   # Helm chart (K8s deploy: manager + dashboard + zot + verdaccio)
+charts/atelier/   # Helm chart (K8s deploy: manager + dashboard + zot)
 infra/images/     # dev-base + dev-cloud Dockerfiles (built via Kaniko in-cluster)
 scripts/          # deploy-k8s.sh (SSH→k3s), bump-version.ts
 ```

@@ -16,7 +16,6 @@ Each sandbox is a complete development environment — VS Code, AI agent, and br
 - **[OpenCode](https://github.com/anomalyco/opencode)** — AI coding agent, launch tasks and review results from anywhere
 - **Chromium via [KasmVNC](https://kasmweb.com/kasmvnc)** — full browser inside your sandbox for previewing, testing, debugging
 - **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — multi-provider AI model proxy (Claude, Gemini, Codex) with management UI
-- **[Verdaccio](https://github.com/verdaccio/verdaccio)** — private npm registry shared across all sandboxes
 
 Spawn a sandbox, push a task to OpenCode, close your laptop.
 Review the results from your phone on the ski lift — or wherever you happen to be.
@@ -33,7 +32,7 @@ Review the results from your phone on the ski lift — or wherever you happen to
 - **Workspace definitions** — configure git repos to clone, init commands, dev commands, exposed ports, secrets, and resource limits per workspace
 - **OpenCode config replication** — define OpenCode configuration globally or per workspace, automatically replicated to every sandbox
 - **Auth synchronization** — OAuth tokens are synced across all running sandboxes so you authenticate once and every instance just works
-- **Package cache** — [Verdaccio](https://github.com/verdaccio/verdaccio) runs as a shared npm registry, caching packages for npm, bun, pnpm, and yarn across all sandboxes
+- **Custom npm registry** — point sandboxes at your own npm proxy (Verdaccio, Nexus, Artifactory, …) with a single `npmRegistryUrl` setting; npm/bun/yarn configs are injected automatically. Leave it empty to use the public registry
 - **SSH access** — use your regular workflow: SSH, VS Code Remote SSH, JetBrains remote. [sshpiper](https://github.com/tg123/sshpiper) provides username-based routing so `ssh sandbox-{id}@host -p 2222` just works
 - **MCP server** — AI agents can orchestrate sandboxes, tasks, workspaces, and dev commands programmatically via the Model Context Protocol
 - **Slack integration** — dispatch tasks and receive attention alerts (permission requests, agent questions) directly in Slack
@@ -154,7 +153,6 @@ The chart deploys these components into your cluster:
 | **Manager** | Sandbox orchestration API (ElysiaJS/Bun) |
 | **Dashboard** | Admin web interface (React SPA via nginx sidecar) |
 | **Zot** | Lightweight OCI registry for base images |
-| **Verdaccio** | npm package cache shared across sandboxes |
 | **CLIProxyAPI** | AI model proxy with multi-provider OAuth |
 | **sshpiper** | SSH proxy with username-based routing to sandboxes |
 | **Shared binaries** | Job that downloads code-server + OpenCode into a shared PVC |
@@ -200,16 +198,15 @@ integrations:
     botToken: ""
     signingSecret: ""
 
+# Optional npm registry proxy injected into sandboxes
+# (Verdaccio/Nexus/Artifactory). Empty uses the public npm registry.
+npmRegistryUrl: ""
+
 # Sub-components (each can be disabled)
 zot:
   enabled: true
   persistence:
     size: 20Gi
-
-verdaccio:
-  enabled: true
-  persistence:
-    size: 10Gi
 
 cliproxy:
   enabled: true

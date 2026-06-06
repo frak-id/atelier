@@ -14,7 +14,6 @@ export { internalWellKnownRoutes } from "./internal-well-known.routes.ts";
 export { opencodeRoutes } from "./opencode.routes.ts";
 export { organizationRoutes } from "./organization.routes.ts";
 export { publicConfigRoutes } from "./public-config.routes.ts";
-export { registryRoutes } from "./registry.routes.ts";
 export { sandboxRoutes } from "./sandboxes/index.ts";
 export { sessionTemplateRoutes } from "./session-template.routes.ts";
 export { sharedAuthRoutes } from "./shared-auth.routes.ts";

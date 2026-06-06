@@ -356,46 +356,6 @@ export const githubBranchesQuery = (owner: string, repo: string) =>
     staleTime: 60000,
   });
 
-// --- Shared Storage ---
-
-// --- Registry ---
-
-export const registryStatusQuery = queryOptions({
-  queryKey: queryKeys.registry.status,
-  queryFn: async () => unwrap(await api.api.registry.get()),
-});
-
-export function useUpdateRegistrySettings() {
-  return useMutation({
-    mutationKey: ["registry", "settings"],
-    mutationFn: async (data: { evictionDays?: number }) =>
-      unwrap(await api.api.registry.settings.put(data)),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
-    },
-  });
-}
-
-export function usePurgeRegistryCache() {
-  return useMutation({
-    mutationKey: ["registry", "purge"],
-    mutationFn: async () => unwrap(await api.api.registry.purge.post({})),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
-    },
-  });
-}
-
-export function useRunRegistryEviction() {
-  return useMutation({
-    mutationKey: ["registry", "evict"],
-    mutationFn: async () => unwrap(await api.api.registry.evict.post({})),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.registry.status });
-    },
-  });
-}
-
 // --- SSH Keys ---
 
 export const sshKeysListQuery = queryOptions({
@@ -553,18 +513,6 @@ export function useSandboxTokenUsage(sandboxId: string, enabled = true) {
     ...cliproxyUsageQuery,
     enabled,
     select: (data) => (data ? (data.sandboxes[sandboxId] ?? null) : null),
-  });
-}
-
-export function useRestartVerdaccio() {
-  return useMutation({
-    mutationKey: ["registry", "restart"],
-    mutationFn: async () => unwrap(await api.api.registry.restart.post()),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.registry.status,
-      });
-    },
   });
 }
 

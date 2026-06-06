@@ -493,9 +493,9 @@ export class PrebuildRunner {
     const githubToken = this.deps.userService.resolveGitHubToken();
     let commitHashes: Record<string, string> = {};
 
-    // Point npm/bun/yarn at our Verdaccio cache before any install runs.
-    // Without this, both `initCommands` and OpenCode's plugin install during
-    // warmup go to the public npm registry — which is the main reason
+    // Point npm/bun/yarn at the configured npm registry before any install
+    // runs. Without this, both `initCommands` and OpenCode's plugin install
+    // during warmup go to the public npm registry — which is the main reason
     // `oh-my-openagent@x.y.z` takes ~13s instead of <1s on a warm cache.
     await this.pushRegistryConfig(sandboxId);
 
@@ -572,26 +572,15 @@ export class PrebuildRunner {
     return commitHashes;
   }
 
-  /**
-   * Push Verdaccio registry config so npm/bun/yarn use the cluster cache
-   * instead of the public npm registry. Best-effort: if Verdaccio is down,
-   * we silently fall back to the public registry rather than failing the
-   * prebuild.
-   */
   private async pushRegistryConfig(sandboxId: string): Promise<void> {
+    const files = RegistryService.buildRegistryConfigFiles();
+    if (!files) return;
+
     try {
-      const files = await RegistryService.buildRegistryConfigFiles();
-      if (!files) {
-        log.warn(
-          { sandboxId },
-          "Verdaccio not reachable, prebuild will hit the public npm registry",
-        );
-        return;
-      }
       await this.deps.agentClient.writeFiles(sandboxId, files);
       log.info(
         { sandboxId, fileCount: files.length },
-        "Pushed Verdaccio registry config to prebuild pod",
+        "Pushed npm registry config to prebuild pod",
       );
     } catch (error) {
       log.warn(

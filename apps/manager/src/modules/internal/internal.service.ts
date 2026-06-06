@@ -337,7 +337,7 @@ export class InternalService {
   }
 
   private async pushRegistryConfig(sandboxId: string): Promise<void> {
-    const files = await RegistryService.buildRegistryConfigFiles();
+    const files = RegistryService.buildRegistryConfigFiles();
     if (!files) return;
 
     await this.pushFilesToSandbox(sandboxId, files, "registry");

@@ -85,7 +85,9 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "anyOf": [
@@ -141,12 +143,16 @@
           "default": "kata-clh",
           "type": "string"
         },
+        "ingressClassName": {
+          "default": "",
+          "type": "string"
+        },
         "registryUrl": {
           "default": "zot.atelier-system.svc:5000",
           "type": "string"
         },
-        "verdaccioImage": {
-          "default": "verdaccio/verdaccio:6",
+        "npmRegistryUrl": {
+          "default": "",
           "type": "string"
         },
         "storageClass": {
@@ -159,6 +165,28 @@
         },
         "defaultVolumeSize": {
           "default": "10Gi",
+          "type": "string"
+        },
+        "vsCodeIngressAnnotations": {
+          "default": {},
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "string"
+            }
+          }
+        },
+        "openCodeIngressAnnotations": {
+          "default": {},
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "string"
+            }
+          }
+        },
+        "managerUrl": {
+          "default": "",
           "type": "string"
         }
       }
@@ -191,91 +219,76 @@
         }
       }
     },
-    "advanced": {
+    "ports": {
       "default": {},
       "type": "object",
       "properties": {
-        "vm": {
-          "default": {},
-          "type": "object",
-          "properties": {
-            "vscode": {
-              "default": {},
-              "type": "object",
-              "properties": {
-                "port": {
-                  "default": 8080,
-                  "type": "number"
-                },
-                "version": {
-                  "default": "4.109.2",
-                  "type": "string"
-                }
-              }
-            },
-            "opencode": {
-              "default": {},
-              "type": "object",
-              "properties": {
-                "port": {
-                  "default": 3000,
-                  "type": "number"
-                },
-                "version": {
-                  "default": "1.2.10",
-                  "type": "string"
-                }
-              }
-            },
-            "browser": {
-              "default": {},
-              "type": "object",
-              "properties": {
-                "port": {
-                  "default": 6080,
-                  "type": "number"
-                }
-              }
-            },
-            "terminal": {
-              "default": {},
-              "type": "object",
-              "properties": {
-                "port": {
-                  "default": 7681,
-                  "type": "number"
-                }
-              }
-            },
-            "agent": {
-              "default": {},
-              "type": "object",
-              "properties": {
-                "port": {
-                  "default": 9999,
-                  "type": "number"
-                }
-              }
-            }
-          }
+        "vscode": {
+          "default": 8080,
+          "type": "number"
         },
-        "server": {
+        "opencode": {
+          "default": 3000,
+          "type": "number"
+        },
+        "browser": {
+          "default": 6080,
+          "type": "number"
+        },
+        "terminal": {
+          "default": 7681,
+          "type": "number"
+        },
+        "agent": {
+          "default": 9998,
+          "type": "number"
+        }
+      }
+    },
+    "imageBuilder": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "kind": {
+          "default": "kaniko",
+          "anyOf": [
+            {
+              "const": "kaniko",
+              "type": "string"
+            },
+            {
+              "const": "buildkit",
+              "type": "string"
+            }
+          ]
+        },
+        "image": {
+          "default": "",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "",
+          "type": "string"
+        },
+        "cacheRepo": {
+          "default": "",
+          "type": "string"
+        },
+        "insecureRegistry": {
+          "default": true,
+          "type": "boolean"
+        },
+        "tls": {
           "default": {},
           "type": "object",
           "properties": {
-            "verdaccio": {
-              "default": {},
-              "type": "object",
-              "properties": {
-                "port": {
-                  "default": 4873,
-                  "type": "number"
-                },
-                "version": {
-                  "default": "6.2.5",
-                  "type": "string"
-                }
-              }
+            "secretName": {
+              "default": "",
+              "type": "string"
+            },
+            "serverName": {
+              "default": "",
+              "type": "string"
             }
           }
         }
@@ -298,6 +311,24 @@
               "type": "string"
             },
             "signingSecret": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        },
+        "cliproxy": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "url": {
+              "default": "",
+              "type": "string"
+            },
+            "apiKey": {
+              "default": "",
+              "type": "string"
+            },
+            "managementKey": {
               "default": "",
               "type": "string"
             }

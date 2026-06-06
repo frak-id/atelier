@@ -97,7 +97,7 @@ export const KubernetesConfigSchema = Type.Object(
   {
     /** Namespace for sandbox pods */
     namespace: Type.String({ default: "atelier-sandboxes" }),
-    /** Namespace for system components (Zot, Verdaccio, image-build Jobs) */
+    /** Namespace for system components (Zot, image-build Jobs) */
     systemNamespace: Type.String({ default: "atelier-system" }),
     /** Path to kubeconfig file (ignored when running in-cluster) */
     kubeconfig: Type.String({ default: "/etc/rancher/k3s/k3s.yaml" }),
@@ -109,10 +109,12 @@ export const KubernetesConfigSchema = Type.Object(
     registryUrl: Type.String({
       default: "zot.atelier-system.svc:5000",
     }),
-    /** Full URL of the Verdaccio npm registry (e.g. http://verdaccio.atelier-system.svc:4873) */
-    verdaccioUrl: Type.String({
-      default: "http://verdaccio.atelier-system.svc:4873",
-    }),
+    /**
+     * Optional npm registry URL injected into every sandbox (e.g. a private
+     * Verdaccio/Nexus/Artifactory proxy). Empty string disables injection and
+     * sandboxes fall back to the public npm registry.
+     */
+    npmRegistryUrl: Type.String({ default: "" }),
     /**
      * StorageClass for sandbox PVCs.
      * Recommend LVM thin provisioning (e.g. openebs-lvmpv) for
@@ -221,7 +223,6 @@ export const PortsConfigSchema = Type.Object(
     browser: Type.Number({ default: 6080 }),
     terminal: Type.Number({ default: 7681 }),
     agent: Type.Number({ default: 9998 }),
-    verdaccio: Type.Number({ default: 4873 }),
   },
   { default: {} },
 );
@@ -409,7 +410,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_KUBECONFIG: "kubernetes.kubeconfig",
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
-  ATELIER_K8S_VERDACCIO_URL: "kubernetes.verdaccioUrl",
+  ATELIER_NPM_REGISTRY_URL: "kubernetes.npmRegistryUrl",
   ATELIER_K8S_STORAGE_CLASS: "kubernetes.storageClass",
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
   ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",
@@ -426,7 +427,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_BROWSER_PORT: "ports.browser",
   ATELIER_TERMINAL_PORT: "ports.terminal",
   ATELIER_AGENT_PORT: "ports.agent",
-  ATELIER_VERDACCIO_PORT: "ports.verdaccio",
 
   ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",
   ATELIER_IMAGE_BUILDER_IMAGE: "imageBuilder.image",

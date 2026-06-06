@@ -52,9 +52,9 @@ Domains are configurable. Default pattern:
 
 Agent runs inside each sandbox pod, listening on TCP port 9998. Manager reaches agent via pod IP obtained from the K8s API (`pod.status.podIP`).
 
-## Registry (Verdaccio)
+## npm Registry
 
-Runs as a K8s Deployment in the `atelier-system` namespace on port 4873, accessible from sandbox pods via K8s Service DNS (`verdaccio.atelier-system.svc:4873`). Sandboxes get `npmrc`/`bunfig`/`yarnrc` injected. Enable/disable via API.
+Atelier does not bundle an npm registry. Set `npmRegistryUrl` to an external proxy (Verdaccio, Nexus, Artifactory, …) and the manager injects `npmrc`/`bunfig`/`yarnrc` into every sandbox so npm/bun/yarn use it. Leave it empty to use the public npm registry.
 
 ## Network Architecture
 
@@ -87,7 +87,6 @@ TopoLVM Thin Pool (LVM VG on node)
 | Shared binaries PV | `atelier-sandboxes` | code-server + OpenCode (ReadOnlyMany) |
 | Manager Deployment + PVC | `atelier-system` | Orchestration API + SQLite database |
 | Zot Deployment + PVC | `atelier-system` | OCI registry for base images |
-| Verdaccio Deployment + PVC | `atelier-system` | npm package cache |
 
 ## Deployment
 

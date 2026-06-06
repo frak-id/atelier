@@ -9,7 +9,6 @@ Single chart deploying the full Atelier stack into a k3s cluster (`atelier-syste
 | `manager` | yes | Bun/Elysia API + SQLite PVC |
 | `dashboard` | yes | Static React SPA (nginx sidecar in manager pod) |
 | `zot` | optional | OCI registry for base images |
-| `verdaccio` | optional | npm package cache shared across sandboxes |
 | `cliproxy` | optional | Multi-provider AI model proxy |
 | `sshpiper` | optional | SSH proxy with username-based routing |
 | `certManager` | optional | Issuer + wildcard cert (assumes cert-manager installed) |

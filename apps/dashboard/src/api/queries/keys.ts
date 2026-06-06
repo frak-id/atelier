@@ -7,9 +7,6 @@ export function unwrap<T>(result: { data: T; error: unknown }): T {
 
 export const queryKeys = {
   health: ["health"] as const,
-  registry: {
-    status: ["registry", "status"] as const,
-  },
   tasks: {
     all: ["tasks"] as const,
     list: (workspaceId?: string) => ["tasks", "list", workspaceId] as const,

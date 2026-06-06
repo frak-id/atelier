@@ -281,7 +281,6 @@ The Manager exposes a REST API on port 4000:
 | Config | `/api/config-files` | Global and workspace config files |
 | Auth | `/api/shared-auth` | OAuth token synchronization |
 | Storage | `/api/binaries` | Shared binaries management |
-| Registry | `/api/registry` | Shared npm registry (Verdaccio) |
 | SSH | `/api/ssh-keys` | User SSH key management |
 | Events | `/api/events` | System-wide event stream |
 | GitHub | `/api/github` | GitHub App integration |

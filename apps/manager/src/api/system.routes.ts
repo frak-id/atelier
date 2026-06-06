@@ -190,7 +190,7 @@ export const systemRoutes = new Elysia({ prefix: "/system" })
       const systemNs = config.kubernetes.systemNamespace;
       const sandboxNs = config.kubernetes.namespace;
 
-      const systemComponents = ["manager", "verdaccio", "cliproxy", "zot"];
+      const systemComponents = ["manager", "cliproxy", "zot"];
 
       const [
         systemPods,

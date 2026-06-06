@@ -16,7 +16,6 @@ import {
   opencodeRoutes,
   organizationRoutes,
   publicConfigRoutes,
-  registryRoutes,
   sandboxRoutes,
   sessionTemplateRoutes,
   sharedAuthRoutes,
@@ -46,7 +45,6 @@ import {
   kubeClient,
 } from "./infrastructure/kubernetes/index.ts";
 import { sandboxPoller } from "./infrastructure/poller/index.ts";
-import { RegistryService } from "./infrastructure/registry/index.ts";
 import { mcpRoutes } from "./mcp/index.ts";
 import { SandboxError } from "./shared/errors.ts";
 import { config, dashboardUrl, isProduction } from "./shared/lib/config.ts";
@@ -149,8 +147,6 @@ const app = new Elysia()
         );
       }
     }
-
-    RegistryService.initialize();
   })
   .use(
     cors({
@@ -235,7 +231,6 @@ const app = new Elysia()
       .use(sharedAuthRoutes)
       .use(sshKeyRoutes)
       .use(systemRoutes)
-      .use(registryRoutes)
       .use(imageRoutes)
       .use(githubApiRoutes)
       .use(eventsRoutes)

@@ -34,10 +34,15 @@
     "systemNamespace": "atelier-system",
     "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
     "runtimeClass": "kata-clh",
+    "ingressClassName": "",
     "registryUrl": "zot.atelier-system.svc:5000",
+    "npmRegistryUrl": "",
     "storageClass": "",
     "volumeSnapshotClass": "",
-    "defaultVolumeSize": "10Gi"
+    "defaultVolumeSize": "10Gi",
+    "vsCodeIngressAnnotations": {},
+    "openCodeIngressAnnotations": {},
+    "managerUrl": ""
   },
   "sandbox": {
     "defaultImage": "dev-base",
@@ -47,28 +52,22 @@
       "name": "Sandbox User"
     }
   },
-  "advanced": {
-    "vm": {
-      "vscode": {
-        "port": 8080
-      },
-      "opencode": {
-        "port": 3000
-      },
-      "browser": {
-        "port": 6080
-      },
-      "terminal": {
-        "port": 7681
-      },
-      "agent": {
-        "port": 9999
-      }
-    },
-    "server": {
-      "verdaccio": {
-        "port": 4873
-      }
+  "ports": {
+    "vscode": 8080,
+    "opencode": 3000,
+    "browser": 6080,
+    "terminal": 7681,
+    "agent": 9998
+  },
+  "imageBuilder": {
+    "kind": "kaniko",
+    "image": "",
+    "endpoint": "",
+    "cacheRepo": "",
+    "insecureRegistry": true,
+    "tls": {
+      "secretName": "",
+      "serverName": ""
     }
   },
   "integrations": {
@@ -76,6 +75,11 @@
       "enabled": false,
       "botToken": "",
       "signingSecret": ""
+    },
+    "cliproxy": {
+      "url": "",
+      "apiKey": "",
+      "managementKey": ""
     }
   }
 }

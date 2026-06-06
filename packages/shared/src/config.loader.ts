@@ -41,7 +41,7 @@ function loadFromEnv(): Record<string, unknown> {
     const value = process.env[envVar];
     if (value !== undefined && value !== "") {
       // Skip Kubernetes auto-injected service discovery values
-      // (e.g. ATELIER_VERDACCIO_PORT=tcp://10.43.x.x:4873)
+      // (e.g. ATELIER_AGENT_PORT=tcp://10.43.x.x:9999)
       if (/^(tcp|udp):\/\//.test(value)) continue;
       setNestedValue(config, configPath, parseEnvValue(value, configPath));
     }
