@@ -11,7 +11,8 @@ ENV RUSTUP_HOME=/opt/rust/rustup \
 
 RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
       | sh -s -- -y --no-modify-path --profile minimal \
-            --default-toolchain stable --component clippy rustfmt \
+            --default-toolchain stable \
+    && rustup component add clippy rustfmt \
     && chmod -R a+rwX /opt/rust \
     && printf 'export RUSTUP_HOME=/opt/rust/rustup\nexport CARGO_HOME=/opt/rust/cargo\nexport PATH=/opt/rust/cargo/bin:$PATH\n' \
          > /etc/profile.d/rust.sh
