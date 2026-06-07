@@ -22,7 +22,11 @@ import type {
 } from "../schemas/index.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
+import {
+  buildOpenCodeAuthHeaders,
+  createTimeoutFetch,
+  OPENCODE_REQUEST_TIMEOUT_MS,
+} from "../shared/lib/opencode-auth.ts";
 import { GuestOps } from "./ports/guest-ops.ts";
 
 const log = createChildLogger("prebuild-runner");
@@ -37,6 +41,7 @@ const OPENCODE_WARMUP_PORT = 4200;
 const GIT_TOKEN_PLACEHOLDER = "$" + "{GIT_TOKEN}";
 const MAX_PREBUILD_RETRIES = 5;
 const RETRY_DELAY_MS = 5_000;
+const PVC_DELETE_TIMEOUT_MS = 60_000;
 
 export interface PrebuildScenario {
   kind: "workspace";
@@ -207,6 +212,8 @@ export class PrebuildRunner {
       // Step 1: Create temp PVC
       const volumeSize = config.kubernetes.defaultVolumeSize;
       log.info({ key, pvcName, volumeSize }, "Creating prebuild PVC");
+
+      await this.ensurePvcDeleted(pvcName, namespace, key);
 
       await this.deps.kubeClient.createResource(
         buildPvc({
@@ -493,12 +500,7 @@ export class PrebuildRunner {
     if (repos.length === 0) {
       return [VM.WORKSPACE_DIR];
     }
-    return repos.map((repo) => {
-      const clonePath = repo.clonePath.startsWith("/")
-        ? repo.clonePath
-        : `/${repo.clonePath}`;
-      return `${VM.HOME}${clonePath}`;
-    });
+    return repos.map((repo) => GuestOps.resolveClonePath(repo));
   }
 
   /**
@@ -571,6 +573,7 @@ export class PrebuildRunner {
     const client = createOpencodeClient({
       baseUrl: `http://${podIp}:${port}`,
       headers: buildOpenCodeAuthHeaders("prebuild"),
+      fetch: createTimeoutFetch(OPENCODE_REQUEST_TIMEOUT_MS),
     });
 
     const healthy = await this.waitForWarmupHealth(client, sandboxId);
@@ -797,14 +800,11 @@ export class PrebuildRunner {
     if (!workspace.config.repos?.length) return hashes;
 
     for (const repo of workspace.config.repos) {
-      const clonePath = repo.clonePath.startsWith("/")
-        ? repo.clonePath
-        : `/${repo.clonePath}`;
-      const fullPath = `${VM.HOME}${clonePath}`;
+      const fullPath = GuestOps.resolveClonePath(repo);
 
       const result = await this.deps.agentClient.exec(
         sandboxId,
-        `git -C ${fullPath} rev-parse HEAD`,
+        `git -C '${fullPath}' rev-parse HEAD`,
         { timeout: 10_000, user: "dev" },
       );
 
@@ -813,7 +813,7 @@ export class PrebuildRunner {
         log.debug(
           {
             workspaceId: workspace.id,
-            clonePath: repo.clonePath,
+            clonePath: fullPath,
             hash: hashes[repo.clonePath],
           },
           "Captured commit hash",
@@ -822,8 +822,9 @@ export class PrebuildRunner {
         log.warn(
           {
             workspaceId: workspace.id,
-            clonePath: repo.clonePath,
+            clonePath: fullPath,
             exitCode: result.exitCode,
+            stderr: result.stderr,
           },
           "Failed to capture commit hash",
         );
@@ -891,6 +892,41 @@ export class PrebuildRunner {
       } catch {
         log.debug({ kind, name }, "Failed to cleanup prebuild resource");
       }
+    }
+  }
+
+  // A previous failed attempt can leave this PVC still terminating (PVCs carry
+  // finalizers + volume-detach latency), so recreating immediately 409s with
+  // "object is being deleted". Delete idempotently and wait it fully out.
+  private async ensurePvcDeleted(
+    pvcName: string,
+    namespace: string,
+    key: string,
+  ): Promise<void> {
+    const exists = await this.deps.kubeClient.resourceExists(
+      "PersistentVolumeClaim",
+      pvcName,
+      namespace,
+    );
+    if (!exists) return;
+
+    log.info(
+      { key, pvcName },
+      "Prebuild PVC still exists, waiting for deletion before recreate",
+    );
+    await this.deps.kubeClient
+      .deleteResource("PersistentVolumeClaim", pvcName, namespace)
+      .catch(() => {});
+
+    const deleted = await this.deps.kubeClient.waitForResourceDeleted(
+      "PersistentVolumeClaim",
+      pvcName,
+      { namespace, timeout: PVC_DELETE_TIMEOUT_MS },
+    );
+    if (!deleted) {
+      throw new Error(
+        `Prebuild PVC ${pvcName} did not finish deleting before recreate`,
+      );
     }
   }
 

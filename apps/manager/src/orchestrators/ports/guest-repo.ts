@@ -5,6 +5,16 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 
 const log = createChildLogger("guest-repo");
 
+// Single source of truth for a repo's guest path — clone, sanitize, commit-hash
+// capture and warmup all derive from it so they can't disagree. Normalizes a
+// missing leading slash ("wallet" and "/wallet" resolve identically).
+export function resolveClonePath(repo: RepoConfig): string {
+  const clonePath = repo.clonePath.startsWith("/")
+    ? repo.clonePath
+    : `/${repo.clonePath}`;
+  return `${VM.HOME}${clonePath}`;
+}
+
 export function buildAuthenticatedGitUrl(
   repoUrl: string,
   githubAccessToken?: string,
@@ -24,7 +34,7 @@ export async function cloneRepository(
   repo: RepoConfig,
   githubAccessToken?: string,
 ): Promise<void> {
-  const clonePath = `${VM.HOME}${repo.clonePath}`;
+  const clonePath = resolveClonePath(repo);
   const gitUrl = buildAuthenticatedGitUrl(repo.url, githubAccessToken);
   const branch = repo.branch;
 
@@ -62,7 +72,7 @@ export async function sanitizeGitRemoteUrls(
   if (repos.length === 0) return;
 
   for (const repo of repos) {
-    const clonePath = `${VM.HOME}${repo.clonePath}`;
+    const clonePath = resolveClonePath(repo);
     const result = await agent.exec(
       sandboxId,
       `git -C '${clonePath}' remote get-url origin 2>/dev/null`,

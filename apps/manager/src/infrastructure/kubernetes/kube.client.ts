@@ -497,7 +497,7 @@ export class KubeClient {
   /**
    * Check if the Kata Containers RuntimeClass exists.
    */
-  async checkRuntimeClass(name = "kata"): Promise<boolean> {
+  async checkRuntimeClass(name: string): Promise<boolean> {
     if (isMock()) return true;
     try {
       const path = `/apis/node.k8s.io/v1/runtimeclasses/${name}`;
@@ -686,6 +686,30 @@ export class KubeClient {
     } catch {
       return false;
     }
+  }
+
+  async waitForResourceDeleted(
+    kind: string,
+    name: string,
+    options: {
+      timeout?: number;
+      namespace?: string;
+      pollIntervalMs?: number;
+    } = {},
+  ): Promise<boolean> {
+    if (isMock()) return true;
+
+    const timeout = options.timeout ?? 60_000;
+    const namespace = options.namespace ?? this.namespace;
+    const pollInterval = options.pollIntervalMs ?? 1_000;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeout) {
+      if (!(await this.resourceExists(kind, name, namespace))) return true;
+      await Bun.sleep(pollInterval);
+    }
+
+    return false;
   }
 
   async waitForJobComplete(

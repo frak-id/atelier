@@ -2,7 +2,11 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { KubeClient } from "../../infrastructure/kubernetes/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
+import {
+  buildOpenCodeAuthHeaders,
+  createTimeoutFetch,
+  OPENCODE_REQUEST_TIMEOUT_MS,
+} from "../../shared/lib/opencode-auth.ts";
 
 const log = createChildLogger("boot-waiter");
 
@@ -83,6 +87,7 @@ async function pollOpencode(
   const client = createOpencodeClient({
     baseUrl: url,
     headers: buildOpenCodeAuthHeaders(password),
+    fetch: createTimeoutFetch(OPENCODE_REQUEST_TIMEOUT_MS),
   });
   let delay = POLL_INITIAL_DELAY_MS;
 
