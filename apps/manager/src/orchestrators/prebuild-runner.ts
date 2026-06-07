@@ -37,11 +37,14 @@ const AGENT_TIMEOUT_MS = 60_000;
 const SNAPSHOT_TIMEOUT_MS = 300_000;
 const INIT_COMMAND_TIMEOUT_MS = 300_000;
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
+const OPENCODE_WARMUP_BOOTSTRAP_TIMEOUT_MS = 120_000;
 const OPENCODE_WARMUP_PORT = 4200;
 const GIT_TOKEN_PLACEHOLDER = "$" + "{GIT_TOKEN}";
 const MAX_PREBUILD_RETRIES = 5;
 const RETRY_DELAY_MS = 5_000;
 const PVC_DELETE_TIMEOUT_MS = 60_000;
+const COMMIT_HASH_CAPTURE_ATTEMPTS = 5;
+const COMMIT_HASH_CAPTURE_RETRY_DELAY_MS = 1_000;
 
 export interface PrebuildScenario {
   kind: "workspace";
@@ -400,6 +403,16 @@ export class PrebuildRunner {
           sandboxId,
           workspace,
         );
+
+        // A "ready" prebuild must carry a hash for every repo: the staleness
+        // checker treats any missing hash as stale and rebuilds on the next
+        // cron tick, so a snapshot with gaps loops forever. Fail the attempt
+        // (it retries) instead of shipping a perpetually-stale snapshot.
+        if (Object.keys(commitHashes).length < workspace.config.repos.length) {
+          throw new Error(
+            `Captured ${Object.keys(commitHashes).length}/${workspace.config.repos.length} repo commit hashes; failing prebuild to avoid a perpetually-stale snapshot`,
+          );
+        }
       }
 
       // Write secrets and file secrets (needed by init commands)
@@ -570,24 +583,34 @@ export class PrebuildRunner {
       return;
     }
 
-    const client = createOpencodeClient({
+    // The readiness probe must fail fast — a wedged /health should not burn the
+    // warmup budget — but the bootstrap calls below legitimately run for tens of
+    // seconds (DB migration, plugin npm install, ripgrep download). One short
+    // timeout would abort them, so use two clients with two request budgets.
+    const probeClient = createOpencodeClient({
       baseUrl: `http://${podIp}:${port}`,
       headers: buildOpenCodeAuthHeaders("prebuild"),
       fetch: createTimeoutFetch(OPENCODE_REQUEST_TIMEOUT_MS),
     });
 
-    const healthy = await this.waitForWarmupHealth(client, sandboxId);
+    const healthy = await this.waitForWarmupHealth(probeClient, sandboxId);
     if (!healthy) {
       await this.killWarmupOpencode(sandboxId);
       return;
     }
+
+    const bootstrapClient = createOpencodeClient({
+      baseUrl: `http://${podIp}:${port}`,
+      headers: buildOpenCodeAuthHeaders("prebuild"),
+      fetch: createTimeoutFetch(OPENCODE_WARMUP_BOOTSTRAP_TIMEOUT_MS),
+    });
 
     // Trigger InstanceBootstrap for each workspace dir. This is what installs
     // plugins, downloads ripgrep, applies migrations, and primes the project
     // .opencode/ directory — the work we want baked into the snapshot.
     for (const directory of bootstrapDirs) {
       const ok = await this.bootstrapWarmupDirectory(
-        client,
+        bootstrapClient,
         sandboxId,
         directory,
       );
@@ -801,37 +824,57 @@ export class PrebuildRunner {
 
     for (const repo of workspace.config.repos) {
       const fullPath = GuestOps.resolveClonePath(repo);
+      const hash = await this.captureRepoHeadHash(
+        sandboxId,
+        fullPath,
+        workspace.id,
+      );
+      if (hash) hashes[repo.clonePath] = hash;
+    }
 
+    return hashes;
+  }
+
+  // `git rev-parse HEAD` here intermittently returns a non-zero exit with empty
+  // stderr: the guest process is killed by a signal early in the pod's life, not
+  // a git error. It's transient, so retry before giving up — a missed hash
+  // poisons staleness detection and triggers an endless rebuild loop.
+  private async captureRepoHeadHash(
+    sandboxId: string,
+    fullPath: string,
+    workspaceId: string,
+  ): Promise<string | null> {
+    for (let attempt = 1; attempt <= COMMIT_HASH_CAPTURE_ATTEMPTS; attempt++) {
       const result = await this.deps.agentClient.exec(
         sandboxId,
         `git -C '${fullPath}' rev-parse HEAD`,
         { timeout: 10_000, user: "dev" },
       );
-
-      if (result.exitCode === 0 && result.stdout.trim()) {
-        hashes[repo.clonePath] = result.stdout.trim();
+      const hash = result.stdout.trim();
+      if (result.exitCode === 0 && hash) {
         log.debug(
-          {
-            workspaceId: workspace.id,
-            clonePath: fullPath,
-            hash: hashes[repo.clonePath],
-          },
+          { workspaceId, clonePath: fullPath, hash },
           "Captured commit hash",
         );
-      } else {
-        log.warn(
-          {
-            workspaceId: workspace.id,
-            clonePath: fullPath,
-            exitCode: result.exitCode,
-            stderr: result.stderr,
-          },
-          "Failed to capture commit hash",
-        );
+        return hash;
       }
-    }
 
-    return hashes;
+      if (attempt < COMMIT_HASH_CAPTURE_ATTEMPTS) {
+        await Bun.sleep(COMMIT_HASH_CAPTURE_RETRY_DELAY_MS);
+        continue;
+      }
+
+      log.warn(
+        {
+          workspaceId,
+          clonePath: fullPath,
+          exitCode: result.exitCode,
+          stderr: result.stderr,
+        },
+        "Failed to capture commit hash after retries",
+      );
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------------------
