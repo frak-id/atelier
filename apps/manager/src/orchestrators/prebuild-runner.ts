@@ -27,6 +27,7 @@ import {
   createTimeoutFetch,
   OPENCODE_REQUEST_TIMEOUT_MS,
 } from "../shared/lib/opencode-auth.ts";
+import { PhaseTimer } from "../shared/lib/phase-timer.ts";
 import { GuestOps } from "./ports/guest-ops.ts";
 
 const log = createChildLogger("prebuild-runner");
@@ -209,139 +210,165 @@ export class PrebuildRunner {
         return;
       }
 
+      const timer = new PhaseTimer(log, {
+        metric: "prebuild_create",
+        workspaceId: key,
+      });
+      const sandboxId = resourceName;
+
       // Pre-flight: verify snapshot capability
-      await this.verifySnapshotCapability();
+      await timer.step("verify_capability", () =>
+        this.verifySnapshotCapability(),
+      );
 
       // Step 1: Create temp PVC
-      const volumeSize = config.kubernetes.defaultVolumeSize;
-      log.info({ key, pvcName, volumeSize }, "Creating prebuild PVC");
+      await timer.step("create_pvc", async () => {
+        const volumeSize = config.kubernetes.defaultVolumeSize;
+        log.info({ key, pvcName, volumeSize }, "Creating prebuild PVC");
 
-      await this.ensurePvcDeleted(pvcName, namespace, key);
+        await this.ensurePvcDeleted(pvcName, namespace, key);
 
-      await this.deps.kubeClient.createResource(
-        buildPvc({
-          name: pvcName,
+        await this.deps.kubeClient.createResource(
+          buildPvc({
+            name: pvcName,
+            namespace,
+            size: volumeSize,
+            labels: { "atelier.dev/prebuild": labelValue },
+          }),
           namespace,
-          size: volumeSize,
-          labels: { "atelier.dev/prebuild": labelValue },
-        }),
-        namespace,
-      );
+        );
+      });
 
       // Note: no waitForPvcBound — local-path uses WaitForFirstConsumer,
       // so the PVC binds only when a pod referencing it is scheduled.
       // Step 2: Spawn temp pod with base image + PVC at /home/dev
-      const image = this.resolveBaseImage(scenario);
-      const sandboxId = resourceName;
-      log.info({ key, podName, image }, "Spawning prebuild pod");
+      await timer.step("create_pod", async () => {
+        const image = this.resolveBaseImage(scenario);
+        log.info({ key, podName, image }, "Spawning prebuild pod");
 
-      await this.deps.kubeClient.createResource(
-        buildConfigMap(
-          configMapName,
-          { "config.json": JSON.stringify({ prebuild: true }) },
+        await this.deps.kubeClient.createResource(
+          buildConfigMap(
+            configMapName,
+            { "config.json": JSON.stringify({ prebuild: true }) },
+            namespace,
+            { "atelier.dev/prebuild": labelValue },
+          ),
           namespace,
-          { "atelier.dev/prebuild": labelValue },
-        ),
-        namespace,
-      );
+        );
 
-      // Use workspace resource config if available, with generous defaults for prebuild
-      const memoryMb =
-        scenario.kind === "workspace"
-          ? Math.max(
-              this.requireWorkspace(scenario).config.memoryMb ?? 4096,
-              4096,
-            )
-          : 4096;
-      const memoryLimit = `${memoryMb}Mi`;
-      const cpuLimit = memoryMb >= 8192 ? "4000m" : "2000m";
+        // Use workspace resource config if available, with generous defaults for prebuild
+        const memoryMb =
+          scenario.kind === "workspace"
+            ? Math.max(
+                this.requireWorkspace(scenario).config.memoryMb ?? 4096,
+                4096,
+              )
+            : 4096;
+        const memoryLimit = `${memoryMb}Mi`;
+        const cpuLimit = memoryMb >= 8192 ? "4000m" : "2000m";
 
-      await this.deps.kubeClient.createResource(
-        buildSandboxPod({
-          sandboxId,
-          image,
-          opencodePassword: "prebuild",
-          pvcName,
-          configMapName,
+        await this.deps.kubeClient.createResource(
+          buildSandboxPod({
+            sandboxId,
+            image,
+            opencodePassword: "prebuild",
+            pvcName,
+            configMapName,
+            namespace,
+            requests: { cpu: "500m", memory: "2Gi" },
+            limits: { cpu: cpuLimit, memory: memoryLimit },
+          }),
           namespace,
-          requests: { cpu: "500m", memory: "2Gi" },
-          limits: { cpu: cpuLimit, memory: memoryLimit },
-        }),
-        namespace,
-      );
+        );
+      });
 
       // Step 3: Wait for pod + agent ready
       // Single wait: agent health check implies pod is ready and has an IP
-      const { ready: agentReady } = await this.deps.agentClient.waitForAgent(
-        sandboxId,
-        {
-          timeout: AGENT_TIMEOUT_MS,
-        },
-      );
-      if (!agentReady) {
-        throw new Error(`Agent in prebuild pod ${podName} did not start`);
-      }
+      await timer.step("wait_agent", async () => {
+        const { ready: agentReady } = await this.deps.agentClient.waitForAgent(
+          sandboxId,
+          {
+            timeout: AGENT_TIMEOUT_MS,
+          },
+        );
+        if (!agentReady) {
+          throw new Error(`Agent in prebuild pod ${podName} did not start`);
+        }
+      });
 
       // Step 4: Run prebuild steps via agent
-      const commitHashes = await this.runPrebuildSteps(sandboxId, scenario);
+      const commitHashes = await timer.step("prebuild_steps", () =>
+        this.runPrebuildSteps(sandboxId, scenario, timer),
+      );
 
       // Flush writes to PVC before snapshot
-      log.info({ key }, "Flushing writes before snapshot");
-      await this.deps.agentClient.exec(sandboxId, "sync", {
-        timeout: 10_000,
+      await timer.step("flush_sync", async () => {
+        log.info({ key }, "Flushing writes before snapshot");
+        await this.deps.agentClient.exec(sandboxId, "sync", {
+          timeout: 10_000,
+        });
       });
 
       // Step 5: Stop the pod (to flush writes)
-      log.info({ key, podName }, "Stopping prebuild pod before snapshot");
-      try {
-        await this.deps.kubeClient.deleteResource(
-          "Pod",
-          `sandbox-${sandboxId}`,
-          namespace,
-        );
-      } catch (error) {
-        log.warn({ key, error }, "Failed to stop prebuild pod");
-      }
+      await timer.step("stop_pod", async () => {
+        log.info({ key, podName }, "Stopping prebuild pod before snapshot");
+        try {
+          await this.deps.kubeClient.deleteResource(
+            "Pod",
+            `sandbox-${sandboxId}`,
+            namespace,
+          );
+        } catch (error) {
+          log.warn({ key, error }, "Failed to stop prebuild pod");
+        }
 
-      // Wait for pod to terminate
-      await this.waitForPodTermination(`sandbox-${sandboxId}`, namespace);
+        // Wait for pod to terminate
+        await this.waitForPodTermination(`sandbox-${sandboxId}`, namespace);
+      });
 
       // Step 6: Create VolumeSnapshot from temp PVC
       const snapshotName = this.snapshotNameForKey(key);
-      log.info({ key, snapshotName, pvcName }, "Creating VolumeSnapshot");
+      await timer.step("create_snapshot", async () => {
+        log.info({ key, snapshotName, pvcName }, "Creating VolumeSnapshot");
 
-      try {
-        await this.deps.kubeClient.deleteResource(
-          "VolumeSnapshot",
-          snapshotName,
+        try {
+          await this.deps.kubeClient.deleteResource(
+            "VolumeSnapshot",
+            snapshotName,
+            namespace,
+          );
+          await Bun.sleep(2000);
+        } catch {}
+
+        await this.deps.kubeClient.createResource(
+          buildVolumeSnapshot({
+            name: snapshotName,
+            namespace,
+            pvcName,
+            labels: { "atelier.dev/prebuild": labelValue },
+          }),
           namespace,
         );
-        await Bun.sleep(2000);
-      } catch {}
-
-      await this.deps.kubeClient.createResource(
-        buildVolumeSnapshot({
-          name: snapshotName,
-          namespace,
-          pvcName,
-          labels: { "atelier.dev/prebuild": labelValue },
-        }),
-        namespace,
-      );
+      });
 
       // Step 7: Wait for snapshot ready
-      const snapReady = await this.deps.kubeClient.waitForVolumeSnapshotReady(
-        snapshotName,
-        { timeout: SNAPSHOT_TIMEOUT_MS, namespace },
-      );
-      if (!snapReady) {
-        throw new Error(`VolumeSnapshot ${snapshotName} did not become ready`);
-      }
+      await timer.step("wait_snapshot", async () => {
+        const snapReady = await this.deps.kubeClient.waitForVolumeSnapshotReady(
+          snapshotName,
+          { timeout: SNAPSHOT_TIMEOUT_MS, namespace },
+        );
+        if (!snapReady) {
+          throw new Error(
+            `VolumeSnapshot ${snapshotName} did not become ready`,
+          );
+        }
+      });
 
       log.info({ key, snapshotName }, "Prebuild snapshot ready");
 
       // Step 8: Update status
       scenario.updateStatus("ready", snapshotName, commitHashes);
+      timer.end();
     } catch (error) {
       if (scenario.kind === "workspace") {
         const workspace = scenario.getWorkspace();
@@ -363,40 +390,42 @@ export class PrebuildRunner {
   private async runPrebuildSteps(
     sandboxId: string,
     scenario: PrebuildScenario,
+    timer: PhaseTimer,
   ): Promise<Record<string, string>> {
     const agent = this.deps.agentClient;
     const githubToken = this.deps.userService.resolveGitHubToken();
     let commitHashes: Record<string, string> = {};
 
-    // Point npm/bun/yarn at the configured npm registry before any install
-    // runs. Without this, both `initCommands` and OpenCode's plugin install
-    // during warmup go to the public npm registry — which is the main reason
-    // `oh-my-openagent@x.y.z` takes ~13s instead of <1s on a warm cache.
-    await this.pushRegistryConfig(sandboxId);
+    await timer.step("push_configs", async () => {
+      // Point npm/bun/yarn at the configured npm registry before any install
+      // runs. Without this, both `initCommands` and OpenCode's plugin install
+      // during warmup go to the public npm registry — which is the main reason
+      // `oh-my-openagent@x.y.z` takes ~13s instead of <1s on a warm cache.
+      await this.pushRegistryConfig(sandboxId);
 
-    // Push merged workspace/system config files (opencode.json with plugin
-    // definitions, MCP server, CLIProxy provider, etc.) into the prebuild
-    // pod. Without this, OpenCode warmup boots blind: it never sees external
-    // plugins like `oh-my-openagent`, never downloads them into
-    // ~/.cache/opencode/packages, and the snapshot ships cold — every
-    // runtime sandbox then pays the full plugin install cost on first use.
-    await this.pushWorkspaceConfigs(sandboxId, scenario);
+      // Push merged workspace/system config files (opencode.json with plugin
+      // definitions, MCP server, CLIProxy provider, etc.) into the prebuild
+      // pod. Without this, OpenCode warmup boots blind: it never sees external
+      // plugins like `oh-my-openagent`, never downloads them into
+      // ~/.cache/opencode/packages, and the snapshot ships cold — every
+      // runtime sandbox then pays the full plugin install cost on first use.
+      await this.pushWorkspaceConfigs(sandboxId, scenario);
+    });
 
     if (scenario.kind === "workspace") {
       const workspace = this.requireWorkspace(scenario);
 
       // Clone repositories
       if (workspace.config.repos?.length) {
-        for (const repo of workspace.config.repos) {
-          await GuestOps.cloneRepository(agent, sandboxId, repo, githubToken);
-        }
+        const repos = workspace.config.repos;
+        await timer.step("clone_repos", async () => {
+          for (const repo of repos) {
+            await GuestOps.cloneRepository(agent, sandboxId, repo, githubToken);
+          }
 
-        // Sanitize git URLs (remove tokens from remote)
-        await GuestOps.sanitizeGitRemoteUrls(
-          agent,
-          sandboxId,
-          workspace.config.repos,
-        );
+          // Sanitize git URLs (remove tokens from remote)
+          await GuestOps.sanitizeGitRemoteUrls(agent, sandboxId, repos);
+        });
 
         // Capture commit hashes from inside the pod
         commitHashes = await this.captureCommitHashesFromPod(
@@ -408,9 +437,9 @@ export class PrebuildRunner {
         // checker treats any missing hash as stale and rebuilds on the next
         // cron tick, so a snapshot with gaps loops forever. Fail the attempt
         // (it retries) instead of shipping a perpetually-stale snapshot.
-        if (Object.keys(commitHashes).length < workspace.config.repos.length) {
+        if (Object.keys(commitHashes).length < repos.length) {
           throw new Error(
-            `Captured ${Object.keys(commitHashes).length}/${workspace.config.repos.length} repo commit hashes; failing prebuild to avoid a perpetually-stale snapshot`,
+            `Captured ${Object.keys(commitHashes).length}/${repos.length} repo commit hashes; failing prebuild to avoid a perpetually-stale snapshot`,
           );
         }
       }
@@ -431,17 +460,21 @@ export class PrebuildRunner {
       }
 
       // Run init commands
-      for (const command of workspace.config.initCommands) {
-        log.info({ sandboxId, command }, "Running init command");
-        const result = await agent.exec(sandboxId, command, {
-          timeout: INIT_COMMAND_TIMEOUT_MS,
-          user: "dev",
-          workdir: VM.WORKSPACE_DIR,
-        });
-        if (result.exitCode !== 0) {
-          throw new Error(`Init command failed: ${command}\n${result.stderr}`);
+      await timer.step("init_commands", async () => {
+        for (const command of workspace.config.initCommands) {
+          log.info({ sandboxId, command }, "Running init command");
+          const result = await agent.exec(sandboxId, command, {
+            timeout: INIT_COMMAND_TIMEOUT_MS,
+            user: "dev",
+            workdir: VM.WORKSPACE_DIR,
+          });
+          if (result.exitCode !== 0) {
+            throw new Error(
+              `Init command failed: ${command}\n${result.stderr}`,
+            );
+          }
         }
-      }
+      });
 
       // Fix ownership after init commands
       log.info({ sandboxId }, "Fixing workspace ownership");
@@ -452,7 +485,9 @@ export class PrebuildRunner {
 
     // OpenCode warmup (both workspace and system)
     const bootstrapDirs = this.resolveWarmupDirs(scenario);
-    await this.warmupOpencode(sandboxId, bootstrapDirs);
+    await timer.step("opencode_warmup", () =>
+      this.warmupOpencode(sandboxId, bootstrapDirs),
+    );
 
     return commitHashes;
   }

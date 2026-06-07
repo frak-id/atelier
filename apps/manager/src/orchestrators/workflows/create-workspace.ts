@@ -5,6 +5,7 @@ import type {
   Workspace,
 } from "../../schemas/index.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { PhaseTimer } from "../../shared/lib/phase-timer.ts";
 import {
   type BootResult,
   bootNewSandbox,
@@ -28,6 +29,7 @@ export async function createWorkspaceSandbox(
   createdByUserId?: string,
 ): Promise<Sandbox> {
   let boot: BootResult | undefined;
+  const timer = new PhaseTimer(log, { metric: "sandbox_boot", sandboxId });
 
   try {
     // The CLIProxy key value is derived deterministically, so the config sync
@@ -40,31 +42,34 @@ export async function createWorkspaceSandbox(
       );
 
     const prebuildReady = workspace.config.prebuild?.status === "ready";
-    boot = await bootNewSandbox(
-      sandboxId,
-      {
-        workspaceId: workspace.id,
-        workspace,
-        baseImage: options.baseImage ?? workspace.config.baseImage,
-        vcpus: options.vcpus ?? workspace.config.vcpus ?? DEFAULTS.VCPUS,
-        memoryMb:
-          options.memoryMb ?? workspace.config.memoryMb ?? DEFAULTS.MEMORY_MB,
-        prebuildReady,
-        prebuildSnapshotName: prebuildReady
-          ? workspace.config.prebuild?.latestId
-          : undefined,
-        name: options.name,
-        origin: options.origin,
-        createdBy: createdByUserId,
-        // Forward workspace-mode env from the opencode-atelier plugin so
-        // the remote `opencode serve` boots in workspace mode.
-        opencodeWorkspaceContext: {
-          opencodeEnv: options.opencodeEnv,
-          sourceWorkspaceFromID: options.sourceWorkspaceFromID,
+    boot = await timer.step("kube_boot", () =>
+      bootNewSandbox(
+        sandboxId,
+        {
+          workspaceId: workspace.id,
+          workspace,
+          baseImage: options.baseImage ?? workspace.config.baseImage,
+          vcpus: options.vcpus ?? workspace.config.vcpus ?? DEFAULTS.VCPUS,
+          memoryMb:
+            options.memoryMb ?? workspace.config.memoryMb ?? DEFAULTS.MEMORY_MB,
+          prebuildReady,
+          prebuildSnapshotName: prebuildReady
+            ? workspace.config.prebuild?.latestId
+            : undefined,
+          name: options.name,
+          origin: options.origin,
+          createdBy: createdByUserId,
+          // Forward workspace-mode env from the opencode-atelier plugin so
+          // the remote `opencode serve` boots in workspace mode.
+          opencodeWorkspaceContext: {
+            opencodeEnv: options.opencodeEnv,
+            sourceWorkspaceFromID: options.sourceWorkspaceFromID,
+          },
         },
-      },
-      ports,
+        ports,
+      ),
     );
+    const bootResult = boot;
 
     const configs = ports.configFiles.getMergedForSandbox(workspace.id);
     const authConfig = configs.find((c) => c.path === VM_PATHS.opencodeAuth);
@@ -90,23 +95,29 @@ export async function createWorkspaceSandbox(
       : undefined;
     const githubToken = ports.users.resolveGitHubToken(createdByUserId);
 
-    const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
-      GuestOps.collectSecretFiles(workspace),
-      GuestOps.collectGitCredentialFiles(githubToken, gitUserIdentity),
-      GuestOps.collectFileSecretFiles(workspace),
-    ]);
+    const [secretFiles, gitCredFiles, fileSecretFiles] = await timer.step(
+      "collect_secrets",
+      () =>
+        Promise.all([
+          GuestOps.collectSecretFiles(workspace),
+          GuestOps.collectGitCredentialFiles(githubToken, gitUserIdentity),
+          GuestOps.collectFileSecretFiles(workspace),
+        ]),
+    );
 
-    const [syncResult] = await Promise.all([
-      ports.internal.syncAllToSandbox(sandboxId),
-      ports.agent.writeFiles(sandboxId, [
-        ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
-        ...GuestOps.buildOhMyOpenCodeCacheFiles(providers),
-        ...GuestOps.buildSandboxMdFile(mdContent),
-        ...secretFiles,
-        ...gitCredFiles,
-        ...fileSecretFiles,
+    const [syncResult] = await timer.step("internal_sync", () =>
+      Promise.all([
+        ports.internal.syncAllToSandbox(sandboxId),
+        ports.agent.writeFiles(sandboxId, [
+          ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
+          ...GuestOps.buildOhMyOpenCodeCacheFiles(providers),
+          ...GuestOps.buildSandboxMdFile(mdContent),
+          ...secretFiles,
+          ...gitCredFiles,
+          ...fileSecretFiles,
+        ]),
       ]),
-    ]);
+    );
     log.info(
       {
         sandboxId,
@@ -117,7 +128,7 @@ export async function createWorkspaceSandbox(
       "Internal sync complete",
     );
 
-    if (!boot.usedPrebuild && workspace.config.repos?.length) {
+    if (!bootResult.usedPrebuild && workspace.config.repos?.length) {
       // For single-repo workspaces, allow `options.branch` to override the
       // workspace's default branch. Multi-repo workspaces always use the
       // configured per-repo branch — overriding one would be ambiguous.
@@ -129,22 +140,26 @@ export async function createWorkspaceSandbox(
             }))
           : workspace.config.repos;
 
-      for (const repo of repos) {
-        await GuestOps.cloneRepository(
+      await timer.step("clone_repos", async () => {
+        for (const repo of repos) {
+          await GuestOps.cloneRepository(
+            ports.agent,
+            sandboxId,
+            repo,
+            githubToken,
+          );
+        }
+        await GuestOps.sanitizeGitRemoteUrls(
           ports.agent,
           sandboxId,
-          repo,
-          githubToken,
+          workspace.config.repos,
         );
-      }
-      await GuestOps.sanitizeGitRemoteUrls(
-        ports.agent,
-        sandboxId,
-        workspace.config.repos,
-      );
+      });
     }
 
-    await GuestOps.startServices(ports.agent, sandboxId, bootServiceNames());
+    await timer.step("start_services", () =>
+      GuestOps.startServices(ports.agent, sandboxId, bootServiceNames()),
+    );
 
     // Wait for OpenCode to be fully ready (HTTP healthy + agent registry loaded)
     // before finalizing. Otherwise callers receive a `running` sandbox that
@@ -152,19 +167,25 @@ export async function createWorkspaceSandbox(
     // Only wait for OpenCode HTTP to be healthy here. The agent registry
     // wait (needed before issuing prompts) is handled inside
     // `openOpencodeSession`, paid lazily by the first session creator.
-    await waitForOpencodeHealthy(
-      boot.sandbox.runtime.ipAddress,
-      boot.sandbox.runtime.opencodePassword,
+    await timer.step("opencode_healthy", () =>
+      waitForOpencodeHealthy(
+        bootResult.sandbox.runtime.ipAddress,
+        bootResult.sandbox.runtime.opencodePassword,
+      ),
     );
 
     await cliproxyKeyReg;
 
-    return await finalizeNewSandbox(
-      sandboxId,
-      boot.sandbox,
-      boot.podName,
-      ports,
+    const sandbox = await timer.step("finalize", () =>
+      finalizeNewSandbox(
+        sandboxId,
+        bootResult.sandbox,
+        bootResult.podName,
+        ports,
+      ),
     );
+    timer.end({ fromPrebuild: bootResult.usedPrebuild });
+    return sandbox;
   } catch (error) {
     log.error(
       {
