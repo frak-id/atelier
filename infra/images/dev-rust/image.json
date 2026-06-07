@@ -1,0 +1,8 @@
+{
+  "name": "Rust Development",
+  "description": "dev-base + Rust stable toolchain (cargo, clippy, rustfmt)",
+  "volumeSize": 8,
+  "tools": ["bun", "node", "git", "rust", "cargo", "clippy", "rustfmt"],
+  "base": "dev-base",
+  "official": true
+}
