@@ -29,20 +29,6 @@ export function buildRuntimeEnvFiles(env: Record<string, string>): FileWrite[] {
   ];
 }
 
-export function buildOhMyOpenCodeCacheFiles(providers: string[]): FileWrite[] {
-  return [
-    {
-      path: `${VM.HOME}/.cache/oh-my-opencode/connected-providers.json`,
-      content: JSON.stringify(
-        { connected: providers, updatedAt: new Date().toISOString() },
-        null,
-        2,
-      ),
-      owner: "dev",
-    },
-  ];
-}
-
 export function buildSandboxMdFile(content: string): FileWrite[] {
   return [{ path: `${VM.HOME}/SANDBOX.md`, content, owner: "dev" }];
 }

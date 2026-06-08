@@ -1,4 +1,4 @@
-import { DEFAULTS, VM_PATHS } from "@frak/atelier-shared/constants";
+import { DEFAULTS } from "@frak/atelier-shared/constants";
 import type {
   CreateSandboxBody,
   Sandbox,
@@ -71,20 +71,6 @@ export async function createWorkspaceSandbox(
     );
     const bootResult = boot;
 
-    const configs = ports.configFiles.getMergedForSandbox(workspace.id);
-    const authConfig = configs.find((c) => c.path === VM_PATHS.opencodeAuth);
-    let providers: string[] = [];
-    if (authConfig) {
-      try {
-        const authJson = JSON.parse(authConfig.content) as Record<
-          string,
-          unknown
-        >;
-        providers = Object.keys(authJson);
-      } catch {
-        log.warn("Failed to parse auth.json for oh-my-opencode cache seed");
-      }
-    }
     const mdContent = generateSandboxMd(sandboxId, workspace);
 
     const creator = createdByUserId
@@ -110,7 +96,6 @@ export async function createWorkspaceSandbox(
         ports.internal.syncAllToSandbox(sandboxId),
         ports.agent.writeFiles(sandboxId, [
           ...GuestOps.buildRuntimeEnvFiles({ ATELIER_SANDBOX_ID: sandboxId }),
-          ...GuestOps.buildOhMyOpenCodeCacheFiles(providers),
           ...GuestOps.buildSandboxMdFile(mdContent),
           ...secretFiles,
           ...gitCredFiles,
