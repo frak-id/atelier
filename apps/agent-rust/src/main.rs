@@ -17,8 +17,6 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use nix::sys::wait::{waitpid, WaitPidFlag};
-use nix::unistd::Pid;
 use tokio::net::TcpListener;
 
 use config::AGENT_PORT;
@@ -57,34 +55,19 @@ async fn handle(req: Request<hyper::body::Incoming>) -> Result<Response<Full<Byt
     Ok(router::route(req).await)
 }
 
-fn reap_zombies() {
-    loop {
-        match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
-            Ok(nix::sys::wait::WaitStatus::StillAlive) => break,
-            Ok(_) => continue,
-            Err(_) => break,
-        }
-    }
-}
-
-fn start_zombie_reaper() {
-    tokio::spawn(async {
-        let mut sigchld =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::child())
-                .expect("failed to register SIGCHLD handler");
-        loop {
-            sigchld.recv().await;
-            reap_zombies();
-        }
-    });
-}
+// NOTE: the agent must NOT install a waitpid(-1) zombie reaper. It races with
+// tokio's own `child.wait()` (command.rs): when the reaper wins, the exit
+// status is consumed, `child.wait()` fails with ECHILD, and every exec is
+// reported as exitCode=1 with empty output — randomly failing ~30% of
+// prebuild/clone/init commands. Orphan reaping is the job of PID 1, which is
+// the sandbox-boot.sh supervision shell (or sandbox-init.sh in the legacy
+// flow), never the agent itself.
 
 #[tokio::main]
 async fn main() {
     println!("Sandbox agent starting...");
 
     watchdog::start();
-    start_zombie_reaper();
 
     let addr = format!("0.0.0.0:{AGENT_PORT}");
     let listener = match TcpListener::bind(&addr).await {
