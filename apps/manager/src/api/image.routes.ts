@@ -10,6 +10,8 @@ import {
   ImageBuildTriggerResponseSchema,
   ImageListQuerySchema,
   ImageListResponseSchema,
+  RebuildAllStatusSchema,
+  RebuildAllTriggerResponseSchema,
 } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
@@ -95,6 +97,35 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
     {
       params: IdParamSchema,
       response: ImageBuildSchema,
+      detail: { tags: ["images"] },
+    },
+  )
+  .post(
+    "/rebuild-all",
+    async ({ set }) => {
+      log.info("Triggering rebuild of all base images");
+      const result = await baseImageBuilder.triggerRebuildAll();
+      set.status = 202;
+      return result;
+    },
+    {
+      response: RebuildAllTriggerResponseSchema,
+      detail: { tags: ["images"] },
+    },
+  )
+  .get(
+    "/rebuild-all",
+    async () => {
+      return (
+        baseImageBuilder.getRebuildAllStatus() ?? {
+          active: false,
+          startedAt: 0,
+          images: [],
+        }
+      );
+    },
+    {
+      response: RebuildAllStatusSchema,
       detail: { tags: ["images"] },
     },
   )

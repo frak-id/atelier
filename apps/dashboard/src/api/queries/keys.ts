@@ -69,6 +69,7 @@ export const queryKeys = {
     detail: (id: string) => ["images", "detail", id] as const,
     builds: ["images", "builds"] as const,
     buildStatus: (id: string) => ["images", id, "buildStatus"] as const,
+    rebuildAll: ["images", "rebuildAll"] as const,
   },
   system: {
     stats: ["system", "stats"] as const,

@@ -73,6 +73,26 @@ export function useTriggerImageBuild() {
   });
 }
 
+export const rebuildAllStatusQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.images.rebuildAll,
+    queryFn: async () => unwrap(await api.api.images["rebuild-all"].get()),
+  });
+
+export function useRebuildAllImages() {
+  return useMutation({
+    mutationKey: ["images", "rebuildAll"],
+    mutationFn: async () =>
+      unwrap(await api.api.images["rebuild-all"].post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Failed to start rebuild"));
+    },
+  });
+}
+
 export function useCancelImageBuild() {
   return useMutation({
     mutationKey: ["images", "cancelBuild"],
