@@ -1,6 +1,7 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api, type Workspace } from "../client";
-import { queryKeys, unwrap } from "./keys";
+import { apiErrorMessage, queryKeys, unwrap } from "./keys";
 
 export const workspaceListQuery = () =>
   queryOptions({
@@ -68,6 +69,26 @@ export function useTriggerImageBuild() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.images.buildStatus(imageId),
       });
+    },
+  });
+}
+
+export const rebuildAllStatusQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.images.rebuildAll,
+    queryFn: async () => unwrap(await api.api.images["rebuild-all"].get()),
+  });
+
+export function useRebuildAllImages() {
+  return useMutation({
+    mutationKey: ["images", "rebuildAll"],
+    mutationFn: async () =>
+      unwrap(await api.api.images["rebuild-all"].post()),
+    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Failed to start rebuild"));
     },
   });
 }
@@ -141,6 +162,9 @@ export function useTriggerPrebuild() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.detail(id),
       });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Failed to trigger prebuild"));
     },
   });
 }

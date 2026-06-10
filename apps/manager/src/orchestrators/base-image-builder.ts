@@ -1,12 +1,22 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { discoverImages, getImageById } from "@frak/atelier-shared";
+import {
+  discoverImages,
+  getImageById,
+  type ImageDefinition,
+} from "@frak/atelier-shared";
 import type { ImageBuilder } from "../infrastructure/image-builder/index.ts";
+import { ImageRegistryService } from "../infrastructure/registry/index.ts";
 import {
   buildConfigMap,
   type KubeClient,
 } from "../infrastructure/kubernetes/index.ts";
-import type { ImageBuild, ImageBuildStatus } from "../schemas/image.ts";
+import type {
+  ImageBuild,
+  ImageBuildStatus,
+  RebuildAllStatus,
+  RebuildAllTriggerResponse,
+} from "../schemas/image.ts";
 import { NotFoundError, SandboxError } from "../shared/errors.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -17,11 +27,185 @@ const COMPONENT_LABEL = "base-image-build";
 const CONFIGMAP_PREFIX = "base-image-ctx";
 const JOB_PREFIX = "base-image-build";
 
+const REBUILD_POLL_INTERVAL_MS = 5_000;
+const REBUILD_BUILD_TIMEOUT_MS = 30 * 60_000;
+
 export class BaseImageBuilder {
+  private rebuildAllState: RebuildAllStatus | null = null;
+
   constructor(
     private kubeClient: KubeClient,
     private imageBuilder: ImageBuilder,
   ) {}
+
+  /**
+   * Rebuild every buildable image, respecting `base` dependencies:
+   * each dependency layer is built sequentially, images within a
+   * layer in parallel. Returns immediately; progress is tracked
+   * in-memory and exposed via getRebuildAllStatus().
+   */
+  async triggerRebuildAll(): Promise<RebuildAllTriggerResponse> {
+    if (this.rebuildAllState?.active) {
+      throw new SandboxError(
+        "A rebuild-all run is already in progress",
+        "CONFLICT",
+        409,
+      );
+    }
+
+    const images = await discoverImages(config.sandbox.imagesDirectory);
+    const buildable = images.filter((img) => img.hasDockerfile);
+    if (buildable.length === 0) {
+      throw new SandboxError(
+        "No buildable images found",
+        "VALIDATION_ERROR",
+        400,
+      );
+    }
+
+    const layers = this.resolveBuildLayers(buildable);
+
+    this.rebuildAllState = {
+      active: true,
+      startedAt: Date.now(),
+      images: buildable.map((img) => ({
+        imageId: img.id,
+        status: "pending",
+      })),
+    };
+
+    const order = layers.map((layer) => layer.map((img) => img.id));
+    setImmediate(() => {
+      this.runRebuildAll(layers).catch((error) => {
+        log.error({ error }, "Rebuild-all run crashed");
+        this.finishRebuildAll();
+      });
+    });
+
+    return {
+      order,
+      message: `Rebuilding ${buildable.length} images in ${layers.length} stage(s)`,
+    };
+  }
+
+  getRebuildAllStatus(): RebuildAllStatus | null {
+    return this.rebuildAllState;
+  }
+
+  /**
+   * Group images into dependency layers (Kahn levels): layer 0 has no
+   * buildable parent, layer N depends only on layers < N. Images whose
+   * base is outside the buildable set (e.g. node:22-slim) are roots.
+   */
+  private resolveBuildLayers(images: ImageDefinition[]): ImageDefinition[][] {
+    const byId = new Map(images.map((img) => [img.id, img]));
+    const placed = new Set<string>();
+    const layers: ImageDefinition[][] = [];
+    let remaining = [...images];
+
+    while (remaining.length > 0) {
+      const layer = remaining.filter(
+        (img) => !img.base || !byId.has(img.base) || placed.has(img.base),
+      );
+      if (layer.length === 0) {
+        // Dependency cycle — build the rest in one parallel layer
+        log.warn(
+          { images: remaining.map((i) => i.id) },
+          "Dependency cycle detected in image bases",
+        );
+        layers.push(remaining);
+        break;
+      }
+      for (const img of layer) placed.add(img.id);
+      remaining = remaining.filter((img) => !placed.has(img.id));
+      layers.push(layer);
+    }
+
+    return layers;
+  }
+
+  private async runRebuildAll(layers: ImageDefinition[][]): Promise<void> {
+    const failed = new Set<string>();
+
+    for (const layer of layers) {
+      await Promise.all(
+        layer.map(async (img) => {
+          if (img.base && failed.has(img.base)) {
+            failed.add(img.id);
+            this.setRebuildImageStatus(
+              img.id,
+              "skipped",
+              `Base image '${img.base}' failed to build`,
+            );
+            return;
+          }
+
+          try {
+            this.setRebuildImageStatus(img.id, "building");
+            await this.triggerBuild(img.id);
+            const result = await this.waitForBuild(img.id);
+            if (result.status === "succeeded") {
+              this.setRebuildImageStatus(img.id, "succeeded");
+            } else {
+              failed.add(img.id);
+              this.setRebuildImageStatus(img.id, "failed", result.error);
+            }
+          } catch (error) {
+            failed.add(img.id);
+            this.setRebuildImageStatus(
+              img.id,
+              "failed",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+        }),
+      );
+    }
+
+    this.finishRebuildAll();
+    log.info(
+      { failed: [...failed] },
+      failed.size === 0
+        ? "Rebuild-all completed successfully"
+        : "Rebuild-all completed with failures",
+    );
+  }
+
+  private async waitForBuild(
+    imageId: string,
+  ): Promise<{ status: "succeeded" | "failed"; error?: string }> {
+    if (isMock()) return { status: "succeeded" };
+
+    const deadline = Date.now() + REBUILD_BUILD_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      await Bun.sleep(REBUILD_POLL_INTERVAL_MS);
+      const build = await this.getBuildStatus(imageId);
+      if (build.status === "succeeded") return { status: "succeeded" };
+      if (build.status === "failed") {
+        return { status: "failed", error: build.error };
+      }
+    }
+    return { status: "failed", error: "Build timed out" };
+  }
+
+  private setRebuildImageStatus(
+    imageId: string,
+    status: RebuildAllStatus["images"][number]["status"],
+    error?: string,
+  ): void {
+    const entry = this.rebuildAllState?.images.find(
+      (img) => img.imageId === imageId,
+    );
+    if (!entry) return;
+    entry.status = status;
+    entry.error = error;
+  }
+
+  private finishRebuildAll(): void {
+    if (!this.rebuildAllState) return;
+    this.rebuildAllState.active = false;
+    this.rebuildAllState.finishedAt = Date.now();
+  }
 
   async triggerBuild(imageId: string): Promise<{
     imageId: string;
@@ -145,10 +329,10 @@ export class BaseImageBuilder {
     }
 
     /* ── No job found — check if image exists in Zot ──── */
-    const exists = await this.checkImageExists(imageId);
+    const exists = await ImageRegistryService.imageExists(imageId);
     return {
       imageId,
-      status: exists ? "succeeded" : "idle",
+      status: exists === true ? "succeeded" : "idle",
     };
   }
 
@@ -183,26 +367,6 @@ export class BaseImageBuilder {
     const images = await discoverImages(config.sandbox.imagesDirectory);
     const buildable = images.filter((img) => img.hasDockerfile);
     return Promise.all(buildable.map((img) => this.getBuildStatus(img.id)));
-  }
-
-  /**
-   * Check if an image exists in the Zot OCI registry.
-   * HEAD /v2/{imageId}/manifests/latest → 200=exists, 404=not found.
-   */
-  private async checkImageExists(imageId: string): Promise<boolean> {
-    if (isMock()) return false;
-    try {
-      const res = await fetch(
-        `http://${config.kubernetes.registryUrl}/v2/${imageId}/manifests/latest`,
-        {
-          method: "HEAD",
-          signal: AbortSignal.timeout(3000),
-        },
-      );
-      return res.ok;
-    } catch {
-      return false;
-    }
   }
 
   private async findActiveJob(imageId: string): Promise<string | null> {

@@ -1,6 +1,7 @@
 import { discoverImages, getImageById } from "@frak/atelier-shared";
 import { Elysia, t } from "elysia";
 import { baseImageBuilder } from "../container.ts";
+import { ImageRegistryService } from "../infrastructure/registry/index.ts";
 import {
   BaseImageSchema,
   IdParamSchema,
@@ -9,6 +10,8 @@ import {
   ImageBuildTriggerResponseSchema,
   ImageListQuerySchema,
   ImageListResponseSchema,
+  RebuildAllStatusSchema,
+  RebuildAllTriggerResponseSchema,
 } from "../schemas/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
@@ -31,7 +34,7 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
           tools: img.tools,
           base: img.base,
           official: img.official,
-          available: true,
+          available: (await ImageRegistryService.imageExists(img.id)) !== false,
         })),
       );
 
@@ -57,7 +60,8 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
         throw new NotFoundError("Image", params.id);
       }
 
-      const available = true;
+      const available =
+        (await ImageRegistryService.imageExists(image.id)) !== false;
       return {
         id: image.id,
         name: image.name,
@@ -93,6 +97,35 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
     {
       params: IdParamSchema,
       response: ImageBuildSchema,
+      detail: { tags: ["images"] },
+    },
+  )
+  .post(
+    "/rebuild-all",
+    async ({ set }) => {
+      log.info("Triggering rebuild of all base images");
+      const result = await baseImageBuilder.triggerRebuildAll();
+      set.status = 202;
+      return result;
+    },
+    {
+      response: RebuildAllTriggerResponseSchema,
+      detail: { tags: ["images"] },
+    },
+  )
+  .get(
+    "/rebuild-all",
+    async () => {
+      return (
+        baseImageBuilder.getRebuildAllStatus() ?? {
+          active: false,
+          startedAt: 0,
+          images: [],
+        }
+      );
+    },
+    {
+      response: RebuildAllStatusSchema,
       detail: { tags: ["images"] },
     },
   )

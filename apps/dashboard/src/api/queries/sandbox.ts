@@ -1,6 +1,7 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "../client";
-import { queryKeys, unwrap } from "./keys";
+import { apiErrorMessage, queryKeys, unwrap } from "./keys";
 
 export const sandboxListQuery = (filters?: {
   status?: string;
@@ -99,6 +100,9 @@ export function useCreateSandbox() {
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.system.stats });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Failed to create sandbox"));
     },
   });
 }

@@ -32,4 +32,19 @@ if [ -f "$SSH_KEY_MOUNT" ]; then
     /usr/sbin/sshd
 fi
 
-exec /usr/local/bin/sandbox-agent "$@"
+# Keep this shell as PID 1: orphaned grandchildren reparent here and get
+# reaped by the shell's wait machinery, instead of being stolen mid-flight
+# from the agent's tokio runtime (which owns its direct children's exit
+# statuses — a waitpid(-1) reaper inside the agent corrupts exec results).
+/usr/local/bin/sandbox-agent "$@" &
+AGENT_PID=$!
+
+trap 'kill -TERM "$AGENT_PID" 2>/dev/null' TERM INT
+
+# `wait` returns early when a trapped signal arrives; loop until the agent
+# itself is gone so its real exit status is propagated.
+while kill -0 "$AGENT_PID" 2>/dev/null; do
+    wait "$AGENT_PID"
+    AGENT_STATUS=$?
+done
+exit "${AGENT_STATUS:-0}"

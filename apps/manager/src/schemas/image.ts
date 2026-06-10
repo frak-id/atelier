@@ -58,3 +58,32 @@ export const ImageBuildListResponseSchema = t.Array(ImageBuildSchema);
 export type ImageBuildListResponse = Static<
   typeof ImageBuildListResponseSchema
 >;
+
+export const RebuildAllImageSchema = t.Object({
+  imageId: t.String(),
+  status: t.Union([
+    t.Literal("pending"),
+    t.Literal("building"),
+    t.Literal("succeeded"),
+    t.Literal("failed"),
+    t.Literal("skipped"),
+  ]),
+  error: t.Optional(t.String()),
+});
+export type RebuildAllImage = Static<typeof RebuildAllImageSchema>;
+
+export const RebuildAllStatusSchema = t.Object({
+  active: t.Boolean(),
+  startedAt: t.Number(),
+  finishedAt: t.Optional(t.Number()),
+  images: t.Array(RebuildAllImageSchema),
+});
+export type RebuildAllStatus = Static<typeof RebuildAllStatusSchema>;
+
+export const RebuildAllTriggerResponseSchema = t.Object({
+  order: t.Array(t.Array(t.String())),
+  message: t.String(),
+});
+export type RebuildAllTriggerResponse = Static<
+  typeof RebuildAllTriggerResponseSchema
+>;
