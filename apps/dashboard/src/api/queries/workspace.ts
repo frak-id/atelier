@@ -1,6 +1,7 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api, type Workspace } from "../client";
-import { queryKeys, unwrap } from "./keys";
+import { apiErrorMessage, queryKeys, unwrap } from "./keys";
 
 export const workspaceListQuery = () =>
   queryOptions({
@@ -141,6 +142,9 @@ export function useTriggerPrebuild() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.detail(id),
       });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Failed to trigger prebuild"));
     },
   });
 }

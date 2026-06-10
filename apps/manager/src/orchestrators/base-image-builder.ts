@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { discoverImages, getImageById } from "@frak/atelier-shared";
 import type { ImageBuilder } from "../infrastructure/image-builder/index.ts";
+import { ImageRegistryService } from "../infrastructure/registry/index.ts";
 import {
   buildConfigMap,
   type KubeClient,
@@ -145,10 +146,10 @@ export class BaseImageBuilder {
     }
 
     /* ── No job found — check if image exists in Zot ──── */
-    const exists = await this.checkImageExists(imageId);
+    const exists = await ImageRegistryService.imageExists(imageId);
     return {
       imageId,
-      status: exists ? "succeeded" : "idle",
+      status: exists === true ? "succeeded" : "idle",
     };
   }
 
@@ -183,26 +184,6 @@ export class BaseImageBuilder {
     const images = await discoverImages(config.sandbox.imagesDirectory);
     const buildable = images.filter((img) => img.hasDockerfile);
     return Promise.all(buildable.map((img) => this.getBuildStatus(img.id)));
-  }
-
-  /**
-   * Check if an image exists in the Zot OCI registry.
-   * HEAD /v2/{imageId}/manifests/latest → 200=exists, 404=not found.
-   */
-  private async checkImageExists(imageId: string): Promise<boolean> {
-    if (isMock()) return false;
-    try {
-      const res = await fetch(
-        `http://${config.kubernetes.registryUrl}/v2/${imageId}/manifests/latest`,
-        {
-          method: "HEAD",
-          signal: AbortSignal.timeout(3000),
-        },
-      );
-      return res.ok;
-    } catch {
-      return false;
-    }
   }
 
   private async findActiveJob(imageId: string): Promise<string | null> {

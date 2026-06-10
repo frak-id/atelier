@@ -1,6 +1,7 @@
 import { discoverImages, getImageById } from "@frak/atelier-shared";
 import { Elysia, t } from "elysia";
 import { baseImageBuilder } from "../container.ts";
+import { ImageRegistryService } from "../infrastructure/registry/index.ts";
 import {
   BaseImageSchema,
   IdParamSchema,
@@ -31,7 +32,7 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
           tools: img.tools,
           base: img.base,
           official: img.official,
-          available: true,
+          available: (await ImageRegistryService.imageExists(img.id)) !== false,
         })),
       );
 
@@ -57,7 +58,8 @@ export const imageRoutes = new Elysia({ prefix: "/images" })
         throw new NotFoundError("Image", params.id);
       }
 
-      const available = true;
+      const available =
+        (await ImageRegistryService.imageExists(image.id)) !== false;
       return {
         id: image.id,
         name: image.name,

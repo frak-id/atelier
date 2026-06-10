@@ -5,6 +5,20 @@ export function unwrap<T>(result: { data: T; error: unknown }): T {
   return result.data;
 }
 
+/** Extract a human-readable message from an Eden treaty error (`{ status, value: { message } }`) or plain Error. */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === "object") {
+    const value = (error as { value?: unknown }).value;
+    if (value && typeof value === "object") {
+      const message = (value as { message?: unknown }).message;
+      if (typeof message === "string" && message) return message;
+    }
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message) return message;
+  }
+  return fallback;
+}
+
 export const queryKeys = {
   health: ["health"] as const,
   tasks: {

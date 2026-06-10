@@ -5,6 +5,7 @@ import {
   sandboxService,
   workspaceService,
 } from "../container.ts";
+import { ImageRegistryService } from "../infrastructure/registry/index.ts";
 import {
   CreateWorkspaceBodySchema,
   IdParamSchema,
@@ -147,6 +148,10 @@ export const workspaceRoutes = new Elysia({ prefix: "/workspaces" })
           status: "building",
         };
       }
+
+      await ImageRegistryService.assertImageAvailable(
+        workspace.config.baseImage || "dev-base",
+      );
 
       log.info({ workspaceId: params.id }, "Triggering prebuild");
       prebuildRunner.runInBackground(params.id);

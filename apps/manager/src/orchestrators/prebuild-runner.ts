@@ -10,7 +10,11 @@ import {
   buildVolumeSnapshot,
   type KubeClient,
 } from "../infrastructure/kubernetes/index.ts";
-import { RegistryService } from "../infrastructure/registry/index.ts";
+import {
+  ImageNotAvailableError,
+  ImageRegistryService,
+  RegistryService,
+} from "../infrastructure/registry/index.ts";
 import type { InternalService } from "../modules/internal/index.ts";
 import type { UserService } from "../modules/user/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
@@ -79,6 +83,25 @@ export class PrebuildRunner {
 
     const workspace = this.deps.workspaceService.getById(workspaceId);
     if (!workspace) throw new Error(`Workspace '${workspaceId}' not found`);
+
+    // A missing base image is not transient — fail once with a clear status
+    // instead of burning the retry budget on ImagePullBackOff pods.
+    const baseImage = workspace.config.baseImage || "dev-base";
+    try {
+      await ImageRegistryService.assertImageAvailable(baseImage);
+    } catch (error) {
+      if (error instanceof ImageNotAvailableError) {
+        this.updatePrebuildStatus(
+          workspaceId,
+          workspace,
+          "failed",
+          undefined,
+          undefined,
+          error.message,
+        );
+      }
+      throw error;
+    }
 
     let lastError: unknown;
     for (let attempt = 1; attempt <= MAX_PREBUILD_RETRIES; attempt++) {

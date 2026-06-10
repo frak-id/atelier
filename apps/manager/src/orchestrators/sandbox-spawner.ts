@@ -1,5 +1,6 @@
 import { customAlphabet } from "nanoid";
 import { eventBus } from "../infrastructure/events/index.ts";
+import { ImageRegistryService } from "../infrastructure/registry/index.ts";
 import type {
   CreateSandboxBody,
   CreateSandboxResponse,
@@ -35,6 +36,15 @@ export class SandboxSpawner {
 
     if (!workspace) {
       throw new Error("Workspace not found for workspace sandbox");
+    }
+
+    // With a ready prebuild the base image is already cached on the node
+    // (the prebuild pod pulled it); without one, a registry miss means the
+    // pod would hang in ImagePullBackOff — reject upfront instead.
+    if (workspace.config.prebuild?.status !== "ready") {
+      const baseImage =
+        options.baseImage ?? workspace.config.baseImage ?? "dev-base";
+      await ImageRegistryService.assertImageAvailable(baseImage);
     }
 
     return createWorkspaceSandbox(
