@@ -1,6 +1,6 @@
 import { KubeClient } from "./kube.client.ts";
 
-export type { KubePod } from "./kube.client.ts";
+export type { JobStatus, KubePod, PodPhase } from "./kube.client.ts";
 export { KubeApiError, KubeClient } from "./kube.client.ts";
 export type {
   IngressOptions,
@@ -26,7 +26,6 @@ export {
   toolHost,
   toolIngressName,
 } from "./kube.resources.ts";
-export type { JobStatus, PodPhase } from "./kube.client.ts";
 export { ensureSharedSshPipeKey } from "./ssh-pipe-key.ts";
 
 /**

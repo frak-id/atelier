@@ -462,7 +462,10 @@ export class PrebuildRunner {
       });
 
       // Capture commit hashes from inside the pod
-      commitHashes = await this.captureCommitHashesFromPod(sandboxId, workspace);
+      commitHashes = await this.captureCommitHashesFromPod(
+        sandboxId,
+        workspace,
+      );
 
       // A "ready" prebuild must carry a hash for every repo: the staleness
       // checker treats any missing hash as stale and rebuilds on the next

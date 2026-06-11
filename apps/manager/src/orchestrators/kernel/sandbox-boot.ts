@@ -351,10 +351,7 @@ interface SandboxResourceSpec {
  * in-flight creates so callers can `Promise.all` them; the PVC is the caller's
  * concern (spawn creates it, restart reuses it).
  */
-function createSandboxResources(
-  sandboxId: string,
-  spec: SandboxResourceSpec,
-) {
+function createSandboxResources(sandboxId: string, spec: SandboxResourceSpec) {
   const labels = {
     "atelier.dev/sandbox": sandboxId,
     "atelier.dev/component": "sandbox",

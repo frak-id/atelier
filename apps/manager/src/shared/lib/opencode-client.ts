@@ -1,6 +1,9 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { config } from "./config.ts";
-import { buildOpenCodeAuthHeaders, createTimeoutFetch } from "./opencode-auth.ts";
+import {
+  buildOpenCodeAuthHeaders,
+  createTimeoutFetch,
+} from "./opencode-auth.ts";
 
 export type SandboxOpencodeClient = ReturnType<typeof createOpencodeClient>;
 
