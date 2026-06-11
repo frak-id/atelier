@@ -41,6 +41,16 @@ const PVC_DELETE_TIMEOUT_MS = 60_000;
 const COMMIT_HASH_CAPTURE_ATTEMPTS = 5;
 const COMMIT_HASH_CAPTURE_RETRY_DELAY_MS = 1_000;
 
+// Deterministic failures (a bad init command, a missing snapshot class) that a
+// retry can only reproduce. The runner fails fast on these instead of burning
+// the full retry budget — up to 5 × 5-min init-command timeouts otherwise.
+export class PrebuildPermanentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PrebuildPermanentError";
+  }
+}
+
 export interface PrebuildScenario {
   kind: "workspace";
   workspaceId: string;
@@ -116,6 +126,7 @@ export class PrebuildRunner {
         return;
       } catch (error) {
         lastError = error;
+        if (error instanceof PrebuildPermanentError) break;
         if (attempt < MAX_PREBUILD_RETRIES) {
           log.warn(
             { workspaceId, attempt, maxRetries: MAX_PREBUILD_RETRIES, error },
@@ -537,7 +548,7 @@ export class PrebuildRunner {
             workdir: VM.WORKSPACE_DIR,
           });
           if (result.exitCode !== 0) {
-            throw new Error(
+            throw new PrebuildPermanentError(
               `Init command failed: ${command}\n${result.stderr}`,
             );
           }
@@ -695,7 +706,7 @@ export class PrebuildRunner {
   private async verifySnapshotCapability(): Promise<void> {
     const hasApi = await this.deps.kubeClient.checkSnapshotApi();
     if (!hasApi) {
-      throw new Error(
+      throw new PrebuildPermanentError(
         "Prebuilds require the CSI snapshot controller " +
           "(snapshot.storage.k8s.io API not available). " +
           "Install the snapshot controller and a VolumeSnapshotClass " +
@@ -707,7 +718,7 @@ export class PrebuildRunner {
     const hasClass =
       await this.deps.kubeClient.checkVolumeSnapshotClass(configuredClass);
     if (!hasClass) {
-      throw new Error(
+      throw new PrebuildPermanentError(
         configuredClass
           ? `VolumeSnapshotClass '${configuredClass}' not found. ` +
               "Prebuilds cannot proceed without a valid snapshot class."
