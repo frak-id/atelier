@@ -33,6 +33,7 @@ const generatePassword = customAlphabet(
 );
 
 const DEFAULT_BASE_IMAGE = "dev-base";
+const POD_DELETE_TIMEOUT_MS = 60_000;
 
 export interface BootNewOptions {
   workspaceId?: string;
@@ -249,6 +250,13 @@ export async function bootExistingSandbox(
   try {
     await kubeClient.deleteResource("Pipe", `ssh-${sandboxId}`);
   } catch {}
+
+  // Kata pods take seconds to terminate; creating a pod with the same name
+  // while the old one is still Terminating 409s. Wait it out before recreating
+  // (the prebuild path learned this same lesson).
+  await kubeClient.waitForResourceDeleted("Pod", podName, {
+    timeout: POD_DELETE_TIMEOUT_MS,
+  });
 
   const sharedKey = await ensureSharedSshPipeKey();
 

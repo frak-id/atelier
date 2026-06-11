@@ -4,6 +4,7 @@ import {
   agentClient,
   agentOperations,
   orgMemberService,
+  prebuildRunner,
   sandboxDestroyer,
   sandboxLifecycle,
   sandboxService,
@@ -431,18 +432,12 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             "Promoting sandbox to prebuild",
           );
 
-          await agentClient.exec(sandbox.id, "sync");
-          await sandboxLifecycle.stop(params.id);
-          await sandboxLifecycle.start(params.id);
-
-          workspaceService.update(sandbox.workspaceId, {
-            config: {
-              ...workspace.config,
-              prebuild: {
-                status: "ready",
-                latestId: params.id,
-                builtAt: new Date().toISOString(),
-              },
+          await prebuildRunner.promote(sandbox.workspaceId, params.id, {
+            stop: async () => {
+              await sandboxLifecycle.stop(params.id);
+            },
+            start: async () => {
+              await sandboxLifecycle.start(params.id);
             },
           });
 

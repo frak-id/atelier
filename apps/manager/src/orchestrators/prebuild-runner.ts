@@ -40,6 +40,7 @@ const POLL_INTERVAL_MS = 2000;
 // const POD_TIMEOUT_MS = 120_000;
 const AGENT_TIMEOUT_MS = 60_000;
 const SNAPSHOT_TIMEOUT_MS = 300_000;
+const SNAPSHOT_DELETE_TIMEOUT_MS = 60_000;
 const INIT_COMMAND_TIMEOUT_MS = 300_000;
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
 const OPENCODE_WARMUP_BOOTSTRAP_TIMEOUT_MS = 120_000;
@@ -190,6 +191,88 @@ export class PrebuildRunner {
     } catch {
       log.debug({ key, snapshotName }, "No snapshot to delete");
     }
+  }
+
+  /**
+   * Promote a running sandbox's current filesystem into the workspace prebuild.
+   *
+   * Unlike `run()` (which provisions a fresh pod and replays init commands),
+   * promote snapshots the *live* sandbox PVC as-is, so manual changes made in
+   * the sandbox are captured. Commit hashes are read from the pod before it is
+   * stopped — a "ready" prebuild with no hashes is treated as stale, so the
+   * next `PrebuildChecker` tick would otherwise silently overwrite this
+   * promotion with a clean rebuild.
+   *
+   * The caller injects sandbox stop/start: pod lifecycle (and the sandbox
+   * status row) is owned by `SandboxLifecycle`, not the runner. The snapshot
+   * is taken while the pod is stopped so the source PVC is unmounted.
+   */
+  async promote(
+    workspaceId: string,
+    sandboxId: string,
+    lifecycle: { stop: () => Promise<void>; start: () => Promise<void> },
+  ): Promise<{ snapshotName: string }> {
+    const workspace = this.deps.workspaceService.getById(workspaceId);
+    if (!workspace) throw new Error(`Workspace '${workspaceId}' not found`);
+
+    const snapshotName = this.snapshotNameForKey(workspaceId);
+
+    if (isMock()) {
+      const commitHashes = await this.captureCommitHashes(workspace);
+      this.updatePrebuildStatus(
+        workspaceId,
+        workspace,
+        "ready",
+        snapshotName,
+        commitHashes,
+      );
+      return { snapshotName };
+    }
+
+    await this.verifySnapshotCapability();
+
+    const namespace = config.kubernetes.namespace;
+    const podName = `sandbox-${sandboxId}`;
+    const pvcName = `sandbox-${sandboxId}`;
+    const labelValue = this.normalizeKey(workspaceId);
+
+    // Capture HEADs while the pod is still running — a stopped pod has no agent.
+    const commitHashes = await this.captureCommitHashesFromPod(
+      sandboxId,
+      workspace,
+    );
+
+    // Flush page cache so the snapshot is filesystem-consistent.
+    await this.deps.agentClient
+      .exec(sandboxId, "sync", { timeout: 10_000 })
+      .catch(() => {});
+
+    // Stop the pod so the PVC is unmounted before we snapshot it.
+    await lifecycle.stop();
+    await this.waitForPodTermination(podName, namespace);
+
+    await this.createWorkspaceSnapshot(
+      snapshotName,
+      pvcName,
+      namespace,
+      labelValue,
+    );
+
+    await lifecycle.start();
+
+    this.updatePrebuildStatus(
+      workspaceId,
+      workspace,
+      "ready",
+      snapshotName,
+      commitHashes,
+    );
+
+    log.info(
+      { workspaceId, sandboxId, snapshotName },
+      "Sandbox promoted to prebuild",
+    );
+    return { snapshotName };
   }
 
   // ---------------------------------------------------------------------------
@@ -349,43 +432,16 @@ export class PrebuildRunner {
         await this.waitForPodTermination(`sandbox-${sandboxId}`, namespace);
       });
 
-      // Step 6: Create VolumeSnapshot from temp PVC
+      // Step 6: Snapshot the temp PVC, wait until ready to clone.
       const snapshotName = this.snapshotNameForKey(key);
-      await timer.step("create_snapshot", async () => {
-        log.info({ key, snapshotName, pvcName }, "Creating VolumeSnapshot");
-
-        try {
-          await this.deps.kubeClient.deleteResource(
-            "VolumeSnapshot",
-            snapshotName,
-            namespace,
-          );
-          await Bun.sleep(2000);
-        } catch {}
-
-        await this.deps.kubeClient.createResource(
-          buildVolumeSnapshot({
-            name: snapshotName,
-            namespace,
-            pvcName,
-            labels: { "atelier.dev/prebuild": labelValue },
-          }),
-          namespace,
-        );
-      });
-
-      // Step 7: Wait for snapshot ready
-      await timer.step("wait_snapshot", async () => {
-        const snapReady = await this.deps.kubeClient.waitForVolumeSnapshotReady(
+      await timer.step("create_snapshot", () =>
+        this.createWorkspaceSnapshot(
           snapshotName,
-          { timeout: SNAPSHOT_TIMEOUT_MS, namespace },
-        );
-        if (!snapReady) {
-          throw new Error(
-            `VolumeSnapshot ${snapshotName} did not become ready`,
-          );
-        }
-      });
+          pvcName,
+          namespace,
+          labelValue,
+        ),
+      );
 
       log.info({ key, snapshotName }, "Prebuild snapshot ready");
 
@@ -1050,6 +1106,51 @@ export class PrebuildRunner {
     }
 
     log.warn({ podName }, "Pod did not terminate within timeout");
+  }
+
+  // Delete-and-wait (not a blind sleep) before recreate: a still-terminating
+  // VolumeSnapshot of the same name 409s the create.
+  private async createWorkspaceSnapshot(
+    snapshotName: string,
+    pvcName: string,
+    namespace: string,
+    labelValue: string,
+  ): Promise<void> {
+    if (
+      await this.deps.kubeClient.resourceExists(
+        "VolumeSnapshot",
+        snapshotName,
+        namespace,
+      )
+    ) {
+      await this.deps.kubeClient
+        .deleteResource("VolumeSnapshot", snapshotName, namespace)
+        .catch(() => {});
+      await this.deps.kubeClient.waitForResourceDeleted(
+        "VolumeSnapshot",
+        snapshotName,
+        { namespace, timeout: SNAPSHOT_DELETE_TIMEOUT_MS },
+      );
+    }
+
+    log.info({ snapshotName, pvcName }, "Creating VolumeSnapshot");
+    await this.deps.kubeClient.createResource(
+      buildVolumeSnapshot({
+        name: snapshotName,
+        namespace,
+        pvcName,
+        labels: { "atelier.dev/prebuild": labelValue },
+      }),
+      namespace,
+    );
+
+    const ready = await this.deps.kubeClient.waitForVolumeSnapshotReady(
+      snapshotName,
+      { timeout: SNAPSHOT_TIMEOUT_MS, namespace },
+    );
+    if (!ready) {
+      throw new Error(`VolumeSnapshot ${snapshotName} did not become ready`);
+    }
   }
 
   private resolveBaseImage(scenario: PrebuildScenario): string {
