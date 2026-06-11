@@ -1,10 +1,8 @@
-import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import { config } from "../../shared/lib/config.ts";
+import { OPENCODE_REQUEST_TIMEOUT_MS } from "../../shared/lib/opencode-auth.ts";
 import {
-  buildOpenCodeAuthHeaders,
-  createTimeoutFetch,
-  OPENCODE_REQUEST_TIMEOUT_MS,
-} from "../../shared/lib/opencode-auth.ts";
+  createSandboxOpencodeClient,
+  type SandboxOpencodeClient,
+} from "../../shared/lib/opencode-client.ts";
 
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
 const POLL_INITIAL_DELAY_MS = 100;
@@ -51,20 +49,15 @@ export async function waitForOpencodeReady(
   await pollOpencode(ipAddress, password, timeout, isOpencodeReady);
 }
 
-type OpencodeClient = ReturnType<typeof createOpencodeClient>;
-
 async function pollOpencode(
   ipAddress: string,
   password: string | undefined,
   timeout: number,
-  predicate: (client: OpencodeClient) => Promise<boolean>,
+  predicate: (client: SandboxOpencodeClient) => Promise<boolean>,
 ): Promise<void> {
   const startTime = Date.now();
-  const url = `http://${ipAddress}:${config.ports.opencode}`;
-  const client = createOpencodeClient({
-    baseUrl: url,
-    headers: buildOpenCodeAuthHeaders(password),
-    fetch: createTimeoutFetch(OPENCODE_REQUEST_TIMEOUT_MS),
+  const client = createSandboxOpencodeClient(ipAddress, password, {
+    timeoutMs: OPENCODE_REQUEST_TIMEOUT_MS,
   });
   let delay = POLL_INITIAL_DELAY_MS;
 
@@ -77,7 +70,9 @@ async function pollOpencode(
   throw new Error("OpenCode server did not become ready within timeout");
 }
 
-async function isOpencodeHealthy(client: OpencodeClient): Promise<boolean> {
+async function isOpencodeHealthy(
+  client: SandboxOpencodeClient,
+): Promise<boolean> {
   try {
     const { data } = await client.global.health();
     return data?.healthy === true;
@@ -86,7 +81,9 @@ async function isOpencodeHealthy(client: OpencodeClient): Promise<boolean> {
   }
 }
 
-async function isOpencodeReady(client: OpencodeClient): Promise<boolean> {
+async function isOpencodeReady(
+  client: SandboxOpencodeClient,
+): Promise<boolean> {
   if (!(await isOpencodeHealthy(client))) return false;
   try {
     const { data, error } = await client.app.agents();

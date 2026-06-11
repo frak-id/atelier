@@ -1,4 +1,3 @@
-import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { Elysia, sse } from "elysia";
 import {
   agentClient,
@@ -36,7 +35,7 @@ import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
 import { authPlugin } from "../../shared/lib/auth.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
+import { createSandboxOpencodeClient } from "../../shared/lib/opencode-client.ts";
 import { startOpencodeSession } from "../../shared/lib/opencode-session.ts";
 import { devRoutes } from "./dev.routes.ts";
 import { sandboxIdGuard } from "./guard.ts";
@@ -171,10 +170,10 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             sandboxId: sandbox.id,
           },
         });
-        const client = createOpencodeClient({
-          baseUrl: `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`,
-          headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
-        });
+        const client = createSandboxOpencodeClient(
+          sandbox.runtime.ipAddress,
+          sandbox.runtime.opencodePassword,
+        );
         const session = await startOpencodeSession(client, {
           prompt: body.message,
           model: body.templateConfig?.model,

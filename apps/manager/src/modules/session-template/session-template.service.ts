@@ -1,13 +1,11 @@
 import { DEFAULT_SESSION_TEMPLATES } from "@frak/atelier-shared/constants";
-import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type {
   SessionTemplate,
   SessionTemplates,
   SessionTemplateVariables,
 } from "../../schemas/index.ts";
-import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { buildOpenCodeAuthHeaders } from "../../shared/lib/opencode-auth.ts";
+import { createSandboxOpencodeClient } from "../../shared/lib/opencode-client.ts";
 import type { SandboxRepository } from "../sandbox/index.ts";
 import type { SettingsRepository } from "../settings/index.ts";
 import type { WorkspaceService } from "../workspace/index.ts";
@@ -240,10 +238,10 @@ export class SessionTemplateService {
     }
 
     try {
-      const client = createOpencodeClient({
-        baseUrl: `http://${ipAddress}:${config.ports.opencode}`,
-        headers: buildOpenCodeAuthHeaders(sandbox.runtime?.opencodePassword),
-      });
+      const client = createSandboxOpencodeClient(
+        ipAddress,
+        sandbox.runtime?.opencodePassword,
+      );
 
       const [providersResult, agentsResult] = await Promise.all([
         client.provider.list(),
