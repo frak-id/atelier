@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
 pub const AGENT_PORT: u16 = 9998;
-// Public port the Service/ingress route to (forwarder listens); must match
-// manager `config.ports.dev`. DEV_APP_PORT is the loopback port the dev server
-// binds (Vite's default) and the forwarder targets; must match `ports.devApp`.
+// Fallback forwarder ports, used only when config.json carries no `devForwarder`
+// (pre-existing blobs). The live values come from the manager's
+// `config.ports.dev`/`devApp` via `SandboxConfig.dev_forwarder`; these defaults
+// just match the manager's own defaults so an un-overridden setup still works.
 pub const DEV_PORT: u16 = 3001;
 pub const DEV_APP_PORT: u16 = 5173;
 pub const LOG_DIR: &str = "/var/log/sandbox";
@@ -42,6 +43,13 @@ pub struct RepoConfig {
     pub branch: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevForwarderConfig {
+    pub public_port: u16,
+    pub app_port: u16,
+}
+
 pub type SandboxServices = HashMap<String, ServiceConfig>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +63,8 @@ pub struct SandboxConfig {
     pub created_at: String,
     pub network: NetworkConfig,
     pub services: SandboxServices,
+    #[serde(default)]
+    pub dev_forwarder: Option<DevForwarderConfig>,
 }
 
 pub static SANDBOX_CONFIG: LazyLock<RwLock<Option<SandboxConfig>>> = LazyLock::new(|| {

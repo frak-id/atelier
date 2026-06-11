@@ -44,9 +44,7 @@ Domains are configurable. Default pattern:
 | VSCode | `sandbox-{id}.{baseDomain}` |
 | OpenCode | `opencode-{id}.{baseDomain}` |
 | Browser | `browser-{id}.{baseDomain}` |
-| Dev (named) | `dev-{name}-{id}.{baseDomain}` |
-| Dev (default) | `dev-{id}.{baseDomain}` |
-| Dev (alias) | `dev-{name}-{alias}-{id}.{baseDomain}` |
+| Dev | `dev-{id}.{baseDomain}` |
 
 ## Pod Communication
 

@@ -137,7 +137,7 @@ External traffic:
 │  Dynamic Routes (K8s Ingress, created by manager):              │
 │  ├── sandbox-{id}.{DOMAIN}    → svc/sandbox-{id}:8080 (VSCode) │
 │  ├── opencode-{id}.{DOMAIN}   → svc/sandbox-{id}:3000 (OC)     │
-│  ├── dev-{name}-{id}.{DOMAIN} → svc/sandbox-{id}:{port} (Dev)  │
+│  ├── dev-{id}.{DOMAIN}        → svc/sandbox-{id}:3001 (Dev)    │
 │  └── browser-{id}.{DOMAIN}    → svc/sandbox-{id}:7681 (Kasm)   │
 │                                                                 │
 │  Features:                                                      │

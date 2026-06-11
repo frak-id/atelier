@@ -118,13 +118,19 @@ export function EditWorkspaceDialog({
               repos: serializeRepos(value.repos),
               secrets: serializeEnvSecrets(value.envSecrets),
               fileSecrets: serializeFileSecrets(value.fileSecrets),
+              // `null` (not `undefined`) so an emptied command actually clears
+              // the dev server on save — the manager merges configs shallowly,
+              // so `undefined` would just preserve the previous value.
               dev: value.dev?.command?.trim()
                 ? {
                     command: value.dev.command,
                     workdir: value.dev.workdir || undefined,
                     env: value.dev.env,
                   }
-                : undefined,
+                : null,
+              // Retire the legacy multi-command blob once a workspace is saved
+              // through the single-dev-server form, so it can't shadow `dev`.
+              devCommands: [],
             },
           },
         },

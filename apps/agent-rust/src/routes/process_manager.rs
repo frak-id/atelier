@@ -167,6 +167,9 @@ impl ProcessRegistry {
     }
 
     pub async fn start_process(&self, params: StartParams<'_>) -> Result<ManagedProcess, String> {
+        // Short grace on the implicit restart-cleanup of a same-named process:
+        // we want a fast respawn, not the full STOP_GRACE_MS an explicit stop
+        // gives a dev server to flush. The group SIGKILL still reaps stragglers.
         self.stop_process(params.name, 500).await;
 
         let log_file = format!("{}/{}", LOG_DIR, params.log_prefix);

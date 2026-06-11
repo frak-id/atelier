@@ -48,6 +48,10 @@ export function buildSandboxConfig(
       opencodeEnv: workspaceContext?.opencodeEnv,
       dev: resolveDevConfig(workspace?.config),
     }),
+    devForwarder: {
+      publicPort: config.ports.dev,
+      appPort: config.ports.devApp,
+    },
   };
 }
 

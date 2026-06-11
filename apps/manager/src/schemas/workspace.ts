@@ -84,7 +84,10 @@ export const WorkspaceConfigSchema = t.Object({
   // Legacy multi-command dev config, superseded by `dev`. Read-only for
   // existing workspace blobs via resolveDevConfig(); not written anymore.
   devCommands: t.Optional(t.Array(DevCommandSchema, { default: [] })),
-  dev: t.Optional(DevConfigSchema),
+  // `null` = explicitly no dev server. Distinct from `undefined` (never set →
+  // fall back to legacy `devCommands`), so clearing the field in the UI sticks
+  // instead of resurrecting a migrated legacy command on the next read.
+  dev: t.Optional(t.Union([DevConfigSchema, t.Null()])),
   useRegistryCache: t.Optional(t.Boolean()),
 });
 export type WorkspaceConfig = Static<typeof WorkspaceConfigSchema>;
@@ -147,6 +150,8 @@ export function resolveDevConfig(
   workspaceConfig: WorkspaceConfig | undefined,
 ): DevConfig | undefined {
   if (!workspaceConfig) return undefined;
+  // Explicitly cleared — do not fall back to the legacy command.
+  if (workspaceConfig.dev === null) return undefined;
   if (workspaceConfig.dev) return workspaceConfig.dev;
   const legacy = workspaceConfig.devCommands ?? [];
   const chosen = legacy.find((c) => c.isDefault) ?? legacy[0];

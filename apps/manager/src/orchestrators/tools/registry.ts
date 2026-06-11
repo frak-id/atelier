@@ -187,10 +187,13 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           command: ctx.dev.command,
           user: "dev",
           workdir: ctx.dev.workdir ?? ctx.workspaceDir,
+          // User env first, then the forwarder contract overrides it: a
+          // user-set PORT would bind the dev server off the port the forwarder
+          // targets, silently breaking the public URL.
           env: {
+            ...(ctx.dev.env ?? {}),
             PORT: String(config.ports.devApp),
             __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: `.${config.domain.baseDomain}`,
-            ...(ctx.dev.env ?? {}),
           },
         },
       };

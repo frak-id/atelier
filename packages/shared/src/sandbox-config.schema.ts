@@ -35,6 +35,17 @@ export const SandboxConfigSchema = Type.Object({
     managerInternalUrl: Type.String(),
   }),
   services: Type.Record(Type.String(), SandboxServiceEntrySchema),
+  // Forwarder ports for the dev tool: the in-pod agent listens on `publicPort`
+  // (the K8s Service/ingress target) and bridges to `127.0.0.1:appPort` where
+  // the dev server binds. Carried here so the agent tracks the manager's
+  // `config.ports.dev`/`devApp` instead of hardcoding them. Optional for
+  // back-compat with config blobs written before this field existed.
+  devForwarder: Type.Optional(
+    Type.Object({
+      publicPort: Type.Number(),
+      appPort: Type.Number(),
+    }),
+  ),
 });
 
 export type SandboxConfig = Static<typeof SandboxConfigSchema>;

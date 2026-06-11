@@ -11,9 +11,10 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
-  deriveToolStatus,
+  deriveToolDetail,
   sandboxToolsQuery,
   serviceLogsQuery,
+  type ToolDetail,
   useSandboxServices,
   useStartTool,
   useStopTool,
@@ -56,7 +57,7 @@ export function DevCommandsPanel({ sandboxId }: { sandboxId: string }) {
           <DevServerItem
             sandboxId={sandboxId}
             url={devTool.url}
-            status={deriveToolStatus(servicesData, devTool)}
+            detail={deriveToolDetail(servicesData, devTool)}
           />
         )}
       </CardContent>
@@ -67,17 +68,18 @@ export function DevCommandsPanel({ sandboxId }: { sandboxId: string }) {
 function DevServerItem({
   sandboxId,
   url,
-  status,
+  detail,
 }: {
   sandboxId: string;
   url?: string;
-  status: string;
+  detail: ToolDetail;
 }) {
   const [expanded, setExpanded] = useState(false);
   const startMutation = useStartTool(sandboxId);
   const stopMutation = useStopTool(sandboxId);
 
-  const isRunning = status === "running";
+  const isRunning = detail.status === "running";
+  const isCrashed = detail.status === "crashed";
   const isPending = startMutation.isPending || stopMutation.isPending;
 
   const handleToggle = () => {
@@ -111,6 +113,8 @@ function DevServerItem({
                 <CheckCircle2 className="h-3 w-3" />
                 Running
               </Badge>
+            ) : isCrashed ? (
+              <Badge variant="destructive">Exit {detail.exitCode ?? "?"}</Badge>
             ) : (
               <Badge variant="secondary">Stopped</Badge>
             )}

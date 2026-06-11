@@ -241,6 +241,35 @@ export function deriveToolStatus(
   return svc?.running ? "running" : "off";
 }
 
+export interface ToolDetail {
+  status: ToolStatus | "crashed";
+  exitCode?: number;
+}
+
+export function deriveToolDetail(
+  services:
+    | {
+        services: Array<{
+          name: string;
+          running: boolean;
+          status?: string;
+          exitCode?: number;
+        }>;
+      }
+    | null
+    | undefined,
+  tool: { services: string[] } | null | undefined,
+): ToolDetail {
+  const primary = tool?.services?.[0];
+  if (!primary) return { status: "off" };
+  const svc = services?.services?.find((s) => s.name === primary);
+  if (!svc) return { status: "off" };
+  if (svc.running) return { status: "running" };
+  if (svc.status === "error")
+    return { status: "crashed", exitCode: svc.exitCode };
+  return { status: "off" };
+}
+
 export function useStartTool(sandboxId: string) {
   return useMutation({
     mutationKey: ["sandboxes", "tools", "start", sandboxId],

@@ -89,8 +89,11 @@ async fn main() {
         terminal::ensure_terminal_from_config().await;
     });
 
-    tokio::spawn(async {
-        forwarder::run(DEV_PORT, DEV_APP_PORT).await;
+    let (dev_listen, dev_target) = config::get_config()
+        .and_then(|c| c.dev_forwarder)
+        .map_or((DEV_PORT, DEV_APP_PORT), |f| (f.public_port, f.app_port));
+    tokio::spawn(async move {
+        forwarder::run(dev_listen, dev_target).await;
     });
 
     loop {

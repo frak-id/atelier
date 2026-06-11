@@ -23,11 +23,7 @@ import {
   buildSandboxConfig,
   type OpencodeWorkspaceContext,
 } from "../sandbox-config.ts";
-import {
-  buildToolIngressResources,
-  listToolInfos,
-  toolIngressNames,
-} from "../tools/registry.ts";
+import { buildToolIngressResources, listToolInfos } from "../tools/registry.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
@@ -407,9 +403,6 @@ async function deleteRestartableSandboxResources(
     ["Pod", podName],
     ["ConfigMap", configMapName],
     ["Service", `sandbox-${sandboxId}`],
-    ...toolIngressNames(sandboxId).map(
-      (name) => ["Ingress", name] as [string, string],
-    ),
     ["Pipe", `ssh-${sandboxId}`],
   ];
 
@@ -418,6 +411,13 @@ async function deleteRestartableSandboxResources(
       await kubeClient.deleteResource(kind, name);
     } catch {}
   }
+
+  // Sweep ingresses by label rather than by current tool name: pre-migration
+  // sandboxes may still carry legacy per-command `dev-{name}-{id}` ingresses a
+  // name list won't cover. createSandboxResources recreates the current set.
+  try {
+    await kubeClient.deleteLabeledIngresses(`atelier.dev/sandbox=${sandboxId}`);
+  } catch {}
 
   // Kata pods take seconds to terminate; creating a pod with the same name
   // while the old one is still Terminating 409s. Wait it out before recreating

@@ -30,9 +30,10 @@ export function DevCommandsForm({ dev, onChange }: DevCommandsFormProps) {
           placeholder="npm run dev"
         />
         <p className="text-xs text-muted-foreground">
-          Served at a public HTTPS URL. Host binding and port are handled
-          automatically — no <code>server.host</code> or{" "}
-          <code>allowedHosts</code> config needed.
+          Served at a public HTTPS URL. The server must listen on{" "}
+          <code>$PORT</code> (injected) — most frameworks do by default;
+          otherwise pass it explicitly (e.g. <code>--port $PORT</code>). No{" "}
+          <code>server.host</code> or <code>allowedHosts</code> config needed.
         </p>
       </div>
       <div className="space-y-2">
