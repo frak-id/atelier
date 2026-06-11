@@ -54,6 +54,8 @@ function parseWorkspaceRepos(
 }
 
 function resolveInitialDev(config: Workspace["config"]): DevConfig | undefined {
+  // Mirror resolveDevConfig: explicit null means "no dev", skip legacy.
+  if (config.dev === null) return undefined;
   if (config.dev) return config.dev;
   const legacy = config.devCommands ?? [];
   const chosen = legacy.find((c) => c.isDefault) ?? legacy[0];

@@ -286,7 +286,9 @@ export class KubeClient {
 
     for (const item of list.items ?? []) {
       const name = item.metadata?.name;
-      if (name) await this.delete(`${base}/${name}`);
+      // Per-item catch so one stale entry (e.g. a concurrent destroy 404)
+      // doesn't abort the sweep and leak the remaining ingresses.
+      if (name) await this.delete(`${base}/${name}`).catch(() => {});
     }
   }
 
