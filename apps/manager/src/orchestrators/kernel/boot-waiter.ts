@@ -20,12 +20,20 @@ const POLL_MAX_DELAY_MS = 500;
  * silently drop the prompt. Either use `waitForOpencodeReady` before issuing
  * prompts, or rely on the built-in registry wait inside `openOpencodeSession`.
  */
+export interface OpencodeWaitOptions {
+  timeout?: number;
+  /** Override the sandbox opencode port (e.g. the temporary warmup server). */
+  port?: number;
+  /** Return false on timeout instead of throwing. Defaults to throwing. */
+  throwOnTimeout?: boolean;
+}
+
 export async function waitForOpencodeHealthy(
   ipAddress: string,
   password?: string,
-  timeout = OPENCODE_HEALTH_TIMEOUT_MS,
-): Promise<void> {
-  await pollOpencode(ipAddress, password, timeout, isOpencodeHealthy);
+  options: OpencodeWaitOptions = {},
+): Promise<boolean> {
+  return pollOpencode(ipAddress, password, isOpencodeHealthy, options);
 }
 
 /**
@@ -44,30 +52,35 @@ export async function waitForOpencodeHealthy(
 export async function waitForOpencodeReady(
   ipAddress: string,
   password?: string,
-  timeout = OPENCODE_HEALTH_TIMEOUT_MS,
-): Promise<void> {
-  await pollOpencode(ipAddress, password, timeout, isOpencodeReady);
+  options: OpencodeWaitOptions = {},
+): Promise<boolean> {
+  return pollOpencode(ipAddress, password, isOpencodeReady, options);
 }
 
 async function pollOpencode(
   ipAddress: string,
   password: string | undefined,
-  timeout: number,
   predicate: (client: SandboxOpencodeClient) => Promise<boolean>,
-): Promise<void> {
+  options: OpencodeWaitOptions,
+): Promise<boolean> {
+  const timeout = options.timeout ?? OPENCODE_HEALTH_TIMEOUT_MS;
   const startTime = Date.now();
   const client = createSandboxOpencodeClient(ipAddress, password, {
     timeoutMs: OPENCODE_REQUEST_TIMEOUT_MS,
+    port: options.port,
   });
   let delay = POLL_INITIAL_DELAY_MS;
 
   while (Date.now() - startTime < timeout) {
-    if (await predicate(client)) return;
+    if (await predicate(client)) return true;
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
   }
 
-  throw new Error("OpenCode server did not become ready within timeout");
+  if (options.throwOnTimeout ?? true) {
+    throw new Error("OpenCode server did not become ready within timeout");
+  }
+  return false;
 }
 
 async function isOpencodeHealthy(
