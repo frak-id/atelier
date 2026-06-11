@@ -51,18 +51,6 @@ export class PrebuildPermanentError extends Error {
   }
 }
 
-export interface PrebuildScenario {
-  kind: "workspace";
-  workspaceId: string;
-  getWorkspace: () => Workspace | undefined;
-  updateStatus: (
-    status: PrebuildStatus,
-    latestId?: string,
-    commitHashes?: Record<string, string>,
-    errorMessage?: string,
-  ) => void;
-}
-
 export interface PrebuildRunnerDependencies {
   workspaceService: WorkspaceService;
   userService: UserService;
@@ -106,23 +94,7 @@ export class PrebuildRunner {
     let lastError: unknown;
     for (let attempt = 1; attempt <= MAX_PREBUILD_RETRIES; attempt++) {
       try {
-        await this.runScenario({
-          kind: "workspace",
-          workspaceId,
-          getWorkspace: () => this.deps.workspaceService.getById(workspaceId),
-          updateStatus: (status, latestId, commitHashes, errorMessage) => {
-            const current = this.deps.workspaceService.getById(workspaceId);
-            if (!current) return;
-            this.updatePrebuildStatus(
-              workspaceId,
-              current,
-              status,
-              latestId,
-              commitHashes,
-              errorMessage,
-            );
-          },
-        });
+        await this.runWorkspacePrebuild(workspaceId);
         return;
       } catch (error) {
         lastError = error;
@@ -276,26 +248,24 @@ export class PrebuildRunner {
   }
 
   // ---------------------------------------------------------------------------
-  // Core scenario runner
+  // Core prebuild runner
   // ---------------------------------------------------------------------------
 
-  private async runScenario(scenario: PrebuildScenario): Promise<void> {
-    const key = scenario.workspaceId;
+  private async runWorkspacePrebuild(workspaceId: string): Promise<void> {
+    const key = workspaceId;
     if (this.activeBuilds.has(key)) {
       throw new Error(
-        `Workspace '${scenario.workspaceId}' already has a prebuild in progress`,
+        `Workspace '${workspaceId}' already has a prebuild in progress`,
       );
     }
 
-    if (scenario.kind === "workspace") {
-      const workspace = this.requireWorkspace(scenario);
-      if (workspace.config.prebuild?.status === "building") {
-        throw new Error(
-          `Workspace '${scenario.workspaceId}' already has a prebuild in progress`,
-        );
-      }
-      scenario.updateStatus("building");
+    const workspace = this.requireWorkspace(workspaceId);
+    if (workspace.config.prebuild?.status === "building") {
+      throw new Error(
+        `Workspace '${workspaceId}' already has a prebuild in progress`,
+      );
     }
+    this.setStatus(workspaceId, "building");
 
     const namespace = config.kubernetes.namespace;
     const resourceName = this.resourceNameForKey(key);
@@ -307,12 +277,9 @@ export class PrebuildRunner {
 
     try {
       if (isMock()) {
-        if (scenario.kind === "workspace") {
-          const workspace = this.requireWorkspace(scenario);
-          const commitHashes = await this.captureCommitHashes(workspace);
-          const snapshotName = this.snapshotNameForKey(key);
-          scenario.updateStatus("ready", snapshotName, commitHashes);
-        }
+        const commitHashes = await this.captureCommitHashes(workspace);
+        const snapshotName = this.snapshotNameForKey(key);
+        this.setStatus(workspaceId, "ready", snapshotName, commitHashes);
         return;
       }
 
@@ -349,7 +316,7 @@ export class PrebuildRunner {
       // so the PVC binds only when a pod referencing it is scheduled.
       // Step 2: Spawn temp pod with base image + PVC at /home/dev
       await timer.step("create_pod", async () => {
-        const image = this.resolveBaseImage(scenario);
+        const image = this.resolveBaseImage(workspaceId);
         log.info({ key, podName, image }, "Spawning prebuild pod");
 
         await this.deps.kubeClient.createResource(
@@ -362,14 +329,8 @@ export class PrebuildRunner {
           namespace,
         );
 
-        // Use workspace resource config if available, with generous defaults for prebuild
-        const memoryMb =
-          scenario.kind === "workspace"
-            ? Math.max(
-                this.requireWorkspace(scenario).config.memoryMb ?? 4096,
-                4096,
-              )
-            : 4096;
+        // Use workspace resource config, with a generous floor for prebuild.
+        const memoryMb = Math.max(workspace.config.memoryMb ?? 4096, 4096);
         const memoryLimit = `${memoryMb}Mi`;
         const cpuLimit = memoryMb >= 8192 ? "4000m" : "2000m";
 
@@ -404,7 +365,7 @@ export class PrebuildRunner {
 
       // Step 4: Run prebuild steps via agent
       const commitHashes = await timer.step("prebuild_steps", () =>
-        this.runPrebuildSteps(sandboxId, scenario, timer),
+        this.runPrebuildSteps(sandboxId, workspaceId, timer),
       );
 
       // Flush writes to PVC before snapshot
@@ -446,15 +407,11 @@ export class PrebuildRunner {
       log.info({ key, snapshotName }, "Prebuild snapshot ready");
 
       // Step 8: Update status
-      scenario.updateStatus("ready", snapshotName, commitHashes);
+      this.setStatus(workspaceId, "ready", snapshotName, commitHashes);
       timer.end();
     } catch (error) {
-      if (scenario.kind === "workspace") {
-        const workspace = scenario.getWorkspace();
-        const message = error instanceof Error ? error.message : String(error);
-        if (workspace)
-          scenario.updateStatus("failed", undefined, undefined, message);
-      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.setStatus(workspaceId, "failed", undefined, undefined, message);
       throw error;
     } finally {
       await this.cleanupBuildResources(key);
@@ -468,11 +425,12 @@ export class PrebuildRunner {
 
   private async runPrebuildSteps(
     sandboxId: string,
-    scenario: PrebuildScenario,
+    workspaceId: string,
     timer: PhaseTimer,
   ): Promise<Record<string, string>> {
     const agent = this.deps.agentClient;
     const githubToken = this.deps.userService.resolveGitHubToken();
+    const workspace = this.requireWorkspace(workspaceId);
     let commitHashes: Record<string, string> = {};
 
     await timer.step("push_configs", async () => {
@@ -488,82 +446,75 @@ export class PrebuildRunner {
       // plugins like `oh-my-openagent`, never downloads them into
       // ~/.cache/opencode/packages, and the snapshot ships cold — every
       // runtime sandbox then pays the full plugin install cost on first use.
-      await this.pushWorkspaceConfigs(sandboxId, scenario);
+      await this.pushWorkspaceConfigs(sandboxId, workspaceId);
     });
 
-    if (scenario.kind === "workspace") {
-      const workspace = this.requireWorkspace(scenario);
+    // Clone repositories
+    if (workspace.config.repos?.length) {
+      const repos = workspace.config.repos;
+      await timer.step("clone_repos", async () => {
+        for (const repo of repos) {
+          await GuestOps.cloneRepository(agent, sandboxId, repo, githubToken);
+        }
 
-      // Clone repositories
-      if (workspace.config.repos?.length) {
-        const repos = workspace.config.repos;
-        await timer.step("clone_repos", async () => {
-          for (const repo of repos) {
-            await GuestOps.cloneRepository(agent, sandboxId, repo, githubToken);
-          }
+        // Sanitize git URLs (remove tokens from remote)
+        await GuestOps.sanitizeGitRemoteUrls(agent, sandboxId, repos);
+      });
 
-          // Sanitize git URLs (remove tokens from remote)
-          await GuestOps.sanitizeGitRemoteUrls(agent, sandboxId, repos);
-        });
+      // Capture commit hashes from inside the pod
+      commitHashes = await this.captureCommitHashesFromPod(sandboxId, workspace);
 
-        // Capture commit hashes from inside the pod
-        commitHashes = await this.captureCommitHashesFromPod(
-          sandboxId,
-          workspace,
+      // A "ready" prebuild must carry a hash for every repo: the staleness
+      // checker treats any missing hash as stale and rebuilds on the next
+      // cron tick, so a snapshot with gaps loops forever. Fail the attempt
+      // (it retries) instead of shipping a perpetually-stale snapshot.
+      if (Object.keys(commitHashes).length < repos.length) {
+        throw new Error(
+          `Captured ${Object.keys(commitHashes).length}/${repos.length} repo commit hashes; failing prebuild to avoid a perpetually-stale snapshot`,
         );
+      }
+    }
 
-        // A "ready" prebuild must carry a hash for every repo: the staleness
-        // checker treats any missing hash as stale and rebuilds on the next
-        // cron tick, so a snapshot with gaps loops forever. Fail the attempt
-        // (it retries) instead of shipping a perpetually-stale snapshot.
-        if (Object.keys(commitHashes).length < repos.length) {
-          throw new Error(
-            `Captured ${Object.keys(commitHashes).length}/${repos.length} repo commit hashes; failing prebuild to avoid a perpetually-stale snapshot`,
+    // Write secrets and file secrets (needed by init commands)
+    const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
+      GuestOps.collectSecretFiles(workspace),
+      GuestOps.collectGitCredentialFiles(githubToken),
+      GuestOps.collectFileSecretFiles(workspace),
+    ]);
+    const allFiles = [...secretFiles, ...gitCredFiles, ...fileSecretFiles];
+    if (allFiles.length > 0) {
+      log.info(
+        { sandboxId, fileCount: allFiles.length },
+        "Writing secrets to prebuild pod",
+      );
+      await agent.writeFiles(sandboxId, allFiles);
+    }
+
+    // Run init commands
+    await timer.step("init_commands", async () => {
+      for (const command of workspace.config.initCommands) {
+        log.info({ sandboxId, command }, "Running init command");
+        const result = await agent.exec(sandboxId, command, {
+          timeout: INIT_COMMAND_TIMEOUT_MS,
+          user: "dev",
+          workdir: VM.WORKSPACE_DIR,
+        });
+        if (result.exitCode !== 0) {
+          throw new PrebuildPermanentError(
+            `Init command failed: ${command}\n${result.stderr}`,
           );
         }
       }
+    });
 
-      // Write secrets and file secrets (needed by init commands)
-      const [secretFiles, gitCredFiles, fileSecretFiles] = await Promise.all([
-        GuestOps.collectSecretFiles(workspace),
-        GuestOps.collectGitCredentialFiles(githubToken),
-        GuestOps.collectFileSecretFiles(workspace),
-      ]);
-      const allFiles = [...secretFiles, ...gitCredFiles, ...fileSecretFiles];
-      if (allFiles.length > 0) {
-        log.info(
-          { sandboxId, fileCount: allFiles.length },
-          "Writing secrets to prebuild pod",
-        );
-        await agent.writeFiles(sandboxId, allFiles);
-      }
+    // Fix ownership after init commands
+    log.info({ sandboxId }, "Fixing workspace ownership");
+    await agent.exec(sandboxId, `chown -R dev:dev ${VM.WORKSPACE_DIR}`, {
+      timeout: INIT_COMMAND_TIMEOUT_MS,
+    });
 
-      // Run init commands
-      await timer.step("init_commands", async () => {
-        for (const command of workspace.config.initCommands) {
-          log.info({ sandboxId, command }, "Running init command");
-          const result = await agent.exec(sandboxId, command, {
-            timeout: INIT_COMMAND_TIMEOUT_MS,
-            user: "dev",
-            workdir: VM.WORKSPACE_DIR,
-          });
-          if (result.exitCode !== 0) {
-            throw new PrebuildPermanentError(
-              `Init command failed: ${command}\n${result.stderr}`,
-            );
-          }
-        }
-      });
-
-      // Fix ownership after init commands
-      log.info({ sandboxId }, "Fixing workspace ownership");
-      await agent.exec(sandboxId, `chown -R dev:dev ${VM.WORKSPACE_DIR}`, {
-        timeout: INIT_COMMAND_TIMEOUT_MS,
-      });
-    }
-
-    // OpenCode warmup (both workspace and system)
-    const bootstrapDirs = this.resolveWarmupDirs(scenario);
+    // OpenCode warmup
+    const bootstrapDirs = this.resolveWarmupDirs(workspaceId);
     await timer.step("opencode_warmup", () =>
       warmupOpencode(
         {
@@ -608,9 +559,8 @@ export class PrebuildRunner {
    */
   private async pushWorkspaceConfigs(
     sandboxId: string,
-    scenario: PrebuildScenario,
+    workspaceId: string,
   ): Promise<void> {
-    const workspaceId = scenario.workspaceId;
     try {
       const result = await this.deps.internalService.syncConfigsToSandbox(
         sandboxId,
@@ -628,8 +578,8 @@ export class PrebuildRunner {
     }
   }
 
-  private resolveWarmupDirs(scenario: PrebuildScenario): string[] {
-    const workspace = scenario.getWorkspace();
+  private resolveWarmupDirs(workspaceId: string): string[] {
+    const workspace = this.deps.workspaceService.getById(workspaceId);
     const repos = workspace?.config.repos ?? [];
     if (repos.length === 0) {
       return [VM.WORKSPACE_DIR];
@@ -728,12 +678,10 @@ export class PrebuildRunner {
     }
   }
 
-  private requireWorkspace(
-    scenario: Extract<PrebuildScenario, { kind: "workspace" }>,
-  ): Workspace {
-    const workspace = scenario.getWorkspace();
+  private requireWorkspace(workspaceId: string): Workspace {
+    const workspace = this.deps.workspaceService.getById(workspaceId);
     if (!workspace) {
-      throw new Error(`Workspace '${scenario.workspaceId}' not found`);
+      throw new Error(`Workspace '${workspaceId}' not found`);
     }
     return workspace;
   }
@@ -861,13 +809,10 @@ export class PrebuildRunner {
     }
   }
 
-  private resolveBaseImage(scenario: PrebuildScenario): string {
-    if (scenario.kind === "workspace") {
-      const workspace = this.requireWorkspace(scenario);
-      const baseImage = workspace.config.baseImage || "dev-base";
-      return `${config.kubernetes.registryUrl}/${baseImage}:latest`;
-    }
-    return `${config.kubernetes.registryUrl}/dev-base:latest`;
+  private resolveBaseImage(workspaceId: string): string {
+    const baseImage =
+      this.requireWorkspace(workspaceId).config.baseImage || "dev-base";
+    return `${config.kubernetes.registryUrl}/${baseImage}:latest`;
   }
 
   private snapshotNameForKey(key: string): string {
@@ -901,6 +846,27 @@ export class PrebuildRunner {
     }
 
     return hashes;
+  }
+
+  // Re-fetch the workspace before each transition (it may have been deleted
+  // mid-build) and no-op if it's gone.
+  private setStatus(
+    workspaceId: string,
+    status: PrebuildStatus,
+    latestId?: string,
+    commitHashes?: Record<string, string>,
+    errorMessage?: string,
+  ): void {
+    const workspace = this.deps.workspaceService.getById(workspaceId);
+    if (!workspace) return;
+    this.updatePrebuildStatus(
+      workspaceId,
+      workspace,
+      status,
+      latestId,
+      commitHashes,
+      errorMessage,
+    );
   }
 
   private updatePrebuildStatus(
