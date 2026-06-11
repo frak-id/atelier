@@ -1,5 +1,6 @@
 import { SandboxError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { eventBus } from "../events/index.ts";
 import { kubeClient } from "../kubernetes/index.ts";
 import type {
   AgentHealth,
@@ -48,14 +49,37 @@ interface RequestOptions {
 }
 
 export class AgentClient {
-  constructor(private readonly kube: typeof kubeClient = kubeClient) {}
+  // A pod's IP is stable for its lifetime and only changes when the pod is
+  // recreated (restart/recover) or removed — each preceded by a stop that
+  // emits sandbox.updated/deleted. Caching it spares a K8s GET on every one
+  // of the ~10-20 agent calls a single spawn issues.
+  private readonly podIpCache = new Map<string, string>();
+
+  constructor(private readonly kube: typeof kubeClient = kubeClient) {
+    eventBus.subscribe((event) => {
+      if (
+        event.type === "sandbox.updated" ||
+        event.type === "sandbox.deleted"
+      ) {
+        this.podIpCache.delete(event.properties.id);
+      }
+    });
+  }
 
   private async getAgentUrl(sandboxId: string): Promise<string> {
+    return `http://${await this.resolvePodIp(sandboxId)}:${AGENT_PORT}`;
+  }
+
+  private async resolvePodIp(sandboxId: string): Promise<string> {
+    const cached = this.podIpCache.get(sandboxId);
+    if (cached) return cached;
+
     const podIp = await this.kube.getPodIp(`sandbox-${sandboxId}`);
     if (!podIp) {
       throw new AgentUnavailableError(sandboxId, "sandbox pod has no IP yet");
     }
-    return `http://${podIp}:${AGENT_PORT}`;
+    this.podIpCache.set(sandboxId, podIp);
+    return podIp;
   }
 
   private async request<T>(
@@ -132,6 +156,7 @@ export class AgentClient {
         if (response.ok) {
           const health = (await response.json()) as AgentHealth;
           if (health.status === "healthy") {
+            this.podIpCache.set(sandboxId, ip);
             log.info({ sandboxId, podIp: ip }, "Agent is healthy");
             return { ready: true, podIp: ip };
           }

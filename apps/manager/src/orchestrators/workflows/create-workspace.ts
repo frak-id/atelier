@@ -126,14 +126,13 @@ export async function createWorkspaceSandbox(
           : workspace.config.repos;
 
       await timer.step("clone_repos", async () => {
-        for (const repo of repos) {
-          await GuestOps.cloneRepository(
-            ports.agent,
-            sandboxId,
-            repo,
-            githubToken,
-          );
-        }
+        // Distinct clone paths, no ordering constraint — clone in parallel so
+        // multi-repo workspaces don't pay N× clone latency serially.
+        await Promise.all(
+          repos.map((repo) =>
+            GuestOps.cloneRepository(ports.agent, sandboxId, repo, githubToken),
+          ),
+        );
         await GuestOps.sanitizeGitRemoteUrls(
           ports.agent,
           sandboxId,
