@@ -37,7 +37,6 @@ import { GuestOps } from "./ports/guest-ops.ts";
 const log = createChildLogger("prebuild-runner");
 
 const POLL_INTERVAL_MS = 2000;
-// const POD_TIMEOUT_MS = 120_000;
 const AGENT_TIMEOUT_MS = 60_000;
 const SNAPSHOT_TIMEOUT_MS = 300_000;
 const SNAPSHOT_DELETE_TIMEOUT_MS = 60_000;

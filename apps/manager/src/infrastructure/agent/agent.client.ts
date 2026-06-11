@@ -302,19 +302,6 @@ export class AgentClient {
     );
   }
 
-  async startServices(
-    sandboxId: string,
-    serviceNames: string[],
-  ): Promise<void> {
-    await Promise.all(
-      serviceNames.map((name) =>
-        this.serviceStart(sandboxId, name).catch((err) => {
-          console.warn(`Failed to start service ${name}: ${err}`);
-        }),
-      ),
-    );
-  }
-
   async terminalSessionCreate(
     sandboxId: string,
     userId: string,

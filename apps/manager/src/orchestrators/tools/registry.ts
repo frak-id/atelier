@@ -19,10 +19,9 @@ import { config } from "../../shared/lib/config.ts";
  * even for workspaceless sandboxes. Everything else (vscode, terminal, the
  * browser/VNC stack) is generic and could later be made user-configurable.
  *
- * NOTE: the in-pod agent does NOT act on the `autoStart` flag (its autostart
- * loop is disabled — see agent `main.rs`). The manager decides what to start
- * via `bootServiceNames()` / `coreServiceNames()`; `autoStart` is kept on the
- * service entry purely as descriptive metadata.
+ * NOTE: the in-pod agent's autostart loop is disabled (see agent `main.rs`),
+ * so service entries carry no start flag — the manager decides what to start
+ * via `bootServiceNames()` / `coreServiceNames()`.
  */
 
 type ServiceEntry = SandboxConfig["services"][string];
@@ -85,7 +84,6 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           port,
           command: `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${port} --auth none --disable-telemetry ${ctx.workspaceDir}`,
           user: "dev",
-          autoStart: true,
         },
       };
     },
@@ -108,7 +106,6 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           port,
           command: `cd ${ctx.workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${port} --cors https://${ctx.dashboardDomain}`,
           user: "dev",
-          autoStart: true,
           env: {
             ...(ctx.opencodePassword && {
               OPENCODE_SERVER_PASSWORD: ctx.opencodePassword,
@@ -154,19 +151,16 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           port,
           command: `Xvnc :99 -geometry 1280x900 -depth 24 -websocketPort ${port} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -DisableBasicAuth -UseIPv6 0 -interface 0.0.0.0 -httpd /usr/share/kasmvnc/www -FrameRate 60 -DynamicQualityMin 7 -DynamicQualityMax 9 -RectThreads 0 -CompareFB 2 -DetectScrolling -sslOnly 0`,
           user: "root",
-          autoStart: false,
         },
         openbox: {
           command: "openbox",
           user: "dev",
-          autoStart: false,
           env: { DISPLAY: ":99" },
         },
         chromium: {
           command:
             "chromium --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-first-run --disable-session-crashed-bubble --disable-infobars --disable-translate --disable-features=TranslateUI --password-store=basic --disable-background-networking --disable-sync --disable-extensions --disable-default-apps --disable-breakpad --disable-component-extensions-with-background-pages --disable-background-timer-throttling --force-device-scale-factor=1 --disable-lcd-text --renderer-process-limit=2 --disk-cache-size=104857600 --user-data-dir=/tmp/chromium-profile about:blank",
           user: "dev",
-          autoStart: false,
           env: { DISPLAY: ":99" },
         },
       };

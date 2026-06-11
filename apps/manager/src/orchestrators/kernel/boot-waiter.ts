@@ -1,37 +1,14 @@
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import type { KubeClient } from "../../infrastructure/kubernetes/index.ts";
 import { config } from "../../shared/lib/config.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
 import {
   buildOpenCodeAuthHeaders,
   createTimeoutFetch,
   OPENCODE_REQUEST_TIMEOUT_MS,
 } from "../../shared/lib/opencode-auth.ts";
 
-const log = createChildLogger("boot-waiter");
-
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
 const POLL_INITIAL_DELAY_MS = 100;
 const POLL_MAX_DELAY_MS = 500;
-
-export async function waitForPodIp(
-  kube: KubeClient,
-  podName: string,
-  timeout = 60000,
-): Promise<string | null> {
-  const deadline = Date.now() + timeout;
-
-  while (Date.now() < deadline) {
-    const ip = await kube.getPodIp(podName);
-    if (ip) {
-      return ip;
-    }
-    await Bun.sleep(500);
-  }
-
-  log.warn({ podName, timeout }, "Pod did not get IP in time");
-  return null;
-}
 
 /**
  * Wait until the OpenCode HTTP server responds healthy.

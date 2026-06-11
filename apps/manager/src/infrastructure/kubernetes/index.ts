@@ -26,13 +26,7 @@ export {
   toolHost,
   toolIngressName,
 } from "./kube.resources.ts";
-export type {
-  JobStatus,
-  KubeEvent,
-  PodPhase,
-  WatchEvent,
-} from "./kube.watcher.ts";
-export { pollPodReady, readPodEvents, watchPodStatus } from "./kube.watcher.ts";
+export type { JobStatus, PodPhase } from "./kube.client.ts";
 export { ensureSharedSshPipeKey } from "./ssh-pipe-key.ts";
 
 /**
