@@ -1,8 +1,7 @@
-import { $ } from "bun";
 import type { UserService } from "../modules/user/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
-import type { RepoConfig } from "../schemas/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { getRemoteCommitHash } from "./ports/git-remote.ts";
 import type { PrebuildRunner } from "./prebuild-runner.ts";
 
 const log = createChildLogger("prebuild-checker");
@@ -63,6 +62,7 @@ export class PrebuildChecker {
       return true;
     }
 
+    const githubToken = this.deps.userService.resolveGitHubToken();
     let fetchFailures = 0;
 
     for (const repo of workspace.config.repos) {
@@ -74,7 +74,7 @@ export class PrebuildChecker {
         return true;
       }
 
-      const remoteHash = await this.getRemoteCommitHash(repo);
+      const remoteHash = await getRemoteCommitHash(repo, githubToken);
       if (!remoteHash) {
         log.warn({ workspaceId, clonePath }, "Failed to fetch remote hash");
         fetchFailures++;
@@ -98,33 +98,5 @@ export class PrebuildChecker {
     }
 
     return false;
-  }
-
-  private async getRemoteCommitHash(repo: RepoConfig): Promise<string | null> {
-    const gitUrl = await this.buildGitUrl(repo);
-    const branch = repo.branch;
-
-    const result = await $`git ls-remote ${gitUrl} refs/heads/${branch}`
-      .quiet()
-      .nothrow();
-
-    if (result.exitCode !== 0) {
-      log.warn({ branch, exitCode: result.exitCode }, "git ls-remote failed");
-      return null;
-    }
-
-    const output = result.stdout.toString().trim();
-    if (!output) return null;
-
-    const hash = output.split("\t")[0];
-    return hash || null;
-  }
-
-  private buildGitUrl(repo: RepoConfig): string {
-    const token = this.deps.userService.resolveGitHubToken();
-    if (token && repo.url.includes("github.com")) {
-      return repo.url.replace("https://", `https://x-access-token:${token}@`);
-    }
-    return repo.url;
   }
 }

@@ -1,6 +1,5 @@
 import { VM } from "@frak/atelier-shared/constants";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import { $ } from "bun";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import { eventBus } from "../infrastructure/events/index.ts";
 import {
@@ -20,7 +19,6 @@ import type { UserService } from "../modules/user/index.ts";
 import type { WorkspaceService } from "../modules/workspace/index.ts";
 import type {
   PrebuildStatus,
-  RepoConfig,
   Workspace,
   WorkspaceConfig,
 } from "../schemas/index.ts";
@@ -32,6 +30,7 @@ import {
   OPENCODE_REQUEST_TIMEOUT_MS,
 } from "../shared/lib/opencode-auth.ts";
 import { PhaseTimer } from "../shared/lib/phase-timer.ts";
+import { getRemoteCommitHash } from "./ports/git-remote.ts";
 import { GuestOps } from "./ports/guest-ops.ts";
 
 const log = createChildLogger("prebuild-runner");
@@ -44,7 +43,6 @@ const INIT_COMMAND_TIMEOUT_MS = 300_000;
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
 const OPENCODE_WARMUP_BOOTSTRAP_TIMEOUT_MS = 120_000;
 const OPENCODE_WARMUP_PORT = 4200;
-const GIT_TOKEN_PLACEHOLDER = "$" + "{GIT_TOKEN}";
 const MAX_PREBUILD_RETRIES = 5;
 const RETRY_DELAY_MS = 5_000;
 const PVC_DELETE_TIMEOUT_MS = 60_000;
@@ -1185,38 +1183,13 @@ export class PrebuildRunner {
     const hashes: Record<string, string> = {};
     if (!workspace.config.repos.length) return hashes;
 
+    const githubToken = this.deps.userService.resolveGitHubToken();
     for (const repo of workspace.config.repos) {
-      const gitUrl = this.buildGitUrl(repo);
-      const token = this.getGitToken();
-      const authUrl = token
-        ? gitUrl.replace(GIT_TOKEN_PLACEHOLDER, token)
-        : gitUrl;
-
-      const result = await $`git ls-remote ${authUrl} refs/heads/${repo.branch}`
-        .quiet()
-        .nothrow();
-      if (result.exitCode !== 0) continue;
-
-      const output = result.stdout.toString().trim();
-      if (!output) continue;
-
-      const hash = output.split("\t")[0];
+      const hash = await getRemoteCommitHash(repo, githubToken);
       if (hash) hashes[repo.clonePath] = hash;
     }
 
     return hashes;
-  }
-
-  private buildGitUrl(repo: RepoConfig): string {
-    const token = this.deps.userService.resolveGitHubToken();
-    if (token && repo.url.includes("github.com")) {
-      return repo.url.replace("https://", `https://x-access-token:${token}@`);
-    }
-    return repo.url;
-  }
-
-  private getGitToken(): string | undefined {
-    return this.deps.userService.resolveGitHubToken();
   }
 
   private updatePrebuildStatus(
