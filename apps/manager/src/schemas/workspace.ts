@@ -78,7 +78,6 @@ export const WorkspaceConfigSchema = t.Object({
   secrets: t.Record(t.String(), t.String(), { default: {} }),
   fileSecrets: t.Optional(t.Array(FileSecretSchema, { default: [] })),
   repos: t.Array(RepoConfigSchema, { default: [] }),
-  exposedPorts: t.Array(t.Number(), { default: [] }),
   prebuild: t.Optional(PrebuildInfoSchema),
   sessionTemplates: t.Optional(SessionTemplatesSchema),
   // Legacy multi-command dev config, superseded by `dev`. Read-only for
@@ -143,7 +142,6 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
   secrets: {},
   fileSecrets: [],
   repos: [],
-  exposedPorts: [],
 };
 
 export function resolveDevConfig(

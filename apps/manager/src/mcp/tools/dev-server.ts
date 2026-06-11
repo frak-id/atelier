@@ -26,7 +26,7 @@ function text(value: unknown, isError = false) {
   };
 }
 
-export function registerDevCommandTools(server: McpServer): void {
+export function registerDevServerTools(server: McpServer): void {
   server.registerTool(
     "get_dev_server",
     {

@@ -10,11 +10,12 @@ import {
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import type {
-  Sandbox,
-  SandboxOrigin,
-  SandboxUrls,
-  Workspace,
+import {
+  resolveDevConfig,
+  type Sandbox,
+  type SandboxOrigin,
+  type SandboxUrls,
+  type Workspace,
 } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -248,7 +249,7 @@ export async function finalizeNewSandbox(
   podName: string,
   ports: SandboxPorts,
 ): Promise<Sandbox> {
-  const urls = buildUrls(sandboxId);
+  const urls = buildUrls(sandboxId, sandboxHasDev(sandbox, ports));
 
   sandbox.status = "running";
   sandbox.runtime.urls = urls;
@@ -278,7 +279,7 @@ export async function finalizeRestartedSandbox(
     status: "running",
     runtime: {
       ...sandbox.runtime,
-      urls: buildUrls(sandboxId),
+      urls: buildUrls(sandboxId, sandboxHasDev(sandbox, ports)),
     },
     updatedAt: new Date().toISOString(),
   };
@@ -297,7 +298,14 @@ function resolveSandboxImage(baseImage?: string): string {
   return `${config.kubernetes.registryUrl}/${baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
 }
 
-function buildUrls(sandboxId: string): SandboxUrls {
+function sandboxHasDev(sandbox: Sandbox, ports: SandboxPorts): boolean {
+  const workspace = sandbox.workspaceId
+    ? ports.workspaces.getById(sandbox.workspaceId)
+    : undefined;
+  return !!resolveDevConfig(workspace?.config);
+}
+
+function buildUrls(sandboxId: string, hasDev: boolean): SandboxUrls {
   const sshHost =
     config.domain.ssh.hostname || `ssh.${config.domain.baseDomain}`;
   const sshPort = config.domain.ssh.port;
@@ -311,7 +319,7 @@ function buildUrls(sandboxId: string): SandboxUrls {
     vscode: toolUrls.vscode ?? "",
     opencode: toolUrls.opencode ?? "",
     ...(toolUrls.browser ? { browser: toolUrls.browser } : {}),
-    ...(toolUrls.dev ? { dev: toolUrls.dev } : {}),
+    ...(hasDev && toolUrls.dev ? { dev: toolUrls.dev } : {}),
     ssh:
       sshPort === 22
         ? `ssh ${sandboxId}@${sshHost}`

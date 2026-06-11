@@ -284,14 +284,6 @@ function WorkspaceDetailPage() {
               value={`${workspace.config.vcpus} vCPU / ${workspace.config.memoryMb}MB`}
             />
             <DetailRow
-              label="Exposed Ports"
-              value={
-                workspace.config.exposedPorts.length > 0
-                  ? workspace.config.exposedPorts.join(", ")
-                  : "None"
-              }
-            />
-            <DetailRow
               label="Created"
               value={formatDate(workspace.createdAt)}
             />
