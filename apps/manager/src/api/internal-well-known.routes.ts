@@ -1,5 +1,7 @@
 import { Elysia } from "elysia";
 import { sandboxService, workspaceService } from "../container.ts";
+import { toolUrl } from "../orchestrators/tools/registry.ts";
+import { resolveDevConfig } from "../schemas/index.ts";
 import { WellKnownAtelierConfigSchema } from "../schemas/well-known.ts";
 import { config } from "../shared/lib/config.ts";
 import { createInternalGuard, getRequestIp } from "../shared/lib/internal.ts";
@@ -60,28 +62,9 @@ export const internalWellKnownRoutes = new Elysia({
       const workspace = sandbox.workspaceId
         ? workspaceService.getById(sandbox.workspaceId)
         : undefined;
-
-      const named: Record<string, string> = {};
-      let defaultDevUrl: string | undefined;
-
-      for (const cmd of workspace?.config.devCommands ?? []) {
-        if (cmd.port) {
-          named[cmd.name] =
-            `https://dev-${cmd.name}-${sandbox.id}.${config.domain.dashboard}`;
-          if (cmd.isDefault) {
-            defaultDevUrl = `https://dev-${sandbox.id}.${config.domain.dashboard}`;
-          }
-        }
-
-        const extraPorts = cmd.extraPorts;
-        if (extraPorts && extraPorts.length > 0) {
-          for (const ep of extraPorts) {
-            const name = `${cmd.name}-${ep.alias}`;
-            named[name] =
-              `https://dev-${cmd.name}-${ep.alias}-${sandbox.id}.${config.domain.dashboard}`;
-          }
-        }
-      }
+      const devUrl = resolveDevConfig(workspace?.config)
+        ? toolUrl("dev", sandbox.id)
+        : undefined;
 
       return {
         baseDomain: config.domain.baseDomain,
@@ -89,10 +72,7 @@ export const internalWellKnownRoutes = new Elysia({
         sandboxId: sandbox.id,
         routes: {
           ...sandbox.runtime.urls,
-          dev: {
-            named,
-            default: defaultDevUrl,
-          },
+          dev: devUrl,
         },
       };
     },

@@ -1,6 +1,7 @@
 mod body;
 mod command;
 mod config;
+mod forwarder;
 mod limits;
 mod response;
 mod router;
@@ -19,7 +20,7 @@ use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
-use config::AGENT_PORT;
+use config::{AGENT_PORT, DEV_APP_PORT, DEV_PORT};
 
 pub fn utc_rfc3339() -> String {
     let dur = SystemTime::now()
@@ -86,6 +87,13 @@ async fn main() {
 
     tokio::spawn(async {
         terminal::ensure_terminal_from_config().await;
+    });
+
+    let (dev_listen, dev_target) = config::get_config()
+        .and_then(|c| c.dev_forwarder)
+        .map_or((DEV_PORT, DEV_APP_PORT), |f| (f.public_port, f.app_port));
+    tokio::spawn(async move {
+        forwarder::run(dev_listen, dev_target).await;
     });
 
     loop {

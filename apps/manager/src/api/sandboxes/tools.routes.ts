@@ -1,5 +1,5 @@
 import Elysia from "elysia";
-import { agentClient } from "../../container";
+import { agentClient, workspaceService } from "../../container";
 import { internalBus } from "../../infrastructure/events";
 import {
   getTool,
@@ -8,6 +8,7 @@ import {
 } from "../../orchestrators/tools/registry.ts";
 import {
   IdParamSchema,
+  resolveDevConfig,
   ToolActionResponseSchema,
   ToolListResponseSchema,
   ToolSlugParamsSchema,
@@ -18,17 +19,38 @@ import { sandboxIdGuard } from "./guard";
 
 const log = createChildLogger("tool-routes");
 
+function hasDevConfigured(sandbox: { workspaceId?: string }): boolean {
+  const workspace = sandbox.workspaceId
+    ? workspaceService.getById(sandbox.workspaceId)
+    : undefined;
+  return !!resolveDevConfig(workspace?.config);
+}
+
 export const toolsRoutes = new Elysia()
   .use(sandboxIdGuard)
-  .get("/:id/tools", ({ sandbox }) => listToolInfos(sandbox.id), {
-    params: IdParamSchema,
-    response: ToolListResponseSchema,
-  })
+  .get(
+    "/:id/tools",
+    ({ sandbox }) => {
+      const hasDev = hasDevConfigured(sandbox);
+      return listToolInfos(sandbox.id).filter(
+        (t) => t.slug !== "dev" || hasDev,
+      );
+    },
+    {
+      params: IdParamSchema,
+      response: ToolListResponseSchema,
+    },
+  )
   .post(
     "/:id/tools/:slug/start",
     async ({ params, sandbox }) => {
       const tool = getTool(params.slug);
       if (!tool) throw new NotFoundError("Tool", params.slug);
+      // Gate the dev tool the same way the list route does: without a dev
+      // config there's no `dev` service, so the agent would 404 → manager 500.
+      if (params.slug === "dev" && !hasDevConfigured(sandbox)) {
+        throw new NotFoundError("Tool", params.slug);
+      }
       if (sandbox.status !== "running") return { status: "off" as const };
 
       const url = toolUrl(params.slug, sandbox.id);

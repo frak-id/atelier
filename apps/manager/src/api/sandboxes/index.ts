@@ -37,7 +37,6 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { createSandboxOpencodeClient } from "../../shared/lib/opencode-client.ts";
 import { startOpencodeSession } from "../../shared/lib/opencode-session.ts";
-import { devRoutes } from "./dev.routes.ts";
 import { sandboxIdGuard } from "./guard.ts";
 import { servicesRoutes } from "./services.routes.ts";
 import { terminalRoutes } from "./terminal.routes.ts";
@@ -458,6 +457,5 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
       )
       .use(toolsRoutes)
       .use(terminalRoutes)
-      .use(servicesRoutes)
-      .use(devRoutes),
+      .use(servicesRoutes),
   );

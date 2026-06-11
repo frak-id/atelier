@@ -18,7 +18,6 @@ import {
   deriveToolStatus,
   opencodeSessionsQuery,
   organizationListQuery,
-  sandboxDevCommandsQuery,
   sandboxGitStatusQuery,
   sandboxToolsQuery,
   useOrganizationMap,
@@ -526,40 +525,37 @@ function SandboxGitBadges({ sandboxId }: { sandboxId: string }) {
 }
 
 function SandboxDevStatus({ sandboxId }: { sandboxId: string }) {
-  const { data } = useQuery(sandboxDevCommandsQuery(sandboxId));
+  const { data: tools } = useQuery(sandboxToolsQuery(sandboxId));
+  const { data: servicesData } = useSandboxServices(sandboxId);
+  const devTool = tools?.find((t) => t.slug === "dev");
 
-  const runningCommands = (data?.commands ?? []).filter(
-    (c) => c.status === "running",
-  );
-
-  if (runningCommands.length === 0) return null;
+  if (!devTool || deriveToolStatus(servicesData, devTool) !== "running") {
+    return null;
+  }
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Stop propagation wrapper
     // biome-ignore lint/a11y/useKeyWithClickEvents: Stop propagation wrapper
     <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
-      {runningCommands.map((cmd) => (
-        <Badge
-          key={cmd.name}
-          variant="outline"
-          className="h-6 gap-1.5 font-normal bg-background/50"
-        >
-          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-          {cmd.devUrl ? (
-            <a
-              href={cmd.devUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:underline flex items-center gap-1"
-            >
-              {cmd.name}
-              <ExternalLink className="h-3 w-3 opacity-50" />
-            </a>
-          ) : (
-            <span>{cmd.name}</span>
-          )}
-        </Badge>
-      ))}
+      <Badge
+        variant="outline"
+        className="h-6 gap-1.5 font-normal bg-background/50"
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+        {devTool.url ? (
+          <a
+            href={devTool.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline flex items-center gap-1"
+          >
+            Dev Server
+            <ExternalLink className="h-3 w-3 opacity-50" />
+          </a>
+        ) : (
+          <span>Dev Server</span>
+        )}
+      </Badge>
     </div>
   );
 }

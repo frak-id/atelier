@@ -21,10 +21,8 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::POST, "/git/commit") => routes::git::handle_git_commit(req).await,
         (Method::POST, "/git/push") => routes::git::handle_git_push(req).await,
 
-
         (Method::POST, "/files/write") => routes::files::handle_write_files(req).await,
 
-        (Method::GET, "/dev") => routes::dev::handle_get_dev().await,
         (Method::GET, "/services") => routes::services::handle_services_list().await,
 
         (Method::POST, "/terminal/sessions") => terminal::handle_create_session(req).await,
@@ -49,40 +47,21 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
                         .into_owned();
                     match (method.clone(), parts[1]) {
                         (Method::GET, "status") => {
-                            return routes::services::handle_service_status(&name).await
+                            return routes::services::handle_service_status(&name).await;
                         }
                         (Method::POST, "start") => {
-                            return routes::services::handle_service_start(&name).await
+                            return routes::services::handle_service_start(&name).await;
                         }
                         (Method::POST, "stop") => {
-                            return routes::services::handle_service_stop(&name).await
+                            return routes::services::handle_service_stop(&name).await;
                         }
                         (Method::GET, sub) if sub.starts_with("logs") => {
                             let query = req.uri().query().unwrap_or("");
                             return routes::services::handle_service_logs(&name, query).await;
                         }
                         _ => {
-                            return json_error(
-                                StatusCode::METHOD_NOT_ALLOWED,
-                                "Method Not Allowed",
-                            )
+                            return json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");
                         }
-                    }
-                }
-            }
-
-            if let Some(rest) = path.strip_prefix("/dev/") {
-                let parts: Vec<&str> = rest.splitn(2, '/').collect();
-                if parts.len() == 2 {
-                    let name = urlencoding::decode(parts[0]).unwrap_or_default().into_owned();
-                    match (method, parts[1]) {
-                        (Method::POST, "start") => return routes::dev::handle_dev_start(&name, req).await,
-                        (Method::POST, "stop") => return routes::dev::handle_dev_stop(&name).await,
-                        (Method::GET, "logs") => {
-                            let query = req.uri().query().unwrap_or("");
-                            return routes::dev::handle_dev_logs(&name, query).await;
-                        }
-                        _ => return json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed"),
                     }
                 }
             }

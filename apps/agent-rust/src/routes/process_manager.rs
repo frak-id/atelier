@@ -9,6 +9,10 @@ use crate::response::json_ok;
 
 const MAX_LOG_READ_BYTES: usize = 1024 * 1024;
 
+// Upper bound for SIGTERM->SIGKILL; stop_process polls for early exit, so a
+// fast process returns immediately while a dev server gets time to shut down.
+pub const STOP_GRACE_MS: u64 = 5000;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogsResponse {
@@ -56,12 +60,12 @@ pub fn is_process_running(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
-pub fn signal_process(pid: u32, signal: i32) {
-    if pid <= 1 {
+pub fn signal_group(pgid: u32, signal: i32) {
+    if pgid <= 1 {
         return;
     }
-    // SAFETY: PID validated >1 above; callers only pass SIGTERM/SIGKILL.
-    unsafe { libc::kill(pid as i32, signal) };
+    // SAFETY: pgid validated >1; negative target signals the whole group.
+    unsafe { libc::kill(-(pgid as i32), signal) };
 }
 
 pub async fn pump_stream<R: tokio::io::AsyncRead + Unpin>(
@@ -96,12 +100,8 @@ pub async fn read_logs(
     for param in query.split('&') {
         let mut kv = param.splitn(2, '=');
         match (kv.next(), kv.next()) {
-            (Some("offset"), Some(v)) => {
-                offset = v.parse().unwrap_or(0)
-            }
-            (Some("limit"), Some(v)) => {
-                limit = v.parse().unwrap_or(10000)
-            }
+            (Some("offset"), Some(v)) => offset = v.parse().unwrap_or(0),
+            (Some("limit"), Some(v)) => limit = v.parse().unwrap_or(10000),
             _ => {}
         }
     }
@@ -123,11 +123,7 @@ pub async fn read_logs(
     };
 
     if offset > 0 {
-        if file
-            .seek(std::io::SeekFrom::Start(offset))
-            .await
-            .is_err()
-        {
+        if file.seek(std::io::SeekFrom::Start(offset)).await.is_err() {
             return json_ok(
                 serde_json::to_value(LogsResponse {
                     name: name.to_string(),
@@ -170,10 +166,10 @@ impl ProcessRegistry {
         }
     }
 
-    pub async fn start_process(
-        &self,
-        params: StartParams<'_>,
-    ) -> Result<ManagedProcess, String> {
+    pub async fn start_process(&self, params: StartParams<'_>) -> Result<ManagedProcess, String> {
+        // Short grace on the implicit restart-cleanup of a same-named process:
+        // we want a fast respawn, not the full STOP_GRACE_MS an explicit stop
+        // gives a dev server to flush. The group SIGKILL still reaps stragglers.
         self.stop_process(params.name, 500).await;
 
         let log_file = format!("{}/{}", LOG_DIR, params.log_prefix);
@@ -190,6 +186,10 @@ impl ProcessRegistry {
         cmd.args(["-l", "-c", params.command])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+
+        // pgid = child pid, so a later kill(-pgid) reaches the whole tree
+        // (bash -> npm -> vite), not just the bash leader we track.
+        cmd.process_group(0);
 
         if params.user == "dev" {
             cmd.uid(1000).gid(1000);
@@ -216,8 +216,7 @@ impl ProcessRegistry {
         let stderr = child.stderr.take();
 
         let (_log_rd, log_wr) = tokio::io::split(log_handle);
-        let log_wr =
-            std::sync::Arc::new(tokio::sync::Mutex::new(log_wr));
+        let log_wr = std::sync::Arc::new(tokio::sync::Mutex::new(log_wr));
 
         if let Some(stdout) = stdout {
             let wr = log_wr.clone();
@@ -253,8 +252,7 @@ impl ProcessRegistry {
                             proc_entry.running = false;
                         }
                         Err(_) => {
-                            proc_entry.status =
-                                ProcessStatus::Error;
+                            proc_entry.status = ProcessStatus::Error;
                             proc_entry.running = false;
                         }
                     }
@@ -292,11 +290,7 @@ impl ProcessRegistry {
         Ok(result)
     }
 
-    pub async fn stop_process(
-        &self,
-        name: &str,
-        grace_ms: u64,
-    ) -> StopResult {
+    pub async fn stop_process(&self, name: &str, grace_ms: u64) -> StopResult {
         let mut procs = self.processes.lock().await;
 
         let proc_entry = match procs.get_mut(name) {
@@ -304,9 +298,7 @@ impl ProcessRegistry {
             None => return StopResult::NotFound,
         };
 
-        if proc_entry.status != ProcessStatus::Running
-            || !is_process_running(proc_entry.pid)
-        {
+        if proc_entry.status != ProcessStatus::Running || !is_process_running(proc_entry.pid) {
             proc_entry.status = if proc_entry.exit_code == Some(0) {
                 ProcessStatus::Stopped
             } else {
@@ -320,17 +312,22 @@ impl ProcessRegistry {
         }
 
         let pid = proc_entry.pid;
-        signal_process(pid, libc::SIGTERM);
+        signal_group(pid, libc::SIGTERM);
 
         drop(procs);
-        tokio::time::sleep(std::time::Duration::from_millis(
-            grace_ms,
-        ))
-        .await;
+
+        let deadline = std::time::Duration::from_millis(grace_ms);
+        let start = std::time::Instant::now();
+        while start.elapsed() < deadline {
+            if !is_process_running(pid) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
 
         let mut procs = self.processes.lock().await;
         if is_process_running(pid) {
-            signal_process(pid, libc::SIGKILL);
+            signal_group(pid, libc::SIGKILL);
         }
 
         if let Some(p) = procs.get_mut(name) {
@@ -347,9 +344,7 @@ impl ProcessRegistry {
     pub async fn list_processes(&self) -> Vec<ManagedProcess> {
         let mut procs = self.processes.lock().await;
         for proc_entry in procs.values_mut() {
-            if proc_entry.status == ProcessStatus::Running
-                && !is_process_running(proc_entry.pid)
-            {
+            if proc_entry.status == ProcessStatus::Running && !is_process_running(proc_entry.pid) {
                 proc_entry.status = ProcessStatus::Error;
                 proc_entry.running = false;
             }
@@ -357,15 +352,10 @@ impl ProcessRegistry {
         procs.values().cloned().collect()
     }
 
-    pub async fn get_process(
-        &self,
-        name: &str,
-    ) -> Option<ManagedProcess> {
+    pub async fn get_process(&self, name: &str) -> Option<ManagedProcess> {
         let mut procs = self.processes.lock().await;
         if let Some(p) = procs.get_mut(name) {
-            if p.status == ProcessStatus::Running
-                && !is_process_running(p.pid)
-            {
+            if p.status == ProcessStatus::Running && !is_process_running(p.pid) {
                 p.status = ProcessStatus::Error;
                 p.running = false;
             }

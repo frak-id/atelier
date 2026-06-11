@@ -46,7 +46,7 @@ bun run deploy       # Build + SSH deploy to production
 | Constraint | Rule | Why |
 |------------|------|-----|
 | **sandbox-agent** | Rust runtime, NO Bun/Node APIs | Lightweight, no AVX dependency |
-| **K8s Ingress** | Dev command Ingress created via KubeClient | Dynamic routing for dev servers |
+| **K8s Ingress** | Per-tool Ingress created via KubeClient | Host-based routing for sandbox tools |
 | **CLI** | MUST run as root | System-level operations |
 
 ## Runtimes

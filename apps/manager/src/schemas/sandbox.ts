@@ -14,6 +14,7 @@ export const SandboxUrlsSchema = t.Object({
   opencode: t.String(),
   ssh: t.String(),
   browser: t.Optional(t.String()),
+  dev: t.Optional(t.String()),
 });
 export type SandboxUrls = Static<typeof SandboxUrlsSchema>;
 
@@ -217,6 +218,19 @@ export const ServiceActionResponseSchema = t.Object({
 });
 export type ServiceActionResponse = Static<typeof ServiceActionResponseSchema>;
 
+export const ServiceLogsResponseSchema = t.Object({
+  name: t.String(),
+  content: t.String(),
+  nextOffset: t.Number(),
+});
+export type ServiceLogsResponse = Static<typeof ServiceLogsResponseSchema>;
+
+export const ServiceLogsQuerySchema = t.Object({
+  offset: t.Optional(t.String()),
+  limit: t.Optional(t.String()),
+});
+export type ServiceLogsQuery = Static<typeof ServiceLogsQuerySchema>;
+
 export const LogsParamsSchema = t.Object({
   id: t.String(),
   service: t.String(),
@@ -309,86 +323,6 @@ export const PromoteToPrebuildResponseSchema = t.Object({
 export type PromoteToPrebuildResponse = Static<
   typeof PromoteToPrebuildResponseSchema
 >;
-
-export const ExtraDevUrlSchema = t.Object({
-  alias: t.String(),
-  port: t.Number(),
-  url: t.String(),
-});
-export type ExtraDevUrl = Static<typeof ExtraDevUrlSchema>;
-
-export const DevCommandListResponseSchema = t.Object({
-  commands: t.Array(
-    t.Object({
-      name: t.String(),
-      command: t.String(),
-      port: t.Optional(t.Number()),
-      extraPorts: t.Optional(
-        t.Array(t.Object({ port: t.Number(), alias: t.String() })),
-      ),
-      workdir: t.Optional(t.String()),
-      env: t.Optional(t.Record(t.String(), t.String())),
-      isDefault: t.Optional(t.Boolean()),
-      status: t.String(),
-      pid: t.Optional(t.Number()),
-      startedAt: t.Optional(t.String()),
-      exitCode: t.Optional(t.Number()),
-      devUrl: t.Optional(t.String()),
-      defaultDevUrl: t.Optional(t.String()),
-      extraDevUrls: t.Optional(t.Array(ExtraDevUrlSchema)),
-    }),
-  ),
-});
-export type DevCommandListResponse = Static<
-  typeof DevCommandListResponseSchema
->;
-
-export const DevCommandStartResponseSchema = t.Object({
-  status: t.String(),
-  pid: t.Optional(t.Number()),
-  name: t.String(),
-  port: t.Optional(t.Number()),
-  logFile: t.Optional(t.String()),
-  startedAt: t.Optional(t.String()),
-  devUrl: t.Optional(t.String()),
-  defaultDevUrl: t.Optional(t.String()),
-  extraDevUrls: t.Optional(t.Array(ExtraDevUrlSchema)),
-});
-export type DevCommandStartResponse = Static<
-  typeof DevCommandStartResponseSchema
->;
-
-export const DevCommandStopResponseSchema = t.Object({
-  status: t.String(),
-  name: t.String(),
-  pid: t.Optional(t.Number()),
-  message: t.Optional(t.String()),
-  exitCode: t.Optional(t.Number()),
-});
-export type DevCommandStopResponse = Static<
-  typeof DevCommandStopResponseSchema
->;
-
-export const DevCommandLogsResponseSchema = t.Object({
-  name: t.String(),
-  content: t.String(),
-  nextOffset: t.Number(),
-});
-export type DevCommandLogsResponse = Static<
-  typeof DevCommandLogsResponseSchema
->;
-
-export const DevCommandNameParamsSchema = t.Object({
-  id: t.String(),
-  name: t.String(),
-});
-export type DevCommandNameParams = Static<typeof DevCommandNameParamsSchema>;
-
-export const DevCommandLogsQuerySchema = t.Object({
-  offset: t.Optional(t.String()),
-  limit: t.Optional(t.String()),
-});
-export type DevCommandLogsQuery = Static<typeof DevCommandLogsQuerySchema>;
 
 export const ToolStatusSchema = t.Union([
   t.Literal("off"),

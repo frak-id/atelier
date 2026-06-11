@@ -6,11 +6,11 @@ import {
   type ImageDefinition,
 } from "@frak/atelier-shared";
 import type { ImageBuilder } from "../infrastructure/image-builder/index.ts";
-import { ImageRegistryService } from "../infrastructure/registry/index.ts";
 import {
   buildConfigMap,
   type KubeClient,
 } from "../infrastructure/kubernetes/index.ts";
+import { ImageRegistryService } from "../infrastructure/registry/index.ts";
 import type {
   ImageBuild,
   ImageBuildStatus,

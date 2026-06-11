@@ -270,6 +270,28 @@ export class KubeClient {
     }
   }
 
+  async deleteLabeledIngresses(
+    labelSelector: string,
+    namespace = this.namespace,
+  ): Promise<void> {
+    if (isMock()) {
+      return;
+    }
+
+    const selector = encodeURIComponent(labelSelector);
+    const base = `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
+    const list = await this.list<{
+      items?: Array<{ metadata?: { name?: string } }>;
+    }>(`${base}?labelSelector=${selector}`);
+
+    for (const item of list.items ?? []) {
+      const name = item.metadata?.name;
+      // Per-item catch so one stale entry (e.g. a concurrent destroy 404)
+      // doesn't abort the sweep and leak the remaining ingresses.
+      if (name) await this.delete(`${base}/${name}`).catch(() => {});
+    }
+  }
+
   async getPodStatus(
     name: string,
     namespace = this.namespace,

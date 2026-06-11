@@ -7,15 +7,15 @@ import {
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
-  collectDevPorts,
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import type {
-  Sandbox,
-  SandboxOrigin,
-  SandboxUrls,
-  Workspace,
+import {
+  resolveDevConfig,
+  type Sandbox,
+  type SandboxOrigin,
+  type SandboxUrls,
+  type Workspace,
 } from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -24,11 +24,7 @@ import {
   buildSandboxConfig,
   type OpencodeWorkspaceContext,
 } from "../sandbox-config.ts";
-import {
-  buildToolIngressResources,
-  listToolInfos,
-  toolIngressNames,
-} from "../tools/registry.ts";
+import { buildToolIngressResources, listToolInfos } from "../tools/registry.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
@@ -148,7 +144,6 @@ export async function bootNewSandbox(
             options.opencodeWorkspaceContext,
           ),
         ),
-        devPorts: collectDevPorts(options.workspace?.config.devCommands),
         vcpus: options.vcpus,
         memoryMb: options.memoryMb,
         sharedKeySecret: sharedKey.secretName,
@@ -222,7 +217,6 @@ export async function bootExistingSandbox(
           sandbox.opencodeWorkspaceContext,
         ),
       ),
-      devPorts: collectDevPorts(workspace?.config.devCommands),
       vcpus: sandbox.runtime.vcpus,
       memoryMb: sandbox.runtime.memoryMb,
       sharedKeySecret: sharedKey.secretName,
@@ -255,7 +249,7 @@ export async function finalizeNewSandbox(
   podName: string,
   ports: SandboxPorts,
 ): Promise<Sandbox> {
-  const urls = buildUrls(sandboxId);
+  const urls = buildUrls(sandboxId, sandboxHasDev(sandbox, ports));
 
   sandbox.status = "running";
   sandbox.runtime.urls = urls;
@@ -285,7 +279,7 @@ export async function finalizeRestartedSandbox(
     status: "running",
     runtime: {
       ...sandbox.runtime,
-      urls: buildUrls(sandboxId),
+      urls: buildUrls(sandboxId, sandboxHasDev(sandbox, ports)),
     },
     updatedAt: new Date().toISOString(),
   };
@@ -304,7 +298,14 @@ function resolveSandboxImage(baseImage?: string): string {
   return `${config.kubernetes.registryUrl}/${baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
 }
 
-function buildUrls(sandboxId: string): SandboxUrls {
+function sandboxHasDev(sandbox: Sandbox, ports: SandboxPorts): boolean {
+  const workspace = sandbox.workspaceId
+    ? ports.workspaces.getById(sandbox.workspaceId)
+    : undefined;
+  return !!resolveDevConfig(workspace?.config);
+}
+
+function buildUrls(sandboxId: string, hasDev: boolean): SandboxUrls {
   const sshHost =
     config.domain.ssh.hostname || `ssh.${config.domain.baseDomain}`;
   const sshPort = config.domain.ssh.port;
@@ -318,6 +319,7 @@ function buildUrls(sandboxId: string): SandboxUrls {
     vscode: toolUrls.vscode ?? "",
     opencode: toolUrls.opencode ?? "",
     ...(toolUrls.browser ? { browser: toolUrls.browser } : {}),
+    ...(hasDev && toolUrls.dev ? { dev: toolUrls.dev } : {}),
     ssh:
       sshPort === 22
         ? `ssh ${sandboxId}@${sshHost}`
@@ -338,7 +340,6 @@ interface SandboxResourceSpec {
   pvcName: string;
   configMapName: string;
   configJson: string;
-  devPorts: Array<{ name: string; port: number }>;
   vcpus: number;
   memoryMb: number;
   sharedKeySecret: string;
@@ -374,7 +375,6 @@ function createSandboxResources(sandboxId: string, spec: SandboxResourceSpec) {
         workspaceId: spec.workspaceId,
         pvcName: spec.pvcName,
         configMapName: spec.configMapName,
-        devPorts: spec.devPorts.map((dp) => dp.port),
         sshPipeKeySecret: spec.sharedKeySecret,
         requests: {
           cpu: `${Math.max(250, spec.vcpus * 250)}m`,
@@ -386,9 +386,7 @@ function createSandboxResources(sandboxId: string, spec: SandboxResourceSpec) {
         },
       }),
     ),
-    kubeClient.createResource(
-      buildSandboxService(sandboxId, { devPorts: spec.devPorts }),
-    ),
+    kubeClient.createResource(buildSandboxService(sandboxId)),
     ...buildToolIngressResources(sandboxId).map((resource) =>
       kubeClient.createResource(resource),
     ),
@@ -413,9 +411,6 @@ async function deleteRestartableSandboxResources(
     ["Pod", podName],
     ["ConfigMap", configMapName],
     ["Service", `sandbox-${sandboxId}`],
-    ...toolIngressNames(sandboxId).map(
-      (name) => ["Ingress", name] as [string, string],
-    ),
     ["Pipe", `ssh-${sandboxId}`],
   ];
 
@@ -424,6 +419,13 @@ async function deleteRestartableSandboxResources(
       await kubeClient.deleteResource(kind, name);
     } catch {}
   }
+
+  // Sweep ingresses by label rather than by current tool name: pre-migration
+  // sandboxes may still carry legacy per-command `dev-{name}-{id}` ingresses a
+  // name list won't cover. createSandboxResources recreates the current set.
+  try {
+    await kubeClient.deleteLabeledIngresses(`atelier.dev/sandbox=${sandboxId}`);
+  } catch {}
 
   // Kata pods take seconds to terminate; creating a pod with the same name
   // while the old one is still Terminating 409s. Wait it out before recreating

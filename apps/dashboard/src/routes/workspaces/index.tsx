@@ -179,14 +179,6 @@ function WorkspaceCard({
               {workspace.config.vcpus} vCPU / {workspace.config.memoryMb}MB
             </p>
           </div>
-          <div>
-            <span className="text-muted-foreground">Exposed Ports</span>
-            <p>
-              {workspace.config.exposedPorts.length > 0
-                ? workspace.config.exposedPorts.join(", ")
-                : "None"}
-            </p>
-          </div>
         </div>
         {workspace.config.initCommands.length > 0 && (
           <div className="mt-3">

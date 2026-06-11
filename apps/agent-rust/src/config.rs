@@ -3,8 +3,13 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
 pub const AGENT_PORT: u16 = 9998;
+// Fallback forwarder ports, used only when config.json carries no `devForwarder`
+// (pre-existing blobs). The live values come from the manager's
+// `config.ports.dev`/`devApp` via `SandboxConfig.dev_forwarder`; these defaults
+// just match the manager's own defaults so an un-overridden setup still works.
+pub const DEV_PORT: u16 = 3001;
+pub const DEV_APP_PORT: u16 = 5173;
 pub const LOG_DIR: &str = "/var/log/sandbox";
-pub const WORKSPACE_DIR: &str = "/home/dev/workspace";
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 30_000;
 
 pub const CONFIG_PATH: &str = "/etc/sandbox/config.json";
@@ -14,6 +19,7 @@ pub const CONFIG_PATH: &str = "/etc/sandbox/config.json";
 pub struct ServiceConfig {
     pub port: Option<u16>,
     pub command: Option<String>,
+    pub workdir: Option<String>,
     pub user: Option<String>,
     #[serde(default)]
     pub auto_start: bool,
@@ -37,6 +43,13 @@ pub struct RepoConfig {
     pub branch: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DevForwarderConfig {
+    pub public_port: u16,
+    pub app_port: u16,
+}
+
 pub type SandboxServices = HashMap<String, ServiceConfig>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +63,8 @@ pub struct SandboxConfig {
     pub created_at: String,
     pub network: NetworkConfig,
     pub services: SandboxServices,
+    #[serde(default)]
+    pub dev_forwarder: Option<DevForwarderConfig>,
 }
 
 pub static SANDBOX_CONFIG: LazyLock<RwLock<Option<SandboxConfig>>> = LazyLock::new(|| {
