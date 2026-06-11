@@ -11,7 +11,12 @@ import {
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import type { Sandbox, SandboxOrigin, Workspace } from "../../schemas/index.ts";
+import type {
+  Sandbox,
+  SandboxOrigin,
+  SandboxUrls,
+  Workspace,
+} from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
@@ -21,8 +26,8 @@ import {
 } from "../sandbox-config.ts";
 import {
   buildToolIngressResources,
+  listToolInfos,
   toolIngressNames,
-  toolUrl,
 } from "../tools/registry.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
@@ -299,18 +304,20 @@ function resolveSandboxImage(baseImage?: string): string {
   return `${config.kubernetes.registryUrl}/${baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
 }
 
-function buildUrls(sandboxId: string): {
-  vscode: string;
-  opencode: string;
-  ssh: string;
-} {
+function buildUrls(sandboxId: string): SandboxUrls {
   const sshHost =
     config.domain.ssh.hostname || `ssh.${config.domain.baseDomain}`;
   const sshPort = config.domain.ssh.port;
 
+  const toolUrls: Record<string, string> = {};
+  for (const tool of listToolInfos(sandboxId)) {
+    if (tool.url) toolUrls[tool.slug] = tool.url;
+  }
+
   return {
-    vscode: toolUrl("vscode", sandboxId) ?? "",
-    opencode: toolUrl("opencode", sandboxId) ?? "",
+    vscode: toolUrls.vscode ?? "",
+    opencode: toolUrls.opencode ?? "",
+    ...(toolUrls.browser ? { browser: toolUrls.browser } : {}),
     ssh:
       sshPort === 22
         ? `ssh ${sandboxId}@${sshHost}`

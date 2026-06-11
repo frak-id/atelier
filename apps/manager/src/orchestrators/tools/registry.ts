@@ -34,18 +34,17 @@ export interface ToolContext {
   opencodeEnv?: Record<string, string>;
 }
 
-type IngressAnnotationSet = "vscode" | "opencode";
-
 export interface ToolExposure {
   /** Subdomain prefix → `${subdomain}-${sandboxId}.${dashboardDomain}`. */
   subdomain: string;
-  /** Key into `config.ports` for the service port the ingress targets. */
-  portKey: "vscode" | "opencode" | "browser";
-  /** Which configured ingress annotation set to apply. */
-  annotations: IngressAnnotationSet;
+  /** In-pod service port the ingress targets. */
+  port: number;
+  /** Ingress annotations (forward-auth, header injection, …). */
+  annotations?: Record<string, string>;
 }
 
 export type ToolStart = "boot" | "lazy";
+export type ToolManagedBy = "agent" | "manager";
 
 export interface ToolDefinition {
   slug: string;
@@ -54,6 +53,12 @@ export interface ToolDefinition {
   core?: boolean;
   /** `boot` = ingress + service started at spawn; `lazy` = on demand. */
   start: ToolStart;
+  /**
+   * Who drives the tool's services. `agent` tools are ensured in-pod by the
+   * agent itself (e.g. terminal) and contribute nothing for the manager to
+   * start. Defaults to `manager`.
+   */
+  managedBy?: ToolManagedBy;
   /** Delay (ms) between sequential service starts (ordered multi-service tools). */
   startDelayMs?: number;
   /** Optional HTTP exposure (ingress + dashboard URL). */
@@ -73,8 +78,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     start: "lazy",
     exposure: {
       subdomain: "vscode",
-      portKey: "vscode",
-      annotations: "vscode",
+      port: config.ports.vscode,
+      annotations: config.kubernetes.vsCodeIngressAnnotations,
     },
     autoStartServices: ["vscode"],
     buildServices: (ctx) => {
@@ -95,8 +100,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     start: "boot",
     exposure: {
       subdomain: "opencode",
-      portKey: "opencode",
-      annotations: "opencode",
+      port: config.ports.opencode,
+      annotations: config.kubernetes.openCodeIngressAnnotations,
     },
     autoStartServices: ["opencode"],
     buildServices: (ctx) => {
@@ -122,8 +127,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     slug: "terminal",
     name: "Terminal",
     start: "boot",
-    // Ensured by the agent itself (ensure_terminal_from_config), never started
-    // by the manager — hence no autoStart services and no HTTP exposure here.
+    managedBy: "agent",
     autoStartServices: [],
     buildServices: () => ({
       terminal: {
@@ -139,9 +143,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     startDelayMs: 500,
     exposure: {
       subdomain: "browser",
-      portKey: "browser",
-      // Browser reuses the vscode ingress annotations (matches prior behavior).
-      annotations: "vscode",
+      port: config.ports.browser,
+      annotations: config.kubernetes.vsCodeIngressAnnotations,
     },
     autoStartServices: ["kasmvnc", "openbox", "chromium"],
     buildServices: () => {
@@ -217,12 +220,6 @@ export function coreServiceNames(): string[] {
   );
 }
 
-function resolveAnnotations(set: IngressAnnotationSet): Record<string, string> {
-  return set === "opencode"
-    ? config.kubernetes.openCodeIngressAnnotations
-    : config.kubernetes.vsCodeIngressAnnotations;
-}
-
 function ingressFor(
   tool: ToolDefinition,
   sandboxId: string,
@@ -232,10 +229,10 @@ function ingressFor(
   return buildToolIngress({
     sandboxId,
     subdomain: exposure.subdomain,
-    port: config.ports[exposure.portKey],
+    port: exposure.port,
     sandboxDomain: config.domain.dashboard,
     ingressClassName: config.kubernetes.ingressClassName || undefined,
-    annotations: resolveAnnotations(exposure.annotations),
+    annotations: exposure.annotations,
     tlsSecretName: TLS_SECRET_NAME,
   });
 }

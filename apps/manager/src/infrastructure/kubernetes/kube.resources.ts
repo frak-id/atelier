@@ -65,6 +65,19 @@ function sandboxLabels(sandboxId: string, workspaceId?: string) {
   return labels;
 }
 
+// Single source for the named ports both the pod and service expose, so a
+// config.ports override can't make them disagree (agent/ssh are infra ports).
+const SANDBOX_PORTS: ReadonlyArray<{ name: string; port: number }> = [
+  { name: "agent", port: config.ports.agent },
+  { name: "vscode", port: config.ports.vscode },
+  { name: "opencode", port: config.ports.opencode },
+  { name: "browser", port: config.ports.browser },
+  { name: "terminal", port: config.ports.terminal },
+  { name: "ssh", port: 22 },
+];
+
+const SANDBOX_PORT_NUMBERS = new Set(SANDBOX_PORTS.map((p) => p.port));
+
 export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
   const labels = sandboxLabels(options.sandboxId, options.workspaceId);
@@ -147,14 +160,12 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           command: ["/etc/sandbox/sandbox-boot.sh"],
           securityContext: { runAsUser: 0 },
           ports: [
-            { name: "agent", containerPort: 9998 },
-            { name: "vscode", containerPort: 8080 },
-            { name: "opencode", containerPort: 3000 },
-            { name: "browser", containerPort: 6080 },
-            { name: "terminal", containerPort: 7681 },
-            { name: "ssh", containerPort: 22 },
+            ...SANDBOX_PORTS.map((p) => ({
+              name: p.name,
+              containerPort: p.port,
+            })),
             ...(options.devPorts ?? [])
-              .filter((p) => ![9998, 8080, 3000, 6080, 7681].includes(p))
+              .filter((p) => !SANDBOX_PORT_NUMBERS.has(p))
               .map((p) => ({
                 name: `dp-${p}`,
                 containerPort: p,
@@ -193,18 +204,14 @@ export function buildSandboxService(
   } = {},
 ): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
-  const basePorts = [
-    { name: "agent", port: 9998, targetPort: 9998 },
-    { name: "vscode", port: 8080, targetPort: 8080 },
-    { name: "opencode", port: 3000, targetPort: 3000 },
-    { name: "browser", port: 6080, targetPort: 6080 },
-    { name: "terminal", port: 7681, targetPort: 7681 },
-    { name: "ssh", port: 22, targetPort: 22 },
-  ];
+  const basePorts = SANDBOX_PORTS.map((p) => ({
+    name: p.name,
+    port: p.port,
+    targetPort: p.port,
+  }));
 
-  const basePortNumbers = new Set(basePorts.map((p) => p.port));
   const extraPorts = (options.devPorts ?? [])
-    .filter((dp) => !basePortNumbers.has(dp.port))
+    .filter((dp) => !SANDBOX_PORT_NUMBERS.has(dp.port))
     .map((dp) => ({ name: dp.name, port: dp.port, targetPort: dp.port }));
 
   return {
