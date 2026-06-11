@@ -201,44 +201,79 @@ export class PrebuildRunner {
       return { snapshotName };
     }
 
+    // Promote and prebuild contend on the same `prebuild-{ws}` snapshot name
+    // (both delete-and-recreate it), so they must be mutually exclusive.
+    if (this.activeBuilds.has(workspaceId)) {
+      throw new Error(
+        `Workspace '${workspaceId}' has a prebuild in progress; cannot promote concurrently`,
+      );
+    }
+
     await this.verifySnapshotCapability();
 
     const namespace = config.kubernetes.namespace;
     const podName = `sandbox-${sandboxId}`;
     const pvcName = `sandbox-${sandboxId}`;
     const labelValue = this.normalizeKey(workspaceId);
+    this.activeBuilds.set(workspaceId, { podName, pvcName });
 
-    // Capture HEADs while the pod is still running — a stopped pod has no agent.
-    const commitHashes = await this.captureCommitHashesFromPod(
-      sandboxId,
-      workspace,
-    );
+    let stopped = false;
+    try {
+      // Capture HEADs while the pod is still running — a stopped pod has no
+      // agent. Fail before stopping anything: a promoted snapshot missing a
+      // hash is treated as stale by the checker and silently rebuilt over.
+      const commitHashes = await this.captureCommitHashesFromPod(
+        sandboxId,
+        workspace,
+      );
+      const repoCount = workspace.config.repos?.length ?? 0;
+      if (Object.keys(commitHashes).length < repoCount) {
+        throw new Error(
+          `Captured ${Object.keys(commitHashes).length}/${repoCount} repo commit hashes; aborting promote to avoid a perpetually-stale snapshot`,
+        );
+      }
 
-    // Flush page cache so the snapshot is filesystem-consistent.
-    await this.deps.agentClient
-      .exec(sandboxId, "sync", { timeout: 10_000 })
-      .catch(() => {});
+      // Flush page cache so the snapshot is filesystem-consistent.
+      await this.deps.agentClient
+        .exec(sandboxId, "sync", { timeout: 10_000 })
+        .catch(() => {});
 
-    // Stop the pod so the PVC is unmounted before we snapshot it.
-    await lifecycle.stop();
-    await this.waitForPodTermination(podName, namespace);
+      // Stop the pod so the PVC is unmounted before we snapshot it.
+      await lifecycle.stop();
+      stopped = true;
+      await this.waitForPodTermination(podName, namespace);
 
-    await this.createWorkspaceSnapshot(
-      snapshotName,
-      pvcName,
-      namespace,
-      labelValue,
-    );
+      await this.createWorkspaceSnapshot(
+        snapshotName,
+        pvcName,
+        namespace,
+        labelValue,
+      );
 
-    await lifecycle.start();
+      await lifecycle.start();
+      stopped = false;
 
-    this.updatePrebuildStatus(
-      workspaceId,
-      workspace,
-      "ready",
-      snapshotName,
-      commitHashes,
-    );
+      this.updatePrebuildStatus(
+        workspaceId,
+        workspace,
+        "ready",
+        snapshotName,
+        commitHashes,
+      );
+    } catch (error) {
+      // Never leave the sandbox stopped because the snapshot failed.
+      if (stopped) {
+        await lifecycle.start().catch((startError: unknown) => {
+          log.error(
+            { workspaceId, sandboxId, error: String(startError) },
+            "Failed to restart sandbox after promote failure",
+          );
+        });
+      }
+      throw error;
+    } finally {
+      this.activeBuilds.delete(workspaceId);
+    }
 
     log.info(
       { workspaceId, sandboxId, snapshotName },
