@@ -6,10 +6,7 @@ export const WellKnownSandboxRoutesSchema = t.Object({
   opencode: t.String(),
   ssh: t.String(),
   browser: t.Optional(t.String()),
-  dev: t.Object({
-    named: t.Record(t.String(), t.String(), { default: {} }),
-    default: t.Optional(t.String()),
-  }),
+  dev: t.Optional(t.String()),
 });
 export type WellKnownSandboxRoutes = Static<
   typeof WellKnownSandboxRoutesSchema

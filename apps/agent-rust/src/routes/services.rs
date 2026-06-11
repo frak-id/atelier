@@ -4,14 +4,13 @@ use hyper::{Response, StatusCode};
 use serde::Serialize;
 use std::sync::LazyLock;
 
-use crate::config::{get_config, ServiceConfig, LOG_DIR};
+use crate::config::{LOG_DIR, ServiceConfig, get_config};
 use crate::response::{json_error, json_ok};
 use crate::routes::process_manager::{
-    ManagedProcess, ProcessRegistry, StartParams, StopResult,
+    ManagedProcess, ProcessRegistry, STOP_GRACE_MS, StartParams, StopResult,
 };
 
-static RUNNING_SERVICES: LazyLock<ProcessRegistry> =
-    LazyLock::new(ProcessRegistry::new);
+static RUNNING_SERVICES: LazyLock<ProcessRegistry> = LazyLock::new(ProcessRegistry::new);
 
 #[derive(Serialize)]
 struct ServiceListResponse {
@@ -59,10 +58,7 @@ fn stopped_service(name: &str, cfg: &ServiceConfig) -> ManagedProcess {
     }
 }
 
-async fn start_service_internal(
-    name: &str,
-    cfg: &ServiceConfig,
-) -> Result<ManagedProcess, String> {
+async fn start_service_internal(name: &str, cfg: &ServiceConfig) -> Result<ManagedProcess, String> {
     let command = cfg
         .command
         .as_deref()
@@ -75,7 +71,7 @@ async fn start_service_internal(
             name,
             command,
             user,
-            workdir: None,
+            workdir: cfg.workdir.as_deref(),
             port: Some(cfg.port.unwrap_or(0)),
             env: cfg.env.as_ref(),
             log_prefix: &format!("{}.log", name),
@@ -86,10 +82,7 @@ async fn start_service_internal(
 pub async fn handle_services_list() -> Response<Full<Bytes>> {
     let running = RUNNING_SERVICES.list_processes().await;
     let mut running_map: std::collections::HashMap<String, ManagedProcess> =
-        running
-            .into_iter()
-            .map(|p| (p.name.clone(), p))
-            .collect();
+        running.into_iter().map(|p| (p.name.clone(), p)).collect();
 
     let mut services: Vec<ManagedProcess> = Vec::new();
 
@@ -103,43 +96,25 @@ pub async fn handle_services_list() -> Response<Full<Bytes>> {
         }
     }
 
-    json_ok(
-        serde_json::to_value(ServiceListResponse { services })
-            .unwrap(),
-    )
+    json_ok(serde_json::to_value(ServiceListResponse { services }).unwrap())
 }
 
-pub async fn handle_service_status(
-    name: &str,
-) -> Response<Full<Bytes>> {
+pub async fn handle_service_status(name: &str) -> Response<Full<Bytes>> {
     if let Some(proc) = RUNNING_SERVICES.get_process(name).await {
         return json_ok(serde_json::to_value(proc).unwrap());
     }
 
     if let Some(svc_cfg) = find_service_config(name) {
-        return json_ok(
-            serde_json::to_value(stopped_service(name, &svc_cfg))
-                .unwrap(),
-        );
+        return json_ok(serde_json::to_value(stopped_service(name, &svc_cfg)).unwrap());
     }
 
-    json_error(
-        StatusCode::NOT_FOUND,
-        &format!("Unknown service: {}", name),
-    )
+    json_error(StatusCode::NOT_FOUND, &format!("Unknown service: {}", name))
 }
 
-pub async fn handle_service_start(
-    name: &str,
-) -> Response<Full<Bytes>> {
+pub async fn handle_service_start(name: &str) -> Response<Full<Bytes>> {
     let cfg = match find_service_config(name) {
         Some(c) => c,
-        None => {
-            return json_error(
-                StatusCode::NOT_FOUND,
-                &format!("Unknown service: {}", name),
-            )
-        }
+        None => return json_error(StatusCode::NOT_FOUND, &format!("Unknown service: {}", name)),
     };
 
     match start_service_internal(name, &cfg).await {
@@ -158,10 +133,8 @@ pub async fn handle_service_start(
     }
 }
 
-pub async fn handle_service_stop(
-    name: &str,
-) -> Response<Full<Bytes>> {
-    let resp = match RUNNING_SERVICES.stop_process(name, 500).await {
+pub async fn handle_service_stop(name: &str) -> Response<Full<Bytes>> {
+    let resp = match RUNNING_SERVICES.stop_process(name, STOP_GRACE_MS).await {
         StopResult::NotFound => ServiceStopResponse {
             status: "stopped".to_string(),
             name: name.to_string(),
@@ -169,15 +142,13 @@ pub async fn handle_service_stop(
             exit_code: None,
             message: "Service not found or already stopped".to_string(),
         },
-        StopResult::AlreadyStopped { status, exit_code } => {
-            ServiceStopResponse {
-                status: format!("{:?}", status).to_lowercase(),
-                name: name.to_string(),
-                pid: None,
-                exit_code,
-                message: "Service already stopped".to_string(),
-            }
-        }
+        StopResult::AlreadyStopped { status, exit_code } => ServiceStopResponse {
+            status: format!("{:?}", status).to_lowercase(),
+            name: name.to_string(),
+            pid: None,
+            exit_code,
+            message: "Service already stopped".to_string(),
+        },
         StopResult::Stopped { pid } => ServiceStopResponse {
             status: "stopped".to_string(),
             name: name.to_string(),
@@ -189,20 +160,11 @@ pub async fn handle_service_stop(
     json_ok(serde_json::to_value(resp).unwrap())
 }
 
-pub async fn handle_service_logs(
-    name: &str,
-    query: &str,
-) -> Response<Full<Bytes>> {
+pub async fn handle_service_logs(name: &str, query: &str) -> Response<Full<Bytes>> {
     if find_service_config(name).is_none() {
-        return json_error(
-            StatusCode::NOT_FOUND,
-            &format!("Unknown service: {}", name),
-        );
+        return json_error(StatusCode::NOT_FOUND, &format!("Unknown service: {}", name));
     }
 
     let log_path = format!("{}/{}.log", LOG_DIR, name);
-    crate::routes::process_manager::read_logs(
-        name, &log_path, query,
-    )
-    .await
+    crate::routes::process_manager::read_logs(name, &log_path, query).await
 }

@@ -32,8 +32,8 @@ import {
 } from "@/components/workspace-form";
 
 import {
-  type DevCommand,
   DevCommandsForm,
+  type DevConfig,
 } from "@/components/workspace-form/dev-commands-form";
 
 interface EditWorkspaceDialogProps {
@@ -53,6 +53,14 @@ function parseWorkspaceRepos(
   }));
 }
 
+function resolveInitialDev(config: Workspace["config"]): DevConfig | undefined {
+  if (config.dev) return config.dev;
+  const legacy = config.devCommands ?? [];
+  const chosen = legacy.find((c) => c.isDefault) ?? legacy[0];
+  if (!chosen) return undefined;
+  return { command: chosen.command, workdir: chosen.workdir, env: chosen.env };
+}
+
 interface WorkspaceFormValues {
   name: string;
   description: string;
@@ -64,7 +72,7 @@ interface WorkspaceFormValues {
   repos: RepoEntry[];
   envSecrets: EnvSecret[];
   fileSecrets: FileSecretInput[];
-  devCommands: DevCommand[];
+  dev: DevConfig | undefined;
 }
 
 export function EditWorkspaceDialog({
@@ -89,7 +97,7 @@ export function EditWorkspaceDialog({
       repos: parseWorkspaceRepos(workspace.config.repos),
       envSecrets: parseEnvSecrets(workspace.config.secrets || {}),
       fileSecrets: parseFileSecrets(workspace.config.fileSecrets),
-      devCommands: (workspace.config.devCommands || []) as DevCommand[],
+      dev: resolveInitialDev(workspace.config),
     } satisfies WorkspaceFormValues,
     onSubmit: async ({ value }) => {
       updateMutation.mutate(
@@ -110,12 +118,13 @@ export function EditWorkspaceDialog({
               repos: serializeRepos(value.repos),
               secrets: serializeEnvSecrets(value.envSecrets),
               fileSecrets: serializeFileSecrets(value.fileSecrets),
-              devCommands: value.devCommands.map(({ id, ...cmd }) => ({
-                ...cmd,
-                extraPorts: cmd.extraPorts
-                  ?.map(({ id: _epId, ...ep }) => ep)
-                  .filter((ep) => ep.alias && ep.port),
-              })),
+              dev: value.dev?.command?.trim()
+                ? {
+                    command: value.dev.command,
+                    workdir: value.dev.workdir || undefined,
+                    env: value.dev.env,
+                  }
+                : undefined,
             },
           },
         },
@@ -139,7 +148,7 @@ export function EditWorkspaceDialog({
   const repos = useStore(form.store, (s) => s.values.repos);
   const envSecrets = useStore(form.store, (s) => s.values.envSecrets);
   const fileSecrets = useStore(form.store, (s) => s.values.fileSecrets);
-  const devCommands = useStore(form.store, (s) => s.values.devCommands);
+  const dev = useStore(form.store, (s) => s.values.dev);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -162,7 +171,7 @@ export function EditWorkspaceDialog({
               <TabsTrigger value="general">General</TabsTrigger>
               <TabsTrigger value="repos">Repos</TabsTrigger>
               <TabsTrigger value="commands">Commands</TabsTrigger>
-              <TabsTrigger value="dev-commands">Dev Commands</TabsTrigger>
+              <TabsTrigger value="dev-commands">Dev Server</TabsTrigger>
               <TabsTrigger value="secrets">Secrets</TabsTrigger>
             </TabsList>
 
@@ -266,8 +275,8 @@ export function EditWorkspaceDialog({
 
             <TabsContent value="dev-commands" className="pt-4">
               <DevCommandsForm
-                devCommands={devCommands}
-                onChange={(v) => form.setFieldValue("devCommands", v)}
+                dev={dev}
+                onChange={(v) => form.setFieldValue("dev", v)}
               />
             </TabsContent>
 

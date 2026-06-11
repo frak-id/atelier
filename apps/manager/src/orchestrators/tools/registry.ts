@@ -32,6 +32,7 @@ export interface ToolContext {
   dashboardDomain: string;
   opencodePassword?: string;
   opencodeEnv?: Record<string, string>;
+  dev?: { command: string; workdir?: string; env?: Record<string, string> };
 }
 
 export interface ToolExposure {
@@ -165,6 +166,32 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
             "chromium --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-first-run --disable-session-crashed-bubble --disable-infobars --disable-translate --disable-features=TranslateUI --password-store=basic --disable-background-networking --disable-sync --disable-extensions --disable-default-apps --disable-breakpad --disable-component-extensions-with-background-pages --disable-background-timer-throttling --force-device-scale-factor=1 --disable-lcd-text --renderer-process-limit=2 --disk-cache-size=104857600 --user-data-dir=/tmp/chromium-profile about:blank",
           user: "dev",
           env: { DISPLAY: ":99" },
+        },
+      };
+    },
+  },
+  {
+    slug: "dev",
+    name: "Dev Server",
+    start: "lazy",
+    exposure: {
+      subdomain: "dev",
+      port: config.ports.dev,
+    },
+    autoStartServices: ["dev"],
+    buildServices: (ctx): Record<string, ServiceEntry> => {
+      if (!ctx.dev) return {};
+      return {
+        dev: {
+          port: config.ports.devApp,
+          command: ctx.dev.command,
+          user: "dev",
+          workdir: ctx.dev.workdir ?? ctx.workspaceDir,
+          env: {
+            PORT: String(config.ports.devApp),
+            __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: `.${config.domain.baseDomain}`,
+            ...(ctx.dev.env ?? {}),
+          },
         },
       };
     },

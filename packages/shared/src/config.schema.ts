@@ -222,6 +222,8 @@ export const PortsConfigSchema = Type.Object(
     browser: Type.Number({ default: 6080 }),
     terminal: Type.Number({ default: 7681 }),
     agent: Type.Number({ default: 9998 }),
+    dev: Type.Number({ default: 3001 }),
+    devApp: Type.Number({ default: 5173 }),
   },
   { default: {} },
 );
@@ -408,6 +410,8 @@ export const ENV_VAR_MAPPING = {
   ATELIER_BROWSER_PORT: "ports.browser",
   ATELIER_TERMINAL_PORT: "ports.terminal",
   ATELIER_AGENT_PORT: "ports.agent",
+  ATELIER_DEV_PORT: "ports.dev",
+  ATELIER_DEV_APP_PORT: "ports.devApp",
 
   ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",
   ATELIER_IMAGE_BUILDER_IMAGE: "imageBuilder.image",

@@ -29,15 +29,7 @@ export type SandboxPodOptions = {
   configMapName?: string;
   requests?: Partial<ResourceSpec>;
   limits?: Partial<ResourceSpec>;
-  devPorts?: Array<number>;
   sshPipeKeySecret?: string;
-};
-
-export type IngressOptions = {
-  namespace?: string;
-  ingressClassName?: string;
-  annotations?: Record<string, string>;
-  tlsSecretName?: string;
 };
 
 /**
@@ -73,10 +65,9 @@ const SANDBOX_PORTS: ReadonlyArray<{ name: string; port: number }> = [
   { name: "opencode", port: config.ports.opencode },
   { name: "browser", port: config.ports.browser },
   { name: "terminal", port: config.ports.terminal },
+  { name: "dev", port: config.ports.dev },
   { name: "ssh", port: 22 },
 ];
-
-const SANDBOX_PORT_NUMBERS = new Set(SANDBOX_PORTS.map((p) => p.port));
 
 export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
@@ -159,18 +150,10 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           imagePullPolicy: "IfNotPresent",
           command: ["/etc/sandbox/sandbox-boot.sh"],
           securityContext: { runAsUser: 0 },
-          ports: [
-            ...SANDBOX_PORTS.map((p) => ({
-              name: p.name,
-              containerPort: p.port,
-            })),
-            ...(options.devPorts ?? [])
-              .filter((p) => !SANDBOX_PORT_NUMBERS.has(p))
-              .map((p) => ({
-                name: `dp-${p}`,
-                containerPort: p,
-              })),
-          ],
+          ports: SANDBOX_PORTS.map((p) => ({
+            name: p.name,
+            containerPort: p.port,
+          })),
           env: [
             { name: "SANDBOX_ID", value: options.sandboxId },
             {
@@ -198,21 +181,14 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
 
 export function buildSandboxService(
   sandboxId: string,
-  options: {
-    devPorts?: Array<{ name: string; port: number }>;
-    namespace?: string;
-  } = {},
+  options: { namespace?: string } = {},
 ): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
-  const basePorts = SANDBOX_PORTS.map((p) => ({
+  const ports = SANDBOX_PORTS.map((p) => ({
     name: p.name,
     port: p.port,
     targetPort: p.port,
   }));
-
-  const extraPorts = (options.devPorts ?? [])
-    .filter((dp) => !SANDBOX_PORT_NUMBERS.has(dp.port))
-    .map((dp) => ({ name: dp.name, port: dp.port, targetPort: dp.port }));
 
   return {
     apiVersion: "v1",
@@ -228,7 +204,7 @@ export function buildSandboxService(
         "atelier.dev/sandbox": sandboxId,
         "atelier.dev/component": "sandbox",
       },
-      ports: [...basePorts, ...extraPorts],
+      ports,
     },
   };
 }
@@ -290,99 +266,6 @@ export function buildToolIngress(options: ToolIngressOptions): KubeResource {
                   service: {
                     name: `sandbox-${options.sandboxId}`,
                     port: { number: options.port },
-                  },
-                },
-              },
-            ],
-          },
-        },
-      ],
-    },
-  };
-}
-
-export function buildDevCommandIngress(
-  sandboxId: string,
-  name: string,
-  port: number,
-  sandboxDomain: string,
-  options: IngressOptions = {},
-): KubeResource {
-  const namespace = options.namespace ?? config.kubernetes.namespace;
-  const host = `dev-${name}-${sandboxId}.${sandboxDomain}`;
-
-  return {
-    apiVersion: "networking.k8s.io/v1",
-    kind: "Ingress",
-    metadata: {
-      name: `dev-${name}-${sandboxId}`,
-      namespace,
-      labels: sandboxLabels(sandboxId),
-      annotations: options.annotations,
-    },
-    spec: {
-      ingressClassName: options.ingressClassName,
-      ...(options.tlsSecretName && {
-        tls: [{ secretName: options.tlsSecretName, hosts: [host] }],
-      }),
-      rules: [
-        {
-          host,
-          http: {
-            paths: [
-              {
-                path: "/",
-                pathType: "Prefix",
-                backend: {
-                  service: {
-                    name: `sandbox-${sandboxId}`,
-                    port: { number: port },
-                  },
-                },
-              },
-            ],
-          },
-        },
-      ],
-    },
-  };
-}
-
-export function buildDefaultDevIngress(
-  sandboxId: string,
-  port: number,
-  sandboxDomain: string,
-  options: IngressOptions = {},
-): KubeResource {
-  const namespace = options.namespace ?? config.kubernetes.namespace;
-  const host = `dev-${sandboxId}.${sandboxDomain}`;
-
-  return {
-    apiVersion: "networking.k8s.io/v1",
-    kind: "Ingress",
-    metadata: {
-      name: `dev-default-${sandboxId}`,
-      namespace,
-      labels: sandboxLabels(sandboxId),
-      annotations: options.annotations,
-    },
-    spec: {
-      ingressClassName: options.ingressClassName,
-      ...(options.tlsSecretName && {
-        tls: [{ secretName: options.tlsSecretName, hosts: [host] }],
-      }),
-      rules: [
-        {
-          host,
-          http: {
-            paths: [
-              {
-                path: "/",
-                pathType: "Prefix",
-                backend: {
-                  service: {
-                    name: `sandbox-${sandboxId}`,
-                    port: { number: port },
                   },
                 },
               },
@@ -561,34 +444,3 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
 const SHARED_BINARIES_MOUNT_PATH = "/opt/shared";
 
 export { SHARED_BINARIES_MOUNT_PATH };
-
-// ---------------------------------------------------------------------------
-// Dev port collection helper (used by sandbox boot)
-// ---------------------------------------------------------------------------
-
-type DevCommandLike = {
-  name: string;
-  port?: number;
-  extraPorts?: Array<{ port: number; alias: string }>;
-};
-
-export function collectDevPorts(
-  devCommands?: DevCommandLike[],
-): Array<{ name: string; port: number }> {
-  if (!devCommands?.length) return [];
-  const seen = new Set<number>();
-  const ports: Array<{ name: string; port: number }> = [];
-  for (const cmd of devCommands) {
-    if (cmd.port && !seen.has(cmd.port)) {
-      seen.add(cmd.port);
-      ports.push({ name: `dp-${cmd.port}`, port: cmd.port });
-    }
-    for (const ep of cmd.extraPorts ?? []) {
-      if (!seen.has(ep.port)) {
-        seen.add(ep.port);
-        ports.push({ name: `dp-${ep.port}`, port: ep.port });
-      }
-    }
-  }
-  return ports;
-}

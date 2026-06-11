@@ -5,317 +5,117 @@ import {
   sandboxService,
   workspaceService,
 } from "../../container.ts";
-import {
-  buildDefaultDevIngress,
-  buildDevCommandIngress,
-  kubeClient,
-} from "../../infrastructure/kubernetes/index.ts";
-import { config } from "../../shared/lib/config.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+import { toolUrl } from "../../orchestrators/tools/registry.ts";
+import { resolveDevConfig } from "../../schemas/index.ts";
 
-const log = createChildLogger("mcp-dev-commands");
+const DEV_SERVICE = "dev";
 
-function buildDevUrl(sandboxId: string, cmdName: string): string {
-  return `https://dev-${cmdName}-${sandboxId}.${config.domain.dashboard}`;
+function loadDev(sandboxId: string) {
+  const sandbox = sandboxService.getById(sandboxId);
+  if (!sandbox) return { error: `Sandbox '${sandboxId}' not found` } as const;
+  const workspace = sandbox.workspaceId
+    ? workspaceService.getById(sandbox.workspaceId)
+    : undefined;
+  return { sandbox, dev: resolveDevConfig(workspace?.config) } as const;
 }
 
-function buildDefaultDevUrl(sandboxId: string): string {
-  return `https://dev-${sandboxId}.${config.domain.dashboard}`;
+function text(value: unknown, isError = false) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+    ...(isError && { isError: true }),
+  };
 }
 
 export function registerDevCommandTools(server: McpServer): void {
   server.registerTool(
-    "list_dev_commands",
+    "get_dev_server",
     {
-      title: "List Dev Commands",
+      title: "Get Dev Server",
       description:
-        "List all configured dev commands for a sandbox with their " +
-        "current runtime status and public URLs.",
+        "Get the sandbox dev server: its command, public URL, and current " +
+        "running status.",
       inputSchema: z.object({
         sandboxId: z.string().describe("The sandbox ID"),
       }),
     },
     async ({ sandboxId }) => {
-      const sandbox = sandboxService.getById(sandboxId);
-      if (!sandbox) {
-        return {
-          content: [{ type: "text", text: `Sandbox '${sandboxId}' not found` }],
-          isError: true,
-        };
-      }
+      const ctx = loadDev(sandboxId);
+      if ("error" in ctx) return text({ error: ctx.error }, true);
+      const { sandbox, dev } = ctx;
+      if (!dev) return text({ sandboxId, configured: false });
 
-      const workspace = sandbox.workspaceId
-        ? workspaceService.getById(sandbox.workspaceId)
-        : undefined;
-      const configuredCommands = workspace?.config.devCommands ?? [];
-
-      if (configuredCommands.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  sandboxId,
-                  commands: [],
-                  message: "No dev commands configured",
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
-      }
-
-      let runtimeStatus: {
-        commands: {
-          name: string;
-          status: string;
-          pid?: number;
-          startedAt?: string;
-          exitCode?: number;
-        }[];
-      } = { commands: [] };
+      let status = "stopped";
       if (sandbox.status === "running") {
         try {
-          runtimeStatus = await agentClient.devList(sandbox.id);
+          const s = await agentClient.serviceStatus(sandbox.id, DEV_SERVICE);
+          status = s.running ? "running" : s.status;
         } catch {
-          // Agent unreachable
+          status = "unknown";
         }
       }
 
-      const commands = configuredCommands.map((cmd) => {
-        const runtime = runtimeStatus.commands.find((r) => r.name === cmd.name);
-        const isRunning = runtime?.status === "running";
-
-        return {
-          name: cmd.name,
-          command: cmd.command,
-          port: cmd.port ?? null,
-          workdir: cmd.workdir ?? null,
-          isDefault: cmd.isDefault ?? false,
-          status: runtime?.status ?? "stopped",
-          pid: runtime?.pid ?? null,
-          startedAt: runtime?.startedAt ?? null,
-          exitCode: runtime?.exitCode ?? null,
-          devUrl:
-            isRunning && cmd.port ? buildDevUrl(sandbox.id, cmd.name) : null,
-          defaultDevUrl:
-            isRunning && cmd.port && cmd.isDefault
-              ? buildDefaultDevUrl(sandbox.id)
-              : null,
-        };
+      return text({
+        sandboxId,
+        configured: true,
+        command: dev.command,
+        url: toolUrl(DEV_SERVICE, sandbox.id),
+        status,
       });
-
-      const result = { sandboxId, commands };
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      };
     },
   );
 
   server.registerTool(
-    "manage_dev_commands",
+    "manage_dev_server",
     {
-      title: "Manage Dev Commands",
-      description:
-        "Start or stop dev commands on a sandbox. " +
-        "Returns the updated status and public URLs for each command.",
+      title: "Manage Dev Server",
+      description: "Start or stop the sandbox dev server.",
       inputSchema: z.object({
         sandboxId: z.string().describe("The sandbox ID"),
-        actions: z
-          .array(
-            z.object({
-              name: z.string().describe("Dev command name"),
-              action: z.enum(["start", "stop"]).describe("Action to perform"),
-            }),
-          )
-          .describe("List of actions to perform on dev commands"),
+        action: z.enum(["start", "stop"]).describe("Action to perform"),
       }),
     },
-    async ({ sandboxId, actions }) => {
-      const sandbox = sandboxService.getById(sandboxId);
-      if (!sandbox) {
-        return {
-          content: [{ type: "text", text: `Sandbox '${sandboxId}' not found` }],
-          isError: true,
-        };
+    async ({ sandboxId, action }) => {
+      const ctx = loadDev(sandboxId);
+      if ("error" in ctx) return text({ error: ctx.error }, true);
+      const { sandbox, dev } = ctx;
+      if (!dev) {
+        return text(
+          { error: "No dev server configured for this workspace" },
+          true,
+        );
       }
-
       if (sandbox.status !== "running") {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Sandbox '${sandboxId}' is not running (status: ${sandbox.status})`,
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      const workspace = sandbox.workspaceId
-        ? workspaceService.getById(sandbox.workspaceId)
-        : undefined;
-      const configuredCommands = workspace?.config.devCommands ?? [];
-
-      const results = [];
-
-      for (const { name, action } of actions) {
-        const devCommand = configuredCommands.find((c) => c.name === name);
-        if (!devCommand) {
-          results.push({
-            name,
-            action,
-            error: `Dev command '${name}' not found`,
-          });
-          continue;
-        }
-
-        try {
-          if (action === "start") {
-            const devCommandWithEnv = {
-              ...devCommand,
-              env: {
-                ...devCommand.env,
-                ATELIER_SANDBOX_ID: sandbox.id,
-              },
-            };
-
-            const startResult = await agentClient.devStart(
-              sandbox.id,
-              name,
-              devCommandWithEnv,
-            );
-
-            let devUrl: string | undefined;
-            let defaultDevUrl: string | undefined;
-
-            if (devCommand.port) {
-              try {
-                const ingressOpts = {
-                  ingressClassName:
-                    config.kubernetes.ingressClassName || undefined,
-                  tlsSecretName: "atelier-sandbox-wildcard-tls",
-                };
-
-                await kubeClient.createResource(
-                  buildDevCommandIngress(
-                    sandbox.id,
-                    name,
-                    devCommand.port,
-                    config.domain.dashboard,
-                    ingressOpts,
-                  ),
-                );
-                devUrl = buildDevUrl(sandbox.id, name);
-
-                if (devCommand.isDefault) {
-                  await kubeClient.createResource(
-                    buildDefaultDevIngress(
-                      sandbox.id,
-                      devCommand.port,
-                      config.domain.dashboard,
-                      ingressOpts,
-                    ),
-                  );
-                  defaultDevUrl = buildDefaultDevUrl(sandbox.id);
-                }
-
-                for (const ep of devCommand.extraPorts ?? []) {
-                  await kubeClient.createResource(
-                    buildDevCommandIngress(
-                      sandbox.id,
-                      `${name}-${ep.alias}`,
-                      ep.port,
-                      config.domain.dashboard,
-                      ingressOpts,
-                    ),
-                  );
-                }
-              } catch (err) {
-                log.warn(
-                  { sandboxId, name, error: err },
-                  "Failed to register dev route",
-                );
-              }
-            }
-
-            results.push({
-              name,
-              action: "start",
-              status: startResult.status,
-              pid: startResult.pid ?? null,
-              devUrl: devUrl ?? null,
-              defaultDevUrl: defaultDevUrl ?? null,
-            });
-          } else {
-            const stopResult = await agentClient.devStop(sandbox.id, name);
-
-            if (devCommand.port) {
-              try {
-                await kubeClient.deleteResource(
-                  "ingresses",
-                  `dev-${name}-${sandbox.id}`,
-                );
-              } catch (err) {
-                log.warn(
-                  { sandboxId, name, error: err },
-                  "Failed to remove dev route",
-                );
-              }
-
-              if (devCommand.isDefault) {
-                kubeClient
-                  .deleteResource("ingresses", `dev-default-${sandbox.id}`)
-                  .catch(() => {});
-              }
-
-              for (const ep of devCommand.extraPorts ?? []) {
-                kubeClient
-                  .deleteResource(
-                    "ingresses",
-                    `dev-${name}-${ep.alias}-${sandbox.id}`,
-                  )
-                  .catch(() => {});
-              }
-            }
-
-            results.push({
-              name,
-              action: "stop",
-              status: stopResult.status,
-              exitCode: stopResult.exitCode ?? null,
-            });
-          }
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error);
-          results.push({ name, action, error: msg });
-        }
-      }
-
-      return {
-        content: [
+        return text(
           {
-            type: "text",
-            text: JSON.stringify({ sandboxId, results }, null, 2),
+            error: `Sandbox '${sandboxId}' is not running (status: ${sandbox.status})`,
           },
-        ],
-      };
+          true,
+        );
+      }
+
+      const result =
+        action === "start"
+          ? await agentClient.serviceStart(sandbox.id, DEV_SERVICE)
+          : await agentClient.serviceStop(sandbox.id, DEV_SERVICE);
+
+      return text({
+        sandboxId,
+        action,
+        status: result.status,
+        url: action === "start" ? toolUrl(DEV_SERVICE, sandbox.id) : undefined,
+      });
     },
   );
 
   server.registerTool(
-    "get_dev_command_logs",
+    "get_dev_server_logs",
     {
-      title: "Get Dev Command Logs",
+      title: "Get Dev Server Logs",
       description:
-        "Get logs for a running dev command. Returns the log content " +
-        "and a nextOffset for pagination.",
+        "Get logs for the sandbox dev server. Returns the log content and a " +
+        "nextOffset for pagination.",
       inputSchema: z.object({
         sandboxId: z.string().describe("The sandbox ID"),
-        name: z.string().describe("Dev command name"),
         offset: z
           .number()
           .optional()
@@ -326,44 +126,25 @@ export function registerDevCommandTools(server: McpServer): void {
           .describe("Max bytes to return. Defaults to 10000"),
       }),
     },
-    async ({ sandboxId, name, offset, limit }) => {
-      const sandbox = sandboxService.getById(sandboxId);
-      if (!sandbox) {
-        return {
-          content: [{ type: "text", text: `Sandbox '${sandboxId}' not found` }],
-          isError: true,
-        };
-      }
-
+    async ({ sandboxId, offset, limit }) => {
+      const ctx = loadDev(sandboxId);
+      if ("error" in ctx) return text({ error: ctx.error }, true);
+      const { sandbox } = ctx;
       if (sandbox.status !== "running") {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Sandbox '${sandboxId}' is not running`,
-            },
-          ],
-          isError: true,
-        };
+        return text({ error: `Sandbox '${sandboxId}' is not running` }, true);
       }
 
       try {
-        const logs = await agentClient.devLogs(
+        const logs = await agentClient.serviceLogs(
           sandbox.id,
-          name,
+          DEV_SERVICE,
           offset ?? 0,
           limit ?? 10000,
         );
-
-        return {
-          content: [{ type: "text", text: JSON.stringify(logs, null, 2) }],
-        };
+        return text(logs);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        return {
-          content: [{ type: "text", text: `Failed to get logs: ${msg}` }],
-          isError: true,
-        };
+        return text({ error: `Failed to get logs: ${msg}` }, true);
       }
     },
   );

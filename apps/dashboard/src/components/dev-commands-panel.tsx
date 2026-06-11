@@ -8,99 +8,83 @@ import {
   Play,
   Square,
   Terminal,
-  XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
-  sandboxDevCommandLogsQuery,
-  sandboxDevCommandsQuery,
-  useStartDevCommand,
-  useStopDevCommand,
+  deriveToolStatus,
+  sandboxToolsQuery,
+  serviceLogsQuery,
+  useSandboxServices,
+  useStartTool,
+  useStopTool,
 } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-export function DevCommandsPanel({ sandboxId }: { sandboxId: string }) {
-  const { data, isLoading, refetch } = useQuery(
-    sandboxDevCommandsQuery(sandboxId),
-  );
+const DEV_SLUG = "dev";
 
-  const commands = data?.commands ?? [];
+export function DevCommandsPanel({ sandboxId }: { sandboxId: string }) {
+  const { data: tools, isLoading } = useQuery(sandboxToolsQuery(sandboxId));
+  const { data: servicesData } = useSandboxServices(sandboxId);
+  const devTool = tools?.find((t) => t.slug === DEV_SLUG);
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Terminal className="h-5 w-5" />
-          Dev Commands
+          Dev Server
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          Refresh
-        </Button>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <div className="flex items-center gap-2 text-muted-foreground py-8 justify-center">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading commands...
+            Loading...
           </div>
-        ) : commands.length === 0 ? (
+        ) : !devTool ? (
           <div className="text-center py-8 text-muted-foreground">
             <Terminal className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>No dev commands configured</p>
+            <p>No dev server configured</p>
             <p className="text-sm mt-1">
-              Add dev commands to your workspace configuration
+              Set a dev command in your workspace configuration
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {commands.map((cmd) => (
-              <DevCommandItem
-                key={cmd.name}
-                sandboxId={sandboxId}
-                command={cmd}
-              />
-            ))}
-          </div>
+          <DevServerItem
+            sandboxId={sandboxId}
+            url={devTool.url}
+            status={deriveToolStatus(servicesData, devTool)}
+          />
         )}
       </CardContent>
     </Card>
   );
 }
 
-function DevCommandItem({
+function DevServerItem({
   sandboxId,
-  command,
+  url,
+  status,
 }: {
   sandboxId: string;
-  command: {
-    name: string;
-    command: string;
-    status: string;
-    port?: number;
-    pid?: number;
-    exitCode?: number;
-    devUrl?: string;
-    defaultDevUrl?: string;
-    extraDevUrls?: Array<{ alias: string; port: number; url: string }>;
-  };
+  url?: string;
+  status: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const startMutation = useStartDevCommand(sandboxId);
-  const stopMutation = useStopDevCommand(sandboxId);
+  const startMutation = useStartTool(sandboxId);
+  const stopMutation = useStopTool(sandboxId);
 
-  const isRunning = command.status === "running";
+  const isRunning = status === "running";
   const isPending = startMutation.isPending || stopMutation.isPending;
 
   const handleToggle = () => {
     if (isRunning) {
-      stopMutation.mutate(command.name);
+      stopMutation.mutate(DEV_SLUG);
     } else {
-      startMutation.mutate(command.name, {
-        onSuccess: () => setExpanded(true),
-      });
+      startMutation.mutate(DEV_SLUG, { onSuccess: () => setExpanded(true) });
     }
   };
 
@@ -120,46 +104,28 @@ function DevCommandItem({
               <ChevronRight className="h-4 w-4" />
             )}
           </Button>
-          <div className="min-w-0">
-            <div className="font-medium flex items-center gap-2 flex-wrap">
-              <span className="truncate">{command.name}</span>
-              <StatusBadge
-                status={command.status}
-                exitCode={command.exitCode}
-              />
-            </div>
-            <div className="text-xs text-muted-foreground font-mono mt-0.5 break-all">
-              {command.command}
-              {command.port && ` • Port ${command.port}`}
-            </div>
+          <div className="font-medium flex items-center gap-2 flex-wrap">
+            <span className="truncate">Dev Server</span>
+            {isRunning ? (
+              <Badge variant="success" className="gap-1">
+                <CheckCircle2 className="h-3 w-3" />
+                Running
+              </Badge>
+            ) : (
+              <Badge variant="secondary">Stopped</Badge>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap shrink-0 sm:justify-end">
-          {command.extraDevUrls?.map((ep) =>
-            isRunning ? (
-              <Button key={ep.alias} variant="outline" size="sm" asChild>
-                <a href={ep.url} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                  {ep.alias}
-                </a>
-              </Button>
-            ) : null,
-          )}
-
-          {command.devUrl && isRunning && (
+          {url && isRunning && (
             <Button variant="outline" size="sm" asChild>
-              <a
-                href={command.devUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href={url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                 Open
               </a>
             </Button>
           )}
-
           <Button
             variant={isRunning ? "outline" : "default"}
             size="sm"
@@ -180,53 +146,18 @@ function DevCommandItem({
 
       {expanded && (
         <div className="border-t">
-          <DevCommandLogs
-            sandboxId={sandboxId}
-            commandName={command.name}
-            isRunning={isRunning}
-          />
+          <DevServerLogs sandboxId={sandboxId} isRunning={isRunning} />
         </div>
       )}
     </div>
   );
 }
 
-function StatusBadge({
-  status,
-  exitCode,
-}: {
-  status: string;
-  exitCode?: number;
-}) {
-  if (status === "running") {
-    return (
-      <Badge variant="success" className="gap-1">
-        <CheckCircle2 className="h-3 w-3" />
-        Running
-      </Badge>
-    );
-  }
-  if (
-    status === "error" ||
-    (status === "stopped" && exitCode && exitCode !== 0)
-  ) {
-    return (
-      <Badge variant="destructive" className="gap-1">
-        <XCircle className="h-3 w-3" />
-        {exitCode ? `Exit ${exitCode}` : "Error"}
-      </Badge>
-    );
-  }
-  return <Badge variant="secondary">Stopped</Badge>;
-}
-
-function DevCommandLogs({
+function DevServerLogs({
   sandboxId,
-  commandName,
   isRunning,
 }: {
   sandboxId: string;
-  commandName: string;
   isRunning: boolean;
 }) {
   const [logs, setLogs] = useState("");
@@ -243,7 +174,7 @@ function DevCommandLogs({
   }, [isRunning]);
 
   const { data } = useQuery({
-    ...sandboxDevCommandLogsQuery(sandboxId, commandName, offset),
+    ...serviceLogsQuery(sandboxId, DEV_SLUG, offset),
     refetchInterval: isRunning ? 2000 : false,
   });
 

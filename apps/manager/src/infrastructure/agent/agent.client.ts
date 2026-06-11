@@ -6,10 +6,7 @@ import type {
   AgentHealth,
   BatchExecResult,
   Command,
-  DevCommandListResult,
   DevLogsResult,
-  DevStartResult,
-  DevStopResult,
   ExecResult,
   FileWrite,
   GitCommitResult,
@@ -211,44 +208,6 @@ export class AgentClient {
       "/exec/batch",
       { commands },
       options.timeout ?? maxCmdTimeout + 10000,
-    );
-  }
-
-  async devList(sandboxId: string): Promise<DevCommandListResult> {
-    return this.request<DevCommandListResult>(sandboxId, "/dev");
-  }
-
-  async devStart(
-    sandboxId: string,
-    name: string,
-    devCommand: {
-      command: string;
-      workdir?: string;
-      env?: Record<string, string>;
-      port?: number;
-    },
-  ): Promise<DevStartResult> {
-    return this.post<DevStartResult>(
-      sandboxId,
-      `/dev/${name}/start`,
-      devCommand,
-      30000,
-    );
-  }
-
-  async devStop(sandboxId: string, name: string): Promise<DevStopResult> {
-    return this.post<DevStopResult>(sandboxId, `/dev/${name}/stop`);
-  }
-
-  async devLogs(
-    sandboxId: string,
-    name: string,
-    offset: number,
-    limit: number,
-  ): Promise<DevLogsResult> {
-    return this.request<DevLogsResult>(
-      sandboxId,
-      `/dev/${name}/logs?offset=${offset}&limit=${limit}`,
     );
   }
 

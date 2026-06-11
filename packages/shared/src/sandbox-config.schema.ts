@@ -10,6 +10,7 @@ import { type Static, Type } from "@sinclair/typebox";
 export const SandboxServiceEntrySchema = Type.Object({
   port: Type.Optional(Type.Number()),
   command: Type.Optional(Type.String()),
+  workdir: Type.Optional(Type.String()),
   user: Type.Optional(Type.Union([Type.Literal("dev"), Type.Literal("root")])),
   autoStart: Type.Optional(Type.Boolean({ default: false })),
   env: Type.Optional(Type.Record(Type.String(), Type.String())),

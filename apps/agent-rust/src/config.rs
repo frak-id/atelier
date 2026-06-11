@@ -3,8 +3,12 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
 pub const AGENT_PORT: u16 = 9998;
+// Public port the Service/ingress route to (forwarder listens); must match
+// manager `config.ports.dev`. DEV_APP_PORT is the loopback port the dev server
+// binds (Vite's default) and the forwarder targets; must match `ports.devApp`.
+pub const DEV_PORT: u16 = 3001;
+pub const DEV_APP_PORT: u16 = 5173;
 pub const LOG_DIR: &str = "/var/log/sandbox";
-pub const WORKSPACE_DIR: &str = "/home/dev/workspace";
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 30_000;
 
 pub const CONFIG_PATH: &str = "/etc/sandbox/config.json";
@@ -14,6 +18,7 @@ pub const CONFIG_PATH: &str = "/etc/sandbox/config.json";
 pub struct ServiceConfig {
     pub port: Option<u16>,
     pub command: Option<String>,
+    pub workdir: Option<String>,
     pub user: Option<String>,
     #[serde(default)]
     pub auto_start: bool,

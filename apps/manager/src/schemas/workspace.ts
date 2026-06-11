@@ -58,6 +58,13 @@ export const DevCommandSchema = t.Object({
 });
 export type DevCommand = Static<typeof DevCommandSchema>;
 
+export const DevConfigSchema = t.Object({
+  command: t.String({ minLength: 1 }),
+  workdir: t.Optional(t.String()),
+  env: t.Optional(t.Record(t.String(), t.String())),
+});
+export type DevConfig = Static<typeof DevConfigSchema>;
+
 export const WorkspaceConfigSchema = t.Object({
   baseImage: t.String({ default: "dev-base" }),
   vcpus: t.Number({ minimum: 1, maximum: 8, default: DEFAULTS.VCPUS }),
@@ -74,7 +81,10 @@ export const WorkspaceConfigSchema = t.Object({
   exposedPorts: t.Array(t.Number(), { default: [] }),
   prebuild: t.Optional(PrebuildInfoSchema),
   sessionTemplates: t.Optional(SessionTemplatesSchema),
+  // Legacy multi-command dev config, superseded by `dev`. Read-only for
+  // existing workspace blobs via resolveDevConfig(); not written anymore.
   devCommands: t.Optional(t.Array(DevCommandSchema, { default: [] })),
+  dev: t.Optional(DevConfigSchema),
   useRegistryCache: t.Optional(t.Boolean()),
 });
 export type WorkspaceConfig = Static<typeof WorkspaceConfigSchema>;
@@ -132,6 +142,21 @@ export const DEFAULT_WORKSPACE_CONFIG: WorkspaceConfig = {
   repos: [],
   exposedPorts: [],
 };
+
+export function resolveDevConfig(
+  workspaceConfig: WorkspaceConfig | undefined,
+): DevConfig | undefined {
+  if (!workspaceConfig) return undefined;
+  if (workspaceConfig.dev) return workspaceConfig.dev;
+  const legacy = workspaceConfig.devCommands ?? [];
+  const chosen = legacy.find((c) => c.isDefault) ?? legacy[0];
+  if (!chosen) return undefined;
+  return {
+    command: chosen.command,
+    workdir: chosen.workdir,
+    env: chosen.env,
+  };
+}
 
 export const WorkspaceMatchQuerySchema = t.Object({
   remoteUrl: t.String({ minLength: 1 }),

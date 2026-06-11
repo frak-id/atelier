@@ -54,24 +54,14 @@ export function useSandboxServices(sandboxId: string, enabled = true) {
   });
 }
 
-export const sandboxDevCommandsQuery = (id: string) =>
+export const serviceLogsQuery = (id: string, name: string, offset: number) =>
   queryOptions({
-    queryKey: queryKeys.sandboxes.devCommands(id),
-    queryFn: async () => unwrap(await api.api.sandboxes({ id }).dev.get()),
-  });
-
-export const sandboxDevCommandLogsQuery = (
-  id: string,
-  name: string,
-  offset: number,
-) =>
-  queryOptions({
-    queryKey: queryKeys.sandboxes.devCommandLogs(id, name, offset),
+    queryKey: queryKeys.sandboxes.serviceLogs(id, name, offset),
     queryFn: async () =>
       unwrap(
         await api.api
           .sandboxes({ id })
-          .dev({ name })
+          .services({ name })
           .logs.get({ query: { offset: offset.toString(), limit: "10000" } }),
       ),
     enabled: !!name,
@@ -184,36 +174,6 @@ export function useRecoverSandbox() {
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
       queryClient.invalidateQueries({
         queryKey: queryKeys.sandboxes.detail(id),
-      });
-    },
-  });
-}
-
-export function useStartDevCommand(sandboxId: string) {
-  return useMutation({
-    mutationKey: ["sandboxes", "dev", "start", sandboxId],
-    mutationFn: async (name: string) =>
-      unwrap(
-        await api.api.sandboxes({ id: sandboxId }).dev({ name }).start.post(),
-      ),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.devCommands(sandboxId),
-      });
-    },
-  });
-}
-
-export function useStopDevCommand(sandboxId: string) {
-  return useMutation({
-    mutationKey: ["sandboxes", "dev", "stop", sandboxId],
-    mutationFn: async (name: string) =>
-      unwrap(
-        await api.api.sandboxes({ id: sandboxId }).dev({ name }).stop.post(),
-      ),
-    onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sandboxes.devCommands(sandboxId),
       });
     },
   });

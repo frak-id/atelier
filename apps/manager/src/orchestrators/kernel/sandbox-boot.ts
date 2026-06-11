@@ -7,7 +7,6 @@ import {
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
-  collectDevPorts,
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
@@ -148,7 +147,6 @@ export async function bootNewSandbox(
             options.opencodeWorkspaceContext,
           ),
         ),
-        devPorts: collectDevPorts(options.workspace?.config.devCommands),
         vcpus: options.vcpus,
         memoryMb: options.memoryMb,
         sharedKeySecret: sharedKey.secretName,
@@ -222,7 +220,6 @@ export async function bootExistingSandbox(
           sandbox.opencodeWorkspaceContext,
         ),
       ),
-      devPorts: collectDevPorts(workspace?.config.devCommands),
       vcpus: sandbox.runtime.vcpus,
       memoryMb: sandbox.runtime.memoryMb,
       sharedKeySecret: sharedKey.secretName,
@@ -318,6 +315,7 @@ function buildUrls(sandboxId: string): SandboxUrls {
     vscode: toolUrls.vscode ?? "",
     opencode: toolUrls.opencode ?? "",
     ...(toolUrls.browser ? { browser: toolUrls.browser } : {}),
+    ...(toolUrls.dev ? { dev: toolUrls.dev } : {}),
     ssh:
       sshPort === 22
         ? `ssh ${sandboxId}@${sshHost}`
@@ -338,7 +336,6 @@ interface SandboxResourceSpec {
   pvcName: string;
   configMapName: string;
   configJson: string;
-  devPorts: Array<{ name: string; port: number }>;
   vcpus: number;
   memoryMb: number;
   sharedKeySecret: string;
@@ -374,7 +371,6 @@ function createSandboxResources(sandboxId: string, spec: SandboxResourceSpec) {
         workspaceId: spec.workspaceId,
         pvcName: spec.pvcName,
         configMapName: spec.configMapName,
-        devPorts: spec.devPorts.map((dp) => dp.port),
         sshPipeKeySecret: spec.sharedKeySecret,
         requests: {
           cpu: `${Math.max(250, spec.vcpus * 250)}m`,
@@ -386,9 +382,7 @@ function createSandboxResources(sandboxId: string, spec: SandboxResourceSpec) {
         },
       }),
     ),
-    kubeClient.createResource(
-      buildSandboxService(sandboxId, { devPorts: spec.devPorts }),
-    ),
+    kubeClient.createResource(buildSandboxService(sandboxId)),
     ...buildToolIngressResources(sandboxId).map((resource) =>
       kubeClient.createResource(resource),
     ),
