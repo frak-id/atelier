@@ -11,7 +11,7 @@ break circular dependencies.
 | `container.ts` | Dependency Injection composition root |
 | `modules/` | Business logic (Services) and Data Access (Repositories) |
 | `orchestrators/` | Multi-step workflows with rollback (spawning, destroying) |
-| `infrastructure/` | Low-level host/VM integrations (LVM, Caddy, Network) |
+| `infrastructure/` | Low-level integrations (Kubernetes API, sandbox agent, events) |
 
 ## Service Patterns
 

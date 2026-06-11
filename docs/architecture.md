@@ -23,7 +23,8 @@
 | Isolation | **Kata Containers** (Cloud Hypervisor) | VM-level sandbox isolation via K8s pods |
 | Orchestration | **k3s** | Lightweight Kubernetes distribution |
 | Storage | **TopoLVM** (CSI) | LVM thin provisioning, PVC snapshots |
-| Reverse Proxy | **K8s Ingress** + **Caddy** (TLS termination) | Dynamic routing, HTTPS |
+| Reverse Proxy | **Traefik** (k3s built-in) + **K8s Ingress** | Dynamic routing, HTTPS |
+| TLS | **cert-manager** (Cloudflare DNS-01) | Wildcard certificates |
 | Base Image Builds | **Kaniko** | Base OCI image builds inside K8s (triggered from dashboard) |
 | Registry | **Zot** | Lightweight OCI registry for base images |
 | Database | **SQLite** (Drizzle ORM) | Sandbox, workspace, task, config, and auth state |
@@ -40,11 +41,13 @@ atelier/
 │   └── agent-rust/       # In-pod agent (Rust — lightweight, no AVX)
 ├── packages/
 │   └── shared/           # Shared types, constants, errors
+├── charts/
+│   └── atelier/          # Helm chart (full stack deployment)
 ├── infra/
 │   ├── images/           # Base image Dockerfiles
-│   └── scripts/          # Install scripts
+│   └── nginx/            # Dashboard nginx config
 └── scripts/
-    └── deploy.ts         # SSH deployment (manager + agent + dashboard)
+    └── deploy-k8s.sh     # Build images + push + helm deploy via SSH
 ```
 
 ---
@@ -101,7 +104,7 @@ sandboxes clone from this snapshot instantly via copy-on-write and boot fresh.
 │  │   (WAN)      │                                               │
 │  └──────┬───────┘                                               │
 │         │                                                       │
-│         │ Caddy (TLS termination) → K8s Ingress                 │
+│         │ Traefik (:443, TLS) → K8s Ingress                     │
 │         │                                                       │
 │  ┌──────▼───────┐                                               │
 │  │  K8s Service │◄── 10.43.x.x (ClusterIP)                     │
@@ -117,7 +120,7 @@ sandboxes clone from this snapshot instantly via copy-on-write and boot fresh.
 └─────────────────────────────────────────────────────────────────┘
 
 External traffic:
-  Internet → Caddy (:443) → K8s Ingress → Service → Pod:port
+  Internet → Traefik (:443) → K8s Ingress → Service → Pod:port
 ```
 
 ---
@@ -128,20 +131,20 @@ External traffic:
 ┌─────────────────────────────────────────────────────────────────┐
 │                     K8s Ingress                                 │
 │                                                                 │
-│  Static Routes (Caddy, migrating to Ingress in Phase 3):       │
-│  └── {DOMAIN}                                                   │
+│  Static Routes (chart-managed Ingress):                         │
+│  └── sandbox.{DOMAIN}                                           │
 │      ├── /api/*, /auth/*, /config, /health, /swagger*           │
 │      │   → manager.atelier-system.svc:4000                      │
-│      └── * → Static Files (Dashboard SPA)                       │
+│      └── * → nginx sidecar (Dashboard SPA)                      │
 │                                                                 │
 │  Dynamic Routes (K8s Ingress, created by manager):              │
 │  ├── sandbox-{id}.{DOMAIN}    → svc/sandbox-{id}:8080 (VSCode) │
 │  ├── opencode-{id}.{DOMAIN}   → svc/sandbox-{id}:3000 (OC)     │
 │  ├── dev-{name}-{id}.{DOMAIN} → svc/sandbox-{id}:{port} (Dev)  │
-│  └── browser-{id}.{DOMAIN}    → svc/sandbox-{id}:7681 (Kasm)   │
+│  └── browser-{id}.{DOMAIN}    → svc/sandbox-{id}:6080 (Kasm)   │
 │                                                                 │
 │  Features:                                                      │
-│  ├── TLS via Caddy (Phase 3: cert-manager or Traefik ACME)      │
+│  ├── Wildcard TLS via cert-manager (Cloudflare DNS-01)          │
 │  └── Host-based routing via K8s Ingress resources               │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -261,7 +264,7 @@ the manager via TCP on port 9998.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Why Rust?** Bun crashes inside Firecracker/Cloud Hypervisor VMs due to AVX
+**Why Rust?** Bun crashes inside Cloud Hypervisor VMs due to AVX
 instruction issues (SIGILL). The agent is compiled as a static musl binary
 for maximum compatibility.
 

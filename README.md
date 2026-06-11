@@ -227,7 +227,10 @@ ATELIER_SERVER_MODE=mock bun run dev
 
 ## Documentation
 
+- [Getting Started](docs/getting-started.md) — what Atelier is, why it's easy, and how to try it
 - [Setup Guide](docs/setup.md) — installation and configuration
+- [Recommended Infrastructure](docs/recommended-infrastructure.md) — server sizing, Hetzner + k3s recommendations, cost ballpark
+- [Advanced Configuration](docs/advanced-configuration.md) — full reference for every Helm option
 - [Architecture](docs/architecture.md) — system design, components, and diagrams
 - [Infrastructure](docs/infrastructure.md) — networking, storage, domains, and deployment
 - [Constraints](docs/constraints.md) — critical gotchas that will save you hours

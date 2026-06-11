@@ -59,7 +59,7 @@ Atelier does not bundle an npm registry. Set `npmRegistryUrl` to an external pro
 ## Network Architecture
 
 ```
-Internet → Caddy (:443, TLS) → K8s Ingress → Service → Pod:port
+Internet → Traefik (:443, TLS) → K8s Ingress → Service → Pod:port
 ```
 
 - Sandbox pods get IPs from K8s CNI (10.42.x.x range)
@@ -90,13 +90,11 @@ TopoLVM Thin Pool (LVM VG on node)
 
 ## Deployment
 
-From dev machine (requires `SSH_KEY_PATH`, `SSH_USER`, `SSH_HOST` env vars):
+Standard path is Helm (see [Setup Guide](setup.md)). From a dev machine, the deploy script builds images, pushes to GHCR, and runs `helm upgrade` over SSH:
 
 ```bash
-bun run deploy    # Builds + SCP + restart services
+VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
 ```
-
-Target: `helm install` replaces manual deployment in Phase 3.
 
 ## Resource Cleanup
 
