@@ -3,9 +3,17 @@ import { SandboxError } from "../../shared/errors.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { KubeResource } from "./kube.resources.ts";
-import type { JobStatus, PodPhase, WatchEvent } from "./kube.watcher.ts";
 
 const log = createChildLogger("kube-client");
+
+export type PodPhase =
+  | "Pending"
+  | "Running"
+  | "Succeeded"
+  | "Failed"
+  | "Unknown";
+
+export type JobStatus = "active" | "succeeded" | "failed" | "unknown";
 
 const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 200;
@@ -102,61 +110,6 @@ export class KubeClient {
         "Content-Type": "application/strategic-merge-patch+json",
       },
     });
-  }
-
-  async watch(
-    path: string,
-    handler: (event: WatchEvent) => void,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (isMock()) {
-      handler({ type: "MODIFIED", object: {} });
-      return;
-    }
-
-    const auth = await this.getAuthConfig();
-    const url = this.buildUrl(auth.server, path);
-    const response = await fetch(url, {
-      method: "GET",
-      signal,
-      headers: this.buildHeaders(auth, undefined),
-      tls: auth.tls,
-    } as BunRequestInit);
-
-    if (!response.ok) {
-      throw await this.toKubeError(response, `Watch failed for ${path}`);
-    }
-
-    if (!response.body) {
-      throw new KubeApiError("Watch stream closed unexpectedly", 500);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      const trailing = lines.pop();
-      buffer = trailing ?? "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const event = JSON.parse(trimmed) as WatchEvent;
-        handler(event);
-      }
-    }
-
-    const finalLine = buffer.trim();
-    if (finalLine) {
-      const event = JSON.parse(finalLine) as WatchEvent;
-      handler(event);
-    }
   }
 
   async getPod(name: string, namespace = this.namespace): Promise<KubePod> {
@@ -317,6 +270,28 @@ export class KubeClient {
     }
   }
 
+  async deleteLabeledIngresses(
+    labelSelector: string,
+    namespace = this.namespace,
+  ): Promise<void> {
+    if (isMock()) {
+      return;
+    }
+
+    const selector = encodeURIComponent(labelSelector);
+    const base = `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
+    const list = await this.list<{
+      items?: Array<{ metadata?: { name?: string } }>;
+    }>(`${base}?labelSelector=${selector}`);
+
+    for (const item of list.items ?? []) {
+      const name = item.metadata?.name;
+      // Per-item catch so one stale entry (e.g. a concurrent destroy 404)
+      // doesn't abort the sweep and leak the remaining ingresses.
+      if (name) await this.delete(`${base}/${name}`).catch(() => {});
+    }
+  }
+
   async getPodStatus(
     name: string,
     namespace = this.namespace,
@@ -348,68 +323,6 @@ export class KubeClient {
       `/api/v1/namespaces/${namespace}/pods/${name}`,
     );
     return pod.status?.podIP ?? null;
-  }
-
-  async waitForPodReady(
-    name: string,
-    options: { timeout?: number; namespace?: string } = {},
-  ): Promise<boolean> {
-    if (isMock()) {
-      return true;
-    }
-
-    const timeout = options.timeout ?? 60_000;
-    const namespace = options.namespace ?? this.namespace;
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < timeout) {
-      const pod = await this.get<KubeStatusResponse>(
-        `/api/v1/namespaces/${namespace}/pods/${name}`,
-      );
-      const conditions = pod.status?.conditions ?? [];
-      const ready = conditions.some(
-        (condition) =>
-          condition.type === "Ready" && condition.status === "True",
-      );
-
-      if (ready) {
-        return true;
-      }
-
-      const phase = pod.status?.phase;
-      if (phase === "Failed") {
-        return false;
-      }
-
-      await Bun.sleep(1000);
-    }
-
-    return false;
-  }
-
-  async waitForPvcBound(
-    name: string,
-    options: { timeout?: number; namespace?: string } = {},
-  ): Promise<boolean> {
-    if (isMock()) {
-      return true;
-    }
-
-    const timeout = options.timeout ?? 60_000;
-    const namespace = options.namespace ?? this.namespace;
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < timeout) {
-      const pvc = await this.get<KubeStatusResponse>(
-        `/api/v1/namespaces/${namespace}/persistentvolumeclaims/${name}`,
-      );
-      const phase = pvc.status?.phase;
-      if (phase === "Bound") return true;
-      if (phase === "Lost") return false;
-      await Bun.sleep(1000);
-    }
-
-    return false;
   }
 
   async waitForVolumeSnapshotReady(

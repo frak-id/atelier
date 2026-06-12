@@ -56,7 +56,6 @@ export function CreateWorkspaceDialog({
               .filter((cmd: string) => cmd.trim()),
             repos: serializeRepos(value.repos),
             secrets: {},
-            exposedPorts: [],
           },
         },
         {

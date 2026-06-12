@@ -1,9 +1,8 @@
 import { KubeClient } from "./kube.client.ts";
 
-export type { KubePod } from "./kube.client.ts";
+export type { JobStatus, KubePod, PodPhase } from "./kube.client.ts";
 export { KubeApiError, KubeClient } from "./kube.client.ts";
 export type {
-  IngressOptions,
   KubeResource,
   PvcOptions,
   SandboxPodOptions,
@@ -13,26 +12,16 @@ export type {
 } from "./kube.resources.ts";
 export {
   buildConfigMap,
-  buildDefaultDevIngress,
-  buildDevCommandIngress,
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
   buildToolIngress,
   buildVolumeSnapshot,
-  collectDevPorts,
   SHARED_BINARIES_MOUNT_PATH,
   toolHost,
   toolIngressName,
 } from "./kube.resources.ts";
-export type {
-  JobStatus,
-  KubeEvent,
-  PodPhase,
-  WatchEvent,
-} from "./kube.watcher.ts";
-export { pollPodReady, readPodEvents, watchPodStatus } from "./kube.watcher.ts";
 export { ensureSharedSshPipeKey } from "./ssh-pipe-key.ts";
 
 /**

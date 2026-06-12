@@ -57,7 +57,9 @@
     "opencode": 3000,
     "browser": 6080,
     "terminal": 7681,
-    "agent": 9998
+    "agent": 9998,
+    "dev": 3001,
+    "devApp": 5173
   },
   "imageBuilder": {
     "kind": "kaniko",

@@ -96,36 +96,6 @@ export interface GitPushResult {
   error?: string;
 }
 
-export interface DevCommandStatus {
-  name: string;
-  status: string;
-  pid?: number;
-  port?: number;
-  startedAt?: string;
-  exitCode?: number;
-}
-
-export interface DevCommandListResult {
-  commands: DevCommandStatus[];
-}
-
-export interface DevStartResult {
-  status: string;
-  pid?: number;
-  name: string;
-  port?: number;
-  logFile?: string;
-  startedAt?: string;
-}
-
-export interface DevStopResult {
-  status: string;
-  name: string;
-  pid?: number;
-  message?: string;
-  exitCode?: number;
-}
-
 export interface DevLogsResult {
   name: string;
   content: string;

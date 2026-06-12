@@ -1,5 +1,5 @@
 import type { Task } from "@frak/atelier-manager/types";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   AlertCircle,
@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { Component, type ReactNode, Suspense, useState } from "react";
 import {
+  allSandboxServicesQuery,
   organizationListQuery,
-  sandboxDevCommandsQuery,
   sandboxListQuery,
   taskListQuery,
   useDeleteSandbox,
@@ -418,27 +418,15 @@ function RunningSandboxesSection({
 
 function DevCommandsSection() {
   const { data: sandboxes } = useQuery(sandboxListQuery());
+  const { data: allServices } = useQuery(allSandboxServicesQuery);
   const runningSandboxes =
     sandboxes?.filter((s) => s.status === "running") ?? [];
 
-  // We need to fetch dev commands for all running sandboxes
-  const devCommandsQueries = useQueries({
-    queries: runningSandboxes.map((sandbox) => ({
-      ...sandboxDevCommandsQuery(sandbox.id),
-      meta: { sandbox },
-    })),
-  });
+  const activeServers = runningSandboxes.filter((sandbox) =>
+    allServices?.[sandbox.id]?.some((svc) => svc.name === "dev" && svc.running),
+  );
 
-  const activeCommands = devCommandsQueries.flatMap((q, i) => {
-    const sandbox = runningSandboxes[i];
-    if (!sandbox) return [];
-    const commands = q.data?.commands ?? [];
-    return commands
-      .filter((c) => c.status === "running")
-      .map((c) => ({ ...c, sandbox }));
-  });
-
-  if (activeCommands.length === 0) {
+  if (activeServers.length === 0) {
     return null;
   }
 
@@ -447,19 +435,21 @@ function DevCommandsSection() {
       <h2 className="text-xl font-semibold flex items-center gap-2">
         Dev Servers
         <Badge variant="secondary" className="bg-green-500/10 text-green-600">
-          {activeCommands.length} Active
+          {activeServers.length} Active
         </Badge>
       </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {activeCommands.map((cmd) => (
-          <Card key={`${cmd.sandbox.id}-${cmd.name}`} className="bg-muted/30">
+        {activeServers.map((sandbox) => (
+          <Card key={sandbox.id} className="bg-muted/30">
             <CardContent className="p-4 flex items-center justify-between">
               <div className="space-y-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium truncate">{cmd.name}</span>
+                  <span className="font-medium truncate">
+                    {sandbox.name ?? sandbox.id}
+                  </span>
                   <Badge variant="outline" className="text-xs h-5 px-1.5">
-                    {cmd.sandbox.id}
+                    {sandbox.id}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -467,10 +457,10 @@ function DevCommandsSection() {
                   Running
                 </div>
               </div>
-              {cmd.devUrl && (
+              {sandbox.runtime.urls.dev && (
                 <Button variant="ghost" size="icon" asChild>
                   <a
-                    href={cmd.devUrl}
+                    href={sandbox.runtime.urls.dev}
                     target="_blank"
                     rel="noopener noreferrer"
                     title="Open Dev Server"

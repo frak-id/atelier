@@ -19,10 +19,9 @@ import { config } from "../../shared/lib/config.ts";
  * even for workspaceless sandboxes. Everything else (vscode, terminal, the
  * browser/VNC stack) is generic and could later be made user-configurable.
  *
- * NOTE: the in-pod agent does NOT act on the `autoStart` flag (its autostart
- * loop is disabled — see agent `main.rs`). The manager decides what to start
- * via `bootServiceNames()` / `coreServiceNames()`; `autoStart` is kept on the
- * service entry purely as descriptive metadata.
+ * NOTE: the in-pod agent's autostart loop is disabled (see agent `main.rs`),
+ * so service entries carry no start flag — the manager decides what to start
+ * via `bootServiceNames()` / `coreServiceNames()`.
  */
 
 type ServiceEntry = SandboxConfig["services"][string];
@@ -33,20 +32,20 @@ export interface ToolContext {
   dashboardDomain: string;
   opencodePassword?: string;
   opencodeEnv?: Record<string, string>;
+  dev?: { command: string; workdir?: string; env?: Record<string, string> };
 }
-
-type IngressAnnotationSet = "vscode" | "opencode";
 
 export interface ToolExposure {
   /** Subdomain prefix → `${subdomain}-${sandboxId}.${dashboardDomain}`. */
   subdomain: string;
-  /** Key into `config.ports` for the service port the ingress targets. */
-  portKey: "vscode" | "opencode" | "browser";
-  /** Which configured ingress annotation set to apply. */
-  annotations: IngressAnnotationSet;
+  /** In-pod service port the ingress targets. */
+  port: number;
+  /** Ingress annotations (forward-auth, header injection, …). */
+  annotations?: Record<string, string>;
 }
 
 export type ToolStart = "boot" | "lazy";
+export type ToolManagedBy = "agent" | "manager";
 
 export interface ToolDefinition {
   slug: string;
@@ -55,6 +54,12 @@ export interface ToolDefinition {
   core?: boolean;
   /** `boot` = ingress + service started at spawn; `lazy` = on demand. */
   start: ToolStart;
+  /**
+   * Who drives the tool's services. `agent` tools are ensured in-pod by the
+   * agent itself (e.g. terminal) and contribute nothing for the manager to
+   * start. Defaults to `manager`.
+   */
+  managedBy?: ToolManagedBy;
   /** Delay (ms) between sequential service starts (ordered multi-service tools). */
   startDelayMs?: number;
   /** Optional HTTP exposure (ingress + dashboard URL). */
@@ -74,8 +79,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     start: "lazy",
     exposure: {
       subdomain: "vscode",
-      portKey: "vscode",
-      annotations: "vscode",
+      port: config.ports.vscode,
+      annotations: config.kubernetes.vsCodeIngressAnnotations,
     },
     autoStartServices: ["vscode"],
     buildServices: (ctx) => {
@@ -85,7 +90,6 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           port,
           command: `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${port} --auth none --disable-telemetry ${ctx.workspaceDir}`,
           user: "dev",
-          autoStart: true,
         },
       };
     },
@@ -97,8 +101,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     start: "boot",
     exposure: {
       subdomain: "opencode",
-      portKey: "opencode",
-      annotations: "opencode",
+      port: config.ports.opencode,
+      annotations: config.kubernetes.openCodeIngressAnnotations,
     },
     autoStartServices: ["opencode"],
     buildServices: (ctx) => {
@@ -108,7 +112,6 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           port,
           command: `cd ${ctx.workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${port} --cors https://${ctx.dashboardDomain}`,
           user: "dev",
-          autoStart: true,
           env: {
             ...(ctx.opencodePassword && {
               OPENCODE_SERVER_PASSWORD: ctx.opencodePassword,
@@ -125,8 +128,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     slug: "terminal",
     name: "Terminal",
     start: "boot",
-    // Ensured by the agent itself (ensure_terminal_from_config), never started
-    // by the manager — hence no autoStart services and no HTTP exposure here.
+    managedBy: "agent",
     autoStartServices: [],
     buildServices: () => ({
       terminal: {
@@ -142,9 +144,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     startDelayMs: 500,
     exposure: {
       subdomain: "browser",
-      portKey: "browser",
-      // Browser reuses the vscode ingress annotations (matches prior behavior).
-      annotations: "vscode",
+      port: config.ports.browser,
+      annotations: config.kubernetes.vsCodeIngressAnnotations,
     },
     autoStartServices: ["kasmvnc", "openbox", "chromium"],
     buildServices: () => {
@@ -154,20 +155,46 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           port,
           command: `Xvnc :99 -geometry 1280x900 -depth 24 -websocketPort ${port} -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -DisableBasicAuth -UseIPv6 0 -interface 0.0.0.0 -httpd /usr/share/kasmvnc/www -FrameRate 60 -DynamicQualityMin 7 -DynamicQualityMax 9 -RectThreads 0 -CompareFB 2 -DetectScrolling -sslOnly 0`,
           user: "root",
-          autoStart: false,
         },
         openbox: {
           command: "openbox",
           user: "dev",
-          autoStart: false,
           env: { DISPLAY: ":99" },
         },
         chromium: {
           command:
             "chromium --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-first-run --disable-session-crashed-bubble --disable-infobars --disable-translate --disable-features=TranslateUI --password-store=basic --disable-background-networking --disable-sync --disable-extensions --disable-default-apps --disable-breakpad --disable-component-extensions-with-background-pages --disable-background-timer-throttling --force-device-scale-factor=1 --disable-lcd-text --renderer-process-limit=2 --disk-cache-size=104857600 --user-data-dir=/tmp/chromium-profile about:blank",
           user: "dev",
-          autoStart: false,
           env: { DISPLAY: ":99" },
+        },
+      };
+    },
+  },
+  {
+    slug: "dev",
+    name: "Dev Server",
+    start: "lazy",
+    exposure: {
+      subdomain: "dev",
+      port: config.ports.dev,
+    },
+    autoStartServices: ["dev"],
+    buildServices: (ctx): Record<string, ServiceEntry> => {
+      if (!ctx.dev) return {};
+      return {
+        dev: {
+          port: config.ports.devApp,
+          command: ctx.dev.command,
+          user: "dev",
+          workdir: ctx.dev.workdir ?? ctx.workspaceDir,
+          // User env first, then the forwarder contract overrides it: a
+          // user-set PORT would bind the dev server off the port the forwarder
+          // targets, silently breaking the public URL.
+          env: {
+            ...(ctx.dev.env ?? {}),
+            PORT: String(config.ports.devApp),
+            __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: `.${config.domain.baseDomain}`,
+          },
         },
       };
     },
@@ -223,12 +250,6 @@ export function coreServiceNames(): string[] {
   );
 }
 
-function resolveAnnotations(set: IngressAnnotationSet): Record<string, string> {
-  return set === "opencode"
-    ? config.kubernetes.openCodeIngressAnnotations
-    : config.kubernetes.vsCodeIngressAnnotations;
-}
-
 function ingressFor(
   tool: ToolDefinition,
   sandboxId: string,
@@ -238,10 +259,10 @@ function ingressFor(
   return buildToolIngress({
     sandboxId,
     subdomain: exposure.subdomain,
-    port: config.ports[exposure.portKey],
+    port: exposure.port,
     sandboxDomain: config.domain.dashboard,
     ingressClassName: config.kubernetes.ingressClassName || undefined,
-    annotations: resolveAnnotations(exposure.annotations),
+    annotations: exposure.annotations,
     tlsSecretName: TLS_SECRET_NAME,
   });
 }

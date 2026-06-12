@@ -7,11 +7,16 @@ import {
   buildSandboxPod,
   buildSandboxService,
   buildSshPipe,
-  collectDevPorts,
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
-import type { Sandbox, SandboxOrigin, Workspace } from "../../schemas/index.ts";
+import {
+  resolveDevConfig,
+  type Sandbox,
+  type SandboxOrigin,
+  type SandboxUrls,
+  type Workspace,
+} from "../../schemas/index.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
@@ -19,11 +24,7 @@ import {
   buildSandboxConfig,
   type OpencodeWorkspaceContext,
 } from "../sandbox-config.ts";
-import {
-  buildToolIngressResources,
-  toolIngressNames,
-  toolUrl,
-} from "../tools/registry.ts";
+import { buildToolIngressResources, listToolInfos } from "../tools/registry.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 
 const log = createChildLogger("sandbox-boot");
@@ -33,6 +34,7 @@ const generatePassword = customAlphabet(
 );
 
 const DEFAULT_BASE_IMAGE = "dev-base";
+const POD_DELETE_TIMEOUT_MS = 60_000;
 
 export interface BootNewOptions {
   workspaceId?: string;
@@ -111,14 +113,6 @@ export async function bootNewSandbox(
   ports.sandbox.create(sandbox);
 
   try {
-    const sandboxLabels = {
-      "atelier.dev/sandbox": sandboxId,
-      "atelier.dev/component": "sandbox",
-    };
-
-    const devPorts = collectDevPorts(options.workspace?.config.devCommands);
-    const devPortNumbers = devPorts.map((dp) => dp.port);
-
     const sharedKey = await ensureSharedSshPipeKey();
 
     await kubeClient.createResource(
@@ -126,66 +120,38 @@ export async function bootNewSandbox(
         name: pvcName,
         size: volumeSize,
         snapshotName: usedPrebuild ? options.prebuildSnapshotName : undefined,
-        labels: sandboxLabels,
+        labels: {
+          "atelier.dev/sandbox": sandboxId,
+          "atelier.dev/component": "sandbox",
+        },
       }),
     );
 
     // Note: no waitForPvcBound — local-path uses WaitForFirstConsumer,
     // so the PVC binds only when a pod referencing it is scheduled.
-    await Promise.all([
-      kubeClient.createResource(
-        buildConfigMap(
-          configMapName,
-          {
-            "config.json": JSON.stringify(
-              buildSandboxConfig(
-                sandboxId,
-                options.workspace,
-                opencodePassword,
-                options.opencodeWorkspaceContext,
-              ),
-            ),
-          },
-          undefined,
-          sandboxLabels,
-        ),
-      ),
-      kubeClient.createResource(
-        buildSandboxPod({
-          sandboxId,
-          image,
-          opencodePassword,
-          workspaceId: options.workspaceId,
-          pvcName,
-          configMapName,
-          devPorts: devPortNumbers,
-          sshPipeKeySecret: sharedKey.secretName,
-          requests: {
-            cpu: `${Math.max(250, options.vcpus * 250)}m`,
-            memory: `${options.memoryMb}Mi`,
-          },
-          limits: {
-            cpu: `${options.vcpus * 1000}m`,
-            memory: `${options.memoryMb}Mi`,
-          },
-        }),
-      ),
-      kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
-      ...buildToolIngressResources(sandboxId).map((resource) =>
-        kubeClient.createResource(resource),
-      ),
-      kubeClient.createResource(
-        buildSshPipe({
-          sandboxId,
-          targetHost: `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`,
-          authorizedKeysData: encodeSshAuthorizedKeys(
-            ports.sshKeys.getValidPublicKeys(),
+    await Promise.all(
+      createSandboxResources(sandboxId, {
+        workspaceId: options.workspaceId,
+        image,
+        opencodePassword,
+        pvcName,
+        configMapName,
+        configJson: JSON.stringify(
+          buildSandboxConfig(
+            sandboxId,
+            options.workspace,
+            opencodePassword,
+            options.opencodeWorkspaceContext,
           ),
-          privateKeySecretName: sharedKey.secretName,
-          workspaceId: options.workspaceId,
-        }),
-      ),
-    ]);
+        ),
+        vcpus: options.vcpus,
+        memoryMb: options.memoryMb,
+        sharedKeySecret: sharedKey.secretName,
+        authorizedKeysData: encodeSshAuthorizedKeys(
+          ports.sshKeys.getValidPublicKeys(),
+        ),
+      }),
+    );
 
     // Single wait: agent health check implies pod is ready and has an IP
     const { ready: agentReady, podIp } = await ports.agent.waitForAgent(
@@ -229,88 +195,36 @@ export async function bootExistingSandbox(
   const opencodePassword =
     sandbox.runtime.opencodePassword ?? generatePassword(32);
 
-  const devPorts = collectDevPorts(workspace?.config.devCommands);
-  const devPortNumbers = devPorts.map((dp) => dp.port);
-
-  try {
-    await kubeClient.deleteResource("Pod", podName);
-  } catch {}
-  try {
-    await kubeClient.deleteResource("ConfigMap", configMapName);
-  } catch {}
-  try {
-    await kubeClient.deleteResource("Service", `sandbox-${sandboxId}`);
-  } catch {}
-  for (const ingressName of toolIngressNames(sandboxId)) {
-    try {
-      await kubeClient.deleteResource("Ingress", ingressName);
-    } catch {}
-  }
-  try {
-    await kubeClient.deleteResource("Pipe", `ssh-${sandboxId}`);
-  } catch {}
+  await deleteRestartableSandboxResources(sandboxId, configMapName);
 
   const sharedKey = await ensureSharedSshPipeKey();
 
-  // Restart path: rehydrate the workspace context that was captured at
-  // create time by the local opencode-atelier plugin. Without this, a
-  // restarted sandbox would lose workspace mode + the preregister env
-  // and `/sync/replay` would FK-fail again.
-  const sandboxConfig = buildSandboxConfig(
-    sandboxId,
-    workspace,
-    opencodePassword,
-    sandbox.opencodeWorkspaceContext,
-  );
-
-  await Promise.all([
-    kubeClient.createResource(
-      buildConfigMap(
-        configMapName,
-        { "config.json": JSON.stringify(sandboxConfig) },
-        undefined,
-        {
-          "atelier.dev/sandbox": sandboxId,
-          "atelier.dev/component": "sandbox",
-        },
-      ),
-    ),
-    kubeClient.createResource(
-      buildSandboxPod({
-        sandboxId,
-        image,
-        opencodePassword,
-        workspaceId: sandbox.workspaceId,
-        pvcName,
-        configMapName,
-        devPorts: devPortNumbers,
-        sshPipeKeySecret: sharedKey.secretName,
-        requests: {
-          cpu: `${Math.max(250, sandbox.runtime.vcpus * 250)}m`,
-          memory: `${sandbox.runtime.memoryMb}Mi`,
-        },
-        limits: {
-          cpu: `${sandbox.runtime.vcpus * 1000}m`,
-          memory: `${sandbox.runtime.memoryMb}Mi`,
-        },
-      }),
-    ),
-    kubeClient.createResource(buildSandboxService(sandboxId, { devPorts })),
-    ...buildToolIngressResources(sandboxId).map((resource) =>
-      kubeClient.createResource(resource),
-    ),
-    kubeClient.createResource(
-      buildSshPipe({
-        sandboxId,
-        targetHost: `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`,
-        authorizedKeysData: encodeSshAuthorizedKeys(
-          ports.sshKeys.getValidPublicKeys(),
+  await Promise.all(
+    createSandboxResources(sandboxId, {
+      workspaceId: sandbox.workspaceId,
+      image,
+      opencodePassword,
+      pvcName,
+      configMapName,
+      // Restart path: rehydrate the workspace context captured at create time
+      // by the local opencode-atelier plugin, else the restarted sandbox loses
+      // workspace mode + the preregister env and `/sync/replay` FK-fails again.
+      configJson: JSON.stringify(
+        buildSandboxConfig(
+          sandboxId,
+          workspace,
+          opencodePassword,
+          sandbox.opencodeWorkspaceContext,
         ),
-        privateKeySecretName: sharedKey.secretName,
-        workspaceId: sandbox.workspaceId,
-      }),
-    ),
-  ]);
+      ),
+      vcpus: sandbox.runtime.vcpus,
+      memoryMb: sandbox.runtime.memoryMb,
+      sharedKeySecret: sharedKey.secretName,
+      authorizedKeysData: encodeSshAuthorizedKeys(
+        ports.sshKeys.getValidPublicKeys(),
+      ),
+    }),
+  );
 
   // Single wait: agent health check implies pod is ready and has an IP
   const { ready: agentReady, podIp } = await ports.agent.waitForAgent(
@@ -335,7 +249,7 @@ export async function finalizeNewSandbox(
   podName: string,
   ports: SandboxPorts,
 ): Promise<Sandbox> {
-  const urls = buildUrls(sandboxId);
+  const urls = buildUrls(sandboxId, sandboxHasDev(sandbox, ports));
 
   sandbox.status = "running";
   sandbox.runtime.urls = urls;
@@ -365,7 +279,7 @@ export async function finalizeRestartedSandbox(
     status: "running",
     runtime: {
       ...sandbox.runtime,
-      urls: buildUrls(sandboxId),
+      urls: buildUrls(sandboxId, sandboxHasDev(sandbox, ports)),
     },
     updatedAt: new Date().toISOString(),
   };
@@ -384,18 +298,28 @@ function resolveSandboxImage(baseImage?: string): string {
   return `${config.kubernetes.registryUrl}/${baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
 }
 
-function buildUrls(sandboxId: string): {
-  vscode: string;
-  opencode: string;
-  ssh: string;
-} {
+function sandboxHasDev(sandbox: Sandbox, ports: SandboxPorts): boolean {
+  const workspace = sandbox.workspaceId
+    ? ports.workspaces.getById(sandbox.workspaceId)
+    : undefined;
+  return !!resolveDevConfig(workspace?.config);
+}
+
+function buildUrls(sandboxId: string, hasDev: boolean): SandboxUrls {
   const sshHost =
     config.domain.ssh.hostname || `ssh.${config.domain.baseDomain}`;
   const sshPort = config.domain.ssh.port;
 
+  const toolUrls: Record<string, string> = {};
+  for (const tool of listToolInfos(sandboxId)) {
+    if (tool.url) toolUrls[tool.slug] = tool.url;
+  }
+
   return {
-    vscode: toolUrl("vscode", sandboxId) ?? "",
-    opencode: toolUrl("opencode", sandboxId) ?? "",
+    vscode: toolUrls.vscode ?? "",
+    opencode: toolUrls.opencode ?? "",
+    ...(toolUrls.browser ? { browser: toolUrls.browser } : {}),
+    ...(hasDev && toolUrls.dev ? { dev: toolUrls.dev } : {}),
     ssh:
       sshPort === 22
         ? `ssh ${sandboxId}@${sshHost}`
@@ -407,4 +331,106 @@ function encodeSshAuthorizedKeys(publicKeys: string[]): string | undefined {
   if (publicKeys.length === 0) return undefined;
   const authorizedKeys = publicKeys.map((key) => key.trim()).join("\n");
   return Buffer.from(authorizedKeys).toString("base64");
+}
+
+interface SandboxResourceSpec {
+  workspaceId?: string;
+  image: string;
+  opencodePassword: string;
+  pvcName: string;
+  configMapName: string;
+  configJson: string;
+  vcpus: number;
+  memoryMb: number;
+  sharedKeySecret: string;
+  authorizedKeysData?: string;
+}
+
+/**
+ * The pod-adjacent resources both spawn and restart create identically
+ * (ConfigMap, Pod, Service, tool ingresses, SSH pipe). Returned as an array of
+ * in-flight creates so callers can `Promise.all` them; the PVC is the caller's
+ * concern (spawn creates it, restart reuses it).
+ */
+function createSandboxResources(sandboxId: string, spec: SandboxResourceSpec) {
+  const labels = {
+    "atelier.dev/sandbox": sandboxId,
+    "atelier.dev/component": "sandbox",
+  };
+
+  return [
+    kubeClient.createResource(
+      buildConfigMap(
+        spec.configMapName,
+        { "config.json": spec.configJson },
+        undefined,
+        labels,
+      ),
+    ),
+    kubeClient.createResource(
+      buildSandboxPod({
+        sandboxId,
+        image: spec.image,
+        opencodePassword: spec.opencodePassword,
+        workspaceId: spec.workspaceId,
+        pvcName: spec.pvcName,
+        configMapName: spec.configMapName,
+        sshPipeKeySecret: spec.sharedKeySecret,
+        requests: {
+          cpu: `${Math.max(250, spec.vcpus * 250)}m`,
+          memory: `${spec.memoryMb}Mi`,
+        },
+        limits: {
+          cpu: `${spec.vcpus * 1000}m`,
+          memory: `${spec.memoryMb}Mi`,
+        },
+      }),
+    ),
+    kubeClient.createResource(buildSandboxService(sandboxId)),
+    ...buildToolIngressResources(sandboxId).map((resource) =>
+      kubeClient.createResource(resource),
+    ),
+    kubeClient.createResource(
+      buildSshPipe({
+        sandboxId,
+        targetHost: `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`,
+        authorizedKeysData: spec.authorizedKeysData,
+        privateKeySecretName: spec.sharedKeySecret,
+        workspaceId: spec.workspaceId,
+      }),
+    ),
+  ];
+}
+
+async function deleteRestartableSandboxResources(
+  sandboxId: string,
+  configMapName: string,
+): Promise<void> {
+  const podName = `sandbox-${sandboxId}`;
+  const deletions: Array<[string, string]> = [
+    ["Pod", podName],
+    ["ConfigMap", configMapName],
+    ["Service", `sandbox-${sandboxId}`],
+    ["Pipe", `ssh-${sandboxId}`],
+  ];
+
+  for (const [kind, name] of deletions) {
+    try {
+      await kubeClient.deleteResource(kind, name);
+    } catch {}
+  }
+
+  // Sweep ingresses by label rather than by current tool name: pre-migration
+  // sandboxes may still carry legacy per-command `dev-{name}-{id}` ingresses a
+  // name list won't cover. createSandboxResources recreates the current set.
+  try {
+    await kubeClient.deleteLabeledIngresses(`atelier.dev/sandbox=${sandboxId}`);
+  } catch {}
+
+  // Kata pods take seconds to terminate; creating a pod with the same name
+  // while the old one is still Terminating 409s. Wait it out before recreating
+  // (the prebuild path learned this same lesson).
+  await kubeClient.waitForResourceDeleted("Pod", podName, {
+    timeout: POD_DELETE_TIMEOUT_MS,
+  });
 }

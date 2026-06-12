@@ -7,16 +7,16 @@ import {
   workspaceService,
 } from "../../container.ts";
 
-import type { Sandbox, Task } from "../../schemas/index.ts";
-import { config } from "../../shared/lib/config.ts";
+import { toolUrl } from "../../orchestrators/tools/registry.ts";
+import {
+  resolveDevConfig,
+  type Sandbox,
+  type Task,
+} from "../../schemas/index.ts";
 
 function findTaskForSandbox(sandboxId: string): Task | undefined {
   const allTasks = taskService.getAll();
   return allTasks.find((t) => t.data.sandboxId === sandboxId);
-}
-
-function buildDevUrl(sandboxId: string, cmdName: string): string {
-  return `https://dev-${cmdName}-${sandboxId}.${config.domain.dashboard}`;
 }
 
 function formatSandbox(sandbox: Sandbox) {
@@ -109,47 +109,29 @@ export function registerSandboxTools(server: McpServer): void {
 
       const base = formatSandbox(sandbox);
 
-      // Fetch live dev command status if sandbox is running
-      let devCommands: unknown[] = [];
-      if (sandbox.status === "running") {
-        const workspace = sandbox.workspaceId
-          ? workspaceService.getById(sandbox.workspaceId)
-          : undefined;
-        const configuredCommands = workspace?.config.devCommands ?? [];
-
-        try {
-          const runtimeStatus = await agentClient.devList(sandbox.id);
-
-          devCommands = configuredCommands.map((cmd) => {
-            const runtime = runtimeStatus.commands.find(
-              (r) => r.name === cmd.name,
-            );
-            const isRunning = runtime?.status === "running";
-
-            return {
-              name: cmd.name,
-              command: cmd.command,
-              port: cmd.port,
-              status: runtime?.status ?? "stopped",
-              devUrl:
-                isRunning && cmd.port
-                  ? buildDevUrl(sandbox.id, cmd.name)
-                  : null,
-            };
-          });
-        } catch {
-          // Agent unreachable — return config-only info
-          devCommands = configuredCommands.map((cmd) => ({
-            name: cmd.name,
-            command: cmd.command,
-            port: cmd.port,
-            status: "unknown",
-            devUrl: null,
-          }));
+      const workspace = sandbox.workspaceId
+        ? workspaceService.getById(sandbox.workspaceId)
+        : undefined;
+      const devConfig = resolveDevConfig(workspace?.config);
+      let dev: unknown = null;
+      if (devConfig) {
+        let status = "stopped";
+        if (sandbox.status === "running") {
+          try {
+            const s = await agentClient.serviceStatus(sandbox.id, "dev");
+            status = s.running ? "running" : s.status;
+          } catch {
+            status = "unknown";
+          }
         }
+        dev = {
+          command: devConfig.command,
+          url: toolUrl("dev", sandbox.id),
+          status,
+        };
       }
 
-      const result = { ...base, devCommands };
+      const result = { ...base, dev };
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };

@@ -37,9 +37,8 @@ export const queryKeys = {
     services: (id: string) => ["sandboxes", id, "services"] as const,
     allServices: ["sandboxes", "allServices"] as const,
     tools: (id: string) => ["sandboxes", id, "tools"] as const,
-    devCommands: (id: string) => ["sandboxes", id, "devCommands"] as const,
-    devCommandLogs: (id: string, name: string, offset: number) =>
-      ["sandboxes", id, "devCommandLogs", name, offset] as const,
+    serviceLogs: (id: string, name: string, offset: number) =>
+      ["sandboxes", id, "serviceLogs", name, offset] as const,
     gitStatus: (id: string) => ["sandboxes", id, "gitStatus"] as const,
     gitDiff: (id: string) => ["sandboxes", id, "gitDiff"] as const,
     terminalSessions: (id: string) =>

@@ -1,7 +1,6 @@
 export {
   waitForOpencodeHealthy,
   waitForOpencodeReady,
-  waitForPodIp,
 } from "./boot-waiter.ts";
 export { cleanupSandboxResources } from "./cleanup-coordinator.ts";
 export {

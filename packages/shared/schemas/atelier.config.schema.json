@@ -85,7 +85,9 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "anyOf": [
@@ -239,6 +241,14 @@
         },
         "agent": {
           "default": 9998,
+          "type": "number"
+        },
+        "dev": {
+          "default": 3001,
+          "type": "number"
+        },
+        "devApp": {
+          "default": 5173,
           "type": "number"
         }
       }

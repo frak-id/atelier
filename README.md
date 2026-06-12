@@ -26,15 +26,15 @@ Review the results from your phone on the ski lift — or wherever you happen to
 - **Session templates** — 4 built-in AI workflows (Implementation, Best Practices Review, Security Review, Simplification) with customizable models, effort levels, and prompt templates per workspace
 - **Dashboard** — mission control for all your sandboxes: real-time task progress, running dev servers, and an attention feed aggregating OpenCode permission and question requests across every session
 - **Prebuilds** — run expensive setup (git clone, dependency install, build) once and snapshot it. Subsequent sandboxes clone from the snapshot instantly via copy-on-write
-- **Dev commands with auto HTTPS** — define dev commands in your workspace config (e.g. `npm run dev` on port 3000) and get a public `https://dev-{name}-{id}.your-domain.com` URL with streaming logs
+- **Dev server with auto HTTPS** — define a dev command in your workspace config (e.g. `npm run dev`) and get a public `https://dev-{id}.your-domain.com` URL with streaming logs
 - **Two base images out of the box** — `dev-base` ships with Node 22 and Bun; `dev-cloud` extends it with AWS CLI, Google Cloud SDK, kubectl, and Pulumi
 - **Base image builds from dashboard** — build and publish base images via Kaniko directly from the UI, no local Docker needed
-- **Workspace definitions** — configure git repos to clone, init commands, dev commands, exposed ports, secrets, and resource limits per workspace
+- **Workspace definitions** — configure git repos to clone, init commands, a dev server, exposed ports, secrets, and resource limits per workspace
 - **OpenCode config replication** — define OpenCode configuration globally or per workspace, automatically replicated to every sandbox
 - **Auth synchronization** — OAuth tokens are synced across all running sandboxes so you authenticate once and every instance just works
 - **Custom npm registry** — point sandboxes at your own npm proxy (Verdaccio, Nexus, Artifactory, …) with a single `npmRegistryUrl` setting; npm/bun/yarn configs are injected automatically. Leave it empty to use the public registry
 - **SSH access** — use your regular workflow: SSH, VS Code Remote SSH, JetBrains remote. [sshpiper](https://github.com/tg123/sshpiper) provides username-based routing so `ssh sandbox-{id}@host -p 2222` just works
-- **MCP server** — AI agents can orchestrate sandboxes, tasks, workspaces, and dev commands programmatically via the Model Context Protocol
+- **MCP server** — AI agents can orchestrate sandboxes, tasks, workspaces, and dev servers programmatically via the Model Context Protocol
 - **GitHub App integration** — connect your GitHub account for repository discovery and branch listing
 - **Multi-dev per sandbox** — nothing stops multiple developers from working in the same sandbox simultaneously
 - **Config file sync** — manage global and per-workspace config files, automatically synced to sandboxes

@@ -4,6 +4,8 @@ import { internalBus } from "../../infrastructure/events";
 import {
   IdParamSchema,
   ServiceActionResponseSchema,
+  ServiceLogsQuerySchema,
+  ServiceLogsResponseSchema,
   ServiceNameParamsSchema,
   ServicesResponseSchema,
 } from "../../schemas";
@@ -43,5 +45,18 @@ export const servicesRoutes = new Elysia()
     {
       params: ServiceNameParamsSchema,
       response: ServiceActionResponseSchema,
+    },
+  )
+  .get(
+    "/:id/services/:name/logs",
+    async ({ params, query, sandbox }) => {
+      const offset = query.offset ? Number.parseInt(query.offset, 10) : 0;
+      const limit = query.limit ? Number.parseInt(query.limit, 10) : 10000;
+      return agentClient.serviceLogs(sandbox.id, params.name, offset, limit);
+    },
+    {
+      params: ServiceNameParamsSchema,
+      query: ServiceLogsQuerySchema,
+      response: ServiceLogsResponseSchema,
     },
   );

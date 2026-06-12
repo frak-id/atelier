@@ -1,37 +1,12 @@
-import { createOpencodeClient } from "@opencode-ai/sdk/v2";
-import type { KubeClient } from "../../infrastructure/kubernetes/index.ts";
-import { config } from "../../shared/lib/config.ts";
-import { createChildLogger } from "../../shared/lib/logger.ts";
+import { OPENCODE_REQUEST_TIMEOUT_MS } from "../../shared/lib/opencode-auth.ts";
 import {
-  buildOpenCodeAuthHeaders,
-  createTimeoutFetch,
-  OPENCODE_REQUEST_TIMEOUT_MS,
-} from "../../shared/lib/opencode-auth.ts";
-
-const log = createChildLogger("boot-waiter");
+  createSandboxOpencodeClient,
+  type SandboxOpencodeClient,
+} from "../../shared/lib/opencode-client.ts";
 
 const OPENCODE_HEALTH_TIMEOUT_MS = 120_000;
 const POLL_INITIAL_DELAY_MS = 100;
 const POLL_MAX_DELAY_MS = 500;
-
-export async function waitForPodIp(
-  kube: KubeClient,
-  podName: string,
-  timeout = 60000,
-): Promise<string | null> {
-  const deadline = Date.now() + timeout;
-
-  while (Date.now() < deadline) {
-    const ip = await kube.getPodIp(podName);
-    if (ip) {
-      return ip;
-    }
-    await Bun.sleep(500);
-  }
-
-  log.warn({ podName, timeout }, "Pod did not get IP in time");
-  return null;
-}
 
 /**
  * Wait until the OpenCode HTTP server responds healthy.
@@ -45,12 +20,20 @@ export async function waitForPodIp(
  * silently drop the prompt. Either use `waitForOpencodeReady` before issuing
  * prompts, or rely on the built-in registry wait inside `openOpencodeSession`.
  */
+export interface OpencodeWaitOptions {
+  timeout?: number;
+  /** Override the sandbox opencode port (e.g. the temporary warmup server). */
+  port?: number;
+  /** Return false on timeout instead of throwing. Defaults to throwing. */
+  throwOnTimeout?: boolean;
+}
+
 export async function waitForOpencodeHealthy(
   ipAddress: string,
   password?: string,
-  timeout = OPENCODE_HEALTH_TIMEOUT_MS,
-): Promise<void> {
-  await pollOpencode(ipAddress, password, timeout, isOpencodeHealthy);
+  options: OpencodeWaitOptions = {},
+): Promise<boolean> {
+  return pollOpencode(ipAddress, password, isOpencodeHealthy, options);
 }
 
 /**
@@ -69,38 +52,40 @@ export async function waitForOpencodeHealthy(
 export async function waitForOpencodeReady(
   ipAddress: string,
   password?: string,
-  timeout = OPENCODE_HEALTH_TIMEOUT_MS,
-): Promise<void> {
-  await pollOpencode(ipAddress, password, timeout, isOpencodeReady);
+  options: OpencodeWaitOptions = {},
+): Promise<boolean> {
+  return pollOpencode(ipAddress, password, isOpencodeReady, options);
 }
-
-type OpencodeClient = ReturnType<typeof createOpencodeClient>;
 
 async function pollOpencode(
   ipAddress: string,
   password: string | undefined,
-  timeout: number,
-  predicate: (client: OpencodeClient) => Promise<boolean>,
-): Promise<void> {
+  predicate: (client: SandboxOpencodeClient) => Promise<boolean>,
+  options: OpencodeWaitOptions,
+): Promise<boolean> {
+  const timeout = options.timeout ?? OPENCODE_HEALTH_TIMEOUT_MS;
   const startTime = Date.now();
-  const url = `http://${ipAddress}:${config.ports.opencode}`;
-  const client = createOpencodeClient({
-    baseUrl: url,
-    headers: buildOpenCodeAuthHeaders(password),
-    fetch: createTimeoutFetch(OPENCODE_REQUEST_TIMEOUT_MS),
+  const client = createSandboxOpencodeClient(ipAddress, password, {
+    timeoutMs: OPENCODE_REQUEST_TIMEOUT_MS,
+    port: options.port,
   });
   let delay = POLL_INITIAL_DELAY_MS;
 
   while (Date.now() - startTime < timeout) {
-    if (await predicate(client)) return;
+    if (await predicate(client)) return true;
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
   }
 
-  throw new Error("OpenCode server did not become ready within timeout");
+  if (options.throwOnTimeout ?? true) {
+    throw new Error("OpenCode server did not become ready within timeout");
+  }
+  return false;
 }
 
-async function isOpencodeHealthy(client: OpencodeClient): Promise<boolean> {
+async function isOpencodeHealthy(
+  client: SandboxOpencodeClient,
+): Promise<boolean> {
   try {
     const { data } = await client.global.health();
     return data?.healthy === true;
@@ -109,7 +94,9 @@ async function isOpencodeHealthy(client: OpencodeClient): Promise<boolean> {
   }
 }
 
-async function isOpencodeReady(client: OpencodeClient): Promise<boolean> {
+async function isOpencodeReady(
+  client: SandboxOpencodeClient,
+): Promise<boolean> {
   if (!(await isOpencodeHealthy(client))) return false;
   try {
     const { data, error } = await client.app.agents();

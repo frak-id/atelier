@@ -4,7 +4,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { Elysia } from "elysia";
 import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { registerDevCommandTools } from "./tools/dev-commands.ts";
+import { registerDevServerTools } from "./tools/dev-server.ts";
 import { registerSandboxTools } from "./tools/sandbox.ts";
 import { registerSessionTemplateTools } from "./tools/session-template.ts";
 import { registerSystemTools } from "./tools/system.ts";
@@ -22,7 +22,7 @@ function createMcpServer(): McpServer {
   registerWorkspaceTools(server);
   registerTaskTools(server);
   registerSandboxTools(server);
-  registerDevCommandTools(server);
+  registerDevServerTools(server);
   registerSessionTemplateTools(server);
   registerSystemTools(server);
 

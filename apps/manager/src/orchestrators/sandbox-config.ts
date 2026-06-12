@@ -1,6 +1,6 @@
 import type { SandboxConfig } from "@frak/atelier-shared";
 import { VM } from "@frak/atelier-shared/constants";
-import type { Workspace } from "../schemas/index.ts";
+import { resolveDevConfig, type Workspace } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
 import { buildToolServices } from "./tools/registry.ts";
 
@@ -46,7 +46,12 @@ export function buildSandboxConfig(
       dashboardDomain,
       opencodePassword,
       opencodeEnv: workspaceContext?.opencodeEnv,
+      dev: resolveDevConfig(workspace?.config),
     }),
+    devForwarder: {
+      publicPort: config.ports.dev,
+      appPort: config.ports.devApp,
+    },
   };
 }
 
@@ -66,15 +71,9 @@ export function generateSandboxMd(
   const vsPort = config.ports.vscode;
   const ocPort = config.ports.opencode;
 
-  const devCommandsSection = ws?.config.devCommands?.length
-    ? ws.config.devCommands
-        .map((cmd) => {
-          const parts = [`\`${cmd.command}\``];
-          if (cmd.workdir) parts.push(`workdir: \`${cmd.workdir}\``);
-          if (cmd.port) parts.push(`port: ${cmd.port}`);
-          return `- **${cmd.name}**: ${parts.join(", ")}`;
-        })
-        .join("\n")
+  const dev = resolveDevConfig(ws?.config);
+  const devCommandsSection = dev
+    ? `- \`${dev.command}\`${dev.workdir ? ` (workdir: \`${dev.workdir}\`)` : ""}`
     : "None configured";
 
   const secretsSection =
@@ -100,7 +99,7 @@ ${reposSection}
 | opencode | ${ocPort} | \`/var/log/sandbox/opencode.log\` |
 | sshd | 22 | — |
 
-## Dev Commands
+## Dev Server
 ${devCommandsSection}
 
 ## Environment Secrets

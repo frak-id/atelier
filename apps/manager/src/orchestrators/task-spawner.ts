@@ -1,5 +1,4 @@
 import { DEFAULT_SESSION_TEMPLATES, VM } from "@frak/atelier-shared/constants";
-import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import type { AgentClient } from "../infrastructure/agent/index.ts";
 import type { SandboxRepository } from "../modules/sandbox/index.ts";
 import type { SessionTemplateService } from "../modules/session-template/index.ts";
@@ -13,7 +12,7 @@ import type {
 } from "../schemas/index.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { buildOpenCodeAuthHeaders } from "../shared/lib/opencode-auth.ts";
+import { createSandboxOpencodeClient } from "../shared/lib/opencode-client.ts";
 import {
   openOpencodeSession,
   resolveAgent,
@@ -180,11 +179,10 @@ export class TaskSpawner {
     const sandbox = this.deps.sandboxService.getById(task.data.sandboxId);
     if (!sandbox?.runtime?.ipAddress) return;
 
-    const url = `http://${sandbox.runtime.ipAddress}:${config.ports.opencode}`;
-    const client = createOpencodeClient({
-      baseUrl: url,
-      headers: buildOpenCodeAuthHeaders(sandbox.runtime.opencodePassword),
-    });
+    const client = createSandboxOpencodeClient(
+      sandbox.runtime.ipAddress,
+      sandbox.runtime.opencodePassword,
+    );
 
     await Promise.allSettled(
       task.data.sessions.map((session) =>
@@ -278,11 +276,7 @@ export class TaskSpawner {
       throw new Error(`Workspace '${task.workspaceId}' not found`);
     }
 
-    const opencodeUrl = `http://${ipAddress}:${config.ports.opencode}`;
-    const client = createOpencodeClient({
-      baseUrl: opencodeUrl,
-      headers: buildOpenCodeAuthHeaders(password),
-    });
+    const client = createSandboxOpencodeClient(ipAddress, password);
 
     const sessionConfig = this.resolveSessionConfig(
       sessionTemplateId,

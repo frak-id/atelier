@@ -47,7 +47,7 @@ function handleEvent(event: ManagerEvent, queryClient: QueryClient): void {
           queryKey: queryKeys.sandboxes.services(properties.id),
         });
         queryClient.invalidateQueries({
-          queryKey: queryKeys.sandboxes.devCommands(properties.id),
+          queryKey: queryKeys.sandboxes.tools(properties.id),
         });
       }
       break;
