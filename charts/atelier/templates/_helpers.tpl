@@ -56,6 +56,17 @@ Dashboard (nginx sidecar) container image.
 {{- end -}}
 
 {{/*
+In-pod sandbox agent image, baked into base images at build time.
+Empty repository renders an empty string so the manager falls back to the
+in-registry `<registryUrl>/sandbox-agent:latest`.
+*/}}
+{{- define "atelier.agentImage" -}}
+{{- with .Values.agent.image.repository -}}
+{{- printf "%s:%s" . (default $.Chart.AppVersion $.Values.agent.image.tag) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 System namespace (where the chart is installed).
 */}}
 {{- define "atelier.systemNamespace" -}}

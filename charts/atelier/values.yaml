@@ -64,6 +64,18 @@ dashboard:
       memory: "64Mi"
       cpu: "100m"
 
+# -- In-pod sandbox agent. Unlike manager/dashboard this image is not run
+# directly; its binary is baked into the base images at build time (the
+# dev-base Dockerfile's `COPY --from=...sandbox-agent`). Pin it in lockstep
+# with the chart so a base-image rebuild always bakes in the matching agent.
+agent:
+  image:
+    repository: ghcr.io/frak-id/sandbox-agent
+    # Empty defaults to the chart appVersion (same as manager/dashboard).
+    tag: ""
+  # Set repository to "" to fall back to the in-registry
+  # `<registryUrl>/sandbox-agent:latest` instead of an external ref.
+
 # -- Ingress configuration
 ingress:
   # Ingress class name (e.g., traefik, nginx)

@@ -426,6 +426,7 @@ export class BaseImageBuilder {
     const data: Record<string, string> = {};
     const items: Array<{ key: string; path: string }> = [];
     const registryUrl = config.kubernetes.registryUrl;
+    const agentImage = config.kubernetes.agentImage;
 
     const walk = async (dir: string) => {
       const entries = await readdir(dir);
@@ -443,6 +444,12 @@ export class BaseImageBuilder {
 
           /* Rewrite FROM lines to use Zot registry */
           if (relPath === "Dockerfile") {
+            if (agentImage) {
+              content = content.replace(
+                /--from=atelier\/sandbox-agent(?::[^\s]+)?/g,
+                `--from=${agentImage}`,
+              );
+            }
             content = content.replace(
               /^FROM\s+atelier\/([^:\s]+)/gm,
               `FROM ${registryUrl}/$1`,

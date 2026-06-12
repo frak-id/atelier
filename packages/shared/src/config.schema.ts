@@ -110,6 +110,12 @@ export const KubernetesConfigSchema = Type.Object(
       default: "zot.atelier-system.svc:5000",
     }),
     /**
+     * Image reference for the in-pod sandbox agent, baked into base images at
+     * build time. Pin to a specific tag so a rebuild bakes in the matching
+     * agent; empty falls back to `{registryUrl}/sandbox-agent:latest`.
+     */
+    agentImage: Type.String({ default: "" }),
+    /**
      * Optional npm registry URL injected into every sandbox (e.g. a private
      * Verdaccio/Nexus/Artifactory proxy). Empty string disables injection and
      * sandboxes fall back to the public npm registry.
@@ -393,6 +399,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_KUBECONFIG: "kubernetes.kubeconfig",
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
+  ATELIER_K8S_AGENT_IMAGE: "kubernetes.agentImage",
   ATELIER_NPM_REGISTRY_URL: "kubernetes.npmRegistryUrl",
   ATELIER_K8S_STORAGE_CLASS: "kubernetes.storageClass",
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",

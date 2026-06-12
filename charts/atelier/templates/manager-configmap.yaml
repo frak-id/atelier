@@ -32,6 +32,7 @@ data:
         "runtimeClass" .Values.kubernetes.runtimeClass
         "ingressClassName" .Values.ingress.className
         "registryUrl" (include "atelier.registryUrl" .)
+        "agentImage" (include "atelier.agentImage" .)
         "npmRegistryUrl" .Values.npmRegistryUrl
         "storageClass" .Values.kubernetes.storageClass
         "volumeSnapshotClass" .Values.kubernetes.volumeSnapshotClass
