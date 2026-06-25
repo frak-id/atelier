@@ -28,6 +28,10 @@ export const PrebuildInfoSchema = t.Object({
   builtAt: t.Optional(t.String()),
   // Key = clonePath (unique per repo), Value = commit hash at build time
   commitHashes: t.Optional(t.Record(t.String(), t.String())),
+  // Digest-pinned base image the prebuild was built on. Sandboxes cloning this
+  // prebuild boot from this exact ref (cached, matching agent) instead of a
+  // freshly-resolved :latest that could pull a different image at boot.
+  baseImageRef: t.Optional(t.String()),
   lastCheckedAt: t.Optional(t.String()),
   stale: t.Optional(t.Boolean()),
   errorMessage: t.Optional(t.String()),

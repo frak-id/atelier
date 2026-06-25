@@ -253,12 +253,17 @@ export class PrebuildRunner {
       await lifecycle.start();
       stopped = false;
 
+      const baseImageRef = await ImageRegistryService.resolveImageReference(
+        workspace.config.baseImage || "dev-base",
+      );
       this.updatePrebuildStatus(
         workspaceId,
         workspace,
         "ready",
         snapshotName,
         commitHashes,
+        undefined,
+        baseImageRef,
       );
     } catch (error) {
       // Never leave the sandbox stopped because the snapshot failed.
@@ -323,6 +328,7 @@ export class PrebuildRunner {
         workspaceId: key,
       });
       const sandboxId = resourceName;
+      let baseImageRef: string | undefined;
 
       // Pre-flight: verify snapshot capability
       await timer.step("verify_capability", () =>
@@ -351,7 +357,8 @@ export class PrebuildRunner {
       // so the PVC binds only when a pod referencing it is scheduled.
       // Step 2: Spawn temp pod with base image + PVC at /home/dev
       await timer.step("create_pod", async () => {
-        const image = this.resolveBaseImage(workspaceId);
+        const image = await this.resolveBaseImage(workspaceId);
+        baseImageRef = image;
         log.info({ key, podName, image }, "Spawning prebuild pod");
 
         await this.deps.kubeClient.createResource(
@@ -442,7 +449,14 @@ export class PrebuildRunner {
       log.info({ key, snapshotName }, "Prebuild snapshot ready");
 
       // Step 8: Update status
-      this.setStatus(workspaceId, "ready", snapshotName, commitHashes);
+      this.setStatus(
+        workspaceId,
+        "ready",
+        snapshotName,
+        commitHashes,
+        undefined,
+        baseImageRef,
+      );
       timer.end();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -847,10 +861,10 @@ export class PrebuildRunner {
     }
   }
 
-  private resolveBaseImage(workspaceId: string): string {
+  private resolveBaseImage(workspaceId: string): Promise<string> {
     const baseImage =
       this.requireWorkspace(workspaceId).config.baseImage || "dev-base";
-    return `${config.kubernetes.registryUrl}/${baseImage}:latest`;
+    return ImageRegistryService.resolveImageReference(baseImage);
   }
 
   private snapshotNameForKey(key: string): string {
@@ -894,6 +908,7 @@ export class PrebuildRunner {
     latestId?: string,
     commitHashes?: Record<string, string>,
     errorMessage?: string,
+    baseImageRef?: string,
   ): void {
     const workspace = this.deps.workspaceService.getById(workspaceId);
     if (!workspace) return;
@@ -904,6 +919,7 @@ export class PrebuildRunner {
       latestId,
       commitHashes,
       errorMessage,
+      baseImageRef,
     );
   }
 
@@ -914,6 +930,7 @@ export class PrebuildRunner {
     latestId?: string,
     commitHashes?: Record<string, string>,
     errorMessage?: string,
+    baseImageRef?: string,
   ): void {
     const now = new Date().toISOString();
     const prebuild: WorkspaceConfig["prebuild"] = {
@@ -921,6 +938,7 @@ export class PrebuildRunner {
       latestId: latestId ?? workspace.config.prebuild?.latestId,
       builtAt: status === "ready" ? now : undefined,
       commitHashes: status === "ready" ? commitHashes : undefined,
+      baseImageRef: status === "ready" ? baseImageRef : undefined,
       lastCheckedAt: status === "ready" ? now : undefined,
       stale: status === "ready" ? false : undefined,
       errorMessage: status === "failed" ? errorMessage : undefined,

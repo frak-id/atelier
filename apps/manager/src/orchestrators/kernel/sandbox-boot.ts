@@ -10,6 +10,7 @@ import {
   ensureSharedSshPipeKey,
   kubeClient,
 } from "../../infrastructure/kubernetes/index.ts";
+import { ImageRegistryService } from "../../infrastructure/registry/index.ts";
 import {
   resolveDevConfig,
   type Sandbox,
@@ -84,7 +85,10 @@ export async function bootNewSandbox(
   const usedPrebuild = Boolean(
     options.prebuildReady && options.prebuildSnapshotName,
   );
-  const image = resolveSandboxImage(options.baseImage);
+  const image = await resolveSandboxImage(
+    options.baseImage,
+    options.workspace?.config.prebuild,
+  );
   const volumeSize = options.volumeSize ?? config.kubernetes.defaultVolumeSize;
 
   const opencodePassword = generatePassword(32);
@@ -191,7 +195,10 @@ export async function bootExistingSandbox(
   const workspace = sandbox.workspaceId
     ? ports.workspaces.getById(sandbox.workspaceId)
     : undefined;
-  const image = resolveSandboxImage(workspace?.config.baseImage);
+  const image = await resolveSandboxImage(
+    workspace?.config.baseImage,
+    workspace?.config.prebuild,
+  );
   const opencodePassword =
     sandbox.runtime.opencodePassword ?? generatePassword(32);
 
@@ -294,8 +301,19 @@ export async function finalizeRestartedSandbox(
   return updatedSandbox;
 }
 
-function resolveSandboxImage(baseImage?: string): string {
-  return `${config.kubernetes.registryUrl}/${baseImage ?? DEFAULT_BASE_IMAGE}:latest`;
+function resolveSandboxImage(
+  baseImage: string | undefined,
+  prebuild: Workspace["config"]["prebuild"],
+): Promise<string> {
+  // A sandbox cloning a ready prebuild boots from the exact base image the
+  // prebuild was built on — already on the node, carrying the matching agent —
+  // instead of re-resolving :latest, which could pull a different image at boot.
+  if (prebuild?.status === "ready" && prebuild.baseImageRef) {
+    return Promise.resolve(prebuild.baseImageRef);
+  }
+  return ImageRegistryService.resolveImageReference(
+    baseImage ?? DEFAULT_BASE_IMAGE,
+  );
 }
 
 function sandboxHasDev(sandbox: Sandbox, ports: SandboxPorts): boolean {
