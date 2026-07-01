@@ -89,6 +89,30 @@
         "pino-pretty": "^13.1.3",
       },
     },
+    "apps/server": {
+      "name": "@atelier/server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@agentclientprotocol/sdk": "^1.1.0",
+        "@atelier/spec": "workspace:*",
+        "@elysiajs/cors": "^1.4.1",
+        "@elysiajs/swagger": "^1.3.1",
+        "@frak/atelier-shared": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.26.0",
+        "async-mutex": "^0.5.0",
+        "drizzle-orm": "^0.45.1",
+        "elysia": "^1.4.28",
+        "jose": "^6.1.3",
+        "nanoid": "^5.1.9",
+        "pino": "^10.2.0",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.12",
+        "drizzle-kit": "^0.31.8",
+        "pino-pretty": "^13.1.3",
+      },
+    },
     "packages/opencode-atelier": {
       "name": "@konfeature/opencode-atelier",
       "version": "0.3.1",
@@ -136,6 +160,8 @@
   },
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.1.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-NT2KqphUJ3w6EksUL51ZhJgIYgq/ZLGcBPkyMKgRSO5PMVwe9DnKKX+Htnvk6KHh6dUuh34UHK4gKp+4te1Mdg=="],
+
+    "@atelier/server": ["@atelier/server@workspace:apps/server"],
 
     "@atelier/spec": ["@atelier/spec@workspace:packages/spec"],
 

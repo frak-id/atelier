@@ -1,0 +1,45 @@
+export class SandboxError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public statusCode: number = 500,
+  ) {
+    super(message);
+    this.name = "SandboxError";
+  }
+}
+
+export class NotFoundError extends SandboxError {
+  constructor(resource: string, id: string) {
+    super(`${resource} '${id}' not found`, "NOT_FOUND", 404);
+    this.name = "NotFoundError";
+  }
+}
+
+export class ForbiddenError extends SandboxError {
+  constructor(message = "Insufficient permissions") {
+    super(message, "FORBIDDEN", 403);
+    this.name = "ForbiddenError";
+  }
+}
+
+export class ResourceExhaustedError extends SandboxError {
+  constructor(resource: string) {
+    super(`${resource} limit reached`, "RESOURCE_EXHAUSTED", 429);
+    this.name = "ResourceExhaustedError";
+  }
+}
+
+export class UnauthorizedError extends SandboxError {
+  constructor(message = "Missing authentication") {
+    super(message, "UNAUTHORIZED", 401);
+    this.name = "UnauthorizedError";
+  }
+}
+
+export class ValidationError extends SandboxError {
+  constructor(message: string) {
+    super(message, "VALIDATION_ERROR", 400);
+    this.name = "ValidationError";
+  }
+}

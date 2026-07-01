@@ -25,6 +25,7 @@
   },
   "references": [
     { "path": "./apps/manager" },
+    { "path": "./apps/server" },
     { "path": "./apps/dashboard" },
     { "path": "./packages/shared" },
     { "path": "./packages/opencode-atelier" },
