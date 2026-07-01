@@ -97,6 +97,11 @@ export const ProcessSchema = Type.Object(
     name: Type.String({ description: "Unique identity of the process." }),
     command: Type.String(),
     cwd: Type.Optional(Type.String()),
+    /**
+     * uid to spawn under (maps 1:1 to systemd `User=`). Defaults are the
+     * runtime's concern; the guest agent honours it at spawn.
+     */
+    user: Type.Optional(Type.String()),
     env: Type.Optional(Type.Record(Type.String(), MaybeSecretStringSchema)),
     /**
      * Sandbox "ready"/"healthy" == this process. Generic replacement for v1's
