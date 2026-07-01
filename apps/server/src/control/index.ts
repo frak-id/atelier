@@ -1,0 +1,31 @@
+/**
+ * The control module's public interface. BOUNDARY RULE (atelier-v2 §3.1):
+ * control/ imports runtime/'s interface (index), never its internals; other
+ * modules import control/'s interface (this barrel), never its internals.
+ */
+
+export { AuthService, type AuthUser, verifyJwt } from "./auth.ts";
+export { isUserAuthorized } from "./authorization-policy.ts";
+export { type ControlContainer, createControlContainer } from "./container.ts";
+export { getDatabase, initDatabase } from "./db/client.ts";
+export { type EnrichmentDeps, enrichSpec } from "./enrichment.ts";
+export {
+  buildOAuthRedirectUrl,
+  exchangeCodeForToken,
+  fetchGitHubUser,
+  type GitHubUser,
+  generateCodeChallenge,
+  generateCodeVerifier,
+} from "./github-oauth.ts";
+export { ApiKeyService } from "./modules/api-key/index.ts";
+export { OrgMemberService } from "./modules/org-member/index.ts";
+export { OrgPolicyService } from "./modules/org-policy/index.ts";
+export { OrganizationService } from "./modules/organization/index.ts";
+export {
+  type SavedSpec,
+  SavedSpecService,
+} from "./modules/saved-spec/index.ts";
+export { SecretService } from "./modules/secret/index.ts";
+export { SshKeyService } from "./modules/ssh-key/index.ts";
+export { UserService } from "./modules/user/index.ts";
+export type * from "./types.ts";

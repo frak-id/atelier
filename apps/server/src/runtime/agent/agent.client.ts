@@ -65,6 +65,12 @@ export class AgentClient {
     this.podIpCache.delete(sandboxId);
   }
 
+  /** Public pod-IP resolution — used by callers that need to dial the pod
+   * directly (e.g. the terminal WS bridge), bypassing the agent HTTP API. */
+  async getPodIp(sandboxId: string): Promise<string> {
+    return this.resolvePodIp(sandboxId);
+  }
+
   private async getAgentUrl(sandboxId: string): Promise<string> {
     return `http://${await this.resolvePodIp(sandboxId)}:${AGENT_PORT}`;
   }
