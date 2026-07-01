@@ -1,12 +1,11 @@
-import type { Session } from "@opencode-ai/sdk/v2/client";
+import type { AgentSession } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { opencodeSessionsQuery, sandboxListQuery } from "@/api/queries";
 
-export type SessionWithSandbox = Session & {
+export type SessionWithSandbox = AgentSession & {
   sandbox: {
     id: string;
     workspaceId: string | undefined;
-    opencodeUrl: string;
   };
 };
 
@@ -20,14 +19,13 @@ export function useAllOpenCodeSessions() {
 
   const sessionQueries = useQueries({
     queries: runningSandboxes.map((sandbox) => ({
-      ...opencodeSessionsQuery(sandbox.runtime.urls.agent),
-      select: (sessions: Session[]) =>
+      ...opencodeSessionsQuery(sandbox.id),
+      select: (sessions: AgentSession[]) =>
         sessions.map((session) => ({
           ...session,
           sandbox: {
             id: sandbox.id,
             workspaceId: sandbox.workspaceId,
-            opencodeUrl: sandbox.runtime.urls.agent,
           },
         })),
     })),

@@ -1,7 +1,7 @@
 import type {
-  PermissionRequest,
-  QuestionRequest,
-} from "@opencode-ai/sdk/v2/client";
+  AgentPermissionRequest,
+  AgentQuestionRequest,
+} from "@frak/atelier-shared";
 import {
   AlertTriangle,
   Check,
@@ -16,7 +16,7 @@ import {
   useRejectQuestion,
   useReplyPermission,
   useReplyQuestion,
-} from "@/api/queries/opencode";
+} from "@/api/queries/agent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -34,10 +34,10 @@ import {
 import { cn } from "@/lib/utils";
 
 type ExpandableInterventionsProps = {
-  permissions: Array<PermissionRequest & { sessionId: string }>;
-  questions: Array<QuestionRequest & { sessionId: string }>;
+  permissions: AgentPermissionRequest[];
+  questions: AgentQuestionRequest[];
   compact?: boolean;
-  opencodeUrl?: string;
+  sandboxId?: string;
   questionsAsLink?: boolean;
   onQuestionClick?: () => void;
 };
@@ -46,7 +46,7 @@ export function ExpandableInterventions({
   permissions,
   questions,
   compact = false,
-  opencodeUrl,
+  sandboxId,
   questionsAsLink = false,
   onQuestionClick,
 }: ExpandableInterventionsProps) {
@@ -121,7 +121,7 @@ export function ExpandableInterventions({
                       key={p.id}
                       permission={p}
                       compact={compact}
-                      opencodeUrl={opencodeUrl}
+                      sandboxId={sandboxId}
                     />
                   ))}
                 </div>
@@ -156,7 +156,7 @@ export function ExpandableInterventions({
                         key={q.id}
                         question={q}
                         compact={compact}
-                        opencodeUrl={opencodeUrl}
+                        sandboxId={sandboxId}
                       />
                     ))}
                   </div>
@@ -173,19 +173,19 @@ export function ExpandableInterventions({
 function PermissionRow({
   permission,
   compact,
-  opencodeUrl,
+  sandboxId,
 }: {
-  permission: PermissionRequest & { sessionId: string };
+  permission: AgentPermissionRequest;
   compact: boolean;
-  opencodeUrl?: string;
+  sandboxId?: string;
 }) {
-  const replyMutation = useReplyPermission(opencodeUrl ?? "");
+  const replyMutation = useReplyPermission(sandboxId ?? "");
   const [clickedAction, setClickedAction] = useState<"once" | "reject" | null>(
     null,
   );
 
   const handleReply = (reply: "once" | "reject") => {
-    if (!opencodeUrl) return;
+    if (!sandboxId) return;
     setClickedAction(reply);
     replyMutation.mutate(
       { requestID: permission.id, reply },
@@ -218,12 +218,12 @@ function PermissionRow({
       )}
     >
       <Badge variant="outline" className="shrink-0 text-xs bg-white">
-        {formatSessionId(permission.sessionID)}
+        {formatSessionId(permission.sessionId)}
       </Badge>
       <span className="font-medium flex-1 min-w-0 truncate">
         {permission.permission}
       </span>
-      {opencodeUrl && (
+      {sandboxId && (
         <div className="flex items-center gap-1 shrink-0">
           <Button
             size="sm"
@@ -268,11 +268,11 @@ function PermissionRow({
 function QuestionRow({
   question,
   compact,
-  opencodeUrl,
+  sandboxId,
 }: {
-  question: QuestionRequest & { sessionId: string };
+  question: AgentQuestionRequest;
   compact: boolean;
-  opencodeUrl?: string;
+  sandboxId?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -283,11 +283,11 @@ function QuestionRow({
     () => new Map(),
   );
 
-  const replyMutation = useReplyQuestion(opencodeUrl ?? "");
-  const rejectMutation = useRejectQuestion(opencodeUrl ?? "");
+  const replyMutation = useReplyQuestion(sandboxId ?? "");
+  const rejectMutation = useRejectQuestion(sandboxId ?? "");
 
   const handleSubmit = () => {
-    if (!opencodeUrl) return;
+    if (!sandboxId) return;
 
     const answers: Array<Array<string>> = question.questions.map((_, idx) => {
       const selected = selections.get(idx) ?? new Set();
@@ -316,7 +316,7 @@ function QuestionRow({
   };
 
   const handleSkip = () => {
-    if (!opencodeUrl) return;
+    if (!sandboxId) return;
     rejectMutation.mutate(question.id, {
       onSuccess: () => {
         toast.success("Question skipped");
@@ -367,7 +367,7 @@ function QuestionRow({
         onClick={() => setIsOpen(!isOpen)}
       >
         <Badge variant="outline" className="shrink-0 text-xs bg-white">
-          {formatSessionId(question.sessionID)}
+          {formatSessionId(question.sessionId)}
         </Badge>
         <span className="flex-1 min-w-0 wrap-break-word">
           {truncateText(getQuestionDisplayText(question), compact ? 120 : 200)}
@@ -379,7 +379,7 @@ function QuestionRow({
         )}
       </button>
 
-      {isOpen && opencodeUrl && (
+      {isOpen && sandboxId && (
         <div className="border-t border-amber-200/60 p-3 space-y-3">
           {question.questions.map((qi, idx) => {
             const isMultiple = qi.multiple ?? false;

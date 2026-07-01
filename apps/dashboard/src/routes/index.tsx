@@ -192,7 +192,6 @@ function AttentionSection() {
               key={group.sandboxId}
               permissions={group.permissions}
               questions={group.questions}
-              opencodeUrl={group.opencodeUrl}
               sandboxId={group.sandboxId}
               workspaceName={group.workspaceName}
               onOpenSandbox={openSandbox}
@@ -275,9 +274,9 @@ function ActiveTaskCard({
   const { progressPercent, allCount, completedSubsessionCount, isLoading } =
     useTaskSessionProgress(
       task,
-      sandbox?.runtime?.urls?.agent,
-      undefined,
-      !!sandbox?.runtime?.urls?.agent,
+      sandbox?.id,
+      sandbox?.workspaceId,
+      !!sandbox?.id,
     );
 
   return (

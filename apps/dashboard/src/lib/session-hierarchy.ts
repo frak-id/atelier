@@ -1,11 +1,7 @@
-import type { Session } from "@opencode-ai/sdk/v2/client";
+import type { AgentSession } from "@frak/atelier-shared";
 
-export type SessionWithSandboxInfo = Session & {
-  sandbox: {
-    id: string;
-    workspaceId: string | undefined;
-    opencodeUrl: string;
-  };
+export type SessionWithSandboxInfo = AgentSession & {
+  workspaceId: string | undefined;
 };
 
 export type SessionNode = {

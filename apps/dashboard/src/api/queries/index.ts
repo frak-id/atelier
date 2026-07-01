@@ -1,5 +1,5 @@
+export * from "./agent";
 export * from "./keys";
-export * from "./opencode";
 export * from "./organization";
 export * from "./platform";
 export * from "./sandbox";

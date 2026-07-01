@@ -218,9 +218,7 @@ export function SandboxCard({
           )}
 
           {sandbox.status === "running" && (
-            <SandboxActivitySummary
-              opencodeUrl={sandbox.runtime.urls.agent}
-            />
+            <SandboxActivitySummary sandboxId={sandbox.id} />
           )}
 
           {sandbox.status === "running" && (
@@ -438,16 +436,12 @@ function RunningToolsBadge({
   );
 }
 
-function SandboxActivitySummary({
-  opencodeUrl,
-}: {
-  opencodeUrl: string | undefined;
-}) {
+function SandboxActivitySummary({ sandboxId }: { sandboxId: string }) {
   const { sessionStatuses, permissions, questions } =
-    useOpencodeData(opencodeUrl);
+    useOpencodeData(sandboxId);
   const { data: sessions } = useQuery({
-    ...opencodeSessionsQuery(opencodeUrl ?? ""),
-    enabled: !!opencodeUrl,
+    ...opencodeSessionsQuery(sandboxId),
+    enabled: !!sandboxId,
   });
 
   const sessionCount = sessions?.length ?? 0;

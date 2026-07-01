@@ -6,20 +6,20 @@ import {
 import { useOpencodeData } from "./use-opencode-data";
 
 export type {
-  PermissionRequest,
-  QuestionRequest,
-} from "@opencode-ai/sdk/v2/client";
+  AgentPermissionRequest as PermissionRequest,
+  AgentQuestionRequest as QuestionRequest,
+} from "@frak/atelier-shared";
 
 export function useSessionInteraction(
-  opencodeUrl: string | undefined,
+  sandboxId: string | undefined,
   sessionId: string,
   enabled = true,
 ): { interaction: SessionInteractionInfo | null; isLoading: boolean } {
   const { permissions, questions, sessionStatuses, isLoading } =
-    useOpencodeData(opencodeUrl, enabled);
+    useOpencodeData(sandboxId, enabled);
 
   const interaction = useMemo(() => {
-    if (!opencodeUrl || !enabled) return null;
+    if (!sandboxId || !enabled) return null;
 
     return getSessionInteraction(
       sessionId,
@@ -27,14 +27,7 @@ export function useSessionInteraction(
       permissions,
       questions,
     );
-  }, [
-    opencodeUrl,
-    enabled,
-    sessionId,
-    sessionStatuses,
-    permissions,
-    questions,
-  ]);
+  }, [sandboxId, enabled, sessionId, sessionStatuses, permissions, questions]);
 
   return { interaction, isLoading };
 }

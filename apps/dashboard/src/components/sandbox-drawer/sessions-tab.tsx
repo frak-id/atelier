@@ -1,10 +1,10 @@
 import type { Workspace } from "@frak/atelier-manager/types";
-import type { Session, Todo } from "@opencode-ai/sdk/v2/client";
+import type { AgentSession, AgentTodo } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Bot, Loader2, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { createOpenCodeSession } from "@/api/opencode";
+import { createOpenCodeSession } from "@/api/agent";
 import { opencodeSessionsQuery, opencodeTodosQuery } from "@/api/queries";
 import { SessionHierarchy } from "@/components/session-hierarchy";
 import { Badge } from "@/components/ui/badge";
@@ -21,23 +21,22 @@ import {
 import { getWorkspaceDirectory } from "@/lib/utils";
 
 export function SessionsTabBadge({
-  opencodeUrl,
+  sandboxId,
 }: {
-  opencodeUrl: string | undefined;
   sandboxId: string;
   workspaceId: string | undefined;
 }) {
   const { data: sessions } = useQuery({
-    ...opencodeSessionsQuery(opencodeUrl ?? ""),
-    enabled: !!opencodeUrl,
+    ...opencodeSessionsQuery(sandboxId),
+    enabled: !!sandboxId,
   });
 
   const { permissions, questions, sessionStatuses } =
-    useOpencodeData(opencodeUrl);
+    useOpencodeData(sandboxId);
 
   const needsAttention = useMemo(() => {
     if (!sessions?.length) return false;
-    const sessionIds = sessions.map((s: Session) => s.id);
+    const sessionIds = sessions.map((s: AgentSession) => s.id);
     const { needsAttention } = aggregateInteractions(
       sessionIds,
       sessionStatuses,
@@ -78,24 +77,20 @@ export function SessionsTab({
   const [isCreating, setIsCreating] = useState(false);
 
   const { data: sessions, isLoading: isSessionsLoading } = useQuery({
-    ...opencodeSessionsQuery(opencodeUrl ?? ""),
-    enabled: !!opencodeUrl,
+    ...opencodeSessionsQuery(sandboxId),
+    enabled: !!sandboxId,
   });
 
   const { permissions, questions, sessionStatuses } =
-    useOpencodeData(opencodeUrl);
+    useOpencodeData(sandboxId);
 
   const directory = getWorkspaceDirectory(workspace);
 
   const hierarchyData = useMemo(() => {
     const sessionsWithSandbox: SessionWithSandboxInfo[] = (sessions ?? []).map(
-      (session: Session) => ({
+      (session: AgentSession) => ({
         ...session,
-        sandbox: {
-          id: sandboxId,
-          workspaceId,
-          opencodeUrl: opencodeUrl ?? "",
-        },
+        workspaceId,
       }),
     );
 
@@ -107,12 +102,12 @@ export function SessionsTab({
       allSessions,
       allSessionIds: allSessions.map((s) => s.id),
     };
-  }, [sessions, sandboxId, workspaceId, opencodeUrl]);
+  }, [sessions, workspaceId]);
 
   const todosResults = useQueries({
     queries: hierarchyData.allSessionIds.map((sessionId) => ({
-      ...opencodeTodosQuery(opencodeUrl ?? "", sessionId),
-      enabled: !!opencodeUrl && !!sessionId,
+      ...opencodeTodosQuery(sandboxId, sessionId),
+      enabled: !!sandboxId && !!sessionId,
     })),
   });
 
@@ -124,11 +119,14 @@ export function SessionsTab({
       questions,
     );
 
-    const todosBySession = new Map<string, Todo[]>();
+    const todosBySession = new Map<string, AgentTodo[]>();
     for (let i = 0; i < hierarchyData.allSessionIds.length; i++) {
       const sessionId = hierarchyData.allSessionIds[i];
       if (sessionId) {
-        todosBySession.set(sessionId, (todosResults[i]?.data ?? []) as Todo[]);
+        todosBySession.set(
+          sessionId,
+          (todosResults[i]?.data ?? []) as AgentTodo[],
+        );
       }
     }
 
@@ -145,10 +143,9 @@ export function SessionsTab({
   }, [hierarchyData, sessionStatuses, permissions, questions, todosResults]);
 
   const handleCreateSession = async () => {
-    if (!opencodeUrl) return;
     setIsCreating(true);
     try {
-      const result = await createOpenCodeSession(opencodeUrl, directory);
+      const result = await createOpenCodeSession(sandboxId, directory);
       if ("error" in result) {
         toast.error(result.error);
       } else {

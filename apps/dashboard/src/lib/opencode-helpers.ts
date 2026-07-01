@@ -1,25 +1,25 @@
 import type {
-  PermissionRequest,
-  QuestionRequest,
-} from "@opencode-ai/sdk/v2/client";
-import type { SessionStatus } from "@/api/opencode";
+  AgentPermissionRequest,
+  AgentQuestionRequest,
+  AgentSessionStatus,
+} from "@frak/atelier-shared";
 
 export type MappedSessionStatus = "idle" | "busy" | "waiting" | "unknown";
 
 export interface SessionInteractionInfo {
   status: MappedSessionStatus;
-  pendingPermissions: PermissionRequest[];
-  pendingQuestions: QuestionRequest[];
+  pendingPermissions: AgentPermissionRequest[];
+  pendingQuestions: AgentQuestionRequest[];
 }
 
 export interface AggregatedInteractionState {
   status: MappedSessionStatus;
-  pendingPermissions: Array<PermissionRequest & { sessionId: string }>;
-  pendingQuestions: Array<QuestionRequest & { sessionId: string }>;
+  pendingPermissions: Array<AgentPermissionRequest & { sessionId: string }>;
+  pendingQuestions: Array<AgentQuestionRequest & { sessionId: string }>;
 }
 
 function mapSessionStatus(
-  statusInfo: SessionStatus | undefined,
+  statusInfo: AgentSessionStatus | undefined,
 ): MappedSessionStatus {
   if (!statusInfo) return "idle";
   if (statusInfo.type === "idle") return "idle";
@@ -30,22 +30,22 @@ function mapSessionStatus(
 
 export function getSessionInteraction(
   sessionId: string,
-  statusMap: Record<string, SessionStatus>,
-  permissions: PermissionRequest[],
-  questions: QuestionRequest[],
+  statusMap: Record<string, AgentSessionStatus>,
+  permissions: AgentPermissionRequest[],
+  questions: AgentQuestionRequest[],
 ): SessionInteractionInfo {
   return {
     status: mapSessionStatus(statusMap[sessionId]),
-    pendingPermissions: permissions.filter((p) => p.sessionID === sessionId),
-    pendingQuestions: questions.filter((q) => q.sessionID === sessionId),
+    pendingPermissions: permissions.filter((p) => p.sessionId === sessionId),
+    pendingQuestions: questions.filter((q) => q.sessionId === sessionId),
   };
 }
 
 export function aggregateInteractions(
   sessionIds: string[],
-  statusMap: Record<string, SessionStatus>,
-  permissions: PermissionRequest[],
-  questions: QuestionRequest[],
+  statusMap: Record<string, AgentSessionStatus>,
+  permissions: AgentPermissionRequest[],
+  questions: AgentQuestionRequest[],
 ): {
   interactions: Map<string, SessionInteractionInfo>;
   aggregated: AggregatedInteractionState;
@@ -54,10 +54,11 @@ export function aggregateInteractions(
 } {
   const interactions = new Map<string, SessionInteractionInfo>();
   const aggregatedPermissions: Array<
-    PermissionRequest & { sessionId: string }
+    AgentPermissionRequest & { sessionId: string }
   > = [];
-  const aggregatedQuestions: Array<QuestionRequest & { sessionId: string }> =
-    [];
+  const aggregatedQuestions: Array<
+    AgentQuestionRequest & { sessionId: string }
+  > = [];
 
   let hasIdleSessions = false;
   let hasBusySessions = false;

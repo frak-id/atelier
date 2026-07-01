@@ -44,18 +44,16 @@ export const queryKeys = {
     terminalSessions: (id: string) =>
       ["sandboxes", id, "terminalSessions"] as const,
   },
-  opencode: {
-    health: (baseUrl: string) => ["opencode", baseUrl, "health"] as const,
-    sessions: (baseUrl: string) => ["opencode", baseUrl, "sessions"] as const,
-    messages: (baseUrl: string, sessionId: string) =>
-      ["opencode", baseUrl, "messages", sessionId] as const,
-    permissions: (baseUrl: string) =>
-      ["opencode", baseUrl, "permissions"] as const,
-    questions: (baseUrl: string) => ["opencode", baseUrl, "questions"] as const,
-    sessionStatuses: (baseUrl: string) =>
-      ["opencode", baseUrl, "sessionStatuses"] as const,
-    todos: (baseUrl: string, sessionId: string) =>
-      ["opencode", baseUrl, "todos", sessionId] as const,
+  agent: {
+    sessions: (sandboxId: string) => ["agent", sandboxId, "sessions"] as const,
+    permissions: (sandboxId: string) =>
+      ["agent", sandboxId, "permissions"] as const,
+    questions: (sandboxId: string) =>
+      ["agent", sandboxId, "questions"] as const,
+    sessionStatuses: (sandboxId: string) =>
+      ["agent", sandboxId, "sessionStatuses"] as const,
+    todos: (sandboxId: string, sessionId: string) =>
+      ["agent", sandboxId, "todos", sessionId] as const,
   },
   workspaces: {
     all: ["workspaces"] as const,

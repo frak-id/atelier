@@ -1,5 +1,5 @@
 import type { Task } from "@frak/atelier-manager/types";
-import type { Session, Todo } from "@opencode-ai/sdk/v2/client";
+import type { AgentSession, AgentTodo } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { opencodeSessionsQuery, opencodeTodosQuery } from "@/api/queries";
@@ -24,7 +24,7 @@ export interface SessionInteractionState {
   status: MappedSessionStatus;
   pendingPermissions: SessionInteractionInfo["pendingPermissions"];
   pendingQuestions: SessionInteractionInfo["pendingQuestions"];
-  todos: Todo[];
+  todos: AgentTodo[];
 }
 
 export interface TodoProgress {
@@ -61,16 +61,13 @@ export interface TaskSessionProgressResult {
 
 export function useTaskSessionProgress(
   task?: Task,
-  opencodeUrl?: string,
-  sandboxInfo?: {
-    id: string;
-    workspaceId?: string;
-  },
+  sandboxId?: string,
+  workspaceId?: string,
   enabled = true,
 ): TaskSessionProgressResult {
   const { data: sessions, isLoading: isSessionsLoading } = useQuery({
-    ...opencodeSessionsQuery(opencodeUrl ?? ""),
-    enabled: enabled && !!opencodeUrl,
+    ...opencodeSessionsQuery(sandboxId ?? ""),
+    enabled: enabled && !!sandboxId,
   });
 
   const {
@@ -78,7 +75,7 @@ export function useTaskSessionProgress(
     questions,
     sessionStatuses,
     isLoading: isInteractionsLoading,
-  } = useOpencodeData(opencodeUrl, enabled);
+  } = useOpencodeData(sandboxId, enabled);
 
   const hierarchyData = useMemo(() => {
     const taskSessionIds = new Set(
@@ -86,13 +83,9 @@ export function useTaskSessionProgress(
     );
 
     const sessionsWithSandbox: SessionWithSandboxInfo[] = (sessions ?? []).map(
-      (session: Session) => ({
+      (session: AgentSession) => ({
         ...session,
-        sandbox: {
-          id: sandboxInfo?.id ?? "",
-          workspaceId: sandboxInfo?.workspaceId,
-          opencodeUrl: opencodeUrl ?? "",
-        },
+        workspaceId,
       }),
     );
 
@@ -111,30 +104,24 @@ export function useTaskSessionProgress(
       allSessions,
       allSessionIds: allSessions.map((s) => s.id),
     };
-  }, [
-    task?.data?.sessions,
-    sessions,
-    sandboxInfo?.id,
-    sandboxInfo?.workspaceId,
-    opencodeUrl,
-  ]);
+  }, [task?.data?.sessions, sessions, workspaceId]);
 
   const todosResults = useQueries({
     queries: hierarchyData.allSessionIds.map((sessionId) => ({
-      ...opencodeTodosQuery(opencodeUrl ?? "", sessionId),
-      enabled: enabled && !!opencodeUrl && !!sessionId,
+      ...opencodeTodosQuery(sandboxId ?? "", sessionId),
+      enabled: enabled && !!sandboxId && !!sessionId,
     })),
   });
 
   const isTodosLoading = todosResults.some((r) => r.isLoading);
 
   const todosBySession = useMemo(() => {
-    const map = new Map<string, Todo[]>();
+    const map = new Map<string, AgentTodo[]>();
     for (let i = 0; i < hierarchyData.allSessionIds.length; i++) {
       const sessionId = hierarchyData.allSessionIds[i];
       if (sessionId) {
         const result = todosResults[i];
-        map.set(sessionId, (result?.data ?? []) as Todo[]);
+        map.set(sessionId, (result?.data ?? []) as AgentTodo[]);
       }
     }
     return map;

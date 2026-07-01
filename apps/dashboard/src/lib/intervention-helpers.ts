@@ -1,6 +1,6 @@
-import type { QuestionRequest } from "@opencode-ai/sdk/v2/client";
+import type { AgentQuestionRequest } from "@frak/atelier-shared";
 
-export function getQuestionDisplayText(question: QuestionRequest): string {
+export function getQuestionDisplayText(question: AgentQuestionRequest): string {
   return (
     question.questions[0]?.header ??
     question.questions[0]?.question ??

@@ -1,4 +1,4 @@
-import type { Todo } from "@opencode-ai/sdk/v2/client";
+import type { AgentTodo } from "@frak/atelier-shared";
 import {
   AlertTriangle,
   CheckCircle,
@@ -90,7 +90,7 @@ function SessionStatusIcon({
   return <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />;
 }
 
-function TodoStatusIcon({ status }: { status: Todo["status"] }) {
+function TodoStatusIcon({ status }: { status: AgentTodo["status"] }) {
   switch (status) {
     case "completed":
       return <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />;
@@ -105,7 +105,7 @@ function TodoStatusIcon({ status }: { status: Todo["status"] }) {
   }
 }
 
-function TodoProgressBadge({ todos }: { todos: Todo[] }) {
+function TodoProgressBadge({ todos }: { todos: AgentTodo[] }) {
   const activeTodos = todos.filter((t) => t.status !== "cancelled");
   const completed = activeTodos.filter((t) => t.status === "completed").length;
   const total = activeTodos.length;
@@ -161,7 +161,7 @@ function TodoProgressBadge({ todos }: { todos: Todo[] }) {
   );
 }
 
-function RootTodoList({ todos }: { todos: Todo[] }) {
+function RootTodoList({ todos }: { todos: AgentTodo[] }) {
   const activeTodos = todos.filter((t) => t.status !== "cancelled");
   if (activeTodos.length === 0) return null;
 

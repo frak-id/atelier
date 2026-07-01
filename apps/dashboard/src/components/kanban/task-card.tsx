@@ -104,14 +104,9 @@ export function TaskCard({
     currentTask,
   } = useTaskSessionProgress(
     task,
-    sandbox?.runtime?.urls?.agent,
-    sandbox
-      ? {
-          id: sandbox.id,
-          workspaceId: sandbox.workspaceId,
-        }
-      : undefined,
-    task.status === "active" && !!sandbox?.runtime?.urls?.agent,
+    sandbox?.id,
+    sandbox?.workspaceId,
+    task.status === "active" && !!sandbox?.id,
   );
 
   const hasActiveSessions = totalCount > 0;

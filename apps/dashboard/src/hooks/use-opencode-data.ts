@@ -1,9 +1,9 @@
 import type {
-  PermissionRequest,
-  QuestionRequest,
-} from "@opencode-ai/sdk/v2/client";
+  AgentPermissionRequest,
+  AgentQuestionRequest,
+  AgentSessionStatus,
+} from "@frak/atelier-shared";
 import { useQueries } from "@tanstack/react-query";
-import type { SessionStatus } from "@/api/opencode";
 import {
   opencodePermissionsQuery,
   opencodeQuestionsQuery,
@@ -11,32 +11,32 @@ import {
 } from "@/api/queries";
 
 export interface OpencodeData {
-  permissions: PermissionRequest[];
-  questions: QuestionRequest[];
-  sessionStatuses: Record<string, SessionStatus>;
+  permissions: AgentPermissionRequest[];
+  questions: AgentQuestionRequest[];
+  sessionStatuses: Record<string, AgentSessionStatus>;
   isLoading: boolean;
   isError: boolean;
 }
 
 export function useOpencodeData(
-  opencodeUrl: string | undefined,
+  sandboxId: string | undefined,
   enabled = true,
 ): OpencodeData {
-  const isEnabled = enabled && !!opencodeUrl;
-  const url = opencodeUrl ?? "";
+  const isEnabled = enabled && !!sandboxId;
+  const id = sandboxId ?? "";
 
   const results = useQueries({
     queries: [
       {
-        ...opencodePermissionsQuery(url),
+        ...opencodePermissionsQuery(id),
         enabled: isEnabled,
       },
       {
-        ...opencodeQuestionsQuery(url),
+        ...opencodeQuestionsQuery(id),
         enabled: isEnabled,
       },
       {
-        ...opencodeSessionStatusesQuery(url),
+        ...opencodeSessionStatusesQuery(id),
         enabled: isEnabled,
       },
     ],
@@ -45,11 +45,11 @@ export function useOpencodeData(
   const [permissionsResult, questionsResult, statusesResult] = results;
 
   return {
-    permissions: (permissionsResult.data ?? []) as PermissionRequest[],
-    questions: (questionsResult.data ?? []) as QuestionRequest[],
+    permissions: (permissionsResult.data ?? []) as AgentPermissionRequest[],
+    questions: (questionsResult.data ?? []) as AgentQuestionRequest[],
     sessionStatuses: (statusesResult.data ?? {}) as Record<
       string,
-      SessionStatus
+      AgentSessionStatus
     >,
     isLoading: results.some((r) => r.isLoading),
     isError: results.some((r) => r.isError),

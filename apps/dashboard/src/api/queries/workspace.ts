@@ -82,8 +82,7 @@ export const rebuildAllStatusQuery = () =>
 export function useRebuildAllImages() {
   return useMutation({
     mutationKey: ["images", "rebuildAll"],
-    mutationFn: async () =>
-      unwrap(await api.api.images["rebuild-all"].post()),
+    mutationFn: async () => unwrap(await api.api.images["rebuild-all"].post()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
     },

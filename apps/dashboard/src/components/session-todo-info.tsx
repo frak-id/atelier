@@ -1,9 +1,9 @@
-import type { Todo } from "@opencode-ai/sdk/v2/client";
+import type { AgentTodo } from "@frak/atelier-shared";
 import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 type SessionTodoInfoProps = {
-  todos: Todo[];
+  todos: AgentTodo[];
   compact?: boolean;
   className?: string;
 };

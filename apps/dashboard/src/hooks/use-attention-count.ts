@@ -1,9 +1,9 @@
 import type {
-  PermissionRequest,
-  QuestionRequest,
-} from "@opencode-ai/sdk/v2/client";
+  AgentPermissionRequest,
+  AgentQuestionRequest,
+  AgentSessionStatus,
+} from "@frak/atelier-shared";
 import { useQueries } from "@tanstack/react-query";
-import type { SessionStatus } from "@/api/opencode";
 import {
   opencodePermissionsQuery,
   opencodeQuestionsQuery,
@@ -16,11 +16,10 @@ export function useAttentionCount() {
   const { runningSandboxes, sessions } = useAllOpenCodeSessions();
 
   const queries = runningSandboxes.flatMap((sandbox) => {
-    const baseUrl = sandbox.runtime.urls.agent;
     return [
-      opencodePermissionsQuery(baseUrl),
-      opencodeQuestionsQuery(baseUrl),
-      opencodeSessionStatusesQuery(baseUrl),
+      opencodePermissionsQuery(sandbox.id),
+      opencodeQuestionsQuery(sandbox.id),
+      opencodeSessionStatusesQuery(sandbox.id),
     ] as const;
   });
 
@@ -31,10 +30,13 @@ export function useAttentionCount() {
   runningSandboxes.forEach((sandbox, index) => {
     const baseIndex = index * 3;
 
-    const permissions = (results[baseIndex]?.data as PermissionRequest[]) ?? [];
-    const questions = (results[baseIndex + 1]?.data as QuestionRequest[]) ?? [];
+    const permissions =
+      (results[baseIndex]?.data as AgentPermissionRequest[]) ?? [];
+    const questions =
+      (results[baseIndex + 1]?.data as AgentQuestionRequest[]) ?? [];
     const statuses =
-      (results[baseIndex + 2]?.data as Record<string, SessionStatus>) ?? {};
+      (results[baseIndex + 2]?.data as Record<string, AgentSessionStatus>) ??
+      {};
 
     const sandboxSessions = sessions.filter((s) => s.sandbox.id === sandbox.id);
     const sessionIds = sandboxSessions.map((s) => s.id);

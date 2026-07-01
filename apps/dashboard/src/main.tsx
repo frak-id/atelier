@@ -8,8 +8,8 @@ import {
 } from "@/components/route-error";
 import { loadConfig } from "./config";
 import "./index.css";
+import { AgentEventsProvider } from "./providers/agent-events-provider";
 import { ManagerEventsProvider } from "./providers/manager-events-provider";
-import { OpencodeEventsProvider } from "./providers/opencode-events-provider";
 import { routeTree } from "./routeTree.gen";
 
 const queryClient = new QueryClient({
@@ -51,9 +51,9 @@ async function bootstrap() {
       <StrictMode>
         <QueryClientProvider client={queryClient}>
           <ManagerEventsProvider>
-            <OpencodeEventsProvider>
+            <AgentEventsProvider>
               <RouterProvider router={router} />
-            </OpencodeEventsProvider>
+            </AgentEventsProvider>
           </ManagerEventsProvider>
         </QueryClientProvider>
       </StrictMode>,

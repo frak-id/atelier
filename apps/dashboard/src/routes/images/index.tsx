@@ -4,7 +4,7 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { HardDrive, Hammer, Loader2, Play, X } from "lucide-react";
+import { Hammer, HardDrive, Loader2, Play, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import {
   imageBuildStatusQuery,
@@ -44,8 +44,7 @@ function ImagesPage() {
   const { data: images } = useSuspenseQuery(imageListQuery(true));
   const { data: rebuildAll } = useQuery({
     ...rebuildAllStatusQuery(),
-    refetchInterval: (query) =>
-      query.state.data?.active ? 3000 : false,
+    refetchInterval: (query) => (query.state.data?.active ? 3000 : false),
   });
   const rebuildAllImages = useRebuildAllImages();
   const isRebuildingAll = rebuildAll?.active === true;

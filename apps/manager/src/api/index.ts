@@ -12,6 +12,7 @@ export { imageRoutes } from "./image.routes.ts";
 export { internalWellKnownRoutes } from "./internal-well-known.routes.ts";
 export { organizationRoutes } from "./organization.routes.ts";
 export { publicConfigRoutes } from "./public-config.routes.ts";
+export { agentFacadeRoutes } from "./sandboxes/agent-facade.routes.ts";
 export { sandboxRoutes } from "./sandboxes/index.ts";
 export { sessionTemplateRoutes } from "./session-template.routes.ts";
 export { sharedAuthRoutes } from "./shared-auth.routes.ts";

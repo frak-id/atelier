@@ -3,6 +3,7 @@ import { swagger } from "@elysiajs/swagger";
 import { validateConfig } from "@frak/atelier-shared";
 import { Elysia } from "elysia";
 import {
+  agentFacadeRoutes,
   apiKeyRoutes,
   authRoutes,
   cliproxyRoutes,
@@ -213,6 +214,7 @@ const app = new Elysia()
   .group("/api", (app) =>
     app
       .use(sandboxRoutes)
+      .use(agentFacadeRoutes)
       .use(workspaceRoutes)
       .use(taskRoutes)
       .use(sessionTemplateRoutes)

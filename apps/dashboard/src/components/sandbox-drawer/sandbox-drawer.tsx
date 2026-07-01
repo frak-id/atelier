@@ -12,9 +12,8 @@ import {
   Terminal,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { registerOpencodePassword } from "@/api/opencode";
 import {
   deriveToolStatus,
   sandboxDetailQuery,
@@ -85,15 +84,6 @@ export function SandboxDrawer({
     ...workspaceDetailQuery(sandbox?.workspaceId ?? ""),
     enabled: !!sandbox?.workspaceId,
   });
-
-  useEffect(() => {
-    if (sandbox?.runtime.agentPassword) {
-      registerOpencodePassword(
-        sandbox.runtime.urls.agent,
-        sandbox.runtime.agentPassword,
-      );
-    }
-  }, [sandbox]);
 
   const { data: tasks } = useQuery({
     ...taskListQuery(),
@@ -433,9 +423,7 @@ export function SandboxDrawer({
 
                 {sandbox.status === "running" && (
                   <>
-                    <SandboxAttentionSection
-                      opencodeUrl={sandbox.runtime.urls.agent}
-                    />
+                    <SandboxAttentionSection sandboxId={sandbox.id} />
 
                     <DevCommandsPanel sandboxId={sandbox.id} />
 
@@ -457,7 +445,6 @@ export function SandboxDrawer({
                         <TabsTrigger value="sessions" className="gap-1.5">
                           Sessions
                           <SessionsTabBadge
-                            opencodeUrl={sandbox.runtime.urls?.agent}
                             sandboxId={sandbox.id}
                             workspaceId={sandbox.workspaceId}
                           />
@@ -582,27 +569,18 @@ export function SandboxDrawer({
   );
 }
 
-function SandboxAttentionSection({ opencodeUrl }: { opencodeUrl: string }) {
-  const { permissions, questions } = useOpencodeData(opencodeUrl);
+function SandboxAttentionSection({ sandboxId }: { sandboxId: string }) {
+  const { permissions, questions } = useOpencodeData(sandboxId);
 
-  const enrichedPermissions = useMemo(
-    () => permissions.map((p) => ({ ...p, sessionId: p.sessionID })),
-    [permissions],
-  );
-  const enrichedQuestions = useMemo(
-    () => questions.map((q) => ({ ...q, sessionId: q.sessionID })),
-    [questions],
-  );
-
-  if (enrichedPermissions.length === 0 && enrichedQuestions.length === 0) {
+  if (permissions.length === 0 && questions.length === 0) {
     return null;
   }
 
   return (
     <AttentionBlock
-      permissions={enrichedPermissions}
-      questions={enrichedQuestions}
-      opencodeUrl={opencodeUrl}
+      permissions={permissions}
+      questions={questions}
+      sandboxId={sandboxId}
     />
   );
 }

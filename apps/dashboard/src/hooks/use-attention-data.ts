@@ -1,7 +1,7 @@
 import type {
-  PermissionRequest,
-  QuestionRequest,
-} from "@opencode-ai/sdk/v2/client";
+  AgentPermissionRequest,
+  AgentQuestionRequest,
+} from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   opencodePermissionsQuery,
@@ -14,22 +14,19 @@ import { getQuestionDisplayText } from "@/lib/intervention-helpers";
 export type AttentionItem = {
   id: string;
   sandboxId: string;
-  sandboxUrl: string;
   workspaceName?: string;
   type: "permission" | "question";
   summary: string;
-  opencodeUrl: string;
   raw:
-    | { kind: "permission"; request: PermissionRequest & { sessionId: string } }
-    | { kind: "question"; request: QuestionRequest & { sessionId: string } };
+    | { kind: "permission"; request: AgentPermissionRequest }
+    | { kind: "question"; request: AgentQuestionRequest };
 };
 
 export type SandboxAttentionGroup = {
   sandboxId: string;
-  opencodeUrl: string;
   workspaceName?: string;
-  permissions: Array<PermissionRequest & { sessionId: string }>;
-  questions: Array<QuestionRequest & { sessionId: string }>;
+  permissions: AgentPermissionRequest[];
+  questions: AgentQuestionRequest[];
 };
 
 export function useAttentionData() {
@@ -41,14 +38,13 @@ export function useAttentionData() {
 
   const queries = useQueries({
     queries: runningSandboxes.flatMap((sandbox) => {
-      const url = sandbox.runtime.urls.agent;
       return [
         {
-          ...opencodePermissionsQuery(url),
+          ...opencodePermissionsQuery(sandbox.id),
           meta: { sandboxId: sandbox.id, type: "permissions" },
         },
         {
-          ...opencodeQuestionsQuery(url),
+          ...opencodeQuestionsQuery(sandbox.id),
           meta: { sandboxId: sandbox.id, type: "questions" },
         },
       ];
@@ -67,55 +63,40 @@ export function useAttentionData() {
     const quesQuery = queries[i * 2 + 1];
     if (!permQuery || !quesQuery) continue;
 
-    const permissions = (permQuery.data ?? []) as PermissionRequest[];
-    const questions = (quesQuery.data ?? []) as QuestionRequest[];
+    const permissions = (permQuery.data ?? []) as AgentPermissionRequest[];
+    const questions = (quesQuery.data ?? []) as AgentQuestionRequest[];
 
     const workspaceName = sandbox.workspaceId
       ? workspaceMap.get(sandbox.workspaceId)
       : undefined;
 
-    const enrichedPermissions = permissions.map((p) => ({
-      ...p,
-      sessionId: p.sessionID,
-    }));
-
-    const enrichedQuestions = questions.map((q) => ({
-      ...q,
-      sessionId: q.sessionID,
-    }));
-
-    if (enrichedPermissions.length > 0 || enrichedQuestions.length > 0) {
+    if (permissions.length > 0 || questions.length > 0) {
       groups.push({
         sandboxId: sandbox.id,
-        opencodeUrl: sandbox.runtime.urls.agent,
         workspaceName,
-        permissions: enrichedPermissions,
-        questions: enrichedQuestions,
+        permissions,
+        questions,
       });
     }
 
-    for (const p of enrichedPermissions) {
+    for (const p of permissions) {
       items.push({
-        id: `perm-${sandbox.id}-${p.sessionID}-${p.id}`,
+        id: `perm-${sandbox.id}-${p.sessionId}-${p.id}`,
         sandboxId: sandbox.id,
-        sandboxUrl: sandbox.runtime.urls.agent,
         workspaceName,
         type: "permission",
         summary: `Requesting permission: ${p.permission}`,
-        opencodeUrl: sandbox.runtime.urls.agent,
         raw: { kind: "permission", request: p },
       });
     }
 
-    for (const q of enrichedQuestions) {
+    for (const q of questions) {
       items.push({
-        id: `ques-${sandbox.id}-${q.sessionID}-${q.id}`,
+        id: `ques-${sandbox.id}-${q.sessionId}-${q.id}`,
         sandboxId: sandbox.id,
-        sandboxUrl: sandbox.runtime.urls.agent,
         workspaceName,
         type: "question",
         summary: getQuestionDisplayText(q),
-        opencodeUrl: sandbox.runtime.urls.agent,
         raw: { kind: "question", request: q },
       });
     }

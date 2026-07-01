@@ -1,3 +1,4 @@
+export * from "./agent.schema.ts";
 export * from "./config.loader.ts";
 export * from "./config.schema.ts";
 export * from "./constants/index.ts";

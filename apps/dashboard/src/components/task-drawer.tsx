@@ -99,16 +99,9 @@ export function TaskDrawer({
     todoProgress,
   } = useTaskSessionProgress(
     taskData ?? undefined,
-    sandbox?.runtime?.urls?.agent,
-    sandbox
-      ? {
-          id: sandbox.id,
-          workspaceId: sandbox.workspaceId,
-        }
-      : undefined,
-    !!taskData &&
-      taskData.status === "active" &&
-      !!sandbox?.runtime?.urls?.agent,
+    sandbox?.id,
+    sandbox?.workspaceId,
+    !!taskData && taskData.status === "active" && !!sandbox?.id,
   );
 
   const { data: templatesData } = useQuery({
@@ -388,11 +381,11 @@ export function TaskDrawer({
                         )}
                       </div>
 
-                      {needsAttention && sandbox?.runtime?.urls?.agent && (
+                      {needsAttention && sandbox?.id && (
                         <AttentionBlock
                           permissions={aggregatedInteraction.pendingPermissions}
                           questions={aggregatedInteraction.pendingQuestions}
-                          opencodeUrl={sandbox.runtime.urls.agent}
+                          sandboxId={sandbox.id}
                         />
                       )}
 

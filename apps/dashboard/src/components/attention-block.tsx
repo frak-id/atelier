@@ -1,7 +1,7 @@
 import type {
-  PermissionRequest,
-  QuestionRequest,
-} from "@opencode-ai/sdk/v2/client";
+  AgentPermissionRequest,
+  AgentQuestionRequest,
+} from "@frak/atelier-shared";
 import {
   AlertTriangle,
   Check,
@@ -18,7 +18,7 @@ import {
   useRejectQuestion,
   useReplyPermission,
   useReplyQuestion,
-} from "@/api/queries/opencode";
+} from "@/api/queries/agent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,10 +35,9 @@ import {
 import { cn } from "@/lib/utils";
 
 type AttentionBlockProps = {
-  permissions: Array<PermissionRequest & { sessionId: string }>;
-  questions: Array<QuestionRequest & { sessionId: string }>;
-  opencodeUrl: string;
-  sandboxId?: string;
+  permissions: AgentPermissionRequest[];
+  questions: AgentQuestionRequest[];
+  sandboxId: string;
   workspaceName?: string;
   onOpenSandbox?: (sandboxId: string) => void;
 };
@@ -46,7 +45,6 @@ type AttentionBlockProps = {
 export function AttentionBlock({
   permissions,
   questions,
-  opencodeUrl,
   sandboxId,
   workspaceName,
   onOpenSandbox,
@@ -79,10 +77,10 @@ export function AttentionBlock({
 
       <div className="divide-y divide-amber-500/10">
         {permissions.map((p) => (
-          <PermissionRow key={p.id} permission={p} opencodeUrl={opencodeUrl} />
+          <PermissionRow key={p.id} permission={p} sandboxId={sandboxId} />
         ))}
         {questions.map((q) => (
-          <QuestionRow key={q.id} question={q} opencodeUrl={opencodeUrl} />
+          <QuestionRow key={q.id} question={q} sandboxId={sandboxId} />
         ))}
       </div>
     </div>
@@ -91,12 +89,12 @@ export function AttentionBlock({
 
 function PermissionRow({
   permission,
-  opencodeUrl,
+  sandboxId,
 }: {
-  permission: PermissionRequest & { sessionId: string };
-  opencodeUrl: string;
+  permission: AgentPermissionRequest;
+  sandboxId: string;
 }) {
-  const replyMutation = useReplyPermission(opencodeUrl);
+  const replyMutation = useReplyPermission(sandboxId);
   const [clickedAction, setClickedAction] = useState<"once" | "reject" | null>(
     null,
   );
@@ -127,7 +125,7 @@ function PermissionRow({
       <div className="flex items-center gap-2 min-w-0">
         <Shield className="h-4 w-4 text-purple-400 shrink-0" />
         <Badge variant="outline" className="shrink-0 text-xs">
-          {formatSessionId(permission.sessionID)}
+          {formatSessionId(permission.sessionId)}
         </Badge>
         <span className="text-sm flex-1 min-w-0 truncate">
           {permission.permission}
@@ -169,10 +167,10 @@ function PermissionRow({
 
 function QuestionRow({
   question,
-  opencodeUrl,
+  sandboxId,
 }: {
-  question: QuestionRequest & { sessionId: string };
-  opencodeUrl: string;
+  question: AgentQuestionRequest;
+  sandboxId: string;
 }) {
   const [selections, setSelections] = useState<Map<number, Set<string>>>(
     () => new Map(),
@@ -182,8 +180,8 @@ function QuestionRow({
   );
   const [currentIdx, setCurrentIdx] = useState(0);
 
-  const replyMutation = useReplyQuestion(opencodeUrl);
-  const rejectMutation = useRejectQuestion(opencodeUrl);
+  const replyMutation = useReplyQuestion(sandboxId);
+  const rejectMutation = useRejectQuestion(sandboxId);
 
   const totalQuestions = question.questions.length;
   const isLastQuestion = currentIdx >= totalQuestions - 1;
@@ -288,7 +286,7 @@ function QuestionRow({
             variant="outline"
             className="shrink-0 text-xs hidden sm:inline-flex"
           >
-            {formatSessionId(question.sessionID)}
+            {formatSessionId(question.sessionId)}
           </Badge>
           <span className="text-sm flex-1 min-w-0 truncate">
             {getQuestionDisplayText(question)}

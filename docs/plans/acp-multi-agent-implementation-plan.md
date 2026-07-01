@@ -304,6 +304,38 @@ Three findings that changed / must inform the code:
 
 ---
 
+## 4c. Phase 4/5 architecture decision (made, after live opencode-acp probe)
+
+**Chosen: neutral manager facade + adapter; keep `opencode serve`.** A live probe of
+`opencode acp` 1.17.10 confirmed ACP can list/resume/fork/close sessions and
+stream prompts, but **cannot** provide (a) session hierarchy (child/subagent
+sessions only leak inside `tool_call_update.rawOutput.metadata`, never in
+`session/list`) or (b) the dashboard's separate "questions" UX (opencode never
+calls `create_elicitation`; only `request_permission`). Deleting serve would
+regress those dashboard features, so serve stays as **opencode's** session
+surface — now encapsulated behind the facade instead of leaked to the browser.
+
+- **Facade**: manager exposes neutral `Agent*` REST+SSE keyed by `sandboxId`
+  (hides pod URL + `agentPassword`). Endpoints per recon §(b).
+- **Adapter-driven**: a `HarnessSessionSurface` capability; `OpencodeSessionSurface`
+  implements it via `opencode serve` REST (SDK confined here, server-side).
+  Future ACP-only harnesses implement a flat surface via AgentDispatch + an
+  ACP session store (no hierarchy/questions — accepted for those harnesses).
+- **Dashboard**: talks only to the facade with `@frak/atelier-shared` `Agent*`
+  types; drops `@opencode-ai/sdk`, the password Map, and the 3 register sites.
+- **Prompt path**: opencode keeps prompting via serve (avoids ACP's
+  registry-wait / silent-failure / agent-validation gaps); AgentDispatch is the
+  ACP prompt path for non-opencode harnesses.
+- **Phase 5 revised**: `@opencode-ai/sdk` is NOT deleted — it's confined to the
+  manager's opencode adapter/lib. "ACP everywhere" holds structurally (bridge +
+  AgentDispatch + adapter seam), not by forcing opencode through ACP.
+
+Facade must defend against the probe's two risk findings: prompt can resolve
+`end_turn` with 0 usage on auth/model failure (treat as error), and plan/todo
+updates are full-list-replace with no per-item id (diff by content).
+
+---
+
 ## 5. Risks specific to this plan
 
 - **Facade is new surface area.** The manager must hold per-session ACP state and

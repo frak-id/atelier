@@ -3,9 +3,9 @@ import type {
   StartSessionStage,
 } from "@frak/atelier-manager/types";
 import { useMutation } from "@tanstack/react-query";
+import type { TemplateConfig } from "@/api/agent";
 import type { Workspace } from "@/api/client";
 import { api } from "@/api/client";
-import type { TemplateConfig } from "@/api/opencode";
 
 interface StartSessionParams {
   workspace: Workspace;
