@@ -1,0 +1,22 @@
+{
+  "name": "@atelier/spec",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The SandboxSpec contract — the one document the Atelier v2 runtime understands.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sandbox": "./src/sandbox-spec.ts",
+    "./prebuild": "./src/prebuild-spec.ts",
+    "./runtime-api": "./src/runtime-api.ts"
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.12"
+  }
+}
