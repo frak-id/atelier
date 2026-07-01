@@ -227,6 +227,8 @@ export const PortsConfigSchema = Type.Object(
     opencode: Type.Number({ default: 3000 }),
     browser: Type.Number({ default: 6080 }),
     terminal: Type.Number({ default: 7681 }),
+    // ACP stdio<->WebSocket bridge (in-pod harness relay); see agent-rust/acp.rs
+    acp: Type.Number({ default: 7682 }),
     agent: Type.Number({ default: 9998 }),
     dev: Type.Number({ default: 3001 }),
     devApp: Type.Number({ default: 5173 }),
@@ -416,6 +418,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_OPENCODE_PORT: "ports.opencode",
   ATELIER_BROWSER_PORT: "ports.browser",
   ATELIER_TERMINAL_PORT: "ports.terminal",
+  ATELIER_ACP_PORT: "ports.acp",
   ATELIER_AGENT_PORT: "ports.agent",
   ATELIER_DEV_PORT: "ports.dev",
   ATELIER_DEV_APP_PORT: "ports.devApp",

@@ -3,6 +3,9 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 import { eventBus } from "../events/index.ts";
 import { kubeClient } from "../kubernetes/index.ts";
 import type {
+  AcpBridgeSession,
+  AcpBridgeSessionDeleteResult,
+  AcpBridgeSessionSpec,
   AgentHealth,
   BatchExecResult,
   Command,
@@ -327,5 +330,41 @@ export class AgentClient {
       `/terminal/sessions/${sessionId}`,
       { method: "DELETE" },
     );
+  }
+
+  /**
+   * Spawn an ACP harness subprocess in the pod and return the bridge session
+   * handle. The manager then opens a WebSocket to the ACP bridge port and
+   * speaks ACP JSON-RPC (see AgentDispatch).
+   */
+  async acpSessionCreate(
+    sandboxId: string,
+    spec: AcpBridgeSessionSpec = {},
+  ): Promise<AcpBridgeSession> {
+    return this.post<AcpBridgeSession>(sandboxId, "/acp/sessions", spec, 15000);
+  }
+
+  async acpSessionDelete(
+    sandboxId: string,
+    sessionId: string,
+  ): Promise<AcpBridgeSessionDeleteResult> {
+    return this.request<AcpBridgeSessionDeleteResult>(
+      sandboxId,
+      `/acp/sessions/${sessionId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /**
+   * Resolve the WebSocket URL for an ACP bridge session. The bridge listens on
+   * its own port (config.ports.acp), separate from the agent control plane.
+   */
+  async acpWebSocketUrl(
+    sandboxId: string,
+    sessionId: string,
+    acpPort: number,
+  ): Promise<string> {
+    const podIp = await this.resolvePodIp(sandboxId);
+    return `ws://${podIp}:${acpPort}/${sessionId}`;
   }
 }

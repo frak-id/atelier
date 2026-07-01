@@ -5,6 +5,7 @@ import {
   toolIngressName as kubeToolIngressName,
   toolHost,
 } from "../../infrastructure/kubernetes/index.ts";
+import { resolveHarness } from "../../shared/agent/harness-adapter.ts";
 import { config } from "../../shared/lib/config.ts";
 
 /**
@@ -136,6 +137,32 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         enabled: true,
       },
     }),
+  },
+  {
+    // ACP stdio<->WebSocket bridge. The in-pod agent (acp.rs) starts the WS
+    // listener from this entry and spawns the harness per session on demand,
+    // so there's nothing for the manager to start (managedBy: agent). The
+    // command/user/workdir/env here are the per-session harness launch
+    // template the bridge reads; harness-driven so swapping the agent is an
+    // adapter change, not a registry edit.
+    slug: "acp",
+    name: "ACP Bridge",
+    start: "boot",
+    managedBy: "agent",
+    autoStartServices: [],
+    buildServices: (ctx) => {
+      const harness = resolveHarness(undefined);
+      return {
+        acp: {
+          port: config.ports.acp,
+          enabled: true,
+          command: harness.acpCommand(),
+          user: "dev",
+          workdir: ctx.workspaceDir,
+          ...(ctx.opencodeEnv && { env: ctx.opencodeEnv }),
+        },
+      };
+    },
   },
   {
     slug: "browser",
