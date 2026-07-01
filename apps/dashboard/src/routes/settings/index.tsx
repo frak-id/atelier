@@ -20,7 +20,6 @@ import {
   CLIProxySection,
   ConfigFileCard,
   RestartSandboxesDialog,
-  SessionTemplatesSection,
   SharedAuthSection,
 } from "@/components/settings";
 import { SshKeysSection } from "@/components/ssh-keys-section";
@@ -247,10 +246,9 @@ function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* Agent & Models — session templates */}
+        {/* Agent & Models */}
         <TabsContent value="agent" className="mt-6 space-y-6">
           <CLIProxySection />
-          <SessionTemplatesSection />
         </TabsContent>
       </Tabs>
       <RestartSandboxesDialog

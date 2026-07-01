@@ -21,7 +21,6 @@ import {
   OrganizationService,
 } from "./modules/organization/index.ts";
 import { SandboxRepository } from "./modules/sandbox/index.ts";
-import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SettingsRepository } from "./modules/settings/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { UserRepository, UserService } from "./modules/user/index.ts";
@@ -108,12 +107,6 @@ const sandboxPorts: SandboxPorts = {
   cliproxy: cliProxyService,
 };
 
-const sessionTemplateService = new SessionTemplateService(
-  settingsRepository,
-  workspaceService,
-  sandboxService,
-);
-
 /* -------------------------------------------------------------------------- */
 /*                                Orchestrators                               */
 /* -------------------------------------------------------------------------- */
@@ -162,7 +155,6 @@ export {
   sandboxLifecycle,
   sandboxService,
   sandboxSpawner,
-  sessionTemplateService,
   sshKeyService,
   userService,
   workspaceService,

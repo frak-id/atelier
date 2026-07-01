@@ -7,7 +7,6 @@ export * from "./image.ts";
 export * from "./organization.ts";
 export * from "./public-config.ts";
 export * from "./sandbox.ts";
-export * from "./session-template.ts";
 export * from "./ssh-key.ts";
 export * from "./system.ts";
 export * from "./well-known.ts";

@@ -1,7 +1,6 @@
 import { DEFAULTS } from "@frak/atelier-shared/constants";
 import type { Static } from "elysia";
 import { t } from "elysia";
-import { SessionTemplatesSchema } from "./session-template.ts";
 
 export const PrebuildStatusSchema = t.Union([
   t.Literal("none"),
@@ -83,7 +82,6 @@ export const WorkspaceConfigSchema = t.Object({
   fileSecrets: t.Optional(t.Array(FileSecretSchema, { default: [] })),
   repos: t.Array(RepoConfigSchema, { default: [] }),
   prebuild: t.Optional(PrebuildInfoSchema),
-  sessionTemplates: t.Optional(SessionTemplatesSchema),
   // Legacy multi-command dev config, superseded by `dev`. Read-only for
   // existing workspace blobs via resolveDevConfig(); not written anymore.
   devCommands: t.Optional(t.Array(DevCommandSchema, { default: [] })),

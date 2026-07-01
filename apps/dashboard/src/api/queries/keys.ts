@@ -90,21 +90,6 @@ export const queryKeys = {
     all: ["apiKeys"] as const,
     list: () => ["apiKeys", "list"] as const,
   },
-  sessionTemplates: {
-    all: ["sessionTemplates"] as const,
-    global: ["sessionTemplates", "global"] as const,
-    workspace: (workspaceId: string) =>
-      ["sessionTemplates", "workspace", workspaceId] as const,
-    workspaceOverride: (workspaceId: string) =>
-      ["sessionTemplates", "workspaceOverride", workspaceId] as const,
-    opencodeConfig: (workspaceId: string) =>
-      ["sessionTemplates", "opencodeConfig", workspaceId] as const,
-    opencodeConfigGlobal: [
-      "sessionTemplates",
-      "opencodeConfig",
-      "global",
-    ] as const,
-  },
   cliproxy: {
     all: ["cliproxy"] as const,
     status: ["cliproxy", "status"] as const,

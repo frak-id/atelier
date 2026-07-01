@@ -60,9 +60,6 @@ function handleEvent(event: ManagerEvent, queryClient: QueryClient): void {
           queryKey: queryKeys.workspaces.detail(properties.id),
         });
       }
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sessionTemplates.all,
-      });
       break;
 
     case "config.created":

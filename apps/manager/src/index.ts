@@ -16,7 +16,6 @@ import {
   organizationRoutes,
   publicConfigRoutes,
   sandboxRoutes,
-  sessionTemplateRoutes,
   sharedAuthRoutes,
   sshKeyRoutes,
   systemRoutes,
@@ -215,7 +214,6 @@ const app = new Elysia()
       .use(sandboxRoutes)
       .use(agentFacadeRoutes)
       .use(workspaceRoutes)
-      .use(sessionTemplateRoutes)
       .use(configFileRoutes)
       .use(sharedAuthRoutes)
       .use(sshKeyRoutes)

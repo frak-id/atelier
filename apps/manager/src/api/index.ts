@@ -14,7 +14,6 @@ export { organizationRoutes } from "./organization.routes.ts";
 export { publicConfigRoutes } from "./public-config.routes.ts";
 export { agentFacadeRoutes } from "./sandboxes/agent-facade.routes.ts";
 export { sandboxRoutes } from "./sandboxes/index.ts";
-export { sessionTemplateRoutes } from "./session-template.routes.ts";
 export { sharedAuthRoutes } from "./shared-auth.routes.ts";
 export { sshKeyRoutes } from "./ssh-key.routes.ts";
 export { systemRoutes } from "./system.routes.ts";

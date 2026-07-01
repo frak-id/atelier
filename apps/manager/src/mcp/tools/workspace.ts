@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
-import { sessionTemplateService, workspaceService } from "../../container.ts";
+import { workspaceService } from "../../container.ts";
 import type { RepoConfig, Workspace } from "../../schemas/index.ts";
 
 function repoUrl(repo: RepoConfig): string {
@@ -21,14 +21,6 @@ function formatWorkspace(ws: Workspace) {
     workdir: d.workdir,
   }));
 
-  const { templates } = sessionTemplateService.getMergedTemplates(ws.id);
-  const sessionTemplatesSummary = templates.map((t) => ({
-    id: t.id,
-    name: t.name,
-    category: t.category,
-    description: t.description,
-  }));
-
   return {
     id: ws.id,
     name: ws.name,
@@ -36,7 +28,6 @@ function formatWorkspace(ws: Workspace) {
     defaultBranch: repos[0]?.branch ?? null,
     repos,
     devCommands,
-    sessionTemplates: sessionTemplatesSummary,
     baseImage: ws.config.baseImage,
     vcpus: ws.config.vcpus,
     memoryMb: ws.config.memoryMb,
@@ -49,9 +40,9 @@ export function registerWorkspaceTools(server: McpServer): void {
     {
       title: "List Workspaces",
       description:
-        "List all configured workspaces with their repos, dev commands, " +
-        "and session templates. Use this to understand which projects " +
-        "are available and how they are configured.",
+        "List all configured workspaces with their repos and dev commands. " +
+        "Use this to understand which projects are available and how " +
+        "they are configured.",
       inputSchema: z.object({}),
     },
     async () => {

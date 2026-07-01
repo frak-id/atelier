@@ -53,7 +53,6 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { WorkspaceSessionTemplatesSection } from "@/components/workspace-session-templates";
 import { cn, formatDate } from "@/lib/utils";
 import { useDrawer } from "@/providers/drawer-provider";
 
@@ -427,10 +426,6 @@ function WorkspaceDetailPage() {
             )}
           </CardContent>
         </Card>
-
-        <div className="lg:col-span-2">
-          <WorkspaceSessionTemplatesSection workspaceId={id} />
-        </div>
       </div>
 
       <Card className="border-destructive/50">
