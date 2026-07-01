@@ -9,7 +9,7 @@ type TaskSessionHierarchyProps = {
   hierarchy: SessionNode[];
   taskSessions: TaskSession[];
   interactions: SessionInteractionState[];
-  opencodeUrl: string | undefined;
+  agentUrl: string | undefined;
   directory: string;
 };
 
@@ -17,14 +17,14 @@ export function TaskSessionHierarchy({
   hierarchy,
   taskSessions,
   interactions,
-  opencodeUrl,
+  agentUrl,
   directory,
 }: TaskSessionHierarchyProps) {
   return (
     <SessionHierarchy
       hierarchy={hierarchy}
       interactions={interactions}
-      opencodeUrl={opencodeUrl}
+      agentUrl={agentUrl}
       directory={directory}
       labelFn={(node) => {
         const taskSession = taskSessions.find(

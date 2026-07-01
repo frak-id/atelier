@@ -1,6 +1,6 @@
 import type { AgentSession } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { opencodeSessionsQuery, sandboxListQuery } from "@/api/queries";
+import { agentSessionsQuery, sandboxListQuery } from "@/api/queries";
 
 export type SessionWithSandbox = AgentSession & {
   sandbox: {
@@ -9,7 +9,7 @@ export type SessionWithSandbox = AgentSession & {
   };
 };
 
-export function useAllOpenCodeSessions() {
+export function useAllAgentSessions() {
   const { data: sandboxes, isLoading: sandboxesLoading } = useQuery(
     sandboxListQuery(),
   );
@@ -19,7 +19,7 @@ export function useAllOpenCodeSessions() {
 
   const sessionQueries = useQueries({
     queries: runningSandboxes.map((sandbox) => ({
-      ...opencodeSessionsQuery(sandbox.id),
+      ...agentSessionsQuery(sandbox.id),
       select: (sessions: AgentSession[]) =>
         sessions.map((session) => ({
           ...session,

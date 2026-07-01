@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Bot, Monitor, Trash2 } from "lucide-react";
 import type { Sandbox } from "@/api/client";
-import { opencodeSessionsQuery, useDeleteSandbox } from "@/api/queries";
+import { agentSessionsQuery, useDeleteSandbox } from "@/api/queries";
 import { IntegrationSourceBadge } from "@/components/integration-source-badge";
 import { SandboxCreator } from "@/components/sandbox-creator";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +29,7 @@ export function SandboxRow({
   const deleteMutation = useDeleteSandbox();
 
   const { data: sessions } = useQuery({
-    ...opencodeSessionsQuery(sandbox.id),
+    ...agentSessionsQuery(sandbox.id),
     enabled: sandbox.status === "running",
   });
   const sessionCount = sessions?.length ?? 0;

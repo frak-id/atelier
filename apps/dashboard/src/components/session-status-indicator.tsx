@@ -18,7 +18,7 @@ import {
 import type {
   MappedSessionStatus,
   SessionInteractionInfo,
-} from "@/lib/opencode-helpers";
+} from "@/lib/agent-helpers";
 import { cn } from "@/lib/utils";
 
 export type { SessionInteractionInfo };

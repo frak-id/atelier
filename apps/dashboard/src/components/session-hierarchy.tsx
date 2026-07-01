@@ -27,7 +27,7 @@ import {
 import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
 import { getQuestionDisplayText } from "@/lib/intervention-helpers";
 import type { SessionNode } from "@/lib/session-hierarchy";
-import { buildOpenCodeSessionUrl, cn } from "@/lib/utils";
+import { buildAgentSessionUrl, cn } from "@/lib/utils";
 
 function collectAllSessionIds(node: SessionNode): Set<string> {
   const ids = new Set<string>([node.session.id]);
@@ -268,12 +268,12 @@ function PendingInterventionLines({
 const ChildSessionRow = memo(function ChildSessionRow({
   node,
   interactions,
-  opencodeUrl,
+  agentUrl,
   directory,
 }: {
   node: SessionNode;
   interactions: SessionInteractionState[];
-  opencodeUrl: string | undefined;
+  agentUrl: string | undefined;
   directory: string;
 }) {
   const session = node.session;
@@ -284,8 +284,8 @@ const ChildSessionRow = memo(function ChildSessionRow({
   const currentTodo = todos.find((t) => t.status === "in_progress");
 
   const sessionUrl =
-    opencodeUrl && directory
-      ? buildOpenCodeSessionUrl(opencodeUrl, directory, session.id)
+    agentUrl && directory
+      ? buildAgentSessionUrl(agentUrl, directory, session.id)
       : undefined;
 
   return (
@@ -345,7 +345,7 @@ const ChildSessionRow = memo(function ChildSessionRow({
               key={child.session.id}
               node={child}
               interactions={interactions}
-              opencodeUrl={opencodeUrl}
+              agentUrl={agentUrl}
               directory={directory}
             />
           ))}
@@ -358,13 +358,13 @@ const ChildSessionRow = memo(function ChildSessionRow({
 const RootSessionAccordion = memo(function RootSessionAccordion({
   node,
   interactions,
-  opencodeUrl,
+  agentUrl,
   directory,
   sessionLabel,
 }: {
   node: SessionNode;
   interactions: SessionInteractionState[];
-  opencodeUrl: string | undefined;
+  agentUrl: string | undefined;
   directory: string;
   sessionLabel?: string;
 }) {
@@ -384,8 +384,8 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
   );
 
   const sessionUrl =
-    opencodeUrl && directory
-      ? buildOpenCodeSessionUrl(opencodeUrl, directory, session.id)
+    agentUrl && directory
+      ? buildAgentSessionUrl(agentUrl, directory, session.id)
       : undefined;
 
   const displayName =
@@ -487,7 +487,7 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
                     key={child.session.id}
                     node={child}
                     interactions={interactions}
-                    opencodeUrl={opencodeUrl}
+                    agentUrl={agentUrl}
                     directory={directory}
                   />
                 ))}
@@ -503,7 +503,7 @@ const RootSessionAccordion = memo(function RootSessionAccordion({
 export type SessionHierarchyProps = {
   hierarchy: SessionNode[];
   interactions: SessionInteractionState[];
-  opencodeUrl: string | undefined;
+  agentUrl: string | undefined;
   directory: string;
   filterFn?: (node: SessionNode) => boolean;
   labelFn?: (node: SessionNode) => string | undefined;
@@ -512,7 +512,7 @@ export type SessionHierarchyProps = {
 export function SessionHierarchy({
   hierarchy,
   interactions,
-  opencodeUrl,
+  agentUrl,
   directory,
   filterFn,
   labelFn,
@@ -530,7 +530,7 @@ export function SessionHierarchy({
           key={node.session.id}
           node={node}
           interactions={interactions}
-          opencodeUrl={opencodeUrl}
+          agentUrl={agentUrl}
           directory={directory}
           sessionLabel={labelFn?.(node)}
         />

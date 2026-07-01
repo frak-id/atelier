@@ -2,20 +2,20 @@ import type { Task } from "@frak/atelier-manager/types";
 import type { AgentSession, AgentTodo } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { opencodeSessionsQuery, opencodeTodosQuery } from "@/api/queries";
+import { agentSessionsQuery, agentTodosQuery } from "@/api/queries";
 import {
   type AggregatedInteractionState,
   aggregateInteractions,
   type MappedSessionStatus,
   type SessionInteractionInfo,
-} from "@/lib/opencode-helpers";
+} from "@/lib/agent-helpers";
 import type { SessionWithSandboxInfo } from "@/lib/session-hierarchy";
 import {
   buildSessionHierarchy,
   flattenHierarchy,
   type SessionNode,
 } from "@/lib/session-hierarchy";
-import { useOpencodeData } from "./use-opencode-data";
+import { useAgentData } from "./use-agent-data";
 
 export type { AggregatedInteractionState, MappedSessionStatus };
 
@@ -66,7 +66,7 @@ export function useTaskSessionProgress(
   enabled = true,
 ): TaskSessionProgressResult {
   const { data: sessions, isLoading: isSessionsLoading } = useQuery({
-    ...opencodeSessionsQuery(sandboxId ?? ""),
+    ...agentSessionsQuery(sandboxId ?? ""),
     enabled: enabled && !!sandboxId,
   });
 
@@ -75,7 +75,7 @@ export function useTaskSessionProgress(
     questions,
     sessionStatuses,
     isLoading: isInteractionsLoading,
-  } = useOpencodeData(sandboxId, enabled);
+  } = useAgentData(sandboxId, enabled);
 
   const hierarchyData = useMemo(() => {
     const taskSessionIds = new Set(
@@ -108,7 +108,7 @@ export function useTaskSessionProgress(
 
   const todosResults = useQueries({
     queries: hierarchyData.allSessionIds.map((sessionId) => ({
-      ...opencodeTodosQuery(sandboxId ?? "", sessionId),
+      ...agentTodosQuery(sandboxId ?? "", sessionId),
       enabled: enabled && !!sandboxId && !!sessionId,
     })),
   });

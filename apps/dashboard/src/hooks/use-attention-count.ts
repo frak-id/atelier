@@ -5,21 +5,21 @@ import type {
 } from "@frak/atelier-shared";
 import { useQueries } from "@tanstack/react-query";
 import {
-  opencodePermissionsQuery,
-  opencodeQuestionsQuery,
-  opencodeSessionStatusesQuery,
+  agentPermissionsQuery,
+  agentQuestionsQuery,
+  agentSessionStatusesQuery,
 } from "@/api/queries";
-import { aggregateInteractions } from "@/lib/opencode-helpers";
-import { useAllOpenCodeSessions } from "./use-all-opencode-sessions";
+import { aggregateInteractions } from "@/lib/agent-helpers";
+import { useAllAgentSessions } from "./use-all-agent-sessions";
 
 export function useAttentionCount() {
-  const { runningSandboxes, sessions } = useAllOpenCodeSessions();
+  const { runningSandboxes, sessions } = useAllAgentSessions();
 
   const queries = runningSandboxes.flatMap((sandbox) => {
     return [
-      opencodePermissionsQuery(sandbox.id),
-      opencodeQuestionsQuery(sandbox.id),
-      opencodeSessionStatusesQuery(sandbox.id),
+      agentPermissionsQuery(sandbox.id),
+      agentQuestionsQuery(sandbox.id),
+      agentSessionStatusesQuery(sandbox.id),
     ] as const;
   });
 

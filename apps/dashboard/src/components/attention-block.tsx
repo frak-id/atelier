@@ -13,12 +13,6 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useState } from "react";
-import { toast } from "sonner";
-import {
-  useRejectQuestion,
-  useReplyPermission,
-  useReplyQuestion,
-} from "@/api/queries/agent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,6 +22,10 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import {
+  usePermissionAction,
+  useQuestionAction,
+} from "@/hooks/use-intervention-actions";
 import {
   formatSessionId,
   getQuestionDisplayText,
@@ -94,31 +92,7 @@ function PermissionRow({
   permission: AgentPermissionRequest;
   sandboxId: string;
 }) {
-  const replyMutation = useReplyPermission(sandboxId);
-  const [clickedAction, setClickedAction] = useState<"once" | "reject" | null>(
-    null,
-  );
-
-  const handleReply = (reply: "once" | "reject") => {
-    setClickedAction(reply);
-    replyMutation.mutate(
-      { requestID: permission.id, reply },
-      {
-        onSuccess: () => {
-          toast.success(
-            reply === "once" ? "Permission approved" : "Permission denied",
-          );
-        },
-        onError: (error) => {
-          setClickedAction(null);
-          const is404 = error instanceof Error && error.message.includes("404");
-          toast.error(is404 ? "Permission request expired" : "Failed to reply");
-        },
-      },
-    );
-  };
-
-  const isPending = replyMutation.isPending;
+  const { reply, isPending, clickedAction } = usePermissionAction(sandboxId);
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 py-3">
@@ -137,7 +111,7 @@ function PermissionRow({
           variant="default"
           className="h-7 text-xs gap-1 px-2.5"
           disabled={isPending}
-          onClick={() => handleReply("once")}
+          onClick={() => reply(permission.id, "once")}
         >
           {isPending && clickedAction === "once" ? (
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -151,7 +125,7 @@ function PermissionRow({
           variant="destructive"
           className="h-7 text-xs gap-1 px-2.5"
           disabled={isPending}
-          onClick={() => handleReply("reject")}
+          onClick={() => reply(permission.id, "reject")}
         >
           {isPending && clickedAction === "reject" ? (
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -180,8 +154,8 @@ function QuestionRow({
   );
   const [currentIdx, setCurrentIdx] = useState(0);
 
-  const replyMutation = useReplyQuestion(sandboxId);
-  const rejectMutation = useRejectQuestion(sandboxId);
+  const { submit, skip, isReplyPending, isRejectPending, isPending } =
+    useQuestionAction(sandboxId);
 
   const totalQuestions = question.questions.length;
   const isLastQuestion = currentIdx >= totalQuestions - 1;
@@ -194,28 +168,12 @@ function QuestionRow({
       if (custom) result.push(custom);
       return result;
     });
-
-    replyMutation.mutate(
-      { requestID: question.id, answers },
-      {
-        onSuccess: () => toast.success("Answer submitted"),
-        onError: (error) => {
-          const is404 = error instanceof Error && error.message.includes("404");
-          toast.error(is404 ? "Question expired" : "Failed to submit answer");
-        },
-      },
-    );
-  }, [question, selections, customInputs, replyMutation]);
+    submit(question.id, answers);
+  }, [question, selections, customInputs, submit]);
 
   const handleSkip = useCallback(() => {
-    rejectMutation.mutate(question.id, {
-      onSuccess: () => toast.success("Question skipped"),
-      onError: (error) => {
-        const is404 = error instanceof Error && error.message.includes("404");
-        toast.error(is404 ? "Question expired" : "Failed to skip question");
-      },
-    });
-  }, [question.id, rejectMutation]);
+    skip(question.id);
+  }, [question.id, skip]);
 
   const toggleOption = useCallback(
     (questionIdx: number, label: string, multiple: boolean) => {
@@ -264,8 +222,6 @@ function QuestionRow({
     },
     [selections, customInputs],
   );
-
-  const isPending = replyMutation.isPending || rejectMutation.isPending;
 
   const qi = question.questions[currentIdx];
   const isMultiple = qi?.multiple ?? false;
@@ -432,7 +388,7 @@ function QuestionRow({
                 disabled={isPending}
                 onClick={handleSkip}
               >
-                {rejectMutation.isPending ? (
+                {isRejectPending ? (
                   <Loader2 className="h-3 w-3 animate-spin mr-1" />
                 ) : null}
                 Skip
@@ -445,7 +401,7 @@ function QuestionRow({
                   disabled={isPending}
                   onClick={handleSubmit}
                 >
-                  {replyMutation.isPending ? (
+                  {isReplyPending ? (
                     <Loader2 className="h-3 w-3 animate-spin mr-1" />
                   ) : (
                     <Check className="h-3 w-3 mr-1" />

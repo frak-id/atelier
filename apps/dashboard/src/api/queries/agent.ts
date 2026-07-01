@@ -1,58 +1,58 @@
 import { queryOptions, useMutation } from "@tanstack/react-query";
 import {
   abortSession,
-  deleteOpenCodeSession,
-  fetchOpenCodePermissions,
-  fetchOpenCodeQuestions,
-  fetchOpenCodeSessions,
-  fetchOpenCodeTodos,
-  getOpenCodeSessionStatuses,
+  deleteAgentSession,
+  fetchAgentPermissions,
+  fetchAgentQuestions,
+  fetchAgentSessions,
+  fetchAgentTodos,
+  getAgentSessionStatuses,
   rejectQuestion,
   replyPermission,
   replyQuestion,
 } from "../agent";
 import { queryKeys } from "./keys";
 
-export const opencodeSessionsQuery = (sandboxId: string) =>
+export const agentSessionsQuery = (sandboxId: string) =>
   queryOptions({
     queryKey: queryKeys.agent.sessions(sandboxId),
-    queryFn: () => fetchOpenCodeSessions(sandboxId),
+    queryFn: () => fetchAgentSessions(sandboxId),
     enabled: !!sandboxId,
   });
 
-export const opencodePermissionsQuery = (sandboxId: string) =>
+export const agentPermissionsQuery = (sandboxId: string) =>
   queryOptions({
     queryKey: queryKeys.agent.permissions(sandboxId),
-    queryFn: () => fetchOpenCodePermissions(sandboxId),
+    queryFn: () => fetchAgentPermissions(sandboxId),
     enabled: !!sandboxId,
   });
 
-export const opencodeQuestionsQuery = (sandboxId: string) =>
+export const agentQuestionsQuery = (sandboxId: string) =>
   queryOptions({
     queryKey: queryKeys.agent.questions(sandboxId),
-    queryFn: () => fetchOpenCodeQuestions(sandboxId),
+    queryFn: () => fetchAgentQuestions(sandboxId),
     enabled: !!sandboxId,
   });
 
-export const opencodeSessionStatusesQuery = (sandboxId: string) =>
+export const agentSessionStatusesQuery = (sandboxId: string) =>
   queryOptions({
     queryKey: queryKeys.agent.sessionStatuses(sandboxId),
-    queryFn: () => getOpenCodeSessionStatuses(sandboxId),
+    queryFn: () => getAgentSessionStatuses(sandboxId),
     enabled: !!sandboxId,
   });
 
-export const opencodeTodosQuery = (sandboxId: string, sessionId: string) =>
+export const agentTodosQuery = (sandboxId: string, sessionId: string) =>
   queryOptions({
     queryKey: queryKeys.agent.todos(sandboxId, sessionId),
-    queryFn: () => fetchOpenCodeTodos(sandboxId, sessionId),
+    queryFn: () => fetchAgentTodos(sandboxId, sessionId),
     enabled: !!sandboxId && !!sessionId,
   });
 
-export function useDeleteOpenCodeSession(sandboxId: string) {
+export function useDeleteAgentSession(sandboxId: string) {
   return useMutation({
     mutationKey: ["agent", "deleteSession", sandboxId],
     mutationFn: (sessionId: string) =>
-      deleteOpenCodeSession(sandboxId, sessionId),
+      deleteAgentSession(sandboxId, sessionId),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.agent.sessions(sandboxId),

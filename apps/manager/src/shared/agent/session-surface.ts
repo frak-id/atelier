@@ -64,8 +64,3 @@ export interface HarnessSessionSurface {
     onEvent: (event: Omit<AgentEvent, "sandboxId">) => void,
   ): Promise<void>;
 }
-
-/** Builds a session surface for a resolved sandbox connection. */
-export type HarnessSessionSurfaceFactory = (
-  conn: AgentConnection,
-) => HarnessSessionSurface;

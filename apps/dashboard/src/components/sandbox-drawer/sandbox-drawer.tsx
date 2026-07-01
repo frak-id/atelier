@@ -52,7 +52,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useOpencodeData } from "@/hooks/use-opencode-data";
+import { useAgentData } from "@/hooks/use-agent-data";
 import { sortToolsForDisplay } from "@/lib/tools";
 import { formatDate, getWorkspaceDirectory } from "@/lib/utils";
 import { QuickConnectCard } from "./quick-connect-card";
@@ -429,7 +429,7 @@ export function SandboxDrawer({
 
                     <QuickConnectCard
                       sandboxId={sandbox.id}
-                      opencodeUrl={sandbox.runtime.urls.agent}
+                      agentUrl={sandbox.runtime.urls.agent}
                       agentPassword={sandbox.runtime.agentPassword}
                       workspaceDir={workspaceDir}
                     />
@@ -462,7 +462,7 @@ export function SandboxDrawer({
                       </TabsContent>
                       <TabsContent value="sessions" className="mt-4">
                         <SessionsTab
-                          opencodeUrl={sandbox.runtime.urls?.agent}
+                          agentUrl={sandbox.runtime.urls?.agent}
                           sandboxId={sandbox.id}
                           workspaceId={sandbox.workspaceId}
                           workspace={workspace}
@@ -570,7 +570,7 @@ export function SandboxDrawer({
 }
 
 function SandboxAttentionSection({ sandboxId }: { sandboxId: string }) {
-  const { permissions, questions } = useOpencodeData(sandboxId);
+  const { permissions, questions } = useAgentData(sandboxId);
 
   if (permissions.length === 0 && questions.length === 0) {
     return null;

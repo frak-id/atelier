@@ -90,7 +90,7 @@ export function getWorkspaceDirectory(
   return VM_WORKSPACE_DIR;
 }
 
-export function buildOpenCodeSessionUrl(
+export function buildAgentSessionUrl(
   baseUrl: string,
   directory: string,
   sessionId: string,

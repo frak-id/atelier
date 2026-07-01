@@ -4,8 +4,8 @@ import type {
 } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
-  opencodePermissionsQuery,
-  opencodeQuestionsQuery,
+  agentPermissionsQuery,
+  agentQuestionsQuery,
   sandboxListQuery,
   useWorkspaceMap,
 } from "@/api/queries";
@@ -40,11 +40,11 @@ export function useAttentionData() {
     queries: runningSandboxes.flatMap((sandbox) => {
       return [
         {
-          ...opencodePermissionsQuery(sandbox.id),
+          ...agentPermissionsQuery(sandbox.id),
           meta: { sandboxId: sandbox.id, type: "permissions" },
         },
         {
-          ...opencodeQuestionsQuery(sandbox.id),
+          ...agentQuestionsQuery(sandbox.id),
           meta: { sandboxId: sandbox.id, type: "questions" },
         },
       ];

@@ -199,8 +199,13 @@ export async function bootExistingSandbox(
     workspace?.config.baseImage,
     workspace?.config.prebuild,
   );
-  const agentPassword =
-    sandbox.runtime.agentPassword ?? generatePassword(32);
+  const agentPassword = sandbox.runtime.agentPassword ?? generatePassword(32);
+  // Persist the password baked into the pod env back onto runtime, so
+  // finalizeRestartedSandbox stores it and later authenticated reads
+  // (forward-auth, task-spawner, session surface) match the live pod. Mirrors
+  // the ipAddress write-back below; without it a regenerated fallback would be
+  // thrown away and the sandbox would be permanently unreachable.
+  sandbox.runtime.agentPassword = agentPassword;
 
   await deleteRestartableSandboxResources(sandboxId, configMapName);
 

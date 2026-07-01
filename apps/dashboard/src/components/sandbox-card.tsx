@@ -16,7 +16,7 @@ import {
 import type { Sandbox, Workspace } from "@/api/client";
 import {
   deriveToolStatus,
-  opencodeSessionsQuery,
+  agentSessionsQuery,
   organizationListQuery,
   sandboxGitStatusQuery,
   sandboxToolsQuery,
@@ -39,7 +39,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useOpencodeData } from "@/hooks/use-opencode-data";
+import { useAgentData } from "@/hooks/use-agent-data";
 import { sortToolsForDisplay } from "@/lib/tools";
 import { formatRelativeTime } from "@/lib/utils";
 import { ToolIconButton } from "./sandbox-drawer/tool-button";
@@ -438,9 +438,9 @@ function RunningToolsBadge({
 
 function SandboxActivitySummary({ sandboxId }: { sandboxId: string }) {
   const { sessionStatuses, permissions, questions } =
-    useOpencodeData(sandboxId);
+    useAgentData(sandboxId);
   const { data: sessions } = useQuery({
-    ...opencodeSessionsQuery(sandboxId),
+    ...agentSessionsQuery(sandboxId),
     enabled: !!sandboxId,
   });
 

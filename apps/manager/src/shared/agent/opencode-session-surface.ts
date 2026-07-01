@@ -13,10 +13,12 @@ import type {
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2";
+import { createChildLogger } from "../lib/logger.ts";
 import {
   createSandboxOpencodeClient,
   type SandboxOpencodeClient,
 } from "../lib/opencode-client.ts";
+import { openOpencodeSession } from "../lib/opencode-session.ts";
 import { runOpencodeEventStream } from "../lib/opencode-sse.ts";
 import type {
   AgentConnection,
@@ -24,6 +26,8 @@ import type {
   HarnessSessionSurface,
   InterventionResult,
 } from "./session-surface.ts";
+
+const log = createChildLogger("opencode-session-surface");
 
 // --- SDK -> neutral mappers ---
 
@@ -88,15 +92,11 @@ function toAgentQuestion(q: QuestionRequest): AgentQuestionRequest {
   };
 }
 
-const SESSION_READY_TIMEOUT_MS = 10_000;
-const SESSION_READY_INITIAL_DELAY_MS = 25;
-const SESSION_READY_MAX_DELAY_MS = 200;
-
 /** OpenCode's session surface, over `opencode serve` REST. SDK lives here. */
 export class OpencodeSessionSurface implements HarnessSessionSurface {
   private readonly client: SandboxOpencodeClient;
 
-  constructor(private readonly conn: AgentConnection) {
+  constructor(conn: AgentConnection) {
     this.client = createSandboxOpencodeClient(conn.ipAddress, conn.password);
   }
 
@@ -113,40 +113,21 @@ export class OpencodeSessionSurface implements HarnessSessionSurface {
         sessionID: sessionId,
       });
       return data?.id && !error ? toAgentSession(data) : null;
-    } catch {
+    } catch (err) {
+      log.warn({ sessionId, err }, "getSession failed");
       return null;
     }
   }
 
   async createSession(directory?: string): Promise<CreateSessionResult> {
     try {
-      const { data, error } = await this.client.session.create({ directory });
-      if (error || !data?.id || !data?.directory) {
-        return { error: "Failed to create session" };
-      }
-      await this.waitForSessionReady(data.id);
-      return { sessionId: data.id, directory: data.directory };
+      // Shared create+ready-wait path (also used by the task/start-session
+      // prompt flow), so both session-creation entry points stay in sync.
+      const session = await openOpencodeSession(this.client, { directory });
+      return { sessionId: session.id, directory: session.directory };
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Unknown error" };
     }
-  }
-
-  private async waitForSessionReady(sessionId: string): Promise<void> {
-    const deadline = Date.now() + SESSION_READY_TIMEOUT_MS;
-    let delay = SESSION_READY_INITIAL_DELAY_MS;
-    while (Date.now() < deadline) {
-      try {
-        const { data, error } = await this.client.session.get({
-          sessionID: sessionId,
-        });
-        if (data?.id && !error) return;
-      } catch {
-        // retry until deadline
-      }
-      await Bun.sleep(delay);
-      delay = Math.min(delay * 2, SESSION_READY_MAX_DELAY_MS);
-    }
-    throw new Error(`Session ${sessionId} did not become ready`);
   }
 
   async deleteSession(sessionId: string): Promise<boolean> {
@@ -155,7 +136,8 @@ export class OpencodeSessionSurface implements HarnessSessionSurface {
         sessionID: sessionId,
       });
       return data ?? false;
-    } catch {
+    } catch (err) {
+      log.warn({ sessionId, err }, "deleteSession failed");
       return false;
     }
   }
@@ -166,7 +148,8 @@ export class OpencodeSessionSurface implements HarnessSessionSurface {
         sessionID: sessionId,
       });
       return data ?? false;
-    } catch {
+    } catch (err) {
+      log.warn({ sessionId, err }, "abortSession failed");
       return false;
     }
   }
@@ -203,7 +186,8 @@ export class OpencodeSessionSurface implements HarnessSessionSurface {
       });
       if (error) return { ok: false, status: response?.status };
       return { ok: data ?? false };
-    } catch {
+    } catch (err) {
+      log.warn({ requestId, err }, "replyPermission failed");
       return { ok: false };
     }
   }
@@ -224,7 +208,8 @@ export class OpencodeSessionSurface implements HarnessSessionSurface {
       });
       if (error) return { ok: false, status: response?.status };
       return { ok: data ?? false };
-    } catch {
+    } catch (err) {
+      log.warn({ requestId, err }, "replyQuestion failed");
       return { ok: false };
     }
   }
@@ -236,7 +221,8 @@ export class OpencodeSessionSurface implements HarnessSessionSurface {
       });
       if (error) return { ok: false, status: response?.status };
       return { ok: data ?? false };
-    } catch {
+    } catch (err) {
+      log.warn({ requestId, err }, "rejectQuestion failed");
       return { ok: false };
     }
   }
@@ -255,8 +241,9 @@ export class OpencodeSessionSurface implements HarnessSessionSurface {
   ): Promise<void> {
     await runOpencodeEventStream({
       signal,
-      getClient: () =>
-        createSandboxOpencodeClient(this.conn.ipAddress, this.conn.password),
+      // conn is fixed for this surface's lifetime (a fresh surface is built per
+      // request), so reuse the client instead of rebuilding it on every reconnect.
+      getClient: () => this.client,
       onEvent: (event) => {
         const mapped = mapEvent(event);
         if (mapped) onEvent(mapped);

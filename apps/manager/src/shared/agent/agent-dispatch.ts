@@ -1,7 +1,8 @@
 import {
-  type Client,
-  ClientSideConnection,
+  type ClientConnection,
+  client,
   type McpServer,
+  methods,
   PROTOCOL_VERSION,
   type PromptResponse,
   type RequestPermissionRequest,
@@ -20,6 +21,16 @@ import {
 } from "./harness-adapter.ts";
 
 const log = createChildLogger("agent-dispatch");
+
+/**
+ * Deadline for the ACP handshake/config calls (initialize, session/new,
+ * set_config_option). These are expected to be fast; a hung harness process
+ * keeps the WebSocket open, so `connection.closed` never fires — without a
+ * deadline the caller would block forever. `session/prompt` is deliberately
+ * NOT timed out: a turn legitimately runs for minutes and is bounded instead
+ * by `cancel()` and by transport death rejecting the pending request.
+ */
+const ACP_HANDSHAKE_TIMEOUT_MS = 30_000;
 
 export interface AgentSessionCallbacks {
   /** Fired for every ACP `session/update` (plan, message chunk, tool call, …). */
@@ -59,24 +70,26 @@ export interface AgentSession {
   close(): Promise<void>;
 }
 
-class DispatchClient implements Client {
-  constructor(private readonly callbacks: AgentSessionCallbacks) {}
-
-  sessionUpdate(notification: SessionNotification): void {
-    this.callbacks.onUpdate?.(notification);
-  }
-
-  async requestPermission(
-    request: RequestPermissionRequest,
-  ): Promise<RequestPermissionResponse> {
-    if (this.callbacks.onPermission) {
-      return this.callbacks.onPermission(request);
-    }
-    log.warn(
-      { sessionId: request.sessionId },
-      "No permission handler registered; cancelling permission request",
-    );
-    return { outcome: { outcome: "cancelled" } };
+/** Race an ACP round trip against a deadline; on timeout, close the connection
+ * (rejecting any other pending requests) and throw. */
+async function withTimeout<T>(
+  op: Promise<T>,
+  ms: number,
+  connection: ClientConnection,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`ACP ${label} timed out after ${ms}ms`);
+      connection.close(err);
+      reject(err);
+    }, ms);
+  });
+  try {
+    return await Promise.race([op, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -105,6 +118,7 @@ export class AgentDispatch {
   async openSession(input: OpenAgentSessionInput): Promise<AgentSession> {
     const harness = this.deps.harness ?? resolveHarness(undefined);
     const cwd = input.cwd ?? VM.HOME;
+    const callbacks = input.callbacks ?? {};
 
     const bridge = await this.deps.agentClient.acpSessionCreate(
       input.sandboxId,
@@ -117,8 +131,20 @@ export class AgentDispatch {
       config.ports.acp,
     );
     const transport = connectAcpWebSocket(url);
-    const client = new DispatchClient(input.callbacks ?? {});
-    const connection = new ClientSideConnection(() => client, transport.stream);
+
+    const connection = client({ name: "atelier-manager" })
+      .onNotification(methods.client.session.update, (ctx) => {
+        callbacks.onUpdate?.(ctx.params);
+      })
+      .onRequest(methods.client.session.requestPermission, async (ctx) => {
+        if (callbacks.onPermission) return callbacks.onPermission(ctx.params);
+        log.warn(
+          { sessionId: ctx.params.sessionId },
+          "No permission handler registered; cancelling permission request",
+        );
+        return { outcome: { outcome: "cancelled" } };
+      })
+      .connect(transport.stream);
 
     const teardownBridge = async () => {
       transport.close();
@@ -134,14 +160,25 @@ export class AgentDispatch {
 
     try {
       await transport.ready;
-      await connection.initialize({
-        protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: {},
-      });
-      const created = await connection.newSession({
-        cwd,
-        mcpServers: input.mcpServers ?? [],
-      });
+      const acp = connection.agent;
+      await withTimeout(
+        acp.request(methods.agent.initialize, {
+          protocolVersion: PROTOCOL_VERSION,
+          clientCapabilities: {},
+        }),
+        ACP_HANDSHAKE_TIMEOUT_MS,
+        connection,
+        "initialize",
+      );
+      const created = await withTimeout(
+        acp.request(methods.agent.session.new, {
+          cwd,
+          mcpServers: input.mcpServers ?? [],
+        }),
+        ACP_HANDSHAKE_TIMEOUT_MS,
+        connection,
+        "session/new",
+      );
 
       const session: AgentSession = {
         sessionId: created.sessionId,
@@ -156,20 +193,29 @@ export class AgentDispatch {
             ? (harness.sessionConfig?.(selection) ?? [])
             : [];
           for (const { configId, value } of assignments) {
-            await connection.setSessionConfigOption({
-              sessionId: created.sessionId,
-              configId,
-              value,
-            });
+            await withTimeout(
+              acp.request(methods.agent.session.setConfigOption, {
+                sessionId: created.sessionId,
+                configId,
+                value,
+              }),
+              ACP_HANDSHAKE_TIMEOUT_MS,
+              connection,
+              "session/set_config_option",
+            );
           }
-          return connection.prompt({
+          return acp.request(methods.agent.session.prompt, {
             sessionId: created.sessionId,
             prompt: [{ type: "text", text }],
           });
         },
-        cancel: () => connection.cancel({ sessionId: created.sessionId }),
+        cancel: () =>
+          acp.notify(methods.agent.session.cancel, {
+            sessionId: created.sessionId,
+          }),
         close: async () => {
           if (this.sessions.delete(created.sessionId)) {
+            connection.close();
             await teardownBridge();
           }
         },
@@ -197,6 +243,7 @@ export class AgentDispatch {
       );
       return session;
     } catch (err) {
+      connection.close(err);
       await teardownBridge();
       throw err;
     }

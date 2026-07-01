@@ -393,7 +393,7 @@ export function TaskDrawer({
                         hierarchy={hierarchy}
                         taskSessions={taskData.data?.sessions ?? []}
                         interactions={sessionInteractions}
-                        opencodeUrl={sandbox?.runtime?.urls?.agent}
+                        agentUrl={sandbox?.runtime?.urls?.agent}
                         directory={getWorkspaceDirectory(workspace)}
                       />
                     </CardContent>

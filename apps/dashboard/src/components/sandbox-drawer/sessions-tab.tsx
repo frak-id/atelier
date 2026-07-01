@@ -4,15 +4,15 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Bot, Loader2, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { createOpenCodeSession } from "@/api/agent";
-import { opencodeSessionsQuery, opencodeTodosQuery } from "@/api/queries";
+import { createAgentSession } from "@/api/agent";
+import { agentSessionsQuery, agentTodosQuery } from "@/api/queries";
 import { SessionHierarchy } from "@/components/session-hierarchy";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useOpencodeData } from "@/hooks/use-opencode-data";
+import { useAgentData } from "@/hooks/use-agent-data";
 import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
-import { aggregateInteractions } from "@/lib/opencode-helpers";
+import { aggregateInteractions } from "@/lib/agent-helpers";
 import {
   buildSessionHierarchy,
   flattenHierarchy,
@@ -27,12 +27,12 @@ export function SessionsTabBadge({
   workspaceId: string | undefined;
 }) {
   const { data: sessions } = useQuery({
-    ...opencodeSessionsQuery(sandboxId),
+    ...agentSessionsQuery(sandboxId),
     enabled: !!sandboxId,
   });
 
   const { permissions, questions, sessionStatuses } =
-    useOpencodeData(sandboxId);
+    useAgentData(sandboxId);
 
   const needsAttention = useMemo(() => {
     if (!sessions?.length) return false;
@@ -64,12 +64,12 @@ export function SessionsTabBadge({
 }
 
 export function SessionsTab({
-  opencodeUrl,
+  agentUrl,
   sandboxId,
   workspaceId,
   workspace,
 }: {
-  opencodeUrl: string | undefined;
+  agentUrl: string | undefined;
   sandboxId: string;
   workspaceId: string | undefined;
   workspace: Workspace | undefined | null;
@@ -77,12 +77,12 @@ export function SessionsTab({
   const [isCreating, setIsCreating] = useState(false);
 
   const { data: sessions, isLoading: isSessionsLoading } = useQuery({
-    ...opencodeSessionsQuery(sandboxId),
+    ...agentSessionsQuery(sandboxId),
     enabled: !!sandboxId,
   });
 
   const { permissions, questions, sessionStatuses } =
-    useOpencodeData(sandboxId);
+    useAgentData(sandboxId);
 
   const directory = getWorkspaceDirectory(workspace);
 
@@ -106,7 +106,7 @@ export function SessionsTab({
 
   const todosResults = useQueries({
     queries: hierarchyData.allSessionIds.map((sessionId) => ({
-      ...opencodeTodosQuery(sandboxId, sessionId),
+      ...agentTodosQuery(sandboxId, sessionId),
       enabled: !!sandboxId && !!sessionId,
     })),
   });
@@ -145,7 +145,7 @@ export function SessionsTab({
   const handleCreateSession = async () => {
     setIsCreating(true);
     try {
-      const result = await createOpenCodeSession(sandboxId, directory);
+      const result = await createAgentSession(sandboxId, directory);
       if ("error" in result) {
         toast.error(result.error);
       } else {
@@ -156,7 +156,7 @@ export function SessionsTab({
     }
   };
 
-  if (!opencodeUrl) {
+  if (!agentUrl) {
     return (
       <Card>
         <CardContent className="py-8">
@@ -226,7 +226,7 @@ export function SessionsTab({
         <SessionHierarchy
           hierarchy={hierarchyData.hierarchy}
           interactions={sessionInteractions}
-          opencodeUrl={opencodeUrl}
+          agentUrl={agentUrl}
           directory={directory}
         />
       )}

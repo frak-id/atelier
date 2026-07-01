@@ -42,7 +42,9 @@ export function connectAcpWebSocket(url: string): AcpTransport {
   });
 
   ws.addEventListener("message", (event: MessageEvent) => {
-    if (!readableController) return;
+    // Skip once the readable is closed/errored: enqueueing on a settled
+    // controller throws synchronously inside this WS callback (uncaught).
+    if (!readableController || settled) return;
     const data = event.data;
     if (data instanceof ArrayBuffer) {
       readableController.enqueue(new Uint8Array(data));

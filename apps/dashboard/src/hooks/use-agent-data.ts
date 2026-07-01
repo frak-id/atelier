@@ -5,12 +5,12 @@ import type {
 } from "@frak/atelier-shared";
 import { useQueries } from "@tanstack/react-query";
 import {
-  opencodePermissionsQuery,
-  opencodeQuestionsQuery,
-  opencodeSessionStatusesQuery,
+  agentPermissionsQuery,
+  agentQuestionsQuery,
+  agentSessionStatusesQuery,
 } from "@/api/queries";
 
-export interface OpencodeData {
+export interface AgentData {
   permissions: AgentPermissionRequest[];
   questions: AgentQuestionRequest[];
   sessionStatuses: Record<string, AgentSessionStatus>;
@@ -18,25 +18,25 @@ export interface OpencodeData {
   isError: boolean;
 }
 
-export function useOpencodeData(
+export function useAgentData(
   sandboxId: string | undefined,
   enabled = true,
-): OpencodeData {
+): AgentData {
   const isEnabled = enabled && !!sandboxId;
   const id = sandboxId ?? "";
 
   const results = useQueries({
     queries: [
       {
-        ...opencodePermissionsQuery(id),
+        ...agentPermissionsQuery(id),
         enabled: isEnabled,
       },
       {
-        ...opencodeQuestionsQuery(id),
+        ...agentQuestionsQuery(id),
         enabled: isEnabled,
       },
       {
-        ...opencodeSessionStatusesQuery(id),
+        ...agentSessionStatusesQuery(id),
         enabled: isEnabled,
       },
     ],

@@ -8,8 +8,7 @@ import type {
 import { Elysia, sse, t } from "elysia";
 import { orgMemberService } from "../../container.ts";
 import type { Sandbox } from "../../schemas/index.ts";
-import { resolveHarness } from "../../shared/agent/harness-adapter.ts";
-import { resolveSessionSurface } from "../../shared/agent/session-surface.registry.ts";
+import { OpencodeSessionSurface } from "../../shared/agent/opencode-session-surface.ts";
 import { ForbiddenError, NotFoundError } from "../../shared/errors.ts";
 import { authPlugin } from "../../shared/lib/auth.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -17,10 +16,11 @@ import { sandboxIdGuard } from "./guard.ts";
 
 const log = createChildLogger("agent-facade");
 
-/** Resolve the harness session surface for a sandbox (auth applied server-side). */
+/** Resolve the harness session surface for a sandbox (auth applied server-side).
+ * Only opencode exists today; when a second harness lands, branch here on the
+ * sandbox's configured harness. */
 function surfaceFor(sandbox: Sandbox) {
-  const harness = resolveHarness(undefined);
-  return resolveSessionSurface(harness.id, {
+  return new OpencodeSessionSurface({
     ipAddress: sandbox.runtime.ipAddress,
     password: sandbox.runtime.agentPassword,
   });
@@ -154,17 +154,24 @@ export const agentFacadeRoutes = new Elysia({ prefix: "/sandboxes/:id/agent" })
         log.warn({ sandboxId: sandbox.id, err }, "Agent event stream ended");
       });
 
+    // Wake the idle loop on client disconnect once, so `finally` runs and tears
+    // down the upstream subscription. Registering per-iteration would leak a
+    // listener onto request.signal on every idle cycle.
+    request.signal.addEventListener(
+      "abort",
+      () => {
+        notify?.();
+        notify = null;
+      },
+      { once: true },
+    );
+
     let eventId = 0;
     try {
       while (!request.signal.aborted) {
         if (queue.length === 0) {
-          // Cancellable by abort so an idle client disconnect runs `finally`
-          // and tears down the upstream subscription (no leak).
           await new Promise<void>((resolve) => {
             notify = resolve;
-            request.signal.addEventListener("abort", () => resolve(), {
-              once: true,
-            });
           });
           if (request.signal.aborted) break;
         }

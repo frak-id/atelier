@@ -2,8 +2,8 @@ import { useMemo } from "react";
 import {
   getSessionInteraction,
   type SessionInteractionInfo,
-} from "@/lib/opencode-helpers";
-import { useOpencodeData } from "./use-opencode-data";
+} from "@/lib/agent-helpers";
+import { useAgentData } from "./use-agent-data";
 
 export type {
   AgentPermissionRequest as PermissionRequest,
@@ -16,7 +16,7 @@ export function useSessionInteraction(
   enabled = true,
 ): { interaction: SessionInteractionInfo | null; isLoading: boolean } {
   const { permissions, questions, sessionStatuses, isLoading } =
-    useOpencodeData(sandboxId, enabled);
+    useAgentData(sandboxId, enabled);
 
   const interaction = useMemo(() => {
     if (!sandboxId || !enabled) return null;

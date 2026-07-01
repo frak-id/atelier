@@ -22,15 +22,17 @@ export interface SessionConfigAssignment {
 }
 
 /**
- * A HarnessAdapter encapsulates everything specific to one ACP coding agent
- * (opencode, claude-code, codex, pi, …). The manager's ACP client
- * (AgentDispatch) and the tool registry stay agent-neutral by going through
- * this interface, so adding a harness is adding an entry here — not touching
- * call sites.
+ * A HarnessAdapter encapsulates everything specific to one ACP coding agent.
+ * The manager's ACP client (AgentDispatch) and the tool registry stay
+ * agent-neutral by going through this interface.
  *
  * ACP itself is the integration contract; an adapter only fills the gaps ACP
  * leaves harness-specific: the launch command, config/auth file locations, and
  * how model/agent selection is expressed (which ACP does not standardize).
+ *
+ * Only opencode exists today. When a second harness (claude-code, codex, …) is
+ * actually staged into the shared-bin catalog, reintroduce an id-keyed table
+ * here — until then a single concrete adapter avoids dead multi-harness scaffolding.
  */
 export interface HarnessAdapter {
   /** Stable catalog id, e.g. "opencode". */
@@ -71,60 +73,6 @@ export interface HarnessAdapter {
   ): string;
 }
 
-/**
- * Declarative harness definition. Most harnesses differ only in data (id,
- * launch binary, config/auth paths), so they share one adapter implementation;
- * only genuinely behavioural bits (e.g. how a model is selected) are functions.
- */
-interface HarnessSpec {
-  id: string;
-  /** Executable (with optional subcommand) under the shared bin dir. */
-  command: string;
-  configPath?: string;
-  authPath?: string;
-  proxyConfigFile?: string;
-  sessionConfig?: (selection: AgentModelSelection) => SessionConfigAssignment[];
-  mergeProxyProviders?: (
-    providers: Record<string, unknown>,
-    existing: string | undefined,
-  ) => string;
-}
-
-class SpecHarnessAdapter implements HarnessAdapter {
-  constructor(private readonly spec: HarnessSpec) {}
-
-  get id(): string {
-    return this.spec.id;
-  }
-  get configPath(): string | undefined {
-    return this.spec.configPath;
-  }
-  get authPath(): string | undefined {
-    return this.spec.authPath;
-  }
-  get proxyConfigFile(): string | undefined {
-    return this.spec.proxyConfigFile;
-  }
-
-  acpCommand(): string {
-    return `${SHARED_BIN_DIR}/${this.spec.command}`;
-  }
-
-  sessionConfig(selection: AgentModelSelection): SessionConfigAssignment[] {
-    return this.spec.sessionConfig?.(selection) ?? [];
-  }
-
-  mergeProxyProviders(
-    providers: Record<string, unknown>,
-    existing: string | undefined,
-  ): string {
-    return (
-      this.spec.mergeProxyProviders?.(providers, existing) ??
-      JSON.stringify({ provider: providers })
-    );
-  }
-}
-
 // Merge cliproxy providers into opencode's config schema (`{ provider: {...} }`).
 // Throws on malformed existing JSON so the caller can leave the file untouched
 // and warn (rather than clobbering a corrupt config with a fresh document).
@@ -160,34 +108,23 @@ function opencodeSessionConfig(
   return assignments;
 }
 
-// The launch set. opencode is native ACP; the others reach ACP via their
-// community/official adapters (see the ACP proposal's agent support matrix) and
-// are pre-staged in the shared-bin catalog. config/auth paths are filled in as
-// each harness's config-file/auth-sync injection is wired up.
-const HARNESS_SPECS: HarnessSpec[] = [
-  {
-    id: "opencode",
-    command: "opencode acp",
-    configPath: `${VM.HOME}/.config/opencode/opencode.json`,
-    authPath: `${VM.HOME}/.local/share/opencode/auth.json`,
-    proxyConfigFile: "~/.config/opencode/opencode.json",
-    sessionConfig: opencodeSessionConfig,
-    mergeProxyProviders: opencodeMergeProxyProviders,
-  },
-  { id: "claude-code", command: "claude-agent-acp" },
-  { id: "codex", command: "codex-acp" },
-  { id: "pi", command: "pi-acp" },
-];
+// The one real harness: opencode, native ACP, pre-staged in the shared-bin catalog.
+const OPENCODE_HARNESS: HarnessAdapter = {
+  id: "opencode",
+  acpCommand: () => `${SHARED_BIN_DIR}/opencode acp`,
+  configPath: `${VM.HOME}/.config/opencode/opencode.json`,
+  authPath: `${VM.HOME}/.local/share/opencode/auth.json`,
+  proxyConfigFile: "~/.config/opencode/opencode.json",
+  sessionConfig: opencodeSessionConfig,
+  mergeProxyProviders: opencodeMergeProxyProviders,
+};
 
-const DEFAULT_HARNESS_ID = "opencode";
-const HARNESS_ADAPTERS: Record<string, HarnessAdapter> = Object.fromEntries(
-  HARNESS_SPECS.map((spec) => [spec.id, new SpecHarnessAdapter(spec)]),
-);
+const DEFAULT_HARNESS_ID = OPENCODE_HARNESS.id;
 
 export function resolveHarness(id: string | undefined): HarnessAdapter {
-  const harness = HARNESS_ADAPTERS[id ?? DEFAULT_HARNESS_ID];
-  if (!harness) {
+  const resolved = id ?? DEFAULT_HARNESS_ID;
+  if (resolved !== OPENCODE_HARNESS.id) {
     throw new Error(`Unknown harness "${id}"`);
   }
-  return harness;
+  return OPENCODE_HARNESS;
 }
