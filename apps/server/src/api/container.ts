@@ -47,6 +47,31 @@ class SessionSurfaceRegistry implements SessionSurfaceResolver {
   }
 }
 
+/**
+ * Register the built-in opencode harness — the only concrete harness that
+ * exists today (atelier-v2 §6 milestone 3 note: "single concrete adapter
+ * avoids dead multi-harness scaffolding"). Composition (spec pieces) comes
+ * from `@atelier/compose`; the session-surface HTTP client stays in
+ * `sessions/harnesses/opencode` since it's an ACP-facade concern, not spec
+ * composition.
+ */
+async function registerBuiltinHarnesses(container: ServerContainer) {
+  const { opencodeSessionConfig } = await import(
+    "@atelier/compose/harnesses/opencode"
+  );
+  const { OpencodeSessionSurface } = await import(
+    "../sessions/harnesses/opencode/index.ts"
+  );
+  container.registerHarnessDispatch({
+    id: "opencode",
+    sessionConfig: opencodeSessionConfig,
+  });
+  container.sessionSurfaces.register(
+    "opencode",
+    (conn) => new OpencodeSessionSurface(conn),
+  );
+}
+
 export function createServerContainer() {
   const control = createControlContainer();
   const agent = new AgentClient();
@@ -56,7 +81,7 @@ export function createServerContainer() {
   const sessions = new SessionService({ runtime, surfaces: sessionSurfaces });
   const terminal = new TerminalService({ agent });
 
-  return {
+  const serverContainer: ServerContainer = {
     control,
     runtime,
     agent,
@@ -66,6 +91,21 @@ export function createServerContainer() {
     sessionSurfaces,
     registerHarnessDispatch,
   };
+  return serverContainer;
 }
 
-export type ServerContainer = ReturnType<typeof createServerContainer>;
+export interface ServerContainer {
+  control: ReturnType<typeof createControlContainer>;
+  runtime: RuntimeService;
+  agent: AgentClient;
+  dispatch: AgentDispatch;
+  sessions: SessionService;
+  terminal: TerminalService;
+  sessionSurfaces: SessionSurfaceRegistry;
+  registerHarnessDispatch: typeof registerHarnessDispatch;
+}
+
+/** Bootstrap hook: call once after `createServerContainer()`. */
+export async function wireBuiltinHarnesses(container: ServerContainer) {
+  await registerBuiltinHarnesses(container);
+}

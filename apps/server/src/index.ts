@@ -4,7 +4,10 @@
  * composition root and starts listening.
  */
 import { validateConfig } from "@frak/atelier-shared";
-import { createServerContainer } from "./api/container.ts";
+import {
+  createServerContainer,
+  wireBuiltinHarnesses,
+} from "./api/container.ts";
 import { createApp } from "./api/index.ts";
 import { initDatabase } from "./control/index.ts";
 import { ensureSharedSshPipeKey } from "./runtime/index.ts";
@@ -29,12 +32,7 @@ await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Control database ready");
 
 const container = createServerContainer();
-
-// TODO(compose): register the built-in opencode harness once
-// @atelier/compose lands — container.registerHarnessDispatch(...) and
-// container.sessionSurfaces.register("opencode", ...). Until then, ACP
-// dispatch and the agent-session facade require a harness to be registered
-// by whatever composes the spec at boot time.
+await wireBuiltinHarnesses(container);
 
 await ensureSharedSshPipeKey();
 

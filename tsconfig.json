@@ -29,7 +29,8 @@
     { "path": "./apps/dashboard" },
     { "path": "./packages/shared" },
     { "path": "./packages/opencode-atelier" },
-    { "path": "./packages/spec" }
+    { "path": "./packages/spec" },
+    { "path": "./packages/compose" }
   ],
   "files": []
 }
