@@ -2,6 +2,7 @@ use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::{Method, Request, Response, StatusCode};
 
+use crate::acp;
 use crate::response::json_error;
 use crate::routes;
 use crate::terminal;
@@ -28,6 +29,9 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
         (Method::POST, "/terminal/sessions") => terminal::handle_create_session(req).await,
         (Method::GET, "/terminal/sessions") => terminal::handle_list_sessions().await,
 
+        (Method::POST, "/acp/sessions") => acp::handle_create_session(req).await,
+        (Method::GET, "/acp/sessions") => acp::handle_list_sessions().await,
+
         _ => {
             if let Some(rest) = path.strip_prefix("/terminal/sessions/") {
                 let session_id = urlencoding::decode(rest).unwrap_or_default().into_owned();
@@ -35,6 +39,16 @@ pub async fn route(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>>
                     return match method {
                         Method::GET => terminal::handle_get_session(&session_id).await,
                         Method::DELETE => terminal::handle_delete_session(&session_id).await,
+                        _ => json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed"),
+                    };
+                }
+            }
+            if let Some(rest) = path.strip_prefix("/acp/sessions/") {
+                let session_id = urlencoding::decode(rest).unwrap_or_default().into_owned();
+                if !session_id.is_empty() && !session_id.contains('/') {
+                    return match method {
+                        Method::GET => acp::handle_get_session(&session_id).await,
+                        Method::DELETE => acp::handle_delete_session(&session_id).await,
                         _ => json_error(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed"),
                     };
                 }

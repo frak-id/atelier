@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::ffi::CString;
 use std::io;
 use std::os::fd::{AsRawFd, RawFd};
@@ -22,55 +21,14 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use tokio::io::unix::AsyncFd;
 
 use crate::body::{read_body_limited, ReadBodyError};
+use crate::bridge::{generate_session_id, parse_session_id_from_request, OutputBuffer};
 use crate::config::get_config;
 use crate::limits::MAX_REQUEST_BODY_BYTES;
 use crate::response::{json_error, json_ok};
 use crate::utc_rfc3339;
 
-const BUFFER_LIMIT: usize = 1024 * 1024 * 2;
 const SESSION_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 const SESSION_IDLE_TTL: Duration = Duration::from_secs(60 * 60);
-
-#[derive(Default)]
-struct OutputBuffer {
-    chunks: VecDeque<Bytes>,
-    total_len: usize,
-}
-
-impl OutputBuffer {
-    fn push(&mut self, chunk: Bytes) {
-        if chunk.is_empty() {
-            return;
-        }
-        self.total_len = self.total_len.saturating_add(chunk.len());
-        self.chunks.push_back(chunk);
-        self.trim_to_limit();
-    }
-
-    fn snapshot_chunks(&self) -> Vec<Bytes> {
-        self.chunks.iter().cloned().collect()
-    }
-
-    fn trim_to_limit(&mut self) {
-        while self.total_len > BUFFER_LIMIT {
-            let excess = self.total_len - BUFFER_LIMIT;
-            let Some(front) = self.chunks.pop_front() else {
-                self.total_len = 0;
-                break;
-            };
-            if front.len() <= excess {
-                self.total_len -= front.len();
-                continue;
-            }
-
-            // Keep only the tail of the front chunk, slicing without copying.
-            let keep = front.slice(excess..);
-            self.total_len -= excess;
-            self.chunks.push_front(keep);
-            break;
-        }
-    }
-}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -186,15 +144,6 @@ fn set_winsize(fd: i32, cols: u16, rows: u16) {
     }
 }
 
-fn generate_session_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("pty_{:x}", nanos)
-}
-
 pub async fn create_session(
     user_id: String,
     title: Option<String>,
@@ -282,7 +231,7 @@ pub async fn create_session(
         }
     };
 
-    let session_id = generate_session_id();
+    let session_id = generate_session_id("pty");
     let info = SessionInfo {
         id: session_id.clone(),
         user_id: user_id.clone(),
@@ -761,13 +710,6 @@ pub async fn ensure_terminal_from_config() {
         return;
     }
     ensure_terminal_running(service.port.unwrap_or(7681)).await;
-}
-
-fn parse_session_id_from_request(buf: &[u8]) -> Option<String> {
-    let request = String::from_utf8_lossy(buf);
-    let path = request.lines().next()?.split_whitespace().nth(1)?;
-    let id = path.strip_prefix('/')?;
-    (!id.is_empty() && !id.contains(' ')).then(|| id.to_string())
 }
 
 pub async fn start_terminal_server(port: u16) {

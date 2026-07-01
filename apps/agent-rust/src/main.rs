@@ -1,4 +1,6 @@
+mod acp;
 mod body;
+mod bridge;
 mod command;
 mod config;
 mod forwarder;
@@ -87,6 +89,10 @@ async fn main() {
 
     tokio::spawn(async {
         terminal::ensure_terminal_from_config().await;
+    });
+
+    tokio::spawn(async {
+        acp::ensure_acp_from_config().await;
     });
 
     let (dev_listen, dev_target) = config::get_config()
