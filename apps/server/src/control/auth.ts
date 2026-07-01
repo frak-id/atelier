@@ -18,6 +18,25 @@ export interface AuthUser {
   email: string;
 }
 
+const JWT_ISSUER_ALG = "HS256";
+
+/** Sign a JWT for `user`, mirroring v1's `@elysiajs/jwt`-issued claims shape. */
+export async function signJwt(
+  user: AuthUser,
+  expiresInSeconds = 7 * 24 * 60 * 60,
+): Promise<string> {
+  return new jose.SignJWT({
+    username: user.username,
+    avatarUrl: user.avatarUrl,
+    email: user.email,
+  })
+    .setProtectedHeader({ alg: JWT_ISSUER_ALG })
+    .setSubject(user.id)
+    .setIssuedAt()
+    .setExpirationTime(Math.floor(Date.now() / 1000) + expiresInSeconds)
+    .sign(JWT_SECRET);
+}
+
 export async function verifyJwt(token: string): Promise<AuthUser | null> {
   if (isMock()) {
     return {

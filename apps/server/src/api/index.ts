@@ -9,6 +9,7 @@ import { Elysia } from "elysia";
 import { SandboxError } from "../shared/errors.ts";
 import { dashboardUrl, isProduction } from "../shared/lib/config.ts";
 import { logger } from "../shared/lib/logger.ts";
+import { createAuthRoutes } from "./auth.routes.ts";
 import type { ServerContainer } from "./container.ts";
 import { createControlRoutes } from "./control.routes.ts";
 import { healthRoutes } from "./health.routes.ts";
@@ -79,6 +80,7 @@ export function createApp(container: ServerContainer) {
       }
     })
     .use(healthRoutes)
+    .use(createAuthRoutes(container))
     .use(createV1Routes(container))
     .use(createControlRoutes(container))
     .use(createSessionsRoutes(container))

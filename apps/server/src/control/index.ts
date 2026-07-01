@@ -4,7 +4,7 @@
  * modules import control/'s interface (this barrel), never its internals.
  */
 
-export { AuthService, type AuthUser, verifyJwt } from "./auth.ts";
+export { AuthService, type AuthUser, signJwt, verifyJwt } from "./auth.ts";
 export { isUserAuthorized } from "./authorization-policy.ts";
 export { type ControlContainer, createControlContainer } from "./container.ts";
 export { getDatabase, initDatabase } from "./db/client.ts";

@@ -4,12 +4,17 @@ Deliberate, documented deferrals in the initial `apps/server` build. None of
 these block the runtime/control/sessions seam from working; each has a named
 follow-up milestone in `docs/proposals/atelier-v2.md` (§6).
 
-1. **GitHub OAuth login route is not wired.** `control/github-oauth.ts` and
-   `control/authorization-policy.ts` implement the PKCE exchange and the
-   org/allowlist gate, but no `api/` route drives them end-to-end and mints a
-   JWT yet. Non-mock browser auth cannot obtain a session today. `atl_` API
-   keys (`control/modules/api-key`) and mock mode (`isMock()`) both work now.
-   Login/GUI is proposal §6 milestone 5 ("GUI v2 — the primary product").
+1. **GitHub OAuth login is wired** (`api/auth.routes.ts`): `GET /auth/github`
+   (mock auto-login, or real PKCE redirect) and `GET /auth/callback` (code
+   exchange → `isUserAuthorized` gate → user upsert → personal-org bootstrap →
+   `signJwt` → `sandbox_token` cookie) mint the JWT the rest of `/v1`, `/api`,
+   `/sessions` require, plus `/auth/me`, `/auth/verify`, `/auth/logout`,
+   `/auth/api-token`. `atl_` API keys and mock mode both still work.
+   **Still a follow-up, not covered by this route**: forward-auth for tool
+   ingresses (v1's `GET /auth/opencode/verify`, which injects Basic-auth for
+   Traefik's `authResponseHeaders`) is out of scope here and unwired — the
+   ingress-level auth story for exposed ports (`atelier-v2` §2 `auth:
+   "forward"`) is a separate follow-up, not this login flow.
 
 2. **No per-sandbox ownership/authz check on `/v1/sandboxes/:id/*` routes.**
    Any authenticated caller can act on any sandbox id — the runtime store has
@@ -30,9 +35,10 @@ follow-up milestone in `docs/proposals/atelier-v2.md` (§6).
    idempotent; provisioning a temp pod to actually run build steps and
    snapshot the result is not yet wired.
 
-5. **The runtime store is in-memory** (`runtime/store.ts`). A server restart
-   drops all sandbox/snapshot bookkeeping, orphaning any still-running pods,
-   until a persistent `SandboxStore` implementation lands.
+5. **~~The runtime store is in-memory~~ — DONE.** `runtime/store.ts` now
+   persists to SQLite via drizzle (`DrizzleSandboxStore`/`DrizzleSnapshotStore`,
+   sharing `server.db` with control through `shared/lib/db.ts`). The
+   `InMemory*` stores remain for tests/standalone use.
 
 6. **MCP tools have no per-caller identity.** `api/mcp.routes.ts` auth
    (`verifyMcpAuth`) is a single static bearer token, not a per-user session,
