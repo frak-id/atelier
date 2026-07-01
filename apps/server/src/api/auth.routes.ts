@@ -78,7 +78,6 @@ export function createAuthRoutes(container: ServerContainer) {
           maxAge: JWT_EXPIRY_SECONDS,
         });
 
-        try {
         userService.upsertFromLogin(
           MOCK_USER.githubId,
           MOCK_USER.username,
@@ -87,7 +86,6 @@ export function createAuthRoutes(container: ServerContainer) {
           MOCK_USER.accessToken,
         );
         ensurePersonalOrg(MOCK_USER.githubId, MOCK_USER.username);
-        } catch (e) { console.error("MOCKERR", e); throw e; }
 
         log.info("Mock: user auto-logged in as mock-user");
         return redirect("/");
