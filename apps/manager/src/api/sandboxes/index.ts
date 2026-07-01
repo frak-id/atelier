@@ -1,4 +1,4 @@
-import { Elysia, sse } from "elysia";
+import { Elysia } from "elysia";
 import {
   agentClient,
   agentOperations,
@@ -10,7 +10,6 @@ import {
   sandboxSpawner,
   workspaceService,
 } from "../../container.ts";
-import { waitForOpencodeHealthy } from "../../orchestrators/kernel/boot-waiter.ts";
 import type { ServiceStatus } from "../../schemas/index.ts";
 import {
   AgentHealthSchema,
@@ -28,15 +27,12 @@ import {
   SandboxListQuerySchema,
   SandboxListResponseSchema,
   SandboxSchema,
-  StartSandboxSessionBodySchema,
   UpdateSandboxBodySchema,
 } from "../../schemas/index.ts";
 import { NotFoundError, ResourceExhaustedError } from "../../shared/errors.ts";
 import { authPlugin } from "../../shared/lib/auth.ts";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { createSandboxOpencodeClient } from "../../shared/lib/opencode-client.ts";
-import { startOpencodeSession } from "../../shared/lib/opencode-session.ts";
 import { sandboxIdGuard } from "./guard.ts";
 import { servicesRoutes } from "./services.routes.ts";
 import { terminalRoutes } from "./terminal.routes.ts";
@@ -109,105 +105,6 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
     {
       body: CreateSandboxBodySchema,
       response: CreateSandboxResponseSchema,
-    },
-  )
-  .post(
-    "/start-session",
-    async function* ({ body, user }) {
-      const allActive = [
-        ...sandboxService.getByStatus("running"),
-        ...sandboxService.getByStatus("creating"),
-      ];
-
-      if (allActive.length >= config.server.maxSandboxes) {
-        throw new ResourceExhaustedError("sandboxes");
-      }
-
-      log.info({ workspaceId: body.workspaceId }, "Starting sandbox + session");
-
-      try {
-        yield sse({ data: { type: "progress", stage: "spawning-sandbox" } });
-        const sandbox = await sandboxSpawner.spawn(
-          { workspaceId: body.workspaceId },
-          user.id,
-        );
-
-        yield sse({
-          data: {
-            type: "progress",
-            stage: "waiting-for-agent",
-            sandboxId: sandbox.id,
-          },
-        });
-        const { ready: agentReady } = await agentClient.waitForAgent(
-          sandbox.id,
-          { timeout: 60000 },
-        );
-        if (!agentReady) {
-          throw new Error("Agent failed to become ready");
-        }
-
-        yield sse({
-          data: {
-            type: "progress",
-            stage: "waiting-for-harness",
-            sandboxId: sandbox.id,
-          },
-        });
-        // Healthy is enough here — `startOpencodeSession` below goes through
-        // `openOpencodeSession`, which waits for the agent registry before
-        // creating the session and issuing the prompt.
-        await waitForOpencodeHealthy(
-          sandbox.runtime.ipAddress,
-          sandbox.runtime.agentPassword,
-        );
-
-        yield sse({
-          data: {
-            type: "progress",
-            stage: "creating-session",
-            sandboxId: sandbox.id,
-          },
-        });
-        const client = createSandboxOpencodeClient(
-          sandbox.runtime.ipAddress,
-          sandbox.runtime.agentPassword,
-        );
-        const session = await startOpencodeSession(client, {
-          prompt: body.message,
-          model: body.templateConfig?.model,
-          variant: body.templateConfig?.variant,
-          agent: body.templateConfig?.agent,
-        });
-
-        const agentUrl = sandbox.runtime.urls.agent;
-        const encodedDirectory = Buffer.from(session.directory).toString(
-          "base64url",
-        );
-        const sessionUrl = `${agentUrl}/${encodedDirectory}/session/${session.id}`;
-
-        yield sse({
-          data: {
-            type: "done",
-            sandboxId: sandbox.id,
-            sessionId: session.id,
-            sessionUrl,
-            directory: session.directory,
-            agentUrl,
-          },
-        });
-      } catch (err) {
-        log.error({ error: err }, "start-session stream failed");
-        yield sse({
-          data: {
-            type: "error",
-            message: err instanceof Error ? err.message : String(err),
-          },
-        });
-      }
-    },
-    {
-      body: StartSandboxSessionBodySchema,
     },
   )
   .get(

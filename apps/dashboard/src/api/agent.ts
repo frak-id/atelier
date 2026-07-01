@@ -12,12 +12,6 @@ export type PermissionRequest = AgentPermissionRequest;
 export type QuestionRequest = AgentQuestionRequest;
 export type Todo = AgentTodo;
 
-export interface TemplateConfig {
-  model?: { providerID: string; modelID: string };
-  variant?: string;
-  agent?: string;
-}
-
 export async function fetchAgentSessions(
   sandboxId: string,
 ): Promise<AgentSession[]> {

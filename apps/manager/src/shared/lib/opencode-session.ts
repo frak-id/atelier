@@ -221,39 +221,6 @@ async function waitForUserMessage(
   return false;
 }
 
-export interface StartOpencodeSessionInput extends OpenOpencodeSessionInput {
-  prompt: string;
-  model?: { providerID: string; modelID: string };
-  variant?: string;
-  agent?: string;
-}
-
-/**
- * Open a session and send its first prompt with delivery verification.
- *
- * Convenience wrapper around `openOpencodeSession` + `sendPromptAndVerify` for
- * the common "create and kick off" flow. Use `openOpencodeSession` directly
- * when you need to run logic (e.g. register event listeners) between session
- * creation and the prompt.
- */
-export async function startOpencodeSession(
-  client: OpencodeClient,
-  input: StartOpencodeSessionInput,
-): Promise<OpenedOpencodeSession> {
-  const session = await openOpencodeSession(client, {
-    title: input.title,
-    directory: input.directory,
-  });
-  await sendPromptAndVerify(client, {
-    sessionID: session.id,
-    parts: [{ type: "text", text: input.prompt }],
-    model: input.model,
-    variant: input.variant,
-    agent: input.agent,
-  });
-  return session;
-}
-
 export interface ResolveAgentResult {
   /** The agent name to pass to `prompt`/`promptAsync`, or `undefined` to omit. */
   resolvedAgent?: string;
