@@ -185,6 +185,14 @@ harness.
 
 ## 6. Dev Profiles
 
+> **Superseded (§6–§8):** the "dev profile as a new layer + `(workspace ×
+> profileHash)` composite snapshots" framing below is reworked in
+> [`generic-sandbox-profiles.md`](./generic-sandbox-profiles.md) into a single
+> generic `Profile` object (all sources are `Partial<Profile>` layers folded by a
+> Profile Merger) with a substrate/runtime split that keeps the prebuild key at
+> `workspace` instead of a per-profile matrix. Read that note for the current
+> direction; the sections below are kept for context.
+
 ### 6.1 The object
 
 A Dev Profile is the per-developer, portable analog of a Workspace. Source of
