@@ -46,5 +46,12 @@ apps/manager/server.js
 sandbox.config.json
 values.production.yaml
 apps/agent-rust/target/
+apps/agent-v2/target/
+apps/agent-v2/dist/
 
 .omo/
+
+# Agent/ralph working dirs
+.pi-subagents/
+.ralph/
+.notes/
