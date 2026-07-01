@@ -4,7 +4,12 @@
  * manual-wiring convention.
  */
 import { createControlContainer } from "../control/index.ts";
-import { AgentClient, RuntimeService } from "../runtime/index.ts";
+import {
+  AgentClient,
+  DrizzleSandboxStore,
+  DrizzleSnapshotStore,
+  RuntimeService,
+} from "../runtime/index.ts";
 import {
   type AgentConnection,
   AgentDispatch,
@@ -75,7 +80,11 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
 export function createServerContainer() {
   const control = createControlContainer();
   const agent = new AgentClient();
-  const runtime = new RuntimeService({ agent });
+  const runtime = new RuntimeService({
+    agent,
+    sandboxes: new DrizzleSandboxStore(),
+    snapshots: new DrizzleSnapshotStore(),
+  });
   const dispatch = new AgentDispatch({ agentClient: agent });
   const sessionSurfaces = new SessionSurfaceRegistry();
   const sessions = new SessionService({ runtime, surfaces: sessionSurfaces });

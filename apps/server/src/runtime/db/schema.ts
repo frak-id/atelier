@@ -1,0 +1,43 @@
+/**
+ * Runtime's tables. Per atelier-v2 §3.1: `sandboxes(id, spec, status,
+ * generated, metadata)` and `snapshots(hash, parent, ref)` — deliberately NO
+ * FK to any identity table. `control/` treats the runtime as an
+ * authenticated principal it talks to, not a database it joins against, and
+ * the reverse holds too: these tables carry no `orgId`/`userId` column.
+ *
+ * `spec`/`generated`/`metadata` are opaque JSON blobs from the runtime's own
+ * point of view — it stores and returns them without interpreting their
+ * shape beyond what `RuntimeService` already does in memory.
+ */
+import { sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+export const sandboxes = sqliteTable("sandboxes", {
+  id: text("id").primaryKey(),
+  /** JSON: the resolved `SandboxSpec` this sandbox was booted from. */
+  spec: text("spec").notNull(),
+  status: text("status").notNull(),
+  /** JSON: runtime-generated values (agent password, pod IP, tokens). */
+  generated: text("generated").notNull(),
+  /** JSON: opaque pass-through, threaded for observability, never read. */
+  metadata: text("metadata").notNull(),
+  podName: text("pod_name"),
+  pvcName: text("pvc_name"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const snapshots = sqliteTable(
+  "snapshots",
+  {
+    /** VolumeSnapshot name to clone a PVC from — the primary handle. */
+    ref: text("ref").primaryKey(),
+    /** Content hash the snapshot is keyed by (prebuild idempotency lookup). */
+    hash: text("hash").notNull(),
+    /** Base OCI image the snapshot was built on. */
+    image: text("image").notNull(),
+    /** Parent snapshot ref in the chain, if this snapshot was derived. */
+    parent: text("parent"),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("idx_snapshots_hash").on(t.hash)],
+);
