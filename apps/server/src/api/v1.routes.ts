@@ -20,6 +20,21 @@ import { Elysia, t } from "elysia";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
 
+/**
+ * Resolve the caller's org for enrichment: first org membership, falling
+ * back to their personal org. Both are synchronous control reads — no org
+ * header/param support yet, so multi-org users resolve to their first
+ * membership (documented Phase 0 simplification, see PHASE0.md).
+ */
+function resolveOrgId(
+  control: ServerContainer["control"],
+  userId: string,
+): string | undefined {
+  const memberships = control.orgMemberService.getByUserId(userId);
+  if (memberships[0]) return memberships[0].orgId;
+  return control.userService.getById(userId)?.personalOrgId;
+}
+
 export function createV1Routes(container: ServerContainer) {
   const { runtime, control } = container;
   const authPlugin = createAuthPlugin(control);
@@ -37,9 +52,10 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/sandboxes",
         async ({ body, user }) => {
-          const orgId = user.id ? undefined : undefined; // TODO: org resolution (see container.ts note)
+          const orgId = resolveOrgId(control, user.id);
           const enriched = await control.enrichSpec(body as SandboxSpec, orgId);
-          return runtime.create(enriched);
+          const authorizedKeys = control.sshKeyService.getValidPublicKeys();
+          return runtime.create(enriched, { authorizedKeys });
         },
         { body: SandboxSpecSchema },
       )

@@ -180,6 +180,7 @@ export class RuntimeService {
   async resume(id: string, req: ResumeRequest = {}): Promise<SandboxState> {
     const record = this.require(id);
     const spec = mergeResume(record.spec, req);
+    rejectUnresolvedSecrets(spec);
     const { image, snapshotName } = await this.resolveSource(spec.source);
 
     const boot = await bootSandbox(
@@ -270,8 +271,13 @@ export class RuntimeService {
       ...record.spec,
       processes: [...(record.spec.processes ?? []), req],
     };
+    rejectUnresolvedSecrets(spec);
     this.sandboxes.update(id, { spec });
     if (!req.lazy) {
+      // TODO(atelier-v2 §6 milestone 1): AgentClient.exec has no `env`
+      // passthrough yet, so an ad-hoc process's own env is stored on the spec
+      // but not applied to this immediate start — full dynamic process
+      // supervision (with env) is v2 agent-line work.
       await this.agent.exec(id, req.command, { workdir: req.cwd });
     }
   }

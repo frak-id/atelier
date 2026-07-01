@@ -14,5 +14,6 @@ export type {
   GitRepoStatus,
   GitStatus,
   ServiceStatus,
+  TerminalSession,
   WriteFilesResult,
 } from "./agent.types.ts";

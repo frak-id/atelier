@@ -6,6 +6,8 @@
  *     the future extraction seam);
  *   - sessions/ must not import control/ (it talks to sandboxes only through
  *     the runtime API);
+ *   - sessions/ may import runtime/'s interface, never its internals (same
+ *     rule as control/ below — the barrel is the only stable surface);
  *   - control/  may import runtime/'s interface, never its internals.
  */
 import { Glob } from "bun";
@@ -19,17 +21,25 @@ interface Rule {
 const RULES: Rule[] = [
   {
     module: "runtime",
-    forbidden: [/from\s+["']\.\.\/control\//, /from\s+["']\.\.\/sessions\//],
+    forbidden: [
+      /from\s+["'](?:\.\.\/)+control\//,
+      /from\s+["'](?:\.\.\/)+sessions\//,
+    ],
     reason: "runtime/ must compile without control/ or sessions/",
   },
   {
     module: "sessions",
-    forbidden: [/from\s+["']\.\.\/control\//],
-    reason: "sessions/ talks to sandboxes only through the runtime API",
+    forbidden: [
+      /from\s+["'](?:\.\.\/)+control\//,
+      /from\s+["'](?:\.\.\/)+runtime\/[^"']+\/[^"']/,
+    ],
+    reason:
+      "sessions/ talks to sandboxes only through the runtime API — import " +
+      "runtime/'s barrel (../runtime/index.ts), not its internals",
   },
   {
     module: "control",
-    forbidden: [/from\s+["']\.\.\/runtime\/[^"']+\/[^"']/],
+    forbidden: [/from\s+["'](?:\.\.\/)+runtime\/[^"']+\/[^"']/],
     reason:
       "control/ imports runtime/'s interface (index), never its internals",
   },

@@ -6,6 +6,7 @@
  * barrel is the only surface the rest of the server is allowed to touch.
  */
 
+export type { TerminalSession } from "./agent/index.ts";
 export { AgentClient, AgentOperations } from "./agent/index.ts";
 export { ensureSharedSshPipeKey } from "./kube/index.ts";
 export {

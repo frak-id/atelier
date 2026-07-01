@@ -5,8 +5,7 @@
  * Elysia `.ws()` byte relay lives in `api/` (WS glue is inherently
  * framework-specific and stays thin there).
  */
-import type { TerminalSession } from "../runtime/agent/agent.types.ts";
-import type { AgentClient } from "../runtime/index.ts";
+import type { AgentClient, TerminalSession } from "../runtime/index.ts";
 import { ForbiddenError, NotFoundError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
 

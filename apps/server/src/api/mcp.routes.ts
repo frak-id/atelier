@@ -35,8 +35,13 @@ function createMcpServer(container: ServerContainer): McpServer {
       inputSchema: { spec: z.record(z.string(), z.unknown()) },
     },
     async ({ spec }) => {
+      // No authenticated user identity in this MCP tool context (verifyMcpAuth
+      // is a static bearer token, not a per-user session) — orgId can't be
+      // resolved here yet; org-scoped secrets/policy are unreachable via MCP
+      // until MCP auth carries a user identity (see PHASE0.md).
       const enriched = await control.enrichSpec(spec as SandboxSpec, undefined);
-      return textResult(await runtime.create(enriched));
+      const authorizedKeys = control.sshKeyService.getValidPublicKeys();
+      return textResult(await runtime.create(enriched, { authorizedKeys }));
     },
   );
 
