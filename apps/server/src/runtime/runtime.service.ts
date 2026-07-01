@@ -8,11 +8,14 @@
  */
 import { createHash } from "node:crypto";
 import {
+  type AddPortRequest,
+  type AddProcessRequest,
   type CreateSandboxResponse,
   type ExecRequest,
   isSecretRef,
   type PatchEnvRequest,
   type PatchFilesRequest,
+  type PortEntry,
   type PrebuildSpec,
   type ProcessStatus,
   type ResumeRequest,
@@ -21,13 +24,14 @@ import {
   type SnapshotRef,
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
+import { config } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { AgentClient } from "./agent/index.ts";
 import { bootSandbox, deleteRestartableResources } from "./boot.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
 import { buildVolumeSnapshot, kubeClient } from "./kube/index.ts";
-import { buildPortUrls, sshUrl } from "./ports.ts";
+import { buildPortIngresses, buildPortUrls, sshUrl } from "./ports.ts";
 import { ImageRegistryService } from "./registry/index.ts";
 import {
   InMemorySandboxStore,
@@ -251,6 +255,74 @@ export class RuntimeService {
   async processLogs(id: string, name: string) {
     this.require(id);
     return this.agent.serviceLogs(id, name, 0, 10_000);
+  }
+
+  /**
+   * Register an ad-hoc supervised process after boot. Updates the stored spec
+   * immediately; best-effort starts it now unless `lazy`. NOTE: the v1 agent
+   * has no generic "register + supervise a new process" endpoint distinct
+   * from boot-time services — full dynamic supervision is v2 agent-line work
+   * (atelier-v2 §6 milestone 1). This records intent and starts it via exec.
+   */
+  async addProcess(id: string, req: AddProcessRequest): Promise<void> {
+    const record = this.require(id);
+    const spec: SandboxSpec = {
+      ...record.spec,
+      processes: [...(record.spec.processes ?? []), req],
+    };
+    this.sandboxes.update(id, { spec });
+    if (!req.lazy) {
+      await this.agent.exec(id, req.command, { workdir: req.cwd });
+    }
+  }
+
+  /** Expose a port after boot — creates the ingress now, real mechanism. */
+  async addPort(id: string, req: AddPortRequest): Promise<void> {
+    const record = this.require(id);
+    const portEntry: PortEntry = {
+      name: req.name,
+      port: req.port,
+      public: req.public ?? true,
+    };
+    const spec: SandboxSpec = {
+      ...record.spec,
+      ports: [...(record.spec.ports ?? []), portEntry],
+    };
+    this.sandboxes.update(id, { spec });
+    if (portEntry.public) {
+      for (const resource of buildPortIngresses(id, [portEntry])) {
+        await kubeClient.createResource(resource);
+      }
+    }
+  }
+
+  /**
+   * Resolve a WS attach URL for a process's stdio bridge. NOTE: today's agent
+   * has one bridge model (spawn-and-relay, `acpSessionCreate`), so this
+   * approximates generic attach by reusing it — a faithful "attach to an
+   * already-running process's stdio" needs the unified bridge from the v2
+   * agent milestone. `pty` processes aren't wired yet (todo, same milestone).
+   */
+  async attach(id: string, processName: string): Promise<{ url: string }> {
+    const record = this.require(id);
+    const proc = record.spec.processes?.find((p) => p.name === processName);
+    if (!proc) throw new NotFoundError("Process", processName);
+    if (proc.stdio !== "bridge") {
+      throw new ValidationError(
+        `Process "${processName}" has no stdio bridge configured`,
+      );
+    }
+    const bridge = await this.agent.acpSessionCreate(id, {
+      command: proc.command,
+      workdir: proc.cwd,
+      user: "dev",
+    });
+    const url = await this.agent.acpWebSocketUrl(
+      id,
+      bridge.id,
+      config.ports.acp,
+    );
+    return { url };
   }
 
   // ── snapshot ───────────────────────────────────────────────────────────

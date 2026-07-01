@@ -1,4 +1,5 @@
 import { SandboxError } from "../../shared/errors.ts";
+import { isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { kubeClient } from "../kube/index.ts";
 import type {
@@ -143,6 +144,12 @@ export class AgentClient {
     sandboxId: string,
     options: { timeout?: number } = {},
   ): Promise<{ ready: boolean; podIp: string | null }> {
+    if (isMock()) {
+      const ip = "10.42.0.99";
+      this.podIpCache.set(sandboxId, ip);
+      return { ready: true, podIp: ip };
+    }
+
     const timeout = options.timeout ?? 60000;
     const deadline = Date.now() + timeout;
     const podName = `sandbox-${sandboxId}`;
@@ -179,6 +186,11 @@ export class AgentClient {
     sandboxId: string,
     files: FileWrite[],
   ): Promise<WriteFilesResult> {
+    if (isMock()) {
+      return {
+        results: files.map((f) => ({ path: f.path, success: true })),
+      };
+    }
     return this.post<WriteFilesResult>(
       sandboxId,
       "/files/write",
@@ -192,6 +204,9 @@ export class AgentClient {
     command: string,
     options: { timeout?: number; user?: "dev" | "root"; workdir?: string } = {},
   ): Promise<ExecResult> {
+    if (isMock()) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
     return this.post<ExecResult>(
       sandboxId,
       "/exec",
@@ -220,6 +235,7 @@ export class AgentClient {
   }
 
   async serviceList(sandboxId: string): Promise<ServiceListResult> {
+    if (isMock()) return { services: [] };
     return this.request<ServiceListResult>(sandboxId, "/services");
   }
 

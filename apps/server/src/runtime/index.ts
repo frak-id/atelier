@@ -7,6 +7,7 @@
  */
 
 export { AgentClient, AgentOperations } from "./agent/index.ts";
+export { ensureSharedSshPipeKey } from "./kube/index.ts";
 export {
   type RuntimeCreateOptions,
   type RuntimeDeps,
