@@ -167,7 +167,7 @@ export class RuntimeService {
 
   /** Snapshot the disk, release compute (delete pod, keep PVC). */
   async pause(id: string): Promise<SnapshotRef> {
-    const record = this.require(id);
+    this.require(id);
     const ref = await this.snapshot(id);
     this.agent.invalidatePodIp(id);
     await deleteRestartableResources(id);
