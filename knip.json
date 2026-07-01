@@ -27,8 +27,15 @@
     "packages/shared": {
       "project": ["src/**/*.ts"]
     },
+    "packages/spec": {
+      "project": ["src/**/*.ts"]
+    },
     "apps/agent": {
       "project": ["src/**/*.ts"]
+    },
+    "apps/server": {
+      "project": ["src/**/*.ts"],
+      "ignoreDependencies": ["pino-pretty"]
     }
   }
 }
