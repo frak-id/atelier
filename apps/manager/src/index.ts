@@ -20,7 +20,6 @@ import {
   sharedAuthRoutes,
   sshKeyRoutes,
   systemRoutes,
-  taskRoutes,
   userRoutes,
   workspaceRoutes,
 } from "./api/index.ts";
@@ -216,7 +215,6 @@ const app = new Elysia()
       .use(sandboxRoutes)
       .use(agentFacadeRoutes)
       .use(workspaceRoutes)
-      .use(taskRoutes)
       .use(sessionTemplateRoutes)
       .use(configFileRoutes)
       .use(sharedAuthRoutes)

@@ -10,6 +10,5 @@ export * from "./sandbox.ts";
 export * from "./session-template.ts";
 export * from "./ssh-key.ts";
 export * from "./system.ts";
-export * from "./task.ts";
 export * from "./well-known.ts";
 export * from "./workspace.ts";

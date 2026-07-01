@@ -2,6 +2,7 @@ import type {
   AgentPermissionRequest,
   AgentQuestionRequest,
   AgentSessionStatus,
+  AgentTodo,
 } from "@frak/atelier-shared";
 
 export type MappedSessionStatus = "idle" | "busy" | "waiting" | "unknown";
@@ -16,6 +17,14 @@ export interface AggregatedInteractionState {
   status: MappedSessionStatus;
   pendingPermissions: Array<AgentPermissionRequest & { sessionId: string }>;
   pendingQuestions: Array<AgentQuestionRequest & { sessionId: string }>;
+}
+
+export interface SessionInteractionState {
+  sessionId: string;
+  status: MappedSessionStatus;
+  pendingPermissions: SessionInteractionInfo["pendingPermissions"];
+  pendingQuestions: SessionInteractionInfo["pendingQuestions"];
+  todos: AgentTodo[];
 }
 
 function mapSessionStatus(

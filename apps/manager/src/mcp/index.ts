@@ -8,7 +8,6 @@ import { registerDevServerTools } from "./tools/dev-server.ts";
 import { registerSandboxTools } from "./tools/sandbox.ts";
 import { registerSessionTemplateTools } from "./tools/session-template.ts";
 import { registerSystemTools } from "./tools/system.ts";
-import { registerTaskTools } from "./tools/task.ts";
 import { registerWorkspaceTools } from "./tools/workspace.ts";
 
 const log = createChildLogger("mcp");
@@ -20,7 +19,6 @@ function createMcpServer(): McpServer {
   });
 
   registerWorkspaceTools(server);
-  registerTaskTools(server);
   registerSandboxTools(server);
   registerDevServerTools(server);
   registerSessionTemplateTools(server);

@@ -1,26 +1,15 @@
-import type { Task } from "@frak/atelier-manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  AlertCircle,
-  Bot,
-  CheckCircle,
-  ExternalLink,
-  Kanban,
-  Loader2,
-  Server,
-} from "lucide-react";
+import { AlertCircle, CheckCircle, ExternalLink, Server } from "lucide-react";
 import { Component, type ReactNode, Suspense, useState } from "react";
 import {
   allSandboxServicesQuery,
   organizationListQuery,
   sandboxListQuery,
-  taskListQuery,
   useDeleteSandbox,
   useRestartSandbox,
   useStartSandbox,
   useStopSandbox,
-  useWorkspaceMap,
   workspaceListQuery,
 } from "@/api/queries";
 import { AttentionBlock } from "@/components/attention-block";
@@ -29,14 +18,7 @@ import { SandboxCard } from "@/components/sandbox-card";
 import { StartWorkingCard } from "@/components/start-working-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -46,8 +28,6 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAttentionData } from "@/hooks/use-attention-data";
-import { useTaskSessionProgress } from "@/hooks/use-task-session-progress";
-import { formatDate } from "@/lib/utils";
 import { useDrawer } from "@/providers/drawer-provider";
 
 class SectionErrorBoundary extends Component<
@@ -87,7 +67,7 @@ export const Route = createFileRoute("/")({
 });
 
 function MissionControlPage() {
-  const { openTask, openSandbox } = useDrawer();
+  const { openSandbox } = useDrawer();
   const [orgFilter, setOrgFilter] = useState<string>("all");
   const { data: organizations } = useQuery(organizationListQuery());
 
@@ -130,15 +110,8 @@ function MissionControlPage() {
 
         <SectionErrorBoundary>
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            <ActiveTasksSection onSelectTask={openTask} orgFilter={orgFilter} />
-          </Suspense>
-        </SectionErrorBoundary>
-
-        <SectionErrorBoundary>
-          <Suspense fallback={<Skeleton className="h-64 w-full" />}>
             <RunningSandboxesSection
               onSelectSandbox={openSandbox}
-              onSelectTask={openTask}
               orgFilter={orgFilter}
             />
           </Suspense>
@@ -203,142 +176,14 @@ function AttentionSection() {
   );
 }
 
-function ActiveTasksSection({
-  onSelectTask,
-  orgFilter,
-}: {
-  onSelectTask: (id: string) => void;
-  orgFilter: string;
-}) {
-  const { data: tasks } = useQuery({
-    ...taskListQuery(),
-    select: (tasks) =>
-      tasks?.filter(
-        (t) =>
-          t.status === "active" &&
-          (orgFilter === "all" || !t.orgId || t.orgId === orgFilter),
-      ),
-  });
-  const workspaceMap = useWorkspaceMap();
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <h2 className="text-xl font-semibold flex items-center gap-2">
-          Active Tasks
-          {tasks && tasks.length > 0 && (
-            <Badge variant="default">{tasks.length}</Badge>
-          )}
-        </h2>
-      </div>
-
-      {!tasks || tasks.length === 0 ? (
-        <Card className="bg-muted/5 border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-            <Kanban className="h-10 w-10 text-muted-foreground/50 mb-3" />
-            <p className="font-medium text-muted-foreground">No active tasks</p>
-            <Button variant="link" size="sm" asChild>
-              <a href="/tasks">Go to Task Board</a>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tasks.map((task) => (
-            <ActiveTaskCard
-              key={task.id}
-              task={task}
-              workspaceName={workspaceMap.get(task.workspaceId)}
-              onClick={() => onSelectTask(task.id)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ActiveTaskCard({
-  task,
-  workspaceName,
-  onClick,
-}: {
-  task: Task;
-  workspaceName?: string;
-  onClick: () => void;
-}) {
-  const { data: sandboxes } = useQuery(sandboxListQuery());
-  const sandbox = sandboxes?.find((s) => s.id === task.data.sandboxId);
-
-  // We only fetch progress if we have the sandbox URL
-  const { progressPercent, allCount, completedSubsessionCount, isLoading } =
-    useTaskSessionProgress(
-      task,
-      sandbox?.id,
-      sandbox?.workspaceId,
-      !!sandbox?.id,
-    );
-
-  return (
-    <Card
-      className="cursor-pointer hover:border-primary/50 transition-colors"
-      onClick={onClick}
-    >
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-start gap-2">
-          <div className="space-y-1 min-w-0">
-            <CardTitle className="text-base truncate" title={task.title}>
-              {task.title}
-            </CardTitle>
-            <CardDescription className="flex items-center gap-2">
-              <span className="truncate max-w-[150px]">
-                {workspaceName || "Unknown Workspace"}
-              </span>
-            </CardDescription>
-          </div>
-          <Badge variant="default" className="shrink-0">
-            Active
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="pb-4 space-y-4">
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Progress</span>
-            {isLoading ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <span>{progressPercent}%</span>
-            )}
-          </div>
-          <Progress value={progressPercent} className="h-2" />
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <Bot className="h-3.5 w-3.5" />
-            <span>
-              {completedSubsessionCount}/{allCount} sessions
-            </span>
-          </div>
-          <div>{formatDate(task.data.startedAt || task.createdAt)}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function RunningSandboxesSection({
   onSelectSandbox,
-  onSelectTask,
   orgFilter,
 }: {
   onSelectSandbox: (id: string) => void;
-  onSelectTask: (id: string) => void;
   orgFilter: string;
 }) {
   const { data: sandboxes } = useQuery(sandboxListQuery());
-  const { data: tasks } = useQuery(taskListQuery());
   const runningSandboxes = (sandboxes ?? []).filter(
     (s) =>
       s.status === "running" &&
@@ -383,32 +228,25 @@ function RunningSandboxesSection({
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {runningSandboxes.map((sandbox) => {
-            const task = tasks?.find((t) => t.data.sandboxId === sandbox.id);
-            return (
-              <SandboxCard
-                key={sandbox.id}
-                sandbox={sandbox}
-                workspace={
-                  sandbox.workspaceId
-                    ? workspaceDataMap?.get(sandbox.workspaceId)
-                    : undefined
-                }
-                task={task}
-                onShowDetails={() => onSelectSandbox(sandbox.id)}
-                onDelete={() => deleteSandbox.mutate(sandbox.id)}
-                onStop={() => stopSandbox.mutate(sandbox.id)}
-                onStart={() => startSandbox.mutate(sandbox.id)}
-                onRecreate={() => restartSandbox.mutate(sandbox.id)}
-                isStopping={stopSandbox.isPending}
-                isStarting={startSandbox.isPending}
-                isRecreating={restartSandbox.isPending}
-                onShowTask={() => {
-                  if (task) onSelectTask(task.id);
-                }}
-              />
-            );
-          })}
+          {runningSandboxes.map((sandbox) => (
+            <SandboxCard
+              key={sandbox.id}
+              sandbox={sandbox}
+              workspace={
+                sandbox.workspaceId
+                  ? workspaceDataMap?.get(sandbox.workspaceId)
+                  : undefined
+              }
+              onShowDetails={() => onSelectSandbox(sandbox.id)}
+              onDelete={() => deleteSandbox.mutate(sandbox.id)}
+              onStop={() => stopSandbox.mutate(sandbox.id)}
+              onStart={() => startSandbox.mutate(sandbox.id)}
+              onRecreate={() => restartSandbox.mutate(sandbox.id)}
+              isStopping={stopSandbox.isPending}
+              isStarting={startSandbox.isPending}
+              isRecreating={restartSandbox.isPending}
+            />
+          ))}
         </div>
       )}
     </div>

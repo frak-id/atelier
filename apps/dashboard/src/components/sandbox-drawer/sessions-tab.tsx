@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAgentData } from "@/hooks/use-agent-data";
-import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
+import type { SessionInteractionState } from "@/lib/agent-helpers";
 import { aggregateInteractions } from "@/lib/agent-helpers";
 import {
   buildSessionHierarchy,
@@ -31,8 +31,7 @@ export function SessionsTabBadge({
     enabled: !!sandboxId,
   });
 
-  const { permissions, questions, sessionStatuses } =
-    useAgentData(sandboxId);
+  const { permissions, questions, sessionStatuses } = useAgentData(sandboxId);
 
   const needsAttention = useMemo(() => {
     if (!sessions?.length) return false;
@@ -81,8 +80,7 @@ export function SessionsTab({
     enabled: !!sandboxId,
   });
 
-  const { permissions, questions, sessionStatuses } =
-    useAgentData(sandboxId);
+  const { permissions, questions, sessionStatuses } = useAgentData(sandboxId);
 
   const directory = getWorkspaceDirectory(workspace);
 

@@ -3,7 +3,6 @@ import { z } from "zod/v4";
 import {
   agentOperations,
   sandboxService,
-  taskService,
   workspaceService,
 } from "../../container.ts";
 
@@ -112,47 +111,6 @@ export function registerSystemTools(server: McpServer): void {
           isError: true,
         };
       }
-    },
-  );
-
-  server.registerTool(
-    "get_task_sessions",
-    {
-      title: "Get Task Sessions",
-      description:
-        "Get OpenCode session details for a task. Returns session IDs, " +
-        "template IDs, and start times. Useful for tracking AI progress.",
-      inputSchema: z.object({
-        taskId: z.string().describe("The task ID"),
-      }),
-    },
-    async ({ taskId }) => {
-      const task = taskService.getById(taskId);
-      if (!task) {
-        return {
-          content: [{ type: "text", text: `Task '${taskId}' not found` }],
-          isError: true,
-        };
-      }
-
-      const sessions = (task.data.sessions ?? []).map((s) => ({
-        id: s.id,
-        templateId: s.templateId,
-        order: s.order,
-        startedAt: s.startedAt ?? null,
-      }));
-
-      const result = {
-        taskId: task.id,
-        title: task.title,
-        status: task.status,
-        sandboxId: task.data.sandboxId ?? null,
-        sessions,
-      };
-
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      };
     },
   );
 }

@@ -64,41 +64,6 @@ export const SandboxEventSchema = t.Union([
 export type SandboxEvent = Static<typeof SandboxEventSchema>;
 
 /* -------------------------------------------------------------------------- */
-/*                                Task Events                                 */
-/* -------------------------------------------------------------------------- */
-
-const TaskCreatedSchema = t.Object({
-  type: t.Literal("task.created"),
-  properties: t.Object({
-    id: t.String(),
-    workspaceId: t.String(),
-  }),
-});
-
-const TaskUpdatedSchema = t.Object({
-  type: t.Literal("task.updated"),
-  properties: t.Object({
-    id: t.String(),
-    workspaceId: t.String(),
-  }),
-});
-
-const TaskDeletedSchema = t.Object({
-  type: t.Literal("task.deleted"),
-  properties: t.Object({
-    id: t.String(),
-    workspaceId: t.String(),
-  }),
-});
-
-export const TaskEventSchema = t.Union([
-  TaskCreatedSchema,
-  TaskUpdatedSchema,
-  TaskDeletedSchema,
-]);
-export type TaskEvent = Static<typeof TaskEventSchema>;
-
-/* -------------------------------------------------------------------------- */
 /*                             Workspace Events                               */
 /* -------------------------------------------------------------------------- */
 
@@ -194,7 +159,6 @@ export type OrganizationEvent = Static<typeof OrganizationEventSchema>;
 
 export const ManagerEventSchema = t.Union([
   ...SandboxEventSchema.anyOf,
-  ...TaskEventSchema.anyOf,
   ...WorkspaceEventSchema.anyOf,
   ...ConfigEventSchema.anyOf,
   ...OrganizationEventSchema.anyOf,

@@ -15,7 +15,6 @@ import {
   FolderGit2,
   HardDrive,
   Home,
-  Kanban,
   Loader2,
   LogOut,
   Menu,
@@ -192,9 +191,6 @@ function SidebarContent({
     <nav className={`flex-1 space-y-1 ${collapsed ? "p-2" : "p-4"}`}>
       <NavLink to="/" icon={Home} badge={attentionCount} collapsed={collapsed}>
         Home
-      </NavLink>
-      <NavLink to="/tasks" icon={Kanban} collapsed={collapsed}>
-        Tasks
       </NavLink>
       <NavLink to="/sandboxes" icon={Boxes} collapsed={collapsed}>
         Sandboxes

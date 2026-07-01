@@ -20,7 +20,6 @@ import {
   sandboxListQuery,
   sandboxToolsQuery,
   type ToolStatus,
-  taskListQuery,
   useRestartSandbox,
   useSandboxServices,
   useStartSandbox,
@@ -104,11 +103,6 @@ function SandboxImmersionPage() {
     ...workspaceDetailQuery(sandbox?.workspaceId ?? ""),
     enabled: !!sandbox?.workspaceId,
   });
-
-  const { data: tasks } = useQuery({
-    ...taskListQuery(),
-  });
-  const task = tasks?.find((t) => t.data.sandboxId === id);
 
   const isMobile = useIsMobile();
 
@@ -207,12 +201,12 @@ function SandboxImmersionPage() {
     const tabPart = tab2
       ? `${buildTabSegment(tab1)} + ${buildTabSegment(tab2)}`
       : buildTabSegment(tab1);
-    const context = task?.title ?? sandbox?.id;
+    const context = sandbox?.id;
     document.title = context ? `A | ${tabPart} · ${context}` : `A | ${tabPart}`;
     return () => {
       document.title = "Atelier";
     };
-  }, [tab1, tab2, buildTabSegment, task?.title, sandbox?.id]);
+  }, [tab1, tab2, buildTabSegment, sandbox?.id]);
 
   const setView = useCallback(
     (newTab1: TabId, newTab2?: TabId) => {

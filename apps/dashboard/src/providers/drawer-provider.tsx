@@ -6,12 +6,10 @@ import {
   useEffect,
   useState,
 } from "react";
-import { sandboxListQuery, taskListQuery } from "@/api/queries";
+import { sandboxListQuery } from "@/api/queries";
 import { SandboxDrawer } from "@/components/sandbox-drawer";
-import { TaskDrawer } from "@/components/task-drawer";
 
 type DrawerContextValue = {
-  openTask: (id: string) => void;
   openSandbox: (id: string) => void;
 };
 
@@ -24,19 +22,13 @@ export function useDrawer() {
 }
 
 export function DrawerProvider({ children }: { children: React.ReactNode }) {
-  const [taskId, setTaskId] = useState<string | null>(null);
   const [sandboxId, setSandboxId] = useState<string | null>(null);
 
-  const openTask = useCallback((id: string) => setTaskId(id), []);
   const openSandbox = useCallback((id: string) => setSandboxId(id), []);
 
   const { data: sandboxes } = useQuery({
     ...sandboxListQuery(),
     enabled: !!sandboxId,
-  });
-  const { data: tasks } = useQuery({
-    ...taskListQuery(),
-    enabled: !!taskId,
   });
 
   // Auto-close drawer when entity disappears from list
@@ -47,32 +39,10 @@ export function DrawerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [sandboxId, sandboxes]);
 
-  useEffect(() => {
-    if (!taskId || !tasks) return;
-    if (!tasks.some((t) => t.id === taskId)) {
-      setTaskId(null);
-    }
-  }, [taskId, tasks]);
-
   return (
-    <DrawerContext.Provider value={{ openTask, openSandbox }}>
+    <DrawerContext.Provider value={{ openSandbox }}>
       {children}
-      <TaskDrawer
-        taskId={taskId}
-        onClose={() => setTaskId(null)}
-        onOpenSandbox={(id) => {
-          setTaskId(null);
-          setSandboxId(id);
-        }}
-      />
-      <SandboxDrawer
-        sandboxId={sandboxId}
-        onClose={() => setSandboxId(null)}
-        onOpenTask={(id) => {
-          setSandboxId(null);
-          setTaskId(id);
-        }}
-      />
+      <SandboxDrawer sandboxId={sandboxId} onClose={() => setSandboxId(null)} />
     </DrawerContext.Provider>
   );
 }

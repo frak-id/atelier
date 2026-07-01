@@ -117,7 +117,6 @@ export function useDeleteSandbox() {
     mutationFn: async (id: string) =>
       unwrap(await api.api.sandboxes({ id }).delete()),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
     },
   });

@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  ClipboardList,
   HeartPulse,
   Loader2,
   Maximize2,
@@ -18,7 +17,6 @@ import {
   deriveToolStatus,
   sandboxDetailQuery,
   sandboxToolsQuery,
-  taskListQuery,
   useDeleteSandbox,
   useRecoverSandbox,
   useRestartSandbox,
@@ -66,14 +64,9 @@ import { ToolButton } from "./tool-button";
 interface SandboxDrawerProps {
   sandboxId: string | null;
   onClose: () => void;
-  onOpenTask?: (taskId: string) => void;
 }
 
-export function SandboxDrawer({
-  sandboxId,
-  onClose,
-  onOpenTask,
-}: SandboxDrawerProps) {
+export function SandboxDrawer({ sandboxId, onClose }: SandboxDrawerProps) {
   const isOpen = !!sandboxId;
   const { data: sandbox } = useQuery({
     ...sandboxDetailQuery(sandboxId ?? ""),
@@ -84,12 +77,6 @@ export function SandboxDrawer({
     ...workspaceDetailQuery(sandbox?.workspaceId ?? ""),
     enabled: !!sandbox?.workspaceId,
   });
-
-  const { data: tasks } = useQuery({
-    ...taskListQuery(),
-    enabled: !!sandboxId,
-  });
-  const task = tasks?.find((t) => t.data.sandboxId === sandboxId);
 
   const { data: services } = useSandboxServices(
     sandboxId ?? "",
@@ -168,22 +155,6 @@ export function SandboxDrawer({
                         >
                           {workspace.name}
                         </Link>
-                        <span>•</span>
-                      </>
-                    )}
-                    {task && (
-                      <>
-                        <button
-                          type="button"
-                          className="hover:text-foreground transition-colors truncate max-w-[200px] cursor-pointer"
-                          title={task.title}
-                          onClick={() => {
-                            onClose();
-                            onOpenTask?.(task.id);
-                          }}
-                        >
-                          {task.title}
-                        </button>
                         <span>•</span>
                       </>
                     )}
@@ -388,38 +359,6 @@ export function SandboxDrawer({
             <ScrollArea className="flex-1">
               <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-hidden">
                 <SandboxWarningsBlock warnings={sandbox.warnings} />
-                {task && (
-                  <Card
-                    className="cursor-pointer hover:border-primary/50 transition-colors"
-                    onClick={() => {
-                      onClose();
-                      onOpenTask?.(task.id);
-                    }}
-                  >
-                    <CardContent className="flex items-center gap-3 py-3">
-                      <ClipboardList className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate">
-                          {task.title}
-                        </div>
-                        <div className="text-xs text-muted-foreground capitalize">
-                          {task.status}
-                        </div>
-                      </div>
-                      <Badge
-                        variant={
-                          task.status === "active"
-                            ? "default"
-                            : task.status === "done"
-                              ? "success"
-                              : "secondary"
-                        }
-                      >
-                        {task.status}
-                      </Badge>
-                    </CardContent>
-                  </Card>
-                )}
 
                 {sandbox.status === "running" && (
                   <>

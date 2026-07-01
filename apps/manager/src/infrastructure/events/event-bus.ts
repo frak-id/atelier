@@ -4,7 +4,6 @@ import { createChildLogger } from "../../shared/lib/logger.ts";
 export type {
   ConfigEvent,
   SandboxEvent,
-  TaskEvent,
   WorkspaceEvent,
 } from "../../schemas/events.ts";
 export type { ManagerEvent };

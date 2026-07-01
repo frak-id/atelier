@@ -177,8 +177,6 @@ export const ServerConfigSchema = Type.Object(
     host: Type.String({ default: "0.0.0.0" }),
     /** Maximum concurrent sandboxes */
     maxSandboxes: Type.Number({ default: 20 }),
-    /** Maximum active tasks */
-    maxActiveTasks: Type.Number({ default: 10 }),
     /** Bearer token for MCP server authentication — if empty, MCP auth is disabled */
     mcpToken: Type.String({ default: "" }),
   },
@@ -393,7 +391,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SERVER_PORT: "server.port",
   ATELIER_SERVER_HOST: "server.host",
   ATELIER_MAX_SANDBOXES: "server.maxSandboxes",
-  ATELIER_MAX_ACTIVE_TASKS: "server.maxActiveTasks",
   ATELIER_MCP_TOKEN: "server.mcpToken",
 
   ATELIER_K8S_NAMESPACE: "kubernetes.namespace",

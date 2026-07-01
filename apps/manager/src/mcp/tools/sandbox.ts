@@ -3,27 +3,16 @@ import { z } from "zod/v4";
 import {
   agentClient,
   sandboxService,
-  taskService,
   workspaceService,
 } from "../../container.ts";
 
 import { toolUrl } from "../../orchestrators/tools/registry.ts";
-import {
-  resolveDevConfig,
-  type Sandbox,
-  type Task,
-} from "../../schemas/index.ts";
-
-function findTaskForSandbox(sandboxId: string): Task | undefined {
-  const allTasks = taskService.getAll();
-  return allTasks.find((t) => t.data.sandboxId === sandboxId);
-}
+import { resolveDevConfig, type Sandbox } from "../../schemas/index.ts";
 
 function formatSandbox(sandbox: Sandbox) {
   const workspace = sandbox.workspaceId
     ? workspaceService.getById(sandbox.workspaceId)
     : undefined;
-  const task = findTaskForSandbox(sandbox.id);
 
   return {
     id: sandbox.id,
@@ -33,14 +22,6 @@ function formatSandbox(sandbox: Sandbox) {
       : sandbox.workspaceId
         ? { id: sandbox.workspaceId, name: "unknown" }
         : null,
-    task: task
-      ? {
-          id: task.id,
-          title: task.title,
-          status: task.status,
-          branchName: task.data.branchName ?? null,
-        }
-      : null,
     urls: sandbox.runtime.urls,
     resources: {
       vcpus: sandbox.runtime.vcpus,
@@ -57,7 +38,7 @@ export function registerSandboxTools(server: McpServer): void {
       title: "List Sandboxes",
       description:
         "List sandboxes with optional filters. Returns sandbox details " +
-        "including status, workspace, associated task, and URLs.",
+        "including status, workspace, and URLs.",
       inputSchema: z.object({
         workspaceId: z.string().optional().describe("Filter by workspace ID"),
         status: z
@@ -93,7 +74,7 @@ export function registerSandboxTools(server: McpServer): void {
       title: "Get Sandbox",
       description:
         "Get detailed sandbox information including status, URLs, " +
-        "associated task, and live dev command status with public URLs.",
+        "and live dev command status with public URLs.",
       inputSchema: z.object({
         sandboxId: z.string().describe("The sandbox ID"),
       }),

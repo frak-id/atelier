@@ -7,7 +7,6 @@ import {
   organizationListQuery,
   sandboxListQuery,
   sshKeysListQuery,
-  taskListQuery,
   useCreateSandbox,
   useDeleteSandbox,
   useRecoverSandbox,
@@ -54,11 +53,10 @@ function SandboxesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [orgFilter, setOrgFilter] = useState<string>("all");
   const [createOpen, setCreateOpen] = useState(false);
-  const { openSandbox, openTask } = useDrawer();
+  const { openSandbox } = useDrawer();
   const [recreatingId, setRecreatingId] = useState<string | null>(null);
   const { data: sandboxes } = useSuspenseQuery(sandboxListQuery());
   const { data: sshKeys } = useQuery(sshKeysListQuery);
-  const { data: tasks } = useQuery(taskListQuery());
   const { data: organizations } = useQuery(organizationListQuery());
   const workspaceDataMap = useWorkspaceDataMap();
   const deleteMutation = useDeleteSandbox();
@@ -168,13 +166,11 @@ function SandboxesPage() {
             const workspace = sandbox.workspaceId
               ? workspaceDataMap.get(sandbox.workspaceId)
               : undefined;
-            const task = tasks?.find((t) => t.data.sandboxId === sandbox.id);
             return (
               <SandboxCard
                 key={sandbox.id}
                 sandbox={sandbox}
                 workspace={workspace}
-                task={task}
                 onDelete={() => handleDelete(sandbox.id)}
                 onRecreate={() => handleRecreate(sandbox)}
                 isRecreating={recreatingId === sandbox.id}
@@ -194,9 +190,6 @@ function SandboxesPage() {
                   recoverMutation.variables === sandbox.id
                 }
                 onShowDetails={() => openSandbox(sandbox.id)}
-                onShowTask={() => {
-                  if (task) openTask(task.id);
-                }}
               />
             );
           })}

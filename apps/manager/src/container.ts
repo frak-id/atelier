@@ -24,7 +24,6 @@ import { SandboxRepository } from "./modules/sandbox/index.ts";
 import { SessionTemplateService } from "./modules/session-template/index.ts";
 import { SettingsRepository } from "./modules/settings/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
-import { TaskRepository, TaskService } from "./modules/task/index.ts";
 import { UserRepository, UserService } from "./modules/user/index.ts";
 import {
   WorkspaceRepository,
@@ -37,7 +36,6 @@ import {
   SandboxDestroyer,
   SandboxLifecycle,
   SandboxSpawner,
-  TaskSpawner,
 } from "./orchestrators/index.ts";
 import type { SandboxPorts } from "./orchestrators/ports/sandbox-ports.ts";
 import { initAuthDependencies } from "./shared/lib/auth.ts";
@@ -52,7 +50,6 @@ const organizationRepository = new OrganizationRepository();
 const orgMemberRepository = new OrgMemberRepository();
 const settingsRepository = new SettingsRepository();
 const sshKeyRepository = new SshKeyRepository();
-const taskRepository = new TaskRepository();
 const userRepository = new UserRepository();
 const workspaceRepository = new WorkspaceRepository();
 const sandboxRepository = new SandboxRepository();
@@ -128,8 +125,6 @@ const sandboxDestroyer = new SandboxDestroyer({
   cliProxyService,
 });
 
-const taskService = new TaskService(taskRepository);
-
 const sandboxLifecycle = new SandboxLifecycle(sandboxPorts);
 
 const prebuildRunner = new PrebuildRunner({
@@ -142,15 +137,6 @@ const prebuildRunner = new PrebuildRunner({
 
 const imageBuilder = createImageBuilder(config.imageBuilder);
 const baseImageBuilder = new BaseImageBuilder(kubeClient, imageBuilder);
-
-const taskSpawner = new TaskSpawner({
-  sandboxSpawner,
-  sandboxService,
-  taskService,
-  workspaceService,
-  sessionTemplateService,
-  agentClient,
-});
 
 const prebuildChecker = new PrebuildChecker({
   workspaceService,
@@ -178,8 +164,6 @@ export {
   sandboxSpawner,
   sessionTemplateService,
   sshKeyService,
-  taskService,
-  taskSpawner,
   userService,
   workspaceService,
 };

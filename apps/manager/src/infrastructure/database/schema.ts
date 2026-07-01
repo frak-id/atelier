@@ -4,7 +4,6 @@ import type {
   SandboxOrigin,
   SandboxRuntime,
   SandboxWarning,
-  TaskData,
   WorkspaceConfig,
 } from "../../schemas/index.ts";
 
@@ -153,24 +152,6 @@ export const settings = sqliteTable("settings", {
   value: text("value", { mode: "json" }).notNull(),
   updatedAt: text("updated_at").notNull(),
 });
-
-export const tasks = sqliteTable(
-  "tasks",
-  {
-    id: text("id").primaryKey(),
-    orgId: text("org_id"),
-    workspaceId: text("workspace_id").notNull(),
-    title: text("title").notNull(),
-    status: text("status").notNull().default("draft"),
-    data: text("data", { mode: "json" }).notNull().$type<TaskData>(),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (t) => [
-    index("idx_tasks_workspace_id").on(t.workspaceId),
-    index("idx_tasks_org_id").on(t.orgId),
-  ],
-);
 
 export const apiKeys = sqliteTable(
   "api_keys",

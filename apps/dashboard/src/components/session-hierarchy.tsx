@@ -24,7 +24,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { SessionInteractionState } from "@/hooks/use-task-session-progress";
+import type { SessionInteractionState } from "@/lib/agent-helpers";
 import { getQuestionDisplayText } from "@/lib/intervention-helpers";
 import type { SessionNode } from "@/lib/session-hierarchy";
 import { buildAgentSessionUrl, cn } from "@/lib/utils";

@@ -30,9 +30,6 @@ function handleEvent(event: ManagerEvent, queryClient: QueryClient): void {
       queryClient.invalidateQueries({
         queryKey: queryKeys.system.stats,
       });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.all,
-      });
       break;
 
     case "sandbox.updated":
@@ -48,19 +45,6 @@ function handleEvent(event: ManagerEvent, queryClient: QueryClient): void {
         });
         queryClient.invalidateQueries({
           queryKey: queryKeys.sandboxes.tools(properties.id),
-        });
-      }
-      break;
-
-    case "task.created":
-    case "task.updated":
-    case "task.deleted":
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tasks.all,
-      });
-      if (properties.id) {
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.tasks.detail(properties.id),
         });
       }
       break;

@@ -1,4 +1,3 @@
-import type { Task } from "@frak/atelier-manager/types";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
@@ -15,8 +14,8 @@ import {
 } from "lucide-react";
 import type { Sandbox, Workspace } from "@/api/client";
 import {
-  deriveToolStatus,
   agentSessionsQuery,
+  deriveToolStatus,
   organizationListQuery,
   sandboxGitStatusQuery,
   sandboxToolsQuery,
@@ -47,7 +46,6 @@ import { ToolIconButton } from "./sandbox-drawer/tool-button";
 interface SandboxCardProps {
   sandbox: Sandbox;
   workspace?: Workspace;
-  task?: Task;
   onDelete: () => void;
   onRecreate?: () => void;
   isRecreating?: boolean;
@@ -58,13 +56,11 @@ interface SandboxCardProps {
   onRecover?: () => void;
   isRecovering?: boolean;
   onShowDetails: () => void;
-  onShowTask?: () => void;
 }
 
 export function SandboxCard({
   sandbox,
   workspace,
-  task,
   onDelete,
   onRecreate,
   isRecreating,
@@ -75,7 +71,6 @@ export function SandboxCard({
   onRecover,
   isRecovering,
   onShowDetails,
-  onShowTask,
 }: SandboxCardProps) {
   const { data: services } = useSandboxServices(
     sandbox.id,
@@ -155,30 +150,11 @@ export function SandboxCard({
                   {sandbox.id}
                 </span>
               )}
-              {(sandbox.workspaceId || task) && (
+              {sandbox.workspaceId && (
                 <p className="text-sm text-muted-foreground truncate flex items-center gap-1.5">
-                  {sandbox.workspaceId && (
-                    <span title={workspace?.name ?? sandbox.workspaceId}>
-                      {workspace?.name ?? sandbox.workspaceId}
-                    </span>
-                  )}
-                  {sandbox.workspaceId && task && (
-                    <span className="text-muted-foreground/50">•</span>
-                  )}
-                  {task && (
-                    // biome-ignore lint/a11y/noStaticElementInteractions: Stop propagation wrapper
-                    // biome-ignore lint/a11y/useKeyWithClickEvents: Stop propagation wrapper
-                    <span
-                      className="truncate hover:text-foreground transition-colors cursor-pointer"
-                      title={task.title}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onShowTask?.();
-                      }}
-                    >
-                      {task.title}
-                    </span>
-                  )}
+                  <span title={workspace?.name ?? sandbox.workspaceId}>
+                    {workspace?.name ?? sandbox.workspaceId}
+                  </span>
                 </p>
               )}
             </div>
@@ -437,8 +413,7 @@ function RunningToolsBadge({
 }
 
 function SandboxActivitySummary({ sandboxId }: { sandboxId: string }) {
-  const { sessionStatuses, permissions, questions } =
-    useAgentData(sandboxId);
+  const { sessionStatuses, permissions, questions } = useAgentData(sandboxId);
   const { data: sessions } = useQuery({
     ...agentSessionsQuery(sandboxId),
     enabled: !!sandboxId,

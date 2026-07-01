@@ -30,6 +30,5 @@ export type {
   Sandbox,
   SshKey,
   SystemStats,
-  Task,
   Workspace,
 } from "@frak/atelier-manager/types";

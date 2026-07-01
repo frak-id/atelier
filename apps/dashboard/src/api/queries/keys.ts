@@ -21,11 +21,6 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
 
 export const queryKeys = {
   health: ["health"] as const,
-  tasks: {
-    all: ["tasks"] as const,
-    list: (workspaceId?: string) => ["tasks", "list", workspaceId] as const,
-    detail: (id: string) => ["tasks", "detail", id] as const,
-  },
   sandboxes: {
     all: ["sandboxes"] as const,
     list: (filters?: { status?: string; workspaceId?: string }) =>
