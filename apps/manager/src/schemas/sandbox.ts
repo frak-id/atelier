@@ -11,7 +11,7 @@ export type SandboxStatus = Static<typeof SandboxStatusSchema>;
 
 export const SandboxUrlsSchema = t.Object({
   vscode: t.String(),
-  opencode: t.String(),
+  agent: t.String(),
   ssh: t.String(),
   browser: t.Optional(t.String()),
   dev: t.Optional(t.String()),
@@ -26,7 +26,7 @@ export const SandboxRuntimeSchema = t.Object({
   memoryMb: t.Number(),
   pid: t.Optional(t.Number()),
   error: t.Optional(t.String()),
-  opencodePassword: t.Optional(t.String()),
+  agentPassword: t.Optional(t.String()),
 });
 export type SandboxRuntime = Static<typeof SandboxRuntimeSchema>;
 
@@ -53,20 +53,20 @@ export const SandboxOriginSchema = t.Object({
 export type SandboxOrigin = Static<typeof SandboxOriginSchema>;
 
 /**
- * OpenCode workspace-mode context captured from the local opencode-atelier
- * plugin at sandbox creation time. Persisted on the sandbox row so the
- * `bootExistingSandbox` (restart) path can rehydrate the same env block
+ * Agent workspace-mode context captured from the local harness plugin (today
+ * opencode-atelier) at sandbox creation time. Persisted on the sandbox row so
+ * the `bootExistingSandbox` (restart) path can rehydrate the same env block
  * — without it, restarted sandboxes silently lose workspace mode until the
  * user spawns a fresh sandbox via the plugin.
  */
-export const SandboxOpencodeWorkspaceContextSchema = t.Object({
+export const SandboxAgentWorkspaceContextSchema = t.Object({
   /** Filtered env from `WorkspaceAdapter.create(info, env)`'s second arg. */
-  opencodeEnv: t.Optional(t.Record(t.String(), t.String())),
+  agentEnv: t.Optional(t.Record(t.String(), t.String())),
   /** Origin workspace_id when forking. */
   sourceWorkspaceFromID: t.Optional(t.String()),
 });
-export type SandboxOpencodeWorkspaceContext = Static<
-  typeof SandboxOpencodeWorkspaceContextSchema
+export type SandboxAgentWorkspaceContext = Static<
+  typeof SandboxAgentWorkspaceContextSchema
 >;
 
 /**
@@ -108,11 +108,11 @@ export const SandboxSchema = t.Object({
   createdAt: t.String(),
   updatedAt: t.String(),
   /**
-   * Workspace-mode context captured at create time from the local
-   * opencode-atelier plugin. Stored verbatim so restarts can rehydrate
-   * the same `opencode serve` env without the local CLI being involved.
+   * Workspace-mode context captured at create time from the local harness
+   * plugin. Stored verbatim so restarts can rehydrate the same agent env
+   * without the local CLI being involved.
    */
-  opencodeWorkspaceContext: t.Optional(SandboxOpencodeWorkspaceContextSchema),
+  agentWorkspaceContext: t.Optional(SandboxAgentWorkspaceContextSchema),
   /**
    * Soft-failure conditions surfaced on the sandbox (degraded modes,
    * config drift). See `SandboxWarningSchema`. Append-only within the
@@ -135,14 +135,14 @@ export const CreateSandboxBodySchema = t.Object({
   /** Where the sandbox came from. Stored verbatim on the persisted sandbox. */
   origin: t.Optional(SandboxOriginSchema),
   /**
-   * OpenCode-specific env vars forwarded into the remote `opencode serve`
-   * process. Set by the opencode-atelier plugin to enable workspace mode
+   * Harness env vars forwarded into the remote agent process. Set by the
+   * harness plugin (today opencode-atelier) to enable workspace mode
    * (`OPENCODE_EXPERIMENTAL_WORKSPACES`), tag emitted events
    * (`OPENCODE_WORKSPACE_ID`), and propagate tracing (`OTEL_*`).
    * Filtered to a known whitelist on the plugin side; auth tokens are
    * deliberately NOT forwarded (the sandbox uses its own provisioned auth).
    */
-  opencodeEnv: t.Optional(t.Record(t.String(), t.String())),
+  agentEnv: t.Optional(t.Record(t.String(), t.String())),
   /**
    * If this workspace is being forked from an existing one (warp source),
    * the original workspace_id. Maps to `from?: WorkspaceInfo` from the
@@ -383,7 +383,7 @@ export type StartSandboxSessionBody = Static<
 export const StartSessionStageSchema = t.Union([
   t.Literal("spawning-sandbox"),
   t.Literal("waiting-for-agent"),
-  t.Literal("waiting-for-opencode"),
+  t.Literal("waiting-for-harness"),
   t.Literal("creating-session"),
 ]);
 export type StartSessionStage = Static<typeof StartSessionStageSchema>;
@@ -400,7 +400,7 @@ export const StartSessionEventSchema = t.Union([
     sessionId: t.String(),
     sessionUrl: t.String(),
     directory: t.String(),
-    opencodeUrl: t.String(),
+    agentUrl: t.String(),
   }),
   t.Object({
     type: t.Literal("error"),

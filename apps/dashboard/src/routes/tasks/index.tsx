@@ -500,14 +500,14 @@ function TaskRow({
     todoProgress,
   } = useTaskSessionProgress(
     task,
-    sandbox?.runtime?.urls?.opencode,
+    sandbox?.runtime?.urls?.agent,
     sandbox
       ? {
           id: sandbox.id,
           workspaceId: sandbox.workspaceId,
         }
       : undefined,
-    task.status === "active" && !!sandbox?.runtime?.urls?.opencode,
+    task.status === "active" && !!sandbox?.runtime?.urls?.agent,
   );
 
   const startMutation = useStartTask();

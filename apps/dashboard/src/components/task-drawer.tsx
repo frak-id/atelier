@@ -99,7 +99,7 @@ export function TaskDrawer({
     todoProgress,
   } = useTaskSessionProgress(
     taskData ?? undefined,
-    sandbox?.runtime?.urls?.opencode,
+    sandbox?.runtime?.urls?.agent,
     sandbox
       ? {
           id: sandbox.id,
@@ -108,7 +108,7 @@ export function TaskDrawer({
       : undefined,
     !!taskData &&
       taskData.status === "active" &&
-      !!sandbox?.runtime?.urls?.opencode,
+      !!sandbox?.runtime?.urls?.agent,
   );
 
   const { data: templatesData } = useQuery({
@@ -388,11 +388,11 @@ export function TaskDrawer({
                         )}
                       </div>
 
-                      {needsAttention && sandbox?.runtime?.urls?.opencode && (
+                      {needsAttention && sandbox?.runtime?.urls?.agent && (
                         <AttentionBlock
                           permissions={aggregatedInteraction.pendingPermissions}
                           questions={aggregatedInteraction.pendingQuestions}
-                          opencodeUrl={sandbox.runtime.urls.opencode}
+                          opencodeUrl={sandbox.runtime.urls.agent}
                         />
                       )}
 
@@ -400,7 +400,7 @@ export function TaskDrawer({
                         hierarchy={hierarchy}
                         taskSessions={taskData.data?.sessions ?? []}
                         interactions={sessionInteractions}
-                        opencodeUrl={sandbox?.runtime?.urls?.opencode}
+                        opencodeUrl={sandbox?.runtime?.urls?.agent}
                         directory={getWorkspaceDirectory(workspace)}
                       />
                     </CardContent>

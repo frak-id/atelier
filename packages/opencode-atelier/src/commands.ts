@@ -102,7 +102,7 @@ const handlers: Record<string, Handler> = {
         `  Workspace: ${sb.workspaceId ?? "none"}`,
         `  Origin: ${sb.origin?.source ?? "manual"}`,
         `  Resources: ${sb.runtime.vcpus}vCPU / ${sb.runtime.memoryMb}MB`,
-        `  OpenCode: ${sb.runtime.urls.opencode}`,
+        `  OpenCode: ${sb.runtime.urls.agent}`,
         `  VS Code: ${sb.runtime.urls.vscode}`,
         "",
       );
@@ -127,7 +127,7 @@ const handlers: Record<string, Handler> = {
         : null,
       `IP: ${sb.runtime.ipAddress}`,
       `Resources: ${sb.runtime.vcpus}vCPU / ${sb.runtime.memoryMb}MB`,
-      `OpenCode: ${sb.runtime.urls.opencode}`,
+      `OpenCode: ${sb.runtime.urls.agent}`,
       `VS Code: ${sb.runtime.urls.vscode}`,
       `SSH: ${sb.runtime.urls.ssh}`,
       sb.runtime.urls.browser ? `Browser: ${sb.runtime.urls.browser}` : null,

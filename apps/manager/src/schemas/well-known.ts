@@ -3,7 +3,7 @@ import { t } from "elysia";
 
 export const WellKnownSandboxRoutesSchema = t.Object({
   vscode: t.String(),
-  opencode: t.String(),
+  agent: t.String(),
   ssh: t.String(),
   browser: t.Optional(t.String()),
   dev: t.Optional(t.String()),

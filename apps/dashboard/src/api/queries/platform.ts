@@ -1,4 +1,4 @@
-import type { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
+import type { AgentConfigResponse } from "@frak/atelier-manager/types";
 import { queryOptions, useMutation } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys, unwrap } from "./keys";
@@ -96,7 +96,7 @@ export const workspaceOpenCodeConfigQuery = (workspaceId: string) =>
           .workspace({ workspaceId })
           ["opencode-config"].get(),
       );
-      return result as OpenCodeConfigResponse | null;
+      return result as AgentConfigResponse | null;
     },
     enabled: !!workspaceId,
     staleTime: 30000,
@@ -108,7 +108,7 @@ export const globalOpenCodeConfigQuery = queryOptions({
     const result = unwrap(
       await api.api["session-templates"]["opencode-config"].get(),
     );
-    return result as OpenCodeConfigResponse | null;
+    return result as AgentConfigResponse | null;
   },
   staleTime: 30000,
 });

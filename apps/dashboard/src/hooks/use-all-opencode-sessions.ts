@@ -20,14 +20,14 @@ export function useAllOpenCodeSessions() {
 
   const sessionQueries = useQueries({
     queries: runningSandboxes.map((sandbox) => ({
-      ...opencodeSessionsQuery(sandbox.runtime.urls.opencode),
+      ...opencodeSessionsQuery(sandbox.runtime.urls.agent),
       select: (sessions: Session[]) =>
         sessions.map((session) => ({
           ...session,
           sandbox: {
             id: sandbox.id,
             workspaceId: sandbox.workspaceId,
-            opencodeUrl: sandbox.runtime.urls.opencode,
+            opencodeUrl: sandbox.runtime.urls.agent,
           },
         })),
     })),

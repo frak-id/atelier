@@ -59,10 +59,10 @@ export async function createWorkspaceSandbox(
           name: options.name,
           origin: options.origin,
           createdBy: createdByUserId,
-          // Forward workspace-mode env from the opencode-atelier plugin so
-          // the remote `opencode serve` boots in workspace mode.
-          opencodeWorkspaceContext: {
-            opencodeEnv: options.opencodeEnv,
+          // Forward workspace-mode env from the harness plugin so the remote
+          // agent boots in workspace mode.
+          agentWorkspaceContext: {
+            agentEnv: options.agentEnv,
             sourceWorkspaceFromID: options.sourceWorkspaceFromID,
           },
         },
@@ -154,7 +154,7 @@ export async function createWorkspaceSandbox(
     await timer.step("opencode_healthy", () =>
       waitForOpencodeHealthy(
         bootResult.sandbox.runtime.ipAddress,
-        bootResult.sandbox.runtime.opencodePassword,
+        bootResult.sandbox.runtime.agentPassword,
       ),
     );
 

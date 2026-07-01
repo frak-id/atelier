@@ -5,13 +5,14 @@ import { config } from "../shared/lib/config.ts";
 import { buildToolServices } from "./tools/registry.ts";
 
 /**
- * Workspace-mode context forwarded from the local opencode-atelier plugin.
- * Merged into the `opencode serve` env block so the remote opencode boots
- * in workspace mode (`OPENCODE_EXPERIMENTAL_WORKSPACES` + `OPENCODE_WORKSPACE_ID`).
+ * Workspace-mode context forwarded from the local harness plugin (today
+ * opencode-atelier). Merged into the agent's env block so the remote harness
+ * boots in workspace mode (e.g. `OPENCODE_EXPERIMENTAL_WORKSPACES` +
+ * `OPENCODE_WORKSPACE_ID` for opencode).
  */
-export interface OpencodeWorkspaceContext {
+export interface AgentWorkspaceContext {
   /** Filtered env from `WorkspaceAdapter.create(info, env)`'s second arg. */
-  opencodeEnv?: Record<string, string>;
+  agentEnv?: Record<string, string>;
   /** Origin workspace_id when forking. */
   sourceWorkspaceFromID?: string;
 }
@@ -19,8 +20,8 @@ export interface OpencodeWorkspaceContext {
 export function buildSandboxConfig(
   sandboxId: string,
   workspace: Workspace | undefined,
-  opencodePassword: string | undefined,
-  workspaceContext?: OpencodeWorkspaceContext,
+  agentPassword: string | undefined,
+  workspaceContext?: AgentWorkspaceContext,
 ): SandboxConfig {
   const repos = (workspace?.config.repos ?? []).map((r) => ({
     clonePath: r.clonePath,
@@ -44,8 +45,8 @@ export function buildSandboxConfig(
     services: buildToolServices({
       workspaceDir,
       dashboardDomain,
-      opencodePassword,
-      opencodeEnv: workspaceContext?.opencodeEnv,
+      agentPassword,
+      agentEnv: workspaceContext?.agentEnv,
       dev: resolveDevConfig(workspace?.config),
     }),
     devForwarder: {

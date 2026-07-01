@@ -41,7 +41,7 @@ export function useAttentionData() {
 
   const queries = useQueries({
     queries: runningSandboxes.flatMap((sandbox) => {
-      const url = sandbox.runtime.urls.opencode;
+      const url = sandbox.runtime.urls.agent;
       return [
         {
           ...opencodePermissionsQuery(url),
@@ -87,7 +87,7 @@ export function useAttentionData() {
     if (enrichedPermissions.length > 0 || enrichedQuestions.length > 0) {
       groups.push({
         sandboxId: sandbox.id,
-        opencodeUrl: sandbox.runtime.urls.opencode,
+        opencodeUrl: sandbox.runtime.urls.agent,
         workspaceName,
         permissions: enrichedPermissions,
         questions: enrichedQuestions,
@@ -98,11 +98,11 @@ export function useAttentionData() {
       items.push({
         id: `perm-${sandbox.id}-${p.sessionID}-${p.id}`,
         sandboxId: sandbox.id,
-        sandboxUrl: sandbox.runtime.urls.opencode,
+        sandboxUrl: sandbox.runtime.urls.agent,
         workspaceName,
         type: "permission",
         summary: `Requesting permission: ${p.permission}`,
-        opencodeUrl: sandbox.runtime.urls.opencode,
+        opencodeUrl: sandbox.runtime.urls.agent,
         raw: { kind: "permission", request: p },
       });
     }
@@ -111,11 +111,11 @@ export function useAttentionData() {
       items.push({
         id: `ques-${sandbox.id}-${q.sessionID}-${q.id}`,
         sandboxId: sandbox.id,
-        sandboxUrl: sandbox.runtime.urls.opencode,
+        sandboxUrl: sandbox.runtime.urls.agent,
         workspaceName,
         type: "question",
         summary: getQuestionDisplayText(q),
-        opencodeUrl: sandbox.runtime.urls.opencode,
+        opencodeUrl: sandbox.runtime.urls.agent,
         raw: { kind: "question", request: q },
       });
     }

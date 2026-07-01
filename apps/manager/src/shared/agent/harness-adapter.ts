@@ -52,6 +52,23 @@ export interface HarnessAdapter {
   readonly configPath?: string;
   /** Path to the harness's auth/credential file, for auth-sync. */
   readonly authPath?: string;
+
+  /**
+   * The harness config file that cliproxy provider settings are injected into,
+   * in `~/`-relative form (matches ConfigFileService path keys). Undefined if
+   * the harness has no such surface.
+   */
+  readonly proxyConfigFile?: string;
+  /**
+   * Merge cliproxy provider configs into this harness's config file content,
+   * returning the new file content. `existing` is the current JSON content, or
+   * undefined if the file doesn't exist yet. The merge shape is the harness's
+   * own config schema.
+   */
+  mergeProxyProviders?(
+    providers: Record<string, unknown>,
+    existing: string | undefined,
+  ): string;
 }
 
 /**
@@ -65,7 +82,12 @@ interface HarnessSpec {
   command: string;
   configPath?: string;
   authPath?: string;
+  proxyConfigFile?: string;
   sessionConfig?: (selection: AgentModelSelection) => SessionConfigAssignment[];
+  mergeProxyProviders?: (
+    providers: Record<string, unknown>,
+    existing: string | undefined,
+  ) => string;
 }
 
 class SpecHarnessAdapter implements HarnessAdapter {
@@ -80,6 +102,9 @@ class SpecHarnessAdapter implements HarnessAdapter {
   get authPath(): string | undefined {
     return this.spec.authPath;
   }
+  get proxyConfigFile(): string | undefined {
+    return this.spec.proxyConfigFile;
+  }
 
   acpCommand(): string {
     return `${SHARED_BIN_DIR}/${this.spec.command}`;
@@ -88,6 +113,31 @@ class SpecHarnessAdapter implements HarnessAdapter {
   sessionConfig(selection: AgentModelSelection): SessionConfigAssignment[] {
     return this.spec.sessionConfig?.(selection) ?? [];
   }
+
+  mergeProxyProviders(
+    providers: Record<string, unknown>,
+    existing: string | undefined,
+  ): string {
+    return (
+      this.spec.mergeProxyProviders?.(providers, existing) ??
+      JSON.stringify({ provider: providers })
+    );
+  }
+}
+
+// Merge cliproxy providers into opencode's config schema (`{ provider: {...} }`).
+// Throws on malformed existing JSON so the caller can leave the file untouched
+// and warn (rather than clobbering a corrupt config with a fresh document).
+function opencodeMergeProxyProviders(
+  providers: Record<string, unknown>,
+  existing: string | undefined,
+): string {
+  const parsed: Record<string, unknown> = existing
+    ? (JSON.parse(existing) as Record<string, unknown>)
+    : {};
+  const existingProvider = (parsed.provider as Record<string, unknown>) ?? {};
+  parsed.provider = { ...existingProvider, ...providers };
+  return JSON.stringify(parsed);
 }
 
 // OpenCode selects model/agent via session/set_config_option (verified against
@@ -120,7 +170,9 @@ const HARNESS_SPECS: HarnessSpec[] = [
     command: "opencode acp",
     configPath: `${VM.HOME}/.config/opencode/opencode.json`,
     authPath: `${VM.HOME}/.local/share/opencode/auth.json`,
+    proxyConfigFile: "~/.config/opencode/opencode.json",
     sessionConfig: opencodeSessionConfig,
+    mergeProxyProviders: opencodeMergeProxyProviders,
   },
   { id: "claude-code", command: "claude-agent-acp" },
   { id: "codex", command: "codex-acp" },

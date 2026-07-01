@@ -1,4 +1,4 @@
-import type { OpenCodeConfigResponse } from "@frak/atelier-manager/types";
+import type { AgentConfigResponse } from "@frak/atelier-manager/types";
 import type { SessionTemplate } from "@frak/atelier-shared/constants";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -23,7 +23,7 @@ import {
 
 interface SessionTemplateEditDialogProps {
   template: SessionTemplate | null;
-  openCodeConfig: OpenCodeConfigResponse | undefined;
+  openCodeConfig: AgentConfigResponse | undefined;
   onClose: () => void;
   onSave: (template: SessionTemplate) => void;
   isNew: boolean;

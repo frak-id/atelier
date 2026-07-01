@@ -16,9 +16,12 @@ import { config } from "../../shared/lib/config.ts";
  * orchestrator/K8s layers iterate this registry instead of hand-wiring each
  * tool, so adding/removing a tool is a single entry here.
  *
- * `opencode` is the one core tool: it is always present and always started,
- * even for workspaceless sandboxes. Everything else (vscode, terminal, the
- * browser/VNC stack) is generic and could later be made user-configurable.
+ * The coding-agent harness is the one core/critical tool: it is always present
+ * and always started, even for workspaceless sandboxes, and its failure aborts
+ * the spawn (see `criticalServiceNames()`). Everything else (vscode, terminal,
+ * the browser/VNC stack) is generic and could later be made user-configurable.
+ * Tools declare `core`/`critical` in data, so no call site special-cases a
+ * particular harness slug.
  *
  * NOTE: the in-pod agent's autostart loop is disabled (see agent `main.rs`),
  * so service entries carry no start flag — the manager decides what to start
@@ -31,8 +34,10 @@ type ServiceEntry = SandboxConfig["services"][string];
 export interface ToolContext {
   workspaceDir: string;
   dashboardDomain: string;
-  opencodePassword?: string;
-  opencodeEnv?: Record<string, string>;
+  /** Basic-auth password for the harness's HTTP surface (if it has one). */
+  agentPassword?: string;
+  /** Workspace-mode env forwarded into the harness process. */
+  agentEnv?: Record<string, string>;
   dev?: { command: string; workdir?: string; env?: Record<string, string> };
 }
 
@@ -53,6 +58,12 @@ export interface ToolDefinition {
   name: string;
   /** Core tools are always present and started, even without a workspace. */
   core?: boolean;
+  /**
+   * Critical tools block the user-facing flow: if one of their services fails
+   * to start the spawn is aborted (see `startServices`). The active harness is
+   * critical; everything else is best-effort.
+   */
+  critical?: boolean;
   /** `boot` = ingress + service started at spawn; `lazy` = on demand. */
   start: ToolStart;
   /**
@@ -99,6 +110,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     slug: "opencode",
     name: "OpenCode",
     core: true,
+    critical: true,
     start: "boot",
     exposure: {
       subdomain: "opencode",
@@ -114,12 +126,12 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           command: `cd ${ctx.workspaceDir} && /opt/shared/bin/opencode serve --hostname 0.0.0.0 --port ${port} --cors https://${ctx.dashboardDomain}`,
           user: "dev",
           env: {
-            ...(ctx.opencodePassword && {
-              OPENCODE_SERVER_PASSWORD: ctx.opencodePassword,
+            ...(ctx.agentPassword && {
+              OPENCODE_SERVER_PASSWORD: ctx.agentPassword,
             }),
             // Forwarded from the local opencode-atelier plugin. Anything
             // missing here leaves the remote opencode in non-workspace mode.
-            ...(ctx.opencodeEnv ?? {}),
+            ...(ctx.agentEnv ?? {}),
           },
         },
       };
@@ -159,7 +171,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           command: harness.acpCommand(),
           user: "dev",
           workdir: ctx.workspaceDir,
-          ...(ctx.opencodeEnv && { env: ctx.opencodeEnv }),
+          ...(ctx.agentEnv && { env: ctx.agentEnv }),
         },
       };
     },
@@ -273,6 +285,16 @@ export function bootServiceNames(): string[] {
 /** Service names started for a workspaceless sandbox (core tools only). */
 export function coreServiceNames(): string[] {
   return BUILTIN_TOOLS.filter((tool) => tool.core).flatMap(
+    (tool) => tool.autoStartServices,
+  );
+}
+
+/**
+ * Service names whose start failure must abort the spawn. Data-driven so no
+ * call site hardcodes a harness slug (see `startServices` in guest-base).
+ */
+export function criticalServiceNames(): string[] {
+  return BUILTIN_TOOLS.filter((tool) => tool.critical).flatMap(
     (tool) => tool.autoStartServices,
   );
 }

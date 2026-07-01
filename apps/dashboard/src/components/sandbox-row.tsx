@@ -29,7 +29,7 @@ export function SandboxRow({
   const deleteMutation = useDeleteSandbox();
 
   const { data: sessions } = useQuery({
-    ...opencodeSessionsQuery(sandbox.runtime.urls.opencode),
+    ...opencodeSessionsQuery(sandbox.runtime.urls.agent),
     enabled: sandbox.status === "running",
   });
   const sessionCount = sessions?.length ?? 0;

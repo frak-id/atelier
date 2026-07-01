@@ -150,7 +150,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         yield sse({
           data: {
             type: "progress",
-            stage: "waiting-for-opencode",
+            stage: "waiting-for-harness",
             sandboxId: sandbox.id,
           },
         });
@@ -159,7 +159,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         // creating the session and issuing the prompt.
         await waitForOpencodeHealthy(
           sandbox.runtime.ipAddress,
-          sandbox.runtime.opencodePassword,
+          sandbox.runtime.agentPassword,
         );
 
         yield sse({
@@ -171,7 +171,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
         });
         const client = createSandboxOpencodeClient(
           sandbox.runtime.ipAddress,
-          sandbox.runtime.opencodePassword,
+          sandbox.runtime.agentPassword,
         );
         const session = await startOpencodeSession(client, {
           prompt: body.message,
@@ -180,11 +180,11 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
           agent: body.templateConfig?.agent,
         });
 
-        const opencodeUrl = sandbox.runtime.urls.opencode;
+        const agentUrl = sandbox.runtime.urls.agent;
         const encodedDirectory = Buffer.from(session.directory).toString(
           "base64url",
         );
-        const sessionUrl = `${opencodeUrl}/${encodedDirectory}/session/${session.id}`;
+        const sessionUrl = `${agentUrl}/${encodedDirectory}/session/${session.id}`;
 
         yield sse({
           data: {
@@ -193,7 +193,7 @@ export const sandboxRoutes = new Elysia({ prefix: "/sandboxes" })
             sessionId: session.id,
             sessionUrl,
             directory: session.directory,
-            opencodeUrl,
+            agentUrl,
           },
         });
       } catch (err) {

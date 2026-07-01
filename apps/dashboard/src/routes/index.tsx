@@ -275,9 +275,9 @@ function ActiveTaskCard({
   const { progressPercent, allCount, completedSubsessionCount, isLoading } =
     useTaskSessionProgress(
       task,
-      sandbox?.runtime?.urls?.opencode,
+      sandbox?.runtime?.urls?.agent,
       undefined,
-      !!sandbox?.runtime?.urls?.opencode,
+      !!sandbox?.runtime?.urls?.agent,
     );
 
   return (

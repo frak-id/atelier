@@ -291,9 +291,9 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
 
     // Inject Basic Auth header for Ingress to forward to OpenCode.
     // Traefik's authResponseHeaders copies this to the upstream request.
-    if (sandbox.runtime.opencodePassword) {
+    if (sandbox.runtime.agentPassword) {
       const basicAuth = Buffer.from(
-        `opencode:${sandbox.runtime.opencodePassword}`,
+        `opencode:${sandbox.runtime.agentPassword}`,
       ).toString("base64");
       set.headers.authorization = `Basic ${basicAuth}`;
     }

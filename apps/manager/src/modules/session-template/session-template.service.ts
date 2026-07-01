@@ -230,7 +230,7 @@ export class SessionTemplateService {
 
   private async fetchOpenCodeConfigFromSandbox(sandbox: {
     id: string;
-    runtime?: { ipAddress?: string; opencodePassword?: string };
+    runtime?: { ipAddress?: string; agentPassword?: string };
   }) {
     const ipAddress = sandbox.runtime?.ipAddress;
     if (!ipAddress) {
@@ -240,7 +240,7 @@ export class SessionTemplateService {
     try {
       const client = createSandboxOpencodeClient(
         ipAddress,
-        sandbox.runtime?.opencodePassword,
+        sandbox.runtime?.agentPassword,
       );
 
       const [providersResult, agentsResult] = await Promise.all([

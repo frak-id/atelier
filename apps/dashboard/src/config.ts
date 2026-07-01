@@ -1,7 +1,7 @@
 interface RuntimeConfig {
   sshHostname: string;
   sshPort: number;
-  opencodePort: number;
+  agentPort: number;
   mcp: {
     url: string;
     hasToken: boolean;
@@ -17,7 +17,7 @@ export async function loadConfig(): Promise<void> {
     loadedConfig = {
       sshHostname: "ssh.localhost",
       sshPort: 2222,
-      opencodePort: 3000,
+      agentPort: 3000,
       mcp: { url: "http://localhost:4000/mcp", hasToken: false },
     };
     return;
@@ -44,8 +44,8 @@ export const config = {
   get sshPort() {
     return assertLoaded().sshPort;
   },
-  get opencodePort() {
-    return assertLoaded().opencodePort;
+  get agentPort() {
+    return assertLoaded().agentPort;
   },
   get mcp() {
     return assertLoaded().mcp;

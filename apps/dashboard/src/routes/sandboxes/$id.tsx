@@ -112,10 +112,10 @@ function SandboxImmersionPage() {
   const task = tasks?.find((t) => t.data.sandboxId === id);
 
   useEffect(() => {
-    if (sandbox?.runtime.opencodePassword) {
+    if (sandbox?.runtime.agentPassword) {
       registerOpencodePassword(
-        sandbox.runtime.urls.opencode,
-        sandbox.runtime.opencodePassword,
+        sandbox.runtime.urls.agent,
+        sandbox.runtime.agentPassword,
       );
     }
   }, [sandbox]);

@@ -306,8 +306,8 @@ function stageLabel(stage: StartSessionStage | null): string {
       return "Spawning sandbox...";
     case "waiting-for-agent":
       return "Waiting for agent...";
-    case "waiting-for-opencode":
-      return "Starting OpenCode...";
+    case "waiting-for-harness":
+      return "Starting agent...";
     case "creating-session":
       return "Creating session...";
     default:

@@ -219,7 +219,7 @@ export function SandboxCard({
 
           {sandbox.status === "running" && (
             <SandboxActivitySummary
-              opencodeUrl={sandbox.runtime.urls.opencode}
+              opencodeUrl={sandbox.runtime.urls.agent}
             />
           )}
 

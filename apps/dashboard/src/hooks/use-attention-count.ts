@@ -16,7 +16,7 @@ export function useAttentionCount() {
   const { runningSandboxes, sessions } = useAllOpenCodeSessions();
 
   const queries = runningSandboxes.flatMap((sandbox) => {
-    const baseUrl = sandbox.runtime.urls.opencode;
+    const baseUrl = sandbox.runtime.urls.agent;
     return [
       opencodePermissionsQuery(baseUrl),
       opencodeQuestionsQuery(baseUrl),

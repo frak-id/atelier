@@ -22,8 +22,8 @@ import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { SandboxPorts } from "../ports/sandbox-ports.ts";
 import {
+  type AgentWorkspaceContext,
   buildSandboxConfig,
-  type OpencodeWorkspaceContext,
 } from "../sandbox-config.ts";
 import { buildToolIngressResources, listToolInfos } from "../tools/registry.ts";
 import { cleanupSandboxResources } from "./cleanup-coordinator.ts";
@@ -57,9 +57,9 @@ export interface BootNewOptions {
   /**
    * Workspace-mode context forwarded by the local opencode-atelier plugin.
    * Required for cross-machine session warp to land its FK-bound rows.
-   * See `OpencodeWorkspaceContext` for the per-field rationale.
+   * See `AgentWorkspaceContext` for the per-field rationale.
    */
-  opencodeWorkspaceContext?: OpencodeWorkspaceContext;
+  agentWorkspaceContext?: AgentWorkspaceContext;
 }
 
 export interface BootResult {
@@ -91,7 +91,7 @@ export async function bootNewSandbox(
   );
   const volumeSize = options.volumeSize ?? config.kubernetes.defaultVolumeSize;
 
-  const opencodePassword = generatePassword(32);
+  const agentPassword = generatePassword(32);
   const sandbox: Sandbox = {
     id: sandboxId,
     status: "creating",
@@ -102,14 +102,14 @@ export async function bootNewSandbox(
     runtime: {
       ipAddress: "",
       macAddress: "",
-      urls: { vscode: "", opencode: "", ssh: "" },
+      urls: { vscode: "", agent: "", ssh: "" },
       vcpus: options.vcpus,
       memoryMb: options.memoryMb,
-      opencodePassword,
+      agentPassword,
     },
     // Persisted so the restart path can rehydrate workspace mode without
     // needing the local opencode-atelier plugin to re-supply the env.
-    opencodeWorkspaceContext: options.opencodeWorkspaceContext,
+    agentWorkspaceContext: options.agentWorkspaceContext,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -137,15 +137,15 @@ export async function bootNewSandbox(
       createSandboxResources(sandboxId, {
         workspaceId: options.workspaceId,
         image,
-        opencodePassword,
+        agentPassword,
         pvcName,
         configMapName,
         configJson: JSON.stringify(
           buildSandboxConfig(
             sandboxId,
             options.workspace,
-            opencodePassword,
-            options.opencodeWorkspaceContext,
+            agentPassword,
+            options.agentWorkspaceContext,
           ),
         ),
         vcpus: options.vcpus,
@@ -199,8 +199,8 @@ export async function bootExistingSandbox(
     workspace?.config.baseImage,
     workspace?.config.prebuild,
   );
-  const opencodePassword =
-    sandbox.runtime.opencodePassword ?? generatePassword(32);
+  const agentPassword =
+    sandbox.runtime.agentPassword ?? generatePassword(32);
 
   await deleteRestartableSandboxResources(sandboxId, configMapName);
 
@@ -210,7 +210,7 @@ export async function bootExistingSandbox(
     createSandboxResources(sandboxId, {
       workspaceId: sandbox.workspaceId,
       image,
-      opencodePassword,
+      agentPassword,
       pvcName,
       configMapName,
       // Restart path: rehydrate the workspace context captured at create time
@@ -220,8 +220,8 @@ export async function bootExistingSandbox(
         buildSandboxConfig(
           sandboxId,
           workspace,
-          opencodePassword,
-          sandbox.opencodeWorkspaceContext,
+          agentPassword,
+          sandbox.agentWorkspaceContext,
         ),
       ),
       vcpus: sandbox.runtime.vcpus,
@@ -335,7 +335,7 @@ function buildUrls(sandboxId: string, hasDev: boolean): SandboxUrls {
 
   return {
     vscode: toolUrls.vscode ?? "",
-    opencode: toolUrls.opencode ?? "",
+    agent: toolUrls.opencode ?? "",
     ...(toolUrls.browser ? { browser: toolUrls.browser } : {}),
     ...(hasDev && toolUrls.dev ? { dev: toolUrls.dev } : {}),
     ssh:
@@ -354,7 +354,7 @@ function encodeSshAuthorizedKeys(publicKeys: string[]): string | undefined {
 interface SandboxResourceSpec {
   workspaceId?: string;
   image: string;
-  opencodePassword: string;
+  agentPassword: string;
   pvcName: string;
   configMapName: string;
   configJson: string;
@@ -389,7 +389,7 @@ function createSandboxResources(sandboxId: string, spec: SandboxResourceSpec) {
       buildSandboxPod({
         sandboxId,
         image: spec.image,
-        opencodePassword: spec.opencodePassword,
+        agentPassword: spec.agentPassword,
         workspaceId: spec.workspaceId,
         pvcName: spec.pvcName,
         configMapName: spec.configMapName,

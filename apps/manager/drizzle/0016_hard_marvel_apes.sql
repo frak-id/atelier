@@ -1,0 +1,1 @@
+ALTER TABLE `sandboxes` RENAME COLUMN "opencode_workspace_context" TO "agent_workspace_context";

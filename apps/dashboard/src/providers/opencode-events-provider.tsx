@@ -21,17 +21,17 @@ export function OpencodeEventsProvider({
 
   useEffect(() => {
     for (const s of sandboxes ?? []) {
-      if (s.runtime.opencodePassword) {
+      if (s.runtime.agentPassword) {
         registerOpencodePassword(
-          s.runtime.urls.opencode,
-          s.runtime.opencodePassword,
+          s.runtime.urls.agent,
+          s.runtime.agentPassword,
         );
       }
     }
   }, [sandboxes]);
 
   const runningSandboxUrls = useMemo(
-    () => (sandboxes ?? []).map((s) => s.runtime.urls.opencode).sort(),
+    () => (sandboxes ?? []).map((s) => s.runtime.urls.agent).sort(),
     [sandboxes],
   );
 

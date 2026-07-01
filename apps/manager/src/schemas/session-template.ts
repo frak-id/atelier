@@ -1,7 +1,3 @@
-import type {
-  AppAgentsResponse,
-  ProviderListResponse,
-} from "@opencode-ai/sdk/v2";
 import type { Static } from "elysia";
 import { t } from "elysia";
 
@@ -59,11 +55,33 @@ export type MergedSessionTemplatesResponse = Static<
   typeof MergedSessionTemplatesResponseSchema
 >;
 
-export type OpenCodeConfigResponse = {
+/**
+ * Harness-neutral shape of the model/agent config a running sandbox advertises,
+ * consumed by the session-template editor. This is the structural subset the
+ * dashboard reads; the opencode-specific service maps its SDK response onto it,
+ * so no harness SDK type leaks into the wire contract.
+ */
+export interface AgentProviderModel {
+  id: string;
+  name: string;
+  /** Variant name -> variant config; keys are the selectable variant names. */
+  variants?: Record<string, unknown>;
+}
+export interface AgentProvider {
+  id: string;
+  name: string;
+  models: Record<string, AgentProviderModel>;
+}
+export interface AgentDefinition {
+  name: string;
+  mode?: string;
+  hidden?: boolean;
+}
+export type AgentConfigResponse = {
   available: boolean;
   sandboxId?: string;
-  providers?: ProviderListResponse["all"];
-  agents?: AppAgentsResponse;
+  providers?: AgentProvider[];
+  agents?: AgentDefinition[];
 };
 
 export interface SessionTemplateVariables {

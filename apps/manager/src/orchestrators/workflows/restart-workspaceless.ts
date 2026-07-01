@@ -48,7 +48,7 @@ export async function restartWorkspacelessSandbox(
 
     await waitForOpencodeHealthy(
       sandbox.runtime.ipAddress,
-      sandbox.runtime.opencodePassword,
+      sandbox.runtime.agentPassword,
     );
   }
 

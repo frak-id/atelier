@@ -87,10 +87,10 @@ export function SandboxDrawer({
   });
 
   useEffect(() => {
-    if (sandbox?.runtime.opencodePassword) {
+    if (sandbox?.runtime.agentPassword) {
       registerOpencodePassword(
-        sandbox.runtime.urls.opencode,
-        sandbox.runtime.opencodePassword,
+        sandbox.runtime.urls.agent,
+        sandbox.runtime.agentPassword,
       );
     }
   }, [sandbox]);
@@ -434,15 +434,15 @@ export function SandboxDrawer({
                 {sandbox.status === "running" && (
                   <>
                     <SandboxAttentionSection
-                      opencodeUrl={sandbox.runtime.urls.opencode}
+                      opencodeUrl={sandbox.runtime.urls.agent}
                     />
 
                     <DevCommandsPanel sandboxId={sandbox.id} />
 
                     <QuickConnectCard
                       sandboxId={sandbox.id}
-                      opencodeUrl={sandbox.runtime.urls.opencode}
-                      opencodePassword={sandbox.runtime.opencodePassword}
+                      opencodeUrl={sandbox.runtime.urls.agent}
+                      agentPassword={sandbox.runtime.agentPassword}
                       workspaceDir={workspaceDir}
                     />
 
@@ -457,7 +457,7 @@ export function SandboxDrawer({
                         <TabsTrigger value="sessions" className="gap-1.5">
                           Sessions
                           <SessionsTabBadge
-                            opencodeUrl={sandbox.runtime.urls?.opencode}
+                            opencodeUrl={sandbox.runtime.urls?.agent}
                             sandboxId={sandbox.id}
                             workspaceId={sandbox.workspaceId}
                           />
@@ -475,7 +475,7 @@ export function SandboxDrawer({
                       </TabsContent>
                       <TabsContent value="sessions" className="mt-4">
                         <SessionsTab
-                          opencodeUrl={sandbox.runtime.urls?.opencode}
+                          opencodeUrl={sandbox.runtime.urls?.agent}
                           sandboxId={sandbox.id}
                           workspaceId={sandbox.workspaceId}
                           workspace={workspace}

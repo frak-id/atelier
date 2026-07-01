@@ -133,7 +133,7 @@ export class TaskSpawner {
         sessionTemplateId,
         ipAddress,
         opencodeDirectory,
-        sandbox.runtime.opencodePassword,
+        sandbox.runtime.agentPassword,
       );
 
       log.info({ taskId, sandboxId }, "Task initial session started");
@@ -181,7 +181,7 @@ export class TaskSpawner {
 
     const client = createSandboxOpencodeClient(
       sandbox.runtime.ipAddress,
-      sandbox.runtime.opencodePassword,
+      sandbox.runtime.agentPassword,
     );
 
     await Promise.allSettled(
@@ -244,7 +244,7 @@ export class TaskSpawner {
       sessionTemplateId,
       sandbox.runtime.ipAddress,
       opencodeDirectory,
-      sandbox.runtime.opencodePassword,
+      sandbox.runtime.agentPassword,
     );
   }
 

@@ -22,7 +22,7 @@ type ResourceSpec = {
 export type SandboxPodOptions = {
   sandboxId: string;
   image: string;
-  opencodePassword: string;
+  agentPassword: string;
   workspaceId?: string;
   namespace?: string;
   pvcName?: string;
@@ -157,8 +157,10 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           env: [
             { name: "SANDBOX_ID", value: options.sandboxId },
             {
-              name: "OPENCODE_PASSWORD",
-              value: options.opencodePassword,
+              // Pod-level agent Basic-auth password. NOTE: if the pod image's
+              // boot script still reads $OPENCODE_PASSWORD, update it there too.
+              name: "AGENT_PASSWORD",
+              value: options.agentPassword,
             },
           ],
           resources: {

@@ -1,6 +1,7 @@
 import { AUTH_PROVIDERS, VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import { RegistryService } from "../../infrastructure/registry/index.ts";
+import { resolveHarness } from "../../shared/agent/harness-adapter.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { CLIProxyService } from "../cliproxy/cliproxy.service.ts";
 import type { ConfigFileService } from "../config-file/config-file.service.ts";
@@ -172,23 +173,24 @@ export class InternalService {
       }
     }
 
-    const configPath = "~/.config/opencode/opencode.json";
+    // Config path + merge shape come from the active harness adapter, so no
+    // opencode config schema is hardcoded here.
+    const harness = resolveHarness(undefined);
+    const configPath = harness.proxyConfigFile;
+    const mergeProxyProviders = harness.mergeProxyProviders;
+    if (!configPath || !mergeProxyProviders) return;
     const existing = merged.find((c) => c.path === configPath);
 
     if (existing && existing.contentType === "json") {
       try {
-        const parsed = JSON.parse(existing.content) as Record<string, unknown>;
-        const existingProvider =
-          (parsed.provider as Record<string, unknown>) ?? {};
-        parsed.provider = { ...existingProvider, ...configs };
-        existing.content = JSON.stringify(parsed);
+        existing.content = mergeProxyProviders(configs, existing.content);
       } catch {
-        log.warn("Failed to merge CLIProxy provider into opencode config");
+        log.warn("Failed to merge CLIProxy provider into agent config");
       }
     } else if (!existing) {
       merged.push({
         path: configPath,
-        content: JSON.stringify({ provider: configs }),
+        content: mergeProxyProviders(configs, undefined),
         contentType: "json",
       });
     }

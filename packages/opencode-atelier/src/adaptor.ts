@@ -141,7 +141,7 @@ export function createAtelierAdaptor(
           // Forwarded so the manager can boot the remote `opencode serve`
           // in workspace mode (OPENCODE_EXPERIMENTAL_WORKSPACES +
           // OPENCODE_WORKSPACE_ID). See manager `sandbox-config.ts`.
-          opencodeEnv,
+          agentEnv: opencodeEnv,
           sourceWorkspaceFromID: from?.id,
         }),
       );
@@ -150,8 +150,8 @@ export function createAtelierAdaptor(
       logger.info(`Sandbox ${ready.id} ready (workspace ${info.id})`);
 
       await waitForOpencodeReachable(
-        ready.runtime.urls.opencode,
-        ready.runtime.opencodePassword,
+        ready.runtime.urls.agent,
+        ready.runtime.agentPassword,
       );
       logger.info(
         `Sandbox ${ready.id} opencode reachable (workspace ${info.id})`,
@@ -194,14 +194,14 @@ export function createAtelierAdaptor(
       }
 
       const headers: Record<string, string> = {};
-      const password = entry.sandbox.runtime.opencodePassword;
+      const password = entry.sandbox.runtime.agentPassword;
       if (password) {
         headers.Authorization = `Basic ${btoa(`opencode:${password}`)}`;
       }
 
       return {
         type: "remote",
-        url: new URL(entry.sandbox.runtime.urls.opencode),
+        url: new URL(entry.sandbox.runtime.urls.agent),
         headers,
       };
     },
@@ -339,7 +339,10 @@ async function waitForOpencodeReachable(
 
   while (Date.now() < deadline) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), READY_REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(
+      () => controller.abort(),
+      READY_REQUEST_TIMEOUT_MS,
+    );
     let status: number | undefined;
     try {
       const res = await fetch(healthUrl, {

@@ -8,14 +8,14 @@ import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 interface QuickConnectCardProps {
   sandboxId: string;
   opencodeUrl: string;
-  opencodePassword?: string;
+  agentPassword?: string;
   workspaceDir: string;
 }
 
 export function QuickConnectCard({
   sandboxId,
   opencodeUrl,
-  opencodePassword,
+  agentPassword,
   workspaceDir,
 }: QuickConnectCardProps) {
   const { copy, isCopied } = useCopyToClipboard();
@@ -57,15 +57,15 @@ export function QuickConnectCard({
           <div className="relative">
             <code className="block bg-muted p-3 rounded-md font-mono text-xs sm:text-sm pr-10 whitespace-pre-wrap break-all">
               opencode attach {opencodeUrl}
-              {opencodePassword && <> -p {opencodePassword}</>}
+              {agentPassword && <> -p {agentPassword}</>}
             </code>
             <Button
               size="icon"
               variant="ghost"
               className="absolute right-1 top-1 h-7 w-7"
               onClick={() => {
-                const cmd = opencodePassword
-                  ? `opencode attach ${opencodeUrl} -p ${opencodePassword}`
+                const cmd = agentPassword
+                  ? `opencode attach ${opencodeUrl} -p ${agentPassword}`
                   : `opencode attach ${opencodeUrl}`;
                 copyToClipboard(cmd, "opencode");
               }}

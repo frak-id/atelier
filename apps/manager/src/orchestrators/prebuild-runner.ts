@@ -380,7 +380,7 @@ export class PrebuildRunner {
           buildSandboxPod({
             sandboxId,
             image,
-            opencodePassword: "prebuild",
+            agentPassword: "prebuild",
             pvcName,
             configMapName,
             namespace,

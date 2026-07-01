@@ -2,6 +2,7 @@ import { VM } from "@frak/atelier-shared/constants";
 import type { AgentClient } from "../../infrastructure/agent/agent.client.ts";
 import type { FileWrite } from "../../infrastructure/agent/agent.types.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { criticalServiceNames } from "../tools/registry.ts";
 
 const log = createChildLogger("guest-base");
 
@@ -39,9 +40,11 @@ export function buildSandboxMdFile(content: string): FileWrite[] {
 
 /**
  * Service names that block the user-facing flow. A failure to start any of
- * these is a hard failure: callers should not finalize the sandbox.
+ * these is a hard failure: callers should not finalize the sandbox. Sourced
+ * from the tool registry (tools flagged `critical`) so no harness slug is
+ * hardcoded here.
  */
-const CRITICAL_SERVICES = new Set(["opencode"]);
+const CRITICAL_SERVICES = new Set(criticalServiceNames());
 
 export async function startServices(
   agent: AgentClient,
