@@ -1,6 +1,7 @@
 import { SandboxError } from "../../shared/errors.ts";
 import { isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { AgentConfig } from "../agent-config.ts";
 import { kubeClient } from "../kube/index.ts";
 import type {
   AcpBridgeSession,
@@ -16,6 +17,8 @@ import type {
   GitDiffResult,
   GitPushResult,
   GitStatus,
+  HookPhase,
+  HookPhaseResult,
   ServiceListResult,
   ServiceStartResult,
   ServiceStatus,
@@ -138,6 +141,47 @@ export class AgentClient {
 
   async health(sandboxId: string): Promise<AgentHealth> {
     return this.request<AgentHealth>(sandboxId, "/health");
+  }
+
+  /**
+   * Push the projected config into the guest agent (`PUT /config`). The v2
+   * agent stores + validates it but does NOT autostart processes — the runtime
+   * drives the phase order (postCreate -> reconcile -> postStart) explicitly.
+   * Config is pushed, never ConfigMap-mounted: `env` may hold resolved secrets
+   * that must not land in etcd or a pause snapshot.
+   */
+  async putConfig(sandboxId: string, config: AgentConfig): Promise<void> {
+    if (isMock()) return;
+    await this.request(sandboxId, "/config", {
+      method: "PUT",
+      body: config,
+      timeout: 15000,
+    });
+  }
+
+  /**
+   * Run a lifecycle phase's hooks in the guest (`POST /hooks/{phase}`), in
+   * order, fail-fast. The runtime owns *when* each phase fires; the agent owns
+   * the commands (from pushed config) and how they run.
+   */
+  async runHook(sandboxId: string, phase: HookPhase): Promise<HookPhaseResult> {
+    if (isMock()) return { success: true, results: [] };
+    return this.post<HookPhaseResult>(
+      sandboxId,
+      `/hooks/${phase}`,
+      undefined,
+      130000,
+    );
+  }
+
+  /**
+   * Start all non-lazy processes not already running (`POST /reconcile`) — the
+   * "processes" phase. Returns once starts are issued; readiness is gated
+   * separately via `waitForPrimary`.
+   */
+  async reconcile(sandboxId: string): Promise<void> {
+    if (isMock()) return;
+    await this.post(sandboxId, "/reconcile", undefined, 15000);
   }
 
   async waitForAgent(

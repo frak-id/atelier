@@ -56,6 +56,13 @@ pub async fn route(
             StatusCode::OK,
             serde_json::json!({ "processes": supervisor.list().await }),
         ),
+        // Start all non-lazy processes not already running. The runtime calls
+        // this as the "processes" phase, after files/write + postCreate. A
+        // config push alone never autostarts (crash-recovery excepted).
+        (&Method::POST, "/reconcile") => {
+            supervisor.reconcile().await;
+            json(StatusCode::OK, serde_json::json!({ "success": true }))
+        }
         // One-shot exec + phased hooks + file writes (1d).
         (&Method::POST, "/exec") => handle_exec(req, &store).await,
         (&Method::POST, "/exec/batch") => handle_exec_batch(req, &store).await,

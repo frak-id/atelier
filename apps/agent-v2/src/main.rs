@@ -91,20 +91,16 @@ async fn main() {
         });
     }
 
-    // Reconcile running processes against every pushed config (level-
-    // triggered: a burst of pushes coalesces into one reconcile pass).
-    {
-        let store = store.clone();
+    // Crash-restart recovery: a persisted config means the agent restarted
+    // within a live pod, so bring its processes back up once. A fresh,
+    // runtime-driven boot instead pushes config *without* autostarting, then
+    // drives the fixed phase order explicitly (files/write -> POST
+    // /hooks/postCreate -> POST /reconcile -> POST /hooks/postStart) so
+    // postCreate always precedes the process phase.
+    if store.get().is_some() {
         let supervisor = supervisor.clone();
-        let mut rx = store.subscribe();
         tokio::spawn(async move {
-            // Recovered config (crash-restart) reconciles once at boot.
-            if store.get().is_some() {
-                supervisor.reconcile().await;
-            }
-            while rx.changed().await.is_ok() {
-                supervisor.reconcile().await;
-            }
+            supervisor.reconcile().await;
         });
     }
 
