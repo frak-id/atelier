@@ -4,14 +4,14 @@
  * §4). Thin: parse args, call {@link AtelierClient}, print. Composition of
  * specs is the caller's job (a spec file, or `@atelier/compose` presets).
  *
- * Lifecycle commands (this build): up, ps, get, logs, exec, pause, resume, rm.
- * WS/local-diff commands (attach, sync, expose, snapshot, prebuild, --bake)
- * land next.
+ * Commands: up (+ --bake), ps, get, logs, exec, pause, resume, rm, attach,
+ * sync, expose, snapshot, prebuild.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join as joinPath, relative as relPath } from "node:path";
 import type {
   PatchFilesRequest,
+  PrebuildRepo,
   PrebuildSpec,
   ResumeRequest,
   SandboxSpec,
@@ -23,7 +23,7 @@ const USAGE = `atelier — client for the atelier /v1 API
 
 Usage:
   atelier up (--spec <file> | --from-snapshot <ref> | --image <ref>)
-             [--vcpus <n>] [--memory <mb>] [--json]
+             [--vcpus <n>] [--memory <mb>] [--bake] [--json]
   atelier ps [--json]
   atelier get <id> [--json]
   atelier logs <id> <process>
@@ -147,6 +147,14 @@ function print(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+/** Authoring superset: a runtime {@link SandboxSpec} plus the bake-only
+ * `build`/`repos` steps that `--bake` extracts into a prebuild. The runtime
+ * never sees these two fields (stripped before POST /sandboxes). */
+type AuthoringSpec = SandboxSpec & {
+  build?: string[];
+  repos?: PrebuildRepo[];
+};
+
 function buildUpSpec(flags: Map<string, string[]>): SandboxSpec {
   const specFile = one(flags, "spec");
   if (specFile) {
@@ -266,6 +274,31 @@ async function attach(
   });
 }
 
+/** Resolve the SandboxSpec to boot. With `--bake`, the `--spec` file's
+ * `build`/`repos` are hashed into a derived prebuild snapshot (content-keyed —
+ * instant on later ups) and the sandbox boots from that snapshot instead. */
+async function resolveUpSpec(
+  client: AtelierClient,
+  flags: Map<string, string[]>,
+): Promise<SandboxSpec> {
+  if (!flags.has("bake")) return buildUpSpec(flags);
+  const specFile = one(flags, "spec");
+  if (!specFile) fail("--bake requires --spec <file>");
+  const { build, repos, ...sandbox } = parseJsonc(
+    readFileSync(specFile, "utf8"),
+  ) as AuthoringSpec;
+  if (!build?.length && !repos?.length) {
+    fail("--bake needs build[] or repos in the spec file");
+  }
+  const prebuild: PrebuildSpec = { source: sandbox.source };
+  if (build?.length) prebuild.build = build;
+  if (repos?.length) prebuild.repos = repos;
+  process.stderr.write("baking prebuild…\n");
+  const ref = await client.prebuild(prebuild);
+  process.stderr.write(`baked ${ref.ref}\n`);
+  return { ...sandbox, source: { snapshot: ref.ref } };
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const command = argv[0];
@@ -280,7 +313,7 @@ async function main(): Promise<void> {
 
   switch (command) {
     case "up": {
-      const result = await client.create(buildUpSpec(flags));
+      const result = await client.create(await resolveUpSpec(client, flags));
       if (json) return print(result);
       process.stdout.write(`${result.id}\n`);
       for (const u of result.urls)
