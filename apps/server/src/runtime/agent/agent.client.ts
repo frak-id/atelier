@@ -11,16 +11,8 @@ import type {
   DevLogsResult,
   ExecResult,
   FileWrite,
-  GitCommitResult,
-  GitDiffResult,
-  GitPushResult,
-  GitStatus,
   HookPhase,
   HookPhaseResult,
-  ServiceListResult,
-  ServiceStartResult,
-  ServiceStatus,
-  ServiceStopResult,
   TerminalSession,
   TerminalSessionCreateResult,
   TerminalSessionDeleteResult,
@@ -337,82 +329,6 @@ export class AgentClient {
       "/exec/batch",
       { commands },
       options.timeout ?? maxCmdTimeout + 10000,
-    );
-  }
-
-  async serviceList(sandboxId: string): Promise<ServiceListResult> {
-    if (isMock()) return { services: [] };
-    return this.request<ServiceListResult>(sandboxId, "/services");
-  }
-
-  async serviceStatus(sandboxId: string, name: string): Promise<ServiceStatus> {
-    return this.request<ServiceStatus>(sandboxId, `/services/${name}/status`);
-  }
-
-  async serviceStart(
-    sandboxId: string,
-    name: string,
-  ): Promise<ServiceStartResult> {
-    return this.post<ServiceStartResult>(
-      sandboxId,
-      `/services/${name}/start`,
-      undefined,
-      30000,
-    );
-  }
-
-  async serviceStop(
-    sandboxId: string,
-    name: string,
-  ): Promise<ServiceStopResult> {
-    return this.post<ServiceStopResult>(sandboxId, `/services/${name}/stop`);
-  }
-
-  async serviceLogs(
-    sandboxId: string,
-    name: string,
-    offset: number,
-    limit: number,
-  ): Promise<DevLogsResult> {
-    return this.request<DevLogsResult>(
-      sandboxId,
-      `/services/${name}/logs?offset=${offset}&limit=${limit}`,
-    );
-  }
-
-  async gitStatus(
-    sandboxId: string,
-    repos: { clonePath: string }[],
-  ): Promise<GitStatus> {
-    return this.post<GitStatus>(sandboxId, "/git/status", { repos }, 30000);
-  }
-
-  async gitDiff(
-    sandboxId: string,
-    repos: { clonePath: string }[],
-  ): Promise<GitDiffResult> {
-    return this.post<GitDiffResult>(sandboxId, "/git/diff", { repos }, 30000);
-  }
-
-  async gitCommit(
-    sandboxId: string,
-    repoPath: string,
-    message: string,
-  ): Promise<GitCommitResult> {
-    return this.post<GitCommitResult>(
-      sandboxId,
-      "/git/commit",
-      { repoPath, message },
-      30000,
-    );
-  }
-
-  async gitPush(sandboxId: string, repoPath: string): Promise<GitPushResult> {
-    return this.post<GitPushResult>(
-      sandboxId,
-      "/git/push",
-      { repoPath },
-      60000,
     );
   }
 
