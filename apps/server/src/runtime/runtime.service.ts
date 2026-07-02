@@ -27,7 +27,9 @@ import { NotFoundError, ValidationError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import type { HookPhase } from "./agent/index.ts";
 import { AgentClient } from "./agent/index.ts";
+import { specToAgentConfig } from "./agent-config.ts";
 import { bootSandbox, deleteRestartableResources } from "./boot.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
 import { buildVolumeSnapshot, kubeClient } from "./kube/index.ts";
@@ -121,14 +123,18 @@ export class RuntimeService {
     this.sandboxes.create(record);
 
     try {
+      // bootSandbox pushes config + writes files[]. The fixed phase order
+      // (atelier-v2 §6): files/env -> postCreate -> processes -> postStart.
       const boot = await bootSandbox(
         id,
         spec,
         { image, snapshotName, authorizedKeys: options.authorizedKeys },
         this.agent,
       );
-      await this.runHooks(id, spec.hooks?.postCreate);
-      await this.runHooks(id, spec.hooks?.postStart);
+      await this.runPhase(id, "postCreate");
+      await this.agent.reconcile(id);
+      await this.gateOnPrimary(id);
+      await this.runPhase(id, "postStart");
 
       this.sandboxes.update(id, {
         status: "running",
@@ -143,6 +149,11 @@ export class RuntimeService {
         generated: { agentPassword: boot.agentPassword, podIp: boot.podIp },
       };
     } catch (error) {
+      // A failure in a post-boot phase (hooks/reconcile/primary gate) would
+      // otherwise orphan the running pod; tear it down so the boot is atomic
+      // (bootSandbox already cleans up failures during its own phase).
+      this.agent.invalidatePodIp(id);
+      await cleanupSandboxResources(id, { podName: `sandbox-${id}` });
       this.sandboxes.update(id, { status: "error" });
       throw error;
     }
@@ -183,13 +194,26 @@ export class RuntimeService {
     rejectUnresolvedSecrets(spec);
     const { image, snapshotName } = await this.resolveSource(spec.source);
 
+    // Resume phase order: files/env -> onResume -> processes. onResume is the
+    // credential-rotation primitive; it runs before processes restart.
     const boot = await bootSandbox(
       id,
       spec,
       { image, snapshotName },
       this.agent,
     );
-    await this.runHooks(id, spec.hooks?.onResume);
+    try {
+      await this.runPhase(id, "onResume");
+      await this.agent.reconcile(id);
+      await this.gateOnPrimary(id);
+    } catch (error) {
+      // Tear down the half-resumed pod and stay paused so a retry starts clean
+      // (the pod name is fixed per sandbox; a second boot would collide).
+      this.agent.invalidatePodIp(id);
+      await deleteRestartableResources(id);
+      this.sandboxes.update(id, { status: "paused" });
+      throw error;
+    }
     this.sandboxes.update(id, {
       spec,
       status: "running",
@@ -231,8 +255,14 @@ export class RuntimeService {
   async patchEnv(id: string, env: PatchEnvRequest): Promise<void> {
     const record = this.require(id);
     const nextEnv = { ...(record.spec.env ?? {}), ...env };
-    this.sandboxes.update(id, { spec: { ...record.spec, env: nextEnv } });
-    await this.runHooks(id, record.spec.hooks?.envChanged);
+    const nextSpec = { ...record.spec, env: nextEnv };
+    // Re-push so future process spawns see the new env, then fire envChanged
+    // (the agent runs it with the updated pod env). Persist the spec only after
+    // the push succeeds, so the store never claims env the agent didn't get.
+    // Does not mutate running processes' env (stated honestly, atelier-v2 §2).
+    await this.agent.putConfig(id, specToAgentConfig(id, nextSpec));
+    this.sandboxes.update(id, { spec: nextSpec });
+    await this.runPhase(id, "envChanged");
   }
 
   async exec(id: string, req: ExecRequest) {
@@ -415,9 +445,24 @@ export class RuntimeService {
     }
   }
 
-  private async runHooks(id: string, hooks?: string[]): Promise<void> {
-    for (const cmd of hooks ?? []) {
-      await this.agent.exec(id, cmd, { timeout: 120_000 });
+  /** Run a lifecycle phase's hooks in the guest, failing the operation if a
+   * hook fails (the agent runs them in order, fail-fast). */
+  private async runPhase(id: string, phase: HookPhase): Promise<void> {
+    const result = await this.agent.runHook(id, phase);
+    if (!result.success) {
+      const failed = result.results.find((r) => r.exitCode !== 0);
+      throw new Error(
+        `${phase} hook failed${failed ? `: '${failed.command}' exited ${failed.exitCode}: ${failed.stderr.trim()}` : ""}`,
+      );
+    }
+  }
+
+  /** Boot gate on the spec's `primary` process readiness (generic replacement
+   * for v1's hardcoded opencode boot-waiter). No-op when no primary. */
+  private async gateOnPrimary(id: string): Promise<void> {
+    const ready = await this.agent.waitForPrimary(id, { timeout: 120_000 });
+    if (!ready) {
+      throw new Error(`Sandbox ${id} primary process did not become ready`);
     }
   }
 }

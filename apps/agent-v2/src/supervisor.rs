@@ -494,9 +494,19 @@ impl Supervisor {
     /// Sandbox health: the `primary` process's readiness. With no primary,
     /// the sandbox is healthy as soon as the agent is up (nothing gates it).
     pub async fn is_healthy(&self) -> bool {
-        let procs = self.procs.lock().await;
-        match procs.values().find(|p| p.primary) {
-            Some(primary) => primary.ready,
+        // Consult the config, not just tracked procs: between a config push (or
+        // a `reconcile` that spawns the primary asynchronously) and the primary
+        // actually entering `procs`, a tracked-only check would find no primary
+        // and wrongly report healthy — opening the runtime's boot gate before
+        // the primary is up.
+        let primary = self.store.get().and_then(|cfg| {
+            cfg.processes
+                .iter()
+                .find(|p| p.primary)
+                .map(|p| p.name.clone())
+        });
+        match primary {
+            Some(name) => self.procs.lock().await.get(&name).is_some_and(|p| p.ready),
             None => true,
         }
     }

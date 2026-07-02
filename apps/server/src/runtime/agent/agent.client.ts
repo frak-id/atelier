@@ -209,21 +209,42 @@ export class AgentClient {
         const response = await fetch(`http://${ip}:${AGENT_PORT}/health`, {
           signal: AbortSignal.timeout(2000),
         });
+        // Gate on the agent being *alive* (any /health 200), not on primary
+        // readiness: the runtime pushes config only after the agent is up, and
+        // gates on the primary separately via waitForPrimary after reconcile.
         if (response.ok) {
-          const health = (await response.json()) as AgentHealth;
-          if (health.status === "healthy") {
-            this.podIpCache.set(sandboxId, ip);
-            log.info({ sandboxId, podIp: ip }, "Agent is healthy");
-            return { ready: true, podIp: ip };
-          }
+          this.podIpCache.set(sandboxId, ip);
+          log.info({ sandboxId, podIp: ip }, "Agent is alive");
+          return { ready: true, podIp: ip };
         }
       } catch {}
 
       await Bun.sleep(200);
     }
 
-    log.warn({ sandboxId, timeout }, "Agent did not become healthy in time");
+    log.warn({ sandboxId, timeout }, "Agent did not come alive in time");
     return { ready: false, podIp: null };
+  }
+
+  /**
+   * Block until the spec's `primary` process is ready (`/health` healthy) — the
+   * generic boot gate replacing v1's hardcoded opencode `/health` wait. Returns
+   * true immediately when no primary is declared (liveness == health).
+   */
+  async waitForPrimary(
+    sandboxId: string,
+    options: { timeout?: number } = {},
+  ): Promise<boolean> {
+    if (isMock()) return true;
+    const deadline = Date.now() + (options.timeout ?? 120000);
+    while (Date.now() < deadline) {
+      try {
+        const health = await this.health(sandboxId);
+        if (health.healthy) return true;
+      } catch {}
+      await Bun.sleep(200);
+    }
+    return false;
   }
 
   async writeFiles(

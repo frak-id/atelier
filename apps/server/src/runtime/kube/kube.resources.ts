@@ -26,7 +26,6 @@ export type SandboxPodOptions = {
   workspaceId?: string;
   namespace?: string;
   pvcName?: string;
-  configMapName?: string;
   requests?: Partial<ResourceSpec>;
   limits?: Partial<ResourceSpec>;
   sshPipeKeySecret?: string;
@@ -84,19 +83,6 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
     volumes.push({
       name: "workspace",
       persistentVolumeClaim: { claimName: options.pvcName },
-    });
-  }
-
-  if (options.configMapName) {
-    volumeMounts.push({
-      name: "sandbox-config",
-      mountPath: "/etc/sandbox/config.json",
-      subPath: "config.json",
-      readOnly: true,
-    });
-    volumes.push({
-      name: "sandbox-config",
-      configMap: { name: options.configMapName },
     });
   }
 
@@ -276,27 +262,6 @@ export function buildToolIngress(options: ToolIngressOptions): KubeResource {
         },
       ],
     },
-  };
-}
-
-export function buildConfigMap(
-  name: string,
-  data: Record<string, string>,
-  namespace = config.kubernetes.namespace,
-  labels: Record<string, string> = {},
-): KubeResource {
-  return {
-    apiVersion: "v1",
-    kind: "ConfigMap",
-    metadata: {
-      name,
-      namespace,
-      labels: {
-        "atelier.dev/sandbox": labels["atelier.dev/sandbox"] ?? "system",
-        ...labels,
-      },
-    },
-    data,
   };
 }
 

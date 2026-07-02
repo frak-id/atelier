@@ -56,13 +56,17 @@ things live, not the wiring style.
 
 ## Known gaps (tracked, not silent)
 
-- **v1 agent, not v2.** `runtime/spec-to-config.ts` maps `processes[]` onto
-  the existing v1 agent's `services` record so specs boot on today's images.
-  The v2 agent line (mutable config, native `readiness`/`primary`, unified
-  attach bridge with single-writer guard) is milestone 1 of the build plan —
-  unbuilt. `RuntimeService.attach()`/`addProcess()` are honest
-  approximations against the current agent's one-bridge model; see their
-  doc comments.
+- **v2 agent boot path (wired), v1 approximations remain for live-ops.**
+  `runtime/agent-config.ts` (`specToAgentConfig`) losslessly projects the
+  spec onto the v2 agent (`apps/agent-v2`); boot pushes config via
+  `PUT /config` (never ConfigMap-mounted) + `files/write`, then drives the
+  phase order (postCreate -> reconcile -> primary `/health` gate -> postStart)
+  — replacing v1's ConfigMap mount + hardcoded opencode boot gate (M1 + M2
+  done). Still on v1-agent shapes: `RuntimeService.processAction/processLogs/
+  processStatuses` (call `/services/*`, should move to `/processes/*`) and
+  `attach()`/`addProcess()` (one-bridge approximation) — M2/2c work. The
+  deployed image is still built from `apps/agent-rust`; wiring `apps/agent-v2`
+  into `scripts/deploy-k8s.sh` is M2/2c.
 - **Event bus / dashboard SSE / cron jobs** (auth-sync watcher, prebuild
   staleness, cliproxy refresh) are v1 features not yet ported — deferred to
   the milestone that needs them (§6 milestones 3–4), not silently dropped.

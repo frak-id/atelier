@@ -23,12 +23,13 @@ follow-up milestone in `docs/proposals/atelier-v2.md` (§6).
    create time and checking it in `api/` before delegating to `runtime.*` is a
    follow-up before multi-tenant exposure.
 
-3. **`readiness` (`http`/`cmd`), `primary`, `after`, `restart`, `stdio` are not
-   yet load-bearing in boot.** `runtime/spec-to-config.ts` maps `processes[]`
-   onto the v1 agent's flat `services` record (only `readiness.port` survives,
-   via `SandboxServiceEntry.port`); boot readiness gates on pod-level agent
-   health, not the spec's `primary` process. Deferred to the v2 agent line
-   (§6 milestone 1), which the seam is documented to depend on.
+3. **RESOLVED (M1 + M2).** The full process model (`readiness` http/cmd,
+   `primary`, `after`, `restart`, `stdio`, `pty`, `lazy`, `user`) is now
+   load-bearing: `runtime/agent-config.ts` losslessly projects it onto the v2
+   agent (`apps/agent-v2`), boot pushes it via `PUT /config` + `files/write`
+   and gates on the spec's `primary` process readiness (`/health`), not
+   pod-level health. Remaining v2-agent wiring (deploy image, `/processes/*`
+   + unified-attach live-ops routes) is M2/2c.
 
 4. **`prebuild()`'s `build[]`/`repos` execution is deferred to milestone 4.**
    The content-hash keying and chaining (`parent`) are already correct and

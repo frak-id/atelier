@@ -13,9 +13,9 @@ import { customAlphabet } from "nanoid";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { AgentClient } from "./agent/index.ts";
+import { specToAgentConfig } from "./agent-config.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
 import {
-  buildConfigMap,
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
@@ -24,7 +24,6 @@ import {
   kubeClient,
 } from "./kube/index.ts";
 import { buildPortIngresses } from "./ports.ts";
-import { specToSandboxConfig } from "./spec-to-config.ts";
 
 const log = createChildLogger("runtime-boot");
 
@@ -58,7 +57,6 @@ export async function bootSandbox(
 ): Promise<BootOutput> {
   const podName = `sandbox-${sandboxId}`;
   const pvcName = `sandbox-${sandboxId}`;
-  const configMapName = `sandbox-config-${sandboxId}`;
   const usedSnapshot = Boolean(input.snapshotName);
   const volumeSize =
     spec.resources.diskGb != null
@@ -89,8 +87,6 @@ export async function bootSandbox(
         image: input.image,
         agentPassword,
         pvcName,
-        configMapName,
-        configJson: JSON.stringify(specToSandboxConfig(sandboxId, spec)),
         sharedKeySecret: sharedKey.secretName,
         authorizedKeysData: encodeSshAuthorizedKeys(input.authorizedKeys),
       }),
@@ -101,6 +97,22 @@ export async function bootSandbox(
     });
     if (!ready || !podIp) {
       throw new Error(`Sandbox pod ${podName} agent did not become ready`);
+    }
+
+    // Push config (never ConfigMap-mounted: per-process `env` may carry
+    // resolved secrets that must not land in etcd or a pause snapshot) and
+    // write files before the phase-ordered hooks/processes the caller drives.
+    await agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec));
+    if (spec.files && spec.files.length > 0) {
+      await agent.writeFiles(
+        sandboxId,
+        spec.files.map((f) => ({
+          path: f.path,
+          content: f.content as string,
+          mode: f.mode,
+          owner: f.owner as "dev" | "root" | undefined,
+        })),
+      );
     }
 
     return { podName, pvcName, agentPassword, podIp };
@@ -121,8 +133,6 @@ interface ResourceSpec {
   image: string;
   agentPassword: string;
   pvcName: string;
-  configMapName: string;
-  configJson: string;
   sharedKeySecret: string;
   authorizedKeysData?: string;
 }
@@ -132,27 +142,13 @@ function createSandboxResources(
   spec: SandboxSpec,
   r: ResourceSpec,
 ) {
-  const labels = {
-    "atelier.dev/sandbox": sandboxId,
-    "atelier.dev/component": "sandbox",
-  };
-
   return [
-    kubeClient.createResource(
-      buildConfigMap(
-        r.configMapName,
-        { "config.json": r.configJson },
-        undefined,
-        labels,
-      ),
-    ),
     kubeClient.createResource(
       buildSandboxPod({
         sandboxId,
         image: r.image,
         agentPassword: r.agentPassword,
         pvcName: r.pvcName,
-        configMapName: r.configMapName,
         sshPipeKeySecret: r.sharedKeySecret,
         requests: {
           cpu: `${Math.max(250, spec.resources.vcpus * 250)}m`,
@@ -183,10 +179,8 @@ export async function deleteRestartableResources(
   sandboxId: string,
 ): Promise<void> {
   const podName = `sandbox-${sandboxId}`;
-  const configMapName = `sandbox-config-${sandboxId}`;
   const deletions: Array<[string, string]> = [
     ["Pod", podName],
-    ["ConfigMap", configMapName],
     ["Service", `sandbox-${sandboxId}`],
     ["Pipe", `ssh-${sandboxId}`],
   ];

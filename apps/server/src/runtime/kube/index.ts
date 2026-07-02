@@ -11,7 +11,6 @@ export type {
   VolumeSnapshotOptions,
 } from "./kube.resources.ts";
 export {
-  buildConfigMap,
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
