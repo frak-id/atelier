@@ -6,7 +6,7 @@ import {
   Outlet,
   useRouter,
 } from "@tanstack/react-router";
-import { Boxes, LogOut } from "lucide-react";
+import { Boxes, LogOut, Rocket } from "lucide-react";
 import { Toaster } from "sonner";
 import { api } from "@/api/client";
 import { currentUserQuery } from "@/api/queries/auth";
@@ -19,7 +19,10 @@ export const Route = createRootRouteWithContext<{
   component: RootLayout,
 });
 
-const NAV_ITEMS = [{ to: "/", label: "Sandboxes", icon: Boxes }] as const;
+const NAV_ITEMS = [
+  { to: "/", label: "Sandboxes", icon: Boxes },
+  { to: "/spawn", label: "Spawn", icon: Rocket },
+] as const;
 
 function RootLayout() {
   const queryClient = useQueryClient();

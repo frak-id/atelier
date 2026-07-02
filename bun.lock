@@ -32,14 +32,18 @@
       "name": "@atelier/console",
       "version": "0.1.0",
       "dependencies": {
+        "@atelier/compose": "workspace:*",
+        "@atelier/spec": "workspace:*",
         "@elysiajs/eden": "^1.4.9",
         "@radix-ui/react-dialog": "^1.1.4",
         "@radix-ui/react-label": "^2.1.1",
         "@radix-ui/react-slot": "^1.1.1",
+        "@sinclair/typebox": "^0.34.0",
         "@tanstack/react-query": "^5.99.0",
         "@tanstack/react-router": "^1.168.22",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "jsonc-parser": "^3.3.1",
         "lucide-react": "^0.468.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -48,7 +52,6 @@
       },
       "devDependencies": {
         "@atelier/server": "workspace:*",
-        "@atelier/spec": "workspace:*",
         "@tailwindcss/vite": "^4.2.2",
         "@tanstack/router-plugin": "^1.167.22",
         "@types/react": "^19.0.0",
@@ -1036,6 +1039,8 @@
     "json-schema-typed": ["json-schema-typed@8.0.2", "", {}, "sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA=="],
 
     "json5": ["json5@2.2.3", "", { "bin": { "json5": "lib/cli.js" } }, "sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg=="],
+
+    "jsonc-parser": ["jsonc-parser@3.3.1", "", {}, "sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ=="],
 
     "jsonfile": ["jsonfile@4.0.0", "", { "optionalDependencies": { "graceful-fs": "^4.1.6" } }, "sha512-m6F1R3z8jjlf2imQHS2Qez5sjKWQzbuuhuJ/FKYFRZvPE3PuHcSMVZzfsLhGVOkfd20obL5SWEBew5ShlquNxg=="],
 

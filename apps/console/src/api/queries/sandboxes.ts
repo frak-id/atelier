@@ -1,3 +1,4 @@
+import type { SandboxSpec } from "@atelier/spec";
 import {
   queryOptions,
   useMutation,
@@ -5,19 +6,8 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
+import { errorMessage } from "./error";
 import { queryKeys } from "./keys";
-
-/** Best-effort extraction of a message from Eden's error envelope. */
-function errorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "value" in error) {
-    const { value } = error;
-    if (value && typeof value === "object" && "message" in value) {
-      const { message } = value;
-      if (typeof message === "string") return message;
-    }
-  }
-  return fallback;
-}
 
 // ── queries ──────────────────────────────────────────────────────────────
 
@@ -179,6 +169,23 @@ export function useAddPort(id: string) {
     onSuccess: (_data, { name }) => {
       invalidate();
       toast.success(`Port "${name}" exposed`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useSpawnSandbox() {
+  const invalidate = useInvalidateSandboxes();
+  return useMutation({
+    mutationFn: async (spec: SandboxSpec) => {
+      const { data, error } = await api.v1.sandboxes.post(spec);
+      if (error)
+        throw new Error(errorMessage(error, "Failed to create sandbox"));
+      return data;
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Sandbox created");
     },
     onError: (error) => toast.error(error.message),
   });

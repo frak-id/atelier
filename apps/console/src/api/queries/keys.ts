@@ -13,4 +13,8 @@ export const queryKeys = {
     processLogs: (id: string, name: string) =>
       [...queryKeys.sandboxes.all, "detail", id, "logs", name] as const,
   },
+  savedSpecs: {
+    all: ["saved-specs"] as const,
+    list: () => [...queryKeys.savedSpecs.all, "list"] as const,
+  },
 } as const;
