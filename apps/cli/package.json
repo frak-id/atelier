@@ -1,0 +1,19 @@
+{
+  "name": "@atelier/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The atelier CLI — a thin client over the /v1 runtime API + @atelier/compose. API-first, CLI-second (atelier-v2 §4).",
+  "bin": {
+    "atelier": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@atelier/spec": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.12"
+  }
+}

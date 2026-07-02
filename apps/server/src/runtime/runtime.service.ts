@@ -21,6 +21,7 @@ import {
   type ResumeRequest,
   type SandboxSpec,
   type SandboxState,
+  type SandboxSummary,
   type SnapshotRef,
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
@@ -171,6 +172,17 @@ export class RuntimeService {
       metadata: record.metadata,
       annotations: record.spec.annotations,
     };
+  }
+
+  /** All sandboxes, from persistence only (no agent round-trips). Live
+   * process health is on `get(id)`. */
+  list(): SandboxSummary[] {
+    return this.sandboxes.list().map((r) => ({
+      id: r.id,
+      status: r.status,
+      createdAt: r.createdAt,
+      annotations: r.spec.annotations,
+    }));
   }
 
   // ── pause / resume ─────────────────────────────────────────────────────

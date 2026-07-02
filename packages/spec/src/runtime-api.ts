@@ -84,6 +84,22 @@ export const SandboxStateSchema = Type.Object(
 );
 export type SandboxState = Static<typeof SandboxStateSchema>;
 
+// ── list ─────────────────────────────────────────────────────────────────────
+
+/** Lightweight sandbox row for `GET /v1/sandboxes` (`atelier ps`): from the
+ * persisted record only — no per-sandbox agent round-trips. Live process
+ * health is on `GET /v1/sandboxes/:id`. */
+export const SandboxSummarySchema = Type.Object(
+  {
+    id: Type.String(),
+    status: SandboxStatusSchema,
+    createdAt: Type.String(),
+    annotations: Type.Optional(Type.Record(Type.String(), Type.String())),
+  },
+  { additionalProperties: false, $id: "SandboxSummary" },
+);
+export type SandboxSummary = Static<typeof SandboxSummarySchema>;
+
 // ── resume ───────────────────────────────────────────────────────────────────
 
 export const ResumeRequestSchema = Type.Object(

@@ -59,6 +59,7 @@ export function createV1Routes(container: ServerContainer) {
         },
         { body: SandboxSpecSchema },
       )
+      .get("/sandboxes", () => runtime.list())
       .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))
       .post("/sandboxes/:id/pause", async ({ params }) =>
         runtime.pause(params.id),
