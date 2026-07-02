@@ -91,8 +91,6 @@ export interface TerminalSession {
 
 export interface TerminalSessionCreateResult extends TerminalSession {}
 
-export interface TerminalSessionListResult extends Array<TerminalSession> {}
-
 export interface TerminalSessionDeleteResult {
   success: boolean;
 }
