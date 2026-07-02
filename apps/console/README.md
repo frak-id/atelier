@@ -21,6 +21,25 @@ cd apps/console && bun run dev
 bun run build      # tsgo --noEmit && vite build → dist/ (static)
 ```
 
+## Container / parallel deploy
+
+`Dockerfile.v2` at the repo root builds a v2 stack in parallel to v1 (own DB,
+own ingress, shared cluster + sandbox base images), mirroring the v1
+`./Dockerfile` pattern:
+
+```sh
+docker build -f Dockerfile.v2 --target server  -t atelier-server  .
+docker build -f Dockerfile.v2 --target console -t atelier-console .
+```
+
+- **server** — `apps/server` bundled to a single Bun file, drizzle migrations
+  applied at boot (`MIGRATIONS_DIR`), sandbox base images baked in
+  (`ATELIER_IMAGES_DIR`), SQLite under `DATA_DIR` (mount a PVC). Listens `:4000`.
+- **console** — this SPA served by nginx (`infra/nginx/console.conf`), which
+  reverse-proxies `/v1 /api /sessions /auth /health /mcp /swagger` to the
+  server on `localhost:4000` — same origin, so the auth cookie and WS/SSE work
+  with no CORS. Run the server + console as two containers in one pod.
+
 ## Surfaces
 
 - `/` — sandbox fleet (status, harness, lifecycle actions)
