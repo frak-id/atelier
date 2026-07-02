@@ -62,6 +62,9 @@ export class RuntimeService {
   private readonly agent: AgentClient;
   private readonly sandboxes: SandboxStore;
   private readonly snapshots: SnapshotStore;
+  /** De-dupes concurrent prebuild() calls for the same content hash onto one
+   * execution (the temp pod name is deterministic and would collide). */
+  private readonly inflightPrebuilds = new Map<string, Promise<SnapshotRef>>();
 
   constructor(deps: RuntimeDeps = {}) {
     this.agent = deps.agent ?? new AgentClient();
@@ -73,7 +76,9 @@ export class RuntimeService {
 
   /**
    * Chained, content-addressed prebuild. Idempotent: keyed by content hash;
-   * a hit returns instantly. Runtime content never enters the key.
+   * a hit returns instantly. Runtime content never enters the key. Concurrent
+   * calls for the same hash dedupe onto one execution (deterministic temp pod
+   * name would otherwise collide).
    */
   async prebuild(spec: PrebuildSpec): Promise<SnapshotRef> {
     const hash = hashPrebuild(spec);
@@ -81,23 +86,89 @@ export class RuntimeService {
     if (existing) {
       return { ref: existing.ref, hash, parent: existing.parent };
     }
+    const inflight = this.inflightPrebuilds.get(hash);
+    if (inflight) return inflight;
+    const run = this.executePrebuild(spec, hash).finally(() => {
+      this.inflightPrebuilds.delete(hash);
+    });
+    this.inflightPrebuilds.set(hash, run);
+    return run;
+  }
 
+  private async executePrebuild(
+    spec: PrebuildSpec,
+    hash: string,
+  ): Promise<SnapshotRef> {
     const parentRef =
       "snapshot" in spec.source ? spec.source.snapshot : undefined;
-    const image = await this.resolveImage(spec.source);
-    // NOTE: running build[]/repos in a temp pod then snapshotting the PVC is
-    // the mechanism to wire in milestone 4. Phase 0 records the keyed snapshot
-    // so chaining + idempotency are exercised end-to-end.
+    const { image, snapshotName } = await this.resolveSource(spec.source);
     const ref = `snap_${hash.slice(0, 12)}`;
-    this.snapshots.put({
-      hash,
-      ref,
-      image,
-      parent: parentRef,
-      createdAt: new Date().toISOString(),
-    });
-    log.info({ ref, hash, parent: parentRef }, "prebuild snapshot recorded");
-    return { ref, hash, parent: parentRef };
+    const tempId = `pb-${hash.slice(0, 12)}`;
+
+    // Boot a throwaway pod (from the image or the parent snapshot — chaining
+    // falls out of resolveSource) to bake files/repos/build[] into a fresh
+    // PVC, snapshot it, then tear the pod + PVC down. The snapshot outlives
+    // the pod. The prebuild pod runs NO processes (the synthesized spec has
+    // none), so boot just stages files + pushes env for the build steps.
+    const boot = await bootSandbox(
+      tempId,
+      prebuildToSpec(spec),
+      { image, snapshotName },
+      this.agent,
+    );
+    try {
+      await this.runPrebuildSteps(tempId, spec);
+      await this.snapshotPvc(boot.pvcName, ref, {
+        "atelier.dev/prebuild": hash,
+      });
+      // Record as soon as the snapshot is ReadyToUse — before teardown — so a
+      // failing cleanup can neither orphan a live-but-untracked snapshot nor
+      // mask this success.
+      this.snapshots.put({
+        hash,
+        ref,
+        image,
+        parent: parentRef,
+        createdAt: new Date().toISOString(),
+      });
+      log.info({ ref, hash, parent: parentRef }, "prebuild snapshot created");
+      return { ref, hash, parent: parentRef };
+    } finally {
+      // The pod + throwaway PVC are no longer needed; the snapshot stands
+      // alone. Best-effort so a teardown error never masks the build result.
+      this.agent.invalidatePodIp(tempId);
+      await cleanupSandboxResources(tempId, { podName: boot.podName }).catch(
+        (err) => log.warn({ tempId, err }, "prebuild pod cleanup failed"),
+      );
+    }
+  }
+
+  /** Clone repos then run build[] in the prebuild pod, fail-fast. The prebuild
+   * `env` rides the pod env (pushed at boot), so build steps inherit it under
+   * `/bin/bash -l`. */
+  private async runPrebuildSteps(
+    tempId: string,
+    spec: PrebuildSpec,
+  ): Promise<void> {
+    for (const repo of spec.repos ?? []) {
+      const branch = repo.branch ? `-b ${shellQuote(repo.branch)} ` : "";
+      await this.execStep(
+        tempId,
+        `git clone --depth 1 ${branch}${shellQuote(repo.url)} ${shellQuote(repo.clonePath)}`,
+      );
+    }
+    for (const step of spec.build ?? []) {
+      await this.execStep(tempId, step);
+    }
+  }
+
+  private async execStep(tempId: string, command: string): Promise<void> {
+    const res = await this.agent.exec(tempId, command, { timeout: 600_000 });
+    if (res.exitCode !== 0) {
+      throw new Error(
+        `prebuild step failed (exit ${res.exitCode}): ${command}\n${res.stderr.trim()}`,
+      );
+    }
   }
 
   // ── create ─────────────────────────────────────────────────────────────
@@ -374,14 +445,7 @@ export class RuntimeService {
     const ref = `snap_${hash.slice(0, 12)}`;
     const { image } = await this.resolveSource(record.spec.source);
 
-    await kubeClient.createResource(
-      buildVolumeSnapshot({
-        name: ref,
-        pvcName,
-        labels: { "atelier.dev/sandbox": id },
-      }),
-    );
-    await kubeClient.waitForVolumeSnapshotReady(ref, { timeout: 120_000 });
+    await this.snapshotPvc(pvcName, ref, { "atelier.dev/sandbox": id });
 
     this.snapshots.put({
       hash,
@@ -390,6 +454,18 @@ export class RuntimeService {
       createdAt: new Date().toISOString(),
     });
     return { ref, hash };
+  }
+
+  /** Create a VolumeSnapshot of `pvcName` named `ref` and wait until ready. */
+  private async snapshotPvc(
+    pvcName: string,
+    ref: string,
+    labels: Record<string, string>,
+  ): Promise<void> {
+    await kubeClient.createResource(
+      buildVolumeSnapshot({ name: ref, pvcName, labels }),
+    );
+    await kubeClient.waitForVolumeSnapshotReady(ref, { timeout: 120_000 });
   }
 
   // ── helpers ────────────────────────────────────────────────────────────
@@ -501,7 +577,27 @@ function mergeResume(spec: SandboxSpec, req: ResumeRequest): SandboxSpec {
   };
 }
 
+/** Synthesize the minimal SandboxSpec the prebuild pod boots from: source +
+ * default resources + staged files + build env. No processes/ports (nothing
+ * to supervise or expose while baking). */
+function prebuildToSpec(spec: PrebuildSpec): SandboxSpec {
+  return {
+    source: spec.source,
+    resources: { vcpus: 2, memoryMb: 2048 },
+    files: spec.files,
+    env: spec.env,
+  };
+}
+
+/** Single-quote a shell argument (POSIX), escaping embedded single quotes. */
+function shellQuote(arg: string): string {
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
 function hashPrebuild(spec: PrebuildSpec): string {
+  // `env` is intentionally excluded (atelier-v2 §2): it carries build-time
+  // secrets (tokens) that must never enter a persisted content key, and is
+  // treated as credential material rather than artifact-identifying input.
   const keyed = {
     source: spec.source,
     files: spec.files ?? [],
