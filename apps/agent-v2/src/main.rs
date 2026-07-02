@@ -12,7 +12,12 @@
 
 mod attach;
 mod bridge;
+mod command;
 mod config;
+mod files;
+mod forwarder;
+mod hooks;
+mod limits;
 mod readiness;
 mod router;
 mod store;
@@ -26,6 +31,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
+use forwarder::Forwarder;
 use store::ConfigStore;
 use supervisor::Supervisor;
 
@@ -74,6 +80,15 @@ async fn main() {
             cfg.sandbox_id
         ),
         None => println!("atelier-agent: no config yet; waiting for runtime push"),
+    }
+
+    // Generic N-port forwarder: exposes each ports[] entry on 0.0.0.0 so the
+    // K8s Service reaches loopback-bound dev servers. Reconciles on push.
+    {
+        let store = store.clone();
+        tokio::spawn(async move {
+            Forwarder::new().run(store).await;
+        });
     }
 
     // Reconcile running processes against every pushed config (level-

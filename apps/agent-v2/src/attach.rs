@@ -499,7 +499,10 @@ mod tests {
     async fn single_writer_guard() {
         let slot = WriterSlot::new();
         // First rw attach acquires the slot.
-        let a = slot.try_acquire(false).await.expect("first writer acquires");
+        let a = slot
+            .try_acquire(false)
+            .await
+            .expect("first writer acquires");
         assert!(slot.is_holder(a).await);
         // A second rw attach without takeover is rejected.
         assert!(slot.try_acquire(false).await.is_none());
