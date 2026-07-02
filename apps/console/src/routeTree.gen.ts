@@ -10,7 +10,15 @@
 
 import { Route as rootRouteImport } from "./routes/__root"
 import { Route as SpawnRouteImport } from "./routes/spawn"
+import { Route as SettingsRouteImport } from "./routes/settings"
 import { Route as IndexRouteImport } from "./routes/index"
+import { Route as SettingsIndexRouteImport } from "./routes/settings.index"
+import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
+import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
+import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
+import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
+import { Route as SettingsCatalogRouteImport } from "./routes/settings.catalog"
+import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
 import { Route as SandboxesSandboxIdRouteImport } from "./routes/sandboxes.$sandboxId"
 import { Route as SandboxesSandboxIdSessionsRouteImport } from "./routes/sandboxes.$sandboxId.sessions"
 
@@ -19,10 +27,50 @@ const SpawnRoute = SpawnRouteImport.update({
   path: "/spawn",
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: "/settings",
+  path: "/settings",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
   getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSshKeysRoute = SettingsSshKeysRouteImport.update({
+  id: "/ssh-keys",
+  path: "/ssh-keys",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSecretsRoute = SettingsSecretsRouteImport.update({
+  id: "/secrets",
+  path: "/secrets",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsPolicyRoute = SettingsPolicyRouteImport.update({
+  id: "/policy",
+  path: "/policy",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsOrganizationsRoute = SettingsOrganizationsRouteImport.update({
+  id: "/organizations",
+  path: "/organizations",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsCatalogRoute = SettingsCatalogRouteImport.update({
+  id: "/catalog",
+  path: "/catalog",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsApiKeysRoute = SettingsApiKeysRouteImport.update({
+  id: "/api-keys",
+  path: "/api-keys",
+  getParentRoute: () => SettingsRoute,
 } as any)
 const SandboxesSandboxIdRoute = SandboxesSandboxIdRouteImport.update({
   id: "/sandboxes/$sandboxId",
@@ -38,46 +86,93 @@ const SandboxesSandboxIdSessionsRoute =
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
+  "/settings": typeof SettingsRouteWithChildren
   "/spawn": typeof SpawnRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
+  "/settings/api-keys": typeof SettingsApiKeysRoute
+  "/settings/catalog": typeof SettingsCatalogRoute
+  "/settings/organizations": typeof SettingsOrganizationsRoute
+  "/settings/policy": typeof SettingsPolicyRoute
+  "/settings/secrets": typeof SettingsSecretsRoute
+  "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/spawn": typeof SpawnRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
+  "/settings/api-keys": typeof SettingsApiKeysRoute
+  "/settings/catalog": typeof SettingsCatalogRoute
+  "/settings/organizations": typeof SettingsOrganizationsRoute
+  "/settings/policy": typeof SettingsPolicyRoute
+  "/settings/secrets": typeof SettingsSecretsRoute
+  "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
+  "/settings": typeof SettingsRouteWithChildren
   "/spawn": typeof SpawnRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
+  "/settings/api-keys": typeof SettingsApiKeysRoute
+  "/settings/catalog": typeof SettingsCatalogRoute
+  "/settings/organizations": typeof SettingsOrganizationsRoute
+  "/settings/policy": typeof SettingsPolicyRoute
+  "/settings/secrets": typeof SettingsSecretsRoute
+  "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | "/"
+    | "/settings"
     | "/spawn"
     | "/sandboxes/$sandboxId"
+    | "/settings/api-keys"
+    | "/settings/catalog"
+    | "/settings/organizations"
+    | "/settings/policy"
+    | "/settings/secrets"
+    | "/settings/ssh-keys"
+    | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/"
     | "/spawn"
     | "/sandboxes/$sandboxId"
+    | "/settings/api-keys"
+    | "/settings/catalog"
+    | "/settings/organizations"
+    | "/settings/policy"
+    | "/settings/secrets"
+    | "/settings/ssh-keys"
+    | "/settings"
     | "/sandboxes/$sandboxId/sessions"
   id:
     | "__root__"
     | "/"
+    | "/settings"
     | "/spawn"
     | "/sandboxes/$sandboxId"
+    | "/settings/api-keys"
+    | "/settings/catalog"
+    | "/settings/organizations"
+    | "/settings/policy"
+    | "/settings/secrets"
+    | "/settings/ssh-keys"
+    | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   SpawnRoute: typeof SpawnRoute
   SandboxesSandboxIdRoute: typeof SandboxesSandboxIdRouteWithChildren
 }
@@ -91,12 +186,68 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SpawnRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/settings": {
+      id: "/settings"
+      path: "/settings"
+      fullPath: "/settings"
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/": {
       id: "/"
       path: "/"
       fullPath: "/"
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    "/settings/": {
+      id: "/settings/"
+      path: "/"
+      fullPath: "/settings/"
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/ssh-keys": {
+      id: "/settings/ssh-keys"
+      path: "/ssh-keys"
+      fullPath: "/settings/ssh-keys"
+      preLoaderRoute: typeof SettingsSshKeysRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/secrets": {
+      id: "/settings/secrets"
+      path: "/secrets"
+      fullPath: "/settings/secrets"
+      preLoaderRoute: typeof SettingsSecretsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/policy": {
+      id: "/settings/policy"
+      path: "/policy"
+      fullPath: "/settings/policy"
+      preLoaderRoute: typeof SettingsPolicyRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/organizations": {
+      id: "/settings/organizations"
+      path: "/organizations"
+      fullPath: "/settings/organizations"
+      preLoaderRoute: typeof SettingsOrganizationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/catalog": {
+      id: "/settings/catalog"
+      path: "/catalog"
+      fullPath: "/settings/catalog"
+      preLoaderRoute: typeof SettingsCatalogRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/api-keys": {
+      id: "/settings/api-keys"
+      path: "/api-keys"
+      fullPath: "/settings/api-keys"
+      preLoaderRoute: typeof SettingsApiKeysRouteImport
+      parentRoute: typeof SettingsRoute
     }
     "/sandboxes/$sandboxId": {
       id: "/sandboxes/$sandboxId"
@@ -115,6 +266,30 @@ declare module "@tanstack/react-router" {
   }
 }
 
+interface SettingsRouteChildren {
+  SettingsApiKeysRoute: typeof SettingsApiKeysRoute
+  SettingsCatalogRoute: typeof SettingsCatalogRoute
+  SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
+  SettingsPolicyRoute: typeof SettingsPolicyRoute
+  SettingsSecretsRoute: typeof SettingsSecretsRoute
+  SettingsSshKeysRoute: typeof SettingsSshKeysRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsApiKeysRoute: SettingsApiKeysRoute,
+  SettingsCatalogRoute: SettingsCatalogRoute,
+  SettingsOrganizationsRoute: SettingsOrganizationsRoute,
+  SettingsPolicyRoute: SettingsPolicyRoute,
+  SettingsSecretsRoute: SettingsSecretsRoute,
+  SettingsSshKeysRoute: SettingsSshKeysRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 interface SandboxesSandboxIdRouteChildren {
   SandboxesSandboxIdSessionsRoute: typeof SandboxesSandboxIdSessionsRoute
 }
@@ -128,6 +303,7 @@ const SandboxesSandboxIdRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   SpawnRoute: SpawnRoute,
   SandboxesSandboxIdRoute: SandboxesSandboxIdRouteWithChildren,
 }

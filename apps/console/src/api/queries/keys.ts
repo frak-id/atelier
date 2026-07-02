@@ -35,4 +35,31 @@ export const queryKeys = {
     list: (sandboxId: string) =>
       [...queryKeys.terminal.all(sandboxId), "list"] as const,
   },
+  apiKeys: {
+    all: ["api-keys"] as const,
+    list: () => [...queryKeys.apiKeys.all, "list"] as const,
+  },
+  sshKeys: {
+    all: ["ssh-keys"] as const,
+    list: () => [...queryKeys.sshKeys.all, "list"] as const,
+  },
+  secrets: {
+    all: ["secrets"] as const,
+    list: (orgId?: string) =>
+      [...queryKeys.secrets.all, "list", orgId ?? "none"] as const,
+  },
+  organizations: {
+    all: ["organizations"] as const,
+    list: () => [...queryKeys.organizations.all, "list"] as const,
+    members: (orgId: string) =>
+      [...queryKeys.organizations.all, "members", orgId] as const,
+  },
+  orgPolicy: {
+    all: ["org-policy"] as const,
+    detail: (orgId: string) => [...queryKeys.orgPolicy.all, orgId] as const,
+  },
+  catalog: {
+    all: ["catalog"] as const,
+    list: () => [...queryKeys.catalog.all, "list"] as const,
+  },
 } as const;

@@ -6,7 +6,7 @@ import {
   Outlet,
   useRouter,
 } from "@tanstack/react-router";
-import { Boxes, LogOut, Rocket } from "lucide-react";
+import { Boxes, LogOut, Rocket, Settings } from "lucide-react";
 import { Toaster } from "sonner";
 import { api } from "@/api/client";
 import { currentUserQuery } from "@/api/queries/auth";
@@ -20,8 +20,9 @@ export const Route = createRootRouteWithContext<{
 });
 
 const NAV_ITEMS = [
-  { to: "/", label: "Sandboxes", icon: Boxes },
-  { to: "/spawn", label: "Spawn", icon: Rocket },
+  { to: "/", label: "Sandboxes", icon: Boxes, exact: true },
+  { to: "/spawn", label: "Spawn", icon: Rocket, exact: true },
+  { to: "/settings", label: "Settings", icon: Settings, exact: false },
 ] as const;
 
 function RootLayout() {
@@ -65,7 +66,7 @@ function RootLayout() {
               key={item.to}
               to={item.to}
               className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&.active]:bg-muted [&.active]:text-foreground"
-              activeOptions={{ exact: true }}
+              activeOptions={{ exact: item.exact }}
             >
               <item.icon className="size-4" />
               {item.label}
