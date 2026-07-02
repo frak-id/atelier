@@ -35,6 +35,13 @@ impl ConfigStore {
         }
     }
 
+    /// Seed a store directly (tests only — production always `load()`s then
+    /// receives the runtime's push).
+    #[cfg(test)]
+    pub fn new_for_test(initial: Option<AgentConfig>) -> Self {
+        Self::new(initial)
+    }
+
     /// Load persisted config if present (agent crash-restart within a live
     /// pod); otherwise start empty and wait for the runtime's push.
     pub fn load() -> Self {

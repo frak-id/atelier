@@ -159,8 +159,9 @@ pub struct AgentConfig {
 
 impl AgentConfig {
     /// Structural validation beyond serde: unique process names, `after`
-    /// references resolve (and aren't self-references), at most one `primary`.
-    /// Cycle detection across `after` chains is the supervisor's concern.
+    /// references resolve (and aren't self-references), no `after` cycles (a
+    /// cycle would otherwise wedge boot for the whole after-timeout), at most
+    /// one `primary`, and http readiness that can resolve a probe port.
     pub fn validate(&self) -> Result<(), String> {
         let mut names = std::collections::HashSet::new();
         for p in &self.processes {
@@ -185,14 +186,93 @@ impl AgentConfig {
                 }
             }
         }
+        self.check_after_acyclic()?;
         let mut port_names = std::collections::HashSet::new();
         for port in &self.ports {
             if !port_names.insert(port.name.as_str()) {
                 return Err(format!("duplicate port name: {}", port.name));
             }
         }
+        // http readiness given as a bare path needs a port to probe against;
+        // we derive it from the ports[] entry sharing the process name.
+        for p in &self.processes {
+            if let Some(Readiness::Http { http }) = &p.readiness
+                && http_probe_url(http, &p.name, &self.ports).is_none()
+            {
+                return Err(format!(
+                    "process {} has http readiness path '{http}' but no ports[] entry \
+                     named '{}' to probe; use a full URL, a matching port, or a cmd probe",
+                    p.name, p.name
+                ));
+            }
+        }
         Ok(())
     }
+}
+
+/// Resolve an http-readiness value to an absolute probe URL. An absolute
+/// `http(s)://…` value is used verbatim; a bare path is probed against the
+/// loopback port of the ports[] entry that shares the process's name.
+impl AgentConfig {
+    /// Detect a cycle in the `after` graph via DFS three-colouring, so an
+    /// A→B→A chain fails loudly at push time instead of stalling every
+    /// process in it for the whole `after` timeout at boot.
+    fn check_after_acyclic(&self) -> Result<(), String> {
+        use std::collections::HashMap;
+        #[derive(Clone, Copy, PartialEq)]
+        enum Mark {
+            Visiting,
+            Done,
+        }
+        let deps: HashMap<&str, &[String]> = self
+            .processes
+            .iter()
+            .map(|p| (p.name.as_str(), p.after.as_slice()))
+            .collect();
+        let mut marks: HashMap<&str, Mark> = HashMap::new();
+        // Iterative DFS so a deep chain can't blow the stack.
+        for p in &self.processes {
+            if marks.get(p.name.as_str()) == Some(&Mark::Done) {
+                continue;
+            }
+            let mut stack: Vec<(&str, usize)> = vec![(p.name.as_str(), 0)];
+            marks.insert(p.name.as_str(), Mark::Visiting);
+            while let Some((node, idx)) = stack.last().copied() {
+                let edges = deps.get(node).copied().unwrap_or(&[]);
+                if idx < edges.len() {
+                    stack.last_mut().unwrap().1 += 1;
+                    let next = edges[idx].as_str();
+                    match marks.get(next) {
+                        Some(Mark::Visiting) => {
+                            return Err(format!("`after` cycle detected through {next}"));
+                        }
+                        Some(Mark::Done) => {}
+                        None => {
+                            marks.insert(next, Mark::Visiting);
+                            stack.push((next, 0));
+                        }
+                    }
+                } else {
+                    marks.insert(node, Mark::Done);
+                    stack.pop();
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn http_probe_url(http: &str, process_name: &str, ports: &[PortEntry]) -> Option<String> {
+    if http.starts_with("http://") || http.starts_with("https://") {
+        return Some(http.to_string());
+    }
+    let port = ports.iter().find(|p| p.name == process_name)?.port;
+    let path = if http.starts_with('/') {
+        http.to_string()
+    } else {
+        format!("/{http}")
+    };
+    Some(format!("http://127.0.0.1:{port}{path}"))
 }
 
 #[cfg(test)]
@@ -230,7 +310,7 @@ mod tests {
               "readiness": { "http": "/health" } },
             { "name": "db", "command": "pg", "readiness": { "cmd": "pg_isready" } }
           ],
-          "ports": [ { "name": "web", "port": 5173 } ],
+          "ports": [ { "name": "web", "port": 5173 }, { "name": "vscode", "port": 8080 } ],
           "hooks": { "onResume": ["~/.atelier/refresh-tokens.sh"] }
         }"#;
         let cfg: AgentConfig = serde_json::from_str(json).expect("parse");
@@ -315,6 +395,38 @@ mod tests {
             hooks: Hooks::default(),
         };
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_after_cycle() {
+        let mut a = proc("a");
+        a.after = vec!["b".into()];
+        let mut b = proc("b");
+        b.after = vec!["a".into()];
+        let cfg = AgentConfig {
+            sandbox_id: "sb".into(),
+            env: HashMap::new(),
+            processes: vec![a, b],
+            ports: vec![],
+            hooks: Hooks::default(),
+        };
+        assert!(cfg.validate().unwrap_err().contains("cycle"));
+    }
+
+    #[test]
+    fn validate_accepts_after_dag() {
+        let mut a = proc("a");
+        a.after = vec!["b".into(), "c".into()];
+        let mut b = proc("b");
+        b.after = vec!["c".into()];
+        let cfg = AgentConfig {
+            sandbox_id: "sb".into(),
+            env: HashMap::new(),
+            processes: vec![a, b, proc("c")],
+            ports: vec![],
+            hooks: Hooks::default(),
+        };
+        cfg.validate().expect("a diamond dag is valid");
     }
 
     #[test]
