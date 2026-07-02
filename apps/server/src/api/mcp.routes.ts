@@ -46,6 +46,16 @@ function createMcpServer(container: ServerContainer): McpServer {
   );
 
   server.registerTool(
+    "list_sandboxes",
+    {
+      title: "List sandboxes",
+      description: "List known sandboxes with their status.",
+      inputSchema: {},
+    },
+    async () => textResult(runtime.list()),
+  );
+
+  server.registerTool(
     "get_sandbox",
     {
       title: "Get sandbox",
@@ -53,6 +63,31 @@ function createMcpServer(container: ServerContainer): McpServer {
       inputSchema: { id: z.string() },
     },
     async ({ id }) => textResult(await runtime.get(id)),
+  );
+
+  server.registerTool(
+    "exec",
+    {
+      title: "Exec",
+      description: "Run a one-shot command in a sandbox and capture output.",
+      inputSchema: {
+        id: z.string(),
+        command: z.string(),
+        cwd: z.string().optional(),
+        timeoutMs: z.number().optional(),
+      },
+    },
+    async ({ id, ...req }) => textResult(await runtime.exec(id, req)),
+  );
+
+  server.registerTool(
+    "logs",
+    {
+      title: "Process logs",
+      description: "Read a supervised process's captured logs.",
+      inputSchema: { id: z.string(), name: z.string() },
+    },
+    async ({ id, name }) => textResult(await runtime.processLogs(id, name)),
   );
 
   server.registerTool(
@@ -126,6 +161,16 @@ function createMcpServer(container: ServerContainer): McpServer {
       await runtime.addPort(id, body);
       return textResult({ ok: true });
     },
+  );
+
+  server.registerTool(
+    "snapshot_sandbox",
+    {
+      title: "Snapshot sandbox",
+      description: "Snapshot the disk without releasing compute.",
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => textResult(await runtime.snapshot(id)),
   );
 
   return server;
