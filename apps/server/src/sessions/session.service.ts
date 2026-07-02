@@ -3,9 +3,8 @@
  * `api/sandboxes/agent-facade.routes.ts`'s `surfaceFor()` + handlers: the
  * routing/Elysia concerns move to `api/`, this class is the framework-agnostic
  * mechanism. Harness-neutral — `SessionSurfaceResolver` is the injection
- * point v1's inline `new OpencodeSessionSurface(...)` used to be; the server
- * bootstrap supplies the concrete resolver (today: opencode only, via
- * `@atelier/compose`).
+ * point the server bootstrap fills with the concrete resolver (today: the ACP
+ * surface for the opencode harness).
  *
  * A privileged CLIENT of runtime (atelier-v2 §3.1): resolves connection info
  * via `RuntimeService.get()`, same data any API caller could read.

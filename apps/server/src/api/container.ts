@@ -21,10 +21,10 @@ import {
 } from "../sessions/index.ts";
 
 /**
- * Session-surface registry — the injection point v1's `agent-facade.routes.ts`
- * filled with an inline `new OpencodeSessionSurface(...)`. The concrete
- * opencode surface is registered by `registerBuiltinHarnesses()` below, kept
- * as a separate step so `container.ts` itself has zero opencode knowledge.
+ * Session-surface registry — the harness-neutral injection point for the live
+ * session facade. The concrete surface is registered by
+ * `registerBuiltinHarnesses()` below, kept as a separate step so
+ * `container.ts` itself has zero harness knowledge.
  */
 class SessionSurfaceRegistry implements SessionSurfaceResolver {
   private readonly factories = new Map<
@@ -69,8 +69,7 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
     sessionConfig: opencodeSessionConfig,
   });
   // The opencode harness's live surface is ACP-over-attach in v2 (the shared
-  // dispatch hub), not `opencode serve` HTTP. v1's OpencodeSessionSurface is
-  // dead here — deleted with the rest of v1 in M6.
+  // dispatch hub), not `opencode serve` HTTP (which has no port in v2).
   container.sessionSurfaces.register(
     "opencode",
     (sandboxId) => new AcpSessionSurface(container.dispatch, sandboxId),
