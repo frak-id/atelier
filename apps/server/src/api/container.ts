@@ -12,7 +12,6 @@ import {
   RuntimeService,
 } from "../runtime/index.ts";
 import {
-  type AgentConnection,
   AgentDispatch,
   type HarnessSessionSurface,
   registerHarnessDispatch,
@@ -30,17 +29,14 @@ import {
 class SessionSurfaceRegistry implements SessionSurfaceResolver {
   private readonly factories = new Map<
     string,
-    (conn: AgentConnection) => HarnessSessionSurface
+    (sandboxId: string) => HarnessSessionSurface
   >();
 
-  register(
-    id: string,
-    factory: (conn: AgentConnection) => HarnessSessionSurface,
-  ) {
+  register(id: string, factory: (sandboxId: string) => HarnessSessionSurface) {
     this.factories.set(id, factory);
   }
 
-  resolve(conn: AgentConnection, harnessId?: string): HarnessSessionSurface {
+  resolve(sandboxId: string, harnessId?: string): HarnessSessionSurface {
     const id = harnessId ?? "opencode";
     const factory = this.factories.get(id);
     if (!factory) {
@@ -49,7 +45,7 @@ class SessionSurfaceRegistry implements SessionSurfaceResolver {
           "via container.sessionSurfaces.register() at bootstrap.",
       );
     }
-    return factory(conn);
+    return factory(sandboxId);
   }
 }
 
@@ -65,16 +61,19 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
   const { opencodeSessionConfig } = await import(
     "@atelier/compose/harnesses/opencode"
   );
-  const { OpencodeSessionSurface } = await import(
-    "../sessions/harnesses/opencode/index.ts"
+  const { AcpSessionSurface } = await import(
+    "../sessions/acp/acp-session-surface.ts"
   );
   container.registerHarnessDispatch({
     id: "opencode",
     sessionConfig: opencodeSessionConfig,
   });
+  // The opencode harness's live surface is ACP-over-attach in v2 (the shared
+  // dispatch hub), not `opencode serve` HTTP. v1's OpencodeSessionSurface is
+  // dead here — deleted with the rest of v1 in M6.
   container.sessionSurfaces.register(
     "opencode",
-    (conn) => new OpencodeSessionSurface(conn),
+    (sandboxId) => new AcpSessionSurface(container.dispatch, sandboxId),
   );
 }
 

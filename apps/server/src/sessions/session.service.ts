@@ -22,14 +22,15 @@ import type {
 import type { RuntimeService } from "../runtime/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import type {
-  AgentConnection,
   CreateSessionResult,
   HarnessSessionSurface,
   InterventionResult,
 } from "./session-surface.ts";
 
 export interface SessionSurfaceResolver {
-  resolve(conn: AgentConnection, harnessId?: string): HarnessSessionSurface;
+  /** ACP goes over the runtime attach bridge, so a surface needs only the
+   * sandbox id (v1's `AgentConnection {ipAddress,password}` is dead). */
+  resolve(sandboxId: string, harnessId?: string): HarnessSessionSurface;
 }
 
 export class SessionService {
@@ -41,13 +42,12 @@ export class SessionService {
   ) {}
 
   private async surfaceFor(sandboxId: string): Promise<HarnessSessionSurface> {
+    // Fetch state only to read the harness annotation (which surface to use);
+    // the surface reaches the sandbox over the runtime attach bridge, not a
+    // pod IP. Throws NotFound for an unknown sandbox, same as any op.
     const state = await this.deps.runtime.get(sandboxId);
-    const conn: AgentConnection = {
-      ipAddress: state.generated?.podIp ?? "",
-      password: state.generated?.agentPassword,
-    };
     const harnessId = state.annotations?.["atelier.dev/harness"];
-    return this.deps.surfaces.resolve(conn, harnessId);
+    return this.deps.surfaces.resolve(sandboxId, harnessId);
   }
 
   async listSessions(sandboxId: string): Promise<AgentSession[]> {
