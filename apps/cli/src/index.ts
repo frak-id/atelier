@@ -8,8 +8,14 @@
  * WS/local-diff commands (attach, sync, expose, snapshot, prebuild, --bake)
  * land next.
  */
-import { readFileSync } from "node:fs";
-import type { ResumeRequest, SandboxSpec } from "@atelier/spec";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join as joinPath, relative as relPath } from "node:path";
+import type {
+  PatchFilesRequest,
+  PrebuildSpec,
+  ResumeRequest,
+  SandboxSpec,
+} from "@atelier/spec";
 import { ApiError, AtelierClient } from "./client.ts";
 import { resolveConfig } from "./config.ts";
 
@@ -25,6 +31,11 @@ Usage:
   atelier pause <id>
   atelier resume <id> [--env KEY=VALUE ...]
   atelier rm <id>
+  atelier attach <id> [process]           (default process: acp)
+  atelier sync <localPath> <id>:<remotePath>
+  atelier expose <id> <name> <port> [--no-public]
+  atelier snapshot <id>
+  atelier prebuild <file>
 
 Env:
   ATELIER_API_URL   server base URL (default http://localhost:4000)
@@ -158,6 +169,103 @@ function buildUpSpec(flags: Map<string, string[]>): SandboxSpec {
   };
 }
 
+/** Build a PatchFiles payload from a local file or directory tree, mapping
+ * each file under `remoteBase` (preserving the tree for a directory). Reads as
+ * UTF-8 — `sync` targets text config (dotfiles), not binaries. */
+function collectFiles(local: string, remoteBase: string): PatchFilesRequest {
+  const st = statSync(local);
+  const octalMode = (m: number): string => (m & 0o777).toString(8);
+  if (st.isFile()) {
+    return [
+      {
+        path: remoteBase,
+        content: readFileSync(local, "utf8"),
+        mode: octalMode(st.mode),
+      },
+    ];
+  }
+  const out: PatchFilesRequest = [];
+  for (const entry of readdirSync(local, {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile()) continue;
+    const abs = joinPath(entry.parentPath, entry.name);
+    const rel = relPath(local, abs);
+    const fst = statSync(abs);
+    out.push({
+      path: `${remoteBase}/${rel}`,
+      content: readFileSync(abs, "utf8"),
+      mode: octalMode(fst.mode),
+    });
+  }
+  return out;
+}
+
+/** Split `id:/remote/path` into its parts (the remote path may contain more
+ * colons, so only the first splits). */
+function splitRemote(arg: string): { id: string; path: string } {
+  const colon = arg.indexOf(":");
+  if (colon === -1) fail(`expected <id>:<remotePath>, got "${arg}"`);
+  return { id: arg.slice(0, colon), path: arg.slice(colon + 1) };
+}
+
+/** Interactive attach: pipe local stdin<->the sandbox process over the WS
+ * bridge. Ctrl-] detaches (like telnet). */
+async function attach(
+  client: AtelierClient,
+  id: string,
+  name: string,
+): Promise<void> {
+  const { url, headers } = client.wsAttach(id, name);
+  // Bun's WebSocket accepts an options object with `headers` for the
+  // handshake (non-DOM extension); the lib.dom type only allows protocols, so
+  // declare Bun's actual signature locally rather than mistype the arg.
+  const BunWebSocket = WebSocket as unknown as new (
+    url: string,
+    options: { headers: Record<string, string> },
+  ) => WebSocket;
+  const ws = new BunWebSocket(url, { headers });
+  ws.binaryType = "arraybuffer";
+  const stdin = process.stdin;
+  const wasRaw = stdin.isRaw;
+  const restore = () => {
+    if (stdin.isTTY) stdin.setRawMode(wasRaw ?? false);
+    stdin.pause();
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    const onData = (chunk: Buffer) => {
+      // Ctrl-] (0x1d) detaches locally without killing the remote process.
+      if (chunk.length === 1 && chunk[0] === 0x1d) {
+        ws.close();
+        return;
+      }
+      if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
+    };
+    ws.onopen = () => {
+      if (stdin.isTTY) stdin.setRawMode(true);
+      stdin.resume();
+      stdin.on("data", onData);
+    };
+    ws.onmessage = (event) => {
+      const d = event.data;
+      if (d instanceof ArrayBuffer) process.stdout.write(Buffer.from(d));
+      else process.stdout.write(String(d));
+    };
+    ws.onclose = () => {
+      stdin.off("data", onData);
+      restore();
+      resolve();
+    };
+    ws.onerror = () => {
+      stdin.off("data", onData);
+      restore();
+      reject(new Error(`attach failed: ${url}`));
+    };
+  });
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const command = argv[0];
@@ -257,6 +365,50 @@ async function main(): Promise<void> {
       const id = positionals[0] ?? fail("rm needs a sandbox id");
       await client.destroy(id);
       process.stdout.write(`removed ${id}\n`);
+      return;
+    }
+    case "attach": {
+      const id = positionals[0] ?? fail("attach needs a sandbox id");
+      const name = positionals[1] ?? "acp";
+      await attach(client, id, name);
+      return;
+    }
+    case "sync": {
+      const local = positionals[0] ?? fail("sync needs a local path");
+      const remote = positionals[1] ?? fail("sync needs <id>:<remotePath>");
+      const { id, path } = splitRemote(remote);
+      const files = collectFiles(local, path);
+      if (files.length === 0) fail(`no files under ${local}`);
+      await client.patchFiles(id, files);
+      process.stdout.write(`synced ${files.length} file(s) to ${id}:${path}\n`);
+      return;
+    }
+    case "expose": {
+      const id = positionals[0] ?? fail("expose needs a sandbox id");
+      const name = positionals[1] ?? fail("expose needs a port name");
+      const port = Number(positionals[2]);
+      if (!Number.isFinite(port)) fail("expose needs a numeric port");
+      await client.addPort(id, {
+        name,
+        port,
+        public: !flags.has("no-public"),
+      });
+      process.stdout.write(`exposed ${name} (:${port}) on ${id}\n`);
+      return;
+    }
+    case "snapshot": {
+      const id = positionals[0] ?? fail("snapshot needs a sandbox id");
+      const ref = await client.snapshot(id);
+      if (json) return print(ref);
+      process.stdout.write(`${ref.ref}\t${ref.hash}\n`);
+      return;
+    }
+    case "prebuild": {
+      const file = positionals[0] ?? fail("prebuild needs a spec file");
+      const spec = parseJsonc(readFileSync(file, "utf8")) as PrebuildSpec;
+      const ref = await client.prebuild(spec);
+      if (json) return print(ref);
+      process.stdout.write(`${ref.ref}\t${ref.hash}\n`);
       return;
     }
     default:

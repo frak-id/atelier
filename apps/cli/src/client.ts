@@ -4,12 +4,16 @@
  * privileged as any other API caller.
  */
 import type {
+  AddPortRequest,
   CreateSandboxResponse,
   ExecRequest,
+  PatchFilesRequest,
+  PrebuildSpec,
   ResumeRequest,
   SandboxSpec,
   SandboxState,
   SandboxSummary,
+  SnapshotRef,
 } from "@atelier/spec";
 import type { CliConfig } from "./config.ts";
 
@@ -100,5 +104,34 @@ export class AtelierClient {
 
   exec(id: string, req: ExecRequest): Promise<ExecResult> {
     return this.req("POST", `/sandboxes/${id}/exec`, req);
+  }
+
+  patchFiles(id: string, files: PatchFilesRequest): Promise<void> {
+    return this.req("PATCH", `/sandboxes/${id}/files`, files);
+  }
+
+  addPort(id: string, req: AddPortRequest): Promise<void> {
+    return this.req("POST", `/sandboxes/${id}/ports`, req);
+  }
+
+  snapshot(id: string): Promise<SnapshotRef> {
+    return this.req("POST", `/sandboxes/${id}/snapshot`);
+  }
+
+  prebuild(spec: PrebuildSpec): Promise<SnapshotRef> {
+    return this.req("POST", "/prebuilds", spec);
+  }
+
+  /** WS attach endpoint + auth header for the unified stdio/PTY bridge. The
+   * server proxies to the pod's :9997 bridge (rw). */
+  wsAttach(
+    id: string,
+    name: string,
+  ): { url: string; headers: Record<string, string> } {
+    const wsBase = this.cfg.baseUrl.replace(/^http/, "ws");
+    return {
+      url: `${wsBase}/v1/sandboxes/${id}/attach/${name}`,
+      headers: { authorization: `Bearer ${this.cfg.apiKey}` },
+    };
   }
 }
