@@ -39,22 +39,18 @@ export function sessionStatusesQuery(sandboxId: string) {
   });
 }
 
-export function sessionTodosQuery(
-  sandboxId: string,
-  sessionId: string,
-  enabled: boolean,
-) {
+export function sessionTodosQuery(sandboxId: string, sessionId: string | null) {
   return queryOptions({
-    queryKey: queryKeys.sessions.todos(sandboxId, sessionId),
+    queryKey: queryKeys.sessions.todos(sandboxId, sessionId ?? ""),
     queryFn: async () => {
       const { data, error } = await api.sessions
         .sandboxes({ id: sandboxId })
-        .agent.sessions({ sessionId })
+        .agent.sessions({ sessionId: sessionId ?? "" })
         .todos.get();
       if (error) throw new Error(errorMessage(error, "Failed to load todos"));
       return data;
     },
-    enabled,
+    enabled: sessionId !== null,
   });
 }
 
@@ -170,7 +166,10 @@ export function useAbortSession(sandboxId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions.all(sandboxId),
+        queryKey: queryKeys.sessions.statuses(sandboxId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sessions.list(sandboxId),
       });
       toast.success("Session aborted");
     },

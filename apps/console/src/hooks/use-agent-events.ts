@@ -1,5 +1,6 @@
-import type { AgentEvent } from "@frak/atelier-shared";
-import { useQueryClient } from "@tanstack/react-query";
+import { type AgentEvent, AgentEventSchema } from "@frak/atelier-shared";
+import { Check } from "@sinclair/typebox/value";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { queryKeys } from "@/api/queries/keys";
 
@@ -25,12 +26,13 @@ export function useAgentEvents(sandboxId: string): { connected: boolean } {
     source.addEventListener("error", () => setConnected(false));
 
     source.addEventListener("agent", (event) => {
-      let parsed: AgentEvent;
+      let parsed: unknown;
       try {
-        parsed = JSON.parse(event.data) as AgentEvent;
+        parsed = JSON.parse(event.data);
       } catch {
         return;
       }
+      if (!Check(AgentEventSchema, parsed)) return;
       invalidateForResource(queryClient, sandboxId, parsed);
     });
 
@@ -44,7 +46,7 @@ export function useAgentEvents(sandboxId: string): { connected: boolean } {
 }
 
 function invalidateForResource(
-  queryClient: ReturnType<typeof useQueryClient>,
+  queryClient: QueryClient,
   sandboxId: string,
   event: AgentEvent,
 ): void {
@@ -70,8 +72,10 @@ function invalidateForResource(
       queryClient.invalidateQueries({
         queryKey: event.sessionId
           ? sessions.todos(sandboxId, event.sessionId)
-          : sessions.all(sandboxId),
+          : [...sessions.all(sandboxId), "todos"],
       });
       break;
+    default:
+      event.resource satisfies never;
   }
 }

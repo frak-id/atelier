@@ -169,35 +169,36 @@ function SessionRow({
   const badge = sessionStatusBadge(status);
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`flex w-full flex-col gap-1 rounded-md border p-3 text-left transition-colors hover:bg-muted ${
+    <div
+      className={`flex flex-col gap-1 rounded-md border p-3 transition-colors ${
         selected ? "border-primary bg-muted" : ""
       }`}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="truncate font-medium">
-          {session.title || "Untitled"}
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex flex-col gap-1 text-left"
+      >
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="truncate font-medium">
+            {session.title || "Untitled"}
+          </span>
+          <Badge variant={badge.variant}>{badge.label}</Badge>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {formatRelativeTime(new Date(session.time.updated).toISOString())}
+          </span>
         </span>
-        <Badge variant={badge.variant}>{badge.label}</Badge>
-        <span className="ml-auto text-xs text-muted-foreground">
-          {formatRelativeTime(new Date(session.time.updated).toISOString())}
+        <span className="truncate font-mono text-xs text-muted-foreground">
+          {session.directory}
         </span>
-      </div>
-      <span className="truncate font-mono text-xs text-muted-foreground">
-        {session.directory}
-      </span>
+      </button>
       <div className="flex gap-2 pt-1">
         {status?.type === "busy" ? (
           <Button
             size="sm"
             variant="outline"
             disabled={abort.isPending}
-            onClick={(event) => {
-              event.stopPropagation();
-              abort.mutate(session.id);
-            }}
+            onClick={() => abort.mutate(session.id)}
           >
             <Square />
             Abort
@@ -207,10 +208,7 @@ function SessionRow({
           size="sm"
           variant="outline"
           disabled={deleteSession.isPending}
-          onClick={(event) => {
-            event.stopPropagation();
-            deleteSession.mutate(session.id);
-          }}
+          onClick={() => deleteSession.mutate(session.id)}
         >
           {deleteSession.isPending ? (
             <Loader2 className="animate-spin" />
@@ -220,7 +218,7 @@ function SessionRow({
           Delete
         </Button>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -241,7 +239,7 @@ function TodosSection({
   sessionId: string | null;
 }) {
   const { data: todos, isPending } = useQuery(
-    sessionTodosQuery(sandboxId, sessionId ?? "", sessionId !== null),
+    sessionTodosQuery(sandboxId, sessionId),
   );
 
   return (

@@ -73,6 +73,7 @@ export function TerminalView({
         sendResize();
       };
       socket.onmessage = (event) => {
+        if (disposed) return;
         if (event.data instanceof ArrayBuffer) {
           terminal.write(new Uint8Array(event.data));
         }
