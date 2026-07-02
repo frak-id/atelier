@@ -94,7 +94,10 @@ export function connectAcpWebSocket(url: string): AcpTransport {
   const writable = new WritableStream<Uint8Array>({
     async write(chunk) {
       if (!isOpen) await ready;
-      ws.send(chunk);
+      // Byte relay: chunk is always ArrayBuffer-backed at runtime; the cast
+      // keeps this consumable under the DOM lib (browser clients import the
+      // server's App type via Eden) where send() excludes SharedArrayBuffer.
+      ws.send(chunk as Uint8Array<ArrayBuffer>);
     },
     close: closeSocket,
     abort: closeSocket,

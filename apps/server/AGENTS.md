@@ -54,6 +54,18 @@ Same as `apps/manager` (see root `AGENTS.md`): manual DI in
 the `SandboxError` hierarchy, TypeBox schemas. The difference is *where*
 things live, not the wiring style.
 
+## Browser-consumable `App` type
+
+Browser clients (`apps/console`) type their Eden Treaty client with
+`import type { App } from "@atelier/server"`, so the console's TS program
+(DOM lib) traverses this package's source. DOM's `WebSocket.send()` excludes
+`SharedArrayBuffer`-backed views, so the WS byte-relays cast outgoing chunks
+`as Uint8Array<ArrayBuffer>` (`api/v1.routes.ts`, `api/sessions.routes.ts`,
+`sessions/acp/acp-stream.ts`). The values are always `ArrayBuffer`-backed at
+runtime (Bun delivers binary frames as `Buffer`); the cast is a lib-compat
+narrowing only. Any new Bun-specific WS/stream code that participates in the
+`App` type may need the same narrowing.
+
 ## Known gaps (tracked, not silent)
 
 - **M2 COMPLETE — runtime fully on the v2 agent.** `runtime/agent-config.ts`

@@ -28,6 +28,34 @@
         "@types/bun": "^1.3.12",
       },
     },
+    "apps/console": {
+      "name": "@atelier/console",
+      "version": "0.1.0",
+      "dependencies": {
+        "@elysiajs/eden": "^1.4.9",
+        "@radix-ui/react-slot": "^1.1.1",
+        "@tanstack/react-query": "^5.99.0",
+        "@tanstack/react-router": "^1.168.22",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "lucide-react": "^0.468.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "sonner": "^2.0.7",
+        "tailwind-merge": "^3.5.0",
+      },
+      "devDependencies": {
+        "@atelier/server": "workspace:*",
+        "@tailwindcss/vite": "^4.2.2",
+        "@tanstack/router-plugin": "^1.167.22",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^6.0.1",
+        "tailwindcss": "^4.2.2",
+        "typescript": "^6.0.2",
+        "vite": "^8.0.0",
+      },
+    },
     "apps/dashboard": {
       "name": "@frak/atelier-dashboard",
       "version": "0.1.3",
@@ -191,6 +219,8 @@
     "@atelier/cli": ["@atelier/cli@workspace:apps/cli"],
 
     "@atelier/compose": ["@atelier/compose@workspace:packages/compose"],
+
+    "@atelier/console": ["@atelier/console@workspace:apps/console"],
 
     "@atelier/server": ["@atelier/server@workspace:apps/server"],
 

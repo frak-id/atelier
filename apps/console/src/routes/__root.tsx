@@ -1,0 +1,87 @@
+import type { QueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  createRootRouteWithContext,
+  Link,
+  Outlet,
+  useRouter,
+} from "@tanstack/react-router";
+import { Boxes, LogOut } from "lucide-react";
+import { Toaster } from "sonner";
+import { api } from "@/api/client";
+import { currentUserQuery } from "@/api/queries/auth";
+import { LoginPage } from "@/components/login-page";
+import { Button } from "@/components/ui/button";
+
+export const Route = createRootRouteWithContext<{
+  queryClient: QueryClient;
+}>()({
+  component: RootLayout,
+});
+
+const NAV_ITEMS = [{ to: "/", label: "Sandboxes", icon: Boxes }] as const;
+
+function RootLayout() {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const { data: user, isPending } = useQuery(currentUserQuery());
+
+  if (isPending) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-background">
+        <div className="size-6 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <LoginPage />
+        <Toaster richColors position="top-right" />
+      </>
+    );
+  }
+
+  async function handleLogout() {
+    try {
+      await api.auth.logout.post();
+    } finally {
+      queryClient.clear();
+      await router.invalidate();
+    }
+  }
+
+  return (
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur">
+        <nav className="flex items-center gap-1">
+          <span className="mr-3 font-semibold">Atelier</span>
+          {NAV_ITEMS.map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&.active]:bg-muted [&.active]:text-foreground"
+              activeOptions={{ exact: true }}
+            >
+              <item.icon className="size-4" />
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-sm text-muted-foreground sm:inline">
+            {user.username}
+          </span>
+          <Button variant="ghost" size="icon" onClick={handleLogout}>
+            <LogOut className="size-4" />
+          </Button>
+        </div>
+      </header>
+      <main className="flex-1 p-4">
+        <Outlet />
+      </main>
+      <Toaster richColors position="top-right" />
+    </div>
+  );
+}

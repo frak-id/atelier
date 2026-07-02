@@ -169,7 +169,8 @@ export function createSessionsRoutes(container: ServerContainer) {
           | undefined;
         if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
         if (typeof message === "string") upstream.send(message);
-        else if (message instanceof Uint8Array) upstream.send(message);
+        else if (message instanceof Uint8Array)
+          upstream.send(message as Uint8Array<ArrayBuffer>);
       },
       close(ws) {
         const upstream = (ws.data as Record<string, unknown>).upstream as
