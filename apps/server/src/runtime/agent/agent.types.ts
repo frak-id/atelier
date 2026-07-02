@@ -172,23 +172,3 @@ export interface TerminalSessionListResult extends Array<TerminalSession> {}
 export interface TerminalSessionDeleteResult {
   success: boolean;
 }
-
-/** A harness subprocess spawned by the in-pod ACP bridge (agent-rust/acp.rs). */
-export interface AcpBridgeSession {
-  id: string;
-  pid: number;
-  createdAt: string;
-}
-
-export interface AcpBridgeSessionDeleteResult {
-  success: boolean;
-}
-
-/** Per-session harness launch overrides for the ACP bridge (all optional; each
- * falls back to the pod's `acp` service config when omitted). */
-export interface AcpBridgeSessionSpec {
-  command?: string;
-  workdir?: string;
-  user?: string;
-  env?: Record<string, string>;
-}
