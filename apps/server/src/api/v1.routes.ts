@@ -146,10 +146,14 @@ export function createV1Routes(container: ServerContainer) {
       )
       // ── attach ─────────────────────────────────────────────────────────
       .ws("/sandboxes/:id/attach/:name", {
+        query: t.Object({ mode: t.Optional(t.Union([t.Literal("rw"), t.Literal("ro")])) }),
         async open(ws) {
           const { id, name } = ws.data.params;
+          // `ro` joins the read-only fan-out; `rw` (default) takes the single
+          // writer slot. Pure passthrough — runtime.attach already models both.
+          const mode = ws.data.query.mode ?? "rw";
           try {
-            const { url } = await runtime.attach(id, name);
+            const { url } = await runtime.attach(id, name, mode);
             const upstream = new WebSocket(url);
             upstream.binaryType = "arraybuffer";
             upstream.onmessage = (event) => {
@@ -168,6 +172,8 @@ export function createV1Routes(container: ServerContainer) {
           }
         },
         message(ws, message) {
+          // Drop client→upstream bytes for read-only attachments.
+          if (ws.data.query.mode === "ro") return;
           const upstream = (ws.data as Record<string, unknown>).upstream as
             | WebSocket
             | undefined;

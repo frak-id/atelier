@@ -17,4 +17,22 @@ export const queryKeys = {
     all: ["saved-specs"] as const,
     list: () => [...queryKeys.savedSpecs.all, "list"] as const,
   },
+  sessions: {
+    all: (sandboxId: string) => ["sessions", sandboxId] as const,
+    list: (sandboxId: string) =>
+      [...queryKeys.sessions.all(sandboxId), "list"] as const,
+    statuses: (sandboxId: string) =>
+      [...queryKeys.sessions.all(sandboxId), "statuses"] as const,
+    todos: (sandboxId: string, sessionId: string) =>
+      [...queryKeys.sessions.all(sandboxId), "todos", sessionId] as const,
+    permissions: (sandboxId: string) =>
+      [...queryKeys.sessions.all(sandboxId), "permissions"] as const,
+    questions: (sandboxId: string) =>
+      [...queryKeys.sessions.all(sandboxId), "questions"] as const,
+  },
+  terminal: {
+    all: (sandboxId: string) => ["terminal", sandboxId] as const,
+    list: (sandboxId: string) =>
+      [...queryKeys.terminal.all(sandboxId), "list"] as const,
+  },
 } as const;

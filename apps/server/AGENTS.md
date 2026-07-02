@@ -66,6 +66,12 @@ runtime (Bun delivers binary frames as `Buffer`); the cast is a lib-compat
 narrowing only. Any new Bun-specific WS/stream code that participates in the
 `App` type may need the same narrowing.
 
+The process-attach WS (`/v1/sandboxes/:id/attach/:name`) accepts an optional
+`?mode=rw|ro` query (default `rw`): `ro` joins the runtime's read-only
+fan-out and drops any client→upstream bytes. This is a pure passthrough —
+`runtime.attach(id, name, mode)` already models both modes; the route just
+exposes the existing capability so the GUI can offer a read-only attach.
+
 ## Known gaps (tracked, not silent)
 
 - **M2 COMPLETE — runtime fully on the v2 agent.** `runtime/agent-config.ts`

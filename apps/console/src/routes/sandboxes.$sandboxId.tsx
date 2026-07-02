@@ -6,7 +6,9 @@ import {
   ChevronRight,
   ExternalLink,
   Loader2,
+  MessagesSquare,
   Play,
+  Radio,
   Square,
   Star,
 } from "lucide-react";
@@ -21,6 +23,7 @@ import {
   useResumeSandbox,
   useSnapshotSandbox,
 } from "@/api/queries/sandboxes";
+import { TerminalView } from "@/components/terminal-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -110,6 +113,15 @@ function SandboxDetailPage() {
           {harness ? <Badge variant="outline">{harness}</Badge> : null}
         </div>
         <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link
+              to="/sandboxes/$sandboxId/sessions"
+              params={{ sandboxId: sandbox.id }}
+            >
+              <MessagesSquare />
+              Sessions
+            </Link>
+          </Button>
           {sandbox.status === "running" ? (
             <Button
               variant="outline"
@@ -265,6 +277,7 @@ function ProcessRow({
   process: ProcessStatus;
 }) {
   const [logsOpen, setLogsOpen] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
   const processAction = useProcessAction(sandboxId);
 
   return (
@@ -323,10 +336,26 @@ function ProcessRow({
             {logsOpen ? <ChevronDown /> : <ChevronRight />}
             Logs
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAttachOpen((open) => !open)}
+          >
+            <Radio />
+            Attach
+          </Button>
         </div>
       </div>
       {logsOpen ? (
         <ProcessLogs sandboxId={sandboxId} name={process.name} />
+      ) : null}
+      {attachOpen ? (
+        <div className="border-t">
+          <TerminalView
+            wsPath={`/v1/sandboxes/${sandboxId}/attach/${process.name}?mode=ro`}
+            readOnly
+          />
+        </div>
       ) : null}
     </div>
   );

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from "./routes/__root"
 import { Route as SpawnRouteImport } from "./routes/spawn"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as SandboxesSandboxIdRouteImport } from "./routes/sandboxes.$sandboxId"
+import { Route as SandboxesSandboxIdSessionsRouteImport } from "./routes/sandboxes.$sandboxId.sessions"
 
 const SpawnRoute = SpawnRouteImport.update({
   id: "/spawn",
@@ -28,35 +29,57 @@ const SandboxesSandboxIdRoute = SandboxesSandboxIdRouteImport.update({
   path: "/sandboxes/$sandboxId",
   getParentRoute: () => rootRouteImport,
 } as any)
+const SandboxesSandboxIdSessionsRoute =
+  SandboxesSandboxIdSessionsRouteImport.update({
+    id: "/sessions",
+    path: "/sessions",
+    getParentRoute: () => SandboxesSandboxIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
   "/spawn": typeof SpawnRoute
-  "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRoute
+  "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
+  "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/spawn": typeof SpawnRoute
-  "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRoute
+  "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
+  "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
   "/spawn": typeof SpawnRoute
-  "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRoute
+  "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
+  "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: "/" | "/spawn" | "/sandboxes/$sandboxId"
+  fullPaths:
+    | "/"
+    | "/spawn"
+    | "/sandboxes/$sandboxId"
+    | "/sandboxes/$sandboxId/sessions"
   fileRoutesByTo: FileRoutesByTo
-  to: "/" | "/spawn" | "/sandboxes/$sandboxId"
-  id: "__root__" | "/" | "/spawn" | "/sandboxes/$sandboxId"
+  to:
+    | "/"
+    | "/spawn"
+    | "/sandboxes/$sandboxId"
+    | "/sandboxes/$sandboxId/sessions"
+  id:
+    | "__root__"
+    | "/"
+    | "/spawn"
+    | "/sandboxes/$sandboxId"
+    | "/sandboxes/$sandboxId/sessions"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SpawnRoute: typeof SpawnRoute
-  SandboxesSandboxIdRoute: typeof SandboxesSandboxIdRoute
+  SandboxesSandboxIdRoute: typeof SandboxesSandboxIdRouteWithChildren
 }
 
 declare module "@tanstack/react-router" {
@@ -82,13 +105,31 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SandboxesSandboxIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/sandboxes/$sandboxId/sessions": {
+      id: "/sandboxes/$sandboxId/sessions"
+      path: "/sessions"
+      fullPath: "/sandboxes/$sandboxId/sessions"
+      preLoaderRoute: typeof SandboxesSandboxIdSessionsRouteImport
+      parentRoute: typeof SandboxesSandboxIdRoute
+    }
   }
 }
+
+interface SandboxesSandboxIdRouteChildren {
+  SandboxesSandboxIdSessionsRoute: typeof SandboxesSandboxIdSessionsRoute
+}
+
+const SandboxesSandboxIdRouteChildren: SandboxesSandboxIdRouteChildren = {
+  SandboxesSandboxIdSessionsRoute: SandboxesSandboxIdSessionsRoute,
+}
+
+const SandboxesSandboxIdRouteWithChildren =
+  SandboxesSandboxIdRoute._addFileChildren(SandboxesSandboxIdRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SpawnRoute: SpawnRoute,
-  SandboxesSandboxIdRoute: SandboxesSandboxIdRoute,
+  SandboxesSandboxIdRoute: SandboxesSandboxIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
