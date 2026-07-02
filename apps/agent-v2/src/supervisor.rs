@@ -20,7 +20,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::{Mutex, Notify};
 
-use crate::config::{AgentConfig, ProcessEntry, Readiness, http_probe_url};
+use crate::attach::{self, AttachRegistry};
+use crate::config::{AgentConfig, ProcessEntry, Readiness, StdioMode, http_probe_url};
 use crate::readiness::{self, ProbeCtx};
 use crate::store::ConfigStore;
 
@@ -71,6 +72,8 @@ pub struct Supervisor {
     store: Arc<ConfigStore>,
     procs: Arc<Mutex<HashMap<String, ProcessState>>>,
     log_dir: String,
+    /// Attach endpoints for `stdio: bridge` / `pty` processes (attach.rs).
+    attach: Arc<AttachRegistry>,
     /// Woken whenever a process latches ready, so `after` waits react
     /// immediately instead of polling out their fallback interval.
     ready_notify: Notify,
@@ -82,7 +85,11 @@ pub struct Supervisor {
 
 impl Supervisor {
     pub fn new(store: Arc<ConfigStore>) -> Arc<Self> {
-        Self::with_log_dir(store, DEFAULT_LOG_DIR.to_string())
+        // ATELIER_LOG_DIR overrides the per-process log directory (an agent
+        // operational path, not sandbox content) for local runs / tests.
+        let log_dir =
+            std::env::var("ATELIER_LOG_DIR").unwrap_or_else(|_| DEFAULT_LOG_DIR.to_string());
+        Self::with_log_dir(store, log_dir)
     }
 
     fn with_log_dir(store: Arc<ConfigStore>, log_dir: String) -> Arc<Self> {
@@ -90,9 +97,15 @@ impl Supervisor {
             store,
             procs: Arc::new(Mutex::new(HashMap::new())),
             log_dir,
+            attach: AttachRegistry::new(),
             ready_notify: Notify::new(),
             gen_counter: AtomicU64::new(0),
         })
+    }
+
+    /// The attach registry, so `main` can serve the attach WS endpoint.
+    pub fn attach_registry(&self) -> Arc<AttachRegistry> {
+        self.attach.clone()
     }
 
     fn log_file(&self, name: &str) -> String {
@@ -250,14 +263,28 @@ impl Supervisor {
             .await
             .map_err(|e| format!("open log {log_file}: {e}"))?;
 
+        // Attach mode selects how stdio is wired: PTY (terminal), stdio-bridge
+        // (relay stdin/stdout over WS), or none (pipe to the log only).
+        let is_pty = process.pty;
+        let is_bridge = !is_pty && process.stdio == StdioMode::Bridge;
+
         let mut cmd = Command::new("/bin/bash");
         cmd.args(["-l", "-c", &process.command])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
             // pgid = child pid so kill(-pgid) reaps the whole tree.
             .process_group(0);
-        apply_user(&mut cmd, process.user.as_deref().unwrap_or("root"));
+        if is_bridge {
+            cmd.stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+        } else if !is_pty {
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+        }
+        // PTY sets uid inside pre_exec (after TIOCSCTTY); others use CommandExt.
+        if !is_pty {
+            apply_user(&mut cmd, process.user.as_deref().unwrap_or("root"));
+        }
         // Pod-wide env first, then per-process env (process wins).
         for (k, v) in &cfg.env {
             cmd.env(k, v);
@@ -268,6 +295,15 @@ impl Supervisor {
         if let Some(dir) = &process.cwd {
             cmd.current_dir(dir);
         }
+
+        let pty_master = if is_pty {
+            Some(
+                attach::setup_pty(&mut cmd, process.user.as_deref())
+                    .map_err(|e| format!("setup pty for {}: {e}", process.name))?,
+            )
+        } else {
+            None
+        };
 
         let mut child = cmd
             .spawn()
@@ -298,13 +334,30 @@ impl Supervisor {
             }
         }
 
-        // Pump stdout+stderr into the shared per-process log.
+        // Wire stdio to the attach bridge (bridge/pty) or the log (none).
         let log_wr = Arc::new(Mutex::new(log_handle));
-        if let Some(out) = child.stdout.take() {
-            spawn_log_pump(out, log_wr.clone());
-        }
-        if let Some(err) = child.stderr.take() {
-            spawn_log_pump(err, log_wr);
+        if let Some(master) = pty_master {
+            self.attach
+                .register_pty(&process.name, master, log_wr)
+                .await;
+        } else if is_bridge {
+            let stdin = child.stdin.take();
+            let stdout = child.stdout.take();
+            if let (Some(stdin), Some(stdout)) = (stdin, stdout) {
+                self.attach
+                    .register_bridge(&process.name, stdin, stdout, log_wr.clone())
+                    .await;
+            }
+            if let Some(err) = child.stderr.take() {
+                spawn_log_pump(err, log_wr);
+            }
+        } else {
+            if let Some(out) = child.stdout.take() {
+                spawn_log_pump(out, log_wr.clone());
+            }
+            if let Some(err) = child.stderr.take() {
+                spawn_log_pump(err, log_wr);
+            }
         }
 
         // Readiness watcher: latch ready once the probe passes (or immediately
@@ -390,6 +443,9 @@ impl Supervisor {
                 };
                 should_restart(process.restart, clean)
             };
+            // The exited process's attach endpoint is dead; a restart will
+            // register a fresh one, so drop it either way.
+            this.attach.remove(&process.name).await;
             if restart {
                 tokio::time::sleep(RESTART_BACKOFF).await;
                 // Restart through start() (not spawn()): it re-runs the
@@ -484,6 +540,7 @@ impl Supervisor {
                 signal_group(pid, libc::SIGKILL);
             }
         }
+        self.attach.remove(name).await;
         Ok(())
     }
 }

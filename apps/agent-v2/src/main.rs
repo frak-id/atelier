@@ -10,6 +10,8 @@
 //!   1c. unified attach bridge with single-writer guard + PTY
 //!   1d. phased hooks + N-port forwarder + exec/files routes
 
+mod attach;
+mod bridge;
 mod config;
 mod readiness;
 mod router;
@@ -57,6 +59,15 @@ async fn main() {
 
     let store = Arc::new(ConfigStore::load());
     let supervisor = Supervisor::new(store.clone());
+
+    // Attach WS server (stdio-bridge + PTY relay) on its own port so the
+    // runtime can proxy WS /v1/sandboxes/:id/attach/:name straight through.
+    {
+        let registry = supervisor.attach_registry();
+        tokio::spawn(async move {
+            attach::serve(attach::ATTACH_PORT, registry).await;
+        });
+    }
     match store.get() {
         Some(cfg) => println!(
             "atelier-agent: recovered config for sandbox {}",
