@@ -42,7 +42,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function PolicyEditor({ orgId }: { orgId: string }) {
-  const { data: policy, isPending } = useQuery(orgPolicyQuery(orgId));
+  const {
+    data: policy,
+    isPending,
+    isError,
+    error,
+  } = useQuery(orgPolicyQuery(orgId));
   const setPolicy = useSetOrgPolicy(orgId);
   const [text, setText] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
@@ -77,6 +82,14 @@ function PolicyEditor({ orgId }: { orgId: string }) {
 
   if (isPending) {
     return <p className="text-sm text-muted-foreground">Loading policy…</p>;
+  }
+
+  if (isError) {
+    return (
+      <p className="text-sm text-destructive">
+        {error instanceof Error ? error.message : "Failed to load policy"}
+      </p>
+    );
   }
 
   return (

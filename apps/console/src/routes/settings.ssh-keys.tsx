@@ -132,6 +132,11 @@ function AddSshKeyDialog({
   const [name, setName] = useState("");
   const [publicKey, setPublicKey] = useState("");
 
+  function reset() {
+    setName("");
+    setPublicKey("");
+  }
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!name || !publicKey.trim()) return;
@@ -139,8 +144,7 @@ function AddSshKeyDialog({
       { name, publicKey: publicKey.trim() },
       {
         onSuccess: () => {
-          setName("");
-          setPublicKey("");
+          reset();
           onOpenChange(false);
         },
       },
@@ -148,7 +152,13 @@ function AddSshKeyDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) reset();
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>

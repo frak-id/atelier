@@ -142,6 +142,11 @@ function AddSecretDialog({
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
 
+  function reset() {
+    setName("");
+    setValue("");
+  }
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!name || !value) return;
@@ -149,8 +154,7 @@ function AddSecretDialog({
       { orgId, name, value },
       {
         onSuccess: () => {
-          setName("");
-          setValue("");
+          reset();
           onOpenChange(false);
         },
       },
@@ -158,7 +162,13 @@ function AddSecretDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) reset();
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>

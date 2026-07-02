@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, Loader2, Plus, Trash2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   apiKeysListQuery,
@@ -144,6 +144,10 @@ function CreateApiKeyDialog({
   const [name, setName] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [rawKey, setRawKey] = useState<string | null>(null);
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
 
   function reset() {
     setName("");
@@ -158,7 +162,9 @@ function CreateApiKeyDialog({
       { name, expiresAt: expiresAt || undefined },
       {
         onSuccess: (data) => {
-          if (data) setRawKey(data.rawKey);
+          // If the user dismissed the dialog before the response arrived, don't
+          // resurrect it with the one-time key on the next open.
+          if (data && openRef.current) setRawKey(data.rawKey);
         },
       },
     );

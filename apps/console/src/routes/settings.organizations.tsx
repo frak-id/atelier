@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, Loader2, Plus } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import {
+  type OrgMemberRole,
   organizationsListQuery,
   orgMembersQuery,
   useAddOrgMember,
@@ -23,8 +24,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 
-type OrgMemberRole = "owner" | "admin" | "member" | "viewer";
 const ROLES: OrgMemberRole[] = ["owner", "admin", "member", "viewer"];
+const SLUG_RE = /^[a-z0-9]([a-z0-9-]{0,48}[a-z0-9])?$/;
 
 export const Route = createFileRoute("/settings/organizations")({
   component: OrganizationsPage,
@@ -106,7 +107,11 @@ function OrgRow({
 }
 
 function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
-  const { data: members, isPending } = useQuery(orgMembersQuery(orgId));
+  const {
+    data: members,
+    isPending,
+    isError,
+  } = useQuery(orgMembersQuery(orgId));
   const [addOpen, setAddOpen] = useState(false);
   const canManage = role === "owner" || role === "admin";
 
@@ -114,6 +119,8 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
     <div className="mt-3 space-y-2 border-t pt-3">
       {isPending ? (
         <Skeleton className="h-10 w-full" />
+      ) : isError ? (
+        <p className="text-sm text-destructive">Failed to load members.</p>
       ) : (
         members?.map((member) => (
           <div
@@ -160,6 +167,11 @@ function AddMemberDialog({
   const [userId, setUserId] = useState("");
   const [role, setRole] = useState<OrgMemberRole>("member");
 
+  function reset() {
+    setUserId("");
+    setRole("member");
+  }
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!userId) return;
@@ -167,8 +179,7 @@ function AddMemberDialog({
       { userId, role },
       {
         onSuccess: () => {
-          setUserId("");
-          setRole("member");
+          reset();
           onOpenChange(false);
         },
       },
@@ -176,7 +187,13 @@ function AddMemberDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) reset();
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
@@ -240,7 +257,12 @@ function CreateOrgDialog({
   const createOrg = useCreateOrganization();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const slugValid = /^[a-z0-9-]{1,50}$/.test(slug);
+  const slugValid = SLUG_RE.test(slug);
+
+  function reset() {
+    setName("");
+    setSlug("");
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -249,8 +271,7 @@ function CreateOrgDialog({
       { name, slug },
       {
         onSuccess: () => {
-          setName("");
-          setSlug("");
+          reset();
           onOpenChange(false);
         },
       },
@@ -258,7 +279,13 @@ function CreateOrgDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) reset();
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>

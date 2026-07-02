@@ -18,7 +18,7 @@ export function OrgSelect({
   onChange: (orgId: string) => void;
   noneLabel?: string;
 }) {
-  const { data: orgs } = useQuery(organizationsListQuery());
+  const { data: orgs, isError } = useQuery(organizationsListQuery());
 
   return (
     <div className="space-y-1">
@@ -36,6 +36,11 @@ export function OrgSelect({
           </option>
         ))}
       </select>
+      {isError ? (
+        <p className="text-xs text-destructive">
+          Failed to load organizations.
+        </p>
+      ) : null}
     </div>
   );
 }

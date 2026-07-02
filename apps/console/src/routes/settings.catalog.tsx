@@ -112,6 +112,14 @@ function AddArtifactDialog({
   const urlValid = URL_RE.test(url);
   const shaValid = SHA256_RE.test(sha256);
 
+  function reset() {
+    setName("");
+    setUrl("");
+    setSha256("");
+    setPath("");
+    setExecutable(true);
+  }
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!name || !urlValid || !shaValid) return;
@@ -119,11 +127,7 @@ function AddArtifactDialog({
       { name, url, sha256, path: path || undefined, executable },
       {
         onSuccess: () => {
-          setName("");
-          setUrl("");
-          setSha256("");
-          setPath("");
-          setExecutable(true);
+          reset();
           onOpenChange(false);
         },
       },
@@ -131,7 +135,13 @@ function AddArtifactDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) reset();
+        onOpenChange(next);
+      }}
+    >
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>

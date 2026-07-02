@@ -10,9 +10,9 @@ import {
 } from "@/components/ui/dialog";
 
 /**
- * A yes/no confirmation dialog for destructive actions. Controlled via `open`;
- * `onConfirm` fires then the caller closes it (mirrors the destroy/delete
- * pattern used across the fleet and spawn surfaces).
+ * A yes/no confirmation dialog for destructive actions. Controlled via `open`.
+ * On confirm it calls `onConfirm` and then closes itself via `onOpenChange`
+ * (fire-and-close; the mutation result surfaces through its own toast).
  */
 export function ConfirmDialog({
   open,

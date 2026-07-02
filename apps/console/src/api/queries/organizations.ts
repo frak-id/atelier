@@ -8,7 +8,7 @@ import { api } from "@/api/client";
 import { errorMessage } from "./error";
 import { queryKeys } from "./keys";
 
-type OrgMemberRole = "owner" | "admin" | "member" | "viewer";
+export type OrgMemberRole = "owner" | "admin" | "member" | "viewer";
 
 export function organizationsListQuery() {
   return queryOptions({
