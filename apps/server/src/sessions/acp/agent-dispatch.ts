@@ -1,16 +1,27 @@
 /**
- * Agent-neutral ACP client (atelier-v2 §3.1 "sessions/"). Speaks ACP JSON-RPC
- * to a sandbox's harness by **attaching to the already-supervised `acp`
- * process** through the runtime's unified attach bridge (agent-v2 attach.rs on
- * :9997) — not by spawning a per-session bridge subprocess. The `acp` process
- * is declared in the spec (`stdio: "bridge"`, `primary: true`, composed
+ * Agent-neutral ACP hub (atelier-v2 §3.1 "sessions/"). Speaks ACP JSON-RPC to
+ * a sandbox's harness by **attaching to the already-supervised `acp` process**
+ * through the runtime's unified attach bridge (agent-v2 attach.rs on :9997) —
+ * not by spawning a per-session bridge subprocess. The `acp` process is
+ * declared in the spec (`stdio: "bridge"`, `primary: true`, composed
  * client-side by `@atelier/compose`); the runtime boots it once and gates
  * health on it, so by the time a session opens it is already running.
  *
- * The attach bridge is single-writer, so all ACP sessions for one sandbox
- * share ONE rw attach connection ({@link SandboxAcpConnection}) and are
- * multiplexed by ACP `sessionId`. sessions/ is a privileged CLIENT of the
- * runtime API here — attach + files, the same surface any caller could use.
+ * The attach bridge is single-writer, so ALL consumers of one sandbox share
+ * ONE rw attach connection ({@link SandboxAcpConnection}). AgentDispatch is
+ * the single owner of that connection and the single source of truth for a
+ * sandbox's live ACP state: the session registry, the pending-permission
+ * buffer, and a per-sandbox event emitter. The chat flow (`openSession`) and
+ * the dashboard surface (`AcpSessionSurface`) are both just readers/drivers of
+ * this hub — neither owns a socket.
+ *
+ * ACP has no "list sessions" RPC and no persistence guarantee, and this server
+ * is the only prompter, so the registry is authoritative: a session it did not
+ * create is one nothing can display. KNOWN GAP: after a server restart, live
+ * acp-side sessions are invisible until recreated (acceptable — ephemeral).
+ *
+ * sessions/ is a privileged CLIENT of the runtime API here — attach + files,
+ * the same surface any caller could use. It never touches k8s directly.
  */
 import {
   type ClientConnection,
@@ -23,8 +34,16 @@ import {
   type RequestPermissionResponse,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
+import type {
+  AgentPermissionReply,
+  AgentPermissionRequest,
+  AgentSessionStatus,
+  AgentTodo,
+} from "@frak/atelier-shared";
 import type { AgentClient } from "../../runtime/index.ts";
+import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { InterventionResult } from "../session-surface.ts";
 import { type AcpTransport, connectAcpWebSocket } from "./acp-stream.ts";
 import {
   type AgentModelSelection,
@@ -44,11 +63,39 @@ const ACP_HANDSHAKE_TIMEOUT_MS = 30_000;
  */
 const ACP_PROCESS_NAME = "acp";
 
+/** Registry entry for one ACP session — the authoritative server-side record
+ * (ACP has no list RPC). `title`/`time` are synthesized. */
+export interface SessionMeta {
+  sessionId: string;
+  title: string;
+  directory: string;
+  created: number;
+  updated: number;
+  /** >0 while a prompt is in flight (drives idle/busy status). */
+  busyCount: number;
+  todos: AgentTodo[];
+}
+
+/** A coarse cache-invalidation signal for the facade SSE stream (the
+ * dashboard re-queries the affected resource; it never reads payloads). */
+export interface SurfaceEvent {
+  resource: "sessions" | "sessionStatuses" | "permissions" | "todos";
+  sessionId?: string;
+}
+export type SurfaceListener = (event: SurfaceEvent) => void;
+
+/** A buffered ACP permission request awaiting a decision (chat auto-approve or
+ * dashboard reply — first `replyPermission` wins). */
+interface PendingPermission {
+  id: string;
+  sessionId: string;
+  request: RequestPermissionRequest;
+  resolve: (response: RequestPermissionResponse) => void;
+}
+
 export interface AgentSessionCallbacks {
+  /** Chat streaming: raw ACP `session/update` notifications for this session. */
   onUpdate?: (notification: SessionNotification) => void;
-  onPermission?: (
-    request: RequestPermissionRequest,
-  ) => Promise<RequestPermissionResponse>;
 }
 
 export interface OpenAgentSessionInput {
@@ -93,19 +140,55 @@ async function withTimeout<T>(
   }
 }
 
+function planEntryStatusToTodo(status: string): AgentTodo["status"] {
+  switch (status) {
+    case "in_progress":
+      return "in_progress";
+    case "completed":
+      return "completed";
+    default:
+      return "pending";
+  }
+}
+
+/** Pick the ACP option to answer a dashboard decision with. ACP requires an
+ * offered `optionId`; `always` falls back to a once-allow when the agent
+ * offers no persistent option. Returns undefined → answer "cancelled". */
+function selectPermissionOption(
+  request: RequestPermissionRequest,
+  decision: AgentPermissionReply,
+): string | undefined {
+  const byKind = (kind: string) =>
+    request.options.find((o) => o.kind === kind)?.optionId;
+  if (decision === "reject") {
+    return byKind("reject_once") ?? byKind("reject_always");
+  }
+  if (decision === "always") {
+    return byKind("allow_always") ?? byKind("allow_once");
+  }
+  return byKind("allow_once") ?? byKind("allow_always");
+}
+
 type AgentProxy = ClientConnection["agent"];
 
 /**
  * One shared ACP connection to a sandbox's `acp` process. Owns the single rw
- * attach WebSocket + ACP client connection, routes `session/update` and
- * `session/requestPermission` to the right session's callbacks by `sessionId`,
- * and refcounts live sessions so the socket closes when the last one does.
+ * attach WebSocket + ACP client connection and, for its lifetime, the
+ * authoritative per-sandbox state: the session registry, pending-permission
+ * buffer, and chat update handlers. It forwards coarse invalidation signals
+ * out via `emit` (owned by AgentDispatch, so it survives connection churn).
+ * The socket closes when the registry drains (last chat + dashboard session
+ * released) — watching (SSE) is free and never keeps it alive.
  */
 class SandboxAcpConnection {
-  private readonly handlers = new Map<string, AgentSessionCallbacks>();
+  readonly sessions = new Map<string, SessionMeta>();
+  private readonly pendingPermissions = new Map<string, PendingPermission>();
+  private readonly updateHandlers = new Map<
+    string,
+    (notification: SessionNotification) => void
+  >();
   private closed = false;
-  /** Whether the agent advertised `sessionCapabilities.close` at initialize —
-   * gates whether `session.close()` sends `session/close` (below). */
+  /** Whether the agent advertised `sessionCapabilities.close` at initialize. */
   canCloseSession = false;
 
   private constructor(
@@ -113,35 +196,32 @@ class SandboxAcpConnection {
     private readonly connection: ClientConnection,
     readonly acp: AgentProxy,
     private readonly onGone: (self: SandboxAcpConnection) => void,
+    private readonly emit: (event: SurfaceEvent) => void,
   ) {}
 
   static async open(
     url: string,
     onGone: (self: SandboxAcpConnection) => void,
+    emit: (event: SurfaceEvent) => void,
   ): Promise<SandboxAcpConnection> {
     const transport = connectAcpWebSocket(url);
-    // `conn` is captured by the notification handlers below; it's assigned
-    // before any frame can arrive (handlers only fire after `transport.ready`).
+    // `conn` is captured by the handlers below; it's assigned before any frame
+    // can arrive (handlers only fire after `transport.ready`).
     let conn: SandboxAcpConnection;
     const connection = client({ name: "atelier-server" })
       .onNotification(methods.client.session.update, (ctx) => {
-        conn.handlers.get(ctx.params.sessionId)?.onUpdate?.(ctx.params);
+        conn.handleUpdate(ctx.params);
       })
-      .onRequest(methods.client.session.requestPermission, async (ctx) => {
-        const handler = conn.handlers.get(ctx.params.sessionId)?.onPermission;
-        if (handler) return handler(ctx.params);
-        log.warn(
-          { sessionId: ctx.params.sessionId },
-          "No permission handler registered; cancelling permission request",
-        );
-        return { outcome: { outcome: "cancelled" } };
-      })
+      .onRequest(methods.client.session.requestPermission, (ctx) =>
+        conn.handlePermission(ctx.params),
+      )
       .connect(transport.stream);
     conn = new SandboxAcpConnection(
       transport,
       connection,
       connection.agent,
       onGone,
+      emit,
     );
 
     try {
@@ -166,26 +246,175 @@ class SandboxAcpConnection {
     return conn;
   }
 
-  registerSession(sessionId: string, callbacks: AgentSessionCallbacks): void {
-    this.handlers.set(sessionId, callbacks);
-  }
+  // ── ACP inbound ──────────────────────────────────────────────────────────
 
-  /** Drop one session; close the shared socket when none remain. */
-  releaseSession(sessionId: string): void {
-    if (this.handlers.delete(sessionId) && this.handlers.size === 0) {
-      this.close();
+  private handleUpdate(notification: SessionNotification): void {
+    // Chat streaming first (raw passthrough), regardless of registry state.
+    this.updateHandlers.get(notification.sessionId)?.(notification);
+
+    const meta = this.sessions.get(notification.sessionId);
+    if (!meta) {
+      // Stale/unknown session (e.g. post-restart) — ignore, never crash/emit.
+      log.debug(
+        { sessionId: notification.sessionId },
+        "session/update for unknown session; ignoring",
+      );
+      return;
+    }
+    meta.updated = Date.now();
+    if (notification.update.sessionUpdate === "plan") {
+      meta.todos = notification.update.entries.map((e) => ({
+        content: e.content,
+        status: planEntryStatusToTodo(e.status),
+        priority: e.priority,
+      }));
+      this.emit({ resource: "todos", sessionId: notification.sessionId });
     }
   }
 
-  get sessionCount(): number {
-    return this.handlers.size;
+  private handlePermission(
+    request: RequestPermissionRequest,
+  ): Promise<RequestPermissionResponse> {
+    const id = safeNanoid();
+    return new Promise<RequestPermissionResponse>((resolve) => {
+      this.pendingPermissions.set(id, {
+        id,
+        sessionId: request.sessionId,
+        request,
+        resolve,
+      });
+      this.emit({ resource: "permissions" });
+    });
   }
 
-  /** Tear down the socket + ACP connection (idempotent). */
+  // ── registry / sessions ───────────────────────────────────────────────────
+
+  async newSession(
+    cwd: string,
+    mcpServers: McpServer[],
+    title: string,
+  ): Promise<string> {
+    const created = await withTimeout(
+      this.acp.request(methods.agent.session.new, { cwd, mcpServers }),
+      ACP_HANDSHAKE_TIMEOUT_MS,
+      "session/new",
+    );
+    const now = Date.now();
+    this.sessions.set(created.sessionId, {
+      sessionId: created.sessionId,
+      title,
+      directory: cwd,
+      created: now,
+      updated: now,
+      busyCount: 0,
+      todos: [],
+    });
+    this.emit({ resource: "sessions" });
+    return created.sessionId;
+  }
+
+  setTitle(sessionId: string, title: string): void {
+    const meta = this.sessions.get(sessionId);
+    if (!meta || meta.title === title) return;
+    meta.title = title;
+    meta.updated = Date.now();
+    this.emit({ resource: "sessions" });
+  }
+
+  registerUpdateHandler(
+    sessionId: string,
+    handler: (notification: SessionNotification) => void,
+  ): void {
+    this.updateHandlers.set(sessionId, handler);
+  }
+
+  markBusy(sessionId: string, delta: number): void {
+    const meta = this.sessions.get(sessionId);
+    if (!meta) return;
+    meta.busyCount = Math.max(0, meta.busyCount + delta);
+    meta.updated = Date.now();
+    this.emit({ resource: "sessionStatuses" });
+  }
+
+  cancel(sessionId: string): Promise<void> {
+    return this.acp.notify(methods.agent.session.cancel, { sessionId });
+  }
+
+  /** Free agent-side session state (capability-gated) + drop it from the
+   * registry; closes the socket if the registry drains. Idempotent. */
+  async closeSession(sessionId: string): Promise<boolean> {
+    if (!this.sessions.delete(sessionId)) return false;
+    this.updateHandlers.delete(sessionId);
+    if (this.canCloseSession) {
+      await this.acp
+        .request(methods.agent.session.close, { sessionId })
+        .catch((err) => log.warn({ sessionId, err }, "session/close failed"));
+    }
+    this.emit({ resource: "sessions" });
+    if (this.sessions.size === 0) this.close();
+    return true;
+  }
+
+  // ── surface reads ─────────────────────────────────────────────────────────
+
+  listSessions(): SessionMeta[] {
+    return [...this.sessions.values()];
+  }
+
+  getSession(sessionId: string): SessionMeta | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  statuses(): Record<string, AgentSessionStatus> {
+    const out: Record<string, AgentSessionStatus> = {};
+    for (const meta of this.sessions.values()) {
+      out[meta.sessionId] = { type: meta.busyCount > 0 ? "busy" : "idle" };
+    }
+    return out;
+  }
+
+  listPermissions(): AgentPermissionRequest[] {
+    return [...this.pendingPermissions.values()].map((p) => ({
+      id: p.id,
+      sessionId: p.sessionId,
+      permission:
+        p.request.toolCall.title ?? p.request.toolCall.kind ?? "permission",
+    }));
+  }
+
+  replyPermission(
+    requestId: string,
+    decision: AgentPermissionReply,
+  ): InterventionResult {
+    const pending = this.pendingPermissions.get(requestId);
+    if (!pending) return { ok: false, status: 404 };
+    this.pendingPermissions.delete(requestId);
+    const optionId = selectPermissionOption(pending.request, decision);
+    pending.resolve(
+      optionId
+        ? { outcome: { outcome: "selected", optionId } }
+        : { outcome: { outcome: "cancelled" } },
+    );
+    this.emit({ resource: "permissions" });
+    return { ok: true };
+  }
+
+  /** Tear down the socket + ACP connection (idempotent). Flushes pending
+   * permissions as cancelled and clears the registry so no ghost state
+   * lingers; emits the invalidations so watchers reflect the wipe. */
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.handlers.clear();
+    const hadPermissions = this.pendingPermissions.size > 0;
+    const hadSessions = this.sessions.size > 0;
+    for (const pending of this.pendingPermissions.values()) {
+      pending.resolve({ outcome: { outcome: "cancelled" } });
+    }
+    this.pendingPermissions.clear();
+    this.sessions.clear();
+    this.updateHandlers.clear();
+    if (hadPermissions) this.emit({ resource: "permissions" });
+    if (hadSessions) this.emit({ resource: "sessions" });
     this.transport.close();
     this.connection.close();
     this.onGone(this);
@@ -194,18 +423,54 @@ class SandboxAcpConnection {
 
 export class AgentDispatch {
   /**
-   * One shared ACP connection per sandbox. Stored as the in-flight promise so
-   * concurrent `openSession` calls dedupe onto a single rw attach (two rw
-   * attaches would collide at the single-writer bridge).
+   * One shared ACP connection per sandbox, stored as the in-flight promise so
+   * concurrent dials dedupe onto a single rw attach (two rw attaches would
+   * collide at the single-writer bridge).
    */
   private readonly connections = new Map<
     string,
     Promise<SandboxAcpConnection>
   >();
-  /** ACP sessionId → the sandbox whose connection hosts it. */
-  private readonly sessionSandbox = new Map<string, string>();
+  /** Resolved connections, for synchronous lazy-read (no dial). */
+  private readonly live = new Map<string, SandboxAcpConnection>();
+  /** Per-sandbox event subscribers. Kept on the hub (NOT the connection) so an
+   * SSE watcher survives connection churn and is never a refcount participant
+   * that could strand or wipe the socket. */
+  private readonly subscribers = new Map<string, Set<SurfaceListener>>();
 
   constructor(private readonly deps: { agentClient: AgentClient }) {}
+
+  // ── event emitter ─────────────────────────────────────────────────────────
+
+  /** Watch a sandbox's coarse invalidation signals. Does NOT dial. */
+  subscribe(sandboxId: string, listener: SurfaceListener): () => void {
+    let set = this.subscribers.get(sandboxId);
+    if (!set) {
+      set = new Set();
+      this.subscribers.set(sandboxId, set);
+    }
+    set.add(listener);
+    return () => {
+      const s = this.subscribers.get(sandboxId);
+      if (!s) return;
+      s.delete(listener);
+      if (s.size === 0) this.subscribers.delete(sandboxId);
+    };
+  }
+
+  private emit(sandboxId: string, event: SurfaceEvent): void {
+    const set = this.subscribers.get(sandboxId);
+    if (!set) return;
+    for (const listener of set) {
+      try {
+        listener(event);
+      } catch (err) {
+        log.warn({ sandboxId, err }, "surface listener threw");
+      }
+    }
+  }
+
+  // ── connection lifecycle ──────────────────────────────────────────────────
 
   private connectionFor(sandboxId: string): Promise<SandboxAcpConnection> {
     const existing = this.connections.get(sandboxId);
@@ -216,23 +481,24 @@ export class AgentDispatch {
         ACP_PROCESS_NAME,
         "rw",
       );
-      return SandboxAcpConnection.open(url, (self) => {
-        // On teardown (socket drop / last release), drop this sandbox's
-        // session index so it can't accumulate across reconnects, and forget
-        // the connection only if this exact one is still mapped.
-        for (const [sid, sbx] of this.sessionSandbox) {
-          if (sbx === sandboxId) this.sessionSandbox.delete(sid);
-        }
-        const cur = this.connections.get(sandboxId);
-        if (cur) {
-          void cur.then(
-            (c) => {
-              if (c === self) this.connections.delete(sandboxId);
-            },
-            () => {},
-          );
-        }
-      });
+      const conn = await SandboxAcpConnection.open(
+        url,
+        (self) => {
+          if (this.live.get(sandboxId) === self) this.live.delete(sandboxId);
+          const cur = this.connections.get(sandboxId);
+          if (cur) {
+            void cur.then(
+              (c) => {
+                if (c === self) this.connections.delete(sandboxId);
+              },
+              () => {},
+            );
+          }
+        },
+        (event) => this.emit(sandboxId, event),
+      );
+      this.live.set(sandboxId, conn);
+      return conn;
     })();
     this.connections.set(sandboxId, pending);
     // A failed open (attach/initialize) must not leave a rejected promise
@@ -245,35 +511,97 @@ export class AgentDispatch {
     return pending;
   }
 
+  // ── surface reads (lazy: no live connection → empty, never dial) ───────────
+
+  sessionsFor(sandboxId: string): SessionMeta[] {
+    return this.live.get(sandboxId)?.listSessions() ?? [];
+  }
+
+  sessionFor(sandboxId: string, sessionId: string): SessionMeta | undefined {
+    return this.live.get(sandboxId)?.getSession(sessionId);
+  }
+
+  statusesFor(sandboxId: string): Record<string, AgentSessionStatus> {
+    return this.live.get(sandboxId)?.statuses() ?? {};
+  }
+
+  todosFor(sandboxId: string, sessionId: string): AgentTodo[] {
+    return this.live.get(sandboxId)?.getSession(sessionId)?.todos ?? [];
+  }
+
+  permissionsFor(sandboxId: string): AgentPermissionRequest[] {
+    return this.live.get(sandboxId)?.listPermissions() ?? [];
+  }
+
+  replyPermission(
+    sandboxId: string,
+    requestId: string,
+    decision: AgentPermissionReply,
+  ): InterventionResult {
+    const conn = this.live.get(sandboxId);
+    if (!conn) return { ok: false, status: 404 };
+    return conn.replyPermission(requestId, decision);
+  }
+
+  // ── surface drivers (dial when needed) ─────────────────────────────────────
+
+  /** Dashboard-initiated session. Dials the sandbox. */
+  async createSession(
+    sandboxId: string,
+    directory: string,
+  ): Promise<{ sessionId: string; directory: string }> {
+    const conn = await this.connectionFor(sandboxId);
+    const sessionId = await conn.newSession(directory, [], titleFor(directory));
+    return { sessionId, directory };
+  }
+
+  async closeSession(sandboxId: string, sessionId: string): Promise<boolean> {
+    const conn = this.live.get(sandboxId);
+    if (!conn) return false;
+    return conn.closeSession(sessionId);
+  }
+
+  async abortSession(sandboxId: string, sessionId: string): Promise<boolean> {
+    const conn = this.live.get(sandboxId);
+    if (!conn) return false;
+    if (!conn.getSession(sessionId)) return false;
+    await conn.cancel(sessionId);
+    return true;
+  }
+
+  // ── chat flow ──────────────────────────────────────────────────────────────
+
   async openSession(input: OpenAgentSessionInput): Promise<AgentSession> {
     const harness: HarnessDispatchAdapter = resolveHarnessDispatch(
       input.harnessId,
     );
     const conn = await this.connectionFor(input.sandboxId);
     const acp = conn.acp;
-
-    const created = await withTimeout(
-      acp.request(methods.agent.session.new, {
-        cwd: input.cwd,
-        mcpServers: input.mcpServers ?? [],
-      }),
-      ACP_HANDSHAKE_TIMEOUT_MS,
-      "session/new",
+    const sessionId = await conn.newSession(
+      input.cwd,
+      input.mcpServers ?? [],
+      titleFor(input.cwd),
     );
-    conn.registerSession(created.sessionId, input.callbacks ?? {});
-    this.sessionSandbox.set(created.sessionId, input.sandboxId);
+    if (input.callbacks?.onUpdate) {
+      conn.registerUpdateHandler(sessionId, input.callbacks.onUpdate);
+    }
+    let titledByPrompt = false;
 
     const session: AgentSession = {
-      sessionId: created.sessionId,
+      sessionId,
       sandboxId: input.sandboxId,
       prompt: async (text, selection) => {
+        if (!titledByPrompt) {
+          titledByPrompt = true;
+          conn.setTitle(sessionId, truncateTitle(text));
+        }
         const assignments = selection
           ? (harness.sessionConfig?.(selection) ?? [])
           : [];
         for (const { configId, value } of assignments) {
           await withTimeout(
             acp.request(methods.agent.session.setConfigOption, {
-              sessionId: created.sessionId,
+              sessionId,
               configId,
               value,
             }),
@@ -281,47 +609,24 @@ export class AgentDispatch {
             "session/set_config_option",
           );
         }
-        return acp.request(methods.agent.session.prompt, {
-          sessionId: created.sessionId,
-          prompt: [{ type: "text", text }],
-        });
-      },
-      cancel: () =>
-        acp.notify(methods.agent.session.cancel, {
-          sessionId: created.sessionId,
-        }),
-      close: async () => {
-        if (!this.sessionSandbox.delete(created.sessionId)) return;
-        // Free agent-side session state before releasing our attach. The acp
-        // process is shared + persistent (unlike v1's per-session subprocess),
-        // so without this its context/history would leak until it restarts.
-        // Sent before releaseSession so the (possibly last) socket is still up.
-        if (conn.canCloseSession) {
-          await acp
-            .request(methods.agent.session.close, {
-              sessionId: created.sessionId,
-            })
-            .catch((err) =>
-              log.warn(
-                {
-                  sandboxId: input.sandboxId,
-                  sessionId: created.sessionId,
-                  err,
-                },
-                "session/close failed",
-              ),
-            );
+        conn.markBusy(sessionId, 1);
+        try {
+          return await acp.request(methods.agent.session.prompt, {
+            sessionId,
+            prompt: [{ type: "text", text }],
+          });
+        } finally {
+          conn.markBusy(sessionId, -1);
         }
-        conn.releaseSession(created.sessionId);
+      },
+      cancel: () => conn.cancel(sessionId),
+      close: async () => {
+        await conn.closeSession(sessionId);
       },
     };
 
     log.info(
-      {
-        sandboxId: input.sandboxId,
-        sessionId: created.sessionId,
-        harness: harness.id,
-      },
+      { sandboxId: input.sandboxId, sessionId, harness: harness.id },
       "ACP session opened",
     );
     return session;
@@ -332,15 +637,21 @@ export class AgentDispatch {
     for (const id of targets) {
       const pending = this.connections.get(id);
       if (!pending) continue;
-      for (const [sessionId, sbx] of this.sessionSandbox) {
-        if (sbx === id) this.sessionSandbox.delete(sessionId);
-      }
-      // close() is idempotent and refcount-independent, so a connection with
-      // no registered sessions is torn down too.
       await pending.then(
         (conn) => conn.close(),
         () => {},
       );
     }
   }
+}
+
+/** Synthesized title for a freshly created session (before any prompt). */
+function titleFor(directory: string): string {
+  const base = directory.replace(/\/+$/, "").split("/").pop();
+  return base && base.length > 0 ? base : `Session ${safeNanoid().slice(0, 6)}`;
+}
+
+function truncateTitle(text: string): string {
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  return trimmed.length > 60 ? `${trimmed.slice(0, 57)}…` : trimmed;
 }
