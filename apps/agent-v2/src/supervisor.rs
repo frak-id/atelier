@@ -10,13 +10,14 @@
 //! model is replaced by config-watch reconcile + agent-side readiness.
 
 use std::collections::HashMap;
+use std::io::SeekFrom;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::Serialize;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::{Mutex, Notify};
 
@@ -40,6 +41,14 @@ const READINESS_PROBE_MS: u64 = 100;
 const AFTER_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// Backoff between restarts so a crash-looping process can't peg a core.
 const RESTART_BACKOFF: Duration = Duration::from_millis(500);
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogsResult {
+    pub name: String,
+    pub content: String,
+    pub next_offset: u64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -519,6 +528,28 @@ impl Supervisor {
         self.procs.lock().await.get(name).cloned()
     }
 
+    /// Read a byte window of a process's combined stdout/stderr log. `offset`
+    /// is a byte cursor and `next_offset` in the result lets a caller poll for
+    /// more without re-reading (a missing log file reads as empty, not error,
+    /// so logs are queryable before/after the process has ever run).
+    pub async fn read_logs(&self, name: &str, offset: u64, limit: usize) -> LogsResult {
+        // Seek to `offset` and read at most `limit` bytes so a chatty process's
+        // huge log never gets slurped whole into memory (allocation is bounded
+        // by `limit`, which the router caps). A missing file / seek past EOF
+        // reads as empty, leaving `next_offset` where the caller asked.
+        let mut buf = Vec::new();
+        if let Ok(mut file) = tokio::fs::File::open(self.log_file(name)).await
+            && file.seek(SeekFrom::Start(offset)).await.is_ok()
+        {
+            let _ = file.take(limit as u64).read_to_end(&mut buf).await;
+        }
+        LogsResult {
+            name: name.to_string(),
+            next_offset: offset + buf.len() as u64,
+            content: String::from_utf8_lossy(&buf).into_owned(),
+        }
+    }
+
     /// SIGTERM the group, escalate to SIGKILL after the grace window, and mark
     /// the process stopped so `never`-restart policy leaves it down.
     pub async fn stop(&self, name: &str) -> Result<(), String> {
@@ -722,5 +753,27 @@ mod tests {
         sup.reconcile().await;
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert!(!sup.is_healthy().await, "primary not ready → unhealthy");
+    }
+
+    #[tokio::test]
+    async fn read_logs_windows_and_tolerates_missing() {
+        let sup = test_supervisor(base_cfg());
+        // Missing log file reads as empty (queryable before first run).
+        let empty = sup.read_logs("never-ran", 0, 100).await;
+        assert_eq!(empty.content, "");
+        assert_eq!(empty.next_offset, 0);
+
+        tokio::fs::create_dir_all(&sup.log_dir).await.unwrap();
+        tokio::fs::write(sup.log_file("p"), b"hello world")
+            .await
+            .unwrap();
+        let head = sup.read_logs("p", 0, 5).await;
+        assert_eq!(head.content, "hello");
+        assert_eq!(head.next_offset, 5);
+        let tail = sup.read_logs("p", head.next_offset, 100).await;
+        assert_eq!(tail.content, " world");
+        assert_eq!(tail.next_offset, 11);
+        // Offset past EOF is clamped, not a panic.
+        assert_eq!(sup.read_logs("p", 999, 100).await.content, "");
     }
 }

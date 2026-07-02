@@ -31,6 +31,7 @@ pub async fn route(
 
     let method = req.method().clone();
     let path = req.uri().path().to_string();
+    let query = req.uri().query().unwrap_or("").to_string();
 
     match (&method, path.as_str()) {
         // `healthy` reflects the spec's `primary` process readiness — the
@@ -70,8 +71,18 @@ pub async fn route(
         _ if method == Method::POST && path.starts_with("/hooks/") => {
             handle_hooks(&path, &store).await
         }
-        _ => route_process(&method, &path, &supervisor).await,
+        _ => route_process(&method, &path, &query, &supervisor).await,
     }
+}
+
+/// Parse a `u64` query param (e.g. `offset`, `limit`) from a raw query string,
+/// falling back to `default` when absent or malformed.
+fn query_u64(query: &str, key: &str, default: u64) -> u64 {
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix(key)?.strip_prefix('='))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 /// Pod env (with resolved secrets) that exec/hooks run under; empty if no
@@ -214,6 +225,7 @@ async fn handle_write_files(req: Request<hyper::body::Incoming>) -> Response<Ful
 async fn route_process(
     method: &Method,
     path: &str,
+    query: &str,
     supervisor: &Arc<Supervisor>,
 ) -> Response<Full<Bytes>> {
     let Some(rest) = path.strip_prefix("/processes/") else {
@@ -234,6 +246,19 @@ async fn route_process(
             ),
             None => error(StatusCode::NOT_FOUND, "Unknown process"),
         },
+        // Byte-windowed log read; `offset`/`limit` are optional query params.
+        // Caps `limit` at the shared body ceiling so a huge log can't be
+        // slurped whole in one response.
+        (&Method::GET, Some("logs")) => {
+            let offset = query_u64(query, "offset", 0);
+            let limit = query_u64(query, "limit", MAX_REQUEST_BODY_BYTES as u64)
+                .min(MAX_REQUEST_BODY_BYTES as u64) as usize;
+            json(
+                StatusCode::OK,
+                serde_json::to_value(supervisor.read_logs(name, offset, limit).await)
+                    .unwrap_or_default(),
+            )
+        }
         (&Method::POST, Some("start")) => match supervisor.ensure_started(name).await {
             Ok(()) => json(StatusCode::OK, serde_json::json!({ "success": true })),
             Err(e) => error(classify_start_error(&e), &e),

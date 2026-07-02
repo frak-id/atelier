@@ -26,6 +26,23 @@ export interface HookPhaseResult {
 /** A lifecycle phase the runtime drives on the v2 agent. */
 export type HookPhase = "postCreate" | "postStart" | "onResume" | "envChanged";
 
+/** A supervised process's state (v2 agent `GET /processes` / `/processes/{name}`).
+ * Mirrors agent-v2 `supervisor::ProcessState`. */
+export interface AgentProcessState {
+  name: string;
+  status: "starting" | "running" | "stopped" | "error";
+  pid: number;
+  ready: boolean;
+  primary: boolean;
+  exitCode?: number;
+  startedAt: string;
+  logFile: string;
+}
+
+export interface AgentProcessListResult {
+  processes: AgentProcessState[];
+}
+
 export interface ServiceStatus {
   name: string;
   status: "running" | "stopped" | "error";

@@ -8,6 +8,7 @@ import type {
   AcpBridgeSessionDeleteResult,
   AcpBridgeSessionSpec,
   AgentHealth,
+  AgentProcessListResult,
   BatchExecResult,
   Command,
   DevLogsResult,
@@ -33,6 +34,8 @@ const log = createChildLogger("agent");
 
 const DEFAULT_TIMEOUT = 10000;
 const AGENT_PORT = 9998;
+/** Unified attach bridge (WS), separate from the HTTP control plane. */
+const ATTACH_PORT = 9997;
 
 export class AgentUnavailableError extends SandboxError {
   constructor(sandboxId: string, cause: string) {
@@ -245,6 +248,47 @@ export class AgentClient {
       await Bun.sleep(200);
     }
     return false;
+  }
+
+  // ── v2 supervised process control (agent-v2 `/processes`) ───────────────
+
+  async processList(sandboxId: string): Promise<AgentProcessListResult> {
+    if (isMock()) return { processes: [] };
+    return this.request<AgentProcessListResult>(sandboxId, "/processes");
+  }
+
+  async processStart(sandboxId: string, name: string): Promise<void> {
+    if (isMock()) return;
+    await this.post(sandboxId, `/processes/${name}/start`, undefined, 30000);
+  }
+
+  async processStop(sandboxId: string, name: string): Promise<void> {
+    if (isMock()) return;
+    await this.post(sandboxId, `/processes/${name}/stop`, undefined, 30000);
+  }
+
+  async processLogs(
+    sandboxId: string,
+    name: string,
+    offset = 0,
+    limit = 1_000_000,
+  ): Promise<DevLogsResult> {
+    if (isMock()) return { name, content: "", nextOffset: 0 };
+    return this.request<DevLogsResult>(
+      sandboxId,
+      `/processes/${name}/logs?offset=${offset}&limit=${limit}`,
+    );
+  }
+
+  /** WS URL for a process's stdio/PTY attach bridge (single-writer for rw,
+   * fan-out for ro). The process must be `stdio: bridge` or `pty`. */
+  async attachUrl(
+    sandboxId: string,
+    name: string,
+    mode: "rw" | "ro" = "rw",
+  ): Promise<string> {
+    const podIp = await this.resolvePodIp(sandboxId);
+    return `ws://${podIp}:${ATTACH_PORT}/attach/${name}?mode=${mode}`;
   }
 
   async writeFiles(

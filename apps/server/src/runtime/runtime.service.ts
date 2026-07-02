@@ -24,7 +24,6 @@ import {
   type SnapshotRef,
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
-import { config } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { HookPhase } from "./agent/index.ts";
@@ -279,21 +278,20 @@ export class RuntimeService {
     action: "start" | "stop",
   ): Promise<void> {
     this.require(id);
-    if (action === "start") await this.agent.serviceStart(id, name);
-    else await this.agent.serviceStop(id, name);
+    if (action === "start") await this.agent.processStart(id, name);
+    else await this.agent.processStop(id, name);
   }
 
   async processLogs(id: string, name: string) {
     this.require(id);
-    return this.agent.serviceLogs(id, name, 0, 10_000);
+    return this.agent.processLogs(id, name);
   }
 
   /**
-   * Register an ad-hoc supervised process after boot. Updates the stored spec
-   * immediately; best-effort starts it now unless `lazy`. NOTE: the v1 agent
-   * has no generic "register + supervise a new process" endpoint distinct
-   * from boot-time services — full dynamic supervision is v2 agent-line work
-   * (atelier-v2 §6 milestone 1). This records intent and starts it via exec.
+   * Register an ad-hoc supervised process after boot: append it to the spec,
+   * re-push the config so the agent supervises it (readiness/restart/attach
+   * all apply), then start it now unless `lazy` (a lazy process starts on
+   * first attach/`start`).
    */
   async addProcess(id: string, req: AddProcessRequest): Promise<void> {
     const record = this.require(id);
@@ -302,14 +300,9 @@ export class RuntimeService {
       processes: [...(record.spec.processes ?? []), req],
     };
     rejectUnresolvedSecrets(spec);
+    await this.agent.putConfig(id, specToAgentConfig(id, spec));
     this.sandboxes.update(id, { spec });
-    if (!req.lazy) {
-      // TODO(atelier-v2 §6 milestone 1): AgentClient.exec has no `env`
-      // passthrough yet, so an ad-hoc process's own env is stored on the spec
-      // but not applied to this immediate start — full dynamic process
-      // supervision (with env) is v2 agent-line work.
-      await this.agent.exec(id, req.command, { workdir: req.cwd });
-    }
+    if (!req.lazy) await this.agent.processStart(id, req.name);
   }
 
   /** Expose a port after boot — creates the ingress now, real mechanism. */
@@ -333,31 +326,27 @@ export class RuntimeService {
   }
 
   /**
-   * Resolve a WS attach URL for a process's stdio bridge. NOTE: today's agent
-   * has one bridge model (spawn-and-relay, `acpSessionCreate`), so this
-   * approximates generic attach by reusing it — a faithful "attach to an
-   * already-running process's stdio" needs the unified bridge from the v2
-   * agent milestone. `pty` processes aren't wired yet (todo, same milestone).
+   * Resolve the WS attach URL for a process's unified bridge (agent-v2
+   * attach.rs on :9997). The process is already supervised, so attach just
+   * joins its live stdio/PTY stream — `rw` takes the single-writer slot, `ro`
+   * fans out read-only. Requires the process to declare `stdio: bridge` or
+   * `pty`; a `lazy` one is started here first so its bridge endpoint exists.
    */
-  async attach(id: string, processName: string): Promise<{ url: string }> {
+  async attach(
+    id: string,
+    processName: string,
+    mode: "rw" | "ro" = "rw",
+  ): Promise<{ url: string }> {
     const record = this.require(id);
     const proc = record.spec.processes?.find((p) => p.name === processName);
     if (!proc) throw new NotFoundError("Process", processName);
-    if (proc.stdio !== "bridge") {
+    if (proc.stdio !== "bridge" && !proc.pty) {
       throw new ValidationError(
-        `Process "${processName}" has no stdio bridge configured`,
+        `Process "${processName}" has no attach bridge (needs stdio: bridge or pty)`,
       );
     }
-    const bridge = await this.agent.acpSessionCreate(id, {
-      command: proc.command,
-      workdir: proc.cwd,
-      user: "dev",
-    });
-    const url = await this.agent.acpWebSocketUrl(
-      id,
-      bridge.id,
-      config.ports.acp,
-    );
+    if (proc.lazy) await this.agent.processStart(id, processName);
+    const url = await this.agent.attachUrl(id, processName, mode);
     return { url };
   }
 
@@ -434,11 +423,13 @@ export class RuntimeService {
   ): Promise<ProcessStatus[]> {
     if (record.status !== "running") return [];
     try {
-      const { services } = await this.agent.serviceList(record.id);
-      return services.map((s) => ({
-        name: s.name,
-        running: s.status === "running",
-        primary: record.spec.processes?.find((p) => p.name === s.name)?.primary,
+      const { processes } = await this.agent.processList(record.id);
+      return processes.map((p) => ({
+        name: p.name,
+        running: p.status === "running",
+        ready: p.ready,
+        primary: p.primary,
+        exitCode: p.exitCode,
       }));
     } catch {
       return [];
