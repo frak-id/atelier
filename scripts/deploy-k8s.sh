@@ -168,16 +168,19 @@ if [[ -z "$SKIP_BUILD" ]]; then
   build_image manager "${MANAGER_IMAGE}"
   build_image dashboard "${DASHBOARD_IMAGE}"
 
+  # v2 agent (apps/agent-v2, `atelier-agent`). Self-building multi-stage image
+  # — no prebuilt binary needed. v1 agent-rust is frozen and deployed off its
+  # own branch.
   info "Building agent: ${AGENT_IMAGE} (linux/amd64)"
   if docker buildx version >/dev/null 2>&1; then
     docker buildx build \
       --platform linux/amd64 \
       -t "${AGENT_IMAGE}" \
       --load \
-      -f "${REPO_ROOT}/apps/agent-rust/Dockerfile" \
-      "${REPO_ROOT}/apps/agent-rust"
+      -f "${REPO_ROOT}/apps/agent-v2/Dockerfile" \
+      "${REPO_ROOT}/apps/agent-v2"
   else
-    docker build -t "${AGENT_IMAGE}" -f "${REPO_ROOT}/apps/agent-rust/Dockerfile" "${REPO_ROOT}/apps/agent-rust"
+    docker build -t "${AGENT_IMAGE}" -f "${REPO_ROOT}/apps/agent-v2/Dockerfile" "${REPO_ROOT}/apps/agent-v2"
   fi
   ok "Agent image built"
 

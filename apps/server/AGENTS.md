@@ -56,17 +56,18 @@ things live, not the wiring style.
 
 ## Known gaps (tracked, not silent)
 
-- **v2 agent boot path (wired), v1 approximations remain for live-ops.**
-  `runtime/agent-config.ts` (`specToAgentConfig`) losslessly projects the
-  spec onto the v2 agent (`apps/agent-v2`); boot pushes config via
-  `PUT /config` (never ConfigMap-mounted) + `files/write`, then drives the
-  phase order (postCreate -> reconcile -> primary `/health` gate -> postStart)
-  — replacing v1's ConfigMap mount + hardcoded opencode boot gate (M1 + M2
-  done). Still on v1-agent shapes: `RuntimeService.processAction/processLogs/
-  processStatuses` (call `/services/*`, should move to `/processes/*`) and
-  `attach()`/`addProcess()` (one-bridge approximation) — M2/2c work. The
-  deployed image is still built from `apps/agent-rust`; wiring `apps/agent-v2`
-  into `scripts/deploy-k8s.sh` is M2/2c.
+- **M2 COMPLETE — runtime fully on the v2 agent.** `runtime/agent-config.ts`
+  (`specToAgentConfig`) losslessly projects the spec onto the v2 agent
+  (`apps/agent-v2`); boot pushes config via `PUT /config` (never
+  ConfigMap-mounted) + `files/write`, then drives the phase order (postCreate
+  -> reconcile -> primary `/health` gate -> postStart). Live-ops routes
+  (process start/stop/logs/status, attach, addProcess) all target the v2
+  agent's `/processes` + unified attach bridge (:9997). `scripts/deploy-k8s.sh`
+  builds the agent from `apps/agent-v2` (self-building multi-stage image); the
+  in-pod binary path stays `/usr/local/bin/sandbox-agent` (dev-base COPYs
+  agent-v2's `/atelier-agent` there, so `sandbox-boot.sh` is unchanged).
+  Deferred to M3/M6: `agent.operations.serviceList` + `sessions/acp` still use
+  the v1 `service*`/`acp*` client methods (migrate then delete them).
 - **Event bus / dashboard SSE / cron jobs** (auth-sync watcher, prebuild
   staleness, cliproxy refresh) are v1 features not yet ported — deferred to
   the milestone that needs them (§6 milestones 3–4), not silently dropped.

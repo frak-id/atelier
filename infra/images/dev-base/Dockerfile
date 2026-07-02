@@ -95,7 +95,9 @@ RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony \
     && echo 'dev ALL=(root) NOPASSWD: /usr/sbin/chronyd, /usr/bin/chronyc' > /etc/sudoers.d/chrony \
     && chmod 440 /etc/sudoers.d/chrony
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
-COPY --from=atelier/sandbox-agent:latest /sandbox-agent /usr/local/bin/sandbox-agent
+# v2 agent binary (apps/agent-v2 ships it at /atelier-agent). The in-pod path
+# stays /usr/local/bin/sandbox-agent so sandbox-boot.sh is unchanged.
+COPY --from=atelier/sandbox-agent:latest /atelier-agent /usr/local/bin/sandbox-agent
 RUN chmod +x /usr/local/bin/sandbox-agent
 
 # Kata CLH cannot mount a block volume over a populated directory, so
