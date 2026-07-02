@@ -3,6 +3,7 @@ import { Check } from "@sinclair/typebox/value";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { queryKeys } from "@/api/queries/keys";
+import { httpUrl, isCrossOrigin } from "@/lib/api-base";
 
 /**
  * Subscribe to a sandbox's agent SSE stream and turn each event into a
@@ -19,7 +20,10 @@ export function useAgentEvents(sandboxId: string): { connected: boolean } {
 
   useEffect(() => {
     const source = new EventSource(
-      `/sessions/sandboxes/${sandboxId}/agent/events`,
+      httpUrl(`/sessions/sandboxes/${sandboxId}/agent/events`),
+      // Cross-origin (Tauri) needs credentialed SSE to send the auth cookie;
+      // a no-op same-origin.
+      { withCredentials: isCrossOrigin },
     );
 
     source.addEventListener("open", () => setConnected(true));

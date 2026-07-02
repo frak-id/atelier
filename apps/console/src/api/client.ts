@@ -1,17 +1,12 @@
 import type { App } from "@atelier/server";
 import { treaty } from "@elysiajs/eden";
+import { apiBase } from "@/lib/api-base";
 
 /**
- * Type-safe client for the v2 server (`@atelier/server`). All server-owned
- * paths are same-origin in dev (vite proxy) and in the deployed static build,
- * so the httpOnly `sandbox_token` cookie rides every request.
- *
- * `VITE_API_BASE` overrides the origin for non-same-origin hosts (a future
- * Tauri desktop/mobile build, where the webview runs on a custom scheme and
- * the server lives at a separate HTTP address). Empty = same-origin.
+ * Type-safe client for the v2 server (`@atelier/server`). The origin comes
+ * from `@/lib/api-base` (same-origin by default, `VITE_API_BASE` override for
+ * Tauri), so the httpOnly `sandbox_token` cookie rides every request.
  */
-const apiBase = import.meta.env.VITE_API_BASE || window.location.origin;
-
 export const api = treaty<App>(apiBase, {
   fetch: { credentials: "include" },
 });

@@ -65,11 +65,12 @@ function RootLayout() {
             <Link
               key={item.to}
               to={item.to}
-              className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&.active]:bg-muted [&.active]:text-foreground"
+              className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-3 [&.active]:bg-muted [&.active]:text-foreground"
               activeOptions={{ exact: item.exact }}
+              title={item.label}
             >
-              <item.icon className="size-4" />
-              {item.label}
+              <item.icon className="size-4 shrink-0" />
+              <span className="hidden sm:inline">{item.label}</span>
             </Link>
           ))}
         </nav>

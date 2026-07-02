@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { httpUrl } from "@/lib/api-base";
 
 const LOGIN_ERRORS: Record<string, string> = {
   unauthorized: "This GitHub account is not authorized for Atelier.",
@@ -48,7 +49,7 @@ export function LoginPage() {
           <Button
             className="w-full"
             onClick={() => {
-              window.location.href = "/auth/github";
+              window.location.href = httpUrl("/auth/github");
             }}
           >
             <Github className="mr-2 size-4" />

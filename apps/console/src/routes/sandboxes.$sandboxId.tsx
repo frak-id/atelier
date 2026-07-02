@@ -112,7 +112,7 @@ function SandboxDetailPage() {
           <Badge variant={status.variant}>{status.label}</Badge>
           {harness ? <Badge variant="outline">{harness}</Badge> : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="outline" size="sm">
             <Link
               to="/sandboxes/$sandboxId/sessions"
