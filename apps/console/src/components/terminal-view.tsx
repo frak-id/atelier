@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { wsUrl } from "@/lib/api-base";
+import { cn } from "@/lib/utils";
 
 const THEME = {
   background: "#09090b",
@@ -16,15 +17,27 @@ const THEME = {
  * runtime's read-only fan-out (`?mode=ro`): it renders output and resizes for
  * display, but never forwards keystrokes. A read-write view (terminal service
  * PTY) wires stdin and resize control frames.
+ *
+ * `active` lets the view live inside a tab stack: an inactive (hidden) xterm
+ * measures 0 cols, so its fit is deferred until it becomes visible again. The
+ * WebSocket and scrollback are preserved across tab switches (the view stays
+ * mounted), so switching tabs never drops or reloads a session.
  */
 export function TerminalView({
   wsPath,
   readOnly = false,
+  active = true,
+  className,
 }: {
   wsPath: string;
   readOnly?: boolean;
+  active?: boolean;
+  className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -32,7 +45,6 @@ export function TerminalView({
 
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    let ws: WebSocket | null = null;
     let hasConnected = false;
 
     const terminal = new Terminal({
@@ -43,13 +55,16 @@ export function TerminalView({
       scrollback: 10_000,
       theme: THEME,
     });
+    terminalRef.current = terminal;
     const fitAddon = new FitAddon();
+    fitRef.current = fitAddon;
     terminal.loadAddon(fitAddon);
     terminal.open(container);
     fitAddon.fit();
 
     function sendResize() {
       if (readOnly) return;
+      const ws = wsRef.current;
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(
           JSON.stringify({
@@ -65,9 +80,10 @@ export function TerminalView({
       if (disposed) return;
       const socket = new WebSocket(wsUrl(wsPath));
       socket.binaryType = "arraybuffer";
-      ws = socket;
+      wsRef.current = socket;
 
       socket.onopen = () => {
+        if (disposed) return;
         hasConnected = true;
         fitAddon.fit();
         sendResize();
@@ -92,6 +108,7 @@ export function TerminalView({
     const dataDisposable = readOnly
       ? undefined
       : terminal.onData((data) => {
+          const ws = wsRef.current;
           if (ws?.readyState === WebSocket.OPEN) {
             ws.send(new TextEncoder().encode(data));
           }
@@ -117,10 +134,43 @@ export function TerminalView({
       observer.disconnect();
       dataDisposable?.dispose();
       resizeDisposable.dispose();
-      ws?.close();
+      wsRef.current?.close();
+      wsRef.current = null;
       terminal.dispose();
+      terminalRef.current = null;
+      fitRef.current = null;
     };
   }, [wsPath, readOnly]);
 
-  return <div ref={containerRef} className="h-72 w-full overflow-hidden" />;
+  // Refit (and focus a writable pane) when this view becomes visible again,
+  // e.g. after its tab is selected. Deferred to the next frame so layout has
+  // settled and the container has non-zero size.
+  useEffect(() => {
+    if (!active) return;
+    const rafId = requestAnimationFrame(() => {
+      const terminal = terminalRef.current;
+      const fit = fitRef.current;
+      if (!terminal || !fit) return;
+      fit.fit();
+      const ws = wsRef.current;
+      if (!readOnly && ws?.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: "resize",
+            cols: terminal.cols,
+            rows: terminal.rows,
+          }),
+        );
+        terminal.focus();
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [active, readOnly]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn("h-72 w-full overflow-hidden", className)}
+    />
+  );
 }

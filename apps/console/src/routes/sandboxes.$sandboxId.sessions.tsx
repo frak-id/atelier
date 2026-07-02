@@ -7,7 +7,7 @@ import type {
 } from "@frak/atelier-shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CircleDot, Loader2, Plus, Radio, Square, Trash2 } from "lucide-react";
+import { CircleDot, Loader2, Radio, Square, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
   permissionsQuery,
@@ -21,12 +21,7 @@ import {
   useReplyPermission,
   useReplyQuestion,
 } from "@/api/queries/sessions";
-import {
-  terminalSessionsQuery,
-  useCreateTerminalSession,
-  useDeleteTerminalSession,
-} from "@/api/queries/terminal";
-import { TerminalView } from "@/components/terminal-view";
+import { MultiTerminal } from "@/components/multi-terminal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -435,77 +430,13 @@ function QuestionRow({
 // ── terminals ──────────────────────────────────────────────────────────────
 
 function TerminalsSection({ sandboxId }: { sandboxId: string }) {
-  const {
-    data: terminals,
-    isPending,
-    isError,
-    error,
-  } = useQuery(terminalSessionsQuery(sandboxId));
-  const create = useCreateTerminalSession(sandboxId);
-  const deleteTerminal = useDeleteTerminalSession(sandboxId);
-  const [activeId, setActiveId] = useState<string | null>(null);
-
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
+      <CardHeader>
         <CardTitle>Terminals</CardTitle>
-        <Button
-          size="sm"
-          disabled={create.isPending}
-          onClick={() =>
-            create.mutate(
-              {},
-              { onSuccess: (data) => data && setActiveId(data.id) },
-            )
-          }
-        >
-          {create.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
-          New terminal
-        </Button>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {isPending ? (
-          <Skeleton className="h-10 w-full" />
-        ) : isError ? (
-          <p className="text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : "Terminal unavailable"}
-          </p>
-        ) : !terminals || terminals.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No terminals.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {terminals.map((terminal) => (
-              <div key={terminal.id} className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant={terminal.id === activeId ? "default" : "outline"}
-                  onClick={() => setActiveId(terminal.id)}
-                >
-                  {terminal.title || terminal.id}
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  disabled={deleteTerminal.isPending}
-                  onClick={() => {
-                    if (terminal.id === activeId) setActiveId(null);
-                    deleteTerminal.mutate(terminal.id);
-                  }}
-                  aria-label="Close terminal"
-                >
-                  <Trash2 />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-        {activeId ? (
-          <div className="overflow-hidden rounded-md border">
-            <TerminalView
-              wsPath={`/sessions/sandboxes/${sandboxId}/terminal/sessions/${activeId}/ws`}
-            />
-          </div>
-        ) : null}
+      <CardContent>
+        <MultiTerminal sandboxId={sandboxId} />
       </CardContent>
     </Card>
   );
