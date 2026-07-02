@@ -7,6 +7,8 @@
 import {
   AddPortRequestSchema,
   AddProcessRequestSchema,
+  type CatalogAddRequest,
+  CatalogAddRequestSchema,
   ExecRequestSchema,
   PatchEnvRequestSchema,
   PatchFilesRequestSchema,
@@ -47,6 +49,13 @@ export function createV1Routes(container: ServerContainer) {
         "/prebuilds",
         async ({ body }) => runtime.prebuild(body as PrebuildSpec),
         { body: PrebuildSpecSchema },
+      )
+      // ── catalog ────────────────────────────────────────────────────────
+      .get("/catalog", () => runtime.catalogList())
+      .post(
+        "/catalog",
+        async ({ body }) => runtime.catalogAdd(body as CatalogAddRequest),
+        { body: CatalogAddRequestSchema },
       )
       // ── sandboxes ──────────────────────────────────────────────────────
       .post(

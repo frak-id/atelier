@@ -13,7 +13,7 @@
 import type { Generated, SandboxSpec, SandboxStatus } from "@atelier/spec";
 import { eq } from "drizzle-orm";
 import { getDatabase } from "../shared/lib/db.ts";
-import { sandboxes, snapshots } from "./db/schema.ts";
+import { catalog, sandboxes, snapshots } from "./db/schema.ts";
 
 export interface SandboxRecord {
   id: string;
@@ -52,6 +52,22 @@ export interface SnapshotStore {
   get(ref: string): SnapshotRecord | undefined;
 }
 
+export interface CatalogRecord {
+  name: string;
+  sha256: string;
+  /** Install path relative to the shared catalog volume (`/opt/shared`). */
+  path: string;
+  url: string;
+  createdAt: string;
+}
+
+export interface CatalogStore {
+  /** Upsert by `name` — a catalog entry's identity is its name. */
+  put(record: CatalogRecord): void;
+  get(name: string): CatalogRecord | undefined;
+  list(): CatalogRecord[];
+}
+
 // ── in-memory (tests, standalone runtime/) ─────────────────────────────────
 
 export class InMemorySandboxStore implements SandboxStore {
@@ -74,6 +90,20 @@ export class InMemorySandboxStore implements SandboxStore {
     this.rows.delete(id);
   }
   list(): SandboxRecord[] {
+    return [...this.rows.values()];
+  }
+}
+
+export class InMemoryCatalogStore implements CatalogStore {
+  private readonly rows = new Map<string, CatalogRecord>();
+
+  put(record: CatalogRecord): void {
+    this.rows.set(record.name, record);
+  }
+  get(name: string): CatalogRecord | undefined {
+    return this.rows.get(name);
+  }
+  list(): CatalogRecord[] {
     return [...this.rows.values()];
   }
 }
@@ -242,5 +272,33 @@ export class DrizzleSnapshotStore implements SnapshotStore {
       return;
     }
     db.insert(snapshots).values(row).run();
+  }
+}
+
+export class DrizzleCatalogStore implements CatalogStore {
+  put(record: CatalogRecord): void {
+    const db = getDatabase();
+    const existing = db
+      .select()
+      .from(catalog)
+      .where(eq(catalog.name, record.name))
+      .get();
+    if (existing) {
+      db.update(catalog).set(record).where(eq(catalog.name, record.name)).run();
+      return;
+    }
+    db.insert(catalog).values(record).run();
+  }
+
+  get(name: string): CatalogRecord | undefined {
+    return getDatabase()
+      .select()
+      .from(catalog)
+      .where(eq(catalog.name, name))
+      .get() as CatalogRecord | undefined;
+  }
+
+  list(): CatalogRecord[] {
+    return getDatabase().select().from(catalog).all() as CatalogRecord[];
   }
 }

@@ -3,6 +3,7 @@ import { KubeClient } from "./kube.client.ts";
 export type { JobStatus, KubePod, PodPhase } from "./kube.client.ts";
 export { KubeApiError, KubeClient } from "./kube.client.ts";
 export type {
+  CatalogJobOptions,
   KubeResource,
   PvcOptions,
   SandboxPodOptions,
@@ -11,6 +12,7 @@ export type {
   VolumeSnapshotOptions,
 } from "./kube.resources.ts";
 export {
+  buildCatalogJob,
   buildPvc,
   buildSandboxPod,
   buildSandboxService,

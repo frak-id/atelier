@@ -155,3 +155,40 @@ export const ExecRequestSchema = Type.Object(
   { additionalProperties: false, $id: "ExecRequest" },
 );
 export type ExecRequest = Static<typeof ExecRequestSchema>;
+
+/**
+ * Add an artifact to the shared read-only catalog volume (`/opt/shared`),
+ * checksum-verified — the API/CLI replacement for the Helm `sharedBinaries.*`
+ * job (atelier-v2 §6). `sha256` is verified against the downloaded bytes
+ * before the artifact is installed; a mismatch fails the add.
+ */
+export const CatalogAddRequestSchema = Type.Object(
+  {
+    /** Catalog identity, e.g. "opencode@1.16.2". */
+    name: Type.String(),
+    /** URL to download the artifact from (http/https only). */
+    url: Type.String({ pattern: "^https?://" }),
+    /** Expected SHA-256 hex digest of the downloaded bytes (64 hex chars). */
+    sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    /** Install path relative to `/opt/shared` (defaults to `name`). */
+    path: Type.Optional(Type.String()),
+    /** chmod +x the installed artifact (default true). */
+    executable: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false, $id: "CatalogAddRequest" },
+);
+export type CatalogAddRequest = Static<typeof CatalogAddRequestSchema>;
+
+/** A verified artifact resident on the shared catalog volume. */
+export const CatalogEntrySchema = Type.Object(
+  {
+    name: Type.String(),
+    sha256: Type.String(),
+    /** Install path relative to `/opt/shared`. */
+    path: Type.String(),
+    url: Type.String(),
+    createdAt: Type.String(),
+  },
+  { additionalProperties: false, $id: "CatalogEntry" },
+);
+export type CatalogEntry = Static<typeof CatalogEntrySchema>;

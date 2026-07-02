@@ -41,3 +41,15 @@ export const snapshots = sqliteTable(
   },
   (t) => [uniqueIndex("idx_snapshots_hash").on(t.hash)],
 );
+
+export const catalog = sqliteTable("catalog", {
+  /** Catalog identity, e.g. "opencode@1.16.2" — the primary handle. */
+  name: text("name").primaryKey(),
+  /** Verified SHA-256 hex digest of the installed bytes. */
+  sha256: text("sha256").notNull(),
+  /** Install path relative to the shared catalog volume (`/opt/shared`). */
+  path: text("path").notNull(),
+  /** Source URL the artifact was downloaded from. */
+  url: text("url").notNull(),
+  createdAt: text("created_at").notNull(),
+});

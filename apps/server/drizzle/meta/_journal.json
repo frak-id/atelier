@@ -15,6 +15,13 @@
       "when": 1782947447762,
       "tag": "0001_military_old_lace",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782980982675,
+      "tag": "0002_previous_senator_kelly",
+      "breakpoints": true
     }
   ]
 }

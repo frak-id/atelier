@@ -6,6 +6,7 @@
 import { createControlContainer } from "../control/index.ts";
 import {
   AgentClient,
+  DrizzleCatalogStore,
   DrizzleSandboxStore,
   DrizzleSnapshotStore,
   RuntimeService,
@@ -84,6 +85,7 @@ export function createServerContainer() {
     agent,
     sandboxes: new DrizzleSandboxStore(),
     snapshots: new DrizzleSnapshotStore(),
+    catalog: new DrizzleCatalogStore(),
   });
   const dispatch = new AgentDispatch({ agentClient: agent });
   const sessionSurfaces = new SessionSurfaceRegistry();

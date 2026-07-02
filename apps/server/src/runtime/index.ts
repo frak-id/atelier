@@ -20,4 +20,8 @@ export type {
   SnapshotRecord,
   SnapshotStore,
 } from "./store.ts";
-export { DrizzleSandboxStore, DrizzleSnapshotStore } from "./store.ts";
+export {
+  DrizzleCatalogStore,
+  DrizzleSandboxStore,
+  DrizzleSnapshotStore,
+} from "./store.ts";

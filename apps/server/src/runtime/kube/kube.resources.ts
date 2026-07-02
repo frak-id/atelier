@@ -404,6 +404,82 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
   };
 }
 
+export type CatalogJobOptions = {
+  /** Job name (also its identity label). */
+  name: string;
+  /** Image with `curl` + `sha256sum` (the sandbox base image has both). */
+  image: string;
+  url: string;
+  sha256: string;
+  /** Absolute install path under the mounted catalog volume. */
+  dest: string;
+  executable: boolean;
+  namespace?: string;
+  labels?: Record<string, string>;
+};
+
+/**
+ * A one-shot Job that downloads an artifact, verifies its SHA-256, and
+ * installs it onto the shared catalog PVC (mounted read-WRITE here, unlike
+ * sandbox pods which mount it read-only). Values ride in as env vars so they
+ * only ever expand as data — never as shell code — and the checksum is
+ * verified before the file is placed, so a mismatch fails the Job.
+ */
+export function buildCatalogJob(options: CatalogJobOptions): KubeResource {
+  const namespace = options.namespace ?? config.kubernetes.namespace;
+  const script = [
+    "set -e",
+    'tmp="$(mktemp)"',
+    'curl -fSL "$URL" -o "$tmp"',
+    'echo "$SHA  $tmp" | sha256sum -c -',
+    'mkdir -p "$(dirname "$DEST")"',
+    'cp "$tmp" "$DEST"',
+    'if [ "$EXEC" = "1" ]; then chmod +x "$DEST"; fi',
+    'rm -f "$tmp"',
+  ].join("\n");
+
+  return {
+    apiVersion: "batch/v1",
+    kind: "Job",
+    metadata: { name: options.name, namespace, labels: options.labels },
+    spec: {
+      backoffLimit: 0,
+      ttlSecondsAfterFinished: 300,
+      template: {
+        metadata: { labels: options.labels },
+        spec: {
+          restartPolicy: "Never",
+          containers: [
+            {
+              name: "install",
+              image: options.image,
+              command: ["/bin/sh", "-c", script],
+              env: [
+                { name: "URL", value: options.url },
+                { name: "SHA", value: options.sha256 },
+                { name: "DEST", value: options.dest },
+                { name: "EXEC", value: options.executable ? "1" : "0" },
+              ],
+              volumeMounts: [
+                {
+                  name: "shared-binaries",
+                  mountPath: SHARED_BINARIES_MOUNT_PATH,
+                },
+              ],
+            },
+          ],
+          volumes: [
+            {
+              name: "shared-binaries",
+              persistentVolumeClaim: { claimName: "shared-binaries" },
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Shared binaries mount path (used by sandbox pod builder)
 // ---------------------------------------------------------------------------

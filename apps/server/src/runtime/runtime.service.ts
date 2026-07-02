@@ -10,6 +10,8 @@ import { createHash } from "node:crypto";
 import {
   type AddPortRequest,
   type AddProcessRequest,
+  type CatalogAddRequest,
+  type CatalogEntry,
   type CreateSandboxResponse,
   type ExecRequest,
   isSecretRef,
@@ -25,6 +27,7 @@ import {
   type SnapshotRef,
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
+import { config } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { HookPhase } from "./agent/index.ts";
@@ -32,10 +35,17 @@ import { AgentClient } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
 import { bootSandbox, deleteRestartableResources } from "./boot.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
-import { buildVolumeSnapshot, kubeClient } from "./kube/index.ts";
+import {
+  buildCatalogJob,
+  buildVolumeSnapshot,
+  kubeClient,
+  SHARED_BINARIES_MOUNT_PATH,
+} from "./kube/index.ts";
 import { buildPortIngresses, buildPortUrls, sshUrl } from "./ports.ts";
 import { ImageRegistryService } from "./registry/index.ts";
 import {
+  type CatalogStore,
+  InMemoryCatalogStore,
   InMemorySandboxStore,
   InMemorySnapshotStore,
   type SandboxRecord,
@@ -56,20 +66,26 @@ export interface RuntimeDeps {
   agent?: AgentClient;
   sandboxes?: SandboxStore;
   snapshots?: SnapshotStore;
+  catalog?: CatalogStore;
 }
 
 export class RuntimeService {
   private readonly agent: AgentClient;
   private readonly sandboxes: SandboxStore;
   private readonly snapshots: SnapshotStore;
+  private readonly catalog: CatalogStore;
   /** De-dupes concurrent prebuild() calls for the same content hash onto one
    * execution (the temp pod name is deterministic and would collide). */
   private readonly inflightPrebuilds = new Map<string, Promise<SnapshotRef>>();
+  /** De-dupes concurrent catalog install Jobs by (deterministic) job name so
+   * same-artifact adds share one execution instead of racing to create it. */
+  private readonly inflightCatalogAdds = new Map<string, Promise<void>>();
 
   constructor(deps: RuntimeDeps = {}) {
     this.agent = deps.agent ?? new AgentClient();
     this.sandboxes = deps.sandboxes ?? new InMemorySandboxStore();
     this.snapshots = deps.snapshots ?? new InMemorySnapshotStore();
+    this.catalog = deps.catalog ?? new InMemoryCatalogStore();
   }
 
   // ── prebuild ───────────────────────────────────────────────────────────
@@ -466,6 +482,91 @@ export class RuntimeService {
       buildVolumeSnapshot({ name: ref, pvcName, labels }),
     );
     await kubeClient.waitForVolumeSnapshotReady(ref, { timeout: 120_000 });
+  }
+
+  // ── catalog ─────────────────────────────────────
+
+  /**
+   * Add a checksum-verified artifact to the shared catalog volume
+   * (`/opt/shared`) — the API/CLI replacement for the Helm `sharedBinaries.*`
+   * job. A one-shot Job (keyed by the sha256, mounts the shared PVC
+   * read-write) downloads, verifies, and installs the artifact; the entry is
+   * only recorded on success, so a checksum mismatch never enters the catalog.
+   */
+  async catalogAdd(req: CatalogAddRequest): Promise<CatalogEntry> {
+    const path = (req.path ?? req.name).replace(/^\/+/, "");
+    // Keep every install under the shared volume — a `..` segment would let
+    // `cp` escape /opt/shared on the read-write-mounted PVC.
+    if (path.split("/").includes("..")) {
+      throw new ValidationError("catalog path must not contain '..'");
+    }
+    const jobName = `catalog-${req.sha256.slice(0, 12)}`;
+    await this.runCatalogJob(
+      jobName,
+      req,
+      `${SHARED_BINARIES_MOUNT_PATH}/${path}`,
+    );
+    const entry: CatalogEntry = {
+      name: req.name,
+      sha256: req.sha256,
+      path,
+      url: req.url,
+      createdAt: new Date().toISOString(),
+    };
+    this.catalog.put(entry);
+    return entry;
+  }
+
+  catalogList(): CatalogEntry[] {
+    return this.catalog.list();
+  }
+
+  /** Run (deduped by job name) the one-shot install Job, throwing unless it
+   * succeeds. Each caller records its own catalog entry afterwards. */
+  private runCatalogJob(
+    jobName: string,
+    req: CatalogAddRequest,
+    dest: string,
+  ): Promise<void> {
+    const inflight = this.inflightCatalogAdds.get(jobName);
+    if (inflight) return inflight;
+    const run = this.executeCatalogJob(jobName, req, dest).finally(() => {
+      this.inflightCatalogAdds.delete(jobName);
+    });
+    this.inflightCatalogAdds.set(jobName, run);
+    return run;
+  }
+
+  private async executeCatalogJob(
+    jobName: string,
+    req: CatalogAddRequest,
+    dest: string,
+  ): Promise<void> {
+    const image = await this.resolveImage({
+      image: config.sandbox.defaultImage,
+    });
+    // Best-effort clear of a stale same-hash Job so re-adds don't 409 (safe:
+    // serialized per job name by inflightCatalogAdds).
+    await kubeClient.deleteResource("Job", jobName).catch(() => {});
+    await kubeClient.createResource(
+      buildCatalogJob({
+        name: jobName,
+        image,
+        url: req.url,
+        sha256: req.sha256,
+        dest,
+        executable: req.executable ?? true,
+        labels: { "atelier.dev/component": "catalog-add" },
+      }),
+    );
+    const result = await kubeClient.waitForJobComplete(jobName, {
+      timeout: 300_000,
+    });
+    if (result !== "succeeded") {
+      throw new ValidationError(
+        `catalog add failed (${result}) — checksum mismatch or download error`,
+      );
+    }
   }
 
   // ── helpers ────────────────────────────────────────────────────────────

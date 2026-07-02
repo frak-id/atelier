@@ -36,6 +36,9 @@ Usage:
   atelier expose <id> <name> <port> [--no-public]
   atelier snapshot <id>
   atelier prebuild <file>
+  atelier catalog ls
+  atelier catalog add <name> --url <url> --sha256 <hex> [--path <p>]
+                                                        [--no-exec]
 
 Env:
   ATELIER_API_URL   server base URL (default http://localhost:4000)
@@ -442,6 +445,38 @@ async function main(): Promise<void> {
       const ref = await client.prebuild(spec);
       if (json) return print(ref);
       process.stdout.write(`${ref.ref}\t${ref.hash}\n`);
+      return;
+    }
+    case "catalog": {
+      const sub = positionals[0];
+      if (sub === "ls") {
+        const entries = await client.catalogList();
+        if (json) return print(entries);
+        if (entries.length === 0) {
+          process.stdout.write("catalog is empty\n");
+          return;
+        }
+        for (const e of entries)
+          process.stdout.write(`${e.name}\t${e.path}\t${e.sha256}\n`);
+        return;
+      }
+      if (sub === "add") {
+        const name = positionals[1] ?? fail("catalog add needs a name");
+        const url = one(flags, "url") ?? fail("catalog add needs --url");
+        const sha256 =
+          one(flags, "sha256") ?? fail("catalog add needs --sha256");
+        const entry = await client.catalogAdd({
+          name,
+          url,
+          sha256,
+          path: one(flags, "path"),
+          executable: !flags.has("no-exec"),
+        });
+        if (json) return print(entry);
+        process.stdout.write(`added ${entry.name} -> ${entry.path}\n`);
+        return;
+      }
+      fail("catalog subcommand must be `ls` or `add`");
       return;
     }
     default:
