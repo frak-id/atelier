@@ -6,4 +6,11 @@ export const queryKeys = {
   auth: {
     me: ["auth", "me"] as const,
   },
+  sandboxes: {
+    all: ["sandboxes"] as const,
+    list: () => [...queryKeys.sandboxes.all, "list"] as const,
+    detail: (id: string) => [...queryKeys.sandboxes.all, "detail", id] as const,
+    processLogs: (id: string, name: string) =>
+      [...queryKeys.sandboxes.all, "detail", id, "logs", name] as const,
+  },
 } as const;

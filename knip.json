@@ -25,10 +25,7 @@
       "project": ["src/**/*.{ts,tsx}"]
     },
     "apps/console": {
-      "entry": ["src/main.tsx", "vite.config.ts"],
-      "project": ["src/**/*.{ts,tsx}"],
-      "ignore": ["src/routeTree.gen.ts", "src/components/ui/**"],
-      "ignoreDependencies": ["tailwindcss"]
+      "project": ["src/**/*.{ts,tsx}"]
     },
     "packages/shared": {
       "project": ["src/**/*.ts"]
