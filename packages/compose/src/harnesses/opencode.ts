@@ -95,6 +95,11 @@ export function composeOpencode(
         name: "acp",
         command: `${SHARED_BIN_DIR}/opencode acp`,
         cwd: HOME,
+        // Run as `dev`, not root: opencode writes its data/cache/log under
+        // ${HOME} (~/.local/share, ~/.cache, ~/.config). As root those become
+        // root-owned, so the dev-user terminal's own `opencode` then fails with
+        // PermissionDenied. v1 hardcoded harness=dev for the same reason.
+        user: "dev",
         stdio: "bridge",
         primary: true,
       },
