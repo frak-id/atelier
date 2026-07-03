@@ -47,7 +47,7 @@ export type PrebuildSpec = Static<typeof PrebuildSpecSchema>;
 export const SnapshotRefSchema = Type.Object(
   {
     ref: Type.String({
-      description: "Opaque snapshot ref, e.g. snap_ws-frak-7f3a.",
+      description: "Opaque snapshot ref, e.g. snap-ws-frak-7f3a.",
     }),
     hash: Type.String({
       description: "Content hash the snapshot is keyed by.",

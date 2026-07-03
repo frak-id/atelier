@@ -92,3 +92,18 @@ exposes the existing capability so the GUI can offer a read-only attach.
 - **Org resolution in `/v1/sandboxes`** is a stub (`orgId = undefined`) —
   saved specs and secrets are org-scoped in the schema already; wiring the
   request → org lookup is pending real multi-org product decisions.
+- **Toolset tier (composed-prebuild-volumes.md) is COMPLETE end-to-end.**
+  Built (`POST /v1/toolsets`) + captured (`POST /sandboxes/:id/toolsets/
+  capture`) artifacts, agent materialize before files/env, `shared-binaries`
+  killed (org toolbox is a built toolset), publish/delete lifecycle, full
+  CLI + console surface. Deferred (proposal §6 items 8–10, independent
+  control-plane work): repo-tier commit-keying/head-watching, the rung-1
+  baked-pair cache, host-share/overlay perf spikes.
+- **`resume()` PVC collision — pre-existing, found live, NOT a toolset
+  regression.** `pause()` snapshots the disk but never persists the new
+  snapshot ref onto the sandbox record; `resume()` re-resolves the
+  *original* `spec.source` and `bootSandbox` unconditionally creates a fresh
+  PVC named `sandbox-${id}`, colliding with the PVC `pause()` correctly left
+  behind. Every `resume()` 409s today. Needs a deliberate fix to the
+  pause/resume PVC-reuse contract — out of scope for the toolset feature,
+  confirmed pre-existing via `git diff` against the pre-toolset base commit.

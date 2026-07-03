@@ -24,7 +24,7 @@ export const SourceSchema = Type.Union(
     Type.Object(
       {
         snapshot: Type.String({
-          description: "A prebuild/pause snapshot ref, e.g. snap_ws-frak-7f3a",
+          description: "A prebuild/pause snapshot ref, e.g. snap-ws-frak-7f3a",
         }),
       },
       { additionalProperties: false },

@@ -119,7 +119,7 @@ export class RuntimeService {
     const parentRef =
       "snapshot" in spec.source ? spec.source.snapshot : undefined;
     const { image, snapshotName } = await this.resolveSource(spec.source);
-    const ref = `snap_${hash.slice(0, 12)}`;
+    const ref = `snap-${hash.slice(0, 12)}`;
     const tempId = `pb-${hash.slice(0, 12)}`;
 
     // Boot a throwaway pod (from the image or the parent snapshot — chaining
@@ -471,7 +471,7 @@ export class RuntimeService {
     const hash = createHash("sha256")
       .update(`${id}:${Date.now()}`)
       .digest("hex");
-    const ref = `snap_${hash.slice(0, 12)}`;
+    const ref = `snap-${hash.slice(0, 12)}`;
     const { image } = await this.resolveSource(record.spec.source);
 
     await this.snapshotPvc(pvcName, ref, { "atelier.dev/sandbox": id });
