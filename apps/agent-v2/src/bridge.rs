@@ -62,14 +62,18 @@ pub struct AttachTarget {
 /// Parse the raw first line of a WS upgrade request. No full HTTP parse — just
 /// the request target and its `mode`/`takeover` query params. `mode=rw` asks
 /// for the single writer slot; anything else (or absent) is read-only.
+///
+/// The runtime proxies `WS /v1/sandboxes/:id/attach/:name` straight through, so
+/// the target is `/attach/{name}`; a bare `/{name}` is also accepted.
 pub fn parse_attach_target(buf: &[u8]) -> Option<AttachTarget> {
     let request = String::from_utf8_lossy(buf);
     let target = request.lines().next()?.split_whitespace().nth(1)?;
     let path = target.strip_prefix('/')?;
-    let (name, query) = match path.split_once('?') {
+    let (path, query) = match path.split_once('?') {
         Some((n, q)) => (n, q),
         None => (path, ""),
     };
+    let name = path.strip_prefix("attach/").unwrap_or(path);
     if name.is_empty() || name.contains('/') {
         return None;
     }
@@ -115,6 +119,17 @@ mod tests {
     }
 
     #[test]
+    fn accepts_attach_prefix() {
+        // The runtime proxies `/attach/:name` straight through.
+        let t = parse_attach_target(b"GET /attach/acp?mode=rw HTTP/1.1\r\n").unwrap();
+        assert_eq!(t.name, "acp");
+        assert!(t.writer);
+        let ro = parse_attach_target(b"GET /attach/vscode HTTP/1.1\r\n").unwrap();
+        assert_eq!(ro.name, "vscode");
+        assert!(!ro.writer);
+    }
+
+    #[test]
     fn defaults_to_readonly() {
         let t = parse_attach_target(b"GET /web HTTP/1.1\r\n").unwrap();
         assert_eq!(t.name, "web");
@@ -132,5 +147,8 @@ mod tests {
     fn rejects_bad_targets() {
         assert!(parse_attach_target(b"GET / HTTP/1.1\r\n").is_none());
         assert!(parse_attach_target(b"GET /a/b HTTP/1.1\r\n").is_none());
+        // `/attach/` with no name, and a nested name, are both invalid.
+        assert!(parse_attach_target(b"GET /attach/ HTTP/1.1\r\n").is_none());
+        assert!(parse_attach_target(b"GET /attach/a/b HTTP/1.1\r\n").is_none());
     }
 }
