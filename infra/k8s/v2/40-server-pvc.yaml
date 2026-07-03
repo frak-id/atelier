@@ -1,0 +1,16 @@
+# Server SQLite data (control users/orgs/keys/specs + runtime sandbox/snapshot
+# store), mounted at DATA_DIR=/app/data. Independent from v1's manager DB.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: atelier-v2-data
+  namespace: atelier-v2-system
+  labels:
+    app.kubernetes.io/name: atelier-v2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi

@@ -1,0 +1,140 @@
+# RBAC for the v2 server — mirrors charts/atelier/templates/rbac.yaml.
+# ServiceAccount in atelier-v2-system; cluster-scoped read for PVs/namespaces/
+# runtimeclasses/volumesnapshotclasses; namespaced write in the system and
+# sandbox namespaces for the resources the runtime creates.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: atelier-v2
+  namespace: atelier-v2-system
+  labels:
+    app.kubernetes.io/name: atelier-v2
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: atelier-v2
+  labels:
+    app.kubernetes.io/name: atelier-v2
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["create", "get", "list", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+  - apiGroups: ["node.k8s.io"]
+    resources: ["runtimeclasses"]
+    verbs: ["get", "list"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotclasses"]
+    verbs: ["get", "list"]
+  - apiGroups: ["sshpiper.com"]
+    resources: ["pipes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: atelier-v2
+  labels:
+    app.kubernetes.io/name: atelier-v2
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: atelier-v2
+subjects:
+  - kind: ServiceAccount
+    name: atelier-v2
+    namespace: atelier-v2-system
+---
+# System namespace: prebuild pods, catalog Jobs, shared-binaries, configmaps.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atelier-v2
+  namespace: atelier-v2-system
+  labels:
+    app.kubernetes.io/name: atelier-v2
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["create", "get", "list", "delete", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "persistentvolumeclaims"]
+    verbs: ["create", "get", "list", "delete", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atelier-v2
+  namespace: atelier-v2-system
+  labels:
+    app.kubernetes.io/name: atelier-v2
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atelier-v2
+subjects:
+  - kind: ServiceAccount
+    name: atelier-v2
+    namespace: atelier-v2-system
+---
+# Sandbox namespace: sandbox pods, services, PVCs, ingresses, jobs, snapshots.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atelier-v2
+  namespace: atelier-v2-sandboxes
+  labels:
+    app.kubernetes.io/name: atelier-v2
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["create", "get", "list", "delete", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "persistentvolumeclaims"]
+    verbs: ["create", "get", "list", "delete", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: ["sshpiper.com"]
+    resources: ["pipes"]
+    verbs: ["create", "get", "list", "delete", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "delete", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atelier-v2
+  namespace: atelier-v2-sandboxes
+  labels:
+    app.kubernetes.io/name: atelier-v2
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atelier-v2
+subjects:
+  - kind: ServiceAccount
+    name: atelier-v2
+    namespace: atelier-v2-system

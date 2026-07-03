@@ -1,0 +1,18 @@
+# Service targets the console (nginx :8080), which serves the SPA and
+# reverse-proxies /v1 /api /sessions /auth /health /mcp /swagger to the
+# server on localhost:4000 within the pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: atelier-v2
+  namespace: atelier-v2-system
+  labels:
+    app.kubernetes.io/name: atelier-v2
+spec:
+  selector:
+    app.kubernetes.io/name: atelier-v2
+    app.kubernetes.io/component: server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
