@@ -20,6 +20,7 @@ import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.org
 import { Route as SettingsCatalogRouteImport } from "./routes/settings.catalog"
 import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
 import { Route as SandboxesSandboxIdRouteImport } from "./routes/sandboxes.$sandboxId"
+import { Route as SandboxesSandboxIdIndexRouteImport } from "./routes/sandboxes.$sandboxId.index"
 import { Route as SandboxesSandboxIdSessionsRouteImport } from "./routes/sandboxes.$sandboxId.sessions"
 
 const SpawnRoute = SpawnRouteImport.update({
@@ -77,6 +78,11 @@ const SandboxesSandboxIdRoute = SandboxesSandboxIdRouteImport.update({
   path: "/sandboxes/$sandboxId",
   getParentRoute: () => rootRouteImport,
 } as any)
+const SandboxesSandboxIdIndexRoute = SandboxesSandboxIdIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => SandboxesSandboxIdRoute,
+} as any)
 const SandboxesSandboxIdSessionsRoute =
   SandboxesSandboxIdSessionsRouteImport.update({
     id: "/sessions",
@@ -97,11 +103,11 @@ export interface FileRoutesByFullPath {
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/sandboxes/$sandboxId/": typeof SandboxesSandboxIdIndexRoute
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/spawn": typeof SpawnRoute
-  "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/catalog": typeof SettingsCatalogRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
@@ -110,6 +116,7 @@ export interface FileRoutesByTo {
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/sandboxes/$sandboxId": typeof SandboxesSandboxIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,6 +132,7 @@ export interface FileRoutesById {
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/sandboxes/$sandboxId/": typeof SandboxesSandboxIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,11 +149,11 @@ export interface FileRouteTypes {
     | "/settings/ssh-keys"
     | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
+    | "/sandboxes/$sandboxId/"
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/"
     | "/spawn"
-    | "/sandboxes/$sandboxId"
     | "/settings/api-keys"
     | "/settings/catalog"
     | "/settings/organizations"
@@ -154,6 +162,7 @@ export interface FileRouteTypes {
     | "/settings/ssh-keys"
     | "/settings"
     | "/sandboxes/$sandboxId/sessions"
+    | "/sandboxes/$sandboxId"
   id:
     | "__root__"
     | "/"
@@ -168,6 +177,7 @@ export interface FileRouteTypes {
     | "/settings/ssh-keys"
     | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
+    | "/sandboxes/$sandboxId/"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -256,6 +266,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SandboxesSandboxIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/sandboxes/$sandboxId/": {
+      id: "/sandboxes/$sandboxId/"
+      path: "/"
+      fullPath: "/sandboxes/$sandboxId/"
+      preLoaderRoute: typeof SandboxesSandboxIdIndexRouteImport
+      parentRoute: typeof SandboxesSandboxIdRoute
+    }
     "/sandboxes/$sandboxId/sessions": {
       id: "/sandboxes/$sandboxId/sessions"
       path: "/sessions"
@@ -292,10 +309,12 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 
 interface SandboxesSandboxIdRouteChildren {
   SandboxesSandboxIdSessionsRoute: typeof SandboxesSandboxIdSessionsRoute
+  SandboxesSandboxIdIndexRoute: typeof SandboxesSandboxIdIndexRoute
 }
 
 const SandboxesSandboxIdRouteChildren: SandboxesSandboxIdRouteChildren = {
   SandboxesSandboxIdSessionsRoute: SandboxesSandboxIdSessionsRoute,
+  SandboxesSandboxIdIndexRoute: SandboxesSandboxIdIndexRoute,
 }
 
 const SandboxesSandboxIdRouteWithChildren =
