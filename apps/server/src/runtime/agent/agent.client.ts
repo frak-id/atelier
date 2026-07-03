@@ -104,9 +104,17 @@ export class AgentClient {
       });
 
       if (!response.ok) {
+        // Surface the agent's own error detail when it sends one (e.g. the
+        // toolset capture secret-scan gate reports exactly which file
+        // tripped it) — falling back to the bare status line otherwise.
+        const detail = await response
+          .clone()
+          .json()
+          .then((body) => (body as { error?: string })?.error)
+          .catch(() => undefined);
         throw new AgentUnavailableError(
           sandboxId,
-          `${response.status} ${response.statusText}`,
+          detail ?? `${response.status} ${response.statusText}`,
         );
       }
 
