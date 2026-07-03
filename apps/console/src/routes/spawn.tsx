@@ -10,6 +10,7 @@ import {
   useDeleteSavedSpec,
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
+import { toolsetsListQuery } from "@/api/queries/toolsets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -263,13 +264,26 @@ function ComposeSection({
     vcpus: "2",
     memoryMb: "2048",
   });
+  const [selectedToolsets, setSelectedToolsets] = useState<Set<string>>(
+    new Set(),
+  );
+  const { data: toolsets } = useQuery(toolsetsListQuery());
 
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
+  function toggleToolset(ref: string) {
+    setSelectedToolsets((current) => {
+      const next = new Set(current);
+      if (next.has(ref)) next.delete(ref);
+      else next.add(ref);
+      return next;
+    });
+  }
+
   function buildSpec(): SandboxSpec {
-    return composeSpec({
+    const spec = composeSpec({
       harness: form.harness,
       presets: {
         vscode: form.vscode,
@@ -280,6 +294,8 @@ function ComposeSection({
       vcpus: Math.max(1, Math.round(Number(form.vcpus) || 1)),
       memoryMb: Math.max(256, Math.round(Number(form.memoryMb) || 256)),
     });
+    if (selectedToolsets.size === 0) return spec;
+    return { ...spec, toolsets: [...selectedToolsets].map((ref) => ({ ref })) };
   }
 
   return (
@@ -344,6 +360,27 @@ function ComposeSection({
             </label>
           ))}
         </div>
+        {toolsets && toolsets.length > 0 ? (
+          <div className="space-y-1">
+            <Label>Toolsets</Label>
+            <div className="flex flex-wrap gap-4">
+              {toolsets.map((toolset) => (
+                <label
+                  key={toolset.ref}
+                  htmlFor={`toolset-${toolset.ref}`}
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <Checkbox
+                    id={`toolset-${toolset.ref}`}
+                    checked={selectedToolsets.has(toolset.ref)}
+                    onChange={() => toggleToolset(toolset.ref)}
+                  />
+                  {toolset.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           <Button disabled={spawnPending} onClick={() => onSpawn(buildSpec())}>
             {spawnPending ? <Loader2 className="animate-spin" /> : <Rocket />}

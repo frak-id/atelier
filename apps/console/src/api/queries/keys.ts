@@ -58,4 +58,8 @@ export const queryKeys = {
     all: ["org-policy"] as const,
     detail: (orgId: string) => [...queryKeys.orgPolicy.all, orgId] as const,
   },
+  toolsets: {
+    all: ["toolsets"] as const,
+    list: () => [...queryKeys.toolsets.all, "list"] as const,
+  },
 } as const;

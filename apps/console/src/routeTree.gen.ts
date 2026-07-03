@@ -13,6 +13,7 @@ import { Route as SpawnRouteImport } from "./routes/spawn"
 import { Route as SettingsRouteImport } from "./routes/settings"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as SettingsIndexRouteImport } from "./routes/settings.index"
+import { Route as SettingsToolsetsRouteImport } from "./routes/settings.toolsets"
 import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
 import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
@@ -40,6 +41,11 @@ const IndexRoute = IndexRouteImport.update({
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsToolsetsRoute = SettingsToolsetsRouteImport.update({
+  id: "/toolsets",
+  path: "/toolsets",
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsSshKeysRoute = SettingsSshKeysRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
   "/sandboxes/$sandboxId/": typeof SandboxesSandboxIdIndexRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdIndexRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
   "/sandboxes/$sandboxId/": typeof SandboxesSandboxIdIndexRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | "/settings/policy"
     | "/settings/secrets"
     | "/settings/ssh-keys"
+    | "/settings/toolsets"
     | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
     | "/sandboxes/$sandboxId/"
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | "/settings/policy"
     | "/settings/secrets"
     | "/settings/ssh-keys"
+    | "/settings/toolsets"
     | "/settings"
     | "/sandboxes/$sandboxId/sessions"
     | "/sandboxes/$sandboxId"
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | "/settings/policy"
     | "/settings/secrets"
     | "/settings/ssh-keys"
+    | "/settings/toolsets"
     | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
     | "/sandboxes/$sandboxId/"
@@ -203,6 +215,13 @@ declare module "@tanstack/react-router" {
       path: "/"
       fullPath: "/settings/"
       preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/toolsets": {
+      id: "/settings/toolsets"
+      path: "/toolsets"
+      fullPath: "/settings/toolsets"
+      preLoaderRoute: typeof SettingsToolsetsRouteImport
       parentRoute: typeof SettingsRoute
     }
     "/settings/ssh-keys": {
@@ -270,6 +289,7 @@ interface SettingsRouteChildren {
   SettingsPolicyRoute: typeof SettingsPolicyRoute
   SettingsSecretsRoute: typeof SettingsSecretsRoute
   SettingsSshKeysRoute: typeof SettingsSshKeysRoute
+  SettingsToolsetsRoute: typeof SettingsToolsetsRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
@@ -279,6 +299,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsPolicyRoute: SettingsPolicyRoute,
   SettingsSecretsRoute: SettingsSecretsRoute,
   SettingsSshKeysRoute: SettingsSshKeysRoute,
+  SettingsToolsetsRoute: SettingsToolsetsRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 

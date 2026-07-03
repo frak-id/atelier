@@ -23,6 +23,7 @@ import {
   useResumeSandbox,
   useSnapshotSandbox,
 } from "@/api/queries/sandboxes";
+import { useCaptureToolset } from "@/api/queries/toolsets";
 import { TerminalView } from "@/components/terminal-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -168,6 +169,7 @@ function SandboxDetailPage() {
       <UrlsSection urls={sandbox.urls} />
       <ProcessesSection sandboxId={sandbox.id} processes={sandbox.processes} />
       <ExposePortSection sandboxId={sandbox.id} />
+      <CaptureToolsetSection sandboxId={sandbox.id} />
       {sandbox.annotations || sandbox.metadata ? (
         <MetadataSection
           annotations={sandbox.annotations}
@@ -456,6 +458,75 @@ function ExposePortSection({ sandboxId }: { sandboxId: string }) {
           <Button type="submit" disabled={addPort.isPending}>
             {addPort.isPending ? <Loader2 className="animate-spin" /> : null}
             Expose
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CaptureToolsetSection({ sandboxId }: { sandboxId: string }) {
+  const captureToolset = useCaptureToolset();
+  const [name, setName] = useState("");
+  const [pathsText, setPathsText] = useState("");
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const paths = pathsText
+      .split("\n")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (!name || paths.length === 0) return;
+    captureToolset.mutate(
+      { sandboxId, name, paths },
+      {
+        onSuccess: () => {
+          setName("");
+          setPathsText("");
+        },
+      },
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Capture toolset</CardTitle>
+        <CardDescription>
+          Snapshot this sandbox's declared path-sets into a private toolset
+          artifact. Known secret files (auth.json, .env*, keys) are excluded and
+          the delta is secret-scanned before publish.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="capture-name">Name</Label>
+            <Input
+              id="capture-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="my-pi-stack"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="capture-paths">Paths (one per line)</Label>
+            <textarea
+              id="capture-paths"
+              value={pathsText}
+              onChange={(e) => setPathsText(e.target.value)}
+              spellCheck={false}
+              required
+              placeholder={"~/.config/pi\n~/.local/share/pi\n~/.local/bin/pi"}
+              className="min-h-20 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+            />
+          </div>
+          <Button type="submit" disabled={captureToolset.isPending}>
+            {captureToolset.isPending ? (
+              <Loader2 className="animate-spin" />
+            ) : null}
+            Capture
           </Button>
         </form>
       </CardContent>
