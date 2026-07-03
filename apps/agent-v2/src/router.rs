@@ -70,6 +70,10 @@ pub async fn route(
         (&Method::POST, "/exec") => handle_exec(req, &store).await,
         (&Method::POST, "/exec/batch") => handle_exec_batch(req, &store).await,
         (&Method::POST, "/files/write") => handle_write_files(req).await,
+        // Build+push a toolset artifact from declared home path-sets (the
+        // runtime drives this in a throwaway build pod; the tail of the
+        // toolset build path — composed-prebuild-volumes.md §2).
+        (&Method::POST, "/toolsets/build") => handle_toolset_build(req).await,
         // Interactive terminal sessions (byte relay + resize on port 7681).
         (&Method::GET, "/terminal/sessions") => json(
             StatusCode::OK,
@@ -210,6 +214,24 @@ async fn handle_hooks(path: &str, store: &Arc<ConfigStore>) -> Response<Full<Byt
         StatusCode::UNPROCESSABLE_ENTITY
     };
     json(status, serde_json::to_value(result).unwrap_or_default())
+}
+
+async fn handle_toolset_build(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
+    let body = match read_body(req, MAX_REQUEST_BODY_BYTES).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let parsed: crate::toolset::BuildRequest = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(e) => return error(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {e}")),
+    };
+    match crate::toolset::build(parsed).await {
+        Ok(result) => json(
+            StatusCode::OK,
+            serde_json::to_value(result).unwrap_or_default(),
+        ),
+        Err(e) => error(StatusCode::UNPROCESSABLE_ENTITY, &e),
+    }
 }
 
 async fn handle_write_files(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {

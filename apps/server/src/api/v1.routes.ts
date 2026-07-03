@@ -17,6 +17,8 @@ import {
   ResumeRequestSchema,
   type SandboxSpec,
   SandboxSpecSchema,
+  type ToolsetBuildRequest,
+  ToolsetBuildRequestSchema,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
 import { createAuthPlugin } from "./auth.plugin.ts";
@@ -49,6 +51,13 @@ export function createV1Routes(container: ServerContainer) {
         "/prebuilds",
         async ({ body }) => runtime.prebuild(body as PrebuildSpec),
         { body: PrebuildSpecSchema },
+      )
+      // ── toolsets ───────────────────────────────────────────────────────
+      .get("/toolsets", () => runtime.listToolsets())
+      .post(
+        "/toolsets",
+        async ({ body }) => runtime.buildToolset(body as ToolsetBuildRequest),
+        { body: ToolsetBuildRequestSchema },
       )
       // ── catalog ────────────────────────────────────────────────────────
       .get("/catalog", () => runtime.catalogList())
@@ -146,7 +155,9 @@ export function createV1Routes(container: ServerContainer) {
       )
       // ── attach ─────────────────────────────────────────────────────────
       .ws("/sandboxes/:id/attach/:name", {
-        query: t.Object({ mode: t.Optional(t.Union([t.Literal("rw"), t.Literal("ro")])) }),
+        query: t.Object({
+          mode: t.Optional(t.Union([t.Literal("rw"), t.Literal("ro")])),
+        }),
         async open(ws) {
           const { id, name } = ws.data.params;
           // `ro` joins the read-only fan-out; `rw` (default) takes the single

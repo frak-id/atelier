@@ -23,6 +23,7 @@ mod router;
 mod store;
 mod supervisor;
 mod terminal;
+mod toolset;
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};

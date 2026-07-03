@@ -25,6 +25,9 @@ import {
   type SandboxState,
   type SandboxSummary,
   type SnapshotRef,
+  type ToolsetBuildRequest,
+  type ToolsetEntry,
+  type ToolsetRef,
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
 import { config } from "../shared/lib/config.ts";
@@ -48,9 +51,12 @@ import {
   InMemoryCatalogStore,
   InMemorySandboxStore,
   InMemorySnapshotStore,
+  InMemoryToolsetStore,
   type SandboxRecord,
   type SandboxStore,
   type SnapshotStore,
+  type ToolsetRecord,
+  type ToolsetStore,
 } from "./store.ts";
 
 const log = createChildLogger("runtime");
@@ -67,6 +73,7 @@ export interface RuntimeDeps {
   sandboxes?: SandboxStore;
   snapshots?: SnapshotStore;
   catalog?: CatalogStore;
+  toolsets?: ToolsetStore;
 }
 
 export class RuntimeService {
@@ -74,18 +81,26 @@ export class RuntimeService {
   private readonly sandboxes: SandboxStore;
   private readonly snapshots: SnapshotStore;
   private readonly catalog: CatalogStore;
+  private readonly toolsets: ToolsetStore;
   /** De-dupes concurrent prebuild() calls for the same content hash onto one
    * execution (the temp pod name is deterministic and would collide). */
   private readonly inflightPrebuilds = new Map<string, Promise<SnapshotRef>>();
   /** De-dupes concurrent catalog install Jobs by (deterministic) job name so
    * same-artifact adds share one execution instead of racing to create it. */
   private readonly inflightCatalogAdds = new Map<string, Promise<void>>();
+  /** De-dupes concurrent built-toolset executions by content hash (the temp
+   * pod name is deterministic and would otherwise collide). */
+  private readonly inflightToolsetBuilds = new Map<
+    string,
+    Promise<ToolsetRef>
+  >();
 
   constructor(deps: RuntimeDeps = {}) {
     this.agent = deps.agent ?? new AgentClient();
     this.sandboxes = deps.sandboxes ?? new InMemorySandboxStore();
     this.snapshots = deps.snapshots ?? new InMemorySnapshotStore();
     this.catalog = deps.catalog ?? new InMemoryCatalogStore();
+    this.toolsets = deps.toolsets ?? new InMemoryToolsetStore();
   }
 
   // ── prebuild ───────────────────────────────────────────────────────────
@@ -178,11 +193,18 @@ export class RuntimeService {
     }
   }
 
-  private async execStep(tempId: string, command: string): Promise<void> {
-    const res = await this.agent.exec(tempId, command, { timeout: 600_000 });
+  private async execStep(
+    tempId: string,
+    command: string,
+    user?: "dev" | "root",
+  ): Promise<void> {
+    const res = await this.agent.exec(tempId, command, {
+      timeout: 600_000,
+      user,
+    });
     if (res.exitCode !== 0) {
       throw new Error(
-        `prebuild step failed (exit ${res.exitCode}): ${command}\n${res.stderr.trim()}`,
+        `build step failed (exit ${res.exitCode}): ${command}\n${res.stderr.trim()}`,
       );
     }
   }
@@ -521,6 +543,85 @@ export class RuntimeService {
     return this.catalog.list();
   }
 
+  // ── toolsets ──────────────────────────────────────────
+
+  /**
+   * Build a reproducible, input-keyed toolset artifact
+   * (composed-prebuild-volumes.md §2). Runs `build[]` in a throwaway pod (as
+   * `dev`, so tools land in the home), then has the agent tar the `paths[]`
+   * and `oras push` them to the registry. Idempotent: keyed by
+   * `hash(source ⊕ build ⊕ paths)`; a hit returns instantly; concurrent builds
+   * for the same hash dedupe onto one execution. The registry-push tail
+   * replaces `prebuild()`'s snapshot tail — same executor economics.
+   */
+  async buildToolset(req: ToolsetBuildRequest): Promise<ToolsetRef> {
+    const hash = hashToolset(req);
+    const existing = this.toolsets.getByHash(hash);
+    if (existing) return { ref: existing.ref };
+    const inflight = this.inflightToolsetBuilds.get(hash);
+    if (inflight) return inflight;
+    const run = this.executeToolsetBuild(req, hash).finally(() => {
+      this.inflightToolsetBuilds.delete(hash);
+    });
+    this.inflightToolsetBuilds.set(hash, run);
+    return run;
+  }
+
+  private async executeToolsetBuild(
+    req: ToolsetBuildRequest,
+    hash: string,
+  ): Promise<ToolsetRef> {
+    const source = req.source ?? { image: config.sandbox.defaultImage };
+    const { image, snapshotName } = await this.resolveSource(source);
+    const tempId = `ts-${hash.slice(0, 12)}`;
+    const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:${hash.slice(0, 12)}`;
+
+    const boot = await bootSandbox(
+      tempId,
+      toolsetToSpec(source, req.env),
+      { image, snapshotName },
+      this.agent,
+    );
+    try {
+      // Build steps run as `dev` so installs land in the home path-sets the
+      // artifact captures (running as root would scatter bytes into /root).
+      for (const step of req.build) {
+        await this.execStep(tempId, step, "dev");
+      }
+      const { digest } = await this.agent.buildToolset(tempId, {
+        target,
+        paths: req.paths,
+      });
+      const ref = `toolsets/${req.name}@${digest}`;
+      this.toolsets.put({
+        hash,
+        name: req.name,
+        ref,
+        paths: req.paths,
+        provenance: { kind: "built", build: req.build },
+        private: false,
+        createdAt: new Date().toISOString(),
+      });
+      log.info({ ref, hash, name: req.name }, "toolset artifact built");
+      return { ref };
+    } finally {
+      this.agent.invalidatePodIp(tempId);
+      await cleanupSandboxResources(tempId, { podName: boot.podName }).catch(
+        (err) => log.warn({ tempId, err }, "toolset build pod cleanup failed"),
+      );
+    }
+  }
+
+  listToolsets(): ToolsetEntry[] {
+    return this.toolsets.list().map(toolsetRecordToEntry);
+  }
+
+  /** Resolve a host-relative toolset ref (`toolsets/<name>@sha256:…`) to a
+   * full pullable registry locator by prepending the configured registry. */
+  resolveToolsetRef(ref: string): string {
+    return `${config.kubernetes.registryUrl}/${ref}`;
+  }
+
   /** Run (deduped by job name) the one-shot install Job, throwing unless it
    * succeeds. Each caller records its own catalog entry afterwards. */
   private runCatalogJob(
@@ -693,6 +794,41 @@ function prebuildToSpec(spec: PrebuildSpec): SandboxSpec {
 /** Single-quote a shell argument (POSIX), escaping embedded single quotes. */
 function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+/** Synthesize the minimal SandboxSpec a toolset build pod boots from: source +
+ * default resources + build env. No processes/ports/files — nothing to
+ * supervise or expose while installing tools into the home. */
+function toolsetToSpec(
+  source: SandboxSpec["source"],
+  env?: Record<string, string>,
+): SandboxSpec {
+  return {
+    source,
+    resources: { vcpus: 2, memoryMb: 2048 },
+    ...(env && { env }),
+  };
+}
+
+/** Drop the internal `hash` (dedup key) so the listed shape matches the
+ * `ToolsetEntry` wire schema (`additionalProperties: false`). */
+function toolsetRecordToEntry(record: ToolsetRecord): ToolsetEntry {
+  const { hash: _hash, ...entry } = record;
+  return entry;
+}
+
+function hashToolset(req: ToolsetBuildRequest): string {
+  // `name` IS keyed: it's the artifact's registry repo (own tag namespace,
+  // own retention window), and the stored ref embeds it — so two names must
+  // build two artifacts, not alias onto the first-built ref. `env` is
+  // build-time secret material, excluded like `PrebuildSpec.env`.
+  const keyed = {
+    name: req.name,
+    source: req.source ?? null,
+    build: req.build,
+    paths: req.paths,
+  };
+  return createHash("sha256").update(JSON.stringify(keyed)).digest("hex");
 }
 
 function hashPrebuild(spec: PrebuildSpec): string {

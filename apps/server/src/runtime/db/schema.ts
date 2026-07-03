@@ -9,7 +9,12 @@
  * point of view — it stores and returns them without interpreting their
  * shape beyond what `RuntimeService` already does in memory.
  */
-import { sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 export const sandboxes = sqliteTable("sandboxes", {
   id: text("id").primaryKey(),
@@ -41,6 +46,24 @@ export const snapshots = sqliteTable(
   },
   (t) => [uniqueIndex("idx_snapshots_hash").on(t.hash)],
 );
+
+export const toolsets = sqliteTable("toolsets", {
+  /** Content/result hash the toolset is keyed by (build idempotency lookup). */
+  hash: text("hash").primaryKey(),
+  /** Registry identity (the artifact repo name). */
+  name: text("name").notNull(),
+  /** Host-relative OCI locator (`toolsets/<name>@sha256:…`) — the pull handle. */
+  ref: text("ref").notNull(),
+  /** JSON: home path-sets the artifact materializes into. */
+  paths: text("paths").notNull(),
+  /** JSON: env fragment merged at compose time (nullable). */
+  env: text("env"),
+  /** JSON: `ToolsetProvenance` (built | captured). */
+  provenance: text("provenance").notNull(),
+  /** 1 = private-to-capturer (captures default), 0 = published. */
+  private: integer("private").notNull(),
+  createdAt: text("created_at").notNull(),
+});
 
 export const catalog = sqliteTable("catalog", {
   /** Catalog identity, e.g. "opencode@1.16.2" — the primary handle. */

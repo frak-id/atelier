@@ -280,6 +280,28 @@ export class AgentClient {
     return `ws://${podIp}:${ATTACH_PORT}/attach/${name}?mode=${mode}`;
   }
 
+  /**
+   * Build+push a toolset artifact from declared home path-sets (agent-v2
+   * `POST /toolsets/build`). The agent tars the paths and `oras push`es them
+   * to `target` from inside the pod; the runtime never handles the bytes.
+   * Returns the pushed manifest digest (`sha256:…`).
+   */
+  async buildToolset(
+    sandboxId: string,
+    body: { target: string; paths: string[] },
+  ): Promise<{ digest: string }> {
+    if (isMock()) {
+      const hex = "0".repeat(64);
+      return { digest: `sha256:${hex}` };
+    }
+    return this.post<{ digest: string }>(
+      sandboxId,
+      "/toolsets/build",
+      body,
+      600_000,
+    );
+  }
+
   async writeFiles(
     sandboxId: string,
     files: FileWrite[],

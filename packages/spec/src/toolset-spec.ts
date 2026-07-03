@@ -31,6 +31,17 @@ import { SourceSchema } from "./sandbox-spec.ts";
  */
 export { type ToolsetRef, ToolsetRefSchema } from "./sandbox-spec.ts";
 
+/**
+ * A toolset name is also its OCI repository path segment(s), so it is
+ * constrained to a valid, traversal-free OCI repository name (lowercase
+ * alnum + `._-`, slash-separated) — an unconstrained name would let a caller
+ * push to `toolsets/../<arbitrary-repo>` in the shared registry.
+ */
+export const ToolsetNameSchema = Type.String({
+  pattern: "^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$",
+  description: "OCI-repo-safe toolset name, e.g. org-toolbox or team/pi.",
+});
+
 // ── built (input-keyed) ───────────────────────────────────────────────────
 
 /**
@@ -42,7 +53,7 @@ export { type ToolsetRef, ToolsetRefSchema } from "./sandbox-spec.ts";
 export const ToolsetBuildRequestSchema = Type.Object(
   {
     /** Registry identity, e.g. "org-toolbox" — the artifact repo name. */
-    name: Type.String(),
+    name: ToolsetNameSchema,
     /** Base image OR snapshot to build in (defaults to the sandbox base image). */
     source: Type.Optional(SourceSchema),
     /** Ordered, fail-fast shell steps that install the tools. */
@@ -73,7 +84,7 @@ export type ToolsetBuildRequest = Static<typeof ToolsetBuildRequestSchema>;
 export const ToolsetCaptureRequestSchema = Type.Object(
   {
     /** Registry identity for the captured artifact. */
-    name: Type.String(),
+    name: ToolsetNameSchema,
     /** Home path-sets to capture (compose-declared defaults + dev additions). */
     paths: Type.Array(Type.String()),
     /** Extra exclude globs beyond the built-in secret-file excludes. */

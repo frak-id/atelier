@@ -19,9 +19,12 @@ export type {
   SandboxStore,
   SnapshotRecord,
   SnapshotStore,
+  ToolsetRecord,
+  ToolsetStore,
 } from "./store.ts";
 export {
   DrizzleCatalogStore,
   DrizzleSandboxStore,
   DrizzleSnapshotStore,
+  DrizzleToolsetStore,
 } from "./store.ts";

@@ -9,6 +9,7 @@ import {
   DrizzleCatalogStore,
   DrizzleSandboxStore,
   DrizzleSnapshotStore,
+  DrizzleToolsetStore,
   RuntimeService,
 } from "../runtime/index.ts";
 import {
@@ -84,6 +85,7 @@ export function createServerContainer() {
     sandboxes: new DrizzleSandboxStore(),
     snapshots: new DrizzleSnapshotStore(),
     catalog: new DrizzleCatalogStore(),
+    toolsets: new DrizzleToolsetStore(),
   });
   const dispatch = new AgentDispatch({ agentClient: agent });
   const sessionSurfaces = new SessionSurfaceRegistry();

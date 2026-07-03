@@ -10,10 +10,15 @@
  * implement the same synchronous interface (bun:sqlite/drizzle bun-sqlite
  * queries are synchronous, and `RuntimeService` calls them as such).
  */
-import type { Generated, SandboxSpec, SandboxStatus } from "@atelier/spec";
+import type {
+  Generated,
+  SandboxSpec,
+  SandboxStatus,
+  ToolsetEntry,
+} from "@atelier/spec";
 import { eq } from "drizzle-orm";
 import { getDatabase } from "../shared/lib/db.ts";
-import { catalog, sandboxes, snapshots } from "./db/schema.ts";
+import { catalog, sandboxes, snapshots, toolsets } from "./db/schema.ts";
 
 export interface SandboxRecord {
   id: string;
@@ -68,6 +73,19 @@ export interface CatalogStore {
   list(): CatalogRecord[];
 }
 
+/** A published toolset artifact keyed by its content/result `hash`. */
+export interface ToolsetRecord extends ToolsetEntry {
+  /** Content hash (built) or result hash (captured) — the dedup key. */
+  hash: string;
+}
+
+export interface ToolsetStore {
+  getByHash(hash: string): ToolsetRecord | undefined;
+  put(record: ToolsetRecord): void;
+  list(): ToolsetRecord[];
+  delete(hash: string): void;
+}
+
 // ── in-memory (tests, standalone runtime/) ─────────────────────────────────
 
 export class InMemorySandboxStore implements SandboxStore {
@@ -105,6 +123,23 @@ export class InMemoryCatalogStore implements CatalogStore {
   }
   list(): CatalogRecord[] {
     return [...this.rows.values()];
+  }
+}
+
+export class InMemoryToolsetStore implements ToolsetStore {
+  private readonly byHash = new Map<string, ToolsetRecord>();
+
+  getByHash(hash: string): ToolsetRecord | undefined {
+    return this.byHash.get(hash);
+  }
+  put(record: ToolsetRecord): void {
+    this.byHash.set(record.hash, record);
+  }
+  list(): ToolsetRecord[] {
+    return [...this.byHash.values()];
+  }
+  delete(hash: string): void {
+    this.byHash.delete(hash);
   }
 }
 
@@ -300,5 +335,78 @@ export class DrizzleCatalogStore implements CatalogStore {
 
   list(): CatalogRecord[] {
     return getDatabase().select().from(catalog).all() as CatalogRecord[];
+  }
+}
+
+interface ToolsetRow {
+  hash: string;
+  name: string;
+  ref: string;
+  paths: string;
+  env: string | null;
+  provenance: string;
+  private: number;
+  createdAt: string;
+}
+
+function toolsetRowToRecord(row: ToolsetRow): ToolsetRecord {
+  return {
+    hash: row.hash,
+    name: row.name,
+    ref: row.ref,
+    paths: JSON.parse(row.paths) as string[],
+    env: row.env ? (JSON.parse(row.env) as Record<string, string>) : undefined,
+    provenance: JSON.parse(row.provenance) as ToolsetEntry["provenance"],
+    private: row.private !== 0,
+    createdAt: row.createdAt,
+  };
+}
+
+function toolsetRecordToRow(record: ToolsetRecord): ToolsetRow {
+  return {
+    hash: record.hash,
+    name: record.name,
+    ref: record.ref,
+    paths: JSON.stringify(record.paths),
+    env: record.env ? JSON.stringify(record.env) : null,
+    provenance: JSON.stringify(record.provenance),
+    private: record.private ? 1 : 0,
+    createdAt: record.createdAt,
+  };
+}
+
+export class DrizzleToolsetStore implements ToolsetStore {
+  getByHash(hash: string): ToolsetRecord | undefined {
+    const row = getDatabase()
+      .select()
+      .from(toolsets)
+      .where(eq(toolsets.hash, hash))
+      .get() as ToolsetRow | undefined;
+    return row ? toolsetRowToRecord(row) : undefined;
+  }
+
+  /** Upsert by `hash` — a toolset's identity is its content/result hash. */
+  put(record: ToolsetRecord): void {
+    const db = getDatabase();
+    const row = toolsetRecordToRow(record);
+    const existing = db
+      .select()
+      .from(toolsets)
+      .where(eq(toolsets.hash, record.hash))
+      .get();
+    if (existing) {
+      db.update(toolsets).set(row).where(eq(toolsets.hash, record.hash)).run();
+      return;
+    }
+    db.insert(toolsets).values(row).run();
+  }
+
+  list(): ToolsetRecord[] {
+    const rows = getDatabase().select().from(toolsets).all() as ToolsetRow[];
+    return rows.map(toolsetRowToRecord);
+  }
+
+  delete(hash: string): void {
+    getDatabase().delete(toolsets).where(eq(toolsets.hash, hash)).run();
   }
 }
