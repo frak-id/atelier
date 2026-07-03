@@ -3,6 +3,13 @@
 //! the forwarder accepts on `0.0.0.0:<port>` and bridges to `127.0.0.1:<port>`,
 //! so no HOST/bind config is needed in the user's tooling.
 //!
+//! A port that a *supervised* process serves directly is skipped: such a
+//! process (e.g. code-server, KasmVNC — declared with a `readiness.port`)
+//! binds `0.0.0.0:<port>` itself and is already reachable via the pod IP.
+//! Pre-binding it here would take the address and make the tool's own bind
+//! fail with EADDRINUSE. Only ports with no owning process (a dev server the
+//! user starts by hand, bound to loopback) actually need bridging.
+//!
 //! v1 hardcoded a single dev-port forwarder; v2 reconciles a listener per
 //! `ports[]` entry against every pushed config, symmetric with the supervisor's
 //! config-watch: a re-pushed config (spec update, resume) that adds or drops a
@@ -50,7 +57,22 @@ impl Forwarder {
     /// Start listeners for newly-declared ports, drop those no longer present.
     async fn reconcile(&self, store: &Arc<ConfigStore>) {
         let Some(cfg) = store.get() else { return };
-        let desired: Vec<u16> = cfg.ports.iter().map(|p| p.port).collect();
+        // Ports a supervised process serves directly (readiness.port) bind
+        // 0.0.0.0 themselves — don't squat those or the tool's bind fails.
+        let owned: Vec<u16> = cfg
+            .processes
+            .iter()
+            .filter_map(|p| match p.readiness {
+                Some(crate::config::Readiness::Port { port }) => Some(port),
+                _ => None,
+            })
+            .collect();
+        let desired: Vec<u16> = cfg
+            .ports
+            .iter()
+            .map(|p| p.port)
+            .filter(|port| !owned.contains(port))
+            .collect();
         let mut active = self.active.lock().await;
         active.retain(|port, handle| {
             let keep = desired.contains(port);
