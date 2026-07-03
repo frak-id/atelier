@@ -9,6 +9,7 @@ FROM node:22-slim
 
 
 ARG KASMVNC_VERSION=1.4.0
+ARG ORAS_VERSION=1.2.0
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
 ENV USER=dev
@@ -53,6 +54,15 @@ RUN curl -fsSL -o /tmp/kasmvnc.deb "https://github.com/kasmtech/KasmVNC/releases
     && apt-get update && apt-get install -y --no-install-recommends /tmp/kasmvnc.deb \
     && rm -f /tmp/kasmvnc.deb \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Layer 2b: oras (OCI artifact CLI) — the guest agent shells out to it to
+# push/pull toolset artifacts to/from the in-cluster zot registry
+# (composed-prebuild-volumes.md). Static linux/amd64 binary; no runtime deps.
+RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_amd64.tar.gz" \
+    && tar -xzf /tmp/oras.tar.gz -C /usr/local/bin oras \
+    && chmod +x /usr/local/bin/oras \
+    && rm -f /tmp/oras.tar.gz \
+    && oras version
 
 # Layer 3: Locale + user setup + SSH config (rarely changes)
 # ssh-keygen -A bakes host keys into the image so they are not regenerated on
