@@ -4,8 +4,8 @@
  * §4). Thin: parse args, call {@link AtelierClient}, print. Composition of
  * specs is the caller's job (a spec file, or `@atelier/compose` presets).
  *
- * Commands: up (+ --bake), ps, get, logs, exec, pause, resume, rm, attach,
- * sync, expose, snapshot, prebuild.
+ * Commands: up (+ --bake, --toolset), ps, get, logs, exec, pause, resume, rm,
+ * attach, sync, expose, snapshot, prebuild, toolset (build|capture|ls).
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join as joinPath, relative as relPath } from "node:path";
@@ -15,6 +15,8 @@ import type {
   PrebuildSpec,
   ResumeRequest,
   SandboxSpec,
+  ToolsetBuildRequest,
+  ToolsetCaptureRequest,
 } from "@atelier/spec";
 import { ApiError, AtelierClient } from "./client.ts";
 import { resolveConfig } from "./config.ts";
@@ -23,7 +25,8 @@ const USAGE = `atelier — client for the atelier /v1 API
 
 Usage:
   atelier up (--spec <file> | --from-snapshot <ref> | --image <ref>)
-             [--vcpus <n>] [--memory <mb>] [--bake] [--json]
+             [--vcpus <n>] [--memory <mb>] [--bake]
+             [--toolset <ref> ...] [--json]
   atelier ps [--json]
   atelier get <id> [--json]
   atelier logs <id> <process>
@@ -36,6 +39,10 @@ Usage:
   atelier expose <id> <name> <port> [--no-public]
   atelier snapshot <id>
   atelier prebuild <file>
+  atelier toolset ls [--json]
+  atelier toolset build <file>                          (ToolsetBuildRequest)
+  atelier toolset capture <id> <name> <path> [<path>...]
+                          [--exclude <glob> ...] [--override <path> ...]
 
 Env:
   ATELIER_API_URL   server base URL (default http://localhost:4000)
@@ -299,6 +306,20 @@ async function resolveUpSpec(
   return { ...sandbox, source: { snapshot: ref.ref } };
 }
 
+/** Append `--toolset <ref>` flags (repeatable) to the spec's `toolsets[]`,
+ * after whatever the spec file/bake step already declared. */
+function applyToolsetFlags(
+  spec: SandboxSpec,
+  flags: Map<string, string[]>,
+): SandboxSpec {
+  const refs = flags.get("toolset");
+  if (!refs || refs.length === 0) return spec;
+  return {
+    ...spec,
+    toolsets: [...(spec.toolsets ?? []), ...refs.map((ref) => ({ ref }))],
+  };
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const command = argv[0];
@@ -313,7 +334,8 @@ async function main(): Promise<void> {
 
   switch (command) {
     case "up": {
-      const result = await client.create(await resolveUpSpec(client, flags));
+      const spec = applyToolsetFlags(await resolveUpSpec(client, flags), flags);
+      const result = await client.create(spec);
       if (json) return print(result);
       process.stdout.write(`${result.id}\n`);
       for (const u of result.urls)
@@ -442,6 +464,54 @@ async function main(): Promise<void> {
       const ref = await client.prebuild(spec);
       if (json) return print(ref);
       process.stdout.write(`${ref.ref}\t${ref.hash}\n`);
+      return;
+    }
+    case "toolset": {
+      const sub = positionals[0];
+      if (sub === "ls") {
+        const entries = await client.listToolsets();
+        if (json) return print(entries);
+        if (entries.length === 0) {
+          process.stdout.write("no toolsets\n");
+          return;
+        }
+        for (const e of entries) {
+          const kind = e.provenance.kind;
+          process.stdout.write(
+            `${e.name}\t${e.ref}\t${kind}\t${e.private ? "private" : "public"}\n`,
+          );
+        }
+        return;
+      }
+      if (sub === "build") {
+        const file = positionals[1] ?? fail("toolset build needs a spec file");
+        const req = parseJsonc(
+          readFileSync(file, "utf8"),
+        ) as ToolsetBuildRequest;
+        const ref = await client.buildToolset(req);
+        if (json) return print(ref);
+        process.stdout.write(`${ref.ref}\n`);
+        return;
+      }
+      if (sub === "capture") {
+        const id = positionals[1] ?? fail("toolset capture needs a sandbox id");
+        const name = positionals[2] ?? fail("toolset capture needs a name");
+        const paths = positionals.slice(3);
+        if (paths.length === 0) {
+          fail("toolset capture needs at least one path");
+        }
+        const req: ToolsetCaptureRequest = {
+          name,
+          paths,
+          exclude: flags.get("exclude"),
+          overrides: flags.get("override"),
+        };
+        const ref = await client.captureToolset(id, req);
+        if (json) return print(ref);
+        process.stdout.write(`${ref.ref}\n`);
+        return;
+      }
+      fail("toolset subcommand must be `ls`, `build`, or `capture`");
       return;
     }
     default:

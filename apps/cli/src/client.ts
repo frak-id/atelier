@@ -14,6 +14,10 @@ import type {
   SandboxState,
   SandboxSummary,
   SnapshotRef,
+  ToolsetBuildRequest,
+  ToolsetCaptureRequest,
+  ToolsetEntry,
+  ToolsetRef,
 } from "@atelier/spec";
 import type { CliConfig } from "./config.ts";
 
@@ -120,6 +124,21 @@ export class AtelierClient {
 
   prebuild(spec: PrebuildSpec): Promise<SnapshotRef> {
     return this.req("POST", "/prebuilds", spec);
+  }
+
+  listToolsets(): Promise<ToolsetEntry[]> {
+    return this.req("GET", "/toolsets");
+  }
+
+  buildToolset(req: ToolsetBuildRequest): Promise<ToolsetRef> {
+    return this.req("POST", "/toolsets", req);
+  }
+
+  captureToolset(
+    sandboxId: string,
+    req: ToolsetCaptureRequest,
+  ): Promise<ToolsetRef> {
+    return this.req("POST", `/sandboxes/${sandboxId}/toolsets/capture`, req);
   }
 
   /** WS attach endpoint + auth header for the unified stdio/PTY bridge. The
