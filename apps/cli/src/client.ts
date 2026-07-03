@@ -146,7 +146,7 @@ export class AtelierClient {
   }
 
   removeToolset(ref: string): Promise<void> {
-    return this.req("DELETE", "/toolsets", { ref });
+    return this.req("DELETE", `/toolsets?ref=${encodeURIComponent(ref)}`);
   }
 
   /** WS attach endpoint + auth header for the unified stdio/PTY bridge. The

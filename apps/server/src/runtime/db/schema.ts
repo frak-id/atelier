@@ -10,6 +10,7 @@
  * shape beyond what `RuntimeService` already does in memory.
  */
 import {
+  index,
   integer,
   sqliteTable,
   text,
@@ -47,20 +48,28 @@ export const snapshots = sqliteTable(
   (t) => [uniqueIndex("idx_snapshots_hash").on(t.hash)],
 );
 
-export const toolsets = sqliteTable("toolsets", {
-  /** Content/result hash the toolset is keyed by (build idempotency lookup). */
-  hash: text("hash").primaryKey(),
-  /** Registry identity (the artifact repo name). */
-  name: text("name").notNull(),
-  /** Host-relative OCI locator (`toolsets/<name>@sha256:…`) — the pull handle. */
-  ref: text("ref").notNull(),
-  /** JSON: home path-sets the artifact materializes into. */
-  paths: text("paths").notNull(),
-  /** JSON: env fragment merged at compose time (nullable). */
-  env: text("env"),
-  /** JSON: `ToolsetProvenance` (built | captured). */
-  provenance: text("provenance").notNull(),
-  /** 1 = private-to-capturer (captures default), 0 = published. */
-  private: integer("private").notNull(),
-  createdAt: text("created_at").notNull(),
-});
+export const toolsets = sqliteTable(
+  "toolsets",
+  {
+    /** Content/result hash the toolset is keyed by (build idempotency lookup). */
+    hash: text("hash").primaryKey(),
+    /** Registry identity (the artifact repo name). */
+    name: text("name").notNull(),
+    /** Host-relative OCI locator (`toolsets/<name>@sha256:…`) — the pull handle. */
+    ref: text("ref").notNull(),
+    /** JSON: home path-sets the artifact materializes into. */
+    paths: text("paths").notNull(),
+    /** JSON: env fragment merged at compose time (nullable). */
+    env: text("env"),
+    /** JSON: `ToolsetProvenance` (built | captured). */
+    provenance: text("provenance").notNull(),
+    /** 1 = private-to-capturer (captures default), 0 = published. */
+    private: integer("private").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  // Secondary lookup key for publish/delete/resolve by ref. NOT unique: two
+  // distinct build hashes can yield byte-identical artifacts under the same
+  // name (→ same `name@digest` ref), which a UNIQUE index would reject on a
+  // legitimate build. The index only bounds the lookup cost.
+  (t) => [index("idx_toolsets_ref").on(t.ref)],
+);

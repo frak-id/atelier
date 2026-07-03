@@ -149,3 +149,20 @@ export function ensureOrgToolbox(container: ServerContainer): void {
       return undefined;
     });
 }
+
+/**
+ * Resolve the org toolbox ref for a spawn. Awaits the in-flight/settled build;
+ * if a prior attempt failed (`undefined`), re-triggers ONE rebuild and awaits
+ * it, so a transient registry hiccup at startup self-heals on the next spawn
+ * rather than wedging every sandbox until a restart. `buildToolset` is
+ * content-hash idempotent with inflight dedup, so concurrent spawns coalesce
+ * onto a single build.
+ */
+export async function resolveOrgToolbox(
+  container: ServerContainer,
+): Promise<ToolsetRef | undefined> {
+  const ready = await container.orgToolboxReady;
+  if (ready) return ready;
+  ensureOrgToolbox(container);
+  return container.orgToolboxReady;
+}

@@ -66,7 +66,9 @@ export function useRemoveToolset() {
   const invalidate = useInvalidateToolsets();
   return useMutation({
     mutationFn: async (ref: string) => {
-      const { error } = await api.v1.toolsets.delete({ ref });
+      const { error } = await api.v1.toolsets.delete(undefined, {
+        query: { ref },
+      });
       if (error)
         throw new Error(errorMessage(error, "Failed to remove toolset"));
     },
