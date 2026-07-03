@@ -59,7 +59,17 @@ export class ToolboxService {
       updatedAt: now,
     };
     log.info({ orgId, slug: input.slug }, "Toolbox config created");
-    return this.repository.create(record);
+    try {
+      return this.repository.create(record);
+    } catch (err) {
+      // Convert a slug race (the pre-check above is TOCTOU) into a clean 400.
+      if (isUniqueConstraintError(err)) {
+        throw new ValidationError(
+          `A toolbox with slug '${input.slug}' already exists for this org`,
+        );
+      }
+      throw err;
+    }
   }
 
   update(id: string, patch: ToolboxConfigPatch): ToolboxConfig {

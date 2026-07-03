@@ -17,14 +17,25 @@ export const ToolboxSlugSchema = Type.String({
 });
 export type ToolboxSlug = Static<typeof ToolboxSlugSchema>;
 
+/** Bounded shell build steps (DoS floor on build-pod work). */
+const BuildStepsSchema = Type.Array(
+  Type.String({ minLength: 1, maxLength: 2000 }),
+  { maxItems: 100 },
+);
+/** Bounded home path-sets to capture (each a home-relative path). */
+const ToolboxPathsSchema = Type.Array(
+  Type.String({ minLength: 1, maxLength: 300 }),
+  { maxItems: 100 },
+);
+
 /** Caller-supplied shape for create (and the base for patch). */
 export const ToolboxConfigInputSchema = Type.Object(
   {
     slug: ToolboxSlugSchema,
     description: Type.String({ minLength: 1, maxLength: 200 }),
     source: Type.Optional(SourceSchema),
-    build: Type.Array(Type.String()),
-    paths: Type.Array(Type.String()),
+    build: BuildStepsSchema,
+    paths: ToolboxPathsSchema,
     enabled: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false, $id: "ToolboxConfigInput" },
@@ -39,8 +50,8 @@ export const ToolboxConfigSchema = Type.Object(
     slug: ToolboxSlugSchema,
     description: Type.String({ minLength: 1, maxLength: 200 }),
     source: Type.Optional(SourceSchema),
-    build: Type.Array(Type.String()),
-    paths: Type.Array(Type.String()),
+    build: BuildStepsSchema,
+    paths: ToolboxPathsSchema,
     enabled: Type.Boolean(),
     createdAt: Type.String(),
     updatedAt: Type.String(),
@@ -58,8 +69,8 @@ export const ToolboxConfigPatchSchema = Type.Object(
   {
     description: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
     source: Type.Optional(SourceSchema),
-    build: Type.Optional(Type.Array(Type.String())),
-    paths: Type.Optional(Type.Array(Type.String())),
+    build: Type.Optional(BuildStepsSchema),
+    paths: Type.Optional(ToolboxPathsSchema),
     enabled: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false, $id: "ToolboxConfigPatch" },

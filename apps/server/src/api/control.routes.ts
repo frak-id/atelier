@@ -233,10 +233,13 @@ export function createControlRoutes(container: ServerContainer) {
         return created;
       },
       {
-        body: t.Composite([
-          ToolboxConfigInputSchema,
-          t.Object({ orgId: t.Optional(t.String()) }),
-        ]),
+        body: t.Composite(
+          [
+            ToolboxConfigInputSchema,
+            t.Object({ orgId: t.Optional(t.String()) }),
+          ],
+          { additionalProperties: false },
+        ),
       },
     )
     .patch(

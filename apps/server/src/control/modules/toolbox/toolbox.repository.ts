@@ -24,6 +24,7 @@ export class ToolboxRepository {
       .select()
       .from(orgToolboxes)
       .where(eq(orgToolboxes.orgId, orgId))
+      .orderBy(asc(orgToolboxes.createdAt))
       .all()
       .map(rowToConfig);
   }
