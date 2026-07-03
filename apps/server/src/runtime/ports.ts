@@ -6,7 +6,12 @@
  */
 import type { PortEntry } from "@atelier/spec";
 import { config } from "../shared/lib/config.ts";
-import { buildToolIngress, type KubeResource, toolHost } from "./kube/index.ts";
+import {
+  buildToolIngress,
+  type KubeResource,
+  toolHost,
+  toolIngressName,
+} from "./kube/index.ts";
 
 function sandboxDomain(): string {
   return config.domain.baseDomain;
@@ -17,23 +22,44 @@ function forwardAuthAnnotations(): Record<string, string> {
   return config.kubernetes.vsCodeIngressAnnotations ?? {};
 }
 
+/**
+ * cert-manager annotations for per-host TLS via HTTP-01. Returns undefined
+ * when no ClusterIssuer is configured (TLS disabled on tool ingresses).
+ */
+function certManagerAnnotations(): Record<string, string> | undefined {
+  const issuer = config.kubernetes.toolIngressClusterIssuer;
+  if (!issuer) return undefined;
+  return {
+    "cert-manager.io/cluster-issuer": issuer,
+    "kubernetes.io/tls-acme": "true",
+  };
+}
+
 export function buildPortIngresses(
   sandboxId: string,
   ports: PortEntry[] = [],
 ): KubeResource[] {
+  const tlsAnnotations = certManagerAnnotations();
   return ports
     .filter((p) => p.public)
-    .map((p) =>
-      buildToolIngress({
+    .map((p) => {
+      const annotations = {
+        ...tlsAnnotations,
+        ...(p.auth === "forward" ? forwardAuthAnnotations() : {}),
+      };
+      return buildToolIngress({
         sandboxId,
         subdomain: p.name,
         port: p.port,
         sandboxDomain: sandboxDomain(),
         ingressClassName: config.kubernetes.ingressClassName || undefined,
-        annotations:
-          p.auth === "forward" ? forwardAuthAnnotations() : undefined,
-      }),
-    );
+        annotations: Object.keys(annotations).length ? annotations : undefined,
+        // Per-host cert secret (cert-manager fills it via the issuer above).
+        tlsSecretName: tlsAnnotations
+          ? `${toolIngressName(p.name, sandboxId)}-tls`
+          : undefined,
+      });
+    });
 }
 
 /** Public URLs for a spec's declared ports. */

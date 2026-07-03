@@ -105,6 +105,12 @@ export const KubernetesConfigSchema = Type.Object(
     runtimeClass: Type.String({ default: "kata-clh" }),
     /** Ingress class name for dynamically created ingresses (e.g., traefik, nginx) */
     ingressClassName: Type.String({ default: "" }),
+    /**
+     * cert-manager ClusterIssuer used to mint a per-host TLS cert for each
+     * dynamically created tool ingress (via HTTP-01). Empty string disables
+     * TLS on tool ingresses (served over the ingress controller default).
+     */
+    toolIngressClusterIssuer: Type.String({ default: "" }),
     /** OCI registry hostname for sandbox and prebuild images (Zot) */
     registryUrl: Type.String({
       default: "zot.atelier-system.svc:5000",
@@ -397,6 +403,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_SYSTEM_NAMESPACE: "kubernetes.systemNamespace",
   ATELIER_K8S_KUBECONFIG: "kubernetes.kubeconfig",
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
+  ATELIER_K8S_TOOL_INGRESS_ISSUER: "kubernetes.toolIngressClusterIssuer",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
   ATELIER_K8S_AGENT_IMAGE: "kubernetes.agentImage",
   ATELIER_NPM_REGISTRY_URL: "kubernetes.npmRegistryUrl",
