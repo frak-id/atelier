@@ -17,7 +17,6 @@ import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
 import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
 import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
-import { Route as SettingsCatalogRouteImport } from "./routes/settings.catalog"
 import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
 import { Route as SandboxesSandboxIdRouteImport } from "./routes/sandboxes.$sandboxId"
 import { Route as SandboxesSandboxIdIndexRouteImport } from "./routes/sandboxes.$sandboxId.index"
@@ -63,11 +62,6 @@ const SettingsOrganizationsRoute = SettingsOrganizationsRouteImport.update({
   path: "/organizations",
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsCatalogRoute = SettingsCatalogRouteImport.update({
-  id: "/catalog",
-  path: "/catalog",
-  getParentRoute: () => SettingsRoute,
-} as any)
 const SettingsApiKeysRoute = SettingsApiKeysRouteImport.update({
   id: "/api-keys",
   path: "/api-keys",
@@ -96,7 +90,6 @@ export interface FileRoutesByFullPath {
   "/spawn": typeof SpawnRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
   "/settings/api-keys": typeof SettingsApiKeysRoute
-  "/settings/catalog": typeof SettingsCatalogRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/secrets": typeof SettingsSecretsRoute
@@ -109,7 +102,6 @@ export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/spawn": typeof SpawnRoute
   "/settings/api-keys": typeof SettingsApiKeysRoute
-  "/settings/catalog": typeof SettingsCatalogRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/secrets": typeof SettingsSecretsRoute
@@ -125,7 +117,6 @@ export interface FileRoutesById {
   "/spawn": typeof SpawnRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
   "/settings/api-keys": typeof SettingsApiKeysRoute
-  "/settings/catalog": typeof SettingsCatalogRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/secrets": typeof SettingsSecretsRoute
@@ -142,7 +133,6 @@ export interface FileRouteTypes {
     | "/spawn"
     | "/sandboxes/$sandboxId"
     | "/settings/api-keys"
-    | "/settings/catalog"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/secrets"
@@ -155,7 +145,6 @@ export interface FileRouteTypes {
     | "/"
     | "/spawn"
     | "/settings/api-keys"
-    | "/settings/catalog"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/secrets"
@@ -170,7 +159,6 @@ export interface FileRouteTypes {
     | "/spawn"
     | "/sandboxes/$sandboxId"
     | "/settings/api-keys"
-    | "/settings/catalog"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/secrets"
@@ -245,13 +233,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsOrganizationsRouteImport
       parentRoute: typeof SettingsRoute
     }
-    "/settings/catalog": {
-      id: "/settings/catalog"
-      path: "/catalog"
-      fullPath: "/settings/catalog"
-      preLoaderRoute: typeof SettingsCatalogRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     "/settings/api-keys": {
       id: "/settings/api-keys"
       path: "/api-keys"
@@ -285,7 +266,6 @@ declare module "@tanstack/react-router" {
 
 interface SettingsRouteChildren {
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
-  SettingsCatalogRoute: typeof SettingsCatalogRoute
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsPolicyRoute: typeof SettingsPolicyRoute
   SettingsSecretsRoute: typeof SettingsSecretsRoute
@@ -295,7 +275,6 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiKeysRoute: SettingsApiKeysRoute,
-  SettingsCatalogRoute: SettingsCatalogRoute,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsPolicyRoute: SettingsPolicyRoute,
   SettingsSecretsRoute: SettingsSecretsRoute,

@@ -6,6 +6,7 @@
 import { validateConfig } from "@frak/atelier-shared";
 import {
   createServerContainer,
+  ensureOrgToolbox,
   wireBuiltinHarnesses,
 } from "./api/container.ts";
 import { createApp } from "./api/index.ts";
@@ -33,6 +34,7 @@ logger.info({ dbPath: appPaths.database }, "Control database ready");
 
 const container = createServerContainer();
 await wireBuiltinHarnesses(container);
+ensureOrgToolbox(container);
 
 await ensureSharedSshPipeKey();
 

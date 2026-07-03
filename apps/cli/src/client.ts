@@ -5,8 +5,6 @@
  */
 import type {
   AddPortRequest,
-  CatalogAddRequest,
-  CatalogEntry,
   CreateSandboxResponse,
   ExecRequest,
   PatchFilesRequest,
@@ -122,14 +120,6 @@ export class AtelierClient {
 
   prebuild(spec: PrebuildSpec): Promise<SnapshotRef> {
     return this.req("POST", "/prebuilds", spec);
-  }
-
-  catalogList(): Promise<CatalogEntry[]> {
-    return this.req("GET", "/catalog");
-  }
-
-  catalogAdd(req: CatalogAddRequest): Promise<CatalogEntry> {
-    return this.req("POST", "/catalog", req);
   }
 
   /** WS attach endpoint + auth header for the unified stdio/PTY bridge. The

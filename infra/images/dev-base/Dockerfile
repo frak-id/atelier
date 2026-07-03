@@ -1,6 +1,7 @@
 # Atelier - dev-base image
 # Minimal development environment with Bun and Git
-# code-server and opencode are served via NFS from /opt/shared/bin
+# code-server and opencode are materialized into ~/.local/bin by the org
+# toolbox toolset artifact (composed-prebuild-volumes.md), not /opt/shared.
 #
 # Build: docker build -t atelier/dev-base .
 # Export: docker export $(docker create atelier/dev-base) | tar -C ./rootfs -xf -
@@ -94,7 +95,12 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
     && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.atelier
 
 # Layer 6: Profile scripts + config files (most likely to change)
-RUN echo 'export PATH="/opt/shared/bin:$PATH"' > /etc/profile.d/shared-binaries.sh \
+# Toolset artifacts (composed-prebuild-volumes.md) materialize binaries into
+# ~/.local/bin — the org toolbox (opencode, code-server) lands there instead
+# of the retired /opt/shared PVC. A login shell (supervisor spawns via
+# `bash -l -c`) sources this, so PATH reaches every supervised process,
+# interactive terminal, and exec/hooks call.
+RUN echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/local-bin.sh \
     && printf 'export LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n' > /etc/profile.d/locale.sh \
     && printf '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n' > /etc/profile.d/99-sandbox-secrets.sh
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json

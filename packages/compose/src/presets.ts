@@ -24,8 +24,10 @@ export function vscode(options?: {
     processes: [
       {
         name: "vscode",
+        // Bare command: the org toolbox toolset materializes code-server onto
+        // PATH via the dev-base `~/.local/bin` shim.
         command:
-          `/opt/shared/bin/code-server --bind-addr 0.0.0.0:${port} ` +
+          `code-server --bind-addr 0.0.0.0:${port} ` +
           `--auth none --disable-telemetry ${workspaceDir}`,
         lazy: true,
         readiness: { port },

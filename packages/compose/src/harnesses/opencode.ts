@@ -12,7 +12,6 @@ import type { HarnessComposer } from "../harness.ts";
 import type { SpecFragment } from "../spec-merge.ts";
 
 const HOME = "/home/dev";
-const SHARED_BIN_DIR = "/opt/shared/bin";
 const OPENCODE_CONFIG_PATH = `${HOME}/.config/opencode/opencode.json`;
 const OPENCODE_AUTH_PATH = `${HOME}/.local/share/opencode/auth.json`;
 
@@ -93,7 +92,9 @@ export function composeOpencode(
     processes: [
       {
         name: "acp",
-        command: `${SHARED_BIN_DIR}/opencode acp`,
+        // Bare command: the org toolbox toolset (packages/compose/src/toolbox.ts)
+        // materializes opencode onto PATH via the dev-base `~/.local/bin` shim.
+        command: "opencode acp",
         cwd: HOME,
         // Run as `dev`, not root: opencode writes its data/cache/log under
         // ${HOME} (~/.local/share, ~/.cache, ~/.config). As root those become

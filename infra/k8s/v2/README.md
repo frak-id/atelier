@@ -8,8 +8,10 @@ v1 stack, under `atelier.hetzner-staging.frak.id`. See
 
 - `atelier-v2-system` ns: server+console Deployment, Service, Ingress, config
   ConfigMap, data PVC, RBAC (SA `atelier-v2`).
-- `atelier-v2-sandboxes` ns: shared-binaries PVC + populate Job
-  (opencode 1.17.4 + code-server 4.123.0); v2 sandbox pods land here.
+- `atelier-v2-sandboxes` ns: v2 sandbox pods land here. opencode +
+  code-server are the `org-toolbox` built toolset artifact (published to Zot,
+  materialized by the guest agent at boot into `~/.local`) — no PVC/Job
+  (composed-prebuild-volumes.md §6 "kill shared-binaries").
 - Images: `zot.zot.svc:5000/atelier-server:v2` + `atelier-console:v2`
   (built in-cluster via BuildKit, pushed to the internal Zot registry).
 
@@ -41,7 +43,6 @@ The GitHub OAuth app's callback URL must be
 ```sh
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/00-namespaces.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/10-rbac.yaml
-kubectl --context hetzner-atelier apply -f infra/k8s/v2/20-shared-binaries.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/30-config.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/40-server-pvc.yaml
 # create the secret (above), then:

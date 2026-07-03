@@ -23,7 +23,6 @@ export type {
   ToolsetStore,
 } from "./store.ts";
 export {
-  DrizzleCatalogStore,
   DrizzleSandboxStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,

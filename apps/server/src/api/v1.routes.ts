@@ -7,8 +7,6 @@
 import {
   AddPortRequestSchema,
   AddProcessRequestSchema,
-  type CatalogAddRequest,
-  CatalogAddRequestSchema,
   ExecRequestSchema,
   PatchEnvRequestSchema,
   PatchFilesRequestSchema,
@@ -59,13 +57,6 @@ export function createV1Routes(container: ServerContainer) {
         async ({ body }) => runtime.buildToolset(body as ToolsetBuildRequest),
         { body: ToolsetBuildRequestSchema },
       )
-      // ── catalog ────────────────────────────────────────────────────────
-      .get("/catalog", () => runtime.catalogList())
-      .post(
-        "/catalog",
-        async ({ body }) => runtime.catalogAdd(body as CatalogAddRequest),
-        { body: CatalogAddRequestSchema },
-      )
       // ── sandboxes ──────────────────────────────────────────────────────
       .post(
         "/sandboxes",
@@ -73,7 +64,17 @@ export function createV1Routes(container: ServerContainer) {
           const orgId = resolveOrgId(control, user.id);
           const enriched = await control.enrichSpec(body as SandboxSpec, orgId);
           const authorizedKeys = control.sshKeyService.getValidPublicKeys();
-          return runtime.create(enriched, { authorizedKeys });
+          // Prepend the org toolbox (opencode + code-server) so a dev's own
+          // toolsets win on path conflicts (last-wins, proposal §2). Awaits the
+          // FIRST-boot build only — already resolved on every later spawn.
+          const toolbox = await container.orgToolboxReady;
+          const withToolbox: SandboxSpec = toolbox
+            ? {
+                ...enriched,
+                toolsets: [toolbox, ...(enriched.toolsets ?? [])],
+              }
+            : enriched;
+          return runtime.create(withToolbox, { authorizedKeys });
         },
         { body: SandboxSpecSchema },
       )

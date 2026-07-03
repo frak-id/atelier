@@ -3,10 +3,11 @@
  * (runtime/control/sessions) are wired together. Mirrors v1 `container.ts`'s
  * manual-wiring convention.
  */
+import { orgToolboxRequest } from "@atelier/compose";
+import type { ToolsetRef } from "@atelier/spec";
 import { createControlContainer } from "../control/index.ts";
 import {
   AgentClient,
-  DrizzleCatalogStore,
   DrizzleSandboxStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,
@@ -20,6 +21,7 @@ import {
   type SessionSurfaceResolver,
   TerminalService,
 } from "../sessions/index.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 
 /**
  * Session-surface registry — the harness-neutral injection point for the live
@@ -77,6 +79,8 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
   );
 }
 
+const log = createChildLogger("container");
+
 export function createServerContainer() {
   const control = createControlContainer();
   const agent = new AgentClient();
@@ -84,7 +88,6 @@ export function createServerContainer() {
     agent,
     sandboxes: new DrizzleSandboxStore(),
     snapshots: new DrizzleSnapshotStore(),
-    catalog: new DrizzleCatalogStore(),
     toolsets: new DrizzleToolsetStore(),
   });
   const dispatch = new AgentDispatch({ agentClient: agent });
@@ -101,6 +104,10 @@ export function createServerContainer() {
     terminal,
     sessionSurfaces,
     registerHarnessDispatch,
+    // Resolved by `ensureOrgToolbox` right after construction; `/v1/sandboxes`
+    // awaits this before injecting the toolbox ref (never server startup —
+    // see `ensureOrgToolbox`).
+    orgToolboxReady: Promise.resolve(undefined),
   };
   return serverContainer;
 }
@@ -114,9 +121,31 @@ export interface ServerContainer {
   terminal: TerminalService;
   sessionSurfaces: SessionSurfaceRegistry;
   registerHarnessDispatch: typeof registerHarnessDispatch;
+  /** Resolves to the org toolbox's ref once built (or `undefined` if the
+   * build failed — spawns then proceed without it rather than wedge). */
+  orgToolboxReady: Promise<ToolsetRef | undefined>;
 }
 
 /** Bootstrap hook: call once after `createServerContainer()`. */
 export async function wireBuiltinHarnesses(container: ServerContainer) {
   await registerBuiltinHarnesses(container);
+}
+
+/**
+ * Ensure the org toolbox (opencode + code-server, replacing `shared-binaries`
+ * — composed-prebuild-volumes.md §6) exists as a built toolset artifact.
+ * `runtime.buildToolset` is content-hash idempotent, so a restart is an
+ * instant store hit, not a rebuild. Runs in the BACKGROUND: the first build
+ * (~30-90s: throwaway pod, two curls, tar, oras push) must not block server
+ * startup or crash-loop the process on a transient registry hiccup. Callers
+ * that need the ref (the `/v1/sandboxes` seam) await `container.orgToolboxReady`
+ * instead, so only the first spawn (not the server) waits on it.
+ */
+export function ensureOrgToolbox(container: ServerContainer): void {
+  container.orgToolboxReady = container.runtime
+    .buildToolset(orgToolboxRequest)
+    .catch((err) => {
+      log.error({ err }, "org toolbox build failed; spawns proceed without it");
+      return undefined;
+    });
 }

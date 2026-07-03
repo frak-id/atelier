@@ -10,7 +10,6 @@ const TABS = [
   { to: "/settings/secrets", label: "Secrets" },
   { to: "/settings/organizations", label: "Organizations" },
   { to: "/settings/policy", label: "Org Policy" },
-  { to: "/settings/catalog", label: "Catalog" },
 ] as const;
 
 function SettingsLayout() {
