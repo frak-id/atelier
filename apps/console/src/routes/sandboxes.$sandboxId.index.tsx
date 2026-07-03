@@ -469,20 +469,35 @@ function CaptureToolsetSection({ sandboxId }: { sandboxId: string }) {
   const captureToolset = useCaptureToolset();
   const [name, setName] = useState("");
   const [pathsText, setPathsText] = useState("");
+  const [excludeText, setExcludeText] = useState("");
+  const [overridesText, setOverridesText] = useState("");
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const paths = pathsText
+  const linesOf = (text: string) =>
+    text
       .split("\n")
       .map((p) => p.trim())
       .filter(Boolean);
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const paths = linesOf(pathsText);
     if (!name || paths.length === 0) return;
+    const exclude = linesOf(excludeText);
+    const overrides = linesOf(overridesText);
     captureToolset.mutate(
-      { sandboxId, name, paths },
+      {
+        sandboxId,
+        name,
+        paths,
+        ...(exclude.length > 0 ? { exclude } : {}),
+        ...(overrides.length > 0 ? { overrides } : {}),
+      },
       {
         onSuccess: () => {
           setName("");
           setPathsText("");
+          setExcludeText("");
+          setOverridesText("");
         },
       },
     );
@@ -520,6 +535,32 @@ function CaptureToolsetSection({ sandboxId }: { sandboxId: string }) {
               required
               placeholder={"~/.config/pi\n~/.local/share/pi\n~/.local/bin/pi"}
               className="min-h-20 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="capture-exclude">
+              Exclude globs (optional, one per line)
+            </Label>
+            <textarea
+              id="capture-exclude"
+              value={excludeText}
+              onChange={(e) => setExcludeText(e.target.value)}
+              spellCheck={false}
+              placeholder={"*.log\ncache"}
+              className="min-h-12 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="capture-overrides">
+              Secret-scan overrides (optional, one path per line)
+            </Label>
+            <textarea
+              id="capture-overrides"
+              value={overridesText}
+              onChange={(e) => setOverridesText(e.target.value)}
+              spellCheck={false}
+              placeholder={"~/.config/pi/config.json"}
+              className="min-h-12 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
             />
           </div>
           <Button type="submit" disabled={captureToolset.isPending}>

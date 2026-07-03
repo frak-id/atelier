@@ -1,4 +1,3 @@
-export * from "./capture-defaults.ts";
 export * from "./harness.ts";
 export * from "./harnesses/opencode.ts";
 export * from "./presets.ts";
