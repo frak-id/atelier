@@ -23,8 +23,14 @@ kubectl --context hetzner-atelier -n atelier-v2-system create secret generic ate
   --from-literal=ATELIER_GITHUB_CLIENT_SECRET=<secret> \
   --from-literal=ATELIER_JWT_SECRET=<jwt> \
   --from-literal=SANDBOX_SECRETS_KEY=<32-char-hex> \
-  --from-literal=ATELIER_MCP_TOKEN=<token>
+  --from-literal=ATELIER_MCP_TOKEN=<token> \
+  --from-literal=ATELIER_CLIPROXY_API_KEY=<cliproxy-key>
 ```
+
+`ATELIER_CLIPROXY_API_KEY` is the bearer token for the CLIProxy model provider
+(`ATELIER_CLIPROXY_URL` is set in the Deployment). The server bakes this
+provider into each opencode sandbox's `opencode.json` at spec enrichment, so
+sessions have models. Omit it and sandboxes still boot, just without models.
 
 The GitHub OAuth app's callback URL must be
 `https://atelier.hetzner-staging.frak.id/auth/callback`, org restricted to

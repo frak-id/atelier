@@ -8,6 +8,7 @@
 import { AuthService } from "./auth.ts";
 import { enrichSpec } from "./enrichment.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
+import { CliproxyService } from "./modules/cliproxy/index.ts";
 import {
   OrgMemberRepository,
   OrgMemberService,
@@ -49,6 +50,7 @@ export function createControlContainer() {
   const savedSpecService = new SavedSpecService(savedSpecRepository);
   const secretService = new SecretService(secretRepository);
   const orgPolicyService = new OrgPolicyService(orgPolicyRepository);
+  const cliproxyService = new CliproxyService();
   const authService = new AuthService({ apiKeyService, userService });
 
   return {
@@ -67,6 +69,7 @@ export function createControlContainer() {
       enrichSpec(spec, orgId, {
         secrets: secretService,
         orgPolicy: orgPolicyService,
+        cliproxy: cliproxyService,
       }),
   };
 }

@@ -3,20 +3,25 @@
  * as it crosses the seam (atelier-v2 §3.2):
  *   (a) secret resolution — replace `{"$secret": name}` references with values;
  *   (b) org-policy injection — append operator-mandated entries (an audit
- *       process, a compliance file) from the org's policy spec.
+ *       process, a compliance file) from the org's policy spec;
+ *   (c) cliproxy provider injection — bake the server-held CLIProxy model
+ *       provider into the opencode harness config so sessions have models.
  *
- * No merger, no catalog, no fragment resolution — two append/substitute
- * steps, deterministic, tiny. A dev hand-crafting a spec against the raw API
- * still gets the mandated pieces, because this runs server-side on every
- * crossing, before `runtime.create(spec)`.
+ * No merger, no catalog, no fragment resolution — append/substitute steps,
+ * deterministic, tiny. A dev hand-crafting a spec against the raw API still
+ * gets the mandated pieces, because this runs server-side on every crossing,
+ * before `runtime.create(spec)`.
  */
+import { OPENCODE_PATHS, opencodeMergeProxyProviders } from "@atelier/compose";
 import { isSecretRef, type SandboxSpec } from "@atelier/spec";
+import type { CliproxyService } from "./modules/cliproxy/index.ts";
 import type { OrgPolicyService } from "./modules/org-policy/index.ts";
 import type { SecretService } from "./modules/secret/index.ts";
 
 export interface EnrichmentDeps {
   secrets: SecretService;
   orgPolicy: OrgPolicyService;
+  cliproxy: CliproxyService;
 }
 
 /** Replace every `{"$secret": name}` reference in the spec with its value. */
@@ -98,6 +103,30 @@ function injectOrgPolicy(
   };
 }
 
+/** Merge the CLIProxy provider block into the opencode harness config file
+ * (`opencode.json`). No-op when CLIProxy is unconfigured or the spec has no
+ * opencode config file (non-opencode harness). The provider carries the
+ * server's API key, so it must be injected here, not client-side. */
+async function injectCliproxyProviders(
+  spec: SandboxSpec,
+  cliproxy: CliproxyService,
+): Promise<SandboxSpec> {
+  const files = spec.files ?? [];
+  const existing = files.find((f) => f.path === OPENCODE_PATHS.configPath);
+  if (!existing) return spec;
+
+  const providers = await cliproxy.getProviders();
+  if (!providers) return spec;
+
+  const content =
+    typeof existing.content === "string" ? existing.content : undefined;
+  const merged = opencodeMergeProxyProviders(providers, content);
+  return {
+    ...spec,
+    files: files.map((f) => (f === existing ? { ...f, content: merged } : f)),
+  };
+}
+
 /** The full enrichment pipeline applied at every seam crossing. */
 export async function enrichSpec(
   spec: SandboxSpec,
@@ -105,5 +134,9 @@ export async function enrichSpec(
   deps: EnrichmentDeps,
 ): Promise<SandboxSpec> {
   const withPolicy = injectOrgPolicy(spec, orgId, deps.orgPolicy);
-  return resolveSecrets(withPolicy, orgId, deps.secrets);
+  const withProviders = await injectCliproxyProviders(
+    withPolicy,
+    deps.cliproxy,
+  );
+  return resolveSecrets(withProviders, orgId, deps.secrets);
 }
