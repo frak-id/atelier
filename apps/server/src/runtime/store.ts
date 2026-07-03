@@ -65,6 +65,7 @@ export interface ToolsetRecord extends ToolsetEntry {
 
 export interface ToolsetStore {
   getByHash(hash: string): ToolsetRecord | undefined;
+  getByRef(ref: string): ToolsetRecord | undefined;
   put(record: ToolsetRecord): void;
   list(): ToolsetRecord[];
   delete(hash: string): void;
@@ -101,6 +102,9 @@ export class InMemoryToolsetStore implements ToolsetStore {
 
   getByHash(hash: string): ToolsetRecord | undefined {
     return this.byHash.get(hash);
+  }
+  getByRef(ref: string): ToolsetRecord | undefined {
+    return [...this.byHash.values()].find((r) => r.ref === ref);
   }
   put(record: ToolsetRecord): void {
     this.byHash.set(record.hash, record);
@@ -323,6 +327,15 @@ export class DrizzleToolsetStore implements ToolsetStore {
       .select()
       .from(toolsets)
       .where(eq(toolsets.hash, hash))
+      .get() as ToolsetRow | undefined;
+    return row ? toolsetRowToRecord(row) : undefined;
+  }
+
+  getByRef(ref: string): ToolsetRecord | undefined {
+    const row = getDatabase()
+      .select()
+      .from(toolsets)
+      .where(eq(toolsets.ref, ref))
       .get() as ToolsetRow | undefined;
     return row ? toolsetRowToRecord(row) : undefined;
   }

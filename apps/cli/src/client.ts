@@ -141,6 +141,14 @@ export class AtelierClient {
     return this.req("POST", `/sandboxes/${sandboxId}/toolsets/capture`, req);
   }
 
+  publishToolset(ref: string): Promise<ToolsetEntry> {
+    return this.req("POST", "/toolsets/publish", { ref });
+  }
+
+  removeToolset(ref: string): Promise<void> {
+    return this.req("DELETE", "/toolsets", { ref });
+  }
+
   /** WS attach endpoint + auth header for the unified stdio/PTY bridge. The
    * server proxies to the pod's :9997 bridge (rw). */
   wsAttach(

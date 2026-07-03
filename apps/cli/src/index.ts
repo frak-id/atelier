@@ -43,6 +43,8 @@ Usage:
   atelier toolset build <file>                          (ToolsetBuildRequest)
   atelier toolset capture <id> <name> <path> [<path>...]
                           [--exclude <glob> ...] [--override <path> ...]
+  atelier toolset publish <ref>
+  atelier toolset rm <ref>
 
 Env:
   ATELIER_API_URL   server base URL (default http://localhost:4000)
@@ -511,7 +513,22 @@ async function main(): Promise<void> {
         process.stdout.write(`${ref.ref}\n`);
         return;
       }
-      fail("toolset subcommand must be `ls`, `build`, or `capture`");
+      if (sub === "publish") {
+        const ref = positionals[1] ?? fail("toolset publish needs a ref");
+        const entry = await client.publishToolset(ref);
+        if (json) return print(entry);
+        process.stdout.write(`published ${entry.name} (${entry.ref})\n`);
+        return;
+      }
+      if (sub === "rm") {
+        const ref = positionals[1] ?? fail("toolset rm needs a ref");
+        await client.removeToolset(ref);
+        process.stdout.write(`removed ${ref}\n`);
+        return;
+      }
+      fail(
+        "toolset subcommand must be `ls`, `build`, `capture`, `publish`, or `rm`",
+      );
       return;
     }
     default:

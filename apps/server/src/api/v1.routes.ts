@@ -19,6 +19,8 @@ import {
   ToolsetBuildRequestSchema,
   type ToolsetCaptureRequest,
   ToolsetCaptureRequestSchema,
+  type ToolsetRef,
+  ToolsetRefSchema,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
 import { createAuthPlugin } from "./auth.plugin.ts";
@@ -58,6 +60,19 @@ export function createV1Routes(container: ServerContainer) {
         "/toolsets",
         async ({ body }) => runtime.buildToolset(body as ToolsetBuildRequest),
         { body: ToolsetBuildRequestSchema },
+      )
+      .post(
+        "/toolsets/publish",
+        async ({ body }) => runtime.publishToolset((body as ToolsetRef).ref),
+        { body: ToolsetRefSchema },
+      )
+      .delete(
+        "/toolsets",
+        async ({ body, set }) => {
+          runtime.deleteToolset((body as ToolsetRef).ref);
+          set.status = 204;
+        },
+        { body: ToolsetRefSchema },
       )
       // ── sandboxes ──────────────────────────────────────────────────────
       .post(

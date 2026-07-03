@@ -570,6 +570,24 @@ export class RuntimeService {
     return this.toolsets.list().map(toolsetRecordToEntry);
   }
 
+  /** Publish a toolset to the org (flip `private` off) — the explicit sharing
+   * step for a private-by-default capture (proposal §2). */
+  publishToolset(ref: string): ToolsetEntry {
+    const record = this.toolsets.getByRef(ref);
+    if (!record) throw new NotFoundError("Toolset", ref);
+    const next: ToolsetRecord = { ...record, private: false };
+    this.toolsets.put(next);
+    return toolsetRecordToEntry(next);
+  }
+
+  /** Delete a toolset record. The registry blob is left to zot retention/GC;
+   * this drops the runtime's handle to it. */
+  deleteToolset(ref: string): void {
+    const record = this.toolsets.getByRef(ref);
+    if (!record) throw new NotFoundError("Toolset", ref);
+    this.toolsets.delete(record.hash);
+  }
+
   /** Resolve a host-relative toolset ref (`toolsets/<name>@sha256:…`) to a
    * full pullable registry locator by prepending the configured registry. */
   resolveToolsetRef(ref: string): string {
