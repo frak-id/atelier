@@ -44,7 +44,7 @@ function ToolsetsPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           Toolset artifacts — harness/tool bundles materialized into every
           sandbox's home at boot. Built toolsets are reproducible (rebuilt from{" "}

@@ -16,6 +16,7 @@ import { Route as SettingsIndexRouteImport } from "./routes/settings.index"
 import { Route as SettingsToolsetsRouteImport } from "./routes/settings.toolsets"
 import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
+import { Route as SettingsPrebuildsRouteImport } from "./routes/settings.prebuilds"
 import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
 import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
 import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
@@ -58,6 +59,11 @@ const SettingsSecretsRoute = SettingsSecretsRouteImport.update({
   path: "/secrets",
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsPrebuildsRoute = SettingsPrebuildsRouteImport.update({
+  id: "/prebuilds",
+  path: "/prebuilds",
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsPolicyRoute = SettingsPolicyRouteImport.update({
   id: "/policy",
   path: "/policy",
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
+  "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolsets": typeof SettingsToolsetsRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
+  "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolsets": typeof SettingsToolsetsRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
+  "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolsets": typeof SettingsToolsetsRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | "/settings/api-keys"
     | "/settings/organizations"
     | "/settings/policy"
+    | "/settings/prebuilds"
     | "/settings/secrets"
     | "/settings/ssh-keys"
     | "/settings/toolsets"
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
     | "/settings/api-keys"
     | "/settings/organizations"
     | "/settings/policy"
+    | "/settings/prebuilds"
     | "/settings/secrets"
     | "/settings/ssh-keys"
     | "/settings/toolsets"
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | "/settings/api-keys"
     | "/settings/organizations"
     | "/settings/policy"
+    | "/settings/prebuilds"
     | "/settings/secrets"
     | "/settings/ssh-keys"
     | "/settings/toolsets"
@@ -238,6 +250,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsSecretsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    "/settings/prebuilds": {
+      id: "/settings/prebuilds"
+      path: "/prebuilds"
+      fullPath: "/settings/prebuilds"
+      preLoaderRoute: typeof SettingsPrebuildsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     "/settings/policy": {
       id: "/settings/policy"
       path: "/policy"
@@ -287,6 +306,7 @@ interface SettingsRouteChildren {
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsPolicyRoute: typeof SettingsPolicyRoute
+  SettingsPrebuildsRoute: typeof SettingsPrebuildsRoute
   SettingsSecretsRoute: typeof SettingsSecretsRoute
   SettingsSshKeysRoute: typeof SettingsSshKeysRoute
   SettingsToolsetsRoute: typeof SettingsToolsetsRoute
@@ -297,6 +317,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiKeysRoute: SettingsApiKeysRoute,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsPolicyRoute: SettingsPolicyRoute,
+  SettingsPrebuildsRoute: SettingsPrebuildsRoute,
   SettingsSecretsRoute: SettingsSecretsRoute,
   SettingsSshKeysRoute: SettingsSshKeysRoute,
   SettingsToolsetsRoute: SettingsToolsetsRoute,

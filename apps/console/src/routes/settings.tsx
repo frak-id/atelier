@@ -11,6 +11,7 @@ const TABS = [
   { to: "/settings/organizations", label: "Organizations" },
   { to: "/settings/policy", label: "Org Policy" },
   { to: "/settings/toolsets", label: "Toolsets" },
+  { to: "/settings/prebuilds", label: "Prebuilds" },
 ] as const;
 
 function SettingsLayout() {
