@@ -74,6 +74,10 @@ pub async fn route(
         // runtime drives this in a throwaway build pod; the tail of the
         // toolset build path — composed-prebuild-volumes.md §2).
         (&Method::POST, "/toolsets/build") => handle_toolset_build(req).await,
+        // Capture a live sandbox's declared path-sets into a toolset artifact
+        // (secret-scanned, exclude-filtered) — composed-prebuild-volumes.md §2
+        // "captured (result-keyed)".
+        (&Method::POST, "/toolsets/capture") => handle_toolset_capture(req).await,
         // Materialize toolset artifacts into the home (runtime drives this as
         // a boot phase before files/env, fresh boots only).
         (&Method::POST, "/toolsets") => handle_toolset_materialize(req).await,
@@ -229,6 +233,24 @@ async fn handle_toolset_build(req: Request<hyper::body::Incoming>) -> Response<F
         Err(e) => return error(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {e}")),
     };
     match crate::toolset::build(parsed).await {
+        Ok(result) => json(
+            StatusCode::OK,
+            serde_json::to_value(result).unwrap_or_default(),
+        ),
+        Err(e) => error(StatusCode::UNPROCESSABLE_ENTITY, &e),
+    }
+}
+
+async fn handle_toolset_capture(req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
+    let body = match read_body(req, MAX_REQUEST_BODY_BYTES).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let parsed: crate::toolset::CaptureRequest = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(e) => return error(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {e}")),
+    };
+    match crate::toolset::capture(parsed).await {
         Ok(result) => json(
             StatusCode::OK,
             serde_json::to_value(result).unwrap_or_default(),

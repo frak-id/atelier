@@ -303,6 +303,34 @@ export class AgentClient {
   }
 
   /**
+   * Capture a live sandbox's declared path-sets into a toolset artifact
+   * (agent-v2 `POST /toolsets/capture`). The agent tars `paths` MINUS the
+   * merged exclude globs, secret-scans the included files (failing unless a
+   * finding is covered by `overrides`), and `oras push`es to `target` —
+   * mirrors `buildToolset`'s push tail. Returns the pushed manifest digest.
+   */
+  async captureToolset(
+    sandboxId: string,
+    body: {
+      target: string;
+      paths: string[];
+      exclude: string[];
+      overrides: string[];
+    },
+  ): Promise<{ digest: string }> {
+    if (isMock()) {
+      const hex = "0".repeat(64);
+      return { digest: `sha256:${hex}` };
+    }
+    return this.post<{ digest: string }>(
+      sandboxId,
+      "/toolsets/capture",
+      body,
+      600_000,
+    );
+  }
+
+  /**
    * Materialize toolset artifacts into the home before the files/env phase
    * (agent-v2 `POST /toolsets`). `references` are full, digest-pinned pull
    * refs (`<registry>/toolsets/<name>@sha256:…`), ordered — later wins. The

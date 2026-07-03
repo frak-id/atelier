@@ -17,6 +17,8 @@ import {
   SandboxSpecSchema,
   type ToolsetBuildRequest,
   ToolsetBuildRequestSchema,
+  type ToolsetCaptureRequest,
+  ToolsetCaptureRequestSchema,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
 import { createAuthPlugin } from "./auth.plugin.ts";
@@ -153,6 +155,12 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post("/sandboxes/:id/snapshot", async ({ params }) =>
         runtime.snapshot(params.id),
+      )
+      .post(
+        "/sandboxes/:id/toolsets/capture",
+        async ({ params, body }) =>
+          runtime.captureToolset(params.id, body as ToolsetCaptureRequest),
+        { body: ToolsetCaptureRequestSchema },
       )
       // ── attach ─────────────────────────────────────────────────────────
       .ws("/sandboxes/:id/attach/:name", {

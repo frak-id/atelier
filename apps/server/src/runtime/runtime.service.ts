@@ -24,6 +24,7 @@ import {
   type SandboxSummary,
   type SnapshotRef,
   type ToolsetBuildRequest,
+  type ToolsetCaptureRequest,
   type ToolsetEntry,
   type ToolsetRef,
 } from "@atelier/spec";
@@ -573,6 +574,46 @@ export class RuntimeService {
    * full pullable registry locator by prepending the configured registry. */
   resolveToolsetRef(ref: string): string {
     return `${config.kubernetes.registryUrl}/${ref}`;
+  }
+
+  /**
+   * Capture a live sandbox's declared path-sets into a toolset artifact
+   * (composed-prebuild-volumes.md §2 "captured (result-keyed)"). The agent
+   * tars `paths` minus the merged exclude globs, secret-scans the included
+   * files, and pushes — no baseline diff (there's nothing to diff against at
+   * capture time; path-set selection + exclude + scan is the honest
+   * mechanism). Result-keyed: unlike `buildToolset`, there is no content hash
+   * to dedupe on — every capture is a distinct artifact, so it is never
+   * silently evictable and is stored private-to-the-capturing-sandbox by
+   * default (org publish is a separate, explicit step, out of MVP scope).
+   */
+  async captureToolset(
+    id: string,
+    req: ToolsetCaptureRequest,
+  ): Promise<ToolsetRef> {
+    this.require(id);
+    const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:cap-${Date.now().toString(36)}`;
+    const { digest } = await this.agent.captureToolset(id, {
+      target,
+      paths: req.paths,
+      exclude: req.exclude ?? [],
+      overrides: req.overrides ?? [],
+    });
+    const ref = `toolsets/${req.name}@${digest}`;
+    this.toolsets.put({
+      // Captures are result-keyed, not input-keyed: the digest itself is the
+      // identity (no `hashToolset`-style pre-image to dedupe concurrent
+      // captures on — each run is a distinct snapshot of live, mutable state).
+      hash: digest,
+      name: req.name,
+      ref,
+      paths: req.paths,
+      provenance: { kind: "captured", capturedFrom: id },
+      private: true,
+      createdAt: new Date().toISOString(),
+    });
+    log.info({ ref, sandboxId: id, name: req.name }, "toolset captured");
+    return { ref };
   }
 
   /** Resolve a spec's `toolsets[]` to full pull references for materialize,
