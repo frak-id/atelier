@@ -15,6 +15,8 @@ import type {
   PrebuildSpec,
   ResumeRequest,
   SandboxSpec,
+  ToolboxConfigInput,
+  ToolboxConfigPatch,
   ToolsetBuildRequest,
   ToolsetCaptureRequest,
 } from "@atelier/spec";
@@ -45,6 +47,13 @@ Usage:
                           [--exclude <glob> ...] [--override <path> ...]
   atelier toolset publish <ref>
   atelier toolset rm <ref>
+  atelier toolbox ls [--org <id>] [--json]
+  atelier toolbox create <slug> --desc <d> --build <cmd> ... --path <p> ...
+                         [--source-image <img> | --source-snapshot <ref>]
+                         [--disabled]
+  atelier toolbox set <id> [--desc <d>] [--enable | --disable]
+                      [--build <cmd> ...] [--path <p> ...]
+  atelier toolbox rm <id>
 
 Env:
   ATELIER_API_URL   server base URL (default http://localhost:4000)
@@ -529,6 +538,85 @@ async function main(): Promise<void> {
       fail(
         "toolset subcommand must be `ls`, `build`, `capture`, `publish`, or `rm`",
       );
+      return;
+    }
+    case "toolbox": {
+      const sub = positionals[0];
+      if (sub === "ls") {
+        const entries = await client.listToolboxes(one(flags, "org"));
+        if (json) return print(entries);
+        if (entries.length === 0) {
+          process.stdout.write("no toolboxes\n");
+          return;
+        }
+        for (const t of entries) {
+          process.stdout.write(
+            `${t.id}\t${t.slug}\t${t.enabled ? "enabled" : "disabled"}\t${t.description}\n`,
+          );
+        }
+        return;
+      }
+      if (sub === "create") {
+        const slug = positionals[1] ?? fail("toolbox create needs a slug");
+        const description =
+          one(flags, "desc") ?? fail("toolbox create needs --desc");
+        const build = flags.get("build") ?? [];
+        const paths = flags.get("path") ?? [];
+        const sourceImage = one(flags, "source-image");
+        const sourceSnapshot = one(flags, "source-snapshot");
+        if (sourceImage && sourceSnapshot) {
+          fail(
+            "toolbox create accepts only one of --source-image or --source-snapshot",
+          );
+        }
+        const input: ToolboxConfigInput = {
+          slug,
+          description,
+          build,
+          paths,
+          ...(sourceImage
+            ? { source: { image: sourceImage } }
+            : sourceSnapshot
+              ? { source: { snapshot: sourceSnapshot } }
+              : {}),
+          ...(flags.has("disabled") ? { enabled: false } : {}),
+        };
+        const org = one(flags, "org");
+        const created = await client.createToolbox({
+          ...input,
+          ...(org ? { orgId: org } : {}),
+        });
+        if (json) return print(created);
+        process.stdout.write(`${created.id}\t${created.slug}\n`);
+        return;
+      }
+      if (sub === "set") {
+        const id = positionals[1] ?? fail("toolbox set needs an id");
+        const desc = one(flags, "desc");
+        const build = flags.get("build");
+        const paths = flags.get("path");
+        if (flags.has("enable") && flags.has("disable")) {
+          fail("toolbox set accepts only one of --enable or --disable");
+        }
+        const patch: ToolboxConfigPatch = {
+          ...(desc !== undefined ? { description: desc } : {}),
+          ...(build !== undefined ? { build } : {}),
+          ...(paths !== undefined ? { paths } : {}),
+          ...(flags.has("enable") ? { enabled: true } : {}),
+          ...(flags.has("disable") ? { enabled: false } : {}),
+        };
+        const updated = await client.updateToolbox(id, patch);
+        if (json) return print(updated);
+        process.stdout.write(`${updated.id}\t${updated.slug}\n`);
+        return;
+      }
+      if (sub === "rm") {
+        const id = positionals[1] ?? fail("toolbox rm needs an id");
+        await client.deleteToolbox(id);
+        process.stdout.write(`removed ${id}\n`);
+        return;
+      }
+      fail("toolbox subcommand must be `ls`, `create`, `set`, or `rm`");
       return;
     }
     default:

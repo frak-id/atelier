@@ -14,6 +14,9 @@ import type {
   SandboxState,
   SandboxSummary,
   SnapshotRef,
+  ToolboxConfig,
+  ToolboxConfigInput,
+  ToolboxConfigPatch,
   ToolsetBuildRequest,
   ToolsetCaptureRequest,
   ToolsetEntry,
@@ -54,6 +57,38 @@ export class AtelierClient {
     body?: unknown,
   ): Promise<T> {
     const res = await fetch(`${this.cfg.baseUrl}/v1${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${this.cfg.apiKey}`,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!res.ok) {
+      let msg = `${res.status} ${res.statusText}`;
+      try {
+        const parsed = (await res.json()) as {
+          error?: string;
+          message?: string;
+        };
+        msg = parsed.error ?? parsed.message ?? msg;
+      } catch {
+        // non-JSON body; keep the status line
+      }
+      throw new ApiError(res.status, msg);
+    }
+    if (res.status === 204) return undefined as T;
+    return (await res.json()) as T;
+  }
+
+  /** Control-plane request (`/api/*`) — org-scoped resources (toolboxes,
+   * secrets, org policy…), same Bearer auth as `req`, distinct base path. */
+  private async ctl<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
+    const res = await fetch(`${this.cfg.baseUrl}/api${path}`, {
       method,
       headers: {
         authorization: `Bearer ${this.cfg.apiKey}`,
@@ -147,6 +182,27 @@ export class AtelierClient {
 
   removeToolset(ref: string): Promise<void> {
     return this.req("DELETE", `/toolsets?ref=${encodeURIComponent(ref)}`);
+  }
+
+  listToolboxes(orgId?: string): Promise<ToolboxConfig[]> {
+    return this.ctl(
+      "GET",
+      `/toolboxes${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ""}`,
+    );
+  }
+
+  createToolbox(
+    input: ToolboxConfigInput & { orgId?: string },
+  ): Promise<ToolboxConfig> {
+    return this.ctl("POST", "/toolboxes", input);
+  }
+
+  updateToolbox(id: string, patch: ToolboxConfigPatch): Promise<ToolboxConfig> {
+    return this.ctl("PATCH", `/toolboxes/${id}`, patch);
+  }
+
+  deleteToolbox(id: string): Promise<void> {
+    return this.ctl("DELETE", `/toolboxes/${id}`);
   }
 
   /** WS attach endpoint + auth header for the unified stdio/PTY bridge. The
