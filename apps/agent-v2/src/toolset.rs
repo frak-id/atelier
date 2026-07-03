@@ -33,6 +33,22 @@ pub struct BuildResult {
     pub digest: String,
 }
 
+/// Materialize toolset artifacts into the home before the files/env phase. The
+/// runtime resolves each spec ref to a full, digest-pinned pull reference
+/// (`<registry>/toolsets/<name>@sha256:…`) and lists them in order — later
+/// wins on path conflicts (same rule as `files[]`).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MaterializeRequest {
+    pub toolsets: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterializeResult {
+    pub materialized: usize,
+}
+
 /// Normalize a declared path to one relative to `/home/dev`, rejecting any
 /// path that escapes the home (absolute outside home, or `..` segments) — a
 /// toolset is home bytes only.
@@ -129,6 +145,42 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     parse_digest(&res.stdout)
         .map(|digest| BuildResult { digest })
         .ok_or_else(|| "could not parse pushed digest from oras output".to_string())
+}
+
+/// Pull each toolset artifact by its digest-pinned reference and extract it
+/// into the home as `dev` (uid 1000), in list order. Digest-pull verifies
+/// content-addressing for free. Fail-fast: a bad pull/extract aborts the boot.
+pub async fn materialize(req: MaterializeRequest) -> Result<MaterializeResult, String> {
+    for reference in &req.toolsets {
+        let script = format!(
+            "set -euo pipefail\n\
+             d=$(mktemp -d)\n\
+             oras pull --plain-http {reference} -o \"$d\"\n\
+             for f in \"$d\"/*.tar.gz; do tar -xzf \"$f\" -C {home}; done\n\
+             rm -rf \"$d\"",
+            reference = sh_quote(reference),
+            home = HOME,
+        );
+        let res = command::run(
+            &script,
+            BUILD_TIMEOUT_MS,
+            Some("dev"),
+            None,
+            &std::collections::HashMap::new(),
+            MAX_COMMAND_OUTPUT_BYTES,
+        )
+        .await;
+        if res.exit_code != 0 {
+            return Err(format!(
+                "toolset materialize failed for {reference} (exit {}): {}",
+                res.exit_code,
+                res.stderr.trim()
+            ));
+        }
+    }
+    Ok(MaterializeResult {
+        materialized: req.toolsets.len(),
+    })
 }
 
 #[cfg(test)]

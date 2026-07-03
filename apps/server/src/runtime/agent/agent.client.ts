@@ -302,6 +302,20 @@ export class AgentClient {
     );
   }
 
+  /**
+   * Materialize toolset artifacts into the home before the files/env phase
+   * (agent-v2 `POST /toolsets`). `references` are full, digest-pinned pull
+   * refs (`<registry>/toolsets/<name>@sha256:…`), ordered — later wins. The
+   * agent `oras pull`s + extracts each into the home as `dev`.
+   */
+  async materializeToolsets(
+    sandboxId: string,
+    references: string[],
+  ): Promise<void> {
+    if (isMock() || references.length === 0) return;
+    await this.post(sandboxId, "/toolsets", { toolsets: references }, 600_000);
+  }
+
   async writeFiles(
     sandboxId: string,
     files: FileWrite[],

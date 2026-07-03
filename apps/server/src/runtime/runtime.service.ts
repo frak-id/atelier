@@ -237,7 +237,12 @@ export class RuntimeService {
       const boot = await bootSandbox(
         id,
         spec,
-        { image, snapshotName, authorizedKeys: options.authorizedKeys },
+        {
+          image,
+          snapshotName,
+          authorizedKeys: options.authorizedKeys,
+          toolsets: this.resolveSpecToolsets(spec),
+        },
         this.agent,
       );
       await this.runPhase(id, "postCreate");
@@ -620,6 +625,13 @@ export class RuntimeService {
    * full pullable registry locator by prepending the configured registry. */
   resolveToolsetRef(ref: string): string {
     return `${config.kubernetes.registryUrl}/${ref}`;
+  }
+
+  /** Resolve a spec's `toolsets[]` to full pull references for materialize,
+   * or undefined when the spec declares none. */
+  private resolveSpecToolsets(spec: SandboxSpec): string[] | undefined {
+    if (!spec.toolsets || spec.toolsets.length === 0) return undefined;
+    return spec.toolsets.map((t) => this.resolveToolsetRef(t.ref));
   }
 
   /** Run (deduped by job name) the one-shot install Job, throwing unless it

@@ -40,6 +40,13 @@ export interface BootInput {
   snapshotName?: string;
   /** SSH public keys authorized on the sshpiper Pipe. Content, resolved by the caller. */
   authorizedKeys?: string[];
+  /**
+   * Full, digest-pinned toolset pull references to materialize into the home
+   * before the files/env phase (composed-prebuild-volumes.md §3). Set on fresh
+   * `create` only — NOT on resume: a pause snapshot already carries the
+   * extracted bytes, and re-extracting would clobber in-session edits.
+   */
+  toolsets?: string[];
 }
 
 export interface BootOutput {
@@ -97,6 +104,12 @@ export async function bootSandbox(
     });
     if (!ready || !podIp) {
       throw new Error(`Sandbox pod ${podName} agent did not become ready`);
+    }
+
+    // Materialize toolset artifacts into the home FIRST (before files/env), so
+    // spec-level files[] can override org toolset config (last-wins layering).
+    if (input.toolsets && input.toolsets.length > 0) {
+      await agent.materializeToolsets(sandboxId, input.toolsets);
     }
 
     // Push config (never ConfigMap-mounted: per-process `env` may carry
