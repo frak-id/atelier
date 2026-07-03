@@ -11,14 +11,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  getQuestionDisplayText,
-  INTERVENTION_STYLES,
-} from "@/lib/intervention-helpers";
 import type {
   MappedSessionStatus,
   SessionInteractionInfo,
 } from "@/lib/agent-helpers";
+import {
+  getQuestionDisplayText,
+  INTERVENTION_STYLES,
+} from "@/lib/intervention-helpers";
 import { cn } from "@/lib/utils";
 
 export type { SessionInteractionInfo };

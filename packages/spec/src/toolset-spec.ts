@@ -107,15 +107,30 @@ export type ToolsetCaptureRequest = Static<typeof ToolsetCaptureRequestSchema>;
  * be rebuilt from inputs → freely evictable); a captured one records the
  * sandbox it came from (result-keyed → never silently GC'd).
  */
-export const ToolsetProvenanceSchema = Type.Object(
+export const ToolsetProvenanceSchema = Type.Union(
+  [
+    Type.Object(
+      {
+        kind: Type.Literal("built"),
+        /** Build steps of a built toolset (input provenance). */
+        build: Type.Array(Type.String()),
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        kind: Type.Literal("captured"),
+        /** Sandbox id a captured toolset was taken from. */
+        capturedFrom: Type.String(),
+      },
+      { additionalProperties: false },
+    ),
+  ],
   {
-    kind: Type.Union([Type.Literal("built"), Type.Literal("captured")]),
-    /** Sandbox id a captured toolset was taken from. */
-    capturedFrom: Type.Optional(Type.String()),
-    /** Build steps of a built toolset (input provenance). */
-    build: Type.Optional(Type.Array(Type.String())),
+    $id: "ToolsetProvenance",
+    description:
+      "Discriminated on `kind`: built carries its `build[]`, captured carries `capturedFrom`.",
   },
-  { additionalProperties: false, $id: "ToolsetProvenance" },
 );
 export type ToolsetProvenance = Static<typeof ToolsetProvenanceSchema>;
 

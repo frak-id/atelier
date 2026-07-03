@@ -51,8 +51,7 @@ export const agentTodosQuery = (sandboxId: string, sessionId: string) =>
 export function useDeleteAgentSession(sandboxId: string) {
   return useMutation({
     mutationKey: ["agent", "deleteSession", sandboxId],
-    mutationFn: (sessionId: string) =>
-      deleteAgentSession(sandboxId, sessionId),
+    mutationFn: (sessionId: string) => deleteAgentSession(sandboxId, sessionId),
     onSuccess: (_data, _variables, _context, { client: queryClient }) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.agent.sessions(sandboxId),

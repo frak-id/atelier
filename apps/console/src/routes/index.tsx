@@ -74,7 +74,9 @@ function SandboxesPage() {
         <div className="space-y-2">
           {[...sandboxes]
             .sort((a, b) =>
-              String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")),
+              String(b.createdAt ?? "").localeCompare(
+                String(a.createdAt ?? ""),
+              ),
             )
             .map((sandbox) => (
               <SandboxRow key={sandbox.id} sandbox={sandbox} />

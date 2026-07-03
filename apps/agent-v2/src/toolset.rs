@@ -137,17 +137,24 @@ fn sh_quote(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))
 }
 
-/// Extract the `sha256:<64hex>` manifest digest from `oras push` output.
+/// A `sha256:<64 lowercase-hex>` digest token, or `None`. Normalizes case:
+/// `ToolsetRefSchema` pins `[0-9a-f]`, but oras/registries may echo mixed hex.
+fn valid_sha256(token: &str) -> Option<String> {
+    let hex = token.strip_prefix("sha256:")?;
+    (hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| format!("sha256:{}", hex.to_ascii_lowercase()))
+}
+
+/// Extract the pushed manifest digest from `oras push` output. Prefer the
+/// explicit `Digest:` label (oras prints the manifest digest there); only then
+/// fall back to the first sha256 token, so a layer digest emitted earlier can
+/// never be mistaken for the manifest.
 fn parse_digest(output: &str) -> Option<String> {
-    for token in output.split_whitespace() {
-        if let Some(hex) = token.strip_prefix("sha256:")
-            && hex.len() == 64
-            && hex.bytes().all(|b| b.is_ascii_hexdigit())
-        {
-            return Some(format!("sha256:{hex}"));
-        }
-    }
-    None
+    output
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("Digest:"))
+        .and_then(|rest| valid_sha256(rest.trim()))
+        .or_else(|| output.split_whitespace().find_map(valid_sha256))
 }
 
 /// Tar the existing declared path-sets and `oras push` them to `target`,
@@ -166,19 +173,25 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     }
 
     let quoted_paths = rels.iter().map(|r| sh_quote(r)).collect::<Vec<_>>().join(" ");
+    // Apply the same secret-file/`.git` exclude floor as `capture` — a built
+    // toolset's declared paths can contain a `.git` dir or stray dotfile too.
+    let tar_excludes = tar_exclude_flags(&merged_excludes(&[]));
     // `oras push` refuses an absolute tarball path ("absolute file path
     // detected" — its default traversal guard), so `cd` into the tarball's
     // directory first and reference it by bare filename. `mktemp` keeps the
-    // name unique so concurrent pushes never clobber each other's tarball.
+    // name unique so concurrent pushes never clobber each other's tarball; the
+    // `trap` removes it on any exit path (`set -e` would otherwise skip a
+    // trailing `rm` when `oras push` fails).
     let script = format!(
         "set -euo pipefail\n\
          cd {dir}\n\
          name=$(mktemp atelier-toolset.XXXXXX.tar.gz)\n\
-         tar -czf \"$name\" -C {home} {paths}\n\
+         trap 'rm -f \"$name\"' EXIT\n\
+         tar -czf \"$name\"{tar_excludes} -C {home} {paths}\n\
          oras push --plain-http {target} \
-           --artifact-type {at} \"$name\":{lt}\n\
-         rm -f \"$name\"",
+           --artifact-type {at} \"$name\":{lt}",
         dir = TARBALL_DIR,
+        tar_excludes = tar_excludes,
         home = HOME,
         paths = quoted_paths,
         target = sh_quote(&req.target),
@@ -186,10 +199,12 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
         lt = LAYER_TYPE,
     );
 
+    // Run as `dev` so the tarball's ownership/readability matches how the
+    // build steps installed the files (consistent with `capture`).
     let res = command::run(
         &script,
         BUILD_TIMEOUT_MS,
-        None,
+        Some("dev"),
         None,
         &std::collections::HashMap::new(),
         MAX_COMMAND_OUTPUT_BYTES,
@@ -293,7 +308,8 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     let scan_script = format!(
         "set -euo pipefail\n\
          cd {home}\n\
-         grep -rIlE {pattern}{excludes} --exclude-dir=.git -- {paths} 2>/dev/null || true",
+         grep -rIlE {pattern}{excludes} --exclude-dir=.git -- {paths} 2>/dev/null \
+           || {{ rc=$?; [ \"$rc\" -le 1 ] || exit \"$rc\"; }}",
         home = HOME,
         pattern = pattern,
         excludes = grep_excludes,
@@ -332,15 +348,17 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     let tar_excludes = tar_exclude_flags(&excludes);
     // `oras push` refuses an absolute tarball path (found live, see `build`),
     // so `cd` into the tarball's directory first and reference it by bare
-    // `mktemp` name (unique so concurrent captures never clobber each other).
+    // `mktemp` name (unique so concurrent captures never clobber each other);
+    // the `trap` removes it on any exit path, incl. an `oras push` failure
+    // that `set -e` would otherwise abort on before a trailing `rm`.
     let script = format!(
         "set -euo pipefail\n\
          cd {dir}\n\
          name=$(mktemp atelier-toolset.XXXXXX.tar.gz)\n\
+         trap 'rm -f \"$name\"' EXIT\n\
          tar -czf \"$name\"{tar_excludes} -C {home} {paths}\n\
          oras push --plain-http {target} \
-           --artifact-type {at} \"$name\":{lt}\n\
-         rm -f \"$name\"",
+           --artifact-type {at} \"$name\":{lt}",
         dir = TARBALL_DIR,
         tar_excludes = tar_excludes,
         home = HOME,
@@ -377,9 +395,11 @@ pub async fn materialize(req: MaterializeRequest) -> Result<MaterializeResult, S
             "set -euo pipefail\n\
              shopt -s nullglob\n\
              d=$(mktemp -d)\n\
+             trap 'rm -rf \"$d\"' EXIT\n\
              oras pull --plain-http {reference} -o \"$d\"\n\
-             for f in \"$d\"/*.tar.gz; do tar -xzf \"$f\" -C {home}; done\n\
-             rm -rf \"$d\"",
+             count=0\n\
+             for f in \"$d\"/*.tar.gz; do tar -xzf \"$f\" -C {home}; count=$((count+1)); done\n\
+             [ \"$count\" -gt 0 ] || {{ echo \"no tar.gz layers in {reference}\" >&2; exit 1; }}",
             reference = sh_quote(reference),
             home = HOME,
         );
@@ -445,6 +465,38 @@ mod tests {
     #[test]
     fn parse_digest_none_when_absent() {
         assert!(parse_digest("no digest here").is_none());
+    }
+
+    #[test]
+    fn parse_digest_rejects_malformed_and_normalizes_case() {
+        // 63 hex (too short), 65 (too long), and a non-hex char all reject.
+        assert!(valid_sha256(&format!("sha256:{}", "a".repeat(63))).is_none());
+        assert!(valid_sha256(&format!("sha256:{}", "a".repeat(65))).is_none());
+        assert!(valid_sha256(&format!("sha256:{}g", "a".repeat(63))).is_none());
+        // Uppercase hex is normalized to lowercase (ToolsetRefSchema pins [0-9a-f]).
+        let upper = format!("sha256:{}", "A".repeat(64));
+        assert_eq!(valid_sha256(&upper).unwrap(), format!("sha256:{}", "a".repeat(64)));
+    }
+
+    #[test]
+    fn parse_digest_prefers_the_manifest_label_over_earlier_tokens() {
+        let layer = "a".repeat(64);
+        let manifest = "b".repeat(64);
+        let out = format!("Uploaded sha256:{layer} layer\nDigest: sha256:{manifest}\n");
+        assert_eq!(parse_digest(&out).unwrap(), format!("sha256:{manifest}"));
+    }
+
+    #[test]
+    fn merged_excludes_covers_every_default() {
+        let merged = merged_excludes(&[]);
+        for d in DEFAULT_EXCLUDES {
+            assert!(merged.iter().any(|g| g == d), "missing default exclude {d}");
+        }
+    }
+
+    #[test]
+    fn sh_quote_escapes_embedded_single_quote() {
+        assert_eq!(sh_quote("a'b"), "'a'\\''b'");
     }
 
     #[test]

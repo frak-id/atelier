@@ -15,8 +15,10 @@ export function useSessionInteraction(
   sessionId: string,
   enabled = true,
 ): { interaction: SessionInteractionInfo | null; isLoading: boolean } {
-  const { permissions, questions, sessionStatuses, isLoading } =
-    useAgentData(sandboxId, enabled);
+  const { permissions, questions, sessionStatuses, isLoading } = useAgentData(
+    sandboxId,
+    enabled,
+  );
 
   const interaction = useMemo(() => {
     if (!sandboxId || !enabled) return null;

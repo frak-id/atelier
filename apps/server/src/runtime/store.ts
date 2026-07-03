@@ -99,21 +99,27 @@ export class InMemorySandboxStore implements SandboxStore {
 
 export class InMemoryToolsetStore implements ToolsetStore {
   private readonly byHash = new Map<string, ToolsetRecord>();
+  private readonly byRef = new Map<string, ToolsetRecord>();
 
   getByHash(hash: string): ToolsetRecord | undefined {
     return this.byHash.get(hash);
   }
   getByRef(ref: string): ToolsetRecord | undefined {
-    return [...this.byHash.values()].find((r) => r.ref === ref);
+    return this.byRef.get(ref);
   }
   put(record: ToolsetRecord): void {
+    const prior = this.byHash.get(record.hash);
+    if (prior && prior.ref !== record.ref) this.byRef.delete(prior.ref);
     this.byHash.set(record.hash, record);
+    this.byRef.set(record.ref, record);
   }
   list(): ToolsetRecord[] {
     return [...this.byHash.values()];
   }
   delete(hash: string): void {
+    const prior = this.byHash.get(hash);
     this.byHash.delete(hash);
+    if (prior) this.byRef.delete(prior.ref);
   }
 }
 

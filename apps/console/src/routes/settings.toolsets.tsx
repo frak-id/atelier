@@ -1,4 +1,4 @@
-import type { ToolsetBuildRequest } from "@atelier/spec";
+import type { ToolsetBuildRequest, ToolsetEntry } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { type ParseError, parse as parseJsonc } from "jsonc-parser";
@@ -76,16 +76,7 @@ function ToolsetsPage() {
   );
 }
 
-interface ToolsetRowData {
-  name: string;
-  ref: string;
-  paths: string[];
-  provenance: { kind: "built" | "captured"; capturedFrom?: string };
-  private: boolean;
-  createdAt: string;
-}
-
-function ToolsetRow({ toolset }: { toolset: ToolsetRowData }) {
+function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
   const publish = usePublishToolset();
   const remove = useRemoveToolset();
   return (
