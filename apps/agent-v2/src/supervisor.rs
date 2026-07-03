@@ -278,9 +278,14 @@ impl Supervisor {
         let is_bridge = !is_pty && process.stdio == StdioMode::Bridge;
 
         let mut cmd = Command::new("/bin/bash");
-        cmd.args(["-l", "-c", &process.command])
-            // pgid = child pid so kill(-pgid) reaps the whole tree.
-            .process_group(0);
+        cmd.args(["-l", "-c", &process.command]);
+        // pgid = child pid so kill(-pgid) reaps the whole tree. A PTY process
+        // instead becomes its own session/group leader via setsid() inside
+        // setup_pty, and setsid() fails (EPERM) if the process is already a
+        // group leader — so don't pre-set the group for pty.
+        if !is_pty {
+            cmd.process_group(0);
+        }
         if is_bridge {
             cmd.stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -305,7 +310,7 @@ impl Supervisor {
             cmd.current_dir(dir);
         }
 
-        let pty_master = if is_pty {
+        let pty = if is_pty {
             Some(
                 attach::setup_pty(&mut cmd, process.user.as_deref())
                     .map_err(|e| format!("setup pty for {}: {e}", process.name))?,
@@ -318,6 +323,11 @@ impl Supervisor {
             .spawn()
             .map_err(|e| format!("spawn {}: {e}", process.name))?;
         let pid = child.id().unwrap_or(0);
+        // Close the parent's slave copy now the child inherited it at fork.
+        let pty_master = pty.map(|(master, slave)| {
+            drop(slave);
+            master
+        });
 
         // Commit only if this start still owns the entry. A stop() or a newer
         // start() during the `after` wait bumps the generation; if so, this

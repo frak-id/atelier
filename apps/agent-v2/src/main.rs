@@ -22,6 +22,7 @@ mod readiness;
 mod router;
 mod store;
 mod supervisor;
+mod terminal;
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,6 +35,7 @@ use tokio::net::TcpListener;
 use forwarder::Forwarder;
 use store::ConfigStore;
 use supervisor::Supervisor;
+use terminal::TerminalRegistry;
 
 pub const AGENT_PORT: u16 = 9998;
 
@@ -65,6 +67,16 @@ async fn main() {
 
     let store = Arc::new(ConfigStore::load());
     let supervisor = Supervisor::new(store.clone());
+    let terminals = TerminalRegistry::new(store.clone());
+
+    // Interactive terminal WS relay (ad-hoc login shells) on its own port, so
+    // the runtime proxies WS /sandboxes/:id/terminal/sessions/:sid/ws through.
+    {
+        let terminals = terminals.clone();
+        tokio::spawn(async move {
+            terminal::serve(terminal::TERMINAL_PORT, terminals).await;
+        });
+    }
 
     // Attach WS server (stdio-bridge + PTY relay) on its own port so the
     // runtime can proxy WS /v1/sandboxes/:id/attach/:name straight through.
@@ -124,13 +136,17 @@ async fn main() {
         };
         let store = store.clone();
         let supervisor = supervisor.clone();
+        let terminals = terminals.clone();
         tokio::spawn(async move {
             let io = TokioIo::new(stream);
             let service = service_fn(move |req| {
                 let store = store.clone();
                 let supervisor = supervisor.clone();
+                let terminals = terminals.clone();
                 async move {
-                    Ok::<_, std::convert::Infallible>(router::route(req, store, supervisor).await)
+                    Ok::<_, std::convert::Infallible>(
+                        router::route(req, store, supervisor, terminals).await,
+                    )
                 }
             });
             if let Err(e) = http1::Builder::new().serve_connection(io, service).await

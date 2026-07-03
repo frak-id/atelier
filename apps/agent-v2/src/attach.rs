@@ -217,14 +217,29 @@ impl Drop for PtyMaster {
     }
 }
 
+/// The parent's copy of the PTY slave fd. It MUST outlive `Command::spawn()`
+/// so the forked child inherits a valid slave to `dup2`/`TIOCSCTTY`; the caller
+/// drops it right after spawn to close the parent's copy (which lets the master
+/// see hangup when the child exits). Closing it *before* spawn — as this code
+/// once did — freed the fd number, which `open()` then reused, so the child's
+/// `TIOCSCTTY` hit a regular file (ENOTTY).
+pub struct SlaveFd(RawFd);
+
+impl Drop for SlaveFd {
+    fn drop(&mut self) {
+        // SAFETY: we own this fd until the caller drops the guard post-spawn.
+        unsafe { libc::close(self.0) };
+    }
+}
+
 /// Open a PTY pair, wire a `Command` to run its child on the slave as a session
-/// leader with a controlling terminal, and return the (still-unspawned)
-/// command plus an async-registered master. `apply_user` semantics run inside
-/// `pre_exec` so uid drop happens after `TIOCSCTTY`.
+/// leader with a controlling terminal, and return an async-registered master
+/// plus the slave guard. The caller spawns `cmd`, then drops the `SlaveFd`.
+/// uid drop runs inside `pre_exec` so it happens after `TIOCSCTTY`.
 pub fn setup_pty(
     cmd: &mut Command,
     user: Option<&str>,
-) -> std::io::Result<Arc<AsyncFd<PtyMaster>>> {
+) -> std::io::Result<(Arc<AsyncFd<PtyMaster>>, SlaveFd)> {
     let (master, slave) = open_pty()?;
     set_nonblocking(master)?;
     let user = user.map(str::to_string);
@@ -262,10 +277,9 @@ pub fn setup_pty(
         });
     }
     let master = Arc::new(AsyncFd::new(PtyMaster { fd: master })?);
-    // Parent keeps the master only; close its copy of the slave.
-    // SAFETY: slave is a valid fd the parent no longer needs.
-    unsafe { libc::close(slave) };
-    Ok(master)
+    // Parent keeps the master; the slave guard is closed by the caller *after*
+    // spawn so the child inherits it at fork.
+    Ok((master, SlaveFd(slave)))
 }
 
 fn open_pty() -> std::io::Result<(RawFd, RawFd)> {
@@ -339,7 +353,7 @@ async fn drain_to_pty(master: Arc<AsyncFd<PtyMaster>>, mut rx: mpsc::Receiver<Ve
     }
 }
 
-fn pty_read(fd: RawFd, buf: &mut [u8]) -> std::io::Result<usize> {
+pub(crate) fn pty_read(fd: RawFd, buf: &mut [u8]) -> std::io::Result<usize> {
     // SAFETY: fd owned by the AsyncFd guard; buf is valid for len.
     let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
     if n >= 0 {
@@ -349,7 +363,7 @@ fn pty_read(fd: RawFd, buf: &mut [u8]) -> std::io::Result<usize> {
     }
 }
 
-fn pty_write(fd: RawFd, data: &[u8]) -> std::io::Result<usize> {
+pub(crate) fn pty_write(fd: RawFd, data: &[u8]) -> std::io::Result<usize> {
     // SAFETY: fd owned by the AsyncFd guard; data is valid for len.
     let n = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
     if n >= 0 {

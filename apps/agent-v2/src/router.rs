@@ -17,6 +17,7 @@ use crate::hooks::{self, Phase};
 use crate::limits::{EXEC_SEMAPHORE, FILES_SEMAPHORE, MAX_REQUEST_BODY_BYTES};
 use crate::store::ConfigStore;
 use crate::supervisor::Supervisor;
+use crate::terminal::{CreateRequest, TerminalRegistry};
 
 /// Config bodies are runtime-authored (spec-sized), not user uploads.
 const MAX_CONFIG_BODY_BYTES: usize = 4 * 1024 * 1024;
@@ -25,6 +26,7 @@ pub async fn route(
     req: Request<hyper::body::Incoming>,
     store: Arc<ConfigStore>,
     supervisor: Arc<Supervisor>,
+    terminals: Arc<TerminalRegistry>,
 ) -> Response<Full<Bytes>> {
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     let start = *START.get_or_init(Instant::now);
@@ -68,8 +70,17 @@ pub async fn route(
         (&Method::POST, "/exec") => handle_exec(req, &store).await,
         (&Method::POST, "/exec/batch") => handle_exec_batch(req, &store).await,
         (&Method::POST, "/files/write") => handle_write_files(req).await,
+        // Interactive terminal sessions (byte relay + resize on port 7681).
+        (&Method::GET, "/terminal/sessions") => json(
+            StatusCode::OK,
+            serde_json::to_value(terminals.list().await).unwrap_or_default(),
+        ),
+        (&Method::POST, "/terminal/sessions") => handle_terminal_create(req, &terminals).await,
         _ if method == Method::POST && path.starts_with("/hooks/") => {
             handle_hooks(&path, &store).await
+        }
+        _ if path.starts_with("/terminal/sessions/") => {
+            route_terminal_session(&method, &path, &terminals).await
         }
         _ => route_process(&method, &path, &query, &supervisor).await,
     }
@@ -218,6 +229,55 @@ async fn handle_write_files(req: Request<hyper::body::Incoming>) -> Response<Ful
         StatusCode::MULTI_STATUS
     };
     json(status, serde_json::json!({ "results": results }))
+}
+
+/// `POST /terminal/sessions` — spawn a login shell on a fresh PTY, returning
+/// its `TerminalSession` metadata. The WS byte relay lives on port 7681.
+async fn handle_terminal_create(
+    req: Request<hyper::body::Incoming>,
+    terminals: &Arc<TerminalRegistry>,
+) -> Response<Full<Bytes>> {
+    let body = match read_body(req, MAX_REQUEST_BODY_BYTES).await {
+        Ok(b) => b,
+        Err(resp) => return resp,
+    };
+    let parsed: CreateRequest = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(e) => return error(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {e}")),
+    };
+    match terminals.create(parsed).await {
+        Ok(meta) => json(
+            StatusCode::OK,
+            serde_json::to_value(meta).unwrap_or_default(),
+        ),
+        Err(e) => error(StatusCode::UNPROCESSABLE_ENTITY, &e),
+    }
+}
+
+/// `GET|DELETE /terminal/sessions/{id}` — inspect or kill one shell.
+async fn route_terminal_session(
+    method: &Method,
+    path: &str,
+    terminals: &Arc<TerminalRegistry>,
+) -> Response<Full<Bytes>> {
+    let id = path.strip_prefix("/terminal/sessions/").unwrap_or_default();
+    if id.is_empty() || id.contains('/') {
+        return error(StatusCode::NOT_FOUND, "Not found");
+    }
+    if *method == Method::GET {
+        match terminals.get(id).await {
+            Some(meta) => json(
+                StatusCode::OK,
+                serde_json::to_value(meta).unwrap_or_default(),
+            ),
+            None => error(StatusCode::NOT_FOUND, "Unknown terminal session"),
+        }
+    } else if *method == Method::DELETE {
+        let removed = terminals.delete(id).await;
+        json(StatusCode::OK, serde_json::json!({ "success": removed }))
+    } else {
+        error(StatusCode::METHOD_NOT_ALLOWED, "Method not allowed")
+    }
 }
 
 /// `/processes/{name}` and `/processes/{name}/{start|stop}` — the supervised
