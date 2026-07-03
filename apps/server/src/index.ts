@@ -6,7 +6,7 @@
 import { validateConfig } from "@frak/atelier-shared";
 import {
   createServerContainer,
-  ensureOrgToolbox,
+  ensureDefaultToolboxes,
   wireBuiltinHarnesses,
 } from "./api/container.ts";
 import { createApp } from "./api/index.ts";
@@ -34,7 +34,9 @@ logger.info({ dbPath: appPaths.database }, "Control database ready");
 
 const container = createServerContainer();
 await wireBuiltinHarnesses(container);
-ensureOrgToolbox(container);
+// Non-blocking: backfills the default toolbox for orgs with none (R4);
+// never blocks or crash-loops boot on a transient DB hiccup.
+ensureDefaultToolboxes(container);
 
 await ensureSharedSshPipeKey();
 

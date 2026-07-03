@@ -9,8 +9,14 @@
  * template (proposal §3.1 table).
  */
 
-import type { SandboxSpec } from "@atelier/spec";
-import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import type { SandboxSpec, Source } from "@atelier/spec";
+import {
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 export const organizations = sqliteTable("organizations", {
   id: text("id").primaryKey(),
@@ -150,6 +156,33 @@ export const apiKeys = sqliteTable(
   (t) => [
     index("idx_api_keys_user_id").on(t.userId),
     uniqueIndex("idx_api_keys_key_hash").on(t.keyHash),
+  ],
+);
+
+/**
+ * Org-scoped toolbox configs (per-org-toolboxes.md §2). The seeded default
+ * (`@atelier/compose` `DEFAULT_TOOLBOX`) is a normal row here — editable,
+ * disable-able, deletable — not a code-level law. `source`/`build`/`paths`
+ * mirror `ToolboxConfigInput`; `enabled` toolboxes are built into refs and
+ * prepended to `SandboxSpec.toolsets` at the api/ seam, never here.
+ */
+export const orgToolboxes = sqliteTable(
+  "org_toolboxes",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description").notNull(),
+    source: text("source", { mode: "json" }).$type<Source>(),
+    build: text("build", { mode: "json" }).notNull().$type<string[]>(),
+    paths: text("paths", { mode: "json" }).notNull().$type<string[]>(),
+    enabled: integer("enabled").notNull().default(1),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [
+    index("idx_org_toolboxes_org_id").on(t.orgId),
+    uniqueIndex("idx_org_toolboxes_org_slug").on(t.orgId, t.slug),
   ],
 );
 

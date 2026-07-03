@@ -3,7 +3,6 @@
  * (runtime/control/sessions) are wired together. Mirrors v1 `container.ts`'s
  * manual-wiring convention.
  */
-import { orgToolboxRequest } from "@atelier/compose";
 import type { ToolsetRef } from "@atelier/spec";
 import { createControlContainer } from "../control/index.ts";
 import {
@@ -104,10 +103,6 @@ export function createServerContainer() {
     terminal,
     sessionSurfaces,
     registerHarnessDispatch,
-    // Resolved by `ensureOrgToolbox` right after construction; `/v1/sandboxes`
-    // awaits this before injecting the toolbox ref (never server startup —
-    // see `ensureOrgToolbox`).
-    orgToolboxReady: Promise.resolve(undefined),
   };
   return serverContainer;
 }
@@ -121,9 +116,6 @@ export interface ServerContainer {
   terminal: TerminalService;
   sessionSurfaces: SessionSurfaceRegistry;
   registerHarnessDispatch: typeof registerHarnessDispatch;
-  /** Resolves to the org toolbox's ref once built (or `undefined` if the
-   * build failed — spawns then proceed without it rather than wedge). */
-  orgToolboxReady: Promise<ToolsetRef | undefined>;
 }
 
 /** Bootstrap hook: call once after `createServerContainer()`. */
@@ -132,37 +124,52 @@ export async function wireBuiltinHarnesses(container: ServerContainer) {
 }
 
 /**
- * Ensure the org toolbox (opencode + code-server, replacing `shared-binaries`
- * — composed-prebuild-volumes.md §6) exists as a built toolset artifact.
- * `runtime.buildToolset` is content-hash idempotent, so a restart is an
- * instant store hit, not a rebuild. Runs in the BACKGROUND: the first build
- * (~30-90s: throwaway pod, two curls, tar, oras push) must not block server
- * startup or crash-loop the process on a transient registry hiccup. Callers
- * that need the ref (the `/v1/sandboxes` seam) await `container.orgToolboxReady`
- * instead, so only the first spawn (not the server) waits on it.
+ * Resolve an org's enabled toolboxes into built `ToolsetRef`s for a spawn
+ * (per-org-toolboxes.md §5). `orgId` is optional and `undefined` returns `[]`
+ * — no org means the sandbox spawns bare rather than the call ever throwing
+ * (Oracle refinement R1). Each build uses a STABLE registry name keyed on the
+ * immutable `orgId` (not the org's slug), so renaming an org never churns
+ * artifacts or orphans a toolbox's repo (R2). `buildToolset` is content-hash
+ * idempotent + inflight-deduped, so resolving fresh on every spawn (no memo
+ * cache, R5) is cheap after the first build. A single toolbox's build
+ * failure is logged and skipped — never fails the whole spawn (same
+ * resilience as the toolbox this replaces).
  */
-export function ensureOrgToolbox(container: ServerContainer): void {
-  container.orgToolboxReady = container.runtime
-    .buildToolset(orgToolboxRequest)
-    .catch((err) => {
-      log.error({ err }, "org toolbox build failed; spawns proceed without it");
-      return undefined;
-    });
+export async function resolveOrgToolboxRefs(
+  container: ServerContainer,
+  orgId?: string,
+): Promise<ToolsetRef[]> {
+  if (!orgId) return [];
+  const configs = container.control.toolboxService.listEnabled(orgId);
+  const refs: ToolsetRef[] = [];
+  for (const config of configs) {
+    try {
+      const ref = await container.runtime.buildToolset({
+        name: `tb/${orgId}/${config.slug}`,
+        source: config.source,
+        build: config.build,
+        paths: config.paths,
+      });
+      refs.push(ref);
+    } catch (err) {
+      log.error(
+        { err, orgId, slug: config.slug },
+        "org toolbox build failed; skipping for this spawn",
+      );
+    }
+  }
+  return refs;
 }
 
 /**
- * Resolve the org toolbox ref for a spawn. Awaits the in-flight/settled build;
- * if a prior attempt failed (`undefined`), re-triggers ONE rebuild and awaits
- * it, so a transient registry hiccup at startup self-heals on the next spawn
- * rather than wedging every sandbox until a restart. `buildToolset` is
- * content-hash idempotent with inflight dedup, so concurrent spawns coalesce
- * onto a single build.
+ * Backfill the default toolbox for every org that currently has zero
+ * toolboxes (R4). Called non-blocking at startup so a restart never
+ * resurrects a deliberately-deleted default, and never blocks boot on a DB
+ * scan.
  */
-export async function resolveOrgToolbox(
-  container: ServerContainer,
-): Promise<ToolsetRef | undefined> {
-  const ready = await container.orgToolboxReady;
-  if (ready) return ready;
-  ensureOrgToolbox(container);
-  return container.orgToolboxReady;
+export function ensureDefaultToolboxes(container: ServerContainer): void {
+  const orgIds = container.control.organizationService
+    .getAll()
+    .map((org) => org.id);
+  container.control.toolboxService.ensureDefaults(orgIds);
 }

@@ -4,10 +4,22 @@
  * binding; all policy logic lives in `control/`.
  */
 import type { SandboxSpec } from "@atelier/spec";
-import { SandboxSpecSchema } from "@atelier/spec";
+import {
+  SandboxSpecSchema,
+  ToolboxConfigInputSchema,
+  ToolboxConfigPatchSchema,
+} from "@atelier/spec";
 import { Elysia, t } from "elysia";
+import { ValidationError } from "../shared/errors.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
+
+const log = createChildLogger("control-routes");
+
+/** Soft cap on enabled toolboxes per org — a boot-latency tradeoff, not a
+ * hard limit (R10). */
+const TOOLBOX_SOFT_CAP = 5;
 
 export function createControlRoutes(container: ServerContainer) {
   const { control } = container;
@@ -65,6 +77,7 @@ export function createControlRoutes(container: ServerContainer) {
       ({ user, body }) => {
         const org = control.organizationService.create(body.name, body.slug);
         control.orgMemberService.addMember(org.id, user.id, "owner");
+        control.toolboxService.seedDefault(org.id);
         return org;
       },
       {
@@ -177,6 +190,77 @@ export function createControlRoutes(container: ServerContainer) {
       set.status = 204;
     });
 
+  /** Mirrors `resolveOrgId` in `v1.routes.ts` (first membership, falling
+   * back to the personal org) — duplicated locally to keep control's routes
+   * independent of the /v1 module. */
+  function resolveCallerOrgId(userId: string): string | undefined {
+    const memberships = control.orgMemberService.getByUserId(userId);
+    if (memberships[0]) return memberships[0].orgId;
+    return control.userService.getById(userId)?.personalOrgId;
+  }
+
+  const toolboxRoutes = new Elysia({ prefix: "/toolboxes" })
+    .use(authPlugin)
+    .get(
+      "/",
+      ({ user, query }) => {
+        const orgId = query.orgId ?? resolveCallerOrgId(user.id);
+        if (!orgId) return [];
+        control.orgMemberService.requireMembership(orgId, user.id);
+        return control.toolboxService.list(orgId);
+      },
+      { query: t.Object({ orgId: t.Optional(t.String()) }) },
+    )
+    .post(
+      "/",
+      ({ user, body }) => {
+        const orgId = body.orgId ?? resolveCallerOrgId(user.id);
+        if (!orgId) {
+          throw new ValidationError("No org to create a toolbox for");
+        }
+        control.orgMemberService.requireRole(orgId, user.id, [
+          "owner",
+          "admin",
+        ]);
+        const created = control.toolboxService.create(orgId, body);
+        const enabledCount = control.toolboxService.listEnabled(orgId).length;
+        if (enabledCount > TOOLBOX_SOFT_CAP) {
+          log.warn(
+            { orgId, enabledCount },
+            `Org exceeds the soft cap of ${TOOLBOX_SOFT_CAP} enabled toolboxes — each adds boot latency to every spawn`,
+          );
+        }
+        return created;
+      },
+      {
+        body: t.Composite([
+          ToolboxConfigInputSchema,
+          t.Object({ orgId: t.Optional(t.String()) }),
+        ]),
+      },
+    )
+    .patch(
+      "/:id",
+      ({ user, params, body }) => {
+        const existing = control.toolboxService.get(params.id);
+        control.orgMemberService.requireRole(existing.orgId, user.id, [
+          "owner",
+          "admin",
+        ]);
+        return control.toolboxService.update(params.id, body);
+      },
+      { body: ToolboxConfigPatchSchema },
+    )
+    .delete("/:id", ({ user, params, set }) => {
+      const existing = control.toolboxService.get(params.id);
+      control.orgMemberService.requireRole(existing.orgId, user.id, [
+        "owner",
+        "admin",
+      ]);
+      control.toolboxService.delete(params.id);
+      set.status = 204;
+    });
+
   const orgPolicyRoutes = new Elysia({ prefix: "/org-policy" })
     .use(authPlugin)
     .get("/:orgId", ({ params }) =>
@@ -197,5 +281,6 @@ export function createControlRoutes(container: ServerContainer) {
     .use(organizationRoutes)
     .use(savedSpecRoutes)
     .use(secretRoutes)
-    .use(orgPolicyRoutes);
+    .use(orgPolicyRoutes)
+    .use(toolboxRoutes);
 }

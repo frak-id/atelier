@@ -27,6 +27,7 @@ import {
 } from "./modules/saved-spec/index.ts";
 import { SecretRepository, SecretService } from "./modules/secret/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
+import { ToolboxRepository, ToolboxService } from "./modules/toolbox/index.ts";
 import { UserRepository, UserService } from "./modules/user/index.ts";
 
 export function createControlContainer() {
@@ -38,6 +39,7 @@ export function createControlContainer() {
   const savedSpecRepository = new SavedSpecRepository();
   const secretRepository = new SecretRepository();
   const orgPolicyRepository = new OrgPolicyRepository();
+  const toolboxRepository = new ToolboxRepository();
 
   const userService = new UserService(userRepository);
   const organizationService = new OrganizationService(organizationRepository);
@@ -50,6 +52,7 @@ export function createControlContainer() {
   const savedSpecService = new SavedSpecService(savedSpecRepository);
   const secretService = new SecretService(secretRepository);
   const orgPolicyService = new OrgPolicyService(orgPolicyRepository);
+  const toolboxService = new ToolboxService(toolboxRepository);
   const cliproxyService = new CliproxyService();
   const authService = new AuthService({ apiKeyService, userService });
 
@@ -62,6 +65,7 @@ export function createControlContainer() {
     savedSpecService,
     secretService,
     orgPolicyService,
+    toolboxService,
     authService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */

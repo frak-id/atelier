@@ -43,7 +43,7 @@ const MOCK_USER = {
 };
 
 export function createAuthRoutes(container: ServerContainer) {
-  const { userService, organizationService, orgMemberService } =
+  const { userService, organizationService, orgMemberService, toolboxService } =
     container.control;
 
   /** Bootstrap a personal org + owner membership on a user's first login. */
@@ -57,6 +57,7 @@ export function createAuthRoutes(container: ServerContainer) {
     );
     userService.setPersonalOrg(userId, personalOrg.id);
     orgMemberService.addMember(personalOrg.id, userId, "owner");
+    toolboxService.seedDefault(personalOrg.id);
   }
 
   return new Elysia({ prefix: "/auth" })
