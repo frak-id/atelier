@@ -62,4 +62,9 @@ export const queryKeys = {
     all: ["toolsets"] as const,
     list: () => [...queryKeys.toolsets.all, "list"] as const,
   },
+  toolboxes: {
+    all: ["toolboxes"] as const,
+    list: (orgId?: string) =>
+      [...queryKeys.toolboxes.all, "list", orgId ?? "none"] as const,
+  },
 } as const;
