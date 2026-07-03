@@ -610,7 +610,7 @@ export class RuntimeService {
     req: ToolsetCaptureRequest,
   ): Promise<ToolsetRef> {
     this.require(id);
-    const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:cap-${Date.now().toString(36)}`;
+    const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:cap-${safeNanoid()}`;
     const { digest } = await this.agent.captureToolset(id, {
       target,
       paths: req.paths,

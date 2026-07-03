@@ -180,8 +180,10 @@ export type CacheEntry = Static<typeof CacheSchema>;
 export const ToolsetRefSchema = Type.Object(
   {
     ref: Type.String({
+      pattern:
+        "^toolsets/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*@sha256:[0-9a-f]{64}$",
       description:
-        "Host-relative OCI locator, e.g. toolsets/alice-pi-stack@sha256:3a9f…",
+        "Host-relative, digest-pinned OCI locator, e.g. toolsets/alice-pi-stack@sha256:3a9f…",
     }),
   },
   { additionalProperties: false, $id: "ToolsetRef" },

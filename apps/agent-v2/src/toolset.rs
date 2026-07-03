@@ -12,7 +12,6 @@ const HOME: &str = "/home/dev";
 const ARTIFACT_TYPE: &str = "application/vnd.atelier.toolset.v1+tar";
 const LAYER_TYPE: &str = "application/vnd.atelier.toolset.layer.v1.tar+gzip";
 const TARBALL_DIR: &str = "/tmp";
-const TARBALL_NAME: &str = "atelier-toolset.tar.gz";
 /// Build/push can move hundreds of MB; give it well past the exec default.
 const BUILD_TIMEOUT_MS: u64 = 600_000;
 
@@ -72,6 +71,7 @@ pub struct CaptureRequest {
 /// of the request's own `exclude[]` (proposal §2: "per-harness exclude lists
 /// for known secret files" is a floor, not a ceiling the caller can lower).
 const DEFAULT_EXCLUDES: &[&str] = &[
+    ".git",
     "auth.json",
     "credentials",
     ".credentials",
@@ -96,7 +96,10 @@ const SECRET_PATTERNS: &[&str] = &[
     r"github_pat_[A-Za-z0-9_]{22,}",        // GitHub fine-grained PAT
     r"xox[baprs]-[A-Za-z0-9-]{10,}",        // Slack token
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",  // PEM private key
-    r"sk-[A-Za-z0-9]{20,}",                 // OpenAI-style secret key
+    r"sk-[A-Za-z0-9]{20,}",                 // OpenAI/Anthropic-style secret key
+    r"sk_(live|test)_[A-Za-z0-9]{16,}",     // Stripe secret key
+    r"npm_[A-Za-z0-9]{36}",                 // npm access token
+    r"hf_[A-Za-z0-9]{20,}",                 // Hugging Face token
     r"AIza[0-9A-Za-z_-]{35}",               // Google API key
 ];
 
@@ -165,16 +168,17 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     let quoted_paths = rels.iter().map(|r| sh_quote(r)).collect::<Vec<_>>().join(" ");
     // `oras push` refuses an absolute tarball path ("absolute file path
     // detected" — its default traversal guard), so `cd` into the tarball's
-    // directory first and reference it by bare filename.
+    // directory first and reference it by bare filename. `mktemp` keeps the
+    // name unique so concurrent pushes never clobber each other's tarball.
     let script = format!(
         "set -euo pipefail\n\
          cd {dir}\n\
-         tar -czf {name} -C {home} {paths}\n\
+         name=$(mktemp atelier-toolset.XXXXXX.tar.gz)\n\
+         tar -czf \"$name\" -C {home} {paths}\n\
          oras push --plain-http {target} \
-           --artifact-type {at} {name}:{lt}\n\
-         rm -f {name}",
+           --artifact-type {at} \"$name\":{lt}\n\
+         rm -f \"$name\"",
         dir = TARBALL_DIR,
-        name = TARBALL_NAME,
         home = HOME,
         paths = quoted_paths,
         target = sh_quote(&req.target),
@@ -198,18 +202,28 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
             res.stderr.trim()
         ));
     }
+    digest_from_push(&res)
+}
+
+/// Extract the pushed digest from an `oras push` result, or an error carrying
+/// the actual stdout/stderr so a changed oras output format is debuggable.
+fn digest_from_push(res: &command::ExecResult) -> Result<BuildResult, String> {
     parse_digest(&res.stdout)
         .map(|digest| BuildResult { digest })
-        .ok_or_else(|| "could not parse pushed digest from oras output".to_string())
+        .ok_or_else(|| {
+            format!(
+                "could not parse pushed digest from oras output (stdout: {}; stderr: {})",
+                res.stdout.trim(),
+                res.stderr.trim()
+            )
+        })
 }
 
 /// Build the `tar --exclude=<glob>` flags for a merged (default + request)
-/// exclude list, deduplicated and shell-quoted. Each glob is passed twice —
-/// bare and `*/`-prefixed — so it matches both a top-level file and one
-/// nested under a captured directory (tar's `--exclude` matches path
-/// components, not just basenames, when the pattern has no `/`; passing the
-/// bare glob already covers nested matches, but the explicit `*/` form keeps
-/// intent obvious for maintainers reading the generated script).
+/// exclude list, deduplicated and shell-quoted. A bare glob (no `/`) already
+/// matches at every path depth — tar's `--exclude` matches path components,
+/// not just basenames — so one `--exclude=<glob>` per glob covers both
+/// top-level and nested files.
 fn tar_exclude_flags(excludes: &[String]) -> String {
     let mut seen = std::collections::HashSet::new();
     let mut flags = String::new();
@@ -271,6 +285,11 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     // matching files (`-I` skips binaries, `-l` = names only), never fails the
     // command itself (`|| true`) so an empty result is a clean pass, not an
     // error exit this script would otherwise abort on under `set -e`.
+    // Accepted limitation: `-I` means secrets embedded in BINARY files (e.g. a
+    // sqlite keystore) are not scanned though they would still be tarred. This
+    // is tolerated because captures default to `private: true` and publishing
+    // is an explicit, separate user action — the scan gates the common
+    // plaintext-dotfile case, not every conceivable blob.
     let scan_script = format!(
         "set -euo pipefail\n\
          cd {home}\n\
@@ -313,16 +332,16 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     let tar_excludes = tar_exclude_flags(&excludes);
     // `oras push` refuses an absolute tarball path (found live, see `build`),
     // so `cd` into the tarball's directory first and reference it by bare
-    // filename.
+    // `mktemp` name (unique so concurrent captures never clobber each other).
     let script = format!(
         "set -euo pipefail\n\
          cd {dir}\n\
-         tar -czf {name}{tar_excludes} -C {home} {paths}\n\
+         name=$(mktemp atelier-toolset.XXXXXX.tar.gz)\n\
+         tar -czf \"$name\"{tar_excludes} -C {home} {paths}\n\
          oras push --plain-http {target} \
-           --artifact-type {at} {name}:{lt}\n\
-         rm -f {name}",
+           --artifact-type {at} \"$name\":{lt}\n\
+         rm -f \"$name\"",
         dir = TARBALL_DIR,
-        name = TARBALL_NAME,
         tar_excludes = tar_excludes,
         home = HOME,
         paths = quoted_paths,
@@ -346,9 +365,7 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
             res.stderr.trim()
         ));
     }
-    parse_digest(&res.stdout)
-        .map(|digest| BuildResult { digest })
-        .ok_or_else(|| "could not parse pushed digest from oras output".to_string())
+    digest_from_push(&res)
 }
 
 /// Pull each toolset artifact by its digest-pinned reference and extract it
@@ -358,6 +375,7 @@ pub async fn materialize(req: MaterializeRequest) -> Result<MaterializeResult, S
     for reference in &req.toolsets {
         let script = format!(
             "set -euo pipefail\n\
+             shopt -s nullglob\n\
              d=$(mktemp -d)\n\
              oras pull --plain-http {reference} -o \"$d\"\n\
              for f in \"$d\"/*.tar.gz; do tar -xzf \"$f\" -C {home}; done\n\
