@@ -167,6 +167,27 @@ export const CacheSchema = Type.Object(
 );
 export type CacheEntry = Static<typeof CacheSchema>;
 
+// ── toolsets ────────────────────────────────────────────────────────────────
+
+/**
+ * A resolved toolset reference — the ONLY toolset shape a `SandboxSpec`
+ * carries. `ref` is a host-relative OCI locator (`toolsets/<name>@sha256:…`);
+ * the runtime prepends the configured registry host to pull it. Names,
+ * harnesses, and profiles are resolved to this by control/compose before the
+ * spec crosses the seam. Defined here (not `toolset-spec.ts`) to keep the
+ * schema module graph acyclic — the build/capture/entry shapes import it back.
+ */
+export const ToolsetRefSchema = Type.Object(
+  {
+    ref: Type.String({
+      description:
+        "Host-relative OCI locator, e.g. toolsets/alice-pi-stack@sha256:3a9f…",
+    }),
+  },
+  { additionalProperties: false, $id: "ToolsetRef" },
+);
+export type ToolsetRef = Static<typeof ToolsetRefSchema>;
+
 // ── the spec ────────────────────────────────────────────────────────────────
 
 export const SandboxSpecSchema = Type.Object(
@@ -179,6 +200,13 @@ export const SandboxSpecSchema = Type.Object(
     ports: Type.Optional(Type.Array(PortSchema)),
     hooks: Type.Optional(HooksSchema),
     caches: Type.Optional(Type.Array(CacheSchema)),
+    /**
+     * Toolset artifacts materialized into the home before the files/env phase
+     * (composed-prebuild-volumes.md §3). Resolved digest locators only — the
+     * runtime never sees a name/harness/profile. Materialized in list order
+     * (later wins on path conflicts, same rule as `files[]`).
+     */
+    toolsets: Type.Optional(Type.Array(ToolsetRefSchema)),
     timeoutSeconds: Type.Optional(Type.Number()),
     /** Opaque pass-through — the runtime threads it and never reads it. */
     metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
