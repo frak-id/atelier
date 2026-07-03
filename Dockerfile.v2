@@ -19,15 +19,20 @@ FROM oven/bun:1 AS deps
 
 WORKDIR /build
 
-# Workspace root + only the package.json files v2 needs to resolve deps.
-# apps/console has a type-only devDep on @atelier/server, so its package.json
-# is copied too (its source is not needed to install).
+# Workspace root + every workspace member's package.json. bun's frozen install
+# validates the whole workspace graph (root `workspaces: [packages/*, apps/*]`),
+# so ALL members must be present or the lockfile is considered out of sync
+# — even the ones whose source v2 never builds.
 COPY package.json bun.lock ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/spec/package.json packages/spec/
 COPY packages/compose/package.json packages/compose/
+COPY packages/opencode-atelier/package.json packages/opencode-atelier/
 COPY apps/server/package.json apps/server/
 COPY apps/console/package.json apps/console/
+COPY apps/cli/package.json apps/cli/
+COPY apps/dashboard/package.json apps/dashboard/
+COPY apps/manager/package.json apps/manager/
 
 RUN bun install --frozen-lockfile
 
