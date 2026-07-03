@@ -11,7 +11,8 @@ use crate::command::{self, MAX_COMMAND_OUTPUT_BYTES};
 const HOME: &str = "/home/dev";
 const ARTIFACT_TYPE: &str = "application/vnd.atelier.toolset.v1+tar";
 const LAYER_TYPE: &str = "application/vnd.atelier.toolset.layer.v1.tar+gzip";
-const TARBALL: &str = "/tmp/atelier-toolset.tar.gz";
+const TARBALL_DIR: &str = "/tmp";
+const TARBALL_NAME: &str = "atelier-toolset.tar.gz";
 /// Build/push can move hundreds of MB; give it well past the exec default.
 const BUILD_TIMEOUT_MS: u64 = 600_000;
 
@@ -112,13 +113,18 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     }
 
     let quoted_paths = rels.iter().map(|r| sh_quote(r)).collect::<Vec<_>>().join(" ");
+    // `oras push` refuses an absolute tarball path ("absolute file path
+    // detected" — its default traversal guard), so `cd` into the tarball's
+    // directory first and reference it by bare filename.
     let script = format!(
         "set -euo pipefail\n\
-         tar -czf {tar} -C {home} {paths}\n\
+         cd {dir}\n\
+         tar -czf {name} -C {home} {paths}\n\
          oras push --plain-http {target} \
-           --artifact-type {at} {tar}:{lt}\n\
-         rm -f {tar}",
-        tar = TARBALL,
+           --artifact-type {at} {name}:{lt}\n\
+         rm -f {name}",
+        dir = TARBALL_DIR,
+        name = TARBALL_NAME,
         home = HOME,
         paths = quoted_paths,
         target = sh_quote(&req.target),
