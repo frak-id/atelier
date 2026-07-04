@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2, Pencil, Plus, Trash2, Wrench } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import {
   toolboxesListQuery,
   useCreateToolbox,
@@ -10,7 +11,6 @@ import {
   useUpdateToolbox,
 } from "@/api/queries/toolboxes";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { OrgSelect } from "@/components/org-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,28 +41,60 @@ function arrayToLines(values: string[]): string {
   return values.join("\n");
 }
 
+/**
+ * Scope selector over the caller's toolbox owners: "My Toolboxes" (identity-
+ * scoped, `user`) plus each org the caller belongs to (`org:<id>`). The value
+ * is the `?owner=` string passed straight to the API.
+ */
+function ScopeSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (owner: string) => void;
+}) {
+  const { data: orgs, isError } = useQuery(organizationsListQuery());
+  return (
+    <div className="space-y-1">
+      <Label htmlFor="toolbox-scope">Scope</Label>
+      <select
+        id="toolbox-scope"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <option value="user">My Toolboxes</option>
+        {orgs?.map((org) => (
+          <option key={org.id} value={`org:${org.id}`}>
+            {org.name} (org)
+          </option>
+        ))}
+      </select>
+      {isError ? (
+        <p className="text-xs text-destructive">
+          Failed to load organizations.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function ToolboxesPage() {
-  const [orgId, setOrgId] = useState("");
+  const [owner, setOwner] = useState("user");
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<ToolboxConfig | undefined>();
-  const scope = orgId || undefined;
   const {
     data: toolboxes,
     isPending,
     isError,
     error,
-  } = useQuery(toolboxesListQuery(scope));
+  } = useQuery(toolboxesListQuery(owner));
 
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="w-full sm:max-w-xs">
-          <OrgSelect
-            id="toolbox-org"
-            value={orgId}
-            onChange={setOrgId}
-            noneLabel="Personal (no org)"
-          />
+          <ScopeSelect value={owner} onChange={setOwner} />
         </div>
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus />
@@ -93,7 +125,7 @@ function ToolboxesPage() {
       <ToolboxDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        orgId={scope}
+        owner={owner}
       />
       <ToolboxDialog
         key={editing?.id ?? "none"}
@@ -101,7 +133,7 @@ function ToolboxesPage() {
         onOpenChange={(next) => {
           if (!next) setEditing(undefined);
         }}
-        orgId={scope}
+        owner={owner}
         toolbox={editing}
       />
     </div>
@@ -161,7 +193,7 @@ function ToolboxRow({
         title="Delete toolbox?"
         description={
           <>
-            New spawns for this org will no longer include{" "}
+            New spawns in this scope will no longer include{" "}
             <span className="font-mono">{toolbox.slug}</span>. This cannot be
             undone.
           </>
@@ -175,12 +207,12 @@ function ToolboxRow({
 function ToolboxDialog({
   open,
   onOpenChange,
-  orgId,
+  owner,
   toolbox,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  orgId?: string;
+  owner: string;
   toolbox?: ToolboxConfig;
 }) {
   const createToolbox = useCreateToolbox();
@@ -235,13 +267,15 @@ function ToolboxDialog({
     if (!slug) return;
     createToolbox.mutate(
       {
-        orgId,
-        slug,
-        description,
-        build: buildSteps,
-        paths: pathList,
-        enabled,
-        source,
+        owner,
+        input: {
+          slug,
+          description,
+          build: buildSteps,
+          paths: pathList,
+          enabled,
+          source,
+        },
       },
       {
         onSuccess: () => {

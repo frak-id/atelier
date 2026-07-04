@@ -64,7 +64,7 @@ export const queryKeys = {
   },
   toolboxes: {
     all: ["toolboxes"] as const,
-    list: (orgId?: string) =>
-      [...queryKeys.toolboxes.all, "list", orgId ?? "none"] as const,
+    list: (owner?: string) =>
+      [...queryKeys.toolboxes.all, "list", owner ?? "user"] as const,
   },
 } as const;

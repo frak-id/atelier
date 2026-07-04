@@ -9,12 +9,16 @@ import { api } from "@/api/client";
 import { errorMessage } from "./error";
 import { queryKeys } from "./keys";
 
-export function toolboxesListQuery(orgId?: string) {
+/**
+ * `owner` is the `?owner=` scope: `user` (the caller's own toolboxes, the
+ * default) or `org:<id>`. Absent → the caller's own toolboxes.
+ */
+export function toolboxesListQuery(owner?: string) {
   return queryOptions({
-    queryKey: queryKeys.toolboxes.list(orgId),
+    queryKey: queryKeys.toolboxes.list(owner),
     queryFn: async () => {
       const { data, error } = await api.api.toolboxes.get({
-        query: orgId ? { orgId } : {},
+        query: owner ? { owner } : {},
       });
       if (error)
         throw new Error(errorMessage(error, "Failed to load toolboxes"));
@@ -26,8 +30,16 @@ export function toolboxesListQuery(orgId?: string) {
 export function useCreateToolbox() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: ToolboxConfigInput & { orgId?: string }) => {
-      const { error } = await api.api.toolboxes.post(body);
+    mutationFn: async ({
+      input,
+      owner,
+    }: {
+      input: ToolboxConfigInput;
+      owner?: string;
+    }) => {
+      const { error } = await api.api.toolboxes.post(input, {
+        query: owner ? { owner } : {},
+      });
       if (error)
         throw new Error(errorMessage(error, "Failed to create toolbox"));
     },
