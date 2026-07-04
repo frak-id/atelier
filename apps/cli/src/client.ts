@@ -184,17 +184,24 @@ export class AtelierClient {
     return this.req("DELETE", `/toolsets?ref=${encodeURIComponent(ref)}`);
   }
 
-  listToolboxes(orgId?: string): Promise<ToolboxConfig[]> {
+  /** `owner` is the `?owner=` scope: `org:<id>` | `user`/`me` (self, the
+   * default). Absent → the caller's own toolboxes. */
+  listToolboxes(owner?: string): Promise<ToolboxConfig[]> {
     return this.ctl(
       "GET",
-      `/toolboxes${orgId ? `?orgId=${encodeURIComponent(orgId)}` : ""}`,
+      `/toolboxes${owner ? `?owner=${encodeURIComponent(owner)}` : ""}`,
     );
   }
 
   createToolbox(
-    input: ToolboxConfigInput & { orgId?: string },
+    input: ToolboxConfigInput,
+    owner?: string,
   ): Promise<ToolboxConfig> {
-    return this.ctl("POST", "/toolboxes", input);
+    return this.ctl(
+      "POST",
+      `/toolboxes${owner ? `?owner=${encodeURIComponent(owner)}` : ""}`,
+      input,
+    );
   }
 
   updateToolbox(id: string, patch: ToolboxConfigPatch): Promise<ToolboxConfig> {

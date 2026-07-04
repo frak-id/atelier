@@ -47,8 +47,9 @@ Usage:
                           [--exclude <glob> ...] [--override <path> ...]
   atelier toolset publish <ref>
   atelier toolset rm <ref>
-  atelier toolbox ls [--org <id>] [--json]
+  atelier toolbox ls [--mine | --org <id>] [--json]
   atelier toolbox create <slug> --desc <d> --build <cmd> ... --path <p> ...
+                         [--mine | --org <id>]
                          [--source-image <img> | --source-snapshot <ref>]
                          [--disabled]
   atelier toolbox set <id> [--desc <d>] [--enable | --disable]
@@ -160,6 +161,17 @@ function parseArgs(argv: string[]): {
 
 const one = (flags: Map<string, string[]>, key: string): string | undefined =>
   flags.get(key)?.at(-1);
+
+/** Resolve toolbox owner scope from flags: `--org <id>` → `org:<id>`,
+ * `--mine` (or nothing) → the caller's own toolboxes (server default). */
+function toolboxOwner(flags: Map<string, string[]>): string | undefined {
+  const org = one(flags, "org");
+  if (org) {
+    if (flags.has("mine")) fail("toolbox accepts only one of --mine or --org");
+    return `org:${org}`;
+  }
+  return flags.has("mine") ? "user" : undefined;
+}
 
 function print(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -543,7 +555,7 @@ async function main(): Promise<void> {
     case "toolbox": {
       const sub = positionals[0];
       if (sub === "ls") {
-        const entries = await client.listToolboxes(one(flags, "org"));
+        const entries = await client.listToolboxes(toolboxOwner(flags));
         if (json) return print(entries);
         if (entries.length === 0) {
           process.stdout.write("no toolboxes\n");
@@ -581,11 +593,7 @@ async function main(): Promise<void> {
               : {}),
           ...(flags.has("disabled") ? { enabled: false } : {}),
         };
-        const org = one(flags, "org");
-        const created = await client.createToolbox({
-          ...input,
-          ...(org ? { orgId: org } : {}),
-        });
+        const created = await client.createToolbox(input, toolboxOwner(flags));
         if (json) return print(created);
         process.stdout.write(`${created.id}\t${created.slug}\n`);
         return;
