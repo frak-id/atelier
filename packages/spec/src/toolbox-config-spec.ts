@@ -1,14 +1,35 @@
 /**
- * Org-scoped toolbox configs (per-org-toolboxes.md). A toolbox config is the
+ * Entity-scoped toolbox configs (entities-toolbox.md). A toolbox config is the
  * control-plane, editable input to a `ToolsetBuildRequest`
  * (`toolset-spec.ts`) — control/compose knowledge, never seen by `runtime/`.
- * At spawn, an org's enabled toolboxes are built into `ToolsetRef`s and
- * prepended to `SandboxSpec.toolsets` (the api/ seam, not this package).
+ * Each toolbox is owned by an `org` or a `user` (see `ToolboxOwner`). At
+ * spawn, the caller's org's then the caller's own enabled toolboxes are built
+ * into `ToolsetRef`s and prepended to `SandboxSpec.toolsets` (the api/ seam,
+ * not this package).
  */
 import { type Static, Type } from "@sinclair/typebox";
 import { SourceSchema } from "./sandbox-spec.ts";
 
-/** Lowercase-kebab identity, immutable per org (delete+recreate to rename). */
+/**
+ * Toolbox owner axis (entities-toolbox.md). A toolbox belongs to either an
+ * `org` (place-scoped, mandated baseline) or a `user` (identity-scoped,
+ * personal overlay that follows the user into any org's sandboxes). `owner`
+ * is a routing/auth concern — it is derived from the request seam, never
+ * carried in a create/patch body.
+ */
+export const ToolboxOwnerTypeSchema = Type.Union(
+  [Type.Literal("org"), Type.Literal("user")],
+  { $id: "ToolboxOwnerType" },
+);
+export type ToolboxOwnerType = Static<typeof ToolboxOwnerTypeSchema>;
+
+/** A `{type,id}` owner reference — the single scoping key for a toolbox. */
+export interface ToolboxOwner {
+  type: ToolboxOwnerType;
+  id: string;
+}
+
+/** Lowercase-kebab identity, immutable per owner (delete+recreate to rename). */
 export const ToolboxSlugSchema = Type.String({
   pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
   minLength: 1,
@@ -46,7 +67,8 @@ export type ToolboxConfigInput = Static<typeof ToolboxConfigInputSchema>;
 export const ToolboxConfigSchema = Type.Object(
   {
     id: Type.String(),
-    orgId: Type.String(),
+    ownerType: ToolboxOwnerTypeSchema,
+    ownerId: Type.String(),
     slug: ToolboxSlugSchema,
     description: Type.String({ minLength: 1, maxLength: 200 }),
     source: Type.Optional(SourceSchema),

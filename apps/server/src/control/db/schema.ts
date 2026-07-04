@@ -159,18 +159,24 @@ export const apiKeys = sqliteTable(
   ],
 );
 
+const toolboxOwnerTypeValues = ["org", "user"] as const;
+export type ToolboxOwnerTypeCol = (typeof toolboxOwnerTypeValues)[number];
+
 /**
- * Org-scoped toolbox configs (per-org-toolboxes.md §2). The seeded default
- * (`@atelier/compose` `DEFAULT_TOOLBOX`) is a normal row here — editable,
- * disable-able, deletable — not a code-level law. `source`/`build`/`paths`
- * mirror `ToolboxConfigInput`; `enabled` toolboxes are built into refs and
- * prepended to `SandboxSpec.toolsets` at the api/ seam, never here.
+ * Entity-scoped toolbox configs (entities-toolbox.md). Owned by an `org`
+ * (place-scoped, mandated baseline) or a `user` (identity-scoped, personal
+ * overlay) via polymorphic (`owner_type`, `owner_id`). The seeded default
+ * (`@atelier/compose` `DEFAULT_TOOLBOX`) is a normal org-owned row here —
+ * editable, disable-able, deletable — not a code-level law. `source`/`build`/
+ * `paths` mirror `ToolboxConfigInput`; `enabled` toolboxes are built into refs
+ * and prepended to `SandboxSpec.toolsets` at the api/ seam, never here.
  */
-export const orgToolboxes = sqliteTable(
-  "org_toolboxes",
+export const entityToolboxes = sqliteTable(
+  "entity_toolboxes",
   {
     id: text("id").primaryKey(),
-    orgId: text("org_id").notNull(),
+    ownerType: text("owner_type", { enum: toolboxOwnerTypeValues }).notNull(),
+    ownerId: text("owner_id").notNull(),
     slug: text("slug").notNull(),
     description: text("description").notNull(),
     source: text("source", { mode: "json" }).$type<Source>(),
@@ -181,8 +187,12 @@ export const orgToolboxes = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (t) => [
-    index("idx_org_toolboxes_org_id").on(t.orgId),
-    uniqueIndex("idx_org_toolboxes_org_slug").on(t.orgId, t.slug),
+    index("idx_entity_toolboxes_owner").on(t.ownerType, t.ownerId),
+    uniqueIndex("idx_entity_toolboxes_owner_slug").on(
+      t.ownerType,
+      t.ownerId,
+      t.slug,
+    ),
   ],
 );
 

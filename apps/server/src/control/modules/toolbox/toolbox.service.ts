@@ -1,14 +1,20 @@
 /**
- * Org-scoped toolbox config CRUD (per-org-toolboxes.md §4). The api/ seam
- * (`container.ts` `resolveOrgToolboxRefs`) turns `listEnabled()` results into
+ * Entity-scoped toolbox config CRUD (entities-toolbox.md §4). The api/ seam
+ * (`container.ts` `resolveToolboxRefs`) turns `listEnabled()` results into
  * built `ToolsetRef`s at spawn time; this service knows nothing about
  * `runtime/` or building — pure control-plane config storage.
+ *
+ * A toolbox is owned by an `org` (place-scoped, mandated baseline) or a `user`
+ * (identity-scoped, personal overlay). Seeding is asymmetric on purpose: orgs
+ * get the `DEFAULT_TOOLBOX` (opencode + code-server), users seed nothing
+ * (bring-your-own) — this is what prevents double-injecting opencode.
  */
 import { DEFAULT_TOOLBOX } from "@atelier/compose";
 import type {
   ToolboxConfig,
   ToolboxConfigInput,
   ToolboxConfigPatch,
+  ToolboxOwner,
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../../../shared/errors.ts";
 import { safeNanoid } from "../../../shared/lib/id.ts";
@@ -24,13 +30,13 @@ function isUniqueConstraintError(err: unknown): boolean {
 export class ToolboxService {
   constructor(private readonly repository: ToolboxRepository) {}
 
-  list(orgId: string): ToolboxConfig[] {
-    return this.repository.list(orgId);
+  list(owner: ToolboxOwner): ToolboxConfig[] {
+    return this.repository.list(owner);
   }
 
   /** Enabled toolboxes, oldest-first — the spawn-injection order (R6). */
-  listEnabled(orgId: string): ToolboxConfig[] {
-    return this.repository.listEnabled(orgId);
+  listEnabled(owner: ToolboxOwner): ToolboxConfig[] {
+    return this.repository.listEnabled(owner);
   }
 
   get(id: string): ToolboxConfig {
@@ -39,16 +45,17 @@ export class ToolboxService {
     return config;
   }
 
-  create(orgId: string, input: ToolboxConfigInput): ToolboxConfig {
-    if (this.repository.getByOrgAndSlug(orgId, input.slug)) {
+  create(owner: ToolboxOwner, input: ToolboxConfigInput): ToolboxConfig {
+    if (this.repository.getByOwnerAndSlug(owner, input.slug)) {
       throw new ValidationError(
-        `A toolbox with slug '${input.slug}' already exists for this org`,
+        `A toolbox with slug '${input.slug}' already exists for this ${owner.type}`,
       );
     }
     const now = new Date().toISOString();
     const record: ToolboxConfig = {
       id: safeNanoid(12),
-      orgId,
+      ownerType: owner.type,
+      ownerId: owner.id,
       slug: input.slug,
       description: input.description,
       source: input.source,
@@ -58,14 +65,17 @@ export class ToolboxService {
       createdAt: now,
       updatedAt: now,
     };
-    log.info({ orgId, slug: input.slug }, "Toolbox config created");
+    log.info(
+      { ownerType: owner.type, ownerId: owner.id, slug: input.slug },
+      "Toolbox config created",
+    );
     try {
       return this.repository.create(record);
     } catch (err) {
       // Convert a slug race (the pre-check above is TOCTOU) into a clean 400.
       if (isUniqueConstraintError(err)) {
         throw new ValidationError(
-          `A toolbox with slug '${input.slug}' already exists for this org`,
+          `A toolbox with slug '${input.slug}' already exists for this ${owner.type}`,
         );
       }
       throw err;
@@ -86,13 +96,15 @@ export class ToolboxService {
   }
 
   /**
-   * Seed the default toolbox for an org. Conflict-safe against
-   * `uniqueIndex(org_id, slug)` (R3): check-then-insert, swallowing a benign
-   * race onto the same slug rather than assuming the org is empty.
+   * Seed the default toolbox for an org (users never seed — asymmetric by
+   * design). Conflict-safe against `uniqueIndex(owner_type, owner_id, slug)`
+   * (R3): check-then-insert, swallowing a benign race onto the same slug
+   * rather than assuming the org is empty.
    */
   seedDefault(orgId: string): ToolboxConfig {
-    const existing = this.repository.getByOrgAndSlug(
-      orgId,
+    const owner: ToolboxOwner = { type: "org", id: orgId };
+    const existing = this.repository.getByOwnerAndSlug(
+      owner,
       DEFAULT_TOOLBOX.slug,
     );
     if (existing) return existing;
@@ -100,7 +112,8 @@ export class ToolboxService {
     const now = new Date().toISOString();
     const record: ToolboxConfig = {
       id: safeNanoid(12),
-      orgId,
+      ownerType: owner.type,
+      ownerId: owner.id,
       slug: DEFAULT_TOOLBOX.slug,
       description: DEFAULT_TOOLBOX.description,
       source: DEFAULT_TOOLBOX.source,
@@ -114,20 +127,21 @@ export class ToolboxService {
       return this.repository.create(record);
     } catch (err) {
       if (!isUniqueConstraintError(err)) throw err;
-      const raced = this.repository.getByOrgAndSlug(orgId, record.slug);
+      const raced = this.repository.getByOwnerAndSlug(owner, record.slug);
       if (!raced) throw err;
       return raced;
     }
   }
 
   /**
-   * Backfill: seed the default for every org with ZERO toolboxes (R4). Never
-   * resurrects a deliberately-deleted default — the guard is org-emptiness,
-   * not "does the default slug exist".
+   * Backfill: seed the default for every org with ZERO toolboxes (R4). Stays
+   * org-only — users are never auto-seeded. Never resurrects a deliberately-
+   * deleted default; the guard is org-emptiness, not "does the default slug
+   * exist".
    */
   ensureDefaults(orgIds: string[]): void {
     for (const orgId of orgIds) {
-      if (this.repository.list(orgId).length === 0) {
+      if (this.repository.list({ type: "org", id: orgId }).length === 0) {
         this.seedDefault(orgId);
       }
     }

@@ -1,12 +1,13 @@
-import type { ToolboxConfig } from "@atelier/spec";
+import type { ToolboxConfig, ToolboxOwner } from "@atelier/spec";
 import { and, asc, eq } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
-import { orgToolboxes } from "../../db/schema.ts";
+import { entityToolboxes } from "../../db/schema.ts";
 
-function rowToConfig(row: typeof orgToolboxes.$inferSelect): ToolboxConfig {
+function rowToConfig(row: typeof entityToolboxes.$inferSelect): ToolboxConfig {
   return {
     id: row.id,
-    orgId: row.orgId,
+    ownerType: row.ownerType,
+    ownerId: row.ownerId,
     slug: row.slug,
     description: row.description,
     source: row.source ?? undefined,
@@ -18,24 +19,32 @@ function rowToConfig(row: typeof orgToolboxes.$inferSelect): ToolboxConfig {
   };
 }
 
+/** The single owner predicate shared by every scoped query. */
+function ownerFilter(owner: ToolboxOwner) {
+  return and(
+    eq(entityToolboxes.ownerType, owner.type),
+    eq(entityToolboxes.ownerId, owner.id),
+  );
+}
+
 export class ToolboxRepository {
-  list(orgId: string): ToolboxConfig[] {
+  list(owner: ToolboxOwner): ToolboxConfig[] {
     return getDatabase()
       .select()
-      .from(orgToolboxes)
-      .where(eq(orgToolboxes.orgId, orgId))
-      .orderBy(asc(orgToolboxes.createdAt))
+      .from(entityToolboxes)
+      .where(ownerFilter(owner))
+      .orderBy(asc(entityToolboxes.createdAt))
       .all()
       .map(rowToConfig);
   }
 
-  /** Enabled toolboxes, oldest-first (per-org-toolboxes.md R6). */
-  listEnabled(orgId: string): ToolboxConfig[] {
+  /** Enabled toolboxes, oldest-first (entities-toolbox.md R6). */
+  listEnabled(owner: ToolboxOwner): ToolboxConfig[] {
     return getDatabase()
       .select()
-      .from(orgToolboxes)
-      .where(and(eq(orgToolboxes.orgId, orgId), eq(orgToolboxes.enabled, 1)))
-      .orderBy(asc(orgToolboxes.createdAt))
+      .from(entityToolboxes)
+      .where(and(ownerFilter(owner), eq(entityToolboxes.enabled, 1)))
+      .orderBy(asc(entityToolboxes.createdAt))
       .all()
       .map(rowToConfig);
   }
@@ -43,27 +52,31 @@ export class ToolboxRepository {
   getById(id: string): ToolboxConfig | undefined {
     const row = getDatabase()
       .select()
-      .from(orgToolboxes)
-      .where(eq(orgToolboxes.id, id))
+      .from(entityToolboxes)
+      .where(eq(entityToolboxes.id, id))
       .get();
     return row ? rowToConfig(row) : undefined;
   }
 
-  getByOrgAndSlug(orgId: string, slug: string): ToolboxConfig | undefined {
+  getByOwnerAndSlug(
+    owner: ToolboxOwner,
+    slug: string,
+  ): ToolboxConfig | undefined {
     const row = getDatabase()
       .select()
-      .from(orgToolboxes)
-      .where(and(eq(orgToolboxes.orgId, orgId), eq(orgToolboxes.slug, slug)))
+      .from(entityToolboxes)
+      .where(and(ownerFilter(owner), eq(entityToolboxes.slug, slug)))
       .get();
     return row ? rowToConfig(row) : undefined;
   }
 
   create(record: ToolboxConfig): ToolboxConfig {
     getDatabase()
-      .insert(orgToolboxes)
+      .insert(entityToolboxes)
       .values({
         id: record.id,
-        orgId: record.orgId,
+        ownerType: record.ownerType,
+        ownerId: record.ownerId,
         slug: record.slug,
         description: record.description,
         source: record.source,
@@ -84,13 +97,14 @@ export class ToolboxRepository {
       ...existing,
       ...patch,
       id: existing.id,
-      orgId: existing.orgId,
+      ownerType: existing.ownerType,
+      ownerId: existing.ownerId,
       slug: existing.slug,
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
     };
     getDatabase()
-      .update(orgToolboxes)
+      .update(entityToolboxes)
       .set({
         description: updated.description,
         source: updated.source,
@@ -99,7 +113,7 @@ export class ToolboxRepository {
         enabled: updated.enabled ? 1 : 0,
         updatedAt: updated.updatedAt,
       })
-      .where(eq(orgToolboxes.id, id))
+      .where(eq(entityToolboxes.id, id))
       .run();
     return updated;
   }
@@ -107,7 +121,10 @@ export class ToolboxRepository {
   delete(id: string): boolean {
     const existing = this.getById(id);
     if (!existing) return false;
-    getDatabase().delete(orgToolboxes).where(eq(orgToolboxes.id, id)).run();
+    getDatabase()
+      .delete(entityToolboxes)
+      .where(eq(entityToolboxes.id, id))
+      .run();
     return true;
   }
 }
