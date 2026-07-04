@@ -3,14 +3,14 @@
  * CRUD"). Identity, orgs, saved specs, secrets, org policy. Thin Elysia
  * binding; all policy logic lives in `control/`.
  */
-import type { SandboxSpec } from "@atelier/spec";
+import type { SandboxSpec, ToolboxOwner } from "@atelier/spec";
 import {
   SandboxSpecSchema,
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
-import { ValidationError } from "../shared/errors.ts";
+import { ForbiddenError, ValidationError } from "../shared/errors.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
@@ -190,13 +190,71 @@ export function createControlRoutes(container: ServerContainer) {
       set.status = 204;
     });
 
-  /** Mirrors `resolveOrgId` in `v1.routes.ts` (first membership, falling
-   * back to the personal org) — duplicated locally to keep control's routes
-   * independent of the /v1 module. */
-  function resolveCallerOrgId(userId: string): string | undefined {
-    const memberships = control.orgMemberService.getByUserId(userId);
-    if (memberships[0]) return memberships[0].orgId;
-    return control.userService.getById(userId)?.personalOrgId;
+  /**
+   * Parse + authorize the `?owner=` scope for a GET/POST toolbox request.
+   * Grammar: `org:<id>` | `user:<id>` | `user` | `me` (alias for the caller).
+   * Absent → default to the caller (`user:<me>`) — the "My Toolboxes" home;
+   * we do NOT fall back to an org, so an org's private build scripts are never
+   * the implicit default (entities-toolbox.md D7).
+   *
+   * AuthZ per owner type: org → `requireRole(owner/admin)` (write) or
+   * `requireMembership` (read); user → self-only (a user may only ever scope
+   * to their own id).
+   */
+  function resolveOwner(
+    userId: string,
+    ownerParam: string | undefined,
+    write: boolean,
+  ): ToolboxOwner {
+    if (!ownerParam || ownerParam === "me" || ownerParam === "user") {
+      return { type: "user", id: userId };
+    }
+    const [type, id] = ownerParam.split(":", 2);
+    if (type === "user") {
+      const targetId = !id || id === "me" ? userId : id;
+      if (targetId !== userId) {
+        throw new ForbiddenError("Cannot access another user's toolboxes");
+      }
+      return { type: "user", id: userId };
+    }
+    if (type === "org") {
+      if (!id) throw new ValidationError("owner=org: requires an org id");
+      if (write) {
+        control.orgMemberService.requireRole(id, userId, ["owner", "admin"]);
+      } else {
+        control.orgMemberService.requireMembership(id, userId);
+      }
+      return { type: "org", id };
+    }
+    throw new ValidationError(`Invalid owner scope '${ownerParam}'`);
+  }
+
+  /**
+   * Authorize a mutation against the STORED record's owner (never a caller-
+   * supplied scope) — the security-critical spot for PATCH/DELETE. Org →
+   * owner/admin of the record's org; user → the record's owner only (org
+   * admins do NOT manage members' personal toolboxes).
+   */
+  function requireToolboxOwnerAccess(
+    toolbox: { ownerType: ToolboxOwner["type"]; ownerId: string },
+    userId: string,
+  ): void {
+    if (toolbox.ownerType === "org") {
+      control.orgMemberService.requireRole(toolbox.ownerId, userId, [
+        "owner",
+        "admin",
+      ]);
+      return;
+    }
+    if (toolbox.ownerType === "user") {
+      if (toolbox.ownerId !== userId) {
+        throw new ForbiddenError("Cannot manage another user's toolbox");
+      }
+      return;
+    }
+    // Fail closed on any unexpected owner type (defense-in-depth: the typed
+    // service layer should make this unreachable).
+    throw new ForbiddenError("Unknown toolbox owner");
   }
 
   const toolboxRoutes = new Elysia({ prefix: "/toolboxes" })
@@ -204,62 +262,42 @@ export function createControlRoutes(container: ServerContainer) {
     .get(
       "/",
       ({ user, query }) => {
-        const orgId = query.orgId ?? resolveCallerOrgId(user.id);
-        if (!orgId) return [];
-        control.orgMemberService.requireMembership(orgId, user.id);
-        return control.toolboxService.list(orgId);
+        const owner = resolveOwner(user.id, query.owner, false);
+        return control.toolboxService.list(owner);
       },
-      { query: t.Object({ orgId: t.Optional(t.String()) }) },
+      { query: t.Object({ owner: t.Optional(t.String()) }) },
     )
     .post(
       "/",
-      ({ user, body }) => {
-        const orgId = body.orgId ?? resolveCallerOrgId(user.id);
-        if (!orgId) {
-          throw new ValidationError("No org to create a toolbox for");
-        }
-        control.orgMemberService.requireRole(orgId, user.id, [
-          "owner",
-          "admin",
-        ]);
-        const created = control.toolboxService.create(orgId, body);
-        const enabledCount = control.toolboxService.listEnabled(orgId).length;
+      ({ user, query, body }) => {
+        const owner = resolveOwner(user.id, query.owner, true);
+        const created = control.toolboxService.create(owner, body);
+        const enabledCount = control.toolboxService.listEnabled(owner).length;
         if (enabledCount > TOOLBOX_SOFT_CAP) {
           log.warn(
-            { orgId, enabledCount },
-            `Org exceeds the soft cap of ${TOOLBOX_SOFT_CAP} enabled toolboxes — each adds boot latency to every spawn`,
+            { ownerType: owner.type, ownerId: owner.id, enabledCount },
+            `${owner.type} exceeds the soft cap of ${TOOLBOX_SOFT_CAP} enabled toolboxes — each adds boot latency to every spawn`,
           );
         }
         return created;
       },
       {
-        body: t.Composite(
-          [
-            ToolboxConfigInputSchema,
-            t.Object({ orgId: t.Optional(t.String()) }),
-          ],
-          { additionalProperties: false },
-        ),
+        query: t.Object({ owner: t.Optional(t.String()) }),
+        body: ToolboxConfigInputSchema,
       },
     )
     .patch(
       "/:id",
       ({ user, params, body }) => {
         const existing = control.toolboxService.get(params.id);
-        control.orgMemberService.requireRole(existing.orgId, user.id, [
-          "owner",
-          "admin",
-        ]);
+        requireToolboxOwnerAccess(existing, user.id);
         return control.toolboxService.update(params.id, body);
       },
       { body: ToolboxConfigPatchSchema },
     )
     .delete("/:id", ({ user, params, set }) => {
       const existing = control.toolboxService.get(params.id);
-      control.orgMemberService.requireRole(existing.orgId, user.id, [
-        "owner",
-        "admin",
-      ]);
+      requireToolboxOwnerAccess(existing, user.id);
       control.toolboxService.delete(params.id);
       set.status = 204;
     });

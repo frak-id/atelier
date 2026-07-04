@@ -24,7 +24,7 @@ import {
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
 import { createAuthPlugin } from "./auth.plugin.ts";
-import { resolveOrgToolboxRefs, type ServerContainer } from "./container.ts";
+import { resolveToolboxRefs, type ServerContainer } from "./container.ts";
 
 /**
  * Resolve the caller's org for enrichment: first org membership, falling
@@ -81,12 +81,16 @@ export function createV1Routes(container: ServerContainer) {
           const orgId = resolveOrgId(control, user.id);
           const enriched = await control.enrichSpec(body as SandboxSpec, orgId);
           const authorizedKeys = control.sshKeyService.getValidPublicKeys();
-          // Prepend the org's enabled toolboxes (oldest-first, R6) so a dev's
-          // own toolsets still win on path conflicts (last-wins).
-          const orgToolboxRefs = await resolveOrgToolboxRefs(container, orgId);
+          // Prepend org (baseline) then user (personal overlay) toolboxes,
+          // oldest-first (R6), so a dev's own `spec.toolsets` still win last on
+          // path conflicts.
+          const toolboxRefs = await resolveToolboxRefs(container, {
+            orgId,
+            userId: user.id,
+          });
           const withToolboxes: SandboxSpec = {
             ...enriched,
-            toolsets: [...orgToolboxRefs, ...(enriched.toolsets ?? [])],
+            toolsets: [...toolboxRefs, ...(enriched.toolsets ?? [])],
           };
           return runtime.create(withToolboxes, { authorizedKeys });
         },

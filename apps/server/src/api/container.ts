@@ -3,7 +3,7 @@
  * (runtime/control/sessions) are wired together. Mirrors v1 `container.ts`'s
  * manual-wiring convention.
  */
-import type { ToolsetRef } from "@atelier/spec";
+import type { ToolboxOwner, ToolsetRef } from "@atelier/spec";
 import { createControlContainer } from "../control/index.ts";
 import {
   AgentClient,
@@ -124,38 +124,48 @@ export async function wireBuiltinHarnesses(container: ServerContainer) {
 }
 
 /**
- * Resolve an org's enabled toolboxes into built `ToolsetRef`s for a spawn
- * (per-org-toolboxes.md §5). `orgId` is optional and `undefined` returns `[]`
- * — no org means the sandbox spawns bare rather than the call ever throwing
- * (Oracle refinement R1). Each build uses a STABLE registry name keyed on the
- * immutable `orgId` (not the org's slug), so renaming an org never churns
+ * Resolve the caller's enabled toolboxes into built `ToolsetRef`s for a spawn
+ * (entities-toolbox.md §5). Injection order is `[org enabled asc] → [user
+ * enabled asc]`: the org's mandated baseline first, then the caller's personal
+ * overlay, so a user's own toolbox shadows an org tool on a path conflict —
+ * but only in that user's own sandboxes ("personal dotfiles win"). The
+ * explicit `spec.toolsets` still win last (applied by the caller).
+ *
+ * `orgId` is optional (`undefined` skips the org tier — spawn bare, never
+ * throw, Oracle refinement R1); `userId` is always present at the seam.
+ * Each build uses a STABLE registry name keyed on the immutable owner
+ * (`tb/${ownerType}/${ownerId}/${slug}`), so renaming an org never churns
  * artifacts or orphans a toolbox's repo (R2). `buildToolset` is content-hash
  * idempotent + inflight-deduped, so resolving fresh on every spawn (no memo
  * cache, R5) is cheap after the first build. A single toolbox's build
- * failure is logged and skipped — never fails the whole spawn (same
- * resilience as the toolbox this replaces).
+ * failure is logged and skipped — never fails the whole spawn.
  */
-export async function resolveOrgToolboxRefs(
+export async function resolveToolboxRefs(
   container: ServerContainer,
-  orgId?: string,
+  { orgId, userId }: { orgId?: string; userId: string },
 ): Promise<ToolsetRef[]> {
-  if (!orgId) return [];
-  const configs = container.control.toolboxService.listEnabled(orgId);
+  const owners: ToolboxOwner[] = [];
+  if (orgId) owners.push({ type: "org", id: orgId });
+  owners.push({ type: "user", id: userId });
+
   const refs: ToolsetRef[] = [];
-  for (const config of configs) {
-    try {
-      const ref = await container.runtime.buildToolset({
-        name: `tb/${orgId}/${config.slug}`,
-        source: config.source,
-        build: config.build,
-        paths: config.paths,
-      });
-      refs.push(ref);
-    } catch (err) {
-      log.error(
-        { err, orgId, slug: config.slug },
-        "org toolbox build failed; skipping for this spawn",
-      );
+  for (const owner of owners) {
+    const configs = container.control.toolboxService.listEnabled(owner);
+    for (const config of configs) {
+      try {
+        const ref = await container.runtime.buildToolset({
+          name: `tb/${owner.type}/${owner.id}/${config.slug}`,
+          source: config.source,
+          build: config.build,
+          paths: config.paths,
+        });
+        refs.push(ref);
+      } catch (err) {
+        log.error(
+          { err, ownerType: owner.type, ownerId: owner.id, slug: config.slug },
+          "toolbox build failed; skipping for this spawn",
+        );
+      }
     }
   }
   return refs;
