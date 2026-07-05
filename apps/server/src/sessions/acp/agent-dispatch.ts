@@ -28,6 +28,7 @@
 import {
   type ClientConnection,
   client,
+  type ListSessionsResponse,
   type McpServer,
   methods,
   PROTOCOL_VERSION,
@@ -503,12 +504,10 @@ class SandboxAcpConnection {
         );
         break;
       }
-      const res = await withTimeout(
-        this.acp.request(methods.agent.session.list, { cursor }),
-        Math.min(remaining, ACP_HANDSHAKE_TIMEOUT_MS),
-        "session/list",
-      );
-      infos.push(...res.sessions);
+      const res = await this.requestSessionListPage(cursor, deadline);
+      // A spec-compliant agent always returns an array; guard anyway so a
+      // malformed response degrades to empty instead of throwing on spread.
+      infos.push(...(res.sessions ?? []));
       cursor = res.nextCursor ?? undefined;
       if (!cursor) break;
       if (page === MAX_LIST_PAGES - 1) {
@@ -519,6 +518,25 @@ class SandboxAcpConnection {
       }
     }
     return infos.map((info) => this.toSessionMeta(info));
+  }
+
+  /** One `session/list` page. pi-acp intermittently returns a `null` sessions
+   * array on the FIRST call after a fresh connect (its session store isn't
+   * warm yet); the immediate retry on the same connection returns the real
+   * page. Retry once on a null `sessions` to spare the caller an empty first
+   * poll. Bounded by the shared list budget. */
+  private async requestSessionListPage(
+    cursor: string | undefined,
+    deadline: number,
+  ): Promise<ListSessionsResponse> {
+    const call = () =>
+      withTimeout(
+        this.acp.request(methods.agent.session.list, { cursor }),
+        Math.min(Math.max(deadline - Date.now(), 1), ACP_HANDSHAKE_TIMEOUT_MS),
+        "session/list",
+      );
+    const res = await call();
+    return res.sessions == null ? call() : res;
   }
 
   /** `session/list` + find. Never `session/load` — that replays history and

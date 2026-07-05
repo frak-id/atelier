@@ -39,6 +39,8 @@ class FakeAcpAgent {
   readonly sessions = new Map<string, FakeSession>();
   canList = true;
   canClose = true;
+  nullFirstList = false;
+  listCallCount = 0;
   promptDelayMs = 5;
   clientCtx?: AgentContext;
   private nextId = 1;
@@ -62,9 +64,14 @@ class FakeAcpAgent {
         this.sessions.set(sessionId, { sessionId, cwd: ctx.params.cwd });
         return { sessionId };
       })
-      .onRequest(methods.agent.session.list, () => ({
-        sessions: [...this.sessions.values()],
-      }))
+      .onRequest(methods.agent.session.list, () => {
+        // Emulate pi-acp's cold-start quirk: first call after connect returns a
+        // null `sessions`, the retry returns the real page.
+        if (this.nullFirstList && this.listCallCount++ === 0) {
+          return { sessions: null } as unknown as { sessions: FakeSession[] };
+        }
+        return { sessions: [...this.sessions.values()] };
+      })
       .onRequest(methods.agent.session.close, (ctx) => {
         this.sessions.delete(ctx.params.sessionId);
         return {};
@@ -278,6 +285,20 @@ describe("AgentDispatch × session/list", () => {
     await fakeAgent.emitTitle(session.sessionId, "Renamed by agent");
     const found = await dispatch.sessionFor(SANDBOX_ID, session.sessionId);
     expect(found?.title).toBe("Renamed by agent");
+  });
+
+  test("retries once when the agent returns a null sessions on the first call", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    fakeAgent.nullFirstList = true;
+    fakeAgent.seedSession("terminal-9", "/home/dev", "From terminal");
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+
+    // First list would get {sessions:null}; the retry returns the real page,
+    // so the caller never sees the cold-start empty and never throws.
+    const sessions = await dispatch.sessionsFor(SANDBOX_ID);
+    expect(sessions.map((s) => s.sessionId)).toEqual(["terminal-9"]);
+    expect(fakeAgent.listCallCount).toBeGreaterThanOrEqual(2);
   });
 
   test("todosFor is a lazy read: no live connection, no dial", async () => {
