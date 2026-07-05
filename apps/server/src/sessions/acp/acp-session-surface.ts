@@ -22,12 +22,15 @@ import type {
   AgentTodo,
 } from "@frak/atelier-shared";
 import { VM } from "@frak/atelier-shared/constants";
+import { createChildLogger } from "../../shared/lib/logger.ts";
 import type {
   CreateSessionResult,
   HarnessSessionSurface,
   InterventionResult,
 } from "../session-surface.ts";
 import type { AgentDispatch, SessionMeta } from "./agent-dispatch.ts";
+
+const log = createChildLogger("acp-session-surface");
 
 const QUESTIONS_UNSUPPORTED: InterventionResult = { ok: false, status: 404 };
 
@@ -47,14 +50,28 @@ export class AcpSessionSurface implements HarnessSessionSurface {
   ) {}
 
   async listSessions(): Promise<Omit<AgentSession, "sandboxId">[]> {
-    return this.dispatch.sessionsFor(this.sandboxId).map(metaToSession);
+    // Reads now dial `session/list`; a transient ACP disruption must degrade to
+    // an empty list (as the old lazy no-dial read did), not 500 the dashboard
+    // poll into a react-query retry storm.
+    try {
+      const sessions = await this.dispatch.sessionsFor(this.sandboxId);
+      return sessions.map(metaToSession);
+    } catch (err) {
+      log.warn({ sandboxId: this.sandboxId, err }, "listSessions failed");
+      return [];
+    }
   }
 
   async getSession(
     sessionId: string,
   ): Promise<Omit<AgentSession, "sandboxId"> | null> {
-    const meta = this.dispatch.sessionFor(this.sandboxId, sessionId);
-    return meta ? metaToSession(meta) : null;
+    try {
+      const meta = await this.dispatch.sessionFor(this.sandboxId, sessionId);
+      return meta ? metaToSession(meta) : null;
+    } catch (err) {
+      log.warn({ sandboxId: this.sandboxId, err }, "getSession failed");
+      return null;
+    }
   }
 
   async createSession(directory?: string): Promise<CreateSessionResult> {
@@ -77,7 +94,12 @@ export class AcpSessionSurface implements HarnessSessionSurface {
   }
 
   async sessionStatuses(): Promise<Record<string, AgentSessionStatus>> {
-    return this.dispatch.statusesFor(this.sandboxId);
+    try {
+      return await this.dispatch.statusesFor(this.sandboxId);
+    } catch (err) {
+      log.warn({ sandboxId: this.sandboxId, err }, "sessionStatuses failed");
+      return {};
+    }
   }
 
   async getTodos(sessionId: string): Promise<AgentTodo[]> {
