@@ -171,6 +171,13 @@ export function createSessionsRoutes(container: ServerContainer) {
         if (typeof message === "string") upstream.send(message);
         else if (message instanceof Uint8Array)
           upstream.send(message as Uint8Array<ArrayBuffer>);
+        // Elysia auto-parses JSON text frames into objects, so control
+        // messages (e.g. `{type:"resize",cols,rows}`) never arrive as a
+        // string. Re-serialize so the agent's PTY resize path still sees
+        // them — otherwise resize is silently dropped (keystrokes, sent as
+        // binary frames, are unaffected).
+        else if (typeof message === "object" && message !== null)
+          upstream.send(JSON.stringify(message));
       },
       close(ws) {
         const upstream = (ws.data as Record<string, unknown>).upstream as
