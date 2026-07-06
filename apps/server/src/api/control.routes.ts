@@ -3,9 +3,11 @@
  * CRUD"). Identity, orgs, saved specs, secrets, org policy. Thin Elysia
  * binding; all policy logic lives in `control/`.
  */
+import { listHarnesses } from "@atelier/compose";
 import type { SandboxSpec, ToolboxOwner } from "@atelier/spec";
 import {
   SandboxSpecSchema,
+  TemplateMetaSchema,
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
 } from "@atelier/spec";
@@ -140,12 +142,16 @@ export function createControlRoutes(container: ServerContainer) {
           body.name,
           body.spec as SandboxSpec,
           body.orgId,
+          { template: body.template, meta: body.meta },
         ),
       {
         body: t.Object({
           name: t.String({ minLength: 1 }),
           spec: SandboxSpecSchema,
           orgId: t.Optional(t.String()),
+          template: t.Optional(t.Boolean()),
+          meta: t.Optional(TemplateMetaSchema),
+          // ^ create body: `meta` is set or omitted (never explicitly null).
         }),
       },
     )
@@ -155,11 +161,16 @@ export function createControlRoutes(container: ServerContainer) {
         control.savedSpecService.update(params.id, {
           name: body.name,
           spec: body.spec as SandboxSpec | undefined,
+          template: body.template,
+          meta: body.meta,
         }),
       {
         body: t.Object({
           name: t.Optional(t.String()),
           spec: t.Optional(SandboxSpecSchema),
+          template: t.Optional(t.Boolean()),
+          // Nullable so a client can explicitly clear a template's meta.
+          meta: t.Optional(t.Union([TemplateMetaSchema, t.Null()])),
         }),
       },
     )
@@ -317,6 +328,15 @@ export function createControlRoutes(container: ServerContainer) {
       { body: t.Record(t.String(), t.Unknown()) },
     );
 
+  // Which harness composers this server has registered (design
+  // ui-evolution.md §3.1) — lets the console render harness pickers/badges as
+  // data instead of a hardcoded list. No org-scoped info, no auth needed.
+  const capabilitiesRoutes = new Elysia({ prefix: "/capabilities" }).get(
+    "/",
+    () => ({ harnesses: listHarnesses() }),
+    { response: t.Object({ harnesses: t.Array(t.String()) }) },
+  );
+
   return new Elysia({ prefix: "/api" })
     .use(apiKeyRoutes)
     .use(sshKeyRoutes)
@@ -324,5 +344,6 @@ export function createControlRoutes(container: ServerContainer) {
     .use(savedSpecRoutes)
     .use(secretRoutes)
     .use(orgPolicyRoutes)
-    .use(toolboxRoutes);
+    .use(toolboxRoutes)
+    .use(capabilitiesRoutes);
 }

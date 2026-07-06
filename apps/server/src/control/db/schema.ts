@@ -14,6 +14,7 @@ import type {
   ProcessEntry,
   SandboxSpec,
   Source,
+  TemplateMeta,
 } from "@atelier/spec";
 import {
   index,
@@ -81,6 +82,10 @@ export const savedSpecs = sqliteTable(
       .notNull()
       .$type<string[]>()
       .default([]),
+    /** "Published to the gallery" (design ui-evolution.md §2.1). Stored as
+     * "true"/"false" text, matching `organizations.personal`'s convention. */
+    template: text("template").notNull().default("false"),
+    meta: text("meta", { mode: "json" }).$type<TemplateMeta>(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

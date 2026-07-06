@@ -1,4 +1,4 @@
-import type { SandboxSpec } from "@atelier/spec";
+import type { SandboxSpec, TemplateMeta } from "@atelier/spec";
 import {
   queryOptions,
   useMutation,
@@ -8,6 +8,24 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import { errorMessage } from "./error";
 import { queryKeys } from "./keys";
+
+// Template presentation types live in `@atelier/spec` (shared with the
+// server's request validation + DB `$type`) — re-exported here so console
+// callers keep importing them from the query module they already use.
+export type { TemplateMeta, TemplateParam } from "@atelier/spec";
+
+/** A saved spec as the console consumes it (a superset row from the list
+ * endpoint). Defined once so rows/dialogs don't each re-declare a partial
+ * shape (which is how `meta` got dropped on the edit path). */
+export interface SavedSpec {
+  id: string;
+  orgId?: string;
+  name: string;
+  spec: SandboxSpec;
+  template: boolean;
+  meta?: TemplateMeta | null;
+  updatedAt: string;
+}
 
 export function savedSpecsListQuery() {
   return queryOptions({
@@ -35,6 +53,10 @@ export function useCreateSavedSpec() {
       name: string;
       spec: SandboxSpec;
       orgId?: string;
+      template?: boolean;
+      // Create never needs an explicit null (omit = no meta); only PATCH
+      // accepts null, to clear.
+      meta?: TemplateMeta;
     }) => {
       const { data, error } = await api.api["saved-specs"].post(body);
       if (error) throw new Error(errorMessage(error, "Failed to save spec"));
@@ -58,6 +80,8 @@ export function useUpdateSavedSpec() {
       id: string;
       name?: string;
       spec?: SandboxSpec;
+      template?: boolean;
+      meta?: TemplateMeta | null;
     }) => {
       const { data, error } = await api.api["saved-specs"]({ id }).patch(body);
       if (error)

@@ -1,19 +1,36 @@
 import type { SandboxUrl } from "@atelier/spec";
-import { TerminalSquare, X } from "lucide-react";
+import { Play, TerminalSquare, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { MultiTerminal } from "@/components/multi-terminal";
 import { Button } from "@/components/ui/button";
+import { useServiceGate } from "@/hooks/use-service-gate";
+import { harnessFromAnnotations } from "@/lib/sandbox-status";
 import { cn } from "@/lib/utils";
 
 export const TERMINAL_TAB = "__terminal__";
+
+type ImmersiveSandbox = {
+  id: string;
+  urls: SandboxUrl[];
+  annotations?: Record<string, string>;
+};
+
+/** "Open" prefers the harness's own web UI (design ui-evolution.md §3.3) — the
+ * url whose name matches the `atelier.dev/harness` annotation, by convention
+ * (opencode/pi's composer names their web-UI port after the harness id).
+ * Falls back to the terminal tab when the harness has no web UI (or the
+ * sandbox has no harness at all). */
+function preferredInitialTab(sandbox: ImmersiveSandbox): string {
+  const harness = harnessFromAnnotations(sandbox.annotations);
+  if (harness && sandbox.urls.some((u) => u.name === harness)) return harness;
+  return TERMINAL_TAB;
+}
 
 /**
  * Full-screen immersion: a maximized terminal plus every exposed URL as an
  * iframe tab. All panels stay mounted so switching tabs never drops a live
  * PTY or reloads an app. Extracted from the sandbox detail route so other
- * surfaces (e.g. a session's "Open" action) can deep-link straight into it —
- * "Open" is terminal-only for now (see IMPLEMENTATION_PLAN.md §1.3); a
- * per-harness web UI iframe is a later TODO.
+ * surfaces (e.g. a session's "Open" action) can deep-link straight into it.
  *
  * TODO(review): this full-screen overlay lacks a focus trap — keyboard/screen
  * reader users can still tab to elements behind it. Adopt a focus trap (or a
@@ -23,10 +40,12 @@ export function ImmersiveView({
   sandbox,
   onClose,
 }: {
-  sandbox: { id: string; urls: SandboxUrl[] };
+  sandbox: ImmersiveSandbox;
   onClose: () => void;
 }) {
-  const [active, setActive] = useState<string>(TERMINAL_TAB);
+  const [active, setActive] = useState<string>(() =>
+    preferredInitialTab(sandbox),
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -90,18 +109,52 @@ export function ImmersiveView({
           />
         </div>
         {sandbox.urls.map((url) => (
-          <iframe
+          <div
             key={url.name}
-            src={url.url}
-            title={url.name}
-            allow="clipboard-read; clipboard-write"
-            className={cn(
-              "absolute inset-0 h-full w-full border-0",
-              active !== url.name && "hidden",
-            )}
-          />
+            className={cn("absolute inset-0", active !== url.name && "hidden")}
+          >
+            <GatedUrlPanel sandboxId={sandbox.id} url={url} />
+          </div>
         ))}
       </div>
     </div>
+  );
+}
+
+/** One url tab's content: the iframe once its gating processes are ready, a
+ * "start the service" panel otherwise — never mount the iframe early, which
+ * is what produces a blank Bad Gateway for a lazy tool. */
+function GatedUrlPanel({
+  sandboxId,
+  url,
+}: {
+  sandboxId: string;
+  url: SandboxUrl;
+}) {
+  const gate = useServiceGate(sandboxId, url);
+
+  if (!gate.canMount) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-muted/30 text-center">
+        <p className="text-sm text-muted-foreground">
+          {gate.starting
+            ? `Starting ${url.name}\u2026`
+            : `${url.name} isn't running.`}
+        </p>
+        <Button size="sm" loading={gate.starting} onClick={() => gate.start()}>
+          <Play />
+          Start service
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <iframe
+      src={url.url}
+      title={url.name}
+      allow="clipboard-read; clipboard-write"
+      className="h-full w-full border-0"
+    />
   );
 }

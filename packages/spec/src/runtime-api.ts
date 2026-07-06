@@ -28,6 +28,12 @@ export const SandboxUrlSchema = Type.Object(
   {
     name: Type.String(),
     url: Type.String(),
+    /** All processes that gate this URL (design ui-evolution.md §4.1). Undefined
+     * when the port has no declared gating process (e.g. `ssh`). */
+    processes: Type.Optional(Type.Array(Type.String())),
+    /** True iff every process in `processes` is live-ready. Undefined when
+     * `processes` is undefined, or when live status wasn't computed (create). */
+    ready: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

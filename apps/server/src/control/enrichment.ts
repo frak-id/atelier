@@ -19,6 +19,7 @@ import {
   resolveHarness,
 } from "@atelier/compose";
 import { isSecretRef, type SandboxSpec } from "@atelier/spec";
+import { dashboardUrl } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 /** Display/routing annotation a composed harness stamps onto the spec. */
@@ -69,7 +70,12 @@ function injectHarness(
   if (!harnessId) return spec;
 
   try {
-    const fragment = resolveHarness(harnessId).compose();
+    // `webUiCorsOrigin`: only the opencode composer reads this key; other
+    // harnesses ignore it (`compose()` options are per-harness, unvalidated
+    // by this seam — see `resolveHarness`).
+    const fragment = resolveHarness(harnessId).compose({
+      webUiCorsOrigin: dashboardUrl,
+    });
     return mergeSpecs(spec, fragment) as SandboxSpec;
   } catch (err) {
     log.warn({ harnessId, err }, "unknown harness; leaving spec unharnessed");

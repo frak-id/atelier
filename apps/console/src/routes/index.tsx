@@ -202,7 +202,11 @@ function SandboxesSection({ sandboxes }: { sandboxes: SandboxSummary[] }) {
       <h2 className="text-sm font-medium text-muted-foreground">Sandboxes</h2>
       <div className="space-y-2">
         {[...sandboxes]
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          // Coerce: some persisted/staging rows carry a non-string createdAt,
+          // so guard before localeCompare (a bare `.localeCompare` throws).
+          .sort((a, b) =>
+            String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")),
+          )
           .map((sandbox) => (
             <SandboxRow key={sandbox.id} sandbox={sandbox} />
           ))}

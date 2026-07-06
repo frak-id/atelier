@@ -4,7 +4,7 @@ import {
   mergeSpecs,
   PRESETS,
 } from "@atelier/compose";
-import type { CreateSandboxRequest, SandboxSpec } from "@atelier/spec";
+import type { SandboxSpec } from "@atelier/spec";
 import type { LucideIcon } from "lucide-react";
 import {
   Bot,
@@ -18,10 +18,16 @@ import {
 } from "lucide-react";
 
 /**
- * The curated template catalog — see apps/console/design/templates.md for
- * the full generation/correction history and the staging-verified reference
- * this is grounded in. A `Template` is a small declarative record;
- * `templateToRequest` turns it into a `CreateSandboxRequest` using the real
+ * Seed examples only (design ui-evolution.md §2.3) — NOT a spawnable gallery.
+ * A real "template" is a saved spec with `template: true` (see
+ * `settings.templates.tsx` + `template-gallery.tsx`), so the org's own
+ * database — not this file — decides what's offered. This catalog exists
+ * purely to give a fresh org something to import ('Start from an example')
+ * so Builder lens isn't a blank page on day one — importing is the ONLY
+ * path in from here (`templateToSavedSpecImport`); nothing here is directly
+ * spawnable. See apps/console/design/templates.md for the generation/
+ * correction history and the staging-verified reference this is grounded in.
+ * A `Template` is a small declarative record built with the real
  * `@atelier/compose` SDK, never hand-written processes/provider JSON.
  */
 export type TemplateSurface = "vscode" | "browser" | "terminal";
@@ -36,19 +42,10 @@ export interface Template {
   resources: { vcpus: number; memoryMb: number; diskGb?: number };
   harness?: "opencode" | "pi";
   surfaces?: TemplateSurface[];
-  /** A user-owned toolbox slug (`pi`) this template needs on top of the
-   * default org toolbox — see notes. Not auto-provisioned by the gallery;
-   * the caller must have it (Settings → Toolboxes) or pick it in the picker. */
-  requiresToolbox?: string;
-  /** This template clones a caller-supplied repo via `postCreate` (see
-   * `withRepoClone`) — the gallery must collect a URL before spawning it. */
-  needsRepoUrl?: boolean;
   hooks?: { postCreate?: string[]; postStart?: string[] };
-  /** Plain-language caveats, surfaced in Builder lens only. */
-  notes?: string;
 }
 
-/** Core five — the primary gallery grid. */
+/** Core five — the primary seed set. */
 export const TEMPLATES: Template[] = [
   {
     id: "opencode",
@@ -109,13 +106,10 @@ export const TEMPLATES: Template[] = [
     resources: { vcpus: 2, memoryMb: 2048, diskGb: 20 },
     harness: "pi",
     surfaces: ["terminal"],
-    requiresToolbox: "pi",
-    notes:
-      "Needs your personal 'pi' toolbox (installs pi-acp + cliproxy config under ~/.local). Create it once under Settings → Toolboxes, then pick it here — the gallery doesn't provision it automatically.",
   },
 ];
 
-/** Extras — the full grid (Builder lens) / secondary Operator cards. */
+/** Extras — the rest of the importable seed set. */
 export const TEMPLATES_EXTRA: Template[] = [
   {
     id: "workstation-pro",
@@ -140,9 +134,6 @@ export const TEMPLATES_EXTRA: Template[] = [
     resources: { vcpus: 2, memoryMb: 4096, diskGb: 20 },
     harness: "opencode",
     surfaces: ["terminal"],
-    needsRepoUrl: true,
-    notes:
-      "The repo URL is collected before spawning and threaded into a postCreate clone.",
   },
   {
     id: "rust-agent",
@@ -157,60 +148,16 @@ export const TEMPLATES_EXTRA: Template[] = [
   },
 ];
 
-/**
- * The Operator lens shows only the lowest-friction, highest-trust cards
- * (`TemplateGallery` filters to these). "Instant Workspace", the plan's third
- * top card, isn't a gallery template — it's the existing prebuild quick-spawn
- * section already on the page (`QuickSpawnSection` in routes/spawn.tsx).
- */
-export const OPERATOR_DEFAULT_IDS = ["opencode", "repo-qa"];
-
-/** The full catalog as a single array — both gallery lens branches read this. */
+/** The full seed catalog — the "import example" list (Builder lens only). */
 export const ALL_TEMPLATES: Template[] = [...TEMPLATES, ...TEMPLATES_EXTRA];
 
-/** Single-quote-escape a value for safe interpolation into a `sh -c` string. */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
 /**
- * A `repo-qa`-style template needs a repo cloned via `postCreate` — the
- * caller (spawn wizard) supplies the URL, this just builds the hook. The URL
- * is validated and both it and the derived directory name are shell-quoted so
- * a URL with spaces/metacharacters can't break or inject into the command.
- */
-export function withRepoClone(template: Template, repoUrl: string): Template {
-  const url = repoUrl.trim();
-  if (!/^https?:\/\/[^\s]+$/.test(url)) {
-    throw new Error("Enter a valid http(s) repository URL (no spaces).");
-  }
-  const name = url.replace(/\/+$/, "").split("/").pop() || "repo";
-  return {
-    ...template,
-    hooks: {
-      ...template.hooks,
-      postCreate: [
-        ...(template.hooks?.postCreate ?? []),
-        `git clone --depth 1 ${shellQuote(url)} ${shellQuote(`/home/dev/${name}`)}`,
-      ],
-    },
-  };
-}
-
-/**
- * Pure builder: turns a `Template` into a `CreateSandboxRequest` using the
- * real compose SDK (no hand-written processes/ports/provider JSON). Models
- * are never wired here — the org's cliproxy provider config is injected
+ * Pure builder: turns a `Template` into a spec fragment using the real
+ * compose SDK (no hand-written processes/ports/provider JSON). Models are
+ * never wired here — the org's cliproxy provider config is injected
  * server-side (control/enrichment.ts), templates just pick the harness.
- *
- * `toolboxSelectors` are the caller-picked `tb/<owner>/<slug>` selectors to
- * attach (e.g. the user's own `pi` toolbox for `requiresToolbox: "pi"`
- * templates) — the gallery, not this builder, resolves which selector to use.
  */
-export function templateToRequest(
-  template: Template,
-  toolboxSelectors: string[] = [],
-): CreateSandboxRequest {
+function templateToSpec(template: Template): SandboxSpec {
   const harnessFragment =
     template.harness === "pi"
       ? composePi()
@@ -226,16 +173,57 @@ export function templateToRequest(
 
   const merged = mergeSpecs(harnessFragment, ...surfaceFragments);
 
-  const spec: SandboxSpec = {
+  return {
     source: template.source,
     resources: template.resources,
     ...merged,
     ...(template.hooks ? { hooks: template.hooks } : {}),
     metadata: { "atelier.dev/template": template.id },
   };
+}
 
+/**
+ * Turns a seed `Template` into a saved-spec import body (design
+ * ui-evolution.md §2.3, "Start from an example → creates a saved spec you
+ * own"). The result is NOT published (`template: false`) — importing is a
+ * fork, not an instant gallery entry; the org explicitly publishes it from
+ * Settings → Templates (where params/toolboxes/repo-cloning are then
+ * authored onto the *saved spec*, not this static seed).
+ */
+export function templateToSavedSpecImport(template: Template): {
+  name: string;
+  spec: SandboxSpec;
+} {
+  return { name: template.name, spec: templateToSpec(template) };
+}
+
+/** Single-quote-escape a value for safe interpolation into a `sh -c` string. */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * The typed transform behind a gallery template's `repo-url` param (design
+ * ui-evolution.md §2.2): appends a validated, shell-quoted `git clone` to
+ * `hooks.postCreate` on a *saved spec* (harness-agnostic, spec-level) — no
+ * `{{var}}` string interpolation into spec JSON. Used by `TemplateGallery`
+ * when spawning a published template that declares a `repo-url` param.
+ */
+export function applyRepoUrlParam(
+  spec: SandboxSpec,
+  repoUrl: string,
+): SandboxSpec {
+  const url = repoUrl.trim();
+  if (!/^https?:\/\/[^\s]+$/.test(url)) {
+    throw new Error("Enter a valid http(s) repository URL (no spaces).");
+  }
+  const name = url.replace(/\/+$/, "").split("/").pop() || "repo";
+  const hook = `git clone --depth 1 ${shellQuote(url)} ${shellQuote(`/home/dev/${name}`)}`;
   return {
     ...spec,
-    ...(toolboxSelectors.length > 0 ? { toolboxes: toolboxSelectors } : {}),
+    hooks: {
+      ...spec.hooks,
+      postCreate: [...(spec.hooks?.postCreate ?? []), hook],
+    },
   };
 }

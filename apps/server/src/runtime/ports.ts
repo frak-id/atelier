@@ -4,7 +4,7 @@
  * "forward"` attaches the operator's forward-auth annotations. No service
  * types, no protocols, no LB config (atelier-v2 §2 "ports stay thin").
  */
-import type { PortEntry } from "@atelier/spec";
+import type { PortEntry, ProcessEntry } from "@atelier/spec";
 import { config } from "../shared/lib/config.ts";
 import {
   buildToolIngress,
@@ -76,6 +76,33 @@ export function buildPortUrls(
       name: p.name,
       url: `${scheme}://${toolHost(p.name, sandboxId, sandboxDomain())}`,
     }));
+}
+
+/**
+ * Which declared processes gate a port (design ui-evolution.md §4.1): every
+ * process whose `readiness.port` targets this port, plus a same-name
+ * fallback (covers processes without an explicit readiness probe) —
+ * deduped. A URL can depend on more than one process (e.g. `browser` needs
+ * kasmvnc + openbox + chromium).
+ */
+export function gatingProcessNames(
+  port: PortEntry,
+  processes: ProcessEntry[] = [],
+): string[] {
+  const names = new Set<string>();
+  for (const p of processes) {
+    const probesThisPort =
+      p.readiness && "port" in p.readiness && p.readiness.port === port.port;
+    // Same-name fallback covers a process with no port readiness probe, but
+    // must NOT pull in a process that explicitly probes a *different* port
+    // (its readiness says nothing about this one).
+    const probesOtherPort =
+      p.readiness && "port" in p.readiness && p.readiness.port !== port.port;
+    if (probesThisPort || (p.name === port.name && !probesOtherPort)) {
+      names.add(p.name);
+    }
+  }
+  return [...names];
 }
 
 export function sshUrl(sandboxId: string): string {

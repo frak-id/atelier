@@ -39,7 +39,12 @@ import { specToAgentConfig } from "./agent-config.ts";
 import { bootSandbox, deleteRestartableResources } from "./boot.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
 import { buildVolumeSnapshot, kubeClient } from "./kube/index.ts";
-import { buildPortIngresses, buildPortUrls, sshUrl } from "./ports.ts";
+import {
+  buildPortIngresses,
+  buildPortUrls,
+  gatingProcessNames,
+  sshUrl,
+} from "./ports.ts";
 import { ImageRegistryService } from "./registry/index.ts";
 import {
   InMemorySandboxStore,
@@ -286,11 +291,12 @@ export class RuntimeService {
 
   async get(id: string): Promise<SandboxState> {
     const record = this.require(id);
+    const processes = await this.processStatuses(record);
     return {
       id,
       status: record.status,
-      urls: this.urlsFor(id, record.spec),
-      processes: await this.processStatuses(record),
+      urls: this.urlsFor(id, record.spec, processes),
+      processes,
       generated: record.generated,
       metadata: record.metadata,
       annotations: record.spec.annotations,
@@ -699,8 +705,30 @@ export class RuntimeService {
     return ImageRegistryService.resolveImageReference(source.image);
   }
 
-  private urlsFor(id: string, spec: SandboxSpec) {
-    return [...buildPortUrls(id, spec.ports), { name: "ssh", url: sshUrl(id) }];
+  /**
+   * `live` process statuses gate `ready` (design ui-evolution.md §4.1) —
+   * omitted at create time (nothing has started yet), present at `get()`.
+   */
+  private urlsFor(id: string, spec: SandboxSpec, live?: ProcessStatus[]) {
+    const publicPorts = (spec.ports ?? []).filter((p) => p.public);
+    const liveByName = new Map((live ?? []).map((p) => [p.name, p]));
+    const urls = buildPortUrls(id, spec.ports).map((url) => {
+      // Correlate by name, not array index: both derive from the same
+      // `public` filter today, but a name lookup can't silently mispair if
+      // `buildPortUrls` ordering ever changes.
+      const port = publicPorts.find((p) => p.name === url.name);
+      const processes = port ? gatingProcessNames(port, spec.processes) : [];
+      if (processes.length === 0) return url;
+      const ready =
+        live === undefined
+          ? undefined
+          : processes.every((name) => {
+              const p = liveByName.get(name);
+              return (p?.ready ?? p?.running) === true;
+            });
+      return { ...url, processes, ready };
+    });
+    return [...urls, { name: "ssh", url: sshUrl(id) }];
   }
 
   private async processStatuses(

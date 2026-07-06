@@ -1,18 +1,27 @@
 import type { PrebuildRecord, SandboxSpec } from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Layers, Loader2, Rocket, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  Download,
+  Layers,
+  Loader2,
+  Rocket,
+  Trash2,
+} from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { organizationsListQuery } from "@/api/queries/organizations";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { useSpawnSandbox } from "@/api/queries/sandboxes";
 import {
+  type SavedSpec,
   savedSpecsListQuery,
   useCreateSavedSpec,
   useDeleteSavedSpec,
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
 import { toolboxesListQuery } from "@/api/queries/toolboxes";
+import { SaveAsTemplateDialog } from "@/components/save-as-template-dialog";
 import { TemplateGallery } from "@/components/template-gallery";
 import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +46,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
+import { ALL_TEMPLATES, templateToSavedSpecImport } from "@/lib/templates";
 import { useLens } from "@/providers/lens";
 
 export const Route = createFileRoute("/spawn")({
@@ -78,7 +88,6 @@ function SpawnPage() {
     setEditingSpec(savedSpec ?? null);
   }
 
-  const toolboxes = useAllToolboxes();
   const { lens } = useLens();
 
   return (
@@ -86,7 +95,6 @@ function SpawnPage() {
       <h1 className="text-xl font-semibold">Spawn a sandbox</h1>
 
       <TemplateGallery
-        toolboxes={toolboxes}
         spawning={spawn.isPending}
         onSpawn={(request) => spawnFromSpec(request)}
       />
@@ -116,6 +124,8 @@ function SpawnPage() {
             editingSpec={editingSpec}
             onStopEditing={() => setEditingSpec(null)}
           />
+
+          <ImportExampleSection onOpenInEditor={loadIntoEditor} />
         </>
       ) : null}
     </div>
@@ -331,15 +341,72 @@ function QuickSpawnSection({
   );
 }
 
-// ── saved specs ──────────────────────────────────────────────────────────
+// ── import example (seed catalog → saved spec) ───────────────────────────
 
-interface SavedSpecRow {
-  id: string;
-  orgId?: string;
-  name: string;
-  spec: SandboxSpec;
-  updatedAt: string;
+/**
+ * Builder-only "cold start" affordance (design ui-evolution.md §2.3): the
+ * static seed catalog (`ALL_TEMPLATES`) is never spawnable directly —
+ * importing forks it into a real, org-owned saved spec (unpublished by
+ * default), which the Builder can then edit and, from `SavedSpecsSection`,
+ * "Promote to template" once it's actually right for their org.
+ */
+function ImportExampleSection({
+  onOpenInEditor,
+}: {
+  onOpenInEditor: (spec: SandboxSpec) => void;
+}) {
+  const createSavedSpec = useCreateSavedSpec();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Examples</CardTitle>
+        <CardDescription>
+          Seed starting points — importing creates a saved spec you own, which
+          you can edit and publish as your org's own template.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {ALL_TEMPLATES.map((template) => {
+          const { name, spec } = templateToSavedSpecImport(template);
+          return (
+            <div
+              key={template.id}
+              className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate font-medium">{name}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {template.description}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={createSavedSpec.isPending}
+                  onClick={() => createSavedSpec.mutate({ name, spec })}
+                >
+                  <Download />
+                  Import
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onOpenInEditor(spec)}
+                >
+                  Open in editor
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
 }
+
+// ── saved specs ──────────────────────────────────────────────────────────
 
 function SavedSpecsSection({
   onSpawn,
@@ -349,7 +416,7 @@ function SavedSpecsSection({
 }: {
   onSpawn: (spec: SandboxSpec) => void;
   spawnPending: boolean;
-  onEdit: (savedSpec: SavedSpecRow) => void;
+  onEdit: (savedSpec: SavedSpec) => void;
   onDeleted: (id: string) => void;
 }) {
   const {
@@ -401,20 +468,22 @@ function SavedSpecItem({
   onEdit,
   onDeleted,
 }: {
-  savedSpec: SavedSpecRow;
+  savedSpec: SavedSpec;
   onSpawn: (spec: SandboxSpec) => void;
   spawnPending: boolean;
-  onEdit: (savedSpec: SavedSpecRow) => void;
+  onEdit: (savedSpec: SavedSpec) => void;
   onDeleted: (id: string) => void;
 }) {
   const deleteSpec = useDeleteSavedSpec();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="truncate font-medium">{savedSpec.name}</span>
         {savedSpec.orgId ? <Badge variant="outline">org</Badge> : null}
+        {savedSpec.template ? <Badge variant="success">published</Badge> : null}
         <span className="text-xs text-muted-foreground">
           {formatRelativeTime(savedSpec.updatedAt)}
         </span>
@@ -433,6 +502,13 @@ function SavedSpecItem({
         </Button>
         <Button
           variant="outline"
+          size="sm"
+          onClick={() => setTemplateDialogOpen(true)}
+        >
+          {savedSpec.template ? "Edit template" : "Promote to template"}
+        </Button>
+        <Button
+          variant="outline"
           size="icon"
           disabled={deleteSpec.isPending}
           onClick={() => setConfirmOpen(true)}
@@ -445,6 +521,12 @@ function SavedSpecItem({
           )}
         </Button>
       </div>
+      <SaveAsTemplateDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        spec={savedSpec.spec}
+        savedSpec={savedSpec}
+      />
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
@@ -497,6 +579,7 @@ function EditorSection({
   const [validated, setValidated] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const [templateSpec, setTemplateSpec] = useState<SandboxSpec | null>(null);
   const createSavedSpec = useCreateSavedSpec();
   const updateSavedSpec = useUpdateSavedSpec();
 
@@ -595,9 +678,20 @@ function EditorSection({
               </Button>
             </>
           ) : (
-            <Button variant="outline" onClick={() => setSaveDialogOpen(true)}>
-              Save as…
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => setSaveDialogOpen(true)}>
+                Save as…
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const spec = validate();
+                  if (spec) setTemplateSpec(spec);
+                }}
+              >
+                Save as template…
+              </Button>
+            </>
           )}
         </div>
       </CardContent>
@@ -638,6 +732,15 @@ function EditorSection({
           </form>
         </DialogContent>
       </Dialog>
+      {templateSpec ? (
+        <SaveAsTemplateDialog
+          open={templateSpec !== null}
+          onOpenChange={(open) => {
+            if (!open) setTemplateSpec(null);
+          }}
+          spec={templateSpec}
+        />
+      ) : null}
     </Card>
   );
 }

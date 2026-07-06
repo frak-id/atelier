@@ -58,6 +58,11 @@ export function composePi(opts: ComposePiOptions = {}): SpecFragment {
         ? { "atelier.dev/mcp": opts.mcp.join(",") }
         : {}),
     },
+    // TODO(pi-web-ui): mirror opencode's lazy `serve` + forward-auth port
+    // (design ui-evolution.md §3.3) once pi ships a verified in-sandbox web
+    // server command. Do NOT point at the external pi-web.dev (rejected: its
+    // origin can't carry the *.baseDomain oauth2-proxy cookie, breaking
+    // forward-auth for both the redirect and any cross-origin XHR/CORS).
   };
 }
 

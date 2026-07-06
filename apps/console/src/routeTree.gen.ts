@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from "./routes/index"
 import { Route as SettingsIndexRouteImport } from "./routes/settings.index"
 import { Route as SettingsToolsetsRouteImport } from "./routes/settings.toolsets"
 import { Route as SettingsToolboxesRouteImport } from "./routes/settings.toolboxes"
+import { Route as SettingsTemplatesRouteImport } from "./routes/settings.templates"
 import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
 import { Route as SettingsPrebuildsRouteImport } from "./routes/settings.prebuilds"
@@ -53,6 +54,11 @@ const SettingsToolsetsRoute = SettingsToolsetsRouteImport.update({
 const SettingsToolboxesRoute = SettingsToolboxesRouteImport.update({
   id: "/toolboxes",
   path: "/toolboxes",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsTemplatesRoute = SettingsTemplatesRouteImport.update({
+  id: "/templates",
+  path: "/templates",
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsSshKeysRoute = SettingsSshKeysRouteImport.update({
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings/templates": typeof SettingsTemplatesRoute
   "/settings/toolboxes": typeof SettingsToolboxesRoute
   "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/": typeof SettingsIndexRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings/templates": typeof SettingsTemplatesRoute
   "/settings/toolboxes": typeof SettingsToolboxesRoute
   "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings": typeof SettingsIndexRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
+  "/settings/templates": typeof SettingsTemplatesRoute
   "/settings/toolboxes": typeof SettingsToolboxesRoute
   "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/": typeof SettingsIndexRoute
@@ -165,6 +174,7 @@ export interface FileRouteTypes {
     | "/settings/prebuilds"
     | "/settings/secrets"
     | "/settings/ssh-keys"
+    | "/settings/templates"
     | "/settings/toolboxes"
     | "/settings/toolsets"
     | "/settings/"
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | "/settings/prebuilds"
     | "/settings/secrets"
     | "/settings/ssh-keys"
+    | "/settings/templates"
     | "/settings/toolboxes"
     | "/settings/toolsets"
     | "/settings"
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | "/settings/prebuilds"
     | "/settings/secrets"
     | "/settings/ssh-keys"
+    | "/settings/templates"
     | "/settings/toolboxes"
     | "/settings/toolsets"
     | "/settings/"
@@ -253,6 +265,13 @@ declare module "@tanstack/react-router" {
       path: "/toolboxes"
       fullPath: "/settings/toolboxes"
       preLoaderRoute: typeof SettingsToolboxesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/templates": {
+      id: "/settings/templates"
+      path: "/templates"
+      fullPath: "/settings/templates"
+      preLoaderRoute: typeof SettingsTemplatesRouteImport
       parentRoute: typeof SettingsRoute
     }
     "/settings/ssh-keys": {
@@ -328,6 +347,7 @@ interface SettingsRouteChildren {
   SettingsPrebuildsRoute: typeof SettingsPrebuildsRoute
   SettingsSecretsRoute: typeof SettingsSecretsRoute
   SettingsSshKeysRoute: typeof SettingsSshKeysRoute
+  SettingsTemplatesRoute: typeof SettingsTemplatesRoute
   SettingsToolboxesRoute: typeof SettingsToolboxesRoute
   SettingsToolsetsRoute: typeof SettingsToolsetsRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -340,6 +360,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsPrebuildsRoute: SettingsPrebuildsRoute,
   SettingsSecretsRoute: SettingsSecretsRoute,
   SettingsSshKeysRoute: SettingsSshKeysRoute,
+  SettingsTemplatesRoute: SettingsTemplatesRoute,
   SettingsToolboxesRoute: SettingsToolboxesRoute,
   SettingsToolsetsRoute: SettingsToolsetsRoute,
   SettingsIndexRoute: SettingsIndexRoute,
