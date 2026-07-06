@@ -135,9 +135,14 @@ export class RuntimeService {
     );
     try {
       await this.runPrebuildSteps(tempId, spec);
-      await this.snapshotPvc(boot.pvcName, ref, {
-        "atelier.dev/prebuild": hash,
-      });
+      // The content hash is 64 hex chars — over the 63-byte k8s label cap — so
+      // it rides as an annotation (no length cap), not a label.
+      await this.snapshotPvc(
+        boot.pvcName,
+        ref,
+        { "atelier.dev/component": "prebuild" },
+        { "atelier.dev/prebuild": hash },
+      );
       // Record as soon as the snapshot is ReadyToUse — before teardown — so a
       // failing cleanup can neither orphan a live-but-untracked snapshot nor
       // mask this success.
@@ -490,9 +495,10 @@ export class RuntimeService {
     pvcName: string,
     ref: string,
     labels: Record<string, string>,
+    annotations?: Record<string, string>,
   ): Promise<void> {
     await kubeClient.createResource(
-      buildVolumeSnapshot({ name: ref, pvcName, labels }),
+      buildVolumeSnapshot({ name: ref, pvcName, labels, annotations }),
     );
     await kubeClient.waitForVolumeSnapshotReady(ref, { timeout: 120_000 });
   }

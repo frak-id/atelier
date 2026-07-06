@@ -307,6 +307,7 @@ export type VolumeSnapshotOptions = {
   pvcName: string;
   volumeSnapshotClassName?: string;
   labels?: Record<string, string>;
+  annotations?: Record<string, string>;
 };
 
 export function buildVolumeSnapshot(
@@ -335,6 +336,7 @@ export function buildVolumeSnapshot(
       name: options.name,
       namespace,
       labels: options.labels,
+      annotations: options.annotations,
     },
     spec,
   };
