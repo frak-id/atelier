@@ -9,7 +9,7 @@ const STATUS_PRESENTATION: Record<
   running: { label: "Running", variant: "success" },
   paused: { label: "Paused", variant: "secondary" },
   stopped: { label: "Stopped", variant: "outline" },
-  error: { label: "Error", variant: "error" },
+  error: { label: "Error", variant: "danger" },
 };
 
 /** Falls back to a neutral badge if the server ever ships a status this

@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+/* Geist Sans (UI) + Geist Mono (code/terminal/ids) — self-hosted via
+   @fontsource, weights kept minimal to bound bundle size. */
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-mono/400.css';
+@import '@fontsource/geist-mono/500.css';
+
 @custom-variant dark (&:is(.dark *));
 
 @theme {
@@ -30,9 +38,52 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
+  --color-elevated: hsl(var(--elevated));
+
+  /* Semantic status colours — carry all the "meaning" hue since --primary is
+     an inverse mono accent (see IMPLEMENTATION_PLAN.md §0.1). */
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-danger: hsl(var(--danger));
+  --color-info: hsl(var(--info));
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+
+  --font-sans: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
+
+  /* Type scale (Graphite & Alabaster) — px/line-height pairs. */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+
+  /* Motion vocabulary — deliberate & smooth, not snappy. */
+  --ease-structural: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fade: 200ms;
+  --duration-structural: 400ms;
+
+  --animate-calm-pulse: calm-pulse 2s ease-in-out infinite;
+
+  @keyframes calm-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
 }
 
 /*
@@ -53,50 +104,72 @@
   }
 }
 
+/*
+  Graphite & Alabaster — warm-neutral editorial theme (see
+  apps/console/design/theme-candidates.md for the full exploration).
+  `--primary` is an inverse mono accent (light-on-dark / dark-on-light);
+  status tokens below carry all the hue. Dark is the default surface.
+*/
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --background: 40 3% 9%;
+    --foreground: 60 3% 93%;
+    --card: 30 3% 12%;
+    --card-foreground: 60 3% 93%;
+    --popover: 30 3% 12%;
+    --popover-foreground: 60 3% 93%;
+    --elevated: 20 3% 17%;
+    --primary: 60 3% 93%;
+    --primary-foreground: 30 3% 8%;
+    --secondary: 20 3% 17%;
+    --secondary-foreground: 60 3% 93%;
+    --muted: 20 3% 17%;
+    --muted-foreground: 30 3% 60%;
+    --accent: 20 3% 17%;
+    --accent-foreground: 60 3% 93%;
+    --destructive: 0 44% 57%;
+    --destructive-foreground: 60 3% 93%;
+    --border: 0 0% 100% / 0.08;
+    --input: 0 0% 100% / 0.08;
+    --ring: 60 3% 93% / 0.3;
+    --success: 155 51% 36%;
+    --warning: 32 62% 53%;
+    --danger: 0 44% 57%;
+    --info: 217 35% 58%;
     --radius: 0.5rem;
   }
 
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+  /*
+    Dark is the default (carried by `:root` above). `ThemeProvider` toggles the
+    `.dark`/`.light` class on <html> — `.dark` exists only so Tailwind's `dark:`
+    variant (`@custom-variant dark`) resolves; the custom-property values come
+    from `:root`, so no duplicate `.dark { … }` token block is needed.
+  */
+  .light {
+    --background: 48 11% 96%;
+    --foreground: 30 3% 8%;
+    --card: 40 20% 99%;
+    --card-foreground: 30 3% 8%;
+    --popover: 40 20% 99%;
+    --popover-foreground: 30 3% 8%;
+    --elevated: 0 0% 100%;
+    --primary: 30 3% 8%;
+    --primary-foreground: 40 20% 99%;
+    --secondary: 48 11% 96%;
+    --secondary-foreground: 30 3% 8%;
+    --muted: 48 11% 96%;
+    --muted-foreground: 20 2% 44%;
+    --accent: 48 11% 96%;
+    --accent-foreground: 30 3% 8%;
+    --destructive: 0 40% 46%;
+    --destructive-foreground: 40 20% 99%;
+    --border: 0 0% 0% / 0.08;
+    --input: 0 0% 0% / 0.08;
+    --ring: 30 3% 8% / 0.3;
+    --success: 152 47% 29%;
+    --warning: 33 60% 42%;
+    --danger: 0 40% 46%;
+    --info: 216 34% 47%;
   }
 }
 
@@ -105,6 +178,22 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Tabular numbers for metrics, IDs and timestamps — use `.tabular-nums`. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* Soft, diffuse elevation shadow — dropdowns, modals, popovers. */
+  .shadow-elevated {
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  }
+  .light .shadow-elevated {
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.08);
   }
 }

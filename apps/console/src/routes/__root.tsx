@@ -6,12 +6,15 @@ import {
   Outlet,
   useRouter,
 } from "@tanstack/react-router";
-import { Boxes, LogOut, Rocket, Settings } from "lucide-react";
+import { Boxes, LogOut, Moon, Rocket, Settings, Sun } from "lucide-react";
 import { Toaster } from "sonner";
 import { api } from "@/api/client";
 import { currentUserQuery } from "@/api/queries/auth";
 import { LoginPage } from "@/components/login-page";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useLens } from "@/providers/lens";
+import { useTheme } from "@/providers/theme";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -29,6 +32,8 @@ function RootLayout() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { data: user, isPending } = useQuery(currentUserQuery());
+  const { theme, toggle } = useTheme();
+  const { lens, setLens } = useLens();
 
   if (isPending) {
     return (
@@ -75,9 +80,30 @@ function RootLayout() {
           ))}
         </nav>
         <div className="flex items-center gap-3">
+          <SegmentedControl
+            options={[
+              { value: "operator", label: "Overview" },
+              { value: "builder", label: "Developer" },
+            ]}
+            value={lens}
+            onChange={setLens}
+            className="hidden sm:inline-flex"
+          />
           <span className="hidden text-sm text-muted-foreground sm:inline">
             {user.username}
           </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggle}
+            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+          >
+            {theme === "dark" ? (
+              <Sun className="size-4" />
+            ) : (
+              <Moon className="size-4" />
+            )}
+          </Button>
           <Button variant="ghost" size="icon" onClick={handleLogout}>
             <LogOut className="size-4" />
           </Button>

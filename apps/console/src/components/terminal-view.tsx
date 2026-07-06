@@ -1,16 +1,36 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { wsUrl } from "@/lib/api-base";
+import { terminalTheme } from "@/lib/terminal-theme";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/providers/theme";
 
-const THEME = {
-  background: "#09090b",
-  foreground: "#fafafa",
-  cursor: "#fafafa",
-  selectionBackground: "#27272a",
-} as const;
+/**
+ * Writes a labeled divider line into the terminal's own scrollback — a real,
+ * honest "block" boundary rather than a guessed one. There is no
+ * command/output boundary signal anywhere in this stack (no OSC 133 shell
+ * integration, no structured server event; see IMPLEMENTATION_PLAN.md §5.3),
+ * so this deliberately does NOT try to detect commands by regex-guessing
+ * prompts on raw output — that would misfire constantly and undermine the
+ * calm, audit-trail feel it's meant to convey. Markers are either explicit
+ * (the caller's "Mark" action, via the imperative handle below) or tied to a
+ * real lifecycle event (reconnect).
+ */
+function writeMarker(terminal: Terminal, label: string) {
+  const time = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  terminal.writeln(`\r\n\x1b[2m── ${label} · ${time} ──\x1b[0m`);
+}
+
+export interface TerminalViewHandle {
+  /** Insert a labeled divider at the current scrollback position. */
+  mark: () => void;
+}
 
 /**
  * An xterm view bound to a server WS bridge. `readOnly` attaches to the
@@ -23,22 +43,40 @@ const THEME = {
  * WebSocket and scrollback are preserved across tab switches (the view stays
  * mounted), so switching tabs never drops or reloads a session.
  */
-export function TerminalView({
-  wsPath,
-  readOnly = false,
-  active = true,
-  className,
-}: {
-  wsPath: string;
-  readOnly?: boolean;
-  active?: boolean;
-  className?: string;
-}) {
+export const TerminalView = forwardRef<
+  TerminalViewHandle,
+  {
+    wsPath: string;
+    readOnly?: boolean;
+    active?: boolean;
+    className?: string;
+  }
+>(function TerminalView(
+  { wsPath, readOnly = false, active = true, className },
+  handleRef,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const { theme } = useTheme();
 
+  useImperativeHandle(
+    handleRef,
+    () => ({
+      mark: () => {
+        const terminal = terminalRef.current;
+        if (terminal) writeMarker(terminal, "Marked");
+      },
+    }),
+    [],
+  );
+
+  // `theme` is read here only to seed the terminal's *initial* theme; it's
+  // intentionally excluded from the deps below so toggling light/dark
+  // doesn't tear down the socket/scrollback — live restyling happens in the
+  // separate effect further down instead.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: theme applied live below, not via reconnect
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -51,9 +89,9 @@ export function TerminalView({
       cursorBlink: !readOnly,
       disableStdin: readOnly,
       fontSize: 13,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily: '"Geist Mono", Menlo, Monaco, "Courier New", monospace',
       scrollback: 10_000,
-      theme: THEME,
+      theme: terminalTheme(theme),
     });
     terminalRef.current = terminal;
     const fitAddon = new FitAddon();
@@ -100,7 +138,7 @@ export function TerminalView({
           reconnectTimer = setTimeout(connect, 500);
           return;
         }
-        terminal.writeln("\r\n\x1b[31mConnection closed.\x1b[0m");
+        writeMarker(terminal, "Connection closed");
       };
       socket.onerror = () => socket.close();
     }
@@ -142,6 +180,12 @@ export function TerminalView({
     };
   }, [wsPath, readOnly]);
 
+  // Live-restyle on theme toggle without tearing down the socket/scrollback.
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (terminal) terminal.options.theme = terminalTheme(theme);
+  }, [theme]);
+
   // Refit (and focus a writable pane) when this view becomes visible again,
   // e.g. after its tab is selected. Deferred to the next frame so layout has
   // settled and the container has non-zero size.
@@ -173,4 +217,4 @@ export function TerminalView({
       className={cn("h-72 w-full overflow-hidden", className)}
     />
   );
-}
+});

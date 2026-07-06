@@ -3,17 +3,21 @@
  * pi coding agent (`pi-acp`). Self-contained: no runtime imports. Composing a
  * harness only declares *what runs* (the primary `acp` process + display
  * annotation); the pi binary itself is delivered by a toolbox/toolset that
- * puts `pi-acp` on `~/.local/bin` (the dev-base PATH shim), exactly like
- * opencode.
+ * installs `pi`/`pi-acp` under `~/.local` (e.g. `npm install -g --prefix
+ * ~/.local @earendil-works/pi-coding-agent pi-acp`), exactly like opencode.
  *
- * Note: pi's live ACP session surface is not wired into the server's session
- * hub yet (only opencode is), so a pi sandbox boots correctly but its sessions
- * aren't drivable from the console today. Composition is independent of that.
+ * The `acp` process is spawned directly by the supervisor (no login shell), so
+ * the `~/.local/bin` PATH shim from `/etc/profile.d` is NOT sourced — the
+ * command must be the ABSOLUTE binary path with an explicit `PATH`/`HOME` env
+ * (verified against staging: bare `pi-acp` does not resolve). pi's live ACP
+ * session surface IS wired into the server session hub (a generic
+ * ACP-over-attach surface registered for `pi`, same as opencode).
  */
 import type { HarnessComposer } from "../harness.ts";
 import type { SpecFragment } from "../spec-merge.ts";
 
 const HOME = "/home/dev";
+const LOCAL_BIN = `${HOME}/.local/bin`;
 
 export interface ComposePiOptions {
   /** MCP server names to record in the `atelier.dev/mcp` annotation. */
@@ -29,12 +33,21 @@ export function composePi(opts: ComposePiOptions = {}): SpecFragment {
     processes: [
       {
         name: "acp",
-        // Bare command: the pi toolbox materializes `pi-acp` onto PATH via the
-        // dev-base `~/.local/bin` shim.
-        command: "pi-acp",
+        // Absolute path, not bare `pi-acp`: the supervisor spawns the process
+        // directly (no login shell), so the `~/.local/bin` PATH shim from
+        // /etc/profile.d is not sourced. Verified on staging — the bare
+        // command does not resolve; the absolute binary + explicit env do.
+        command: `${LOCAL_BIN}/pi-acp`,
         cwd: HOME,
         // Run as `dev` so pi writes its data/config under ${HOME}, not root.
         user: "dev",
+        // Explicit PATH/HOME: the process runs without a login shell, so
+        // `pi-acp` needs `~/.local/bin` on PATH to exec its own tools, and
+        // HOME so pi resolves ~/.pi, ~/.config/pi-cliproxyapi, etc.
+        env: {
+          PATH: `${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin`,
+          HOME,
+        },
         stdio: "bridge",
         primary: true,
       },

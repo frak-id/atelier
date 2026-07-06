@@ -3,7 +3,7 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2",
   {
     variants: {
       variant: {
@@ -14,12 +14,13 @@ const badgeVariants = cva(
         destructive:
           "border-transparent bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/80",
         outline: "text-foreground",
-        success:
-          "border-transparent bg-green-500/20 text-green-400 hover:bg-green-500/30",
-        warning:
-          "border-transparent bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30",
-        error:
-          "border-transparent bg-red-500/20 text-red-400 hover:bg-red-500/30",
+        // Status variants — all built on the semantic tokens (§0.1), never
+        // hardcoded colours, so they stay correct across both themes.
+        success: "border-transparent bg-success/15 text-success",
+        warning: "border-transparent bg-warning/15 text-warning",
+        danger: "border-transparent bg-danger/15 text-danger",
+        info: "border-transparent bg-info/15 text-info",
+        neutral: "border-transparent bg-muted text-muted-foreground",
       },
     },
     defaultVariants: {
@@ -42,4 +43,4 @@ function Badge({ className, variant, ...props }: BadgeProps) {
   );
 }
 
-export { Badge };
+export { Badge, badgeVariants };

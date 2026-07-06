@@ -6,6 +6,9 @@ import {
   RouteErrorComponent,
   RouteNotFoundComponent,
 } from "@/components/route-error";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { LensProvider } from "@/providers/lens";
+import { ThemeProvider } from "@/providers/theme";
 import "./index.css";
 import { routeTree } from "./routeTree.gen";
 
@@ -43,9 +46,15 @@ const rootElement = document.getElementById("root");
 if (rootElement) {
   createRoot(rootElement).render(
     <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <ThemeProvider>
+        <LensProvider>
+          <QueryClientProvider client={queryClient}>
+            <TooltipProvider delayDuration={300}>
+              <RouterProvider router={router} />
+            </TooltipProvider>
+          </QueryClientProvider>
+        </LensProvider>
+      </ThemeProvider>
     </StrictMode>,
   );
 }

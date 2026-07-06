@@ -153,18 +153,33 @@ export function useRejectQuestion(sandboxId: string) {
   });
 }
 
-export function useAbortSession(sandboxId: string) {
+/**
+ * Abort/delete take `{ sandboxId, sessionId }` as the mutation argument (not a
+ * fixed `sandboxId` at hook-call time) so a single hook instance serves both
+ * the per-sandbox sessions page and the fleet-wide mission-control home, where
+ * rows span many sandboxes and can't bind one hook each without violating the
+ * rules of hooks. Read the in-flight `sessionId` via `mutation.variables?.
+ * sessionId`.
+ */
+export function useAbortSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (sessionId: string) => {
+    mutationFn: async ({
+      sandboxId,
+      sessionId,
+    }: {
+      sandboxId: string;
+      sessionId: string;
+    }) => {
       const { error } = await api.sessions
         .sandboxes({ id: sandboxId })
         .agent.sessions({ sessionId })
         .abort.post();
       if (error)
         throw new Error(errorMessage(error, "Failed to abort session"));
+      return sandboxId;
     },
-    onSuccess: () => {
+    onSuccess: (sandboxId) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sessions.statuses(sandboxId),
       });
@@ -177,18 +192,25 @@ export function useAbortSession(sandboxId: string) {
   });
 }
 
-export function useDeleteSession(sandboxId: string) {
+export function useDeleteSession() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (sessionId: string) => {
+    mutationFn: async ({
+      sandboxId,
+      sessionId,
+    }: {
+      sandboxId: string;
+      sessionId: string;
+    }) => {
       const { error } = await api.sessions
         .sandboxes({ id: sandboxId })
         .agent.sessions({ sessionId })
         .delete();
       if (error)
         throw new Error(errorMessage(error, "Failed to delete session"));
+      return sandboxId;
     },
-    onSuccess: () => {
+    onSuccess: (sandboxId) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sessions.all(sandboxId),
       });

@@ -13,6 +13,7 @@ import {
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
 import { toolboxesListQuery } from "@/api/queries/toolboxes";
+import { TemplateGallery } from "@/components/template-gallery";
 import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
+import { useLens } from "@/providers/lens";
 
 export const Route = createFileRoute("/spawn")({
   component: SpawnPage,
@@ -50,6 +52,9 @@ function SpawnPage() {
     name: string;
   } | null>(null);
 
+  // `toolboxes` is optional: the template-gallery path passes a full
+  // CreateSandboxRequest that already embeds `toolboxes`, so it carries through
+  // the `...spec` spread; the builder-lens callers pass it as the second arg.
   function spawnFromSpec(spec: SandboxSpec, toolboxes?: string[]) {
     spawn.mutate(
       { ...spec, ...(toolboxes && toolboxes.length > 0 ? { toolboxes } : {}) },
@@ -73,33 +78,46 @@ function SpawnPage() {
     setEditingSpec(savedSpec ?? null);
   }
 
+  const toolboxes = useAllToolboxes();
+  const { lens } = useLens();
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">Spawn a sandbox</h1>
 
-      <QuickSpawnSection
-        onSpawn={spawnFromSpec}
-        spawnPending={spawn.isPending}
-        onOpenInEditor={(spec) => loadIntoEditor(spec)}
+      <TemplateGallery
+        toolboxes={toolboxes}
+        spawning={spawn.isPending}
+        onSpawn={(request) => spawnFromSpec(request)}
       />
 
-      <SavedSpecsSection
-        onSpawn={spawnFromSpec}
-        spawnPending={spawn.isPending}
-        onEdit={(savedSpec) => loadIntoEditor(savedSpec.spec, savedSpec)}
-        onDeleted={(id) => {
-          if (editingSpec?.id === id) setEditingSpec(null);
-        }}
-      />
+      {lens === "builder" ? (
+        <>
+          <QuickSpawnSection
+            onSpawn={spawnFromSpec}
+            spawnPending={spawn.isPending}
+            onOpenInEditor={(spec) => loadIntoEditor(spec)}
+          />
 
-      <EditorSection
-        text={editorText}
-        onTextChange={setEditorText}
-        onSpawn={spawnFromSpec}
-        spawnPending={spawn.isPending}
-        editingSpec={editingSpec}
-        onStopEditing={() => setEditingSpec(null)}
-      />
+          <SavedSpecsSection
+            onSpawn={spawnFromSpec}
+            spawnPending={spawn.isPending}
+            onEdit={(savedSpec) => loadIntoEditor(savedSpec.spec, savedSpec)}
+            onDeleted={(id) => {
+              if (editingSpec?.id === id) setEditingSpec(null);
+            }}
+          />
+
+          <EditorSection
+            text={editorText}
+            onTextChange={setEditorText}
+            onSpawn={spawnFromSpec}
+            spawnPending={spawn.isPending}
+            editingSpec={editingSpec}
+            onStopEditing={() => setEditingSpec(null)}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -550,7 +568,7 @@ function EditorSection({
             ))}
           </ul>
         ) : validated ? (
-          <p className="text-sm text-green-500">Valid SandboxSpec</p>
+          <p className="text-sm text-success">Valid SandboxSpec</p>
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={validate}>

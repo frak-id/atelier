@@ -1,12 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Bookmark, Loader2, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   terminalSessionsQuery,
   useCreateTerminalSession,
   useDeleteTerminalSession,
 } from "@/api/queries/terminal";
-import { TerminalView } from "@/components/terminal-view";
+import {
+  TerminalView,
+  type TerminalViewHandle,
+} from "@/components/terminal-view";
 import { cn } from "@/lib/utils";
 
 /**
@@ -31,6 +34,7 @@ export function MultiTerminal({
   const create = useCreateTerminalSession(sandboxId);
   const remove = useDeleteTerminalSession(sandboxId);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const activeHandleRef = useRef<TerminalViewHandle | null>(null);
 
   const list = sessions ?? [];
 
@@ -51,7 +55,7 @@ export function MultiTerminal({
     return (
       <div
         className={cn(
-          "flex h-96 items-center justify-center rounded-md border bg-[#09090b]",
+          "flex h-96 items-center justify-center rounded-md border bg-card",
           className,
         )}
       >
@@ -64,7 +68,7 @@ export function MultiTerminal({
     return (
       <div
         className={cn(
-          "flex h-96 items-center justify-center rounded-md border bg-[#09090b] px-4 text-center text-sm text-muted-foreground",
+          "flex h-96 items-center justify-center rounded-md border bg-card px-4 text-center text-sm text-muted-foreground",
           className,
         )}
       >
@@ -76,19 +80,19 @@ export function MultiTerminal({
   return (
     <div
       className={cn(
-        "flex h-96 flex-col overflow-hidden rounded-md border bg-[#09090b]",
+        "flex h-96 flex-col overflow-hidden rounded-md border bg-card",
         className,
       )}
     >
-      <div className="flex items-center overflow-x-auto border-b border-zinc-800 bg-zinc-900/50">
+      <div className="flex items-center overflow-x-auto border-b bg-elevated/50">
         {list.map((session) => (
           <div
             key={session.id}
             className={cn(
-              "group flex shrink-0 items-center gap-1 border-r border-zinc-800 py-1.5 pr-1 pl-3 text-sm transition-colors",
+              "group flex shrink-0 items-center gap-1 border-r py-1.5 pr-1 pl-3 text-sm transition-colors",
               session.id === activeId
-                ? "bg-[#09090b] text-white"
-                : "text-zinc-400 hover:bg-zinc-800/50 hover:text-white",
+                ? "bg-card text-foreground"
+                : "text-muted-foreground hover:bg-elevated/50 hover:text-foreground",
             )}
           >
             <button
@@ -101,7 +105,7 @@ export function MultiTerminal({
             <button
               type="button"
               aria-label="Close terminal"
-              className="rounded p-0.5 text-zinc-500 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
               disabled={remove.isPending}
               onClick={() => {
                 // Advance to an adjacent tab immediately so the pane never
@@ -121,7 +125,7 @@ export function MultiTerminal({
         <button
           type="button"
           aria-label="New terminal"
-          className="flex shrink-0 items-center px-2 py-1.5 text-zinc-400 hover:text-white disabled:opacity-50"
+          className="flex shrink-0 items-center px-2 py-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
           disabled={create.isPending}
           onClick={createSession}
         >
@@ -131,15 +135,27 @@ export function MultiTerminal({
             <Plus className="size-4" />
           )}
         </button>
+        {activeId ? (
+          <button
+            type="button"
+            aria-label="Mark this point in the terminal"
+            title="Mark this point in the terminal"
+            className="ml-auto flex shrink-0 items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => activeHandleRef.current?.mark()}
+          >
+            <Bookmark className="size-3.5" />
+            Mark
+          </button>
+        ) : null}
       </div>
 
       <div className="relative min-h-0 flex-1">
         {list.length === 0 ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-500">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
             <p className="text-sm">No terminal sessions</p>
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm text-foreground hover:bg-elevated disabled:opacity-50"
               disabled={create.isPending}
               onClick={createSession}
             >
@@ -161,6 +177,7 @@ export function MultiTerminal({
               )}
             >
               <TerminalView
+                ref={session.id === activeId ? activeHandleRef : null}
                 wsPath={`/sessions/sandboxes/${sandboxId}/terminal/sessions/${session.id}/ws`}
                 active={session.id === activeId}
                 className="h-full"

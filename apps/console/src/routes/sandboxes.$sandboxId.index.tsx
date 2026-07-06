@@ -13,10 +13,8 @@ import {
   Radio,
   Square,
   Star,
-  TerminalSquare,
-  X,
 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 import {
   processLogsQuery,
   sandboxDetailQuery,
@@ -28,6 +26,7 @@ import {
   useSnapshotSandbox,
 } from "@/api/queries/sandboxes";
 import { useCaptureToolset } from "@/api/queries/toolsets";
+import { ImmersiveView } from "@/components/immersive-view";
 import { MultiTerminal } from "@/components/multi-terminal";
 import { TerminalView } from "@/components/terminal-view";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +38,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -50,11 +50,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusDot } from "@/components/ui/status-dot";
 import {
   harnessFromAnnotations,
   sandboxStatusPresentation,
 } from "@/lib/sandbox-status";
-import { cn } from "@/lib/utils";
+import { useLens } from "@/providers/lens";
 
 export const Route = createFileRoute("/sandboxes/$sandboxId/")({
   component: SandboxDetailPage,
@@ -75,6 +76,7 @@ function SandboxDetailPage() {
   const resume = useResumeSandbox();
   const destroy = useDestroySandbox();
   const snapshot = useSnapshotSandbox();
+  const { lens } = useLens();
 
   if (isPending) {
     return (
@@ -183,14 +185,21 @@ function SandboxDetailPage() {
 
       <UrlsSection urls={sandbox.urls} />
       <TerminalSection sandboxId={sandbox.id} />
-      <ProcessesSection sandboxId={sandbox.id} processes={sandbox.processes} />
-      <ExposePortSection sandboxId={sandbox.id} />
-      <CaptureToolsetSection sandboxId={sandbox.id} />
-      {sandbox.annotations || sandbox.metadata ? (
-        <MetadataSection
-          annotations={sandbox.annotations}
-          metadata={sandbox.metadata}
-        />
+      {lens === "builder" ? (
+        <>
+          <ProcessesSection
+            sandboxId={sandbox.id}
+            processes={sandbox.processes}
+          />
+          <ExposePortSection sandboxId={sandbox.id} />
+          <CaptureToolsetSection sandboxId={sandbox.id} />
+          {sandbox.annotations || sandbox.metadata ? (
+            <MetadataSection
+              annotations={sandbox.annotations}
+              metadata={sandbox.metadata}
+            />
+          ) : null}
+        </>
       ) : null}
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -256,97 +265,6 @@ function TerminalSection({ sandboxId }: { sandboxId: string }) {
         />
       </CardContent>
     </Card>
-  );
-}
-
-/** Full-screen immersion (v1 parity): a maximized terminal plus every exposed
- * URL as an iframe tab. All panels stay mounted so switching tabs never drops
- * a live PTY or reloads an app. */
-function ImmersiveView({
-  sandbox,
-  onClose,
-}: {
-  sandbox: { id: string; urls: SandboxUrl[] };
-  onClose: () => void;
-}) {
-  const TERMINAL_TAB = "__terminal__";
-  const [active, setActive] = useState(TERMINAL_TAB);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-        <span className="truncate font-mono text-sm">{sandbox.id}</span>
-        <div className="ml-2 flex items-center gap-1 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActive(TERMINAL_TAB)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm transition-colors",
-              active === TERMINAL_TAB
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <TerminalSquare className="size-4" />
-            Terminal
-          </button>
-          {sandbox.urls.map((url) => (
-            <button
-              key={url.name}
-              type="button"
-              onClick={() => setActive(url.name)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm transition-colors",
-                active === url.name
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              {url.name}
-            </button>
-          ))}
-        </div>
-        <div className="flex-1" />
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X />
-          Close
-        </Button>
-      </div>
-
-      <div className="relative min-h-0 flex-1">
-        <div
-          className={cn(
-            "absolute inset-0",
-            active !== TERMINAL_TAB && "hidden",
-          )}
-        >
-          <MultiTerminal
-            sandboxId={sandbox.id}
-            className="h-full rounded-none border-0"
-          />
-        </div>
-        {sandbox.urls.map((url) => (
-          <iframe
-            key={url.name}
-            src={url.url}
-            title={url.name}
-            allow="clipboard-read; clipboard-write"
-            className={cn(
-              "absolute inset-0 h-full w-full border-0",
-              active !== url.name && "hidden",
-            )}
-          />
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -425,12 +343,9 @@ function ProcessRow({
   return (
     <div className="rounded-md border">
       <div className="flex flex-wrap items-center gap-2 p-3">
-        <span
-          className={`size-2 shrink-0 rounded-full ${process.running ? "bg-green-500" : "bg-red-500"}`}
-        >
-          <span className="sr-only">
-            {process.running ? "running" : "stopped"}
-          </span>
+        <StatusDot variant={process.running ? "success" : "danger"} />
+        <span className="sr-only">
+          {process.running ? "running" : "stopped"}
         </span>
         <span className="font-mono text-sm">{process.name}</span>
         {process.primary ? (
@@ -586,12 +501,10 @@ function ExposePortSection({ sandboxId }: { sandboxId: string }) {
             />
           </div>
           <div className="flex items-center gap-2">
-            <input
+            <Checkbox
               id="port-public"
-              type="checkbox"
               checked={isPublic}
               onChange={(e) => setIsPublic(e.target.checked)}
-              className="size-4"
             />
             <Label htmlFor="port-public">Public</Label>
           </div>

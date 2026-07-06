@@ -88,6 +88,19 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
     "opencode",
     (sandboxId) => new AcpSessionSurface(container.dispatch, sandboxId),
   );
+
+  // pi (pi-acp) speaks ACP, so it rides the exact same generic
+  // ACP-over-attach surface as opencode. This replaces the staging workaround
+  // of spoofing `atelier.dev/harness=opencode` on pi sandboxes: with `pi`
+  // registered, `composePi()` can honestly annotate `harness=pi` and both the
+  // session surface and dispatch resolve. pi selects its model via its own
+  // config (~/.pi/agent/settings.json + cliproxy), not ACP
+  // `session/set_config_option`, so its dispatch contributes no assignments.
+  container.registerHarnessDispatch({ id: "pi" });
+  container.sessionSurfaces.register(
+    "pi",
+    (sandboxId) => new AcpSessionSurface(container.dispatch, sandboxId),
+  );
 }
 
 const log = createChildLogger("container");
