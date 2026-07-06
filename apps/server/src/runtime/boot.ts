@@ -173,7 +173,9 @@ function createSandboxResources(
         },
       }),
     ),
-    kubeClient.createResource(buildSandboxService(sandboxId)),
+    kubeClient.createResource(
+      buildSandboxService(sandboxId, { ports: spec.ports ?? [] }),
+    ),
     ...buildPortIngresses(sandboxId, spec.ports).map((resource) =>
       kubeClient.createResource(resource),
     ),

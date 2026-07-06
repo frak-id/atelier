@@ -156,14 +156,26 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
 
 export function buildSandboxService(
   sandboxId: string,
-  options: { namespace?: string } = {},
+  options: {
+    namespace?: string;
+    ports?: ReadonlyArray<{ name: string; port: number }>;
+  } = {},
 ): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
-  const ports = SANDBOX_PORTS.map((p) => ({
-    name: p.name,
-    port: p.port,
-    targetPort: p.port,
-  }));
+  // Base infra ports (agent/ssh/well-known tools) plus any ports the spec's
+  // toolboxes declare. Without the latter, a toolbox port (e.g. pi-web's) gets
+  // an ingress pointing at `service:<port>` but no matching Service port, so
+  // Traefik has no backend and returns 404. Dedupe by name and port number
+  // (k8s requires unique Service port names).
+  const byName = new Set<string>();
+  const byPort = new Set<number>();
+  const ports: { name: string; port: number; targetPort: number }[] = [];
+  for (const p of [...SANDBOX_PORTS, ...(options.ports ?? [])]) {
+    if (byName.has(p.name) || byPort.has(p.port)) continue;
+    byName.add(p.name);
+    byPort.add(p.port);
+    ports.push({ name: p.name, port: p.port, targetPort: p.port });
+  }
 
   return {
     apiVersion: "v1",
