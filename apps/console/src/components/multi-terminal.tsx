@@ -15,7 +15,13 @@ import { cn } from "@/lib/utils";
  * so switching tabs preserves each session's live PTY connection and
  * scrollback. Creating selects the new tab; closing a session removes it.
  */
-export function MultiTerminal({ sandboxId }: { sandboxId: string }) {
+export function MultiTerminal({
+  sandboxId,
+  className,
+}: {
+  sandboxId: string;
+  className?: string;
+}) {
   const {
     data: sessions,
     isPending,
@@ -43,7 +49,12 @@ export function MultiTerminal({ sandboxId }: { sandboxId: string }) {
 
   if (isPending) {
     return (
-      <div className="flex h-96 items-center justify-center rounded-md border bg-[#09090b]">
+      <div
+        className={cn(
+          "flex h-96 items-center justify-center rounded-md border bg-[#09090b]",
+          className,
+        )}
+      >
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
@@ -51,14 +62,24 @@ export function MultiTerminal({ sandboxId }: { sandboxId: string }) {
 
   if (isError) {
     return (
-      <div className="flex h-96 items-center justify-center rounded-md border bg-[#09090b] px-4 text-center text-sm text-muted-foreground">
+      <div
+        className={cn(
+          "flex h-96 items-center justify-center rounded-md border bg-[#09090b] px-4 text-center text-sm text-muted-foreground",
+          className,
+        )}
+      >
         {error instanceof Error ? error.message : "Terminal unavailable"}
       </div>
     );
   }
 
   return (
-    <div className="flex h-96 flex-col overflow-hidden rounded-md border bg-[#09090b]">
+    <div
+      className={cn(
+        "flex h-96 flex-col overflow-hidden rounded-md border bg-[#09090b]",
+        className,
+      )}
+    >
       <div className="flex items-center overflow-x-auto border-b border-zinc-800 bg-zinc-900/50">
         {list.map((session) => (
           <div

@@ -85,7 +85,6 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
 
 # Layer 5: Directory structure + permissions
 RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
-    /home/dev/workspace \
     /home/dev/.local/share/code-server/User \
     /home/dev/.local/share/opencode \
     /home/dev/.config/opencode \

@@ -7,7 +7,14 @@ import type {
 } from "@frak/atelier-shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CircleDot, Loader2, Radio, Square, Trash2 } from "lucide-react";
+import {
+  CircleDot,
+  FolderGit2,
+  Loader2,
+  Radio,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import {
   permissionsQuery,
@@ -21,7 +28,6 @@ import {
   useReplyPermission,
   useReplyQuestion,
 } from "@/api/queries/sessions";
-import { MultiTerminal } from "@/components/multi-terminal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,18 +73,33 @@ function SessionsPage() {
       <PermissionsSection sandboxId={sandboxId} />
       <QuestionsSection sandboxId={sandboxId} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SessionsSection
-          sandboxId={sandboxId}
-          selectedSessionId={selectedSessionId}
-          onSelect={setSelectedSessionId}
-        />
-        <TodosSection sandboxId={sandboxId} sessionId={selectedSessionId} />
-      </div>
-
-      <TerminalsSection sandboxId={sandboxId} />
+      <SessionsSection
+        sandboxId={sandboxId}
+        selectedSessionId={selectedSessionId}
+        onSelect={setSelectedSessionId}
+      />
     </div>
   );
+}
+
+// ── grouping ─────────────────────────────────────────────────────────────
+
+/** The cloned-repo label for a session's absolute working directory — the
+ * trailing path segment (e.g. `/home/dev/wallet` → `wallet`). */
+function repoLabel(directory: string): string {
+  const trimmed = directory.replace(/\/+$/, "");
+  const base = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  return base || directory;
+}
+
+function groupSessionsByDirectory(sessions: AgentSession[]) {
+  const groups = new Map<string, AgentSession[]>();
+  for (const session of sessions) {
+    const list = groups.get(session.directory) ?? [];
+    list.push(session);
+    groups.set(session.directory, list);
+  }
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
 // ── sessions ───────────────────────────────────────────────────────────────
@@ -115,22 +136,98 @@ function SessionsSection({
   } = useQuery(sessionsListQuery(sandboxId));
   const { data: statuses } = useQuery(sessionStatusesQuery(sandboxId));
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Agent sessions</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {isPending ? (
+  if (isPending) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Agent sessions</CardTitle>
+        </CardHeader>
+        <CardContent>
           <Skeleton className="h-16 w-full" />
-        ) : isError ? (
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Agent sessions</CardTitle>
+        </CardHeader>
+        <CardContent>
           <p className="text-sm text-destructive">
             {error instanceof Error ? error.message : "Failed to load"}
           </p>
-        ) : !sessions || sessions.length === 0 ? (
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!sessions || sessions.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Agent sessions</CardTitle>
+        </CardHeader>
+        <CardContent>
           <p className="text-sm text-muted-foreground">No agent sessions.</p>
-        ) : (
-          sessions.map((session) => (
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const groups = groupSessionsByDirectory(sessions);
+
+  return (
+    <div className="space-y-4">
+      {groups.map(([directory, groupSessions]) => (
+        <DirectoryGroup
+          key={directory}
+          sandboxId={sandboxId}
+          directory={directory}
+          sessions={groupSessions}
+          statuses={statuses}
+          selectedSessionId={selectedSessionId}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DirectoryGroup({
+  sandboxId,
+  directory,
+  sessions,
+  statuses,
+  selectedSessionId,
+  onSelect,
+}: {
+  sandboxId: string;
+  directory: string;
+  sessions: AgentSession[];
+  statuses: Record<string, AgentSessionStatus> | undefined;
+  selectedSessionId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const selectedInGroup =
+    sessions.find((s) => s.id === selectedSessionId)?.id ?? null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-baseline gap-2">
+          <FolderGit2 className="size-4 shrink-0 self-center text-muted-foreground" />
+          <span>{repoLabel(directory)}</span>
+          <span className="truncate font-mono text-xs font-normal text-muted-foreground">
+            {directory}
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="space-y-2">
+          {sessions.map((session) => (
             <SessionRow
               key={session.id}
               sandboxId={sandboxId}
@@ -139,8 +236,9 @@ function SessionsSection({
               selected={session.id === selectedSessionId}
               onSelect={() => onSelect(session.id)}
             />
-          ))
-        )}
+          ))}
+        </div>
+        <TodosSection sandboxId={sandboxId} sessionId={selectedInGroup} />
       </CardContent>
     </Card>
   );
@@ -238,40 +336,38 @@ function TodosSection({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Todos</CardTitle>
-        <CardDescription>
-          {sessionId ? "For the selected session." : "Select a session."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {!sessionId ? (
-          <p className="text-sm text-muted-foreground">No session selected.</p>
-        ) : isPending ? (
-          <Skeleton className="h-16 w-full" />
-        ) : !todos || todos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No todos.</p>
-        ) : (
-          <ul className="space-y-1 text-sm">
-            {todos.map((todo, index) => (
-              <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: todos have no id; list re-fetched wholesale
-                key={index}
-                className={`flex items-start gap-2 ${
-                  todo.status === "completed" || todo.status === "cancelled"
-                    ? "text-muted-foreground line-through"
-                    : ""
-                }`}
-              >
-                <span className="font-mono">{TODO_ICON[todo.status]}</span>
-                <span>{todo.content}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+    <div className="rounded-md border bg-muted/20 p-3">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold">Todos</h3>
+        <span className="text-xs text-muted-foreground">
+          {sessionId ? "Selected session" : "Select a session"}
+        </span>
+      </div>
+      {!sessionId ? (
+        <p className="text-sm text-muted-foreground">No session selected.</p>
+      ) : isPending ? (
+        <Skeleton className="h-16 w-full" />
+      ) : !todos || todos.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No todos.</p>
+      ) : (
+        <ul className="space-y-1 text-sm">
+          {todos.map((todo, index) => (
+            <li
+              // biome-ignore lint/suspicious/noArrayIndexKey: todos have no id; list re-fetched wholesale
+              key={index}
+              className={`flex items-start gap-2 ${
+                todo.status === "completed" || todo.status === "cancelled"
+                  ? "text-muted-foreground line-through"
+                  : ""
+              }`}
+            >
+              <span className="font-mono">{TODO_ICON[todo.status]}</span>
+              <span>{todo.content}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -424,20 +520,5 @@ function QuestionRow({
         Reject
       </Button>
     </div>
-  );
-}
-
-// ── terminals ──────────────────────────────────────────────────────────────
-
-function TerminalsSection({ sandboxId }: { sandboxId: string }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Terminals</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <MultiTerminal sandboxId={sandboxId} />
-      </CardContent>
-    </Card>
   );
 }

@@ -6,13 +6,17 @@ import {
   ChevronRight,
   ExternalLink,
   Loader2,
+  Maximize2,
   MessagesSquare,
+  Minimize2,
   Play,
   Radio,
   Square,
   Star,
+  TerminalSquare,
+  X,
 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import {
   processLogsQuery,
   sandboxDetailQuery,
@@ -24,6 +28,7 @@ import {
   useSnapshotSandbox,
 } from "@/api/queries/sandboxes";
 import { useCaptureToolset } from "@/api/queries/toolsets";
+import { MultiTerminal } from "@/components/multi-terminal";
 import { TerminalView } from "@/components/terminal-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +54,7 @@ import {
   harnessFromAnnotations,
   sandboxStatusPresentation,
 } from "@/lib/sandbox-status";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/sandboxes/$sandboxId/")({
   component: SandboxDetailPage,
@@ -64,6 +70,7 @@ function SandboxDetailPage() {
     error,
   } = useQuery(sandboxDetailQuery(sandboxId));
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [immersive, setImmersive] = useState(false);
   const pause = usePauseSandbox();
   const resume = useResumeSandbox();
   const destroy = useDestroySandbox();
@@ -114,6 +121,14 @@ function SandboxDetailPage() {
           {harness ? <Badge variant="outline">{harness}</Badge> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setImmersive(true)}
+          >
+            <Maximize2 />
+            Immerse
+          </Button>
           <Button asChild variant="outline" size="sm">
             <Link
               to="/sandboxes/$sandboxId/sessions"
@@ -167,6 +182,7 @@ function SandboxDetailPage() {
       </div>
 
       <UrlsSection urls={sandbox.urls} />
+      <TerminalSection sandboxId={sandbox.id} />
       <ProcessesSection sandboxId={sandbox.id} processes={sandbox.processes} />
       <ExposePortSection sandboxId={sandbox.id} />
       <CaptureToolsetSection sandboxId={sandbox.id} />
@@ -206,6 +222,130 @@ function SandboxDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {immersive ? (
+        <ImmersiveView sandbox={sandbox} onClose={() => setImmersive(false)} />
+      ) : null}
+    </div>
+  );
+}
+
+/** Expandable terminal panel embedded in the sandbox's main view. Toggles
+ * between an inline height and a tall pane; the immersive view offers a
+ * full-screen terminal on top of this. */
+function TerminalSection({ sandboxId }: { sandboxId: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardTitle>Terminal</CardTitle>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setExpanded((open) => !open)}
+        >
+          {expanded ? <Minimize2 /> : <Maximize2 />}
+          {expanded ? "Collapse" : "Expand"}
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <MultiTerminal
+          sandboxId={sandboxId}
+          className={expanded ? "h-[70vh]" : undefined}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Full-screen immersion (v1 parity): a maximized terminal plus every exposed
+ * URL as an iframe tab. All panels stay mounted so switching tabs never drops
+ * a live PTY or reloads an app. */
+function ImmersiveView({
+  sandbox,
+  onClose,
+}: {
+  sandbox: { id: string; urls: SandboxUrl[] };
+  onClose: () => void;
+}) {
+  const TERMINAL_TAB = "__terminal__";
+  const [active, setActive] = useState(TERMINAL_TAB);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
+        <span className="truncate font-mono text-sm">{sandbox.id}</span>
+        <div className="ml-2 flex items-center gap-1 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActive(TERMINAL_TAB)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm transition-colors",
+              active === TERMINAL_TAB
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <TerminalSquare className="size-4" />
+            Terminal
+          </button>
+          {sandbox.urls.map((url) => (
+            <button
+              key={url.name}
+              type="button"
+              onClick={() => setActive(url.name)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm transition-colors",
+                active === url.name
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {url.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1" />
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          <X />
+          Close
+        </Button>
+      </div>
+
+      <div className="relative min-h-0 flex-1">
+        <div
+          className={cn(
+            "absolute inset-0",
+            active !== TERMINAL_TAB && "hidden",
+          )}
+        >
+          <MultiTerminal
+            sandboxId={sandbox.id}
+            className="h-full rounded-none border-0"
+          />
+        </div>
+        {sandbox.urls.map((url) => (
+          <iframe
+            key={url.name}
+            src={url.url}
+            title={url.name}
+            allow="clipboard-read; clipboard-write"
+            className={cn(
+              "absolute inset-0 h-full w-full border-0",
+              active !== url.name && "hidden",
+            )}
+          />
+        ))}
+      </div>
     </div>
   );
 }
