@@ -1,14 +1,7 @@
 import type { PrebuildRecord, SandboxSpec } from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import {
-  ChevronDown,
-  Download,
-  Layers,
-  Loader2,
-  Rocket,
-  Trash2,
-} from "lucide-react";
+import { ChevronDown, Layers, Loader2, Rocket, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { organizationsListQuery } from "@/api/queries/organizations";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
@@ -23,6 +16,7 @@ import {
 import { toolboxesListQuery } from "@/api/queries/toolboxes";
 import { SaveAsTemplateDialog } from "@/components/save-as-template-dialog";
 import { TemplateGallery } from "@/components/template-gallery";
+import { TemplateImportList } from "@/components/template-import-list";
 import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +40,6 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
-import { ALL_TEMPLATES, templateToSavedSpecImport } from "@/lib/templates";
 import { useLens } from "@/providers/lens";
 
 export const Route = createFileRoute("/spawn")({
@@ -345,18 +338,16 @@ function QuickSpawnSection({
 
 /**
  * Builder-only "cold start" affordance (design ui-evolution.md §2.3): the
- * static seed catalog (`ALL_TEMPLATES`) is never spawnable directly —
- * importing forks it into a real, org-owned saved spec (unpublished by
- * default), which the Builder can then edit and, from `SavedSpecsSection`,
- * "Promote to template" once it's actually right for their org.
+ * static seed catalog is never spawnable directly — importing forks it into a
+ * real, org-owned saved spec (unpublished by default), which the Builder can
+ * then edit and, from `SavedSpecsSection`, "Promote to template" once it's
+ * actually right for their org.
  */
 function ImportExampleSection({
   onOpenInEditor,
 }: {
   onOpenInEditor: (spec: SandboxSpec) => void;
 }) {
-  const createSavedSpec = useCreateSavedSpec();
-
   return (
     <Card>
       <CardHeader>
@@ -366,41 +357,8 @@ function ImportExampleSection({
           you can edit and publish as your org's own template.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2">
-        {ALL_TEMPLATES.map((template) => {
-          const { name, spec } = templateToSavedSpecImport(template);
-          return (
-            <div
-              key={template.id}
-              className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="truncate font-medium">{name}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {template.description}
-                </span>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={createSavedSpec.isPending}
-                  onClick={() => createSavedSpec.mutate({ name, spec })}
-                >
-                  <Download />
-                  Import
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onOpenInEditor(spec)}
-                >
-                  Open in editor
-                </Button>
-              </div>
-            </div>
-          );
-        })}
+      <CardContent>
+        <TemplateImportList onOpenInEditor={onOpenInEditor} />
       </CardContent>
     </Card>
   );

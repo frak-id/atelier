@@ -1,19 +1,22 @@
 import type { SandboxSpec } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Download, LayoutGrid, Pencil } from "lucide-react";
+import { LayoutGrid, Pencil } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { capabilitiesQuery } from "@/api/queries/capabilities";
 import {
   type SavedSpec,
   savedSpecsListQuery,
   useCreateSavedSpec,
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
+import { TemplateImportList } from "@/components/template-import-list";
+import {
+  TemplateMetaFields,
+  TemplatePublishToggle,
+} from "@/components/template-meta-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -22,13 +25,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 import { harnessFromAnnotations } from "@/lib/sandbox-status";
 import { parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
-import { ALL_TEMPLATES, templateToSavedSpecImport } from "@/lib/templates";
 
 export const Route = createFileRoute("/settings/templates")({
   component: TemplatesPage,
@@ -173,39 +174,12 @@ function TemplateRow({
  * forks a seed into a real, unpublished saved spec; publishing is a separate,
  * explicit step (the toggle above). */
 function ImportExamplesSection() {
-  const createSavedSpec = useCreateSavedSpec();
-
   return (
     <div className="space-y-2">
       <h2 className="text-sm font-medium text-muted-foreground">
         Examples — import to get started
       </h2>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {ALL_TEMPLATES.map((template) => {
-          const { name, spec } = templateToSavedSpecImport(template);
-          return (
-            <Card key={template.id}>
-              <CardContent className="flex items-center justify-between gap-2 p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {template.description}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={createSavedSpec.isPending}
-                  onClick={() => createSavedSpec.mutate({ name, spec })}
-                >
-                  <Download />
-                  Import
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      <TemplateImportList />
     </div>
   );
 }
@@ -229,7 +203,6 @@ function TemplateDialog({
 }) {
   const createSavedSpec = useCreateSavedSpec();
   const updateSavedSpec = useUpdateSavedSpec();
-  const { data: capabilities } = useQuery(capabilitiesQuery());
   const isEditing = savedSpec !== undefined;
 
   const [name, setName] = useState(savedSpec?.name ?? "");
@@ -325,43 +298,18 @@ function TemplateDialog({
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label htmlFor="tpl-name">Name</Label>
-              <Input
-                id="tpl-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                autoFocus={!isEditing}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="tpl-description">Description (optional)</Label>
-              <Input
-                id="tpl-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="tpl-icon">Icon name (optional)</Label>
-              <Input
-                id="tpl-icon"
-                value={icon}
-                onChange={(e) => setIcon(e.target.value)}
-                placeholder="bot, code, terminal…"
-                className="font-mono"
-              />
-            </div>
-            {harness ? (
-              <p className="text-xs text-muted-foreground">
-                Harness: <span className="font-mono">{harness}</span>
-                {capabilities && !capabilities.harnesses.includes(harness)
-                  ? " (not registered on this server)"
-                  : ""}
-                {" — set by the harness composer used in the spec below."}
-              </p>
-            ) : null}
+            <TemplateMetaFields
+              idPrefix="tpl"
+              name={name}
+              onNameChange={setName}
+              description={description}
+              onDescriptionChange={setDescription}
+              icon={icon}
+              onIconChange={setIcon}
+              harness={harness}
+              autoFocusName={!isEditing}
+              harnessHint="set by the harness composer used in the spec below."
+            />
             <div className="space-y-1">
               <Label htmlFor="tpl-spec">
                 Spec (JSONC){isEditing ? " — leave unchanged to keep it" : ""}
@@ -379,17 +327,11 @@ function TemplateDialog({
                 <p className="text-sm text-destructive">{specError}</p>
               ) : null}
             </div>
-            <label
-              htmlFor="tpl-publish"
-              className="flex items-center gap-2 text-sm"
-            >
-              <Checkbox
-                id="tpl-publish"
-                checked={publish}
-                onChange={(e) => setPublish(e.target.checked)}
-              />
-              Publish to the gallery
-            </label>
+            <TemplatePublishToggle
+              id="tpl-publish"
+              checked={publish}
+              onChange={setPublish}
+            />
           </div>
           <DialogFooter>
             <Button

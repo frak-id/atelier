@@ -190,12 +190,26 @@ one opencode (`acp`); the shared-state question only arises when a user clicks
 proves unsafe, escalate to the bigger "pivot the harness to `serve` and drive
 sessions over it" project (what v1 did) — but don't block this feature on it.
 
-**pi:** self-host pi's in-sandbox web server the same way
-(`{name:"pi", port, public:true, auth:"forward"}` on `pi-{id}.{baseDomain}`).
-**Reject external `pi-web.dev`:** a third-party origin won't carry the
-`*.baseDomain` oauth2-proxy cookie (every request 302s to the IdP),
-forward-auth's 302 breaks cross-origin XHR, and it would force CORS-allowing a
-SaaS origin *with credentials* — coupling our security to a third party.
+**pi (implemented):** self-host **PI WEB** (`@jmfederico/pi-web`, the
+self-hostable pi-web.dev) in-sandbox. `composePi` adds two lazy processes
+mirroring the `browser` preset's shape — `pi-web-sessiond` (persistent session
+daemon) + `pi` (the `pi-web-server` web/API, `after: ["pi-web-sessiond"]`,
+`readiness:{port:8504}`, holds the public `pi` port) — both auth-less behind
+forward-auth (`PI_WEB_HOST=0.0.0.0`, `PI_WEB_ALLOWED_HOSTS` = base domain from
+the enrichment seam, `PI_WEB_OFFLINE=1`). The pi toolbox must also `npm i -g
+--prefix ~/.local @jmfederico/pi-web`. **Reject external `pi-web.dev`** as a
+hosted client: a third-party origin won't carry the `*.baseDomain` oauth2-proxy
+cookie (every request 302s to the IdP), forward-auth's 302 breaks cross-origin
+XHR, and it would force CORS-allowing a SaaS origin *with credentials* — hence
+we run PI WEB *inside* the sandbox instead.
+
+> **Needs staging verification** (shape is proven by the `browser` preset, but
+> these runtime details are untested): (1) `PI_WEB_ALLOWED_HOSTS` = base domain
+> actually satisfies pi-web-server's host-check for `pi-{id}.{baseDomain}`;
+> (2) starting the lazy `pi` process cascades its `after` dep (`pi-web-sessiond`)
+> the way the browser preset's kasmvnc→openbox→chromium chain does; (3) the
+> `@jmfederico/pi-web` binaries resolve their node deps under the direct
+> (no-login-shell) supervisor exec with the absolute path + explicit PATH.
 
 **Gating process:** the harness-UI port's gating process is the lazy `serve`
 process (via its `readiness:{port:4096}`), so "Open → harness UI" gets the
@@ -317,6 +331,9 @@ UI" target selection.
 
 - **claude-code (or any new) harness:** the 4-step recipe in §3.2. Non-ACP
   harnesses additionally need a bespoke session surface (bigger lift).
+- **pi web UI staging smoke test:** the three runtime unknowns in §3.3 (host
+  check, lazy `after` cascade, binary PATH) — verify on `dev-base-v2` with the
+  pi toolbox + `@jmfederico/pi-web` before relying on it.
 - **Richer param kinds:** enums, secret-backed params → will want real
   validation beyond the JSON blob.
 - **Template versioning / audit:** who published what, when; rollback.

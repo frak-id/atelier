@@ -161,6 +161,10 @@ export const TEMPLATES: Template[] = [
       // then pi plugin installs, then write cliproxy + pi settings files.
       build: [
         "npm install -g --prefix ~/.local @earendil-works/pi-coding-agent pi-acp",
+        // PI WEB (self-hostable pi-web.dev) for the harness web UI — composePi()
+        // declares its lazy pi-web-sessiond + pi-web-server processes + `pi`
+        // forward-auth port; the binaries come from here (ui-evolution.md §3.3).
+        "npm install -g --prefix ~/.local @jmfederico/pi-web",
         "~/.local/bin/pi install npm:pi-cliproxyapi",
         "~/.local/bin/pi install npm:pi-subagents",
         "~/.local/bin/pi install npm:pi-usage",
@@ -171,7 +175,7 @@ export const TEMPLATES: Template[] = [
         // + node one-liners that write ~/.config/pi-cliproxyapi/config.json
         //   and ~/.pi/agent/settings.json (see reference block below).
       ],
-      paths: ["~/.local/bin", "~/.local/lib", "~/.pi", "~/.config/pi-cliproxyapi"],
+      paths: ["~/.local/bin", "~/.local/lib", "~/.pi", "~/.pi-web", "~/.config/pi-cliproxyapi"],
       harness: "pi",
       autoInject: false,
     },

@@ -1,15 +1,16 @@
 import type { SandboxSpec } from "@atelier/spec";
-import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { capabilitiesQuery } from "@/api/queries/capabilities";
 import {
   type SavedSpec,
   type TemplateParam,
   useCreateSavedSpec,
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
+import {
+  TemplateMetaFields,
+  TemplatePublishToggle,
+} from "@/components/template-meta-fields";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { harnessFromAnnotations } from "@/lib/sandbox-status";
 
@@ -53,7 +53,6 @@ export function SaveAsTemplateDialog({
   const isPromoting = savedSpec !== undefined;
   const createSavedSpec = useCreateSavedSpec();
   const updateSavedSpec = useUpdateSavedSpec();
-  const { data: capabilities } = useQuery(capabilitiesQuery());
 
   const [name, setName] = useState(savedSpec?.name ?? "");
   const [description, setDescription] = useState(
@@ -147,48 +146,17 @@ export function SaveAsTemplateDialog({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label htmlFor="template-name">Name</Label>
-              <Input
-                id="template-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="template-description">
-                Description (optional)
-              </Label>
-              <Input
-                id="template-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="What this template is for"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="template-icon">Icon name (optional)</Label>
-              <Input
-                id="template-icon"
-                value={icon}
-                onChange={(e) => setIcon(e.target.value)}
-                placeholder="bot, code, terminal…"
-                className="font-mono"
-              />
-            </div>
-            <div className="space-y-1 text-xs text-muted-foreground">
-              Harness:{" "}
-              <span className="font-mono">
-                {harness ?? "none"}
-                {capabilities &&
-                harness &&
-                !capabilities.harnesses.includes(harness)
-                  ? " (not registered on this server)"
-                  : ""}
-              </span>
-            </div>
+            <TemplateMetaFields
+              idPrefix="template"
+              name={name}
+              onNameChange={setName}
+              description={description}
+              onDescriptionChange={setDescription}
+              icon={icon}
+              onIconChange={setIcon}
+              harness={harness}
+              autoFocusName
+            />
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label>Parameters</Label>
@@ -233,17 +201,12 @@ export function SaveAsTemplateDialog({
                 </ul>
               )}
             </div>
-            <label
-              htmlFor="template-publish"
-              className="flex items-center gap-2 text-sm"
-            >
-              <Checkbox
-                id="template-publish"
-                checked={publish}
-                onChange={(e) => setPublish(e.target.checked)}
-              />
-              Publish to the gallery (visible to everyone in this scope)
-            </label>
+            <TemplatePublishToggle
+              id="template-publish"
+              checked={publish}
+              onChange={setPublish}
+              label="Publish to the gallery (visible to everyone in this scope)"
+            />
           </div>
           <DialogFooter>
             <Button

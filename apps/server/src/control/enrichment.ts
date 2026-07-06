@@ -19,7 +19,7 @@ import {
   resolveHarness,
 } from "@atelier/compose";
 import { isSecretRef, type SandboxSpec } from "@atelier/spec";
-import { dashboardUrl } from "../shared/lib/config.ts";
+import { config, dashboardUrl } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 /** Display/routing annotation a composed harness stamps onto the spec. */
@@ -70,11 +70,14 @@ function injectHarness(
   if (!harnessId) return spec;
 
   try {
-    // `webUiCorsOrigin`: only the opencode composer reads this key; other
-    // harnesses ignore it (`compose()` options are per-harness, unvalidated
-    // by this seam — see `resolveHarness`).
+    // Web-UI options are per-harness and ignored when unknown (`compose()`
+    // options aren't validated by this seam — see `resolveHarness`):
+    // opencode reads `webUiCorsOrigin` (the console origin, for its `serve`
+    // `--cors`); pi reads `webUiAllowedHosts` (the sandbox base domain, for
+    // PI WEB's host-check).
     const fragment = resolveHarness(harnessId).compose({
       webUiCorsOrigin: dashboardUrl,
+      webUiAllowedHosts: config.domain.baseDomain,
     });
     return mergeSpecs(spec, fragment) as SandboxSpec;
   } catch (err) {
