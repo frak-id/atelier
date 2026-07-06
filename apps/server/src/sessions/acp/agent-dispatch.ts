@@ -237,6 +237,13 @@ class SandboxAcpConnection {
   private holdCount = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /** Whether the socket has been torn down (idle-close or peer drop). A session
+   * handle captured before the drop uses this to fail fast rather than prompt
+   * into a dead connection. */
+  get isClosed(): boolean {
+    return this.closed;
+  }
+
   private constructor(
     private readonly transport: AcpTransport,
     private readonly connection: ClientConnection,
@@ -536,7 +543,14 @@ class SandboxAcpConnection {
         "session/list",
       );
     const res = await call();
-    return res.sessions == null ? call() : res;
+    if (res.sessions != null) return res;
+    const retry = await call();
+    if (retry.sessions == null) {
+      log.warn(
+        "session/list returned a null sessions array after retry; treating as empty",
+      );
+    }
+    return retry;
   }
 
   /** `session/list` + find. Never `session/load` — that replays history and
@@ -838,6 +852,17 @@ export class AgentDispatch {
     // non-empty registry kept the socket open). A caller that never calls
     // close() keeps one hold, same failure mode as any explicit-close resource.
     conn.acquire();
+    // The lifetime hold is released exactly once — on the first close(), or if
+    // newSession fails below. Guarding it lets a client's disconnect handler
+    // and an explicit close() both call close() without over-releasing the
+    // shared hold count (which would strand or prematurely idle-close the
+    // socket for sibling sessions).
+    let holdReleased = false;
+    const releaseHold = () => {
+      if (holdReleased) return;
+      holdReleased = true;
+      conn.release();
+    };
     let sessionId: string;
     try {
       sessionId = await conn.newSession(
@@ -846,7 +871,7 @@ export class AgentDispatch {
         titleFor(input.cwd),
       );
     } catch (err) {
-      conn.release();
+      releaseHold();
       throw err;
     }
     if (input.callbacks?.onUpdate) {
@@ -857,6 +882,17 @@ export class AgentDispatch {
       sessionId,
       sandboxId: input.sandboxId,
       prompt: async (text, selection) => {
+        // Re-resolve the owning connection each prompt. If it dropped (acp
+        // restart / idle-close race) and was replaced, the agent-side session
+        // no longer exists on the new connection (we don't session/load), so
+        // fail fast with an actionable error instead of prompting into a dead
+        // or mismatched socket.
+        const active = await this.connectionFor(input.sandboxId);
+        if (active !== conn || conn.isClosed) {
+          throw new Error(
+            `ACP session ${sessionId} is no longer live (connection was replaced); reopen the session`,
+          );
+        }
         const assignments = selection
           ? (harness.sessionConfig?.(selection) ?? [])
           : [];
@@ -886,7 +922,7 @@ export class AgentDispatch {
         try {
           await conn.closeSession(sessionId);
         } finally {
-          conn.release();
+          releaseHold();
         }
       },
     };

@@ -246,6 +246,47 @@ describe("AgentDispatch × session/list", () => {
     expect(afterPrompt[session.sessionId]).toEqual({ type: "idle" });
   });
 
+  test("double close() releases the lifetime hold once, never a sibling's", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+    const live = (
+      dispatch as unknown as { live: Map<string, { holdCount: number }> }
+    ).live;
+
+    const a = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev/a",
+    });
+    // Second session keeps a hold on the shared connection.
+    await dispatch.openSession({ sandboxId: SANDBOX_ID, cwd: "/home/dev/b" });
+    const conn = live.get(SANDBOX_ID);
+    expect(conn?.holdCount).toBe(2);
+
+    await a.close();
+    await a.close(); // idempotent: must NOT release b's hold
+    expect(conn?.holdCount).toBe(1);
+    expect(live.has(SANDBOX_ID)).toBe(true);
+  });
+
+  test("prompt fails fast when the owning connection was replaced", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+    const live = (
+      dispatch as unknown as { live: Map<string, { close(): void }> }
+    ).live;
+
+    const session = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev/work",
+    });
+    // Simulate a socket drop (acp restart): the owning connection tears down.
+    live.get(SANDBOX_ID)?.close();
+
+    await expect(session.prompt("hi")).rejects.toThrow(/no longer live/);
+  });
+
   test("todos come from plan notifications; [] for sessions never driven", async () => {
     const fakeAgent = new FakeAcpAgent();
     fakeAgent.seedSession("terminal-2", "/home/dev/other");
