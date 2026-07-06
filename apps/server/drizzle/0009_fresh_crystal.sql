@@ -1,0 +1,1 @@
+ALTER TABLE `entity_toolboxes` ADD `harness` text;

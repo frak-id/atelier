@@ -146,6 +146,14 @@ export const ToolsetEntrySchema = Type.Object(
     env: Type.Optional(Type.Record(Type.String(), Type.String())),
     provenance: ToolsetProvenanceSchema,
     /**
+     * The harness this toolset's owning toolbox provides, if any (e.g.
+     * "opencode", "pi"). Derived at list time from the `tb/<owner>/<slug>`
+     * toolbox behind this artifact; absent for standalone toolsets. Lets the
+     * compose surface tag a toolset with the harness it brings, independent
+     * of who is viewing.
+     */
+    harness: Type.Optional(Type.String()),
+    /**
      * Private-to-the-capturing-user by default (captures). Publishing to the
      * org is an explicit step (proposal §2 secret-scrub constraint).
      */

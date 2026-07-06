@@ -13,7 +13,10 @@ function rowToConfig(row: typeof entityToolboxes.$inferSelect): ToolboxConfig {
     source: row.source ?? undefined,
     build: row.build,
     paths: row.paths,
-    enabled: row.enabled === 1,
+    harness: row.harness ?? undefined,
+    processes: row.processes ?? undefined,
+    ports: row.ports ?? undefined,
+    autoInject: row.autoInject === 1,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -38,12 +41,12 @@ export class ToolboxRepository {
       .map(rowToConfig);
   }
 
-  /** Enabled toolboxes, oldest-first (entities-toolbox.md R6). */
-  listEnabled(owner: ToolboxOwner): ToolboxConfig[] {
+  /** Auto-inject toolboxes, oldest-first (entities-toolbox.md R6). */
+  listAutoInject(owner: ToolboxOwner): ToolboxConfig[] {
     return getDatabase()
       .select()
       .from(entityToolboxes)
-      .where(and(ownerFilter(owner), eq(entityToolboxes.enabled, 1)))
+      .where(and(ownerFilter(owner), eq(entityToolboxes.autoInject, 1)))
       .orderBy(asc(entityToolboxes.createdAt))
       .all()
       .map(rowToConfig);
@@ -82,7 +85,10 @@ export class ToolboxRepository {
         source: record.source,
         build: record.build,
         paths: record.paths,
-        enabled: record.enabled ? 1 : 0,
+        harness: record.harness,
+        processes: record.processes,
+        ports: record.ports,
+        autoInject: record.autoInject ? 1 : 0,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
       })
@@ -90,12 +96,23 @@ export class ToolboxRepository {
     return record;
   }
 
-  update(id: string, patch: Partial<ToolboxConfig>): ToolboxConfig | undefined {
+  update(
+    id: string,
+    patch: Partial<Omit<ToolboxConfig, "harness">> & {
+      harness?: string | null;
+    },
+  ): ToolboxConfig | undefined {
     const existing = this.getById(id);
     if (!existing) return undefined;
+    // `harness: null` clears it; an absent key keeps the existing value.
+    const harness =
+      patch.harness === undefined
+        ? existing.harness
+        : (patch.harness ?? undefined);
     const updated: ToolboxConfig = {
       ...existing,
       ...patch,
+      harness,
       id: existing.id,
       ownerType: existing.ownerType,
       ownerId: existing.ownerId,
@@ -110,7 +127,10 @@ export class ToolboxRepository {
         source: updated.source,
         build: updated.build,
         paths: updated.paths,
-        enabled: updated.enabled ? 1 : 0,
+        harness: updated.harness ?? null,
+        processes: updated.processes,
+        ports: updated.ports,
+        autoInject: updated.autoInject ? 1 : 0,
         updatedAt: updated.updatedAt,
       })
       .where(eq(entityToolboxes.id, id))

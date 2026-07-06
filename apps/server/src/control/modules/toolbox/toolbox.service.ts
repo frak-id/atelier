@@ -34,15 +34,24 @@ export class ToolboxService {
     return this.repository.list(owner);
   }
 
-  /** Enabled toolboxes, oldest-first — the spawn-injection order (R6). */
-  listEnabled(owner: ToolboxOwner): ToolboxConfig[] {
-    return this.repository.listEnabled(owner);
+  /** Auto-inject toolboxes, oldest-first — the spawn-injection order (R6). */
+  listAutoInject(owner: ToolboxOwner): ToolboxConfig[] {
+    return this.repository.listAutoInject(owner);
   }
 
   get(id: string): ToolboxConfig {
     const config = this.repository.getById(id);
     if (!config) throw new NotFoundError("ToolboxConfig", id);
     return config;
+  }
+
+  /** Lookup by owner+slug (undefined if absent) — used by the api/ seam to
+   * map a `tb/…` toolset ref back to its declaring toolbox config. */
+  getByOwnerAndSlug(
+    owner: ToolboxOwner,
+    slug: string,
+  ): ToolboxConfig | undefined {
+    return this.repository.getByOwnerAndSlug(owner, slug);
   }
 
   create(owner: ToolboxOwner, input: ToolboxConfigInput): ToolboxConfig {
@@ -61,7 +70,10 @@ export class ToolboxService {
       source: input.source,
       build: input.build,
       paths: input.paths,
-      enabled: input.enabled ?? true,
+      harness: input.harness,
+      processes: input.processes,
+      ports: input.ports,
+      autoInject: input.autoInject ?? true,
       createdAt: now,
       updatedAt: now,
     };
@@ -119,7 +131,10 @@ export class ToolboxService {
       source: DEFAULT_TOOLBOX.source,
       build: DEFAULT_TOOLBOX.build,
       paths: DEFAULT_TOOLBOX.paths,
-      enabled: DEFAULT_TOOLBOX.enabled ?? true,
+      harness: DEFAULT_TOOLBOX.harness,
+      processes: DEFAULT_TOOLBOX.processes,
+      ports: DEFAULT_TOOLBOX.ports,
+      autoInject: DEFAULT_TOOLBOX.autoInject ?? true,
       createdAt: now,
       updatedAt: now,
     };

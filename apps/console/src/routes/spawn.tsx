@@ -1,8 +1,10 @@
-import type { SandboxSpec } from "@atelier/spec";
-import { useQuery } from "@tanstack/react-query";
+import type { PrebuildRecord, SandboxSpec } from "@atelier/spec";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Loader2, Rocket, Trash2 } from "lucide-react";
+import { ChevronDown, Layers, Loader2, Rocket, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { organizationsListQuery } from "@/api/queries/organizations";
+import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { useSpawnSandbox } from "@/api/queries/sandboxes";
 import {
   savedSpecsListQuery,
@@ -10,7 +12,8 @@ import {
   useDeleteSavedSpec,
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
-import { toolsetsListQuery } from "@/api/queries/toolsets";
+import { toolboxesListQuery } from "@/api/queries/toolboxes";
+import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +23,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -48,16 +50,19 @@ function SpawnPage() {
     name: string;
   } | null>(null);
 
-  function spawnFromSpec(spec: SandboxSpec) {
-    spawn.mutate(spec, {
-      onSuccess: (data) => {
-        if (data)
-          navigate({
-            to: "/sandboxes/$sandboxId",
-            params: { sandboxId: data.id },
-          });
+  function spawnFromSpec(spec: SandboxSpec, toolboxes?: string[]) {
+    spawn.mutate(
+      { ...spec, ...(toolboxes && toolboxes.length > 0 ? { toolboxes } : {}) },
+      {
+        onSuccess: (data) => {
+          if (data)
+            navigate({
+              to: "/sandboxes/$sandboxId",
+              params: { sandboxId: data.id },
+            });
+        },
       },
-    });
+    );
   }
 
   function loadIntoEditor(
@@ -72,6 +77,12 @@ function SpawnPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">Spawn a sandbox</h1>
 
+      <QuickSpawnSection
+        onSpawn={spawnFromSpec}
+        spawnPending={spawn.isPending}
+        onOpenInEditor={(spec) => loadIntoEditor(spec)}
+      />
+
       <SavedSpecsSection
         onSpawn={spawnFromSpec}
         spawnPending={spawn.isPending}
@@ -79,12 +90,6 @@ function SpawnPage() {
         onDeleted={(id) => {
           if (editingSpec?.id === id) setEditingSpec(null);
         }}
-      />
-
-      <ComposeSection
-        onSpawn={spawnFromSpec}
-        spawnPending={spawn.isPending}
-        onOpenInEditor={(spec) => loadIntoEditor(spec)}
       />
 
       <EditorSection
@@ -96,6 +101,215 @@ function SpawnPage() {
         onStopEditing={() => setEditingSpec(null)}
       />
     </div>
+  );
+}
+
+// ── quick spawn (prebuild + toolboxes) ──────────────────────
+
+/** Every toolbox the caller can apply — their own + each org's, flattened. */
+function useAllToolboxes() {
+  const { data: orgs } = useQuery(organizationsListQuery());
+  const owners = ["user", ...(orgs ?? []).map((org) => `org:${org.id}`)];
+  const results = useQueries({
+    queries: owners.map((owner) => toolboxesListQuery(owner)),
+  });
+  return results.flatMap((r) => r.data ?? []);
+}
+
+/** Short, human summary of a prebuild's opaque metadata (workspace/repo…). */
+function metadataSummary(metadata?: Record<string, string>): string | null {
+  if (!metadata) return null;
+  const entries = Object.entries(metadata);
+  if (entries.length === 0) return null;
+  return entries.map(([k, v]) => `${k}: ${v}`).join(" · ");
+}
+
+/** One-tap spawn from a stored prebuild snapshot, with optional harness and a
+ * shared toolset selection layered on top (`source.snapshot` + `toolsets`). */
+function QuickSpawnSection({
+  onSpawn,
+  spawnPending,
+  onOpenInEditor,
+}: {
+  onSpawn: (spec: SandboxSpec, toolboxes?: string[]) => void;
+  spawnPending: boolean;
+  onOpenInEditor: (spec: SandboxSpec) => void;
+}) {
+  const {
+    data: prebuilds,
+    isPending,
+    isError,
+    error,
+  } = useQuery(prebuildsListQuery());
+  const toolboxes = useAllToolboxes();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advanced, setAdvanced] = useState({
+    vcpus: "2",
+    memoryMb: "2048",
+  });
+  const [selectedToolboxes, setSelectedToolboxes] = useState<Set<string>>(
+    new Set(),
+  );
+
+  function setAdv<K extends keyof typeof advanced>(
+    key: K,
+    value: (typeof advanced)[K],
+  ) {
+    setAdvanced((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleToolbox(selector: string) {
+    setSelectedToolboxes((current) => {
+      const next = new Set(current);
+      if (next.has(selector)) next.delete(selector);
+      else next.add(selector);
+      return next;
+    });
+  }
+
+  function buildSpec(snapshotRef: string): SandboxSpec {
+    // No harness or tool presets here: the harness AND any tool surfaces
+    // (vscode, browser, …) come from the toolboxes applied to the spawn,
+    // never hardcoded UI toggles.
+    const base = composeSpec({
+      image: "unused",
+      vcpus: Math.max(1, Math.round(Number(advanced.vcpus) || 1)),
+      memoryMb: Math.max(256, Math.round(Number(advanced.memoryMb) || 256)),
+    });
+    return { ...base, source: { snapshot: snapshotRef } };
+  }
+
+  const pickedToolboxes = () => [...selectedToolboxes];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Quick spawn from a prebuild</CardTitle>
+        <CardDescription>
+          Boot straight from a workspace snapshot, with toolsets layered on top.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
+            <ChevronDown
+              className={
+                advancedOpen
+                  ? "rotate-180 transition-transform"
+                  : "transition-transform"
+              }
+            />
+            Advanced
+          </Button>
+        </div>
+        {advancedOpen ? (
+          <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="quick-vcpus">vCPUs</Label>
+                <Input
+                  id="quick-vcpus"
+                  type="number"
+                  min={1}
+                  value={advanced.vcpus}
+                  onChange={(e) => setAdv("vcpus", e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="quick-memory">Memory (MB)</Label>
+                <Input
+                  id="quick-memory"
+                  type="number"
+                  min={256}
+                  value={advanced.memoryMb}
+                  onChange={(e) => setAdv("memoryMb", e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {toolboxes.length > 0 ? (
+          <div className="space-y-1">
+            <Label>Toolboxes</Label>
+            <ToolboxPicker
+              toolboxes={toolboxes}
+              selected={selectedToolboxes}
+              onToggle={toggleToolbox}
+            />
+          </div>
+        ) : null}
+        {isPending ? (
+          <div className="space-y-2">
+            <Skeleton className="h-14 w-full" />
+            <Skeleton className="h-14 w-full" />
+          </div>
+        ) : isError ? (
+          <p className="text-sm text-destructive">
+            {error instanceof Error ? error.message : "Failed to load"}
+          </p>
+        ) : !prebuilds || prebuilds.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No prebuilds yet. Create one under Settings → Prebuilds.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {prebuilds.map((prebuild: PrebuildRecord) => {
+              const summary = metadataSummary(prebuild.metadata);
+              return (
+                <div
+                  key={prebuild.ref}
+                  className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Layers className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate font-medium">
+                        {summary ?? prebuild.ref}
+                      </span>
+                      {prebuild.parent ? (
+                        <Badge variant="outline">chained</Badge>
+                      ) : null}
+                    </div>
+                    <span className="truncate font-mono text-xs text-muted-foreground">
+                      {prebuild.ref}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      size="sm"
+                      disabled={spawnPending}
+                      onClick={() =>
+                        onSpawn(buildSpec(prebuild.ref), pickedToolboxes())
+                      }
+                    >
+                      {spawnPending ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Rocket />
+                      )}
+                      Spawn
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onOpenInEditor(buildSpec(prebuild.ref))}
+                    >
+                      Editor
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -241,157 +455,6 @@ function SavedSpecItem({
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-// ── compose ──────────────────────────────────────────────────────────────
-
-function ComposeSection({
-  onSpawn,
-  spawnPending,
-  onOpenInEditor,
-}: {
-  onSpawn: (spec: SandboxSpec) => void;
-  spawnPending: boolean;
-  onOpenInEditor: (spec: SandboxSpec) => void;
-}) {
-  const [form, setForm] = useState({
-    harness: true,
-    vscode: false,
-    terminal: false,
-    browser: false,
-    image: "dev-base:latest",
-    vcpus: "2",
-    memoryMb: "2048",
-  });
-  const [selectedToolsets, setSelectedToolsets] = useState<Set<string>>(
-    new Set(),
-  );
-  const { data: toolsets } = useQuery(toolsetsListQuery());
-
-  function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  function toggleToolset(ref: string) {
-    setSelectedToolsets((current) => {
-      const next = new Set(current);
-      if (next.has(ref)) next.delete(ref);
-      else next.add(ref);
-      return next;
-    });
-  }
-
-  function buildSpec(): SandboxSpec {
-    const spec = composeSpec({
-      harness: form.harness,
-      presets: {
-        vscode: form.vscode,
-        terminal: form.terminal,
-        browser: form.browser,
-      },
-      image: form.image,
-      vcpus: Math.max(1, Math.round(Number(form.vcpus) || 1)),
-      memoryMb: Math.max(256, Math.round(Number(form.memoryMb) || 256)),
-    });
-    if (selectedToolsets.size === 0) return spec;
-    return { ...spec, toolsets: [...selectedToolsets].map((ref) => ({ ref })) };
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Compose</CardTitle>
-        <CardDescription>
-          Build a spec from presets — no editing required.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="space-y-1">
-            <Label htmlFor="compose-image">Image</Label>
-            <Input
-              id="compose-image"
-              value={form.image}
-              onChange={(e) => set("image", e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="compose-vcpus">vCPUs</Label>
-            <Input
-              id="compose-vcpus"
-              type="number"
-              min={1}
-              value={form.vcpus}
-              onChange={(e) => set("vcpus", e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="compose-memory">Memory (MB)</Label>
-            <Input
-              id="compose-memory"
-              type="number"
-              min={256}
-              value={form.memoryMb}
-              onChange={(e) => set("memoryMb", e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-4">
-          {(
-            [
-              ["harness", "opencode harness"],
-              ["vscode", "vscode"],
-              ["terminal", "terminal"],
-              ["browser", "browser"],
-            ] as const
-          ).map(([key, label]) => (
-            <label
-              key={key}
-              htmlFor={`compose-${key}`}
-              className="flex items-center gap-2 text-sm"
-            >
-              <Checkbox
-                id={`compose-${key}`}
-                checked={form[key]}
-                onChange={(e) => set(key, e.target.checked)}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-        {toolsets && toolsets.length > 0 ? (
-          <div className="space-y-1">
-            <Label>Toolsets</Label>
-            <div className="flex flex-wrap gap-4">
-              {toolsets.map((toolset) => (
-                <label
-                  key={toolset.ref}
-                  htmlFor={`toolset-${toolset.ref}`}
-                  className="flex items-center gap-2 text-sm"
-                >
-                  <Checkbox
-                    id={`toolset-${toolset.ref}`}
-                    checked={selectedToolsets.has(toolset.ref)}
-                    onChange={() => toggleToolset(toolset.ref)}
-                  />
-                  {toolset.name}
-                </label>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={spawnPending} onClick={() => onSpawn(buildSpec())}>
-            {spawnPending ? <Loader2 className="animate-spin" /> : <Rocket />}
-            Spawn
-          </Button>
-          <Button variant="outline" onClick={() => onOpenInEditor(buildSpec())}>
-            Open in editor
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 

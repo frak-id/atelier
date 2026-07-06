@@ -1,4 +1,3 @@
-import { composeOpencode, mergeSpecs, PRESETS } from "@atelier/compose";
 import type { SandboxSpec } from "@atelier/spec";
 import { SandboxSpecSchema } from "@atelier/spec";
 import { Errors } from "@sinclair/typebox/errors";
@@ -40,25 +39,17 @@ export function parseSpecJsonc(
 }
 
 interface ComposeSpecOptions {
-  harness: boolean;
-  presets: { vscode: boolean; terminal: boolean; browser: boolean };
   image: string;
   vcpus: number;
   memoryMb: number;
 }
 
-/** Base + selected harness/presets, folded left to right (last wins on
- * scalar conflicts, keyed-merge on arrays) via `@atelier/compose`. */
+/** The bare spec skeleton (source + resources). Harness and tool surfaces
+ * (vscode, browser, …) are NOT composed here — they come from the
+ * toolboxes/toolsets applied to the spawn, never hardcoded UI toggles. */
 export function composeSpec(opts: ComposeSpecOptions): SandboxSpec {
-  const fragments = [
-    {
-      source: { image: opts.image },
-      resources: { vcpus: opts.vcpus, memoryMb: opts.memoryMb },
-    },
-    opts.harness ? composeOpencode() : {},
-    opts.presets.vscode ? PRESETS.vscode() : {},
-    opts.presets.terminal ? PRESETS.terminal() : {},
-    opts.presets.browser ? PRESETS.browser() : {},
-  ];
-  return mergeSpecs(...fragments) as SandboxSpec;
+  return {
+    source: { image: opts.image },
+    resources: { vcpus: opts.vcpus, memoryMb: opts.memoryMb },
+  } as SandboxSpec;
 }

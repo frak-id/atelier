@@ -6,7 +6,7 @@
  */
 
 import { AuthService } from "./auth.ts";
-import { enrichSpec } from "./enrichment.ts";
+import { type EnrichmentOptions, enrichSpec } from "./enrichment.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import { CliproxyService } from "./modules/cliproxy/index.ts";
 import {
@@ -69,12 +69,21 @@ export function createControlContainer() {
     authService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
-    enrichSpec: (spec: Parameters<typeof enrichSpec>[0], orgId?: string) =>
-      enrichSpec(spec, orgId, {
-        secrets: secretService,
-        orgPolicy: orgPolicyService,
-        cliproxy: cliproxyService,
-      }),
+    enrichSpec: (
+      spec: Parameters<typeof enrichSpec>[0],
+      orgId?: string,
+      opts?: EnrichmentOptions,
+    ) =>
+      enrichSpec(
+        spec,
+        orgId,
+        {
+          secrets: secretService,
+          orgPolicy: orgPolicyService,
+          cliproxy: cliproxyService,
+        },
+        opts,
+      ),
   };
 }
 

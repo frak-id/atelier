@@ -16,6 +16,7 @@ import {
   type PatchEnvRequest,
   type PatchFilesRequest,
   type PortEntry,
+  type PrebuildRecord,
   type PrebuildSpec,
   type ProcessStatus,
   type ResumeRequest,
@@ -112,6 +113,22 @@ export class RuntimeService {
     return run;
   }
 
+  /** List stored prebuild snapshots, newest first — the read side of
+   * `prebuild()`, for the console's prebuild list and one-tap spawn. */
+  listPrebuilds(): PrebuildRecord[] {
+    return this.snapshots
+      .list()
+      .map((s) => ({
+        ref: s.ref,
+        hash: s.hash,
+        image: s.image,
+        parent: s.parent,
+        metadata: s.metadata,
+        createdAt: s.createdAt,
+      }))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   private async executePrebuild(
     spec: PrebuildSpec,
     hash: string,
@@ -151,6 +168,7 @@ export class RuntimeService {
         ref,
         image,
         parent: parentRef,
+        metadata: spec.metadata,
         createdAt: new Date().toISOString(),
       });
       log.info({ ref, hash, parent: parentRef }, "prebuild snapshot created");
@@ -689,18 +707,34 @@ export class RuntimeService {
     record: SandboxRecord,
   ): Promise<ProcessStatus[]> {
     if (record.status !== "running") return [];
+    // Union the live agent view with the spec's *declared* processes: a lazy
+    // process that hasn't started yet is absent from the supervisor, so
+    // without this a `lazy` tool (vscode, browser) would be invisible in the
+    // UI — no row, no Start button. Declared-not-live → shown as stopped.
+    const declared = record.spec.processes ?? [];
+    let live: Awaited<ReturnType<typeof this.agent.processList>>["processes"] =
+      [];
     try {
-      const { processes } = await this.agent.processList(record.id);
-      return processes.map((p) => ({
-        name: p.name,
-        running: p.status === "running",
-        ready: p.ready,
-        primary: p.primary,
-        exitCode: p.exitCode,
-      }));
+      ({ processes: live } = await this.agent.processList(record.id));
     } catch {
-      return [];
+      // Agent unreachable: still surface the declared set so the UI isn't blank.
     }
+    const liveByName = new Map(live.map((p) => [p.name, p]));
+    const names = new Set<string>([
+      ...live.map((p) => p.name),
+      ...declared.map((p) => p.name),
+    ]);
+    return [...names].map((name) => {
+      const p = liveByName.get(name);
+      const decl = declared.find((d) => d.name === name);
+      return {
+        name,
+        running: p?.status === "running",
+        ready: p?.ready,
+        primary: p?.primary ?? decl?.primary,
+        exitCode: p?.exitCode,
+      };
+    });
   }
 
   /** Run a lifecycle phase's hooks in the guest, failing the operation if a

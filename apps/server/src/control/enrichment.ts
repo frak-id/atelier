@@ -12,16 +12,69 @@
  * gets the mandated pieces, because this runs server-side on every crossing,
  * before `runtime.create(spec)`.
  */
-import { OPENCODE_PATHS, opencodeMergeProxyProviders } from "@atelier/compose";
+import {
+  mergeSpecs,
+  OPENCODE_PATHS,
+  opencodeMergeProxyProviders,
+  resolveHarness,
+} from "@atelier/compose";
 import { isSecretRef, type SandboxSpec } from "@atelier/spec";
+import { createChildLogger } from "../shared/lib/logger.ts";
+
+/** Display/routing annotation a composed harness stamps onto the spec. */
+const HARNESS_ANNOTATION = "atelier.dev/harness";
+
 import type { CliproxyService } from "./modules/cliproxy/index.ts";
 import type { OrgPolicyService } from "./modules/org-policy/index.ts";
 import type { SecretService } from "./modules/secret/index.ts";
+
+const log = createChildLogger("enrichment");
 
 export interface EnrichmentDeps {
   secrets: SecretService;
   orgPolicy: OrgPolicyService;
   cliproxy: CliproxyService;
+}
+
+/** Options carrying pre-resolved, per-request enrichment hints. */
+export interface EnrichmentOptions {
+  /** The harness id resolved from the spawn's toolboxes (see `api/` seam). */
+  toolboxHarnessId?: string;
+}
+
+/**
+ * Compose the winning harness into the spec when it doesn't already declare
+ * one. Precedence: the spec's own harness (a `atelier.dev/harness` annotation,
+ * composed client-side) > a toolbox-declared harness > the org policy's
+ * `harness`. Composition only happens for the two lower tiers; a spec that
+ * already carries a harness is returned untouched (it wins).
+ */
+function injectHarness(
+  spec: SandboxSpec,
+  orgId: string | undefined,
+  orgPolicy: OrgPolicyService,
+  toolboxHarnessId: string | undefined,
+): SandboxSpec {
+  if (spec.annotations?.[HARNESS_ANNOTATION]) return spec;
+
+  const orgFragment = orgId
+    ? (orgPolicy.getByOrgId(orgId)?.fragment as
+        | { harness?: unknown }
+        | undefined)
+    : undefined;
+  const orgHarness =
+    typeof orgFragment?.harness === "string" ? orgFragment.harness : undefined;
+
+  const harnessId = toolboxHarnessId ?? orgHarness;
+  if (!harnessId) return spec;
+
+  try {
+    const fragment = resolveHarness(harnessId).compose();
+    return mergeSpecs(spec, fragment) as SandboxSpec;
+  } catch (err) {
+    log.warn({ harnessId, err }, "unknown harness; leaving spec unharnessed");
+    return spec;
+  }
 }
 
 /** Replace every `{"$secret": name}` reference in the spec with its value. */
@@ -132,10 +185,19 @@ export async function enrichSpec(
   spec: SandboxSpec,
   orgId: string | undefined,
   deps: EnrichmentDeps,
+  opts: EnrichmentOptions = {},
 ): Promise<SandboxSpec> {
   const withPolicy = injectOrgPolicy(spec, orgId, deps.orgPolicy);
-  const withProviders = await injectCliproxyProviders(
+  // Harness must be composed before cliproxy provider injection so a
+  // toolbox/org-composed `opencode.json` still receives the server's models.
+  const withHarness = injectHarness(
     withPolicy,
+    orgId,
+    deps.orgPolicy,
+    opts.toolboxHarnessId,
+  );
+  const withProviders = await injectCliproxyProviders(
+    withHarness,
     deps.cliproxy,
   );
   return resolveSecrets(withProviders, orgId, deps.secrets);

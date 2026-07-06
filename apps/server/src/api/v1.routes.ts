@@ -7,6 +7,8 @@
 import {
   AddPortRequestSchema,
   AddProcessRequestSchema,
+  type CreateSandboxRequest,
+  CreateSandboxRequestSchema,
   ExecRequestSchema,
   PatchEnvRequestSchema,
   PatchFilesRequestSchema,
@@ -14,7 +16,6 @@ import {
   PrebuildSpecSchema,
   ResumeRequestSchema,
   type SandboxSpec,
-  SandboxSpecSchema,
   type ToolsetBuildRequest,
   ToolsetBuildRequestSchema,
   type ToolsetCaptureRequest,
@@ -24,7 +25,30 @@ import {
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
 import { createAuthPlugin } from "./auth.plugin.ts";
-import { resolveToolboxRefs, type ServerContainer } from "./container.ts";
+import {
+  harnessForToolset,
+  resolveSelectedToolboxes,
+  resolveToolboxHarness,
+  resolveToolboxRefs,
+  resolveToolboxSurface,
+  type ServerContainer,
+} from "./container.ts";
+
+/**
+ * Merge two name-keyed lists (processes/ports): `base` entries first, then
+ * `override` entries — a same-name entry in `override` (the spec's own) wins.
+ */
+function mergeByName<T extends { name: string }>(
+  base: T[],
+  override: T[] | undefined,
+): T[] | undefined {
+  if (!override || override.length === 0)
+    return base.length > 0 ? base : undefined;
+  const byName = new Map<string, T>();
+  for (const e of base) byName.set(e.name, e);
+  for (const e of override) byName.set(e.name, e);
+  return [...byName.values()];
+}
 
 /**
  * Resolve the caller's org for enrichment: first org membership, falling
@@ -49,13 +73,19 @@ export function createV1Routes(container: ServerContainer) {
     new Elysia({ prefix: "/v1" })
       .use(authPlugin)
       // ── prebuilds ──────────────────────────────────────────────────────
+      .get("/prebuilds", () => runtime.listPrebuilds())
       .post(
         "/prebuilds",
         async ({ body }) => runtime.prebuild(body as PrebuildSpec),
         { body: PrebuildSpecSchema },
       )
       // ── toolsets ───────────────────────────────────────────────────────
-      .get("/toolsets", () => runtime.listToolsets())
+      .get("/toolsets", () =>
+        runtime.listToolsets().map((entry) => ({
+          ...entry,
+          harness: harnessForToolset(container, entry.name),
+        })),
+      )
       .post(
         "/toolsets",
         async ({ body }) => runtime.buildToolset(body as ToolsetBuildRequest),
@@ -78,23 +108,61 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/sandboxes",
         async ({ body, user }) => {
+          // The body is a spec plus the high-level `toolboxes` the caller
+          // picked; strip the selectors so the runtime only ever sees a spec.
+          const { toolboxes: selectors = [], ...specFields } =
+            body as CreateSandboxRequest;
+          const spec = specFields as SandboxSpec;
           const orgId = resolveOrgId(control, user.id);
-          const enriched = await control.enrichSpec(body as SandboxSpec, orgId);
           const authorizedKeys = control.sshKeyService.getValidPublicKeys();
-          // Prepend org (baseline) then user (personal overlay) toolboxes,
-          // oldest-first (R6), so a dev's own `spec.toolsets` still win last on
-          // path conflicts.
-          const toolboxRefs = await resolveToolboxRefs(container, {
+          // Auto-inject org (baseline) then user (personal overlay) toolboxes,
+          // oldest-first (R6), then the explicitly-picked ones.
+          const autoInjectRefs = await resolveToolboxRefs(container, {
             orgId,
             userId: user.id,
           });
+          const selectedRefs = await resolveSelectedToolboxes(
+            container,
+            selectors,
+          );
+          // Every toolbox applied to this spawn, as parseable `tb/…` handles —
+          // auto-injected refs, picked selectors (incl. process-only ones with
+          // no toolset), and any explicit `spec.toolsets`. Drives harness +
+          // surface resolution.
+          const applied = [
+            ...autoInjectRefs,
+            ...selectors.map((ref) => ({ ref })),
+            ...(spec.toolsets ?? []),
+          ];
+          // Harness precedence: spec > toolbox > org policy.
+          const toolboxHarnessId = resolveToolboxHarness(container, applied);
+          const enriched = await control.enrichSpec(spec, orgId, {
+            toolboxHarnessId,
+          });
+          // Dedupe materialized refs (a toolbox can be both auto-injected and
+          // picked) so the agent never extracts the same artifact twice.
+          const seen = new Set<string>();
+          const toolsets = [
+            ...autoInjectRefs,
+            ...selectedRefs,
+            ...(enriched.toolsets ?? []),
+          ].filter((t) => {
+            if (seen.has(t.ref)) return false;
+            seen.add(t.ref);
+            return true;
+          });
+          // Merge the processes + ports every applied toolbox contributes
+          // (its tool's running surface), keyed by name (spec's own win).
+          const surface = resolveToolboxSurface(container, applied);
           const withToolboxes: SandboxSpec = {
             ...enriched,
-            toolsets: [...toolboxRefs, ...(enriched.toolsets ?? [])],
+            toolsets,
+            processes: mergeByName(surface.processes, enriched.processes),
+            ports: mergeByName(surface.ports, enriched.ports),
           };
           return runtime.create(withToolboxes, { authorizedKeys });
         },
-        { body: SandboxSpecSchema },
+        { body: CreateSandboxRequestSchema },
       )
       .get("/sandboxes", () => runtime.list())
       .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))

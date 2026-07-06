@@ -6,7 +6,6 @@
 import { validateConfig } from "@frak/atelier-shared";
 import {
   createServerContainer,
-  ensureDefaultToolboxes,
   wireBuiltinHarnesses,
 } from "./api/container.ts";
 import { createApp } from "./api/index.ts";
@@ -34,9 +33,10 @@ logger.info({ dbPath: appPaths.database }, "Control database ready");
 
 const container = createServerContainer();
 await wireBuiltinHarnesses(container);
-// Non-blocking: backfills the default toolbox for orgs with none (R4);
-// never blocks or crash-loops boot on a transient DB hiccup.
-ensureDefaultToolboxes(container);
+// Default org-toolbox auto-seeding is disabled for now: toolboxes (incl.
+// vscode) are created explicitly rather than mandated as an org baseline.
+// `ensureDefaultToolboxes` / `seedDefault` remain available for a manual
+// re-enable.
 
 await ensureSharedSshPipeKey();
 

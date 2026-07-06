@@ -177,8 +177,8 @@ export function useAddPort(id: string) {
 export function useSpawnSandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
-    mutationFn: async (spec: SandboxSpec) => {
-      const { data, error } = await api.v1.sandboxes.post(spec);
+    mutationFn: async (request: SandboxSpec & { toolboxes?: string[] }) => {
+      const { data, error } = await api.v1.sandboxes.post(request);
       if (error)
         throw new Error(errorMessage(error, "Failed to create sandbox"));
       return data;

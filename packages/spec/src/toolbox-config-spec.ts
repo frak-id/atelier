@@ -8,7 +8,7 @@
  * not this package).
  */
 import { type Static, Type } from "@sinclair/typebox";
-import { SourceSchema } from "./sandbox-spec.ts";
+import { PortSchema, ProcessSchema, SourceSchema } from "./sandbox-spec.ts";
 
 /**
  * Toolbox owner axis (entities-toolbox.md). A toolbox belongs to either an
@@ -49,6 +49,33 @@ const ToolboxPathsSchema = Type.Array(
   { maxItems: 100 },
 );
 
+/**
+ * Optional harness this toolbox provides (entities-toolbox.md). A harness id
+ * (e.g. "opencode", "pi") the api/ seam composes into the spawn's spec when no
+ * higher-precedence harness is present (spec > toolbox > org policy). The
+ * toolbox's `build[]`/`paths[]` install the agent binary; this field declares
+ * that the toolbox also owns the harness *process*.
+ */
+export const ToolboxHarnessSchema = Type.String({
+  pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
+  minLength: 1,
+  maxLength: 50,
+  description: "Harness id the toolbox provides, e.g. opencode or pi.",
+});
+
+/**
+ * Processes/ports a toolbox contributes to a spawn's spec (entities-toolbox.md).
+ * A toolbox is not just files: it can carry the *running surface* of a tool —
+ * e.g. vscode's `code-server` process + its public port, or the browser
+ * stack's kasmvnc/openbox/chromium processes (whose binaries are baked into
+ * the base image, so `build`/`paths` are empty). Merged into the spec at the
+ * api/ seam for every toolbox applied to the spawn (auto-injected or picked).
+ * Mark long-running surfaces `lazy: true` so they start on demand from the
+ * sandbox UI rather than at boot.
+ */
+const ToolboxProcessesSchema = Type.Array(ProcessSchema, { maxItems: 50 });
+const ToolboxPortsSchema = Type.Array(PortSchema, { maxItems: 50 });
+
 /** Caller-supplied shape for create (and the base for patch). */
 export const ToolboxConfigInputSchema = Type.Object(
   {
@@ -57,7 +84,16 @@ export const ToolboxConfigInputSchema = Type.Object(
     source: Type.Optional(SourceSchema),
     build: BuildStepsSchema,
     paths: ToolboxPathsSchema,
-    enabled: Type.Optional(Type.Boolean()),
+    harness: Type.Optional(ToolboxHarnessSchema),
+    processes: Type.Optional(ToolboxProcessesSchema),
+    ports: Type.Optional(ToolboxPortsSchema),
+    /**
+     * Auto-inject this toolbox into every one of the owner's spawns. When
+     * false the toolbox is still fully usable — it just isn't applied unless
+     * explicitly selected for a spawn (renamed from the old `enabled`, which
+     * misleadingly implied on/off existence).
+     */
+    autoInject: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false, $id: "ToolboxConfigInput" },
 );
@@ -74,7 +110,10 @@ export const ToolboxConfigSchema = Type.Object(
     source: Type.Optional(SourceSchema),
     build: BuildStepsSchema,
     paths: ToolboxPathsSchema,
-    enabled: Type.Boolean(),
+    harness: Type.Optional(ToolboxHarnessSchema),
+    processes: Type.Optional(ToolboxProcessesSchema),
+    ports: Type.Optional(ToolboxPortsSchema),
+    autoInject: Type.Boolean(),
     createdAt: Type.String(),
     updatedAt: Type.String(),
   },
@@ -84,8 +123,8 @@ export type ToolboxConfig = Static<typeof ToolboxConfigSchema>;
 
 /**
  * Partial update — everything but `slug` (immutable identity). Includes
- * `enabled` as a first-class field: a pure `{enabled:false}` patch must not
- * touch `build`/`paths` (per-org-toolboxes.md Oracle refinement R9).
+ * `autoInject` as a first-class field: a pure `{autoInject:false}` patch must
+ * not touch `build`/`paths` (per-org-toolboxes.md Oracle refinement R9).
  */
 export const ToolboxConfigPatchSchema = Type.Object(
   {
@@ -93,7 +132,10 @@ export const ToolboxConfigPatchSchema = Type.Object(
     source: Type.Optional(SourceSchema),
     build: Type.Optional(BuildStepsSchema),
     paths: Type.Optional(ToolboxPathsSchema),
-    enabled: Type.Optional(Type.Boolean()),
+    harness: Type.Optional(Type.Union([ToolboxHarnessSchema, Type.Null()])),
+    processes: Type.Optional(ToolboxProcessesSchema),
+    ports: Type.Optional(ToolboxPortsSchema),
+    autoInject: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false, $id: "ToolboxConfigPatch" },
 );

@@ -69,7 +69,7 @@ describe("ToolboxService", () => {
     expect(service.list(org).map((c) => c.slug)).toEqual(["my-tools"]);
   });
 
-  test("listEnabled orders oldest-first and excludes disabled", () => {
+  test("listAutoInject orders oldest-first and excludes non-auto-inject", () => {
     const repository = new ToolboxRepository();
     const owner = { type: "org", id: "org-order" } as const;
     const base = Date.now();
@@ -83,7 +83,7 @@ describe("ToolboxService", () => {
       description: "d",
       build: [],
       paths: [],
-      enabled: true,
+      autoInject: true,
       createdAt: at(2000),
       updatedAt: at(2000),
     });
@@ -95,7 +95,7 @@ describe("ToolboxService", () => {
       description: "d",
       build: [],
       paths: [],
-      enabled: true,
+      autoInject: true,
       createdAt: at(0),
       updatedAt: at(0),
     });
@@ -107,13 +107,13 @@ describe("ToolboxService", () => {
       description: "d",
       build: [],
       paths: [],
-      enabled: false,
+      autoInject: false,
       createdAt: at(1000),
       updatedAt: at(1000),
     });
 
     const service = new ToolboxService(repository);
-    expect(service.listEnabled(owner).map((c) => c.id)).toEqual([
+    expect(service.listAutoInject(owner).map((c) => c.id)).toEqual([
       "t-first",
       "t-third",
     ]);

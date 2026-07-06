@@ -9,7 +9,12 @@
  * template (proposal §3.1 table).
  */
 
-import type { SandboxSpec, Source } from "@atelier/spec";
+import type {
+  PortEntry,
+  ProcessEntry,
+  SandboxSpec,
+  Source,
+} from "@atelier/spec";
 import {
   index,
   integer,
@@ -182,7 +187,10 @@ export const entityToolboxes = sqliteTable(
     source: text("source", { mode: "json" }).$type<Source>(),
     build: text("build", { mode: "json" }).notNull().$type<string[]>(),
     paths: text("paths", { mode: "json" }).notNull().$type<string[]>(),
-    enabled: integer("enabled").notNull().default(1),
+    harness: text("harness"),
+    processes: text("processes", { mode: "json" }).$type<ProcessEntry[]>(),
+    ports: text("ports", { mode: "json" }).$type<PortEntry[]>(),
+    autoInject: integer("auto_inject").notNull().default(1),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

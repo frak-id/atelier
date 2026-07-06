@@ -59,3 +59,19 @@ export const SnapshotRefSchema = Type.Object(
   { additionalProperties: false, $id: "SnapshotRef" },
 );
 export type SnapshotRef = Static<typeof SnapshotRefSchema>;
+
+/** A stored prebuild snapshot, as returned by `GET /v1/prebuilds`. Carries
+ * the base image, opaque metadata (workspace/repo/branch…) and creation time
+ * so the console can list prebuilds and one-tap spawn from them. */
+export const PrebuildRecordSchema = Type.Object(
+  {
+    ref: Type.String(),
+    hash: Type.String(),
+    image: Type.String(),
+    parent: Type.Optional(Type.String()),
+    metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
+    createdAt: Type.String(),
+  },
+  { additionalProperties: false, $id: "PrebuildRecord" },
+);
+export type PrebuildRecord = Static<typeof PrebuildRecordSchema>;

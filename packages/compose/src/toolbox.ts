@@ -8,7 +8,7 @@
  *
  * Content knowledge (versions, install commands) belongs here, not in
  * `runtime/` — control seeds this as an org's `ToolboxConfig`, and the api/
- * seam later turns enabled configs into `runtime.buildToolset()` requests.
+ * seam later turns auto-inject configs into `runtime.buildToolset()` requests.
  */
 import type { ToolboxConfigInput } from "@atelier/spec";
 
@@ -18,6 +18,9 @@ const CODE_SERVER_VERSION = "4.123.0";
 export const DEFAULT_TOOLBOX: ToolboxConfigInput = {
   slug: "org-toolbox",
   description: "opencode + code-server (default)",
+  // The default org toolbox also owns the opencode harness: a spawn that
+  // doesn't declare its own harness inherits opencode from this baseline.
+  harness: "opencode",
   build: [
     "mkdir -p ~/.local/bin ~/.local/share/opencode ~/.local/share/code-server",
     `curl -fsSL -o /tmp/opencode.tar.gz "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-x64-baseline.tar.gz"`,
@@ -33,5 +36,5 @@ export const DEFAULT_TOOLBOX: ToolboxConfigInput = {
     "~/.local/share/opencode",
     "~/.local/share/code-server",
   ],
-  enabled: true,
+  autoInject: true,
 };

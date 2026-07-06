@@ -62,6 +62,10 @@ export const queryKeys = {
     all: ["toolsets"] as const,
     list: () => [...queryKeys.toolsets.all, "list"] as const,
   },
+  prebuilds: {
+    all: ["prebuilds"] as const,
+    list: () => [...queryKeys.prebuilds.all, "list"] as const,
+  },
   toolboxes: {
     all: ["toolboxes"] as const,
     list: (owner?: string) =>

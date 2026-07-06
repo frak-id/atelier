@@ -223,3 +223,36 @@ export const SandboxSpecSchema = Type.Object(
   },
 );
 export type SandboxSpec = Static<typeof SandboxSpecSchema>;
+
+// ── create request (seam input, not the runtime spec) ────────────────────────
+
+/**
+ * A selected toolbox, `tb/<ownerType>/<ownerId>/<slug>`. The high-level unit a
+ * caller picks; the api/ seam resolves it into a materialized toolset ref (if
+ * it carries files) and/or its process/port surface + harness. Never reaches
+ * the runtime.
+ */
+export const ToolboxSelectorSchema = Type.String({
+  pattern: "^tb/(org|user)/[^/]+/[a-z0-9]+(-[a-z0-9]+)*$",
+  description: "Selected toolbox: tb/<ownerType>/<ownerId>/<slug>.",
+});
+export type ToolboxSelector = Static<typeof ToolboxSelectorSchema>;
+
+/**
+ * The `POST /v1/sandboxes` body: a `SandboxSpec` plus an optional set of
+ * `toolboxes` the caller selected (the high-level unit). The seam resolves
+ * the selectors — building toolsets for those with files, applying every
+ * applied toolbox's surface + harness — and hands the runtime a pure
+ * `SandboxSpec`. A plain `SandboxSpec` (no `toolboxes`) is a valid body, so
+ * the CLI/editor/saved-spec paths are unchanged.
+ */
+export const CreateSandboxRequestSchema = Type.Composite(
+  [
+    SandboxSpecSchema,
+    Type.Object({
+      toolboxes: Type.Optional(Type.Array(ToolboxSelectorSchema)),
+    }),
+  ],
+  { additionalProperties: false, $id: "CreateSandboxRequest" },
+);
+export type CreateSandboxRequest = Static<typeof CreateSandboxRequestSchema>;

@@ -43,6 +43,8 @@ export const snapshots = sqliteTable(
     image: text("image").notNull(),
     /** Parent snapshot ref in the chain, if this snapshot was derived. */
     parent: text("parent"),
+    /** JSON: opaque `PrebuildSpec.metadata` pass-through (workspace, repo…). */
+    metadata: text("metadata"),
     createdAt: text("created_at").notNull(),
   },
   (t) => [uniqueIndex("idx_snapshots_hash").on(t.hash)],

@@ -77,7 +77,7 @@ export function createControlRoutes(container: ServerContainer) {
       ({ user, body }) => {
         const org = control.organizationService.create(body.name, body.slug);
         control.orgMemberService.addMember(org.id, user.id, "owner");
-        control.toolboxService.seedDefault(org.id);
+        // Default toolbox seeding disabled for now (created explicitly).
         return org;
       },
       {
@@ -272,11 +272,12 @@ export function createControlRoutes(container: ServerContainer) {
       ({ user, query, body }) => {
         const owner = resolveOwner(user.id, query.owner, true);
         const created = control.toolboxService.create(owner, body);
-        const enabledCount = control.toolboxService.listEnabled(owner).length;
-        if (enabledCount > TOOLBOX_SOFT_CAP) {
+        const autoInjectCount =
+          control.toolboxService.listAutoInject(owner).length;
+        if (autoInjectCount > TOOLBOX_SOFT_CAP) {
           log.warn(
-            { ownerType: owner.type, ownerId: owner.id, enabledCount },
-            `${owner.type} exceeds the soft cap of ${TOOLBOX_SOFT_CAP} enabled toolboxes — each adds boot latency to every spawn`,
+            { ownerType: owner.type, ownerId: owner.id, autoInjectCount },
+            `${owner.type} exceeds the soft cap of ${TOOLBOX_SOFT_CAP} auto-inject toolboxes — each adds boot latency to every spawn`,
           );
         }
         return created;

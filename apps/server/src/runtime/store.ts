@@ -40,6 +40,8 @@ export interface SnapshotRecord {
   /** Base OCI image the snapshot was built on (pods boot from this exact image). */
   image: string;
   parent?: string;
+  /** Opaque `PrebuildSpec.metadata` pass-through (workspace, repo, branch…). */
+  metadata?: Record<string, string>;
   createdAt: string;
 }
 
@@ -55,6 +57,7 @@ export interface SnapshotStore {
   getByHash(hash: string): SnapshotRecord | undefined;
   put(record: SnapshotRecord): void;
   get(ref: string): SnapshotRecord | undefined;
+  list(): SnapshotRecord[];
 }
 
 /** A published toolset artifact keyed by its content/result `hash`. */
@@ -136,6 +139,9 @@ export class InMemorySnapshotStore implements SnapshotStore {
   put(record: SnapshotRecord): void {
     this.byRef.set(record.ref, record);
     this.byHash.set(record.hash, record);
+  }
+  list(): SnapshotRecord[] {
+    return [...this.byRef.values()];
   }
 }
 
@@ -231,6 +237,7 @@ interface SnapshotRow {
   hash: string;
   image: string;
   parent: string | null;
+  metadata: string | null;
   createdAt: string;
 }
 
@@ -240,6 +247,9 @@ function snapshotRowToRecord(row: SnapshotRow): SnapshotRecord {
     hash: row.hash,
     image: row.image,
     parent: row.parent ?? undefined,
+    metadata: row.metadata
+      ? (JSON.parse(row.metadata) as Record<string, string>)
+      : undefined,
     createdAt: row.createdAt,
   };
 }
@@ -250,6 +260,7 @@ function snapshotRecordToRow(record: SnapshotRecord): SnapshotRow {
     hash: record.hash,
     image: record.image,
     parent: record.parent ?? null,
+    metadata: record.metadata ? JSON.stringify(record.metadata) : null,
     createdAt: record.createdAt,
   };
 }
@@ -287,6 +298,11 @@ export class DrizzleSnapshotStore implements SnapshotStore {
       return;
     }
     db.insert(snapshots).values(row).run();
+  }
+
+  list(): SnapshotRecord[] {
+    const rows = getDatabase().select().from(snapshots).all() as SnapshotRow[];
+    return rows.map(snapshotRowToRecord);
   }
 }
 

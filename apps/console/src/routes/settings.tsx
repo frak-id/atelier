@@ -10,8 +10,7 @@ const TABS = [
   { to: "/settings/secrets", label: "Secrets" },
   { to: "/settings/organizations", label: "Organizations" },
   { to: "/settings/policy", label: "Org Policy" },
-  { to: "/settings/toolsets", label: "Toolsets" },
-  { to: "/settings/toolboxes", label: "Toolboxes" },
+  { to: "/settings/toolboxes", label: "Toolboxes & Toolsets" },
   { to: "/settings/prebuilds", label: "Prebuilds" },
 ] as const;
 

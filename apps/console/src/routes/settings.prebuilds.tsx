@@ -1,9 +1,11 @@
-import type { PrebuildSpec } from "@atelier/spec";
+import type { PrebuildRecord, PrebuildSpec } from "@atelier/spec";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { type ParseError, parse as parseJsonc } from "jsonc-parser";
-import { Hammer, Loader2 } from "lucide-react";
+import { Hammer, Layers, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { useRunPrebuild } from "@/api/queries/prebuilds";
+import { prebuildsListQuery, useRunPrebuild } from "@/api/queries/prebuilds";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,6 +14,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatRelativeTime } from "@/lib/formatters";
 
 export const Route = createFileRoute("/settings/prebuilds")({
   component: PrebuildsPage,
@@ -54,6 +58,7 @@ function PrebuildsPage() {
 
   return (
     <div className="space-y-3">
+      <PrebuildsList />
       <Card>
         <CardHeader>
           <CardTitle>Run a prebuild</CardTitle>
@@ -91,5 +96,80 @@ function PrebuildsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** Short, human summary of a prebuild's opaque metadata (workspace/repo…). */
+function metadataSummary(metadata?: Record<string, string>): string | null {
+  if (!metadata) return null;
+  const entries = Object.entries(metadata);
+  if (entries.length === 0) return null;
+  return entries.map(([k, v]) => `${k}: ${v}`).join(" · ");
+}
+
+function PrebuildsList() {
+  const {
+    data: prebuilds,
+    isPending,
+    isError,
+    error,
+  } = useQuery(prebuildsListQuery());
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Prebuilds</CardTitle>
+        <CardDescription>
+          Stored workspace snapshots, reusable as a boot{" "}
+          <code>source.snapshot</code>. One-tap spawn from the{" "}
+          <a href="/spawn" className="underline">
+            Spawn
+          </a>{" "}
+          page.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {isPending ? (
+          <Skeleton className="h-12 w-full" />
+        ) : isError ? (
+          <p className="text-sm text-destructive">
+            {error instanceof Error ? error.message : "Failed to load"}
+          </p>
+        ) : !prebuilds || prebuilds.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No prebuilds yet.</p>
+        ) : (
+          prebuilds.map((prebuild: PrebuildRecord) => {
+            const summary = metadataSummary(prebuild.metadata);
+            return (
+              <div
+                key={prebuild.ref}
+                className="flex flex-col gap-1 rounded-md border p-3"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Layers className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate font-mono text-sm">
+                    {prebuild.ref}
+                  </span>
+                  {prebuild.parent ? (
+                    <Badge variant="outline">chained</Badge>
+                  ) : null}
+                  <span className="text-xs text-muted-foreground">
+                    {formatRelativeTime(prebuild.createdAt)}
+                  </span>
+                </div>
+                {summary ? (
+                  <span className="text-sm text-muted-foreground">
+                    {summary}
+                  </span>
+                ) : null}
+                <span className="truncate font-mono text-xs text-muted-foreground">
+                  {prebuild.image}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </CardContent>
+    </Card>
   );
 }
