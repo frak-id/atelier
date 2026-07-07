@@ -563,7 +563,7 @@ async function main(): Promise<void> {
         }
         for (const t of entries) {
           process.stdout.write(
-            `${t.id}\t${t.slug}\t${t.enabled ? "enabled" : "disabled"}\t${t.description}\n`,
+            `${t.id}\t${t.slug}\t${t.autoInject ? "auto-inject" : "manual"}\t${t.description}\n`,
           );
         }
         return;
@@ -591,7 +591,7 @@ async function main(): Promise<void> {
             : sourceSnapshot
               ? { source: { snapshot: sourceSnapshot } }
               : {}),
-          ...(flags.has("disabled") ? { enabled: false } : {}),
+          ...(flags.has("disabled") ? { autoInject: false } : {}),
         };
         const created = await client.createToolbox(input, toolboxOwner(flags));
         if (json) return print(created);
@@ -610,8 +610,8 @@ async function main(): Promise<void> {
           ...(desc !== undefined ? { description: desc } : {}),
           ...(build !== undefined ? { build } : {}),
           ...(paths !== undefined ? { paths } : {}),
-          ...(flags.has("enable") ? { enabled: true } : {}),
-          ...(flags.has("disable") ? { enabled: false } : {}),
+          ...(flags.has("enable") ? { autoInject: true } : {}),
+          ...(flags.has("disable") ? { autoInject: false } : {}),
         };
         const updated = await client.updateToolbox(id, patch);
         if (json) return print(updated);
