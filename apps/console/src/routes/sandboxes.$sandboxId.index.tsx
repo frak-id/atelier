@@ -25,6 +25,8 @@ import {
   useResumeSandbox,
   useSnapshotSandbox,
 } from "@/api/queries/sandboxes";
+import { useCaptureToolboxVersion } from "@/api/queries/toolbox-versions";
+import { toolboxesListQuery } from "@/api/queries/toolboxes";
 import { useCaptureToolset } from "@/api/queries/toolsets";
 import { ImmersiveView } from "@/components/immersive-view";
 import { MultiTerminal } from "@/components/multi-terminal";
@@ -193,6 +195,7 @@ function SandboxDetailPage() {
             processes={sandbox.processes}
           />
           <ExposePortSection sandboxId={sandbox.id} />
+          <SaveToolsetForToolboxSection sandboxId={sandbox.id} />
           <CaptureToolsetSection sandboxId={sandbox.id} />
           {sandbox.annotations || sandbox.metadata ? (
             <MetadataSection
@@ -555,6 +558,100 @@ function ExposePortSection({ sandboxId }: { sandboxId: string }) {
             Expose
           </Button>
         </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Higher-level, toolbox-associated flow (docs/toolbox-versions.md §7):
+ * snapshots this sandbox's tuned state into a new *version* of a toolbox the
+ * caller owns, kept associated for rollback/pinning in Settings → Toolboxes.
+ * Unlike `CaptureToolsetSection` below (raw, orphan capture), the server
+ * derives `paths`/`exclude` from the toolbox itself.
+ */
+function SaveToolsetForToolboxSection({ sandboxId }: { sandboxId: string }) {
+  const { data: toolboxes } = useQuery(toolboxesListQuery("user"));
+  const captureVersion = useCaptureToolboxVersion();
+  const capturable = (toolboxes ?? []).filter((tb) => tb.paths.length > 0);
+
+  const [toolboxId, setToolboxId] = useState("");
+  const [description, setDescription] = useState("");
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!toolboxId || !description) return;
+    captureVersion.mutate(
+      { toolboxId, sandboxId, description },
+      {
+        onSuccess: () => {
+          setToolboxId("");
+          setDescription("");
+        },
+      },
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Save toolset for toolbox</CardTitle>
+        <CardDescription>
+          Snapshots this sandbox's tuned state into a new version of the
+          selected toolbox, kept associated with it for rollback. Saving does
+          not pin it — pin the version in Settings → Toolboxes to apply it to
+          future spawns.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {capturable.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            None of your toolboxes have <code>paths[]</code> configured yet
+            (nothing to capture). Add paths in{" "}
+            <Link to="/settings/toolboxes" className="underline">
+              Settings → Toolboxes
+            </Link>
+            .
+          </p>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="save-toolbox">Toolbox</Label>
+              <select
+                id="save-toolbox"
+                value={toolboxId}
+                onChange={(e) => setToolboxId(e.target.value)}
+                required
+                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="" disabled>
+                  Select a toolbox…
+                </option>
+                {capturable.map((tb) => (
+                  <option key={tb.id} value={tb.id}>
+                    {tb.slug}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="save-description">Description</Label>
+              <Input
+                id="save-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="tuned MCP config for the pi harness"
+                required
+              />
+            </div>
+            <Button type="submit" disabled={captureVersion.isPending}>
+              {captureVersion.isPending ? (
+                <Loader2 className="animate-spin" />
+              ) : null}
+              Save version
+            </Button>
+          </form>
+        )}
       </CardContent>
     </Card>
   );

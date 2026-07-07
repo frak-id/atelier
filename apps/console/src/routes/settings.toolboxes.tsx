@@ -1,9 +1,29 @@
-import type { ToolboxConfig, ToolsetEntry } from "@atelier/spec";
+import type {
+  ToolboxConfig,
+  ToolboxVersion,
+  ToolsetEntry,
+} from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Loader2, Package, Pencil, Plus, Trash2, Wrench } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Package,
+  Pencil,
+  Pin,
+  PinOff,
+  Plus,
+  Trash2,
+  Wrench,
+} from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { organizationsListQuery } from "@/api/queries/organizations";
+import {
+  toolboxVersionsQuery,
+  useDeleteToolboxVersion,
+  useSetActiveToolboxVersion,
+} from "@/api/queries/toolbox-versions";
 import {
   toolboxesListQuery,
   useCreateToolbox,
@@ -173,6 +193,7 @@ function ToolboxRow({
 }) {
   const deleteToolbox = useDeleteToolbox();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
 
   return (
     <Card>
@@ -233,6 +254,21 @@ function ToolboxRow({
             <span>Artifact not built yet — compiled on next spawn.</span>
           )}
         </div>
+        <div className="border-t pt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setVersionsOpen((open) => !open)}
+          >
+            {versionsOpen ? <ChevronDown /> : <ChevronRight />}
+            Versions
+          </Button>
+          {/* Mounted only while open — mirrors ProcessLogs' mount-gate so N
+           * toolbox rows don't fire N version queries on page load. */}
+          {versionsOpen ? (
+            <ToolboxVersionsPanel toolboxId={toolbox.id} />
+          ) : null}
+        </div>
       </CardContent>
       <ConfirmDialog
         open={confirmOpen}
@@ -248,6 +284,134 @@ function ToolboxRow({
         onConfirm={() => deleteToolbox.mutate(toolbox.id)}
       />
     </Card>
+  );
+}
+
+/** Per-toolbox version history: label, description, provenance, pin/unpin,
+ * delete, and a "recipe changed since pin" drift badge on the active row
+ * (docs/toolbox-versions.md §3, §7). */
+function ToolboxVersionsPanel({ toolboxId }: { toolboxId: string }) {
+  const { data, isPending, isError, error } = useQuery(
+    toolboxVersionsQuery(toolboxId),
+  );
+  const setActive = useSetActiveToolboxVersion();
+  const deleteVersion = useDeleteToolboxVersion();
+  const [pendingDelete, setPendingDelete] = useState<
+    ToolboxVersion | undefined
+  >();
+
+  if (isPending) return <Skeleton className="mt-2 h-10 w-full" />;
+  if (isError) {
+    return (
+      <p className="mt-2 text-sm text-destructive">
+        {error instanceof Error ? error.message : "Failed to load versions"}
+      </p>
+    );
+  }
+  if (data.versions.length === 0) {
+    return (
+      <p className="mt-2 text-sm text-muted-foreground">
+        No saved versions yet — capture one from a running sandbox.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      {data.versions.map((version) => {
+        const isActive = version.id === data.activeVersionId;
+        const drifted =
+          isActive &&
+          version.recipeFingerprint !== data.currentRecipeFingerprint;
+        // Native binaries in a captured artifact are compiled against the
+        // base image; if it moved since capture, the pinned toolset may not
+        // match the current runtime (docs/toolbox-versions.md §5).
+        const baseDrifted =
+          isActive &&
+          version.provenance.sourceImage !== undefined &&
+          data.currentSourceImage !== undefined &&
+          version.provenance.sourceImage !== data.currentSourceImage;
+        return (
+          <div
+            key={version.id}
+            className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-sm"
+          >
+            <span className="font-mono">v{version.label}</span>
+            <span className="truncate text-muted-foreground">
+              {version.description}
+            </span>
+            <Badge variant="outline">{version.provenance.kind}</Badge>
+            <span className="text-xs text-muted-foreground">
+              {formatRelativeTime(version.createdAt)}
+            </span>
+            {isActive ? <Badge variant="success">active</Badge> : null}
+            {drifted ? (
+              <Badge variant="warning">recipe changed since pin</Badge>
+            ) : null}
+            {baseDrifted ? (
+              <Badge variant="warning">base image changed since capture</Badge>
+            ) : null}
+            <div className="ml-auto flex shrink-0 gap-1">
+              {isActive ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={setActive.isPending}
+                  onClick={() =>
+                    setActive.mutate({ toolboxId, versionId: null })
+                  }
+                >
+                  <PinOff />
+                  Unpin
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={setActive.isPending}
+                  onClick={() =>
+                    setActive.mutate({ toolboxId, versionId: version.id })
+                  }
+                >
+                  <Pin />
+                  Pin
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={isActive || deleteVersion.isPending}
+                aria-label={
+                  isActive ? "Unpin before deleting" : "Delete version"
+                }
+                title={isActive ? "Unpin before deleting" : "Delete version"}
+                onClick={() => setPendingDelete(version)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+      <ConfirmDialog
+        open={pendingDelete !== undefined}
+        onOpenChange={(next) => {
+          if (!next) setPendingDelete(undefined);
+        }}
+        title="Delete version?"
+        description={
+          <>
+            This removes{" "}
+            <span className="font-mono">v{pendingDelete?.label}</span> from the
+            toolbox's history. This cannot be undone.
+          </>
+        }
+        onConfirm={() => {
+          if (pendingDelete)
+            deleteVersion.mutate({ toolboxId, versionId: pendingDelete.id });
+        }}
+      />
+    </div>
   );
 }
 

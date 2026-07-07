@@ -71,6 +71,11 @@ export const queryKeys = {
     list: (owner?: string) =>
       [...queryKeys.toolboxes.all, "list", owner ?? "user"] as const,
   },
+  toolboxVersions: {
+    all: ["toolbox-versions"] as const,
+    list: (toolboxId: string) =>
+      [...queryKeys.toolboxVersions.all, "list", toolboxId] as const,
+  },
   // Singleton endpoint — one flat key, no list/detail split.
   capabilities: {
     all: ["capabilities"] as const,
