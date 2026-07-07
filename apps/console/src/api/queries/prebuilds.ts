@@ -27,13 +27,22 @@ export function prebuildsListQuery() {
  * Run a chained, content-addressed repo prebuild (POST /v1/prebuilds): bake
  * `build[]`/`repos` into a VolumeSnapshot and get back its ref, usable as a
  * boot `source`. The repo tier beside the toolset tier
- * (composed-prebuild-volumes.md).
+ * (composed-prebuild-volumes.md). `force` bypasses the content-hash cache hit
+ * — the "rebuild" action on an existing prebuild.
  */
 export function useRunPrebuild() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (spec: PrebuildSpec) => {
-      const { data, error } = await api.v1.prebuilds.post(spec);
+    mutationFn: async ({
+      spec,
+      force,
+    }: {
+      spec: PrebuildSpec;
+      force?: boolean;
+    }) => {
+      const { data, error } = await api.v1.prebuilds.post(spec, {
+        query: { force: force ?? false },
+      });
       if (error) throw new Error(errorMessage(error, "Prebuild failed"));
       return data;
     },

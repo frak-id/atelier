@@ -12,6 +12,7 @@
  */
 import type {
   Generated,
+  PrebuildSpec,
   SandboxSpec,
   SandboxStatus,
   ToolsetEntry,
@@ -42,6 +43,8 @@ export interface SnapshotRecord {
   parent?: string;
   /** Opaque `PrebuildSpec.metadata` pass-through (workspace, repo, branch…). */
   metadata?: Record<string, string>;
+  /** The original request, so a prebuild can be replayed/refreshed. */
+  spec?: PrebuildSpec;
   createdAt: string;
 }
 
@@ -238,6 +241,7 @@ interface SnapshotRow {
   image: string;
   parent: string | null;
   metadata: string | null;
+  spec: string | null;
   createdAt: string;
 }
 
@@ -250,6 +254,7 @@ function snapshotRowToRecord(row: SnapshotRow): SnapshotRecord {
     metadata: row.metadata
       ? (JSON.parse(row.metadata) as Record<string, string>)
       : undefined,
+    spec: row.spec ? (JSON.parse(row.spec) as PrebuildSpec) : undefined,
     createdAt: row.createdAt,
   };
 }
@@ -261,6 +266,7 @@ function snapshotRecordToRow(record: SnapshotRecord): SnapshotRow {
     image: record.image,
     parent: record.parent ?? null,
     metadata: record.metadata ? JSON.stringify(record.metadata) : null,
+    spec: record.spec ? JSON.stringify(record.spec) : null,
     createdAt: record.createdAt,
   };
 }

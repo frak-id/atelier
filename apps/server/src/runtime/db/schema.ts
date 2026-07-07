@@ -45,6 +45,8 @@ export const snapshots = sqliteTable(
     parent: text("parent"),
     /** JSON: opaque `PrebuildSpec.metadata` pass-through (workspace, repo…). */
     metadata: text("metadata"),
+    /** JSON: the original PrebuildSpec, so a prebuild can be replayed/refreshed. */
+    spec: text("spec"),
     createdAt: text("created_at").notNull(),
   },
   (t) => [uniqueIndex("idx_snapshots_hash").on(t.hash)],

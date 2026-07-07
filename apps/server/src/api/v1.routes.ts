@@ -76,8 +76,14 @@ export function createV1Routes(container: ServerContainer) {
       .get("/prebuilds", () => runtime.listPrebuilds())
       .post(
         "/prebuilds",
-        async ({ body }) => runtime.prebuild(body as PrebuildSpec),
-        { body: PrebuildSpecSchema },
+        async ({ body, query }) =>
+          runtime.prebuild(body as PrebuildSpec, {
+            force: query.force === true,
+          }),
+        {
+          body: PrebuildSpecSchema,
+          query: t.Object({ force: t.Optional(t.Boolean()) }),
+        },
       )
       // ── toolsets ───────────────────────────────────────────────────────
       .get("/toolsets", () =>

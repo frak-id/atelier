@@ -70,6 +70,8 @@ export const PrebuildRecordSchema = Type.Object(
     image: Type.String(),
     parent: Type.Optional(Type.String()),
     metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
+    /** The original request, so the console/checker can replay/refresh it. */
+    spec: Type.Optional(PrebuildSpecSchema),
     createdAt: Type.String(),
   },
   { additionalProperties: false, $id: "PrebuildRecord" },

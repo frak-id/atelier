@@ -30,7 +30,7 @@ import {
   type ToolsetRef,
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
-import { config } from "../shared/lib/config.ts";
+import { config, isMock } from "../shared/lib/config.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { HookPhase } from "./agent/index.ts";
@@ -38,6 +38,7 @@ import { AgentClient } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
 import { bootSandbox, deleteRestartableResources } from "./boot.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
+import { getRemoteCommitHash } from "./git-remote.ts";
 import { buildVolumeSnapshot, kubeClient } from "./kube/index.ts";
 import {
   buildPortIngresses,
@@ -99,21 +100,32 @@ export class RuntimeService {
 
   /**
    * Chained, content-addressed prebuild. Idempotent: keyed by content hash;
-   * a hit returns instantly. Runtime content never enters the key. Concurrent
+   * a hit returns instantly. The key includes the resolved base image and
+   * each repo's current remote HEAD (`resolveContentKey`), so a base image
+   * update or a git push busts the hash instead of silently reusing a stale
+   * snapshot. `options.force` bypasses the cache hit — used by the console's
+   * explicit "rebuild" action and by `refreshStalePrebuilds`. Concurrent
    * calls for the same hash dedupe onto one execution (deterministic temp pod
    * name would otherwise collide).
    */
-  async prebuild(spec: PrebuildSpec): Promise<SnapshotRef> {
-    const hash = hashPrebuild(spec);
-    const existing = this.snapshots.getByHash(hash);
-    if (existing) {
-      return { ref: existing.ref, hash, parent: existing.parent };
+  async prebuild(
+    spec: PrebuildSpec,
+    options: { force?: boolean } = {},
+  ): Promise<SnapshotRef> {
+    const { hash, image, snapshotName } = await this.resolveContentKey(spec);
+    if (!options.force) {
+      const existing = this.snapshots.getByHash(hash);
+      if (existing) {
+        return { ref: existing.ref, hash, parent: existing.parent };
+      }
     }
     const inflight = this.inflightPrebuilds.get(hash);
     if (inflight) return inflight;
-    const run = this.executePrebuild(spec, hash).finally(() => {
-      this.inflightPrebuilds.delete(hash);
-    });
+    const run = this.executePrebuild(spec, hash, image, snapshotName).finally(
+      () => {
+        this.inflightPrebuilds.delete(hash);
+      },
+    );
     this.inflightPrebuilds.set(hash, run);
     return run;
   }
@@ -129,18 +141,81 @@ export class RuntimeService {
         image: s.image,
         parent: s.parent,
         metadata: s.metadata,
+        spec: s.spec,
         createdAt: s.createdAt,
       }))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  /** Cron entry: for every stored prebuild that clones repos, recompute the
+   * content key (which now reflects current remote HEADs + base image
+   * digest). A changed key means upstream moved — rebuild to a fresh
+   * snapshot. A key that already resolves to an existing snapshot is skipped
+   * (already refreshed). */
+  async refreshStalePrebuilds(): Promise<void> {
+    for (const snap of this.snapshots.list()) {
+      if (!snap.spec?.repos?.length) continue;
+      try {
+        const { hash } = await this.resolveContentKey(snap.spec);
+        if (hash === snap.hash) continue;
+        if (this.snapshots.getByHash(hash)) continue;
+        log.info(
+          { ref: snap.ref, oldHash: snap.hash, newHash: hash },
+          "prebuild stale, rebuilding",
+        );
+        await this.prebuild(snap.spec);
+      } catch (err) {
+        log.error({ ref: snap.ref, err }, "prebuild staleness check failed");
+      }
+    }
+  }
+
+  /** Resolve the content key for a prebuild: source resolved to its current
+   * image/snapshot, plus each repo's current remote HEAD. `env` is
+   * intentionally excluded (atelier-v2 §2): it carries build-time secrets
+   * (tokens) that must never enter a persisted content key, and is treated
+   * as credential material rather than artifact-identifying input. */
+  private async resolveContentKey(
+    spec: PrebuildSpec,
+  ): Promise<{ hash: string; image: string; snapshotName?: string }> {
+    const { image, snapshotName } = await this.resolveSource(spec.source);
+    const repoHeads = await this.resolveRepoHeads(spec.repos);
+    const keyed = {
+      source: spec.source,
+      image,
+      files: spec.files ?? [],
+      build: spec.build ?? [],
+      repos: spec.repos ?? [],
+      repoHeads,
+    };
+    const hash = createHash("sha256")
+      .update(JSON.stringify(keyed))
+      .digest("hex");
+    return { hash, image, snapshotName };
+  }
+
+  /** Current remote HEAD per repo (keyed by `clonePath`), so a git push busts
+   * the content key. Skipped in mock mode (no network git). */
+  private async resolveRepoHeads(
+    repos: PrebuildSpec["repos"],
+  ): Promise<Record<string, string>> {
+    if (!repos?.length || isMock()) return {};
+    const heads: Record<string, string> = {};
+    for (const repo of repos) {
+      const head = await getRemoteCommitHash(repo.url, repo.branch);
+      if (head) heads[repo.clonePath] = head;
+    }
+    return heads;
+  }
+
   private async executePrebuild(
     spec: PrebuildSpec,
     hash: string,
+    image: string,
+    snapshotName?: string,
   ): Promise<SnapshotRef> {
     const parentRef =
       "snapshot" in spec.source ? spec.source.snapshot : undefined;
-    const { image, snapshotName } = await this.resolveSource(spec.source);
     const ref = `snap-${hash.slice(0, 12)}`;
     const tempId = `pb-${hash.slice(0, 12)}`;
 
@@ -174,6 +249,7 @@ export class RuntimeService {
         image,
         parent: parentRef,
         metadata: spec.metadata,
+        spec,
         createdAt: new Date().toISOString(),
       });
       log.info({ ref, hash, parent: parentRef }, "prebuild snapshot created");
@@ -514,13 +590,22 @@ export class RuntimeService {
     return { ref, hash };
   }
 
-  /** Create a VolumeSnapshot of `pvcName` named `ref` and wait until ready. */
+  /** Create a VolumeSnapshot of `pvcName` named `ref` and wait until ready.
+   * Idempotent: a forced rebuild can resolve to a `ref` that already exists
+   * (same hash slice), so any prior snapshot of that name is deleted first
+   * instead of 409ing the create. */
   private async snapshotPvc(
     pvcName: string,
     ref: string,
     labels: Record<string, string>,
     annotations?: Record<string, string>,
   ): Promise<void> {
+    if (!isMock() && (await kubeClient.resourceExists("VolumeSnapshot", ref))) {
+      await kubeClient.deleteResource("VolumeSnapshot", ref);
+      await kubeClient.waitForResourceDeleted("VolumeSnapshot", ref, {
+        timeout: 60_000,
+      });
+    }
     await kubeClient.createResource(
       buildVolumeSnapshot({ name: ref, pvcName, labels, annotations }),
     );
@@ -895,19 +980,6 @@ function hashToolset(req: ToolsetBuildRequest): string {
     source: req.source ?? null,
     build: req.build,
     paths: req.paths,
-  };
-  return createHash("sha256").update(JSON.stringify(keyed)).digest("hex");
-}
-
-function hashPrebuild(spec: PrebuildSpec): string {
-  // `env` is intentionally excluded (atelier-v2 §2): it carries build-time
-  // secrets (tokens) that must never enter a persisted content key, and is
-  // treated as credential material rather than artifact-identifying input.
-  const keyed = {
-    source: spec.source,
-    files: spec.files ?? [],
-    build: spec.build ?? [],
-    repos: spec.repos ?? [],
   };
   return createHash("sha256").update(JSON.stringify(keyed)).digest("hex");
 }

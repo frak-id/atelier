@@ -4,6 +4,7 @@
  * composition root and starts listening.
  */
 import { validateConfig } from "@frak/atelier-shared";
+import { Cron } from "croner";
 import {
   createServerContainer,
   wireBuiltinHarnesses,
@@ -11,7 +12,7 @@ import {
 import { createApp } from "./api/index.ts";
 import { initDatabase } from "./control/index.ts";
 import { ensureSharedSshPipeKey } from "./runtime/index.ts";
-import { config, isProduction } from "./shared/lib/config.ts";
+import { config, isMock, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 
@@ -39,6 +40,17 @@ await wireBuiltinHarnesses(container);
 // re-enable.
 
 await ensureSharedSshPipeKey();
+
+// Recompute each stored prebuild's content key against current remote HEADs
+// + base image digest, and rebuild anything that moved (runtime.service.ts
+// `refreshStalePrebuilds`). Skipped in mock mode (no network git/registry).
+if (!isMock()) {
+  new Cron("*/30 * * * *", () => {
+    container.runtime
+      .refreshStalePrebuilds()
+      .catch((err) => logger.error({ err }, "prebuild staleness cron failed"));
+  });
+}
 
 const app = createApp(container);
 

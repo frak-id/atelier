@@ -2,7 +2,7 @@ import type { PrebuildRecord, PrebuildSpec } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { type ParseError, parse as parseJsonc } from "jsonc-parser";
-import { Hammer, Layers, Loader2 } from "lucide-react";
+import { Hammer, Layers, Loader2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { prebuildsListQuery, useRunPrebuild } from "@/api/queries/prebuilds";
 import { Badge } from "@/components/ui/badge";
@@ -51,9 +51,10 @@ function PrebuildsPage() {
       return;
     }
     setParseError(undefined);
-    runPrebuild.mutate(value, {
-      onSuccess: (data) => setResult(data ?? null),
-    });
+    runPrebuild.mutate(
+      { spec: value },
+      { onSuccess: (data) => setResult(data ?? null) },
+    );
   }
 
   return (
@@ -114,6 +115,7 @@ function PrebuildsList() {
     isError,
     error,
   } = useQuery(prebuildsListQuery());
+  const runPrebuild = useRunPrebuild();
 
   return (
     <Card>
@@ -156,6 +158,27 @@ function PrebuildsList() {
                   <span className="text-xs text-muted-foreground">
                     {formatRelativeTime(prebuild.createdAt)}
                   </span>
+                  {prebuild.spec ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto"
+                      disabled={runPrebuild.isPending}
+                      onClick={() =>
+                        runPrebuild.mutate({
+                          spec: prebuild.spec as PrebuildSpec,
+                          force: true,
+                        })
+                      }
+                    >
+                      {runPrebuild.isPending ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <RefreshCw />
+                      )}
+                      Rebuild
+                    </Button>
+                  ) : null}
                 </div>
                 {summary ? (
                   <span className="text-sm text-muted-foreground">
