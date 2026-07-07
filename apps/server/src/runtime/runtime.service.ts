@@ -600,6 +600,14 @@ export class RuntimeService {
     return this.toolsets.list().map(toolsetRecordToEntry);
   }
 
+  /** Look up a single toolset by ref (control-side guards, e.g. the org
+   * publish-before-pin check, need to inspect one entry without listing
+   * everything). */
+  getToolsetEntry(ref: string): ToolsetEntry | undefined {
+    const record = this.toolsets.getByRef(ref);
+    return record ? toolsetRecordToEntry(record) : undefined;
+  }
+
   /** Publish a toolset to the org (flip `private` off) — the explicit sharing
    * step for a private-by-default capture (proposal §2). */
   publishToolset(ref: string): ToolsetEntry {
@@ -662,6 +670,27 @@ export class RuntimeService {
     });
     log.info({ ref, sandboxId: id, name: req.name }, "toolset captured");
     return { ref };
+  }
+
+  /** Resolve a source to the concrete image it currently pulls (digest-
+   * pinned where possible) — used for toolbox-version provenance/drift
+   * (docs/toolbox-versions.md §5), not spawn itself. */
+  async resolveSourceImage(source: SandboxSpec["source"]): Promise<string> {
+    return (await this.resolveSource(source)).image;
+  }
+
+  /** The sandbox's current base image, resolved the same way a spawn would
+   * (docs/toolbox-versions.md §5 drift badge). */
+  async getSandboxImage(id: string): Promise<string> {
+    return this.resolveSourceImage(this.require(id).spec.source);
+  }
+
+  /** The configured default base image — exposed so the api/ seam can
+   * resolve "current source image" for a toolbox with no explicit `source`
+   * without importing `shared/lib/config` across the runtime/control
+   * boundary. */
+  defaultImage(): string {
+    return config.sandbox.defaultImage;
   }
 
   /** Resolve a spec's `toolsets[]` to full pull references for materialize,

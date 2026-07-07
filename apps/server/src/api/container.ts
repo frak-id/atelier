@@ -6,10 +6,11 @@
 import type {
   PortEntry,
   ProcessEntry,
+  ToolboxConfig,
   ToolboxOwner,
   ToolsetRef,
 } from "@atelier/spec";
-import { createControlContainer } from "../control/index.ts";
+import { createControlContainer, recipeFingerprint } from "../control/index.ts";
 import {
   AgentClient,
   DrizzleSandboxStore,
@@ -177,14 +178,33 @@ export async function resolveToolboxRefs(
   for (const owner of owners) {
     const configs = container.control.toolboxService.listAutoInject(owner);
     for (const config of configs) {
+      // Pinned (docs/toolbox-versions.md §2): resolve straight to the saved
+      // ref, skipping `buildToolset` entirely — no build, no content-hash
+      // lookup, just the pointer. A dangling pin falls back to the recipe
+      // build (same "never fail the whole spawn" resilience as below).
+      const activeId = container.control.toolboxService.getActiveVersionId(
+        config.id,
+      );
+      if (activeId) {
+        const version = container.control.toolboxVersionService.find(activeId);
+        if (version) {
+          refs.push({ ref: version.ref });
+          continue;
+        }
+        log.warn(
+          { slug: config.slug, activeId },
+          "pinned toolbox version missing; falling back to recipe build",
+        );
+      }
       try {
-        const ref = await container.runtime.buildToolset({
+        const { ref } = await container.runtime.buildToolset({
           name: `tb/${owner.type}/${owner.id}/${config.slug}`,
           source: config.source,
           build: config.build,
           paths: config.paths,
         });
-        refs.push(ref);
+        refs.push({ ref });
+        await recordBuiltVersionLazily(container, config, ref);
       } catch (err) {
         log.error(
           { err, ownerType: owner.type, ownerId: owner.id, slug: config.slug },
@@ -220,15 +240,31 @@ export async function resolveSelectedToolboxes(
     if (!config || config.build.length === 0 || config.paths.length === 0) {
       continue;
     }
-    try {
-      refs.push(
-        await container.runtime.buildToolset({
-          name: `tb/${parsed.owner.type}/${parsed.owner.id}/${config.slug}`,
-          source: config.source,
-          build: config.build,
-          paths: config.paths,
-        }),
+    // Pinned: skip the build, same as `resolveToolboxRefs` (dangling pin
+    // falls back to the recipe build).
+    const activeId = container.control.toolboxService.getActiveVersionId(
+      config.id,
+    );
+    if (activeId) {
+      const version = container.control.toolboxVersionService.find(activeId);
+      if (version) {
+        refs.push({ ref: version.ref });
+        continue;
+      }
+      log.warn(
+        { slug: config.slug, activeId },
+        "pinned toolbox version missing; falling back to recipe build",
       );
+    }
+    try {
+      const { ref } = await container.runtime.buildToolset({
+        name: `tb/${parsed.owner.type}/${parsed.owner.id}/${config.slug}`,
+        source: config.source,
+        build: config.build,
+        paths: config.paths,
+      });
+      refs.push({ ref });
+      await recordBuiltVersionLazily(container, config, ref);
     } catch (err) {
       log.error(
         { err, ownerType: parsed.owner.type, slug: parsed.slug },
@@ -237,6 +273,71 @@ export async function resolveSelectedToolboxes(
     }
   }
   return refs;
+}
+
+/**
+ * Lazily record a recipe-built artifact as a `built` version row, once per
+ * distinct ref (docs/toolbox-versions.md §3) — so version history stays
+ * complete even for toolboxes that never went through an explicit capture.
+ * Gated on `existsByRef` first so the hot spawn path stays a single indexed
+ * lookup once a ref has been recorded (the seam calls `buildToolset` every
+ * spawn, but it's content-hash cached, so `ref` is stable until the recipe
+ * changes). Recording a version row must never fail a spawn: every failure
+ * is caught and logged only.
+ */
+async function recordBuiltVersionLazily(
+  container: ServerContainer,
+  config: ToolboxConfig,
+  ref: string,
+): Promise<void> {
+  try {
+    if (container.control.toolboxVersionService.existsByRef(config.id, ref)) {
+      return;
+    }
+    const fp = recipeFingerprint(config);
+    const sourceImage = await container.runtime
+      .resolveSourceImage(
+        config.source ?? { image: container.runtime.defaultImage() },
+      )
+      .catch(() => undefined);
+    container.control.toolboxVersionService.recordBuilt(config.id, {
+      ref,
+      recipeFingerprint: fp,
+      sourceImage,
+    });
+    pruneToolboxVersions(container, config.id);
+  } catch (err) {
+    log.error(
+      { err, toolboxId: config.id, ref },
+      "lazy built-version recording failed; spawn continues",
+    );
+  }
+}
+
+/**
+ * Enforce the per-toolbox retention policy after a new version row is added
+ * (docs/toolbox-versions.md §6) — called after both lazy `built` recording
+ * and explicit capture. Also drops the runtime toolset record for any pruned
+ * version (Zot retention handles the underlying blobs). Log-only: pruning
+ * must never fail the caller's request.
+ */
+export function pruneToolboxVersions(
+  container: ServerContainer,
+  toolboxId: string,
+): void {
+  try {
+    const deleted = container.control.toolboxVersionService.pruneOldVersions(
+      toolboxId,
+      container.control.toolboxService.getActiveVersionId(toolboxId),
+    );
+    for (const v of deleted) {
+      try {
+        container.runtime.deleteToolset(v.ref);
+      } catch {}
+    }
+  } catch (err) {
+    log.error({ err, toolboxId }, "toolbox version retention prune failed");
+  }
 }
 
 /** Parse a toolbox toolset ref/name back to its owner+slug (the inverse of the

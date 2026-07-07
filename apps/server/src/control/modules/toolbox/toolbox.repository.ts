@@ -147,4 +147,24 @@ export class ToolboxRepository {
       .run();
     return true;
   }
+
+  /** The pinned toolbox-version pointer (docs/toolbox-versions.md §2) — an
+   * internal control concern kept off `ToolboxConfig`, exposed only via the
+   * versions endpoint. */
+  getActiveVersionId(toolboxId: string): string | null {
+    const row = getDatabase()
+      .select({ activeVersionId: entityToolboxes.activeVersionId })
+      .from(entityToolboxes)
+      .where(eq(entityToolboxes.id, toolboxId))
+      .get();
+    return row?.activeVersionId ?? null;
+  }
+
+  setActiveVersionId(toolboxId: string, versionId: string | null): void {
+    getDatabase()
+      .update(entityToolboxes)
+      .set({ activeVersionId: versionId })
+      .where(eq(entityToolboxes.id, toolboxId))
+      .run();
+  }
 }

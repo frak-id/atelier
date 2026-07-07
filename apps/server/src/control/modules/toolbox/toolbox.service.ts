@@ -107,6 +107,18 @@ export class ToolboxService {
     log.info({ toolboxId: id }, "Toolbox config deleted");
   }
 
+  /** The pinned toolbox-version pointer (docs/toolbox-versions.md §2) —
+   * null means "resolve the recipe build every spawn" (today's behavior). */
+  getActiveVersionId(id: string): string | null {
+    return this.repository.getActiveVersionId(id);
+  }
+
+  /** Repoint (or clear, with `null`) the active pin. Free/instant — no build,
+   * no ref mutation, just the pointer moving. */
+  setActiveVersionId(id: string, versionId: string | null): void {
+    this.repository.setActiveVersionId(id, versionId);
+  }
+
   /**
    * Seed the default toolbox for an org (users never seed — asymmetric by
    * design). Conflict-safe against `uniqueIndex(owner_type, owner_id, slug)`

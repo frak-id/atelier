@@ -10,12 +10,14 @@ import {
   TemplateMetaSchema,
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
+  ToolboxVersionCaptureRequestSchema,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
+import { recipeFingerprint } from "../control/index.ts";
 import { ForbiddenError, ValidationError } from "../shared/errors.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
-import type { ServerContainer } from "./container.ts";
+import { pruneToolboxVersions, type ServerContainer } from "./container.ts";
 
 const log = createChildLogger("control-routes");
 
@@ -311,6 +313,107 @@ export function createControlRoutes(container: ServerContainer) {
       const existing = control.toolboxService.get(params.id);
       requireToolboxOwnerAccess(existing, user.id);
       control.toolboxService.delete(params.id);
+      set.status = 204;
+    })
+    .post(
+      "/:id/versions/capture",
+      async ({ user, params, body }) => {
+        const tb = control.toolboxService.get(params.id);
+        requireToolboxOwnerAccess(tb, user.id);
+        if (tb.paths.length === 0) {
+          throw new ValidationError("toolbox has no paths to capture");
+        }
+        // Server-authoritative capture inputs (docs/toolbox-versions.md §2
+        // invariant): a "version" must capture the toolbox's OWN paths[] to
+        // stay substitutable for the recipe-built artifact, never whatever
+        // the caller passes.
+        const { ref } = await container.runtime.captureToolset(body.sandboxId, {
+          name: `tb/${tb.ownerType}/${tb.ownerId}/${tb.slug}`,
+          paths: tb.paths,
+          exclude: [],
+          overrides: [],
+        });
+        // Best-effort drift signal (docs/toolbox-versions.md §5): the base
+        // image the sandbox was actually running at capture time.
+        const sourceImage = await container.runtime
+          .getSandboxImage(body.sandboxId)
+          .catch(() => undefined);
+        // Save, don't pin — pinning is a separate, explicit call (§7).
+        const version = control.toolboxVersionService.create(tb.id, {
+          ref,
+          description: body.description,
+          provenance: {
+            kind: "captured",
+            capturedFrom: body.sandboxId,
+            capturedBy: user.id,
+            ...(sourceImage ? { sourceImage } : {}),
+          },
+          recipeFingerprint: recipeFingerprint(tb),
+        });
+        pruneToolboxVersions(container, tb.id);
+        return version;
+      },
+      { body: ToolboxVersionCaptureRequestSchema },
+    )
+    .get("/:id/versions", async ({ user, params }) => {
+      const tb = control.toolboxService.get(params.id);
+      requireToolboxOwnerAccess(tb, user.id);
+      const currentSourceImage = await container.runtime
+        .resolveSourceImage(
+          tb.source ?? { image: container.runtime.defaultImage() },
+        )
+        .catch(() => undefined);
+      return {
+        versions: control.toolboxVersionService.listByToolbox(tb.id),
+        activeVersionId: control.toolboxService.getActiveVersionId(tb.id),
+        currentRecipeFingerprint: recipeFingerprint(tb),
+        ...(currentSourceImage ? { currentSourceImage } : {}),
+      };
+    })
+    .put(
+      "/:id/active-version",
+      ({ user, params, body }) => {
+        const tb = control.toolboxService.get(params.id);
+        requireToolboxOwnerAccess(tb, user.id);
+        if (body.versionId === null) {
+          control.toolboxService.setActiveVersionId(tb.id, null);
+          return { activeVersionId: null };
+        }
+        const version = control.toolboxVersionService.get(body.versionId);
+        if (version.toolboxId !== tb.id) {
+          throw new ValidationError("version does not belong to this toolbox");
+        }
+        // Org publish-before-pin guard (docs/toolbox-versions.md §5): a
+        // private capture pinned org-wide would replay one user's config
+        // (and possibly secrets) into every future spawn for the whole org.
+        if (tb.ownerType === "org") {
+          const entry = container.runtime.getToolsetEntry(version.ref);
+          if (entry?.private === true) {
+            throw new ValidationError(
+              "publish this toolset before pinning an org toolbox org-wide",
+            );
+          }
+        }
+        control.toolboxService.setActiveVersionId(tb.id, version.id);
+        return { activeVersionId: version.id };
+      },
+      {
+        body: t.Object({
+          versionId: t.Union([t.String(), t.Null()]),
+        }),
+      },
+    )
+    .delete("/:id/versions/:versionId", ({ user, params, set }) => {
+      const tb = control.toolboxService.get(params.id);
+      requireToolboxOwnerAccess(tb, user.id);
+      if (
+        control.toolboxService.getActiveVersionId(tb.id) === params.versionId
+      ) {
+        throw new ValidationError(
+          "cannot delete the active version; unpin first",
+        );
+      }
+      control.toolboxVersionService.delete(params.versionId);
       set.status = 204;
     });
 

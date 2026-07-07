@@ -28,5 +28,9 @@ export {
 export { SecretService } from "./modules/secret/index.ts";
 export { SshKeyService } from "./modules/ssh-key/index.ts";
 export { ToolboxService } from "./modules/toolbox/index.ts";
+export {
+  recipeFingerprint,
+  ToolboxVersionService,
+} from "./modules/toolbox-version/index.ts";
 export { UserService } from "./modules/user/index.ts";
 export type * from "./types.ts";

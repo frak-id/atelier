@@ -15,6 +15,7 @@ import type {
   SandboxSpec,
   Source,
   TemplateMeta,
+  ToolboxVersionProvenance,
 } from "@atelier/spec";
 import {
   index,
@@ -196,6 +197,11 @@ export const entityToolboxes = sqliteTable(
     processes: text("processes", { mode: "json" }).$type<ProcessEntry[]>(),
     ports: text("ports", { mode: "json" }).$type<PortEntry[]>(),
     autoInject: integer("auto_inject").notNull().default(1),
+    /** Pinned toolbox version (nullable — null means "resolve the recipe
+     * build every spawn", the default). Owned/updated by
+     * `ToolboxRepository.setActiveVersionId`, never by
+     * `ToolboxRepository.update` (docs/toolbox-versions.md §2). */
+    activeVersionId: text("active_version_id"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -207,6 +213,30 @@ export const entityToolboxes = sqliteTable(
       t.slug,
     ),
   ],
+);
+
+/**
+ * Versions of a toolbox's deliverable (docs/toolbox-versions.md §4). A row
+ * per capture/build kept associated with the toolbox — the runtime
+ * `ToolsetRecord` never learns about toolboxes, so this is the control-side
+ * join by `ref`. `label` is a per-toolbox monotonic counter (v1, v2, …),
+ * assigned by `ToolboxVersionRepository.nextLabel`.
+ */
+export const entityToolboxVersions = sqliteTable(
+  "entity_toolbox_versions",
+  {
+    id: text("id").primaryKey(),
+    toolboxId: text("toolbox_id").notNull(),
+    label: integer("label").notNull(),
+    ref: text("ref").notNull(),
+    description: text("description").notNull(),
+    provenance: text("provenance", { mode: "json" })
+      .notNull()
+      .$type<ToolboxVersionProvenance>(),
+    recipeFingerprint: text("recipe_fingerprint").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [index("idx_entity_toolbox_versions_toolbox").on(t.toolboxId)],
 );
 
 export const settings = sqliteTable("settings", {
