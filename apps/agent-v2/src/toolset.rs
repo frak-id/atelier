@@ -251,6 +251,24 @@ fn tar_exclude_flags(excludes: &[String]) -> String {
     flags
 }
 
+/// Directories skipped by the secret SCAN only — still captured into the tar
+/// (a toolset that installs npm tools NEEDS its `node_modules`). `.git` holds
+/// no user config; `node_modules` is vendored third-party code — never where a
+/// capturing user's own credentials live, but riddled with example keys (e.g.
+/// AWS's documented `AKIAIOSFODNN7EXAMPLE` in `@aws-sdk` JSDoc `.d.ts` files)
+/// and test fixtures. Scanning them only produces false positives that train
+/// devs to reach for `overrides` reflexively, defeating the gate (see
+/// SECRET_PATTERNS).
+const SCAN_EXCLUDE_DIRS: &[&str] = &[".git", "node_modules"];
+
+/// `grep --exclude-dir=<dir>` flags for the scan-only directory excludes.
+fn scan_exclude_dir_flags() -> String {
+    SCAN_EXCLUDE_DIRS
+        .iter()
+        .map(|d| format!(" --exclude-dir={}", sh_quote(d)))
+        .collect()
+}
+
 /// Merge the built-in secret-file excludes with the request's own, as owned
 /// `String`s ready for `tar_exclude_flags` / grep-exclude construction.
 fn merged_excludes(request_exclude: &[String]) -> Vec<String> {
@@ -308,11 +326,12 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     let scan_script = format!(
         "set -euo pipefail\n\
          cd {home}\n\
-         grep -rIlE {pattern}{excludes} --exclude-dir=.git -- {paths} 2>/dev/null \
+         grep -rIlE {pattern}{excludes}{dir_excludes} -- {paths} 2>/dev/null \
            || {{ rc=$?; [ \"$rc\" -le 1 ] || exit \"$rc\"; }}",
         home = HOME,
         pattern = pattern,
         excludes = grep_excludes,
+        dir_excludes = scan_exclude_dir_flags(),
         paths = quoted_paths,
     );
     let scan = command::run(
@@ -492,6 +511,18 @@ mod tests {
         for d in DEFAULT_EXCLUDES {
             assert!(merged.iter().any(|g| g == d), "missing default exclude {d}");
         }
+    }
+
+    #[test]
+    fn node_modules_is_scan_excluded_but_still_captured() {
+        // The scan skips node_modules (vendored deps trip patterns on example
+        // keys, e.g. AWS's AKIAIOSFODNN7EXAMPLE) …
+        let flags = scan_exclude_dir_flags();
+        assert!(flags.contains("--exclude-dir='node_modules'"));
+        assert!(flags.contains("--exclude-dir='.git'"));
+        // … but it must NOT be a tar exclude, or an npm toolset would ship
+        // without its dependencies.
+        assert!(!merged_excludes(&[]).iter().any(|g| g == "node_modules"));
     }
 
     #[test]
