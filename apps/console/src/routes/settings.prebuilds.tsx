@@ -2,9 +2,13 @@ import type { PrebuildRecord, PrebuildSpec } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { type ParseError, parse as parseJsonc } from "jsonc-parser";
-import { Hammer, Layers, Loader2, RefreshCw } from "lucide-react";
+import { Hammer, Layers, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { prebuildsListQuery, useRunPrebuild } from "@/api/queries/prebuilds";
+import {
+  prebuildsListQuery,
+  useDeletePrebuild,
+  useRunPrebuild,
+} from "@/api/queries/prebuilds";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -116,6 +120,7 @@ function PrebuildsList() {
     error,
   } = useQuery(prebuildsListQuery());
   const runPrebuild = useRunPrebuild();
+  const deletePrebuild = useDeletePrebuild();
 
   return (
     <Card>
@@ -156,25 +161,49 @@ function PrebuildsList() {
                   {prebuild.parent ? (
                     <Badge variant="outline">chained</Badge>
                   ) : null}
+                  {prebuild.inUse ? (
+                    <Badge variant="secondary">in use</Badge>
+                  ) : null}
                   <span className="text-xs text-muted-foreground">
                     {formatRelativeTime(prebuild.createdAt)}
                   </span>
-                  {spec ? (
+                  <div className="ml-auto flex items-center gap-2">
+                    {spec ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={runPrebuild.isPending}
+                        onClick={() =>
+                          runPrebuild.mutate({ spec, force: true })
+                        }
+                      >
+                        {runPrebuild.isPending ? (
+                          <Loader2 className="animate-spin" />
+                        ) : (
+                          <RefreshCw />
+                        )}
+                        Rebuild
+                      </Button>
+                    ) : null}
                     <Button
                       variant="outline"
                       size="sm"
-                      className="ml-auto"
-                      disabled={runPrebuild.isPending}
-                      onClick={() => runPrebuild.mutate({ spec, force: true })}
+                      disabled={prebuild.inUse || deletePrebuild.isPending}
+                      title={
+                        prebuild.inUse
+                          ? "In use by a sandbox or a chained prebuild"
+                          : "Delete this snapshot"
+                      }
+                      onClick={() => deletePrebuild.mutate(prebuild.ref)}
                     >
-                      {runPrebuild.isPending ? (
+                      {deletePrebuild.isPending ? (
                         <Loader2 className="animate-spin" />
                       ) : (
-                        <RefreshCw />
+                        <Trash2 />
                       )}
-                      Rebuild
+                      Delete
                     </Button>
-                  ) : null}
+                  </div>
                 </div>
                 {summary ? (
                   <span className="text-sm text-muted-foreground">

@@ -85,6 +85,14 @@ export function createV1Routes(container: ServerContainer) {
           query: t.Object({ force: t.Optional(t.Boolean()) }),
         },
       )
+      .delete(
+        "/prebuilds/:ref",
+        async ({ params, set }) => {
+          await runtime.deletePrebuild(params.ref);
+          set.status = 204;
+        },
+        { params: t.Object({ ref: t.String() }) },
+      )
       // ── toolsets ───────────────────────────────────────────────────────
       .get("/toolsets", () =>
         runtime.listToolsets().map((entry) => ({

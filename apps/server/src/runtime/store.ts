@@ -61,6 +61,7 @@ export interface SnapshotStore {
   put(record: SnapshotRecord): void;
   get(ref: string): SnapshotRecord | undefined;
   list(): SnapshotRecord[];
+  delete(ref: string): void;
 }
 
 /** A published toolset artifact keyed by its content/result `hash`. */
@@ -145,6 +146,11 @@ export class InMemorySnapshotStore implements SnapshotStore {
   }
   list(): SnapshotRecord[] {
     return [...this.byRef.values()];
+  }
+  delete(ref: string): void {
+    const prior = this.byRef.get(ref);
+    this.byRef.delete(ref);
+    if (prior) this.byHash.delete(prior.hash);
   }
 }
 
@@ -309,6 +315,10 @@ export class DrizzleSnapshotStore implements SnapshotStore {
   list(): SnapshotRecord[] {
     const rows = getDatabase().select().from(snapshots).all() as SnapshotRow[];
     return rows.map(snapshotRowToRecord);
+  }
+
+  delete(ref: string): void {
+    getDatabase().delete(snapshots).where(eq(snapshots.ref, ref)).run();
   }
 }
 

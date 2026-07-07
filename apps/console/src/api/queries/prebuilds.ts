@@ -53,3 +53,24 @@ export function useRunPrebuild() {
     onError: (error) => toast.error(error.message),
   });
 }
+
+/**
+ * Delete a stored prebuild snapshot (DELETE /v1/prebuilds/:ref). Refused
+ * server-side when the snapshot is still in use (a sandbox boots from it or a
+ * prebuild is chained on it) — the console only offers it for unused ones.
+ */
+export function useDeletePrebuild() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ref: string) => {
+      const { error } = await api.v1.prebuilds({ ref }).delete();
+      if (error)
+        throw new Error(errorMessage(error, "Failed to delete prebuild"));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.prebuilds.all });
+      toast.success("Prebuild deleted");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}

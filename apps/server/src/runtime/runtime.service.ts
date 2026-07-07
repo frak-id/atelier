@@ -131,20 +131,73 @@ export class RuntimeService {
   }
 
   /** List stored prebuild snapshots, newest first — the read side of
-   * `prebuild()`, for the console's prebuild list and one-tap spawn. */
+   * `prebuild()`, for the console's prebuild list and one-tap spawn. Each
+   * record is flagged `inUse` so the console can offer deletion of the stale,
+   * unreferenced ones without risking a live boot source. */
   listPrebuilds(): PrebuildRecord[] {
-    return this.snapshots
-      .list()
-      .map((s) => ({
-        ref: s.ref,
-        hash: s.hash,
-        image: s.image,
-        parent: s.parent,
-        metadata: s.metadata,
-        spec: s.spec,
-        createdAt: s.createdAt,
-      }))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const referenced = this.referencedSnapshotRefs();
+    return (
+      this.snapshots
+        .list()
+        // Only real prebuilds: the table also holds pause/manual snapshots
+        // (no `spec`), which must never surface here as deletable prebuilds.
+        .filter((s) => s.spec !== undefined)
+        .map((s) => ({
+          ref: s.ref,
+          hash: s.hash,
+          image: s.image,
+          parent: s.parent,
+          metadata: s.metadata,
+          spec: s.spec,
+          inUse: referenced.has(s.ref),
+          createdAt: s.createdAt,
+        }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    );
+  }
+
+  /** Refs that must not be deleted: a sandbox boots from them
+   * (`source.snapshot`) or another snapshot is chained on them (`parent`). */
+  private referencedSnapshotRefs(): Set<string> {
+    const refs = new Set<string>();
+    for (const s of this.sandboxes.list()) {
+      if ("snapshot" in s.spec.source) refs.add(s.spec.source.snapshot);
+    }
+    for (const snap of this.snapshots.list()) {
+      if (snap.parent) refs.add(snap.parent);
+    }
+    return refs;
+  }
+
+  /** Delete a stored prebuild snapshot (VolumeSnapshot + record). Refuses when
+   * the snapshot is still referenced by a sandbox or a chained prebuild. */
+  async deletePrebuild(ref: string): Promise<void> {
+    // Only prebuild snapshots (`spec`-bearing) are deletable here — a
+    // pause/manual snapshot shares the table but is a sandbox's own storage,
+    // and referencedSnapshotRefs() can't see a pause ref (it isn't in
+    // `source.snapshot`), so treat those as not-a-prebuild.
+    if (!this.snapshots.get(ref)?.spec)
+      throw new NotFoundError("Prebuild", ref);
+    if (this.referencedSnapshotRefs().has(ref)) {
+      throw new ValidationError(
+        `Snapshot ${ref} is in use (a sandbox boots from it or a prebuild is ` +
+          "chained on it) and cannot be deleted.",
+      );
+    }
+    await this.removeSnapshot(ref);
+  }
+
+  /** Drop a snapshot's VolumeSnapshot then its record. The k8s delete is
+   * best-effort (an already-gone object must still clear the row) — matching
+   * the runtime's cleanup style elsewhere. */
+  private async removeSnapshot(ref: string): Promise<void> {
+    if (!isMock()) {
+      await kubeClient
+        .deleteResource("VolumeSnapshot", ref)
+        .catch((err) => log.warn({ ref, err }, "VolumeSnapshot delete failed"));
+    }
+    this.snapshots.delete(ref);
+    log.info({ ref }, "snapshot deleted");
   }
 
   /** Cron entry: for every stored prebuild that clones repos, recompute the
@@ -170,6 +223,12 @@ export class RuntimeService {
           "prebuild stale, rebuilding",
         );
         await this.prebuild(snap.spec);
+        // The fresh snapshot supersedes this one; drop it so drifted prebuilds
+        // don't accumulate. Kept if something still references it (a running
+        // sandbox booted from it, or a prebuild chained on it).
+        if (!this.referencedSnapshotRefs().has(snap.ref)) {
+          await this.removeSnapshot(snap.ref);
+        }
       } catch (err) {
         log.error({ ref: snap.ref, err }, "prebuild staleness check failed");
       }
