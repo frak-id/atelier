@@ -45,7 +45,9 @@ await ensureSharedSshPipeKey();
 // + base image digest, and rebuild anything that moved (runtime.service.ts
 // `refreshStalePrebuilds`). Skipped in mock mode (no network git/registry).
 if (!isMock()) {
-  new Cron("*/30 * * * *", () => {
+  // `protect: true` skips a tick if the previous run is still going, so a slow
+  // pass (many repos / slow remotes) can't stack overlapping refresh runs.
+  new Cron("*/30 * * * *", { protect: true }, () => {
     container.runtime
       .refreshStalePrebuilds()
       .catch((err) => logger.error({ err }, "prebuild staleness cron failed"));

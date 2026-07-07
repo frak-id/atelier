@@ -142,6 +142,7 @@ function PrebuildsList() {
         ) : (
           prebuilds.map((prebuild: PrebuildRecord) => {
             const summary = metadataSummary(prebuild.metadata);
+            const spec = prebuild.spec;
             return (
               <div
                 key={prebuild.ref}
@@ -158,18 +159,13 @@ function PrebuildsList() {
                   <span className="text-xs text-muted-foreground">
                     {formatRelativeTime(prebuild.createdAt)}
                   </span>
-                  {prebuild.spec ? (
+                  {spec ? (
                     <Button
                       variant="outline"
                       size="sm"
                       className="ml-auto"
                       disabled={runPrebuild.isPending}
-                      onClick={() =>
-                        runPrebuild.mutate({
-                          spec: prebuild.spec as PrebuildSpec,
-                          force: true,
-                        })
-                      }
+                      onClick={() => runPrebuild.mutate({ spec, force: true })}
                     >
                       {runPrebuild.isPending ? (
                         <Loader2 className="animate-spin" />

@@ -4,27 +4,39 @@
  * without cloning. Returns null on any failure so callers decide how to
  * degrade (a prebuild build still runs — only the cache key is affected).
  */
-import { $ } from "bun";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("git-remote");
+
+const LS_REMOTE_TIMEOUT_MS = 5_000;
 
 export async function getRemoteCommitHash(
   url: string,
   branch?: string,
 ): Promise<string | null> {
   const ref = branch ? `refs/heads/${branch}` : "HEAD";
-  const result = await $`git ls-remote ${url} ${ref}`.quiet().nothrow();
-
-  if (result.exitCode !== 0) {
-    log.warn(
-      { url, branch, exitCode: result.exitCode },
-      "git ls-remote failed",
-    );
+  // Bound the call: a dead host or firewall black-hole makes `git ls-remote`
+  // hang on the TCP connect indefinitely. The AbortSignal kills the process on
+  // timeout; any failure (timeout, non-zero exit, spawn error) degrades to null.
+  try {
+    const proc = Bun.spawn(["git", "ls-remote", url, ref], {
+      stdout: "pipe",
+      stderr: "ignore",
+      signal: AbortSignal.timeout(LS_REMOTE_TIMEOUT_MS),
+    });
+    const [exitCode, stdout] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+    ]);
+    if (exitCode !== 0) {
+      log.warn({ url, branch, exitCode }, "git ls-remote failed");
+      return null;
+    }
+    const output = stdout.trim();
+    if (!output) return null;
+    return output.split("\t")[0] || null;
+  } catch (err) {
+    log.warn({ url, branch, err }, "git ls-remote failed");
     return null;
   }
-
-  const output = result.stdout.toString().trim();
-  if (!output) return null;
-  return output.split("\t")[0] || null;
 }

@@ -156,7 +156,13 @@ export class RuntimeService {
     for (const snap of this.snapshots.list()) {
       if (!snap.spec?.repos?.length) continue;
       try {
-        const { hash } = await this.resolveContentKey(snap.spec);
+        const { hash, repoHeadsComplete } = await this.resolveContentKey(
+          snap.spec,
+        );
+        // A transient ls-remote failure drops a repo from the key, which would
+        // otherwise flap the hash and trigger a rebuild every tick. Only act on
+        // drift we can trust — skip until every repo HEAD resolves.
+        if (!repoHeadsComplete) continue;
         if (hash === snap.hash) continue;
         if (this.snapshots.getByHash(hash)) continue;
         log.info(
@@ -175,11 +181,15 @@ export class RuntimeService {
    * intentionally excluded (atelier-v2 §2): it carries build-time secrets
    * (tokens) that must never enter a persisted content key, and is treated
    * as credential material rather than artifact-identifying input. */
-  private async resolveContentKey(
-    spec: PrebuildSpec,
-  ): Promise<{ hash: string; image: string; snapshotName?: string }> {
+  private async resolveContentKey(spec: PrebuildSpec): Promise<{
+    hash: string;
+    image: string;
+    snapshotName?: string;
+    repoHeadsComplete: boolean;
+  }> {
     const { image, snapshotName } = await this.resolveSource(spec.source);
-    const repoHeads = await this.resolveRepoHeads(spec.repos);
+    const { heads: repoHeads, complete: repoHeadsComplete } =
+      await this.resolveRepoHeads(spec.repos);
     const keyed = {
       source: spec.source,
       image,
@@ -191,21 +201,30 @@ export class RuntimeService {
     const hash = createHash("sha256")
       .update(JSON.stringify(keyed))
       .digest("hex");
-    return { hash, image, snapshotName };
+    return { hash, image, snapshotName, repoHeadsComplete };
   }
 
   /** Current remote HEAD per repo (keyed by `clonePath`), so a git push busts
-   * the content key. Skipped in mock mode (no network git). */
+   * the content key. Resolved in parallel; skipped in mock mode (no network
+   * git). `complete` is false when any HEAD failed to resolve, so callers can
+   * avoid acting on a partial (and therefore flappy) key. */
   private async resolveRepoHeads(
     repos: PrebuildSpec["repos"],
-  ): Promise<Record<string, string>> {
-    if (!repos?.length || isMock()) return {};
+  ): Promise<{ heads: Record<string, string>; complete: boolean }> {
+    if (!repos?.length || isMock()) return { heads: {}, complete: true };
+    const resolved = await Promise.all(
+      repos.map(async (repo) => ({
+        clonePath: repo.clonePath,
+        head: await getRemoteCommitHash(repo.url, repo.branch),
+      })),
+    );
     const heads: Record<string, string> = {};
-    for (const repo of repos) {
-      const head = await getRemoteCommitHash(repo.url, repo.branch);
-      if (head) heads[repo.clonePath] = head;
+    let complete = true;
+    for (const { clonePath, head } of resolved) {
+      if (head) heads[clonePath] = head;
+      else complete = false;
     }
-    return heads;
+    return { heads, complete };
   }
 
   private async executePrebuild(
