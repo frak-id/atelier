@@ -1,4 +1,8 @@
-import type { PrebuildRecord, SandboxSpec } from "@atelier/spec";
+import type {
+  CreateSandboxRequest,
+  PrebuildRecord,
+  SandboxSpec,
+} from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Layers, Loader2, Rocket, Trash2 } from "lucide-react";
@@ -38,6 +42,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { specToSpawnRequest } from "@/lib/composition";
 import { formatRelativeTime } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
 import { useLens } from "@/providers/lens";
@@ -56,11 +61,15 @@ function SpawnPage() {
   } | null>(null);
 
   // `toolboxes` is optional: the template-gallery path passes a full
-  // CreateSandboxRequest that already embeds `toolboxes`, so it carries through
-  // the `...spec` spread; the builder-lens callers pass it as the second arg.
-  function spawnFromSpec(spec: SandboxSpec, toolboxes?: string[]) {
+  // CreateSandboxRequest that already embeds `toolboxes`/`prebuild`, so they
+  // carry through the `...request` spread; the builder-lens callers pass a
+  // plain spec plus `toolboxes` as the second arg.
+  function spawnFromSpec(request: CreateSandboxRequest, toolboxes?: string[]) {
     spawn.mutate(
-      { ...spec, ...(toolboxes && toolboxes.length > 0 ? { toolboxes } : {}) },
+      {
+        ...request,
+        ...(toolboxes && toolboxes.length > 0 ? { toolboxes } : {}),
+      },
       {
         onSuccess: (data) => {
           if (data)
@@ -87,10 +96,7 @@ function SpawnPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">Spawn a sandbox</h1>
 
-      <TemplateGallery
-        spawning={spawn.isPending}
-        onSpawn={(request) => spawnFromSpec(request)}
-      />
+      <TemplateGallery spawning={spawn.isPending} onSpawn={spawnFromSpec} />
 
       {lens === "builder" ? (
         <>
@@ -152,7 +158,7 @@ function QuickSpawnSection({
   spawnPending,
   onOpenInEditor,
 }: {
-  onSpawn: (spec: SandboxSpec, toolboxes?: string[]) => void;
+  onSpawn: (request: CreateSandboxRequest, toolboxes?: string[]) => void;
   spawnPending: boolean;
   onOpenInEditor: (spec: SandboxSpec) => void;
 }) {
@@ -372,7 +378,7 @@ function SavedSpecsSection({
   onEdit,
   onDeleted,
 }: {
-  onSpawn: (spec: SandboxSpec) => void;
+  onSpawn: (request: CreateSandboxRequest) => void;
   spawnPending: boolean;
   onEdit: (savedSpec: SavedSpec) => void;
   onDeleted: (id: string) => void;
@@ -427,7 +433,7 @@ function SavedSpecItem({
   onDeleted,
 }: {
   savedSpec: SavedSpec;
-  onSpawn: (spec: SandboxSpec) => void;
+  onSpawn: (request: CreateSandboxRequest) => void;
   spawnPending: boolean;
   onEdit: (savedSpec: SavedSpec) => void;
   onDeleted: (id: string) => void;
@@ -442,6 +448,9 @@ function SavedSpecItem({
         <span className="truncate font-medium">{savedSpec.name}</span>
         {savedSpec.orgId ? <Badge variant="outline">org</Badge> : null}
         {savedSpec.template ? <Badge variant="success">published</Badge> : null}
+        {savedSpec.composition ? (
+          <Badge variant="secondary">follows prebuild + toolbox</Badge>
+        ) : null}
         <span className="text-xs text-muted-foreground">
           {formatRelativeTime(savedSpec.updatedAt)}
         </span>
@@ -450,7 +459,9 @@ function SavedSpecItem({
         <Button
           size="sm"
           disabled={spawnPending}
-          onClick={() => onSpawn(savedSpec.spec)}
+          onClick={() =>
+            onSpawn(specToSpawnRequest(savedSpec.spec, savedSpec.composition))
+          }
         >
           {spawnPending ? <Loader2 className="animate-spin" /> : <Rocket />}
           Spawn
@@ -528,7 +539,7 @@ function EditorSection({
 }: {
   text: string;
   onTextChange: (text: string) => void;
-  onSpawn: (spec: SandboxSpec) => void;
+  onSpawn: (request: CreateSandboxRequest) => void;
   spawnPending: boolean;
   editingSpec: { id: string; name: string } | null;
   onStopEditing: () => void;

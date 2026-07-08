@@ -1,4 +1,9 @@
-import type { SandboxSpec, TemplateMeta } from "@atelier/spec";
+import type {
+  CreateSandboxRequest,
+  SandboxSpec,
+  TemplateComposition,
+  TemplateMeta,
+} from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { LayoutGrid, Rocket } from "lucide-react";
 import { useState } from "react";
@@ -9,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { specToSpawnRequest } from "@/lib/composition";
 import { harnessFromAnnotations } from "@/lib/sandbox-status";
 import { applyRepoUrlParam } from "@/lib/templates";
 
@@ -24,7 +30,7 @@ export function TemplateGallery({
   onSpawn,
   spawning,
 }: {
-  onSpawn: (spec: SandboxSpec) => void;
+  onSpawn: (request: CreateSandboxRequest) => void;
   spawning: boolean;
 }) {
   const {
@@ -89,6 +95,7 @@ interface GalleryTemplate {
   name: string;
   spec: SandboxSpec;
   meta?: TemplateMeta | null;
+  composition?: TemplateComposition | null;
 }
 
 function TemplateCard({
@@ -98,7 +105,7 @@ function TemplateCard({
   disabled,
 }: {
   template: GalleryTemplate;
-  onSpawn: (spec: SandboxSpec) => void;
+  onSpawn: (request: CreateSandboxRequest) => void;
   spawning: boolean;
   disabled: boolean;
 }) {
@@ -129,7 +136,10 @@ function TemplateCard({
       return;
     }
     setError(null);
-    onSpawn(spec);
+    // A template authored from a prebuild + toolbox carries a `composition`:
+    // thread the prebuild recipe + toolbox selectors so the seam resolves them
+    // to the latest snapshot/toolset refs at spawn.
+    onSpawn(specToSpawnRequest(spec, template.composition));
   }
 
   return (

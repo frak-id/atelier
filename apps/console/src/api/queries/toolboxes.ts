@@ -24,6 +24,7 @@ export function toolboxesListQuery(owner?: string) {
         throw new Error(errorMessage(error, "Failed to load toolboxes"));
       return data;
     },
+    staleTime: 30_000,
   });
 }
 

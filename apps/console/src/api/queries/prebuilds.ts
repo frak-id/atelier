@@ -20,6 +20,7 @@ export function prebuildsListQuery() {
         throw new Error(errorMessage(error, "Failed to load prebuilds"));
       return data;
     },
+    staleTime: 30_000,
   });
 }
 

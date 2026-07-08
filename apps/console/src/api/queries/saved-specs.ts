@@ -1,4 +1,8 @@
-import type { SandboxSpec, TemplateMeta } from "@atelier/spec";
+import type {
+  SandboxSpec,
+  TemplateComposition,
+  TemplateMeta,
+} from "@atelier/spec";
 import {
   queryOptions,
   useMutation,
@@ -12,7 +16,11 @@ import { queryKeys } from "./keys";
 // Template presentation types live in `@atelier/spec` (shared with the
 // server's request validation + DB `$type`) — re-exported here so console
 // callers keep importing them from the query module they already use.
-export type { TemplateMeta, TemplateParam } from "@atelier/spec";
+export type {
+  TemplateComposition,
+  TemplateMeta,
+  TemplateParam,
+} from "@atelier/spec";
 
 /** A saved spec as the console consumes it (a superset row from the list
  * endpoint). Defined once so rows/dialogs don't each re-declare a partial
@@ -24,6 +32,10 @@ export interface SavedSpec {
   spec: SandboxSpec;
   template: boolean;
   meta?: TemplateMeta | null;
+  /** Build recipe (prebuild + toolbox selectors) resolved to the latest
+   * snapshot/toolset refs at spawn — set for templates authored from an
+   * existing prebuild + toolbox. */
+  composition?: TemplateComposition | null;
   updatedAt: string;
 }
 
@@ -57,6 +69,7 @@ export function useCreateSavedSpec() {
       // Create never needs an explicit null (omit = no meta); only PATCH
       // accepts null, to clear.
       meta?: TemplateMeta;
+      composition?: TemplateComposition;
     }) => {
       const { data, error } = await api.api["saved-specs"].post(body);
       if (error) throw new Error(errorMessage(error, "Failed to save spec"));
@@ -82,6 +95,7 @@ export function useUpdateSavedSpec() {
       spec?: SandboxSpec;
       template?: boolean;
       meta?: TemplateMeta | null;
+      composition?: TemplateComposition | null;
     }) => {
       const { data, error } = await api.api["saved-specs"]({ id }).patch(body);
       if (error)

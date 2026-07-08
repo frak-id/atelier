@@ -122,11 +122,22 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/sandboxes",
         async ({ body, user }) => {
-          // The body is a spec plus the high-level `toolboxes` the caller
-          // picked; strip the selectors so the runtime only ever sees a spec.
-          const { toolboxes: selectors = [], ...specFields } =
-            body as CreateSandboxRequest;
-          const spec = specFields as SandboxSpec;
+          // The body is a spec plus the high-level references the caller
+          // picked (`toolboxes` selectors, a `prebuild` recipe); strip them so
+          // the runtime only ever sees a resolved spec.
+          const {
+            toolboxes: selectors = [],
+            prebuild,
+            ...specFields
+          } = body as CreateSandboxRequest;
+          let spec = specFields as SandboxSpec;
+          // A template built from a prebuild carries the recipe, not a pinned
+          // ref: resolve it to the current snapshot (idempotent — a cache hit
+          // when unchanged) so an updated prebuild is picked up here.
+          if (prebuild) {
+            const snapshot = await runtime.prebuild(prebuild);
+            spec = { ...spec, source: { snapshot: snapshot.ref } };
+          }
           const orgId = resolveOrgId(control, user.id);
           const authorizedKeys = control.sshKeyService.getValidPublicKeys();
           // Auto-inject org (baseline) then user (personal overlay) toolboxes,

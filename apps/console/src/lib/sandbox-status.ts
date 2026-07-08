@@ -21,7 +21,7 @@ export function sandboxStatusPresentation(status: SandboxStatus): {
   return STATUS_PRESENTATION[status] ?? { label: status, variant: "outline" };
 }
 
-const HARNESS_ANNOTATION_KEY = "atelier.dev/harness";
+export const HARNESS_ANNOTATION_KEY = "atelier.dev/harness";
 
 export function harnessFromAnnotations(
   annotations: Record<string, string> | undefined,

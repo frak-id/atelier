@@ -7,6 +7,7 @@ import { listHarnesses } from "@atelier/compose";
 import type { SandboxSpec, ToolboxOwner } from "@atelier/spec";
 import {
   SandboxSpecSchema,
+  TemplateCompositionSchema,
   TemplateMetaSchema,
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
@@ -144,7 +145,11 @@ export function createControlRoutes(container: ServerContainer) {
           body.name,
           body.spec as SandboxSpec,
           body.orgId,
-          { template: body.template, meta: body.meta },
+          {
+            template: body.template,
+            meta: body.meta,
+            composition: body.composition,
+          },
         ),
       {
         body: t.Object({
@@ -153,7 +158,9 @@ export function createControlRoutes(container: ServerContainer) {
           orgId: t.Optional(t.String()),
           template: t.Optional(t.Boolean()),
           meta: t.Optional(TemplateMetaSchema),
-          // ^ create body: `meta` is set or omitted (never explicitly null).
+          // ^ create body: `meta`/`composition` are set or omitted (never
+          // explicitly null).
+          composition: t.Optional(TemplateCompositionSchema),
         }),
       },
     )
@@ -165,6 +172,7 @@ export function createControlRoutes(container: ServerContainer) {
           spec: body.spec as SandboxSpec | undefined,
           template: body.template,
           meta: body.meta,
+          composition: body.composition,
         }),
       {
         body: t.Object({
@@ -173,6 +181,9 @@ export function createControlRoutes(container: ServerContainer) {
           template: t.Optional(t.Boolean()),
           // Nullable so a client can explicitly clear a template's meta.
           meta: t.Optional(t.Union([TemplateMetaSchema, t.Null()])),
+          composition: t.Optional(
+            t.Union([TemplateCompositionSchema, t.Null()]),
+          ),
         }),
       },
     )

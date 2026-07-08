@@ -5,6 +5,7 @@ import { createChildLogger } from "../../../shared/lib/logger.ts";
 import type {
   SavedSpec,
   SavedSpecRepository,
+  TemplateComposition,
   TemplateMeta,
 } from "./saved-spec.repository.ts";
 
@@ -35,7 +36,11 @@ export class SavedSpecService {
     name: string,
     spec: SandboxSpec,
     orgId?: string,
-    options?: { template?: boolean; meta?: TemplateMeta | null },
+    options?: {
+      template?: boolean;
+      meta?: TemplateMeta | null;
+      composition?: TemplateComposition | null;
+    },
   ): SavedSpec {
     const now = new Date().toISOString();
     const record: SavedSpec = {
@@ -46,6 +51,7 @@ export class SavedSpecService {
       policyRefs: [],
       template: options?.template ?? false,
       meta: options?.meta ?? null,
+      composition: options?.composition ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -60,6 +66,7 @@ export class SavedSpecService {
       spec?: SandboxSpec;
       template?: boolean;
       meta?: TemplateMeta | null;
+      composition?: TemplateComposition | null;
     },
   ): SavedSpec {
     this.getByIdOrThrow(id);

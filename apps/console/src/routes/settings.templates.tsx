@@ -9,6 +9,7 @@ import {
   useCreateSavedSpec,
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
+import { TemplateCompositionDialog } from "@/components/template-composition-dialog";
 import { TemplateImportList } from "@/components/template-import-list";
 import {
   TemplateMetaFields,
@@ -44,6 +45,7 @@ function TemplatesPage() {
   } = useQuery(savedSpecsListQuery());
   const [editing, setEditing] = useState<SavedSpec | undefined>();
   const [creating, setCreating] = useState(false);
+  const [composing, setComposing] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -51,13 +53,23 @@ function TemplatesPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <p className="max-w-2xl text-sm text-muted-foreground">
             A template is a saved spec published to the spawn gallery (
-            <code>template: true</code>). Publish an existing saved spec from
-            the Spawn page ("Promote to template"), or author one here from
-            scratch or from an example.
+            <code>template: true</code>). Build one from an existing prebuild +
+            toolbox (it follows their latest builds), publish an existing saved
+            spec from the Spawn page ("Promote to template"), or author one here
+            from scratch or from an example.
           </p>
-          <Button size="sm" onClick={() => setCreating(true)}>
-            New template
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" onClick={() => setComposing(true)}>
+              New from prebuild + toolbox
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCreating(true)}
+            >
+              New template
+            </Button>
+          </div>
         </div>
         {isPending ? (
           <Skeleton className="h-16 w-full" />
@@ -86,6 +98,7 @@ function TemplatesPage() {
 
       <ImportExamplesSection />
 
+      <TemplateCompositionDialog open={composing} onOpenChange={setComposing} />
       <TemplateDialog open={creating} onOpenChange={setCreating} />
       <TemplateDialog
         key={editing?.id ?? "none"}
@@ -118,6 +131,9 @@ function TemplateRow({
               {savedSpec.name}
             </span>
             {savedSpec.orgId ? <Badge variant="outline">org</Badge> : null}
+            {savedSpec.composition ? (
+              <Badge variant="secondary">follows prebuild + toolbox</Badge>
+            ) : null}
             {harness ? (
               <Badge variant="neutral">harness: {harness}</Badge>
             ) : null}

@@ -238,21 +238,6 @@ export const ToolboxSelectorSchema = Type.String({
 });
 export type ToolboxSelector = Static<typeof ToolboxSelectorSchema>;
 
-/**
- * The `POST /v1/sandboxes` body: a `SandboxSpec` plus an optional set of
- * `toolboxes` the caller selected (the high-level unit). The seam resolves
- * the selectors — building toolsets for those with files, applying every
- * applied toolbox's surface + harness — and hands the runtime a pure
- * `SandboxSpec`. A plain `SandboxSpec` (no `toolboxes`) is a valid body, so
- * the CLI/editor/saved-spec paths are unchanged.
- */
-export const CreateSandboxRequestSchema = Type.Composite(
-  [
-    SandboxSpecSchema,
-    Type.Object({
-      toolboxes: Type.Optional(Type.Array(ToolboxSelectorSchema)),
-    }),
-  ],
-  { additionalProperties: false, $id: "CreateSandboxRequest" },
-);
-export type CreateSandboxRequest = Static<typeof CreateSandboxRequestSchema>;
+// The `POST /v1/sandboxes` body (`CreateSandboxRequest`) lives in
+// `create-request.ts` — it composes this spec with a `prebuild` recipe, and
+// keeping it here would cycle (`prebuild-spec.ts` imports this module).

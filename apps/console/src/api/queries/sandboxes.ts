@@ -1,4 +1,4 @@
-import type { SandboxSpec } from "@atelier/spec";
+import type { CreateSandboxRequest } from "@atelier/spec";
 import {
   queryOptions,
   useMutation,
@@ -177,7 +177,7 @@ export function useAddPort(id: string) {
 export function useSpawnSandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
-    mutationFn: async (request: SandboxSpec & { toolboxes?: string[] }) => {
+    mutationFn: async (request: CreateSandboxRequest) => {
       const { data, error } = await api.v1.sandboxes.post(request);
       if (error)
         throw new Error(errorMessage(error, "Failed to create sandbox"));

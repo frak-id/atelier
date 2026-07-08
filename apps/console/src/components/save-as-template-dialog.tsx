@@ -7,10 +7,16 @@ import {
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
 import {
+  TemplateCompositionFields,
+  type TemplateCompositionSelection,
+} from "@/components/template-composition-fields";
+import {
   TemplateMetaFields,
   TemplatePublishToggle,
 } from "@/components/template-meta-fields";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { composeTemplateSpec } from "@/lib/composition";
 import { harnessFromAnnotations } from "@/lib/sandbox-status";
 
 /**
@@ -34,8 +41,12 @@ import { harnessFromAnnotations } from "@/lib/sandbox-status";
  * Two modes, driven by whether `savedSpec` is supplied:
  * - **New** (`savedSpec` undefined): creates a saved spec from `spec`.
  * - **Promote/edit** (`savedSpec` supplied): updates that saved spec's name +
- *   template metadata in place (spec body itself is untouched here — the
- *   editor already owns spec edits).
+ *   template metadata in place (the spec body is untouched unless a
+ *   composition is attached below — the editor otherwise owns spec edits).
+ *
+ * Either mode can opt into a **composition**: base the template on an existing
+ * prebuild + toolbox so it follows their latest builds instead of pinning the
+ * current spec's source/toolsets.
  */
 export function SaveAsTemplateDialog({
   open,
@@ -47,7 +58,10 @@ export function SaveAsTemplateDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   spec: SandboxSpec;
-  savedSpec?: Pick<SavedSpec, "id" | "name" | "template" | "meta">;
+  savedSpec?: Pick<
+    SavedSpec,
+    "id" | "name" | "template" | "meta" | "composition"
+  >;
   onSaved?: () => void;
 }) {
   const isPromoting = savedSpec !== undefined;
@@ -63,8 +77,20 @@ export function SaveAsTemplateDialog({
   const [params, setParams] = useState<TemplateParam[]>(
     savedSpec?.meta?.params ?? [],
   );
+  const [useComposition, setUseComposition] = useState(
+    Boolean(savedSpec?.composition),
+  );
+  const [selection, setSelection] =
+    useState<TemplateCompositionSelection | null>(null);
+  const [formError, setFormError] = useState<string | undefined>();
 
-  const harness = harnessFromAnnotations(spec.annotations);
+  // The prebuild the saved template last resolved to, so editing preselects
+  // that row (if the snapshot still exists).
+  const initialPrebuildRef =
+    "snapshot" in spec.source ? spec.source.snapshot : undefined;
+  const compositionHarness = selection?.harness;
+  const specHarness = harnessFromAnnotations(spec.annotations);
+  const harness = useComposition ? compositionHarness : specHarness;
   const isPending = createSavedSpec.isPending || updateSavedSpec.isPending;
 
   function reset() {
@@ -73,6 +99,9 @@ export function SaveAsTemplateDialog({
     setIcon(savedSpec?.meta?.icon ?? "");
     setPublish(savedSpec?.template ?? true);
     setParams(savedSpec?.meta?.params ?? []);
+    setUseComposition(Boolean(savedSpec?.composition));
+    setSelection(null);
+    setFormError(undefined);
   }
 
   function addRepoUrlParam() {
@@ -94,6 +123,11 @@ export function SaveAsTemplateDialog({
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!name) return;
+    if (useComposition && !selection) {
+      setFormError("Pick a prebuild to base the template on.");
+      return;
+    }
+    setFormError(undefined);
     const meta = {
       description: description || undefined,
       icon: icon || undefined,
@@ -101,8 +135,24 @@ export function SaveAsTemplateDialog({
     };
 
     if (isPromoting) {
+      // Attach/replace a composition, or clear one that was turned off.
+      const compositionPatch =
+        useComposition && selection
+          ? {
+              spec: composeTemplateSpec(spec, selection),
+              composition: selection.composition,
+            }
+          : savedSpec.composition
+            ? { composition: null }
+            : {};
       updateSavedSpec.mutate(
-        { id: savedSpec.id, name, template: publish, meta },
+        {
+          id: savedSpec.id,
+          name,
+          template: publish,
+          meta,
+          ...compositionPatch,
+        },
         {
           onSuccess: () => {
             onOpenChange(false);
@@ -114,7 +164,18 @@ export function SaveAsTemplateDialog({
     }
 
     createSavedSpec.mutate(
-      { name, spec, template: publish, meta },
+      {
+        name,
+        spec:
+          useComposition && selection
+            ? composeTemplateSpec(spec, selection)
+            : spec,
+        template: publish,
+        meta,
+        ...(useComposition && selection
+          ? { composition: selection.composition }
+          : {}),
+      },
       {
         onSuccess: () => {
           reset();
@@ -145,7 +206,7 @@ export function SaveAsTemplateDialog({
                 : "Save this spec so it can be one-tap spawned later — optionally publish it to the gallery."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="max-h-[70vh] space-y-3 overflow-y-auto py-2">
             <TemplateMetaFields
               idPrefix="template"
               name={name}
@@ -157,6 +218,39 @@ export function SaveAsTemplateDialog({
               harness={harness}
               autoFocusName
             />
+            <div className="space-y-2 rounded-md border p-3">
+              <label
+                htmlFor="template-composition"
+                className="flex items-center gap-2 text-sm font-medium"
+              >
+                <Checkbox
+                  id="template-composition"
+                  checked={useComposition}
+                  onChange={(e) => setUseComposition(e.target.checked)}
+                />
+                Follow a prebuild + toolbox (use latest builds)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Instead of pinning this spec's source and toolsets, base the
+                template on an existing prebuild + toolbox; each spawn resolves
+                them to the latest snapshot/toolset.
+              </p>
+              {useComposition ? (
+                <div className="space-y-4 pt-1">
+                  <TemplateCompositionFields
+                    idPrefix="save-tpl"
+                    initialPrebuildRef={initialPrebuildRef}
+                    initialToolboxes={savedSpec?.composition?.toolboxes}
+                    onChange={setSelection}
+                  />
+                  {compositionHarness ? (
+                    <Badge variant="neutral" className="w-fit">
+                      harness: {compositionHarness}
+                    </Badge>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <Label>Parameters</Label>
@@ -201,6 +295,9 @@ export function SaveAsTemplateDialog({
                 </ul>
               )}
             </div>
+            {formError ? (
+              <p className="text-sm text-destructive">{formError}</p>
+            ) : null}
             <TemplatePublishToggle
               id="template-publish"
               checked={publish}
