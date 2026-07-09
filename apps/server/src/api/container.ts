@@ -221,15 +221,20 @@ export async function resolveToolboxRefs(
   if (orgId) owners.push({ type: "org", id: orgId });
   owners.push({ type: "user", id: userId });
 
-  const refs: ToolsetRef[] = [];
-  for (const owner of owners) {
-    const configs = container.control.toolboxService.listAutoInject(owner);
-    for (const config of configs) {
-      const ref = await resolveToolboxToRef(container, owner, config);
-      if (ref) refs.push(ref);
-    }
-  }
-  return refs;
+  // Resolve everything concurrently — builds are content-hash idempotent and
+  // inflight-deduped, so parallel cold builds each get their own throwaway
+  // pod instead of queuing. `Promise.all` preserves position, so the
+  // org → user, oldest-first injection order is unchanged.
+  const resolved = await Promise.all(
+    owners.map((owner) =>
+      Promise.all(
+        container.control.toolboxService
+          .listAutoInject(owner)
+          .map((config) => resolveToolboxToRef(container, owner, config)),
+      ),
+    ),
+  );
+  return resolved.flat().filter((ref) => ref !== undefined);
 }
 
 /**
@@ -245,21 +250,21 @@ export async function resolveSelectedToolboxes(
   container: ServerContainer,
   selectors: string[],
 ): Promise<ToolsetRef[]> {
-  const refs: ToolsetRef[] = [];
-  for (const selector of selectors) {
-    const parsed = parseToolboxRef(selector);
-    if (!parsed) continue;
-    const config = container.control.toolboxService.getByOwnerAndSlug(
-      parsed.owner,
-      parsed.slug,
-    );
-    if (!config || config.build.length === 0 || config.paths.length === 0) {
-      continue;
-    }
-    const ref = await resolveToolboxToRef(container, parsed.owner, config);
-    if (ref) refs.push(ref);
-  }
-  return refs;
+  const resolved = await Promise.all(
+    selectors.map((selector) => {
+      const parsed = parseToolboxRef(selector);
+      if (!parsed) return undefined;
+      const config = container.control.toolboxService.getByOwnerAndSlug(
+        parsed.owner,
+        parsed.slug,
+      );
+      if (!config || config.build.length === 0 || config.paths.length === 0) {
+        return undefined;
+      }
+      return resolveToolboxToRef(container, parsed.owner, config);
+    }),
+  );
+  return resolved.filter((ref) => ref !== undefined);
 }
 
 /**

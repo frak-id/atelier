@@ -9,8 +9,36 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 const log = createChildLogger("git-remote");
 
 const LS_REMOTE_TIMEOUT_MS = 5_000;
+// Short TTL cache: spawn-from-prebuild resolves the content key on the
+// request path, paying up-to-5s of ls-remote per repo. 30s of staleness is
+// harmless there (the staleness cron rebuilds drifted prebuilds anyway), and
+// the cron's 30-min cadence means it always misses the cache — it stays
+// effectively uncached. Failures are not cached so a transient network blip
+// doesn't pin `null` for the TTL.
+const HEAD_CACHE_TTL_MS = 30_000;
+const headCache = new Map<
+  string,
+  { at: number; promise: Promise<string | null> }
+>();
 
-export async function getRemoteCommitHash(
+export function getRemoteCommitHash(
+  url: string,
+  branch?: string,
+): Promise<string | null> {
+  const key = `${url}\u0000${branch ?? ""}`;
+  const hit = headCache.get(key);
+  if (hit && Date.now() - hit.at < HEAD_CACHE_TTL_MS) return hit.promise;
+  // Cache the promise (not the value) so concurrent callers dedupe onto one
+  // ls-remote; a null resolution (any failure) evicts itself immediately.
+  const promise = lsRemoteHead(url, branch).then((head) => {
+    if (head === null) headCache.delete(key);
+    return head;
+  });
+  headCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
+async function lsRemoteHead(
   url: string,
   branch?: string,
 ): Promise<string | null> {

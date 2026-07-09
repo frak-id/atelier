@@ -75,29 +75,33 @@ export async function bootSandbox(
   try {
     const sharedKey = await ensureSharedSshPipeKey();
 
-    await kubeClient.createResource(
-      buildPvc({
-        name: pvcName,
-        size: volumeSize,
-        snapshotName: usedSnapshot ? input.snapshotName : undefined,
-        labels: {
-          "atelier.dev/sandbox": sandboxId,
-          "atelier.dev/component": "sandbox",
-        },
-      }),
-    );
-
-    // local-path uses WaitForFirstConsumer: the PVC binds only when the pod
-    // referencing it is scheduled, so there is no separate waitForPvcBound.
-    await Promise.all(
-      createSandboxResources(sandboxId, spec, {
+    // All resources create in one concurrent batch, PVC included: a pod may
+    // reference a PVC that doesn't exist yet (it just stays unschedulable
+    // until the PVC-add event requeues it — level-triggered, same as
+    // StatefulSets), and within this batch the PVC create lands well before
+    // the pod is scheduled. local-path uses WaitForFirstConsumer: the PVC
+    // binds only when the pod referencing it is scheduled, so there is no
+    // separate waitForPvcBound.
+    await Promise.all([
+      kubeClient.createResource(
+        buildPvc({
+          name: pvcName,
+          size: volumeSize,
+          snapshotName: usedSnapshot ? input.snapshotName : undefined,
+          labels: {
+            "atelier.dev/sandbox": sandboxId,
+            "atelier.dev/component": "sandbox",
+          },
+        }),
+      ),
+      ...createSandboxResources(sandboxId, spec, {
         image: input.image,
         agentPassword,
         pvcName,
         sharedKeySecret: sharedKey.secretName,
         authorizedKeysData: encodeSshAuthorizedKeys(input.authorizedKeys),
       }),
-    );
+    ]);
 
     const { ready, podIp } = await agent.waitForAgent(sandboxId, {
       timeout: 120_000,
@@ -106,16 +110,21 @@ export async function bootSandbox(
       throw new Error(`Sandbox pod ${podName} agent did not become ready`);
     }
 
-    // Materialize toolset artifacts into the home FIRST (before files/env), so
-    // spec-level files[] can override org toolset config (last-wins layering).
-    if (input.toolsets && input.toolsets.length > 0) {
-      await agent.materializeToolsets(sandboxId, input.toolsets);
-    }
-
-    // Push config (never ConfigMap-mounted: per-process `env` may carry
-    // resolved secrets that must not land in etcd or a pause snapshot) and
-    // write files before the phase-ordered hooks/processes the caller drives.
-    await agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec));
+    // Two independent agent calls run concurrently:
+    //   - materialize toolset artifacts into the home (must land BEFORE
+    //     files[] so spec-level files can override org toolset config —
+    //     last-wins layering);
+    //   - push config (never ConfigMap-mounted: per-process `env` may carry
+    //     resolved secrets that must not land in etcd or a pause snapshot).
+    // Config touches no home files, so it can overlap the extraction.
+    await Promise.all([
+      input.toolsets && input.toolsets.length > 0
+        ? agent.materializeToolsets(sandboxId, input.toolsets)
+        : undefined,
+      agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec)),
+    ]);
+    // Files last — after materialize — and before the phase-ordered
+    // hooks/processes the caller drives.
     if (spec.files && spec.files.length > 0) {
       await agent.writeFiles(sandboxId, toFileWrites(spec.files));
     }

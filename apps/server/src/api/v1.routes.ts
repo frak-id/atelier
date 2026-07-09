@@ -161,14 +161,10 @@ export function createV1Routes(container: ServerContainer) {
           };
           // Auto-inject org (baseline) then user (personal overlay) toolboxes,
           // oldest-first (R6), then the explicitly-picked ones.
-          const autoInjectRefs = await resolveToolboxRefs(container, {
-            orgId,
-            userId: user.id,
-          });
-          const selectedRefs = await resolveSelectedToolboxes(
-            container,
-            selectors,
-          );
+          const [autoInjectRefs, selectedRefs] = await Promise.all([
+            resolveToolboxRefs(container, { orgId, userId: user.id }),
+            resolveSelectedToolboxes(container, selectors),
+          ]);
           // Every toolbox applied to this spawn, as parseable `tb/…` handles —
           // auto-injected refs, picked selectors (incl. process-only ones with
           // no toolset), and any explicit `spec.toolsets`. Drives harness +

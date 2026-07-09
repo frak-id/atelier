@@ -122,6 +122,10 @@ will happily try to boot.
 
 ## 3. Sandbox boot-time speedup (prebuilt + 2-3 toolboxes)
 
+> Status: S1, S2, S5, S6 ✅ done. S4 skipped (K8s watch machinery exceeds
+> complexity budget). S3 (baked-pair cache + agent-side parallel pulls)
+> still open — structural, involves agent-v2.
+
 Hot path: `POST /v1/sandboxes` → toolbox resolution → `bootSandbox` →
 materialize → config/files → hooks → primary gate.
 
