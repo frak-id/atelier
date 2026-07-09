@@ -87,7 +87,7 @@ export const TEMPLATES: Template[] = [
     id: "cliproxy-base",
     name: "Base Agent",
     description:
-      "A minimal agent + terminal, nothing else — models pre-wired through your organization's proxy (no keys needed). The lean starting point to extend.",
+      "A minimal agent + terminal, nothing else — the lean starting point to extend. Bring model providers via a toolbox or your own config.",
     category: "base",
     icon: Terminal,
     source: { image: "dev-base-v2" },
@@ -98,8 +98,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "pi-agent",
     name: "Pi Agent",
-    description:
-      "The pi coding agent with the cliproxy provider and a curated plugin stack.",
+    description: "The pi coding agent with a curated plugin stack.",
     category: "agent",
     icon: SquareTerminal,
     source: { image: "dev-base-v2" },
@@ -154,8 +153,8 @@ export const ALL_TEMPLATES: Template[] = [...TEMPLATES, ...TEMPLATES_EXTRA];
 /**
  * Pure builder: turns a `Template` into a spec fragment using the real
  * compose SDK (no hand-written processes/ports/provider JSON). Models are
- * never wired here — the org's cliproxy provider config is injected
- * server-side (control/enrichment.ts), templates just pick the harness.
+ * never wired here — providers come from a toolbox's composed config or the
+ * user's own harness config; templates just pick the harness.
  */
 function templateToSpec(template: Template): SandboxSpec {
   const harnessFragment =

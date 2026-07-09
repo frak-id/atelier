@@ -8,7 +8,6 @@
 import { AuthService } from "./auth.ts";
 import { type EnrichmentOptions, enrichSpec } from "./enrichment.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
-import { CliproxyService } from "./modules/cliproxy/index.ts";
 import {
   OrgMemberRepository,
   OrgMemberService,
@@ -61,7 +60,6 @@ export function createControlContainer() {
   const toolboxVersionService = new ToolboxVersionService(
     toolboxVersionRepository,
   );
-  const cliproxyService = new CliproxyService();
   const authService = new AuthService({ apiKeyService, userService });
 
   return {
@@ -89,7 +87,6 @@ export function createControlContainer() {
         {
           secrets: secretService,
           orgPolicy: orgPolicyService,
-          cliproxy: cliproxyService,
         },
         opts,
       ),
