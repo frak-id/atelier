@@ -183,9 +183,7 @@ export type ToolboxOwnerTypeCol = (typeof toolboxOwnerTypeValues)[number];
 /**
  * Entity-scoped toolbox configs (entities-toolbox.md). Owned by an `org`
  * (place-scoped, mandated baseline) or a `user` (identity-scoped, personal
- * overlay) via polymorphic (`owner_type`, `owner_id`). The seeded default
- * (`@atelier/compose` `DEFAULT_TOOLBOX`) is a normal org-owned row here —
- * editable, disable-able, deletable — not a code-level law. `source`/`build`/
+ * overlay) via polymorphic (`owner_type`, `owner_id`). `source`/`build`/
  * `paths` mirror `ToolboxConfigInput`; `enabled` toolboxes are built into refs
  * and prepended to `SandboxSpec.toolsets` at the api/ seam, never here.
  */

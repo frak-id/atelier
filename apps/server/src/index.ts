@@ -34,10 +34,6 @@ logger.info({ dbPath: appPaths.database }, "Control database ready");
 
 const container = createServerContainer();
 await wireBuiltinHarnesses(container);
-// Default org-toolbox auto-seeding is disabled for now: toolboxes (incl.
-// vscode) are created explicitly rather than mandated as an org baseline.
-// `ensureDefaultToolboxes` / `seedDefault` remain available for a manual
-// re-enable.
 
 await ensureSharedSshPipeKey();
 

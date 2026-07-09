@@ -5,11 +5,9 @@
  * `runtime/` or building — pure control-plane config storage.
  *
  * A toolbox is owned by an `org` (place-scoped, mandated baseline) or a `user`
- * (identity-scoped, personal overlay). Seeding is asymmetric on purpose: orgs
- * get the `DEFAULT_TOOLBOX` (opencode + code-server), users seed nothing
- * (bring-your-own) — this is what prevents double-injecting opencode.
+ * (identity-scoped, personal overlay). No server-side seeding: toolboxes are
+ * created explicitly (console/CLI); the console offers starter templates.
  */
-import { DEFAULT_TOOLBOX } from "@atelier/compose";
 import type {
   ToolboxConfig,
   ToolboxConfigInput,
@@ -117,60 +115,5 @@ export class ToolboxService {
    * no ref mutation, just the pointer moving. */
   setActiveVersionId(id: string, versionId: string | null): void {
     this.repository.setActiveVersionId(id, versionId);
-  }
-
-  /**
-   * Seed the default toolbox for an org (users never seed — asymmetric by
-   * design). Conflict-safe against `uniqueIndex(owner_type, owner_id, slug)`
-   * (R3): check-then-insert, swallowing a benign race onto the same slug
-   * rather than assuming the org is empty.
-   */
-  seedDefault(orgId: string): ToolboxConfig {
-    const owner: ToolboxOwner = { type: "org", id: orgId };
-    const existing = this.repository.getByOwnerAndSlug(
-      owner,
-      DEFAULT_TOOLBOX.slug,
-    );
-    if (existing) return existing;
-
-    const now = new Date().toISOString();
-    const record: ToolboxConfig = {
-      id: safeNanoid(12),
-      ownerType: owner.type,
-      ownerId: owner.id,
-      slug: DEFAULT_TOOLBOX.slug,
-      description: DEFAULT_TOOLBOX.description,
-      source: DEFAULT_TOOLBOX.source,
-      build: DEFAULT_TOOLBOX.build,
-      paths: DEFAULT_TOOLBOX.paths,
-      harness: DEFAULT_TOOLBOX.harness,
-      processes: DEFAULT_TOOLBOX.processes,
-      ports: DEFAULT_TOOLBOX.ports,
-      autoInject: DEFAULT_TOOLBOX.autoInject ?? true,
-      createdAt: now,
-      updatedAt: now,
-    };
-    try {
-      return this.repository.create(record);
-    } catch (err) {
-      if (!isUniqueConstraintError(err)) throw err;
-      const raced = this.repository.getByOwnerAndSlug(owner, record.slug);
-      if (!raced) throw err;
-      return raced;
-    }
-  }
-
-  /**
-   * Backfill: seed the default for every org with ZERO toolboxes (R4). Stays
-   * org-only — users are never auto-seeded. Never resurrects a deliberately-
-   * deleted default; the guard is org-emptiness, not "does the default slug
-   * exist".
-   */
-  ensureDefaults(orgIds: string[]): void {
-    for (const orgId of orgIds) {
-      if (this.repository.list({ type: "org", id: orgId }).length === 0) {
-        this.seedDefault(orgId);
-      }
-    }
   }
 }

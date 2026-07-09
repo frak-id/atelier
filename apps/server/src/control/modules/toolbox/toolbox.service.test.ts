@@ -24,17 +24,6 @@ afterAll(async () => {
 });
 
 describe("ToolboxService", () => {
-  test("seedDefault seeds an org and is idempotent", () => {
-    const service = new ToolboxService(new ToolboxRepository());
-    const orgId = "org-seed-idempotent";
-    const owner = { type: "org", id: orgId } as const;
-    const first = service.seedDefault(orgId);
-    const second = service.seedDefault(orgId);
-    expect(first.ownerType).toBe("org");
-    expect(second.id).toBe(first.id);
-    expect(service.list(owner)).toHaveLength(1);
-  });
-
   test("slug uniqueness is per-owner, not global", () => {
     const service = new ToolboxService(new ToolboxRepository());
     const orgA = { type: "org", id: "org-slug-a" } as const;
@@ -117,33 +106,5 @@ describe("ToolboxService", () => {
       "t-first",
       "t-third",
     ]);
-  });
-
-  test("ensureDefaults backfills only orgs with zero toolboxes", () => {
-    const service = new ToolboxService(new ToolboxRepository());
-    const emptyOrg = { type: "org", id: "org-empty-backfill" } as const;
-    const nonEmptyOrg = { type: "org", id: "org-nonempty-backfill" } as const;
-
-    service.create(nonEmptyOrg, {
-      slug: "custom",
-      description: "d",
-      build: ["echo hi"],
-      paths: ["~/x"],
-    });
-
-    service.ensureDefaults([emptyOrg.id, nonEmptyOrg.id]);
-
-    expect(service.list(emptyOrg).map((c) => c.slug)).toEqual(["org-toolbox"]);
-    // A deliberately non-default, non-empty org is left untouched — the
-    // default is never resurrected once the org has any toolbox (R4).
-    expect(service.list(nonEmptyOrg).map((c) => c.slug)).toEqual(["custom"]);
-  });
-
-  test("ensureDefaults never auto-seeds users", () => {
-    const service = new ToolboxService(new ToolboxRepository());
-    const user = { type: "user", id: "user-no-seed" } as const;
-    service.ensureDefaults(["some-org"]);
-    // Users are bring-your-own — backfill is org-only.
-    expect(service.list(user)).toHaveLength(0);
   });
 });

@@ -427,16 +427,3 @@ export function resolveToolboxSurface(
   }
   return { processes, ports };
 }
-
-/**
- * Backfill the default toolbox for every org that currently has zero
- * toolboxes (R4). Called non-blocking at startup so a restart never
- * resurrects a deliberately-deleted default, and never blocks boot on a DB
- * scan.
- */
-export function ensureDefaultToolboxes(container: ServerContainer): void {
-  const orgIds = container.control.organizationService
-    .getAll()
-    .map((org) => org.id);
-  container.control.toolboxService.ensureDefaults(orgIds);
-}
