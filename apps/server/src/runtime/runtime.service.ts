@@ -38,7 +38,7 @@ import {
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { HookPhase } from "./agent/index.ts";
-import { AgentClient } from "./agent/index.ts";
+import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
 import { bootSandbox, deleteRestartableResources } from "./boot.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
@@ -311,70 +311,58 @@ export class RuntimeService {
     // PVC, snapshot it, then tear the pod + PVC down. The snapshot outlives
     // the pod. The prebuild pod runs NO processes (the synthesized spec has
     // none), so boot just stages files + pushes env for the build steps.
-    const boot = await bootSandbox(
+    return this.withThrowawayPod(
       tempId,
       prebuildToSpec(spec),
       { image, snapshotName },
-      this.agent,
-    );
-    try {
-      // Inject the git credential transiently — via the agent, NOT the boot
-      // spec's files[] — so the token neither enters the content hash nor is
-      // baked into the snapshot. Written before clone/build so private repos
-      // authenticate through the `store` credential helper.
-      if (githubToken) {
-        await this.agent.writeFiles(
-          tempId,
-          buildGitAttributionFiles({ githubToken }).map((f) => ({
-            path: f.path,
-            content: f.content as string,
-            mode: f.mode,
-            owner: f.owner as "dev" | "root" | undefined,
-          })),
-        );
-      }
-      await this.runPrebuildSteps(tempId, spec);
-      // Scrub the credential before snapshotting: the snapshot is a shared,
-      // content-addressed artifact that must never carry a user's token.
-      // (The file lives on the pod's ephemeral rootfs, outside the `/home/dev`
-      // PVC the snapshot captures — this is explicit defense-in-depth.)
-      if (githubToken) {
-        await this.agent
-          .exec(tempId, `rm -f ${GIT_CREDENTIALS_PATH}`, { user: "root" })
-          .catch((err) =>
-            log.warn({ tempId, err }, "git credential scrub failed"),
+      "prebuild pod cleanup failed",
+      async (boot) => {
+        // Inject the git credential transiently — via the agent, NOT the boot
+        // spec's files[] — so the token neither enters the content hash nor is
+        // baked into the snapshot. Written before clone/build so private repos
+        // authenticate through the `store` credential helper.
+        if (githubToken) {
+          await this.agent.writeFiles(
+            tempId,
+            toFileWrites(buildGitAttributionFiles({ githubToken })),
           );
-      }
-      // The content hash is 64 hex chars — over the 63-byte k8s label cap — so
-      // it rides as an annotation (no length cap), not a label.
-      await this.snapshotPvc(
-        boot.pvcName,
-        ref,
-        { "atelier.dev/component": "prebuild" },
-        { "atelier.dev/prebuild": hash },
-      );
-      // Record as soon as the snapshot is ReadyToUse — before teardown — so a
-      // failing cleanup can neither orphan a live-but-untracked snapshot nor
-      // mask this success.
-      this.snapshots.put({
-        hash,
-        ref,
-        image,
-        parent: parentRef,
-        metadata: spec.metadata,
-        spec,
-        createdAt: new Date().toISOString(),
-      });
-      log.info({ ref, hash, parent: parentRef }, "prebuild snapshot created");
-      return { ref, hash, parent: parentRef };
-    } finally {
-      // The pod + throwaway PVC are no longer needed; the snapshot stands
-      // alone. Best-effort so a teardown error never masks the build result.
-      this.agent.invalidatePodIp(tempId);
-      await cleanupSandboxResources(tempId, { podName: boot.podName }).catch(
-        (err) => log.warn({ tempId, err }, "prebuild pod cleanup failed"),
-      );
-    }
+        }
+        await this.runPrebuildSteps(tempId, spec);
+        // Scrub the credential before snapshotting: the snapshot is a shared,
+        // content-addressed artifact that must never carry a user's token.
+        // (The file lives on the pod's ephemeral rootfs, outside the `/home/dev`
+        // PVC the snapshot captures — this is explicit defense-in-depth.)
+        if (githubToken) {
+          await this.agent
+            .exec(tempId, `rm -f ${GIT_CREDENTIALS_PATH}`, { user: "root" })
+            .catch((err) =>
+              log.warn({ tempId, err }, "git credential scrub failed"),
+            );
+        }
+        // The content hash is 64 hex chars — over the 63-byte k8s label cap — so
+        // it rides as an annotation (no length cap), not a label.
+        await this.snapshotPvc(
+          boot.pvcName,
+          ref,
+          { "atelier.dev/component": "prebuild" },
+          { "atelier.dev/prebuild": hash },
+        );
+        // Record as soon as the snapshot is ReadyToUse — before teardown — so a
+        // failing cleanup can neither orphan a live-but-untracked snapshot nor
+        // mask this success.
+        this.snapshots.put({
+          hash,
+          ref,
+          image,
+          parent: parentRef,
+          metadata: spec.metadata,
+          spec,
+          createdAt: new Date().toISOString(),
+        });
+        log.info({ ref, hash, parent: parentRef }, "prebuild snapshot created");
+        return { ref, hash, parent: parentRef };
+      },
+    );
   }
 
   /** Clone repos then run build[] in the prebuild pod, fail-fast. The prebuild
@@ -470,7 +458,7 @@ export class RuntimeService {
       // otherwise orphan the running pod; tear it down so the boot is atomic
       // (bootSandbox already cleans up failures during its own phase).
       this.agent.invalidatePodIp(id);
-      await cleanupSandboxResources(id, { podName: `sandbox-${id}` });
+      await cleanupSandboxResources(id);
       this.sandboxes.update(id, { status: "error" });
       throw error;
     }
@@ -556,7 +544,7 @@ export class RuntimeService {
   async destroy(id: string): Promise<void> {
     this.require(id);
     this.agent.invalidatePodIp(id);
-    await cleanupSandboxResources(id, { podName: `sandbox-${id}` });
+    await cleanupSandboxResources(id);
     this.sandboxes.delete(id);
     log.info({ id }, "sandbox destroyed");
   }
@@ -565,15 +553,7 @@ export class RuntimeService {
 
   async patchFiles(id: string, files: PatchFilesRequest): Promise<void> {
     this.require(id);
-    await this.agent.writeFiles(
-      id,
-      files.map((f) => ({
-        path: f.path,
-        content: f.content,
-        mode: f.mode,
-        owner: f.owner as "dev" | "root" | undefined,
-      })),
-    );
+    await this.agent.writeFiles(id, toFileWrites(files));
   }
 
   /**
@@ -758,38 +738,64 @@ export class RuntimeService {
     const tempId = `ts-${hash.slice(0, 12)}`;
     const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:${hash.slice(0, 12)}`;
 
-    const boot = await bootSandbox(
+    return this.withThrowawayPod(
       tempId,
       toolsetToSpec(source, req.env),
       { image, snapshotName },
-      this.agent,
+      "toolset build pod cleanup failed",
+      async () => {
+        // Build steps run as `dev` so installs land in the home path-sets the
+        // artifact captures (running as root would scatter bytes into /root).
+        for (const step of req.build) {
+          await this.execStep(tempId, step, "dev");
+        }
+        const { digest } = await this.agent.buildToolset(tempId, {
+          target,
+          paths: req.paths,
+        });
+        const ref = `toolsets/${req.name}@${digest}`;
+        this.toolsets.put({
+          hash,
+          name: req.name,
+          ref,
+          paths: req.paths,
+          provenance: { kind: "built", build: req.build },
+          private: false,
+          createdAt: new Date().toISOString(),
+        });
+        log.info({ ref, hash, name: req.name }, "toolset artifact built");
+        return { ref };
+      },
     );
+  }
+
+  /**
+   * Boot a throwaway pod for a build-then-teardown flow (prebuild bake,
+   * toolset build) and guarantee cleanup: the pod + its PVC are torn down in
+   * a `finally` regardless of whether `fn` succeeds, and the pod-IP cache
+   * entry is invalidated so a reused `tempId` (deterministic per content
+   * hash) never dials a stale IP. `fn` receives the boot output (pod/PVC
+   * names) and returns the operation's result, which is threaded straight
+   * through. Cleanup itself is best-effort — a teardown failure is logged,
+   * never thrown, so it can't mask `fn`'s success or replace its error.
+   */
+  private async withThrowawayPod<T>(
+    tempId: string,
+    spec: SandboxSpec,
+    input: { image: string; snapshotName?: string },
+    cleanupFailureMessage: string,
+    fn: (boot: Awaited<ReturnType<typeof bootSandbox>>) => Promise<T>,
+  ): Promise<T> {
+    const boot = await bootSandbox(tempId, spec, input, this.agent);
     try {
-      // Build steps run as `dev` so installs land in the home path-sets the
-      // artifact captures (running as root would scatter bytes into /root).
-      for (const step of req.build) {
-        await this.execStep(tempId, step, "dev");
-      }
-      const { digest } = await this.agent.buildToolset(tempId, {
-        target,
-        paths: req.paths,
-      });
-      const ref = `toolsets/${req.name}@${digest}`;
-      this.toolsets.put({
-        hash,
-        name: req.name,
-        ref,
-        paths: req.paths,
-        provenance: { kind: "built", build: req.build },
-        private: false,
-        createdAt: new Date().toISOString(),
-      });
-      log.info({ ref, hash, name: req.name }, "toolset artifact built");
-      return { ref };
+      return await fn(boot);
     } finally {
+      // The pod + throwaway PVC are no longer needed; whatever `fn` produced
+      // (a snapshot, a pushed toolset) stands alone. Best-effort so a teardown
+      // error never masks the build result.
       this.agent.invalidatePodIp(tempId);
-      await cleanupSandboxResources(tempId, { podName: boot.podName }).catch(
-        (err) => log.warn({ tempId, err }, "toolset build pod cleanup failed"),
+      await cleanupSandboxResources(tempId).catch((err) =>
+        log.warn({ tempId, err }, cleanupFailureMessage),
       );
     }
   }
@@ -919,15 +925,15 @@ export class RuntimeService {
     return { image: await this.resolveImage(source) };
   }
 
-  private resolveImage(source: SandboxSpec["source"]): Promise<string> {
-    if ("snapshot" in source) {
-      const snap = this.snapshots.get(source.snapshot);
-      return Promise.resolve(snap?.image ?? source.snapshot);
-    }
+  /** Only ever called by `resolveSource` with a non-snapshot source (the
+   * `"snapshot" in source` case is resolved there before this runs). */
+  private async resolveImage(
+    source: Exclude<SandboxSpec["source"], { snapshot: string }>,
+  ): Promise<string> {
     // A fully-qualified ref (registry/host or digest) is used verbatim;
     // a bare name is resolved against the configured registry.
     if (source.image.includes("/") || source.image.includes("@")) {
-      return Promise.resolve(source.image);
+      return source.image;
     }
     return ImageRegistryService.resolveImageReference(source.image);
   }

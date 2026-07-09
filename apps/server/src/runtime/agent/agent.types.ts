@@ -49,16 +49,6 @@ export interface ExecResult {
   stderr: string;
 }
 
-export interface Command {
-  id: string;
-  command: string;
-  timeout?: number;
-}
-
-export interface BatchExecResult {
-  results: (ExecResult & { id: string })[];
-}
-
 export interface DevLogsResult {
   name: string;
   content: string;
@@ -70,6 +60,31 @@ export interface FileWrite {
   content: string;
   mode?: string;
   owner?: "dev" | "root";
+}
+
+/** A file entry as it appears in `SandboxSpec`/`PatchFilesRequest` — `content`
+ * is typed `unknown` here because `SandboxSpec.files[].content` is
+ * `MaybeSecretString` at the type level, but by the time a spec reaches the
+ * agent client secrets are already resolved to plain strings (the seam
+ * rejects any unresolved ref). `owner` is an unvalidated string from the wire
+ * schema, narrowed to the agent's `"dev" | "root"` union below. */
+interface WireFileEntry {
+  path: string;
+  content: unknown;
+  mode?: string;
+  owner?: string;
+}
+
+/** Project a spec/request file list onto the agent's `FileWrite` shape.
+ * Shared by every `files/write` call site so the `content`/`owner` casts live
+ * in exactly one place. */
+export function toFileWrites(files: WireFileEntry[]): FileWrite[] {
+  return files.map((f) => ({
+    path: f.path,
+    content: f.content as string,
+    mode: f.mode,
+    owner: f.owner as "dev" | "root" | undefined,
+  }));
 }
 
 export interface FileWriteResult {

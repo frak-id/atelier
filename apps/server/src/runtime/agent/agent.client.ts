@@ -6,8 +6,6 @@ import { kubeClient } from "../kube/index.ts";
 import type {
   AgentHealth,
   AgentProcessListResult,
-  BatchExecResult,
-  Command,
   DevLogsResult,
   ExecResult,
   FileWrite,
@@ -387,20 +385,6 @@ export class AgentClient {
         workdir: options.workdir,
       },
       (options.timeout ?? 30000) + 5000,
-    );
-  }
-
-  async batchExec(
-    sandboxId: string,
-    commands: Command[],
-    options: { timeout?: number } = {},
-  ): Promise<BatchExecResult> {
-    const maxCmdTimeout = Math.max(...commands.map((c) => c.timeout ?? 30000));
-    return this.post<BatchExecResult>(
-      sandboxId,
-      "/exec/batch",
-      { commands },
-      options.timeout ?? maxCmdTimeout + 10000,
     );
   }
 

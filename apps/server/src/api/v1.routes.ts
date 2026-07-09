@@ -37,6 +37,7 @@ import {
   resolveToolboxSurface,
   type ServerContainer,
 } from "./container.ts";
+import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
 
 /**
  * Merge two name-keyed lists (processes/ports): `base` entries first, then
@@ -323,16 +324,7 @@ export function createV1Routes(container: ServerContainer) {
           const mode = ws.data.query.mode ?? "rw";
           try {
             const { url } = await runtime.attach(id, name, mode);
-            const upstream = new WebSocket(url);
-            upstream.binaryType = "arraybuffer";
-            upstream.onmessage = (event) => {
-              const data = event.data;
-              if (data instanceof ArrayBuffer) ws.send(Buffer.from(data));
-              else if (typeof data === "string") ws.send(data);
-            };
-            upstream.onclose = () => ws.close();
-            upstream.onerror = () => ws.close(1011, "Upstream error");
-            (ws.data as Record<string, unknown>).upstream = upstream;
+            openUpstreamRelay(ws, url);
           } catch (err) {
             ws.close(
               4004,
@@ -343,19 +335,10 @@ export function createV1Routes(container: ServerContainer) {
         message(ws, message) {
           // Drop client→upstream bytes for read-only attachments.
           if (ws.data.query.mode === "ro") return;
-          const upstream = (ws.data as Record<string, unknown>).upstream as
-            | WebSocket
-            | undefined;
-          if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
-          if (typeof message === "string") upstream.send(message);
-          else if (message instanceof Uint8Array)
-            upstream.send(message as Uint8Array<ArrayBuffer>);
+          relayMessage(ws, message);
         },
         close(ws) {
-          const upstream = (ws.data as Record<string, unknown>).upstream as
-            | WebSocket
-            | undefined;
-          if (upstream?.readyState === WebSocket.OPEN) upstream.close();
+          closeUpstream(ws);
         },
       })
   );

@@ -12,7 +12,7 @@ import type { SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import type { AgentClient } from "./agent/index.ts";
+import { type AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
 import {
@@ -117,15 +117,7 @@ export async function bootSandbox(
     // write files before the phase-ordered hooks/processes the caller drives.
     await agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec));
     if (spec.files && spec.files.length > 0) {
-      await agent.writeFiles(
-        sandboxId,
-        spec.files.map((f) => ({
-          path: f.path,
-          content: f.content as string,
-          mode: f.mode,
-          owner: f.owner as "dev" | "root" | undefined,
-        })),
-      );
+      await agent.writeFiles(sandboxId, toFileWrites(spec.files));
     }
 
     return { podName, pvcName, agentPassword, podIp };
@@ -137,7 +129,7 @@ export async function bootSandbox(
       },
       "Boot failed, cleaning up allocated resources",
     );
-    await cleanupSandboxResources(sandboxId, { podName });
+    await cleanupSandboxResources(sandboxId);
     throw error;
   }
 }

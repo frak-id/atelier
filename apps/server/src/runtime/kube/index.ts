@@ -1,6 +1,5 @@
 import { KubeClient } from "./kube.client.ts";
 
-export type { JobStatus, KubePod, PodPhase } from "./kube.client.ts";
 export { KubeApiError, KubeClient } from "./kube.client.ts";
 export type {
   KubeResource,

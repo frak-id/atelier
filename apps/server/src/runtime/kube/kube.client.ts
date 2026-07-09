@@ -6,15 +6,6 @@ import type { KubeResource } from "./kube.resources.ts";
 
 const log = createChildLogger("kube-client");
 
-export type PodPhase =
-  | "Pending"
-  | "Running"
-  | "Succeeded"
-  | "Failed"
-  | "Unknown";
-
-export type JobStatus = "active" | "succeeded" | "failed" | "unknown";
-
 const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 200;
 
@@ -43,25 +34,7 @@ type BunRequestInit = RequestInit & {
 
 type KubeStatusResponse = {
   status?: {
-    phase?: string;
     podIP?: string;
-    conditions?: Array<{
-      type?: string;
-      status?: string;
-    }>;
-    active?: number;
-    succeeded?: number;
-    failed?: number;
-  };
-};
-
-export type KubePod = {
-  metadata: { name: string; namespace?: string };
-  status?: {
-    phase?: string;
-    podIP?: string;
-    conditions?: Array<{ type?: string; status?: string }>;
-    message?: string;
   };
 };
 
@@ -110,81 +83,6 @@ export class KubeClient {
         "Content-Type": "application/strategic-merge-patch+json",
       },
     });
-  }
-
-  async getPod(name: string, namespace = this.namespace): Promise<KubePod> {
-    if (isMock()) {
-      return {
-        metadata: { name, namespace },
-        status: {
-          phase: "Running",
-          podIP: "10.42.0.99",
-          conditions: [{ type: "Ready", status: "True" }],
-        },
-      };
-    }
-
-    return this.get<KubePod>(`/api/v1/namespaces/${namespace}/pods/${name}`);
-  }
-
-  async listPods(
-    labelSelector: string,
-    namespace = this.namespace,
-  ): Promise<KubePod[]> {
-    if (isMock()) {
-      void labelSelector;
-      return [];
-    }
-
-    const selector = encodeURIComponent(labelSelector);
-    const path = `/api/v1/namespaces/${namespace}/pods?labelSelector=${selector}`;
-    const response = await this.list<{ items?: KubePod[] }>(path);
-    return response.items ?? [];
-  }
-
-  /**
-   * List K8s Jobs matching a label selector.
-   */
-  async listJobs(
-    labelSelector: string,
-    namespace = this.namespace,
-  ): Promise<
-    Array<{
-      metadata?: {
-        name?: string;
-        creationTimestamp?: string;
-        labels?: Record<string, string>;
-      };
-      status?: {
-        succeeded?: number;
-        failed?: number;
-        active?: number;
-        completionTime?: string;
-      };
-    }>
-  > {
-    if (isMock()) {
-      return [];
-    }
-
-    const selector = encodeURIComponent(labelSelector);
-    const path = `/apis/batch/v1/namespaces/${namespace}/jobs?labelSelector=${selector}`;
-    const response = await this.list<{
-      items?: Array<{
-        metadata?: {
-          name?: string;
-          creationTimestamp?: string;
-          labels?: Record<string, string>;
-        };
-        status?: {
-          succeeded?: number;
-          failed?: number;
-          active?: number;
-          completionTime?: string;
-        };
-      }>;
-    }>(path);
-    return response.items ?? [];
   }
 
   async createResource(
@@ -292,25 +190,6 @@ export class KubeClient {
     }
   }
 
-  async getPodStatus(
-    name: string,
-    namespace = this.namespace,
-  ): Promise<PodPhase> {
-    if (isMock()) {
-      return "Running";
-    }
-
-    const pod = await this.get<KubeStatusResponse>(
-      `/api/v1/namespaces/${namespace}/pods/${name}`,
-    );
-    const phase = pod.status?.phase;
-    if (phase === "Pending") return "Pending";
-    if (phase === "Running") return "Running";
-    if (phase === "Succeeded") return "Succeeded";
-    if (phase === "Failed") return "Failed";
-    return "Unknown";
-  }
-
   async getPodIp(
     name: string,
     namespace = this.namespace,
@@ -351,241 +230,6 @@ export class KubeClient {
     return false;
   }
 
-  async getJobStatus(
-    name: string,
-    namespace = this.namespace,
-  ): Promise<JobStatus> {
-    if (isMock()) {
-      return "succeeded";
-    }
-
-    const response = await this.get<KubeStatusResponse>(
-      `/apis/batch/v1/namespaces/${namespace}/jobs/${name}`,
-    );
-    const status = response.status;
-
-    if ((status?.succeeded ?? 0) > 0) return "succeeded";
-    if ((status?.failed ?? 0) > 0) return "failed";
-    if ((status?.active ?? 0) > 0) return "active";
-    return "unknown";
-  }
-
-  async getPodLogs(name: string, namespace = this.namespace): Promise<string> {
-    if (isMock()) {
-      return "[mock] no logs";
-    }
-
-    const auth = await this.getAuthConfig();
-    const path = `/api/v1/namespaces/${namespace}/pods/${name}/log`;
-    const url = this.buildUrl(auth.server, path);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: this.buildHeaders(auth, undefined),
-      tls: auth.tls,
-    } as BunRequestInit);
-
-    if (!response.ok) {
-      throw await this.toKubeError(
-        response,
-        `Unable to fetch logs for ${name}`,
-      );
-    }
-
-    return response.text();
-  }
-
-  /**
-   * Check if the K8s API server is reachable.
-   */
-  async checkApiHealth(): Promise<boolean> {
-    if (isMock()) return true;
-    try {
-      await this.get("/api/v1/namespaces");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Check if the Kata Containers RuntimeClass exists.
-   */
-  async checkRuntimeClass(name: string): Promise<boolean> {
-    if (isMock()) return true;
-    try {
-      const path = `/apis/node.k8s.io/v1/runtimeclasses/${name}`;
-      await this.get(path);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Check if the snapshot.storage.k8s.io API group is available
-   * (i.e. the CSI snapshot controller is installed).
-   */
-  async checkSnapshotApi(): Promise<boolean> {
-    if (isMock()) return false;
-    try {
-      await this.get("/apis/snapshot.storage.k8s.io/v1");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Check if a VolumeSnapshotClass exists.
-   * When `name` is provided, checks that specific class.
-   * Otherwise checks that at least one VolumeSnapshotClass exists.
-   */
-  async checkVolumeSnapshotClass(name?: string): Promise<boolean> {
-    if (isMock()) return false;
-    try {
-      if (name) {
-        await this.get(
-          `/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses/${name}`,
-        );
-      } else {
-        const list = await this.list<{ items?: unknown[] }>(
-          "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses",
-        );
-        return (list.items?.length ?? 0) > 0;
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Rollout-restart a Deployment matched by label selector.
-   */
-  async restartDeployment(
-    labelSelector: string,
-    namespace = this.namespace,
-  ): Promise<{ name: string; restarted: boolean }> {
-    if (isMock()) {
-      return { name: "mock-deployment", restarted: true };
-    }
-
-    const selector = encodeURIComponent(labelSelector);
-    const listPath = `/apis/apps/v1/namespaces/${namespace}/deployments?labelSelector=${selector}`;
-    const result = await this.list<{
-      items?: Array<{ metadata?: { name?: string } }>;
-    }>(listPath);
-    const deployments = result.items ?? [];
-
-    if (deployments.length === 0) {
-      throw new KubeApiError(
-        `No deployment found matching ${labelSelector}`,
-        404,
-      );
-    }
-
-    const name = deployments[0]?.metadata?.name;
-    if (!name) {
-      throw new KubeApiError("Deployment has no name", 500);
-    }
-
-    const patchPath = `/apis/apps/v1/namespaces/${namespace}/deployments/${name}`;
-    await this.patch(patchPath, {
-      spec: {
-        template: {
-          metadata: {
-            annotations: {
-              "kubectl.kubernetes.io/restartedAt": new Date().toISOString(),
-            },
-          },
-        },
-      },
-    });
-
-    return { name, restarted: true };
-  }
-
-  async listPodMetrics(namespace = this.namespace): Promise<
-    Array<{
-      podName: string;
-      containers: Array<{
-        name: string;
-        cpu: string;
-        memory: string;
-      }>;
-    }>
-  > {
-    if (isMock()) {
-      return [];
-    }
-
-    try {
-      const path = `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods`;
-      const result = await this.list<{
-        items?: Array<{
-          metadata?: { name?: string };
-          containers?: Array<{
-            name?: string;
-            usage?: { cpu?: string; memory?: string };
-          }>;
-        }>;
-      }>(path);
-
-      return (result.items ?? []).map((item) => ({
-        podName: item.metadata?.name ?? "",
-        containers: (item.containers ?? []).map((c) => ({
-          name: c.name ?? "",
-          cpu: c.usage?.cpu ?? "0",
-          memory: c.usage?.memory ?? "0",
-        })),
-      }));
-    } catch {
-      return [];
-    }
-  }
-
-  async listPvcs(
-    namespace = this.namespace,
-    labelSelector?: string,
-  ): Promise<
-    Array<{
-      name: string;
-      capacity: string;
-      phase: string;
-    }>
-  > {
-    if (isMock()) {
-      return [{ name: "mock-pvc", capacity: "10Gi", phase: "Bound" }];
-    }
-
-    let path = `/api/v1/namespaces/${namespace}/persistentvolumeclaims`;
-    if (labelSelector) {
-      path += `?labelSelector=${encodeURIComponent(labelSelector)}`;
-    }
-
-    const result = await this.list<{
-      items?: Array<{
-        metadata?: { name?: string };
-        status?: {
-          phase?: string;
-          capacity?: { storage?: string };
-        };
-        spec?: {
-          resources?: { requests?: { storage?: string } };
-        };
-      }>;
-    }>(path);
-
-    return (result.items ?? []).map((item) => ({
-      name: item.metadata?.name ?? "",
-      capacity:
-        item.status?.capacity?.storage ??
-        item.spec?.resources?.requests?.storage ??
-        "unknown",
-      phase: item.status?.phase ?? "unknown",
-    }));
-  }
-
   async resourceExists(
     kind: string,
     name: string,
@@ -623,26 +267,6 @@ export class KubeClient {
     }
 
     return false;
-  }
-
-  async waitForJobComplete(
-    name: string,
-    options: { timeout?: number; namespace?: string } = {},
-  ): Promise<"succeeded" | "failed" | "timeout"> {
-    if (isMock()) return "succeeded";
-
-    const timeout = options.timeout ?? 300_000;
-    const namespace = options.namespace ?? this.namespace;
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < timeout) {
-      const status = await this.getJobStatus(name, namespace);
-      if (status === "succeeded") return "succeeded";
-      if (status === "failed") return "failed";
-      await Bun.sleep(3000);
-    }
-
-    return "timeout";
   }
 
   private async request<T = unknown>(
@@ -827,11 +451,8 @@ function resourceCollectionPath(kind: string, namespace: string): string {
     return `/api/v1/namespaces/${namespace}/configmaps`;
   if (normalized === "persistentvolumeclaim")
     return `/api/v1/namespaces/${namespace}/persistentvolumeclaims`;
-  if (normalized === "persistentvolume") return "/api/v1/persistentvolumes";
   if (normalized === "ingress")
     return `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
-  if (normalized === "job")
-    return `/apis/batch/v1/namespaces/${namespace}/jobs`;
   if (normalized === "volumesnapshot") {
     return `/apis/snapshot.storage.k8s.io/v1/namespaces/${namespace}/volumesnapshots`;
   }

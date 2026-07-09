@@ -150,6 +150,59 @@ export async function wireBuiltinHarnesses(container: ServerContainer) {
 }
 
 /**
+ * Resolve one toolbox (for a given owner) to a `ToolsetRef`, or `undefined`
+ * if it can't be resolved this spawn. Shared by `resolveToolboxRefs` (the
+ * auto-inject tiers) and `resolveSelectedToolboxes` (explicit selectors) —
+ * both need the same pinned-fast-path → build → lazy-record → log-and-skip
+ * sequence, just over different toolbox sets.
+ *
+ * Pinned (docs/toolbox-versions.md §2): resolve straight to the saved ref,
+ * skipping `buildToolset` entirely — no build, no content-hash lookup, just
+ * the pointer. A dangling pin falls back to the recipe build (same
+ * "never fail the whole spawn" resilience as the build path).
+ *
+ * Each build uses a STABLE registry name keyed on the immutable owner
+ * (`tb/${ownerType}/${ownerId}/${slug}`), so renaming an org never churns
+ * artifacts or orphans a toolbox's repo (R2). `buildToolset` is content-hash
+ * idempotent + inflight-deduped, so resolving fresh on every spawn (no memo
+ * cache, R5) is cheap after the first build. A single toolbox's build
+ * failure is logged and skipped — never fails the whole spawn.
+ */
+async function resolveToolboxToRef(
+  container: ServerContainer,
+  owner: ToolboxOwner,
+  config: ToolboxConfig,
+): Promise<ToolsetRef | undefined> {
+  const activeId = container.control.toolboxService.getActiveVersionId(
+    config.id,
+  );
+  if (activeId) {
+    const version = container.control.toolboxVersionService.find(activeId);
+    if (version) return { ref: version.ref };
+    log.warn(
+      { slug: config.slug, activeId },
+      "pinned toolbox version missing; falling back to recipe build",
+    );
+  }
+  try {
+    const { ref } = await container.runtime.buildToolset({
+      name: `tb/${owner.type}/${owner.id}/${config.slug}`,
+      source: config.source,
+      build: config.build,
+      paths: config.paths,
+    });
+    await recordBuiltVersionLazily(container, config, ref);
+    return { ref };
+  } catch (err) {
+    log.error(
+      { err, ownerType: owner.type, ownerId: owner.id, slug: config.slug },
+      "toolbox build failed; skipping for this spawn",
+    );
+    return undefined;
+  }
+}
+
+/**
  * Resolve the caller's enabled toolboxes into built `ToolsetRef`s for a spawn
  * (entities-toolbox.md §5). Injection order is `[org enabled asc] → [user
  * enabled asc]`: the org's mandated baseline first, then the caller's personal
@@ -159,12 +212,6 @@ export async function wireBuiltinHarnesses(container: ServerContainer) {
  *
  * `orgId` is optional (`undefined` skips the org tier — spawn bare, never
  * throw, Oracle refinement R1); `userId` is always present at the seam.
- * Each build uses a STABLE registry name keyed on the immutable owner
- * (`tb/${ownerType}/${ownerId}/${slug}`), so renaming an org never churns
- * artifacts or orphans a toolbox's repo (R2). `buildToolset` is content-hash
- * idempotent + inflight-deduped, so resolving fresh on every spawn (no memo
- * cache, R5) is cheap after the first build. A single toolbox's build
- * failure is logged and skipped — never fails the whole spawn.
  */
 export async function resolveToolboxRefs(
   container: ServerContainer,
@@ -178,39 +225,8 @@ export async function resolveToolboxRefs(
   for (const owner of owners) {
     const configs = container.control.toolboxService.listAutoInject(owner);
     for (const config of configs) {
-      // Pinned (docs/toolbox-versions.md §2): resolve straight to the saved
-      // ref, skipping `buildToolset` entirely — no build, no content-hash
-      // lookup, just the pointer. A dangling pin falls back to the recipe
-      // build (same "never fail the whole spawn" resilience as below).
-      const activeId = container.control.toolboxService.getActiveVersionId(
-        config.id,
-      );
-      if (activeId) {
-        const version = container.control.toolboxVersionService.find(activeId);
-        if (version) {
-          refs.push({ ref: version.ref });
-          continue;
-        }
-        log.warn(
-          { slug: config.slug, activeId },
-          "pinned toolbox version missing; falling back to recipe build",
-        );
-      }
-      try {
-        const { ref } = await container.runtime.buildToolset({
-          name: `tb/${owner.type}/${owner.id}/${config.slug}`,
-          source: config.source,
-          build: config.build,
-          paths: config.paths,
-        });
-        refs.push({ ref });
-        await recordBuiltVersionLazily(container, config, ref);
-      } catch (err) {
-        log.error(
-          { err, ownerType: owner.type, ownerId: owner.id, slug: config.slug },
-          "toolbox build failed; skipping for this spawn",
-        );
-      }
+      const ref = await resolveToolboxToRef(container, owner, config);
+      if (ref) refs.push(ref);
     }
   }
   return refs;
@@ -240,37 +256,8 @@ export async function resolveSelectedToolboxes(
     if (!config || config.build.length === 0 || config.paths.length === 0) {
       continue;
     }
-    // Pinned: skip the build, same as `resolveToolboxRefs` (dangling pin
-    // falls back to the recipe build).
-    const activeId = container.control.toolboxService.getActiveVersionId(
-      config.id,
-    );
-    if (activeId) {
-      const version = container.control.toolboxVersionService.find(activeId);
-      if (version) {
-        refs.push({ ref: version.ref });
-        continue;
-      }
-      log.warn(
-        { slug: config.slug, activeId },
-        "pinned toolbox version missing; falling back to recipe build",
-      );
-    }
-    try {
-      const { ref } = await container.runtime.buildToolset({
-        name: `tb/${parsed.owner.type}/${parsed.owner.id}/${config.slug}`,
-        source: config.source,
-        build: config.build,
-        paths: config.paths,
-      });
-      refs.push({ ref });
-      await recordBuiltVersionLazily(container, config, ref);
-    } catch (err) {
-      log.error(
-        { err, ownerType: parsed.owner.type, slug: parsed.slug },
-        "selected toolbox build failed; skipping for this spawn",
-      );
-    }
+    const ref = await resolveToolboxToRef(container, parsed.owner, config);
+    if (ref) refs.push(ref);
   }
   return refs;
 }

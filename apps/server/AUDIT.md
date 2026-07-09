@@ -163,7 +163,7 @@ variance on the request path (keep the cron uncached).
 
 ---
 
-## 4. Simplification / deduplication
+## 4. Simplification / deduplication — ✅ ALL DONE (D1-D7 implemented)
 
 ### D1. Dead code — safe deletes
 - `shared/lib/retry.ts`, `shared/lib/shell.ts`, `shared/lib/phase-timer.ts`

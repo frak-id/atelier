@@ -1,8 +1,6 @@
 export { AgentClient } from "./agent.client.ts";
 export type {
   AgentHealth,
-  BatchExecResult,
-  Command,
   DevLogsResult,
   ExecResult,
   FileWrite,
@@ -13,3 +11,4 @@ export type {
   TerminalSession,
   WriteFilesResult,
 } from "./agent.types.ts";
+export { toFileWrites } from "./agent.types.ts";
