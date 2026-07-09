@@ -56,23 +56,16 @@ function sandboxLabels(sandboxId: string, workspaceId?: string) {
   return labels;
 }
 
-// Single source for the named ports both the pod and service expose, so a
-// config.ports override can't make them disagree (agent/ssh are infra ports).
-//
-// TODO(remove): ARCHITECTURAL SMELL — vscode/opencode/browser/terminal/dev
-// are concrete tools hardcoded into the mechanism tier (and into the shared
-// config schema as ATELIER_*_PORT). v2 already has the generic channel:
-// toolboxes declare `ports[]`, which ride `spec.ports` into
-// `buildSandboxService(options.ports)` / `buildPortIngresses`. Only `agent`
-// and `ssh` are genuinely infra. Shrink this list to those two once every
-// tool port is toolbox-declared.
+// Infra ports only — the single source both the pod and Service expose
+// unconditionally. Every tool port (vscode, web UIs, dev servers…) is
+// toolbox/spec-declared and rides `spec.ports` into
+// `buildSandboxService(options.ports)` / `buildPortIngresses`. Keeping tool
+// ports out of this list matters beyond genericity: a stale static entry
+// here claims the port *name* in the Service dedup below and silently
+// shadows the spec's real entry (this happened with opencode — static 3000
+// masked the harness's declared 4096, so its ingress had no backend).
 const SANDBOX_PORTS: ReadonlyArray<{ name: string; port: number }> = [
   { name: "agent", port: config.ports.agent },
-  { name: "vscode", port: config.ports.vscode },
-  { name: "opencode", port: config.ports.opencode },
-  { name: "browser", port: config.ports.browser },
-  { name: "terminal", port: config.ports.terminal },
-  { name: "dev", port: config.ports.dev },
   { name: "ssh", port: 22 },
 ];
 
