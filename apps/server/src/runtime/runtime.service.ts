@@ -32,6 +32,7 @@ import {
 import {
   ConflictError,
   NotFoundError,
+  SandboxError,
   ValidationError,
 } from "../shared/errors.ts";
 import { config, isMock } from "../shared/lib/config.ts";
@@ -634,8 +635,12 @@ export class RuntimeService {
         // Keep the record: deleting it now would orphan whatever the sweep
         // left behind (pod/PVC/snapshots) with nothing to retry destroy from.
         this.sandboxes.update(id, { status: "error" });
-        throw new Error(
-          `Failed to clean up resources for sandbox ${id}; record kept for retry`,
+        // SandboxError (not plain Error) so the API surfaces the real cause
+        // instead of a masked INTERNAL_ERROR in production.
+        throw new SandboxError(
+          `Failed to clean up resources for sandbox ${id}; record kept — retry destroy`,
+          "CLEANUP_FAILED",
+          502,
         );
       }
       // The label sweep deleted every sandbox-labeled VolumeSnapshot (pause

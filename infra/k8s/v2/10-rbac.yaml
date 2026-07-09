@@ -119,9 +119,10 @@ rules:
   - apiGroups: ["sshpiper.com"]
     resources: ["pipes"]
     verbs: ["create", "get", "list", "delete", "update", "patch"]
+  # `list` is required by the destroy label sweep (`deleteLabeledResources`).
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["create", "get", "delete", "update"]
+    verbs: ["create", "get", "list", "delete", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

@@ -134,6 +134,7 @@ export class KubeClient {
     }
 
     const selector = encodeURIComponent(labelSelector);
+    const failures: string[] = [];
     const collections = [
       { path: "pods", api: "core" },
       { path: "services", api: "core" },
@@ -184,10 +185,23 @@ export class KubeClient {
       } catch (err) {
         // A 404 on the *list* means the CRD isn't installed (volumesnapshots,
         // pipes) — nothing to sweep. Anything else is a real failure the
-        // caller must see (destroy keeps the record for retry on failure).
+        // caller must see (destroy keeps the record for retry on failure) —
+        // but keep sweeping the remaining collections first, so one broken
+        // collection (e.g. an RBAC gap) doesn't leak everything after it.
         if (err instanceof KubeApiError && err.status === 404) continue;
-        throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        log.warn(
+          { collection: col.path, error: message },
+          "labeled-resource sweep failed for collection",
+        );
+        failures.push(`${col.path}: ${message}`);
       }
+    }
+    if (failures.length > 0) {
+      throw new KubeApiError(
+        `Labeled-resource sweep incomplete (${failures.join("; ")})`,
+        500,
+      );
     }
   }
 
