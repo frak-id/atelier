@@ -37,6 +37,13 @@ export class UnauthorizedError extends SandboxError {
   }
 }
 
+export class ConflictError extends SandboxError {
+  constructor(message: string) {
+    super(message, "CONFLICT", 409);
+    this.name = "ConflictError";
+  }
+}
+
 export class ValidationError extends SandboxError {
   constructor(message: string) {
     super(message, "VALIDATION_ERROR", 400);

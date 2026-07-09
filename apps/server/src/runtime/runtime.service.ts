@@ -29,7 +29,11 @@ import {
   type ToolsetEntry,
   type ToolsetRef,
 } from "@atelier/spec";
-import { NotFoundError, ValidationError } from "../shared/errors.ts";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../shared/errors.ts";
 import { config, isMock } from "../shared/lib/config.ts";
 import {
   buildGitAttributionFiles,
@@ -92,6 +96,12 @@ export class RuntimeService {
     string,
     Promise<ToolsetRef>
   >();
+  /** Per-sandbox operation lock: create/pause/resume/destroy/snapshot on the
+   * same id serialize instead of racing (double resume booting two pods on
+   * one pod name, destroy sweeping resources out from under an in-flight
+   * create, …). Queued ops re-read the record once they acquire the lock, so
+   * status guards see the previous op's outcome. */
+  private readonly opLocks = new Map<string, Promise<void>>();
 
   constructor(deps: RuntimeDeps = {}) {
     this.agent = deps.agent ?? new AgentClient();
@@ -408,6 +418,17 @@ export class RuntimeService {
   ): Promise<CreateSandboxResponse> {
     rejectUnresolvedSecrets(spec);
     const id = options.id ?? safeNanoid();
+    return this.withOpLock(id, () => this.executeCreate(id, spec, options));
+  }
+
+  private async executeCreate(
+    id: string,
+    spec: SandboxSpec,
+    options: RuntimeCreateOptions,
+  ): Promise<CreateSandboxResponse> {
+    if (this.sandboxes.get(id)) {
+      throw new ConflictError(`Sandbox ${id} already exists`);
+    }
     const { image, snapshotName } = await this.resolveSource(spec.source);
 
     const now = new Date().toISOString();
@@ -493,60 +514,160 @@ export class RuntimeService {
 
   // ── pause / resume ─────────────────────────────────────────────────────
 
-  /** Snapshot the disk, release compute (delete pod, keep PVC). */
+  /** Snapshot the disk, release compute (delete pod, keep PVC). The snapshot
+   * ref persists on the record: it is `resume()`'s boot source if the PVC is
+   * ever lost (a failed resume boot cleans the PVC; the snapshot survives). */
   async pause(id: string): Promise<SnapshotRef> {
-    this.require(id);
-    const ref = await this.snapshot(id);
-    this.agent.invalidatePodIp(id);
-    await deleteRestartableResources(id);
-    this.sandboxes.update(id, { status: "paused" });
-    log.info({ id, ref: ref.ref }, "sandbox paused");
-    return ref;
-  }
-
-  /** Boot from the pause snapshot, injecting rotated files/env, run onResume. */
-  async resume(id: string, req: ResumeRequest = {}): Promise<SandboxState> {
-    const record = this.require(id);
-    const spec = mergeResume(record.spec, req);
-    rejectUnresolvedSecrets(spec);
-    const { image, snapshotName } = await this.resolveSource(spec.source);
-
-    // Resume phase order: files/env -> onResume -> processes. onResume is the
-    // credential-rotation primitive; it runs before processes restart.
-    const boot = await bootSandbox(
-      id,
-      spec,
-      { image, snapshotName },
-      this.agent,
-    );
-    try {
-      await this.runPhase(id, "onResume");
-      await this.agent.reconcile(id);
-      await this.gateOnPrimary(id);
-    } catch (error) {
-      // Tear down the half-resumed pod and stay paused so a retry starts clean
-      // (the pod name is fixed per sandbox; a second boot would collide).
+    return this.withOpLock(id, async () => {
+      const record = this.require(id);
+      if (record.status !== "running") {
+        throw new ConflictError(
+          `Sandbox ${id} is ${record.status}; only a running sandbox can be paused`,
+        );
+      }
+      // Flush filesystem buffers before snapshotting — processes keep running
+      // (the snapshot stays crash-consistent, not clean), but a sync bounds
+      // the loss window for in-flight writes. Best-effort: an unreachable
+      // agent must not block a pause (the pod is about to be deleted anyway).
+      await this.agent
+        .exec(id, "sync", { user: "root", timeout: 30_000 })
+        .catch((err) => log.warn({ id, err }, "pre-pause sync failed"));
+      const ref = await this.executeSnapshot(record);
       this.agent.invalidatePodIp(id);
       await deleteRestartableResources(id);
-      this.sandboxes.update(id, { status: "paused" });
-      throw error;
-    }
-    this.sandboxes.update(id, {
-      spec,
-      status: "running",
-      generated: { agentPassword: boot.agentPassword, podIp: boot.podIp },
+      this.sandboxes.update(id, {
+        status: "paused",
+        pauseSnapshotRef: ref.ref,
+      });
+      log.info({ id, ref: ref.ref }, "sandbox paused");
+      return ref;
+    });
+  }
+
+  /** Boot from the paused disk, injecting rotated files/env, run onResume.
+   * Boot source, in order: the PVC `pause()` left behind (the live disk —
+   * reused, not cloned), else a clone from the persisted pause snapshot,
+   * else the original `spec.source` (records that predate the pause, or an
+   * `error` record recovering from scratch). Also the recovery route for
+   * `status: "error"` records — a failed create/resume can be retried here. */
+  async resume(id: string, req: ResumeRequest = {}): Promise<SandboxState> {
+    await this.withOpLock(id, async () => {
+      const record = this.require(id);
+      if (record.status !== "paused" && record.status !== "error") {
+        throw new ConflictError(
+          `Sandbox ${id} is ${record.status}; only a paused or errored sandbox can be resumed`,
+        );
+      }
+      const spec = mergeResume(record.spec, req);
+      rejectUnresolvedSecrets(spec);
+      const { image, snapshotName: sourceSnapshot } = await this.resolveSource(
+        spec.source,
+      );
+      const reusePvc =
+        !isMock() &&
+        (await kubeClient.resourceExists(
+          "PersistentVolumeClaim",
+          record.pvcName ?? `sandbox-${id}`,
+        ));
+
+      // Resume phase order: files/env -> onResume -> processes. onResume is
+      // the credential-rotation primitive; it runs before processes restart.
+      const boot = await bootSandbox(
+        id,
+        spec,
+        {
+          image,
+          reusePvc,
+          // A resume boot failure must not sweep the paused disk/snapshot
+          // (both carry the sandbox label); a retry needs them.
+          preserveDisk: true,
+          snapshotName: reusePvc
+            ? undefined
+            : (record.pauseSnapshotRef ?? sourceSnapshot),
+        },
+        this.agent,
+      );
+      try {
+        await this.runPhase(id, "onResume");
+        await this.agent.reconcile(id);
+        await this.gateOnPrimary(id);
+      } catch (error) {
+        // Tear down the half-resumed pod (keep the PVC) and restore the prior
+        // status so a retry starts clean (the pod name is fixed per sandbox; a
+        // second boot would collide).
+        this.agent.invalidatePodIp(id);
+        await deleteRestartableResources(id);
+        this.sandboxes.update(id, { status: record.status });
+        throw error;
+      }
+      // The disk is live again — the pause snapshot no longer reflects it, so
+      // drop the pointer (the VolumeSnapshot itself is GC'd by destroy's
+      // label sweep, or overwritten by the next pause).
+      this.sandboxes.update(id, {
+        spec,
+        status: "running",
+        pauseSnapshotRef: undefined,
+        generated: { agentPassword: boot.agentPassword, podIp: boot.podIp },
+      });
     });
     return this.get(id);
   }
 
   // ── destroy ────────────────────────────────────────────────────────────
 
+  /** Allowed from any status — destroy is the universal recovery exit. */
   async destroy(id: string): Promise<void> {
-    this.require(id);
-    this.agent.invalidatePodIp(id);
-    await cleanupSandboxResources(id);
-    this.sandboxes.delete(id);
-    log.info({ id }, "sandbox destroyed");
+    return this.withOpLock(id, async () => {
+      const record = this.require(id);
+      this.agent.invalidatePodIp(id);
+      await cleanupSandboxResources(id);
+      // The label sweep deleted the pause VolumeSnapshot (it carries the
+      // sandbox label); drop its store row too so no dangling ref survives.
+      if (record.pauseSnapshotRef)
+        this.snapshots.delete(record.pauseSnapshotRef);
+      this.sandboxes.delete(id);
+      log.info({ id }, "sandbox destroyed");
+    });
+  }
+
+  // ── startup reconciliation ────────────────────────────────────────
+
+  /**
+   * Reconcile persisted records against the cluster after a server restart,
+   * so zombies don't accumulate: a `creating` record means the server died
+   * mid-boot — its half-created resources are swept and the record parked in
+   * `error` (resumable: `resolveSource` still works from the original spec).
+   * A `running` record whose pod is gone (OOM-killed, node lost, manually
+   * deleted while the server was down) flips to `error` too — its PVC, if it
+   * survived, makes `resume()` a disk-preserving restart.
+   */
+  async reconcileOnStartup(): Promise<void> {
+    if (isMock()) return;
+    for (const record of this.sandboxes.list()) {
+      try {
+        if (record.status === "creating") {
+          this.agent.invalidatePodIp(record.id);
+          await cleanupSandboxResources(record.id);
+          this.sandboxes.update(record.id, { status: "error" });
+          log.warn(
+            { id: record.id },
+            "swept sandbox stuck in creating (server restarted mid-boot)",
+          );
+        } else if (record.status === "running") {
+          const podName = record.podName ?? `sandbox-${record.id}`;
+          if (!(await kubeClient.resourceExists("Pod", podName))) {
+            this.agent.invalidatePodIp(record.id);
+            this.sandboxes.update(record.id, { status: "error" });
+            log.warn(
+              { id: record.id, podName },
+              "running sandbox has no pod; marked error (resume restarts it)",
+            );
+          }
+        }
+      } catch (err) {
+        log.error({ id: record.id, err }, "startup reconciliation failed");
+      }
+    }
   }
 
   // ── live mutations ─────────────────────────────────────────────────────
@@ -664,7 +785,21 @@ export class RuntimeService {
 
   /** Promote the current disk → snapshotRef. */
   async snapshot(id: string): Promise<SnapshotRef> {
-    const record = this.require(id);
+    return this.withOpLock(id, async () => {
+      const record = this.require(id);
+      if (record.status !== "running" && record.status !== "paused") {
+        throw new ConflictError(
+          `Sandbox ${id} is ${record.status}; only a running or paused sandbox has a disk to snapshot`,
+        );
+      }
+      return this.executeSnapshot(record);
+    });
+  }
+
+  /** Snapshot body, called with the op lock already held (`snapshot` and
+   * `pause` both funnel here — `pause` must not re-acquire its own lock). */
+  private async executeSnapshot(record: SandboxRecord): Promise<SnapshotRef> {
+    const id = record.id;
     const pvcName = record.pvcName ?? `sandbox-${id}`;
     const hash = createHash("sha256")
       .update(`${id}:${Date.now()}`)
@@ -910,6 +1045,25 @@ export class RuntimeService {
     const record = this.sandboxes.get(id);
     if (!record) throw new NotFoundError("Sandbox", id);
     return record;
+  }
+
+  /** Serialize lifecycle operations per sandbox id: each op chains onto the
+   * tail of the previous one (fulfilled or rejected — a failed pause must
+   * not poison a queued destroy). Ops re-read the record after acquiring
+   * the lock, so a queued duplicate (double resume) fails the status guard
+   * instead of racing. The entry is dropped when the tail drains. */
+  private async withOpLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.opLocks.get(id) ?? Promise.resolve();
+    const run = prior.then(fn, fn);
+    const tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.opLocks.set(id, tail);
+    tail.finally(() => {
+      if (this.opLocks.get(id) === tail) this.opLocks.delete(id);
+    });
+    return run;
   }
 
   private async resolveSource(

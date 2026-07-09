@@ -80,7 +80,7 @@ upserts by hash and the second capture silently overwrites the first record
 
 ---
 
-## 2. Sandbox lifecycle issues
+## 2. Sandbox lifecycle issues — ✅ ALL DONE (L1-L5 implemented)
 
 ### L1. `resume()` is fully broken (known, documented)
 AGENTS.md already tracks it: `pause()` never persists the snapshot ref,

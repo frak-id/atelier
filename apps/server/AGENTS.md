@@ -99,11 +99,13 @@ exposes the existing capability so the GUI can offer a read-only attach.
   CLI + console surface. Deferred (proposal §6 items 8–10, independent
   control-plane work): repo-tier commit-keying/head-watching, the rung-1
   baked-pair cache, host-share/overlay perf spikes.
-- **`resume()` PVC collision — pre-existing, found live, NOT a toolset
-  regression.** `pause()` snapshots the disk but never persists the new
-  snapshot ref onto the sandbox record; `resume()` re-resolves the
-  *original* `spec.source` and `bootSandbox` unconditionally creates a fresh
-  PVC named `sandbox-${id}`, colliding with the PVC `pause()` correctly left
-  behind. Every `resume()` 409s today. Needs a deliberate fix to the
-  pause/resume PVC-reuse contract — out of scope for the toolset feature,
-  confirmed pre-existing via `git diff` against the pre-toolset base commit.
+- **Pause/resume contract (fixed — was the `resume()` PVC collision).**
+  `pause()` syncs, snapshots, persists `pauseSnapshotRef` on the record,
+  then deletes pod/service/pipe (PVC kept). `resume()` reuses the live PVC
+  when it still exists (no clone, no 409), else clones from the persisted
+  pause snapshot, else falls back to the original `spec.source`; `error`
+  records are resumable (the recovery route). Lifecycle ops (create/pause/
+  resume/snapshot/destroy) serialize per sandbox id via an op lock and
+  check status preconditions; `reconcileOnStartup()` sweeps zombie
+  `creating`/pod-less `running` records to `error` at boot. Contract is
+  pinned by `src/runtime/runtime.lifecycle.test.ts`.

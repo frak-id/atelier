@@ -41,6 +41,10 @@ await wireBuiltinHarnesses(container);
 
 await ensureSharedSshPipeKey();
 
+// Sweep zombie records left by a server crash/restart: `creating` → cleanup +
+// `error`, `running` without a pod → `error` (both recoverable via resume).
+await container.runtime.reconcileOnStartup();
+
 // Recompute each stored prebuild's content key against current remote HEADs
 // + base image digest, and rebuild anything that moved (runtime.service.ts
 // `refreshStalePrebuilds`). Skipped in mock mode (no network git/registry).

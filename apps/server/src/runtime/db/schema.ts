@@ -28,6 +28,8 @@ export const sandboxes = sqliteTable("sandboxes", {
   metadata: text("metadata").notNull(),
   podName: text("pod_name"),
   pvcName: text("pvc_name"),
+  /** VolumeSnapshot ref the last `pause()` produced — the resume boot source. */
+  pauseSnapshotRef: text("pause_snapshot_ref"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

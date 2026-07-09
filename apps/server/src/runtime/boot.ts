@@ -38,6 +38,15 @@ export interface BootInput {
   image: string;
   /** VolumeSnapshot to clone the PVC from (set when booting from a snapshot). */
   snapshotName?: string;
+  /** Reuse the sandbox's existing PVC instead of creating one — the resume
+   * path: `pause()` deletes the pod but keeps the PVC, so the live disk (not
+   * a snapshot clone) is the boot source and a create would 409. */
+  reusePvc?: boolean;
+  /** On boot failure, tear down only the restartable resources (pod/service/
+   * pipe/ingresses) instead of the full label sweep — the resume path: the
+   * PVC and the pause VolumeSnapshot both carry the sandbox label, and a
+   * full sweep would destroy the paused disk a retry needs. */
+  preserveDisk?: boolean;
   /** SSH public keys authorized on the sshpiper Pipe. Content, resolved by the caller. */
   authorizedKeys?: string[];
   /**
@@ -83,17 +92,19 @@ export async function bootSandbox(
     // binds only when the pod referencing it is scheduled, so there is no
     // separate waitForPvcBound.
     await Promise.all([
-      kubeClient.createResource(
-        buildPvc({
-          name: pvcName,
-          size: volumeSize,
-          snapshotName: usedSnapshot ? input.snapshotName : undefined,
-          labels: {
-            "atelier.dev/sandbox": sandboxId,
-            "atelier.dev/component": "sandbox",
-          },
-        }),
-      ),
+      input.reusePvc
+        ? undefined
+        : kubeClient.createResource(
+            buildPvc({
+              name: pvcName,
+              size: volumeSize,
+              snapshotName: usedSnapshot ? input.snapshotName : undefined,
+              labels: {
+                "atelier.dev/sandbox": sandboxId,
+                "atelier.dev/component": "sandbox",
+              },
+            }),
+          ),
       ...createSandboxResources(sandboxId, spec, {
         image: input.image,
         agentPassword,
@@ -138,7 +149,8 @@ export async function bootSandbox(
       },
       "Boot failed, cleaning up allocated resources",
     );
-    await cleanupSandboxResources(sandboxId);
+    if (input.preserveDisk) await deleteRestartableResources(sandboxId);
+    else await cleanupSandboxResources(sandboxId);
     throw error;
   }
 }

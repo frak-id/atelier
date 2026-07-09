@@ -30,6 +30,9 @@ export interface SandboxRecord {
   metadata: Record<string, string>;
   podName?: string;
   pvcName?: string;
+  /** VolumeSnapshot ref the last `pause()` produced — what `resume()` boots
+   * from. Cleared on successful resume (the PVC is live again). */
+  pauseSnapshotRef?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -164,6 +167,7 @@ interface SandboxRow {
   metadata: string;
   podName: string | null;
   pvcName: string | null;
+  pauseSnapshotRef: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -177,6 +181,7 @@ function rowToRecord(row: SandboxRow): SandboxRecord {
     metadata: JSON.parse(row.metadata) as Record<string, string>,
     podName: row.podName ?? undefined,
     pvcName: row.pvcName ?? undefined,
+    pauseSnapshotRef: row.pauseSnapshotRef ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -191,6 +196,7 @@ function recordToRow(record: SandboxRecord): SandboxRow {
     metadata: JSON.stringify(record.metadata),
     podName: record.podName ?? null,
     pvcName: record.pvcName ?? null,
+    pauseSnapshotRef: record.pauseSnapshotRef ?? null,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
