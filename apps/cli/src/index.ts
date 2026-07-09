@@ -10,6 +10,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join as joinPath, relative as relPath } from "node:path";
 import type {
+  AddProcessRequest,
   PatchFilesRequest,
   PrebuildRepo,
   PrebuildSpec,
@@ -38,9 +39,17 @@ Usage:
   atelier rm <id>
   atelier attach <id> [process]           (default process: acp)
   atelier sync <localPath> <id>:<remotePath>
+  atelier env <id> KEY=VALUE [KEY=VALUE ...]         (live env patch)
+  atelier process start <id> <name>
+  atelier process stop <id> <name>
+  atelier process add <id> (--spec <file>
+                          | --name <n> --command <cmd> [--cwd <dir>]
+                            [--user <u>] [--primary] [--pty])
   atelier expose <id> <name> <port> [--no-public]
   atelier snapshot <id>
-  atelier prebuild <file>
+  atelier prebuild <file> [--force] [--json]
+  atelier prebuild ls [--json]
+  atelier prebuild rm <ref>
   atelier toolset ls [--json]
   atelier toolset build <file>                          (ToolsetBuildRequest)
   atelier toolset capture <id> <name> <path> [<path>...]
@@ -55,6 +64,11 @@ Usage:
   atelier toolbox set <id> [--desc <d>] [--enable | --disable]
                       [--build <cmd> ...] [--path <p> ...]
   atelier toolbox rm <id>
+  atelier toolbox versions <id> [--json]
+  atelier toolbox version capture <id> <sandboxId> --desc <d>
+  atelier toolbox version pin <id> <versionId>
+  atelier toolbox version unpin <id>
+  atelier toolbox version rm <id> <versionId>
 
 Env:
   ATELIER_API_URL   server base URL (default http://localhost:4000)
@@ -461,6 +475,62 @@ async function main(): Promise<void> {
       process.stdout.write(`synced ${files.length} file(s) to ${id}:${path}\n`);
       return;
     }
+    case "env": {
+      const id = positionals[0] ?? fail("env needs a sandbox id");
+      const pairs = positionals.slice(1);
+      if (pairs.length === 0) fail("env needs at least one KEY=VALUE");
+      const env: Record<string, string> = {};
+      for (const pair of pairs) {
+        const eq = pair.indexOf("=");
+        if (eq === -1) fail(`env expects KEY=VALUE, got "${pair}"`);
+        env[pair.slice(0, eq)] = pair.slice(eq + 1);
+      }
+      await client.patchEnv(id, env);
+      process.stdout.write(
+        `patched ${Object.keys(env).length} env var(s) on ${id}\n`,
+      );
+      return;
+    }
+    case "process": {
+      const sub = positionals[0];
+      const id = positionals[1] ?? fail("process needs a sandbox id");
+      if (sub === "start" || sub === "stop") {
+        const name = positionals[2] ?? fail(`process ${sub} needs a name`);
+        await client.processAction(id, name, sub);
+        process.stdout.write(
+          `${sub === "start" ? "started" : "stopped"} ${name} on ${id}\n`,
+        );
+        return;
+      }
+      if (sub === "add") {
+        const specFile = one(flags, "spec");
+        let proc: AddProcessRequest;
+        if (specFile) {
+          proc = parseJsonc(
+            readFileSync(specFile, "utf8"),
+          ) as AddProcessRequest;
+        } else {
+          const name =
+            one(flags, "name") ?? fail("process add needs --name or --spec");
+          const command =
+            one(flags, "command") ??
+            fail("process add needs --command or --spec");
+          proc = {
+            name,
+            command,
+            ...(one(flags, "cwd") ? { cwd: one(flags, "cwd") } : {}),
+            ...(one(flags, "user") ? { user: one(flags, "user") } : {}),
+            ...(flags.has("primary") ? { primary: true } : {}),
+            ...(flags.has("pty") ? { pty: true } : {}),
+          };
+        }
+        await client.addProcess(id, proc);
+        process.stdout.write(`added process ${proc.name} on ${id}\n`);
+        return;
+      }
+      fail("process subcommand must be `start`, `stop`, or `add`");
+      return;
+    }
     case "expose": {
       const id = positionals[0] ?? fail("expose needs a sandbox id");
       const name = positionals[1] ?? fail("expose needs a port name");
@@ -482,9 +552,30 @@ async function main(): Promise<void> {
       return;
     }
     case "prebuild": {
-      const file = positionals[0] ?? fail("prebuild needs a spec file");
+      const sub = positionals[0];
+      if (sub === "ls") {
+        const rows = await client.listPrebuilds();
+        if (json) return print(rows);
+        if (rows.length === 0) {
+          process.stdout.write("no prebuilds\n");
+          return;
+        }
+        for (const r of rows) {
+          process.stdout.write(
+            `${r.ref}\t${r.hash}\t${r.inUse ? "in-use" : "unused"}\t${r.createdAt}\n`,
+          );
+        }
+        return;
+      }
+      if (sub === "rm") {
+        const ref = positionals[1] ?? fail("prebuild rm needs a ref");
+        await client.deletePrebuild(ref);
+        process.stdout.write(`removed ${ref}\n`);
+        return;
+      }
+      const file = sub ?? fail("prebuild needs a spec file");
       const spec = parseJsonc(readFileSync(file, "utf8")) as PrebuildSpec;
-      const ref = await client.prebuild(spec);
+      const ref = await client.prebuild(spec, flags.has("force"));
       if (json) return print(ref);
       process.stdout.write(`${ref.ref}\t${ref.hash}\n`);
       return;
@@ -624,7 +715,69 @@ async function main(): Promise<void> {
         process.stdout.write(`removed ${id}\n`);
         return;
       }
-      fail("toolbox subcommand must be `ls`, `create`, `set`, or `rm`");
+      if (sub === "versions") {
+        const id =
+          positionals[1] ?? fail("toolbox versions needs a toolbox id");
+        const list = await client.listToolboxVersions(id);
+        if (json) return print(list);
+        if (list.versions.length === 0) {
+          process.stdout.write("no versions\n");
+          return;
+        }
+        for (const v of list.versions) {
+          const active = v.id === list.activeVersionId ? "* " : "  ";
+          process.stdout.write(
+            `${active}v${v.label}\t${v.id}\t${v.ref}\t${v.provenance.kind}\t${v.description}\n`,
+          );
+        }
+        return;
+      }
+      if (sub === "version") {
+        const action = positionals[1];
+        const id = positionals[2] ?? fail("toolbox version needs a toolbox id");
+        if (action === "capture") {
+          const sandboxId =
+            positionals[3] ??
+            fail("toolbox version capture needs a sandbox id");
+          const description =
+            one(flags, "desc") ?? fail("toolbox version capture needs --desc");
+          const version = await client.captureToolboxVersion(id, {
+            sandboxId,
+            description,
+          });
+          if (json) return print(version);
+          process.stdout.write(
+            `v${version.label}\t${version.id}\t${version.ref}\n`,
+          );
+          return;
+        }
+        if (action === "pin") {
+          const versionId =
+            positionals[3] ?? fail("toolbox version pin needs a version id");
+          await client.setActiveToolboxVersion(id, versionId);
+          process.stdout.write(`pinned ${versionId} on ${id}\n`);
+          return;
+        }
+        if (action === "unpin") {
+          await client.setActiveToolboxVersion(id, null);
+          process.stdout.write(`unpinned ${id}\n`);
+          return;
+        }
+        if (action === "rm") {
+          const versionId =
+            positionals[3] ?? fail("toolbox version rm needs a version id");
+          await client.deleteToolboxVersion(id, versionId);
+          process.stdout.write(`removed ${versionId}\n`);
+          return;
+        }
+        fail(
+          "toolbox version subcommand must be `capture`, `pin`, `unpin`, or `rm`",
+        );
+        return;
+      }
+      fail(
+        "toolbox subcommand must be `ls`, `create`, `set`, `rm`, `versions`, or `version`",
+      );
       return;
     }
     default:

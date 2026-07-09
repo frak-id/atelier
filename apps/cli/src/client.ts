@@ -5,9 +5,12 @@
  */
 import type {
   AddPortRequest,
+  AddProcessRequest,
   CreateSandboxResponse,
   ExecRequest,
+  PatchEnvRequest,
   PatchFilesRequest,
+  PrebuildRecord,
   PrebuildSpec,
   ResumeRequest,
   SandboxSpec,
@@ -17,6 +20,9 @@ import type {
   ToolboxConfig,
   ToolboxConfigInput,
   ToolboxConfigPatch,
+  ToolboxVersion,
+  ToolboxVersionCaptureRequest,
+  ToolboxVersionList,
   ToolsetBuildRequest,
   ToolsetCaptureRequest,
   ToolsetEntry,
@@ -149,6 +155,25 @@ export class AtelierClient {
     return this.req("PATCH", `/sandboxes/${id}/files`, files);
   }
 
+  patchEnv(id: string, env: PatchEnvRequest): Promise<void> {
+    return this.req("PATCH", `/sandboxes/${id}/env`, env);
+  }
+
+  addProcess(id: string, proc: AddProcessRequest): Promise<void> {
+    return this.req("POST", `/sandboxes/${id}/processes`, proc);
+  }
+
+  processAction(
+    id: string,
+    name: string,
+    action: "start" | "stop",
+  ): Promise<void> {
+    return this.req(
+      "POST",
+      `/sandboxes/${id}/processes/${encodeURIComponent(name)}/${action}`,
+    );
+  }
+
   addPort(id: string, req: AddPortRequest): Promise<void> {
     return this.req("POST", `/sandboxes/${id}/ports`, req);
   }
@@ -157,8 +182,16 @@ export class AtelierClient {
     return this.req("POST", `/sandboxes/${id}/snapshot`);
   }
 
-  prebuild(spec: PrebuildSpec): Promise<SnapshotRef> {
-    return this.req("POST", "/prebuilds", spec);
+  prebuild(spec: PrebuildSpec, force = false): Promise<SnapshotRef> {
+    return this.req("POST", `/prebuilds${force ? "?force=true" : ""}`, spec);
+  }
+
+  listPrebuilds(): Promise<PrebuildRecord[]> {
+    return this.req("GET", "/prebuilds");
+  }
+
+  deletePrebuild(ref: string): Promise<void> {
+    return this.req("DELETE", `/prebuilds/${encodeURIComponent(ref)}`);
   }
 
   listToolsets(): Promise<ToolsetEntry[]> {
@@ -210,6 +243,31 @@ export class AtelierClient {
 
   deleteToolbox(id: string): Promise<void> {
     return this.ctl("DELETE", `/toolboxes/${id}`);
+  }
+
+  listToolboxVersions(id: string): Promise<ToolboxVersionList> {
+    return this.ctl("GET", `/toolboxes/${id}/versions`);
+  }
+
+  captureToolboxVersion(
+    id: string,
+    req: ToolboxVersionCaptureRequest,
+  ): Promise<ToolboxVersion> {
+    return this.ctl("POST", `/toolboxes/${id}/versions/capture`, req);
+  }
+
+  setActiveToolboxVersion(
+    id: string,
+    versionId: string | null,
+  ): Promise<{ activeVersionId: string | null }> {
+    return this.ctl("PUT", `/toolboxes/${id}/active-version`, { versionId });
+  }
+
+  deleteToolboxVersion(id: string, versionId: string): Promise<void> {
+    return this.ctl(
+      "DELETE",
+      `/toolboxes/${id}/versions/${encodeURIComponent(versionId)}`,
+    );
   }
 
   /** WS attach endpoint + auth header for the unified stdio/PTY bridge. The
