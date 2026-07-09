@@ -58,6 +58,14 @@ function sandboxLabels(sandboxId: string, workspaceId?: string) {
 
 // Single source for the named ports both the pod and service expose, so a
 // config.ports override can't make them disagree (agent/ssh are infra ports).
+//
+// TODO(remove): ARCHITECTURAL SMELL — vscode/opencode/browser/terminal/dev
+// are concrete tools hardcoded into the mechanism tier (and into the shared
+// config schema as ATELIER_*_PORT). v2 already has the generic channel:
+// toolboxes declare `ports[]`, which ride `spec.ports` into
+// `buildSandboxService(options.ports)` / `buildPortIngresses`. Only `agent`
+// and `ssh` are genuinely infra. Shrink this list to those two once every
+// tool port is toolbox-declared.
 const SANDBOX_PORTS: ReadonlyArray<{ name: string; port: number }> = [
   { name: "agent", port: config.ports.agent },
   { name: "vscode", port: config.ports.vscode },

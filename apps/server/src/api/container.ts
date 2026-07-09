@@ -45,6 +45,9 @@ class SessionSurfaceRegistry implements SessionSurfaceResolver {
   }
 
   resolve(sandboxId: string, harnessId?: string): HarnessSessionSurface {
+    // TODO(remove): SMELL — a sandbox with no harness annotation silently
+    // gets the opencode surface. The default should come from org policy /
+    // config (or fail explicitly), not a hardcoded concrete harness.
     const id = harnessId ?? "opencode";
     const factory = this.factories.get(id);
     if (!factory) {

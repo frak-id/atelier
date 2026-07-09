@@ -218,7 +218,12 @@ function injectOrgPolicy(
 /** Merge the CLIProxy provider block into the opencode harness config file
  * (`opencode.json`). No-op when CLIProxy is unconfigured or the spec has no
  * opencode config file (non-opencode harness). The provider carries the
- * server's API key, so it must be injected here, not client-side. */
+ * server's API key, so it must be injected here, not client-side.
+ *
+ * TODO(remove): SMELL — harness-specific (OPENCODE_PATHS) + deployment-
+ * specific (CLIProxy) logic in the generic enrichment pipeline, run on every
+ * spawn. Goes away with the cliproxy module (see cliproxy.service.ts TODO):
+ * provider wiring should be toolbox-scoped or plugin-provided. */
 async function injectCliproxyProviders(
   spec: SandboxSpec,
   cliproxy: CliproxyService,

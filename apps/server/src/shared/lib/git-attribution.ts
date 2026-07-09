@@ -13,6 +13,14 @@
  * container's ephemeral rootfs (`/etc/…`), so a PVC snapshot never captures
  * them — but the prebuild path still scrubs them explicitly before snapshot
  * (`GIT_CREDENTIALS_PATH`) as defense-in-depth.
+ *
+ * TODO(generalize): ARCHITECTURAL SMELL — GitHub is hardcoded as *the* git
+ * provider: the credential line is `x-access-token:…@github.com` and the
+ * token plumbing is `resolveGitHubToken` end to end (control → api → runtime
+ * prebuild). Git attribution is core; the provider-specific credential shape
+ * is not — GitLab/Bitbucket/self-hosted remotes get no credentials today.
+ * Should become a provider-agnostic credential list (host → token) resolved
+ * by control, with GitHub as just one entry.
  */
 import type { FileEntry } from "@atelier/spec";
 
