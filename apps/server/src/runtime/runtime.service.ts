@@ -627,13 +627,20 @@ export class RuntimeService {
   /** Allowed from any status — destroy is the universal recovery exit. */
   async destroy(id: string): Promise<void> {
     return this.withOpLock(id, async () => {
-      const record = this.require(id);
+      this.require(id);
       this.agent.invalidatePodIp(id);
-      await cleanupSandboxResources(id);
-      // The label sweep deleted the pause VolumeSnapshot (it carries the
-      // sandbox label); drop its store row too so no dangling ref survives.
-      if (record.pauseSnapshotRef)
-        this.snapshots.delete(record.pauseSnapshotRef);
+      const swept = await cleanupSandboxResources(id);
+      if (!swept) {
+        // Keep the record: deleting it now would orphan whatever the sweep
+        // left behind (pod/PVC/snapshots) with nothing to retry destroy from.
+        this.sandboxes.update(id, { status: "error" });
+        throw new Error(
+          `Failed to clean up resources for sandbox ${id}; record kept for retry`,
+        );
+      }
+      // The label sweep deleted every sandbox-labeled VolumeSnapshot (pause
+      // + manual snapshots); drop their store rows so no dangling ref survives.
+      this.snapshots.deleteBySandbox(id);
       this.sandboxes.delete(id);
       log.info({ id }, "sandbox destroyed");
     });
@@ -759,6 +766,22 @@ export class RuntimeService {
     };
     this.sandboxes.update(id, { spec });
     if (portEntry.public) {
+      // The Service was built at boot from the spec's ports — a live-added
+      // port must be patched in too, or the new Ingress points at a Service
+      // port that doesn't exist and Traefik 404s until a pause/resume
+      // rebuilds the Service. Strategic merge on `spec.ports` (merge key:
+      // `port`) appends without clobbering the existing entries.
+      await kubeClient.patchResource("Service", `sandbox-${id}`, {
+        spec: {
+          ports: [
+            {
+              name: portEntry.name,
+              port: portEntry.port,
+              targetPort: portEntry.port,
+            },
+          ],
+        },
+      });
       for (const resource of buildPortIngresses(id, [portEntry])) {
         await kubeClient.createResource(resource);
       }
@@ -822,6 +845,9 @@ export class RuntimeService {
       hash,
       ref,
       image,
+      // Sandbox-scoped: the VolumeSnapshot carries the sandbox label, so
+      // destroy's sweep deletes it — the row must be GC'd with it.
+      sandboxId: id,
       createdAt: new Date().toISOString(),
     });
     return { ref, hash };
@@ -1005,10 +1031,15 @@ export class RuntimeService {
     });
     const ref = `toolsets/${req.name}@${digest}`;
     this.toolsets.put({
-      // Captures are result-keyed, not input-keyed: the digest itself is the
+      // Captures are result-keyed, not input-keyed: the digest is the
       // identity (no `hashToolset`-style pre-image to dedupe concurrent
-      // captures on — each run is a distinct snapshot of live, mutable state).
-      hash: digest,
+      // captures on — each run is a distinct snapshot of live, mutable
+      // state). Scoped by name: `put` upserts by hash, and two names can
+      // legitimately capture byte-identical content (same digest) — they
+      // must be two records (own registry repo/retention), not an overwrite.
+      hash: createHash("sha256")
+        .update(`${req.name}\u0000${digest}`)
+        .digest("hex"),
       name: req.name,
       ref,
       paths: req.paths,
@@ -1207,9 +1238,20 @@ function rejectUnresolvedSecrets(spec: SandboxSpec): void {
 }
 
 function mergeResume(spec: SandboxSpec, req: ResumeRequest): SandboxSpec {
+  // Files merge keyed by path (incoming wins): resume re-injects rotated
+  // credentials every cycle, so an append would grow `spec.files` — which is
+  // persisted back onto the record — without bound.
+  let files = spec.files;
+  if (req.files) {
+    const incoming = new Set(req.files.map((f) => f.path));
+    files = [
+      ...(spec.files ?? []).filter((f) => !incoming.has(f.path)),
+      ...req.files,
+    ];
+  }
   return {
     ...spec,
-    files: req.files ? [...(spec.files ?? []), ...req.files] : spec.files,
+    files,
     env: req.env ? { ...(spec.env ?? {}), ...req.env } : spec.env,
   };
 }

@@ -8,15 +8,21 @@ const log = createChildLogger("cleanup-coordinator");
  * pod included: `buildSandboxPod` always stamps that label
  * (`kube.resources.ts` `sandboxLabels`), and `deleteLabeledResources` already
  * sweeps the `pods` collection, so no separate by-name pod delete is needed.
+ *
+ * Returns whether the sweep fully succeeded. Callers on best-effort paths
+ * (boot-failure teardown) can ignore it; `destroy()` must NOT delete the
+ * sandbox record on `false`, or the leaked pod/PVC would have no record left
+ * to retry the destroy from.
  */
 export async function cleanupSandboxResources(
   sandboxId: string,
-): Promise<void> {
+): Promise<boolean> {
   const selector = `atelier.dev/sandbox=${sandboxId}`;
 
   try {
     await kubeClient.deleteLabeledResources(selector);
     log.info({ sandboxId }, "Sandbox resources cleaned up");
+    return true;
   } catch (error) {
     log.warn(
       {
@@ -25,5 +31,6 @@ export async function cleanupSandboxResources(
       },
       "Failed to cleanup sandbox resources",
     );
+    return false;
   }
 }

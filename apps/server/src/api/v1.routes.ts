@@ -314,6 +314,13 @@ export function createV1Routes(container: ServerContainer) {
           mode: t.Optional(t.Union([t.Literal("rw"), t.Literal("ro")])),
         }),
         async open(ws) {
+          // The auth plugin's resolve doesn't reliably guard WS upgrades —
+          // check the resolved user explicitly (same pattern as the terminal
+          // WS route) so an unauthenticated socket never reaches the agent.
+          if (!(ws.data as { user?: { id: string } }).user) {
+            ws.close(4001, "Unauthorized");
+            return;
+          }
           const { id, name } = ws.data.params;
           // `ro` joins the read-only fan-out; `rw` (default) takes the single
           // writer slot. Pure passthrough — runtime.attach already models both.

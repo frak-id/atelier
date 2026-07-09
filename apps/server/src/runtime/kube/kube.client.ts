@@ -110,6 +110,21 @@ export class KubeClient {
     await this.delete(path);
   }
 
+  /** Strategic-merge-patch a namespaced resource by kind/name. */
+  async patchResource(
+    kind: string,
+    name: string,
+    body: unknown,
+    namespace = this.namespace,
+  ): Promise<void> {
+    if (isMock()) {
+      return;
+    }
+
+    const path = resourceItemPath(kind, name, namespace);
+    await this.patch(path, body);
+  }
+
   async deleteLabeledResources(
     labelSelector: string,
     namespace = this.namespace,
@@ -160,10 +175,18 @@ export class KubeClient {
         for (const item of items) {
           const name = item.metadata?.name;
           if (!name) continue;
-          await this.delete(`${base}/${name}`);
+          // A concurrent delete already removed it — that's the goal state.
+          await this.delete(`${base}/${name}`).catch((err) => {
+            if (err instanceof KubeApiError && err.status === 404) return;
+            throw err;
+          });
         }
-      } catch {
-        // VolumeSnapshot CRD may not be installed — skip
+      } catch (err) {
+        // A 404 on the *list* means the CRD isn't installed (volumesnapshots,
+        // pipes) — nothing to sweep. Anything else is a real failure the
+        // caller must see (destroy keeps the record for retry on failure).
+        if (err instanceof KubeApiError && err.status === 404) continue;
+        throw err;
       }
     }
   }
@@ -285,12 +308,31 @@ export class KubeClient {
     const url = this.buildUrl(auth.server, path);
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const response = await fetch(url, {
-        method: options.method,
-        headers: this.buildHeaders(auth, options.headers),
-        body: options.body ? JSON.stringify(options.body) : undefined,
-        tls: auth.tls,
-      } as BunRequestInit);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: options.method,
+          headers: this.buildHeaders(auth, options.headers),
+          body: options.body ? JSON.stringify(options.body) : undefined,
+          tls: auth.tls,
+        } as BunRequestInit);
+      } catch (err) {
+        // Transport failures (ECONNRESET, DNS, TLS) never reach the HTTP
+        // retry check below — retry them under the same backoff policy.
+        if (attempt === MAX_ATTEMPTS) {
+          throw new KubeApiError(
+            `Request failed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
+            503,
+          );
+        }
+        const delay = BASE_DELAY_MS * 2 ** (attempt - 1);
+        log.warn(
+          { path, err, attempt, delay },
+          "Kubernetes request errored, retrying",
+        );
+        await Bun.sleep(delay);
+        continue;
+      }
 
       if (response.ok) {
         const text = await response.text();
@@ -376,27 +418,43 @@ export class KubeClient {
 
   private async loadKubeconfigAuth(): Promise<KubeAuthConfig> {
     const content = await Bun.file(this.kubeconfigPath).text();
-    const server = extractYamlValue(content, "server");
+    // Real YAML parse honoring `current-context`: the previous regex scraper
+    // grabbed the FIRST `server:`/`token:` in the file, silently pointing at
+    // the wrong cluster on any multi-context kubeconfig.
+    const kc = Bun.YAML.parse(content) as Kubeconfig;
+    // No/unknown current-context: fall back to the sole context (common in
+    // generated single-cluster kubeconfigs like k3s's).
+    const context = (
+      kc.contexts?.find((c) => c.name === kc["current-context"]) ??
+      kc.contexts?.[0]
+    )?.context;
+    const cluster = (
+      kc.clusters?.find((c) => c.name === context?.cluster) ?? kc.clusters?.[0]
+    )?.cluster;
+    const user = (
+      kc.users?.find((u) => u.name === context?.user) ?? kc.users?.[0]
+    )?.user;
 
-    if (!server) {
+    if (!cluster?.server) {
       throw new KubeApiError(
-        "Unable to parse Kubernetes server from kubeconfig",
+        "Unable to resolve a cluster server from kubeconfig",
         500,
       );
     }
 
-    const token = extractYamlValue(content, "token");
-    const caData = extractYamlValue(content, "certificate-authority-data");
-    const certData = extractYamlValue(content, "client-certificate-data");
-    const keyData = extractYamlValue(content, "client-key-data");
-
     return {
-      server,
-      token,
+      server: cluster.server,
+      token: user?.token,
       tls: {
-        ca: caData ? decodeBase64(caData) : undefined,
-        cert: certData ? decodeBase64(certData) : undefined,
-        key: keyData ? decodeBase64(keyData) : undefined,
+        ca: cluster["certificate-authority-data"]
+          ? decodeBase64(cluster["certificate-authority-data"])
+          : undefined,
+        cert: user?.["client-certificate-data"]
+          ? decodeBase64(user["client-certificate-data"])
+          : undefined,
+        key: user?.["client-key-data"]
+          ? decodeBase64(user["client-key-data"])
+          : undefined,
       },
     };
   }
@@ -422,20 +480,25 @@ export class KubeClient {
   }
 }
 
-function extractYamlValue(content: string, key: string): string | undefined {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`^\\s*${escaped}:\\s*(.+)$`, "m");
-  const match = content.match(pattern);
-  if (!match) {
-    return undefined;
-  }
-
-  const raw = match[1]?.trim();
-  if (!raw) {
-    return undefined;
-  }
-
-  return raw.replace(/^['"]|['"]$/g, "");
+/** The subset of a kubeconfig document `loadKubeconfigAuth` reads. */
+interface Kubeconfig {
+  "current-context"?: string;
+  contexts?: Array<{
+    name?: string;
+    context?: { cluster?: string; user?: string };
+  }>;
+  clusters?: Array<{
+    name?: string;
+    cluster?: { server?: string; "certificate-authority-data"?: string };
+  }>;
+  users?: Array<{
+    name?: string;
+    user?: {
+      token?: string;
+      "client-certificate-data"?: string;
+      "client-key-data"?: string;
+    };
+  }>;
 }
 
 function decodeBase64(value: string): string {

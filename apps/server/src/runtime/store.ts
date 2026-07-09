@@ -44,6 +44,11 @@ export interface SnapshotRecord {
   /** Base OCI image the snapshot was built on (pods boot from this exact image). */
   image: string;
   parent?: string;
+  /** Owning sandbox for sandbox-scoped snapshots (pause/manual). Their
+   * VolumeSnapshots carry the `atelier.dev/sandbox` label — destroy's sweep
+   * deletes them, so their rows are deleted alongside. Unset for shared
+   * prebuild snapshots (component label only; survive sandbox destroy). */
+  sandboxId?: string;
   /** Opaque `PrebuildSpec.metadata` pass-through (workspace, repo, branch…). */
   metadata?: Record<string, string>;
   /** The original request, so a prebuild can be replayed/refreshed. */
@@ -65,6 +70,9 @@ export interface SnapshotStore {
   get(ref: string): SnapshotRecord | undefined;
   list(): SnapshotRecord[];
   delete(ref: string): void;
+  /** Drop every row owned by a sandbox (destroy's label sweep just deleted
+   * their VolumeSnapshots). */
+  deleteBySandbox(sandboxId: string): void;
 }
 
 /** A published toolset artifact keyed by its content/result `hash`. */
@@ -149,6 +157,11 @@ export class InMemorySnapshotStore implements SnapshotStore {
   }
   list(): SnapshotRecord[] {
     return [...this.byRef.values()];
+  }
+  deleteBySandbox(sandboxId: string): void {
+    for (const record of this.byRef.values()) {
+      if (record.sandboxId === sandboxId) this.delete(record.ref);
+    }
   }
   delete(ref: string): void {
     const prior = this.byRef.get(ref);
@@ -252,6 +265,7 @@ interface SnapshotRow {
   hash: string;
   image: string;
   parent: string | null;
+  sandboxId: string | null;
   metadata: string | null;
   spec: string | null;
   createdAt: string;
@@ -263,6 +277,7 @@ function snapshotRowToRecord(row: SnapshotRow): SnapshotRecord {
     hash: row.hash,
     image: row.image,
     parent: row.parent ?? undefined,
+    sandboxId: row.sandboxId ?? undefined,
     metadata: row.metadata
       ? (JSON.parse(row.metadata) as Record<string, string>)
       : undefined,
@@ -277,6 +292,7 @@ function snapshotRecordToRow(record: SnapshotRecord): SnapshotRow {
     hash: record.hash,
     image: record.image,
     parent: record.parent ?? null,
+    sandboxId: record.sandboxId ?? null,
     metadata: record.metadata ? JSON.stringify(record.metadata) : null,
     spec: record.spec ? JSON.stringify(record.spec) : null,
     createdAt: record.createdAt,
@@ -325,6 +341,13 @@ export class DrizzleSnapshotStore implements SnapshotStore {
 
   delete(ref: string): void {
     getDatabase().delete(snapshots).where(eq(snapshots.ref, ref)).run();
+  }
+
+  deleteBySandbox(sandboxId: string): void {
+    getDatabase()
+      .delete(snapshots)
+      .where(eq(snapshots.sandboxId, sandboxId))
+      .run();
   }
 }
 

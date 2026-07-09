@@ -6,7 +6,10 @@ Focus areas: simplification & deduplication, performance, sandbox boot-time
 
 ---
 
-## 1. Latent bugs (most important first)
+## 1. Latent bugs (most important first) — ✅ DONE except B6 (deliberately
+deferred: CLIProxy module is flagged for removal — see TODO in
+cliproxy.service.ts — provider wiring should be toolbox-scoped/plugin-based,
+not a hardcoded enrichment; review together)
 
 ### B1. `/v1/sandboxes/:id/attach/:name` WS appears unauthenticated
 `api/v1.routes.ts` — the attach WS has no user check inside `open()`. The

@@ -1,0 +1,1 @@
+ALTER TABLE `snapshots` ADD `sandbox_id` text;

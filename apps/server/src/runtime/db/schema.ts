@@ -45,6 +45,10 @@ export const snapshots = sqliteTable(
     image: text("image").notNull(),
     /** Parent snapshot ref in the chain, if this snapshot was derived. */
     parent: text("parent"),
+    /** Owning sandbox for sandbox-scoped snapshots (pause/manual) — their
+     * VolumeSnapshots carry the sandbox label and are swept on destroy, so
+     * the rows must go with them. Null for shared prebuild snapshots. */
+    sandboxId: text("sandbox_id"),
     /** JSON: opaque `PrebuildSpec.metadata` pass-through (workspace, repo…). */
     metadata: text("metadata"),
     /** JSON: the original PrebuildSpec, so a prebuild can be replayed/refreshed. */

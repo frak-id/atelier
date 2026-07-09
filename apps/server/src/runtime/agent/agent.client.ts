@@ -35,6 +35,20 @@ export class AgentUnavailableError extends SandboxError {
   }
 }
 
+/** The agent answered but rejected the request (4xx) — a caller error, not
+ * an availability problem: don't dress it up as a 503. Propagates the
+ * agent's status code so a validation failure surfaces as one. */
+export class AgentRequestError extends SandboxError {
+  constructor(sandboxId: string, status: number, detail: string) {
+    super(
+      `Agent for sandbox ${sandboxId} rejected the request: ${detail}`,
+      "AGENT_REQUEST_FAILED",
+      status,
+    );
+    this.name = "AgentRequestError";
+  }
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
@@ -110,14 +124,18 @@ export class AgentClient {
           .json()
           .then((body) => (body as { error?: string })?.error)
           .catch(() => undefined);
-        throw new AgentUnavailableError(
-          sandboxId,
-          detail ?? `${response.status} ${response.statusText}`,
-        );
+        const message = detail ?? `${response.status} ${response.statusText}`;
+        // 4xx: the agent is alive and refusing — a caller error. Only
+        // 5xx/transport failures mean "unavailable".
+        if (response.status >= 400 && response.status < 500) {
+          throw new AgentRequestError(sandboxId, response.status, message);
+        }
+        throw new AgentUnavailableError(sandboxId, message);
       }
 
       return response.json() as Promise<T>;
     } catch (err) {
+      if (err instanceof AgentRequestError) throw err;
       if (err instanceof AgentUnavailableError) throw err;
       throw new AgentUnavailableError(
         sandboxId,

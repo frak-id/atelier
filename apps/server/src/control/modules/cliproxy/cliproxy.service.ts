@@ -1,6 +1,14 @@
 /**
  * CLIProxy provider wiring for the opencode harness.
  *
+ * TODO(remove): ARCHITECTURAL SMELL — this hardcodes a deployment-specific
+ * integration (CLIProxy) and a harness-specific file shape (opencode.json)
+ * into control, and `enrichSpec` runs it on EVERY sandbox spawn. v2's whole
+ * point is to stay ultra-generic: provider wiring like this belongs to a
+ * specific toolbox (opt-in, composed like any other toolbox config), or to a
+ * future plugin surface — not to a baked-in control module. Kill this module
+ * and its `enrichSpec` hook once toolbox-level provider injection exists.
+ *
  * v1 ran a full CLIProxyService (deploy, per-sandbox key registration,
  * models.dev enrichment, config sync). v2 only needs the essential piece: turn
  * a reachable CLIProxy endpoint into an opencode `provider` block so sessions
