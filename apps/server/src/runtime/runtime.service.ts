@@ -384,13 +384,22 @@ export class RuntimeService {
   ): Promise<void> {
     for (const repo of spec.repos ?? []) {
       const branch = repo.branch ? `-b ${shellQuote(repo.branch)} ` : "";
+      // Clone as `dev` (uid 1000): clonePath lives on the /home/dev PVC the
+      // snapshot captures, so the repo must be dev-owned. Cloning as root (the
+      // default exec user) leaves the baked repo root-owned, which trips git's
+      // "dubious ownership" guard and denies writes when dev boots the sandbox.
       await this.execStep(
         tempId,
         `git clone --depth 1 ${branch}${shellQuote(repo.url)} ${shellQuote(repo.clonePath)}`,
+        "dev",
       );
     }
+    // Build steps also run as `dev`: they operate inside the dev-owned
+    // workspace/home the snapshot captures, so running them as root would bake
+    // root-owned artifacts (e.g. node_modules) that dev can't write. A step
+    // needing root uses `sudo` (same convention as the guest agent's hooks).
     for (const step of spec.build ?? []) {
-      await this.execStep(tempId, step);
+      await this.execStep(tempId, step, "dev");
     }
   }
 
