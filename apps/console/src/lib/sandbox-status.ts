@@ -28,3 +28,12 @@ export function harnessFromAnnotations(
 ): string | undefined {
   return annotations?.[HARNESS_ANNOTATION_KEY];
 }
+
+export const OWNER_ANNOTATION_KEY = "atelier.dev/owner";
+
+/** The sandbox owner (git user) for console display, injected server-side. */
+export function ownerFromAnnotations(
+  annotations: Record<string, string> | undefined,
+): string | undefined {
+  return annotations?.[OWNER_ANNOTATION_KEY];
+}

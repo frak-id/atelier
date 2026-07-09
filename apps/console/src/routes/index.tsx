@@ -46,6 +46,7 @@ import { useAgentEvents } from "@/hooks/use-agent-events";
 import { formatRelativeTime } from "@/lib/formatters";
 import {
   harnessFromAnnotations,
+  ownerFromAnnotations,
   sandboxStatusPresentation,
 } from "@/lib/sandbox-status";
 
@@ -222,6 +223,7 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
   const destroy = useDestroySandbox();
   const status = sandboxStatusPresentation(sandbox.status);
   const harness = harnessFromAnnotations(sandbox.annotations);
+  const owner = ownerFromAnnotations(sandbox.annotations);
   const { data: sessions } = useQuery({
     ...sessionsListQuery(sandbox.id),
     enabled: sandbox.status === "running",
@@ -239,6 +241,7 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
           <span className="truncate font-mono text-sm">{sandbox.id}</span>
           <Badge variant={status.variant}>{status.label}</Badge>
           {harness ? <Badge variant="outline">{harness}</Badge> : null}
+          {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
           {sandbox.status === "running" ? (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <StatusDot variant={sessionCount > 0 ? "info" : "neutral"} />

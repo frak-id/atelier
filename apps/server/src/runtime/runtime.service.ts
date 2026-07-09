@@ -31,6 +31,10 @@ import {
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
 import { config, isMock } from "../shared/lib/config.ts";
+import {
+  buildGitAttributionFiles,
+  GIT_CREDENTIALS_PATH,
+} from "../shared/lib/git-attribution.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { HookPhase } from "./agent/index.ts";
@@ -110,7 +114,7 @@ export class RuntimeService {
    */
   async prebuild(
     spec: PrebuildSpec,
-    options: { force?: boolean } = {},
+    options: { force?: boolean; githubToken?: string } = {},
   ): Promise<SnapshotRef> {
     const { hash, image, snapshotName } = await this.resolveContentKey(spec);
     if (!options.force) {
@@ -121,11 +125,15 @@ export class RuntimeService {
     }
     const inflight = this.inflightPrebuilds.get(hash);
     if (inflight) return inflight;
-    const run = this.executePrebuild(spec, hash, image, snapshotName).finally(
-      () => {
-        this.inflightPrebuilds.delete(hash);
-      },
-    );
+    const run = this.executePrebuild(
+      spec,
+      hash,
+      image,
+      snapshotName,
+      options.githubToken,
+    ).finally(() => {
+      this.inflightPrebuilds.delete(hash);
+    });
     this.inflightPrebuilds.set(hash, run);
     return run;
   }
@@ -291,6 +299,7 @@ export class RuntimeService {
     hash: string,
     image: string,
     snapshotName?: string,
+    githubToken?: string,
   ): Promise<SnapshotRef> {
     const parentRef =
       "snapshot" in spec.source ? spec.source.snapshot : undefined;
@@ -309,7 +318,33 @@ export class RuntimeService {
       this.agent,
     );
     try {
+      // Inject the git credential transiently — via the agent, NOT the boot
+      // spec's files[] — so the token neither enters the content hash nor is
+      // baked into the snapshot. Written before clone/build so private repos
+      // authenticate through the `store` credential helper.
+      if (githubToken) {
+        await this.agent.writeFiles(
+          tempId,
+          buildGitAttributionFiles({ githubToken }).map((f) => ({
+            path: f.path,
+            content: f.content as string,
+            mode: f.mode,
+            owner: f.owner as "dev" | "root" | undefined,
+          })),
+        );
+      }
       await this.runPrebuildSteps(tempId, spec);
+      // Scrub the credential before snapshotting: the snapshot is a shared,
+      // content-addressed artifact that must never carry a user's token.
+      // (The file lives on the pod's ephemeral rootfs, outside the `/home/dev`
+      // PVC the snapshot captures — this is explicit defense-in-depth.)
+      if (githubToken) {
+        await this.agent
+          .exec(tempId, `rm -f ${GIT_CREDENTIALS_PATH}`, { user: "root" })
+          .catch((err) =>
+            log.warn({ tempId, err }, "git credential scrub failed"),
+          );
+      }
       // The content hash is 64 hex chars — over the 63-byte k8s label cap — so
       // it rides as an annotation (no length cap), not a label.
       await this.snapshotPvc(

@@ -20,6 +20,12 @@ import {
 } from "@atelier/compose";
 import { isSecretRef, type SandboxSpec } from "@atelier/spec";
 import { config, dashboardUrl } from "../shared/lib/config.ts";
+import {
+  buildGitAttributionFiles,
+  OWNER_ANNOTATION,
+  OWNER_EMAIL_ANNOTATION,
+  OWNER_ID_METADATA,
+} from "../shared/lib/git-attribution.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 /** Display/routing annotation a composed harness stamps onto the spec. */
@@ -37,10 +43,24 @@ export interface EnrichmentDeps {
   cliproxy: CliproxyService;
 }
 
+/**
+ * The resolved sandbox owner (the git user). Carries the identity displayed on
+ * the console and the GitHub token injected as a credential. Resolved by the
+ * `api/` seam (control owns `UserService`); the runtime never sees it.
+ */
+export interface OwnerContext {
+  id: string;
+  username: string;
+  email: string;
+  githubToken?: string;
+}
+
 /** Options carrying pre-resolved, per-request enrichment hints. */
 export interface EnrichmentOptions {
   /** The harness id resolved from the spawn's toolboxes (see `api/` seam). */
   toolboxHarnessId?: string;
+  /** The sandbox owner — injects git identity/credentials + owner display. */
+  owner?: OwnerContext;
 }
 
 /**
@@ -128,6 +148,36 @@ async function resolveSecrets(
   };
 }
 
+/**
+ * Inject sandbox git attribution (atelier-v2 parity with v1's
+ * `collectGitCredentialFiles`): the owner's git identity + GitHub credential
+ * as guest files, plus owner display annotations and an owner-id metadata tag
+ * (so resume can re-resolve the token). No-op without an owner.
+ */
+function injectGitAttribution(
+  spec: SandboxSpec,
+  owner: OwnerContext | undefined,
+): SandboxSpec {
+  if (!owner) return spec;
+  const gitFiles = buildGitAttributionFiles({
+    identity: { name: owner.username, email: owner.email },
+    githubToken: owner.githubToken,
+  });
+  return {
+    ...spec,
+    files: [...(spec.files ?? []), ...gitFiles],
+    annotations: {
+      ...spec.annotations,
+      [OWNER_ANNOTATION]: owner.username,
+      [OWNER_EMAIL_ANNOTATION]: owner.email,
+    },
+    metadata: {
+      ...spec.metadata,
+      [OWNER_ID_METADATA]: owner.id,
+    },
+  };
+}
+
 /** Append the org's mandated fragment (never overrides the caller's fields). */
 function injectOrgPolicy(
   spec: SandboxSpec,
@@ -209,5 +259,8 @@ export async function enrichSpec(
     withHarness,
     deps.cliproxy,
   );
-  return resolveSecrets(withProviders, orgId, deps.secrets);
+  const resolved = await resolveSecrets(withProviders, orgId, deps.secrets);
+  // Injected last: the credential file carries a GitHub token (not a `$secret`
+  // ref), so it must skip the secret-resolution pass entirely.
+  return injectGitAttribution(resolved, opts.owner);
 }

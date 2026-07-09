@@ -24,6 +24,10 @@ import {
   ToolsetRefSchema,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
+import {
+  buildGitAttributionFiles,
+  OWNER_ID_METADATA,
+} from "../shared/lib/git-attribution.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import {
   harnessForToolset,
@@ -76,9 +80,13 @@ export function createV1Routes(container: ServerContainer) {
       .get("/prebuilds", () => runtime.listPrebuilds())
       .post(
         "/prebuilds",
-        async ({ body, query }) =>
+        async ({ body, query, user }) =>
           runtime.prebuild(body as PrebuildSpec, {
             force: query.force === true,
+            // Transient credential for cloning private repos in the build pod;
+            // scrubbed before the snapshot (never baked into the shared
+            // content-addressed artifact).
+            githubToken: control.userService.resolveGitHubToken(user.id),
           }),
         {
           body: PrebuildSpecSchema,
@@ -135,11 +143,21 @@ export function createV1Routes(container: ServerContainer) {
           // ref: resolve it to the current snapshot (idempotent — a cache hit
           // when unchanged) so an updated prebuild is picked up here.
           if (prebuild) {
-            const snapshot = await runtime.prebuild(prebuild);
+            const snapshot = await runtime.prebuild(prebuild, {
+              githubToken: control.userService.resolveGitHubToken(user.id),
+            });
             spec = { ...spec, source: { snapshot: snapshot.ref } };
           }
           const orgId = resolveOrgId(control, user.id);
           const authorizedKeys = control.sshKeyService.getValidPublicKeys();
+          // The sandbox owner (git user): identity for attribution/display +
+          // GitHub token for the injected credential helper.
+          const owner = {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            githubToken: control.userService.resolveGitHubToken(user.id),
+          };
           // Auto-inject org (baseline) then user (personal overlay) toolboxes,
           // oldest-first (R6), then the explicitly-picked ones.
           const autoInjectRefs = await resolveToolboxRefs(container, {
@@ -163,6 +181,7 @@ export function createV1Routes(container: ServerContainer) {
           const toolboxHarnessId = resolveToolboxHarness(container, applied);
           const enriched = await control.enrichSpec(spec, orgId, {
             toolboxHarnessId,
+            owner,
           });
           // Dedupe materialized refs (a toolbox can be both auto-injected and
           // picked) so the agent never extracts the same artifact twice.
@@ -196,7 +215,28 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/sandboxes/:id/resume",
-        async ({ params, body }) => runtime.resume(params.id, body),
+        async ({ params, body }) => {
+          // Refresh the owner's git credentials on resume (the credential
+          // rotation primitive): re-resolve the owner from the persisted
+          // owner-id metadata — stable regardless of who triggers the resume —
+          // and merge fresh git files over the persisted (possibly stale) ones.
+          const state = await runtime.get(params.id);
+          const ownerId = state.metadata?.[OWNER_ID_METADATA];
+          const ownerUser = ownerId
+            ? control.userService.getById(ownerId)
+            : undefined;
+          const gitFiles = buildGitAttributionFiles({
+            identity: ownerUser
+              ? { name: ownerUser.username, email: ownerUser.email }
+              : undefined,
+            githubToken: control.userService.resolveGitHubToken(ownerId),
+          });
+          const merged = {
+            ...body,
+            files: [...(body.files ?? []), ...gitFiles],
+          };
+          return runtime.resume(params.id, merged);
+        },
         { body: ResumeRequestSchema },
       )
       .delete("/sandboxes/:id", async ({ params, set }) => {
