@@ -41,8 +41,10 @@ follow-up milestone in `docs/proposals/atelier-v2.md` (§6).
    sharing `server.db` with control through `shared/lib/db.ts`). The
    `InMemory*` stores remain for tests/standalone use.
 
-6. **MCP tools have no per-caller identity.** `api/mcp.routes.ts` auth
-   (`verifyMcpAuth`) is a single static bearer token, not a per-user session,
-   so `create_sandbox` cannot resolve an `orgId` for enrichment yet —
-   org-scoped secrets/policy are unreachable via MCP until MCP auth carries a
-   user identity.
+6. **RESOLVED.** `api/mcp/` now resolves the caller through
+   `control.authService.resolveToken` (the same `atl_` API-key / JWT path
+   every other route uses) instead of a single static bearer token. Each MCP
+   session is bound to the user who initialized it, so `create_sandbox`
+   (via the shared `createSandboxForUser`, also used by `POST /v1/sandboxes`)
+   resolves `orgId` and applies org-scoped secrets/policy/toolboxes exactly
+   like the HTTP/CLI/GUI path.

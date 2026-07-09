@@ -70,6 +70,88 @@ function resolveOrgId(
   return control.userService.getById(userId)?.personalOrgId;
 }
 
+/**
+ * Shared by `POST /v1/sandboxes` and the `create_sandbox` MCP tool (the
+ * "one API, three surfaces" principle, atelier-v2 §4): resolve the caller's
+ * org, apply toolbox auto-inject + explicit selectors, run the enrichment
+ * seam, merge toolbox-contributed processes/ports, and boot. Both callers
+ * pass an authenticated `AuthUser` — there is exactly one enrichment path.
+ */
+export async function createSandboxForUser(
+  container: ServerContainer,
+  user: { id: string; username: string; email: string },
+  body: CreateSandboxRequest,
+) {
+  const { runtime, control } = container;
+  // The body is a spec plus the high-level references the caller picked
+  // (`toolboxes` selectors, a `prebuild` recipe); strip them so the runtime
+  // only ever sees a resolved spec.
+  const { toolboxes: selectors = [], prebuild, ...specFields } = body;
+  let spec = specFields as SandboxSpec;
+  // A template built from a prebuild carries the recipe, not a pinned ref:
+  // resolve it to the current snapshot (idempotent — a cache hit when
+  // unchanged) so an updated prebuild is picked up here.
+  if (prebuild) {
+    const snapshot = await runtime.prebuild(prebuild, {
+      githubToken: control.userService.resolveGitHubToken(user.id),
+    });
+    spec = { ...spec, source: { snapshot: snapshot.ref } };
+  }
+  const orgId = resolveOrgId(control, user.id);
+  const authorizedKeys = control.sshKeyService.getValidPublicKeys();
+  // The sandbox owner (git user): identity for attribution/display + GitHub
+  // token for the injected credential helper.
+  const owner = {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    githubToken: control.userService.resolveGitHubToken(user.id),
+  };
+  // Auto-inject org (baseline) then user (personal overlay) toolboxes,
+  // oldest-first (R6), then the explicitly-picked ones.
+  const [autoInjectRefs, selectedRefs] = await Promise.all([
+    resolveToolboxRefs(container, { orgId, userId: user.id }),
+    resolveSelectedToolboxes(container, selectors),
+  ]);
+  // Every toolbox applied to this spawn, as parseable `tb/…` handles — auto-
+  // injected refs, picked selectors (incl. process-only ones with no
+  // toolset), and any explicit `spec.toolsets`. Drives harness + surface
+  // resolution.
+  const applied = [
+    ...autoInjectRefs,
+    ...selectors.map((ref) => ({ ref })),
+    ...(spec.toolsets ?? []),
+  ];
+  // Harness precedence: spec > toolbox > org policy.
+  const toolboxHarnessId = resolveToolboxHarness(container, applied);
+  const enriched = await control.enrichSpec(spec, orgId, {
+    toolboxHarnessId,
+    owner,
+  });
+  // Dedupe materialized refs (a toolbox can be both auto-injected and
+  // picked) so the agent never extracts the same artifact twice.
+  const seen = new Set<string>();
+  const toolsets = [
+    ...autoInjectRefs,
+    ...selectedRefs,
+    ...(enriched.toolsets ?? []),
+  ].filter((t) => {
+    if (seen.has(t.ref)) return false;
+    seen.add(t.ref);
+    return true;
+  });
+  // Merge the processes + ports every applied toolbox contributes (its
+  // tool's running surface), keyed by name (spec's own win).
+  const surface = resolveToolboxSurface(container, applied);
+  const withToolboxes: SandboxSpec = {
+    ...enriched,
+    toolsets,
+    processes: mergeByName(surface.processes, enriched.processes),
+    ports: mergeByName(surface.ports, enriched.ports),
+  };
+  return runtime.create(withToolboxes, { authorizedKeys });
+}
+
 export function createV1Routes(container: ServerContainer) {
   const { runtime, control } = container;
   const authPlugin = createAuthPlugin(control);
@@ -130,79 +212,8 @@ export function createV1Routes(container: ServerContainer) {
       // ── sandboxes ──────────────────────────────────────────────────────
       .post(
         "/sandboxes",
-        async ({ body, user }) => {
-          // The body is a spec plus the high-level references the caller
-          // picked (`toolboxes` selectors, a `prebuild` recipe); strip them so
-          // the runtime only ever sees a resolved spec.
-          const {
-            toolboxes: selectors = [],
-            prebuild,
-            ...specFields
-          } = body as CreateSandboxRequest;
-          let spec = specFields as SandboxSpec;
-          // A template built from a prebuild carries the recipe, not a pinned
-          // ref: resolve it to the current snapshot (idempotent — a cache hit
-          // when unchanged) so an updated prebuild is picked up here.
-          if (prebuild) {
-            const snapshot = await runtime.prebuild(prebuild, {
-              githubToken: control.userService.resolveGitHubToken(user.id),
-            });
-            spec = { ...spec, source: { snapshot: snapshot.ref } };
-          }
-          const orgId = resolveOrgId(control, user.id);
-          const authorizedKeys = control.sshKeyService.getValidPublicKeys();
-          // The sandbox owner (git user): identity for attribution/display +
-          // GitHub token for the injected credential helper.
-          const owner = {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            githubToken: control.userService.resolveGitHubToken(user.id),
-          };
-          // Auto-inject org (baseline) then user (personal overlay) toolboxes,
-          // oldest-first (R6), then the explicitly-picked ones.
-          const [autoInjectRefs, selectedRefs] = await Promise.all([
-            resolveToolboxRefs(container, { orgId, userId: user.id }),
-            resolveSelectedToolboxes(container, selectors),
-          ]);
-          // Every toolbox applied to this spawn, as parseable `tb/…` handles —
-          // auto-injected refs, picked selectors (incl. process-only ones with
-          // no toolset), and any explicit `spec.toolsets`. Drives harness +
-          // surface resolution.
-          const applied = [
-            ...autoInjectRefs,
-            ...selectors.map((ref) => ({ ref })),
-            ...(spec.toolsets ?? []),
-          ];
-          // Harness precedence: spec > toolbox > org policy.
-          const toolboxHarnessId = resolveToolboxHarness(container, applied);
-          const enriched = await control.enrichSpec(spec, orgId, {
-            toolboxHarnessId,
-            owner,
-          });
-          // Dedupe materialized refs (a toolbox can be both auto-injected and
-          // picked) so the agent never extracts the same artifact twice.
-          const seen = new Set<string>();
-          const toolsets = [
-            ...autoInjectRefs,
-            ...selectedRefs,
-            ...(enriched.toolsets ?? []),
-          ].filter((t) => {
-            if (seen.has(t.ref)) return false;
-            seen.add(t.ref);
-            return true;
-          });
-          // Merge the processes + ports every applied toolbox contributes
-          // (its tool's running surface), keyed by name (spec's own win).
-          const surface = resolveToolboxSurface(container, applied);
-          const withToolboxes: SandboxSpec = {
-            ...enriched,
-            toolsets,
-            processes: mergeByName(surface.processes, enriched.processes),
-            ports: mergeByName(surface.ports, enriched.ports),
-          };
-          return runtime.create(withToolboxes, { authorizedKeys });
-        },
+        async ({ body, user }) =>
+          createSandboxForUser(container, user, body as CreateSandboxRequest),
         { body: CreateSandboxRequestSchema },
       )
       .get("/sandboxes", () => runtime.list())

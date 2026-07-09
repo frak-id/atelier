@@ -4,7 +4,7 @@
  * binding; all policy logic lives in `control/`.
  */
 import { listHarnesses } from "@atelier/compose";
-import type { SandboxSpec, ToolboxOwner } from "@atelier/spec";
+import type { SandboxSpec } from "@atelier/spec";
 import {
   SandboxSpecSchema,
   TemplateCompositionSchema,
@@ -15,10 +15,11 @@ import {
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
 import { recipeFingerprint } from "../control/index.ts";
-import { ForbiddenError, ValidationError } from "../shared/errors.ts";
+import { ValidationError } from "../shared/errors.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import { pruneToolboxVersions, type ServerContainer } from "./container.ts";
+import { requireToolboxOwnerAccess, resolveOwner } from "./toolbox-access.ts";
 
 const log = createChildLogger("control-routes");
 
@@ -214,79 +215,12 @@ export function createControlRoutes(container: ServerContainer) {
       set.status = 204;
     });
 
-  /**
-   * Parse + authorize the `?owner=` scope for a GET/POST toolbox request.
-   * Grammar: `org:<id>` | `user:<id>` | `user` | `me` (alias for the caller).
-   * Absent → default to the caller (`user:<me>`) — the "My Toolboxes" home;
-   * we do NOT fall back to an org, so an org's private build scripts are never
-   * the implicit default (entities-toolbox.md D7).
-   *
-   * AuthZ per owner type: org → `requireRole(owner/admin)` (write) or
-   * `requireMembership` (read); user → self-only (a user may only ever scope
-   * to their own id).
-   */
-  function resolveOwner(
-    userId: string,
-    ownerParam: string | undefined,
-    write: boolean,
-  ): ToolboxOwner {
-    if (!ownerParam || ownerParam === "me" || ownerParam === "user") {
-      return { type: "user", id: userId };
-    }
-    const [type, id] = ownerParam.split(":", 2);
-    if (type === "user") {
-      const targetId = !id || id === "me" ? userId : id;
-      if (targetId !== userId) {
-        throw new ForbiddenError("Cannot access another user's toolboxes");
-      }
-      return { type: "user", id: userId };
-    }
-    if (type === "org") {
-      if (!id) throw new ValidationError("owner=org: requires an org id");
-      if (write) {
-        control.orgMemberService.requireRole(id, userId, ["owner", "admin"]);
-      } else {
-        control.orgMemberService.requireMembership(id, userId);
-      }
-      return { type: "org", id };
-    }
-    throw new ValidationError(`Invalid owner scope '${ownerParam}'`);
-  }
-
-  /**
-   * Authorize a mutation against the STORED record's owner (never a caller-
-   * supplied scope) — the security-critical spot for PATCH/DELETE. Org →
-   * owner/admin of the record's org; user → the record's owner only (org
-   * admins do NOT manage members' personal toolboxes).
-   */
-  function requireToolboxOwnerAccess(
-    toolbox: { ownerType: ToolboxOwner["type"]; ownerId: string },
-    userId: string,
-  ): void {
-    if (toolbox.ownerType === "org") {
-      control.orgMemberService.requireRole(toolbox.ownerId, userId, [
-        "owner",
-        "admin",
-      ]);
-      return;
-    }
-    if (toolbox.ownerType === "user") {
-      if (toolbox.ownerId !== userId) {
-        throw new ForbiddenError("Cannot manage another user's toolbox");
-      }
-      return;
-    }
-    // Fail closed on any unexpected owner type (defense-in-depth: the typed
-    // service layer should make this unreachable).
-    throw new ForbiddenError("Unknown toolbox owner");
-  }
-
   const toolboxRoutes = new Elysia({ prefix: "/toolboxes" })
     .use(authPlugin)
     .get(
       "/",
       ({ user, query }) => {
-        const owner = resolveOwner(user.id, query.owner, false);
+        const owner = resolveOwner(control, user.id, query.owner, false);
         return control.toolboxService.list(owner);
       },
       { query: t.Object({ owner: t.Optional(t.String()) }) },
@@ -294,7 +228,7 @@ export function createControlRoutes(container: ServerContainer) {
     .post(
       "/",
       ({ user, query, body }) => {
-        const owner = resolveOwner(user.id, query.owner, true);
+        const owner = resolveOwner(control, user.id, query.owner, true);
         const created = control.toolboxService.create(owner, body);
         const autoInjectCount =
           control.toolboxService.listAutoInject(owner).length;
@@ -315,14 +249,14 @@ export function createControlRoutes(container: ServerContainer) {
       "/:id",
       ({ user, params, body }) => {
         const existing = control.toolboxService.get(params.id);
-        requireToolboxOwnerAccess(existing, user.id);
+        requireToolboxOwnerAccess(control, existing, user.id);
         return control.toolboxService.update(params.id, body);
       },
       { body: ToolboxConfigPatchSchema },
     )
     .delete("/:id", ({ user, params, set }) => {
       const existing = control.toolboxService.get(params.id);
-      requireToolboxOwnerAccess(existing, user.id);
+      requireToolboxOwnerAccess(control, existing, user.id);
       control.toolboxService.delete(params.id);
       set.status = 204;
     })
@@ -330,7 +264,7 @@ export function createControlRoutes(container: ServerContainer) {
       "/:id/versions/capture",
       async ({ user, params, body }) => {
         const tb = control.toolboxService.get(params.id);
-        requireToolboxOwnerAccess(tb, user.id);
+        requireToolboxOwnerAccess(control, tb, user.id);
         if (tb.paths.length === 0) {
           throw new ValidationError("toolbox has no paths to capture");
         }
@@ -368,7 +302,7 @@ export function createControlRoutes(container: ServerContainer) {
     )
     .get("/:id/versions", async ({ user, params }) => {
       const tb = control.toolboxService.get(params.id);
-      requireToolboxOwnerAccess(tb, user.id);
+      requireToolboxOwnerAccess(control, tb, user.id);
       const currentSourceImage = await container.runtime
         .resolveSourceImage(
           tb.source ?? { image: container.runtime.defaultImage() },
@@ -385,7 +319,7 @@ export function createControlRoutes(container: ServerContainer) {
       "/:id/active-version",
       ({ user, params, body }) => {
         const tb = control.toolboxService.get(params.id);
-        requireToolboxOwnerAccess(tb, user.id);
+        requireToolboxOwnerAccess(control, tb, user.id);
         if (body.versionId === null) {
           control.toolboxService.setActiveVersionId(tb.id, null);
           return { activeVersionId: null };
@@ -416,7 +350,7 @@ export function createControlRoutes(container: ServerContainer) {
     )
     .delete("/:id/versions/:versionId", ({ user, params, set }) => {
       const tb = control.toolboxService.get(params.id);
-      requireToolboxOwnerAccess(tb, user.id);
+      requireToolboxOwnerAccess(control, tb, user.id);
       if (
         control.toolboxService.getActiveVersionId(tb.id) === params.versionId
       ) {
