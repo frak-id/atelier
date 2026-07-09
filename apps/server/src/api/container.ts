@@ -19,58 +19,25 @@ import {
   RuntimeService,
 } from "../runtime/index.ts";
 import {
+  AcpSessionSurface,
   AgentDispatch,
-  type HarnessSessionSurface,
   registerHarnessDispatch,
   SessionService,
-  type SessionSurfaceResolver,
   TerminalService,
 } from "../sessions/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 /**
- * Session-surface registry — the harness-neutral injection point for the live
- * session facade. The concrete surface is registered by
- * `registerBuiltinHarnesses()` below, kept as a separate step so
- * `container.ts` itself has zero harness knowledge.
- */
-class SessionSurfaceRegistry implements SessionSurfaceResolver {
-  private readonly factories = new Map<
-    string,
-    (sandboxId: string) => HarnessSessionSurface
-  >();
-
-  register(id: string, factory: (sandboxId: string) => HarnessSessionSurface) {
-    this.factories.set(id, factory);
-  }
-
-  resolve(sandboxId: string, harnessId?: string): HarnessSessionSurface {
-    // TODO(remove): SMELL — a sandbox with no harness annotation silently
-    // gets the opencode surface. The default should come from org policy /
-    // config (or fail explicitly), not a hardcoded concrete harness.
-    const id = harnessId ?? "opencode";
-    const factory = this.factories.get(id);
-    if (!factory) {
-      throw new Error(
-        `No session surface registered for harness "${id}". Register one ` +
-          "via container.sessionSurfaces.register() at bootstrap.",
-      );
-    }
-    return factory(sandboxId);
-  }
-}
-
-/**
- * Register the built-in opencode harness — the only concrete harness that
- * exists today (atelier-v2 §6 milestone 3 note: "single concrete adapter
- * avoids dead multi-harness scaffolding"). Composition (spec pieces) comes
- * from `@atelier/compose`; the session-surface HTTP client stays in
- * `sessions/harnesses/opencode` since it's an ACP-facade concern, not spec
- * composition.
+ * Wire the built-in harnesses. Two independent, both OPTIONAL, extension
+ * points — any ACP-speaking harness works with neither (the session surface
+ * is one generic ACP-over-attach view for every harness):
+ *  - compose-side `registerHarness`: server-side fallback composition when a
+ *    toolbox/org-policy names a harness (client-composed specs bypass it);
+ *  - `registerHarnessDispatch`: only for harnesses that translate a
+ *    model/agent selection into ACP `session/set_config_option` (opencode
+ *    does; pi and unknown harnesses dispatch config-free).
  */
 async function registerBuiltinHarnesses(container: ServerContainer) {
-  // Register the compose-side harness composers (spec fragments) so the api/
-  // seam can materialize a toolbox-declared harness into a spawn's spec.
   const { registerHarness, opencodeHarness, piHarness } = await import(
     "@atelier/compose"
   );
@@ -79,32 +46,10 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
   const { opencodeSessionConfig } = await import(
     "@atelier/compose/harnesses/opencode"
   );
-  const { AcpSessionSurface } = await import(
-    "../sessions/acp/acp-session-surface.ts"
-  );
   container.registerHarnessDispatch({
     id: "opencode",
     sessionConfig: opencodeSessionConfig,
   });
-  // The opencode harness's live surface is ACP-over-attach in v2 (the shared
-  // dispatch hub), not `opencode serve` HTTP (which has no port in v2).
-  container.sessionSurfaces.register(
-    "opencode",
-    (sandboxId) => new AcpSessionSurface(container.dispatch, sandboxId),
-  );
-
-  // pi (pi-acp) speaks ACP, so it rides the exact same generic
-  // ACP-over-attach surface as opencode. This replaces the staging workaround
-  // of spoofing `atelier.dev/harness=opencode` on pi sandboxes: with `pi`
-  // registered, `composePi()` can honestly annotate `harness=pi` and both the
-  // session surface and dispatch resolve. pi selects its model via its own
-  // config (~/.pi/agent/settings.json + cliproxy), not ACP
-  // `session/set_config_option`, so its dispatch contributes no assignments.
-  container.registerHarnessDispatch({ id: "pi" });
-  container.sessionSurfaces.register(
-    "pi",
-    (sandboxId) => new AcpSessionSurface(container.dispatch, sandboxId),
-  );
 }
 
 const log = createChildLogger("container");
@@ -119,8 +64,12 @@ export function createServerContainer() {
     toolsets: new DrizzleToolsetStore(),
   });
   const dispatch = new AgentDispatch({ agentClient: agent });
-  const sessionSurfaces = new SessionSurfaceRegistry();
-  const sessions = new SessionService({ runtime, surfaces: sessionSurfaces });
+  const sessions = new SessionService({
+    runtime,
+    // One surface for every harness: they all speak ACP over the attach
+    // bridge, so there is nothing per-harness to resolve.
+    surface: (sandboxId) => new AcpSessionSurface(dispatch, sandboxId),
+  });
   const terminal = new TerminalService({ agent });
 
   const serverContainer: ServerContainer = {
@@ -130,7 +79,6 @@ export function createServerContainer() {
     dispatch,
     sessions,
     terminal,
-    sessionSurfaces,
     registerHarnessDispatch,
   };
   return serverContainer;
@@ -143,7 +91,6 @@ export interface ServerContainer {
   dispatch: AgentDispatch;
   sessions: SessionService;
   terminal: TerminalService;
-  sessionSurfaces: SessionSurfaceRegistry;
   registerHarnessDispatch: typeof registerHarnessDispatch;
 }
 

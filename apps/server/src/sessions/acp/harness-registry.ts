@@ -39,26 +39,19 @@ export interface HarnessDispatchAdapter {
 
 const registry = new Map<string, HarnessDispatchAdapter>();
 
+/** Registration is OPTIONAL — only for harnesses that need a `sessionConfig`
+ * translation (opencode). Any ACP-speaking harness works unregistered. */
 export function registerHarnessDispatch(adapter: HarnessDispatchAdapter): void {
   registry.set(adapter.id, adapter);
 }
 
+/** Unknown/unregistered ids resolve to a pass-through adapter (no
+ * `sessionConfig` translation, like pi) rather than throwing: model
+ * selection over ACP is an optional capability, not a requirement — a
+ * harness the server has never heard of must still dispatch. */
 export function resolveHarnessDispatch(
   id: string | undefined,
 ): HarnessDispatchAdapter {
-  const resolved = id ?? DEFAULT_HARNESS_ID;
-  const adapter = registry.get(resolved);
-  if (!adapter) {
-    throw new Error(
-      `Unknown harness dispatch adapter "${resolved}". Register one via ` +
-        "registerHarnessDispatch() before opening ACP sessions.",
-    );
-  }
-  return adapter;
+  if (id === undefined) return { id: "unknown" };
+  return registry.get(id) ?? { id };
 }
-
-export function listHarnessDispatchIds(): string[] {
-  return [...registry.keys()];
-}
-
-export const DEFAULT_HARNESS_ID = "opencode";

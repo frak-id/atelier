@@ -2,9 +2,11 @@
  * The dashboard/CLI-facing agent session facade. Reshaped from v1
  * `api/sandboxes/agent-facade.routes.ts`'s `surfaceFor()` + handlers: the
  * routing/Elysia concerns move to `api/`, this class is the framework-agnostic
- * mechanism. Harness-neutral — `SessionSurfaceResolver` is the injection
- * point the server bootstrap fills with the concrete resolver (today: the ACP
- * surface for the opencode harness).
+ * mechanism. Harness-neutral: every harness speaks ACP over the attach bridge
+ * (the `acp` process convention), so ONE surface factory serves all of them —
+ * a sandbox only needs the `atelier.dev/harness` annotation, no per-harness
+ * server registration. A sandbox without the annotation has no agent surface
+ * and gets a clean error instead of a silently-wrong default.
  *
  * A privileged CLIENT of runtime (atelier-v2 §3.1): resolves connection info
  * via `RuntimeService.get()`, same data any API caller could read.
@@ -19,34 +21,36 @@ import type {
   AgentTodo,
 } from "@frak/atelier-shared";
 import type { RuntimeService } from "../runtime/index.ts";
-import { NotFoundError } from "../shared/errors.ts";
+import { ConflictError, NotFoundError } from "../shared/errors.ts";
 import type {
   CreateSessionResult,
   HarnessSessionSurface,
   InterventionResult,
 } from "./session-surface.ts";
 
-export interface SessionSurfaceResolver {
-  /** ACP goes over the runtime attach bridge, so a surface needs only the
-   * sandbox id (v1's `AgentConnection {ipAddress,password}` is dead). */
-  resolve(sandboxId: string, harnessId?: string): HarnessSessionSurface;
-}
-
 export class SessionService {
   constructor(
     private readonly deps: {
       runtime: RuntimeService;
-      surfaces: SessionSurfaceResolver;
+      /** ACP goes over the runtime attach bridge, so a surface needs only
+       * the sandbox id (v1's `AgentConnection {ipAddress,password}` is
+       * dead). One factory for every harness — they all speak ACP. */
+      surface: (sandboxId: string) => HarnessSessionSurface;
     },
   ) {}
 
   private async surfaceFor(sandboxId: string): Promise<HarnessSessionSurface> {
-    // Fetch state only to read the harness annotation (which surface to use);
-    // the surface reaches the sandbox over the runtime attach bridge, not a
-    // pod IP. Throws NotFound for an unknown sandbox, same as any op.
+    // Fetch state only to check the harness annotation (does this sandbox
+    // have an agent at all?); the surface reaches the sandbox over the
+    // runtime attach bridge, not a pod IP. Throws NotFound for an unknown
+    // sandbox, same as any op.
     const state = await this.deps.runtime.get(sandboxId);
-    const harnessId = state.annotations?.["atelier.dev/harness"];
-    return this.deps.surfaces.resolve(sandboxId, harnessId);
+    if (!state.annotations?.["atelier.dev/harness"]) {
+      throw new ConflictError(
+        `Sandbox ${sandboxId} has no agent harness (no atelier.dev/harness annotation); agent sessions are unavailable`,
+      );
+    }
+    return this.deps.surface(sandboxId);
   }
 
   async listSessions(sandboxId: string): Promise<AgentSession[]> {
