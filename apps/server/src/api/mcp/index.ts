@@ -138,9 +138,15 @@ export function createMcpRoutes(container: ServerContainer) {
         const body = await request.clone().json();
         if (isInitializeRequest(body)) {
           const server = createMcpServer(container, user);
+          // If `handleRequest` fails before the SDK fires
+          // `onsessioninitialized`, the connected server is in no map and
+          // nothing would ever close it — track registration so the catch
+          // below can release the orphan.
+          let registered = false;
           const transport = new WebStandardStreamableHTTPServerTransport({
             sessionIdGenerator: () => crypto.randomUUID(),
             onsessioninitialized: (newSessionId) => {
+              registered = true;
               sessions.set(newSessionId, {
                 server,
                 transport,
@@ -160,7 +166,14 @@ export function createMcpRoutes(container: ServerContainer) {
             },
           });
           await server.connect(transport);
-          return await transport.handleRequest(request, { parsedBody: body });
+          try {
+            return await transport.handleRequest(request, {
+              parsedBody: body,
+            });
+          } catch (err) {
+            if (!registered) server.close().catch(() => {});
+            throw err;
+          }
         }
       }
 

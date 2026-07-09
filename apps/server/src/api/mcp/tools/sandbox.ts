@@ -6,13 +6,14 @@
  * sandbox gets the same org secrets/policy/auto-injected toolboxes as the
  * HTTP/CLI/GUI path \u2014 no more "no identity in this context" gap.
  */
-import type { CreateSandboxRequest } from "@atelier/spec";
+import { CreateSandboxRequestSchema } from "@atelier/spec";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
 import type { ServerContainer } from "../../container.ts";
 import { createSandboxForUser } from "../../v1.routes.ts";
 import { safeTool, text } from "../format.ts";
+import { parseSpec } from "../validate.ts";
 
 function formatUrl(u: { name: string; url: string; ready?: boolean }) {
   return { name: u.name, url: u.url, ready: u.ready };
@@ -47,11 +48,16 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ spec, toolboxes, prebuild }) => {
-      const body = {
-        ...spec,
-        ...(toolboxes ? { toolboxes } : {}),
-        ...(prebuild ? { prebuild } : {}),
-      } as CreateSandboxRequest;
+      // Same boundary validation Elysia's schema guard gives the HTTP route.
+      const body = parseSpec(
+        CreateSandboxRequestSchema,
+        {
+          ...spec,
+          ...(toolboxes ? { toolboxes } : {}),
+          ...(prebuild ? { prebuild } : {}),
+        },
+        "CreateSandboxRequest",
+      );
       return text(await createSandboxForUser(container, user, body));
     }),
   );

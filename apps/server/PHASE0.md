@@ -48,3 +48,13 @@ follow-up milestone in `docs/proposals/atelier-v2.md` (§6).
    (via the shared `createSandboxForUser`, also used by `POST /v1/sandboxes`)
    resolves `orgId` and applies org-scoped secrets/policy/toolboxes exactly
    like the HTTP/CLI/GUI path.
+
+7. **Sandbox/prebuild/saved-spec resources are not caller-scoped.** Every
+   authenticated user can list/get/exec/destroy any sandbox (`/v1/sandboxes`
+   + the MCP sandbox tools), delete any prebuild (`DELETE /v1/prebuilds`),
+   and `GET /api/saved-specs/:id` skips the org-membership check its list
+   sibling applies. All single-tenant-era gaps shared by HTTP and MCP
+   (surfaced in the MCP per-user-auth review); fixing them needs an
+   `ownerId` on sandbox/prebuild records + guards on both surfaces — same
+   milestone as real multi-org resolution (the MCP `saved_specs get`/`save`
+   already enforce org membership; HTTP does not yet).

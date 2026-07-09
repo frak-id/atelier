@@ -3,11 +3,11 @@
  * toolbox/toolset merge point \u2014 see `list_toolboxes`), and saved specs. The
  * "configure your prebuilt/toolbox from your own dev env" surface.
  */
-import type {
-  PrebuildSpec,
-  SandboxSpec,
-  ToolboxConfigInput,
-  ToolboxConfigPatch,
+import {
+  PrebuildSpecSchema,
+  SandboxSpecSchema,
+  ToolboxConfigInputSchema,
+  ToolboxConfigPatchSchema,
 } from "@atelier/spec";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -20,6 +20,7 @@ import {
   resolveOwner,
 } from "../../toolbox-access.ts";
 import { safeTool, text } from "../format.ts";
+import { parseSpec } from "../validate.ts";
 
 export function registerConfigTools(
   server: McpServer,
@@ -55,10 +56,13 @@ export function registerConfigTools(
             throw new ValidationError("action=create requires `spec`");
           }
           return text(
-            await runtime.prebuild(spec as PrebuildSpec, {
-              force,
-              githubToken: control.userService.resolveGitHubToken(user.id),
-            }),
+            await runtime.prebuild(
+              parseSpec(PrebuildSpecSchema, spec, "PrebuildSpec"),
+              {
+                force,
+                githubToken: control.userService.resolveGitHubToken(user.id),
+              },
+            ),
           );
         case "delete":
           if (!ref) throw new ValidationError("action=delete requires `ref`");
@@ -88,11 +92,22 @@ export function registerConfigTools(
     safeTool(async ({ owner }) => {
       const ownerRef = resolveOwner(control, user.id, owner, false);
       const toolboxes = control.toolboxService.list(ownerRef);
+      // Version history parity with HTTP (`GET /api/toolboxes/:id/versions`
+      // is owner/admin-gated): inline versions only when the caller could
+      // read them there — own toolboxes always, org toolboxes only for
+      // owner/admin members.
+      const canSeeVersions =
+        ownerRef.type === "user" ||
+        ["owner", "admin"].includes(
+          control.orgMemberService.requireMembership(ownerRef.id, user.id).role,
+        );
       return text(
         toolboxes.map((tb) => ({
           ...tb,
           activeVersionId: control.toolboxService.getActiveVersionId(tb.id),
-          versions: control.toolboxVersionService.listByToolbox(tb.id),
+          ...(canSeeVersions
+            ? { versions: control.toolboxVersionService.listByToolbox(tb.id) }
+            : {}),
         })),
       );
     }),
@@ -160,7 +175,7 @@ export function registerConfigTools(
           return text(
             control.toolboxService.create(
               ownerRef,
-              config as ToolboxConfigInput,
+              parseSpec(ToolboxConfigInputSchema, config, "ToolboxConfigInput"),
             ),
           );
         }
@@ -175,7 +190,14 @@ export function registerConfigTools(
               throw new ValidationError("action=update requires `config`");
             }
             return text(
-              control.toolboxService.update(id, config as ToolboxConfigPatch),
+              control.toolboxService.update(
+                id,
+                parseSpec(
+                  ToolboxConfigPatchSchema,
+                  config,
+                  "ToolboxConfigPatch",
+                ),
+              ),
             );
 
           case "delete":
@@ -284,16 +306,29 @@ export function registerConfigTools(
             .map((m) => m.orgId);
           return text(control.savedSpecService.getByOrgIds(orgIds));
         }
-        case "get":
+        case "get": {
           if (!id) throw new ValidationError("action=get requires `id`");
-          return text(control.savedSpecService.getByIdOrThrow(id));
+          const saved = control.savedSpecService.getByIdOrThrow(id);
+          // Org-scoped specs are readable by members only (the HTTP GET
+          // /api/saved-specs/:id lacks this check — pre-existing gap, not
+          // mirrored here). Specs without an orgId are global by design
+          // (getByOrgIds lists them for everyone).
+          if (saved.orgId) {
+            control.orgMemberService.requireMembership(saved.orgId, user.id);
+          }
+          return text(saved);
+        }
         case "save":
           if (!name || !spec) {
             throw new ValidationError("action=save requires `name` and `spec`");
           }
           if (orgId) control.orgMemberService.requireMembership(orgId, user.id);
           return text(
-            control.savedSpecService.create(name, spec as SandboxSpec, orgId),
+            control.savedSpecService.create(
+              name,
+              parseSpec(SandboxSpecSchema, spec, "SandboxSpec"),
+              orgId,
+            ),
           );
       }
     }),
