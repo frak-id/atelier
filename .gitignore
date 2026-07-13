@@ -55,3 +55,5 @@ apps/agent-v2/dist/
 .pi-subagents/
 .ralph/
 .notes/
+# Local MCP config (holds API keys)
+.mcp.json
