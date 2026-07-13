@@ -362,6 +362,22 @@ export function createControlRoutes(container: ServerContainer) {
       set.status = 204;
     });
 
+  // Server-wide runtime config (the config plane). Not org-scoped: these are
+  // operator knobs for the whole server. Auth-gated (any authenticated caller
+  // can read/set today — there is no server-admin role yet; tighten here once
+  // one exists).
+  const configRoutes = new Elysia({ prefix: "/config" })
+    .use(authPlugin)
+    .get("/", () => control.serverConfigService.list())
+    .put(
+      "/:key",
+      ({ params, body }) => {
+        const value = control.serverConfigService.set(params.key, body.value);
+        return { key: params.key, value };
+      },
+      { body: t.Object({ value: t.Union([t.Boolean(), t.Number()]) }) },
+    );
+
   const orgPolicyRoutes = new Elysia({ prefix: "/org-policy" })
     .use(authPlugin)
     .get("/:orgId", ({ params }) =>
@@ -391,6 +407,7 @@ export function createControlRoutes(container: ServerContainer) {
     .use(organizationRoutes)
     .use(savedSpecRoutes)
     .use(secretRoutes)
+    .use(configRoutes)
     .use(orgPolicyRoutes)
     .use(toolboxRoutes)
     .use(capabilitiesRoutes);

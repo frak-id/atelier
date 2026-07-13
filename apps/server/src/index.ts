@@ -37,20 +37,33 @@ await wireBuiltinHarnesses(container);
 
 await ensureSharedSshPipeKey();
 
+// Preseed config-plane defaults from env (safe hard-coded defaults otherwise).
+// DB rows always win, so this is a one-time bootstrap per key.
+container.control.serverConfigService.seedFromEnv();
+
 // Sweep zombie records left by a server crash/restart: `creating` → cleanup +
 // `error`, `running` without a pod → `error` (both recoverable via resume).
 await container.runtime.reconcileOnStartup();
 
 // Recompute each stored prebuild's content key against current remote HEADs
 // + base image digest, and rebuild anything that moved (runtime.service.ts
-// `refreshStalePrebuilds`). Skipped in mock mode (no network git/registry).
+// `refreshStalePrebuilds`), then enforce the retention window. Both are gated
+// on the `prebuild.gitTracking` config (read every tick, so a live toggle
+// takes effect without a restart). Skipped in mock mode (no network git).
 if (!isMock()) {
   // `protect: true` skips a tick if the previous run is still going, so a slow
   // pass (many repos / slow remotes) can't stack overlapping refresh runs.
-  new Cron("*/30 * * * *", { protect: true }, () => {
-    container.runtime
-      .refreshStalePrebuilds()
-      .catch((err) => logger.error({ err }, "prebuild staleness cron failed"));
+  new Cron("*/30 * * * *", { protect: true }, async () => {
+    const { serverConfigService } = container.control;
+    if (!serverConfigService.get("prebuild.gitTracking")) return;
+    try {
+      await container.runtime.refreshStalePrebuilds();
+      await container.runtime.pruneUnusedPrebuilds(
+        serverConfigService.get("prebuild.pruneKeep"),
+      );
+    } catch (err) {
+      logger.error({ err }, "prebuild staleness cron failed");
+    }
   });
 }
 

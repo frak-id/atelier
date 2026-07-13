@@ -69,6 +69,9 @@ Usage:
   atelier toolbox version pin <id> <versionId>
   atelier toolbox version unpin <id>
   atelier toolbox version rm <id> <versionId>
+  atelier config ls [--json]
+  atelier config get <key> [--json]
+  atelier config set <key> <value>            (value: true|false or a number)
 
 Env:
   ATELIER_API_URL   server base URL (default http://localhost:4000)
@@ -778,6 +781,49 @@ async function main(): Promise<void> {
       fail(
         "toolbox subcommand must be `ls`, `create`, `set`, `rm`, `versions`, or `version`",
       );
+      return;
+    }
+    case "config": {
+      const sub = positionals[0];
+      if (!sub || sub === "ls") {
+        const entries = await client.listConfig();
+        if (json) return print(entries);
+        for (const e of entries) {
+          const marker = e.isDefault ? " " : "*";
+          process.stdout.write(
+            `${marker} ${e.key}\t${JSON.stringify(e.value)}\t(default ${JSON.stringify(e.default)})\n`,
+          );
+        }
+        return;
+      }
+      if (sub === "get") {
+        const key = positionals[1] ?? fail("config get needs a key");
+        const entries = await client.listConfig();
+        const entry = entries.find((e) => e.key === key);
+        if (!entry) fail(`unknown config key "${key}"`);
+        if (json) return print(entry);
+        process.stdout.write(`${JSON.stringify(entry.value)}\n`);
+        return;
+      }
+      if (sub === "set") {
+        const key = positionals[1] ?? fail("config set needs a key");
+        const raw = positionals[2] ?? fail("config set needs a value");
+        const value: boolean | number =
+          raw === "true"
+            ? true
+            : raw === "false"
+              ? false
+              : Number.isFinite(Number(raw))
+                ? Number(raw)
+                : fail("config value must be true|false or a number");
+        const result = await client.setConfig(key, value);
+        if (json) return print(result);
+        process.stdout.write(
+          `${result.key} = ${JSON.stringify(result.value)}\n`,
+        );
+        return;
+      }
+      fail("config subcommand must be `ls`, `get`, or `set`");
       return;
     }
     default:

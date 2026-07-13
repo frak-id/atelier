@@ -13,6 +13,7 @@ const TABS = [
   { to: "/settings/toolboxes", label: "Toolboxes & Toolsets" },
   { to: "/settings/prebuilds", label: "Prebuilds" },
   { to: "/settings/templates", label: "Templates" },
+  { to: "/settings/config", label: "Config" },
 ] as const;
 
 function SettingsLayout() {

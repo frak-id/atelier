@@ -18,6 +18,7 @@ import { Route as SettingsToolboxesRouteImport } from "./routes/settings.toolbox
 import { Route as SettingsTemplatesRouteImport } from "./routes/settings.templates"
 import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
+import { Route as SettingsConfigRouteImport } from "./routes/settings.config"
 import { Route as SettingsPrebuildsRouteImport } from "./routes/settings.prebuilds"
 import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
 import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
@@ -71,6 +72,11 @@ const SettingsSecretsRoute = SettingsSecretsRouteImport.update({
   path: "/secrets",
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsConfigRoute = SettingsConfigRouteImport.update({
+  id: "/config",
+  path: "/config",
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsPrebuildsRoute = SettingsPrebuildsRouteImport.update({
   id: "/prebuilds",
   path: "/prebuilds",
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   "/spawn": typeof SpawnRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
   "/settings/api-keys": typeof SettingsApiKeysRoute
+  "/settings/config": typeof SettingsConfigRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/spawn": typeof SpawnRoute
   "/settings/api-keys": typeof SettingsApiKeysRoute
+  "/settings/config": typeof SettingsConfigRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   "/spawn": typeof SpawnRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdRouteWithChildren
   "/settings/api-keys": typeof SettingsApiKeysRoute
+  "/settings/config": typeof SettingsConfigRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | "/spawn"
     | "/sandboxes/$sandboxId"
     | "/settings/api-keys"
+    | "/settings/config"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/prebuilds"
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | "/"
     | "/spawn"
     | "/settings/api-keys"
+    | "/settings/config"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/prebuilds"
@@ -203,6 +214,7 @@ export interface FileRouteTypes {
     | "/spawn"
     | "/sandboxes/$sandboxId"
     | "/settings/api-keys"
+    | "/settings/config"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/prebuilds"
@@ -288,6 +300,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsSecretsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    "/settings/config": {
+      id: "/settings/config"
+      path: "/config"
+      fullPath: "/settings/config"
+      preLoaderRoute: typeof SettingsConfigRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     "/settings/prebuilds": {
       id: "/settings/prebuilds"
       path: "/prebuilds"
@@ -342,6 +361,7 @@ declare module "@tanstack/react-router" {
 
 interface SettingsRouteChildren {
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
+  SettingsConfigRoute: typeof SettingsConfigRoute
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsPolicyRoute: typeof SettingsPolicyRoute
   SettingsPrebuildsRoute: typeof SettingsPrebuildsRoute
@@ -355,6 +375,7 @@ interface SettingsRouteChildren {
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiKeysRoute: SettingsApiKeysRoute,
+  SettingsConfigRoute: SettingsConfigRoute,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsPolicyRoute: SettingsPolicyRoute,
   SettingsPrebuildsRoute: SettingsPrebuildsRoute,

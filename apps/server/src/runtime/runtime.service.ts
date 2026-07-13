@@ -62,6 +62,7 @@ import {
   InMemoryToolsetStore,
   type SandboxRecord,
   type SandboxStore,
+  type SnapshotRecord,
   type SnapshotStore,
   type ToolsetRecord,
   type ToolsetStore,
@@ -223,7 +224,9 @@ export class RuntimeService {
    * content key (which now reflects current remote HEADs + base image
    * digest). A changed key means upstream moved — rebuild to a fresh
    * snapshot. A key that already resolves to an existing snapshot is skipped
-   * (already refreshed). */
+   * (already refreshed). Superseded snapshots are NOT deleted here — the
+   * caller enforces retention separately via `pruneUnusedPrebuilds(keep)`, so
+   * a configurable history of older versions survives a drift rebuild. */
   async refreshStalePrebuilds(): Promise<void> {
     for (const snap of this.snapshots.list()) {
       if (!snap.spec?.repos?.length) continue;
@@ -242,16 +245,48 @@ export class RuntimeService {
           "prebuild stale, rebuilding",
         );
         await this.prebuild(snap.spec);
-        // The fresh snapshot supersedes this one; drop it so drifted prebuilds
-        // don't accumulate. Kept if something still references it (a running
-        // sandbox booted from it, or a prebuild chained on it).
-        if (!this.referencedSnapshotRefs().has(snap.ref)) {
-          await this.removeSnapshot(snap.ref);
-        }
       } catch (err) {
         log.error({ ref: snap.ref, err }, "prebuild staleness check failed");
       }
     }
+  }
+
+  /**
+   * Retention for prebuild snapshots (config `prebuild.pruneKeep`). Groups
+   * prebuilds by lineage (the same spec regardless of resolved git HEADs) and,
+   * within each lineage, keeps the newest `keep` UNUSED snapshots — deleting
+   * the rest. In-use snapshots (a sandbox boots from them, or a prebuild is
+   * chained on them) are never counted or deleted, so pause/resume and live
+   * boots are unaffected. `keep = 0` prunes every unused snapshot; `keep = 3`
+   * keeps the last three. Returns the number of snapshots deleted.
+   */
+  async pruneUnusedPrebuilds(keep: number): Promise<number> {
+    const referenced = this.referencedSnapshotRefs();
+    const lineages = new Map<string, SnapshotRecord[]>();
+    for (const snap of this.snapshots.list()) {
+      if (!snap.spec) continue; // only real prebuilds (not pause/manual)
+      const key = prebuildLineageKey(snap.spec);
+      const group = lineages.get(key);
+      if (group) group.push(snap);
+      else lineages.set(key, [snap]);
+    }
+
+    let deleted = 0;
+    for (const group of lineages.values()) {
+      const unused = group
+        .filter((s) => !referenced.has(s.ref))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      for (const stale of unused.slice(keep)) {
+        try {
+          await this.removeSnapshot(stale.ref);
+          deleted++;
+        } catch (err) {
+          log.error({ ref: stale.ref, err }, "prebuild prune failed");
+        }
+      }
+    }
+    if (deleted > 0) log.info({ deleted, keep }, "pruned unused prebuilds");
+    return deleted;
   }
 
   /** Resolve the content key for a prebuild: source resolved to its current
@@ -1271,6 +1306,22 @@ function prebuildToSpec(spec: PrebuildSpec): SandboxSpec {
     files: spec.files,
     env: spec.env,
   };
+}
+
+/** Lineage identity for a prebuild: the spec's shape independent of the
+ * resolved git HEADs a build was keyed on. Two snapshots share a lineage when
+ * they came from the same source/files/build/repos recipe — i.e. the same
+ * prebuild followed across upstream pushes. `env` is excluded (build-time
+ * credential material, never lineage-defining — same rationale as the content
+ * key in `resolveContentKey`). */
+function prebuildLineageKey(spec: PrebuildSpec): string {
+  const keyed = {
+    source: spec.source,
+    files: spec.files ?? [],
+    build: spec.build ?? [],
+    repos: spec.repos ?? [],
+  };
+  return createHash("sha256").update(JSON.stringify(keyed)).digest("hex");
 }
 
 /** Single-quote a shell argument (POSIX), escaping embedded single quotes. */

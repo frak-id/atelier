@@ -25,6 +25,10 @@ import {
   SavedSpecService,
 } from "./modules/saved-spec/index.ts";
 import { SecretRepository, SecretService } from "./modules/secret/index.ts";
+import {
+  ServerConfigRepository,
+  ServerConfigService,
+} from "./modules/server-config/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { ToolboxRepository, ToolboxService } from "./modules/toolbox/index.ts";
 import {
@@ -42,6 +46,7 @@ export function createControlContainer() {
   const savedSpecRepository = new SavedSpecRepository();
   const secretRepository = new SecretRepository();
   const orgPolicyRepository = new OrgPolicyRepository();
+  const serverConfigRepository = new ServerConfigRepository();
   const toolboxRepository = new ToolboxRepository();
   const toolboxVersionRepository = new ToolboxVersionRepository();
 
@@ -56,6 +61,7 @@ export function createControlContainer() {
   const savedSpecService = new SavedSpecService(savedSpecRepository);
   const secretService = new SecretService(secretRepository);
   const orgPolicyService = new OrgPolicyService(orgPolicyRepository);
+  const serverConfigService = new ServerConfigService(serverConfigRepository);
   const toolboxService = new ToolboxService(toolboxRepository);
   const toolboxVersionService = new ToolboxVersionService(
     toolboxVersionRepository,
@@ -71,6 +77,7 @@ export function createControlContainer() {
     savedSpecService,
     secretService,
     orgPolicyService,
+    serverConfigService,
     toolboxService,
     toolboxVersionService,
     authService,

@@ -26,6 +26,14 @@ export {
   SavedSpecService,
 } from "./modules/saved-spec/index.ts";
 export { SecretService } from "./modules/secret/index.ts";
+export {
+  type ConfigEntry,
+  type ConfigKey,
+  type ConfigValue,
+  type ConfigValues,
+  CONFIG_REGISTRY,
+  ServerConfigService,
+} from "./modules/server-config/index.ts";
 export { SshKeyService } from "./modules/ssh-key/index.ts";
 export { ToolboxService } from "./modules/toolbox/index.ts";
 export {

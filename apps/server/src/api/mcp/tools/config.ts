@@ -29,6 +29,34 @@ export function registerConfigTools(
 ): void {
   const { runtime, control } = container;
 
+  // ── server config (the config plane) ─────────────────────────────────
+  server.registerTool(
+    "server_config",
+    {
+      title: "Server config",
+      description:
+        "Read or change server-wide runtime config (e.g. prebuild git " +
+        "tracking and prebuild retention). action=list returns every key " +
+        "with its value, type, and default; action=set updates one key.",
+      inputSchema: {
+        action: z.enum(["list", "set"]),
+        key: z.string().optional().describe("Config key (required for set)"),
+        value: z
+          .union([z.boolean(), z.number()])
+          .optional()
+          .describe("New value (required for set)"),
+      },
+    },
+    safeTool(async ({ action, key, value }) => {
+      if (action === "list") return text(control.serverConfigService.list());
+      if (key === undefined || value === undefined) {
+        throw new ValidationError("action=set requires `key` and `value`");
+      }
+      const stored = control.serverConfigService.set(key, value);
+      return text({ key, value: stored });
+    }),
+  );
+
   // ── prebuilds ────────────────────────────────────────────────────────
   server.registerTool(
     "manage_prebuilds",

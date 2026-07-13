@@ -44,6 +44,18 @@ export interface LogsResult {
   nextOffset: number;
 }
 
+/** One server-config entry (`GET /api/config`). */
+export interface ServerConfigEntry {
+  key: string;
+  label: string;
+  description: string;
+  type: "boolean" | "number";
+  value: boolean | number;
+  default: boolean | number;
+  isDefault: boolean;
+  updatedAt: string | null;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -268,6 +280,19 @@ export class AtelierClient {
       "DELETE",
       `/toolboxes/${id}/versions/${encodeURIComponent(versionId)}`,
     );
+  }
+
+  /** Server-wide runtime config (the config plane). List every key with its
+   * value/type/default, or set one key. */
+  listConfig(): Promise<ServerConfigEntry[]> {
+    return this.ctl("GET", "/config");
+  }
+
+  setConfig(
+    key: string,
+    value: boolean | number,
+  ): Promise<{ key: string; value: boolean | number }> {
+    return this.ctl("PUT", `/config/${encodeURIComponent(key)}`, { value });
   }
 
   /** WS attach endpoint + auth header for the unified stdio/PTY bridge. The
