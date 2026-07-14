@@ -1,12 +1,13 @@
 /**
  * The pi harness composer — the spec-fragment analog of `opencode.ts` for the
- * pi coding agent (`pi-acp`). Self-contained: no runtime imports. Composing a
- * harness only declares *what runs* (the primary `acp` process, the lazy PI
- * WEB session daemon + web server, and display annotations); the binaries
- * themselves are delivered by a toolbox/toolset that installs `pi`/`pi-acp`
- * (and, for the web UI, `@jmfederico/pi-web`) under `~/.local` (e.g. `npm
- * install -g --prefix ~/.local @earendil-works/pi-coding-agent pi-acp
- * @jmfederico/pi-web`), exactly like opencode.
+ * pi coding agent (`pi-acp`). Self-contained: no runtime imports. The harness
+ * declares ONLY how the server talks to pi: the primary `acp` process
+ * (stdio-bridged) plus display annotations. Everything else pi needs — the
+ * `pi-acp` binary and the pi-web UI (session daemon + web server, its port and
+ * processes) — is delivered by a toolbox/toolset that installs `pi`/`pi-acp`
+ * (and, for the web UI, `@jmfederico/pi-web`) under `~/.local` and contributes
+ * the pi-web processes/ports itself. The harness never assumes those binaries
+ * exist, so it declares no pi-web process or port.
  *
  * The `acp` process is spawned directly by the supervisor (no login shell), so
  * the `~/.local/bin` PATH shim from `/etc/profile.d` is NOT sourced — the
@@ -20,24 +21,16 @@ import type { SpecFragment } from "../spec-merge.ts";
 
 const HOME = "/home/dev";
 const LOCAL_BIN = `${HOME}/.local/bin`;
-const PI_WEB_PORT = 8504;
 
 export interface ComposePiOptions {
   /** MCP server names to record in the `atelier.dev/mcp` annotation. */
   mcp?: string[];
-  /**
-   * Value for PI WEB's `PI_WEB_ALLOWED_HOSTS` host-check (the sandbox is
-   * served at `pi-{id}.{baseDomain}`, which pi-web-server would otherwise
-   * reject). The control seam passes the base domain; omitted → the flag is
-   * left off (pi-web's default). Never affects auth — the ingress forward-auth
-   * gates the browser, same as opencode's `serve`.
-   */
-  webUiAllowedHosts?: string;
 }
 
 /**
  * Compose pi's spec fragment: the `acp` process (`pi-acp`, stdio-bridged,
- * primary — the sandbox's health gate) plus its display annotations.
+ * primary — the sandbox's health gate) plus its display annotations. The
+ * pi-web UI is NOT here — a toolbox owns that surface.
  */
 export function composePi(opts: ComposePiOptions = {}): SpecFragment {
   return {
@@ -61,61 +54,6 @@ export function composePi(opts: ComposePiOptions = {}): SpecFragment {
         },
         stdio: "bridge",
         primary: true,
-      },
-      // PI WEB (`@jmfederico/pi-web`, the self-hostable pi-web.dev) — the pi
-      // analog of opencode's `serve` (design ui-evolution.md §3.3). Two
-      // processes, mirroring the `browser` preset's kasmvnc/openbox/chromium
-      // shape: a persistent session daemon plus the web/API server that holds
-      // the public port and depends on it via `after`. Both lazy, so a plain
-      // pi sandbox runs only `acp` until someone opens the web UI. The
-      // binaries come from the pi toolbox (`npm i -g --prefix ~/.local
-      // @jmfederico/pi-web`), like `pi-acp` — so absolute paths + explicit
-      // PATH/HOME (the supervisor spawns without a login shell).
-      {
-        name: "pi-web-sessiond",
-        command: `${LOCAL_BIN}/pi-web-sessiond`,
-        cwd: HOME,
-        user: "dev",
-        env: {
-          PATH: `${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin`,
-          HOME,
-        },
-        lazy: true,
-      },
-      {
-        // Named to match the `pi` port below — the console resolves "which URL
-        // is the harness UI" by that convention. Auth-less by design (no
-        // token): the operator forward-auth ingress is the trusted reverse
-        // proxy pi-web mandates for a non-loopback bind.
-        name: "pi",
-        command: `${LOCAL_BIN}/pi-web-server`,
-        cwd: HOME,
-        user: "dev",
-        after: ["pi-web-sessiond"],
-        readiness: { port: PI_WEB_PORT },
-        lazy: true,
-        env: {
-          PATH: `${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin`,
-          HOME,
-          // Bind all interfaces so the ingress can reach it (loopback default
-          // is unreachable from outside the pod); forward-auth guards it.
-          PI_WEB_HOST: "0.0.0.0",
-          PI_WEB_PORT: String(PI_WEB_PORT),
-          // No outbound update/version checks from inside the sandbox.
-          PI_WEB_SKIP_VERSION_CHECK: "1",
-          PI_WEB_OFFLINE: "1",
-          ...(opts.webUiAllowedHosts
-            ? { PI_WEB_ALLOWED_HOSTS: opts.webUiAllowedHosts }
-            : {}),
-        },
-      },
-    ],
-    ports: [
-      {
-        name: "pi",
-        port: PI_WEB_PORT,
-        public: true,
-        auth: "forward",
       },
     ],
     annotations: {
