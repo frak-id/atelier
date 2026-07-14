@@ -16,16 +16,11 @@
     ".": {
       "entry": ["scripts/*.ts"]
     },
-    "apps/manager": {
-      "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["pino-pretty"]
-    },
-    "apps/dashboard": {
-      "entry": ["src/main.tsx"],
-      "project": ["src/**/*.{ts,tsx}"]
-    },
     "apps/console": {
       "project": ["src/**/*.{ts,tsx}"]
+    },
+    "apps/cli": {
+      "project": ["src/**/*.ts"]
     },
     "packages/shared": {
       "project": ["src/**/*.ts"]
@@ -33,7 +28,7 @@
     "packages/spec": {
       "project": ["src/**/*.ts"]
     },
-    "apps/agent": {
+    "packages/compose": {
       "project": ["src/**/*.ts"]
     },
     "apps/server": {

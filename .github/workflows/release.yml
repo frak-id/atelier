@@ -15,8 +15,8 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  MANAGER_IMAGE: ghcr.io/frak-id/atelier-manager
-  DASHBOARD_IMAGE: ghcr.io/frak-id/atelier-dashboard
+  SERVER_IMAGE: ghcr.io/frak-id/atelier-server
+  CONSOLE_IMAGE: ghcr.io/frak-id/atelier-console
   AGENT_IMAGE: ghcr.io/frak-id/sandbox-agent
 
 jobs:
@@ -48,10 +48,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: manager
-            image_env: MANAGER_IMAGE
-          - target: dashboard
-            image_env: DASHBOARD_IMAGE
+          - target: server
+            image_env: SERVER_IMAGE
+          - target: console
+            image_env: CONSOLE_IMAGE
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -107,26 +107,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
-
-      - name: Install musl cross-compiler
-        run: sudo apt-get install -y musl-tools
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/agent-rust
-
-      - name: Build agent binary
-        working-directory: apps/agent-rust
-        run: |
-          cargo build --release --target x86_64-unknown-linux-musl
-          mkdir -p dist
-          cp target/x86_64-unknown-linux-musl/release/sandbox-agent dist/sandbox-agent
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -162,7 +142,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: apps/agent-rust
+          context: apps/agent-v2
           push: true
           tags: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.tags || steps.meta-nightly.outputs.tags }}
           labels: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.labels || steps.meta-nightly.outputs.labels }}
@@ -235,7 +215,7 @@ jobs:
             ## Docker Images
 
             ```bash
-            docker pull ghcr.io/frak-id/atelier-manager:${{ steps.version.outputs.version }}
-            docker pull ghcr.io/frak-id/atelier-dashboard:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/frak-id/atelier-server:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/frak-id/atelier-console:${{ steps.version.outputs.version }}
             docker pull ghcr.io/frak-id/sandbox-agent:${{ steps.version.outputs.version }}
             ```

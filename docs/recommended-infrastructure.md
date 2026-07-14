@@ -80,7 +80,7 @@ Compare with per-seat SaaS dev-environment pricing and the math usually works ou
 
 The state that matters:
 
-- **Manager SQLite database** — PVC `atelier-manager` in `atelier-system` (workspaces, tasks, settings)
+- **Server SQLite database** — PVC for the v2 server (workspaces, tasks, settings)
 - **Zot registry** — base images (rebuildable from Dockerfiles, but backups save time)
 - **Your values file + secrets** — keep `values.production.yaml` in a private repo or vault
 

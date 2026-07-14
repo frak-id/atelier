@@ -49,7 +49,7 @@ bunx drizzle-kit generate                                  # control/db schema m
 
 ## Conventions
 
-Same as `apps/manager` (see root `AGENTS.md`): manual DI in
+See root `AGENTS.md`: manual DI in
 `api/container.ts` / `control/container.ts`, `createChildLogger("name")`,
 the `SandboxError` hierarchy, TypeBox schemas. The difference is *where*
 things live, not the wiring style.

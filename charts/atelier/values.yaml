@@ -22,52 +22,10 @@ rbac:
   # -- Create ClusterRole/Role and bindings for the manager
   create: true
 
-# -- Manager configuration
-manager:
-  image:
-    repository: ghcr.io/frak-id/atelier-manager
-    tag: ""
-    pullPolicy: IfNotPresent
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "100m"
-    limits:
-      memory: "1Gi"
-      cpu: "1000m"
-  persistence:
-    size: 1Gi
-    storageClass: ""
-  # -- Pod scheduling
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
-  # -- Extra pod annotations
-  podAnnotations: {}
-  # -- Extra pod labels
-  podLabels: {}
-  # -- Deployment update strategy
-  updateStrategy:
-    type: RollingUpdate
-
-# -- Dashboard (nginx sidecar serving the SPA)
-dashboard:
-  image:
-    repository: ghcr.io/frak-id/atelier-dashboard
-    tag: ""
-    pullPolicy: IfNotPresent
-  resources:
-    requests:
-      memory: "32Mi"
-      cpu: "10m"
-    limits:
-      memory: "64Mi"
-      cpu: "100m"
-
-# -- In-pod sandbox agent. Unlike manager/dashboard this image is not run
-# directly; its binary is baked into the base images at build time (the
-# dev-base Dockerfile's `COPY --from=...sandbox-agent`). Pin it in lockstep
-# with the chart so a base-image rebuild always bakes in the matching agent.
+# -- In-pod sandbox agent. This image is not run directly; its binary is baked
+# into the base images at build time (the dev-base Dockerfile's
+# `COPY --from=...sandbox-agent`). Pin it in lockstep with the chart so a
+# base-image rebuild always bakes in the matching agent.
 agent:
   image:
     repository: ghcr.io/frak-id/sandbox-agent
@@ -224,18 +182,6 @@ zot:
 # scheme, e.g. `https://npm.example.com`). Leave empty to use the public
 # npm registry.
 npmRegistryUrl: ""
-
-# -- Shared binaries (opencode + code-server, mounted into sandboxes)
-sharedBinaries:
-  enabled: true
-  storage: 2Gi
-  storageClass: ""
-  # -- Image used by the download Job
-  image: curlimages/curl:8.17.0
-  opencode:
-    version: "1.16.2"
-  codeServer:
-    version: "4.116.0"
 
 # -- cert-manager integration
 #

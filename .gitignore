@@ -36,16 +36,12 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Bun build
 **/*.bun-build
 
-# Temp files
-apps/manager/server.js
-
 *.tar.gz
 .deploy-staging/
 
 # Sandbox config (contains deployment-specific values)
 sandbox.config.json
 values.production.yaml
-apps/agent-rust/target/
 apps/agent-v2/target/
 apps/agent-v2/dist/
 

@@ -28,7 +28,6 @@ Review the results from your phone on the ski lift — or wherever you happen to
 - **Prebuilds** — run expensive setup (git clone, dependency install, build) once and snapshot it. Subsequent sandboxes clone from the snapshot instantly via copy-on-write
 - **Dev server with auto HTTPS** — define a dev command in your workspace config (e.g. `npm run dev`) and get a public `https://dev-{id}.your-domain.com` URL with streaming logs
 - **Two base images out of the box** — `dev-base` ships with Node 22 and Bun; `dev-cloud` extends it with AWS CLI, Google Cloud SDK, kubectl, and Pulumi
-- **Base image builds from dashboard** — build and publish base images via Kaniko directly from the UI, no local Docker needed
 - **Workspace definitions** — configure git repos to clone, init commands, a dev server, exposed ports, secrets, and resource limits per workspace
 - **OpenCode config replication** — define OpenCode configuration globally or per workspace, automatically replicated to every sandbox
 - **Auth synchronization** — OAuth tokens are synced across all running sandboxes so you authenticate once and every instance just works
@@ -64,7 +63,7 @@ Atelier runs isolated development sandboxes on Kubernetes with Kata Containers.
 | **[Helm](https://helm.sh)** | Chart-based deployment |
 | **[cert-manager](https://cert-manager.io)** | Automated TLS certificates |
 | **[kata-deploy](https://github.com/kata-containers/kata-containers)** | Kata Containers runtime (Cloud Hypervisor) |
-| **Docker** | Building manager and agent images |
+| **Docker** | Building server, console, and agent images |
 | **TopoLVM** *(optional)* | CSI driver for PVC snapshots — required for prebuilds |
 
 ### Networking
@@ -215,7 +214,7 @@ See [`charts/atelier/values.yaml`](charts/atelier/values.yaml) for all options.
 
 ## Local Development
 
-No server or KVM needed — the manager runs in mock mode:
+No server or KVM needed — the server runs in mock mode:
 
 ```bash
 bun install

@@ -5,7 +5,7 @@
  * Sections:
  *   domain   — Where this runs (base domain, TLS, SSH)
  *   auth     — Who can access (GitHub OAuth, JWT, ACLs)
- *   server   — Manager API settings (mode, port, limits)
+ *   server   — Server API settings (mode, port, limits)
  *   sandbox  — Defaults for new sandboxes (image, git identity)
  *   advanced — Power-user overrides (VM service ports, versions)
  */
@@ -149,13 +149,6 @@ export const KubernetesConfigSchema = Type.Object(
     openCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
       default: {},
     }),
-    /**
-     * Internal base URL of the manager K8s Service.
-     * Used by sandbox pods for callbacks and MCP registration.
-     * Set by the Helm chart — e.g.
-     * http://atelier-manager.atelier-system.svc:4000
-     */
-    managerUrl: Type.String({ default: "" }),
   },
   { default: {} },
 );
@@ -177,12 +170,10 @@ export const ServerConfigSchema = Type.Object(
   {
     /** Runtime mode: production (real VMs) or mock (local dev) */
     mode: RuntimeModeSchema,
-    /** Manager API port */
+    /** Server API port */
     port: Type.Number({ default: 4000 }),
-    /** Manager API bind host */
+    /** Server API bind host */
     host: Type.String({ default: "0.0.0.0" }),
-    /** Maximum concurrent sandboxes */
-    maxSandboxes: Type.Number({ default: 20 }),
     /** Bearer token for MCP server authentication — if empty, MCP auth is disabled */
     mcpToken: Type.String({ default: "" }),
   },
@@ -211,8 +202,6 @@ export const SandboxDefaultsSchema = Type.Object(
   {
     /** Default image for new sandboxes */
     defaultImage: Type.String({ default: "dev-base" }),
-    /** Directory containing image definitions */
-    imagesDirectory: Type.String({ default: "/opt/atelier/infra/images" }),
     /** Default git identity injected into sandboxes */
     git: SandboxGitConfigSchema,
   },
@@ -231,11 +220,8 @@ export const PortsConfigSchema = Type.Object(
     opencode: Type.Number({ default: 3000 }),
     browser: Type.Number({ default: 6080 }),
     terminal: Type.Number({ default: 7681 }),
-    // ACP stdio<->WebSocket bridge (in-pod harness relay); see agent-rust/acp.rs
-    acp: Type.Number({ default: 7682 }),
     agent: Type.Number({ default: 9998 }),
     dev: Type.Number({ default: 3001 }),
-    devApp: Type.Number({ default: 5173 }),
   },
   { default: {} },
 );
@@ -396,7 +382,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SERVER_MODE: "server.mode",
   ATELIER_SERVER_PORT: "server.port",
   ATELIER_SERVER_HOST: "server.host",
-  ATELIER_MAX_SANDBOXES: "server.maxSandboxes",
   ATELIER_MCP_TOKEN: "server.mcpToken",
 
   ATELIER_K8S_NAMESPACE: "kubernetes.namespace",
@@ -411,9 +396,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
   ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",
   ATELIER_K8S_INGRESS_CLASS: "kubernetes.ingressClassName",
-  ATELIER_K8S_MANAGER_URL: "kubernetes.managerUrl",
 
-  ATELIER_IMAGES_DIR: "sandbox.imagesDirectory",
   ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",
   ATELIER_GIT_EMAIL: "sandbox.git.email",
   ATELIER_GIT_NAME: "sandbox.git.name",
@@ -422,10 +405,8 @@ export const ENV_VAR_MAPPING = {
   ATELIER_OPENCODE_PORT: "ports.opencode",
   ATELIER_BROWSER_PORT: "ports.browser",
   ATELIER_TERMINAL_PORT: "ports.terminal",
-  ATELIER_ACP_PORT: "ports.acp",
   ATELIER_AGENT_PORT: "ports.agent",
   ATELIER_DEV_PORT: "ports.dev",
-  ATELIER_DEV_APP_PORT: "ports.devApp",
 
   ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",
   ATELIER_IMAGE_BUILDER_IMAGE: "imageBuilder.image",

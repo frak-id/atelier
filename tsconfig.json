@@ -24,12 +24,10 @@
     "noPropertyAccessFromIndexSignature": false
   },
   "references": [
-    { "path": "./apps/manager" },
     { "path": "./apps/server" },
-    { "path": "./apps/dashboard" },
     { "path": "./apps/console" },
+    { "path": "./apps/cli" },
     { "path": "./packages/shared" },
-    { "path": "./packages/opencode-atelier" },
     { "path": "./packages/spec" },
     { "path": "./packages/compose" }
   ],

@@ -15,8 +15,8 @@ jobs:
     strategy:
       matrix:
         package:
-          - atelier-manager
-          - atelier-dashboard
+          - atelier-server
+          - atelier-console
           - sandbox-agent
     steps:
       - name: Prune old nightly versions

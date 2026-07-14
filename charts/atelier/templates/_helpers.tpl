@@ -42,22 +42,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-Manager container image.
-*/}}
-{{- define "atelier.managerImage" -}}
-{{- printf "%s:%s" .Values.manager.image.repository (default .Chart.AppVersion .Values.manager.image.tag) -}}
-{{- end -}}
-
-{{/*
-Dashboard (nginx sidecar) container image.
-*/}}
-{{- define "atelier.dashboardImage" -}}
-{{- printf "%s:%s" .Values.dashboard.image.repository (default .Chart.AppVersion .Values.dashboard.image.tag) -}}
-{{- end -}}
-
-{{/*
 In-pod sandbox agent image, baked into base images at build time.
-Empty repository renders an empty string so the manager falls back to the
+Empty repository renders an empty string so the runtime falls back to the
 in-registry `<registryUrl>/sandbox-agent:latest`.
 */}}
 {{- define "atelier.agentImage" -}}

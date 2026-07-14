@@ -59,6 +59,4 @@ Warping a local OpenCode TUI session into an Atelier sandbox lands on an empty/p
 
 Cause: the TUI configures `@opencode-ai/sdk` with `directory = process.cwd()` (the user's local Mac path). The SDK injects `?directory=<local cwd>` into every GET. After proxy, the remote opencode's `WorkspaceRoutingMiddleware.defaultDirectory()` reads `?directory` first — a path that doesn't exist on the VM — and bootstraps a phantom instance disconnected from the real workspace at `/home/dev/workspace/<repo>`.
 
-Dashboard is unaffected: it constructs the SDK without a `directory` config, so the remote falls back to its own `process.cwd()` (the workspace dir).
-
-Full breakdown: see [`packages/opencode-atelier/README.md`](../packages/opencode-atelier/README.md#known-limitations).
+The console is unaffected: it constructs the SDK without a `directory` config, so the remote falls back to its own `process.cwd()` (the workspace dir).

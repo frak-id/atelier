@@ -1,1 +1,0 @@
-ALTER TABLE `sandboxes` ADD `opencode_workspace_context` text;

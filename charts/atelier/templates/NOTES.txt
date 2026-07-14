@@ -32,11 +32,6 @@ SSH access (sshpiper):
   Manage SSH keys in the dashboard Settings page.
 {{- end }}
 
-Manager health checks:
-  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/component=manager
-  kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "atelier.fullname" . }}-manager {{ .Values.server.port }}:{{ .Values.server.port }}
-  curl http://127.0.0.1:{{ .Values.server.port }}/health/ready
-
 IMPORTANT — k3s registries configuration:
   The deploy script automatically configures /etc/rancher/k3s/registries.yaml
   for the Zot registry. If deploying manually, run:

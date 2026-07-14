@@ -85,7 +85,9 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "anyOf": [
@@ -106,14 +108,6 @@
         "host": {
           "default": "0.0.0.0",
           "type": "string"
-        },
-        "maxSandboxes": {
-          "default": 20,
-          "type": "number"
-        },
-        "maxActiveTasks": {
-          "default": 10,
-          "type": "number"
         },
         "mcpToken": {
           "default": "",
@@ -145,8 +139,16 @@
           "default": "",
           "type": "string"
         },
+        "toolIngressClusterIssuer": {
+          "default": "",
+          "type": "string"
+        },
         "registryUrl": {
           "default": "zot.atelier-system.svc:5000",
+          "type": "string"
+        },
+        "agentImage": {
+          "default": "",
           "type": "string"
         },
         "npmRegistryUrl": {
@@ -182,10 +184,6 @@
               "type": "string"
             }
           }
-        },
-        "managerUrl": {
-          "default": "",
-          "type": "string"
         }
       }
     },
@@ -195,10 +193,6 @@
       "properties": {
         "defaultImage": {
           "default": "dev-base",
-          "type": "string"
-        },
-        "imagesDirectory": {
-          "default": "/opt/atelier/infra/images",
           "type": "string"
         },
         "git": {
@@ -243,10 +237,6 @@
         },
         "dev": {
           "default": 3001,
-          "type": "number"
-        },
-        "devApp": {
-          "default": 5173,
           "type": "number"
         }
       }
