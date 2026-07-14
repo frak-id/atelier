@@ -58,10 +58,12 @@ import {
 import { ImageRegistryService } from "./registry/index.ts";
 import {
   InMemorySandboxStore,
+  InMemorySandboxToolsetRefStore,
   InMemorySnapshotStore,
   InMemoryToolsetStore,
   type SandboxRecord,
   type SandboxStore,
+  type SandboxToolsetRefStore,
   type SnapshotRecord,
   type SnapshotStore,
   type ToolsetRecord,
@@ -82,6 +84,7 @@ export interface RuntimeDeps {
   sandboxes?: SandboxStore;
   snapshots?: SnapshotStore;
   toolsets?: ToolsetStore;
+  sandboxToolsetRefs?: SandboxToolsetRefStore;
 }
 
 export class RuntimeService {
@@ -89,6 +92,7 @@ export class RuntimeService {
   private readonly sandboxes: SandboxStore;
   private readonly snapshots: SnapshotStore;
   private readonly toolsets: ToolsetStore;
+  private readonly sandboxToolsetRefs: SandboxToolsetRefStore;
   /** De-dupes concurrent prebuild() calls for the same content hash onto one
    * execution (the temp pod name is deterministic and would collide). */
   private readonly inflightPrebuilds = new Map<string, Promise<SnapshotRef>>();
@@ -110,6 +114,8 @@ export class RuntimeService {
     this.sandboxes = deps.sandboxes ?? new InMemorySandboxStore();
     this.snapshots = deps.snapshots ?? new InMemorySnapshotStore();
     this.toolsets = deps.toolsets ?? new InMemoryToolsetStore();
+    this.sandboxToolsetRefs =
+      deps.sandboxToolsetRefs ?? new InMemorySandboxToolsetRefStore();
   }
 
   // ── prebuild ───────────────────────────────────────────────────────────
@@ -488,6 +494,7 @@ export class RuntimeService {
     };
     this.sandboxes.create(record);
 
+    const toolsets = this.resolveSpecToolsets(spec);
     try {
       // bootSandbox pushes config + writes files[]. The fixed phase order
       // (atelier-v2 §6): files/env -> postCreate -> processes -> postStart.
@@ -498,10 +505,20 @@ export class RuntimeService {
           image,
           snapshotName,
           authorizedKeys: options.authorizedKeys,
-          toolsets: this.resolveSpecToolsets(spec),
+          toolsets,
         },
         this.agent,
       );
+      // Persist which toolsets this sandbox mounted (toolset-overlay-squashfs
+      // .md §6-7) as soon as boot (⇒ materialize ⇒ mounted) succeeds — NOT
+      // after postStart — so a concurrent deleteToolset can't slip past the GC
+      // guard during the (possibly minutes-long) hook/process phase. Resume
+      // re-mounts from this list without re-resolving spec.toolsets. Stored as
+      // host-relative refs (matching `ToolsetRecord.ref` / `deleteToolset`'s
+      // param), not the full pull refs `toolsets` (above) carries for the
+      // agent.
+      this.sandboxToolsetRefs.putForSandbox(id, toRefEntries(spec.toolsets));
+
       await this.runPhase(id, "postCreate");
       await this.agent.reconcile(id);
       await this.gateOnPrimary(id);
@@ -594,7 +611,15 @@ export class RuntimeService {
    * reused, not cloned), else a clone from the persisted pause snapshot,
    * else the original `spec.source` (records that predate the pause, or an
    * `error` record recovering from scratch). Also the recovery route for
-   * `status: "error"` records — a failed create/resume can be retried here. */
+   * `status: "error"` records — a failed create/resume can be retried here.
+   *
+   * Toolsets are materialized on EVERY boot, including resume
+   * (toolset-overlay-squashfs.md §6) — not skipped as under the old
+   * extract-into-PVC model. Materialize is now mount-only and idempotent: the
+   * squashfs blobs already live under `/data/toolsets` on the resumed PVC, so
+   * this degrades to loop-mount + overlay re-assembly, no re-pull, no
+   * clobber (edits live in `/data/upper`, untouched by re-mounting the RO
+   * lowers). */
   async resume(id: string, req: ResumeRequest = {}): Promise<SandboxState> {
     await this.withOpLock(id, async () => {
       const record = this.require(id);
@@ -614,6 +639,7 @@ export class RuntimeService {
           "PersistentVolumeClaim",
           record.pvcName ?? `sandbox-${id}`,
         ));
+      const toolsets = this.resolveSpecToolsets(spec);
 
       // Resume phase order: files/env -> onResume -> processes. onResume is
       // the credential-rotation primitive; it runs before processes restart.
@@ -629,9 +655,16 @@ export class RuntimeService {
           snapshotName: reusePvc
             ? undefined
             : (record.pauseSnapshotRef ?? sourceSnapshot),
+          toolsets,
         },
         this.agent,
       );
+      // Refresh the mounted-refs list to match this boot's resolved spec (a
+      // resume can carry a rotated/updated `spec.toolsets` via `req`) as soon
+      // as boot (⇒ materialize ⇒ mounted) succeeds — before the hook/process
+      // phase, so the GC guard reflects the live mounts. Same host-relative-
+      // ref form as create — see the comment there.
+      this.sandboxToolsetRefs.putForSandbox(id, toRefEntries(spec.toolsets));
       try {
         await this.runPhase(id, "onResume");
         await this.agent.reconcile(id);
@@ -681,6 +714,10 @@ export class RuntimeService {
       // The label sweep deleted every sandbox-labeled VolumeSnapshot (pause
       // + manual snapshots); drop their store rows so no dangling ref survives.
       this.snapshots.deleteBySandbox(id);
+      // The pod/PVC are gone too, so this sandbox no longer has any toolset
+      // mounted — clear its rows or it would permanently pin those refs
+      // against the deleteToolset GC guard (§7).
+      this.sandboxToolsetRefs.deleteBySandbox(id);
       this.sandboxes.delete(id);
       log.info({ id }, "sandbox destroyed");
     });
@@ -704,6 +741,12 @@ export class RuntimeService {
         if (record.status === "creating") {
           this.agent.invalidatePodIp(record.id);
           await cleanupSandboxResources(record.id);
+          // The sweep just tore down whatever pod/PVC this record had, so it
+          // no longer has anything mounted — clear its rows or a toolset
+          // deleteToolset thinks is still referenced would be permanently
+          // pinned against GC (§7) until an explicit resume/destroy overwrites
+          // or clears this record.
+          this.sandboxToolsetRefs.deleteBySandbox(record.id);
           this.sandboxes.update(record.id, { status: "error" });
           log.warn(
             { id: record.id },
@@ -713,6 +756,10 @@ export class RuntimeService {
           const podName = record.podName ?? `sandbox-${record.id}`;
           if (!(await kubeClient.resourceExists("Pod", podName))) {
             this.agent.invalidatePodIp(record.id);
+            // No pod means nothing has the toolsets mounted right now either
+            // (the PVC may survive, but resume() re-derives and re-persists
+            // fresh refs on its own boot) — same GC-pinning reasoning as above.
+            this.sandboxToolsetRefs.deleteBySandbox(record.id);
             this.sandboxes.update(record.id, { status: "error" });
             log.warn(
               { id: record.id, podName },
@@ -756,6 +803,8 @@ export class RuntimeService {
     return this.agent.exec(id, req.command, {
       timeout: req.timeoutMs,
       workdir: req.cwd,
+      // Default to the sandbox's `dev` user (matches SSH); `root` is opt-in.
+      user: req.user ?? "dev",
     });
   }
 
@@ -1032,11 +1081,31 @@ export class RuntimeService {
     return toolsetRecordToEntry(next);
   }
 
-  /** Delete a toolset record. The registry blob is left to zot retention/GC;
-   * this drops the runtime's handle to it. */
+  /** Refs a live/paused sandbox currently has mounted — the `deleteToolset`
+   * GC guard (toolset-overlay-squashfs.md §7), mirroring
+   * `referencedSnapshotRefs()`. Backed by the `sandbox_toolset_refs` join,
+   * populated on every successful create/resume boot and cleared on destroy,
+   * so it always reflects the current fleet without deserializing every
+   * sandbox's `spec` JSON. */
+  private referencedToolsetRefs(): Set<string> {
+    return this.sandboxToolsetRefs.referencedRefs();
+  }
+
+  /** Delete a toolset record. Refuses when a live/paused sandbox still has it
+   * mounted (toolset-overlay-squashfs.md §7) — unlike the old extract-into-
+   * PVC model, a paused sandbox's squashfs blob lives on its own PVC and
+   * never depends on this record surviving, but deleting it out from under a
+   * live/paused sandbox would still 404 a future `getByRef`/compose lookup
+   * for that ref. The registry blob itself is left to zot retention/GC; this
+   * only drops the runtime's handle to it. */
   deleteToolset(ref: string): void {
     const record = this.toolsets.getByRef(ref);
     if (!record) throw new NotFoundError("Toolset", ref);
+    if (this.referencedToolsetRefs().has(ref)) {
+      throw new ConflictError(
+        `Toolset ${ref} is mounted by a live or paused sandbox and cannot be deleted.`,
+      );
+    }
     this.toolsets.delete(record.hash);
   }
 
@@ -1348,6 +1417,21 @@ function toolsetToSpec(
 function toolsetRecordToEntry(record: ToolsetRecord): ToolsetEntry {
   const { hash: _hash, ...entry } = record;
   return entry;
+}
+
+/** `spec.toolsets[].ref` is host-relative and digest-pinned
+ * (`toolsets/<name>@sha256:<64 hex>`, `ToolsetRefSchema`'s pattern) — the
+ * digest is trivially the substring after `@sha256:`. Used to populate the
+ * `sandbox_toolset_refs` join (toolset-overlay-squashfs.md §6-7): the
+ * digest column is denormalized so resume/GC never re-parse the ref. */
+function toRefEntries(
+  toolsetRefs: SandboxSpec["toolsets"],
+): Array<{ ref: string; digest: string }> {
+  if (!toolsetRefs || toolsetRefs.length === 0) return [];
+  return toolsetRefs.map((t) => {
+    const digest = t.ref.slice(t.ref.indexOf("@sha256:") + 1);
+    return { ref: t.ref, digest };
+  });
 }
 
 function hashToolset(req: ToolsetBuildRequest): string {

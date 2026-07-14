@@ -17,6 +17,8 @@ export {
 export type {
   SandboxRecord,
   SandboxStore,
+  SandboxToolsetRefEntry,
+  SandboxToolsetRefStore,
   SnapshotRecord,
   SnapshotStore,
   ToolsetRecord,
@@ -24,6 +26,8 @@ export type {
 } from "./store.ts";
 export {
   DrizzleSandboxStore,
+  DrizzleSandboxToolsetRefStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,
+  InMemorySandboxToolsetRefStore,
 } from "./store.ts";

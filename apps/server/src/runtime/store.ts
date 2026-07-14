@@ -19,7 +19,12 @@ import type {
 } from "@atelier/spec";
 import { eq } from "drizzle-orm";
 import { getDatabase } from "../shared/lib/db.ts";
-import { sandboxes, snapshots, toolsets } from "./db/schema.ts";
+import {
+  sandboxes,
+  sandboxToolsetRefs,
+  snapshots,
+  toolsets,
+} from "./db/schema.ts";
 
 export interface SandboxRecord {
   id: string;
@@ -89,6 +94,25 @@ export interface ToolsetStore {
   delete(hash: string): void;
 }
 
+/** One mounted toolset on one sandbox — the many-to-many join
+ * (toolset-overlay-squashfs.md §6-7): resume re-mounts from `getForSandbox`,
+ * the GC guard refuses to delete a ref in `referencedRefs()`. */
+export interface SandboxToolsetRefEntry {
+  ref: string;
+  digest: string;
+}
+
+export interface SandboxToolsetRefStore {
+  /** Replace-all: the full set of toolsets a sandbox has mounted, as of its
+   * last successful boot (create or resume). */
+  putForSandbox(sandboxId: string, entries: SandboxToolsetRefEntry[]): void;
+  getForSandbox(sandboxId: string): SandboxToolsetRefEntry[];
+  deleteBySandbox(sandboxId: string): void;
+  /** Every ref mounted by at least one sandbox (live or paused), for the
+   * `deleteToolset` GC guard. */
+  referencedRefs(): Set<string>;
+}
+
 // ── in-memory (tests, standalone runtime/) ─────────────────────────────────
 
 export class InMemorySandboxStore implements SandboxStore {
@@ -138,6 +162,27 @@ export class InMemoryToolsetStore implements ToolsetStore {
     const prior = this.byHash.get(hash);
     this.byHash.delete(hash);
     if (prior) this.byRef.delete(prior.ref);
+  }
+}
+
+export class InMemorySandboxToolsetRefStore implements SandboxToolsetRefStore {
+  private readonly bySandbox = new Map<string, SandboxToolsetRefEntry[]>();
+
+  putForSandbox(sandboxId: string, entries: SandboxToolsetRefEntry[]): void {
+    this.bySandbox.set(sandboxId, entries);
+  }
+  getForSandbox(sandboxId: string): SandboxToolsetRefEntry[] {
+    return this.bySandbox.get(sandboxId) ?? [];
+  }
+  deleteBySandbox(sandboxId: string): void {
+    this.bySandbox.delete(sandboxId);
+  }
+  referencedRefs(): Set<string> {
+    const refs = new Set<string>();
+    for (const entries of this.bySandbox.values()) {
+      for (const e of entries) refs.add(e.ref);
+    }
+    return refs;
   }
 }
 
@@ -430,5 +475,55 @@ export class DrizzleToolsetStore implements ToolsetStore {
 
   delete(hash: string): void {
     getDatabase().delete(toolsets).where(eq(toolsets.hash, hash)).run();
+  }
+}
+
+interface SandboxToolsetRefRow {
+  sandboxId: string;
+  ref: string;
+  digest: string;
+}
+
+export class DrizzleSandboxToolsetRefStore implements SandboxToolsetRefStore {
+  /** Replace-all in one transaction: delete the sandbox's prior rows, then
+   * insert the current mount set — avoids a delete-then-insert race leaving
+   * a torn read between the two statements. */
+  putForSandbox(sandboxId: string, entries: SandboxToolsetRefEntry[]): void {
+    const db = getDatabase();
+    db.transaction((tx) => {
+      tx.delete(sandboxToolsetRefs)
+        .where(eq(sandboxToolsetRefs.sandboxId, sandboxId))
+        .run();
+      if (entries.length === 0) return;
+      tx.insert(sandboxToolsetRefs)
+        .values(
+          entries.map((e) => ({ sandboxId, ref: e.ref, digest: e.digest })),
+        )
+        .run();
+    });
+  }
+
+  getForSandbox(sandboxId: string): SandboxToolsetRefEntry[] {
+    const rows = getDatabase()
+      .select()
+      .from(sandboxToolsetRefs)
+      .where(eq(sandboxToolsetRefs.sandboxId, sandboxId))
+      .all() as SandboxToolsetRefRow[];
+    return rows.map((r) => ({ ref: r.ref, digest: r.digest }));
+  }
+
+  deleteBySandbox(sandboxId: string): void {
+    getDatabase()
+      .delete(sandboxToolsetRefs)
+      .where(eq(sandboxToolsetRefs.sandboxId, sandboxId))
+      .run();
+  }
+
+  referencedRefs(): Set<string> {
+    const rows = getDatabase()
+      .select({ ref: sandboxToolsetRefs.ref })
+      .from(sandboxToolsetRefs)
+      .all() as Array<{ ref: string }>;
+    return new Set(rows.map((r) => r.ref));
   }
 }

@@ -355,16 +355,27 @@ export class AgentClient {
   }
 
   /**
-   * Materialize toolset artifacts into the home before the files/env phase
-   * (agent-v2 `POST /toolsets`). `references` are full, digest-pinned pull
-   * refs (`<registry>/toolsets/<name>@sha256:…`), ordered — later wins. The
-   * agent `oras pull`s + extracts each into the home as `dev`.
+   * Assemble the `/home/dev` overlay before the files/env phase (agent-v2
+   * `POST /toolsets`, toolset-overlay-squashfs.md §5). `references` are full,
+   * digest-pinned pull refs (`<registry>/toolsets/<name>@sha256:…`), ordered
+   * — later wins (topmost overlay lower). The agent pulls each squashfs blob
+   * to `/data/toolsets` (skipped if already present — the resume case),
+   * loop-mounts it read-only, and assembles the `/home/dev` overlay with the
+   * blobs as lowers over `/home/skel`, upper `/data/upper`.
+   *
+   * ALWAYS called, even with an empty `references` — the entrypoint never
+   * mounts `/home/dev` (see `sandbox-boot.sh`), so this is the only place
+   * `/home/dev` is ever assembled; an empty list still produces the
+   * skel-only overlay every sandbox needs. Also the signal the entrypoint
+   * waits on (`/run/home-ready`) before starting sshd — the race-free
+   * handshake replacing the old base-overlay-then-remount design. Idempotent
+   * and safe to call on every boot, including resume.
    */
   async materializeToolsets(
     sandboxId: string,
     references: string[],
   ): Promise<void> {
-    if (isMock() || references.length === 0) return;
+    if (isMock()) return;
     await this.post(sandboxId, "/toolsets", { toolsets: references }, 600_000);
   }
 

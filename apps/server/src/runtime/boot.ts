@@ -51,9 +51,19 @@ export interface BootInput {
   authorizedKeys?: string[];
   /**
    * Full, digest-pinned toolset pull references to materialize into the home
-   * before the files/env phase (composed-prebuild-volumes.md §3). Set on fresh
-   * `create` only — NOT on resume: a pause snapshot already carries the
-   * extracted bytes, and re-extracting would clobber in-session edits.
+   * before the files/env phase (toolset-overlay-squashfs.md §5-6). Set on
+   * EVERY boot — create AND resume — and passed to `agent.materializeToolsets`
+   * unconditionally, even when empty: materialize is what assembles the
+   * `/home/dev` overlay at all (the entrypoint never mounts it — see
+   * `sandbox-boot.sh`), so an empty toolset list still needs the call to
+   * produce the skel-only overlay. Materialize is mount-only and idempotent
+   * under the squashfs+overlay scheme: each ref's blob is pulled to
+   * `/data/toolsets` once (skipped if already present — true on resume,
+   * since the pause VolumeSnapshot carries `/data` including the blobs) and
+   * loop-mounted read-only as an overlay lower over `/data/upper`. Unlike
+   * the old extract-into-PVC model, re-running this on resume cannot clobber
+   * in-session edits: those live in the writable upper, which the RO lowers
+   * never touch.
    */
   toolsets?: string[];
 }
@@ -122,20 +132,24 @@ export async function bootSandbox(
     }
 
     // Two independent agent calls run concurrently:
-    //   - materialize toolset artifacts into the home (must land BEFORE
-    //     files[] so spec-level files can override org toolset config —
-    //     last-wins layering);
+    //   - materialize toolset artifacts: pull each squashfs blob (skipped if
+    //     already on `/data/toolsets` — the resume case), then assemble the
+    //     `/home/dev` overlay with them as the topmost lowers, over
+    //     `/home/skel` (toolset-overlay-squashfs.md §5). ALWAYS called, even
+    //     with an empty list: the entrypoint never mounts `/home/dev` (see
+    //     `sandbox-boot.sh`) — this call is the only place it's ever
+    //     assembled, skel-only lower when there are no toolsets. Must land
+    //     BEFORE files[] so spec-level files can override org toolset
+    //     config — last-wins layering;
     //   - push config (never ConfigMap-mounted: per-process `env` may carry
     //     resolved secrets that must not land in etcd or a pause snapshot).
-    // Config touches no home files, so it can overlap the extraction.
+    // Config touches no home files, so it can overlap the mount/materialize.
     await Promise.all([
-      input.toolsets && input.toolsets.length > 0
-        ? agent.materializeToolsets(sandboxId, input.toolsets)
-        : undefined,
+      agent.materializeToolsets(sandboxId, input.toolsets ?? []),
       agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec)),
     ]);
-    // Files last — after materialize — and before the phase-ordered
-    // hooks/processes the caller drives.
+    // Files last — after the overlay is fully assembled — and before the
+    // phase-ordered hooks/processes the caller drives.
     if (spec.files && spec.files.length > 0) {
       await agent.writeFiles(sandboxId, toFileWrites(spec.files));
     }

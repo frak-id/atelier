@@ -14,6 +14,7 @@ import { createControlContainer, recipeFingerprint } from "../control/index.ts";
 import {
   AgentClient,
   DrizzleSandboxStore,
+  DrizzleSandboxToolsetRefStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,
   RuntimeService,
@@ -62,6 +63,7 @@ export function createServerContainer() {
     sandboxes: new DrizzleSandboxStore(),
     snapshots: new DrizzleSnapshotStore(),
     toolsets: new DrizzleToolsetStore(),
+    sandboxToolsetRefs: new DrizzleSandboxToolsetRefStore(),
   });
   const dispatch = new AgentDispatch({ agentClient: agent });
   const sessions = new SessionService({
@@ -261,7 +263,11 @@ async function recordBuiltVersionLazily(
  * (docs/toolbox-versions.md §6) — called after both lazy `built` recording
  * and explicit capture. Also drops the runtime toolset record for any pruned
  * version (Zot retention handles the underlying blobs). Log-only: pruning
- * must never fail the caller's request.
+ * must never fail the caller's request. `deleteToolset` may now refuse a ref
+ * still mounted by a live/paused sandbox (toolset-overlay-squashfs.md §7) —
+ * the swallowing catch is exactly right for that: the version row stays
+ * pruned from toolbox history, the runtime record just outlives it until the
+ * last referencing sandbox destroys/resumes off it.
  */
 export function pruneToolboxVersions(
   container: ServerContainer,

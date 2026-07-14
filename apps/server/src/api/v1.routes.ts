@@ -204,6 +204,11 @@ export function createV1Routes(container: ServerContainer) {
       .delete(
         "/toolsets",
         async ({ query, set }) => {
+          // Throws ConflictError when a live/paused sandbox still has this
+          // ref mounted (toolset-overlay-squashfs.md §7) — the shared
+          // onError handler (api/index.ts) maps SandboxError subclasses to
+          // their `statusCode`, so this surfaces as a 409 with no extra
+          // handling needed here.
           runtime.deleteToolset((query as ToolsetRef).ref);
           set.status = 204;
         },

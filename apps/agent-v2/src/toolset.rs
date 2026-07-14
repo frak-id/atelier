@@ -1,19 +1,165 @@
-//! Toolset artifact build/push (composed-prebuild-volumes.md §2). The agent
-//! tars declared home path-sets and pushes them as an OCI artifact to the
-//! in-cluster registry by shelling out to the baked `oras` CLI + `tar`. The
-//! agent links NO OCI/HTTP/tar library — it stays lean and orchestrates the
+//! Toolset artifact build/push (docs/proposals/toolset-overlay-squashfs.md).
+//! The agent packages declared home path-sets as a single read-only erofs
+//! blob and pushes it as an OCI artifact to the in-cluster registry by
+//! shelling out to the baked `oras` + `mkfs.erofs` CLIs. Materialize is the
+//! mirror image: pull ONE blob per toolset (skipped if already present on the
+//! PVC), loop-mount each read-only, then stack them as overlayfs lowerdirs
+//! over the writable PVC upper — a mount, not a per-file copy. The agent
+//! links NO OCI/HTTP/erofs library — it stays lean and orchestrates the
 //! tools already present in the image (the runtime never proxies the bytes).
+//!
+//! Blob format is auto-detected, not hard-coded: the agent packages with
+//! whichever read-only FS the guest kernel can mount (see `BlobFormat`),
+//! preferring `erofs` and falling back to `squashfs`. This keeps the scheme
+//! portable across Kata guest kernels — e.g. the Cloud-Hypervisor guest here
+//! (kernel 6.18.x) ships `erofs`+`overlay`+loop but NOT `squashfs`, while a
+//! QEMU guest built with `CONFIG_SQUASHFS` would use squashfs. The chosen
+//! format is recorded in the OCI layer media type and the blob's file
+//! extension, and materialize mounts each blob by its own recorded format —
+//! so a build and its consumers only need to agree per-blob, not globally.
+
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 use crate::command::{self, MAX_COMMAND_OUTPUT_BYTES};
 
 const HOME: &str = "/home/dev";
-const ARTIFACT_TYPE: &str = "application/vnd.atelier.toolset.v1+tar";
-const LAYER_TYPE: &str = "application/vnd.atelier.toolset.layer.v1.tar+gzip";
-const TARBALL_DIR: &str = "/tmp";
+const SKEL: &str = "/home/skel";
+/// Overlay upperdir/workdir/blob-store — all on the PVC (mounted at `/data`,
+/// see docs/proposals/toolset-overlay-squashfs.md §3). Blobs living here
+/// (not in a per-sandbox tmpfs) is what makes resume registry-independent —
+/// a pause `VolumeSnapshot` of `/data` carries them.
+const DATA_UPPER: &str = "/data/upper";
+const DATA_WORK: &str = "/data/work";
+const DATA_TOOLSETS: &str = "/data/toolsets";
+/// Per-blob loop-mount points. Ephemeral (tmpfs-backed `/run`) — mounts don't
+/// survive pod recreation, so materialize re-mounts every boot (idempotent:
+/// the blob pull is skipped when already on the PVC, only the mount reruns).
+const RUN_TOOLSETS: &str = "/run/toolsets";
+/// Written by `materialize` as its last step, once `/home/dev` is fully
+/// assembled. `sandbox-boot.sh` waits for this file before starting sshd —
+/// the race-free handshake that replaces the old base-overlay-then-remount
+/// design (docs/proposals/toolset-overlay-squashfs.md §5): nothing can hold
+/// `/home/dev` busy before this point, because nothing touches it before
+/// this point.
+const HOME_READY_MARKER: &str = "/run/home-ready";
+/// Written by `materialize` when assembly FAILS. The entrypoint waits for
+/// either this or HOME_READY_MARKER, so a genuine failure starts sshd (onto a
+/// degraded home, for diagnosis) immediately instead of burning the full pull
+/// budget waiting for a `/run/home-ready` that will never appear
+/// (toolset-overlay-squashfs.md §5).
+const HOME_FAILED_MARKER: &str = "/run/home-failed";
+/// The last successful materialize's toolset selection, persisted on the PVC
+/// (so it rides the pause snapshot). Read by `self_heal_home` to re-assemble
+/// `/home/dev` after a whole-container (kubelet) restart — which the runtime
+/// does NOT re-drive. Lives under DATA_TOOLSETS but is not a blob
+/// (`*.erofs`/`*.sqfs`), so the stale-blob sweep leaves it alone.
+const MATERIALIZE_REQUEST_PATH: &str = "/data/toolsets/.materialize.json";
+const ARTIFACT_TYPE: &str = "application/vnd.atelier.toolset.v1";
+
+/// A read-only, loop-mountable blob filesystem. The agent builds with the
+/// preferred format the guest kernel supports and mounts each blob by the
+/// format it was actually built with (recorded in its file extension).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum BlobFormat {
+    Erofs,
+    Squashfs,
+}
+
+impl BlobFormat {
+    /// Preference order: erofs first (modern, and what the CLH guest here
+    /// supports), squashfs second. Detection scans `/proc/filesystems`.
+    const PREFERENCE: [BlobFormat; 2] = [BlobFormat::Erofs, BlobFormat::Squashfs];
+
+    /// `mount -t` filesystem type.
+    fn fs_type(self) -> &'static str {
+        match self {
+            BlobFormat::Erofs => "erofs",
+            BlobFormat::Squashfs => "squashfs",
+        }
+    }
+
+    /// On-PVC blob file extension (`<digest>.<ext>`). Also how materialize
+    /// recovers a blob's format on resume (the extension is the record).
+    fn ext(self) -> &'static str {
+        match self {
+            BlobFormat::Erofs => "erofs",
+            BlobFormat::Squashfs => "sqfs",
+        }
+    }
+
+    /// OCI layer media type stamped on push (debuggable provenance; the mount
+    /// path keys off the extension, not this).
+    fn media_type(self) -> &'static str {
+        match self {
+            BlobFormat::Erofs => "application/vnd.atelier.toolset.layer.v1.erofs",
+            BlobFormat::Squashfs => "application/vnd.atelier.toolset.layer.v1.squashfs",
+        }
+    }
+
+    /// The mkfs command that turns staged dir `$stage` into blob `$name`.
+    /// erofs: `-zlz4hc` (bookworm erofs-utils 1.5 lacks zstd; the kernel's
+    /// built-in LZ4 decompresses lz4hc), `-T0` pins timestamps. squashfs:
+    /// zstd + the reproducibility/ownership-normalizing flags. Note the
+    /// argument order differs (`mkfs.erofs <img> <dir>` vs `mksquashfs <dir>
+    /// <img>`). Both normalize to uid/gid 1000 — erofs implicitly (the stage
+    /// is rsynced as `dev`), squashfs via `-force-uid/-force-gid`.
+    fn mkfs_cmd(self, name_var: &str, stage_var: &str) -> String {
+        match self {
+            BlobFormat::Erofs => format!("mkfs.erofs -zlz4hc -T0 {name_var} {stage_var}"),
+            BlobFormat::Squashfs => format!(
+                "mksquashfs {stage_var} {name_var} -comp zstd -noappend -no-exports \
+                 -all-time 0 -mkfs-time 0 -force-uid 1000 -force-gid 1000"
+            ),
+        }
+    }
+
+}
+
+/// Pick the preferred blob format this guest kernel can mount, by scanning
+/// `/proc/filesystems` (authoritative for built-ins; the minimal Kata guest
+/// has no loadable-module tree). Build/capture run on the same guest kernel
+/// as the consuming sandboxes, so this is exactly “what can be mounted here”.
+async fn detect_build_format() -> Result<BlobFormat, String> {
+    let listed = tokio::fs::read_to_string("/proc/filesystems")
+        .await
+        .unwrap_or_default();
+    let supported = |fs: &str| listed.split_whitespace().any(|w| w == fs);
+    BlobFormat::PREFERENCE
+        .into_iter()
+        .find(|f| supported(f.fs_type()))
+        .ok_or_else(|| {
+            "guest kernel supports neither erofs nor squashfs; cannot build a toolset blob".into()
+        })
+}
+/// Packaging stages the selected path-sets into a scratch tree before
+/// packaging. Stage on the PVC-backed home (the overlay's `/data/upper`),
+/// NOT the pod's ephemeral rootfs `/tmp`: a node_modules-heavy toolset's
+/// uncompressed staged copy can be many hundreds of MB, and the pod declares
+/// no `ephemeral-storage` budget — staging on the small rootfs risks ENOSPC
+/// mid-capture (toolset-overlay-squashfs.md §11). The home is dev-owned
+/// (build/capture run as `dev`) and sized for the sandbox; a random `mktemp`
+/// name never collides with a declared path and is removed by the EXIT trap.
+const STAGE_DIR: &str = HOME;
 /// Build/push can move hundreds of MB; give it well past the exec default.
 const BUILD_TIMEOUT_MS: u64 = 600_000;
+/// Grace for the runtime to drive materialize on a fresh boot before
+/// `self_heal_home` assumes a kubelet restart and assembles `/home/dev`
+/// itself. Comfortably exceeds a healthy create/resume's boot-to-materialize
+/// latency; only the (rare) whole-container-restart path waits it out.
+const SELF_HEAL_GRACE_MS: u128 = 90_000;
+
+/// Process-global lock serializing overlay assembly. Both the runtime-driven
+/// materialize (router) and the restart self-heal go through `materialize`;
+/// the lock plus the HOME_READY_MARKER early-return make a concurrent or
+/// duplicate call a safe no-op instead of a double `umount`/remount race on
+/// the shared upper/workdir.
+fn materialize_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 /// Push a set of home path-sets as a toolset artifact. `target` is the full
 /// registry reference incl. host (`zot.zot.svc:5000/toolsets/<name>:<tag>`);
@@ -52,7 +198,7 @@ pub struct MaterializeResult {
 /// Capture a live sandbox's declared path-sets into a toolset artifact
 /// (composed-prebuild-volumes.md §2 "captured (result-keyed)"). NOT a
 /// baseline diff (there is no prior snapshot to diff against at capture
-/// time) — the mechanism is path-set selection: tar exactly `paths` MINUS
+/// time) — the mechanism is path-set selection: squash exactly `paths` MINUS
 /// `exclude` globs (compose-declared additions to the built-in secret-file
 /// excludes), scan the included files for secret patterns, and fail the
 /// capture on any finding not covered by `overrides`.
@@ -145,6 +291,14 @@ fn valid_sha256(token: &str) -> Option<String> {
         .then(|| format!("sha256:{}", hex.to_ascii_lowercase()))
 }
 
+/// The bare `<64 lowercase-hex>` half of a `sha256:<hex>` token, or `None` if
+/// the token isn't a well-formed sha256 digest. Same validation as
+/// `valid_sha256`, but returns the hex only (no `sha256:` prefix) — the form
+/// used as a filesystem path component (blob filename, mount point).
+fn valid_sha256_hex(token: &str) -> Option<String> {
+    valid_sha256(token).map(|s| s.trim_start_matches("sha256:").to_string())
+}
+
 /// Extract the pushed manifest digest from `oras push` output. Prefer the
 /// explicit `Digest:` label (oras prints the manifest digest there); only then
 /// fall back to the first sha256 token, so a layer digest emitted earlier can
@@ -157,9 +311,10 @@ fn parse_digest(output: &str) -> Option<String> {
         .or_else(|| output.split_whitespace().find_map(valid_sha256))
 }
 
-/// Tar the existing declared path-sets and `oras push` them to `target`,
-/// returning the pushed digest. Missing path-sets are skipped (a build step
-/// may legitimately produce a subset); an empty result is an error.
+/// Squash the existing declared path-sets into one blob and `oras push` it to
+/// `target`, returning the pushed digest. Missing path-sets are skipped (a
+/// build step may legitimately produce a subset); an empty result is an
+/// error.
 pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     let mut rels = Vec::new();
     for p in &req.paths {
@@ -172,34 +327,13 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
         return Err("none of the declared toolset paths exist in the home".into());
     }
 
-    let quoted_paths = rels.iter().map(|r| sh_quote(r)).collect::<Vec<_>>().join(" ");
     // Apply the same secret-file/`.git` exclude floor as `capture` — a built
     // toolset's declared paths can contain a `.git` dir or stray dotfile too.
-    let tar_excludes = tar_exclude_flags(&merged_excludes(&[]));
-    // `oras push` refuses an absolute tarball path ("absolute file path
-    // detected" — its default traversal guard), so `cd` into the tarball's
-    // directory first and reference it by bare filename. `mktemp` keeps the
-    // name unique so concurrent pushes never clobber each other's tarball; the
-    // `trap` removes it on any exit path (`set -e` would otherwise skip a
-    // trailing `rm` when `oras push` fails).
-    let script = format!(
-        "set -euo pipefail\n\
-         cd {dir}\n\
-         name=$(mktemp atelier-toolset.XXXXXX.tar.gz)\n\
-         trap 'rm -f \"$name\"' EXIT\n\
-         tar -czf \"$name\"{tar_excludes} -C {home} {paths}\n\
-         oras push --plain-http {target} \
-           --artifact-type {at} \"$name\":{lt}",
-        dir = TARBALL_DIR,
-        tar_excludes = tar_excludes,
-        home = HOME,
-        paths = quoted_paths,
-        target = sh_quote(&req.target),
-        at = ARTIFACT_TYPE,
-        lt = LAYER_TYPE,
-    );
+    let excludes = merged_excludes(&[]);
+    let fmt = detect_build_format().await?;
+    let script = squash_and_push_script(&rels, &excludes, &req.target, fmt);
 
-    // Run as `dev` so the tarball's ownership/readability matches how the
+    // Run as `dev` so the staged copy's ownership/readability matches how the
     // build steps installed the files (consistent with `capture`).
     let res = command::run(
         &script,
@@ -220,6 +354,82 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     digest_from_push(&res)
 }
 
+/// Build the shared "stage selected paths, mkfs, oras push" script used by
+/// both `build` and `capture`, for the given `fmt` (erofs/squashfs). Staging
+/// (rsync'ing the selected home-relative paths into a scratch dir) rather
+/// than pointing the mkfs tool directly at `/home/dev` with per-path args
+/// keeps the exclude/selection semantics identical to the old tar invocation
+/// (`-C {home} {paths}` selected an exact rel-path set) without fighting the
+/// mkfs tool's own multi-source-root argument handling. `rsync -a --exclude` is used over
+/// plain `cp -a` because it supports the same glob-exclude semantics as
+/// `tar --exclude` (matches at every path depth, not just the top level).
+/// `-H` preserves hardlinks (tar's default behavior) — without it, a
+/// pnpm-style content-addressable store hardlinked into `node_modules` would
+/// get independently duplicated per link into the staged tree and thus into
+/// the blob, inflating its size for exactly the toolsets `SCAN_
+/// EXCLUDE_DIRS` already calls out as needing their `node_modules` intact.
+///
+/// `mkfs.erofs -zlz4hc -T0` builds the blob: `-zlz4hc` is high-compression
+/// LZ4 (kernel decompresses it with built-in LZ4; bookworm's erofs-utils 1.5
+/// has no zstd), `-T0` pins every file timestamp to epoch 0 so the blob's
+/// bytes track its *content*, not the build step's clock. Ownership needs no
+/// `-force-uid`: the staging rsync runs as `dev`, so the tree is already
+/// uid/gid 1000. Note the argument order is OUTPUT then SOURCE
+/// (`mkfs.erofs <img> <dir>`) — the reverse of `mksquashfs <dir> <img>`.
+///
+/// NOTE: `-T0` is reproducibility hygiene (equal *content* should produce
+/// equal bytes), not currently load-bearing for dedup — the `built` path's
+/// dedup key (`hashToolset`, computed by the runtime) hashes the *build
+/// request* (name/build steps/paths), not this blob's bytes, and gates
+/// before any build/push runs. If a future content-addressed-by-blob path is
+/// added, verify actual byte-reproducibility before relying on it
+/// (toolset-overlay-squashfs.md §11).
+fn squash_and_push_script(
+    rels: &[String],
+    excludes: &[String],
+    target: &str,
+    fmt: BlobFormat,
+) -> String {
+    // A `--files-from=-`-style bulk copy can't apply tar-style per-glob
+    // excludes uniformly across an arbitrary set of top-level rel paths, so
+    // stage each declared path individually (mirrors the old `tar -C {home}
+    // {paths}` explicit rel-path list). `$(dirname "$p")` recreates the
+    // parent dir under `$stage` first (bare top-level names dirname to `.`,
+    // which `mkdir -p`/the rsync destination both accept) so nested paths
+    // like `.config/pi` land at the same depth they have under `/home/dev`.
+    let quoted_paths = rels.iter().map(|r| sh_quote(r)).collect::<Vec<_>>().join(" ");
+    let rsync_excludes = rsync_exclude_flags(excludes);
+    // EXIT-trap cleanup is best-effort (`||:`): the stage lives on the
+    // virtio-fs home and native `.node` files under heavy install churn can
+    // return ESTALE ("Stale file handle") on unlink. The blob is already
+    // built + pushed by the time the trap runs, and the whole pod/PVC is torn
+    // down right after, so a failed cleanup must not fail the capture.
+    format!(
+        "set -euo pipefail\n\
+         cd {dir}\n\
+         stage=$(mktemp -d atelier-toolset-stage.XXXXXX)\n\
+         name=$(mktemp -u atelier-toolset.XXXXXX.{ext})\n\
+         trap 'rm -rf \"$stage\" 2>/dev/null||:; rm -f \"$name\" 2>/dev/null||:' EXIT\n\
+         for p in {paths}; do\n\
+         parent=\"$stage/$(dirname \"$p\")\"\n\
+         mkdir -p \"$parent\"\n\
+         rsync -aH{excludes} \"{home}/$p\" \"$parent/\"\n\
+         done\n\
+         {mkfs}\n\
+         oras push --plain-http {target} \
+           --artifact-type {at} \"$name\":{lt}",
+        dir = STAGE_DIR,
+        ext = fmt.ext(),
+        excludes = rsync_excludes,
+        paths = quoted_paths,
+        mkfs = fmt.mkfs_cmd("\"$name\"", "\"$stage\""),
+        home = HOME,
+        target = sh_quote(target),
+        at = ARTIFACT_TYPE,
+        lt = fmt.media_type(),
+    )
+}
+
 /// Extract the pushed digest from an `oras push` result, or an error carrying
 /// the actual stdout/stderr so a changed oras output format is debuggable.
 fn digest_from_push(res: &command::ExecResult) -> Result<BuildResult, String> {
@@ -234,12 +444,14 @@ fn digest_from_push(res: &command::ExecResult) -> Result<BuildResult, String> {
         })
 }
 
-/// Build the `tar --exclude=<glob>` flags for a merged (default + request)
+/// Build the `rsync --exclude=<glob>` flags for a merged (default + request)
 /// exclude list, deduplicated and shell-quoted. A bare glob (no `/`) already
-/// matches at every path depth — tar's `--exclude` matches path components,
-/// not just basenames — so one `--exclude=<glob>` per glob covers both
-/// top-level and nested files.
-fn tar_exclude_flags(excludes: &[String]) -> String {
+/// matches at every path depth — rsync's `--exclude` matches path components
+/// like tar's did, not just basenames — so one `--exclude=<glob>` per glob
+/// covers both top-level and nested files. Slash-bearing user globs (which
+/// rsync would anchor differently than tar) are rejected upstream in
+/// `capture`, so every glob reaching here is a depth-agnostic basename glob.
+fn rsync_exclude_flags(excludes: &[String]) -> String {
     let mut seen = std::collections::HashSet::new();
     let mut flags = String::new();
     for glob in excludes {
@@ -251,7 +463,7 @@ fn tar_exclude_flags(excludes: &[String]) -> String {
     flags
 }
 
-/// Directories skipped by the secret SCAN only — still captured into the tar
+/// Directories skipped by the secret SCAN only — still squashed into the blob
 /// (a toolset that installs npm tools NEEDS its `node_modules`). `.git` holds
 /// no user config; `node_modules` is vendored third-party code — never where a
 /// capturing user's own credentials live, but riddled with example keys (e.g.
@@ -270,7 +482,7 @@ fn scan_exclude_dir_flags() -> String {
 }
 
 /// Merge the built-in secret-file excludes with the request's own, as owned
-/// `String`s ready for `tar_exclude_flags` / grep-exclude construction.
+/// `String`s ready for `rsync_exclude_flags` / grep-exclude construction.
 fn merged_excludes(request_exclude: &[String]) -> Vec<String> {
     let mut merged: Vec<String> = DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
     merged.extend(request_exclude.iter().cloned());
@@ -291,9 +503,9 @@ fn is_overridden(offender: &str, overrides: &[String]) -> bool {
 }
 
 /// Capture a live sandbox's declared path-sets: scan for secrets (failing
-/// unless overridden), then tar (minus excludes) and `oras push`, mirroring
-/// `build`'s push tail. Runs as `dev` — path ownership stays consistent with
-/// how the tools were installed/used.
+/// unless overridden), then squash (minus excludes) and `oras push`,
+/// mirroring `build`'s push tail. Runs as `dev` — path ownership stays
+/// consistent with how the tools were installed/used.
 pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     let mut rels = Vec::new();
     for p in &req.paths {
@@ -306,6 +518,20 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
         return Err("none of the declared capture paths exist in the home".into());
     }
 
+    // Reject slash-bearing user excludes: rsync anchors a pattern containing
+    // `/` to each path-set's transfer root (matches only there), whereas tar's
+    // `--exclude` matched it at any depth. Silently applying rsync's rule
+    // would let a `config/secrets`-style exclude quietly miss nested matches
+    // and leak the very files it was meant to drop, so fail loudly instead
+    // (the built-in DEFAULT_EXCLUDES are all slash-free basenames/globs).
+    if let Some(bad) = req.exclude.iter().find(|e| e.contains('/')) {
+        return Err(format!(
+            "exclude '{bad}' contains '/': use a basename glob — slash-bearing \
+             excludes are rejected because they would only match at a path-set's \
+             root, silently missing nested matches"
+        ));
+    }
+
     let excludes = merged_excludes(&req.exclude);
     let quoted_paths = rels.iter().map(|r| sh_quote(r)).collect::<Vec<_>>().join(" ");
     let grep_excludes = excludes
@@ -314,7 +540,7 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
         .collect::<String>();
     let pattern = sh_quote(&SECRET_PATTERNS.join("|"));
 
-    // Scan first (read-only), independent of the tar step: `grep -rIlE` lists
+    // Scan first (read-only), independent of the squash step: `grep -rIlE` lists
     // matching files (`-I` skips binaries, `-l` = names only), never fails the
     // command itself (`|| true`) so an empty result is a clean pass, not an
     // error exit this script would otherwise abort on under `set -e`.
@@ -364,28 +590,8 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
         ));
     }
 
-    let tar_excludes = tar_exclude_flags(&excludes);
-    // `oras push` refuses an absolute tarball path (found live, see `build`),
-    // so `cd` into the tarball's directory first and reference it by bare
-    // `mktemp` name (unique so concurrent captures never clobber each other);
-    // the `trap` removes it on any exit path, incl. an `oras push` failure
-    // that `set -e` would otherwise abort on before a trailing `rm`.
-    let script = format!(
-        "set -euo pipefail\n\
-         cd {dir}\n\
-         name=$(mktemp atelier-toolset.XXXXXX.tar.gz)\n\
-         trap 'rm -f \"$name\"' EXIT\n\
-         tar -czf \"$name\"{tar_excludes} -C {home} {paths}\n\
-         oras push --plain-http {target} \
-           --artifact-type {at} \"$name\":{lt}",
-        dir = TARBALL_DIR,
-        tar_excludes = tar_excludes,
-        home = HOME,
-        paths = quoted_paths,
-        target = sh_quote(&req.target),
-        at = ARTIFACT_TYPE,
-        lt = LAYER_TYPE,
-    );
+    let fmt = detect_build_format().await?;
+    let script = squash_and_push_script(&rels, &excludes, &req.target, fmt);
     let res = command::run(
         &script,
         BUILD_TIMEOUT_MS,
@@ -405,27 +611,148 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     digest_from_push(&res)
 }
 
-/// Pull each toolset artifact by its digest-pinned reference and extract it
-/// into the home as `dev` (uid 1000), in list order. Digest-pull verifies
-/// content-addressing for free. Fail-fast: a bad pull/extract aborts the boot.
-pub async fn materialize(req: MaterializeRequest) -> Result<MaterializeResult, String> {
+/// Extract the bare `<64 hex>` digest from a full pull reference
+/// (`<registry>/toolsets/<name>@sha256:<hex>`) for use as the on-PVC blob's
+/// filename — a stable, collision-free name keyed by content, independent of
+/// `<name>` (two toolsets can't collide; the same digest pulled via two refs
+/// correctly reuses one blob). The `sha256:` prefix is dropped so the blob
+/// filename (`<hex>.<ext>`) has no `:` in it.
+///
+/// Hex-validated (reuses `valid_sha256`'s shape), not just prefix-stripped:
+/// this string flows straight into root-run `mkdir`/`mv`/`mount` paths and
+/// the overlay `lowerdir=` list (materialize), so a malformed or non-sha256
+/// digest must hard-fail here rather than pass through as an unvalidated
+/// path component (defense-in-depth — today every caller is upstream-
+/// validated by `ToolsetRefSchema`, but this is the one place a bad value
+/// would land in a filesystem path).
+fn digest_suffix(reference: &str) -> Option<String> {
+    let (_, token) = reference.rsplit_once('@')?;
+    valid_sha256_hex(token)
+}
+
+/// Materialize toolset artifacts into the home as a **mount, not a copy**
+/// (docs/proposals/toolset-overlay-squashfs.md §5). For each digest-pinned
+/// ref, in order: pull its blob to `/data/toolsets/<digest>.<ext>` (`.erofs`
+/// or `.sqfs`, whichever format the builder used)
+/// (skipped if already present — idempotent across create/resume/retry, and
+/// what makes resume registry-independent: the blob rides the PVC's pause
+/// snapshot), then loop-mount it read-only at `/run/toolsets/<digest>`. Once
+/// every blob is mounted, `/home/dev` is assembled as a **single** overlay
+/// stacking every lower — **later refs win** (leftmost lowerdir = highest
+/// priority in overlayfs), floored by the image's `/home/skel`, with
+/// `/data/{upper,work}` as the writable layer. Called with an empty
+/// `req.toolsets` too (every boot, per `boot.ts`): that degrades to a
+/// skel-only overlay, which is what makes `/home/dev` usable at all — the
+/// entrypoint (`sandbox-boot.sh`) does NOT mount it; this call is the only
+/// place `/home/dev` is ever assembled.
+///
+/// On success, writes `/run/home-ready` as the last step — the entrypoint's
+/// signal to stop waiting and start sshd. This is the race-free handshake:
+/// nothing touches `/home/dev` (no sshd, no session) until this function has
+/// fully assembled it exactly once, so there is never a prior mount to tear
+/// down and the `umount` this function performs is expected to be a no-op on
+/// every normal boot (only a defensive measure for an agent retry within the
+/// same pod — see the `mountpoint -q` guard below, which makes a genuine
+/// absence of a prior mount a no-op rather than a swallowed failure).
+///
+/// Runs as **root** (`user: None`): mounting needs `CAP_SYS_ADMIN`, which the
+/// container process gets from the pod's `securityContext.capabilities`
+/// (`kube.resources.ts` — uid 0 alone has only the default OCI capset, which
+/// excludes it), plus the `/dev/loop*` nodes the entrypoint creates. Unlike
+/// `build`/`capture`, which run as `dev`. Fail-fast: a bad pull/mount aborts
+/// assembly; the wrapper (`materialize`) writes `/run/home-failed` so the
+/// entrypoint stops waiting and starts sshd onto the degraded home for
+/// diagnosis.
+async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult, String> {
+    // Sweep any leftover pull scratch dirs from a previous boot that was
+    // SIGKILLed mid-pull (the EXIT trap is skipped on kill/VM-death) — left
+    // unswept they ride every pause snapshot and prebuild clone, and the
+    // blob sweep below (`*.erofs`/`*.sqfs` only) never matches them. Safe:
+    // materialize is the single writer on this PVC and runs before any mount.
+    let cleanup = command::run(
+        &format!("rm -rf {}/atelier-toolset-pull.*", sh_quote(DATA_TOOLSETS)),
+        BUILD_TIMEOUT_MS,
+        None,
+        None,
+        &std::collections::HashMap::new(),
+        MAX_COMMAND_OUTPUT_BYTES,
+    )
+    .await;
+    if cleanup.exit_code != 0 {
+        eprintln!(
+            "toolset materialize: pull-scratch cleanup failed (exit {}): {}",
+            cleanup.exit_code,
+            cleanup.stderr.trim()
+        );
+    }
+
+    let mut mounts: Vec<String> = Vec::new();
+    let mut keep_digests: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for reference in &req.toolsets {
+        let digest = digest_suffix(reference).ok_or_else(|| {
+            format!("toolset reference '{reference}' is missing a valid @sha256:<64 hex> digest")
+        })?;
+        // Dedupe by digest: the same ref listed twice would otherwise push the
+        // same mount point into `lowerdir=X:X:…`, which overlayfs rejects on
+        // some kernels. Identical content ⇒ priority position is irrelevant,
+        // so keep the first occurrence.
+        if !seen.insert(digest.clone()) {
+            continue;
+        }
+        let mount_point = format!("{RUN_TOOLSETS}/{digest}");
+
+        // Pull is skipped when a blob for this digest already exists on the
+        // PVC (fresh boot after a warm pull, or a resume where the blob rode
+        // the pause VolumeSnapshot) — the mount below always reruns since
+        // loop mounts don't survive pod recreation. The blob's format
+        // (erofs/squashfs) is not known ahead of time (the builder picked
+        // whatever this guest kernel supports — see `BlobFormat`), so the
+        // filename carries it: `<digest>.erofs` or `<digest>.sqfs`. Discover
+        // an existing blob by globbing `<digest>.*` (a real wildcard, so
+        // `nullglob` correctly yields an EMPTY array when absent — listing the
+        // two literal `<digest>.erofs`/`.sqfs` names instead never drops under
+        // nullglob and would make the pull always skip onto a missing blob);
+        // on a fresh pull,
+        // `oras pull` writes the layer under its pushed filename (a random
+        // `mktemp` name, NOT `<digest>.*`), so move the single `*.erofs`/
+        // `*.sqfs` layer it contains to the digest-named path, preserving the
+        // extension. Mount type is then read back from that extension.
+        //
+        // The scratch dir is created UNDER `/data/toolsets` (same filesystem
+        // as the blob, both on the PVC) rather than under `/tmp` (the pod's
+        // ephemeral rootfs): different filesystems would make the scratch-to-
+        // blob `mv` a copy+unlink, not an atomic `rename(2)` — a kill mid-copy
+        // (OOM, eviction, timeout) would leave a truncated file at the final
+        // blob path that the next boot's existence check would trust forever.
+        // Same-filesystem staging makes the final `mv` a true rename: atomic.
         let script = format!(
             "set -euo pipefail\n\
              shopt -s nullglob\n\
-             d=$(mktemp -d)\n\
-             trap 'rm -rf \"$d\"' EXIT\n\
-             oras pull --plain-http {reference} -o \"$d\"\n\
-             count=0\n\
-             for f in \"$d\"/*.tar.gz; do tar -xzf \"$f\" -C {home}; count=$((count+1)); done\n\
-             [ \"$count\" -gt 0 ] || {{ echo \"no tar.gz layers in {reference}\" >&2; exit 1; }}",
+             mkdir -p {toolsets_dir} {mount_point}\n\
+             existing=({toolsets_dir}/{digest}.*)\n\
+             if [ \"${{#existing[@]}}\" -ge 1 ]; then\n\
+             blob=\"${{existing[0]}}\"\n\
+             else\n\
+             scratch=$(mktemp -d -p {toolsets_dir} atelier-toolset-pull.XXXXXX)\n\
+             trap 'rm -rf \"$scratch\"' EXIT\n\
+             oras pull --plain-http {reference} -o \"$scratch\"\n\
+             layers=(\"$scratch\"/*.erofs \"$scratch\"/*.sqfs)\n\
+             [ \"${{#layers[@]}}\" -eq 1 ] || {{ echo \"expected exactly one .erofs/.sqfs layer for {reference}, found ${{#layers[@]}}\" >&2; exit 1; }}\n\
+             blob={toolsets_dir}/{digest}.\"${{layers[0]##*.}}\"\n\
+             mv \"${{layers[0]}}\" \"$blob\"\n\
+             fi\n\
+             case \"$blob\" in *.erofs) fstype=erofs;; *.sqfs) fstype=squashfs;; *) echo \"unknown blob format: $blob\" >&2; exit 1;; esac\n\
+             mountpoint -q {mount_point} || mount -t \"$fstype\" -o ro,loop \"$blob\" {mount_point}",
+            toolsets_dir = sh_quote(DATA_TOOLSETS),
+            mount_point = sh_quote(&mount_point),
+            digest = digest,
             reference = sh_quote(reference),
-            home = HOME,
         );
         let res = command::run(
             &script,
             BUILD_TIMEOUT_MS,
-            Some("dev"),
+            None,
             None,
             &std::collections::HashMap::new(),
             MAX_COMMAND_OUTPUT_BYTES,
@@ -438,15 +765,269 @@ pub async fn materialize(req: MaterializeRequest) -> Result<MaterializeResult, S
                 res.stderr.trim()
             ));
         }
+        mounts.push(mount_point);
+        keep_digests.push(digest);
     }
+
+    // Later refs win: `req.toolsets` is ordered lowest-to-highest priority
+    // (same rule as `files[]`), and overlayfs treats the FIRST lowerdir as
+    // highest priority — so the mount list is reversed before joining.
+    let mut lowerdir_parts: Vec<String> = mounts.into_iter().rev().collect();
+    lowerdir_parts.push(SKEL.to_string());
+    let lowerdir = lowerdir_parts.join(":");
+
+    // Single assembly, no swallowed failure: `/home/dev` is guaranteed bare
+    // (the entrypoint never mounts it — see the doc comment above), so
+    // `mountpoint -q` is expected to be false on every normal boot and the
+    // `umount` branch only exists to make an agent retry within the same pod
+    // safe. If `/home/dev` IS mounted and the `umount` fails (e.g. something
+    // holds it busy), `set -e` aborts the script here instead of silently
+    // falling through to a second overlay instance stacked on the same
+    // upper/workdir (which overlayfs itself may refuse, or — worse — allow
+    // with undefined concurrent-write behavior).
+    //
+    // `chown 1000:1000 {upper}` (the upper root only, NOT `-R`) fixes the
+    // merged home's ownership: overlayfs surfaces the upperdir's own uid/gid
+    // as the `/home/dev` root (the upper IS the merged root's inode). A fresh
+    // `/data/upper` is `root:root`, so without this `dev` cannot create
+    // top-level entries in its own home — git clone of `workspace/`,
+    // `~/.bash_history`, any new dotfile → EACCES. `-R` would be wrong: it
+    // would clobber the ownership of files copied up from the lowers.
+    //
+    // `userxattr` is REQUIRED because the upper (`/data`) is a Kata virtio-fs
+    // share. Kernel overlayfs normally stores its metadata in `trusted.overlay.*`
+    // xattrs, but virtiofsd exposes only the `user.*` namespace (even with
+    // `--xattr`), so the default mount hard-fails ("failed to set xattr on
+    // upper ... upper fs missing required features"). `userxattr` (kernel
+    // ≥5.11) switches overlay to `user.overlay.*`, which virtio-fs passes
+    // through. Prereq: the `kata-clh` guest's virtiofsd must run with `--xattr`
+    // (infra/k8s — kata configuration-clh.toml). O_TMPFILE is still unsupported
+    // on virtio-fs but that is non-fatal (overlay falls back to index=off).
+    let overlay_script = format!(
+        "set -euo pipefail\n\
+         mkdir -p {upper} {work}\n\
+         chown 1000:1000 {upper}\n\
+         if mountpoint -q {home}; then umount {home}; fi\n\
+         mount -t overlay overlay {home} \
+           -o lowerdir={lowerdir},upperdir={upper},workdir={work},userxattr\n\
+         : > {ready}\n\
+         rm -f {failed}",
+        upper = sh_quote(DATA_UPPER),
+        work = sh_quote(DATA_WORK),
+        home = sh_quote(HOME),
+        lowerdir = lowerdir,
+        ready = sh_quote(HOME_READY_MARKER),
+        failed = sh_quote(HOME_FAILED_MARKER),
+    );
+    let res = command::run(
+        &overlay_script,
+        BUILD_TIMEOUT_MS,
+        None,
+        None,
+        &std::collections::HashMap::new(),
+        MAX_COMMAND_OUTPUT_BYTES,
+    )
+    .await;
+    if res.exit_code != 0 {
+        return Err(format!(
+            "overlay assembly failed (exit {}): {}",
+            res.exit_code,
+            res.stderr.trim()
+        ));
+    }
+
+    // Sweep stale blobs — only after a successful assembly (a failed boot
+    // must never delete a blob it might still need on retry). Any
+    // `/data/toolsets/*` blob whose digest-named basename isn't in this
+    // boot's `keep_blobs` is left over from a previous boot whose toolset
+    // set has since drifted (a toolbox update, a different resume
+    // selection…) — left unswept it rides every future pause snapshot and
+    // prebuild clone forever (toolset-overlay-squashfs.md §11). `find
+    // -maxdepth 1` scopes to exactly this directory; the keep-set is matched
+    // by digest via a `-name '<digest>.*'` OR chain (extension-agnostic, so
+    // it keeps the blob whatever format it was built in). An empty keep-set
+    // — zero toolsets — correctly deletes every blob, since the `-not \\(
+    // ... \\)` clause is simply absent).
+    let sweep_script = sweep_stale_blobs_script(&keep_digests);
+    let sweep = command::run(
+        &sweep_script,
+        BUILD_TIMEOUT_MS,
+        None,
+        None,
+        &std::collections::HashMap::new(),
+        MAX_COMMAND_OUTPUT_BYTES,
+    )
+    .await;
+    if sweep.exit_code != 0 {
+        // Best-effort: a failed sweep leaves disk usage slightly higher, not
+        // a broken boot — don't fail materialize over cleanup.
+        eprintln!(
+            "toolset materialize: stale blob sweep failed (exit {}): {}",
+            sweep.exit_code,
+            sweep.stderr.trim()
+        );
+    }
+
     Ok(MaterializeResult {
         materialized: req.toolsets.len(),
     })
 }
 
+/// Assemble `/home/dev` (see `materialize_inner`), serialized and idempotent.
+/// The lock plus the HOME_READY_MARKER early-return make a duplicate or
+/// concurrent call (a restart self-heal racing the runtime's own call) a safe
+/// no-op rather than a second `umount`/remount of a live overlay. On failure
+/// it writes HOME_FAILED_MARKER so the entrypoint stops waiting; on success it
+/// persists the selection for `self_heal_home`.
+pub async fn materialize(req: MaterializeRequest) -> Result<MaterializeResult, String> {
+    let _guard = materialize_lock().lock().await;
+    // Already assembled this container life — nothing to redo. (A failed prior
+    // attempt leaves no marker, so a retry still proceeds below.)
+    if std::path::Path::new(HOME_READY_MARKER).exists() {
+        return Ok(MaterializeResult {
+            materialized: req.toolsets.len(),
+        });
+    }
+    match materialize_inner(&req).await {
+        Ok(result) => {
+            persist_materialize_request(&req.toolsets);
+            Ok(result)
+        }
+        Err(e) => {
+            // Unblock the entrypoint's wait so it starts sshd for diagnosis
+            // instead of burning the full pull budget on a doomed boot.
+            let _ = std::fs::write(HOME_FAILED_MARKER, b"");
+            Err(e)
+        }
+    }
+}
+
+/// Persist the assembled toolset selection to the PVC (atomic write+rename) so
+/// `self_heal_home` can rebuild the overlay after a kubelet restart without
+/// the runtime. Best-effort: a failed write only degrades restart recovery.
+fn persist_materialize_request(toolsets: &[String]) {
+    let Ok(bytes) = serde_json::to_vec(toolsets) else {
+        return;
+    };
+    let tmp = format!("{MATERIALIZE_REQUEST_PATH}.tmp");
+    if std::fs::write(&tmp, &bytes)
+        .and_then(|()| std::fs::rename(&tmp, MATERIALIZE_REQUEST_PATH))
+        .is_err()
+    {
+        eprintln!(
+            "toolset: failed to persist materialize request; self-heal after a restart may no-op"
+        );
+    }
+}
+
+/// Re-assemble `/home/dev` after a whole-container (kubelet) restart. A fresh
+/// container has an empty `/run` (no HOME_READY_MARKER) and a fresh mount
+/// namespace (no overlay), but `/data` still holds the blobs and the persisted
+/// selection. The runtime does NOT re-drive materialize on a bare container
+/// restart, so without this the entrypoint would eventually start sshd on the
+/// un-assembled rootfs home and silently divorce writes from the PVC.
+///
+/// Fires ONLY on a kubelet restart: on a first-ever boot there is no persisted
+/// request (returns immediately), and on a runtime-driven create/resume the
+/// runtime's own materialize call writes HOME_READY_MARKER within the grace
+/// window — so this observes the marker and no-ops (also correct when a resume
+/// changed the selection: the runtime's call, not this stale snapshot, wins).
+pub async fn self_heal_home() {
+    let Ok(bytes) = std::fs::read(MATERIALIZE_REQUEST_PATH) else {
+        return; // first-ever boot: nothing to recover
+    };
+    if std::path::Path::new(HOME_READY_MARKER).exists() {
+        return;
+    }
+    let toolsets: Vec<String> = match serde_json::from_slice(&bytes) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    // Let the runtime drive materialize itself (the normal path); only step in
+    // if it never does within the window (the kubelet-restart case).
+    let start = std::time::Instant::now();
+    while start.elapsed().as_millis() < SELF_HEAL_GRACE_MS {
+        if std::path::Path::new(HOME_READY_MARKER).exists() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    if std::path::Path::new(HOME_READY_MARKER).exists() {
+        return;
+    }
+    eprintln!(
+        "toolset: /home/dev not assembled {}ms after restart; self-healing from persisted selection",
+        SELF_HEAL_GRACE_MS
+    );
+    if let Err(e) = materialize(MaterializeRequest { toolsets }).await {
+        eprintln!("toolset: self-heal materialize failed: {e}");
+    }
+}
+
+/// Build the `find /data/toolsets -maxdepth 1 ( -name '*.erofs' -o -name
+/// '*.sqfs' ) ...` script that deletes every blob whose digest is NOT in
+/// `keep_digests` (matched extension-agnostically as `<digest>.*`). An empty
+/// keep-set (zero toolsets this boot) deletes every blob — correct: nothing
+/// references any blob.
+fn sweep_stale_blobs_script(keep_digests: &[String]) -> String {
+    let blob_glob = "\\( -name '*.erofs' -o -name '*.sqfs' \\)";
+    if keep_digests.is_empty() {
+        return format!(
+            "find {dir} -maxdepth 1 {blob_glob} -exec rm -f {{}} +",
+            dir = sh_quote(DATA_TOOLSETS),
+        );
+    }
+    let keep_clauses = keep_digests
+        .iter()
+        .map(|digest| format!("-name {}", sh_quote(&format!("{digest}.*"))))
+        .collect::<Vec<_>>()
+        .join(" -o ");
+    format!(
+        "find {dir} -maxdepth 1 {blob_glob} -not \\( {keep_clauses} \\) -exec rm -f {{}} +",
+        dir = sh_quote(DATA_TOOLSETS),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blob_format_mount_type_matches_extension_case_in_materialize() {
+        // The materialize shell maps *.erofs->erofs and *.sqfs->squashfs; keep
+        // the enum in lockstep with that mapping and the pushed media types.
+        assert_eq!(BlobFormat::Erofs.ext(), "erofs");
+        assert_eq!(BlobFormat::Erofs.fs_type(), "erofs");
+        assert_eq!(BlobFormat::Squashfs.ext(), "sqfs");
+        assert_eq!(BlobFormat::Squashfs.fs_type(), "squashfs");
+        assert!(BlobFormat::Erofs.media_type().ends_with(".erofs"));
+        assert!(BlobFormat::Squashfs.media_type().ends_with(".squashfs"));
+        // erofs is preferred when a kernel supports both.
+        assert_eq!(BlobFormat::PREFERENCE[0], BlobFormat::Erofs);
+    }
+
+    #[test]
+    fn mkfs_cmd_argument_order_differs_by_format() {
+        // mkfs.erofs is <img> <dir>; mksquashfs is <dir> <img> — a swap here
+        // silently produces an empty/garbage blob.
+        let e = BlobFormat::Erofs.mkfs_cmd("OUT", "SRC");
+        assert!(e.starts_with("mkfs.erofs"));
+        assert!(e.contains("OUT SRC"), "erofs is output-then-source: {e}");
+        let s = BlobFormat::Squashfs.mkfs_cmd("OUT", "SRC");
+        assert!(s.starts_with("mksquashfs SRC OUT"), "squashfs is source-then-output: {s}");
+    }
+
+    #[test]
+    fn sweep_keeps_blobs_by_digest_across_extensions() {
+        let d = "a".repeat(64);
+        let script = sweep_stale_blobs_script(&[d.clone()]);
+        assert!(script.contains("*.erofs"));
+        assert!(script.contains("*.sqfs"));
+        // keeps the digest regardless of extension
+        assert!(script.contains(&format!("'{d}.*'")));
+        // empty keep-set deletes everything
+        assert!(!sweep_stale_blobs_script(&[]).contains("-not"));
+    }
 
     #[test]
     fn rel_to_home_normalizes_prefixes() {
@@ -471,9 +1052,9 @@ mod tests {
 
     #[test]
     fn parse_digest_finds_manifest_sha() {
-        let out = "Uploading 46bc684ddba9 layer.tar.gz\nPushed [registry] \
+        let out = "Uploading 46bc684ddba9 layer.sqfs\nPushed [registry] \
                    zot.zot.svc:5000/toolsets/x:t\nArtifactType: \
-                   application/vnd.atelier.toolset.v1+tar\nDigest: \
+                   application/vnd.atelier.toolset.v1\nDigest: \
                    sha256:48f338c9fd3283dfc27a52c58bb5e8a3fe621e74e124666181da40ef59fe047a\n";
         assert_eq!(
             parse_digest(out).unwrap(),
@@ -520,8 +1101,8 @@ mod tests {
         let flags = scan_exclude_dir_flags();
         assert!(flags.contains("--exclude-dir='node_modules'"));
         assert!(flags.contains("--exclude-dir='.git'"));
-        // … but it must NOT be a tar exclude, or an npm toolset would ship
-        // without its dependencies.
+        // … but it must NOT be an rsync/squash exclude, or an npm toolset
+        // would ship without its dependencies.
         assert!(!merged_excludes(&[]).iter().any(|g| g == "node_modules"));
     }
 
@@ -539,11 +1120,45 @@ mod tests {
     }
 
     #[test]
-    fn tar_exclude_flags_quotes_and_dedupes() {
+    fn rsync_exclude_flags_quotes_and_dedupes() {
         let excludes = vec!["auth.json".to_string(), "auth.json".to_string()];
-        let flags = tar_exclude_flags(&excludes);
+        let flags = rsync_exclude_flags(&excludes);
         assert_eq!(flags.matches("--exclude=").count(), 1);
         assert!(flags.contains("'auth.json'"));
+    }
+
+    #[test]
+    fn digest_suffix_extracts_the_bare_hex_digest() {
+        let hex = "a".repeat(64);
+        assert_eq!(
+            digest_suffix(&format!("zot.zot.svc:5000/toolsets/pi-base@sha256:{hex}")),
+            Some(hex.clone())
+        );
+        // Uppercase hex is normalized to lowercase, mirroring `valid_sha256`.
+        assert_eq!(
+            digest_suffix(&format!("zot.zot.svc:5000/toolsets/pi-base@sha256:{}", hex.to_ascii_uppercase())),
+            Some(hex)
+        );
+    }
+
+    #[test]
+    fn digest_suffix_rejects_missing_or_malformed_digests() {
+        // No `@` at all (a bare tag ref).
+        assert!(digest_suffix("zot.zot.svc:5000/toolsets/pi-base:latest").is_none());
+        // Too-short hex, non-hex char, and a non-sha256 algorithm all reject —
+        // this string flows straight into root-run mkdir/mv/mount paths, so a
+        // malformed digest must hard-fail rather than pass through unchecked.
+        assert!(digest_suffix("zot.zot.svc:5000/toolsets/pi-base@sha256:abc123").is_none());
+        assert!(digest_suffix(&format!(
+            "zot.zot.svc:5000/toolsets/pi-base@sha256:{}g",
+            "a".repeat(63)
+        ))
+        .is_none());
+        assert!(digest_suffix(&format!(
+            "zot.zot.svc:5000/toolsets/pi-base@sha512:{}",
+            "a".repeat(128)
+        ))
+        .is_none());
     }
 
     #[test]

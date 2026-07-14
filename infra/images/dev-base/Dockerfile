@@ -25,6 +25,13 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
 # Layer 1: System packages (cached unless package list changes)
+# erofs-utils (mkfs.erofs) + squashfs-tools (mksquashfs): the guest agent
+# packages toolset artifacts as a read-only blob and picks whichever format
+# the guest kernel can mount, preferring erofs (the CLH guest kernel here
+# ships erofs+overlay+loop but NOT squashfs; a QEMU guest with CONFIG_SQUASHFS
+# would use squashfs) — docs/proposals/toolset-overlay-squashfs.md §3-4.
+# Both mkfs tools are baked so one image works on either kernel. rsync: stages
+# toolset build/capture path-sets into a scratch root before packaging.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chrony \
@@ -46,6 +53,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     openbox \
     libegl1 \
+    squashfs-tools \
+    erofs-utils \
+    rsync \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && rm -rf /usr/share/doc /usr/share/man /usr/share/info /usr/share/lintian \
@@ -117,9 +127,12 @@ RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
 COPY --from=zot.zot.svc:5000/sandbox-agent-v2:latest /atelier-agent /usr/local/bin/sandbox-agent
 RUN chmod +x /usr/local/bin/sandbox-agent
 
-# Kata CLH cannot mount a block volume over a populated directory, so
-# /home/dev must be empty in the final image.  Move its contents to
-# /home/skel — sandbox-boot.sh copies them back on first PVC boot.
+# /home/skel is the read-only overlay lower for /home/dev
+# (docs/proposals/toolset-overlay-squashfs.md §3): the PVC no longer mounts
+# at /home/dev (it mounts at /data), and /home/dev must be an EMPTY mountpoint
+# for the overlay the entrypoint/agent assemble on top of it — so the image's
+# original home contents move to /home/skel and stay there permanently (never
+# copied back; they're read directly as the lowest overlay layer).
 RUN mv /home/dev /home/skel \
     && mkdir /home/dev \
     && chown dev:dev /home/dev

@@ -77,9 +77,13 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
   const volumes: Array<Record<string, unknown>> = [];
 
   if (options.pvcName) {
+    // PVC mounts at VM.DATA, not VM.HOME (toolset-overlay-squashfs.md §3):
+    // the guest entrypoint assembles an overlay at HOME from `/home/skel`
+    // (image lower) + toolset squashfs blobs (pulled to DATA_TOOLSETS) as
+    // read-only lowers, with DATA_UPPER/DATA_WORK as the writable upper.
     volumeMounts.push({
       name: "workspace",
-      mountPath: VM.HOME,
+      mountPath: VM.DATA,
     });
     volumes.push({
       name: "workspace",
@@ -123,7 +127,18 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           // round-trip on every spawn. Pull only when not cached on the node.
           imagePullPolicy: "IfNotPresent",
           command: ["/etc/sandbox/sandbox-boot.sh"],
-          securityContext: { runAsUser: 0 },
+          // runAsUser 0 + CAP_SYS_ADMIN: the agent loop-mounts squashfs
+          // toolset blobs and assembles the /home/dev overlay from INSIDE the
+          // container (toolset-overlay-squashfs.md §3). uid 0 alone gets the
+          // default OCI capability set, which excludes CAP_SYS_ADMIN, so
+          // mount(2) would EPERM. Cheap under Kata: the VM (not the container
+          // capset) is the isolation boundary. Pre-cutover, verify in a booted
+          // sandbox: `capsh --print` shows cap_sys_admin, and `mount -t
+          // squashfs -o ro,loop <blob> /mnt` succeeds.
+          securityContext: {
+            runAsUser: 0,
+            capabilities: { add: ["SYS_ADMIN"] },
+          },
           ports: SANDBOX_PORTS.map((p) => ({
             name: p.name,
             containerPort: p.port,

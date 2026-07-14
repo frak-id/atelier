@@ -134,12 +134,15 @@ export function registerSandboxTools(
     "exec",
     {
       title: "Exec",
-      description: "Run a one-shot command in a sandbox and capture output.",
+      description:
+        "Run a one-shot command in a sandbox and capture output. Runs as the " +
+        "`dev` user by default (like SSH); pass user:'root' for privileged work.",
       inputSchema: {
         id: z.string(),
         command: z.string(),
         cwd: z.string().optional(),
         timeoutMs: z.number().optional(),
+        user: z.enum(["dev", "root"]).optional(),
       },
     },
     safeTool(async ({ id, ...req }) => text(await runtime.exec(id, req))),

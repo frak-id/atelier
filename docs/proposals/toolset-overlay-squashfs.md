@@ -130,27 +130,62 @@ Consequences:
 - **Blobs live on the PVC**, so a pause `VolumeSnapshot` carries them (see
   §6) — resume never depends on zot.
 
-### Guest capability check (prerequisite)
+### Guest capability check (prerequisite) — RESOLVED in-cluster
 
-Guest-side block/loop mounting is **already a capability**: PID-1 mounts
-`/dev/vdb` ro at `/opt/shared` (`sandbox-init.sh` Phase 1), and the
-container runs as root (`kube.resources.ts` `securityContext: { runAsUser: 0
-}`). Overlay + loop mounts need `CAP_SYS_ADMIN` (root has it) and guest
-kernel support. **Verify in the Kata guest kernel before building:**
+Overlay + loop mounts need `CAP_SYS_ADMIN` and guest-kernel support. Both were
+verified live on the `kata-clh` guest (2026-07, kernel 6.18.x) with a smoke
+pod using the real pod securityContext:
 
-- `CONFIG_OVERLAY_FS=y`
-- loop + squashfs: `CONFIG_BLK_DEV_LOOP=y` + `CONFIG_SQUASHFS=y`
-  (+ `CONFIG_SQUASHFS_ZSTD=y` for zstd-compressed squashfs), **or**
-- **EROFS** (`CONFIG_EROFS_FS=y`) — often already built into modern
-  kernels, mountable directly from a file via loop, and where the ecosystem
-  is heading (composefs/EROFS: verifiable, page-cache-shared, overlay-native
-  RO layers).
+| Requirement | Result |
+|---|---|
+| `CAP_SYS_ADMIN` in the container process | ✅ present (via the pod's `securityContext.capabilities.add: [SYS_ADMIN]` — uid 0 alone is NOT enough) |
+| `CONFIG_OVERLAY_FS` | ✅ `overlay` in `/proc/filesystems` |
+| `CONFIG_BLK_DEV_LOOP` | ✅ loop works (nodes created via `mknod` in `sandbox-boot.sh`) |
+| `CONFIG_SQUASHFS` | ❌ **absent** — not built-in, no loadable-module tree |
+| `CONFIG_EROFS_FS` | ✅ `erofs` in `/proc/filesystems`, mounts cleanly |
 
-If neither in-kernel option is present, `squashfuse`/`erofsfuse` (userspace)
-is a fallback but adds a FUSE hop — prefer fixing the kernel config. **Keep
-the format pluggable**: the artifact media type carries the format, and the
-only code difference is the mount command (`mount -t squashfs` vs `mount -t
-erofs`). Start with whichever the guest kernel already supports.
+**Overlay upperdir on virtio-fs — RESOLVED (virtiofsd `--xattr` + `userxattr`).**
+Kata delivers the PVC (and rootfs) to the guest as **virtio-fs**, and a virtio-fs
+dir cannot be a kernel-overlay upperdir out of the box: the kernel needs to
+write `trusted.overlay.*` xattrs on the upper, and the default virtiofsd
+exposes no xattrs at all (`dmesg`: "failed to set xattr on upper ... upper fs
+missing required features"; `O_TMPFILE` is also unsupported but that is a
+non-fatal fallback). Fix, validated live and preserving all of v1's
+capabilities (CSI resize, fs-mode snapshots, host visibility, native perf, the
+`/data/upper` ssh-staging handshake):
+
+1. Run the `kata-clh` guest's virtiofsd with **`--xattr`**
+   (`virtio_fs_extra_args` in the active `configuration-clh.toml` — for
+   kata-deploy that is `…/runtimes/clh/configuration-clh.toml`, NOT the legacy
+   `…/configuration-clh.toml`). This exposes the `user.*` xattr namespace.
+2. Mount the overlay with the **`userxattr`** option (kernel ≥5.11; this guest
+   is 6.18), so overlayfs stores its metadata in `user.overlay.*` instead of
+   `trusted.overlay.*` (`toolset.rs` overlay script). virtio-fs only passes
+   `user.*`, so both halves are required.
+
+Block-mode PVC and a loop-ext4-on-virtio-fs image were the fallbacks; both work
+but regress resize/snapshot/host-visibility, so `--xattr`+`userxattr` is
+preferred. **Durability (staging, kata-deploy 3.31):** kata-deploy repopulates
+`/opt/kata` on (re)install, so a hand-edit to the stock clh config reverts. The
+durable fix is a chart-managed `customRuntimes` entry (`kata-atelier-clh` =
+`baseConfig: clh` + a Kata `config.d` drop-in that sets `virtio_fs_extra_args`
+with `--xattr`) in `infra/k8s/v2/kata-atelier-values.yaml`; the server targets
+that RuntimeClass via `30-config.yaml` (`runtimeClass: kata-atelier-clh`). This
+survives kata-deploy rolls and needs no node-level service.
+
+**Consequence — the blob format is auto-detected, both are supported.** The
+agent scans `/proc/filesystems` and packages with the preferred format the
+guest can mount (`BlobFormat` in `toolset.rs`): **erofs first** (what this
+guest has), **squashfs as fallback** (for QEMU guests built with
+`CONFIG_SQUASHFS`). The `dev-base` image bakes BOTH `erofs-utils` and
+`squashfs-tools`, so one image is portable across guest kernels. The chosen
+format is recorded in the OCI layer media type and the blob's file extension
+(`<digest>.erofs` / `<digest>.sqfs`); materialize reads the extension back and
+mounts each blob with the matching `-t erofs`/`-t squashfs` — so a build and
+its consumers only need to agree per-blob, not globally. Since the guest
+kernel here has no squashfs, `sandbox-init.sh`'s old `/opt/shared` block mount
+is NOT the capability precedent it looked like (that script is legacy v1 init,
+not the K8s entrypoint — see its header).
 
 ---
 
@@ -162,23 +197,26 @@ erofs`). Start with whichever the guest kernel already supports.
 tail only:
 
 - `build()` / `capture()`: replace `tar -czf … | oras push …:<tar+gzip>`
-  with
+  with a staged mkfs of the detected format (`BlobFormat::mkfs_cmd`), e.g.
+  for the erofs path this guest uses:
 
   ```
-  mksquashfs <selected paths, staged> <name>.sqfs -comp zstd [-e <excludes>]
+  mkfs.erofs -zlz4hc -T0 <name>.erofs <selected paths, staged>
   oras push --plain-http <target> --artifact-type <ARTIFACT_TYPE> \
-    <name>.sqfs:application/vnd.atelier.toolset.layer.v1.squashfs
+    <name>.erofs:application/vnd.atelier.toolset.layer.v1.erofs
   ```
 
-  `mksquashfs` takes a source tree; stage the declared `paths[]` (relative
-  to `/home/dev`) into a temp root first, or use `-e` excludes + explicit
-  path args. The **secret scan** (`capture()`, `SECRET_PATTERNS`,
-  `DEFAULT_EXCLUDES`, `SCAN_EXCLUDE_DIRS`) and the exclude-floor logic are
-  **unchanged** — they run before packaging regardless of container format.
-- `LAYER_TYPE` becomes the squashfs (or erofs) media type; digest parsing
+  (squashfs path: `mksquashfs <staged> <name>.sqfs -comp zstd …:…layer.v1.squashfs`.)
+  Both stage the declared `paths[]` (relative to `/home/dev`) into a temp
+  root first via `rsync -aH`. The **secret scan** (`capture()`,
+  `SECRET_PATTERNS`, `DEFAULT_EXCLUDES`, `SCAN_EXCLUDE_DIRS`) and the
+  exclude-floor logic are **unchanged** — they run before packaging
+  regardless of container format.
+- `LAYER_TYPE` is per-format (`BlobFormat::media_type`); digest parsing
   (`parse_digest`) is format-agnostic and unchanged.
-- `mksquashfs` must be added to `dev-base` (`apt-get install squashfs-tools`;
-  `erofs-utils` if EROFS).
+- Compression: erofs uses `-zlz4hc` (bookworm's erofs-utils 1.5 has no zstd;
+  the kernel decompresses lz4hc via built-in LZ4). squashfs uses zstd.
+- Both `erofs-utils` and `squashfs-tools` are baked into `dev-base`.
 
 Build/capture stay **single-file, sequential, compressed** — and produce a
 blob that is *mountable*, which is the entire point. Content-addressing
@@ -186,10 +224,10 @@ blob that is *mountable*, which is the entire point. Content-addressing
 `ToolsetRecord` still points at `toolsets/<name>@sha256:<digest>`
 (`store.ts:76-87`).
 
-> Note: squashfs is deterministic enough for content-addressing if
-> `mksquashfs` is invoked with reproducible flags (`-no-exports`,
-> pinned timestamps via `-mkfs-time`/`-all-time`, sorted). Pin these so the
-> `built`-path content hash stays stable across rebuilds.
+> Note: reproducibility is hygiene only, not load-bearing — the `built`-path
+> dedup key (`hashToolset`) hashes the build *request*, not the blob bytes.
+> `-T0` (erofs) / pinned timestamps + `-force-uid/-gid` (squashfs) are set
+> anyway so equal content tends to equal bytes.
 
 ---
 
@@ -282,6 +320,27 @@ Under the new topology:
 `composed-prebuild-volumes.md` §5 already accepted) — but now as **one
 dedupe-friendly compressed blob per toolset**, not thousands of inodes.
 Strictly better, and CoW-shareable across a prebuild lineage.
+
+**Offline lower-stack changes are benign here.** Changing the toolset
+selection across a resume swaps the overlay's lowerdirs under the *same*
+persisted `/data/upper`. The kernel formally calls modifying lowers under a
+populated upper "undefined," but with the plain options used here (no `index`,
+`metacopy`, or `redirect_dir`) the practical effect is well-behaved: upper
+copies shadow whatever the new lowers provide, and the only observable drift
+is that a lower file's `st_ino` may change across boots. No code depends on
+lower inode stability, so this is acceptable; do not enable `index=on`
+(which would make it genuinely unsafe).
+
+**Whole-container (kubelet) restart** is distinct from resume: the pod object
+survives but the container's mount namespace and tmpfs `/run` are recreated,
+so the overlay and `/run/home-ready` are gone while `/data` (blobs +
+`.materialize.json` selection) persists. The runtime does not re-drive
+materialize on a bare restart, so the agent self-heals: on startup, if a
+persisted selection exists and `/run/home-ready` is absent after a grace
+window (long enough that a genuine runtime-driven boot would have written the
+marker first), it re-runs materialize from the PVC-local blobs. Serialized by
+a process lock + the marker early-return, so it is a no-op whenever the
+runtime drives materialize itself.
 
 ### Persist the mounted digest list
 

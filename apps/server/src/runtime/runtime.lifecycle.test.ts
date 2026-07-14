@@ -6,7 +6,7 @@
  */
 import { beforeAll, describe, expect, test } from "bun:test";
 import type { SandboxSpec } from "@atelier/spec";
-import { ConflictError } from "../shared/errors.ts";
+import { ConflictError, NotFoundError } from "../shared/errors.ts";
 
 // Config is read once at module load — force mock mode (agent/kube no-op)
 // before importing anything that transitively loads it.
@@ -28,12 +28,21 @@ const spec: SandboxSpec = {
 function makeRuntime() {
   const sandboxes = new stores.InMemorySandboxStore();
   const snapshots = new stores.InMemorySnapshotStore();
+  const toolsets = new stores.InMemoryToolsetStore();
+  const sandboxToolsetRefs = new stores.InMemorySandboxToolsetRefStore();
   const runtime = new RuntimeService({
     sandboxes,
     snapshots,
-    toolsets: new stores.InMemoryToolsetStore(),
+    toolsets,
+    sandboxToolsetRefs,
   });
-  return { runtime, sandboxes, snapshots };
+  return { runtime, sandboxes, snapshots, toolsets, sandboxToolsetRefs };
+}
+
+const TOOLSET_REF = `toolsets/alice-pi-stack@sha256:${"a".repeat(64)}`;
+
+function specWithToolset(): SandboxSpec {
+  return { ...spec, toolsets: [{ ref: TOOLSET_REF }] };
 }
 
 describe("RuntimeService lifecycle", () => {
@@ -112,5 +121,89 @@ describe("RuntimeService lifecycle", () => {
     await runtime.create(spec, { id: "sb1" });
     sandboxes.update("sb1", { status: "error" });
     expect(runtime.snapshot("sb1")).rejects.toThrow(ConflictError);
+  });
+
+  // ── toolset mount bookkeeping (toolset-overlay-squashfs.md §6-7) ────────
+
+  test("create persists the sandbox's mounted toolset refs", async () => {
+    const { runtime, sandboxToolsetRefs } = makeRuntime();
+    await runtime.create(specWithToolset(), { id: "sb1" });
+    expect(sandboxToolsetRefs.getForSandbox("sb1")).toEqual([
+      { ref: TOOLSET_REF, digest: `sha256:${"a".repeat(64)}` },
+    ]);
+  });
+
+  test("resume re-persists the mounted toolset refs (survives pause)", async () => {
+    const { runtime, sandboxToolsetRefs } = makeRuntime();
+    await runtime.create(specWithToolset(), { id: "sb1" });
+    await runtime.pause("sb1");
+    // Still tracked while paused — a paused sandbox's mount must keep
+    // blocking the GC guard, not just a running one.
+    expect(sandboxToolsetRefs.getForSandbox("sb1")).toHaveLength(1);
+
+    await runtime.resume("sb1");
+    expect(sandboxToolsetRefs.getForSandbox("sb1")).toEqual([
+      { ref: TOOLSET_REF, digest: `sha256:${"a".repeat(64)}` },
+    ]);
+  });
+
+  test("destroy clears the sandbox's mounted toolset refs", async () => {
+    const { runtime, sandboxToolsetRefs } = makeRuntime();
+    await runtime.create(specWithToolset(), { id: "sb1" });
+    await runtime.destroy("sb1");
+    expect(sandboxToolsetRefs.getForSandbox("sb1")).toEqual([]);
+  });
+
+  test("deleteToolset refuses a ref mounted by a live sandbox", async () => {
+    const { runtime, toolsets } = makeRuntime();
+    await runtime.create(specWithToolset(), { id: "sb1" });
+    toolsets.put({
+      hash: "h1",
+      name: "alice-pi-stack",
+      ref: TOOLSET_REF,
+      paths: ["~/.config/pi"],
+      provenance: { kind: "built", build: [] },
+      private: false,
+      createdAt: new Date().toISOString(),
+    });
+    expect(() => runtime.deleteToolset(TOOLSET_REF)).toThrow(ConflictError);
+  });
+
+  test("deleteToolset refuses a ref mounted by a paused sandbox", async () => {
+    const { runtime, toolsets } = makeRuntime();
+    await runtime.create(specWithToolset(), { id: "sb1" });
+    await runtime.pause("sb1");
+    toolsets.put({
+      hash: "h1",
+      name: "alice-pi-stack",
+      ref: TOOLSET_REF,
+      paths: ["~/.config/pi"],
+      provenance: { kind: "built", build: [] },
+      private: false,
+      createdAt: new Date().toISOString(),
+    });
+    expect(() => runtime.deleteToolset(TOOLSET_REF)).toThrow(ConflictError);
+  });
+
+  test("deleteToolset succeeds once no sandbox references the ref", async () => {
+    const { runtime, toolsets } = makeRuntime();
+    await runtime.create(specWithToolset(), { id: "sb1" });
+    toolsets.put({
+      hash: "h1",
+      name: "alice-pi-stack",
+      ref: TOOLSET_REF,
+      paths: ["~/.config/pi"],
+      provenance: { kind: "built", build: [] },
+      private: false,
+      createdAt: new Date().toISOString(),
+    });
+    await runtime.destroy("sb1");
+    runtime.deleteToolset(TOOLSET_REF);
+    expect(() => runtime.deleteToolset(TOOLSET_REF)).toThrow(NotFoundError);
+  });
+
+  test("deleteToolset still 404s on an unknown ref", () => {
+    const { runtime } = makeRuntime();
+    expect(() => runtime.deleteToolset(TOOLSET_REF)).toThrow(NotFoundError);
   });
 });

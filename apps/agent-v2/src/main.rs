@@ -104,6 +104,15 @@ async fn main() {
         });
     }
 
+    // Recover /home/dev after a whole-container (kubelet) restart: the overlay
+    // and /run/home-ready are lost with the old container's mount ns, and the
+    // runtime does not re-drive materialize on a bare restart. No-ops on a
+    // first boot or when the runtime drives materialize itself (see
+    // toolset::self_heal_home).
+    tokio::spawn(async {
+        toolset::self_heal_home().await;
+    });
+
     // Crash-restart recovery: a persisted config means the agent restarted
     // within a live pod, so bring its processes back up once. A fresh,
     // runtime-driven boot instead pushes config *without* autostarting, then

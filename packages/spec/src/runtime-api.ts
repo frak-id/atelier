@@ -157,6 +157,12 @@ export const ExecRequestSchema = Type.Object(
     command: Type.String(),
     cwd: Type.Optional(Type.String()),
     timeoutMs: Type.Optional(Type.Number()),
+    // Which in-sandbox user runs the command. Defaults to `dev` (the sandbox's
+    // primary user, uid 1000) so exec matches an interactive SSH session and
+    // the dev-owned home/repos — pass `root` explicitly for privileged work.
+    user: Type.Optional(
+      Type.Union([Type.Literal("dev"), Type.Literal("root")]),
+    ),
   },
   { additionalProperties: false, $id: "ExecRequest" },
 );

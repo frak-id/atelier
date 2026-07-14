@@ -1,4 +1,14 @@
 #!/bin/bash
+# LEGACY (v1 raw-VM init) — NOT the current K8s pod entrypoint.
+#
+# The v2 K8s + Kata pod runs `/etc/sandbox/sandbox-boot.sh` as its container
+# command (kata-agent is the VM init and sets up /proc,/sys,/dev per the OCI
+# spec, so this script's Phase 1 mounts/mknods are redundant there). This file
+# is retained only for the pre-K8s raw-VM boot path and does NOT implement the
+# toolset-overlay handshake (it starts sshd unconditionally against a plain
+# /home/dev). Do not wire it into the K8s image without adding the
+# /run/home-ready wait (see sandbox-boot.sh / toolset-overlay-squashfs.md §5).
+#
 # Sandbox init script - runs as PID 1 inside Kata Containers VM
 #
 # Boot-time is critical — the host blocks on waitForAgent until the agent
@@ -58,18 +68,6 @@ if [ -b /dev/vdb ]; then
     log "Shared binaries mounted at /opt/shared"
 else
     log "No shared binaries drive found (/dev/vdb)"
-fi
-
-# ── Phase 1b: Bootstrap /home/dev from skeleton if PVC is empty ───────
-# When a fresh PVC is mounted at /home/dev (no prebuild), the image
-# contents are hidden.  Restore dotfiles, .bun, etc. from the tarball
-# created at image build time.
-SKEL_TARBALL="/etc/skel/home-dev.tar.gz"
-if [ -f "$SKEL_TARBALL" ] && [ ! -d "/home/dev/.bun" ]; then
-    log "Empty home detected — extracting skeleton"
-    tar xzf "$SKEL_TARBALL" -C /home/dev
-    chown -R 1000:1000 /home/dev
-    log "Skeleton extracted"
 fi
 
 # ── Phase 2: Start agent IMMEDIATELY ──────────────────────────────────
