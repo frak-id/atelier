@@ -1,12 +1,11 @@
 /**
- * Client-side spec merge — the replacement for v1's server-side profile
- * merger (atelier-v2 §3: "the spec-file merge … defined once here, not an
- * open question: deep-merge, arrays merged by `name`/`path`, last layer
- * wins, same rules as the old profile merger but running client-side").
+ * Client-side spec merge (atelier-v2 §3: "the spec-file merge … defined once
+ * here, not an open question: deep-merge, arrays merged by `name`/`path`,
+ * last layer wins").
  *
  * A fragment is a `Partial<SandboxSpec>`: what a preset, a harness composer,
  * or a repo's `atelier.jsonc` contributes. `mergeSpecs` folds any number of
- * fragments, left to right, into one fragment. The caller (CLI/dashboard/MCP)
+ * fragments, left to right, into one fragment. The caller (CLI/console/MCP)
  * is responsible for validating the final result is a complete `SandboxSpec`
  * (has `source` + `resources`) before calling the runtime API.
  */

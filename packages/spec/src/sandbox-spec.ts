@@ -104,8 +104,8 @@ export const ProcessSchema = Type.Object(
     user: Type.Optional(Type.String()),
     env: Type.Optional(Type.Record(Type.String(), MaybeSecretStringSchema)),
     /**
-     * Sandbox "ready"/"healthy" == this process. Generic replacement for v1's
-     * hardcoded opencode gate in boot-waiter.ts.
+     * Sandbox "ready"/"healthy" == this process. Generic, harness-agnostic
+     * boot gate — not hardcoded to any particular process.
      */
     primary: Type.Optional(Type.Boolean()),
     /** stdio attachment mode. `bridge` relays stdin/stdout over a WS endpoint. */

@@ -6,12 +6,12 @@ Things that will break the system if ignored.
 
 | Component | Runtime | Why |
 |-----------|---------|-----|
-| Manager API | **Bun** | Performance, native Elysia |
-| Dashboard | **Vite/Browser** | React SPA, static deploy |
-| Sandbox Agent | **Rust (Tokio/Hyper)** | Lightweight static musl binary — Bun crashes (SIGILL) inside Kata VMs due to AVX instruction issues |
+| Server API | **Bun** | Performance, native Elysia |
+| Console | **Vite/Browser** | React SPA, static deploy |
+| Sandbox Agent | **Rust (Tokio)** | Static musl binary — Bun crashes (SIGILL) inside Kata VMs due to AVX instruction issues |
 
 ```bash
-# Agent build - Rust compile for Linux
+# Agent build - Rust compile for Linux (apps/agent-v2)
 cargo build --release --target x86_64-unknown-linux-musl
 ```
 
@@ -21,7 +21,7 @@ Kata Containers needs `/dev/kvm` on the host. Standard cloud VMs without nested 
 
 ## Prebuilds Require CSI Snapshots
 
-Prebuilds need a CSI driver with VolumeSnapshot support (e.g. TopoLVM) **and** the CSI snapshot controller. Without them, the manager disables prebuilds automatically at startup — sandboxes still work, they just boot the slow path (clone + init every time).
+Prebuilds need a CSI driver with VolumeSnapshot support (e.g. TopoLVM) **and** the CSI snapshot controller. Without them, the server disables prebuilds automatically at startup — sandboxes still work, they just boot the slow path (clone + init every time).
 
 ## OpenCode Config Is Read Once
 
@@ -39,23 +39,23 @@ If using Cloudflare, disable Rocket Loader — it breaks WebSocket connections u
 
 Sandbox destruction deletes everything labeled `atelier.dev/sandbox={id}` (pods, services, configmaps, PVCs, ingresses, volumesnapshots). Any manually created resource for a sandbox **must** carry this label or it leaks.
 
-## Shared Binaries Mount
+## Toolsets Are Content-Addressed, Not Shared-PVC
 
-code-server and opencode live on a `ReadOnlyMany` PVC mounted at `/opt/shared` in every sandbox. If the shared-binaries Job hasn't completed (or the PVC fails to mount), sandboxes boot but `/opt/shared/bin/*` is missing and services fail to start.
+code-server, opencode, and any org toolbox are built as content-addressed toolset artifacts (`toolsets/{name}@{digest}`), pushed to Zot, and materialized into the overlay home by the in-pod agent before the primary process starts. There is no shared `ReadOnlyMany` PVC or populate Job (the old v1 `shared-binaries` mount) — a missing toolset means materialize fails for that sandbox, not a global outage.
 
 ## Mock Mode
 
-Manager runs without KVM/K8s locally:
+The server runs without KVM/K8s locally:
 
 ```bash
-ATELIER_SERVER_MODE=mock bun run dev
+ATELIER_SERVER_MODE=mock bun run --filter @atelier/server dev
 ```
 
 All infrastructure services check `isMock()` and return mock responses.
 
 ## TUI Warp Phantom-Instance (Upstream Bug)
 
-Warping a local OpenCode TUI session into an Atelier sandbox lands on an empty/phantom instance. Use the dashboard (or SSH/VSCode-Remote) instead.
+Warping a local OpenCode TUI session into an Atelier sandbox lands on an empty/phantom instance. Use the console (or SSH/VSCode-Remote) instead.
 
 Cause: the TUI configures `@opencode-ai/sdk` with `directory = process.cwd()` (the user's local Mac path). The SDK injects `?directory=<local cwd>` into every GET. After proxy, the remote opencode's `WorkspaceRoutingMiddleware.defaultDirectory()` reads `?directory` first — a path that doesn't exist on the VM — and bootstraps a phantom instance disconnected from the real workspace at `/home/dev/workspace/<repo>`.
 

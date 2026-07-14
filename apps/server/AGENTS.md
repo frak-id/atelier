@@ -2,9 +2,7 @@
 
 The v2 deployable: `apps/server` ("the Atelier server", atelier-v2 §3.1).
 One process, three internal modules with import boundaries enforced by
-`scripts/check-boundaries.ts`, not convention. Developed on a **parallel
-track** beside `apps/manager` (v1) — see `docs/proposals/atelier-v2.md` §6.
-v1 keeps running untouched; nothing here is wired into v1's boot path.
+`scripts/check-boundaries.ts`, not convention. See `docs/proposals/atelier-v2.md` §6.
 
 ## Structure
 

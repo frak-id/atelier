@@ -1,7 +1,7 @@
 //! Shared plumbing for the attach bridge (attach.rs): a bounded output replay
-//! buffer and the tiny WS-handshake request-target parse. Ported from v1
-//! apps/agent-rust bridge.rs; the two v1 bridges (acp stdio + terminal PTY)
-//! collapse into one attach mechanism here, so the buffer lives once.
+//! buffer and the tiny WS-handshake request-target parse. The two v1 bridges
+//! (acp stdio + terminal PTY) collapse into one attach mechanism here, so the
+//! buffer lives once.
 
 use std::collections::VecDeque;
 

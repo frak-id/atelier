@@ -13,7 +13,7 @@
 //! v1 hardcoded a single dev-port forwarder; v2 reconciles a listener per
 //! `ports[]` entry against every pushed config, symmetric with the supervisor's
 //! config-watch: a re-pushed config (spec update, resume) that adds or drops a
-//! port adds or drops its listener. Ported from apps/agent-rust forwarder.rs.
+//! port adds or drops its listener.
 
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -1,10 +1,9 @@
-//! Unified attach bridge — one mechanism for a process's stdio, replacing v1's
-//! two separate bridges (acp.rs stdio + terminal.rs PTY). A process with
+//! Unified attach bridge — one mechanism for a process's stdio. A process with
 //! `stdio: "bridge"` gets its stdin/stdout relayed over a WebSocket; a process
 //! with `pty: true` gets a PTY. Both fan output out to any number of read-only
 //! (`mode=ro`) clients with ring-buffer replay, and admit at most ONE writer
-//! (`mode=rw`) at a time — the single-writer guard v1's acp.rs lacked, where
-//! two concurrent writers interleave and corrupt the JSON-RPC frame stream.
+//! (`mode=rw`) at a time — a single-writer guard, since two concurrent writers
+//! would interleave and corrupt the JSON-RPC frame stream.
 
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, RawFd};

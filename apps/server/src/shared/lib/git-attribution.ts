@@ -5,9 +5,8 @@
  * in shared/ so both modules can import it without crossing the control↔runtime
  * boundary (`scripts/check-boundaries.ts`).
  *
- * Reshaped from v1 `orchestrators/ports/guest-secrets.ts`
- * (`buildGitConfigFiles`). No config or identity-table dependency: the caller
- * resolves the identity/token and passes plain values.
+ * No config or identity-table dependency: the caller resolves the
+ * identity/token and passes plain values.
  *
  * Mount note: the PVC mounts at `/home/dev` only. These files land on the
  * container's ephemeral rootfs (`/etc/…`), so a PVC snapshot never captures

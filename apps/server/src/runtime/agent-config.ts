@@ -13,9 +13,9 @@
  * `timeoutSeconds` (runtime lifecycle). The Rust side is
  * `deny_unknown_fields`, so any drift fails loudly at `PUT /config`.
  *
- * Mirrors v1's lossy `specToSandboxConfig` (which collapsed a process to a
- * `services` entry keeping only `readiness.port`); the v2 projection is
- * lossless across the full process model.
+ * Lossless across the full process model — unlike a naive projection that
+ * would collapse a process to a `services` entry keeping only
+ * `readiness.port`, every field here round-trips.
  */
 import {
   type Hooks,

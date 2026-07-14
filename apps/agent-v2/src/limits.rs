@@ -1,5 +1,5 @@
 //! Concurrency + size caps for the exec/files request surface, so a burst of
-//! calls can't exhaust fds or memory. Ported from apps/agent-rust limits.rs.
+//! calls can't exhaust fds or memory.
 
 use std::sync::LazyLock;
 

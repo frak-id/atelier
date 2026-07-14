@@ -140,8 +140,7 @@ async function resolveSecrets(
 }
 
 /**
- * Inject sandbox git attribution (atelier-v2 parity with v1's
- * `collectGitCredentialFiles`): the owner's git identity + GitHub credential
+ * Inject sandbox git attribution: the owner's git identity + GitHub credential
  * as guest files, plus owner display annotations and an owner-id metadata tag
  * (so resume can re-resolve the token). No-op without an owner.
  */

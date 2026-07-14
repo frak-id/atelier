@@ -1,8 +1,8 @@
 /**
- * Control's composition root. Mirrors v1 `container.ts`'s manual-wiring
- * convention (AGENTS.md "DI: Manual wiring in container.ts"), scoped to
- * exactly what atelier-v2 §3.1 assigns to control/: identity, orgs, quotas,
- * secrets, saved specs, org policy, and the enrichment pipeline.
+ * Control's composition root. Manual-wiring convention (AGENTS.md "DI: Manual
+ * wiring in container.ts"), scoped to exactly what atelier-v2 §3.1 assigns to
+ * control/: identity, orgs, quotas, secrets, saved specs, org policy, and the
+ * enrichment pipeline.
  */
 
 import { AuthService } from "./auth.ts";

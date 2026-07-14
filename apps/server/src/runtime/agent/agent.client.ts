@@ -66,8 +66,8 @@ export class AgentClient {
 
   /**
    * Drop the cached pod IP for a sandbox. Callers invoke this whenever the pod
-   * is recreated or removed (restart/recover/destroy). Replaces v1's implicit
-   * eventBus subscription — the runtime stays free of the domain event schema.
+   * is recreated or removed (restart/recover/destroy) — an explicit call, so
+   * the runtime stays free of any domain event bus/schema dependency.
    */
   invalidatePodIp(sandboxId: string): void {
     this.podIpCache.delete(sandboxId);
@@ -243,9 +243,10 @@ export class AgentClient {
   }
 
   /**
-   * Block until the spec's `primary` process is ready (`/health` healthy) — the
-   * generic boot gate replacing v1's hardcoded opencode `/health` wait. Returns
-   * true immediately when no primary is declared (liveness == health).
+   * Block until the spec's `primary` process is ready (`/health` healthy) — a
+   * generic, harness-agnostic boot gate (any process can be `primary`, not
+   * just opencode). Returns true immediately when no primary is declared
+   * (liveness == health).
    */
   async waitForPrimary(
     sandboxId: string,

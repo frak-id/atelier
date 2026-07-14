@@ -1,7 +1,7 @@
 //! One-shot shell command execution with output + time bounds. Shared by the
-//! `exec` routes and the hook runner. Ported from apps/agent-rust command.rs;
-//! the v2 change is that pod `env` (which may carry resolved secrets) is passed
-//! in explicitly rather than read from a global, and results are a typed struct.
+//! `exec` routes and the hook runner. Pod `env` (which may carry resolved
+//! secrets) is passed in explicitly rather than read from a global, and
+//! results are a typed struct.
 
 use std::collections::HashMap;
 use std::process::Stdio;

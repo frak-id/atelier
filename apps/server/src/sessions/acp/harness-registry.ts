@@ -8,9 +8,9 @@
  * manager-side model/agent selection maps to `session/set_config_option`
  * assignments (ACP does not standardize model selection).
  *
- * Reshaped from v1 `shared/agent/harness-adapter.ts`: the interface + registry
- * mechanism is kept here (neutral); the concrete opencode adapter moves to
- * `@atelier/compose` and is registered by the server's bootstrap.
+ * The interface + registry mechanism is kept here (neutral); the concrete
+ * opencode adapter lives in `@atelier/compose` and is registered by the
+ * server's bootstrap.
  */
 
 /** The model/agent selection a session was configured with, harness-neutral. */

@@ -1,7 +1,6 @@
 //! `POST /files/write` — write `files[]` to their paths with mode/owner. The
 //! runtime calls this before the process phase (file contents never persist in
-//! the pushed config) and again on `PATCH /files` for live rotation. Ported
-//! from apps/agent-rust files.rs.
+//! the pushed config) and again on `PATCH /files` for live rotation.
 
 use std::fs::{self, Permissions};
 use std::os::unix::fs::{PermissionsExt, chown};

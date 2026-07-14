@@ -1,7 +1,7 @@
 /**
  * Authn mechanism — framework-agnostic (no Elysia). `api/` wires this into
  * the actual HTTP middleware; control only knows how to verify a token and
- * validate an API key. Reshaped from v1 `shared/lib/auth.ts`.
+ * validate an API key.
  */
 import * as jose from "jose";
 import { UnauthorizedError } from "../shared/errors.ts";
@@ -20,7 +20,7 @@ export interface AuthUser {
 
 const JWT_ISSUER_ALG = "HS256";
 
-/** Sign a JWT for `user`, mirroring v1's `@elysiajs/jwt`-issued claims shape. */
+/** Sign a JWT for `user` (HS256, `@elysiajs/jwt`-compatible claims shape). */
 export async function signJwt(
   user: AuthUser,
   expiresInSeconds = 7 * 24 * 60 * 60,

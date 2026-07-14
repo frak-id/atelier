@@ -6,8 +6,8 @@
 //! agent runs the commands the config carries for it.
 //!
 //! Hooks run as `dev` (uid 1000, HOME=/home/dev): the canonical hooks —
-//! `git config --global`, `~/.atelier/refresh-tokens.sh` — are user-scoped,
-//! matching v1's harness=dev default. A hook needing root uses `sudo`.
+//! `git config --global`, `~/.atelier/refresh-tokens.sh` — are user-scoped by
+//! default. A hook needing root uses `sudo`.
 
 use std::collections::HashMap;
 

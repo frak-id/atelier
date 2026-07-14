@@ -1,9 +1,8 @@
 /**
- * The v2 `HarnessSessionSurface` — a STATELESS per-sandbox view over the ACP
- * hub ({@link AgentDispatch}). Replaces v1's `OpencodeSessionSurface`, which
- * spoke `opencode serve` REST over HTTP: v2 harnesses run as an `acp` stdio
- * bridge (no serve port), so the dashboard's read/intervene surface is served
- * from the same shared ACP connection the chat flow uses.
+ * `HarnessSessionSurface` — a STATELESS per-sandbox view over the ACP
+ * hub ({@link AgentDispatch}). Harnesses run as an `acp` stdio bridge (no
+ * serve port), so the console's read/intervene surface is served from the
+ * same shared ACP connection the chat flow uses.
  *
  * Every method delegates to the hub; the hub owns all state (session registry,
  * permission buffer, event emitter). ACP is a flatter model than opencode

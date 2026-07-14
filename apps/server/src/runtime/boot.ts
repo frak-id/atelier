@@ -1,6 +1,5 @@
 /**
- * Mechanism-only boot. Reshaped from v1 `orchestrators/kernel/sandbox-boot.ts`
- * with every Workspace/policy leak removed:
+ * Mechanism-only boot, with every Workspace/policy leak removed:
  *   - no `Workspace` param — takes a resolved `SandboxSpec`;
  *   - no `ports.sshKeys.getValidPublicKeys()` — `authorizedKeys` is an explicit
  *     input (an SSH pubkey is content the caller resolved);

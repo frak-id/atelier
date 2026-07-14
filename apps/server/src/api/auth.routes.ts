@@ -3,9 +3,8 @@
  * (it's how a caller *gets* a token): mints the `sandbox_token` JWT the rest
  * of `/v1`, `/api`, `/sessions` require (atelier-v2 PHASE0.md item 1).
  *
- * Ported from v1 `apps/manager/src/api/auth.routes.ts`, ACP/dashboard-scoped:
- * dropped the cliproxy user-key bootstrap and `/opencode/verify` forward-auth
- * route (out of v2 scope — forward-auth for tool ingresses is a separate,
+ * ACP/console-scoped: no cliproxy user-key bootstrap and no `/opencode/verify`
+ * forward-auth route (forward-auth for tool ingresses is a separate,
  * still-open follow-up, not this login flow).
  */
 import { Elysia, t } from "elysia";

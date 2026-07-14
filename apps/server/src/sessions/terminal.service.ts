@@ -1,9 +1,8 @@
 /**
  * Terminal (PTY) session mechanism — ownership-checked CRUD plus the raw byte
- * bridge URL. Reshaped from v1 `api/sandboxes/terminal.routes.ts`: the
- * ownership checks and agent calls are framework-agnostic here; the actual
- * Elysia `.ws()` byte relay lives in `api/` (WS glue is inherently
- * framework-specific and stays thin there).
+ * bridge URL. The ownership checks and agent calls are framework-agnostic
+ * here; the actual Elysia `.ws()` byte relay lives in `api/` (WS glue is
+ * inherently framework-specific and stays thin there).
  */
 import type { AgentClient, TerminalSession } from "../runtime/index.ts";
 import { ForbiddenError, NotFoundError } from "../shared/errors.ts";

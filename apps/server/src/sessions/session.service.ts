@@ -1,8 +1,7 @@
 /**
- * The dashboard/CLI-facing agent session facade. Reshaped from v1
- * `api/sandboxes/agent-facade.routes.ts`'s `surfaceFor()` + handlers: the
- * routing/Elysia concerns move to `api/`, this class is the framework-agnostic
- * mechanism. Harness-neutral: every harness speaks ACP over the attach bridge
+ * The console/CLI-facing agent session facade. The routing/Elysia concerns
+ * live in `api/`; this class is the framework-agnostic mechanism.
+ * Harness-neutral: every harness speaks ACP over the attach bridge
  * (the `acp` process convention), so ONE surface factory serves all of them —
  * a sandbox only needs the `atelier.dev/harness` annotation, no per-harness
  * server registration. A sandbox without the annotation has no agent surface
@@ -33,8 +32,8 @@ export class SessionService {
     private readonly deps: {
       runtime: RuntimeService;
       /** ACP goes over the runtime attach bridge, so a surface needs only
-       * the sandbox id (v1's `AgentConnection {ipAddress,password}` is
-       * dead). One factory for every harness — they all speak ACP. */
+       * the sandbox id — no ip/password connection details. One factory
+       * for every harness — they all speak ACP. */
       surface: (sandboxId: string) => HarnessSessionSurface;
     },
   ) {}

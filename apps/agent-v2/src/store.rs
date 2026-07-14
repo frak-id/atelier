@@ -1,5 +1,5 @@
-//! Mutable config store — the v2 replacement for v1's
-//! `LazyLock<RwLock<Option<SandboxConfig>>>` read-once-at-boot static.
+//! Mutable config store, swappable at runtime (not a read-once-at-boot
+//! static).
 //!
 //! The runtime *pushes* config over HTTP (`PUT /config`); the store swaps it
 //! atomically, persists a copy for crash-restart recovery, and notifies

@@ -1,8 +1,8 @@
-//! Atelier v2 in-pod agent (`atelier-agent`). Parallel-track fork of
-//! `sandbox-agent` (apps/agent-rust) against the v2 `SandboxSpec` seam:
-//! config is *pushed* by the runtime and mutable (store.rs), processes are
-//! supervised agent-side with readiness/primary/after/restart/lazy semantics,
-//! and stdio/PTY attach share one bridge with a single-writer guard.
+//! Atelier v2 in-pod agent (`atelier-agent`), built against the v2
+//! `SandboxSpec` seam: config is *pushed* by the runtime and mutable
+//! (store.rs), processes are supervised agent-side with
+//! readiness/primary/after/restart/lazy semantics, and stdio/PTY attach share
+//! one bridge with a single-writer guard.
 //!
 //! Milestone 1 build order (atelier-v2 §6 phase 1):
 //!   1a. crate + config schema + mutable store + config push route  ← this commit
@@ -41,7 +41,7 @@ use terminal::TerminalRegistry;
 pub const AGENT_PORT: u16 = 9998;
 
 /// UTC RFC3339 timestamp with no chrono dependency (civil-date algorithm from
-/// Howard Hinnant), ported from apps/agent-rust main.rs.
+/// Howard Hinnant).
 pub fn now_rfc3339() -> String {
     let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)

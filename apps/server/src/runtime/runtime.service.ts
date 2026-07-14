@@ -1313,8 +1313,8 @@ export class RuntimeService {
     }
   }
 
-  /** Boot gate on the spec's `primary` process readiness (generic replacement
-   * for v1's hardcoded opencode boot-waiter). No-op when no primary. */
+  /** Boot gate on the spec's `primary` process readiness (generic,
+   * harness-agnostic — not hardcoded to opencode). No-op when no primary. */
   private async gateOnPrimary(id: string): Promise<void> {
     const ready = await this.agent.waitForPrimary(id, { timeout: 120_000 });
     if (!ready) {

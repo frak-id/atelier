@@ -1,7 +1,6 @@
 /**
  * Post-GitHub-OAuth authorization gate: is this GitHub user allowed to use
- * the platform at all (org membership or a static allowlist). Ported from v1
- * `modules/auth/auth.service.ts` verbatim.
+ * the platform at all (org membership or a static allowlist).
  */
 import { config, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";

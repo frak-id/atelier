@@ -1,7 +1,7 @@
 /**
- * Shared MCP tool result formatting (v1's `apps/manager/src/mcp` convention):
- * curated `text()` results, `isError: true` for failures instead of letting
- * exceptions bubble to a raw 500-shaped MCP error.
+ * Shared MCP tool result formatting: curated `text()` results,
+ * `isError: true` for failures instead of letting exceptions bubble to a raw
+ * 500-shaped MCP error.
  */
 import { SandboxError } from "../../shared/errors.ts";
 

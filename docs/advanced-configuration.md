@@ -1,8 +1,23 @@
 # Advanced Configuration
 
-Complete reference for every option in the Atelier Helm chart (`charts/atelier/values.yaml`) plus runtime environment variables.
+Atelier's deploy topology is split in two:
 
-Apply changes with:
+- **`charts/atelier`** — the shared cluster infra Helm chart: Zot (OCI
+  registry), CLIProxyAPI, sshpiper, cert-manager issuers + wildcard certs,
+  the Kata `RuntimeClass`, and the prebuild `VolumeSnapshotClass`. It does
+  **not** deploy the server or console app.
+- **`infra/k8s/v2`** — plain Kubernetes manifests for the server + console
+  app itself (Deployment, Service, Ingress, config ConfigMap, secrets, PVC,
+  RBAC). See [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md) for the
+  full apply sequence.
+
+This page documents the infra chart's values (`charts/atelier/values.yaml`).
+For app-level settings (domain, auth, ports, sandbox defaults, MCP token,
+CLIProxy wiring), edit `infra/k8s/v2/30-config.yaml` (non-secret config,
+mounted as `/etc/atelier/sandbox.config.json`) and the `atelier-v2-secrets`
+Secret (credentials) — see the schema reference below.
+
+Apply infra chart changes with:
 
 ```bash
 helm upgrade atelier ./charts/atelier \
@@ -10,122 +25,122 @@ helm upgrade atelier ./charts/atelier \
   --values values.production.yaml
 ```
 
-## Domain & TLS
+## App configuration (`infra/k8s/v2/30-config.yaml` + secrets)
 
-```yaml
-domain:
-  baseDomain: ""        # REQUIRED — e.g. "example.com". All services hang off this.
-  dashboard: ""         # Dashboard domain. Empty = "sandbox.{baseDomain}"
-  tls:
-    email: ""           # ACME contact email (required when certManager.enabled)
+The server reads a layered config: env vars > the mounted
+`sandbox.config.json` > built-in defaults. The full schema lives in
+`packages/shared/src/config.schema.ts`; the generated JSON Schema is at
+`packages/shared/schemas/atelier.config.schema.json`.
+
+```jsonc
+{
+  "domain": {
+    "baseDomain": "example.com",     // REQUIRED — all services hang off this
+    "dashboard": "atelier.example.com",
+    "tls": { "email": "admin@example.com" },
+    "ssh": { "port": 2222, "hostname": "ssh.example.com" }
+  },
+  "auth": {
+    "allowedOrg": "my-github-org"    // optional GitHub org restriction
+  },
+  "server": {
+    "mode": "production",
+    "port": 4000,
+    "host": "0.0.0.0",
+    "maxSandboxes": 20,
+    "maxActiveTasks": 10
+  },
+  "kubernetes": {
+    "namespace": "atelier-v2-sandboxes",
+    "systemNamespace": "atelier-v2-system",
+    "runtimeClass": "kata-atelier-clh",
+    "ingressClassName": "traefik",
+    "toolIngressClusterIssuer": "letsencrypt-prod",
+    "registryUrl": "zot.zot.svc:5000",
+    "npmRegistryUrl": "",
+    "storageClass": "topolvm-thin",
+    "volumeSnapshotClass": "atelier-snapshots",
+    "defaultVolumeSize": "20Gi"
+  },
+  "sandbox": {
+    "defaultImage": "dev-base-v2",
+    "git": { "email": "sandbox@atelier.dev", "name": "Sandbox User" }
+  }
+}
 ```
+
+Secrets (GitHub OAuth, JWT, secrets-at-rest key, MCP token, CLIProxy API key)
+are injected via env from the `atelier-v2-secrets` Secret and override the
+matching config fields — see `infra/k8s/v2/README.md` for the exact
+`kubectl create secret` command.
 
 Resulting URL patterns:
 
 | Service | URL |
 |---------|-----|
-| Dashboard | `sandbox.{baseDomain}` |
+| Console | `{domain.dashboard}` |
 | VS Code | `sandbox-{id}.{baseDomain}` |
 | OpenCode | `opencode-{id}.{baseDomain}` |
 | Browser (KasmVNC) | `browser-{id}.{baseDomain}` |
 | Dev command | `dev-{name}-{id}.{baseDomain}` |
 
-## Authentication
+### Key environment variables (server)
+
+Set directly on the Deployment (`infra/k8s/v2/50-deployment.yaml`); these
+override the config file.
+
+| Variable | Description |
+|----------|-------------|
+| `ATELIER_SERVER_MODE` | `production` or `mock` (local dev, no K8s/KVM) |
+| `ATELIER_CONFIG` | Path to the mounted config JSON (default `/etc/atelier/sandbox.config.json`) |
+| `ATELIER_GITHUB_CLIENT_ID` / `_SECRET` | GitHub OAuth credentials |
+| `ATELIER_JWT_SECRET` | JWT signing secret |
+| `SANDBOX_SECRETS_KEY` | Encrypts saved-spec/workspace secrets at rest |
+| `ATELIER_MCP_TOKEN` | Bearer token enabling the MCP server (empty = disabled) |
+| `ATELIER_CLIPROXY_URL` / `_API_KEY` | CLIProxy model provider baked into sandbox `opencode.json` at spec enrichment |
+
+The full `ATELIER_*` → config-path mapping is `ENV_VAR_MAPPING` in
+`packages/shared/src/config.schema.ts`.
+
+### MCP server for AI agents
+
+Set `ATELIER_MCP_TOKEN` (Secret key) to let external AI agents orchestrate
+sandboxes via the Model Context Protocol (`/mcp`). Agents authenticate with
+`Authorization: Bearer <token>`.
+
+## Base images (dev-base, dev-cloud)
+
+Base images are **not** built by the server at runtime — there is no
+build-from-UI feature in v2. They're built in-cluster with BuildKit
+(`buildctl`) against a shared `buildkitd` and pushed to Zot; see
+`infra/k8s/v2/deploy.sh` and [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md#rebuild-images-in-cluster-no-local-docker).
+The `imageBuilder.*` config schema (kaniko/buildkit) still exists in
+`packages/shared` for a planned server-side rebuild but is currently unread.
+
+## Infra chart values (`charts/atelier/values.yaml`)
+
+### Ingress
 
 ```yaml
-auth:
-  github:
-    clientId: ""        # GitHub OAuth App client ID
-    clientSecret: ""    # GitHub OAuth App client secret
-  jwtSecret: ""         # JWT signing secret — auto-generated if empty
-  allowedOrg: ""        # Restrict login to members of this GitHub org
-  allowedUsers: []      # Or restrict to explicit GitHub usernames
-  existingSecret: ""    # Use a pre-created K8s Secret instead of values
+ingress:
+  className: traefik             # traefik (k3s default) | nginx | …
+  annotations: {}
 ```
 
-When using `existingSecret`, the Secret must contain `ATELIER_GITHUB_CLIENT_ID`, `ATELIER_GITHUB_CLIENT_SECRET`, `ATELIER_JWT_SECRET`, `SANDBOX_SECRETS_KEY`, and optionally `ATELIER_MCP_TOKEN`. This keeps credentials out of your values file (recommended with sealed-secrets / SOPS / external-secrets).
-
-The GitHub OAuth App callback URL must be `https://sandbox.{baseDomain}/auth/callback`.
-
-## Server
+### In-pod sandbox agent
 
 ```yaml
-server:
-  port: 4000            # Manager API port
-  maxSandboxes: 20      # Hard cap on concurrent sandboxes
-  maxActiveTasks: 10    # Hard cap on concurrent AI tasks
-  mcpToken: ""          # Bearer token enabling the MCP server (empty = disabled)
+agent:
+  image:
+    repository: ghcr.io/frak-id/sandbox-agent
+    tag: ""                      # Empty defaults to the chart appVersion
 ```
 
-Setting `mcpToken` lets external AI agents orchestrate sandboxes, tasks, workspaces, and dev commands via the Model Context Protocol.
+Not run directly — the binary is baked into base images at build time
+(`/usr/local/bin/sandbox-agent`, from `apps/agent-v2`). Set `repository: ""`
+to fall back to the in-registry `<registryUrl>/sandbox-agent:latest`.
 
-## Kubernetes & Storage
-
-```yaml
-kubernetes:
-  namespace: atelier-sandboxes   # Namespace for sandbox pods (created by the chart)
-  runtimeClass: kata-clh         # RuntimeClass for VM isolation
-  storageClass: ""               # StorageClass for sandbox PVCs (empty = cluster default)
-  volumeSnapshotClass: ""        # VolumeSnapshotClass for prebuilds (empty = cluster default)
-  defaultVolumeSize: "10Gi"      # Default PVC size for new sandboxes
-```
-
-### Prebuilds / snapshots
-
-Prebuilds require a CSI driver with snapshot support (e.g. TopoLVM) and the CSI snapshot controller. Without them, prebuilds are **automatically disabled at startup** — everything else still works.
-
-```yaml
-snapshots:
-  createSnapshotClass: false   # Let the chart create a VolumeSnapshotClass
-  driver: ""                   # CSI driver name, e.g. "topolvm.io" or "ebs.csi.aws.com"
-  deletionPolicy: Delete       # Delete | Retain
-```
-
-### Kata runtime class
-
-```yaml
-kata:
-  createRuntimeClass: false    # kata-deploy usually creates it; set true to manage in-chart
-  handler: kata-clh
-```
-
-## Sandbox Defaults
-
-```yaml
-sandbox:
-  defaultImage: dev-base       # Base image for new sandboxes (dev-base | dev-cloud | custom)
-  git:
-    email: sandbox@atelier.dev # Default git identity inside sandboxes
-    name: Sandbox User
-
-ports:                         # Internal service ports inside sandbox VMs —
-  vscode: 8080                 # only change if your custom images differ
-  opencode: 3000
-  browser: 6080
-  terminal: 7681
-  agent: 9999
-```
-
-## Image Builder (base images from the dashboard)
-
-Build and publish base images directly from the UI — no local Docker needed.
-
-```yaml
-imageBuilder:
-  kind: kaniko             # kaniko (default, zero deps) | buildkit (external daemon)
-  image: ""                # Builder image override (per-kind defaults apply)
-  endpoint: ""             # REQUIRED when kind=buildkit, e.g. tcp://buildkitd.buildkit.svc:1234
-  cacheRepo: ""            # Layer cache repo (empty = bundled Zot at {registryUrl}/cache)
-  insecureRegistry: true   # Bundled Zot has no TLS; set false for an external TLS registry
-  tls:                     # mTLS for BuildKit (kind=buildkit only)
-    secretName: ""         # Secret with ca.crt / tls.crt / tls.key
-    serverName: ""         # Optional SNI override
-```
-
-- **kaniko** — spawns a K8s Job per build; works out of the box
-- **buildkit** — dispatches to a BuildKit daemon you already host; only a small `buildctl` Job runs per build
-
-## Zot (OCI Registry)
+### Zot (OCI Registry)
 
 ```yaml
 zot:
@@ -141,7 +156,7 @@ zot:
   port: 5000
 ```
 
-## CLIProxyAPI (AI model proxy)
+### CLIProxyAPI (AI model proxy)
 
 Wraps Claude, Gemini, Codex, Qwen, etc. into OpenAI-compatible endpoints with a management UI at `/management.html`.
 
@@ -151,7 +166,7 @@ cliproxy:
   port: 8317
   configSeedStrategy: "seed-once"  # seed-once | hash-sync (see warning below)
   managementKey: ""                # Management UI key (auto-generated if empty)
-  managerApiKey: ""                # Key the manager uses to fetch models (auto-generated)
+  managerApiKey: ""                # Key the app uses to fetch models (auto-generated)
   apiKeys: []                      # Bearer tokens for proxy clients
   extraConfig: {}                  # Merged into config.yaml (provider keys, aliases, …)
   persistence:
@@ -170,7 +185,7 @@ cliproxy:
     proxy-url: "socks5://proxy:1080"
 ```
 
-## sshpiper (SSH proxy)
+### sshpiper (SSH proxy)
 
 Username-based SSH routing: `ssh sandbox-{id}@your-host -p 2222`.
 
@@ -184,7 +199,7 @@ sshpiper:
 
 To expose plain port `2222` externally, DNAT `2222 → 30022` on the host firewall, or set k3s' service node port range to include 2222.
 
-## cert-manager Integration
+### cert-manager Integration
 
 ```yaml
 certManager:
@@ -200,69 +215,34 @@ certManager:
       key: api-token
 ```
 
-Currently **only Cloudflare DNS-01** is supported for the wildcard certificate. For other DNS providers, set `certManager.enabled: false` and provide certs manually (see [Setup Guide — Manual TLS](setup.md#manual-tls)).
+Currently **only Cloudflare DNS-01** is supported for the wildcard certificate.
 
-## Shared Binaries
-
-A Job downloads code-server and OpenCode once into a `ReadOnlyMany` PVC mounted by every sandbox — keeping base images small and updates centralized.
+### Kata Containers runtime class
 
 ```yaml
-sharedBinaries:
-  enabled: true
-  storage: 2Gi
-  image: curlimages/curl:8.17.0
-  opencode:
-    version: "1.16.2"
-  codeServer:
-    version: "4.116.0"
+kata:
+  createRuntimeClass: false    # kata-deploy usually creates it; set true to manage in-chart
+  handler: kata-clh
 ```
 
-Bump the versions and `helm upgrade` to roll out new binaries.
+Prerequisites: kata-deploy must be installed in the cluster.
 
-## npm Registry Proxy
+### Snapshot support (for prebuilds)
+
+Prebuilds use CSI VolumeSnapshots to clone workspace filesystems instantly.
+Without a CSI driver + snapshot controller, prebuilds are automatically
+disabled at startup — everything else still works.
 
 ```yaml
-npmRegistryUrl: ""   # e.g. "https://npm.example.com" (Verdaccio/Nexus/Artifactory)
+snapshots:
+  createSnapshotClass: false   # Let the chart create a VolumeSnapshotClass
+  driver: ""                   # CSI driver name, e.g. "topolvm.io" or "ebs.csi.aws.com"
+  deletionPolicy: Delete       # Delete | Retain
 ```
 
-When set, `npmrc`/`bunfig`/`yarnrc` are injected into every sandbox so npm, bun, and yarn use your proxy. Empty = public npm registry.
-
-## Secrets Encryption
+### Global / RBAC
 
 ```yaml
-secrets:
-  encryptionKey: ""   # Key encrypting workspace secrets at rest (auto-generated if empty)
-```
-
-## Manager & Dashboard Tuning
-
-```yaml
-manager:
-  image:
-    repository: ghcr.io/frak-id/atelier-manager
-    tag: ""                      # Empty = chart appVersion
-  resources:
-    requests: { memory: "256Mi", cpu: "100m" }
-    limits:   { memory: "1Gi",   cpu: "1000m" }
-  persistence:
-    size: 1Gi                    # SQLite database volume
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
-  podAnnotations: {}
-  podLabels: {}
-
-dashboard:
-  image:
-    repository: ghcr.io/frak-id/atelier-dashboard
-  resources:
-    requests: { memory: "32Mi", cpu: "10m" }
-    limits:   { memory: "64Mi", cpu: "100m" }
-
-ingress:
-  className: traefik             # traefik (k3s default) | nginx | …
-  annotations: {}
-
 global:
   imagePullSecrets: []           # e.g. [{ name: regcred }]
 
@@ -272,63 +252,37 @@ serviceAccount:
   annotations: {}
 
 rbac:
-  create: true                   # ClusterRole/Role + bindings for the manager
+  create: true
 ```
-
-## Environment Variables (manager runtime)
-
-Helm sets these for you, but they're useful for local development and debugging. Priority: env vars > config file (`ATELIER_CONFIG`, default `/etc/atelier/sandbox.config.json`) > defaults.
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ATELIER_SERVER_MODE` | `production` or `mock` (local dev, no K8s/KVM) | required |
-| `ATELIER_BASE_DOMAIN` | Base domain | `localhost` |
-| `ATELIER_DASHBOARD_DOMAIN` | Dashboard domain | derived |
-| `ATELIER_TLS_EMAIL` | ACME contact email | — |
-| `ATELIER_GITHUB_CLIENT_ID` / `_SECRET` | GitHub OAuth credentials | — |
-| `ATELIER_JWT_SECRET` | JWT signing secret | — |
-| `ATELIER_AUTH_ALLOWED_ORG` | Allowed GitHub org | — |
-| `ATELIER_AUTH_ALLOWED_USERS` | Allowed usernames (comma-separated) | — |
-| `ATELIER_SERVER_PORT` / `_HOST` | API bind | `4000` / `0.0.0.0` |
-| `ATELIER_MAX_SANDBOXES` | Concurrent sandbox cap | `20` |
 
 ## Recipes
-
-### Restrict access to your team
-
-```yaml
-auth:
-  allowedOrg: "my-company"        # any member of the org
-  # or
-  allowedUsers: ["alice", "bob"]  # explicit allow-list
-```
 
 ### Use an external registry instead of Zot
 
 ```yaml
+# charts/atelier/values.yaml
 zot:
   enabled: false
   externalUrl: "registry.internal:5000"
-imageBuilder:
-  insecureRegistry: false         # if your registry has proper TLS
 ```
+
+Then point the app's `kubernetes.registryUrl` (in `infra/k8s/v2/30-config.yaml`) at the same host:port.
 
 ### Enable prebuilds with TopoLVM
 
 ```yaml
-kubernetes:
-  storageClass: topolvm-provisioner
-  volumeSnapshotClass: topolvm-snapshot
+# charts/atelier/values.yaml
 snapshots:
   createSnapshotClass: true
   driver: topolvm.io
 ```
 
-### Enable the MCP server for AI agents
-
-```yaml
-server:
-  mcpToken: "a-long-random-token"
+```jsonc
+// infra/k8s/v2/30-config.yaml
+{
+  "kubernetes": {
+    "storageClass": "topolvm-provisioner",
+    "volumeSnapshotClass": "atelier-snapshots"
+  }
+}
 ```
-
-Agents authenticate with `Authorization: Bearer <token>` and can manage sandboxes, tasks, workspaces, and dev commands programmatically.

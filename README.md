@@ -22,9 +22,9 @@ Review the results from your phone on the ski lift — or wherever you happen to
 
 ## Features
 
-- **Task dispatch** — create coding tasks from the dashboard. Atelier spawns a sandbox, creates a git branch, launches OpenCode with your prompt, and tracks progress. An AI task queue for your team
+- **Task dispatch** — create coding tasks from the console. Atelier spawns a sandbox, creates a git branch, launches OpenCode with your prompt, and tracks progress. An AI task queue for your team
 - **Session templates** — 4 built-in AI workflows (Implementation, Best Practices Review, Security Review, Simplification) with customizable models, effort levels, and prompt templates per workspace
-- **Dashboard** — mission control for all your sandboxes: real-time task progress, running dev servers, and an attention feed aggregating OpenCode permission and question requests across every session
+- **Console** — mission control for all your sandboxes: real-time task progress, running dev servers, and an attention feed aggregating OpenCode permission and question requests across every session
 - **Prebuilds** — run expensive setup (git clone, dependency install, build) once and snapshot it. Subsequent sandboxes clone from the snapshot instantly via copy-on-write
 - **Dev server with auto HTTPS** — define a dev command in your workspace config (e.g. `npm run dev`) and get a public `https://dev-{id}.your-domain.com` URL with streaming logs
 - **Two base images out of the box** — `dev-base` ships with Node 22 and Bun; `dev-cloud` extends it with AWS CLI, Google Cloud SDK, kubectl, and Pulumi
@@ -119,7 +119,7 @@ certManager:
 
 Set the Authorization callback URL in your GitHub OAuth App to `https://sandbox.example.com/auth/callback`.
 
-### 3. Deploy with Helm
+### 3. Deploy the shared infra chart
 
 ```bash
 helm install atelier charts/atelier/ \
@@ -127,73 +127,54 @@ helm install atelier charts/atelier/ \
   --values values.production.yaml
 ```
 
-Or use the deploy script (builds images, pushes to GHCR, deploys via SSH):
+Or use the deploy script (builds the agent image, pushes to GHCR, deploys the chart via SSH):
 
 ```bash
 VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
 ```
 
-### 4. Verify
+This chart provisions cluster-wide infra only — Zot, CLIProxyAPI, sshpiper,
+cert-manager issuers, the Kata `RuntimeClass`, and the prebuild
+`VolumeSnapshotClass`. It does not deploy the server or console app.
+
+### 4. Deploy the server + console app
+
+The app itself (server + console, one pod) is deployed with plain manifests
+under `infra/k8s/v2/`, which point at the infra chart's Zot/CLIProxy/etc. See
+[`infra/k8s/v2/README.md`](infra/k8s/v2/README.md) for the full apply
+sequence (namespaces → RBAC → kata custom runtime → config → PVC → secret →
+deployment → service → ingress).
+
+### 5. Verify
 
 ```bash
-kubectl -n atelier-system get pods
-kubectl -n atelier-system logs -f deploy/atelier-manager -c manager
+kubectl -n atelier-v2-system get pods
+kubectl -n atelier-v2-system logs -f deploy/atelier-v2 -c server
 ```
 
-Your dashboard is at `https://sandbox.example.com`.
+Your console is at the `domain.dashboard` you configured in
+`infra/k8s/v2/30-config.yaml`.
 
 ## Helm Chart Overview
 
-The chart deploys these components into your cluster:
+`charts/atelier` deploys shared cluster infra — not the app itself:
 
 | Component | Purpose |
 |-----------|---------|
-| **Manager** | Sandbox orchestration API (ElysiaJS/Bun) |
-| **Dashboard** | Admin web interface (React SPA via nginx sidecar) |
 | **Zot** | Lightweight OCI registry for base images |
 | **CLIProxyAPI** | AI model proxy with multi-provider OAuth |
 | **sshpiper** | SSH proxy with username-based routing to sandboxes |
-| **Shared binaries** | Job that downloads code-server + OpenCode into a shared PVC |
+| **cert-manager issuers** | ClusterIssuer + wildcard TLS certs |
+| **Kata RuntimeClass** | VM isolation runtime for sandbox pods |
 
-Sandbox pods are created dynamically in the `atelier-sandboxes` namespace with the `kata-clh` runtime class.
+The server + console app is deployed separately via `infra/k8s/v2/` (see
+above). Sandbox pods are created dynamically in the namespace configured by
+`kubernetes.namespace` in the app's config, using the Kata runtime class.
 
 ### Key configuration
 
 ```yaml
-# Domain & TLS
-domain:
-  baseDomain: ""           # REQUIRED — e.g. "example.com"
-  dashboard: ""            # defaults to "sandbox.{baseDomain}"
-
-# Authentication (required for production)
-auth:
-  github:
-    clientId: ""
-    clientSecret: ""
-  jwtSecret: ""            # auto-generated if empty
-  allowedOrg: ""           # restrict to a GitHub org
-  allowedUsers: []         # or specific usernames
-
-# Server
-server:
-  port: 4000
-  maxSandboxes: 20
-  maxActiveTasks: 10
-  mcpToken: ""             # bearer token for MCP server auth
-
-# Kubernetes
-kubernetes:
-  namespace: atelier-sandboxes
-  runtimeClass: kata-clh
-  storageClass: ""         # cluster default
-  volumeSnapshotClass: ""  # for prebuilds
-  defaultVolumeSize: "10Gi"
-
-# Optional npm registry proxy injected into sandboxes
-# (Verdaccio/Nexus/Artifactory). Empty uses the public npm registry.
-npmRegistryUrl: ""
-
-# Sub-components (each can be disabled)
+# charts/atelier/values.yaml (shared infra)
 zot:
   enabled: true
   persistence:
@@ -208,9 +189,14 @@ sshpiper:
 
 certManager:
   enabled: true
+  cloudflare:
+    apiToken: ""
 ```
 
-See [`charts/atelier/values.yaml`](charts/atelier/values.yaml) for all options.
+See [`charts/atelier/values.yaml`](charts/atelier/values.yaml) for all infra
+options, and [Advanced Configuration](docs/advanced-configuration.md) for the
+app's domain/auth/server/kubernetes/sandbox settings (set via
+`infra/k8s/v2/30-config.yaml` + the `atelier-v2-secrets` Secret).
 
 ## Local Development
 
@@ -218,10 +204,9 @@ No server or KVM needed — the server runs in mock mode:
 
 ```bash
 bun install
-ATELIER_SERVER_MODE=mock bun run dev
-# API:       http://localhost:4000
-# Swagger:   http://localhost:4000/swagger
-# Dashboard: http://localhost:5173
+bun run --filter @atelier/server dev   # API:     http://localhost:4000
+                                        # Swagger: http://localhost:4000/swagger
+bun run --filter @atelier/console dev  # Console: http://localhost:5174
 ```
 
 ## Documentation

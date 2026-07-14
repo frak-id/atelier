@@ -11,7 +11,7 @@
 | Runtime | **Bun** | JS/TS runtime, bundler, package manager |
 | Monorepo | **Bun Workspaces** | Workspace management |
 | API Framework | **ElysiaJS** | Type-safe HTTP server |
-| Frontend | **React** + **TanStack Router/Query** | Dashboard SPA |
+| Frontend | **React** + **TanStack Router/Query** | Console SPA |
 | Frontend Build | **Vite** | Dev server and bundling |
 | Styling | **Tailwind CSS** + **shadcn/ui** | UI components |
 | Validation | **TypeBox** | Runtime validation (Elysia native) |
@@ -25,9 +25,13 @@
 | Storage | **TopoLVM** (CSI) | LVM thin provisioning, PVC snapshots |
 | Reverse Proxy | **Traefik** (k3s built-in) + **K8s Ingress** | Dynamic routing, HTTPS |
 | TLS | **cert-manager** (Cloudflare DNS-01) | Wildcard certificates |
-| Base Image Builds | **Kaniko** | Base OCI image builds inside K8s (triggered from dashboard) |
-| Registry | **Zot** | Lightweight OCI registry for base images |
-| Database | **SQLite** (Drizzle ORM) | Sandbox, workspace, task, config, and auth state |
+| Base Image Builds | **BuildKit** (`buildctl`, in-cluster) | Base OCI image builds against a shared buildkitd daemon |
+| Toolset Builds | **In-pod agent** | Content-addressed toolset artifacts (opencode, code-server, org toolboxes), built in a throwaway sandbox, pushed to Zot |
+| Registry | **Zot** | Lightweight OCI registry for base images + toolsets |
+| Database | **SQLite** (Drizzle ORM) | Sandbox, control-plane, and session state |
+
+There is no build-from-UI feature — base images are built out-of-band via
+`infra/k8s/v2/deploy.sh` / BuildKit, not triggered by the server at runtime.
 
 ---
 
@@ -36,18 +40,24 @@
 ```
 atelier/
 ├── apps/
-│   ├── manager/          # Sandbox orchestration API (ElysiaJS)
-│   ├── dashboard/        # Admin web interface (React + Vite)
-│   └── agent-rust/       # In-pod agent (Rust — lightweight, no AVX)
+│   ├── server/           # Server (ElysiaJS) — runtime/control/sessions/api
+│   ├── console/          # Web GUI (React + Vite)
+│   ├── cli/               # @atelier/cli — host CLI (compiled Bun binary)
+│   └── agent-v2/          # In-pod agent (Rust — lightweight, no AVX)
 ├── packages/
-│   └── shared/           # Shared types, constants, errors
+│   ├── shared/            # TypeBox schemas, config loaders (cross-app)
+│   ├── spec/               # @atelier/spec — the SandboxSpec seam contract
+│   └── compose/            # @atelier/compose — harness/preset/spec-merge SDK
 ├── charts/
-│   └── atelier/          # Helm chart (full stack deployment)
+│   └── atelier/            # Helm chart — SHARED CLUSTER INFRA ONLY
+│                            # (Zot, CLIProxy, sshpiper, cert-manager, kata,
+│                            #  snapshot class). Does not deploy the app.
 ├── infra/
-│   ├── images/           # Base image Dockerfiles
-│   └── nginx/            # Dashboard nginx config
+│   ├── images/             # Base image Dockerfiles (dev-base, dev-cloud)
+│   ├── nginx/               # Console nginx config (console.conf)
+│   └── k8s/v2/              # Server + console app manifests (the deploy)
 └── scripts/
-    └── deploy-k8s.sh     # Build images + push + helm deploy via SSH
+    └── deploy-k8s.sh        # Build agent image + push + helm deploy the infra chart
 ```
 
 ---
@@ -72,6 +82,10 @@ atelier/
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+Pause/resume reuses the live PVC when it still exists (no re-clone); when the
+pod has been fully torn down it clones from the persisted pause snapshot, or
+falls back to the original source spec. `error` records are resumable too.
+
 ### Prebuild Flow
 
 ```
@@ -90,6 +104,14 @@ With Prebuilds (fast, ~1-3 seconds):
 Prebuilds run expensive initialization (git clone, dependency install, build)
 **once** and snapshot the PVC as a CSI VolumeSnapshot via TopoLVM. Subsequent
 sandboxes clone from this snapshot instantly via copy-on-write and boot fresh.
+
+### Toolsets (content-addressed tool delivery)
+
+Tools like code-server, opencode, and org-defined toolboxes are **not**
+baked into base images or mounted from a shared PVC. They're built once as
+content-addressed artifacts (`toolsets/{name}@{digest}`), pushed to Zot, and
+materialized by the in-pod agent into the overlay home before the primary
+process starts (see [Constraints](constraints.md#toolsets-are-content-addressed-not-shared-pvc)).
 
 ---
 
@@ -131,23 +153,27 @@ External traffic:
 ┌─────────────────────────────────────────────────────────────────┐
 │                     K8s Ingress                                 │
 │                                                                 │
-│  Static Routes (chart-managed Ingress):                         │
-│  └── sandbox.{DOMAIN}                                           │
-│      ├── /api/*, /auth/*, /config, /health, /swagger*           │
-│      │   → manager.atelier-system.svc:4000                      │
-│      └── * → nginx sidecar (Dashboard SPA)                      │
+│  Static Routes (infra/k8s/v2-managed Ingress):                  │
+│  └── {domain.dashboard}                                         │
+│      ├── /v1/*, /api/*, /sessions/*, /auth/*, /health, /swagger*│
+│      │   → server container, same pod, :4000                    │
+│      └── * → console container, same pod, :8080 (nginx)        │
 │                                                                 │
-│  Dynamic Routes (K8s Ingress, created by manager):              │
+│  Dynamic Routes (K8s Ingress, created by the server):           │
 │  ├── sandbox-{id}.{DOMAIN}    → svc/sandbox-{id}:8080 (VSCode) │
 │  ├── opencode-{id}.{DOMAIN}   → svc/sandbox-{id}:3000 (OC)     │
-│  ├── dev-{id}.{DOMAIN}        → svc/sandbox-{id}:3001 (Dev)    │
-│  └── browser-{id}.{DOMAIN}    → svc/sandbox-{id}:7681 (Kasm)   │
+│  ├── dev-{name}-{id}.{DOMAIN} → svc/sandbox-{id}:3001 (Dev)    │
+│  └── browser-{id}.{DOMAIN}    → svc/sandbox-{id}:6080 (Kasm)   │
 │                                                                 │
 │  Features:                                                      │
 │  ├── Wildcard TLS via cert-manager (Cloudflare DNS-01)          │
 │  └── Host-based routing via K8s Ingress resources               │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+Server and console run as two containers in **one pod** (same origin, so the
+`sandbox_token` cookie and WS/SSE need no CORS) — see
+`infra/k8s/v2/50-deployment.yaml`.
 
 ---
 
@@ -164,38 +190,31 @@ External traffic:
 │  └── Boot time: ~1-2s (Cloud Hypervisor)                        │
 │                                                                 │
 │  Volumes:                                                       │
-│  ├── workspace-pvc → /home/dev (CoW clone from VolumeSnapshot)  │
-│  ├── shared-binaries-pvc → /opt/shared (ReadOnlyMany)           │
-│  └── config-configmap → /etc/sandbox/config.json                │
+│  ├── workspace-pvc → /data (CoW clone from VolumeSnapshot;      │
+│  │                    /data/upper + /data/work back the overlay)│
+│  ├── ssh-pipe-key   → /etc/sandbox/ssh (sshpiper public key)    │
 │                                                                 │
-│  Filesystem:                                                    │
+│  Filesystem (/home/dev is an OVERLAY, not the PVC mount itself: │
+│  skel + toolset squashfs blobs as read-only lowers, /data/upper │
+│  as the writable upper — see toolset-overlay-squashfs.md):      │
 │  /                                                              │
 │  ├── usr/local/bin/                                             │
-│  │   └── sandbox-agent      # In-pod agent binary               │
-│  ├── opt/shared/bin/                                            │
-│  │   ├── code-server        # VSCode Server                     │
-│  │   ├── opencode           # OpenCode CLI                      │
-│  │   └── node, bun, git     # Dev tools                         │
-│  ├── home/dev/                                                  │
-│  │   ├── workspace/         # Project code (on PVC)             │
+│  │   └── sandbox-agent      # In-pod agent binary (atelier-agent)│
+│  ├── home/dev/               # Overlay-assembled at boot         │
+│  │   ├── workspace/         # Project code                      │
+│  │   ├── .local/, .config/  # Materialized toolset content      │
 │  │   └── SANDBOX.md         # Agent skill file                  │
 │  ├── etc/sandbox/                                               │
-│  │   ├── config.json        # Sandbox metadata (ConfigMap)      │
-│  │   └── secrets/.env       # Injected secrets                  │
-│  └── var/log/sandbox/       # Service logs                      │
+│  │   ├── sandbox-boot.sh    # Pod entrypoint                    │
+│  │   └── ssh/authorized_keys # sshpiper public key (mounted)    │
+│  └── data/                  # PVC mount: upper/work/toolsets    │
 │                                                                 │
-│  Services:                                                      │
-│  ├── sandbox-init starts sshd + sandbox-agent                   │
-│  ├── agent starts services after manager pushes config:         │
-│  │   ├── sandbox-agent (TCP:9998)                               │
-│  │   ├── code-server (:8080)                                    │
-│  │   ├── opencode serve (:3000)                                 │
-│  │   ├── terminal (:7681)   # WebSocket PTY                     │
-│  │   └── browser            # KasmVNC/Chromium on demand        │
-│  └── sshd (:22)                                                 │
-│                                                                 │
-│  Network:                                                       │
-│  └── Pod IP (10.42.x.x), routed via K8s CNI                    │
+│  Services (started by sandbox-boot.sh → sandbox-agent):         │
+│  ├── sandbox-agent (TCP:9998, config + processes)               │
+│  ├── attach bridge (TCP:9997, stdio/PTY relay)                  │
+│  ├── terminal WS relay (TCP:7681, ad-hoc login shells)          │
+│  ├── code-server, opencode serve, browser stack — per spec      │
+│  └── sshd (:22, via sshpiper routing)                           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -224,7 +243,12 @@ External traffic:
 │  │ Debian Bookworm + Node22 │  │ dev-base + Cloud SDKs    │     │
 │  └──────────────────────────┘  └──────────────────────────┘     │
 │                                                                 │
-│  Prebuild VolumeSnapshots (per-workspace):                      │
+│  Toolset artifacts (in Zot registry, content-addressed):        │
+│  ┌──────────────────────────┐  ┌──────────────────────────┐     │
+│  │ toolsets/opencode@sha256 │  │ toolsets/tb/org/…@sha256 │     │
+│  └──────────────────────────┘  └──────────────────────────┘     │
+│                                                                 │
+│  Prebuild VolumeSnapshots (per-saved-spec):                     │
 │  ┌──────────────────────┐  ┌──────────────────────┐             │
 │  │ prebuild-myproject   │  │ prebuild-backend     │             │
 │  │ (snapshot of PVC +   │  │ (snapshot of PVC +   │             │
@@ -247,47 +271,45 @@ External traffic:
 
 ## Sandbox Agent
 
-A lightweight Rust binary running inside each sandbox pod, communicating with
-the manager via TCP on port 9998.
+A lightweight Rust binary (`atelier-agent`) running inside each sandbox pod,
+communicating with the server via TCP.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Sandbox Agent (TCP:9998)                      │
+│                    Sandbox Agent                                 │
 │                                                                 │
 │  Core Responsibilities:                                         │
-│  ├── TCP HTTP API for manager orchestration                     │
-│  ├── Service & dev process lifecycle management                 │
-│  ├── File system operations (writes, git helpers)               │
-│  ├── Command execution (/exec)                                  │
-│  ├── Interactive terminal sessions (WebSocket PTY)              │
-│  └── Resource metrics (CPU, memory, disk)                       │
+│  ├── Config API (TCP:9998) — runtime pushes SandboxSpec-derived │
+│  │   config, agent supervises processes accordingly             │
+│  ├── Process supervision — readiness/primary/after/restart/lazy │
+│  ├── Overlay materialize — assembles /home/dev from toolset     │
+│  │   squashfs blobs + /data/upper before sshd starts            │
+│  ├── Attach bridge (TCP:9997) — unified stdio/PTY relay with a  │
+│  │   single-writer guard, used for ACP sessions and process     │
+│  │   attach                                                     │
+│  ├── Terminal WS relay (TCP:7681) — ad-hoc login shells         │
+│  ├── File system operations, command execution (/exec)          │
+│  └── Toolset build/capture (content-hash artifacts pushed to Zot)│
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **Why Rust?** Bun crashes inside Cloud Hypervisor VMs due to AVX
 instruction issues (SIGILL). The agent is compiled as a static musl binary
-for maximum compatibility.
+(`FROM scratch` image) for maximum compatibility.
 
 ---
 
 ## API Overview
 
-The Manager exposes a REST API on port 4000:
+The server exposes its API on port 4000, split into three surfaces plus MCP:
 
-| Group | Endpoints | Description |
-|-------|-----------|-------------|
+| Group | Prefix | Description |
+|-------|--------|--------------|
 | Health | `/health`, `/health/live`, `/health/ready` | Liveness and readiness probes |
-| Sandboxes | `/api/sandboxes` | Full sandbox lifecycle |
-| Workspaces | `/api/workspaces` | Workspace CRUD and prebuilds |
-| Tasks | `/api/tasks` | AI task orchestration |
-| Templates | `/api/session-templates` | AI workflow configurations |
-| Config | `/api/config-files` | Global and workspace config files |
-| Auth | `/api/shared-auth` | OAuth token synchronization |
-| Storage | `/api/binaries` | Shared binaries management |
-| SSH | `/api/ssh-keys` | User SSH key management |
-| Events | `/api/events` | System-wide event stream |
-| GitHub | `/api/github` | GitHub App integration |
-| Images | `/api/images` | Base image listing and builds |
-| System | `/api/system/stats` | Monitoring and maintenance |
+| Runtime (mechanism) | `/v1/sandboxes`, `/v1/prebuilds`, `/v1/toolsets` | Sandbox lifecycle: prebuild/boot/pause/resume/destroy, files/env/processes/ports/exec/attach |
+| Control (policy) | `/api/organizations`, `/api/saved-specs`, `/api/secrets`, `/api/toolboxes`, `/api/api-keys`, `/api/ssh-keys`, `/api/org-policy`, `/api/config`, `/api/capabilities` | Identity, orgs, saved specs, secrets, toolboxes |
+| Sessions | `/sessions/*` | Agent app-tier: ACP client sessions, terminal |
+| Auth | `/auth/*` | GitHub OAuth |
+| MCP | `/mcp` | Same three surfaces exposed as MCP tools for AI agents |
 
-Full API documentation available at `/swagger` when the manager is running.
+Full API documentation is available at `/swagger` when the server is running.

@@ -9,7 +9,7 @@
  * This module factors only the identical wiring — opening the upstream
  * socket, forwarding its frames down, and the outgoing frame-type guard. Each
  * route keeps its own auth/ownership checks, close codes, and any
- * route-specific message handling (v1's `ro`-mode drop, the terminal route's
+ * route-specific message handling (the `ro`-mode drop, the terminal route's
  * JSON re-serialization fallback).
  *
  * See `AGENTS.md` "Browser-consumable `App` type": both routes participate in

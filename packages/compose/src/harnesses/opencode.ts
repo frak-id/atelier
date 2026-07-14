@@ -1,9 +1,7 @@
 /**
- * The opencode harness composer — ported from
- * `apps/manager/src/shared/agent/harness-adapter.ts` (`OPENCODE_HARNESS`,
- * `opencodeMergeProxyProviders`, `opencodeSessionConfig`). Self-contained:
- * no manager imports, no `@opencode-ai/sdk` (session-surface / ACP-client
- * concerns live in `apps/server/src/sessions`, not in spec composition).
+ * The opencode harness composer. Self-contained: no `@opencode-ai/sdk`
+ * (session-surface / ACP-client concerns live in `apps/server/src/sessions`,
+ * not in spec composition).
  *
  * "opencode with these MCP servers" → files + the acp process + annotations
  * (atelier-v2 §3).
@@ -113,7 +111,7 @@ export function composeOpencode(
         // Run as `dev`, not root: opencode writes its data/cache/log under
         // ${HOME} (~/.local/share, ~/.cache, ~/.config). As root those become
         // root-owned, so the dev-user terminal's own `opencode` then fails with
-        // PermissionDenied. v1 hardcoded harness=dev for the same reason.
+        // PermissionDenied.
         user: "dev",
         stdio: "bridge",
         primary: true,
@@ -133,9 +131,8 @@ export function composeOpencode(
         // Auth-less by design: no `OPENCODE_SERVER_PASSWORD`. The browser UI
         // is served behind the operator's forward-auth ingress instead — an
         // iframe can't inject an `Authorization` header, so a served-side
-        // password (v1's model) doesn't translate to this UI (verified: v1
-        // used opencode serve + a per-sandbox Basic-Auth password; v2
-        // deliberately relies on the ingress cookie session instead).
+        // password doesn't translate to this UI; the ingress cookie session
+        // is relied on instead.
       },
     ],
     files: [

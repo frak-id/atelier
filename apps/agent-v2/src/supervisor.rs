@@ -1,13 +1,13 @@
-//! Process supervisor — the v2 replacement for v1's manager-driven
-//! `POST /services/{name}/start`. The agent now owns the process lifecycle:
-//! it reconciles running processes against the pushed config, spawns non-lazy
-//! processes at boot respecting `after` ordering, latches per-process
-//! readiness (config.rs probes), enforces restart policy, and reports the
-//! `primary` process's readiness as the sandbox's health.
+//! Process supervisor. The agent owns the process lifecycle: it reconciles
+//! running processes against the pushed config, spawns non-lazy processes at
+//! boot respecting `after` ordering, latches per-process readiness (config.rs
+//! probes), enforces restart policy, and reports the `primary` process's
+//! readiness as the sandbox's health.
 //!
-//! Ported and reshaped from apps/agent-rust process_manager.rs: the pgid group
-//! spawn + SIGTERM/SIGKILL teardown + log pumping are kept; the manager-poll
-//! model is replaced by config-watch reconcile + agent-side readiness.
+//! Process groups are spawned with their own pgid so a SIGTERM/SIGKILL
+//! teardown reaches the whole group, with log pumping to the shared ring
+//! buffers; reconciliation is driven by config-watch + agent-side readiness,
+//! not external polling.
 
 use std::collections::HashMap;
 use std::io::SeekFrom;

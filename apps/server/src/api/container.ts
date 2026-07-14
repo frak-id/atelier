@@ -1,7 +1,7 @@
 /**
  * The server's top-level composition root — the only place all three modules
- * (runtime/control/sessions) are wired together. Mirrors v1 `container.ts`'s
- * manual-wiring convention.
+ * (runtime/control/sessions) are wired together. Manual-wiring convention
+ * (no DI framework).
  */
 import type {
   PortEntry,

@@ -8,7 +8,7 @@ A single **Hetzner dedicated server (AX-line)** running k3s is the sweet spot: c
 
 ## Sizing Guide
 
-Each sandbox is a VM with its own kernel, plus the workloads inside it (code-server, OpenCode, Chromium, your dev servers). Budget roughly **2–4 GB RAM and 1–2 vCPU per active sandbox**, plus ~4 GB for the system (k3s, manager, Zot, CLIProxy, sshpiper).
+Each sandbox is a VM with its own kernel, plus the workloads inside it (code-server, OpenCode, Chromium, your dev servers). Budget roughly **2–4 GB RAM and 1–2 vCPU per active sandbox**, plus ~4 GB for the system (k3s, the server, Zot, CLIProxy, sshpiper).
 
 | Team size | Concurrent sandboxes | RAM | CPU | Storage |
 |-----------|---------------------|-----|-----|---------|
@@ -36,7 +36,8 @@ Bare-metal server (Debian 12)
     ├── kata-deploy        → Kata Containers runtime (Cloud Hypervisor)
     ├── cert-manager       → wildcard TLS via Cloudflare DNS-01
     ├── TopoLVM            → LVM thin-provisioned PVCs + CSI snapshots
-    └── Atelier Helm chart → manager, dashboard, Zot, CLIProxy, sshpiper
+    ├── Atelier infra chart → Zot, CLIProxy, sshpiper, cert-manager issuers, Kata RuntimeClass
+    └── Atelier app (infra/k8s/v2) → server + console
 ```
 
 ### Why single-node k3s?

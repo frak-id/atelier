@@ -1,74 +1,85 @@
 # Code Patterns
 
-## Manager Architecture
+## Server Architecture
 
-The Manager follows a layered architecture to ensure separation of concerns and
-break circular dependencies.
+`apps/server` is one deployable split into three internal modules with import
+boundaries enforced by `scripts/check-boundaries.ts` (not just convention),
+plus an HTTP shell that wires them together:
 
 | Layer | Responsibility |
 |-------|----------------|
 | `api/` | Elysia route handlers, schema validation, imports from `container.ts` |
-| `container.ts` | Dependency Injection composition root |
-| `modules/` | Business logic (Services) and Data Access (Repositories) |
-| `orchestrators/` | Multi-step workflows with rollback (spawning, destroying) |
-| `infrastructure/` | Low-level integrations (Kubernetes API, sandbox agent, events) |
+| `api/container.ts` | Composition root wiring `runtime` + `control` + `sessions` together |
+| `runtime/` | Mechanism: prebuild/boot/pause/resume/destroy, files/env/processes/ports/hooks/exec/attach, Kubernetes builders, CSI snapshots, agent client. Takes `SandboxSpec`, never identity. |
+| `control/` | Policy: identity (users/orgs/org-members), API keys, SSH keys, saved specs, secrets, org policy, toolboxes — plus the seam-crossing enrichment steps. Owns its own composition root (`control/container.ts`). |
+| `control/modules/` | Business logic (Services) and Data Access (Repositories) for control-plane entities. |
+| `sessions/` | Agent app-tier: the ACP client + session facade — a privileged client of `runtime`, never imported by it. |
+
+See `apps/server/AGENTS.md` for the full module-boundary rules.
 
 ## Service Patterns
 
 We use three distinct patterns depending on the service's role:
 
 1. **Module Services**: Classes with constructor DI. Used for business logic.
-2. **Infrastructure**: Singleton objects. Used for low-level host integrations.
+2. **Infrastructure**: Singleton/composed objects (e.g. `AgentClient`, `RuntimeService`). Used for low-level host integrations.
 3. **Stateless Helpers**: Exported functions. Used for pure logic.
 
 ## Dependency Injection
 
-`apps/manager/src/container.ts` is the composition root. All dependencies are
-manually wired here.
+`apps/server/src/api/container.ts` is the top-level composition root — the
+only place `runtime`, `control`, and `sessions` are wired together. `control`
+has its own nested composition root, `apps/server/src/control/container.ts`,
+scoped to identity/orgs/secrets/saved-specs/toolboxes. All dependencies are
+manually wired, no DI framework.
 
 ```ts
-// apps/manager/src/container.ts
-const taskRepository = new TaskRepository();
-const taskService = new TaskService(taskRepository);
-const sandboxSpawner = new SandboxSpawner({
-  sandboxService,
-  workspaceService,
+// apps/server/src/api/container.ts
+export function createServerContainer() {
+  const control = createControlContainer();
+  const agent = new AgentClient();
+  const runtime = new RuntimeService({
+    agent,
+    sandboxes: new DrizzleSandboxStore(),
+    snapshots: new DrizzleSnapshotStore(),
+    toolsets: new DrizzleToolsetStore(),
+    sandboxToolsetRefs: new DrizzleSandboxToolsetRefStore(),
+  });
+  const sessions = new SessionService({ runtime, surface: /* ... */ });
   // ...
-});
-
-export { taskService, sandboxSpawner };
+  return { control, runtime, agent, sessions /* ... */ };
+}
 ```
 
-**Rule**: Routes MUST import from `container.ts`, never directly from modules.
+**Rule**: Routes MUST import from `container.ts`, never directly from `runtime/control/sessions` internals.
 
 ## Module Structure
 
-Modules contain business logic and data access. They do NOT contain routes.
+Control-plane modules contain business logic and data access; they do NOT
+contain routes.
 
 ```
-apps/manager/src/modules/{name}/
+apps/server/src/control/modules/{name}/
 ├── index.ts              # Barrel: export Service + Repository
 ├── {name}.service.ts     # Business logic class
 └── {name}.repository.ts  # Data access class (Drizzle)
 ```
 
-**Exception**: Some modules like `sandbox` use the repository directly as the
-service in `container.ts` if no additional business logic is required.
+Examples: `user`, `organization`, `org-member`, `org-policy`, `api-key`,
+`ssh-key`, `saved-spec`, `secret`, `server-config`, `toolbox`,
+`toolbox-version`.
 
 ## Routes
 
-Routes live in `apps/manager/src/api/`. They define Elysia handlers and
-validation schemas, importing all dependencies from `container.ts`.
-
-## Orchestrators
-
-Orchestrators in `apps/manager/src/orchestrators/` coordinate complex,
-multi-step workflows that span multiple modules or infrastructure services.
-They typically use context objects and implement rollback logic on failure.
+Routes live in `apps/server/src/api/` (`v1.routes.ts` → runtime,
+`control.routes.ts` → control CRUD, `sessions.routes.ts` → sessions,
+`mcp/` → MCP surface, `auth.routes.ts` → GitHub OAuth). They define Elysia
+handlers and validation schemas, importing all dependencies from
+`container.ts`.
 
 ## Error Handling
 
-Errors are defined in `apps/manager/src/shared/errors.ts`.
+Errors are defined in `apps/server/src/shared/errors.ts`.
 
 ```ts
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
@@ -78,17 +89,10 @@ throw new NotFoundError("Sandbox", sandboxId);
 throw new ValidationError("Invalid configuration");
 ```
 
-`SandboxError` subclasses are automatically mapped to HTTP responses in
-`apps/manager/src/index.ts` via the `.onError()` handler.
-
-## Events
-
-The system uses two event buses for different purposes:
-
-- **eventBus** (`infrastructure/events/event-bus.ts`): Typed domain events
-  (e.g., `sandbox.created`, `task.updated`). Consumed by the SSE route.
-- **internalBus** (`infrastructure/events/internal-bus.ts`): Node EventEmitter
-  for internal triggers (e.g., used by pollers).
+`SandboxError` subclasses (`NotFoundError`, `ForbiddenError`,
+`ResourceExhaustedError`, `UnauthorizedError`, `ConflictError`,
+`ValidationError`) are automatically mapped to HTTP responses in
+`apps/server/src/api/index.ts` via the `.onError()` handler.
 
 ## Logging
 

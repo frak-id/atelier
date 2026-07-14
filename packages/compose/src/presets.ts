@@ -1,13 +1,11 @@
 /**
- * Preset snippets — the client-side demotion of v1's `BUILTIN_TOOLS`
- * (atelier-v2 §3: "the preset snippets (today's `BUILTIN_TOOLS`: vscode,
- * browser, terminal — each a function returning spec pieces)"). Each preset
- * is a plain function returning a `SpecFragment`; "add vscode" is appending
- * one process + one port, nothing the runtime has an opinion about.
+ * Preset snippets (atelier-v2 §3: "the preset snippets: vscode, browser,
+ * terminal — each a function returning spec pieces"). Each preset is a plain
+ * function returning a `SpecFragment`; "add vscode" is appending one process
+ * + one port, nothing the runtime has an opinion about.
  *
- * Commands/ports are carried over verbatim from
- * `apps/manager/src/orchestrators/tools/registry.ts` (`BUILTIN_TOOLS`) so
- * existing dev-base images keep working unmodified.
+ * Commands/ports match the dev-base image's baked-in tooling so existing
+ * base images keep working unmodified.
  */
 import type { SpecFragment } from "./spec-merge.ts";
 
@@ -38,11 +36,11 @@ export function vscode(options?: {
 }
 
 /**
- * The in-pod terminal multiplexer. Agent-managed in v1 (the guest agent
- * ensures it itself, contributing no manager-started service) — kept as a
- * thin, non-lazy declaration so a spec that wants a terminal surface can
- * still say so; the runtime's PTY attach mode is the actual mechanism
- * (atelier-v2 §2 "One supervisor, three attachment modes").
+ * The in-pod terminal multiplexer. Agent-managed (the guest agent ensures it
+ * itself, contributing no server-started service) — kept as a thin, non-lazy
+ * declaration so a spec that wants a terminal surface can still say so; the
+ * runtime's PTY attach mode is the actual mechanism (atelier-v2 §2 "One
+ * supervisor, three attachment modes").
  */
 export function terminal(options?: { port?: number }): SpecFragment {
   const port = options?.port ?? 7681;

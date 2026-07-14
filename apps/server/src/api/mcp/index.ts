@@ -1,8 +1,8 @@
 /**
- * `/mcp` \u2014 same transport pattern as v1, but the tools grow mutation
- * capability (atelier-v2 \u00a74: "it grows the mutation tools (create/pause/
- * resume/rm/files/expose) so agents drive sandboxes exactly like the CLI
- * does"). One API, three surfaces \u2014 GUI (primary), CLI, MCP.
+ * `/mcp` exposes mutation capability (atelier-v2 \u00a74: "it grows the mutation
+ * tools (create/pause/resume/rm/files/expose) so agents drive sandboxes
+ * exactly like the CLI does"). One API, three surfaces \u2014 GUI (primary), CLI,
+ * MCP.
  *
  * Per-user identity (PHASE0.md gap #6, now closed): the bearer token is
  * resolved through `control.authService.resolveToken` \u2014 the same `atl_`
@@ -12,10 +12,10 @@
  * data (secrets, policy, toolboxes, saved specs) is finally reachable from
  * MCP exactly as it is from the HTTP API.
  *
- * Sessions are kept in a map (one stateful transport per client) instead of
- * v1/old-v2's single global slot \u2014 required once callers carry distinct
- * identities: two developers' IDEs must not evict each other's session.
- * Still STATEFUL (`sessionIdGenerator` set): v1's stateless-mode experiment
+ * Sessions are kept in a map (one stateful transport per client), not a
+ * single global slot \u2014 required once callers carry distinct identities: two
+ * developers' IDEs must not evict each other's session.
+ * Still STATEFUL (`sessionIdGenerator` set): a stateless-mode experiment
  * caused a ~10s timeout-then-SSE-fallback in OpenCode's MCP client during
  * the `initialize \u2192 initialized \u2192 tools/list` handshake, so every session
  * keeps its own long-lived transport instance.

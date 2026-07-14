@@ -1,7 +1,7 @@
-//! Interactive terminal sessions — the v2 replacement for v1's ttyd-on-7681
-//! multiplexer. Where the attach bridge (attach.rs) exposes a *supervised*
-//! process's stdio/PTY, a terminal is an *ad-hoc* login shell the user opens on
-//! demand: `POST /terminal/sessions` spawns `bash -l` on a fresh PTY, and a WS
+//! Interactive terminal sessions. Where the attach bridge (attach.rs) exposes
+//! a *supervised* process's stdio/PTY, a terminal is an *ad-hoc* login shell
+//! the user opens on demand: `POST /terminal/sessions` spawns `bash -l` on a
+//! fresh PTY, and a WS
 //! on port 7681 (`/{sessionId}`) relays bytes both ways plus `{"type":"resize"}`
 //! control frames (applied via `TIOCSWINSZ`).
 //!

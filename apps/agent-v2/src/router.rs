@@ -37,7 +37,7 @@ pub async fn route(
 
     match (&method, path.as_str()) {
         // `healthy` reflects the spec's `primary` process readiness — the
-        // generic replacement for v1's hardcoded opencode boot gate.
+        // generic, harness-agnostic boot gate (any process can be `primary`).
         (&Method::GET, "/health") => json(
             StatusCode::OK,
             serde_json::json!({
