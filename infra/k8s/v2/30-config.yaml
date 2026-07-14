@@ -32,7 +32,7 @@ data:
       "kubernetes": {
         "namespace": "atelier-v2-sandboxes",
         "systemNamespace": "atelier-v2-system",
-        "runtimeClass": "kata-clh",
+        "runtimeClass": "kata-atelier-clh",
         "ingressClassName": "traefik",
         "toolIngressClusterIssuer": "letsencrypt-frak",
         "registryUrl": "zot.zot.svc:5000",

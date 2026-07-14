@@ -12,6 +12,11 @@ v1 stack, under `atelier.hetzner-staging.frak.id`. See
   code-server are the `org-toolbox` built toolset artifact (published to Zot,
   materialized by the guest agent at boot into `~/.local`) — no PVC/Job
   (composed-prebuild-volumes.md §6 "kill shared-binaries").
+- Runtime class: sandboxes run under `kata-atelier-clh` (`30-config.yaml`), a
+  kata-deploy `customRuntimes` = stock `clh` + a Kata `config.d` drop-in that
+  enables virtiofsd `--xattr` (see `kata-atelier-values.yaml`). Required so the
+  overlay-home upperdir on the virtio-fs PVC works (guest mounts it
+  `userxattr`). Chart-managed, so it survives kata-deploy rolls.
 - Images: `zot.zot.svc:5000/atelier-server:v2` + `atelier-console:v2`
   (built in-cluster via BuildKit, pushed to the internal Zot registry).
 
@@ -43,6 +48,9 @@ The GitHub OAuth app's callback URL must be
 ```sh
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/00-namespaces.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/10-rbac.yaml
+# kata custom runtime (virtiofsd --xattr) — needed once per cluster:
+helm upgrade kata-deploy oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
+  --version 3.31.0 -n default -f infra/k8s/v2/kata-atelier-values.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/30-config.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/40-server-pvc.yaml
 # create the secret (above), then:
