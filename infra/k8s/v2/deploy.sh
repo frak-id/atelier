@@ -165,6 +165,13 @@ if $NEED_BUILDER; then cleanup; trap - EXIT; fi
 sync_build_tls
 
 if $DO_ROLLOUT; then
+  # Apply the server config (registryUrl, imageBuilder, defaultImage, ...) so
+  # code+config ship together: the restart below recreates the pods, which
+  # re-mount the updated ConfigMap. Without this the file edits never reach the
+  # cluster and the server falls back to defaults (e.g. imageBuilder.kind).
+  say "Applying 30-config.yaml"
+  K apply -f "$ROOT/infra/k8s/v2/30-config.yaml"
+
   say "Rolling deploy/$DEPLOY"
   K rollout restart "deploy/$DEPLOY" -n "$NS_SYS"
   K rollout status  "deploy/$DEPLOY" -n "$NS_SYS" --timeout=180s
