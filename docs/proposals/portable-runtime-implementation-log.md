@@ -392,6 +392,101 @@ providers (btrfs/reflink/copy) with the Docker/local `SandboxBackend`; the
 no-overlayfs copy-merge toolset tier; backend→UI progress events for Tier-2
 stop-then-copy.
 
+---
+
+# Phase 2 — Docker backend (steps 5-6)
+
+Docker became available locally (OrbStack, linux/aarch64 with `CAP_SYS_ADMIN` +
+overlayfs), so the "dream" steps 5-6 moved from infra-gated to buildable. Done
+in four commits after the phase-1 audit.
+
+## Step 6a — `runtime.backend` selector seam (`1dbb07d6`)
+
+Added `config.runtime.backend` (`kubernetes` default | `docker` | `local`) +
+`createSandboxBackend(backend)` selecting the orchestrator, mirroring
+`createVolumeBackend`. RuntimeService defaults its backend through it.
+
+**SHORT-CIRCUIT:** deferred the proposal's invasive `kubernetes.*` → backend
+sub-config nesting (25 `config.kubernetes.*` refs; purely cosmetic) — it buys
+nothing until a second backend needs a *different* config tree, and would be
+pure churn now. Documented for when it does.
+
+## Endpoint seam — `resolveAgentEndpoint` (`4a05b385`) — the step-1 deferral, resolved
+
+The step-1 oracle (Q2) deferred pulling endpoint resolution off `AgentClient`
+until the real second backend existed. It now does. `SandboxBackend` grows
+`resolveAgentEndpoint(id): AgentEndpoint | null` (`{host, agentPort,
+attachPort, terminalPort}`); `AgentClient` takes an injected resolver (default =
+the old kube pod-IP logic, so direct construction stays behavior-identical) and
+owns all three URLs. `terminal.service` stopped reaching for `getPodIp` + a
+manual `:7681` URL (which would have been wrong under Docker's mapped ports) and
+calls `agent.terminalBridgeUrl`. Composition constructs the backend first, then
+wires the agent to it. **DECISION:** endpoint carries *all three* mapped ports
+because Docker publishes each container port on a distinct dynamic host port —
+the `host:fixedPort` assumption the k8s code baked in is false off-cluster.
+
+## Step 5 — `DockerBackend` + `LocalVolumeBackend` (`69d0b7f7`)
+
+- **LocalVolumeBackend** (storage ladder's copy/CoW rung): `/data` is a host
+  dir bind-mounted in; a snapshot is a CoW clone (`cp -c` APFS clonefile /
+  `cp --reflink=auto` btrfs-XFS / plain-copy fallback). Same content-hash key as
+  CSI — prebuilds stay addressable across planes. 6 real-FS tests (CoW clone
+  verified on APFS).
+- **DockerBackend**: `boot` = `docker run --privileged --user 0` (the Docker
+  analogue of the pod's runAsUser 0 + `CAP_SYS_ADMIN`) with `/data` mounted,
+  every infra+tool port published on a *dynamic loopback* host port, the sandbox
+  image's `/etc/sandbox/sandbox-boot.sh` entrypoint (as k8s overrides it).
+  `resolveAgentEndpoint` parses `docker port`; `computeExists` via `inspect`;
+  `deleteRestartable` keeps the volume, `cleanup` removes it.
+- **Shared boot tail** extracted to `boot-agent.ts` (`provisionAgent`) so both
+  backends run wait→materialize→config→files identically (no drift).
+
+### DECISION — validate orchestration against the *bare agent* image
+
+The agent binds `:9998` and serves `/health` with no config, so the tiny
+`FROM scratch` agent image (built in ~seconds) is enough to prove the
+Docker-specific mechanics. The opt-in IT (`ATELIER_DOCKER_IT=1`) boots a real
+container, confirms the mapped endpoint resolves, the agent is reachable at
+`127.0.0.1:<mapped>` (real `waitForAgent`, not mocked), and cleanup tears it
+down. Verified green on OrbStack. The IT is fully gated (flag + daemon + image
+presence) and forces non-mock only inside that gate, so the normal mock suite
+skips it with zero config-mode contamination.
+
+### SHORT-CIRCUIT — full dev-base boot (materialize) not run here
+
+A full `boot()` with real toolset materialization needs the `dev-base` sandbox
+image — whose Dockerfile `COPY --from=zot.zot.svc:5000/sandbox-agent-v2` pulls
+the agent from the *cluster-internal* zot registry, unreachable locally. So the
+materialize/overlay tail (proven separately on k8s) is stubbed in the IT and the
+full-image boot is the documented next validation, not a blind build. The bare
+agent's `materialize([])` was empirically confirmed to fail on missing
+`/home/skel` — i.e. the stub boundary is real, not hiding a bug.
+
+### KNOWN LIMITATION — `exposePort` is a Docker no-op
+
+Docker can't publish a new host port on a running container, so a *live-added*
+public port (`exposePort`) logs a warning instead of failing silently; ports
+declared in the spec are published at boot. A truly live public port needs a
+container recreate — documented, deferred (the k8s path patches the Service +
+Ingress live, which has no cheap Docker analogue).
+
+### Still deferred after phase 2
+
+same list as phase 1, plus: full dev-base Docker boot (registry-gated); Docker
+`local`-process backend (Tier 3); live `exposePort` via recreate; the
+`kubernetes.*` config sub-nesting.
+
+## Phase 2 commit map
+
+| Step | State | Commit |
+|---|---|---|
+| 6a — runtime.backend selector seam | done | `1dbb07d6` |
+| endpoint seam (resolveAgentEndpoint) | done (resolves step-1 Q2 deferral) | `4a05b385` |
+| 5 — DockerBackend + LocalVolumeBackend | done (orchestration validated; full dev-base boot deferred) | `69d0b7f7` |
+
+Runtime backends now: `kubernetes` (full), `docker` (orchestration validated,
+full-image boot registry-gated), `local` (reserved, fail-fast).
+
 ### Final audit (self, after a reviewer-agent glitch produced no output)
 
 Per-step reviews ran on steps 1-2 (oracle + reviewer); steps 3-4 were
