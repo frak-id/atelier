@@ -15,6 +15,24 @@ export interface SandboxUrl {
 }
 
 /**
+ * Where the guest agent is reachable from the server. The Kubernetes backend
+ * yields the pod IP + fixed ports; a Docker backend yields `127.0.0.1` + the
+ * per-container published host ports (proposal §4.4). `AgentClient` dials this
+ * instead of resolving a pod IP itself — the endpoint-resolution seam that was
+ * deferred out of step 1 (implementation log, oracle Q2).
+ */
+export interface AgentEndpoint {
+  /** Client-reachable host (pod IP, or 127.0.0.1 for Docker). */
+  host: string;
+  /** HTTP control-plane port. */
+  agentPort: number;
+  /** WS attach-bridge port. */
+  attachPort: number;
+  /** WS terminal-multiplexer port. */
+  terminalPort: number;
+}
+
+/**
  * Storage plane: disk snapshot / clone / existence. Varies independently of
  * the sandbox orchestrator (CSI VolumeSnapshot today; btrfs/zfs/reflink/copy
  * or an OCI-tar materialization later — see proposal §5-6).
@@ -73,9 +91,11 @@ export interface SandboxBackend {
    */
   urls(id: string, spec: SandboxSpec): SandboxUrl[];
 
-  // resolveAgentEndpoint(id) is intentionally NOT on the port yet: RuntimeService
-  // never resolves a pod IP (only AgentClient does, internally). Its Docker-era
-  // shape (host + agent/attach ports, ws/http scheme ownership, IP cache) is
-  // designed against the real second backend — see proposal §4.4 and the
-  // implementation log (oracle run c47e7292, Q2).
+  /**
+   * Resolve where the sandbox's agent is reachable, or `null` when compute is
+   * not ready yet (pod unscheduled / no IP; container still starting) so a
+   * poller can retry. `AgentClient` owns caching + the ws/http scheme; this is
+   * the backend-varying host/port shaping only.
+   */
+  resolveAgentEndpoint(id: string): Promise<AgentEndpoint | null>;
 }

@@ -45,10 +45,7 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 import type { HookPhase } from "./agent/index.ts";
 import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
-import {
-  createSandboxBackend,
-  type SandboxBackend,
-} from "./backend/index.ts";
+import { createSandboxBackend, type SandboxBackend } from "./backend/index.ts";
 import type { BootOutput } from "./boot.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
 import { gatingProcessNames } from "./ports.ts";
@@ -112,8 +109,13 @@ export class RuntimeService {
   private readonly opLocks = new Map<string, Promise<void>>();
 
   constructor(deps: RuntimeDeps = {}) {
-    this.agent = deps.agent ?? new AgentClient();
+    // Backend before agent: the agent dials the backend's resolved endpoint
+    // (pod IP on k8s, mapped host ports on Docker), so it must be wired to the
+    // active backend's resolveAgentEndpoint.
     this.backend = deps.backend ?? createSandboxBackend();
+    this.agent =
+      deps.agent ??
+      new AgentClient((id) => this.backend.resolveAgentEndpoint(id));
     this.sandboxes = deps.sandboxes ?? new InMemorySandboxStore();
     this.snapshots = deps.snapshots ?? new InMemorySnapshotStore();
     this.toolsets = deps.toolsets ?? new InMemoryToolsetStore();

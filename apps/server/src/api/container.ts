@@ -13,6 +13,7 @@ import type {
 import { createControlContainer, recipeFingerprint } from "../control/index.ts";
 import {
   AgentClient,
+  createSandboxBackend,
   DrizzleSandboxStore,
   DrizzleSandboxToolsetRefStore,
   DrizzleSnapshotStore,
@@ -57,9 +58,14 @@ const log = createChildLogger("container");
 
 export function createServerContainer() {
   const control = createControlContainer();
-  const agent = new AgentClient();
+  // Construct the backend once and dial its resolved endpoint from the agent
+  // (pod IP on k8s, mapped host ports on Docker) — the same instance is shared
+  // with RuntimeService so there is a single source of endpoint truth.
+  const backend = createSandboxBackend();
+  const agent = new AgentClient((id) => backend.resolveAgentEndpoint(id));
   const runtime = new RuntimeService({
     agent,
+    backend,
     sandboxes: new DrizzleSandboxStore(),
     snapshots: new DrizzleSnapshotStore(),
     toolsets: new DrizzleToolsetStore(),

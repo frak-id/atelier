@@ -6,7 +6,6 @@
  */
 import type { AgentClient, TerminalSession } from "../runtime/index.ts";
 import { ForbiddenError, NotFoundError } from "../shared/errors.ts";
-import { config } from "../shared/lib/config.ts";
 
 export class TerminalService {
   constructor(private readonly deps: { agent: AgentClient }) {}
@@ -56,7 +55,6 @@ export class TerminalService {
 
   /** Raw WS URL for the pod's terminal multiplexer — byte relay, no ACP. */
   async bridgeUrl(sandboxId: string, sessionId: string): Promise<string> {
-    const ip = await this.deps.agent.getPodIp(sandboxId);
-    return `ws://${ip}:${config.ports.terminal}/${sessionId}`;
+    return this.deps.agent.terminalBridgeUrl(sandboxId, sessionId);
   }
 }

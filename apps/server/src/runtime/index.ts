@@ -10,6 +10,7 @@ export type { TerminalSession } from "./agent/index.ts";
 export { AgentClient } from "./agent/index.ts";
 export {
   CsiVolumeBackend,
+  createSandboxBackend,
   KubernetesBackend,
   type SandboxBackend,
   type VolumeBackend,

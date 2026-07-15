@@ -19,12 +19,16 @@ import { cleanupSandboxResources } from "../cleanup.ts";
 import { buildVolumeSnapshot, kubeClient } from "../kube/index.ts";
 import { buildPortIngresses, buildPortUrls, sshUrl } from "../ports.ts";
 import type {
+  AgentEndpoint,
   SandboxBackend,
   SandboxUrl,
   VolumeBackend,
 } from "./backend.types.ts";
 
 const log = createChildLogger("runtime-backend-kube");
+
+/** WS attach-bridge port the agent listens on (agent-v2 `attach::ATTACH_PORT`). */
+const ATTACH_PORT = 9997;
 
 /**
  * Select the volume storage plane from `config.storage.provider`. Only `csi`
@@ -122,5 +126,20 @@ export class KubernetesBackend implements SandboxBackend {
 
   urls(id: string, spec: SandboxSpec): SandboxUrl[] {
     return [...buildPortUrls(id, spec.ports), { name: "ssh", url: sshUrl(id) }];
+  }
+
+  async resolveAgentEndpoint(id: string): Promise<AgentEndpoint | null> {
+    // The pod IP is directly reachable on any container port from the server
+    // (same cluster network). `null` while the pod is unscheduled/has no IP so
+    // the caller can poll. Fixed ports: agent = config.ports.agent, attach =
+    // the well-known 9997 (the pod exposes both).
+    const host = await kubeClient.getPodIp(`sandbox-${id}`);
+    if (!host) return null;
+    return {
+      host,
+      agentPort: config.ports.agent,
+      attachPort: ATTACH_PORT,
+      terminalPort: config.ports.terminal,
+    };
   }
 }

@@ -1,7 +1,8 @@
 import { SandboxError } from "../../shared/errors.ts";
-import { isMock } from "../../shared/lib/config.ts";
+import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { AgentConfig } from "../agent-config.ts";
+import type { AgentEndpoint } from "../backend/backend.types.ts";
 import { kubeClient } from "../kube/index.ts";
 import type {
   AgentHealth,
@@ -20,9 +21,33 @@ import type {
 const log = createChildLogger("agent");
 
 const DEFAULT_TIMEOUT = 10000;
-const AGENT_PORT = 9998;
 /** Unified attach bridge (WS), separate from the HTTP control plane. */
 const ATTACH_PORT = 9997;
+
+/**
+ * Resolve where a sandbox's agent is reachable ({@link AgentEndpoint}), or
+ * `null` while compute isn't ready. The composition root wires this to the
+ * active backend's `resolveAgentEndpoint` so a Docker container's mapped host
+ * ports are dialed; the default below is the Kubernetes pod IP + fixed ports,
+ * kept so `new AgentClient()` stays independently constructable and
+ * behavior-preserving.
+ */
+export type AgentEndpointResolver = (
+  sandboxId: string,
+) => Promise<AgentEndpoint | null>;
+
+async function kubeEndpointResolver(
+  sandboxId: string,
+): Promise<AgentEndpoint | null> {
+  const host = await kubeClient.getPodIp(`sandbox-${sandboxId}`);
+  if (!host) return null;
+  return {
+    host,
+    agentPort: config.ports.agent,
+    attachPort: ATTACH_PORT,
+    terminalPort: config.ports.terminal,
+  };
+}
 
 export class AgentUnavailableError extends SandboxError {
   constructor(sandboxId: string, cause: string) {
@@ -56,48 +81,45 @@ interface RequestOptions {
 }
 
 export class AgentClient {
-  // A pod's IP is stable for its lifetime and only changes when the pod is
-  // recreated (restart/recover) or removed — each preceded by a stop that
-  // emits sandbox.updated/deleted. Caching it spares a K8s GET on every one
-  // of the ~10-20 agent calls a single spawn issues.
-  private readonly podIpCache = new Map<string, string>();
+  // An endpoint is stable for the sandbox's compute lifetime and only changes
+  // when compute is recreated (restart/recover) or removed — each preceded by
+  // a stop. Caching it spares a resolution round-trip on every one of the
+  // ~10-20 agent calls a single spawn issues.
+  private readonly endpointCache = new Map<string, AgentEndpoint>();
 
-  constructor(private readonly kube: typeof kubeClient = kubeClient) {}
+  constructor(
+    private readonly resolveEndpoint: AgentEndpointResolver = kubeEndpointResolver,
+  ) {}
 
   /**
-   * Drop the cached pod IP for a sandbox. Callers invoke this whenever the pod
-   * is recreated or removed (restart/recover/destroy) — an explicit call, so
-   * the runtime stays free of any domain event bus/schema dependency.
+   * Drop the cached endpoint for a sandbox. Callers invoke this whenever
+   * compute is recreated or removed (restart/recover/destroy) — an explicit
+   * call, so the runtime stays free of any domain event bus/schema dependency.
    */
   invalidatePodIp(sandboxId: string): void {
-    this.podIpCache.delete(sandboxId);
-  }
-
-  /** Public pod-IP resolution — used by callers that need to dial the pod
-   * directly (e.g. the terminal WS bridge), bypassing the agent HTTP API. */
-  async getPodIp(sandboxId: string): Promise<string> {
-    return this.resolvePodIp(sandboxId);
+    this.endpointCache.delete(sandboxId);
   }
 
   private async getAgentUrl(sandboxId: string): Promise<string> {
-    return `http://${await this.resolvePodIp(sandboxId)}:${AGENT_PORT}`;
+    const ep = await this.resolveEndpointCached(sandboxId);
+    return `http://${ep.host}:${ep.agentPort}`;
   }
 
-  private async resolvePodIp(sandboxId: string): Promise<string> {
-    // TODO(docker): endpoint resolution (pod IP today) moves behind
-    // SandboxBackend.resolveAgentEndpoint when the Docker backend lands — it
-    // must yield a client-reachable host + agent/attach ports and own the
-    // ws/http scheme (proposal §4.4). Left on AgentClient for now to keep the
-    // step-1 extraction behavior-preserving (implementation log, oracle Q2).
-    const cached = this.podIpCache.get(sandboxId);
+  private async resolveEndpointCached(
+    sandboxId: string,
+  ): Promise<AgentEndpoint> {
+    const cached = this.endpointCache.get(sandboxId);
     if (cached) return cached;
 
-    const podIp = await this.kube.getPodIp(`sandbox-${sandboxId}`);
-    if (!podIp) {
-      throw new AgentUnavailableError(sandboxId, "sandbox pod has no IP yet");
+    const endpoint = await this.resolveEndpoint(sandboxId);
+    if (!endpoint) {
+      throw new AgentUnavailableError(
+        sandboxId,
+        "sandbox agent has no endpoint yet",
+      );
     }
-    this.podIpCache.set(sandboxId, podIp);
-    return podIp;
+    this.endpointCache.set(sandboxId, endpoint);
+    return endpoint;
   }
 
   private async request<T>(
@@ -210,33 +232,38 @@ export class AgentClient {
     options: { timeout?: number } = {},
   ): Promise<{ ready: boolean; podIp: string | null }> {
     if (isMock()) {
-      const ip = "10.42.0.99";
-      this.podIpCache.set(sandboxId, ip);
-      return { ready: true, podIp: ip };
+      const endpoint: AgentEndpoint = {
+        host: "10.42.0.99",
+        agentPort: config.ports.agent,
+        attachPort: ATTACH_PORT,
+        terminalPort: config.ports.terminal,
+      };
+      this.endpointCache.set(sandboxId, endpoint);
+      return { ready: true, podIp: endpoint.host };
     }
 
     const timeout = options.timeout ?? 60000;
     const deadline = Date.now() + timeout;
-    const podName = `sandbox-${sandboxId}`;
 
     while (Date.now() < deadline) {
       try {
-        const ip = await this.kube.getPodIp(podName);
-        if (!ip) {
+        const endpoint = await this.resolveEndpoint(sandboxId);
+        if (!endpoint) {
           await Bun.sleep(200);
           continue;
         }
 
-        const response = await fetch(`http://${ip}:${AGENT_PORT}/health`, {
-          signal: AbortSignal.timeout(2000),
-        });
+        const response = await fetch(
+          `http://${endpoint.host}:${endpoint.agentPort}/health`,
+          { signal: AbortSignal.timeout(2000) },
+        );
         // Gate on the agent being *alive* (any /health 200), not on primary
         // readiness: the runtime pushes config only after the agent is up, and
         // gates on the primary separately via waitForPrimary after reconcile.
         if (response.ok) {
-          this.podIpCache.set(sandboxId, ip);
-          log.info({ sandboxId, podIp: ip }, "Agent is alive");
-          return { ready: true, podIp: ip };
+          this.endpointCache.set(sandboxId, endpoint);
+          log.info({ sandboxId, podIp: endpoint.host }, "Agent is alive");
+          return { ready: true, podIp: endpoint.host };
         }
       } catch {}
 
@@ -306,8 +333,19 @@ export class AgentClient {
     name: string,
     mode: "rw" | "ro" = "rw",
   ): Promise<string> {
-    const podIp = await this.resolvePodIp(sandboxId);
-    return `ws://${podIp}:${ATTACH_PORT}/attach/${name}?mode=${mode}`;
+    const ep = await this.resolveEndpointCached(sandboxId);
+    return `ws://${ep.host}:${ep.attachPort}/attach/${name}?mode=${mode}`;
+  }
+
+  /** Raw WS URL for the pod's terminal multiplexer (byte relay, no ACP). The
+   * terminal port varies per backend (fixed on k8s, mapped on Docker), so the
+   * URL is shaped here rather than by the caller. */
+  async terminalBridgeUrl(
+    sandboxId: string,
+    sessionId: string,
+  ): Promise<string> {
+    const ep = await this.resolveEndpointCached(sandboxId);
+    return `ws://${ep.host}:${ep.terminalPort}/${sessionId}`;
   }
 
   /**
