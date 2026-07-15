@@ -67,16 +67,12 @@
       "indexes": {
         "idx_api_keys_user_id": {
           "name": "idx_api_keys_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         },
         "idx_api_keys_key_hash": {
           "name": "idx_api_keys_key_hash",
-          "columns": [
-            "key_hash"
-          ],
+          "columns": ["key_hash"],
           "isUnique": true
         }
       },
@@ -148,9 +144,7 @@
       "indexes": {
         "idx_entity_toolbox_versions_toolbox": {
           "name": "idx_entity_toolbox_versions_toolbox",
-          "columns": [
-            "toolbox_id"
-          ],
+          "columns": ["toolbox_id"],
           "isUnique": false
         }
       },
@@ -272,19 +266,12 @@
       "indexes": {
         "idx_entity_toolboxes_owner": {
           "name": "idx_entity_toolboxes_owner",
-          "columns": [
-            "owner_type",
-            "owner_id"
-          ],
+          "columns": ["owner_type", "owner_id"],
           "isUnique": false
         },
         "idx_entity_toolboxes_owner_slug": {
           "name": "idx_entity_toolboxes_owner_slug",
-          "columns": [
-            "owner_type",
-            "owner_id",
-            "slug"
-          ],
+          "columns": ["owner_type", "owner_id", "slug"],
           "isUnique": true
         }
       },
@@ -335,24 +322,17 @@
       "indexes": {
         "idx_org_members_org_id": {
           "name": "idx_org_members_org_id",
-          "columns": [
-            "org_id"
-          ],
+          "columns": ["org_id"],
           "isUnique": false
         },
         "idx_org_members_user_id": {
           "name": "idx_org_members_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         },
         "idx_org_members_org_user": {
           "name": "idx_org_members_org_user",
-          "columns": [
-            "org_id",
-            "user_id"
-          ],
+          "columns": ["org_id", "user_id"],
           "isUnique": true
         }
       },
@@ -403,9 +383,7 @@
       "indexes": {
         "org_policy_specs_org_id_unique": {
           "name": "org_policy_specs_org_id_unique",
-          "columns": [
-            "org_id"
-          ],
+          "columns": ["org_id"],
           "isUnique": true
         }
       },
@@ -471,9 +449,7 @@
       "indexes": {
         "organizations_slug_unique": {
           "name": "organizations_slug_unique",
-          "columns": [
-            "slug"
-          ],
+          "columns": ["slug"],
           "isUnique": true
         }
       },
@@ -561,9 +537,7 @@
       "indexes": {
         "idx_saved_specs_org_id": {
           "name": "idx_saved_specs_org_id",
-          "columns": [
-            "org_id"
-          ],
+          "columns": ["org_id"],
           "isUnique": false
         }
       },
@@ -621,17 +595,12 @@
       "indexes": {
         "idx_secrets_org_id": {
           "name": "idx_secrets_org_id",
-          "columns": [
-            "org_id"
-          ],
+          "columns": ["org_id"],
           "isUnique": false
         },
         "idx_secrets_org_name": {
           "name": "idx_secrets_org_name",
-          "columns": [
-            "org_id",
-            "name"
-          ],
+          "columns": ["org_id", "name"],
           "isUnique": true
         }
       },
@@ -748,9 +717,7 @@
       "indexes": {
         "idx_ssh_keys_user_id": {
           "name": "idx_ssh_keys_user_id",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -822,9 +789,7 @@
       "indexes": {
         "users_username_unique": {
           "name": "users_username_unique",
-          "columns": [
-            "username"
-          ],
+          "columns": ["username"],
           "isUnique": true
         }
       },
@@ -868,16 +833,12 @@
       "indexes": {
         "idx_sandbox_toolset_refs_sandbox": {
           "name": "idx_sandbox_toolset_refs_sandbox",
-          "columns": [
-            "sandbox_id"
-          ],
+          "columns": ["sandbox_id"],
           "isUnique": false
         },
         "idx_sandbox_toolset_refs_ref": {
           "name": "idx_sandbox_toolset_refs_ref",
-          "columns": [
-            "ref"
-          ],
+          "columns": ["ref"],
           "isUnique": false
         }
       },
@@ -1029,9 +990,7 @@
       "indexes": {
         "idx_snapshots_hash": {
           "name": "idx_snapshots_hash",
-          "columns": [
-            "hash"
-          ],
+          "columns": ["hash"],
           "isUnique": true
         }
       },
@@ -1103,9 +1062,7 @@
       "indexes": {
         "idx_toolsets_ref": {
           "name": "idx_toolsets_ref",
-          "columns": [
-            "ref"
-          ],
+          "columns": ["ref"],
           "isUnique": false
         }
       },

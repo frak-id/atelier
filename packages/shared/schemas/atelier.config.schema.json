@@ -84,9 +84,7 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "properties": {
         "mode": {
           "anyOf": [
