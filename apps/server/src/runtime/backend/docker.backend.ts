@@ -13,7 +13,6 @@
  * pod does, so the guest agent's overlay/loop-mount toolset model is unchanged.
  */
 
-import { spawn } from "node:child_process";
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -26,7 +25,8 @@ import type {
   SandboxUrl,
   VolumeBackend,
 } from "./backend.types.ts";
-import { LocalVolumeBackend } from "./local-volume.backend.ts";
+import { docker } from "./docker-cli.ts";
+import { DockerVolumeBackend } from "./docker-volume.backend.ts";
 
 const log = createChildLogger("runtime-backend-docker");
 
@@ -46,46 +46,28 @@ const SSH_PORT = 22;
 const DEFAULT_BOOT_SCRIPT = "/etc/sandbox/sandbox-boot.sh";
 
 export interface DockerBackendOptions {
-  volumes?: LocalVolumeBackend;
+  volumes?: DockerVolumeBackend;
   /** Entrypoint to run (matches the k8s `command` override). `false` uses the
    * image's own entrypoint — for a bare agent image that has no boot script. */
   bootScript?: string | false;
   dockerBin?: string;
 }
 
-interface DockerResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
 export class DockerBackend implements SandboxBackend {
   readonly volumes: VolumeBackend;
-  private readonly local: LocalVolumeBackend;
+  private readonly local: DockerVolumeBackend;
   private readonly bootScript: string | false;
   private readonly dockerBin: string;
 
   constructor(options: DockerBackendOptions = {}) {
-    this.local = options.volumes ?? new LocalVolumeBackend();
+    this.local = options.volumes ?? new DockerVolumeBackend();
     this.volumes = this.local;
     this.bootScript = options.bootScript ?? DEFAULT_BOOT_SCRIPT;
     this.dockerBin = options.dockerBin ?? "docker";
   }
 
-  private docker(args: string[]): Promise<DockerResult> {
-    return new Promise((resolve) => {
-      const child = spawn(this.dockerBin, args);
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (d) => {
-        stdout += d;
-      });
-      child.stderr.on("data", (d) => {
-        stderr += d;
-      });
-      child.on("error", (e) => resolve({ code: -1, stdout, stderr: `${e}` }));
-      child.on("exit", (code) => resolve({ code: code ?? -1, stdout, stderr }));
-    });
+  private docker(args: string[]) {
+    return docker(args, this.dockerBin);
   }
 
   private containerName(id: string): string {
@@ -130,7 +112,7 @@ export class DockerBackend implements SandboxBackend {
       // blobs and assembles the /home/dev overlay from inside the container —
       // the Docker analogue of the pod's runAsUser 0 + CAP_SYS_ADMIN.
       runArgs.push("--privileged", "--user", "0");
-      runArgs.push("-v", `${this.local.volumeDir(pvcName)}:/data`);
+      runArgs.push("-v", `${this.local.volumeName(pvcName)}:/data`);
       runArgs.push("-e", `SANDBOX_ID=${id}`);
       runArgs.push("-e", `AGENT_PASSWORD=${agentPassword}`);
       for (const cport of this.publishedPorts(spec)) {

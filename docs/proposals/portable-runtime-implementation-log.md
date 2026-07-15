@@ -476,6 +476,49 @@ same list as phase 1, plus: full dev-base Docker boot (registry-gated); Docker
 `local`-process backend (Tier 3); live `exposePort` via recreate; the
 `kubernetes.*` config sub-nesting.
 
+## Step 5 CORRECTION — named volumes, not host-dir bind mounts (found by actually booting)
+
+The first cut used a host-directory `LocalVolumeBackend` (`/data` = a host dir
+bind-mounted in, snapshot = `cp -c` CoW clone) and the orchestration IT stubbed
+`materialize`/`putConfig`. Pushed to actually run a **full** `boot()` (real
+materialize + config + spec files) against a locally-built minimal sandbox
+image, two real bugs surfaced that the stub had hidden:
+
+1. **overlay mounted read-only → `writeFiles` fails** (`Read-only file system`).
+   The agent mounts `/home/dev` as overlayfs with `upperdir` on `/data`.
+   overlayfs needs a real Linux fs (d_type + xattrs) for the upperdir; a macOS
+   host dir bind-mounted through **virtiofs does not qualify**, so the kernel
+   silently downgraded the overlay to `ro`. Verified: same image with `/data`
+   on a **Docker named volume** (VM ext4) mounts `rw` and writes succeed.
+2. **cleanup `EACCES`**: the container runs as root (`--user 0`), so
+   `/data/upper` is root-owned; the host-side Node `rm` (running as the
+   unprivileged host user) can't delete it. `docker volume rm` has no such
+   problem.
+
+**DECISION — `DockerVolumeBackend` (named volumes) replaces `LocalVolumeBackend`.**
+`/data` is a Docker named volume (`sandbox-<id>`) on the VM's ext4; a snapshot is
+another named volume filled by a throwaway `cp -a` helper container (no host CoW
+clone across named volumes — correctness over the `cp -c` optimization). Fixes
+both bugs. `LocalVolumeBackend` + its 6 FS tests were **deleted** (superseded and
+proven wrong for the primary macOS target; not left as dead code). The
+content-hash key is unchanged, so prebuilds stay addressable.
+
+**VALIDATED END-TO-END** via a full `DockerBackend.boot()` against a minimal
+sandbox image (node:22-slim + the locally-built arm64 agent + `sandbox-boot.sh`
++ `/home/skel`): container runs, `materialize([])` assembles the `/home/dev`
+overlay **rw**, `putConfig` lands (`configured:true`), a runtime-written spec
+file appears in the overlay home, and `cleanup` removes container **and** volume.
+The committed opt-in IT still uses the bare agent image (built in seconds) and
+stubs only the guest-fs tail; the full-image run is reproduced from the log's
+minimal Dockerfile.
+
+**Confirms the user's image-ownership instinct:** the remaining gap to a
+turn-key `docker`-native sandbox is *image provisioning* — the backend should
+own/build the sandbox image (inject the locally-built agent instead of the
+cluster-registry `COPY --from=zot…`, and pick arch-correct KasmVNC/oras
+artifacts) rather than consume a cluster-built amd64 image. That is the next
+step; the runtime path above is proven.
+
 ## Phase 2 commit map
 
 | Step | State | Commit |

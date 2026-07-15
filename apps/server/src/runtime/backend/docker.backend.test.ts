@@ -17,9 +17,6 @@
 
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { SandboxSpec } from "@atelier/spec";
 import type { BootInput } from "../boot.ts";
 
@@ -46,8 +43,8 @@ async function loadMods() {
   return {
     AgentClient: (await import("../agent/index.ts")).AgentClient,
     DockerBackend: (await import("./docker.backend.ts")).DockerBackend,
-    LocalVolumeBackend: (await import("./local-volume.backend.ts"))
-      .LocalVolumeBackend,
+    DockerVolumeBackend: (await import("./docker-volume.backend.ts"))
+      .DockerVolumeBackend,
   };
 }
 
@@ -62,23 +59,20 @@ const minimalSpec = (): SandboxSpec =>
 
 describe("DockerBackend (integration)", () => {
   const id = `it${Date.now().toString(36)}`;
-  let base: string | undefined;
   let cleanup: (() => Promise<void>) | undefined;
 
   afterAll(async () => {
     if (cleanup) await cleanup();
-    if (base) await rm(base, { recursive: true, force: true });
   });
 
   test.skipIf(!mods)(
     "boot runs a container, resolves the mapped endpoint, cleans up",
     async () => {
       if (!mods) return; // narrows for TS; skipIf already guards at runtime.
-      const { DockerBackend, AgentClient, LocalVolumeBackend } = mods;
+      const { DockerBackend, AgentClient, DockerVolumeBackend } = mods;
 
-      base = await mkdtemp(join(tmpdir(), "atelier-docker-it-"));
       const backend = new DockerBackend({
-        volumes: new LocalVolumeBackend(base),
+        volumes: new DockerVolumeBackend(),
         // Bare agent image has no /etc/sandbox/sandbox-boot.sh — use its own
         // entrypoint (/atelier-agent).
         bootScript: false,

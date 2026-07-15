@@ -16,12 +16,12 @@ export type {
   VolumeBackend,
 } from "./backend.types.ts";
 export { DockerBackend } from "./docker.backend.ts";
+export { DockerVolumeBackend } from "./docker-volume.backend.ts";
 export {
   CsiVolumeBackend,
   createVolumeBackend,
   KubernetesBackend,
 } from "./kubernetes.backend.ts";
-export { LocalVolumeBackend } from "./local-volume.backend.ts";
 
 /**
  * Select the sandbox orchestration backend from `config.runtime.backend`
