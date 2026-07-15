@@ -56,6 +56,9 @@ container.control.serverConfigService.seedFromEnv();
 // Sweep zombie records left by a server crash/restart: `creating` → cleanup +
 // `error`, `running` without a pod → `error` (both recoverable via resume).
 await container.runtime.reconcileOnStartup();
+// Same sweep for the image builder: a `building` row with no live in-flight
+// build after a restart is a permanent ghost otherwise.
+container.images.reconcileOnStartup();
 
 // Recompute each stored prebuild's content key against current remote HEADs
 // + base image digest, and rebuild anything that moved (runtime.service.ts

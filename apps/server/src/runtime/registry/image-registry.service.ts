@@ -15,6 +15,24 @@ export class ImageNotAvailableError extends SandboxError {
   }
 }
 
+/** The registry gate could not determine whether the image exists (network
+ * failure / timeout) — distinct from `ImageNotAvailableError`'s confirmed
+ * 404. Retryable: the caller should NOT proceed to boot (that would hang on
+ * `ImagePullBackOff` against a registry that might not have the image), but
+ * it also must not be conflated with "confirmed missing" (design review R1). */
+export class RegistryUnreachableError extends SandboxError {
+  constructor(imageId: string) {
+    super(
+      `Could not verify base image '${imageId}' against the registry ` +
+        `(${config.kubernetes.registryUrl}) — it is unreachable or timed out. ` +
+        "Retry once the registry is reachable.",
+      "REGISTRY_UNREACHABLE",
+      503,
+    );
+    this.name = "RegistryUnreachableError";
+  }
+}
+
 export const ImageRegistryService = {
   /**
    * HEAD /v2/{imageId}/manifests/latest against the OCI registry.

@@ -84,9 +84,7 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "properties": {
         "mode": {
           "anyOf": [
@@ -244,8 +242,12 @@
       "type": "object",
       "properties": {
         "kind": {
-          "default": "kaniko",
+          "default": "docker",
           "anyOf": [
+            {
+              "const": "docker",
+              "type": "string"
+            },
             {
               "const": "kaniko",
               "type": "string"
@@ -261,6 +263,10 @@
           "type": "string"
         },
         "endpoint": {
+          "default": "",
+          "type": "string"
+        },
+        "dockerHost": {
           "default": "",
           "type": "string"
         },

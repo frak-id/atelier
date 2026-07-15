@@ -4,5 +4,13 @@
   "volumeSize": 8,
   "tools": ["bun", "node", "git", "rust", "cargo", "clippy", "rustfmt"],
   "base": "dev-base",
-  "official": true
+  "official": true,
+  "dependsOn": ["dev-base"],
+  "substitutions": [
+    {
+      "token": "atelier/dev-base:latest",
+      "kind": "seed",
+      "seed": "dev-base"
+    }
+  ]
 }

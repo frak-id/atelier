@@ -13,5 +13,12 @@
     "vim"
   ],
   "base": null,
-  "official": true
+  "official": true,
+  "dependsOn": [],
+  "substitutions": [
+    {
+      "token": "zot.zot.svc:5000/sandbox-agent-v2:latest",
+      "kind": "agent"
+    }
+  ]
 }

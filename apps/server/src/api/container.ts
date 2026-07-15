@@ -13,11 +13,14 @@ import type {
 import { createControlContainer, recipeFingerprint } from "../control/index.ts";
 import {
   AgentClient,
+  createImageBuilder,
   createSandboxBackend,
+  DrizzleImageStore,
   DrizzleSandboxStore,
   DrizzleSandboxToolsetRefStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,
+  ImageBuilderService,
   RuntimeService,
 } from "../runtime/index.ts";
 import {
@@ -27,6 +30,7 @@ import {
   SessionService,
   TerminalService,
 } from "../sessions/index.ts";
+import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 /**
@@ -79,6 +83,14 @@ export function createServerContainer() {
     surface: (sandboxId) => new AcpSessionSurface(dispatch, sandboxId),
   });
   const terminal = new TerminalService({ agent });
+  const images = new ImageBuilderService({
+    store: new DrizzleImageStore(),
+    builder: createImageBuilder(),
+    registryUrl: config.kubernetes.registryUrl,
+    // Lazy read so it always reflects current runtime state — not captured
+    // once at construction time (sandboxes/snapshots keep changing).
+    referencedImageRefs: () => runtime.referencedImageRefs(),
+  });
 
   const serverContainer: ServerContainer = {
     control,
@@ -87,6 +99,7 @@ export function createServerContainer() {
     dispatch,
     sessions,
     terminal,
+    images,
     registerHarnessDispatch,
   };
   return serverContainer;
@@ -95,6 +108,7 @@ export function createServerContainer() {
 export interface ServerContainer {
   control: ReturnType<typeof createControlContainer>;
   runtime: RuntimeService;
+  images: ImageBuilderService;
   agent: AgentClient;
   dispatch: AgentDispatch;
   sessions: SessionService;

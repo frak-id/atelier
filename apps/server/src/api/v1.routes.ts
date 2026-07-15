@@ -4,6 +4,10 @@
  * two seam mutations) → call `runtime.*(spec)` once. The runtime itself never
  * sees an unresolved secret or an unauthenticated caller.
  */
+import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   AddPortRequestSchema,
   AddProcessRequestSchema,
@@ -24,6 +28,8 @@ import {
   ToolsetRefSchema,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
+import { readContextDockerfile, unpackZipContext } from "../runtime/index.ts";
+import { NotFoundError } from "../shared/errors.ts";
 import {
   buildGitAttributionFiles,
   OWNER_ID_METADATA,
@@ -159,6 +165,101 @@ export function createV1Routes(container: ServerContainer) {
   return (
     new Elysia({ prefix: "/v1" })
       .use(authPlugin)
+      // ── images ─────────────────────────────────────────────────────────
+      .get("/images", () => container.images.listImages())
+      .get("/images/templates", () => container.images.listTemplates())
+      .get(
+        "/images/:name",
+        ({ params }) => {
+          const record = container.images.getImage(params.name);
+          if (!record) throw new NotFoundError("Image", params.name);
+          return record;
+        },
+        { params: t.Object({ name: t.String() }) },
+      )
+      .get(
+        "/images/:name/logs",
+        ({ params }) => {
+          const record = container.images.getImage(params.name);
+          if (!record) throw new NotFoundError("Image", params.name);
+          return {
+            status: record.status,
+            log: container.images.getBuildLog(params.name),
+          };
+        },
+        { params: t.Object({ name: t.String() }) },
+      )
+      .post(
+        "/images",
+        async ({ body, set }) => {
+          const record =
+            "seed" in body
+              ? await container.images.buildSeed(body.seed, {
+                  force: body.force,
+                })
+              : await container.images.buildDockerfile(
+                  body.name,
+                  body.dockerfile,
+                );
+          set.status = 202;
+          return record;
+        },
+        {
+          body: t.Union([
+            t.Object({ seed: t.String(), force: t.Optional(t.Boolean()) }),
+            t.Object({ name: t.String(), dockerfile: t.String() }),
+          ]),
+        },
+      )
+      .post(
+        "/images/upload",
+        async ({ body, set }) => {
+          const zipPath = join(
+            tmpdir(),
+            `atelier-image-upload-${Date.now()}-${randomUUID()}.zip`,
+          );
+          await Bun.write(zipPath, body.file);
+          let contextDir: string | undefined;
+          try {
+            contextDir = await unpackZipContext(zipPath);
+            const dockerfile = await readContextDockerfile(contextDir);
+            // On success the service takes ownership of `contextDir` (the
+            // background build still needs it) and cleans it up when the
+            // build settles — so DON'T delete it here.
+            const record = await container.images.buildDockerfile(
+              body.name,
+              dockerfile,
+              contextDir,
+            );
+            set.status = 202;
+            return record;
+          } catch (err) {
+            // buildDockerfile threw before taking ownership (e.g. invalid
+            // name) — the context is ours to clean.
+            if (contextDir)
+              await rm(contextDir, { recursive: true, force: true });
+            throw err;
+          } finally {
+            await rm(zipPath, { force: true });
+          }
+        },
+        {
+          body: t.Object({ name: t.String(), file: t.File() }),
+        },
+      )
+      .post(
+        "/images/register",
+        ({ body }) => container.images.registerExternal(body.name, body.ref),
+        { body: t.Object({ name: t.String(), ref: t.String() }) },
+      )
+      .delete(
+        "/images/:name",
+        ({ params, set }) => {
+          container.images.deleteImage(params.name);
+          set.status = 204;
+        },
+        { params: t.Object({ name: t.String() }) },
+      )
       // ── prebuilds ──────────────────────────────────────────────────────
       .get("/prebuilds", () => runtime.listPrebuilds())
       .post(

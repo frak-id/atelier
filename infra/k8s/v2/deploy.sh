@@ -101,8 +101,8 @@ $BUILDCTL build --frontend dockerfile.v0 --local context=/agent --local dockerfi
 }
 
 build_devbase() {
-  say "Build dev-base-v2:latest (infra/images/dev-base, --no-cache to pull fresh agent)"
-  tar -czf /tmp/dev-base-ctx.tgz -C infra/images/dev-base .
+  say "Build dev-base-v2:latest (apps/server/src/runtime/registry/seeds/dev-base, --no-cache to pull fresh agent)"
+  tar -czf /tmp/dev-base-ctx.tgz -C apps/server/src/runtime/registry/seeds/dev-base .
   K exec -n "$NS_BUILD" "$BUILDER_POD" -- mkdir -p /devbase
   K cp /tmp/dev-base-ctx.tgz "$NS_BUILD/$BUILDER_POD:/tmp/devbase.tgz"
   K exec -n "$NS_BUILD" "$BUILDER_POD" -- sh -c "

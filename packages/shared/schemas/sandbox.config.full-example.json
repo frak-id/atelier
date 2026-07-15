@@ -49,9 +49,10 @@
     "agent": 9998
   },
   "imageBuilder": {
-    "kind": "kaniko",
+    "kind": "docker",
     "image": "",
     "endpoint": "",
+    "dockerHost": "",
     "cacheRepo": "",
     "insecureRegistry": true,
     "tls": {

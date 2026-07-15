@@ -20,6 +20,7 @@ import type {
 import { eq } from "drizzle-orm";
 import { getDatabase } from "../shared/lib/db.ts";
 import {
+  images,
   sandboxes,
   sandboxToolsetRefs,
   snapshots,
@@ -78,6 +79,40 @@ export interface SnapshotStore {
   /** Drop every row owned by a sandbox (destroy's label sweep just deleted
    * their VolumeSnapshots). */
   deleteBySandbox(sandboxId: string): void;
+}
+
+/** Provenance of an `ImageRecord` — see `db/schema.ts`'s `images` table doc
+ * for what each means. */
+export type ImageProvenance = "seed" | "dockerfile" | "external";
+export type ImageStatus = "building" | "ready" | "error";
+
+/** A registered/built base image — the read+write model behind `GET/POST
+ * /v1/images`. `name` is the sole identity (the destination repo name). */
+export interface ImageRecord {
+  name: string;
+  provenance: ImageProvenance;
+  status: ImageStatus;
+  /** Digest-pinned pull ref once `ready`; the verbatim ref for `external`. */
+  ref?: string;
+  /** Which embedded seed this was built from, when `provenance="seed"`. */
+  seedId?: string;
+  /** The Dockerfile content built, when `provenance="dockerfile"` — kept so
+   * a rebuild can replay it. */
+  dockerfile?: string;
+  digest?: string;
+  /** Last-N lines of build output. */
+  buildLog?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ImageStore {
+  get(name: string): ImageRecord | undefined;
+  put(record: ImageRecord): void;
+  update(name: string, patch: Partial<ImageRecord>): ImageRecord | undefined;
+  list(): ImageRecord[];
+  delete(name: string): void;
 }
 
 /** A published toolset artifact keyed by its content/result `hash`. */
@@ -212,6 +247,34 @@ export class InMemorySnapshotStore implements SnapshotStore {
     const prior = this.byRef.get(ref);
     this.byRef.delete(ref);
     if (prior) this.byHash.delete(prior.hash);
+  }
+}
+
+export class InMemoryImageStore implements ImageStore {
+  private readonly byName = new Map<string, ImageRecord>();
+
+  get(name: string): ImageRecord | undefined {
+    return this.byName.get(name);
+  }
+  put(record: ImageRecord): void {
+    this.byName.set(record.name, record);
+  }
+  update(name: string, patch: Partial<ImageRecord>): ImageRecord | undefined {
+    const existing = this.byName.get(name);
+    if (!existing) return undefined;
+    const next: ImageRecord = {
+      ...existing,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    this.byName.set(name, next);
+    return next;
+  }
+  list(): ImageRecord[] {
+    return [...this.byName.values()];
+  }
+  delete(name: string): void {
+    this.byName.delete(name);
   }
 }
 
@@ -393,6 +456,101 @@ export class DrizzleSnapshotStore implements SnapshotStore {
       .delete(snapshots)
       .where(eq(snapshots.sandboxId, sandboxId))
       .run();
+  }
+}
+
+interface ImageRow {
+  name: string;
+  provenance: string;
+  status: string;
+  ref: string | null;
+  seedId: string | null;
+  dockerfile: string | null;
+  digest: string | null;
+  buildLog: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function imageRowToRecord(row: ImageRow): ImageRecord {
+  return {
+    name: row.name,
+    provenance: row.provenance as ImageRecord["provenance"],
+    status: row.status as ImageRecord["status"],
+    ref: row.ref ?? undefined,
+    seedId: row.seedId ?? undefined,
+    dockerfile: row.dockerfile ?? undefined,
+    digest: row.digest ?? undefined,
+    buildLog: row.buildLog ?? undefined,
+    error: row.error ?? undefined,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function imageRecordToRow(record: ImageRecord): ImageRow {
+  return {
+    name: record.name,
+    provenance: record.provenance,
+    status: record.status,
+    ref: record.ref ?? null,
+    seedId: record.seedId ?? null,
+    dockerfile: record.dockerfile ?? null,
+    digest: record.digest ?? null,
+    buildLog: record.buildLog ?? null,
+    error: record.error ?? null,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+/** Upsert-by-`name` store, mirroring `DrizzleSnapshotStore`'s shape — an
+ * image's identity is its destination repo name (see `ImageRecord`). */
+export class DrizzleImageStore implements ImageStore {
+  get(name: string): ImageRecord | undefined {
+    const row = getDatabase()
+      .select()
+      .from(images)
+      .where(eq(images.name, name))
+      .get() as ImageRow | undefined;
+    return row ? imageRowToRecord(row) : undefined;
+  }
+
+  put(record: ImageRecord): void {
+    const db = getDatabase();
+    const row = imageRecordToRow(record);
+    const existing = db
+      .select()
+      .from(images)
+      .where(eq(images.name, record.name))
+      .get();
+    if (existing) {
+      db.update(images).set(row).where(eq(images.name, record.name)).run();
+      return;
+    }
+    db.insert(images).values(row).run();
+  }
+
+  update(name: string, patch: Partial<ImageRecord>): ImageRecord | undefined {
+    const existing = this.get(name);
+    if (!existing) return undefined;
+    const next: ImageRecord = {
+      ...existing,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    this.put(next);
+    return next;
+  }
+
+  list(): ImageRecord[] {
+    const rows = getDatabase().select().from(images).all() as ImageRow[];
+    return rows.map(imageRowToRecord);
+  }
+
+  delete(name: string): void {
+    getDatabase().delete(images).where(eq(images.name, name)).run();
   }
 }
 

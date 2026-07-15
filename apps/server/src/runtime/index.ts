@@ -17,11 +17,29 @@ export {
 } from "./backend/index.ts";
 export { ensureSharedSshPipeKey } from "./kube/index.ts";
 export {
+  createImageBuilder,
+  type ImageBuilderBackend,
+  type ImageBuilderDeps,
+  ImageBuilderService,
+  type ImageBuildRequest,
+  type ImageBuildResult,
+  ImageNotAvailableError,
+  RegistryUnreachableError,
+  readContextDockerfile,
+  type SeedManifest,
+  type SeedSubstitution,
+  unpackZipContext,
+} from "./registry/index.ts";
+export {
   type RuntimeCreateOptions,
   type RuntimeDeps,
   RuntimeService,
 } from "./runtime.service.ts";
 export type {
+  ImageProvenance,
+  ImageRecord,
+  ImageStatus,
+  ImageStore,
   SandboxRecord,
   SandboxStore,
   SandboxToolsetRefEntry,
@@ -32,9 +50,11 @@ export type {
   ToolsetStore,
 } from "./store.ts";
 export {
+  DrizzleImageStore,
   DrizzleSandboxStore,
   DrizzleSandboxToolsetRefStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,
+  InMemoryImageStore,
   InMemorySandboxToolsetRefStore,
 } from "./store.ts";

@@ -5,7 +5,8 @@
  * specs is the caller's job (a spec file, or `@atelier/compose` presets).
  *
  * Commands: up (+ --bake, --toolset), ps, get, logs, exec, pause, resume, rm,
- * attach, sync, expose, snapshot, prebuild, toolset (build|capture|ls).
+ * attach, sync, expose, snapshot, prebuild, image (build|templates|ls|rm|
+ * register|logs), toolset (build|capture|ls).
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join as joinPath, relative as relPath } from "node:path";
@@ -50,6 +51,13 @@ Usage:
   atelier prebuild <file> [--force] [--json]
   atelier prebuild ls [--json]
   atelier prebuild rm <ref>
+  atelier image ls [--json]
+  atelier image templates [--json]
+  atelier image build <seed> [--force] [--json]
+  atelier image build-dockerfile --name <n> --file <path> [--json]
+  atelier image register <name> <ref> [--json]
+  atelier image logs <name> [--json]
+  atelier image rm <name>
   atelier toolset ls [--json]
   atelier toolset build <file>                          (ToolsetBuildRequest)
   atelier toolset capture <id> <name> <path> [<path>...]
@@ -581,6 +589,88 @@ async function main(): Promise<void> {
       const ref = await client.prebuild(spec, flags.has("force"));
       if (json) return print(ref);
       process.stdout.write(`${ref.ref}\t${ref.hash}\n`);
+      return;
+    }
+    case "image": {
+      const sub = positionals[0];
+      if (sub === "ls") {
+        const rows = await client.listImages();
+        if (json) return print(rows);
+        if (rows.length === 0) {
+          process.stdout.write("no images\n");
+          return;
+        }
+        for (const r of rows) {
+          process.stdout.write(
+            `${r.name}\t${r.provenance}\t${r.status}\t${r.ref ?? ""}\n`,
+          );
+        }
+        return;
+      }
+      if (sub === "templates") {
+        const rows = await client.listImageTemplates();
+        if (json) return print(rows);
+        if (rows.length === 0) {
+          process.stdout.write("no image templates\n");
+          return;
+        }
+        for (const r of rows) {
+          process.stdout.write(
+            `${r.id}\t${r.description}\t${r.dependsOn.join(",")}\n`,
+          );
+        }
+        return;
+      }
+      if (sub === "build-dockerfile") {
+        const name =
+          one(flags, "name") ?? fail("image build-dockerfile needs --name");
+        const file =
+          one(flags, "file") ?? fail("image build-dockerfile needs --file");
+        const dockerfile = readFileSync(file, "utf8");
+        const record = await client.buildDockerfileImage(name, dockerfile);
+        if (json) return print(record);
+        process.stdout.write(
+          `${record.name}\t${record.status}\t(building — poll \`atelier image logs ${record.name}\`)\n`,
+        );
+        return;
+      }
+      if (sub === "register") {
+        const name = positionals[1] ?? fail("image register needs a name");
+        const ref = positionals[2] ?? fail("image register needs a ref");
+        const record = await client.registerImage(name, ref);
+        if (json) return print(record);
+        process.stdout.write(
+          `${record.name}\t${record.status}\t${record.ref}\n`,
+        );
+        return;
+      }
+      if (sub === "logs") {
+        const name = positionals[1] ?? fail("image logs needs a name");
+        const logs = await client.imageLogs(name);
+        if (json) return print(logs);
+        process.stdout.write(`status: ${logs.status}\n`);
+        process.stdout.write(logs.log);
+        return;
+      }
+      if (sub === "rm") {
+        const name = positionals[1] ?? fail("image rm needs a name");
+        await client.deleteImage(name);
+        process.stdout.write(`removed ${name}\n`);
+        return;
+      }
+      if (sub === "build") {
+        const seed = positionals[1] ?? fail("image build needs a seed id");
+        const record = await client.buildSeedImage(seed, flags.has("force"));
+        if (json) return print(record);
+        process.stdout.write(
+          `${record.name}\t${record.status}\t(building — poll \`atelier image logs ${record.name}\`)\n`,
+        );
+        return;
+      }
+      fail(
+        "image subcommand must be `ls`, `templates`, `build`, " +
+          "`build-dockerfile`, `register`, `logs`, or `rm`",
+      );
       return;
     }
     case "toolset": {

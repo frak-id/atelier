@@ -49,7 +49,11 @@ import { createSandboxBackend, type SandboxBackend } from "./backend/index.ts";
 import type { BootOutput } from "./boot.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
 import { gatingProcessNames } from "./ports.ts";
-import { ImageRegistryService } from "./registry/index.ts";
+import {
+  ImageNotAvailableError,
+  ImageRegistryService,
+  RegistryUnreachableError,
+} from "./registry/index.ts";
 import {
   InMemorySandboxStore,
   InMemorySandboxToolsetRefStore,
@@ -196,6 +200,22 @@ export class RuntimeService {
     }
     for (const snap of this.snapshots.list()) {
       if (snap.parent) refs.add(snap.parent);
+    }
+    return refs;
+  }
+
+  /** Every image reference a live sandbox's `source.image` or a stored
+   * snapshot's `image` still points at — the read `ImageBuilderService`'s
+   * delete guard consumes (mirrors `referencedSnapshotRefs`, but across the
+   * runtime/registry module seam so it stays a plain read, no shared
+   * mutable state). */
+  referencedImageRefs(): string[] {
+    const refs: string[] = [];
+    for (const s of this.sandboxes.list()) {
+      if ("image" in s.spec.source) refs.push(s.spec.source.image);
+    }
+    for (const snap of this.snapshots.list()) {
+      refs.push(snap.image);
     }
     return refs;
   }
@@ -1206,11 +1226,30 @@ export class RuntimeService {
   private async resolveImage(
     source: Exclude<SandboxSpec["source"], { snapshot: string }>,
   ): Promise<string> {
-    // A fully-qualified ref (registry/host or digest) is used verbatim;
-    // a bare name is resolved against the configured registry.
+    // A fully-qualified ref (registry/host or digest) is used verbatim; the
+    // gate below only applies to bare names resolved against the configured
+    // (in-cluster) registry — an external ref (GHCR, a public tag, another
+    // registry entirely) can't be validated by a HEAD against OUR registry,
+    // so it would false-negative every BYO image. Let the pod's own pull
+    // surface a real error for those instead (design review R1).
     if (source.image.includes("/") || source.image.includes("@")) {
       return source.image;
     }
+    // Fail CLOSED on a confirmed-missing image (404) and on an indeterminate
+    // registry (network failure/timeout) alike — the prior behaviour only
+    // hard-failed on 404 and silently proceeded on `null`, which let a spawn
+    // through to hang on ImagePullBackOff against a flaky registry instead of
+    // surfacing a clean, retryable error here.
+    const exists = await ImageRegistryService.imageExists(source.image);
+    if (exists === false) {
+      throw new ImageNotAvailableError(source.image);
+    }
+    if (exists === null) {
+      throw new RegistryUnreachableError(source.image);
+    }
+    // TODO(follow-up, out of scope here): prefer a `ready` ImageRecord's
+    // already-pinned digest over re-resolving `:latest` on every spawn —
+    // would also remove the extra registry round-trip this gate just added.
     return ImageRegistryService.resolveImageReference(source.image);
   }
 

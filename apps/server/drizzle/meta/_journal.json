@@ -127,6 +127,13 @@
       "when": 1783968646334,
       "tag": "0017_fancy_lyja",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1784136858856,
+      "tag": "0018_needy_hobgoblin",
+      "breakpoints": true
     }
   ]
 }

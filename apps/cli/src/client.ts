@@ -44,6 +44,45 @@ export interface LogsResult {
   nextOffset: number;
 }
 
+/**
+ * A registered/built base image (`GET/POST /v1/images`). Server-internal
+ * type, not part of `@atelier/spec` (the runtime's `images` table is not a
+ * seam contract) — defined locally so the CLI stays a pure HTTP client with
+ * no `apps/server` import.
+ */
+export interface ImageRecord {
+  name: string;
+  provenance: "seed" | "dockerfile" | "external";
+  status: "building" | "ready" | "error";
+  ref?: string;
+  seedId?: string;
+  dockerfile?: string;
+  digest?: string;
+  buildLog?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** An embedded base-image seed template (`GET /v1/images/templates`). */
+export interface SeedTemplate {
+  id: string;
+  name: string;
+  description: string;
+  volumeSize: number;
+  tools: string[];
+  base: string | null;
+  official: boolean;
+  dependsOn: string[];
+  substitutions: unknown[];
+}
+
+/** `GET /v1/images/:name/logs` result. */
+export interface ImageLogs {
+  status: ImageRecord["status"];
+  log: string;
+}
+
 /** One server-config entry (`GET /api/config`). */
 export interface ServerConfigEntry {
   key: string;
@@ -204,6 +243,43 @@ export class AtelierClient {
 
   deletePrebuild(ref: string): Promise<void> {
     return this.req("DELETE", `/prebuilds/${encodeURIComponent(ref)}`);
+  }
+
+  listImages(): Promise<ImageRecord[]> {
+    return this.req("GET", "/images");
+  }
+
+  listImageTemplates(): Promise<SeedTemplate[]> {
+    return this.req("GET", "/images/templates");
+  }
+
+  getImage(name: string): Promise<ImageRecord> {
+    return this.req("GET", `/images/${encodeURIComponent(name)}`);
+  }
+
+  imageLogs(name: string): Promise<ImageLogs> {
+    return this.req("GET", `/images/${encodeURIComponent(name)}/logs`);
+  }
+
+  /** Build an embedded seed in the operator's own cluster (202, async — poll
+   * `imageLogs`/`getImage` for progress). */
+  buildSeedImage(seed: string, force = false): Promise<ImageRecord> {
+    return this.req("POST", "/images", { seed, force });
+  }
+
+  /** Build a user-supplied Dockerfile (202, async). */
+  buildDockerfileImage(name: string, dockerfile: string): Promise<ImageRecord> {
+    return this.req("POST", "/images", { name, dockerfile });
+  }
+
+  /** Register an externally-hosted image (e.g. GHCR) by reference — no
+   * build, ready immediately. */
+  registerImage(name: string, ref: string): Promise<ImageRecord> {
+    return this.req("POST", "/images/register", { name, ref });
+  }
+
+  deleteImage(name: string): Promise<void> {
+    return this.req("DELETE", `/images/${encodeURIComponent(name)}`);
   }
 
   listToolsets(): Promise<ToolsetEntry[]> {

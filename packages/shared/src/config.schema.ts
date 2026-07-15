@@ -205,24 +205,31 @@ export type PortsConfig = Static<typeof PortsConfigSchema>;
 // ---------------------------------------------------------------------------
 // Image Builder
 //
-// ROADMAP / NOT YET WIRED: reserved for the planned server-side base-image
-// build. No code reads `imageBuilder.*` today; base images are currently built
-// out-of-band (see scripts/deploy-k8s.sh). Kept as the config seam for when the
-// server grows an in-cluster build path.
+// Base images (dev-base, dev-cloud, dev-rust, ...) are server-embedded seed
+// build contexts (`apps/server/src/runtime/registry/seeds/`) plus any
+// user-supplied Dockerfile/zip or externally-registered ref (GHCR etc). This
+// section configures HOW the server builds one when asked to (`ImageBuilder‑
+// Service` / `POST /v1/images`) — three strategies are supported:
 //
-// Strategy for building base images (e.g. dev-base, dev-cloud) from
-// Dockerfiles in `sandbox.imagesDirectory`. Two strategies are supported:
-//
+//   - docker:   shells out to a `docker` daemon (local socket, or a remote
+//               `tcp://` one via `dockerHost`/`DOCKER_HOST`). Default — the
+//               lowest-friction option, works with any Docker/OrbStack/Lima
+//               install. Not a good fit for untrusted multi-tenant builds
+//               (a shared daemon is root-equivalent); buildkit-rootless or
+//               kaniko are the safer choice there.
 //   - kaniko:   spawn a K8s Job running gcr.io/kaniko-project/executor
-//               with the build context mounted from a ConfigMap. Default;
-//               works out of the box with no external dependencies.
+//               with the build context mounted from a ConfigMap. Works out
+//               of the box with no external daemon dependency. NOT YET
+//               IMPLEMENTED (fails fast at construction).
 //   - buildkit: spawn a tiny `buildctl` client Job that dispatches the
 //               build to an existing BuildKit daemon at `endpoint`. Use
 //               this when the cluster already hosts a buildkitd Pod that
-//               you want to reuse.
+//               you want to reuse. NOT YET IMPLEMENTED (fails fast at
+//               construction).
 // ---------------------------------------------------------------------------
 
 export const ImageBuilderKindSchema = Type.Union([
+  Type.Literal("docker"),
   Type.Literal("kaniko"),
   Type.Literal("buildkit"),
 ]);
@@ -255,13 +262,19 @@ export type ImageBuilderTlsConfig = Static<typeof ImageBuilderTlsConfigSchema>;
 export const ImageBuilderConfigSchema = Type.Object(
   {
     /** Which builder strategy to use */
-    kind: Type.Union([Type.Literal("kaniko"), Type.Literal("buildkit")], {
-      default: "kaniko",
-    }),
+    kind: Type.Union(
+      [
+        Type.Literal("docker"),
+        Type.Literal("kaniko"),
+        Type.Literal("buildkit"),
+      ],
+      { default: "docker" },
+    ),
     /**
      * Override the builder image. Defaults to a sensible value per kind:
      *   - kaniko:   gcr.io/kaniko-project/executor:latest
      *   - buildkit: moby/buildkit:latest (used as the buildctl client)
+     *   - docker:   unused (the daemon itself does the build)
      */
     image: Type.String({ default: "" }),
     /**
@@ -270,6 +283,13 @@ export const ImageBuilderConfigSchema = Type.Object(
      * ignored otherwise.
      */
     endpoint: Type.String({ default: "" }),
+    /**
+     * Docker daemon URL (e.g. tcp://docker-host:2375) for kind=docker.
+     * Empty string inherits the process's own `DOCKER_HOST` / default local
+     * socket — the common case when the server runs beside (or as) the
+     * build host. Ignored for other kinds.
+     */
+    dockerHost: Type.String({ default: "" }),
     /**
      * Cache repository used by the builder. Defaults to
      * `${kubernetes.registryUrl}/cache` when empty.
@@ -422,6 +442,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",
   ATELIER_IMAGE_BUILDER_IMAGE: "imageBuilder.image",
   ATELIER_IMAGE_BUILDER_ENDPOINT: "imageBuilder.endpoint",
+  ATELIER_IMAGE_BUILDER_DOCKER_HOST: "imageBuilder.dockerHost",
   ATELIER_IMAGE_BUILDER_CACHE_REPO: "imageBuilder.cacheRepo",
   ATELIER_IMAGE_BUILDER_INSECURE_REGISTRY: "imageBuilder.insecureRegistry",
   ATELIER_IMAGE_BUILDER_TLS_SECRET_NAME: "imageBuilder.tls.secretName",

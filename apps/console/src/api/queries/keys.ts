@@ -66,6 +66,12 @@ export const queryKeys = {
     all: ["prebuilds"] as const,
     list: () => [...queryKeys.prebuilds.all, "list"] as const,
   },
+  images: {
+    all: ["images"] as const,
+    list: () => [...queryKeys.images.all, "list"] as const,
+    templates: () => [...queryKeys.images.all, "templates"] as const,
+    logs: (name: string) => [...queryKeys.images.all, "logs", name] as const,
+  },
   toolboxes: {
     all: ["toolboxes"] as const,
     list: (owner?: string) =>
