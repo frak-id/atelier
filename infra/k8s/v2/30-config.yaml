@@ -52,7 +52,7 @@ data:
         }
       },
       "sandbox": {
-        "defaultImage": "dev-base-v2",
+        "defaultImage": "dev-base",
         "git": { "email": "sandbox@atelier.dev", "name": "Sandbox User" }
       }
     }
