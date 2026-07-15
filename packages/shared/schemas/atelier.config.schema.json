@@ -14,24 +14,6 @@
           "default": "",
           "type": "string"
         },
-        "tls": {
-          "default": {},
-          "type": "object",
-          "properties": {
-            "email": {
-              "default": "",
-              "type": "string"
-            },
-            "certPath": {
-              "default": "",
-              "type": "string"
-            },
-            "keyPath": {
-              "default": "",
-              "type": "string"
-            }
-          }
-        },
         "ssh": {
           "default": {},
           "type": "object",
@@ -108,10 +90,6 @@
         "host": {
           "default": "0.0.0.0",
           "type": "string"
-        },
-        "mcpToken": {
-          "default": "",
-          "type": "string"
         }
       }
     },
@@ -121,10 +99,6 @@
       "properties": {
         "namespace": {
           "default": "atelier-sandboxes",
-          "type": "string"
-        },
-        "systemNamespace": {
-          "default": "atelier-system",
           "type": "string"
         },
         "kubeconfig": {
@@ -145,10 +119,6 @@
         },
         "registryUrl": {
           "default": "zot.atelier-system.svc:5000",
-          "type": "string"
-        },
-        "agentImage": {
-          "default": "",
           "type": "string"
         },
         "npmRegistryUrl": {
@@ -175,15 +145,6 @@
               "type": "string"
             }
           }
-        },
-        "openCodeIngressAnnotations": {
-          "default": {},
-          "type": "object",
-          "patternProperties": {
-            "^(.*)$": {
-              "type": "string"
-            }
-          }
         }
       }
     },
@@ -194,20 +155,6 @@
         "defaultImage": {
           "default": "dev-base",
           "type": "string"
-        },
-        "git": {
-          "default": {},
-          "type": "object",
-          "properties": {
-            "email": {
-              "default": "sandbox@atelier.dev",
-              "type": "string"
-            },
-            "name": {
-              "default": "Sandbox User",
-              "type": "string"
-            }
-          }
         }
       }
     },
@@ -215,28 +162,12 @@
       "default": {},
       "type": "object",
       "properties": {
-        "vscode": {
-          "default": 8080,
-          "type": "number"
-        },
-        "opencode": {
-          "default": 3000,
-          "type": "number"
-        },
-        "browser": {
-          "default": 6080,
-          "type": "number"
-        },
         "terminal": {
           "default": 7681,
           "type": "number"
         },
         "agent": {
           "default": 9998,
-          "type": "number"
-        },
-        "dev": {
-          "default": 3001,
           "type": "number"
         }
       }
@@ -283,30 +214,6 @@
               "type": "string"
             },
             "serverName": {
-              "default": "",
-              "type": "string"
-            }
-          }
-        }
-      }
-    },
-    "integrations": {
-      "default": {},
-      "type": "object",
-      "properties": {
-        "cliproxy": {
-          "default": {},
-          "type": "object",
-          "properties": {
-            "url": {
-              "default": "",
-              "type": "string"
-            },
-            "apiKey": {
-              "default": "",
-              "type": "string"
-            },
-            "managementKey": {
               "default": "",
               "type": "string"
             }

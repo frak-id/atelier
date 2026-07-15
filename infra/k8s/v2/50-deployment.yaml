@@ -93,21 +93,6 @@ spec:
                 secretKeyRef:
                   name: atelier-v2-secrets
                   key: SANDBOX_SECRETS_KEY
-            - name: ATELIER_MCP_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: atelier-v2-secrets
-                  key: ATELIER_MCP_TOKEN
-            # CLIProxy model provider for the opencode harness. URL is public;
-            # the API key is server-held and baked into each sandbox's
-            # opencode.json at spec enrichment (never exposed to the browser).
-            - name: ATELIER_CLIPROXY_URL
-              value: https://cliproxy.nivelais.com/v1
-            - name: ATELIER_CLIPROXY_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: atelier-v2-secrets
-                  key: ATELIER_CLIPROXY_API_KEY
           resources:
             requests:
               memory: "256Mi"

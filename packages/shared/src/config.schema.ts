@@ -6,28 +6,13 @@
  *   domain   — Where this runs (base domain, TLS, SSH)
  *   auth     — Who can access (GitHub OAuth, JWT, ACLs)
  *   server   — Server API settings (mode, port, limits)
- *   sandbox  — Defaults for new sandboxes (image, git identity)
- *   advanced — Power-user overrides (VM service ports, versions)
+ *   sandbox  — Defaults for new sandboxes (image)
  */
 import { type Static, Type } from "@sinclair/typebox";
 
 // ---------------------------------------------------------------------------
 // Domain
 // ---------------------------------------------------------------------------
-
-export const TlsConfigSchema = Type.Object(
-  {
-    /** Email for TLS certificate (e.g., ACME / Let's Encrypt) */
-    email: Type.String({ default: "" }),
-    /** Path to TLS certificate PEM file (manual TLS) */
-    certPath: Type.String({ default: "" }),
-    /** Path to TLS private key file (manual TLS) */
-    keyPath: Type.String({ default: "" }),
-  },
-  { default: {} },
-);
-
-export type TlsConfig = Static<typeof TlsConfigSchema>;
 
 export const SshConfigSchema = Type.Object(
   {
@@ -47,8 +32,6 @@ export const DomainConfigSchema = Type.Object(
     baseDomain: Type.String({ default: "localhost" }),
     /** Dashboard domain — defaults to sandbox.{baseDomain} if empty */
     dashboard: Type.String({ default: "" }),
-    /** TLS / HTTPS configuration */
-    tls: TlsConfigSchema,
     /** SSH proxy configuration */
     ssh: SshConfigSchema,
   },
@@ -97,8 +80,6 @@ export const KubernetesConfigSchema = Type.Object(
   {
     /** Namespace for sandbox pods */
     namespace: Type.String({ default: "atelier-sandboxes" }),
-    /** Namespace for system components (Zot, image-build Jobs) */
-    systemNamespace: Type.String({ default: "atelier-system" }),
     /** Path to kubeconfig file (ignored when running in-cluster) */
     kubeconfig: Type.String({ default: "/etc/rancher/k3s/k3s.yaml" }),
     /** Kata Containers runtime class name */
@@ -115,12 +96,6 @@ export const KubernetesConfigSchema = Type.Object(
     registryUrl: Type.String({
       default: "zot.atelier-system.svc:5000",
     }),
-    /**
-     * Image reference for the in-pod sandbox agent, baked into base images at
-     * build time. Pin to a specific tag so a rebuild bakes in the matching
-     * agent; empty falls back to `{registryUrl}/sandbox-agent:latest`.
-     */
-    agentImage: Type.String({ default: "" }),
     /**
      * Optional npm registry URL injected into every sandbox (e.g. a private
      * Verdaccio/Nexus/Artifactory proxy). Empty string disables injection and
@@ -143,10 +118,6 @@ export const KubernetesConfigSchema = Type.Object(
     defaultVolumeSize: Type.String({ default: "10Gi" }),
     /** Annotations to apply to VS Code ingresses (e.g., forward-auth middleware) */
     vsCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
-      default: {},
-    }),
-    /** Annotations to apply to OpenCode ingresses (e.g., forward-auth + header injection) */
-    openCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
       default: {},
     }),
   },
@@ -174,8 +145,6 @@ export const ServerConfigSchema = Type.Object(
     port: Type.Number({ default: 4000 }),
     /** Server API bind host */
     host: Type.String({ default: "0.0.0.0" }),
-    /** Bearer token for MCP server authentication — if empty, MCP auth is disabled */
-    mcpToken: Type.String({ default: "" }),
   },
   { default: {} },
 );
@@ -186,24 +155,10 @@ export type ServerConfig = Static<typeof ServerConfigSchema>;
 // Sandbox defaults
 // ---------------------------------------------------------------------------
 
-export const SandboxGitConfigSchema = Type.Object(
-  {
-    /** Default git email for sandbox users */
-    email: Type.String({ default: "sandbox@atelier.dev" }),
-    /** Default git name for sandbox users */
-    name: Type.String({ default: "Sandbox User" }),
-  },
-  { default: {} },
-);
-
-export type SandboxGitConfig = Static<typeof SandboxGitConfigSchema>;
-
 export const SandboxDefaultsSchema = Type.Object(
   {
     /** Default image for new sandboxes */
     defaultImage: Type.String({ default: "dev-base" }),
-    /** Default git identity injected into sandboxes */
-    git: SandboxGitConfigSchema,
   },
   { default: {} },
 );
@@ -211,17 +166,18 @@ export const SandboxDefaultsSchema = Type.Object(
 export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
 
 // ---------------------------------------------------------------------------
-// Ports — service ports inside sandbox VMs and on the host
+// Ports — infra-level service ports.
+//
+// Only ports the server itself needs to reach live here. Tool ports (vscode,
+// browser, dev servers, opencode, …) are declared per-sandbox via `spec.ports`
+// and must NOT be duplicated here — a static entry claims the port name in the
+// Service dedup and silently shadows the spec's real entry.
 // ---------------------------------------------------------------------------
 
 export const PortsConfigSchema = Type.Object(
   {
-    vscode: Type.Number({ default: 8080 }),
-    opencode: Type.Number({ default: 3000 }),
-    browser: Type.Number({ default: 6080 }),
     terminal: Type.Number({ default: 7681 }),
     agent: Type.Number({ default: 9998 }),
-    dev: Type.Number({ default: 3001 }),
   },
   { default: {} },
 );
@@ -230,6 +186,11 @@ export type PortsConfig = Static<typeof PortsConfigSchema>;
 
 // ---------------------------------------------------------------------------
 // Image Builder
+//
+// ROADMAP / NOT YET WIRED: reserved for the planned server-side base-image
+// build. No code reads `imageBuilder.*` today; base images are currently built
+// out-of-band (see scripts/deploy-k8s.sh). Kept as the config seam for when the
+// server grows an in-cluster build path.
 //
 // Strategy for building base images (e.g. dev-base, dev-cloud) from
 // Dockerfiles in `sandbox.imagesDirectory`. Two strategies are supported:
@@ -313,36 +274,6 @@ export const ImageBuilderConfigSchema = Type.Object(
 export type ImageBuilderConfig = Static<typeof ImageBuilderConfigSchema>;
 
 // ---------------------------------------------------------------------------
-// Integrations
-// ---------------------------------------------------------------------------
-
-export const CLIProxyIntegrationConfigSchema = Type.Object(
-  {
-    /** Internal URL of the CLIProxy service (K8s service URL) */
-    url: Type.String({ default: "" }),
-    /** API key for authenticating to the CLIProxy (Bearer token) */
-    apiKey: Type.String({ default: "" }),
-    /** Management API secret key for programmatic key management */
-    managementKey: Type.String({ default: "" }),
-  },
-  { default: {} },
-);
-
-export type CLIProxyIntegrationConfig = Static<
-  typeof CLIProxyIntegrationConfigSchema
->;
-
-export const IntegrationsConfigSchema = Type.Object(
-  {
-    /** CLIProxy AI model proxy integration */
-    cliproxy: CLIProxyIntegrationConfigSchema,
-  },
-  { default: {} },
-);
-
-export type IntegrationsConfig = Static<typeof IntegrationsConfigSchema>;
-
-// ---------------------------------------------------------------------------
 // Root config
 // ---------------------------------------------------------------------------
 
@@ -354,7 +285,6 @@ export const AtelierConfigSchema = Type.Object({
   sandbox: SandboxDefaultsSchema,
   ports: PortsConfigSchema,
   imageBuilder: ImageBuilderConfigSchema,
-  integrations: IntegrationsConfigSchema,
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;
@@ -367,9 +297,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_BASE_DOMAIN: "domain.baseDomain",
   ATELIER_DASHBOARD_DOMAIN: "domain.dashboard",
 
-  ATELIER_TLS_EMAIL: "domain.tls.email",
-  ATELIER_TLS_CERT_PATH: "domain.tls.certPath",
-  ATELIER_TLS_KEY_PATH: "domain.tls.keyPath",
   ATELIER_SSH_PROXY_PORT: "domain.ssh.port",
   ATELIER_SSH_PROXY_HOSTNAME: "domain.ssh.hostname",
 
@@ -382,15 +309,12 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SERVER_MODE: "server.mode",
   ATELIER_SERVER_PORT: "server.port",
   ATELIER_SERVER_HOST: "server.host",
-  ATELIER_MCP_TOKEN: "server.mcpToken",
 
   ATELIER_K8S_NAMESPACE: "kubernetes.namespace",
-  ATELIER_K8S_SYSTEM_NAMESPACE: "kubernetes.systemNamespace",
   ATELIER_K8S_KUBECONFIG: "kubernetes.kubeconfig",
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
   ATELIER_K8S_TOOL_INGRESS_ISSUER: "kubernetes.toolIngressClusterIssuer",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
-  ATELIER_K8S_AGENT_IMAGE: "kubernetes.agentImage",
   ATELIER_NPM_REGISTRY_URL: "kubernetes.npmRegistryUrl",
   ATELIER_K8S_STORAGE_CLASS: "kubernetes.storageClass",
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
@@ -398,15 +322,9 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_INGRESS_CLASS: "kubernetes.ingressClassName",
 
   ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",
-  ATELIER_GIT_EMAIL: "sandbox.git.email",
-  ATELIER_GIT_NAME: "sandbox.git.name",
 
-  ATELIER_VSCODE_PORT: "ports.vscode",
-  ATELIER_OPENCODE_PORT: "ports.opencode",
-  ATELIER_BROWSER_PORT: "ports.browser",
   ATELIER_TERMINAL_PORT: "ports.terminal",
   ATELIER_AGENT_PORT: "ports.agent",
-  ATELIER_DEV_PORT: "ports.dev",
 
   ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",
   ATELIER_IMAGE_BUILDER_IMAGE: "imageBuilder.image",
@@ -415,10 +333,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_IMAGE_BUILDER_INSECURE_REGISTRY: "imageBuilder.insecureRegistry",
   ATELIER_IMAGE_BUILDER_TLS_SECRET_NAME: "imageBuilder.tls.secretName",
   ATELIER_IMAGE_BUILDER_TLS_SERVER_NAME: "imageBuilder.tls.serverName",
-
-  ATELIER_CLIPROXY_URL: "integrations.cliproxy.url",
-  ATELIER_CLIPROXY_API_KEY: "integrations.cliproxy.apiKey",
-  ATELIER_CLIPROXY_MANAGEMENT_KEY: "integrations.cliproxy.managementKey",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;

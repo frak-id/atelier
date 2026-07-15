@@ -2,11 +2,6 @@
   "domain": {
     "baseDomain": "localhost",
     "dashboard": "",
-    "tls": {
-      "email": "",
-      "certPath": "",
-      "keyPath": ""
-    },
     "ssh": {
       "port": 2222,
       "hostname": ""
@@ -24,39 +19,27 @@
   "server": {
     "mode": "production",
     "port": 4000,
-    "host": "0.0.0.0",
-    "mcpToken": ""
+    "host": "0.0.0.0"
   },
   "kubernetes": {
     "namespace": "atelier-sandboxes",
-    "systemNamespace": "atelier-system",
     "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
     "runtimeClass": "kata-clh",
     "ingressClassName": "",
     "toolIngressClusterIssuer": "",
     "registryUrl": "zot.atelier-system.svc:5000",
-    "agentImage": "",
     "npmRegistryUrl": "",
     "storageClass": "",
     "volumeSnapshotClass": "",
     "defaultVolumeSize": "10Gi",
-    "vsCodeIngressAnnotations": {},
-    "openCodeIngressAnnotations": {}
+    "vsCodeIngressAnnotations": {}
   },
   "sandbox": {
-    "defaultImage": "dev-base",
-    "git": {
-      "email": "sandbox@atelier.dev",
-      "name": "Sandbox User"
-    }
+    "defaultImage": "dev-base"
   },
   "ports": {
-    "vscode": 8080,
-    "opencode": 3000,
-    "browser": 6080,
     "terminal": 7681,
-    "agent": 9998,
-    "dev": 3001
+    "agent": 9998
   },
   "imageBuilder": {
     "kind": "kaniko",
@@ -67,13 +50,6 @@
     "tls": {
       "secretName": "",
       "serverName": ""
-    }
-  },
-  "integrations": {
-    "cliproxy": {
-      "url": "",
-      "apiKey": "",
-      "managementKey": ""
     }
   }
 }

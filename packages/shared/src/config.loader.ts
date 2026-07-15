@@ -221,25 +221,6 @@ export function validateConfig(
           "Base domain should be configured for production (set ATELIER_BASE_DOMAIN)",
       });
     }
-
-    const hasCert = config.domain.tls.certPath?.trim().length > 0;
-    const hasKey = config.domain.tls.keyPath?.trim().length > 0;
-
-    if ((hasCert && !hasKey) || (!hasCert && hasKey)) {
-      errors.push({
-        field: "domain.tls",
-        message:
-          "Both tls.certPath and tls.keyPath are required for manual TLS",
-      });
-    }
-
-    if (!hasCert && !hasKey && !config.domain.tls.email) {
-      errors.push({
-        field: "domain.tls.email",
-        message:
-          "TLS email is required for automatic HTTPS (set ATELIER_TLS_EMAIL)",
-      });
-    }
   }
 
   return errors;

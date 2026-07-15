@@ -65,7 +65,6 @@ auth:
   # -- Use an existing K8s Secret instead of creating one from values.
   # The secret must contain keys: ATELIER_GITHUB_CLIENT_ID,
   # ATELIER_GITHUB_CLIENT_SECRET, ATELIER_JWT_SECRET, SANDBOX_SECRETS_KEY.
-  # Optionally: ATELIER_MCP_TOKEN.
   existingSecret: ""
 
 # -- Server settings
