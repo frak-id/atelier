@@ -66,27 +66,41 @@ const ARTIFACT_TYPE: &str = "application/vnd.atelier.toolset.v1";
 enum BlobFormat {
     Erofs,
     Squashfs,
+    /// zstd-compressed tarball. NOT loop-mounted — extracted into a plain
+    /// directory used directly as an overlay lowerdir. The copy fallback for a
+    /// guest kernel that can mount neither erofs nor squashfs (the real
+    /// portability enabler for locked-down/rootless — proposal §6): tar needs
+    /// no read-only filesystem driver and no loop device.
+    Tar,
 }
 
 impl BlobFormat {
-    /// Preference order: erofs first (modern, and what the CLH guest here
-    /// supports), squashfs second. Detection scans `/proc/filesystems`.
+    /// Loop-mount preference order (erofs first — modern, and what the CLH guest
+    /// here supports; squashfs second). `Tar` is deliberately absent: it is the
+    /// extraction fallback chosen only when neither mountable format is
+    /// available, not a mount option to prefer. Detection scans
+    /// `/proc/filesystems`.
     const PREFERENCE: [BlobFormat; 2] = [BlobFormat::Erofs, BlobFormat::Squashfs];
 
-    /// `mount -t` filesystem type.
-    fn fs_type(self) -> &'static str {
+    /// `mount -t` filesystem type, or `None` for a format that is extracted
+    /// rather than mounted (`Tar`).
+    fn fs_type(self) -> Option<&'static str> {
         match self {
-            BlobFormat::Erofs => "erofs",
-            BlobFormat::Squashfs => "squashfs",
+            BlobFormat::Erofs => Some("erofs"),
+            BlobFormat::Squashfs => Some("squashfs"),
+            BlobFormat::Tar => None,
         }
     }
 
     /// On-PVC blob file extension (`<digest>.<ext>`). Also how materialize
-    /// recovers a blob's format on resume (the extension is the record).
+    /// recovers a blob's format on resume (the extension is the record). `tzst`
+    /// is a single extension (not `tar.zst`) so `<digest>.tzst` survives the
+    /// `<digest>.*` glob + `${blob##*.}` extension recovery unchanged.
     fn ext(self) -> &'static str {
         match self {
             BlobFormat::Erofs => "erofs",
             BlobFormat::Squashfs => "sqfs",
+            BlobFormat::Tar => "tzst",
         }
     }
 
@@ -96,6 +110,7 @@ impl BlobFormat {
         match self {
             BlobFormat::Erofs => "application/vnd.atelier.toolset.layer.v1.erofs",
             BlobFormat::Squashfs => "application/vnd.atelier.toolset.layer.v1.squashfs",
+            BlobFormat::Tar => "application/vnd.atelier.toolset.layer.v1.tar+zstd",
         }
     }
 
@@ -104,8 +119,11 @@ impl BlobFormat {
     /// built-in LZ4 decompresses lz4hc), `-T0` pins timestamps. squashfs:
     /// zstd + the reproducibility/ownership-normalizing flags. Note the
     /// argument order differs (`mkfs.erofs <img> <dir>` vs `mksquashfs <dir>
-    /// <img>`). Both normalize to uid/gid 1000 — erofs implicitly (the stage
-    /// is rsynced as `dev`), squashfs via `-force-uid/-force-gid`.
+    /// <img>`). tar: a `--zstd` archive of the stage's contents, with the same
+    /// uid/gid-1000 + epoch-mtime normalization (the stage is rsynced as
+    /// `dev`, so it is already 1000; the flags pin it for reproducibility).
+    /// Both erofs/squashfs normalize to uid/gid 1000 — erofs implicitly (the
+    /// stage is rsynced as `dev`), squashfs via `-force-uid/-force-gid`.
     fn mkfs_cmd(self, name_var: &str, stage_var: &str) -> String {
         match self {
             BlobFormat::Erofs => format!("mkfs.erofs -zlz4hc -T0 {name_var} {stage_var}"),
@@ -113,26 +131,35 @@ impl BlobFormat {
                 "mksquashfs {stage_var} {name_var} -comp zstd -noappend -no-exports \
                  -all-time 0 -mkfs-time 0 -force-uid 1000 -force-gid 1000"
             ),
+            BlobFormat::Tar => format!(
+                "tar --zstd --numeric-owner --owner=1000 --group=1000 --mtime=@0 \
+                 --sort=name -cf {name_var} -C {stage_var} ."
+            ),
         }
     }
-
 }
 
-/// Pick the preferred blob format this guest kernel can mount, by scanning
+/// Choose the build format from a kernel-support predicate: the first
+/// loop-mountable format the guest supports, else `Tar` (extraction needs no
+/// read-only FS driver, so it always works — removing the old hard-error).
+/// Pure so it is unit-testable without a real `/proc/filesystems`.
+fn select_build_format(is_supported: impl Fn(&str) -> bool) -> BlobFormat {
+    BlobFormat::PREFERENCE
+        .into_iter()
+        .find(|f| f.fs_type().is_some_and(&is_supported))
+        .unwrap_or(BlobFormat::Tar)
+}
+
+/// Pick the build format this guest kernel supports, by scanning
 /// `/proc/filesystems` (authoritative for built-ins; the minimal Kata guest
 /// has no loadable-module tree). Build/capture run on the same guest kernel
-/// as the consuming sandboxes, so this is exactly “what can be mounted here”.
-async fn detect_build_format() -> Result<BlobFormat, String> {
+/// as the consuming sandboxes, so this is exactly “what can be mounted here”;
+/// when neither erofs nor squashfs is mountable it falls back to `Tar`.
+async fn detect_build_format() -> BlobFormat {
     let listed = tokio::fs::read_to_string("/proc/filesystems")
         .await
         .unwrap_or_default();
-    let supported = |fs: &str| listed.split_whitespace().any(|w| w == fs);
-    BlobFormat::PREFERENCE
-        .into_iter()
-        .find(|f| supported(f.fs_type()))
-        .ok_or_else(|| {
-            "guest kernel supports neither erofs nor squashfs; cannot build a toolset blob".into()
-        })
+    select_build_format(|fs| listed.split_whitespace().any(|w| w == fs))
 }
 /// Packaging stages the selected path-sets into a scratch tree before
 /// packaging. Stage on the PVC-backed home (the overlay's `/data/upper`),
@@ -330,7 +357,7 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     // Apply the same secret-file/`.git` exclude floor as `capture` — a built
     // toolset's declared paths can contain a `.git` dir or stray dotfile too.
     let excludes = merged_excludes(&[]);
-    let fmt = detect_build_format().await?;
+    let fmt = detect_build_format().await;
     let script = squash_and_push_script(&rels, &excludes, &req.target, fmt);
 
     // Run as `dev` so the staged copy's ownership/readability matches how the
@@ -590,7 +617,7 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
         ));
     }
 
-    let fmt = detect_build_format().await?;
+    let fmt = detect_build_format().await;
     let script = squash_and_push_script(&rels, &excludes, &req.target, fmt);
     let res = command::run(
         &script,
@@ -632,8 +659,10 @@ fn digest_suffix(reference: &str) -> Option<String> {
 
 /// Materialize toolset artifacts into the home as a **mount, not a copy**
 /// (docs/proposals/toolset-overlay-squashfs.md §5). For each digest-pinned
-/// ref, in order: pull its blob to `/data/toolsets/<digest>.<ext>` (`.erofs`
-/// or `.sqfs`, whichever format the builder used)
+/// ref, in order: pull its blob to `/data/toolsets/<digest>.<ext>` (`.erofs`,
+/// `.sqfs`, or `.tzst`, whichever format the builder used — the last is a
+/// zstd tarball, extracted into a plain lowerdir instead of loop-mounted, for
+/// a guest kernel that can mount neither read-only FS)
 /// (skipped if already present — idempotent across create/resume/retry, and
 /// what makes resume registry-independent: the blob rides the PVC's pause
 /// snapshot), then loop-mount it read-only at `/run/toolsets/<digest>`. Once
@@ -737,13 +766,16 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
              scratch=$(mktemp -d -p {toolsets_dir} atelier-toolset-pull.XXXXXX)\n\
              trap 'rm -rf \"$scratch\"' EXIT\n\
              oras pull --plain-http {reference} -o \"$scratch\"\n\
-             layers=(\"$scratch\"/*.erofs \"$scratch\"/*.sqfs)\n\
-             [ \"${{#layers[@]}}\" -eq 1 ] || {{ echo \"expected exactly one .erofs/.sqfs layer for {reference}, found ${{#layers[@]}}\" >&2; exit 1; }}\n\
+             layers=(\"$scratch\"/*.erofs \"$scratch\"/*.sqfs \"$scratch\"/*.tzst)\n\
+             [ \"${{#layers[@]}}\" -eq 1 ] || {{ echo \"expected exactly one .erofs/.sqfs/.tzst layer for {reference}, found ${{#layers[@]}}\" >&2; exit 1; }}\n\
              blob={toolsets_dir}/{digest}.\"${{layers[0]##*.}}\"\n\
              mv \"${{layers[0]}}\" \"$blob\"\n\
              fi\n\
-             case \"$blob\" in *.erofs) fstype=erofs;; *.sqfs) fstype=squashfs;; *) echo \"unknown blob format: $blob\" >&2; exit 1;; esac\n\
-             mountpoint -q {mount_point} || mount -t \"$fstype\" -o ro,loop \"$blob\" {mount_point}",
+             case \"$blob\" in\n\
+             *.erofs) mountpoint -q {mount_point} || mount -t erofs -o ro,loop \"$blob\" {mount_point};;\n\
+             *.sqfs) mountpoint -q {mount_point} || mount -t squashfs -o ro,loop \"$blob\" {mount_point};;\n\
+             *.tzst) [ -n \"$(ls -A {mount_point} 2>/dev/null)\" ] || tar --zstd -xf \"$blob\" -C {mount_point};;\n\
+             *) echo \"unknown blob format: $blob\" >&2; exit 1;; esac",
             toolsets_dir = sh_quote(DATA_TOOLSETS),
             mount_point = sh_quote(&mount_point),
             digest = digest,
@@ -970,7 +1002,7 @@ pub async fn self_heal_home() {
 /// keep-set (zero toolsets this boot) deletes every blob — correct: nothing
 /// references any blob.
 fn sweep_stale_blobs_script(keep_digests: &[String]) -> String {
-    let blob_glob = "\\( -name '*.erofs' -o -name '*.sqfs' \\)";
+    let blob_glob = "\\( -name '*.erofs' -o -name '*.sqfs' -o -name '*.tzst' \\)";
     if keep_digests.is_empty() {
         return format!(
             "find {dir} -maxdepth 1 {blob_glob} -exec rm -f {{}} +",
@@ -994,15 +1026,21 @@ mod tests {
 
     #[test]
     fn blob_format_mount_type_matches_extension_case_in_materialize() {
-        // The materialize shell maps *.erofs->erofs and *.sqfs->squashfs; keep
-        // the enum in lockstep with that mapping and the pushed media types.
+        // The materialize shell maps *.erofs->erofs, *.sqfs->squashfs, and
+        // extracts *.tzst; keep the enum in lockstep with that mapping and the
+        // pushed media types.
         assert_eq!(BlobFormat::Erofs.ext(), "erofs");
-        assert_eq!(BlobFormat::Erofs.fs_type(), "erofs");
+        assert_eq!(BlobFormat::Erofs.fs_type(), Some("erofs"));
         assert_eq!(BlobFormat::Squashfs.ext(), "sqfs");
-        assert_eq!(BlobFormat::Squashfs.fs_type(), "squashfs");
+        assert_eq!(BlobFormat::Squashfs.fs_type(), Some("squashfs"));
+        // Tar is extracted, not mounted: no mount fs type, and its extension is
+        // a single token so `<digest>.*` + `${blob##*.}` recovery still works.
+        assert_eq!(BlobFormat::Tar.ext(), "tzst");
+        assert_eq!(BlobFormat::Tar.fs_type(), None);
         assert!(BlobFormat::Erofs.media_type().ends_with(".erofs"));
         assert!(BlobFormat::Squashfs.media_type().ends_with(".squashfs"));
-        // erofs is preferred when a kernel supports both.
+        assert!(BlobFormat::Tar.media_type().ends_with(".tar+zstd"));
+        // erofs is preferred when a kernel supports both mountable formats.
         assert_eq!(BlobFormat::PREFERENCE[0], BlobFormat::Erofs);
     }
 
@@ -1015,6 +1053,24 @@ mod tests {
         assert!(e.contains("OUT SRC"), "erofs is output-then-source: {e}");
         let s = BlobFormat::Squashfs.mkfs_cmd("OUT", "SRC");
         assert!(s.starts_with("mksquashfs SRC OUT"), "squashfs is source-then-output: {s}");
+        // tar archives the stage's contents into the blob, zstd-compressed,
+        // with ownership/mtime normalized (stage is `dev`; flags pin it).
+        let t = BlobFormat::Tar.mkfs_cmd("OUT", "SRC");
+        assert!(t.starts_with("tar --zstd"), "tar blob is a zstd archive: {t}");
+        assert!(t.contains("-cf OUT -C SRC ."), "tar is create-file OUT from SRC: {t}");
+        assert!(t.contains("--owner=1000") && t.contains("--group=1000"));
+    }
+
+    #[test]
+    fn select_build_format_falls_back_to_tar_when_no_mountable_fs() {
+        // erofs preferred when present.
+        assert_eq!(select_build_format(|fs| fs == "erofs" || fs == "ext4"), BlobFormat::Erofs);
+        // squashfs when erofs absent.
+        assert_eq!(select_build_format(|fs| fs == "squashfs"), BlobFormat::Squashfs);
+        // neither mountable RO fs -> tar (no hard-error). This is the copy
+        // fallback the whole rung exists for.
+        assert_eq!(select_build_format(|_| false), BlobFormat::Tar);
+        assert_eq!(select_build_format(|fs| fs == "ext4" || fs == "overlay"), BlobFormat::Tar);
     }
 
     #[test]
@@ -1023,6 +1079,7 @@ mod tests {
         let script = sweep_stale_blobs_script(&[d.clone()]);
         assert!(script.contains("*.erofs"));
         assert!(script.contains("*.sqfs"));
+        assert!(script.contains("*.tzst"));
         // keeps the digest regardless of extension
         assert!(script.contains(&format!("'{d}.*'")));
         // empty keep-set deletes everything

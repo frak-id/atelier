@@ -265,4 +265,56 @@ short-circuit above; seam ready). Boot stops emitting the `Pipe` for
 `none`/`in-server`, which is the concrete "make sshpiper optional" change the
 proposal §5 called for.
 
+---
+
+## Step 4 — `Tar` blob rung in agent-v2 (done before step 3)
+
+**Proposal target:** add a `Tar` variant to `BlobFormat` + a capability probe /
+copy fallback in `apps/agent-v2/src/toolset.rs`, so the agent no longer
+hard-errors when the guest kernel can mount neither erofs nor squashfs — the
+real portability enabler for locked-down/rootless (proposal §6-7).
+
+**Reorder note:** delivered before step 3 because it is the concrete,
+cargo-testable foundation (and the agent-side tar machinery a future OCI-tar
+prebuild would reuse), whereas step 3's OCI-tar leaf is infra-gated.
+
+### DECISION — Tar is extracted, not mounted
+
+erofs/squashfs blobs are loop-mounted read-only and stacked as overlay
+lowerdirs. A `Tar` blob (`<digest>.tzst`, zstd) is instead **extracted into a
+plain directory** which is used directly as an overlay lowerdir (overlayfs
+accepts ordinary dirs as lowers). So the Tar rung removes the loop-device +
+read-only-FS-driver requirement while keeping the existing single-overlay
+assembly. Changes:
+
+- `BlobFormat::Tar` with `ext()="tzst"` (single token, so `<digest>.*` glob +
+  `${blob##*.}` recovery are unchanged), `fs_type()=None` (not mounted),
+  `media_type()=...tar+zstd`, `mkfs_cmd()=tar --zstd ... -cf <name> -C <stage> .`
+  (uid/gid-1000 + epoch-mtime normalized, matching erofs/squashfs).
+- `detect_build_format` no longer returns `Result`/hard-errors: it picks the
+  first mountable format the kernel supports, **else `Tar`**. Extracted into a
+  pure `select_build_format(is_supported)` for unit testing.
+- Materialize discovers a `.tzst` blob (pull-layer glob + existing-blob glob
+  already `*` / now list `*.tzst`), and its per-arm `case` **extracts** the
+  tarball into the mount point (idempotent: only when the dir is empty) instead
+  of `mount -t`. The stale-blob sweep glob gains `*.tzst`.
+
+### SHORT-CIRCUIT — no-overlay tier not addressed
+
+The Tar rung targets kernels that lack a mountable RO FS but **still have
+overlayfs**. A fully locked-down environment without overlayfs at all would need
+a direct copy-merge into the home (no overlay) — a different assembly model,
+deferred. Also: `.tzst` extracts into the tmpfs mount point (`/run/toolsets`),
+so a very large tar costs RAM; acceptable for a last-resort fallback, noted here
+for when the copy-merge tier is designed.
+
+### Verification
+
+`cargo build` clean; `cargo test` 52/52 (incl. updated `blob_format_*`,
+`mkfs_cmd_*`, `sweep_*`, and new `select_build_format_falls_back_to_tar_*`).
+clippy clean for `toolset.rs` (the one repo warning is pre-existing in
+`attach.rs`). CI does not gate Rust on fmt/clippy; the crate is hand-formatted
+(HEAD already has 10 `cargo fmt` diffs) so new code matches that style rather
+than reformatting pre-existing lines.
+
 (Continued below.)
