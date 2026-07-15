@@ -273,16 +273,26 @@ async function watchBuildJob(
   // Stream logs best-effort in the background: the container may still be in
   // `unpack`/`ContainerCreating` when we first try, so retry until it starts.
   let streaming = true;
+  let delivered = false;
+  let lastLogErr: unknown;
+  const relay = (chunk: string) => {
+    delivered = true;
+    onLog(chunk);
+  };
   const logs = (async () => {
     while (streaming && !signal.aborted) {
       try {
-        await kubeClient.streamPodLogs(podName, onLog, {
+        await kubeClient.streamPodLogs(podName, relay, {
           container: BUILD_CONTAINER,
           namespace: ns,
           signal,
         });
-        return;
-      } catch {
+        if (delivered) return;
+        // Endpoint returned with no output yet (container not producing) —
+        // re-attach rather than giving up, or we'd stream nothing at all.
+        await Bun.sleep(1_000);
+      } catch (err) {
+        lastLogErr = err;
         await Bun.sleep(1_000);
       }
     }
@@ -324,6 +334,12 @@ async function watchBuildJob(
   } finally {
     streaming = false;
     await logs.catch(() => {});
+    if (!delivered) {
+      log.warn(
+        { job: name, pod: podName, err: lastLogErr },
+        "build log stream produced no output",
+      );
+    }
   }
 }
 

@@ -66,12 +66,18 @@ export class BuildkitImageBuilder implements ImageBuilderBackend {
     signal: AbortSignal,
   ): Promise<ImageBuildResult> {
     const args = buildctlArgs(req, this.endpoint, this.tls);
-    // buildctl prints metadata to a file; extract the pushed digest from it
-    // into the termination log the shared runner reads back.
+    // buildctl writes metadata to a file; pin the MANIFEST digest
+    // (`containerimage.digest`) into the termination log the shared runner
+    // reads back. NOT the first sha256 in the file — that's
+    // `containerimage.config.digest`, and pinning the config blob makes
+    // containerd reject the pull ("unexpected media type
+    // application/vnd.oci.image.config.v1+json"). The key match tolerates an
+    // optional space after the colon so it works on compact or pretty JSON.
     const script =
       `set -e; buildctl ${args.join(" ")}; ` +
-      "grep -o 'sha256:[0-9a-f]\\{64\\}' /tmp/atelier-md.json " +
-      "| head -n1 > /dev/termination-log";
+      "grep -o '\"containerimage\\.digest\": *\"sha256:[0-9a-f]\\{64\\}\"' " +
+      "/tmp/atelier-md.json | grep -o 'sha256:[0-9a-f]\\{64\\}' " +
+      "> /dev/termination-log";
 
     const useTls = this.tls.secretName.length > 0;
     return runKubeBuildJob(
