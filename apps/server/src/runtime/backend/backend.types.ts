@@ -89,7 +89,7 @@ export interface SandboxBackend {
    * live-vs-declared correlation) is backend-neutral policy and stays in
    * `RuntimeService`.
    */
-  urls(id: string, spec: SandboxSpec): SandboxUrl[];
+  urls(id: string, spec: SandboxSpec): Promise<SandboxUrl[]>;
 
   /**
    * Resolve where the sandbox's agent is reachable, or `null` when compute is

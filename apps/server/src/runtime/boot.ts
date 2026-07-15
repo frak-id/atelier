@@ -10,8 +10,8 @@ import type { SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { type AgentClient, toFileWrites } from "./agent/index.ts";
-import { specToAgentConfig } from "./agent-config.ts";
+import type { AgentClient } from "./agent/index.ts";
+import { provisionAgent } from "./boot-agent.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
 import {
   buildPvc,
@@ -125,35 +125,9 @@ export async function bootSandbox(
       }),
     ]);
 
-    const { ready, podIp } = await agent.waitForAgent(sandboxId, {
-      timeout: 120_000,
-    });
-    if (!ready || !podIp) {
-      throw new Error(`Sandbox pod ${podName} agent did not become ready`);
-    }
-
-    // Two independent agent calls run concurrently:
-    //   - materialize toolset artifacts: pull each squashfs blob (skipped if
-    //     already on `/data/toolsets` — the resume case), then assemble the
-    //     `/home/dev` overlay with them as the topmost lowers, over
-    //     `/home/skel` (toolset-overlay-squashfs.md §5). ALWAYS called, even
-    //     with an empty list: the entrypoint never mounts `/home/dev` (see
-    //     `sandbox-boot.sh`) — this call is the only place it's ever
-    //     assembled, skel-only lower when there are no toolsets. Must land
-    //     BEFORE files[] so spec-level files can override org toolset
-    //     config — last-wins layering;
-    //   - push config (never ConfigMap-mounted: per-process `env` may carry
-    //     resolved secrets that must not land in etcd or a pause snapshot).
-    // Config touches no home files, so it can overlap the mount/materialize.
-    await Promise.all([
-      agent.materializeToolsets(sandboxId, input.toolsets ?? []),
-      agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec)),
-    ]);
-    // Files last — after the overlay is fully assembled — and before the
-    // phase-ordered hooks/processes the caller drives.
-    if (spec.files && spec.files.length > 0) {
-      await agent.writeFiles(sandboxId, toFileWrites(spec.files));
-    }
+    // Backend-neutral tail (wait for agent -> materialize -> config -> files);
+    // shared with the Docker backend via provisionAgent.
+    const podIp = await provisionAgent(sandboxId, spec, input, agent);
 
     return { podName, pvcName, agentPassword, podIp };
   } catch (error) {

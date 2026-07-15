@@ -6,18 +6,22 @@
  */
 import { config } from "../../shared/lib/config.ts";
 import type { SandboxBackend } from "./backend.types.ts";
+import { DockerBackend } from "./docker.backend.ts";
 import { KubernetesBackend } from "./kubernetes.backend.ts";
 
 export type {
+  AgentEndpoint,
   SandboxBackend,
   SandboxUrl,
   VolumeBackend,
 } from "./backend.types.ts";
+export { DockerBackend } from "./docker.backend.ts";
 export {
   CsiVolumeBackend,
   createVolumeBackend,
   KubernetesBackend,
 } from "./kubernetes.backend.ts";
+export { LocalVolumeBackend } from "./local-volume.backend.ts";
 
 /**
  * Select the sandbox orchestration backend from `config.runtime.backend`
@@ -29,9 +33,10 @@ export function createSandboxBackend(
   backend: (typeof config.runtime)["backend"] = config.runtime.backend,
 ): SandboxBackend {
   if (backend === "kubernetes") return new KubernetesBackend();
+  if (backend === "docker") return new DockerBackend();
   throw new Error(
-    `runtime.backend="${backend}" is not yet implemented; only "kubernetes" ` +
-      "is available today (the docker/local backends are the in-progress " +
-      "portability work). Set runtime.backend=kubernetes.",
+    `runtime.backend="${backend}" is not yet implemented; "kubernetes" and ` +
+      '"docker" are available today (the local-process backend is reserved). ' +
+      "Set runtime.backend=kubernetes or docker.",
   );
 }

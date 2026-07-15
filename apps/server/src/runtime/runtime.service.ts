@@ -534,7 +534,7 @@ export class RuntimeService {
 
       return {
         id,
-        urls: this.urlsFor(id, spec),
+        urls: await this.urlsFor(id, spec),
         generated: { agentPassword: boot.agentPassword, podIp: boot.podIp },
       };
     } catch (error) {
@@ -556,7 +556,7 @@ export class RuntimeService {
     return {
       id,
       status: record.status,
-      urls: this.urlsFor(id, record.spec, processes),
+      urls: await this.urlsFor(id, record.spec, processes),
       processes,
       generated: record.generated,
       metadata: record.metadata,
@@ -1218,7 +1218,7 @@ export class RuntimeService {
    * `live` process statuses gate `ready` (design ui-evolution.md §4.1) —
    * omitted at create time (nothing has started yet), present at `get()`.
    */
-  private urlsFor(id: string, spec: SandboxSpec, live?: ProcessStatus[]) {
+  private async urlsFor(id: string, spec: SandboxSpec, live?: ProcessStatus[]) {
     const publicPorts = (spec.ports ?? []).filter((p) => p.public);
     const liveByName = new Map((live ?? []).map((p) => [p.name, p]));
     // The backend shapes the host/scheme (port URLs + the ssh entry); the
@@ -1226,7 +1226,7 @@ export class RuntimeService {
     // any non-public port) matches no public port and passes through untouched
     // — assuming no public port is itself named "ssh" (unenforced, but such a
     // spec was already ambiguous pre-refactor: it emitted two "ssh" URLs).
-    return this.backend.urls(id, spec).map((url) => {
+    return (await this.backend.urls(id, spec)).map((url) => {
       // Correlate by name, not array index: both derive from the same
       // `public` filter today, but a name lookup can't silently mispair if
       // the URL ordering ever changes.

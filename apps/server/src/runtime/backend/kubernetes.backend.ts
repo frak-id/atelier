@@ -124,8 +124,11 @@ export class KubernetesBackend implements SandboxBackend {
     }
   }
 
-  urls(id: string, spec: SandboxSpec): SandboxUrl[] {
-    return [...buildPortUrls(id, spec.ports), { name: "ssh", url: sshUrl(id) }];
+  urls(id: string, spec: SandboxSpec): Promise<SandboxUrl[]> {
+    return Promise.resolve([
+      ...buildPortUrls(id, spec.ports),
+      { name: "ssh", url: sshUrl(id) },
+    ]);
   }
 
   async resolveAgentEndpoint(id: string): Promise<AgentEndpoint | null> {
