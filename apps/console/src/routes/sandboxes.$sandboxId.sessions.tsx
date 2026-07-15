@@ -38,7 +38,6 @@ import {
   permissionPresentation,
   riskBadgeVariant,
 } from "@/lib/status-presentation";
-import { useLens } from "@/providers/lens";
 
 export const Route = createFileRoute("/sandboxes/$sandboxId/sessions")({
   component: SessionsPage,
@@ -165,7 +164,6 @@ function PermissionRow({
   request: AgentPermissionRequest;
 }) {
   const reply = useReplyPermission(sandboxId);
-  const { lens } = useLens();
   const presentation = permissionPresentation(request.permission);
 
   return (
@@ -177,20 +175,18 @@ function PermissionRow({
           {presentation.riskLabel}
         </Badge>
       </div>
-      {lens === "builder" ? (
-        <div className="mt-1 space-y-0.5">
-          <p className="font-mono text-xs text-muted-foreground">
-            {request.permission}
-          </p>
-          {request.patterns && request.patterns.length > 0 ? (
-            <ul className="space-y-0.5 font-mono text-xs text-muted-foreground">
-              {request.patterns.map((pattern) => (
-                <li key={pattern}>{pattern}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="mt-1 space-y-0.5">
+        <p className="font-mono text-xs text-muted-foreground">
+          {request.permission}
+        </p>
+        {request.patterns && request.patterns.length > 0 ? (
+          <ul className="space-y-0.5 font-mono text-xs text-muted-foreground">
+            {request.patterns.map((pattern) => (
+              <li key={pattern}>{pattern}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
       <div className="mt-2 flex gap-2">
         <Button
           size="sm"

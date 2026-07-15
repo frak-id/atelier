@@ -7,7 +7,6 @@ import {
   RouteNotFoundComponent,
 } from "@/components/route-error";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { LensProvider } from "@/providers/lens";
 import { ThemeProvider } from "@/providers/theme";
 import "./index.css";
 import { routeTree } from "./routeTree.gen";
@@ -47,13 +46,11 @@ if (rootElement) {
   createRoot(rootElement).render(
     <StrictMode>
       <ThemeProvider>
-        <LensProvider>
-          <QueryClientProvider client={queryClient}>
-            <TooltipProvider delayDuration={300}>
-              <RouterProvider router={router} />
-            </TooltipProvider>
-          </QueryClientProvider>
-        </LensProvider>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider delayDuration={300}>
+            <RouterProvider router={router} />
+          </TooltipProvider>
+        </QueryClientProvider>
       </ThemeProvider>
     </StrictMode>,
   );

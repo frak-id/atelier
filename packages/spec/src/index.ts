@@ -3,7 +3,6 @@ export * from "./prebuild-spec.ts";
 export * from "./runtime-api.ts";
 export * from "./sandbox-spec.ts";
 export * from "./secret-ref.ts";
-export * from "./template.ts";
 export * from "./toolbox-config-spec.ts";
 export * from "./toolbox-version-spec.ts";
 export * from "./toolset-spec.ts";

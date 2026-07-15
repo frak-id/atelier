@@ -14,8 +14,6 @@ import type {
   ProcessEntry,
   SandboxSpec,
   Source,
-  TemplateComposition,
-  TemplateMeta,
   ToolboxVersionProvenance,
 } from "@atelier/spec";
 import {
@@ -84,16 +82,6 @@ export const savedSpecs = sqliteTable(
       .notNull()
       .$type<string[]>()
       .default([]),
-    /** "Published to the gallery" (design ui-evolution.md §2.1). Stored as
-     * "true"/"false" text, matching `organizations.personal`'s convention. */
-    template: text("template").notNull().default("false"),
-    meta: text("meta", { mode: "json" }).$type<TemplateMeta>(),
-    /** Optional template build recipe (prebuild + toolbox selectors). When set,
-     * the spawn seam resolves it to the latest snapshot/toolset refs, so the
-     * template follows an updated prebuild/toolbox instead of pinning them. */
-    composition: text("composition", {
-      mode: "json",
-    }).$type<TemplateComposition>(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

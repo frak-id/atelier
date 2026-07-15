@@ -18,9 +18,6 @@ import {
   useUpdateSavedSpec,
 } from "@/api/queries/saved-specs";
 import { toolboxesListQuery } from "@/api/queries/toolboxes";
-import { SaveAsTemplateDialog } from "@/components/save-as-template-dialog";
-import { TemplateGallery } from "@/components/template-gallery";
-import { TemplateImportList } from "@/components/template-import-list";
 import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,10 +39,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { specToSpawnRequest } from "@/lib/composition";
 import { formatRelativeTime } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
-import { useLens } from "@/providers/lens";
 
 export const Route = createFileRoute("/spawn")({
   component: SpawnPage,
@@ -60,10 +55,8 @@ function SpawnPage() {
     name: string;
   } | null>(null);
 
-  // `toolboxes` is optional: the template-gallery path passes a full
-  // CreateSandboxRequest that already embeds `toolboxes`/`prebuild`, so they
-  // carry through the `...request` spread; the builder-lens callers pass a
-  // plain spec plus `toolboxes` as the second arg.
+  // `toolboxes` is optional: the builder-lens callers pass a plain spec plus
+  // `toolboxes` as the second arg; it carries through the `...request` spread.
   function spawnFromSpec(request: CreateSandboxRequest, toolboxes?: string[]) {
     spawn.mutate(
       {
@@ -90,43 +83,33 @@ function SpawnPage() {
     setEditingSpec(savedSpec ?? null);
   }
 
-  const { lens } = useLens();
-
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">Spawn a sandbox</h1>
 
-      <TemplateGallery spawning={spawn.isPending} onSpawn={spawnFromSpec} />
+      <QuickSpawnSection
+        onSpawn={spawnFromSpec}
+        spawnPending={spawn.isPending}
+        onOpenInEditor={(spec) => loadIntoEditor(spec)}
+      />
 
-      {lens === "builder" ? (
-        <>
-          <QuickSpawnSection
-            onSpawn={spawnFromSpec}
-            spawnPending={spawn.isPending}
-            onOpenInEditor={(spec) => loadIntoEditor(spec)}
-          />
+      <SavedSpecsSection
+        onSpawn={spawnFromSpec}
+        spawnPending={spawn.isPending}
+        onEdit={(savedSpec) => loadIntoEditor(savedSpec.spec, savedSpec)}
+        onDeleted={(id) => {
+          if (editingSpec?.id === id) setEditingSpec(null);
+        }}
+      />
 
-          <SavedSpecsSection
-            onSpawn={spawnFromSpec}
-            spawnPending={spawn.isPending}
-            onEdit={(savedSpec) => loadIntoEditor(savedSpec.spec, savedSpec)}
-            onDeleted={(id) => {
-              if (editingSpec?.id === id) setEditingSpec(null);
-            }}
-          />
-
-          <EditorSection
-            text={editorText}
-            onTextChange={setEditorText}
-            onSpawn={spawnFromSpec}
-            spawnPending={spawn.isPending}
-            editingSpec={editingSpec}
-            onStopEditing={() => setEditingSpec(null)}
-          />
-
-          <ImportExampleSection onOpenInEditor={loadIntoEditor} />
-        </>
-      ) : null}
+      <EditorSection
+        text={editorText}
+        onTextChange={setEditorText}
+        onSpawn={spawnFromSpec}
+        spawnPending={spawn.isPending}
+        editingSpec={editingSpec}
+        onStopEditing={() => setEditingSpec(null)}
+      />
     </div>
   );
 }
@@ -340,36 +323,6 @@ function QuickSpawnSection({
   );
 }
 
-// ── import example (seed catalog → saved spec) ───────────────────────────
-
-/**
- * Builder-only "cold start" affordance (design ui-evolution.md §2.3): the
- * static seed catalog is never spawnable directly — importing forks it into a
- * real, org-owned saved spec (unpublished by default), which the Builder can
- * then edit and, from `SavedSpecsSection`, "Promote to template" once it's
- * actually right for their org.
- */
-function ImportExampleSection({
-  onOpenInEditor,
-}: {
-  onOpenInEditor: (spec: SandboxSpec) => void;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Examples</CardTitle>
-        <CardDescription>
-          Seed starting points — importing creates a saved spec you own, which
-          you can edit and publish as your org's own template.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <TemplateImportList onOpenInEditor={onOpenInEditor} />
-      </CardContent>
-    </Card>
-  );
-}
-
 // ── saved specs ──────────────────────────────────────────────────────────
 
 function SavedSpecsSection({
@@ -440,17 +393,12 @@ function SavedSpecItem({
 }) {
   const deleteSpec = useDeleteSavedSpec();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="truncate font-medium">{savedSpec.name}</span>
         {savedSpec.orgId ? <Badge variant="outline">org</Badge> : null}
-        {savedSpec.template ? <Badge variant="success">published</Badge> : null}
-        {savedSpec.composition ? (
-          <Badge variant="secondary">follows prebuild + toolbox</Badge>
-        ) : null}
         <span className="text-xs text-muted-foreground">
           {formatRelativeTime(savedSpec.updatedAt)}
         </span>
@@ -459,22 +407,13 @@ function SavedSpecItem({
         <Button
           size="sm"
           disabled={spawnPending}
-          onClick={() =>
-            onSpawn(specToSpawnRequest(savedSpec.spec, savedSpec.composition))
-          }
+          onClick={() => onSpawn(savedSpec.spec)}
         >
           {spawnPending ? <Loader2 className="animate-spin" /> : <Rocket />}
           Spawn
         </Button>
         <Button variant="outline" size="sm" onClick={() => onEdit(savedSpec)}>
           Edit
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setTemplateDialogOpen(true)}
-        >
-          {savedSpec.template ? "Edit template" : "Promote to template"}
         </Button>
         <Button
           variant="outline"
@@ -490,12 +429,6 @@ function SavedSpecItem({
           )}
         </Button>
       </div>
-      <SaveAsTemplateDialog
-        open={templateDialogOpen}
-        onOpenChange={setTemplateDialogOpen}
-        spec={savedSpec.spec}
-        savedSpec={savedSpec}
-      />
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
@@ -548,7 +481,6 @@ function EditorSection({
   const [validated, setValidated] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
-  const [templateSpec, setTemplateSpec] = useState<SandboxSpec | null>(null);
   const createSavedSpec = useCreateSavedSpec();
   const updateSavedSpec = useUpdateSavedSpec();
 
@@ -647,20 +579,9 @@ function EditorSection({
               </Button>
             </>
           ) : (
-            <>
-              <Button variant="outline" onClick={() => setSaveDialogOpen(true)}>
-                Save as…
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const spec = validate();
-                  if (spec) setTemplateSpec(spec);
-                }}
-              >
-                Save as template…
-              </Button>
-            </>
+            <Button variant="outline" onClick={() => setSaveDialogOpen(true)}>
+              Save as…
+            </Button>
           )}
         </div>
       </CardContent>
@@ -701,15 +622,6 @@ function EditorSection({
           </form>
         </DialogContent>
       </Dialog>
-      {templateSpec ? (
-        <SaveAsTemplateDialog
-          open={templateSpec !== null}
-          onOpenChange={(open) => {
-            if (!open) setTemplateSpec(null);
-          }}
-          spec={templateSpec}
-        />
-      ) : null}
     </Card>
   );
 }

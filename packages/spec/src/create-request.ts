@@ -33,22 +33,3 @@ export const CreateSandboxRequestSchema = Type.Composite(
   { additionalProperties: false, $id: "CreateSandboxRequest" },
 );
 export type CreateSandboxRequest = Static<typeof CreateSandboxRequestSchema>;
-
-/**
- * A template's build recipe, stored alongside a saved spec so the template
- * follows updates rather than pinning: a `prebuild` recipe (re-resolved to the
- * latest snapshot at spawn) and `toolboxes` selectors (re-resolved to the
- * latest toolset builds). Presentation-only metadata stays in `TemplateMeta`;
- * this is the part that changes what actually boots.
- */
-export const TemplateCompositionSchema = Type.Object(
-  {
-    // Required: a composition exists to follow a prebuild. `toolboxes` alone
-    // would just be a plain `toolboxes` spawn with nothing to re-resolve for
-    // `source`, so it stays on the spec/request, not here.
-    prebuild: PrebuildSpecSchema,
-    toolboxes: Type.Optional(Type.Array(ToolboxSelectorSchema)),
-  },
-  { additionalProperties: false, $id: "TemplateComposition" },
-);
-export type TemplateComposition = Static<typeof TemplateCompositionSchema>;

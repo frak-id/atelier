@@ -86,8 +86,4 @@ export const queryKeys = {
     all: ["config"] as const,
     list: () => [...queryKeys.config.all, "list"] as const,
   },
-  // Singleton endpoint — one flat key, no list/detail split.
-  capabilities: {
-    all: ["capabilities"] as const,
-  },
 } as const;

@@ -1,14 +1,7 @@
-import type {
-  SandboxSpec,
-  TemplateComposition,
-  TemplateMeta,
-  TemplateParam,
-} from "@atelier/spec";
+import type { SandboxSpec } from "@atelier/spec";
 import { eq, inArray, isNull, or } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
 import { savedSpecs } from "../../db/schema.ts";
-
-export type { TemplateComposition, TemplateMeta, TemplateParam };
 
 export interface SavedSpec {
   id: string;
@@ -16,12 +9,6 @@ export interface SavedSpec {
   name: string;
   spec: SandboxSpec;
   policyRefs: string[];
-  /** Published to the gallery (design ui-evolution.md §2.1). */
-  template: boolean;
-  meta: TemplateMeta | null;
-  /** Build recipe (prebuild + toolbox selectors) resolved at spawn so the
-   * template follows updates rather than pinning refs. */
-  composition: TemplateComposition | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,9 +20,6 @@ function rowToSavedSpec(row: typeof savedSpecs.$inferSelect): SavedSpec {
     name: row.name,
     spec: row.spec,
     policyRefs: row.policyRefs,
-    template: row.template === "true",
-    meta: row.meta ?? null,
-    composition: row.composition ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -91,9 +75,6 @@ export class SavedSpecRepository {
         name: record.name,
         spec: record.spec,
         policyRefs: record.policyRefs,
-        template: record.template ? "true" : "false",
-        meta: record.meta,
-        composition: record.composition,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
       })
@@ -117,9 +98,6 @@ export class SavedSpecRepository {
         name: updated.name,
         spec: updated.spec,
         policyRefs: updated.policyRefs,
-        template: updated.template ? "true" : "false",
-        meta: updated.meta,
-        composition: updated.composition,
         updatedAt: updated.updatedAt,
       })
       .where(eq(savedSpecs.id, id))

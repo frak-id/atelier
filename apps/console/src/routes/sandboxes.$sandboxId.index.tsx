@@ -58,7 +58,6 @@ import {
   harnessFromAnnotations,
   sandboxStatusPresentation,
 } from "@/lib/sandbox-status";
-import { useLens } from "@/providers/lens";
 
 export const Route = createFileRoute("/sandboxes/$sandboxId/")({
   component: SandboxDetailPage,
@@ -79,7 +78,6 @@ function SandboxDetailPage() {
   const resume = useResumeSandbox();
   const destroy = useDestroySandbox();
   const snapshot = useSnapshotSandbox();
-  const { lens } = useLens();
 
   if (isPending) {
     return (
@@ -188,22 +186,15 @@ function SandboxDetailPage() {
 
       <UrlsSection sandboxId={sandbox.id} urls={sandbox.urls} />
       <TerminalSection sandboxId={sandbox.id} />
-      {lens === "builder" ? (
-        <>
-          <ProcessesSection
-            sandboxId={sandbox.id}
-            processes={sandbox.processes}
-          />
-          <ExposePortSection sandboxId={sandbox.id} />
-          <SaveToolsetForToolboxSection sandboxId={sandbox.id} />
-          <CaptureToolsetSection sandboxId={sandbox.id} />
-          {sandbox.annotations || sandbox.metadata ? (
-            <MetadataSection
-              annotations={sandbox.annotations}
-              metadata={sandbox.metadata}
-            />
-          ) : null}
-        </>
+      <ProcessesSection sandboxId={sandbox.id} processes={sandbox.processes} />
+      <ExposePortSection sandboxId={sandbox.id} />
+      <SaveToolsetForToolboxSection sandboxId={sandbox.id} />
+      <CaptureToolsetSection sandboxId={sandbox.id} />
+      {sandbox.annotations || sandbox.metadata ? (
+        <MetadataSection
+          annotations={sandbox.annotations}
+          metadata={sandbox.metadata}
+        />
       ) : null}
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

@@ -309,7 +309,7 @@ export function registerConfigTools(
     {
       title: "Saved specs",
       description:
-        "List your saved specs/templates, get one by id, or save a new " +
+        "List your saved specs, get one by id, or save a new " +
         "one \u2014 the config-from-your-dev-env loop for reusable sandbox " +
         "shapes.",
       inputSchema: {

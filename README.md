@@ -26,11 +26,11 @@ Review the results from your phone on the ski lift — or wherever you happen to
 
 ## Features
 
-- **Template gallery** — spawn sandboxes with one tap from saved specs published as templates. Templates can declare fill-in-the-blank parameters (e.g. a repo URL) applied at spawn. This replaces the old static workflow list — a template is just an org-owned saved spec, so your gallery reflects your stack
+- **Saved specs** — name a `SandboxSpec` once and spawn it one-tap later, scoped to you or an org, so your reusable sandbox shapes reflect your own stack
 - **Toolboxes & toolsets** — owner-scoped recipes (`build[]` + `paths[]`) that compile once into a versioned, content-addressed **toolset** artifact and materialize into every spawn for that user or org. Add any binary or tool (a harness, a linter, an SDK) without rebuilding a base image
 - **Pluggable harnesses** — AI coding agents integrated over ACP. OpenCode and pi ship in `@atelier/compose`; the available set is derived at runtime, not hardcoded, so a pi-first or claude-code-first org sees its own stack everywhere
 - **Agent sessions** — drive the in-sandbox agent from the console: start sessions, stream output, and answer an attention feed that aggregates permission and question requests across every sandbox. Attach to any process read-write or read-only
-- **Console with Operator/Builder lenses** — mission control for all your sandboxes. Operators get the one-tap template gallery; Builders additionally get the JSONC spec editor, prebuilds, saved specs, and toolbox management
+- **Console** — mission control for all your sandboxes: one-tap spawn from prebuilds and saved specs, a JSONC spec editor, plus prebuild and toolbox management
 - **Prebuilds** — run expensive setup (git clone, dependency install, build) once and snapshot it. Subsequent sandboxes clone from the snapshot instantly via copy-on-write
 - **Public HTTPS for any port** — declare a port in your spec and get a public `https://{name}-{id}.your-domain.com` URL, protected by forward-auth. The editor, browser, dev servers, and per-harness web UIs all ride this same mechanism
 - **Three base images out of the box** — `dev-base` ships with Node 22 and Bun; `dev-cloud` extends it with AWS CLI, Google Cloud SDK, kubectl, and Pulumi; `dev-rust` adds a Rust toolchain

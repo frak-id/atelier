@@ -12,8 +12,6 @@ import { api } from "@/api/client";
 import { currentUserQuery } from "@/api/queries/auth";
 import { LoginPage } from "@/components/login-page";
 import { Button } from "@/components/ui/button";
-import { SegmentedControl } from "@/components/ui/segmented-control";
-import { useLens } from "@/providers/lens";
 import { useTheme } from "@/providers/theme";
 
 export const Route = createRootRouteWithContext<{
@@ -33,7 +31,6 @@ function RootLayout() {
   const router = useRouter();
   const { data: user, isPending } = useQuery(currentUserQuery());
   const { theme, toggle } = useTheme();
-  const { lens, setLens } = useLens();
 
   if (isPending) {
     return (
@@ -80,15 +77,6 @@ function RootLayout() {
           ))}
         </nav>
         <div className="flex items-center gap-3">
-          <SegmentedControl
-            options={[
-              { value: "operator", label: "Overview" },
-              { value: "builder", label: "Developer" },
-            ]}
-            value={lens}
-            onChange={setLens}
-            className="hidden sm:inline-flex"
-          />
           <span className="hidden text-sm text-muted-foreground sm:inline">
             {user.username}
           </span>

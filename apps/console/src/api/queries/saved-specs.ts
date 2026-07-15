@@ -1,8 +1,4 @@
-import type {
-  SandboxSpec,
-  TemplateComposition,
-  TemplateMeta,
-} from "@atelier/spec";
+import type { SandboxSpec } from "@atelier/spec";
 import {
   queryOptions,
   useMutation,
@@ -13,29 +9,12 @@ import { api } from "@/api/client";
 import { errorMessage } from "./error";
 import { queryKeys } from "./keys";
 
-// Template presentation types live in `@atelier/spec` (shared with the
-// server's request validation + DB `$type`) — re-exported here so console
-// callers keep importing them from the query module they already use.
-export type {
-  TemplateComposition,
-  TemplateMeta,
-  TemplateParam,
-} from "@atelier/spec";
-
-/** A saved spec as the console consumes it (a superset row from the list
- * endpoint). Defined once so rows/dialogs don't each re-declare a partial
- * shape (which is how `meta` got dropped on the edit path). */
+/** A saved spec as the console consumes it (a row from the list endpoint). */
 export interface SavedSpec {
   id: string;
   orgId?: string;
   name: string;
   spec: SandboxSpec;
-  template: boolean;
-  meta?: TemplateMeta | null;
-  /** Build recipe (prebuild + toolbox selectors) resolved to the latest
-   * snapshot/toolset refs at spawn — set for templates authored from an
-   * existing prebuild + toolbox. */
-  composition?: TemplateComposition | null;
   updatedAt: string;
 }
 
@@ -65,11 +44,6 @@ export function useCreateSavedSpec() {
       name: string;
       spec: SandboxSpec;
       orgId?: string;
-      template?: boolean;
-      // Create never needs an explicit null (omit = no meta); only PATCH
-      // accepts null, to clear.
-      meta?: TemplateMeta;
-      composition?: TemplateComposition;
     }) => {
       const { data, error } = await api.api["saved-specs"].post(body);
       if (error) throw new Error(errorMessage(error, "Failed to save spec"));
@@ -93,9 +67,6 @@ export function useUpdateSavedSpec() {
       id: string;
       name?: string;
       spec?: SandboxSpec;
-      template?: boolean;
-      meta?: TemplateMeta | null;
-      composition?: TemplateComposition | null;
     }) => {
       const { data, error } = await api.api["saved-specs"]({ id }).patch(body);
       if (error)

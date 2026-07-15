@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
 /** `tb/<ownerType>/<ownerId>/<slug>` — the selector the seam resolves. */
-export function toolboxSelector(toolbox: ToolboxConfig): string {
+function toolboxSelector(toolbox: ToolboxConfig): string {
   return `tb/${toolbox.ownerType}/${toolbox.ownerId}/${toolbox.slug}`;
 }
 
