@@ -317,4 +317,77 @@ clippy clean for `toolset.rs` (the one repo warning is pre-existing in
 (HEAD already has 10 `cargo fmt` diffs) so new code matches that style rather
 than reformatting pre-existing lines.
 
-(Continued below.)
+---
+
+## Step 3 — Dual-format prebuild artifacts (seam + config; OCI-tar leaf deferred)
+
+**Proposal target:** prebuilds materializable as CSI `VolumeSnapshot` **or** OCI
+`tar.zst`, same content-hash key, `VolumeBackend` picking the fastest; config
+`storage.provider`.
+
+### Finding — the substance is infra-gated
+
+The content-key (`resolveContentKey`) and the snapshot store are ALREADY
+storage-agnostic (confirmed step-1 oracle). The only storage-specific pieces are
+(a) snapshot creation (`CsiVolumeBackend.snapshot`) and (b) boot materialization
+(`buildPvc` `dataSource` clone). "Dual-format" needs a SECOND implementation of
+both — an OCI-tar producer (whole-`/data`-PVC tar + `oras push`, a new agent
+operation that does not exist — the toolset build only tars selected home paths)
+and an OCI-tar materializer (empty PVC + agent pull/extract at boot). Both need
+a live cluster + registry to build and validate; neither is exercisable in
+mock/CI.
+
+### SHORT-CIRCUIT — ship the seam + config, defer the OCI-tar leaf
+
+Building a persisted `format` column + boot-time clone-vs-extract dispatch while
+only CSI exists would be **single-valued speculative abstraction** (against the
+"no design for hypothetical requirements" guardrail) — and the OCI-tar leaf it
+would serve can't be validated here anyway. So step 3 delivers the
+non-speculative, immediately-real seam and defers the leaf (mirroring step 2's
+in-server-listener deferral):
+
+- **Config `storage.provider`** (`csi` default | `btrfs` | `reflink` | `copy`)
+  — the proposal §8 config axis, documenting the degradation ladder.
+- **`createVolumeBackend(provider)`** selects the storage plane; only `csi` is
+  wired (returns `CsiVolumeBackend`), the rest **fail fast at construction**
+  with a clear message rather than silently degrading. `KubernetesBackend.volumes`
+  now goes through it.
+- Deferred (documented): the OCI-tar producer + materializer (needs agent
+  whole-PVC tar/extract + registry + cluster), the host-FS providers
+  (btrfs/reflink/copy — land with the Docker/local backend), and the persisted
+  per-snapshot `format` column + clone-vs-extract dispatch (added WITH the
+  OCI-tar leaf, when there is a second value to distinguish). The oracle's
+  suggested `snapshot()`→descriptor return is likewise deferred to that point,
+  to avoid a one-format contract change that is pure ceremony today.
+
+### Verification
+
+New `kubernetes.backend.test.ts` pins provider selection (csi → CsiVolumeBackend;
+btrfs/reflink/copy → fail fast). Full server suite 45/45; typecheck + boundary
+clean; shared package typechecks with the new `storage` config.
+
+### PLAN-COMPLIANCE note
+
+Proposal step 3 = "dual-format prebuild/toolset artifacts." Delivered: the
+`VolumeBackend` provider seam + `storage.provider` config surface. The dual
+*format* itself (OCI-tar) is the honest deferral — infra-gated, not speculatively
+stubbed. Step 4 (the agent `Tar` rung) already landed the tar/extract machinery
+an OCI-tar prebuild would build on, so the follow-up has its foundation.
+
+---
+
+## Cross-step status
+
+| Step | State | Commit |
+|---|---|---|
+| 1 — SandboxBackend/VolumeBackend extraction | done | `0a77e0ff` |
+| 2 — pluggable SshGateway (sshpiper optional) | done (in-server listener deferred) | `242de191` |
+| 4 — Tar blob rung in agent-v2 | done | `ae694560` |
+| 3 — dual-format prebuild seam + config | done (OCI-tar leaf deferred) | _this commit_ |
+
+**Deferred, infra-gated follow-ups** (each needs a live cluster/registry/guest to
+build+validate, all with the seam ready): in-server ssh2 proxy listener +
+host-key-in-control-DB; OCI-tar prebuild producer/materializer; host-FS volume
+providers (btrfs/reflink/copy) with the Docker/local `SandboxBackend`; the
+no-overlayfs copy-merge toolset tier; backend→UI progress events for Tier-2
+stop-then-copy.

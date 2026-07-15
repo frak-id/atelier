@@ -6,6 +6,7 @@
  * its own — see the implementation log, step 1).
  */
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { AgentClient } from "../agent/index.ts";
 import {
@@ -24,6 +25,24 @@ import type {
 } from "./backend.types.ts";
 
 const log = createChildLogger("runtime-backend-kube");
+
+/**
+ * Select the volume storage plane from `config.storage.provider`. Only `csi`
+ * is implemented today; the host-FS ladder (`btrfs`/`reflink`/`copy`) and the
+ * OCI-tar prebuild materialization are the deferred, infra-gated pieces (see
+ * docs/proposals/portable-runtime-implementation-log.md, step 3). Fail fast
+ * at construction rather than silently degrading a misconfigured provider.
+ */
+export function createVolumeBackend(
+  provider: (typeof config.storage)["provider"] = config.storage.provider,
+): VolumeBackend {
+  if (provider === "csi") return new CsiVolumeBackend();
+  throw new Error(
+    `storage.provider="${provider}" is not yet implemented; only "csi" is ` +
+      "available today (the btrfs/reflink/copy + OCI-tar backends are the " +
+      "deferred portability follow-up). Set storage.provider=csi.",
+  );
+}
 
 /** CSI VolumeSnapshot / PVC storage plane. */
 export class CsiVolumeBackend implements VolumeBackend {
@@ -62,7 +81,7 @@ export class CsiVolumeBackend implements VolumeBackend {
 
 /** Kubernetes sandbox orchestration plane. */
 export class KubernetesBackend implements SandboxBackend {
-  readonly volumes: VolumeBackend = new CsiVolumeBackend();
+  readonly volumes: VolumeBackend = createVolumeBackend();
 
   boot(
     id: string,

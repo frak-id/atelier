@@ -292,6 +292,43 @@ export const ImageBuilderConfigSchema = Type.Object(
 export type ImageBuilderConfig = Static<typeof ImageBuilderConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Storage
+// ---------------------------------------------------------------------------
+
+export const StorageConfigSchema = Type.Object(
+  {
+    /**
+     * Which volume snapshot/clone mechanism the runtime's `VolumeBackend`
+     * uses (docs/proposals/portable-runtime-backends.md §5-6, §8). The
+     * degradation ladder:
+     *   - `csi`: CSI `VolumeSnapshot` + PVC `dataSource` clone (default; the
+     *     only provider implemented today).
+     *   - `btrfs` / `reflink` / `copy`: host-filesystem snapshot strategies for
+     *     the Docker/local backends — reserved; not yet implemented. Selecting
+     *     one currently fails fast at startup (see the implementation log's
+     *     step-3 short-circuit) rather than silently degrading.
+     *
+     * Orthogonal to the *artifact* a prebuild is stored as (VolumeSnapshot vs
+     * OCI `tar.zst`): the content-hash key is storage-agnostic, so a prebuild
+     * stays addressable across providers — the OCI-tar materialization itself
+     * is the deferred, infra-gated piece.
+     */
+    provider: Type.Union(
+      [
+        Type.Literal("csi"),
+        Type.Literal("btrfs"),
+        Type.Literal("reflink"),
+        Type.Literal("copy"),
+      ],
+      { default: "csi" },
+    ),
+  },
+  { default: {} },
+);
+
+export type StorageConfig = Static<typeof StorageConfigSchema>;
+
+// ---------------------------------------------------------------------------
 // Root config
 // ---------------------------------------------------------------------------
 
@@ -300,6 +337,7 @@ export const AtelierConfigSchema = Type.Object({
   auth: AuthConfigSchema,
   server: ServerConfigSchema,
   kubernetes: KubernetesConfigSchema,
+  storage: StorageConfigSchema,
   sandbox: SandboxDefaultsSchema,
   ports: PortsConfigSchema,
   imageBuilder: ImageBuilderConfigSchema,
@@ -318,6 +356,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SSH_PROXY_PORT: "domain.ssh.port",
   ATELIER_SSH_PROXY_HOSTNAME: "domain.ssh.hostname",
   ATELIER_SSH_GATEWAY: "domain.ssh.gateway",
+  ATELIER_STORAGE_PROVIDER: "storage.provider",
 
   ATELIER_GITHUB_CLIENT_ID: "auth.github.clientId",
   ATELIER_GITHUB_CLIENT_SECRET: "auth.github.clientSecret",

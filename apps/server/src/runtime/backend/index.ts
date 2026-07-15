@@ -9,4 +9,8 @@ export type {
   SandboxUrl,
   VolumeBackend,
 } from "./backend.types.ts";
-export { CsiVolumeBackend, KubernetesBackend } from "./kubernetes.backend.ts";
+export {
+  CsiVolumeBackend,
+  createVolumeBackend,
+  KubernetesBackend,
+} from "./kubernetes.backend.ts";
