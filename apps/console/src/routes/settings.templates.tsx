@@ -337,7 +337,7 @@ function TemplateDialog({
                 spellCheck={false}
                 required={!isEditing}
                 className="min-h-56 w-full rounded-md border bg-muted/30 p-3 font-mono text-xs"
-                placeholder='{"source": {"image": "dev-base-v2"}, "resources": {"vcpus": 2, "memoryMb": 2048}}'
+                placeholder='{"source": {"image": "dev-base"}, "resources": {"vcpus": 2, "memoryMb": 2048}}'
               />
               {specError ? (
                 <p className="text-sm text-destructive">{specError}</p>

@@ -66,13 +66,13 @@ describe("ToolboxService", () => {
       description: "d",
       build: [],
       paths: [],
-      source: { image: "dev-base-v2" },
+      source: { image: "dev-base" },
     });
-    expect(created.source).toEqual({ image: "dev-base-v2" });
+    expect(created.source).toEqual({ image: "dev-base" });
 
     // Absent key keeps the existing override.
     const kept = service.update(created.id, { description: "d2" });
-    expect(kept.source).toEqual({ image: "dev-base-v2" });
+    expect(kept.source).toEqual({ image: "dev-base" });
 
     // Explicit null clears it.
     const cleared = service.update(created.id, { source: null });

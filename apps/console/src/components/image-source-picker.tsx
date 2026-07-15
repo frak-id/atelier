@@ -174,7 +174,7 @@ function ImageGrid({
           id="image-source-manual"
           value={selected}
           onChange={(e) => onSelect(e.target.value)}
-          placeholder="dev-base-v2"
+          placeholder="dev-base"
           className="font-mono"
         />
       </div>

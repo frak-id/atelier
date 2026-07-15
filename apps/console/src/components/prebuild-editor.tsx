@@ -50,7 +50,7 @@ function sourceRef(source: Source): string {
 }
 
 const JSON_PLACEHOLDER = `{
-  "source": { "image": "dev-base-v2" },
+  "source": { "image": "dev-base" },
   "repos": [{ "url": "https://github.com/org/repo", "branch": "main", "clonePath": "workspace/repo" }],
   "build": ["cd workspace/repo && bun install"]
 }`;

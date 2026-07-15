@@ -116,7 +116,7 @@ $BUILDCTL build --frontend dockerfile.v0 --local context=/agent --local dockerfi
 }
 
 build_devbase() {
-  say "Build dev-base-v2:latest (apps/server/src/runtime/registry/seeds/dev-base, --no-cache to pull fresh agent)"
+  say "Build dev-base:latest (apps/server/src/runtime/registry/seeds/dev-base, --no-cache to pull fresh agent)"
   tar -czf /tmp/dev-base-ctx.tgz -C apps/server/src/runtime/registry/seeds/dev-base .
   K exec -n "$NS_BUILD" "$BUILDER_POD" -- mkdir -p /devbase
   K cp /tmp/dev-base-ctx.tgz "$NS_BUILD/$BUILDER_POD:/tmp/devbase.tgz"
@@ -125,7 +125,7 @@ set -e
 cd /devbase && tar xzf /tmp/devbase.tgz && printf '\n' > .dockerignore
 $BUILDCTL build --frontend dockerfile.v0 --local context=/devbase --local dockerfile=/devbase \
   --opt platform=linux/amd64 --no-cache \
-  --output type=image,name=$REGISTRY/dev-base-v2:latest,$OUT_OPTS 2>&1 | tail -2
+  --output type=image,name=$REGISTRY/dev-base:latest,$OUT_OPTS 2>&1 | tail -2
 "
 }
 
@@ -144,12 +144,12 @@ cd /ctx && tar xzf /tmp/v2-ctx.tgz && printf 'node_modules\n.git\n*.tar.gz\n' > 
 }
 
 build_target() { # $1 = server|console, $2 = image name
-  say "Build $2 (Dockerfile.v2 target=$1)"
+  say "Build $2 (Dockerfile target=$1)"
   send_repo_ctx
   K exec -n "$NS_BUILD" "$BUILDER_POD" -- sh -c "
 set -e
 $BUILDCTL build --frontend dockerfile.v0 --local context=/ctx --local dockerfile=/ctx \
-  --opt filename=Dockerfile.v2 --opt target=$1 --opt platform=linux/amd64 \
+  --opt filename=Dockerfile --opt target=$1 --opt platform=linux/amd64 \
   --output type=image,name=$REGISTRY/$2,$OUT_OPTS 2>&1 | tail -2
 "
 }
