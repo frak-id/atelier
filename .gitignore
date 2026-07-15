@@ -53,3 +53,10 @@ apps/agent-v2/dist/
 .notes/
 # Local MCP config (holds API keys)
 .mcp.json
+
+# The sandbox-agent seed keeps only image.json committed; its Rust build
+# context is copied in from apps/agent-v2 at server-build time (see Dockerfile).
+apps/server/src/runtime/registry/seeds/sandbox-agent-v2/Dockerfile
+apps/server/src/runtime/registry/seeds/sandbox-agent-v2/Cargo.toml
+apps/server/src/runtime/registry/seeds/sandbox-agent-v2/Cargo.lock
+apps/server/src/runtime/registry/seeds/sandbox-agent-v2/src/

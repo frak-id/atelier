@@ -21,31 +21,27 @@
  *     tokens exist; `ImageBuilderService` (not yet built — a later worker)
  *     performs the actual rewrite via `ImageRegistryService.resolveImageReference`.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Static, Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 
-/** A token substitution the builder must rewrite before running the build.
- *  - `agent`: the in-pod guest agent image (`COPY --from=...`).
- *  - `seed`: another seed's resulting image (`FROM ...`) — `seed` names the
- *    sibling seed (must appear in `dependsOn`).
- */
-const SeedSubstitutionSchema = Type.Union([
-  Type.Object(
-    { token: Type.String(), kind: Type.Literal("agent") },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      token: Type.String(),
-      kind: Type.Literal("seed"),
-      seed: Type.String(),
-    },
-    { additionalProperties: false },
-  ),
-]);
+/** A token substitution the builder must rewrite before running the build:
+ * a literal ref baked into the seed's Dockerfile (`FROM …` or
+ * `COPY --from=…`) that points at ANOTHER seed's resulting image and must be
+ * rewritten to the operator's registry + a resolved digest at build time.
+ * `seed` names the sibling seed (which must appear in `dependsOn`). The
+ * in-pod agent image is one such sibling seed (`sandbox-agent-v2`), so it
+ * needs no special-cased kind. */
+const SeedSubstitutionSchema = Type.Object(
+  {
+    token: Type.String(),
+    kind: Type.Literal("seed"),
+    seed: Type.String(),
+  },
+  { additionalProperties: false },
+);
 export type SeedSubstitution = Static<typeof SeedSubstitutionSchema>;
 
 /** On-disk shape of a seed's `image.json`. */
@@ -59,6 +55,13 @@ const SeedManifestFileSchema = Type.Object(
     official: Type.Boolean(),
     dependsOn: Type.Array(Type.String(), { default: [] }),
     substitutions: Type.Array(SeedSubstitutionSchema, { default: [] }),
+    /** Repo-relative path whose build context this seed borrows when its own
+     * directory carries no Dockerfile — the "source stays in apps/, copied in
+     * at server-build time" seam (the agent seed: image.json is committed
+     * here, the Rust context is COPYed in for the deployed image, and in dev
+     * this points back at `apps/agent-v2`). Ignored once a local Dockerfile
+     * is present (the copied-in / prod case). */
+    contextFrom: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -75,16 +78,39 @@ export interface SeedManifest extends SeedManifestFile {
   contextDir: string;
 }
 
-// Resolve the seeds dir relative to this module's own location, so it works
-// regardless of process cwd (dev via `bun --watch`, or a compiled binary run
-// from anywhere).
-const SEEDS_DIR = dirname(fileURLToPath(import.meta.url));
+// Resolve the seeds dir. In the bundled server (`bun build` inlines all TS
+// into one `server.js`), `import.meta.url` points at `/app`, NOT a seeds
+// subdir, so the deployed image sets ATELIER_SEEDS_DIR to where the Dockerfile
+// COPYs the seed contexts. In dev it's unset and we resolve relative to this
+// module's own location (works regardless of cwd).
+const SEEDS_DIR =
+  process.env.ATELIER_SEEDS_DIR ?? dirname(fileURLToPath(import.meta.url));
 
 let cache: SeedManifest[] | undefined;
 
+/** A seed's build context is its own directory when that carries a Dockerfile
+ * (a normal seed, or the agent seed after its Rust context was COPYed in for
+ * the deployed image). Otherwise fall back to `contextFrom` (dev: the agent
+ * seed borrows `apps/agent-v2`), located by walking up from SEEDS_DIR until
+ * the referenced path with a Dockerfile is found. */
+function resolveContextDir(seedDir: string, contextFrom?: string): string {
+  if (existsSync(join(seedDir, "Dockerfile"))) return seedDir;
+  if (contextFrom) {
+    let dir = SEEDS_DIR;
+    for (let i = 0; i < 8; i++) {
+      const candidate = join(dir, contextFrom);
+      if (existsSync(join(candidate, "Dockerfile"))) return candidate;
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
+  return seedDir;
+}
+
 function readSeed(id: string): SeedManifest {
-  const contextDir = join(SEEDS_DIR, id);
-  const manifestPath = join(contextDir, "image.json");
+  const seedDir = join(SEEDS_DIR, id);
+  const manifestPath = join(seedDir, "image.json");
   const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
   // Apply schema defaults (dependsOn/substitutions may be omitted) BEFORE
   // checking — `Value.Check` does not itself apply `default`s.
@@ -96,6 +122,7 @@ function readSeed(id: string): SeedManifest {
     throw new Error(`Malformed seed manifest ${manifestPath}: ${errors}`);
   }
   const file = raw as SeedManifestFile;
+  const contextDir = resolveContextDir(seedDir, file.contextFrom);
   return { ...file, id, contextDir };
 }
 

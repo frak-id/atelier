@@ -145,7 +145,13 @@ fi
 
 if [[ -z "$SKIP_BUILD" ]]; then
   # Sandbox agent (apps/agent-v2, `atelier-agent`). Self-building multi-stage
-  # image — no prebuilt binary needed.
+  # image — no prebuilt binary needed. NOTE: the agent is ALSO exposed as a
+  # build seed (`sandbox-agent-v2`) via the server's Images pipeline, so an
+  # operator with a configured docker builder can provision it (and dev-base)
+  # in-cluster instead. This deploy-time build stays the canonical bootstrap
+  # path: a stock k3s node has no docker daemon for the pipeline to use, and
+  # the agent image is a build input dev-base COPYs from, so it must exist
+  # before dev-base is built either way.
   info "Building agent: ${AGENT_IMAGE} (linux/amd64)"
   if docker buildx version >/dev/null 2>&1; then
     docker buildx build \

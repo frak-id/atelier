@@ -169,9 +169,9 @@ export class ImageBuilderService {
       "utf8",
     );
     for (const sub of seed.substitutions) {
-      const resolveName = sub.kind === "seed" ? sub.seed : "sandbox-agent-v2";
-      const resolved =
-        await ImageRegistryService.resolveImageReference(resolveName);
+      const resolved = await ImageRegistryService.resolveImageReference(
+        sub.seed,
+      );
       if (!dockerfile.includes(sub.token)) {
         throw new ValidationError(
           `Seed '${seed.id}' declares substitution token '${sub.token}' ` +

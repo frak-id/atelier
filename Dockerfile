@@ -78,14 +78,25 @@ COPY --from=builder /build/dist/server.js ./server.js
 # Drizzle migrations (applied at boot via MIGRATIONS_DIR)
 COPY apps/server/drizzle ./drizzle
 
-# Sandbox base-image definitions (image.json + Dockerfiles for dev-base/…)
-COPY infra/images ./images
+# Embedded base-image seeds (image.json + Dockerfile + rootfs for dev-base/
+# dev-cloud/dev-rust, and the agent seed's image.json). `bun build` inlines TS
+# but never these data files, so they're copied verbatim and located at runtime
+# via ATELIER_SEEDS_DIR.
+COPY apps/server/src/runtime/registry/seeds ./seeds
+
+# The sandbox-agent seed keeps its Rust source in apps/agent-v2 (single source
+# of truth); only its image.json is committed under seeds/. Copy the build
+# context in here so the deployed server can build it as a seed (in dev the
+# loader falls back to apps/agent-v2 directly via `contextFrom`).
+COPY apps/agent-v2/Dockerfile apps/agent-v2/Cargo.toml apps/agent-v2/Cargo.lock \
+     ./seeds/sandbox-agent-v2/
+COPY apps/agent-v2/src ./seeds/sandbox-agent-v2/src
 
 ENV NODE_ENV=production \
     ATELIER_SERVER_MODE=production \
     DATA_DIR=/app/data \
     MIGRATIONS_DIR=/app/drizzle \
-    ATELIER_IMAGES_DIR=/app/images
+    ATELIER_SEEDS_DIR=/app/seeds
 
 # SQLite data directory (mount a PVC here in k8s to persist)
 RUN mkdir -p /app/data
