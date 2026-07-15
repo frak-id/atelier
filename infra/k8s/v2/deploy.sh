@@ -111,7 +111,7 @@ set -e
 cd /agent && tar xzf /tmp/agent.tgz && printf 'target\n' > .dockerignore
 $BUILDCTL build --frontend dockerfile.v0 --local context=/agent --local dockerfile=/agent \
   --opt platform=linux/amd64 \
-  --output type=image,name=$REGISTRY/sandbox-agent-v2:latest,$OUT_OPTS 2>&1 | tail -2
+  --output type=image,name=$REGISTRY/sandbox-agent-v2:latest,$OUT_OPTS
 "
 }
 
@@ -125,7 +125,7 @@ set -e
 cd /devbase && tar xzf /tmp/devbase.tgz && printf '\n' > .dockerignore
 $BUILDCTL build --frontend dockerfile.v0 --local context=/devbase --local dockerfile=/devbase \
   --opt platform=linux/amd64 --no-cache \
-  --output type=image,name=$REGISTRY/dev-base:latest,$OUT_OPTS 2>&1 | tail -2
+  --output type=image,name=$REGISTRY/dev-base:latest,$OUT_OPTS
 "
 }
 
@@ -150,7 +150,7 @@ build_target() { # $1 = server|console, $2 = image name
 set -e
 $BUILDCTL build --frontend dockerfile.v0 --local context=/ctx --local dockerfile=/ctx \
   --opt filename=Dockerfile --opt target=$1 --opt platform=linux/amd64 \
-  --output type=image,name=$REGISTRY/$2,$OUT_OPTS 2>&1 | tail -2
+  --output type=image,name=$REGISTRY/$2,$OUT_OPTS
 "
 }
 

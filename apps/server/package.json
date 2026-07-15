@@ -25,6 +25,7 @@
     "@frak/atelier-shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@opencode-ai/sdk": "1.16.2",
+    "@sinclair/typebox": "^0.34.0",
     "async-mutex": "^0.5.0",
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.1",
