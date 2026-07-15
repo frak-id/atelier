@@ -25,6 +25,23 @@
             "hostname": {
               "default": "",
               "type": "string"
+            },
+            "gateway": {
+              "default": "sshpiper",
+              "anyOf": [
+                {
+                  "const": "sshpiper",
+                  "type": "string"
+                },
+                {
+                  "const": "none",
+                  "type": "string"
+                },
+                {
+                  "const": "in-server",
+                  "type": "string"
+                }
+              ]
             }
           }
         }
@@ -145,6 +162,33 @@
               "type": "string"
             }
           }
+        }
+      }
+    },
+    "storage": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "provider": {
+          "default": "csi",
+          "anyOf": [
+            {
+              "const": "csi",
+              "type": "string"
+            },
+            {
+              "const": "btrfs",
+              "type": "string"
+            },
+            {
+              "const": "reflink",
+              "type": "string"
+            },
+            {
+              "const": "copy",
+              "type": "string"
+            }
+          ]
         }
       }
     },

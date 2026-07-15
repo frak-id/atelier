@@ -4,7 +4,8 @@
     "dashboard": "",
     "ssh": {
       "port": 2222,
-      "hostname": ""
+      "hostname": "",
+      "gateway": "sshpiper"
     }
   },
   "auth": {
@@ -33,6 +34,9 @@
     "volumeSnapshotClass": "",
     "defaultVolumeSize": "10Gi",
     "vsCodeIngressAnnotations": {}
+  },
+  "storage": {
+    "provider": "csi"
   },
   "sandbox": {
     "defaultImage": "dev-base"
