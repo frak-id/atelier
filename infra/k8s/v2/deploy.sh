@@ -7,13 +7,17 @@
 # are pinned by digest downstream, so re-pushing :latest forces a fresh pull.
 #
 # Usage:
-#   infra/k8s/v2/deploy.sh                 # build everything + roll the deployment
+#   infra/k8s/v2/deploy.sh                 # build server + console, roll the deployment
 #   infra/k8s/v2/deploy.sh server console  # build only these, then roll
-#   infra/k8s/v2/deploy.sh agent dev-base  # rebuild the sandbox image chain
+#   infra/k8s/v2/deploy.sh agent dev-base  # (bootstrap) rebuild the base-image chain
 #   infra/k8s/v2/deploy.sh rollout         # just restart the deployment
 #
-# Targets: agent  dev-base  server  console  rollout   (or "all", the default)
-# Note: dev-base COPYs the agent from Zot, so build agent before dev-base.
+# Targets: server  console  rollout   (or "all", the default = server+console+rollout)
+# Opt-in only: agent  dev-base — the running server now builds base images on
+# demand via the in-cluster BuildKit (imageBuilder.kind=buildkit), so these are
+# NOT part of "all". Build them explicitly only to bootstrap a fresh registry
+# or force a base-image rebuild outside the app pipeline. Note: dev-base COPYs
+# the agent from Zot, so build agent before dev-base.
 #
 set -euo pipefail
 
