@@ -75,7 +75,7 @@ export class BuildkitImageBuilder implements ImageBuilderBackend {
     // optional space after the colon so it works on compact or pretty JSON.
     const script =
       `set -e; buildctl ${args.join(" ")}; ` +
-      "grep -o '\"containerimage\\.digest\": *\"sha256:[0-9a-f]\\{64\\}\"' " +
+      'grep -o \'"containerimage\\.digest": *"sha256:[0-9a-f]\\{64\\}"\' ' +
       "/tmp/atelier-md.json | grep -o 'sha256:[0-9a-f]\\{64\\}' " +
       "> /dev/termination-log";
 
