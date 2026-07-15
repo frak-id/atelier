@@ -391,3 +391,29 @@ host-key-in-control-DB; OCI-tar prebuild producer/materializer; host-FS volume
 providers (btrfs/reflink/copy) with the Docker/local `SandboxBackend`; the
 no-overlayfs copy-merge toolset tier; backend→UI progress events for Tier-2
 stop-then-copy.
+
+### Final audit (self, after a reviewer-agent glitch produced no output)
+
+Per-step reviews ran on steps 1-2 (oracle + reviewer); steps 3-4 were
+self-verified with tests. A final cross-step reviewer run glitched (completed
+with no emitted text), so the plan-compliance audit was done directly against
+the committed code. Confirmed:
+
+- `runtime.service.ts`: exactly **2** `isMock()` (git + reconcile seams), **0**
+  direct `kubeClient.` — the step-1 extraction goal.
+- Behavior-preserving defaults: `ssh.gateway=sshpiper`, `storage.provider=csi`,
+  `KubernetesBackend` is the default backend, `Tar` is fallback-only
+  (`PREFERENCE=[Erofs,Squashfs]`, `unwrap_or(Tar)`).
+- Deferrals are coherent, not broken stubs: `ssh.gateway=in-server` prepares the
+  pod side (shared key, no Pipe) and logs a startup warning — no crash;
+  `storage.provider` ≠ csi **fail-fasts at construction** with a clear
+  "not yet implemented; set storage.provider=csi" message (intended, documented;
+  the default never triggers it); `detect_build_format` returns `BlobFormat`
+  (no hard-error). No selectable value silently mis-behaves.
+- Verification: server 45/45, agent-v2 52/52, typecheck + module-boundary clean,
+  changed files biome-clean. Generated config-schema artifacts regenerated for
+  the `ssh.gateway` + `storage.provider` additions (`f1f64474`).
+
+**Residual risk:** the deferred SSH-listener and OCI-tar paths are unexercised
+by definition; when they land they need the live Remote-SSH channel-fidelity
+spike and a registry+cluster round-trip respectively before becoming default.
