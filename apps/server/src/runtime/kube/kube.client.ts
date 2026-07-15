@@ -241,6 +241,58 @@ export class KubeClient {
     return pod.status?.podIP ?? null;
   }
 
+  /**
+   * Stream a pod container's logs (`follow=true`) to `onLog` chunk-by-chunk.
+   * Unlike `request()` this must NOT buffer/JSON-parse: build Jobs emit
+   * minutes of plain-text output the caller relays to an async job's `/logs`.
+   * Resolves when the stream ends (container exited) or `signal` aborts;
+   * throws a `KubeApiError` if the log endpoint rejects (e.g. the container
+   * hasn't started yet — the caller retries against pod status).
+   */
+  async streamPodLogs(
+    podName: string,
+    onLog: (chunk: string) => void,
+    options: {
+      container?: string;
+      namespace?: string;
+      signal?: AbortSignal;
+    } = {},
+  ): Promise<void> {
+    if (isMock()) return;
+
+    const namespace = options.namespace ?? this.namespace;
+    const auth = await this.getAuthConfig();
+    const query = new URLSearchParams({ follow: "true" });
+    if (options.container) query.set("container", options.container);
+    const url = this.buildUrl(
+      auth.server,
+      `/api/v1/namespaces/${namespace}/pods/${podName}/log?${query}`,
+    );
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: this.buildHeaders(auth, { Accept: "text/plain" }),
+      signal: options.signal,
+      tls: auth.tls,
+    } as BunRequestInit);
+
+    if (!response.ok || !response.body) {
+      throw await this.toKubeError(response, `Log stream failed: ${podName}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) onLog(decoder.decode(value, { stream: true }));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
   async waitForVolumeSnapshotReady(
     name: string,
     options: { timeout?: number; namespace?: string } = {},

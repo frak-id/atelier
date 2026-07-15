@@ -219,13 +219,12 @@ export type PortsConfig = Static<typeof PortsConfigSchema>;
 //               kaniko are the safer choice there.
 //   - kaniko:   spawn a K8s Job running gcr.io/kaniko-project/executor
 //               with the build context mounted from a ConfigMap. Works out
-//               of the box with no external daemon dependency. NOT YET
-//               IMPLEMENTED (fails fast at construction).
+//               of the box with no external daemon dependency — the right
+//               fit for a stock k3s node.
 //   - buildkit: spawn a tiny `buildctl` client Job that dispatches the
 //               build to an existing BuildKit daemon at `endpoint`. Use
 //               this when the cluster already hosts a buildkitd Pod that
-//               you want to reuse. NOT YET IMPLEMENTED (fails fast at
-//               construction).
+//               you want to reuse.
 // ---------------------------------------------------------------------------
 
 export const ImageBuilderKindSchema = Type.Union([
@@ -290,6 +289,14 @@ export const ImageBuilderConfigSchema = Type.Object(
      * build host. Ignored for other kinds.
      */
     dockerHost: Type.String({ default: "" }),
+    /**
+     * Target build platform, shared by every backend (docker `--platform`,
+     * kaniko `--custom-platform`, buildkit `--opt platform`). Defaults to
+     * linux/amd64; set linux/arm64 to build for arm nodes (note the seed
+     * Dockerfiles' own amd64-pinned asset downloads must also be arch-aware
+     * for a fully arm base image).
+     */
+    platform: Type.String({ default: "linux/amd64" }),
     /**
      * Cache repository used by the builder. Defaults to
      * `${kubernetes.registryUrl}/cache` when empty.
@@ -443,6 +450,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_IMAGE_BUILDER_IMAGE: "imageBuilder.image",
   ATELIER_IMAGE_BUILDER_ENDPOINT: "imageBuilder.endpoint",
   ATELIER_IMAGE_BUILDER_DOCKER_HOST: "imageBuilder.dockerHost",
+  ATELIER_IMAGE_BUILDER_PLATFORM: "imageBuilder.platform",
   ATELIER_IMAGE_BUILDER_CACHE_REPO: "imageBuilder.cacheRepo",
   ATELIER_IMAGE_BUILDER_INSECURE_REGISTRY: "imageBuilder.insecureRegistry",
   ATELIER_IMAGE_BUILDER_TLS_SECRET_NAME: "imageBuilder.tls.secretName",
