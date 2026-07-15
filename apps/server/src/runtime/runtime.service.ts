@@ -55,6 +55,8 @@ import {
   RegistryUnreachableError,
 } from "./registry/index.ts";
 import {
+  type ImageStore,
+  InMemoryImageStore,
   InMemorySandboxStore,
   InMemorySandboxToolsetRefStore,
   InMemorySnapshotStore,
@@ -87,6 +89,10 @@ export interface RuntimeDeps {
   snapshots?: SnapshotStore;
   toolsets?: ToolsetStore;
   sandboxToolsetRefs?: SandboxToolsetRefStore;
+  /** Read-only view of the `images` table (shared with `ImageBuilderService`)
+   * so `resolveImage` can prefer a built image's already-pinned digest over
+   * re-resolving `:latest` on every spawn. */
+  images?: ImageStore;
 }
 
 export class RuntimeService {
@@ -96,6 +102,7 @@ export class RuntimeService {
   private readonly snapshots: SnapshotStore;
   private readonly toolsets: ToolsetStore;
   private readonly sandboxToolsetRefs: SandboxToolsetRefStore;
+  private readonly images: ImageStore;
   /** De-dupes concurrent prebuild() calls for the same content hash onto one
    * execution (the temp pod name is deterministic and would collide). */
   private readonly inflightPrebuilds = new Map<string, Promise<SnapshotRef>>();
@@ -125,6 +132,7 @@ export class RuntimeService {
     this.toolsets = deps.toolsets ?? new InMemoryToolsetStore();
     this.sandboxToolsetRefs =
       deps.sandboxToolsetRefs ?? new InMemorySandboxToolsetRefStore();
+    this.images = deps.images ?? new InMemoryImageStore();
   }
 
   // ── prebuild ───────────────────────────────────────────────────────────
@@ -1235,6 +1243,18 @@ export class RuntimeService {
     if (source.image.includes("/") || source.image.includes("@")) {
       return source.image;
     }
+    // Prefer a built/registered image's already-pinned ref: a `ready`
+    // `images` row carries the exact digest we pushed (`<registry>/<name>@
+    // sha256:…`) or, for an `external` registration, the verbatim BYO ref.
+    // Using it skips BOTH registry round-trips below (the gate HEAD +
+    // resolveImageReference) and pins the same immutable digest the build
+    // produced — the design-review §5 consistency win. A row that isn't
+    // `ready` (building/error) or has no ref falls through to the live gate,
+    // which surfaces the right "not available yet" error.
+    const record = this.images.get(source.image);
+    if (record?.status === "ready" && record.ref) {
+      return record.ref;
+    }
     // Fail CLOSED on a confirmed-missing image (404) and on an indeterminate
     // registry (network failure/timeout) alike — the prior behaviour only
     // hard-failed on 404 and silently proceeded on `null`, which let a spawn
@@ -1247,9 +1267,8 @@ export class RuntimeService {
     if (exists === null) {
       throw new RegistryUnreachableError(source.image);
     }
-    // TODO(follow-up, out of scope here): prefer a `ready` ImageRecord's
-    // already-pinned digest over re-resolving `:latest` on every spawn —
-    // would also remove the extra registry round-trip this gate just added.
+    // No `images` row (a bare image built out-of-band, or the seed pushed
+    // before this table existed): resolve `:latest` to its current digest.
     return ImageRegistryService.resolveImageReference(source.image);
   }
 

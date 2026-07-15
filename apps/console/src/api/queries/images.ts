@@ -101,6 +101,29 @@ export function useBuildDockerfile() {
   });
 }
 
+/**
+ * Build from an uploaded zip build context (POST /v1/images/upload,
+ * multipart). The zip must contain a `Dockerfile` at its root; the server
+ * unpacks it (size-capped, traversal-guarded) and builds it. Returns
+ * immediately with the `building` record — same async poll as the other
+ * builds.
+ */
+export function useUploadImage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ name, file }: { name: string; file: File }) => {
+      const { data, error } = await api.v1.images.upload.post({ name, file });
+      if (error) throw new Error(errorMessage(error, "Upload failed"));
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
+      toast.success(`Building ${data?.name ?? "image"}…`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
 /** Register an externally-hosted image by reference, e.g. a GHCR tag
  * (POST /v1/images/register { name, ref }) — no build, ready immediately. */
 export function useRegisterImage() {

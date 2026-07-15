@@ -67,6 +67,11 @@ export function createServerContainer() {
   // with RuntimeService so there is a single source of endpoint truth.
   const backend = createSandboxBackend();
   const agent = new AgentClient((id) => backend.resolveAgentEndpoint(id));
+  // One `images` store instance shared by the runtime (which reads it in
+  // resolveImage to prefer a built image's pinned digest) and the image
+  // builder service (which writes it) — a single source of truth for the
+  // images table.
+  const imageStore = new DrizzleImageStore();
   const runtime = new RuntimeService({
     agent,
     backend,
@@ -74,6 +79,7 @@ export function createServerContainer() {
     snapshots: new DrizzleSnapshotStore(),
     toolsets: new DrizzleToolsetStore(),
     sandboxToolsetRefs: new DrizzleSandboxToolsetRefStore(),
+    images: imageStore,
   });
   const dispatch = new AgentDispatch({ agentClient: agent });
   const sessions = new SessionService({
@@ -84,7 +90,7 @@ export function createServerContainer() {
   });
   const terminal = new TerminalService({ agent });
   const images = new ImageBuilderService({
-    store: new DrizzleImageStore(),
+    store: imageStore,
     builder: createImageBuilder(),
     registryUrl: config.kubernetes.registryUrl,
     // Lazy read so it always reflects current runtime state — not captured

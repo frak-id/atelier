@@ -4,13 +4,16 @@ import {
   Boxes,
   ChevronDown,
   ChevronUp,
+  FileArchive,
   Hammer,
   Loader2,
   Package,
   RefreshCw,
   Trash2,
+  UploadCloud,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { type DragEvent, useRef, useState } from "react";
 import {
   imageLogsQuery,
   imagesListQuery,
@@ -19,6 +22,7 @@ import {
   useBuildSeed,
   useDeleteImage,
   useRegisterImage,
+  useUploadImage,
 } from "@/api/queries/images";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,7 +62,135 @@ function ImagesPage() {
       <TemplatesCard />
       <ImagesCard />
       <BringYourOwnCard />
+      <UploadZipCard />
     </div>
+  );
+}
+
+/** Human-readable byte size for the selected-file chip. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Build from an uploaded zip build context (Dockerfile + accompanying
+ * files). A drag-and-drop dropzone over a hidden file input — the "nice
+ * file picker" beside the pasted-Dockerfile path. */
+function UploadZipCard() {
+  const upload = useUploadImage();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  function pick(selected: File | undefined) {
+    if (!selected) return;
+    if (!selected.name.toLowerCase().endsWith(".zip")) return;
+    setFile(selected);
+    // Default the image name to the zip's basename the first time.
+    if (!name.trim()) {
+      const base = selected.name.replace(/\.zip$/i, "").toLowerCase();
+      setName(base.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, ""));
+    }
+  }
+
+  function onDrop(e: DragEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    pick(e.dataTransfer.files[0]);
+  }
+
+  function submit() {
+    if (!file || !name.trim()) return;
+    upload.mutate(
+      { name: name.trim(), file },
+      {
+        onSuccess: () => {
+          setFile(null);
+          if (inputRef.current) inputRef.current.value = "";
+        },
+      },
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Upload a build context</CardTitle>
+        <CardDescription>
+          A <code>.zip</code> containing a <code>Dockerfile</code> at its root
+          plus any files it <code>COPY</code>s. Built in your cluster and pushed
+          to your registry.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-2">
+          <Label htmlFor="zip-name">Image name</Label>
+          <Input
+            id="zip-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="my-custom-image"
+          />
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".zip,application/zip"
+          className="hidden"
+          onChange={(e) => pick(e.target.files?.[0])}
+        />
+        {file ? (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3">
+            <FileArchive className="size-4 shrink-0 text-muted-foreground" />
+            <span className="truncate font-mono text-sm">{file.name}</span>
+            <span className="text-xs text-muted-foreground">
+              {formatBytes(file.size)}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto"
+              onClick={() => {
+                setFile(null);
+                if (inputRef.current) inputRef.current.value = "";
+              }}
+            >
+              <X />
+            </Button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            className={`flex w-full flex-col items-center gap-2 rounded-md border border-dashed p-6 text-center transition-colors ${
+              dragOver
+                ? "border-primary bg-primary/5"
+                : "border-muted-foreground/25 hover:border-muted-foreground/50"
+            }`}
+          >
+            <UploadCloud className="size-6 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">
+              Drag a <code>.zip</code> here, or click to browse
+            </span>
+          </button>
+        )}
+        <Button
+          disabled={upload.isPending || !file || !name.trim()}
+          onClick={submit}
+        >
+          {upload.isPending ? <Loader2 className="animate-spin" /> : <Hammer />}
+          Build from zip
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
