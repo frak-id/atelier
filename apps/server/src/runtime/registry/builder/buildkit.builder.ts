@@ -133,8 +133,12 @@ export function buildctlArgs(
     args.push("--opt", `build-arg:${key}=${value}`);
   }
 
+  // `oci-mediatypes`/`image-manifest` force a single OCI manifest (not a
+  // manifest LIST): the bundled Zot registry rejects the buildx default
+  // multi-manifest index, so these two are required for the push to land.
   const output =
     `type=image,name=${req.tag},push=true` +
+    ",oci-mediatypes=true,image-manifest=true" +
     (req.insecureRegistry ? ",registry.insecure=true" : "");
   args.push("--output", output);
 

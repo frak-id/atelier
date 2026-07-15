@@ -57,6 +57,8 @@ describe("buildctlArgs", () => {
     expect(args).toContain("--local context=/workspace");
     expect(args).toContain(`type=image,name=${baseReq.tag},push=true`);
     expect(args).toContain("registry.insecure=true");
+    // Zot rejects buildx's default manifest index without these two.
+    expect(args).toContain("oci-mediatypes=true,image-manifest=true");
     expect(args).toContain("--metadata-file /tmp/atelier-md.json");
   });
 
@@ -132,11 +134,11 @@ describe("buildJobManifest", () => {
 
     const podSpec = manifest.spec.template.spec;
     expect(podSpec.restartPolicy).toBe("Never");
-    expect(podSpec.initContainers[0].name).toBe("unpack");
-    expect(podSpec.containers[0].name).toBe("build");
-    expect(podSpec.containers[0].image).toBe("kaniko:latest");
-    expect(podSpec.containers[0].terminationMessagePolicy).toBe("File");
-    expect(podSpec.volumes[0].configMap?.name).toBe(
+    expect(podSpec.initContainers[0]?.name).toBe("unpack");
+    expect(podSpec.containers[0]?.name).toBe("build");
+    expect(podSpec.containers[0]?.image).toBe("kaniko:latest");
+    expect(podSpec.containers[0]?.terminationMessagePolicy).toBe("File");
+    expect(podSpec.volumes[0]?.configMap?.name).toBe(
       "atelier-build-dev-base-abc123-ctx",
     );
   });

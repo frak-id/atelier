@@ -21,6 +21,7 @@ set -euo pipefail
 CTX="${KUBE_CONTEXT:-hetzner-atelier}"
 NS_SYS="atelier-v2-system"
 NS_BUILD="buildkit"
+NS_SANDBOX="atelier-v2-sandboxes"
 REGISTRY="zot.zot.svc:5000"
 DEPLOY="atelier-v2"
 BUILDER_POD="v2-builder"
@@ -76,6 +77,20 @@ spec:
 EOF
   trap cleanup EXIT
   K wait --for=condition=Ready "pod/$BUILDER_POD" -n "$NS_BUILD" --timeout=120s
+}
+
+# The running server (in $NS_SYS) now builds base images ON DEMAND via the
+# in-cluster BuildKit (imageBuilder.kind=buildkit, see 30-config.yaml): it
+# creates a short-lived buildctl Job in the SANDBOX namespace whose pod mTLS's
+# to buildkitd. Secrets are namespace-scoped, so that namespace needs its own
+# copy of the client-cert secret. Replicate it from $NS_BUILD (idempotent).
+sync_build_tls() {
+  say "Syncing buildkit-client-tls into $NS_SANDBOX"
+  K -n "$NS_SANDBOX" delete secret buildkit-client-tls \
+    --ignore-not-found >/dev/null 2>&1 || true
+  K -n "$NS_BUILD" get secret buildkit-client-tls -o yaml \
+    | sed -E '/^[[:space:]]*(namespace|resourceVersion|uid|creationTimestamp):/d' \
+    | K -n "$NS_SANDBOX" create -f - >/dev/null
 }
 
 # buildctl invocation (mTLS to the shared buildkitd). $1 = extra buildctl args.
@@ -146,6 +161,8 @@ $BUILD_DEVBASE && build_devbase
 $BUILD_SERVER  && build_target server  atelier-server:v2
 $BUILD_CONSOLE && build_target console atelier-console:v2
 if $NEED_BUILDER; then cleanup; trap - EXIT; fi
+
+sync_build_tls
 
 if $DO_ROLLOUT; then
   say "Rolling deploy/$DEPLOY"

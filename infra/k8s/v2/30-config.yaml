@@ -41,6 +41,16 @@ data:
         "volumeSnapshotClass": "atelier-snapshots",
         "defaultVolumeSize": "20Gi"
       },
+      "imageBuilder": {
+        "kind": "buildkit",
+        "endpoint": "tcp://buildkitd.buildkit.svc:1234",
+        "insecureRegistry": true,
+        "platform": "linux/amd64",
+        "tls": {
+          "secretName": "buildkit-client-tls",
+          "serverName": "buildkitd.buildkit.svc.cluster.local"
+        }
+      },
       "sandbox": {
         "defaultImage": "dev-base-v2",
         "git": { "email": "sandbox@atelier.dev", "name": "Sandbox User" }
