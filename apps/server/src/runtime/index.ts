@@ -8,6 +8,12 @@
 
 export type { TerminalSession } from "./agent/index.ts";
 export { AgentClient } from "./agent/index.ts";
+export {
+  CsiVolumeBackend,
+  KubernetesBackend,
+  type SandboxBackend,
+  type VolumeBackend,
+} from "./backend/index.ts";
 export { ensureSharedSshPipeKey } from "./kube/index.ts";
 export {
   type RuntimeCreateOptions,

@@ -84,6 +84,11 @@ export class AgentClient {
   }
 
   private async resolvePodIp(sandboxId: string): Promise<string> {
+    // TODO(docker): endpoint resolution (pod IP today) moves behind
+    // SandboxBackend.resolveAgentEndpoint when the Docker backend lands — it
+    // must yield a client-reachable host + agent/attach ports and own the
+    // ws/http scheme (proposal §4.4). Left on AgentClient for now to keep the
+    // step-1 extraction behavior-preserving (implementation log, oracle Q2).
     const cached = this.podIpCache.get(sandboxId);
     if (cached) return cached;
 

@@ -45,16 +45,10 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 import type { HookPhase } from "./agent/index.ts";
 import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
-import { bootSandbox, deleteRestartableResources } from "./boot.ts";
-import { cleanupSandboxResources } from "./cleanup.ts";
+import { KubernetesBackend, type SandboxBackend } from "./backend/index.ts";
+import type { BootOutput } from "./boot.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
-import { buildVolumeSnapshot, kubeClient } from "./kube/index.ts";
-import {
-  buildPortIngresses,
-  buildPortUrls,
-  gatingProcessNames,
-  sshUrl,
-} from "./ports.ts";
+import { gatingProcessNames } from "./ports.ts";
 import { ImageRegistryService } from "./registry/index.ts";
 import {
   InMemorySandboxStore,
@@ -81,6 +75,10 @@ export interface RuntimeCreateOptions {
 
 export interface RuntimeDeps {
   agent?: AgentClient;
+  /** The sandbox orchestration + storage backend. Defaults to the Kubernetes/
+   * CSI backend; injectable so a Docker/local backend (or a test double) can
+   * replace it without touching RuntimeService's policy. */
+  backend?: SandboxBackend;
   sandboxes?: SandboxStore;
   snapshots?: SnapshotStore;
   toolsets?: ToolsetStore;
@@ -89,6 +87,7 @@ export interface RuntimeDeps {
 
 export class RuntimeService {
   private readonly agent: AgentClient;
+  private readonly backend: SandboxBackend;
   private readonly sandboxes: SandboxStore;
   private readonly snapshots: SnapshotStore;
   private readonly toolsets: ToolsetStore;
@@ -111,6 +110,7 @@ export class RuntimeService {
 
   constructor(deps: RuntimeDeps = {}) {
     this.agent = deps.agent ?? new AgentClient();
+    this.backend = deps.backend ?? new KubernetesBackend();
     this.sandboxes = deps.sandboxes ?? new InMemorySandboxStore();
     this.snapshots = deps.snapshots ?? new InMemorySnapshotStore();
     this.toolsets = deps.toolsets ?? new InMemoryToolsetStore();
@@ -217,11 +217,7 @@ export class RuntimeService {
    * best-effort (an already-gone object must still clear the row) — matching
    * the runtime's cleanup style elsewhere. */
   private async removeSnapshot(ref: string): Promise<void> {
-    if (!isMock()) {
-      await kubeClient
-        .deleteResource("VolumeSnapshot", ref)
-        .catch((err) => log.warn({ ref, err }, "VolumeSnapshot delete failed"));
-    }
+    await this.backend.volumes.deleteSnapshot(ref);
     this.snapshots.delete(ref);
     log.info({ ref }, "snapshot deleted");
   }
@@ -498,7 +494,7 @@ export class RuntimeService {
     try {
       // bootSandbox pushes config + writes files[]. The fixed phase order
       // (atelier-v2 §6): files/env -> postCreate -> processes -> postStart.
-      const boot = await bootSandbox(
+      const boot = await this.backend.boot(
         id,
         spec,
         {
@@ -541,7 +537,7 @@ export class RuntimeService {
       // otherwise orphan the running pod; tear it down so the boot is atomic
       // (bootSandbox already cleans up failures during its own phase).
       this.agent.invalidatePodIp(id);
-      await cleanupSandboxResources(id);
+      await this.backend.cleanup(id);
       this.sandboxes.update(id, { status: "error" });
       throw error;
     }
@@ -596,7 +592,7 @@ export class RuntimeService {
         .catch((err) => log.warn({ id, err }, "pre-pause sync failed"));
       const ref = await this.executeSnapshot(record);
       this.agent.invalidatePodIp(id);
-      await deleteRestartableResources(id);
+      await this.backend.deleteRestartable(id);
       this.sandboxes.update(id, {
         status: "paused",
         pauseSnapshotRef: ref.ref,
@@ -633,17 +629,14 @@ export class RuntimeService {
       const { image, snapshotName: sourceSnapshot } = await this.resolveSource(
         spec.source,
       );
-      const reusePvc =
-        !isMock() &&
-        (await kubeClient.resourceExists(
-          "PersistentVolumeClaim",
-          record.pvcName ?? `sandbox-${id}`,
-        ));
+      const reusePvc = await this.backend.volumes.volumeExists(
+        record.pvcName ?? `sandbox-${id}`,
+      );
       const toolsets = this.resolveSpecToolsets(spec);
 
       // Resume phase order: files/env -> onResume -> processes. onResume is
       // the credential-rotation primitive; it runs before processes restart.
-      const boot = await bootSandbox(
+      const boot = await this.backend.boot(
         id,
         spec,
         {
@@ -674,7 +667,7 @@ export class RuntimeService {
         // status so a retry starts clean (the pod name is fixed per sandbox; a
         // second boot would collide).
         this.agent.invalidatePodIp(id);
-        await deleteRestartableResources(id);
+        await this.backend.deleteRestartable(id);
         this.sandboxes.update(id, { status: record.status });
         throw error;
       }
@@ -698,7 +691,7 @@ export class RuntimeService {
     return this.withOpLock(id, async () => {
       this.require(id);
       this.agent.invalidatePodIp(id);
-      const swept = await cleanupSandboxResources(id);
+      const swept = await this.backend.cleanup(id);
       if (!swept) {
         // Keep the record: deleting it now would orphan whatever the sweep
         // left behind (pod/PVC/snapshots) with nothing to retry destroy from.
@@ -740,7 +733,7 @@ export class RuntimeService {
       try {
         if (record.status === "creating") {
           this.agent.invalidatePodIp(record.id);
-          await cleanupSandboxResources(record.id);
+          await this.backend.cleanup(record.id);
           // The sweep just tore down whatever pod/PVC this record had, so it
           // no longer has anything mounted — clear its rows or a toolset
           // deleteToolset thinks is still referenced would be permanently
@@ -754,7 +747,7 @@ export class RuntimeService {
           );
         } else if (record.status === "running") {
           const podName = record.podName ?? `sandbox-${record.id}`;
-          if (!(await kubeClient.resourceExists("Pod", podName))) {
+          if (!(await this.backend.computeExists(record.id))) {
             this.agent.invalidatePodIp(record.id);
             // No pod means nothing has the toolsets mounted right now either
             // (the PVC may survive, but resume() re-derives and re-persists
@@ -855,25 +848,10 @@ export class RuntimeService {
     };
     this.sandboxes.update(id, { spec });
     if (portEntry.public) {
-      // The Service was built at boot from the spec's ports — a live-added
-      // port must be patched in too, or the new Ingress points at a Service
-      // port that doesn't exist and Traefik 404s until a pause/resume
-      // rebuilds the Service. Strategic merge on `spec.ports` (merge key:
-      // `port`) appends without clobbering the existing entries.
-      await kubeClient.patchResource("Service", `sandbox-${id}`, {
-        spec: {
-          ports: [
-            {
-              name: portEntry.name,
-              port: portEntry.port,
-              targetPort: portEntry.port,
-            },
-          ],
-        },
-      });
-      for (const resource of buildPortIngresses(id, [portEntry])) {
-        await kubeClient.createResource(resource);
-      }
+      // The live-added port becomes a Service port + Ingress (mechanism owned
+      // by the backend); without it the new Ingress would point at a Service
+      // port that doesn't exist until a pause/resume rebuilds the Service.
+      await this.backend.exposePort(id, portEntry);
     }
   }
 
@@ -942,26 +920,16 @@ export class RuntimeService {
     return { ref, hash };
   }
 
-  /** Create a VolumeSnapshot of `pvcName` named `ref` and wait until ready.
-   * Idempotent: a forced rebuild can resolve to a `ref` that already exists
-   * (same hash slice), so any prior snapshot of that name is deleted first
-   * instead of 409ing the create. */
-  private async snapshotPvc(
+  /** Snapshot `pvcName` into `ref` via the volume backend (create + wait,
+   * idempotent on `ref`). Thin seam kept so the two call sites (prebuild bake,
+   * pause/manual snapshot) read the same. */
+  private snapshotPvc(
     pvcName: string,
     ref: string,
     labels: Record<string, string>,
     annotations?: Record<string, string>,
   ): Promise<void> {
-    if (!isMock() && (await kubeClient.resourceExists("VolumeSnapshot", ref))) {
-      await kubeClient.deleteResource("VolumeSnapshot", ref);
-      await kubeClient.waitForResourceDeleted("VolumeSnapshot", ref, {
-        timeout: 60_000,
-      });
-    }
-    await kubeClient.createResource(
-      buildVolumeSnapshot({ name: ref, pvcName, labels, annotations }),
-    );
-    await kubeClient.waitForVolumeSnapshotReady(ref, { timeout: 120_000 });
+    return this.backend.volumes.snapshot(pvcName, ref, labels, annotations);
   }
 
   // ── toolsets ──────────────────────────────────────────
@@ -1043,9 +1011,9 @@ export class RuntimeService {
     spec: SandboxSpec,
     input: { image: string; snapshotName?: string },
     cleanupFailureMessage: string,
-    fn: (boot: Awaited<ReturnType<typeof bootSandbox>>) => Promise<T>,
+    fn: (boot: BootOutput) => Promise<T>,
   ): Promise<T> {
-    const boot = await bootSandbox(tempId, spec, input, this.agent);
+    const boot = await this.backend.boot(tempId, spec, input, this.agent);
     try {
       return await fn(boot);
     } finally {
@@ -1053,9 +1021,9 @@ export class RuntimeService {
       // (a snapshot, a pushed toolset) stands alone. Best-effort so a teardown
       // error never masks the build result.
       this.agent.invalidatePodIp(tempId);
-      await cleanupSandboxResources(tempId).catch((err) =>
-        log.warn({ tempId, err }, cleanupFailureMessage),
-      );
+      await this.backend
+        .cleanup(tempId)
+        .catch((err) => log.warn({ tempId, err }, cleanupFailureMessage));
     }
   }
 
@@ -1248,10 +1216,15 @@ export class RuntimeService {
   private urlsFor(id: string, spec: SandboxSpec, live?: ProcessStatus[]) {
     const publicPorts = (spec.ports ?? []).filter((p) => p.public);
     const liveByName = new Map((live ?? []).map((p) => [p.name, p]));
-    const urls = buildPortUrls(id, spec.ports).map((url) => {
+    // The backend shapes the host/scheme (port URLs + the ssh entry); the
+    // readiness overlay below is backend-neutral policy. The ssh entry (and
+    // any non-public port) matches no public port and passes through untouched
+    // — assuming no public port is itself named "ssh" (unenforced, but such a
+    // spec was already ambiguous pre-refactor: it emitted two "ssh" URLs).
+    return this.backend.urls(id, spec).map((url) => {
       // Correlate by name, not array index: both derive from the same
       // `public` filter today, but a name lookup can't silently mispair if
-      // `buildPortUrls` ordering ever changes.
+      // the URL ordering ever changes.
       const port = publicPorts.find((p) => p.name === url.name);
       const processes = port ? gatingProcessNames(port, spec.processes) : [];
       if (processes.length === 0) return url;
@@ -1264,7 +1237,6 @@ export class RuntimeService {
             });
       return { ...url, processes, ready };
     });
-    return [...urls, { name: "ssh", url: sshUrl(id) }];
   }
 
   private async processStatuses(
