@@ -6,37 +6,42 @@ Isolated dev environments that boot in seconds, not minutes.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 
-![demo](https://raw.githubusercontent.com/frak-id/atelier/main/docs/assets/demo.gif)
-
 ## Batteries Included
 
-Each sandbox is a complete development environment — VS Code, AI agent, and browser, accessible from any device.
+Each sandbox is composed from modular pieces — an AI coding agent, an editor,
+and a browser — assembled from a declarative `SandboxSpec` and accessible from
+any device. Nothing is hardcoded: what a sandbox ships is decided by your org's
+toolboxes, harnesses, and saved specs, not by the console's source.
 
+- **AI coding harnesses** — [OpenCode](https://github.com/anomalyco/opencode)
+  (default) and **pi** ship today, both driven over ACP. Harnesses are
+  pluggable: add another by registering a composer in `@atelier/compose`;
+  the console discovers the set at runtime
 - **[code-server](https://github.com/coder/code-server)** — VS Code in the browser, zero local setup
-- **[OpenCode](https://github.com/anomalyco/opencode)** — AI coding agent, launch tasks and review results from anywhere
 - **Chromium via [KasmVNC](https://kasmweb.com/kasmvnc)** — full browser inside your sandbox for previewing, testing, debugging
-- **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — multi-provider AI model proxy (Claude, Gemini, Codex) with management UI
+- **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — multi-provider AI model proxy (Claude, Gemini, Codex); provider config is injected into every sandbox by the server enrichment seam, so you authenticate once
 
-Spawn a sandbox, push a task to OpenCode, close your laptop.
+Spawn a sandbox, drive an agent session from the console, close your laptop.
 Review the results from your phone on the ski lift — or wherever you happen to be.
 
 ## Features
 
-- **Task dispatch** — create coding tasks from the console. Atelier spawns a sandbox, creates a git branch, launches OpenCode with your prompt, and tracks progress. An AI task queue for your team
-- **Session templates** — 4 built-in AI workflows (Implementation, Best Practices Review, Security Review, Simplification) with customizable models, effort levels, and prompt templates per workspace
-- **Console** — mission control for all your sandboxes: real-time task progress, running dev servers, and an attention feed aggregating OpenCode permission and question requests across every session
+- **Template gallery** — spawn sandboxes with one tap from saved specs published as templates. Templates can declare fill-in-the-blank parameters (e.g. a repo URL) applied at spawn. This replaces the old static workflow list — a template is just an org-owned saved spec, so your gallery reflects your stack
+- **Toolboxes & toolsets** — owner-scoped recipes (`build[]` + `paths[]`) that compile once into a versioned, content-addressed **toolset** artifact and materialize into every spawn for that user or org. Add any binary or tool (a harness, a linter, an SDK) without rebuilding a base image
+- **Pluggable harnesses** — AI coding agents integrated over ACP. OpenCode and pi ship in `@atelier/compose`; the available set is derived at runtime, not hardcoded, so a pi-first or claude-code-first org sees its own stack everywhere
+- **Agent sessions** — drive the in-sandbox agent from the console: start sessions, stream output, and answer an attention feed that aggregates permission and question requests across every sandbox. Attach to any process read-write or read-only
+- **Console with Operator/Builder lenses** — mission control for all your sandboxes. Operators get the one-tap template gallery; Builders additionally get the JSONC spec editor, prebuilds, saved specs, and toolbox management
 - **Prebuilds** — run expensive setup (git clone, dependency install, build) once and snapshot it. Subsequent sandboxes clone from the snapshot instantly via copy-on-write
-- **Dev server with auto HTTPS** — define a dev command in your workspace config (e.g. `npm run dev`) and get a public `https://dev-{id}.your-domain.com` URL with streaming logs
-- **Two base images out of the box** — `dev-base` ships with Node 22 and Bun; `dev-cloud` extends it with AWS CLI, Google Cloud SDK, kubectl, and Pulumi
-- **Workspace definitions** — configure git repos to clone, init commands, a dev server, exposed ports, secrets, and resource limits per workspace
-- **OpenCode config replication** — define OpenCode configuration globally or per workspace, automatically replicated to every sandbox
-- **Auth synchronization** — OAuth tokens are synced across all running sandboxes so you authenticate once and every instance just works
+- **Public HTTPS for any port** — declare a port in your spec and get a public `https://{name}-{id}.your-domain.com` URL, protected by forward-auth. The editor, browser, dev servers, and per-harness web UIs all ride this same mechanism
+- **Three base images out of the box** — `dev-base` ships with Node 22 and Bun; `dev-cloud` extends it with AWS CLI, Google Cloud SDK, kubectl, and Pulumi; `dev-rust` adds a Rust toolchain
+- **SandboxSpec + compose SDK** — a sandbox is `files + processes + ports`, nothing more. `@atelier/compose` builds specs client-side from harness and preset (`vscode`, `browser`, `terminal`) fragments; the runtime never learns what a "harness" is
+- **Host CLI** — the `atelier` binary drives the `/v1` runtime API directly: `up`, `ps`, `exec`, `attach`, `pause`/`resume`, `snapshot`, `prebuild`, and `toolset`/`toolbox` management
 - **Custom npm registry** — point sandboxes at your own npm proxy (Verdaccio, Nexus, Artifactory, …) with a single `npmRegistryUrl` setting; npm/bun/yarn configs are injected automatically. Leave it empty to use the public registry
 - **SSH access** — use your regular workflow: SSH, VS Code Remote SSH, JetBrains remote. [sshpiper](https://github.com/tg123/sshpiper) provides username-based routing so `ssh sandbox-{id}@host -p 2222` just works
-- **MCP server** — AI agents can orchestrate sandboxes, tasks, workspaces, and dev servers programmatically via the Model Context Protocol
-- **GitHub App integration** — connect your GitHub account for repository discovery and branch listing
+- **MCP server** — AI agents can orchestrate sandboxes, saved specs, toolboxes, and sessions programmatically via the Model Context Protocol
+- **GitHub OAuth** — sign in with GitHub (optionally gated to an org) for authentication and repository/branch discovery
 - **Multi-dev per sandbox** — nothing stops multiple developers from working in the same sandbox simultaneously
-- **Config file sync** — manage global and per-workspace config files, automatically synced to sandboxes
+- **Config file sync** — manage global and per-scope config files, automatically synced to sandboxes
 
 ## Why Atelier?
 
@@ -208,6 +213,12 @@ bun run --filter @atelier/server dev   # API:     http://localhost:4000
                                         # Swagger: http://localhost:4000/swagger
 bun run --filter @atelier/console dev  # Console: http://localhost:5174
 ```
+
+The repo is a Bun monorepo: the `@atelier/server` (Bun/Elysia) and
+`@atelier/console` (React 19 / TanStack Router) apps, the in-pod
+`atelier-agent` (Rust, `apps/agent-v2`), the `atelier` host CLI
+(`apps/cli`), and the `@atelier/spec` / `@atelier/compose` /
+`@atelier/shared` packages. See [`AGENTS.md`](AGENTS.md) for the full layout.
 
 ## Documentation
 
