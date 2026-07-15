@@ -6,7 +6,6 @@
  *   - no `sandboxHasDev` workspace lookup — URLs come from `spec.ports`.
  * The runtime never imports control/ or sessions/.
  */
-import { Buffer } from "node:buffer";
 import type { SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
 import { config } from "../shared/lib/config.ts";
@@ -18,11 +17,11 @@ import {
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
-  buildSshPipe,
-  ensureSharedSshPipeKey,
+  type KubeResource,
   kubeClient,
 } from "./kube/index.ts";
 import { buildPortIngresses } from "./ports.ts";
+import { resolveSshGatewayBoot, sshAuthKeysSecretName } from "./ssh-gateway.ts";
 
 const log = createChildLogger("runtime-boot");
 
@@ -91,7 +90,10 @@ export async function bootSandbox(
   const agentPassword = generatePassword(32);
 
   try {
-    const sharedKey = await ensureSharedSshPipeKey();
+    // The SSH gateway strategy decides which secret the pod trusts as its
+    // authorized_keys and what extra SSH resources to emit (Pipe / per-sandbox
+    // key Secret) — sshpiper is optional (proposal §5).
+    const ssh = await resolveSshGatewayBoot(sandboxId, input.authorizedKeys);
 
     // All resources create in one concurrent batch, PVC included: a pod may
     // reference a PVC that doesn't exist yet (it just stays unschedulable
@@ -118,8 +120,8 @@ export async function bootSandbox(
         image: input.image,
         agentPassword,
         pvcName,
-        sharedKeySecret: sharedKey.secretName,
-        authorizedKeysData: encodeSshAuthorizedKeys(input.authorizedKeys),
+        podAuthKeysSecret: ssh.podAuthKeysSecret,
+        sshResources: ssh.resources,
       }),
     ]);
 
@@ -172,8 +174,11 @@ interface ResourceSpec {
   image: string;
   agentPassword: string;
   pvcName: string;
-  sharedKeySecret: string;
-  authorizedKeysData?: string;
+  /** Secret the pod mounts as its authorized_keys source (resolved by the SSH
+   * gateway strategy); undefined disables in-pod SSH. */
+  podAuthKeysSecret?: string;
+  /** SSH gateway resources to create alongside the pod (Pipe / key Secret). */
+  sshResources: KubeResource[];
 }
 
 function createSandboxResources(
@@ -188,7 +193,7 @@ function createSandboxResources(
         image: r.image,
         agentPassword: r.agentPassword,
         pvcName: r.pvcName,
-        sshPipeKeySecret: r.sharedKeySecret,
+        sshPipeKeySecret: r.podAuthKeysSecret,
         requests: {
           cpu: `${Math.max(250, spec.resources.vcpus * 250)}m`,
           memory: `${spec.resources.memoryMb}Mi`,
@@ -205,14 +210,7 @@ function createSandboxResources(
     ...buildPortIngresses(sandboxId, spec.ports).map((resource) =>
       kubeClient.createResource(resource),
     ),
-    kubeClient.createResource(
-      buildSshPipe({
-        sandboxId,
-        targetHost: `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`,
-        authorizedKeysData: r.authorizedKeysData,
-        privateKeySecretName: r.sharedKeySecret,
-      }),
-    ),
+    ...r.sshResources.map((resource) => kubeClient.createResource(resource)),
   ];
 }
 
@@ -223,7 +221,11 @@ export async function deleteRestartableResources(
   const deletions: Array<[string, string]> = [
     ["Pod", podName],
     ["Service", `sandbox-${sandboxId}`],
+    // Both SSH-gateway restartable resources: the sshpiper Pipe and the `none`
+    // strategy's per-sandbox authorized-keys Secret. Deleting a non-existent
+    // one is a no-op (swallowed below), so this is strategy-agnostic.
     ["Pipe", `ssh-${sandboxId}`],
+    ["Secret", sshAuthKeysSecretName(sandboxId)],
   ];
   for (const [kind, name] of deletions) {
     try {
@@ -236,10 +238,4 @@ export async function deleteRestartableResources(
   await kubeClient.waitForResourceDeleted("Pod", podName, {
     timeout: POD_DELETE_TIMEOUT_MS,
   });
-}
-
-function encodeSshAuthorizedKeys(publicKeys?: string[]): string | undefined {
-  if (!publicKeys || publicKeys.length === 0) return undefined;
-  const authorizedKeys = publicKeys.map((key) => key.trim()).join("\n");
-  return Buffer.from(authorizedKeys).toString("base64");
 }

@@ -20,6 +20,24 @@ export const SshConfigSchema = Type.Object(
     port: Type.Number({ default: 2222 }),
     /** SSH proxy hostname — defaults to ssh.{baseDomain} if empty */
     hostname: Type.String({ default: "" }),
+    /**
+     * How SSH into sandboxes is routed (docs/proposals/portable-runtime-
+     * backends.md §5):
+     *   - `sshpiper`: the external sshpiper Deployment + a per-sandbox `Pipe`
+     *     CRD (default; k8s only).
+     *   - `none`: no central SSH gateway — the sandbox pod trusts the dev's own
+     *     keys, so an operator can `kubectl port-forward` and SSH directly.
+     *   - `in-server`: the in-server ssh2 proxy (reserved; not yet available —
+     *     see the implementation log's step-2 short-circuit).
+     */
+    gateway: Type.Union(
+      [
+        Type.Literal("sshpiper"),
+        Type.Literal("none"),
+        Type.Literal("in-server"),
+      ],
+      { default: "sshpiper" },
+    ),
   },
   { default: {} },
 );
@@ -299,6 +317,7 @@ export const ENV_VAR_MAPPING = {
 
   ATELIER_SSH_PROXY_PORT: "domain.ssh.port",
   ATELIER_SSH_PROXY_HOSTNAME: "domain.ssh.hostname",
+  ATELIER_SSH_GATEWAY: "domain.ssh.gateway",
 
   ATELIER_GITHUB_CLIENT_ID: "auth.github.clientId",
   ATELIER_GITHUB_CLIENT_SECRET: "auth.github.clientSecret",

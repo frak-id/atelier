@@ -35,7 +35,19 @@ logger.info({ dbPath: appPaths.database }, "Control database ready");
 const container = createServerContainer();
 await wireBuiltinHarnesses(container);
 
-await ensureSharedSshPipeKey();
+// The shared SSH pipe key is only needed by strategies that proxy through it
+// (`sshpiper`, `in-server`); `none` mounts the dev's own keys per-sandbox, so
+// pre-warming a shared k8s Secret there would be dead infra (proposal §5).
+if (config.domain.ssh.gateway !== "none" && !isMock()) {
+  await ensureSharedSshPipeKey();
+}
+if (config.domain.ssh.gateway === "in-server") {
+  logger.warn(
+    "ssh.gateway=in-server: the in-server ssh2 proxy listener is not yet " +
+      "available (see the portable-runtime implementation log). The pod side " +
+      "is prepared but SSH is inert until the listener lands.",
+  );
+}
 
 // Preseed config-plane defaults from env (safe hard-coded defaults otherwise).
 // DB rows always win, so this is a one-time bootstrap per key.

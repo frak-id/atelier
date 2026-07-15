@@ -179,4 +179,90 @@ the task does not warrant (scope discipline). Marked with an explicit code
 comment at `urlsFor` noting the unenforced assumption. Verified: `tsgo`
 typecheck, boundary check, and all 36 server tests (incl. 14 lifecycle) green.
 
+---
+
+## Step 2 — Pluggable `SshGateway` (sshpiper becomes optional)
+
+**Proposal target:** extract the `Pipe` + ssh-pipe-key emission behind a
+`sshpiper` strategy, add a `none` strategy, land the in-server `ssh2` proxy
+(new default), host key in the control DB secrets store, config `ssh.gateway`.
+
+### SSH model (verified in code)
+
+- The sandbox **pod** trusts exactly one key: the shared ed25519 **public** key,
+  mounted from a Secret at `/etc/sandbox/ssh/authorized_keys`
+  (`kube.resources.ts` `buildSandboxPod` → `sshPipeKeySecret`). So only whoever
+  holds the shared **private** key can log into the pod as `dev`.
+- **sshpiper** holds the shared private key (`to.private_key_secret`) and dials
+  `pod:22` as `dev`; it authenticates the *client* against the dev's own public
+  keys carried per-sandbox in the `Pipe`'s `from.authorized_keys_data`
+  (`buildSshPipe`).
+- Consequence for strategies: `sshpiper` and a future `in-server` proxy both
+  keep the **pod side identical** (pod trusts the shared key; the proxy does the
+  hop). `none` has no proxy holding the shared key, so for a port-forwarding
+  operator to authenticate the pod must instead trust the **dev's own keys**.
+
+### DECISION — the three strategies' boot-side wiring
+
+| Strategy | Pod `authorized_keys` source | Pipe? | Shared key? |
+|---|---|---|---|
+| `sshpiper` (default) | shared-key Secret (today) | yes | ensured |
+| `none` | a per-sandbox Secret holding the **dev's** keys | no | not needed |
+| `in-server` (deferred) | shared-key Secret (proxy hops) | no | ensured |
+
+`none` mounts the dev's `authorizedKeys` (already an explicit boot input) into
+the pod via a per-sandbox Secret at the same mount path, so `kubectl
+port-forward` + direct SSH works for an operator — matching the proposal's
+`none` description. When the sandbox has no authorized keys, `none` mounts
+nothing (SSH simply off).
+
+### SHORT-CIRCUIT — defer the in-server `ssh2` *listener*
+
+The proposal's step 2 says "land the in-server ssh2 proxy." **The boot-side seam
+and config land now; the actual listening ssh2 proxy process is deferred to its
+own spike.** Rationale (reality before dream):
+
+1. **Unvalidatable here.** The proxy's whole risk is faithful channel
+   forwarding (`session`/pty, `sftp`, `direct-tcpip`) for git-over-ssh + VS
+   Code/Cursor/JetBrains Remote-SSH. That can only be verified against a live
+   pod `sshd` — impossible in mock/CI without a cluster. Shipping unvalidated
+   SSH-forwarding networking, even opt-in, is exactly what the proposal itself
+   flagged as a distinct "Remote-SSH channel-fidelity spike."
+2. **Cross-boundary wiring.** The listener needs the persistent host key (control
+   DB secrets store) + the shared private key + endpoint resolution + a
+   long-running socket in the composition root (`apps/server/src/index.ts`).
+   `runtime/` cannot import `control/`, so the listener belongs at the
+   composition root, designed against the real host-key + auth-registry
+   surface — not stubbed blind now.
+3. **The seam makes it a drop-in.** `ssh.gateway: "in-server"` + an
+   `InServerSshGateway` (pod mounts the shared key, no Pipe — already expressible
+   in this seam) + a listener module is the follow-up; nothing here blocks it.
+
+So step-2 ships `sshpiper` (default, verbatim) + `none`, with the config enum
+and boot seam ready for `in-server`. Default stays `sshpiper` (behavior-
+preserving); the in-server proxy becomes default only after its live spike.
+Host-key-in-control-DB is therefore also deferred (only the listener needs it).
+
+### Review (reviewer run 002d0da7) + tests
+
+Fresh-context reviewer: **default (`sshpiper`) path provably output-identical**
+to pre-diff (byte-identical `buildSshPipe` args + `encodeAuthorizedKeys` matches
+the deleted `encodeSshAuthorizedKeys`); `none` Secret is single-base64-encoded
+(correct k8s convention, matches the shared-key secret shape) so the mounted
+file gets raw keys; lifecycle safe (per-entry try/catch no-op for absent
+secrets, pause deletes before resume recreates, `none` Secret labeled so
+destroy's sweep reaches it); index.ts gating correct; boundary clean; no
+dangling refs. No blockers. New unit tests (`ssh-gateway.test.ts`, 4 cases)
+pin the per-strategy resource emission; full server suite 40/40 green;
+typecheck + boundary clean.
+
+### PLAN-COMPLIANCE note
+
+Delivered: `SshGateway` seam + `sshpiper`/`none` strategies + `ssh.gateway`
+config — sshpiper is now optional (the original ask). Deferred vs. the proposal:
+the in-server `ssh2` **listener** and host-key-in-control-DB (documented
+short-circuit above; seam ready). Boot stops emitting the `Pipe` for
+`none`/`in-server`, which is the concrete "make sshpiper optional" change the
+proposal §5 called for.
+
 (Continued below.)
