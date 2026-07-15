@@ -1,14 +1,14 @@
-import type { PrebuildRecord, PrebuildSpec } from "@atelier/spec";
+import type { PrebuildRecord } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { type ParseError, parse as parseJsonc } from "jsonc-parser";
-import { Hammer, Layers, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Layers, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
   prebuildsListQuery,
   useDeletePrebuild,
   useRunPrebuild,
 } from "@/api/queries/prebuilds";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,12 +25,6 @@ export const Route = createFileRoute("/settings/prebuilds")({
   component: PrebuildsPage,
 });
 
-const PLACEHOLDER = `{
-  "source": { "image": "dev-base-v2" },
-  "repos": [{ "url": "https://github.com/org/repo", "branch": "main", "clonePath": "workspace/repo" }],
-  "build": ["cd workspace/repo && bun install"]
-}`;
-
 /**
  * The repo tier beside the toolset tier (composed-prebuild-volumes.md):
  * content-addressed VolumeSnapshots, chained, node-local. No list endpoint
@@ -38,68 +32,17 @@ const PLACEHOLDER = `{
  * is exposed) — this mirrors the CLI's `atelier prebuild <file>` exactly.
  */
 function PrebuildsPage() {
-  const runPrebuild = useRunPrebuild();
-  const [text, setText] = useState("");
-  const [parseError, setParseError] = useState<string | undefined>();
-  const [result, setResult] = useState<{ ref: string; hash: string } | null>(
-    null,
-  );
-
-  function handleRun() {
-    const errors: ParseError[] = [];
-    const value = parseJsonc(text, errors, { allowTrailingComma: true }) as
-      | PrebuildSpec
-      | undefined;
-    if (errors.length > 0 || !value) {
-      setParseError("Invalid JSON — check syntax");
-      return;
-    }
-    setParseError(undefined);
-    runPrebuild.mutate(
-      { spec: value },
-      { onSuccess: (data) => setResult(data ?? null) },
-    );
-  }
-
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <Button asChild size="sm">
+          <Link to="/settings/prebuilds/new">
+            <Plus />
+            New prebuild
+          </Link>
+        </Button>
+      </div>
       <PrebuildsList />
-      <Card>
-        <CardHeader>
-          <CardTitle>Run a prebuild</CardTitle>
-          <CardDescription>
-            Chained, content-addressed repo snapshot — clone +{" "}
-            <code>build[]</code> baked into a VolumeSnapshot, reusable as a
-            sandbox <code>source.snapshot</code>. Idempotent: identical content
-            hashes return instantly.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            spellCheck={false}
-            placeholder={PLACEHOLDER}
-            className="min-h-56 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
-          />
-          {parseError ? (
-            <p className="text-sm text-destructive">{parseError}</p>
-          ) : null}
-          <Button disabled={runPrebuild.isPending} onClick={handleRun}>
-            {runPrebuild.isPending ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <Hammer />
-            )}
-            Run prebuild
-          </Button>
-          {result ? (
-            <p className="font-mono text-xs text-muted-foreground">
-              {result.ref} ({result.hash})
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -121,6 +64,7 @@ function PrebuildsList() {
   } = useQuery(prebuildsListQuery());
   const runPrebuild = useRunPrebuild();
   const deletePrebuild = useDeletePrebuild();
+  const [pendingDelete, setPendingDelete] = useState<string | undefined>();
 
   return (
     <Card>
@@ -169,21 +113,32 @@ function PrebuildsList() {
                   </span>
                   <div className="ml-auto flex items-center gap-2">
                     {spec ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={runPrebuild.isPending}
-                        onClick={() =>
-                          runPrebuild.mutate({ spec, force: true })
-                        }
-                      >
-                        {runPrebuild.isPending ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <RefreshCw />
-                        )}
-                        Rebuild
-                      </Button>
+                      <>
+                        <Button asChild variant="outline" size="sm">
+                          <Link
+                            to="/settings/prebuilds/$ref"
+                            params={{ ref: prebuild.ref }}
+                          >
+                            <Pencil />
+                            Edit
+                          </Link>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={runPrebuild.isPending}
+                          onClick={() =>
+                            runPrebuild.mutate({ spec, force: true })
+                          }
+                        >
+                          {runPrebuild.isPending ? (
+                            <Loader2 className="animate-spin" />
+                          ) : (
+                            <RefreshCw />
+                          )}
+                          Rebuild
+                        </Button>
+                      </>
                     ) : null}
                     <Button
                       variant="outline"
@@ -194,7 +149,7 @@ function PrebuildsList() {
                           ? "In use by a sandbox or a chained prebuild"
                           : "Delete this snapshot"
                       }
-                      onClick={() => deletePrebuild.mutate(prebuild.ref)}
+                      onClick={() => setPendingDelete(prebuild.ref)}
                     >
                       {deletePrebuild.isPending ? (
                         <Loader2 className="animate-spin" />
@@ -218,6 +173,23 @@ function PrebuildsList() {
           })
         )}
       </CardContent>
+      <ConfirmDialog
+        open={pendingDelete !== undefined}
+        onOpenChange={(next) => {
+          if (!next) setPendingDelete(undefined);
+        }}
+        title="Delete prebuild?"
+        description={
+          <>
+            This permanently deletes the snapshot{" "}
+            <span className="font-mono">{pendingDelete}</span>. This cannot be
+            undone.
+          </>
+        }
+        onConfirm={() => {
+          if (pendingDelete) deletePrebuild.mutate(pendingDelete);
+        }}
+      />
     </Card>
   );
 }

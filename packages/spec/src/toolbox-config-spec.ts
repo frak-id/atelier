@@ -129,7 +129,11 @@ export type ToolboxConfig = Static<typeof ToolboxConfigSchema>;
 export const ToolboxConfigPatchSchema = Type.Object(
   {
     description: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
-    source: Type.Optional(SourceSchema),
+    /** `null` clears the source override (revert to the default base image);
+     * an absent key keeps the existing value — mirrors `harness`. Needed
+     * because JSON serialization drops `undefined`, so the console sends an
+     * explicit `null` to clear. */
+    source: Type.Optional(Type.Union([SourceSchema, Type.Null()])),
     build: Type.Optional(BuildStepsSchema),
     paths: Type.Optional(ToolboxPathsSchema),
     harness: Type.Optional(Type.Union([ToolboxHarnessSchema, Type.Null()])),

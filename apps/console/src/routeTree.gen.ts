@@ -26,6 +26,10 @@ import { Route as SettingsConfigRouteImport } from "./routes/settings.config"
 import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
 import { Route as SandboxesSandboxIdRouteImport } from "./routes/sandboxes.$sandboxId"
 import { Route as SandboxesSandboxIdIndexRouteImport } from "./routes/sandboxes.$sandboxId.index"
+import { Route as SettingsToolboxesNewRouteImport } from "./routes/settings.toolboxes.new"
+import { Route as SettingsToolboxesIdRouteImport } from "./routes/settings.toolboxes.$id"
+import { Route as SettingsPrebuildsNewRouteImport } from "./routes/settings.prebuilds.new"
+import { Route as SettingsPrebuildsRefRouteImport } from "./routes/settings.prebuilds.$ref"
 import { Route as SandboxesSandboxIdSessionsRouteImport } from "./routes/sandboxes.$sandboxId.sessions"
 
 const SpawnRoute = SpawnRouteImport.update({
@@ -113,6 +117,26 @@ const SandboxesSandboxIdIndexRoute = SandboxesSandboxIdIndexRouteImport.update({
   path: "/",
   getParentRoute: () => SandboxesSandboxIdRoute,
 } as any)
+const SettingsToolboxesNewRoute = SettingsToolboxesNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => SettingsToolboxesRoute,
+} as any)
+const SettingsToolboxesIdRoute = SettingsToolboxesIdRouteImport.update({
+  id: "/$id",
+  path: "/$id",
+  getParentRoute: () => SettingsToolboxesRoute,
+} as any)
+const SettingsPrebuildsNewRoute = SettingsPrebuildsNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => SettingsPrebuildsRoute,
+} as any)
+const SettingsPrebuildsRefRoute = SettingsPrebuildsRefRouteImport.update({
+  id: "/$ref",
+  path: "/$ref",
+  getParentRoute: () => SettingsPrebuildsRoute,
+} as any)
 const SandboxesSandboxIdSessionsRoute =
   SandboxesSandboxIdSessionsRouteImport.update({
     id: "/sessions",
@@ -130,14 +154,18 @@ export interface FileRoutesByFullPath {
   "/settings/images": typeof SettingsImagesRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
-  "/settings/prebuilds": typeof SettingsPrebuildsRoute
+  "/settings/prebuilds": typeof SettingsPrebuildsRouteWithChildren
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/templates": typeof SettingsTemplatesRoute
-  "/settings/toolboxes": typeof SettingsToolboxesRoute
+  "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
   "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/settings/prebuilds/$ref": typeof SettingsPrebuildsRefRoute
+  "/settings/prebuilds/new": typeof SettingsPrebuildsNewRoute
+  "/settings/toolboxes/$id": typeof SettingsToolboxesIdRoute
+  "/settings/toolboxes/new": typeof SettingsToolboxesNewRoute
   "/sandboxes/$sandboxId/": typeof SandboxesSandboxIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -148,14 +176,18 @@ export interface FileRoutesByTo {
   "/settings/images": typeof SettingsImagesRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
-  "/settings/prebuilds": typeof SettingsPrebuildsRoute
+  "/settings/prebuilds": typeof SettingsPrebuildsRouteWithChildren
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/templates": typeof SettingsTemplatesRoute
-  "/settings/toolboxes": typeof SettingsToolboxesRoute
+  "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
   "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/settings/prebuilds/$ref": typeof SettingsPrebuildsRefRoute
+  "/settings/prebuilds/new": typeof SettingsPrebuildsNewRoute
+  "/settings/toolboxes/$id": typeof SettingsToolboxesIdRoute
+  "/settings/toolboxes/new": typeof SettingsToolboxesNewRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdIndexRoute
 }
 export interface FileRoutesById {
@@ -169,14 +201,18 @@ export interface FileRoutesById {
   "/settings/images": typeof SettingsImagesRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
-  "/settings/prebuilds": typeof SettingsPrebuildsRoute
+  "/settings/prebuilds": typeof SettingsPrebuildsRouteWithChildren
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/templates": typeof SettingsTemplatesRoute
-  "/settings/toolboxes": typeof SettingsToolboxesRoute
+  "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
   "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/settings/prebuilds/$ref": typeof SettingsPrebuildsRefRoute
+  "/settings/prebuilds/new": typeof SettingsPrebuildsNewRoute
+  "/settings/toolboxes/$id": typeof SettingsToolboxesIdRoute
+  "/settings/toolboxes/new": typeof SettingsToolboxesNewRoute
   "/sandboxes/$sandboxId/": typeof SandboxesSandboxIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -199,6 +235,10 @@ export interface FileRouteTypes {
     | "/settings/toolsets"
     | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
+    | "/settings/prebuilds/$ref"
+    | "/settings/prebuilds/new"
+    | "/settings/toolboxes/$id"
+    | "/settings/toolboxes/new"
     | "/sandboxes/$sandboxId/"
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -217,6 +257,10 @@ export interface FileRouteTypes {
     | "/settings/toolsets"
     | "/settings"
     | "/sandboxes/$sandboxId/sessions"
+    | "/settings/prebuilds/$ref"
+    | "/settings/prebuilds/new"
+    | "/settings/toolboxes/$id"
+    | "/settings/toolboxes/new"
     | "/sandboxes/$sandboxId"
   id:
     | "__root__"
@@ -237,6 +281,10 @@ export interface FileRouteTypes {
     | "/settings/toolsets"
     | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
+    | "/settings/prebuilds/$ref"
+    | "/settings/prebuilds/new"
+    | "/settings/toolboxes/$id"
+    | "/settings/toolboxes/new"
     | "/sandboxes/$sandboxId/"
   fileRoutesById: FileRoutesById
 }
@@ -368,6 +416,34 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SandboxesSandboxIdIndexRouteImport
       parentRoute: typeof SandboxesSandboxIdRoute
     }
+    "/settings/toolboxes/new": {
+      id: "/settings/toolboxes/new"
+      path: "/new"
+      fullPath: "/settings/toolboxes/new"
+      preLoaderRoute: typeof SettingsToolboxesNewRouteImport
+      parentRoute: typeof SettingsToolboxesRoute
+    }
+    "/settings/toolboxes/$id": {
+      id: "/settings/toolboxes/$id"
+      path: "/$id"
+      fullPath: "/settings/toolboxes/$id"
+      preLoaderRoute: typeof SettingsToolboxesIdRouteImport
+      parentRoute: typeof SettingsToolboxesRoute
+    }
+    "/settings/prebuilds/new": {
+      id: "/settings/prebuilds/new"
+      path: "/new"
+      fullPath: "/settings/prebuilds/new"
+      preLoaderRoute: typeof SettingsPrebuildsNewRouteImport
+      parentRoute: typeof SettingsPrebuildsRoute
+    }
+    "/settings/prebuilds/$ref": {
+      id: "/settings/prebuilds/$ref"
+      path: "/$ref"
+      fullPath: "/settings/prebuilds/$ref"
+      preLoaderRoute: typeof SettingsPrebuildsRefRouteImport
+      parentRoute: typeof SettingsPrebuildsRoute
+    }
     "/sandboxes/$sandboxId/sessions": {
       id: "/sandboxes/$sandboxId/sessions"
       path: "/sessions"
@@ -378,17 +454,43 @@ declare module "@tanstack/react-router" {
   }
 }
 
+interface SettingsPrebuildsRouteChildren {
+  SettingsPrebuildsRefRoute: typeof SettingsPrebuildsRefRoute
+  SettingsPrebuildsNewRoute: typeof SettingsPrebuildsNewRoute
+}
+
+const SettingsPrebuildsRouteChildren: SettingsPrebuildsRouteChildren = {
+  SettingsPrebuildsRefRoute: SettingsPrebuildsRefRoute,
+  SettingsPrebuildsNewRoute: SettingsPrebuildsNewRoute,
+}
+
+const SettingsPrebuildsRouteWithChildren =
+  SettingsPrebuildsRoute._addFileChildren(SettingsPrebuildsRouteChildren)
+
+interface SettingsToolboxesRouteChildren {
+  SettingsToolboxesIdRoute: typeof SettingsToolboxesIdRoute
+  SettingsToolboxesNewRoute: typeof SettingsToolboxesNewRoute
+}
+
+const SettingsToolboxesRouteChildren: SettingsToolboxesRouteChildren = {
+  SettingsToolboxesIdRoute: SettingsToolboxesIdRoute,
+  SettingsToolboxesNewRoute: SettingsToolboxesNewRoute,
+}
+
+const SettingsToolboxesRouteWithChildren =
+  SettingsToolboxesRoute._addFileChildren(SettingsToolboxesRouteChildren)
+
 interface SettingsRouteChildren {
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
   SettingsConfigRoute: typeof SettingsConfigRoute
   SettingsImagesRoute: typeof SettingsImagesRoute
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsPolicyRoute: typeof SettingsPolicyRoute
-  SettingsPrebuildsRoute: typeof SettingsPrebuildsRoute
+  SettingsPrebuildsRoute: typeof SettingsPrebuildsRouteWithChildren
   SettingsSecretsRoute: typeof SettingsSecretsRoute
   SettingsSshKeysRoute: typeof SettingsSshKeysRoute
   SettingsTemplatesRoute: typeof SettingsTemplatesRoute
-  SettingsToolboxesRoute: typeof SettingsToolboxesRoute
+  SettingsToolboxesRoute: typeof SettingsToolboxesRouteWithChildren
   SettingsToolsetsRoute: typeof SettingsToolsetsRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -399,11 +501,11 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsImagesRoute: SettingsImagesRoute,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsPolicyRoute: SettingsPolicyRoute,
-  SettingsPrebuildsRoute: SettingsPrebuildsRoute,
+  SettingsPrebuildsRoute: SettingsPrebuildsRouteWithChildren,
   SettingsSecretsRoute: SettingsSecretsRoute,
   SettingsSshKeysRoute: SettingsSshKeysRoute,
   SettingsTemplatesRoute: SettingsTemplatesRoute,
-  SettingsToolboxesRoute: SettingsToolboxesRoute,
+  SettingsToolboxesRoute: SettingsToolboxesRouteWithChildren,
   SettingsToolsetsRoute: SettingsToolsetsRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }

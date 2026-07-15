@@ -98,8 +98,9 @@ export class ToolboxRepository {
 
   update(
     id: string,
-    patch: Partial<Omit<ToolboxConfig, "harness">> & {
+    patch: Partial<Omit<ToolboxConfig, "harness" | "source">> & {
       harness?: string | null;
+      source?: ToolboxConfig["source"] | null;
     },
   ): ToolboxConfig | undefined {
     const existing = this.getById(id);
@@ -109,10 +110,17 @@ export class ToolboxRepository {
       patch.harness === undefined
         ? existing.harness
         : (patch.harness ?? undefined);
+    // `source: null` clears the override; an absent key keeps it (same
+    // absent-vs-null contract as `harness`).
+    const source =
+      patch.source === undefined
+        ? existing.source
+        : (patch.source ?? undefined);
     const updated: ToolboxConfig = {
       ...existing,
       ...patch,
       harness,
+      source,
       id: existing.id,
       ownerType: existing.ownerType,
       ownerId: existing.ownerId,
@@ -124,7 +132,9 @@ export class ToolboxRepository {
       .update(entityToolboxes)
       .set({
         description: updated.description,
-        source: updated.source,
+        // Force `null` (not `undefined`) so a cleared override actually
+        // persists — drizzle skips `undefined` columns on update.
+        source: updated.source ?? null,
         build: updated.build,
         paths: updated.paths,
         harness: updated.harness ?? null,

@@ -1,5 +1,14 @@
-import type { SandboxSpec } from "@atelier/spec";
-import { SandboxSpecSchema } from "@atelier/spec";
+import type {
+  PrebuildSpec,
+  SandboxSpec,
+  ToolboxConfigInput,
+} from "@atelier/spec";
+import {
+  PrebuildSpecSchema,
+  SandboxSpecSchema,
+  ToolboxConfigInputSchema,
+} from "@atelier/spec";
+import type { TSchema } from "@sinclair/typebox";
 import { Errors } from "@sinclair/typebox/errors";
 import { Check } from "@sinclair/typebox/value";
 import {
@@ -10,14 +19,47 @@ import {
 
 const MAX_ERRORS = 10;
 
-export function validateSandboxSpec(
+/** Typebox `Check` + short, path-prefixed error list. The one validation
+ * primitive behind every spec editor (sandbox/prebuild/toolbox). */
+export function validateAgainst<T>(
+  schema: TSchema,
   value: unknown,
-): { ok: true; spec: SandboxSpec } | { ok: false; errors: string[] } {
-  if (Check(SandboxSpecSchema, value)) return { ok: true, spec: value };
-  const errors = [...Errors(SandboxSpecSchema, value)]
+): { ok: true; value: T } | { ok: false; errors: string[] } {
+  if (Check(schema, value)) return { ok: true, value: value as T };
+  const errors = [...Errors(schema, value)]
     .slice(0, MAX_ERRORS)
     .map((error) => `${error.path || "/"} ${error.message}`);
   return { ok: false, errors };
+}
+
+export function validateSandboxSpec(
+  value: unknown,
+): { ok: true; spec: SandboxSpec } | { ok: false; errors: string[] } {
+  const result = validateAgainst<SandboxSpec>(SandboxSpecSchema, value);
+  return result.ok ? { ok: true, spec: result.value } : result;
+}
+
+/** Parse JSONC text then validate against `PrebuildSpecSchema` — the JSON-mode
+ * seam for the prebuild editor's visual↔JSON toggle. */
+export function parsePrebuildSpec(
+  text: string,
+): { ok: true; value: PrebuildSpec } | { ok: false; errors: string[] } {
+  const parsed = parseSpecJsonc(text);
+  if (!parsed.ok) return parsed;
+  return validateAgainst<PrebuildSpec>(PrebuildSpecSchema, parsed.value);
+}
+
+/** Parse JSONC text then validate against `ToolboxConfigInputSchema` — the
+ * JSON-mode seam for the toolbox editor's visual↔JSON toggle. */
+export function parseToolboxInput(
+  text: string,
+): { ok: true; value: ToolboxConfigInput } | { ok: false; errors: string[] } {
+  const parsed = parseSpecJsonc(text);
+  if (!parsed.ok) return parsed;
+  return validateAgainst<ToolboxConfigInput>(
+    ToolboxConfigInputSchema,
+    parsed.value,
+  );
 }
 
 function describeParseError(error: ParseError): string {

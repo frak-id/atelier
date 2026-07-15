@@ -58,6 +58,27 @@ describe("ToolboxService", () => {
     expect(service.list(org).map((c) => c.slug)).toEqual(["my-tools"]);
   });
 
+  test("update clears source with null but keeps it when the key is absent", () => {
+    const service = new ToolboxService(new ToolboxRepository());
+    const owner = { type: "org", id: "org-clear-source" } as const;
+    const created = service.create(owner, {
+      slug: "with-source",
+      description: "d",
+      build: [],
+      paths: [],
+      source: { image: "dev-base-v2" },
+    });
+    expect(created.source).toEqual({ image: "dev-base-v2" });
+
+    // Absent key keeps the existing override.
+    const kept = service.update(created.id, { description: "d2" });
+    expect(kept.source).toEqual({ image: "dev-base-v2" });
+
+    // Explicit null clears it.
+    const cleared = service.update(created.id, { source: null });
+    expect(cleared.source).toBeUndefined();
+  });
+
   test("listAutoInject orders oldest-first and excludes non-auto-inject", () => {
     const repository = new ToolboxRepository();
     const owner = { type: "org", id: "org-order" } as const;
