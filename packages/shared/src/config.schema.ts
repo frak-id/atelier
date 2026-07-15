@@ -329,6 +329,39 @@ export const StorageConfigSchema = Type.Object(
 export type StorageConfig = Static<typeof StorageConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Runtime backend
+// ---------------------------------------------------------------------------
+
+export const RuntimeConfigSchema = Type.Object(
+  {
+    /**
+     * Which `SandboxBackend` orchestrates sandbox compute + network
+     * (docs/proposals/portable-runtime-backends.md §3, §8):
+     *   - `kubernetes`: Pod/Service/Ingress/PVC on a cluster (default; the only
+     *     backend implemented today). Its `kubernetes.*` config sub-tree
+     *     applies.
+     *   - `docker`: `docker run` the agent locally with published ports and a
+     *     host-dir volume — the self-host payoff; in progress.
+     *   - `local`: a bare local-process backend (Tier 3) — reserved.
+     *
+     * Selecting a backend that is not yet implemented fails fast at startup
+     * (see the implementation log) rather than silently falling back.
+     */
+    backend: Type.Union(
+      [
+        Type.Literal("kubernetes"),
+        Type.Literal("docker"),
+        Type.Literal("local"),
+      ],
+      { default: "kubernetes" },
+    ),
+  },
+  { default: {} },
+);
+
+export type RuntimeConfig = Static<typeof RuntimeConfigSchema>;
+
+// ---------------------------------------------------------------------------
 // Root config
 // ---------------------------------------------------------------------------
 
@@ -336,6 +369,7 @@ export const AtelierConfigSchema = Type.Object({
   domain: DomainConfigSchema,
   auth: AuthConfigSchema,
   server: ServerConfigSchema,
+  runtime: RuntimeConfigSchema,
   kubernetes: KubernetesConfigSchema,
   storage: StorageConfigSchema,
   sandbox: SandboxDefaultsSchema,
@@ -357,6 +391,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SSH_PROXY_HOSTNAME: "domain.ssh.hostname",
   ATELIER_SSH_GATEWAY: "domain.ssh.gateway",
   ATELIER_STORAGE_PROVIDER: "storage.provider",
+  ATELIER_RUNTIME_BACKEND: "runtime.backend",
 
   ATELIER_GITHUB_CLIENT_ID: "auth.github.clientId",
   ATELIER_GITHUB_CLIENT_SECRET: "auth.github.clientSecret",

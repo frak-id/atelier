@@ -45,7 +45,10 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 import type { HookPhase } from "./agent/index.ts";
 import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
-import { KubernetesBackend, type SandboxBackend } from "./backend/index.ts";
+import {
+  createSandboxBackend,
+  type SandboxBackend,
+} from "./backend/index.ts";
 import type { BootOutput } from "./boot.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
 import { gatingProcessNames } from "./ports.ts";
@@ -110,7 +113,7 @@ export class RuntimeService {
 
   constructor(deps: RuntimeDeps = {}) {
     this.agent = deps.agent ?? new AgentClient();
-    this.backend = deps.backend ?? new KubernetesBackend();
+    this.backend = deps.backend ?? createSandboxBackend();
     this.sandboxes = deps.sandboxes ?? new InMemorySandboxStore();
     this.snapshots = deps.snapshots ?? new InMemorySnapshotStore();
     this.toolsets = deps.toolsets ?? new InMemoryToolsetStore();

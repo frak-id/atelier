@@ -84,7 +84,9 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": ["mode"],
+      "required": [
+        "mode"
+      ],
       "properties": {
         "mode": {
           "anyOf": [
@@ -105,6 +107,29 @@
         "host": {
           "default": "0.0.0.0",
           "type": "string"
+        }
+      }
+    },
+    "runtime": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "backend": {
+          "default": "kubernetes",
+          "anyOf": [
+            {
+              "const": "kubernetes",
+              "type": "string"
+            },
+            {
+              "const": "docker",
+              "type": "string"
+            },
+            {
+              "const": "local",
+              "type": "string"
+            }
+          ]
         }
       }
     },
