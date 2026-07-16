@@ -12,11 +12,11 @@ import { JobStatusBadge } from "@/components/job-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { StatusDot } from "@/components/ui/status-dot";
 import { formatRelativeTime } from "@/lib/formatters";
 
@@ -25,9 +25,9 @@ import { formatRelativeTime } from "@/lib/formatters";
  * what's happening across the app right now — running/queued counts while work
  * is in flight, and a sticky "failed" affordance that persists until the user
  * opens the queue (so a background failure whose toast they missed is never
- * silently lost). Opening it lists the jobs (active + failures by default,
- * with a "show all" toggle) with a cancel action for still-queued ones.
- * Kept live by the `/v1/jobs/events` SSE feed (`useJobEvents`, at the root).
+ * silently lost). Clicking it opens a right-hand sidebar listing the jobs
+ * (active + failures by default, with a "show all" toggle) with a cancel
+ * action. Kept live by the `/v1/jobs/events` SSE feed (`useJobEvents`).
  */
 export function JobsIndicator() {
   const [open, setOpen] = useState(false);
@@ -87,11 +87,11 @@ export function JobsIndicator() {
           {indicatorLabel(running, queued, unackedFailed)}
         </span>
       </Button>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Job queue</DialogTitle>
-          </DialogHeader>
+      <Sheet open={open} onOpenChange={handleOpenChange}>
+        <SheetContent side="right" className="gap-3">
+          <SheetHeader>
+            <SheetTitle>Job queue</SheetTitle>
+          </SheetHeader>
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
               {running} running · {queued} queued
@@ -104,7 +104,7 @@ export function JobsIndicator() {
               {showAll ? "Show active" : "Show all"}
             </Button>
           </div>
-          <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+          <div className="-mr-2 flex-1 space-y-2 overflow-y-auto pr-2">
             {visible.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
                 {showAll ? "No jobs yet." : "Nothing active."}
@@ -113,8 +113,8 @@ export function JobsIndicator() {
               visible.map((job) => <JobRow key={job.id} job={job} />)
             )}
           </div>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }
