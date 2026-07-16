@@ -152,28 +152,38 @@ export class JobService {
   }
 
   /**
-   * Cancel a `queued` job: pull it from the wait list and mark it `canceled`
-   * before it ever runs — the only honest cancellation today. A *running* job
-   * is deliberately NOT cancellable: the runtime ops don't observe the abort
-   * signal yet, so flipping a running row to `canceled` would be a lie (a
-   * throwaway-pod build keeps running to completion, and freeing its pool slot
-   * would let the next job start and over-subscribe the concurrency bound; a
-   * running lifecycle op like `sandbox-destroy` would show "canceled" while it
-   * actually completes). Cancelling a running or terminal job is a `409`.
-   * When cooperative abort is threaded into the runtime, this can widen to
-   * running jobs.
+   * Cancel a non-terminal job:
+   *  - `queued`: pulled from the wait list and settled `canceled` before it
+   *    ever runs (no side effects to unwind).
+   *  - `running` POOLED build (prebuild/toolset): its `AbortSignal` is aborted.
+   *    The op observes it at a checkpoint (or its in-flight agent call aborts),
+   *    unwinds — tearing its throwaway pod down — and settles itself
+   *    `canceled` via the natural catch. We deliberately DON'T settle here or
+   *    free the pool slot early: the slot is released only when the op
+   *    actually unwinds, so a canceled build never over-subscribes the pool.
+   *    The row stays `running` for the brief unwind window, then flips.
+   *  - `running` TRACKED lifecycle op (`sandbox-*`): NOT cancellable — these
+   *    are awaited by their route and mutate shared state (a half-canceled
+   *    `sandbox-destroy` is dangerous), so cancelling one is a `409`.
+   *  - terminal: `409`.
    */
   cancel(id: string): JobRecord {
     const job = this.get(id);
-    if (job.status !== "queued") {
-      throw new ConflictError(
-        `Job ${id} is ${job.status}; only queued jobs can be canceled`,
+    if (job.status === "queued") {
+      const idx = this.waiting.findIndex((w) => w.id === id);
+      if (idx !== -1) this.waiting.splice(idx, 1);
+      return (
+        this.settle(id, { status: "canceled", error: "Canceled by user" }) ??
+        job
       );
     }
-    const idx = this.waiting.findIndex((w) => w.id === id);
-    if (idx !== -1) this.waiting.splice(idx, 1);
-    return (
-      this.settle(id, { status: "canceled", error: "Canceled by user" }) ?? job
+    if (job.status === "running" && this.pooledInFlight.has(id)) {
+      // Cooperative: abort and let the op unwind + settle itself `canceled`.
+      this.controllers.get(id)?.abort();
+      return this.get(id);
+    }
+    throw new ConflictError(
+      `Job ${id} is ${job.status} and cannot be canceled`,
     );
   }
 

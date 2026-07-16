@@ -9,6 +9,7 @@ import {
   usePublishToolset,
   useRemoveToolset,
 } from "@/api/queries/toolsets";
+import { JobStatus } from "@/components/job-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -85,6 +86,7 @@ function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
       <CardContent className="flex flex-col gap-2 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate font-medium">{toolset.name}</span>
+          <JobStatus kind="toolset-build" target={toolset.name} />
           <Badge
             variant={
               toolset.provenance.kind === "built" ? "outline" : "secondary"

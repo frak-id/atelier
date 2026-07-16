@@ -78,6 +78,10 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
   timeout?: number;
+  /** Caller cancellation (e.g. a canceled job) — combined with the per-request
+   * timeout so an in-flight agent call (a long build step, a capture push)
+   * aborts promptly instead of running to completion after cancel. */
+  signal?: AbortSignal;
 }
 
 export class AgentClient {
@@ -131,6 +135,10 @@ export class AgentClient {
     const url = `${await this.getAgentUrl(sandboxId)}${path}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+    // The fetch aborts on EITHER the timeout OR the caller's cancellation.
+    const signal = options.signal
+      ? AbortSignal.any([controller.signal, options.signal])
+      : controller.signal;
 
     try {
       const response = await fetch(url, {
@@ -139,7 +147,7 @@ export class AgentClient {
           ? { "Content-Type": "application/json" }
           : undefined,
         body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: controller.signal,
+        signal,
       });
 
       if (!response.ok) {
@@ -178,8 +186,14 @@ export class AgentClient {
     path: string,
     body?: unknown,
     timeout?: number,
+    signal?: AbortSignal,
   ): Promise<T> {
-    return this.request<T>(sandboxId, path, { method: "POST", body, timeout });
+    return this.request<T>(sandboxId, path, {
+      method: "POST",
+      body,
+      timeout,
+      signal,
+    });
   }
 
   async health(sandboxId: string): Promise<AgentHealth> {
@@ -357,6 +371,7 @@ export class AgentClient {
   async buildToolset(
     sandboxId: string,
     body: { target: string; paths: string[] },
+    signal?: AbortSignal,
   ): Promise<{ digest: string }> {
     if (isMock()) {
       const hex = "0".repeat(64);
@@ -367,6 +382,7 @@ export class AgentClient {
       "/toolsets/build",
       body,
       600_000,
+      signal,
     );
   }
 
@@ -385,6 +401,7 @@ export class AgentClient {
       exclude: string[];
       overrides: string[];
     },
+    signal?: AbortSignal,
   ): Promise<{ digest: string }> {
     if (isMock()) {
       const hex = "0".repeat(64);
@@ -395,6 +412,7 @@ export class AgentClient {
       "/toolsets/capture",
       body,
       600_000,
+      signal,
     );
   }
 
@@ -443,7 +461,12 @@ export class AgentClient {
   async exec(
     sandboxId: string,
     command: string,
-    options: { timeout?: number; user?: "dev" | "root"; workdir?: string } = {},
+    options: {
+      timeout?: number;
+      user?: "dev" | "root";
+      workdir?: string;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<ExecResult> {
     if (isMock()) {
       return { exitCode: 0, stdout: "", stderr: "" };
@@ -458,6 +481,7 @@ export class AgentClient {
         workdir: options.workdir,
       },
       (options.timeout ?? 30000) + 5000,
+      options.signal,
     );
   }
 

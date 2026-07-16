@@ -9,6 +9,7 @@ import {
   useRunPrebuild,
 } from "@/api/queries/prebuilds";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { JobStatus } from "@/components/job-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,19 @@ function PrebuildsPage() {
       </div>
       <PrebuildsList />
     </div>
+  );
+}
+
+/** The queue `target` the server labels a prebuild job with (mirrors
+ * `prebuildLabel` in v1.routes) — lets `<JobStatus>` match a running rebuild
+ * of THIS snapshot back to its row. */
+function prebuildJobTarget(prebuild: PrebuildRecord): string | undefined {
+  const source = prebuild.spec?.source;
+  return (
+    prebuild.metadata?.workspace ??
+    prebuild.metadata?.repo ??
+    prebuild.spec?.repos?.[0]?.url ??
+    (source && "image" in source ? source.image : source?.snapshot)
   );
 }
 
@@ -102,6 +116,10 @@ function PrebuildsList() {
                   <span className="truncate font-mono text-sm">
                     {prebuild.ref}
                   </span>
+                  <JobStatus
+                    kind="prebuild"
+                    target={prebuildJobTarget(prebuild)}
+                  />
                   {prebuild.parent ? (
                     <Badge variant="outline">chained</Badge>
                   ) : null}

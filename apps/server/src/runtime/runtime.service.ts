@@ -149,7 +149,11 @@ export class RuntimeService {
    */
   async prebuild(
     spec: PrebuildSpec,
-    options: { force?: boolean; githubToken?: string } = {},
+    options: {
+      force?: boolean;
+      githubToken?: string;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<SnapshotRef> {
     const { hash, image, snapshotName } = await this.resolveContentKey(spec);
     if (!options.force) {
@@ -158,6 +162,9 @@ export class RuntimeService {
         return { ref: existing.ref, hash, parent: existing.parent };
       }
     }
+    // A concurrent request for the same content shares the in-flight build
+    // (and thus the first caller's cancellation) — cancel is best-effort, so
+    // a later job deduped onto an existing run may not observe its own signal.
     const inflight = this.inflightPrebuilds.get(hash);
     if (inflight) return inflight;
     const run = this.executePrebuild(
@@ -166,6 +173,7 @@ export class RuntimeService {
       image,
       snapshotName,
       options.githubToken,
+      options.signal,
     ).finally(() => {
       this.inflightPrebuilds.delete(hash);
     });
@@ -381,6 +389,7 @@ export class RuntimeService {
     image: string,
     snapshotName?: string,
     githubToken?: string,
+    signal?: AbortSignal,
   ): Promise<SnapshotRef> {
     const parentRef =
       "snapshot" in spec.source ? spec.source.snapshot : undefined;
@@ -408,7 +417,9 @@ export class RuntimeService {
             toFileWrites(buildGitAttributionFiles({ githubToken })),
           );
         }
-        await this.runPrebuildSteps(tempId, spec);
+        await this.runPrebuildSteps(tempId, spec, signal);
+        // Bail before the (irreversible) snapshot if canceled during the build.
+        signal?.throwIfAborted();
         // Scrub the credential before snapshotting: the snapshot is a shared,
         // content-addressed artifact that must never carry a user's token.
         // (The file lives on the pod's ephemeral rootfs, outside the `/home/dev`
@@ -452,8 +463,10 @@ export class RuntimeService {
   private async runPrebuildSteps(
     tempId: string,
     spec: PrebuildSpec,
+    signal?: AbortSignal,
   ): Promise<void> {
     for (const repo of spec.repos ?? []) {
+      signal?.throwIfAborted();
       const branch = repo.branch ? `-b ${shellQuote(repo.branch)} ` : "";
       // Clone as `dev` (uid 1000): clonePath lives on the /home/dev PVC the
       // snapshot captures, so the repo must be dev-owned. Cloning as root (the
@@ -463,6 +476,7 @@ export class RuntimeService {
         tempId,
         `git clone --depth 1 ${branch}${shellQuote(repo.url)} ${shellQuote(repo.clonePath)}`,
         "dev",
+        signal,
       );
     }
     // Build steps also run as `dev`: they operate inside the dev-owned
@@ -470,7 +484,8 @@ export class RuntimeService {
     // root-owned artifacts (e.g. node_modules) that dev can't write. A step
     // needing root uses `sudo` (same convention as the guest agent's hooks).
     for (const step of spec.build ?? []) {
-      await this.execStep(tempId, step, "dev");
+      signal?.throwIfAborted();
+      await this.execStep(tempId, step, "dev", signal);
     }
   }
 
@@ -478,10 +493,12 @@ export class RuntimeService {
     tempId: string,
     command: string,
     user?: "dev" | "root",
+    signal?: AbortSignal,
   ): Promise<void> {
     const res = await this.agent.exec(tempId, command, {
       timeout: 600_000,
       user,
+      signal,
     });
     if (res.exitCode !== 0) {
       throw new Error(
@@ -976,13 +993,16 @@ export class RuntimeService {
    * for the same hash dedupe onto one execution. The registry-push tail
    * replaces `prebuild()`'s snapshot tail — same executor economics.
    */
-  async buildToolset(req: ToolsetBuildRequest): Promise<ToolsetRef> {
+  async buildToolset(
+    req: ToolsetBuildRequest,
+    signal?: AbortSignal,
+  ): Promise<ToolsetRef> {
     const hash = hashToolset(req);
     const existing = this.toolsets.getByHash(hash);
     if (existing) return { ref: existing.ref };
     const inflight = this.inflightToolsetBuilds.get(hash);
     if (inflight) return inflight;
-    const run = this.executeToolsetBuild(req, hash).finally(() => {
+    const run = this.executeToolsetBuild(req, hash, signal).finally(() => {
       this.inflightToolsetBuilds.delete(hash);
     });
     this.inflightToolsetBuilds.set(hash, run);
@@ -992,6 +1012,7 @@ export class RuntimeService {
   private async executeToolsetBuild(
     req: ToolsetBuildRequest,
     hash: string,
+    signal?: AbortSignal,
   ): Promise<ToolsetRef> {
     const source = req.source ?? { image: config.sandbox.defaultImage };
     const { image, snapshotName } = await this.resolveSource(source);
@@ -1007,12 +1028,15 @@ export class RuntimeService {
         // Build steps run as `dev` so installs land in the home path-sets the
         // artifact captures (running as root would scatter bytes into /root).
         for (const step of req.build) {
-          await this.execStep(tempId, step, "dev");
+          signal?.throwIfAborted();
+          await this.execStep(tempId, step, "dev", signal);
         }
-        const { digest } = await this.agent.buildToolset(tempId, {
-          target,
-          paths: req.paths,
-        });
+        signal?.throwIfAborted();
+        const { digest } = await this.agent.buildToolset(
+          tempId,
+          { target, paths: req.paths },
+          signal,
+        );
         const ref = `toolsets/${req.name}@${digest}`;
         this.toolsets.put({
           hash,
@@ -1130,15 +1154,20 @@ export class RuntimeService {
   async captureToolset(
     id: string,
     req: ToolsetCaptureRequest,
+    signal?: AbortSignal,
   ): Promise<ToolsetRef> {
     this.require(id);
     const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:cap-${safeNanoid()}`;
-    const { digest } = await this.agent.captureToolset(id, {
-      target,
-      paths: req.paths,
-      exclude: req.exclude ?? [],
-      overrides: req.overrides ?? [],
-    });
+    const { digest } = await this.agent.captureToolset(
+      id,
+      {
+        target,
+        paths: req.paths,
+        exclude: req.exclude ?? [],
+        overrides: req.overrides ?? [],
+      },
+      signal,
+    );
     const ref = `toolsets/${req.name}@${digest}`;
     this.toolsets.put({
       // Captures are result-keyed, not input-keyed: the digest is the

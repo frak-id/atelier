@@ -345,10 +345,11 @@ export function createV1Routes(container: ServerContainer) {
               target: prebuildLabel(spec),
               metadata: spec.metadata,
             },
-            () =>
+            (signal) =>
               runtime.prebuild(spec, {
                 force: query.force === true,
                 githubToken,
+                signal,
               }),
           );
           set.status = 202;
@@ -384,7 +385,7 @@ export function createV1Routes(container: ServerContainer) {
               target: req.name,
               metadata: req.metadata,
             },
-            () => runtime.buildToolset(req),
+            (signal) => runtime.buildToolset(req, signal),
           );
           set.status = 202;
           return job;
@@ -539,7 +540,7 @@ export function createV1Routes(container: ServerContainer) {
               target: req.name,
               metadata: { sandboxId: params.id },
             },
-            () => runtime.captureToolset(params.id, req),
+            (signal) => runtime.captureToolset(params.id, req, signal),
           );
           set.status = 202;
           return job;

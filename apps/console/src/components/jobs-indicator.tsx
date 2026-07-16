@@ -8,7 +8,8 @@ import {
   jobsListQuery,
   useCancelJob,
 } from "@/api/queries/jobs";
-import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { JobStatusBadge } from "@/components/job-status";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -130,16 +131,13 @@ function indicatorLabel(
   return "Jobs";
 }
 
-const STATUS_VARIANT: Record<Job["status"], BadgeVariant> = {
-  queued: "warning",
-  running: "info",
-  succeeded: "success",
-  failed: "danger",
-  canceled: "neutral",
-};
-
 function JobRow({ job }: { job: Job }) {
   const cancel = useCancelJob();
+  // Queued jobs (any kind) and running *pooled build* jobs are cancelable;
+  // running `sandbox-*` lifecycle ops are awaited server-side and are not.
+  const cancelable =
+    job.status === "queued" ||
+    (job.status === "running" && !job.kind.startsWith("sandbox-"));
   return (
     <div className="flex items-center gap-3 rounded-md border p-2.5">
       <div className="min-w-0 flex-1">
@@ -161,17 +159,15 @@ function JobRow({ job }: { job: Job }) {
           )}
         </p>
       </div>
-      <Badge variant={STATUS_VARIANT[job.status]} className="shrink-0">
-        {job.status}
-      </Badge>
-      {job.status === "queued" ? (
+      <JobStatusBadge job={job} className="shrink-0" />
+      {cancelable ? (
         <Button
           variant="ghost"
           size="icon"
           className="shrink-0"
           disabled={cancel.isPending}
           onClick={() => cancel.mutate(job.id)}
-          title="Cancel queued job"
+          title={job.status === "queued" ? "Cancel queued job" : "Cancel job"}
         >
           <X className="size-4" />
         </Button>

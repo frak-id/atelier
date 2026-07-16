@@ -256,7 +256,7 @@ export function createControlRoutes(container: ServerContainer) {
             target: tb.slug,
             metadata: { toolboxId: tb.id, sandboxId: body.sandboxId },
           },
-          async () => {
+          async (signal) => {
             // Server-authoritative capture inputs (docs/toolbox-versions.md §2
             // invariant): a "version" must capture the toolbox's OWN paths[]
             // to stay substitutable for the recipe-built artifact, never
@@ -269,6 +269,7 @@ export function createControlRoutes(container: ServerContainer) {
                 exclude: [],
                 overrides: [],
               },
+              signal,
             );
             // Best-effort drift signal (docs/toolbox-versions.md §5): the base
             // image the sandbox was actually running at capture time.
