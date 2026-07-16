@@ -2,7 +2,7 @@
  * server's (`SshKeyService.computeFingerprint`) so the CLI can tell whether a
  * local key is already registered. */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
 import { join } from "node:path";
 
@@ -74,6 +74,14 @@ export function listLocalKeys(): LocalKey[] {
 
 export const atelierKeyExists = (): boolean =>
   existsSync(`${ATELIER_KEY_PATH}.pub`);
+
+/** Delete the atelier-managed keypair (both halves) if present — used by
+ * `regenerate`, which then writes a fresh one. */
+export function removeAtelierKey(): void {
+  for (const p of [ATELIER_KEY_PATH, `${ATELIER_KEY_PATH}.pub`]) {
+    if (existsSync(p)) rmSync(p);
+  }
+}
 
 /** A stable, human comment/name for the generated key: `atelier:user@host`. */
 export function defaultKeyLabel(): string {

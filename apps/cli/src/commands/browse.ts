@@ -1,7 +1,9 @@
 /** `atelier browse` (alias `i`) — the interactive sandbox cockpit: pick a
  * sandbox (or spawn a new one), then drive it (shell, browser, attach,
- * processes, logs/tail, exec, expose, env, sync, snapshot, pause/resume,
- * remove). */
+ * processes, logs, exec, pause/resume, remove). An Account entry exposes
+ * identity + SSH readiness and one-shot SSH setup/regenerate. Advanced,
+ * rarely-used actions (expose/env/sync/snapshot/add-process) live as scriptable
+ * subcommands to keep this menu lean. */
 import type {
   CreateSandboxResponse,
   PrebuildRecord,
@@ -20,9 +22,17 @@ import {
 import type { CliConfig } from "../config.ts";
 import type { Ctx } from "../context.ts";
 import { age, line, statusColor } from "../output.ts";
-import { listLocalKeys } from "../ssh-keys.ts";
+import {
+  ATELIER_KEY_PATH,
+  defaultKeyLabel,
+  generateAtelierKey,
+  type LocalKey,
+  listLocalKeys,
+  readLocalKey,
+  removeAtelierKey,
+} from "../ssh-keys.ts";
 import * as ui from "../ui.ts";
-import { collectFiles, openInBrowser, parseEnvPairs } from "../util.ts";
+import { openInBrowser, parseEnvPairs } from "../util.ts";
 import { followLogs } from "./logs-follow.ts";
 import { describeAnnotations, sshCommand } from "./sandbox-helpers.ts";
 
@@ -30,6 +40,9 @@ const BACK = Symbol("back");
 const NEW = "__new__";
 const QUIT = "__quit__";
 const FILTER = "__filter__";
+const ACCOUNT = "__account__";
+
+const ok = (v: boolean): string => (v ? pc.green("✓") : pc.red("✗"));
 
 /** Pick a sandbox from the live list, with an optional name filter and entries
  * to spawn a new one or quit. Returns an id, `NEW`, or null (quit). */
@@ -61,6 +74,7 @@ async function pickSandbox(
         label: `${r.id}  ${statusColor(r.status)}`,
         hint: `${describeAnnotations(r.annotations)} · ${age(r.createdAt)}`,
       })),
+      { value: ACCOUNT, label: pc.dim("Account & SSH") },
       { value: QUIT, label: pc.dim("Quit") },
     ],
   });
@@ -113,6 +127,136 @@ async function pickProcess(
       { value: BACK, label: pc.dim("Back") },
     ],
   });
+}
+
+/** The Account & SSH panel: show identity + SSH readiness, then offer to set up
+ * or regenerate the atelier SSH key. Kept out of the per-sandbox menu so global
+ * concerns live in one place. */
+async function accountMenu(api: AtelierApi): Promise<void> {
+  const s = ui.spinner();
+  s.start("Loading account…");
+  let me: Awaited<ReturnType<typeof loadMe>>;
+  let registered: LocalKey | undefined;
+  let localCount = 0;
+  try {
+    me = await loadMe(api);
+    const remote = unwrap(await api.api["ssh-keys"].get());
+    const localKeys = listLocalKeys();
+    localCount = localKeys.length;
+    registered = localKeys.find((k) =>
+      remote.some((r) => r.fingerprint === k.fingerprint),
+    );
+    s.stop("Account");
+  } catch (err) {
+    s.stop("Failed to load account");
+    ui.note(err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  const info = [`${pc.bold(me.username)}  ${pc.dim(me.email)}`, `id: ${me.id}`];
+  if (me.organizations.length > 0) {
+    info.push(`orgs: ${me.organizations.map((o) => o.name).join(", ")}`);
+  }
+  info.push("");
+  info.push(
+    `${ok(localCount > 0)} local ssh key ${pc.dim(localCount > 0 ? `${localCount} in ~/.ssh` : "none found")}`,
+  );
+  info.push(
+    `${ok(Boolean(registered))} ssh registered ${pc.dim(registered ? registered.fingerprint : "not set up")}`,
+  );
+  ui.note(info.join("\n"), "account");
+
+  const action = await ui.select<"setup" | "regen" | "back">({
+    message: "Account & SSH",
+    options: [
+      registered
+        ? {
+            value: "regen",
+            label: "Regenerate SSH key",
+            hint: "replace + re-register",
+          }
+        : {
+            value: "setup",
+            label: "Set up SSH",
+            hint: "generate + register a key",
+          },
+      { value: "back", label: pc.dim("Back") },
+    ],
+  });
+  if (action === "setup") await setupSsh(api);
+  else if (action === "regen") await regenSsh(api);
+}
+
+function loadMe(api: AtelierApi) {
+  return api.api.me.get().then(unwrap);
+}
+
+/** Generate the atelier key (if missing) and register it — the cockpit twin of
+ * `atelier ssh-key setup`. */
+async function setupSsh(api: AtelierApi): Promise<void> {
+  const s = ui.spinner();
+  s.start("Generating key…");
+  try {
+    const local = await generateAtelierKey();
+    s.message("Registering…");
+    const remote = unwrap(await api.api["ssh-keys"].get());
+    if (!remote.some((r) => r.fingerprint === local.fingerprint)) {
+      unwrap(
+        await api.api["ssh-keys"].post({
+          publicKey: local.publicKey,
+          name: defaultKeyLabel(),
+          type: "generated",
+        }),
+      );
+    }
+    s.stop("SSH set up");
+    ui.note(
+      `${ok(true)} ${local.fingerprint}\nprivate key: ${pc.dim(ATELIER_KEY_PATH)}`,
+    );
+  } catch (err) {
+    s.stop("Setup failed");
+    ui.note(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** De-register + delete the atelier key, then generate and register a fresh
+ * one. Destructive, so it confirms first. */
+async function regenSsh(api: AtelierApi): Promise<void> {
+  const yes = await ui.confirm({
+    message:
+      "Regenerate the atelier SSH key? The old key is removed everywhere.",
+    initialValue: false,
+  });
+  if (!yes) return;
+  const s = ui.spinner();
+  s.start("Regenerating…");
+  try {
+    const current = readLocalKey(`${ATELIER_KEY_PATH}.pub`);
+    if (current) {
+      const remote = unwrap(await api.api["ssh-keys"].get());
+      const match = remote.find((r) => r.fingerprint === current.fingerprint);
+      if (match)
+        await api.api["ssh-keys"]({ id: match.id }).delete().then(unwrap);
+    }
+    removeAtelierKey();
+    s.message("Generating new key…");
+    const local = await generateAtelierKey();
+    s.message("Registering…");
+    unwrap(
+      await api.api["ssh-keys"].post({
+        publicKey: local.publicKey,
+        name: defaultKeyLabel(),
+        type: "generated",
+      }),
+    );
+    s.stop("SSH key regenerated");
+    ui.note(
+      `${ok(true)} ${local.fingerprint}\nprivate key: ${pc.dim(ATELIER_KEY_PATH)}`,
+    );
+  } catch (err) {
+    s.stop("Regenerate failed");
+    ui.note(err instanceof Error ? err.message : String(err));
+  }
 }
 
 /** Trim a clone URL down to `owner/name` for a compact prebuild label. */
@@ -338,15 +482,9 @@ type Action =
   | "attach"
   | "exec"
   | "tail"
-  | "logs"
   | "start"
   | "stop"
   | "restart"
-  | "addproc"
-  | "expose"
-  | "env"
-  | "sync"
-  | "snapshot"
   | "pause"
   | "resume"
   | "refresh"
@@ -392,15 +530,9 @@ function actionMenu(
       { value: "attach", label: "Attach to a process (Ctrl-] detaches)" },
       { value: "exec", label: "Run a command" },
       { value: "tail", label: "Follow logs (live)" },
-      { value: "logs", label: "View logs (snapshot)" },
       { value: "start", label: "Start a process" },
       { value: "stop", label: "Stop a process" },
       { value: "restart", label: "Restart a process" },
-      { value: "addproc", label: "Add a process" },
-      { value: "expose", label: "Expose a port" },
-      { value: "env", label: "Patch env vars" },
-      { value: "sync", label: "Sync files" },
-      { value: "snapshot", label: "Snapshot" },
       { value: "pause", label: "Pause" },
     );
   }
@@ -483,18 +615,10 @@ async function runAction(
       if (res.stderr) line(pc.red(res.stderr.trimEnd()));
       return true;
     }
-    case "tail":
-    case "logs": {
+    case "tail": {
       const name = await pickProcess(state, "Which process?");
       if (name === BACK) return true;
-      if (action === "tail") {
-        await tailLogs(api, id, name);
-      } else {
-        const { content } = unwrap(
-          await api.v1.sandboxes({ id }).processes({ name }).logs.get(),
-        );
-        line(content.trimEnd() || pc.dim("(no output)"));
-      }
+      await tailLogs(api, id, name);
       return true;
     }
     case "start":
@@ -519,80 +643,6 @@ async function runAction(
       await proc(name, "stop").then(unwrap);
       await proc(name, "start").then(unwrap);
       s.stop(`Restarted ${name}`);
-      return true;
-    }
-    case "addproc": {
-      const name = await ui.text({ message: "Process name" });
-      if (!name.trim()) return true;
-      const command = await ui.text({ message: "Command" });
-      if (!command.trim()) return true;
-      const s = ui.spinner();
-      s.start("Adding…");
-      await api.v1
-        .sandboxes({ id })
-        .processes.post({ name: name.trim(), command: command.trim() })
-        .then(unwrap);
-      s.stop(`Added ${name.trim()}`);
-      return true;
-    }
-    case "expose": {
-      const name = await ui.text({ message: "Port name", placeholder: "web" });
-      if (!name.trim()) return true;
-      const portStr = await ui.text({ message: "Port", placeholder: "3000" });
-      const port = Number(portStr);
-      if (!Number.isFinite(port)) {
-        ui.note("Invalid port.");
-        return true;
-      }
-      const s = ui.spinner();
-      s.start("Exposing…");
-      await api.v1
-        .sandboxes({ id })
-        .ports.post({ name: name.trim(), port, public: true })
-        .then(unwrap);
-      s.stop(`Exposed ${name.trim()} (:${port})`);
-      return true;
-    }
-    case "env": {
-      const raw = await ui.text({
-        message: "Env vars (space-separated KEY=VALUE)",
-        placeholder: "FOO=bar BAZ=qux",
-      });
-      if (!raw.trim()) return true;
-      const env = parseEnvPairs(raw.trim().split(/\s+/));
-      const s = ui.spinner();
-      s.start("Patching…");
-      await api.v1.sandboxes({ id }).env.patch(env).then(unwrap);
-      s.stop(`Patched ${Object.keys(env).length} var(s)`);
-      return true;
-    }
-    case "sync": {
-      const local = await ui.text({
-        message: "Local path",
-        placeholder: "./.config",
-      });
-      if (!local.trim()) return true;
-      const remote = await ui.text({
-        message: "Remote path",
-        placeholder: "/home/dev/.config",
-      });
-      if (!remote.trim()) return true;
-      const files = collectFiles(local.trim(), remote.trim());
-      if (files.length === 0) {
-        ui.note("No files found.");
-        return true;
-      }
-      const s = ui.spinner();
-      s.start(`Syncing ${files.length} file(s)…`);
-      await api.v1.sandboxes({ id }).files.patch(files).then(unwrap);
-      s.stop(`Synced ${files.length} file(s)`);
-      return true;
-    }
-    case "snapshot": {
-      const s = ui.spinner();
-      s.start("Snapshotting…");
-      const ref = unwrap(await api.v1.sandboxes({ id }).snapshot.post());
-      s.stop(`Snapshot ${ref.ref}`);
       return true;
     }
     case "pause": {
@@ -642,11 +692,17 @@ export async function browseInteractive(ctx: Ctx): Promise<void> {
   }
   const api = ctx.api();
   const cfg = ctx.config();
-  const sshReady = await computeSshReady(api);
+  let sshReady = await computeSshReady(api);
   ui.intro(pc.cyan("atelier"));
   while (true) {
     const picked = await pickSandbox(api);
     if (!picked) break;
+    if (picked === ACCOUNT) {
+      await accountMenu(api);
+      // SSH may have been set up / regenerated in the panel.
+      sshReady = await computeSshReady(api);
+      continue;
+    }
     const id = picked === NEW ? await spawnFlow(api) : picked;
     if (!id) continue;
     // Inner loop: drive one sandbox until back / removed.
