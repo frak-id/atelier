@@ -74,16 +74,22 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
   const labels = sandboxLabels(options.sandboxId, options.workspaceId);
 
   const volumeMounts: Array<Record<string, unknown>> = [];
+  const volumeDevices: Array<Record<string, unknown>> = [];
   const volumes: Array<Record<string, unknown>> = [];
 
   if (options.pvcName) {
-    // PVC mounts at VM.DATA, not VM.HOME (toolset-overlay-squashfs.md §3):
-    // the guest entrypoint assembles an overlay at HOME from `/home/skel`
-    // (image lower) + toolset squashfs blobs (pulled to DATA_TOOLSETS) as
-    // read-only lowers, with DATA_UPPER/DATA_WORK as the writable upper.
-    volumeMounts.push({
+    // The workspace PVC is attached as a RAW BLOCK device (`volumeMode:
+    // Block`), NOT a pre-mounted filesystem. Under Kata this passes through to
+    // the guest as virtio-blk; `sandbox-boot.sh` formats it ext4 on first boot
+    // and mounts it at VM.DATA. This is what gives overlayfs a real
+    // `trusted.overlay.*`-capable upper (no virtio-fs `userxattr` shim) and
+    // fixes in-place `pi update` (toolset-inplace-update-fix-options.md §3).
+    // The guest assembles an overlay at HOME from `/home/skel` (image lower) +
+    // toolset squashfs blobs (pulled to DATA_TOOLSETS) as read-only lowers,
+    // with DATA_UPPER/DATA_WORK on the ext4 upper.
+    volumeDevices.push({
       name: "workspace",
-      mountPath: VM.DATA,
+      devicePath: VM.DATA_DEVICE,
     });
     volumes.push({
       name: "workspace",
@@ -163,6 +169,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
             },
           },
           ...(volumeMounts.length > 0 && { volumeMounts }),
+          ...(volumeDevices.length > 0 && { volumeDevices }),
         },
       ],
       ...(volumes.length > 0 && { volumes }),
@@ -300,6 +307,12 @@ export function buildPvc(options: PvcOptions): KubeResource {
 
   const spec: Record<string, unknown> = {
     accessModes: ["ReadWriteOnce"],
+    // Raw block volume: the guest formats/mounts it natively (virtio-blk under
+    // Kata), rather than the CSI/kubelet presenting a formatted filesystem.
+    // This removes the virtio-fs xattr limitation that broke in-place overlay
+    // updates (toolset-inplace-update-fix-options.md §3). The storage class
+    // (topolvm-thin) must support Block mode + block-volume VolumeSnapshots.
+    volumeMode: "Block",
     resources: {
       requests: { storage: options.size },
     },
