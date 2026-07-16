@@ -20,7 +20,7 @@ import {
 import type { CliConfig } from "../config.ts";
 import type { Ctx } from "../context.ts";
 import { age, line, statusColor } from "../output.ts";
-import { atelierKeyExists } from "../ssh-keys.ts";
+import { listLocalKeys } from "../ssh-keys.ts";
 import * as ui from "../ui.ts";
 import { collectFiles, openInBrowser, parseEnvPairs } from "../util.ts";
 import { followLogs } from "./logs-follow.ts";
@@ -73,7 +73,7 @@ async function pickSandbox(
   return choice;
 }
 
-function summarize(state: SandboxState): void {
+function summarize(state: SandboxState, sshReady: boolean): void {
   const lines: string[] = [`status: ${statusColor(state.status)}`];
   if (state.processes.length > 0) {
     lines.push(
@@ -83,6 +83,8 @@ function summarize(state: SandboxState): void {
     );
   }
   for (const u of state.urls) {
+    // Hide the ssh endpoint entirely when SSH isn't set up locally.
+    if (u.name === "ssh" && !sshReady) continue;
     const ready = u.ready === false ? pc.yellow(" (not ready)") : "";
     lines.push(`${u.name}: ${pc.cyan(u.url)}${ready}`);
   }
@@ -351,7 +353,25 @@ type Action =
   | "rm"
   | "back";
 
-function actionMenu(state: SandboxState): {
+/** SSH is "set up" when a local key exists AND it's registered on the server
+ * — the same readiness `config doctor` reports. Computed once per cockpit
+ * session; when false the SSH shell option is hidden entirely. */
+async function computeSshReady(api: AtelierApi): Promise<boolean> {
+  try {
+    const local = listLocalKeys();
+    if (local.length === 0) return false;
+    const remote = unwrap(await api.api["ssh-keys"].get());
+    const registered = new Set(remote.map((k) => k.fingerprint));
+    return local.some((k) => registered.has(k.fingerprint));
+  } catch {
+    return false;
+  }
+}
+
+function actionMenu(
+  state: SandboxState,
+  sshReady: boolean,
+): {
   value: Action;
   label: string;
   hint?: string;
@@ -361,7 +381,8 @@ function actionMenu(state: SandboxState): {
   const opts: { value: Action; label: string; hint?: string }[] = [];
   const openable = state.urls.filter((u) => u.name !== "ssh");
   if (running) {
-    if (sshCommand(state.urls)) {
+    // Only offer SSH when it will actually work (key set up + registered).
+    if (sshReady && sshCommand(state.urls)) {
       opts.push({ value: "shell", label: "Open SSH shell" });
     }
     if (openable.length > 0) {
@@ -398,10 +419,11 @@ async function runAction(
   cfg: CliConfig,
   id: string,
   state: SandboxState,
+  sshReady: boolean,
 ): Promise<boolean> {
   const action = await ui.select<Action>({
     message: id,
-    options: actionMenu(state),
+    options: actionMenu(state, sshReady),
   });
   const proc = (name: string, act: "start" | "stop") =>
     api.v1.sandboxes({ id }).processes({ name })({ action: act }).post();
@@ -414,11 +436,7 @@ async function runAction(
     case "shell": {
       const cmd = sshCommand(state.urls);
       if (!cmd) {
-        ui.note(
-          atelierKeyExists()
-            ? "No ssh endpoint."
-            : "No ssh endpoint. Run `atelier ssh-key setup` first.",
-        );
+        ui.note("No ssh endpoint.");
         return true;
       }
       line(pc.dim(`$ ${cmd.join(" ")}`));
@@ -624,6 +642,7 @@ export async function browseInteractive(ctx: Ctx): Promise<void> {
   }
   const api = ctx.api();
   const cfg = ctx.config();
+  const sshReady = await computeSshReady(api);
   ui.intro(pc.cyan("atelier"));
   while (true) {
     const picked = await pickSandbox(api);
@@ -640,8 +659,8 @@ export async function browseInteractive(ctx: Ctx): Promise<void> {
         ui.note("Sandbox is gone.");
         break;
       }
-      summarize(state);
-      inMenu = await runAction(api, cfg, id, state);
+      summarize(state, sshReady);
+      inMenu = await runAction(api, cfg, id, state, sshReady);
     }
   }
   ui.outro("Bye.");
