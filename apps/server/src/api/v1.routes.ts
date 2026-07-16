@@ -169,6 +169,7 @@ export async function createSandboxForUser(
   user: { id: string; username: string; email: string },
   body: CreateSandboxRequest,
   id?: string,
+  onProgress?: (msg: string) => void,
 ) {
   const { runtime, control } = container;
   // The body is a spec plus the high-level references the caller picked
@@ -180,11 +181,13 @@ export async function createSandboxForUser(
   // resolve it to the current snapshot (idempotent — a cache hit when
   // unchanged) so an updated prebuild is picked up here.
   if (prebuild) {
+    onProgress?.("resolving prebuild…");
     const snapshot = await runtime.prebuild(prebuild, {
       githubToken: control.userService.resolveGitHubToken(user.id),
     });
     spec = { ...spec, source: { snapshot: snapshot.ref } };
   }
+  if (selectors.length > 0) onProgress?.("resolving toolboxes…");
   const orgId = resolveOrgId(control, user.id);
   const authorizedKeys = control.sshKeyService.getValidPublicKeys();
   // The sandbox owner (git user): identity for attribution/display + GitHub
@@ -237,7 +240,7 @@ export async function createSandboxForUser(
     processes: mergeByName(surface.processes, enriched.processes),
     ports: mergeByName(surface.ports, enriched.ports),
   };
-  return runtime.create(withToolboxes, { authorizedKeys, id });
+  return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
 }
 
 export function createV1Routes(container: ServerContainer) {
@@ -560,7 +563,8 @@ export function createV1Routes(container: ServerContainer) {
               metadata: { sandboxId: id },
               unpooled: true,
             },
-            () => createSandboxForUser(container, user, req, id),
+            (_signal, log) =>
+              createSandboxForUser(container, user, req, id, log),
           );
           set.status = 202;
           return job;

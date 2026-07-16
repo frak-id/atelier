@@ -41,6 +41,7 @@ export async function multiselect<T>(opts: {
   message: string;
   options: { value: T; label: string; hint?: string }[];
   required?: boolean;
+  initialValues?: T[];
 }): Promise<T[]> {
   const r = await clack.multiselect(
     opts as unknown as Parameters<typeof clack.multiselect>[0],

@@ -82,6 +82,9 @@ export interface RuntimeCreateOptions {
   id?: string;
   /** SSH public keys authorized on the pipe — content resolved by the caller. */
   authorizedKeys?: string[];
+  /** Optional boot-progress sink: coarse phase lines streamed to the caller
+   * (e.g. the sandbox-create job log the CLI/console tails during boot). */
+  onProgress?: (msg: string) => void;
 }
 
 export interface RuntimeDeps {
@@ -543,7 +546,9 @@ export class RuntimeService {
     if (this.sandboxes.get(id)) {
       throw new ConflictError(`Sandbox ${id} already exists`);
     }
+    const progress = options.onProgress ?? (() => {});
     const { image, snapshotName } = await this.resolveSource(spec.source);
+    progress(`source resolved (${snapshotName ?? image})`);
 
     const now = new Date().toISOString();
     const record: SandboxRecord = {
@@ -561,6 +566,7 @@ export class RuntimeService {
     try {
       // bootSandbox pushes config + writes files[]. The fixed phase order
       // (atelier-v2 §6): files/env -> postCreate -> processes -> postStart.
+      progress("booting pod…");
       const boot = await this.backend.boot(
         id,
         spec,
@@ -572,6 +578,7 @@ export class RuntimeService {
         },
         this.agent,
       );
+      progress("pod up…");
       // Persist which toolsets this sandbox mounted (toolset-overlay-squashfs
       // .md §6-7) as soon as boot (⇒ materialize ⇒ mounted) succeeds — NOT
       // after postStart — so a concurrent deleteToolset can't slip past the GC
@@ -583,9 +590,12 @@ export class RuntimeService {
       this.sandboxToolsetRefs.putForSandbox(id, toRefEntries(spec.toolsets));
 
       await this.runPhase(id, "postCreate");
+      progress("reconciling processes…");
       await this.agent.reconcile(id);
       await this.gateOnPrimary(id);
+      progress("primary ready, running postStart…");
       await this.runPhase(id, "postStart");
+      progress("sandbox running");
 
       this.sandboxes.update(id, {
         status: "running",

@@ -2,11 +2,21 @@
  * sandbox (or spawn a new one), then drive it (shell, browser, attach,
  * processes, logs/tail, exec, expose, env, sync, snapshot, pause/resume,
  * remove). */
-import type { CreateSandboxResponse, SandboxState } from "@atelier/spec";
+import type {
+  CreateSandboxResponse,
+  PrebuildRecord,
+  SandboxState,
+  ToolboxConfig,
+} from "@atelier/spec";
 import type { Command } from "commander";
 import pc from "picocolors";
 import { attach } from "../attach.ts";
-import { type AtelierApi, unwrap, waitForJob } from "../client.ts";
+import {
+  ApiError,
+  type AtelierApi,
+  type JobRecord,
+  unwrap,
+} from "../client.ts";
 import type { CliConfig } from "../config.ts";
 import type { Ctx } from "../context.ts";
 import { age, line, statusColor } from "../output.ts";
@@ -103,21 +113,133 @@ async function pickProcess(
   });
 }
 
-/** Spawn a new sandbox from within the cockpit: image ref, saved spec, or
- * prebuild snapshot. Returns the new id, or null if cancelled. */
+/** Trim a clone URL down to `owner/name` for a compact prebuild label. */
+function shortRepo(url: string): string {
+  return url
+    .replace(/^https?:\/\/[^/]+\//, "")
+    .replace(/^git@[^:]+:/, "")
+    .replace(/\.git$/, "");
+}
+
+/** A one-line summary for a prebuild: repo@branch · build age · base image. */
+function prebuildHint(p: PrebuildRecord): string {
+  const repo =
+    p.spec?.repos?.[0]?.url ?? p.metadata?.repo ?? p.metadata?.workspace;
+  const branch = p.spec?.repos?.[0]?.branch ?? p.metadata?.branch;
+  const parts: string[] = [];
+  if (repo) parts.push(shortRepo(repo) + (branch ? `@${branch}` : ""));
+  parts.push(`built ${age(p.createdAt)} ago`);
+  if (p.image) parts.push(p.image);
+  return parts.join(" · ");
+}
+
+const toolboxSelector = (t: ToolboxConfig) =>
+  `tb/${t.ownerType}/${t.ownerId}/${t.slug}`;
+
+/** Surface a toolbox provides, mirroring the console's spawn badges: whether
+ * it's always-on, its harness, the processes it runs, and its description. */
+function toolboxHint(t: ToolboxConfig): string {
+  const parts: string[] = [];
+  if (t.autoInject) parts.push("always on");
+  if (t.harness) parts.push(`harness: ${t.harness}`);
+  if (t.processes && t.processes.length > 0) {
+    parts.push(`runs: ${t.processes.map((p) => p.name).join(",")}`);
+  }
+  if (t.description) parts.push(t.description);
+  return parts.join(" · ");
+}
+
+/** Every toolbox visible to the caller (personal + each org they belong to). */
+async function gatherToolboxes(api: AtelierApi): Promise<ToolboxConfig[]> {
+  const me = unwrap(await api.api.me.get());
+  const owners: (string | undefined)[] = [
+    undefined,
+    ...me.organizations.map((o) => `org:${o.id}`),
+  ];
+  const lists = await Promise.all(
+    owners.map((o) =>
+      api.api.toolboxes.get({ query: o ? { owner: o } : {} }).then(unwrap),
+    ),
+  );
+  const seen = new Set<string>();
+  return lists.flat().filter((t) => {
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
+    return true;
+  });
+}
+
+/** Offer the caller's toolboxes as a multi-select. Auto-inject toolboxes are
+ * pre-checked and always included (the server injects them regardless). */
+async function pickToolboxes(api: AtelierApi): Promise<string[]> {
+  const toolboxes = await gatherToolboxes(api).catch(() => []);
+  if (toolboxes.length === 0) return [];
+  const forced = toolboxes.filter((t) => t.autoInject).map(toolboxSelector);
+  const picks = await ui.multiselect<string>({
+    message: "Toolsets to layer on (auto ones are always on)",
+    required: false,
+    initialValues: forced,
+    options: toolboxes.map((t) => ({
+      value: toolboxSelector(t),
+      label: t.slug,
+      hint: toolboxHint(t),
+    })),
+  });
+  return Array.from(new Set([...forced, ...picks]));
+}
+
+/** Block on a sandbox-create job while streaming its boot progress log. */
+async function bootWithLogs(
+  api: AtelierApi,
+  job: JobRecord,
+): Promise<CreateSandboxResponse> {
+  line(pc.dim("booting…"));
+  let printed = 0;
+  let current = job;
+  const flush = async () => {
+    try {
+      const { log } = unwrap(await api.v1.jobs({ id: current.id }).logs.get());
+      if (log.length > printed) {
+        for (const l of log.slice(printed).split("\n")) {
+          if (l) line(pc.dim(`  ${l}`));
+        }
+        printed = log.length;
+      }
+    } catch {
+      // Log endpoint is best-effort; keep polling status.
+    }
+  };
+  while (current.status === "queued" || current.status === "running") {
+    await flush();
+    await new Promise((r) => setTimeout(r, 900));
+    current = unwrap(await api.v1.jobs({ id: current.id }).get());
+  }
+  await flush();
+  if (current.status !== "succeeded") {
+    throw new ApiError(
+      current.status === "canceled" ? 499 : 500,
+      current.error ?? `boot ${current.status}`,
+    );
+  }
+  return current.result as CreateSandboxResponse;
+}
+
+/** Spawn a new sandbox from within the cockpit: pick a core (image / saved
+ * spec / prebuild), layer on toolboxes, then boot with a live progress log. */
 async function spawnFlow(api: AtelierApi): Promise<string | null> {
   const source = await ui.select<"image" | "spec" | "prebuild" | "cancel">({
     message: "New sandbox from…",
     options: [
-      { value: "image", label: "Image ref" },
+      { value: "image", label: "Base image" },
+      { value: "prebuild", label: "Prebuild (repo snapshot)" },
       { value: "spec", label: "Saved spec" },
-      { value: "prebuild", label: "Prebuild snapshot" },
       { value: "cancel", label: pc.dim("Cancel") },
     ],
   });
   if (source === "cancel") return null;
 
-  let body: unknown;
+  // ── 1. core source ──────────────────────────────────────────────────────
+  let body: Record<string, unknown> | undefined;
   if (source === "image") {
     const image = await ui.text({
       message: "Image ref",
@@ -138,7 +260,7 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
       message: "Which spec?",
       options: specs.map((s) => ({ value: s.id, label: s.name })),
     });
-    body = specs.find((s) => s.id === id)?.spec;
+    body = specs.find((s) => s.id === id)?.spec as Record<string, unknown>;
   } else {
     const prebuilds = unwrap(await api.v1.prebuilds.get());
     if (prebuilds.length === 0) {
@@ -150,7 +272,7 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
       options: prebuilds.map((p) => ({
         value: p.ref,
         label: p.ref,
-        hint: p.hash,
+        hint: prebuildHint(p),
       })),
     });
     body = {
@@ -158,23 +280,23 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
       resources: { vcpus: 2, memoryMb: 2048 },
     };
   }
+  if (!body) return null;
 
-  const s = ui.spinner();
-  s.start("Creating…");
+  // ── 2. toolboxes ────────────────────────────────────────────────────────
+  const toolboxes = await pickToolboxes(api);
+  const finalBody = toolboxes.length > 0 ? { ...body, toolboxes } : body;
+
+  // ── 3. boot (streaming the progress log) ────────────────────────────────
+  const job = unwrap(
+    // biome-ignore lint/suspicious/noExplicitAny: body is a validated spec union
+    await api.v1.sandboxes.post(finalBody as any),
+  );
   try {
-    // Spawn answers 202 with a job now; block on it so the cockpit only
-    // proceeds once the sandbox is actually up (job.result is the sandbox).
-    const job = unwrap(
-      // biome-ignore lint/suspicious/noExplicitAny: body is a validated spec union
-      await api.v1.sandboxes.post(body as any),
-    );
-    const result = await waitForJob<CreateSandboxResponse>(api, job);
-    s.stop(`Created ${result.id}`);
+    const result = await bootWithLogs(api, job);
+    line(pc.green(`✓ ${result.id} ready`));
     return result.id;
   } catch (err) {
-    // Stop the spinner cleanly before the error propagates (a late job
-    // failure could otherwise leave it spinning on "Creating…").
-    s.stop("Failed");
+    line(pc.red("boot failed"));
     throw err;
   }
 }
