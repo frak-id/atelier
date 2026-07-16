@@ -87,6 +87,13 @@ async function pickSandbox(
   return choice;
 }
 
+/** Non-ssh URLs that are actually reachable: `ready === false` means a gating
+ * process isn't up yet, so opening it would just fail — exclude those. An
+ * undefined `ready` (ungated) counts as available. */
+function openableUrls(state: SandboxState): SandboxState["urls"] {
+  return state.urls.filter((u) => u.name !== "ssh" && u.ready !== false);
+}
+
 function summarize(state: SandboxState, sshReady: boolean): void {
   const lines: string[] = [`status: ${statusColor(state.status)}`];
   if (state.processes.length > 0) {
@@ -517,13 +524,13 @@ function actionMenu(
   const running = state.status === "running";
   const paused = state.status === "paused";
   const opts: { value: Action; label: string; hint?: string }[] = [];
-  const openable = state.urls.filter((u) => u.name !== "ssh");
   if (running) {
     // Only offer SSH when it will actually work (key set up + registered).
     if (sshReady && sshCommand(state.urls)) {
       opts.push({ value: "shell", label: "Open SSH shell" });
     }
-    if (openable.length > 0) {
+    // Only offer "Open URL" when at least one non-ssh URL is actually reachable.
+    if (openableUrls(state).length > 0) {
       opts.push({ value: "open", label: "Open URL in browser" });
     }
     opts.push(
@@ -576,7 +583,8 @@ async function runAction(
       return true;
     }
     case "open": {
-      const openable = state.urls.filter((u) => u.name !== "ssh");
+      const openable = openableUrls(state);
+      // Single reachable URL opens directly; several prompt a picker.
       const url =
         openable.length === 1
           ? openable[0]?.url
