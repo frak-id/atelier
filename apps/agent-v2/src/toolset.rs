@@ -57,6 +57,13 @@ const HOME_FAILED_MARKER: &str = "/run/home-failed";
 /// does NOT re-drive. Lives under DATA_TOOLSETS but is not a blob
 /// (`*.erofs`/`*.sqfs`), so the stale-blob sweep leaves it alone.
 const MATERIALIZE_REQUEST_PATH: &str = "/data/toolsets/.materialize.json";
+/// Overlay mount option tail for `/home/dev`. `/data` (the upper) is a native
+/// ext4 on a virtio-blk device — NOT a virtio-fs share — so overlayfs gets real
+/// `trusted.overlay.*` xattrs and we do NOT use `userxattr`. `redirect_dir=on`
+/// is passed explicitly (don't rely on the kernel default) so npm's atomic
+/// rename-then-mkdir works on the first in-place toolset update; `index`/
+/// `metacopy` stay off (see toolset-inplace-update-fix-options.md §5).
+const OVERLAY_MOUNT_OPTS: &str = "redirect_dir=on,index=off,metacopy=off";
 const ARTIFACT_TYPE: &str = "application/vnd.atelier.toolset.v1";
 
 /// A read-only, loop-mountable blob filesystem. The agent builds with the
@@ -1089,9 +1096,10 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
          chown 1000:1000 {upper}\n\
          if mountpoint -q {home}; then umount {home}; fi\n\
          mount -t overlay overlay {home} \
-           -o lowerdir={lowerdir},upperdir={upper},workdir={work},redirect_dir=on,index=off,metacopy=off\n\
+           -o lowerdir={lowerdir},upperdir={upper},workdir={work},{opts}\n\
          : > {ready}\n\
          rm -f {failed}",
+        opts = OVERLAY_MOUNT_OPTS,
         upper = sh_quote(DATA_UPPER),
         work = sh_quote(DATA_WORK),
         home = sh_quote(HOME),
@@ -1326,6 +1334,19 @@ mod tests {
         assert!(script.contains(STAGE_DIR));
         assert!(STAGE_DIR.starts_with("/home/dev/."));
         assert!(script.contains("atelier-toolset-stage.*"));
+    }
+
+    #[test]
+    fn overlay_mount_opts_use_trusted_xattrs_not_userxattr() {
+        // Option C: the upper is native ext4 on virtio-blk, so overlay must use
+        // real trusted.overlay.* (redirect_dir=on) and NEVER userxattr — which
+        // would force redirect_dir=nofollow and re-break in-place `pi update`.
+        assert!(OVERLAY_MOUNT_OPTS.contains("redirect_dir=on"));
+        assert!(!OVERLAY_MOUNT_OPTS.contains("userxattr"));
+        // index/metacopy stay off (squashfs lowers are -no-exports; metacopy
+        // drags in origin-xattr paths we don't need).
+        assert!(OVERLAY_MOUNT_OPTS.contains("index=off"));
+        assert!(OVERLAY_MOUNT_OPTS.contains("metacopy=off"));
     }
 
     #[test]
