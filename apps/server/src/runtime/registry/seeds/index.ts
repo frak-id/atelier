@@ -108,6 +108,29 @@ function resolveContextDir(seedDir: string, contextFrom?: string): string {
   return seedDir;
 }
 
+/** H6: `rewriteSeedDockerfile` (`image-builder.service.ts`) resolves every
+ * `substitutions[].seed` through the SAME `dependsOn`-ordering contract
+ * `buildSeed` enforces (parents must already be built) — a substitution
+ * naming a seed absent from `dependsOn` would only surface as a build-time
+ * failure (or worse, silently resolve against a stale/unrelated image if one
+ * happens to share the name). Validate the subset at load so a drifted
+ * `image.json` fails loudly at server boot instead. */
+function assertSubstitutionsSubsetOfDependsOn(
+  manifestPath: string,
+  file: SeedManifestFile,
+): void {
+  const dependsOn = new Set(file.dependsOn);
+  for (const sub of file.substitutions) {
+    if (!dependsOn.has(sub.seed)) {
+      throw new Error(
+        `Malformed seed manifest ${manifestPath}: substitution token ` +
+          `'${sub.token}' references seed '${sub.seed}', which is not ` +
+          `listed in dependsOn (${JSON.stringify(file.dependsOn)}).`,
+      );
+    }
+  }
+}
+
 function readSeed(id: string): SeedManifest {
   const seedDir = join(SEEDS_DIR, id);
   const manifestPath = join(seedDir, "image.json");
@@ -122,19 +145,55 @@ function readSeed(id: string): SeedManifest {
     throw new Error(`Malformed seed manifest ${manifestPath}: ${errors}`);
   }
   const file = raw as SeedManifestFile;
+  assertSubstitutionsSubsetOfDependsOn(manifestPath, file);
   const contextDir = resolveContextDir(seedDir, file.contextFrom);
   return { ...file, id, contextDir };
 }
 
+/** H6: reject a `dependsOn` cycle across the whole seed set — a cycle would
+ * make `buildSeed`'s "parents must already be a ready image" check
+ * unsatisfiable for every seed in the loop (none can ever build first).
+ * Plain DFS with a recursion stack; seed graphs are tiny (a handful of
+ * nodes) so this stays O(seeds + edges) with no need for anything fancier. */
+function assertNoDependsOnCycle(seeds: SeedManifest[]): void {
+  const byId = new Map(seeds.map((s) => [s.id, s]));
+  const state = new Map<string, "visiting" | "done">();
+
+  const visit = (id: string, path: string[]): void => {
+    const status = state.get(id);
+    if (status === "done") return;
+    if (status === "visiting") {
+      throw new Error(
+        `Seed dependsOn cycle detected: ${[...path, id].join(" -> ")}`,
+      );
+    }
+    state.set(id, "visiting");
+    const seed = byId.get(id);
+    // A dependsOn entry naming a seed that doesn't exist on disk isn't a
+    // cycle — leave that failure to buildSeed's own "has not been built yet"
+    // guard, which already handles a missing/unbuilt parent at build time.
+    if (seed) {
+      for (const parent of seed.dependsOn) visit(parent, [...path, id]);
+    }
+    state.set(id, "done");
+  };
+
+  for (const seed of seeds) visit(seed.id, []);
+}
+
 /** Load every embedded seed's manifest (cached after the first call — seeds
  * are baked into the server image and never change at runtime). Throws
- * loudly on a malformed `image.json` rather than silently skipping it. */
+ * loudly on a malformed `image.json` (including a `substitutions`/
+ * `dependsOn` drift or a `dependsOn` cycle, H6) rather than silently
+ * skipping it. */
 export function loadSeeds(): SeedManifest[] {
   if (cache) return cache;
   const ids = readdirSync(SEEDS_DIR).filter((entry) =>
     statSync(join(SEEDS_DIR, entry)).isDirectory(),
   );
-  cache = ids.map(readSeed).sort((a, b) => a.id.localeCompare(b.id));
+  const seeds = ids.map(readSeed).sort((a, b) => a.id.localeCompare(b.id));
+  assertNoDependsOnCycle(seeds);
+  cache = seeds;
   return cache;
 }
 

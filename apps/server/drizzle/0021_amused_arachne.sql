@@ -1,0 +1,1 @@
+ALTER TABLE `sandbox_toolset_refs` DROP COLUMN `digest`;

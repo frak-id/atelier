@@ -12,10 +12,11 @@
  * registry is plain HTTP); `cacheRepo` enables `--cache` against that repo.
  */
 import { config } from "../../../shared/lib/config.ts";
-import type {
-  ImageBuilderBackend,
-  ImageBuildRequest,
-  ImageBuildResult,
+import {
+  formatBuildArgs,
+  type ImageBuilderBackend,
+  type ImageBuildRequest,
+  type ImageBuildResult,
 } from "./builder.types.ts";
 import {
   jobResourceName,
@@ -66,9 +67,11 @@ export function kanikoArgs(req: ImageBuildRequest): string[] {
     `--custom-platform=${config.imageBuilder.platform ?? "linux/amd64"}`,
   ];
 
-  for (const [key, value] of Object.entries(req.buildArgs ?? {})) {
-    args.push(`--build-arg=${key}=${value}`);
-  }
+  args.push(
+    ...formatBuildArgs(req.buildArgs, (key, value) => [
+      `--build-arg=${key}=${value}`,
+    ]),
+  );
 
   if (req.insecureRegistry) {
     args.push(

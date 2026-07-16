@@ -50,9 +50,12 @@ async fn read_limited<R: tokio::io::AsyncRead + Unpin>(reader: R, max: usize) ->
     (buf, n >= max)
 }
 
-/// Run `command` under `/bin/bash -l -c`, bounded by `timeout_ms` and
-/// `max_output_bytes`. `env` is layered onto the process environment (pod env +
-/// per-call additions); `user`/`workdir` follow the v2 user model.
+/// Run `command` under a login shell (`/bin/bash -l -c`), bounded by
+/// `timeout_ms` and `max_output_bytes`. `env` is layered onto the process
+/// environment (pod env + per-call additions); `user`/`workdir` follow the v2
+/// user model. Thin wrapper over `run_with_login` that preserves every
+/// existing caller's behavior (exec routes, hooks, `build`/`capture`) — the
+/// login shell is the default so those callers need no change.
 pub async fn run(
     command: &str,
     timeout_ms: u64,
@@ -61,11 +64,34 @@ pub async fn run(
     env: &HashMap<String, String>,
     max_output_bytes: usize,
 ) -> ExecResult {
+    run_with_login(command, timeout_ms, user, workdir, env, max_output_bytes, true).await
+}
+
+/// Same as `run`, with an explicit `login` choice. `login: false` runs under
+/// a plain `/bin/bash -c` instead of `-l -c` — skips sourcing `/etc/profile`
+/// and every `profile.d/*.sh` script, a cost a purely root-run
+/// mkdir/mount/find/rm plumbing script (the agent's toolset
+/// materialize/cleanup/overlay/sweep scripts — see `toolset.rs`) never
+/// benefits from paying on every invocation. `readiness.rs`'s `probe_cmd`
+/// already set this non-login precedent for the same reason.
+pub async fn run_with_login(
+    command: &str,
+    timeout_ms: u64,
+    user: Option<&str>,
+    workdir: Option<&str>,
+    env: &HashMap<String, String>,
+    max_output_bytes: usize,
+    login: bool,
+) -> ExecResult {
     let timeout = Duration::from_millis(timeout_ms);
 
     let mut cmd = Command::new("/bin/bash");
-    cmd.args(["-l", "-c", command])
-        .stdin(Stdio::null())
+    if login {
+        cmd.args(["-l", "-c", command]);
+    } else {
+        cmd.args(["-c", command]);
+    }
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (k, v) in env {

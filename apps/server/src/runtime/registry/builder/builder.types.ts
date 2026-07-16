@@ -76,3 +76,29 @@ export interface ImageBuilderBackend {
     signal: AbortSignal,
   ): Promise<ImageBuildResult>;
 }
+
+/** Single-quote a shell argument (POSIX), escaping embedded single quotes —
+ * the same scheme `runtime.service.ts`'s `shellQuote` and the agent's
+ * `sh_quote` (Rust) use. Only the buildkit backend currently needs this (its
+ * `buildctl` invocation runs through `sh -c`); docker/kaniko pass args
+ * straight to argv (no shell involved) so they don't need quoting, but they
+ * still go through {@link formatBuildArgs} for a single shared loop. */
+export function shQuote(arg: string): string {
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+/** Shared `req.buildArgs` → argv-flag formatting loop, used by all three
+ * backends (H2): each backend differs only in the flag SHAPE it wants per
+ * key/value pair (`--build-arg k=v`, `--build-arg=k=v`, `--opt
+ * build-arg:k=v`), supplied via `formatFlag`. Centralizing the loop means a
+ * quoting fix (H1) or a future encoding change only needs to happen once. */
+export function formatBuildArgs(
+  buildArgs: Record<string, string> | undefined,
+  formatFlag: (key: string, value: string) => string[],
+): string[] {
+  const out: string[] = [];
+  for (const [key, value] of Object.entries(buildArgs ?? {})) {
+    out.push(...formatFlag(key, value));
+  }
+  return out;
+}

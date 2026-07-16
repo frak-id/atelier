@@ -131,18 +131,16 @@ export interface ToolsetStore {
 }
 
 /** One mounted toolset on one sandbox — the many-to-many join
- * (toolset-overlay-squashfs.md §6-7): resume re-mounts from `getForSandbox`,
- * the GC guard refuses to delete a ref in `referencedRefs()`. */
+ * (toolset-overlay-squashfs.md §6-7): the GC guard refuses to delete a ref
+ * in `referencedRefs()`. */
 export interface SandboxToolsetRefEntry {
   ref: string;
-  digest: string;
 }
 
 export interface SandboxToolsetRefStore {
   /** Replace-all: the full set of toolsets a sandbox has mounted, as of its
    * last successful boot (create or resume). */
   putForSandbox(sandboxId: string, entries: SandboxToolsetRefEntry[]): void;
-  getForSandbox(sandboxId: string): SandboxToolsetRefEntry[];
   deleteBySandbox(sandboxId: string): void;
   /** Every ref mounted by at least one sandbox (live or paused), for the
    * `deleteToolset` GC guard. */
@@ -265,9 +263,6 @@ export class InMemorySandboxToolsetRefStore implements SandboxToolsetRefStore {
 
   putForSandbox(sandboxId: string, entries: SandboxToolsetRefEntry[]): void {
     this.bySandbox.set(sandboxId, entries);
-  }
-  getForSandbox(sandboxId: string): SandboxToolsetRefEntry[] {
-    return this.bySandbox.get(sandboxId) ?? [];
   }
   deleteBySandbox(sandboxId: string): void {
     this.bySandbox.delete(sandboxId);
@@ -616,6 +611,23 @@ function imageRecordToRow(record: ImageRecord): ImageRow {
   };
 }
 
+/** Column-wise partial for an `UPDATE ... SET` clause — only the keys
+ * actually present on `patch` are included (an explicit `error: undefined`,
+ * e.g. clearing the error on a successful rebuild, must still translate to
+ * `SET error = NULL`, so presence is checked with `in`, not truthiness). */
+function imagePatchToRow(patch: Partial<ImageRecord>): Partial<ImageRow> {
+  const row: Partial<ImageRow> = {};
+  if ("provenance" in patch) row.provenance = patch.provenance;
+  if ("status" in patch) row.status = patch.status;
+  if ("ref" in patch) row.ref = patch.ref ?? null;
+  if ("seedId" in patch) row.seedId = patch.seedId ?? null;
+  if ("dockerfile" in patch) row.dockerfile = patch.dockerfile ?? null;
+  if ("digest" in patch) row.digest = patch.digest ?? null;
+  if ("buildLog" in patch) row.buildLog = patch.buildLog ?? null;
+  if ("error" in patch) row.error = patch.error ?? null;
+  return row;
+}
+
 /** Upsert-by-`name` store, mirroring `DrizzleSnapshotStore`'s shape — an
  * image's identity is its destination repo name (see `ImageRecord`). */
 export class DrizzleImageStore implements ImageStore {
@@ -643,16 +655,20 @@ export class DrizzleImageStore implements ImageStore {
     db.insert(images).values(row).run();
   }
 
+  /** Direct `UPDATE ... WHERE name = ? RETURNING *` (P2f) — was previously
+   * a `get()` + `put()` (2 SELECT + 1 UPDATE/INSERT), which ran on every
+   * build-log flush (`LOG_FLUSH_INTERVAL_MS`, i.e. roughly once a second per
+   * in-flight build). `RETURNING` gives back the updated row in the same
+   * round trip so the undefined-when-missing contract still holds without a
+   * separate existence check. */
   update(name: string, patch: Partial<ImageRecord>): ImageRecord | undefined {
-    const existing = this.get(name);
-    if (!existing) return undefined;
-    const next: ImageRecord = {
-      ...existing,
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-    this.put(next);
-    return next;
+    const row = getDatabase()
+      .update(images)
+      .set({ ...imagePatchToRow(patch), updatedAt: new Date().toISOString() })
+      .where(eq(images.name, name))
+      .returning()
+      .get() as ImageRow | undefined;
+    return row ? imageRowToRecord(row) : undefined;
   }
 
   list(): ImageRecord[] {
@@ -747,12 +763,6 @@ export class DrizzleToolsetStore implements ToolsetStore {
   }
 }
 
-interface SandboxToolsetRefRow {
-  sandboxId: string;
-  ref: string;
-  digest: string;
-}
-
 export class DrizzleSandboxToolsetRefStore implements SandboxToolsetRefStore {
   /** Replace-all in one transaction: delete the sandbox's prior rows, then
    * insert the current mount set — avoids a delete-then-insert race leaving
@@ -765,20 +775,9 @@ export class DrizzleSandboxToolsetRefStore implements SandboxToolsetRefStore {
         .run();
       if (entries.length === 0) return;
       tx.insert(sandboxToolsetRefs)
-        .values(
-          entries.map((e) => ({ sandboxId, ref: e.ref, digest: e.digest })),
-        )
+        .values(entries.map((e) => ({ sandboxId, ref: e.ref })))
         .run();
     });
-  }
-
-  getForSandbox(sandboxId: string): SandboxToolsetRefEntry[] {
-    const rows = getDatabase()
-      .select()
-      .from(sandboxToolsetRefs)
-      .where(eq(sandboxToolsetRefs.sandboxId, sandboxId))
-      .all() as SandboxToolsetRefRow[];
-    return rows.map((r) => ({ ref: r.ref, digest: r.digest }));
   }
 
   deleteBySandbox(sandboxId: string): void {

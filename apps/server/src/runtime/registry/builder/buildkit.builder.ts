@@ -14,10 +14,12 @@
 
 import { SandboxError } from "../../../shared/errors.ts";
 import { config } from "../../../shared/lib/config.ts";
-import type {
-  ImageBuilderBackend,
-  ImageBuildRequest,
-  ImageBuildResult,
+import {
+  formatBuildArgs,
+  type ImageBuilderBackend,
+  type ImageBuildRequest,
+  type ImageBuildResult,
+  shQuote,
 } from "./builder.types.ts";
 import {
   jobResourceName,
@@ -73,8 +75,13 @@ export class BuildkitImageBuilder implements ImageBuilderBackend {
     // containerd reject the pull ("unexpected media type
     // application/vnd.oci.image.config.v1+json"). The key match tolerates an
     // optional space after the colon so it works on compact or pretty JSON.
+    // H1: every interpolated value (in particular `req.buildArgs`
+    // key/values, which flow straight from the API request) MUST be shell-
+    // quoted before landing in this `sh -c` script — unreachable today (no
+    // caller sets `buildArgs`), but the port advertises the field and this
+    // is the one backend that actually shells out through `sh -c`.
     const script =
-      `set -e; buildctl ${args.join(" ")}; ` +
+      `set -e; buildctl ${args.map(shQuote).join(" ")}; ` +
       'grep -o \'"containerimage\\.digest": *"sha256:[0-9a-f]\\{64\\}"\' ' +
       "/tmp/atelier-md.json | grep -o 'sha256:[0-9a-f]\\{64\\}' " +
       "> /dev/termination-log";
@@ -135,9 +142,12 @@ export function buildctlArgs(
     `platform=${config.imageBuilder.platform ?? "linux/amd64"}`,
   );
 
-  for (const [key, value] of Object.entries(req.buildArgs ?? {})) {
-    args.push("--opt", `build-arg:${key}=${value}`);
-  }
+  args.push(
+    ...formatBuildArgs(req.buildArgs, (key, value) => [
+      "--opt",
+      `build-arg:${key}=${value}`,
+    ]),
+  );
 
   // `oci-mediatypes`/`image-manifest` force a single OCI manifest (not a
   // manifest LIST): the bundled Zot registry rejects the buildx default

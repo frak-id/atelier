@@ -167,9 +167,20 @@ async fn detect_build_format() -> BlobFormat {
 /// uncompressed staged copy can be many hundreds of MB, and the pod declares
 /// no `ephemeral-storage` budget — staging on the small rootfs risks ENOSPC
 /// mid-capture (toolset-overlay-squashfs.md §11). The home is dev-owned
-/// (build/capture run as `dev`) and sized for the sandbox; a random `mktemp`
-/// name never collides with a declared path and is removed by the EXIT trap.
-const STAGE_DIR: &str = HOME;
+/// (build/capture run as `dev`) and sized for the sandbox.
+///
+/// Dot-prefixed and NOT bare `/home/dev`: a random `mktemp` name never
+/// collides with a declared path, and is normally removed by the EXIT trap
+/// in `squash_and_push_script` — but that cleanup is best-effort (see the
+/// trap's own comment) and can fail. For `build()` that's harmless (the
+/// throwaway build pod is torn down right after). For `capture()` it is NOT:
+/// the sandbox stays live, so leftover debris under here would otherwise sit
+/// directly in `~` forever, riding every future pause snapshot and prebuild
+/// clone. Keeping it under one well-known scratch dir lets `build()`/
+/// `capture()` sweep it at the START of every call (mirroring the
+/// `atelier-toolset-pull.*` sweep in `materialize_inner`), so a prior call's
+/// debris never survives past the next one.
+const STAGE_DIR: &str = "/home/dev/.atelier-toolset-scratch";
 /// Build/push can move hundreds of MB; give it well past the exec default.
 const BUILD_TIMEOUT_MS: u64 = 600_000;
 /// Grace for the runtime to drive materialize on a fresh boot before
@@ -338,11 +349,51 @@ fn parse_digest(output: &str) -> Option<String> {
         .or_else(|| output.split_whitespace().find_map(valid_sha256))
 }
 
+/// Sweep `STAGE_DIR` of any `atelier-toolset-stage.*`/`atelier-toolset.*`
+/// debris left behind by a previous `build()`/`capture()` whose EXIT-trap
+/// cleanup failed (ESTALE on virtio-fs — see `squash_and_push_script`'s
+/// trap comment — or the agent being killed mid-call, which skips the trap
+/// entirely). Mirrors the `atelier-toolset-pull.*` sweep at the start of
+/// `materialize_inner`. Run at the START of `build()`/`capture()`, not the
+/// end: sweeping only after a successful run would never fire on the run
+/// whose OWN trap just failed; sweeping first means the NEXT call always
+/// cleans up after the previous one. Best-effort (mirrors the pull-scratch
+/// sweep) — a failed sweep degrades disk usage, not correctness, so it must
+/// not fail the build/capture itself. `rm -rf` on a non-matching glob is a
+/// silent no-op (the `-f` flag), so this is safe to run on a first-ever call
+/// before `STAGE_DIR` exists.
+fn sweep_stage_scratch_script() -> String {
+    format!(
+        "mkdir -p {dir}\nrm -rf {dir}/atelier-toolset-stage.* {dir}/atelier-toolset.*",
+        dir = sh_quote(STAGE_DIR),
+    )
+}
+
+async fn sweep_stage_scratch(caller: &str) {
+    let res = command::run(
+        &sweep_stage_scratch_script(),
+        BUILD_TIMEOUT_MS,
+        Some("dev"),
+        None,
+        &std::collections::HashMap::new(),
+        MAX_COMMAND_OUTPUT_BYTES,
+    )
+    .await;
+    if res.exit_code != 0 {
+        eprintln!(
+            "toolset {caller}: stage-scratch sweep failed (exit {}): {}",
+            res.exit_code,
+            res.stderr.trim()
+        );
+    }
+}
+
 /// Squash the existing declared path-sets into one blob and `oras push` it to
 /// `target`, returning the pushed digest. Missing path-sets are skipped (a
 /// build step may legitimately produce a subset); an empty result is an
 /// error.
 pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
+    sweep_stage_scratch("build").await;
     let mut rels = Vec::new();
     for p in &req.paths {
         let rel = rel_to_home(p)?;
@@ -429,10 +480,20 @@ fn squash_and_push_script(
     // EXIT-trap cleanup is best-effort (`||:`): the stage lives on the
     // virtio-fs home and native `.node` files under heavy install churn can
     // return ESTALE ("Stale file handle") on unlink. The blob is already
-    // built + pushed by the time the trap runs, and the whole pod/PVC is torn
-    // down right after, so a failed cleanup must not fail the capture.
+    // built + pushed by the time the trap runs, so a failed cleanup must not
+    // fail the build/capture either way — but the two callers differ in what
+    // a failed cleanup COSTS: `build()`'s pod/PVC is torn down right after,
+    // so leftover debris there is truly harmless, while `capture()`'s
+    // sandbox stays live, so debris would otherwise be visible in `~`
+    // indefinitely. That's why staging happens under the dot-prefixed
+    // `STAGE_DIR` scratch dir rather than bare `/home/dev`: both callers
+    // sweep `STAGE_DIR` at the START of their next invocation (see
+    // `sweep_stage_scratch_script`), so a failed trap's leftovers are always
+    // cleaned up before they can accumulate — this trap remains the fast
+    // path, the start-of-call sweep is the backstop.
     format!(
         "set -euo pipefail\n\
+         mkdir -p {dir}\n\
          cd {dir}\n\
          stage=$(mktemp -d atelier-toolset-stage.XXXXXX)\n\
          name=$(mktemp -u atelier-toolset.XXXXXX.{ext})\n\
@@ -534,6 +595,7 @@ fn is_overridden(offender: &str, overrides: &[String]) -> bool {
 /// mirroring `build`'s push tail. Runs as `dev` — path ownership stays
 /// consistent with how the tools were installed/used.
 pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
+    sweep_stage_scratch("capture").await;
     let mut rels = Vec::new();
     for p in &req.paths {
         let rel = rel_to_home(p)?;
@@ -657,23 +719,224 @@ fn digest_suffix(reference: &str) -> Option<String> {
     valid_sha256_hex(token)
 }
 
+/// Grace floor under which a root-run plumbing command is not even attempted
+/// once the global materialize deadline (`BUILD_TIMEOUT_MS`, see
+/// `materialize_inner`) is nearly exhausted — long enough for a local
+/// mkdir/mount/find/rm, far too short for a fresh `oras pull` to have any
+/// real chance of completing. Below this, `materialize_inner`/
+/// `pull_blobs_concurrently` fail fast with a "pulled X of N" error instead
+/// of burning the remainder of the budget on a doomed attempt.
+const MIN_COMMAND_TIMEOUT_MS: u64 = 3_000;
+
+/// Bounded fan-out for the concurrent `oras pull` phase (P2a) — caps how many
+/// toolsets pull at once so a large toolset list doesn't open unbounded
+/// registry connections; small enough to stay well under typical container
+/// fd/conntrack limits, large enough that pulls are the common case that
+/// actually overlaps.
+const MAX_CONCURRENT_PULLS: usize = 4;
+
+/// Milliseconds remaining until `deadline`, saturating at 0 — never negative,
+/// never panics against an already-past deadline (C3's global materialize
+/// budget: every root-run command in `materialize_inner` is timed off this
+/// shrinking remainder instead of its own fresh `BUILD_TIMEOUT_MS`).
+fn remaining_ms(deadline: std::time::Instant) -> u64 {
+    deadline
+        .saturating_duration_since(std::time::Instant::now())
+        .as_millis() as u64
+}
+
+/// One deduplicated toolset pull target: a digest-pinned reference plus the
+/// bare hex digest extracted from it (`digest_suffix`), carried together so
+/// the pull/mount phases don't re-derive or re-validate it.
+#[derive(Clone)]
+struct PullEntry {
+    digest: String,
+    reference: String,
+}
+
+/// Build the pull-only half of the old combined pull+mount script: ensure a
+/// blob for `digest` exists at `/data/toolsets/<digest>.<ext>`, pulling it
+/// via `oras` only if not already present. No mount here — mounting is a
+/// fast, local, ordering-sensitive step done by `mount_blob_script` after
+/// every pull in the batch has landed (see `pull_blobs_concurrently`'s doc
+/// comment for why the split is safe to parallelize on this half only).
+///
+/// Pull is skipped when a blob for this digest already exists on the PVC
+/// (fresh boot after a warm pull, or a resume where the blob rode the pause
+/// VolumeSnapshot). The blob's format (erofs/squashfs) is not known ahead of
+/// time (the builder picked whatever this guest kernel supports — see
+/// `BlobFormat`), so the filename carries it: `<digest>.erofs` or
+/// `<digest>.sqfs`. Discover an existing blob by globbing `<digest>.*` (a
+/// real wildcard, so `nullglob` correctly yields an EMPTY array when absent —
+/// listing the literal `<digest>.erofs`/`.sqfs`/`.tzst` names instead never
+/// drops under nullglob and would make the pull always skip onto a missing
+/// blob); on a fresh pull, `oras pull` writes the layer under its pushed
+/// filename (a random `mktemp` name, NOT `<digest>.*`), so move the single
+/// `*.erofs`/`*.sqfs`/`*.tzst` layer it contains to the digest-named path,
+/// preserving the extension.
+///
+/// The scratch dir is created UNDER `/data/toolsets` (same filesystem as the
+/// blob, both on the PVC) rather than under `/tmp` (the pod's ephemeral
+/// rootfs): different filesystems would make the scratch-to-blob `mv` a
+/// copy+unlink, not an atomic `rename(2)` — a kill mid-copy (OOM, eviction,
+/// timeout) would leave a truncated file at the final blob path that the
+/// next boot's existence check would trust forever. Same-filesystem staging
+/// makes the final `mv` a true rename: atomic. The per-call random scratch
+/// dir name also means concurrent pulls for different digests never collide.
+fn pull_blob_script(digest: &str, reference: &str) -> String {
+    format!(
+        "set -euo pipefail\n\
+         shopt -s nullglob\n\
+         mkdir -p {toolsets_dir}\n\
+         existing=({toolsets_dir}/{digest}.*)\n\
+         if [ \"${{#existing[@]}}\" -ge 1 ]; then exit 0; fi\n\
+         scratch=$(mktemp -d -p {toolsets_dir} atelier-toolset-pull.XXXXXX)\n\
+         trap 'rm -rf \"$scratch\"' EXIT\n\
+         oras pull --plain-http {reference} -o \"$scratch\"\n\
+         layers=(\"$scratch\"/*.erofs \"$scratch\"/*.sqfs \"$scratch\"/*.tzst)\n\
+         [ \"${{#layers[@]}}\" -eq 1 ] || {{ echo \"expected exactly one .erofs/.sqfs/.tzst layer for {reference}, found ${{#layers[@]}}\" >&2; exit 1; }}\n\
+         blob={toolsets_dir}/{digest}.\"${{layers[0]##*.}}\"\n\
+         mv \"${{layers[0]}}\" \"$blob\"",
+        toolsets_dir = sh_quote(DATA_TOOLSETS),
+        digest = digest,
+        reference = sh_quote(reference),
+    )
+}
+
+/// Build the mount-only half: `digest`'s blob (already pulled by
+/// `pull_blob_script`) is loop-mounted read-only at `mount_point` (or
+/// extracted, for a `.tzst` tarball blob). `mountpoint -q` guards make a
+/// retry within the same pod a no-op instead of a double-mount error.
+fn mount_blob_script(digest: &str, mount_point: &str) -> String {
+    format!(
+        "set -euo pipefail\n\
+         shopt -s nullglob\n\
+         mkdir -p {mount_point}\n\
+         existing=({toolsets_dir}/{digest}.*)\n\
+         [ \"${{#existing[@]}}\" -ge 1 ] || {{ echo \"blob for digest {digest} missing after pull\" >&2; exit 1; }}\n\
+         blob=\"${{existing[0]}}\"\n\
+         case \"$blob\" in\n\
+         *.erofs) mountpoint -q {mount_point} || mount -t erofs -o ro,loop \"$blob\" {mount_point};;\n\
+         *.sqfs) mountpoint -q {mount_point} || mount -t squashfs -o ro,loop \"$blob\" {mount_point};;\n\
+         *.tzst) [ -n \"$(ls -A {mount_point} 2>/dev/null)\" ] || tar --zstd -xf \"$blob\" -C {mount_point};;\n\
+         *) echo \"unknown blob format: $blob\" >&2; exit 1;; esac",
+        toolsets_dir = sh_quote(DATA_TOOLSETS),
+        mount_point = sh_quote(mount_point),
+        digest = digest,
+    )
+}
+
+/// Pull every entry's blob with bounded concurrency (P2a). Independent per
+/// digest (own scratch dir, own existence check, own final blob path), so
+/// fetching several at once is safe — unlike the loop-mount + final overlay
+/// assembly that follows in `materialize_inner`, which must stay sequential/
+/// ordered for correct lowerdir priority (mounting is fast and local; pulling
+/// is the network-bound step this actually helps). Shares `deadline` (C3's
+/// global materialize budget) with the rest of `materialize_inner`: each
+/// task's timeout is whatever remains of the budget when it actually starts
+/// running (not reserved up front — a task queued behind the concurrency cap
+/// naturally gets less), and a task that finds the budget already exhausted
+/// fails without attempting the pull. On any failure, returns a single error
+/// naming how many of the N toolsets DID complete (not which — with
+/// concurrent tasks "first N in request order" is no longer meaningful) so
+/// the caller gets the same "pulled X of N" shape C3 asks for.
+async fn pull_blobs_concurrently(
+    entries: &[PullEntry],
+    deadline: std::time::Instant,
+) -> Result<(), String> {
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_PULLS));
+    let mut set = tokio::task::JoinSet::new();
+    for entry in entries.iter().cloned() {
+        let sem = sem.clone();
+        set.spawn(async move {
+            let _permit = sem.acquire_owned().await.expect("toolset pull semaphore");
+            let timeout = remaining_ms(deadline);
+            if timeout < MIN_COMMAND_TIMEOUT_MS {
+                return Err(format!(
+                    "materialize budget exhausted before pulling {}",
+                    entry.reference
+                ));
+            }
+            // Non-login (P2c): pure root mkdir/mktemp/oras/mv, no profile PATH
+            // needed, and this runs once per toolset per boot.
+            let res = command::run_with_login(
+                &pull_blob_script(&entry.digest, &entry.reference),
+                timeout,
+                None,
+                None,
+                &std::collections::HashMap::new(),
+                MAX_COMMAND_OUTPUT_BYTES,
+                false,
+            )
+            .await;
+            if res.exit_code != 0 {
+                return Err(format!(
+                    "toolset pull failed for {} (exit {}): {}",
+                    entry.reference,
+                    res.exit_code,
+                    res.stderr.trim()
+                ));
+            }
+            Ok(())
+        });
+    }
+
+    let total = entries.len();
+    let mut ok_count = 0usize;
+    let mut first_err: Option<String> = None;
+    while let Some(joined) = set.join_next().await {
+        match joined {
+            Ok(Ok(())) => ok_count += 1,
+            Ok(Err(e)) => {
+                first_err.get_or_insert(e);
+            }
+            Err(join_err) => {
+                first_err.get_or_insert(format!("toolset pull task panicked: {join_err}"));
+            }
+        }
+    }
+    match first_err {
+        Some(e) => Err(format!("pulled {ok_count} of {total} toolsets: {e}")),
+        None => Ok(()),
+    }
+}
+
 /// Materialize toolset artifacts into the home as a **mount, not a copy**
-/// (docs/proposals/toolset-overlay-squashfs.md §5). For each digest-pinned
-/// ref, in order: pull its blob to `/data/toolsets/<digest>.<ext>` (`.erofs`,
+/// (docs/proposals/toolset-overlay-squashfs.md §5). Digest-pinned refs are
+/// deduplicated, then pulled to `/data/toolsets/<digest>.<ext>` (`.erofs`,
 /// `.sqfs`, or `.tzst`, whichever format the builder used — the last is a
 /// zstd tarball, extracted into a plain lowerdir instead of loop-mounted, for
-/// a guest kernel that can mount neither read-only FS)
-/// (skipped if already present — idempotent across create/resume/retry, and
-/// what makes resume registry-independent: the blob rides the PVC's pause
-/// snapshot), then loop-mount it read-only at `/run/toolsets/<digest>`. Once
-/// every blob is mounted, `/home/dev` is assembled as a **single** overlay
-/// stacking every lower — **later refs win** (leftmost lowerdir = highest
-/// priority in overlayfs), floored by the image's `/home/skel`, with
-/// `/data/{upper,work}` as the writable layer. Called with an empty
-/// `req.toolsets` too (every boot, per `boot.ts`): that degrades to a
-/// skel-only overlay, which is what makes `/home/dev` usable at all — the
-/// entrypoint (`sandbox-boot.sh`) does NOT mount it; this call is the only
-/// place `/home/dev` is ever assembled.
+/// a guest kernel that can mount neither read-only FS) with bounded
+/// concurrency (P2a — independent per digest; skipped per-blob if already
+/// present, idempotent across create/resume/retry, and what makes resume
+/// registry-independent: the blob rides the PVC's pause snapshot). Once every
+/// blob has landed, each is loop-mounted read-only at `/run/toolsets/<digest>`
+/// **in request order** (mounting is fast/local — no benefit to
+/// parallelizing it, and doing it in order keeps the code simple even though
+/// mount order itself doesn't affect the result). Then `/home/dev` is
+/// assembled as a **single** overlay stacking every lower — **later refs
+/// win** (leftmost lowerdir = highest priority in overlayfs), floored by the
+/// image's `/home/skel`, with `/data/{upper,work}` as the writable layer.
+/// Called with an empty `req.toolsets` too (every boot, per `boot.ts`): that
+/// degrades to a skel-only overlay, which is what makes `/home/dev` usable at
+/// all — the entrypoint (`sandbox-boot.sh`) does NOT mount it; this call is
+/// the only place `/home/dev` is ever assembled.
+///
+/// **C3 — global budget**: a single deadline (`BUILD_TIMEOUT_MS` from now) is
+/// computed once at the top and shared by every command this function runs
+/// (`remaining_ms`) — the pull-scratch cleanup, every pull (via
+/// `pull_blobs_concurrently`), every mount, the overlay assembly, and the
+/// final blob sweep all draw from the SAME shrinking budget instead of each
+/// getting its own fresh `BUILD_TIMEOUT_MS`. For a single toolset this is
+/// indistinguishable from the old per-command-timeout behavior (nothing else
+/// competes for the budget); for N>1 it caps total wall time at
+/// `BUILD_TIMEOUT_MS` instead of up to N×`BUILD_TIMEOUT_MS`, matching the
+/// fixed ceilings `agent.client.ts`'s `materializeToolsets` and
+/// `sandbox-boot.sh`'s wait loop already enforce on the other two layers.
+/// Exhausting the budget mid-pull fails fast with "pulled X of N toolsets";
+/// the cheap post-pull steps (mount/assembly/sweep) still run with whatever
+/// remains (floored at `MIN_COMMAND_TIMEOUT_MS` so they're not starved to
+/// zero by a budget that ran out exactly at the pull/mount boundary).
 ///
 /// On success, writes `/run/home-ready` as the last step — the entrypoint's
 /// signal to stop waiting and start sshd. This is the race-free handshake:
@@ -688,23 +951,30 @@ fn digest_suffix(reference: &str) -> Option<String> {
 /// container process gets from the pod's `securityContext.capabilities`
 /// (`kube.resources.ts` — uid 0 alone has only the default OCI capset, which
 /// excludes it), plus the `/dev/loop*` nodes the entrypoint creates. Unlike
-/// `build`/`capture`, which run as `dev`. Fail-fast: a bad pull/mount aborts
+/// `build`/`capture`, which run as `dev`. Every root-run script here uses
+/// `command::run_with_login(..., false)` (P2c): pure mkdir/mount/find/rm
+/// plumbing needs no `/etc/profile`/`profile.d` sourcing, which a login shell
+/// would otherwise pay on every one of these calls (`readiness.rs`'s
+/// `probe_cmd` set this precedent). Fail-fast: a bad pull/mount aborts
 /// assembly; the wrapper (`materialize`) writes `/run/home-failed` so the
 /// entrypoint stops waiting and starts sshd onto the degraded home for
 /// diagnosis.
 async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult, String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(BUILD_TIMEOUT_MS);
+
     // Sweep any leftover pull scratch dirs from a previous boot that was
     // SIGKILLed mid-pull (the EXIT trap is skipped on kill/VM-death) — left
     // unswept they ride every pause snapshot and prebuild clone, and the
     // blob sweep below (`*.erofs`/`*.sqfs` only) never matches them. Safe:
     // materialize is the single writer on this PVC and runs before any mount.
-    let cleanup = command::run(
+    let cleanup = command::run_with_login(
         &format!("rm -rf {}/atelier-toolset-pull.*", sh_quote(DATA_TOOLSETS)),
-        BUILD_TIMEOUT_MS,
+        remaining_ms(deadline).max(MIN_COMMAND_TIMEOUT_MS),
         None,
         None,
         &std::collections::HashMap::new(),
         MAX_COMMAND_OUTPUT_BYTES,
+        false,
     )
     .await;
     if cleanup.exit_code != 0 {
@@ -715,90 +985,62 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
         );
     }
 
-    let mut mounts: Vec<String> = Vec::new();
-    let mut keep_digests: Vec<String> = Vec::new();
+    // Dedupe by digest, preserving `req.toolsets`' order: the same ref listed
+    // twice would otherwise push the same mount point into `lowerdir=X:X:…`,
+    // which overlayfs rejects on some kernels. Identical content ⇒ priority
+    // position is irrelevant, so keep the first occurrence.
+    let mut entries: Vec<PullEntry> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for reference in &req.toolsets {
         let digest = digest_suffix(reference).ok_or_else(|| {
             format!("toolset reference '{reference}' is missing a valid @sha256:<64 hex> digest")
         })?;
-        // Dedupe by digest: the same ref listed twice would otherwise push the
-        // same mount point into `lowerdir=X:X:…`, which overlayfs rejects on
-        // some kernels. Identical content ⇒ priority position is irrelevant,
-        // so keep the first occurrence.
         if !seen.insert(digest.clone()) {
             continue;
         }
-        let mount_point = format!("{RUN_TOOLSETS}/{digest}");
+        entries.push(PullEntry {
+            digest,
+            reference: reference.clone(),
+        });
+    }
 
-        // Pull is skipped when a blob for this digest already exists on the
-        // PVC (fresh boot after a warm pull, or a resume where the blob rode
-        // the pause VolumeSnapshot) — the mount below always reruns since
-        // loop mounts don't survive pod recreation. The blob's format
-        // (erofs/squashfs) is not known ahead of time (the builder picked
-        // whatever this guest kernel supports — see `BlobFormat`), so the
-        // filename carries it: `<digest>.erofs` or `<digest>.sqfs`. Discover
-        // an existing blob by globbing `<digest>.*` (a real wildcard, so
-        // `nullglob` correctly yields an EMPTY array when absent — listing the
-        // two literal `<digest>.erofs`/`.sqfs` names instead never drops under
-        // nullglob and would make the pull always skip onto a missing blob);
-        // on a fresh pull,
-        // `oras pull` writes the layer under its pushed filename (a random
-        // `mktemp` name, NOT `<digest>.*`), so move the single `*.erofs`/
-        // `*.sqfs` layer it contains to the digest-named path, preserving the
-        // extension. Mount type is then read back from that extension.
-        //
-        // The scratch dir is created UNDER `/data/toolsets` (same filesystem
-        // as the blob, both on the PVC) rather than under `/tmp` (the pod's
-        // ephemeral rootfs): different filesystems would make the scratch-to-
-        // blob `mv` a copy+unlink, not an atomic `rename(2)` — a kill mid-copy
-        // (OOM, eviction, timeout) would leave a truncated file at the final
-        // blob path that the next boot's existence check would trust forever.
-        // Same-filesystem staging makes the final `mv` a true rename: atomic.
-        let script = format!(
-            "set -euo pipefail\n\
-             shopt -s nullglob\n\
-             mkdir -p {toolsets_dir} {mount_point}\n\
-             existing=({toolsets_dir}/{digest}.*)\n\
-             if [ \"${{#existing[@]}}\" -ge 1 ]; then\n\
-             blob=\"${{existing[0]}}\"\n\
-             else\n\
-             scratch=$(mktemp -d -p {toolsets_dir} atelier-toolset-pull.XXXXXX)\n\
-             trap 'rm -rf \"$scratch\"' EXIT\n\
-             oras pull --plain-http {reference} -o \"$scratch\"\n\
-             layers=(\"$scratch\"/*.erofs \"$scratch\"/*.sqfs \"$scratch\"/*.tzst)\n\
-             [ \"${{#layers[@]}}\" -eq 1 ] || {{ echo \"expected exactly one .erofs/.sqfs/.tzst layer for {reference}, found ${{#layers[@]}}\" >&2; exit 1; }}\n\
-             blob={toolsets_dir}/{digest}.\"${{layers[0]##*.}}\"\n\
-             mv \"${{layers[0]}}\" \"$blob\"\n\
-             fi\n\
-             case \"$blob\" in\n\
-             *.erofs) mountpoint -q {mount_point} || mount -t erofs -o ro,loop \"$blob\" {mount_point};;\n\
-             *.sqfs) mountpoint -q {mount_point} || mount -t squashfs -o ro,loop \"$blob\" {mount_point};;\n\
-             *.tzst) [ -n \"$(ls -A {mount_point} 2>/dev/null)\" ] || tar --zstd -xf \"$blob\" -C {mount_point};;\n\
-             *) echo \"unknown blob format: $blob\" >&2; exit 1;; esac",
-            toolsets_dir = sh_quote(DATA_TOOLSETS),
-            mount_point = sh_quote(&mount_point),
-            digest = digest,
-            reference = sh_quote(reference),
-        );
-        let res = command::run(
-            &script,
-            BUILD_TIMEOUT_MS,
+    // P2a: fetch every blob concurrently (bounded), sharing the global
+    // deadline. Mounting happens after, sequentially, once every blob is on
+    // the PVC.
+    pull_blobs_concurrently(&entries, deadline).await?;
+
+    let mut mounts: Vec<String> = Vec::new();
+    let mut keep_digests: Vec<String> = Vec::new();
+    for entry in &entries {
+        let mount_point = format!("{RUN_TOOLSETS}/{}", entry.digest);
+        let timeout = remaining_ms(deadline);
+        if timeout < MIN_COMMAND_TIMEOUT_MS {
+            return Err(format!(
+                "materialize budget exhausted: mounted {} of {} toolsets",
+                mounts.len(),
+                entries.len()
+            ));
+        }
+        let res = command::run_with_login(
+            &mount_blob_script(&entry.digest, &mount_point),
+            timeout,
             None,
             None,
             &std::collections::HashMap::new(),
             MAX_COMMAND_OUTPUT_BYTES,
+            false,
         )
         .await;
         if res.exit_code != 0 {
             return Err(format!(
-                "toolset materialize failed for {reference} (exit {}): {}",
+                "toolset mount failed for {} (exit {}): {}",
+                entry.reference,
                 res.exit_code,
                 res.stderr.trim()
             ));
         }
         mounts.push(mount_point);
-        keep_digests.push(digest);
+        keep_digests.push(entry.digest.clone());
     }
 
     // Later refs win: `req.toolsets` is ordered lowest-to-highest priority
@@ -851,13 +1093,14 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
         ready = sh_quote(HOME_READY_MARKER),
         failed = sh_quote(HOME_FAILED_MARKER),
     );
-    let res = command::run(
+    let res = command::run_with_login(
         &overlay_script,
-        BUILD_TIMEOUT_MS,
+        remaining_ms(deadline).max(MIN_COMMAND_TIMEOUT_MS),
         None,
         None,
         &std::collections::HashMap::new(),
         MAX_COMMAND_OUTPUT_BYTES,
+        false,
     )
     .await;
     if res.exit_code != 0 {
@@ -878,16 +1121,17 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
     // -maxdepth 1` scopes to exactly this directory; the keep-set is matched
     // by digest via a `-name '<digest>.*'` OR chain (extension-agnostic, so
     // it keeps the blob whatever format it was built in). An empty keep-set
-    // — zero toolsets — correctly deletes every blob, since the `-not \\(
-    // ... \\)` clause is simply absent).
+    // — zero toolsets — correctly deletes every blob, since the `-not \(
+    // ... \)` clause is simply absent).
     let sweep_script = sweep_stale_blobs_script(&keep_digests);
-    let sweep = command::run(
+    let sweep = command::run_with_login(
         &sweep_script,
-        BUILD_TIMEOUT_MS,
+        remaining_ms(deadline).max(MIN_COMMAND_TIMEOUT_MS),
         None,
         None,
         &std::collections::HashMap::new(),
         MAX_COMMAND_OUTPUT_BYTES,
+        false,
     )
     .await;
     if sweep.exit_code != 0 {
@@ -915,37 +1159,51 @@ pub async fn materialize(req: MaterializeRequest) -> Result<MaterializeResult, S
     let _guard = materialize_lock().lock().await;
     // Already assembled this container life — nothing to redo. (A failed prior
     // attempt leaves no marker, so a retry still proceeds below.)
-    if std::path::Path::new(HOME_READY_MARKER).exists() {
+    if home_ready_marker_exists().await {
         return Ok(MaterializeResult {
             materialized: req.toolsets.len(),
         });
     }
     match materialize_inner(&req).await {
         Ok(result) => {
-            persist_materialize_request(&req.toolsets);
+            persist_materialize_request(&req.toolsets).await;
             Ok(result)
         }
         Err(e) => {
             // Unblock the entrypoint's wait so it starts sshd for diagnosis
             // instead of burning the full pull budget on a doomed boot.
-            let _ = std::fs::write(HOME_FAILED_MARKER, b"");
+            let _ = tokio::fs::write(HOME_FAILED_MARKER, b"").await;
             Err(e)
         }
     }
 }
 
+/// `HOME_READY_MARKER`'s presence, via `tokio::fs` (P2d) rather than the
+/// blocking `std::path::Path::exists` — this is polled from `self_heal_home`'s
+/// loop and checked in `materialize`, both async fns running on tokio
+/// workers; a blocking `stat(2)` against the virtio-fs-backed home is exactly
+/// the stall this design flags as risky (doc comment at the top of this
+/// file).
+async fn home_ready_marker_exists() -> bool {
+    tokio::fs::try_exists(HOME_READY_MARKER).await.unwrap_or(false)
+}
+
 /// Persist the assembled toolset selection to the PVC (atomic write+rename) so
 /// `self_heal_home` can rebuild the overlay after a kubelet restart without
 /// the runtime. Best-effort: a failed write only degrades restart recovery.
-fn persist_materialize_request(toolsets: &[String]) {
+/// `tokio::fs` (P2d) instead of blocking `std::fs`: `write`/`rename` still
+/// end up on a blocking-pool thread either way, but going through `tokio::fs`
+/// keeps this async fn from ever blocking its own worker thread directly.
+/// `rename(2)` is atomic regardless of which pool runs the syscall, so the
+/// write-then-rename durability guarantee is unchanged.
+async fn persist_materialize_request(toolsets: &[String]) {
     let Ok(bytes) = serde_json::to_vec(toolsets) else {
         return;
     };
     let tmp = format!("{MATERIALIZE_REQUEST_PATH}.tmp");
-    if std::fs::write(&tmp, &bytes)
-        .and_then(|()| std::fs::rename(&tmp, MATERIALIZE_REQUEST_PATH))
-        .is_err()
-    {
+    let persisted = tokio::fs::write(&tmp, &bytes).await.is_ok()
+        && tokio::fs::rename(&tmp, MATERIALIZE_REQUEST_PATH).await.is_ok();
+    if !persisted {
         eprintln!(
             "toolset: failed to persist materialize request; self-heal after a restart may no-op"
         );
@@ -965,10 +1223,10 @@ fn persist_materialize_request(toolsets: &[String]) {
 /// window — so this observes the marker and no-ops (also correct when a resume
 /// changed the selection: the runtime's call, not this stale snapshot, wins).
 pub async fn self_heal_home() {
-    let Ok(bytes) = std::fs::read(MATERIALIZE_REQUEST_PATH) else {
+    let Ok(bytes) = tokio::fs::read(MATERIALIZE_REQUEST_PATH).await else {
         return; // first-ever boot: nothing to recover
     };
-    if std::path::Path::new(HOME_READY_MARKER).exists() {
+    if home_ready_marker_exists().await {
         return;
     }
     let toolsets: Vec<String> = match serde_json::from_slice(&bytes) {
@@ -979,12 +1237,12 @@ pub async fn self_heal_home() {
     // if it never does within the window (the kubelet-restart case).
     let start = std::time::Instant::now();
     while start.elapsed().as_millis() < SELF_HEAL_GRACE_MS {
-        if std::path::Path::new(HOME_READY_MARKER).exists() {
+        if home_ready_marker_exists().await {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
-    if std::path::Path::new(HOME_READY_MARKER).exists() {
+    if home_ready_marker_exists().await {
         return;
     }
     eprintln!(
@@ -1023,6 +1281,46 @@ fn sweep_stale_blobs_script(keep_digests: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remaining_ms_saturates_at_zero_past_deadline() {
+        let past = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        assert_eq!(remaining_ms(past), 0);
+        let future = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        // Allow scheduling jitter: should be close to but not over 60_000ms.
+        let r = remaining_ms(future);
+        assert!(r > 0 && r <= 60_000, "remaining_ms out of range: {r}");
+    }
+
+    #[test]
+    fn pull_blob_script_has_no_mount_step() {
+        // P2a split: the pull half only ensures the blob file exists, never
+        // mounts it — mounting is `mount_blob_script`'s job, run after every
+        // pull in the batch has landed.
+        let script = pull_blob_script("deadbeef", "zot.zot.svc:5000/toolsets/x@sha256:deadbeef");
+        assert!(script.contains("oras pull"));
+        assert!(!script.contains("mount -t"));
+        assert!(script.contains("atelier-toolset-pull.XXXXXX"));
+    }
+
+    #[test]
+    fn mount_blob_script_has_no_pull_step() {
+        let script = mount_blob_script("deadbeef", "/run/toolsets/deadbeef");
+        assert!(!script.contains("oras pull"));
+        assert!(script.contains("mount -t erofs"));
+        assert!(script.contains("mount -t squashfs"));
+        assert!(script.contains("tar --zstd"));
+    }
+
+    #[test]
+    fn sweep_stage_scratch_script_targets_the_dot_prefixed_scratch_dir() {
+        // C2: staging must not sweep bare /home/dev — only the dot-prefixed
+        // scratch dir both build() and capture() stage under.
+        let script = sweep_stage_scratch_script();
+        assert!(script.contains(STAGE_DIR));
+        assert!(STAGE_DIR.starts_with("/home/dev/."));
+        assert!(script.contains("atelier-toolset-stage.*"));
+    }
 
     #[test]
     fn blob_format_mount_type_matches_extension_case_in_materialize() {

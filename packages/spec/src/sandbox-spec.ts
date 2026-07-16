@@ -207,6 +207,10 @@ export const SandboxSpecSchema = Type.Object(
      * (composed-prebuild-volumes.md §3). Resolved digest locators only — the
      * runtime never sees a name/harness/profile. Materialized in list order
      * (later wins on path conflicts, same rule as `files[]`).
+     *
+     * Entries must be unique by `ref` — TypeBox has no `uniqueItems` keyword,
+     * so this is documentation only; `RuntimeService.create` enforces it at
+     * runtime and throws a `ValidationError` on a duplicate ref.
      */
     toolsets: Type.Optional(Type.Array(ToolsetRefSchema)),
     timeoutSeconds: Type.Optional(Type.Number()),

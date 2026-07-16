@@ -165,12 +165,13 @@ export const toolsets = sqliteTable(
  * Which toolset refs each sandbox has mounted (toolset-overlay-squashfs.md
  * §6-7) — a many-to-many join, deliberately not a column on `sandboxes` (one
  * toolset can be referenced by many sandboxes) and not a column on
- * `toolsets` (one sandbox mounts many toolsets). Two jobs:
- *   - resume: re-mount the same digest-pinned blobs from `/data/toolsets`
- *     without re-resolving `spec.toolsets` or contacting the registry;
- *   - GC guard: `referencedToolsetRefs()` refuses to delete a `toolsets` row
- *     a live/paused sandbox still depends on (mirrors `snapshots.sandboxId`,
- *     but many-to-many instead of one-owner).
+ * `toolsets` (one sandbox mounts many toolsets). Sole job: GC guard —
+ * `referencedRefs()` refuses to delete a `toolsets` row a live/paused
+ * sandbox still depends on (mirrors `snapshots.sandboxId`, but many-to-many
+ * instead of one-owner). `resume()` does NOT read this table — it
+ * re-derives its toolset list fresh from `spec.toolsets` (no registry call,
+ * just string concatenation), so this table carries no `digest` column (H4:
+ * a prior denormalized copy went unread and was removed).
  * No FK (runtime's tables carry no FK per this file's header); rows are
  * replaced wholesale per sandboxId on every successful boot and dropped on
  * destroy, so staleness is bounded to a single boot's lifetime.
@@ -182,14 +183,6 @@ export const sandboxToolsetRefs = sqliteTable(
     sandboxId: text("sandbox_id").notNull(),
     /** Full, digest-pinned pull reference (`<registry>/toolsets/<name>@sha256:…`). */
     ref: text("ref").notNull(),
-    /** The `sha256:<hex>` digest extracted from `ref` — denormalized so a
-     * future consumer doesn't need to re-parse the ref string. NOT currently
-     * read anywhere: resume still re-derives its toolset list fresh via
-     * `resolveSpecToolsets` (no registry call, just string concatenation),
-     * rather than consulting this column. Kept for the §6 registry-
-     * independent-resume path this table was designed to eventually serve;
-     * `getForSandbox` is unused until something wires it in. */
-    digest: text("digest").notNull(),
   },
   (t) => [
     index("idx_sandbox_toolset_refs_sandbox").on(t.sandboxId),

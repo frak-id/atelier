@@ -530,6 +530,7 @@ export class RuntimeService {
     options: RuntimeCreateOptions = {},
   ): Promise<CreateSandboxResponse> {
     rejectUnresolvedSecrets(spec);
+    rejectDuplicateToolsetRefs(spec);
     const id = options.id ?? safeNanoid();
     return this.withOpLock(id, () => this.executeCreate(id, spec, options));
   }
@@ -1312,17 +1313,19 @@ export class RuntimeService {
     // registry (network failure/timeout) alike — the prior behaviour only
     // hard-failed on 404 and silently proceeded on `null`, which let a spawn
     // through to hang on ImagePullBackOff against a flaky registry instead of
-    // surfacing a clean, retryable error here.
-    const exists = await ImageRegistryService.imageExists(source.image);
-    if (exists === false) {
+    // surfacing a clean, retryable error here. `resolveOrAssert` does this in
+    // a SINGLE HEAD instead of the previous `imageExists` + `resolveImageReference`
+    // pair (design review P2b) — no `images` row (a bare image built
+    // out-of-band, or the seed pushed before this table existed) means one
+    // round-trip resolves `:latest` to its current digest.
+    const result = await ImageRegistryService.resolveOrAssert(source.image);
+    if ("missing" in result) {
       throw new ImageNotAvailableError(source.image);
     }
-    if (exists === null) {
+    if ("unreachable" in result) {
       throw new RegistryUnreachableError(source.image);
     }
-    // No `images` row (a bare image built out-of-band, or the seed pushed
-    // before this table existed): resolve `:latest` to its current digest.
-    return ImageRegistryService.resolveImageReference(source.image);
+    return result.ref;
   }
 
   /**
@@ -1412,6 +1415,26 @@ export class RuntimeService {
 }
 
 // ── module helpers ─────────────────────────────────────────────────────────
+
+/** `spec.toolsets` has no schema-level uniqueness guarantee — TypeBox lacks
+ * `uniqueItems` (see the doc comment on `SandboxSpecSchema.toolsets`) and
+ * dedup otherwise only happens downstream (agent-side overlay assembly),
+ * silently. Reject a duplicate `ref` here with a clean 400 instead (design
+ * review H8). */
+function rejectDuplicateToolsetRefs(spec: SandboxSpec): void {
+  if (!spec.toolsets || spec.toolsets.length < 2) return;
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const t of spec.toolsets) {
+    if (seen.has(t.ref)) duplicates.add(t.ref);
+    seen.add(t.ref);
+  }
+  if (duplicates.size > 0) {
+    throw new ValidationError(
+      `Spec contains duplicate toolset references: ${[...duplicates].join(", ")}.`,
+    );
+  }
+}
 
 function rejectUnresolvedSecrets(spec: SandboxSpec): void {
   const offenders: string[] = [];

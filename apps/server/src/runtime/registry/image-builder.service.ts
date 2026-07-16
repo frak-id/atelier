@@ -34,6 +34,13 @@ const log = createChildLogger("image-builder-service");
  * push destination (security review R-push-scope). */
 const IMAGE_NAME_PATTERN = /^[a-z0-9]+([._-][a-z0-9]+)*$/;
 
+/** Bound on a single build's wall-clock time — matches the k8s builders'
+ * own `BUILD_TIMEOUT_MS` (`k8s-build-job.ts`; NOT imported from there, this
+ * is the docker-backend's independent bound so a hung `docker build`/`push`
+ * against a wedged daemon doesn't wedge the `inflight` dedupe entry forever;
+ * see C1). */
+const BUILD_TIMEOUT_MS = 30 * 60_000;
+
 /** Number of build-log lines kept in `ImageRecord.buildLog`. */
 const LOG_TAIL_LINES = 500;
 /** Persist the rolling log to the store at most this often while a build is
@@ -279,6 +286,12 @@ export class ImageBuilderService {
   deleteImage(name: string): void {
     const record = this.store.get(name);
     if (!record) throw new NotFoundError("Image", name);
+    if (record.status === "building") {
+      throw new ValidationError(
+        `Image '${name}' is still building and cannot be deleted; wait for ` +
+          "the build to finish (or fail) first.",
+      );
+    }
     const qualified = `${this.registryUrl}/${name}`;
     const referenced = this.referencedImageRefs();
     const inUse = referenced.some(
@@ -348,6 +361,17 @@ export class ImageBuilderService {
   ): Promise<ImageRecord> {
     const tag = `${this.registryUrl}/${record.name}:latest`;
     const controller = new AbortController();
+    // Bound the backend call to BUILD_TIMEOUT_MS regardless of provenance:
+    // the k8s builders (kaniko/buildkit) already self-bound via
+    // `activeDeadlineSeconds`, but the docker backend has no such bound of
+    // its own — a hung `docker build`/`push` against a wedged daemon would
+    // otherwise wedge this build's `inflight` entry until a full server
+    // restart (C1). `AbortSignal.any` combines this timeout with the
+    // service's own controller so either source can abort the build.
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(BUILD_TIMEOUT_MS),
+    ]);
     const lines: string[] = [];
     let lastFlush = 0;
     let pendingFlush: ReturnType<typeof setTimeout> | undefined;
@@ -381,7 +405,7 @@ export class ImageBuilderService {
           cacheRepo: config.imageBuilder.cacheRepo || undefined,
         },
         onLog,
-        controller.signal,
+        signal,
       );
       if (pendingFlush) clearTimeout(pendingFlush);
       const ref = `${this.registryUrl}/${record.name}@${digest}`;

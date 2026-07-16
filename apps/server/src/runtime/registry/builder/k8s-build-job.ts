@@ -20,7 +20,7 @@
  * pod status once the Job completes.
  */
 import { Buffer } from "node:buffer";
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SandboxError } from "../../../shared/errors.ts";
@@ -42,9 +42,12 @@ const BUILD_CONTAINER = "build";
 /**
  * ConfigMaps are capped at ~1MiB by the API server and base64 inflates ~33%,
  * so refuse anything whose encoded size approaches that. Seed contexts are
- * ~10-90KB; only a large zip upload would ever hit this.
+ * ~10-90KB; only a large zip upload would ever hit this. Exported so the
+ * upload/accept path (H7: `v1.routes.ts`) can reject an over-ceiling BYO/zip
+ * context synchronously, before a `202`, instead of discovering it here mid-
+ * build.
  */
-const MAX_CONTEXT_BYTES = 900_000;
+export const MAX_CONTEXT_BYTES = 900_000;
 
 const POD_APPEAR_TIMEOUT_MS = 120_000;
 const BUILD_TIMEOUT_MS = 30 * 60_000;
@@ -83,19 +86,54 @@ export function jobResourceName(tag: string): string {
   return `atelier-build-${stem}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** `tar czf` the context (with the rewritten Dockerfile) into base64. */
+/**
+ * `tar` the context (with the rewritten Dockerfile) into base64-encoded
+ * gzip. P2e: rather than `cp`-ing the whole (potentially ~100MB) context
+ * tree just to overwrite one file, `tar` reads directly from `contextDir`
+ * excluding the ROOT on-disk `Dockerfile` (`--exclude=./Dockerfile`, anchored
+ * so a nested `subdir/Dockerfile` is preserved as ordinary context, matching
+ * the old copy-then-overwrite behavior), then a second `tar --append` adds the
+ * service-rewritten Dockerfile from a tiny one-file overlay dir — the
+ * rewritten content still always wins, without doubling disk I/O.
+ */
 export async function stageContextTarball(
   contextDir: string,
   dockerfile: string,
 ): Promise<string> {
   const staging = await mkdtemp(join(tmpdir(), "atelier-image-ctx-"));
   try {
-    await cp(contextDir, staging, { recursive: true });
+    const tarPath = join(staging, "context.tar");
+    const overlayDir = join(staging, "overlay");
+    await mkdir(overlayDir);
     // Overwrite any Dockerfile in the context with the service-rewritten one
     // (the backend port's contract: build CONTENT, never the on-disk file).
-    await writeFile(join(staging, "Dockerfile"), dockerfile, "utf8");
+    await writeFile(join(overlayDir, "Dockerfile"), dockerfile, "utf8");
 
-    const proc = Bun.spawn(["tar", "czf", "-", "-C", staging, "."], {
+    const create = Bun.spawnSync(
+      ["tar", "cf", tarPath, "--exclude=./Dockerfile", "-C", contextDir, "."],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    if (create.exitCode !== 0) {
+      throw new SandboxError(
+        `failed to package build context: ${create.stderr.toString().trim()}`,
+        "IMAGE_CONTEXT_PACKAGING_FAILED",
+        500,
+      );
+    }
+
+    const append = Bun.spawnSync(
+      ["tar", "rf", tarPath, "-C", overlayDir, "Dockerfile"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    if (append.exitCode !== 0) {
+      throw new SandboxError(
+        `failed to package build context: ${append.stderr.toString().trim()}`,
+        "IMAGE_CONTEXT_PACKAGING_FAILED",
+        500,
+      );
+    }
+
+    const proc = Bun.spawn(["gzip", "-c", tarPath], {
       stdout: "pipe",
       stderr: "pipe",
     });

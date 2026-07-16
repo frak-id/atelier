@@ -69,12 +69,17 @@ AGENT_PID=$!
 # — see boot.ts) writes /run/home-ready as its last step once /home/dev is a
 # fully-assembled overlay, or /run/home-failed if assembly fails. Wait for
 # EITHER: on success sshd serves the real home; on failure start sshd anyway
-# (onto the degraded home) so the pod is reachable for diagnosis. The cap is
-# ~600s to match the agent's BUILD_TIMEOUT_MS — a slow first cold pull must
-# not be cut off and served the wrong (bare, un-assembled) home mid-assembly,
-# which would strand any early writes on the rootfs.
+# (onto the degraded home) so the pod is reachable for diagnosis. The agent
+# bounds its WHOLE pull/mount/assembly loop (any toolset count) to a single
+# global ~600s deadline (toolset::BUILD_TIMEOUT_MS) and fails fast past it —
+# see toolset.rs materialize_inner — so this cap only needs a small margin
+# above that, not a per-toolset multiple. 1260 * 0.5s = 630s, matching
+# agent.client.ts's MATERIALIZE_TOOLSETS_TIMEOUT_MS (both downstream of the
+# same agent ceiling). A slow first cold pull must not be cut off and served
+# the wrong (bare, un-assembled) home mid-assembly, which would strand any
+# early writes on the rootfs.
 i=0
-while [ ! -e /run/home-ready ] && [ ! -e /run/home-failed ] && [ "$i" -lt 1200 ]; do
+while [ ! -e /run/home-ready ] && [ ! -e /run/home-failed ] && [ "$i" -lt 1260 ]; do
     sleep 0.5
     i=$((i + 1))
 done

@@ -23,6 +23,18 @@ const log = createChildLogger("agent");
 const DEFAULT_TIMEOUT = 10000;
 /** Unified attach bridge (WS), separate from the HTTP control plane. */
 const ATTACH_PORT = 9997;
+/**
+ * C3: the agent's `toolset::materialize_inner` bounds its whole pull/mount/
+ * assembly loop to a single global 600s deadline (`BUILD_TIMEOUT_MS`),
+ * regardless of toolset count, and fails fast with a "pulled X of N" error
+ * once exhausted. This client-side timeout must be >= that deadline (else it
+ * would abort a call the agent was about to finish/fail on its own, losing
+ * the agent's more specific error) — a 30s margin covers HTTP/serialization
+ * overhead on top of the agent's own budget. Keep in sync with
+ * `sandbox-boot.sh`'s wait-loop cap (both are downstream of the same agent
+ * ceiling).
+ */
+const MATERIALIZE_TOOLSETS_TIMEOUT_MS = 630_000;
 
 /**
  * Resolve where a sandbox's agent is reachable ({@link AgentEndpoint}), or
@@ -432,13 +444,28 @@ export class AgentClient {
    * waits on (`/run/home-ready`) before starting sshd — the race-free
    * handshake replacing the old base-overlay-then-remount design. Idempotent
    * and safe to call on every boot, including resume.
+   *
+   * C3: the agent now enforces a single GLOBAL deadline
+   * (`toolset::BUILD_TIMEOUT_MS` = 600s) across its whole pull/mount/assembly
+   * loop, no matter how many toolsets are requested — so this timeout no
+   * longer needs to scale with toolset count. It's set a little ABOVE the
+   * agent's own deadline (not equal) so the agent's own "pulled X of N"
+   * timeout error has a chance to land before this client-side abort fires;
+   * keep it in sync with `MATERIALIZE_TOOLSETS_TIMEOUT_MS` and with
+   * `sandbox-boot.sh`'s wait-loop cap (both must agree with the agent's
+   * ceiling for the create/resume race this replaces to stay closed).
    */
   async materializeToolsets(
     sandboxId: string,
     references: string[],
   ): Promise<void> {
     if (isMock()) return;
-    await this.post(sandboxId, "/toolsets", { toolsets: references }, 600_000);
+    await this.post(
+      sandboxId,
+      "/toolsets",
+      { toolsets: references },
+      MATERIALIZE_TOOLSETS_TIMEOUT_MS,
+    );
   }
 
   async writeFiles(

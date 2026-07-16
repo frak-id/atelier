@@ -125,12 +125,15 @@ describe("RuntimeService lifecycle", () => {
 
   // ── toolset mount bookkeeping (toolset-overlay-squashfs.md §6-7) ────────
 
+  // `getForSandbox` was removed as dead code (H4) — these assert through
+  // `referencedRefs()`, the one accessor an actual caller (the `deleteToolset`
+  // GC guard) uses. Each test uses a single sandbox, so `referencedRefs()`'s
+  // aggregate view is equivalent to a per-sandbox lookup here.
+
   test("create persists the sandbox's mounted toolset refs", async () => {
     const { runtime, sandboxToolsetRefs } = makeRuntime();
     await runtime.create(specWithToolset(), { id: "sb1" });
-    expect(sandboxToolsetRefs.getForSandbox("sb1")).toEqual([
-      { ref: TOOLSET_REF, digest: `sha256:${"a".repeat(64)}` },
-    ]);
+    expect(sandboxToolsetRefs.referencedRefs()).toEqual(new Set([TOOLSET_REF]));
   });
 
   test("resume re-persists the mounted toolset refs (survives pause)", async () => {
@@ -139,19 +142,17 @@ describe("RuntimeService lifecycle", () => {
     await runtime.pause("sb1");
     // Still tracked while paused — a paused sandbox's mount must keep
     // blocking the GC guard, not just a running one.
-    expect(sandboxToolsetRefs.getForSandbox("sb1")).toHaveLength(1);
+    expect(sandboxToolsetRefs.referencedRefs()).toEqual(new Set([TOOLSET_REF]));
 
     await runtime.resume("sb1");
-    expect(sandboxToolsetRefs.getForSandbox("sb1")).toEqual([
-      { ref: TOOLSET_REF, digest: `sha256:${"a".repeat(64)}` },
-    ]);
+    expect(sandboxToolsetRefs.referencedRefs()).toEqual(new Set([TOOLSET_REF]));
   });
 
   test("destroy clears the sandbox's mounted toolset refs", async () => {
     const { runtime, sandboxToolsetRefs } = makeRuntime();
     await runtime.create(specWithToolset(), { id: "sb1" });
     await runtime.destroy("sb1");
-    expect(sandboxToolsetRefs.getForSandbox("sb1")).toEqual([]);
+    expect(sandboxToolsetRefs.referencedRefs()).toEqual(new Set());
   });
 
   test("deleteToolset refuses a ref mounted by a live sandbox", async () => {

@@ -19,13 +19,25 @@ import { join } from "node:path";
 import { config } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 import { docker, dockerStream } from "../../backend/docker-cli.ts";
-import type {
-  ImageBuilderBackend,
-  ImageBuildRequest,
-  ImageBuildResult,
+import {
+  formatBuildArgs,
+  type ImageBuilderBackend,
+  type ImageBuildRequest,
+  type ImageBuildResult,
 } from "./builder.types.ts";
 
 const log = createChildLogger("image-builder-docker");
+
+/** Strip a `:tag` suffix off a full image reference, leaving the bare repo
+ * (`registry[:port]/name`). Only strips a colon that comes AFTER the last
+ * `/`, so a registry host's own port (`localhost:5000/name:latest`) is left
+ * alone. */
+function tagRepo(tag: string): string {
+  const lastSlash = tag.lastIndexOf("/");
+  const lastColon = tag.lastIndexOf(":");
+  if (lastColon > lastSlash) return tag.slice(0, lastColon);
+  return tag;
+}
 
 export interface DockerImageBuilderOptions {
   /** Docker daemon URL, e.g. `tcp://host:2375`. Empty inherits the process's
@@ -73,9 +85,12 @@ export class DockerImageBuilder implements ImageBuilderBackend {
         "-f",
         dockerfilePath,
       ];
-      for (const [key, value] of Object.entries(req.buildArgs ?? {})) {
-        buildArgs.push("--build-arg", `${key}=${value}`);
-      }
+      buildArgs.push(
+        ...formatBuildArgs(req.buildArgs, (key, value) => [
+          "--build-arg",
+          `${key}=${value}`,
+        ]),
+      );
       buildArgs.push(req.contextDir);
 
       onLog(`$ docker ${buildArgs.join(" ")}\n`);
@@ -108,14 +123,17 @@ export class DockerImageBuilder implements ImageBuilderBackend {
     }
   }
 
-  /** `docker inspect` reports the digest of the manifest just pushed under
-   * `RepoDigests` (`<repo>@sha256:...`) — more reliable across daemon
-   * versions than parsing push output. Extracts only the `sha256:...` part
-   * so the service can pin `${tag-without-suffix}@${digest}` uniformly with
-   * how `ImageRegistryService.resolveImageReference` already resolves refs. */
+  /** `docker inspect` reports EVERY digest the daemon has ever pushed/pulled
+   * for this image content under `RepoDigests` (`<repo>@sha256:...`), one
+   * entry per distinct repo the same content landed in — not just `req.tag`'s
+   * repo. Taking `[0]` unconditionally (H3) could pin a digest from a
+   * DIFFERENT repo if the same layers were previously pushed there on this
+   * daemon. Filter to the entry whose repo prefix matches `tag`'s repo
+   * (everything before the last `:`, which strips the tag but not a port)
+   * before extracting the `sha256:...` suffix. */
   private async resolveDigest(tag: string): Promise<string> {
     const result = await docker(
-      ["inspect", "--format", "{{index .RepoDigests 0}}", tag],
+      ["inspect", "--format", "{{json .RepoDigests}}", tag],
       this.dockerBin,
       this.env,
     );
@@ -124,13 +142,29 @@ export class DockerImageBuilder implements ImageBuilderBackend {
         `failed to resolve pushed digest for ${tag}: ${result.stderr}`,
       );
     }
-    const repoDigest = result.stdout.trim();
-    const at = repoDigest.lastIndexOf("@");
-    if (at === -1 || !repoDigest.slice(at + 1).startsWith("sha256:")) {
+    const repoDigests = JSON.parse(result.stdout.trim()) as unknown;
+    if (!Array.isArray(repoDigests)) {
       throw new Error(
-        `unexpected docker inspect output for ${tag}: "${repoDigest}"`,
+        `unexpected docker inspect output for ${tag}: "${result.stdout.trim()}"`,
       );
     }
-    return repoDigest.slice(at + 1);
+    const repo = tagRepo(tag);
+    const match = repoDigests.find(
+      (entry): entry is string =>
+        typeof entry === "string" && entry.startsWith(`${repo}@`),
+    );
+    if (!match) {
+      throw new Error(
+        `no RepoDigests entry for repo "${repo}" (tag ${tag}) among: ` +
+          JSON.stringify(repoDigests),
+      );
+    }
+    const at = match.lastIndexOf("@");
+    if (at === -1 || !match.slice(at + 1).startsWith("sha256:")) {
+      throw new Error(
+        `unexpected docker inspect RepoDigests entry for ${tag}: "${match}"`,
+      );
+    }
+    return match.slice(at + 1);
   }
 }

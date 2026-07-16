@@ -33,7 +33,12 @@ import {
   readContextDockerfile,
   unpackZipContext,
 } from "../runtime/index.ts";
-import { NotFoundError } from "../shared/errors.ts";
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "../shared/errors.ts";
+import { config } from "../shared/lib/config.ts";
 import {
   buildGitAttributionFiles,
   OWNER_ID_METADATA,
@@ -49,6 +54,56 @@ import {
   type ServerContainer,
 } from "./container.ts";
 import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
+
+/**
+ * H7: the active cluster-native builder (kaniko/buildkit) packages the whole
+ * build context as a single base64'd ConfigMap and refuses anything whose
+ * encoded size nears the Kubernetes API server's ~1MiB object cap — see
+ * `MAX_CONTEXT_BYTES` in `../runtime/registry/builder/k8s-build-job.ts`
+ * (kept in sync here; not re-exported through the runtime barrel, so this is
+ * a duplicated literal, not an import — see that file for the source of
+ * truth). `zip-context.ts`'s 100MB cap is for the docker backend; a BYO/zip
+ * context over this much smaller ceiling would previously be accepted
+ * (`202`) and only fail asynchronously mid-build. Reject it synchronously at
+ * accept time instead when kaniko/buildkit is the active builder.
+ */
+const MAX_K8S_NATIVE_CONTEXT_BYTES = 900_000;
+
+/** Rough base64-inflated size estimate for a raw (pre-tar) context, used to
+ * fail fast before even unpacking/tarring — tar + base64 only ever grows the
+ * byte count (tar adds block-alignment padding, base64 adds ~33%), so an
+ * input already over the ceiling can be rejected immediately. */
+function exceedsK8sNativeContextCeiling(rawBytes: number): boolean {
+  return rawBytes > MAX_K8S_NATIVE_CONTEXT_BYTES;
+}
+
+/**
+ * S3: `/v1/images*` accepts an arbitrary Dockerfile and (with the default
+ * `imageBuilder.kind=docker`) runs it as a root-equivalent build against the
+ * host's docker daemon — gate build/upload/register/delete behind an
+ * elevated role. There is genuinely no server-wide admin/operator role today
+ * (see `control.routes.ts`'s `configRoutes` comment: "no server-admin role
+ * yet"). This reuses control's existing org-scoped RBAC primitive
+ * (`OrgMemberService.requireRole`, `OrgMemberRole = owner|admin|member|
+ * viewer`) as the smallest correct proxy: the caller must be `owner` or
+ * `admin` of at least one organization they belong to. Revisit once a real
+ * server-wide admin role exists — this is an explicit assumption, not a new
+ * permissions system.
+ */
+function requireImageOperator(
+  control: ServerContainer["control"],
+  userId: string,
+): void {
+  const isOperator = control.orgMemberService
+    .getByUserId(userId)
+    .some((m) => m.role === "owner" || m.role === "admin");
+  if (!isOperator) {
+    throw new ForbiddenError(
+      "Building or managing images requires an owner/admin role in at " +
+        "least one organization.",
+    );
+  }
+}
 
 /** A short, human label for a prebuild job's queue row — the workspace/repo
  * metadata when present, else the source, else "prebuild". */
@@ -284,7 +339,24 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/images",
-        async ({ body, set }) => {
+        async ({ body, user, set }) => {
+          requireImageOperator(control, user.id);
+          // H7: a plain-dockerfile build's context is just the Dockerfile
+          // text itself — still worth bounding against the k8s-native
+          // ceiling up front when that's the active builder, for the same
+          // reason as the zip-upload path below.
+          if (
+            (config.imageBuilder.kind === "kaniko" ||
+              config.imageBuilder.kind === "buildkit") &&
+            "dockerfile" in body &&
+            exceedsK8sNativeContextCeiling(Buffer.byteLength(body.dockerfile))
+          ) {
+            throw new ValidationError(
+              `Dockerfile (${Buffer.byteLength(body.dockerfile)} bytes) ` +
+                `exceeds the ${MAX_K8S_NATIVE_CONTEXT_BYTES} byte ceiling ` +
+                `of the active kaniko/buildkit builder.`,
+            );
+          }
           const record =
             "seed" in body
               ? await container.images.buildSeed(body.seed, {
@@ -306,7 +378,24 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/images/upload",
-        async ({ body, set }) => {
+        async ({ body, user, set }) => {
+          requireImageOperator(control, user.id);
+          // H7: reject a BYO/zip context over the active k8s-native builder's
+          // real ceiling synchronously, at accept time — before this would
+          // otherwise answer `202` and only fail once `stageContextTarball`
+          // discovers it mid-build.
+          if (
+            (config.imageBuilder.kind === "kaniko" ||
+              config.imageBuilder.kind === "buildkit") &&
+            exceedsK8sNativeContextCeiling(body.file.size)
+          ) {
+            throw new ValidationError(
+              `Uploaded context (${body.file.size} bytes) exceeds the ` +
+                `${MAX_K8S_NATIVE_CONTEXT_BYTES} byte ceiling of the active ` +
+                `kaniko/buildkit builder. Slim the context or use the docker ` +
+                `builder for large uploads.`,
+            );
+          }
           const zipPath = join(
             tmpdir(),
             `atelier-image-upload-${Date.now()}-${randomUUID()}.zip`,
@@ -337,17 +426,28 @@ export function createV1Routes(container: ServerContainer) {
           }
         },
         {
-          body: t.Object({ name: t.String(), file: t.File() }),
+          // S1: bound the raw multipart body itself, not just the unpacked
+          // context — a generous margin over the 100MB unpacked cap (zip
+          // overhead, non-compressible content) while still refusing an
+          // unbounded upload.
+          body: t.Object({
+            name: t.String(),
+            file: t.File({ maxSize: "150m" }),
+          }),
         },
       )
       .post(
         "/images/register",
-        ({ body }) => container.images.registerExternal(body.name, body.ref),
+        ({ body, user }) => {
+          requireImageOperator(control, user.id);
+          return container.images.registerExternal(body.name, body.ref);
+        },
         { body: t.Object({ name: t.String(), ref: t.String() }) },
       )
       .delete(
         "/images/:name",
-        ({ params, set }) => {
+        ({ params, user, set }) => {
+          requireImageOperator(control, user.id);
           container.images.deleteImage(params.name);
           set.status = 204;
         },

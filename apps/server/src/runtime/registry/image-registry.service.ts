@@ -33,17 +33,31 @@ export class RegistryUnreachableError extends SandboxError {
   }
 }
 
+/** Discriminated result of a single registry HEAD (`resolveOrAssert`):
+ * either a resolved ref (digest-pinned, or `:latest` when no digest is
+ * available), a confirmed 404 (`missing`), or an indeterminate outcome
+ * (`unreachable` — network failure/timeout, distinct from a confirmed
+ * miss). */
+export type ResolveOrAssertResult =
+  | { ref: string }
+  | { missing: true }
+  | { unreachable: true };
+
 export const ImageRegistryService = {
   /**
-   * HEAD /v2/{imageId}/manifests/latest against the OCI registry.
-   * Returns null on network failure so callers can fail open: a flaky
-   * registry must not block spawns of images that do exist.
+   * Single HEAD /v2/{imageId}/manifests/latest against the OCI registry,
+   * shared by `imageExists`/`assertImageAvailable` and `resolveImageReference`
+   * so a caller that needs both "does it exist" and "what's its pinned ref"
+   * (the `resolveImage` hot path) does ONE round-trip instead of two
+   * near-identical HEADs (design review P2b).
    */
-  async imageExists(imageId: string): Promise<boolean | null> {
-    if (isMock()) return true;
+  async resolveOrAssert(imageId: string): Promise<ResolveOrAssertResult> {
+    const registry = config.kubernetes.registryUrl;
+    const tagged = `${registry}/${imageId}:latest`;
+    if (isMock()) return { ref: tagged };
     try {
       const res = await fetch(
-        `http://${config.kubernetes.registryUrl}/v2/${imageId}/manifests/latest`,
+        `http://${registry}/v2/${imageId}/manifests/latest`,
         {
           method: "HEAD",
           headers: {
@@ -53,12 +67,25 @@ export const ImageRegistryService = {
           signal: AbortSignal.timeout(MANIFEST_CHECK_TIMEOUT_MS),
         },
       );
-      if (res.ok) return true;
-      if (res.status === 404) return false;
-      return null;
+      if (res.status === 404) return { missing: true };
+      if (!res.ok) return { unreachable: true };
+      const digest = res.headers.get("docker-content-digest");
+      return { ref: digest ? `${registry}/${imageId}@${digest}` : tagged };
     } catch {
-      return null;
+      return { unreachable: true };
     }
+  },
+
+  /**
+   * HEAD /v2/{imageId}/manifests/latest against the OCI registry.
+   * Returns null on network failure so callers can fail open: a flaky
+   * registry must not block spawns of images that do exist.
+   */
+  async imageExists(imageId: string): Promise<boolean | null> {
+    const result = await ImageRegistryService.resolveOrAssert(imageId);
+    if ("missing" in result) return false;
+    if ("unreachable" in result) return null;
+    return true;
   },
 
   async assertImageAvailable(imageId: string): Promise<void> {
@@ -79,24 +106,7 @@ export const ImageRegistryService = {
   async resolveImageReference(imageId: string): Promise<string> {
     const registry = config.kubernetes.registryUrl;
     const tagged = `${registry}/${imageId}:latest`;
-    if (isMock()) return tagged;
-    try {
-      const res = await fetch(
-        `http://${registry}/v2/${imageId}/manifests/latest`,
-        {
-          method: "HEAD",
-          headers: {
-            Accept:
-              "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json",
-          },
-          signal: AbortSignal.timeout(MANIFEST_CHECK_TIMEOUT_MS),
-        },
-      );
-      const digest = res.headers.get("docker-content-digest");
-      if (res.ok && digest) return `${registry}/${imageId}@${digest}`;
-      return tagged;
-    } catch {
-      return tagged;
-    }
+    const result = await ImageRegistryService.resolveOrAssert(imageId);
+    return "ref" in result ? result.ref : tagged;
   },
 };
