@@ -1,6 +1,8 @@
 /** Shared read-side helpers for sandbox display + SSH, used by both the
  * scriptable commands and the interactive browser. */
+import { existsSync } from "node:fs";
 import type { SandboxUrl } from "@atelier/spec";
+import { ATELIER_KEY_PATH } from "../ssh-keys.ts";
 
 const HARNESS = "atelier.dev/harness";
 const PREBUILD = "atelier.dev/prebuild";
@@ -36,9 +38,12 @@ export function sshCommand(urls: SandboxUrl[]): string[] | null {
   const entry = urls.find((u) => u.name === "ssh");
   if (!entry) return null;
   const raw = entry.url.trim();
+  // Offer the atelier-managed key when present, so `atelier ssh` works right
+  // after `ssh-key setup` without touching `~/.ssh/config` or the agent.
+  const identity = existsSync(ATELIER_KEY_PATH) ? ["-i", ATELIER_KEY_PATH] : [];
   if (raw.startsWith("ssh://")) {
     const parsed = new URL(raw);
-    const args = ["ssh"];
+    const args = ["ssh", ...identity];
     if (parsed.port) args.push("-p", parsed.port);
     args.push(
       parsed.username
@@ -47,6 +52,9 @@ export function sshCommand(urls: SandboxUrl[]): string[] | null {
     );
     return args;
   }
-  if (raw.startsWith("ssh ")) return raw.split(/\s+/);
+  if (raw.startsWith("ssh ")) {
+    const [cmd, ...rest] = raw.split(/\s+/);
+    return [cmd as string, ...identity, ...rest];
+  }
   return null;
 }

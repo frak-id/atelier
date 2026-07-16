@@ -12,7 +12,23 @@ import {
 } from "../config.ts";
 import type { Ctx } from "../context.ts";
 import { fail, line, printJson, statusColor, table } from "../output.ts";
+import { type LocalKey, listLocalKeys } from "../ssh-keys.ts";
 import * as ui from "../ui.ts";
+
+/** SSH readiness: which local keys exist and whether any is registered on the
+ * server (the prerequisite for `atelier ssh`). Only meaningful once authed. */
+async function probeSsh(cfg: CliConfig): Promise<{
+  localKeys: LocalKey[];
+  registered: LocalKey | undefined;
+}> {
+  const local = listLocalKeys();
+  const remote = unwrap(await createClient(cfg).api["ssh-keys"].get());
+  const registeredFps = new Set(remote.map((k) => k.fingerprint));
+  return {
+    localKeys: local,
+    registered: local.find((k) => registeredFps.has(k.fingerprint)),
+  };
+}
 
 /** Probe a config: connectivity (`/health`, no auth) then auth (`/api/config`,
  * needs a valid Bearer). Returns a per-check verdict for `doctor`. */
@@ -105,6 +121,8 @@ export async function runInit(): Promise<void> {
 async function runDoctor(json: boolean): Promise<void> {
   const cfg = loadConfig();
   const verdict = await probe(cfg);
+  // The SSH check only makes sense once we can talk to the server as the user.
+  const ssh = verdict.authed ? await probeSsh(cfg).catch(() => null) : null;
   if (json) {
     printJson({
       configPath: cfg.configPath,
@@ -115,6 +133,13 @@ async function runDoctor(json: boolean): Promise<void> {
       reachable: verdict.reachable,
       authenticated: verdict.authed,
       detail: verdict.detail,
+      ssh: ssh
+        ? {
+            localKeyCount: ssh.localKeys.length,
+            registered: Boolean(ssh.registered),
+            registeredFingerprint: ssh.registered?.fingerprint ?? null,
+          }
+        : null,
     });
     return;
   }
@@ -131,10 +156,22 @@ async function runDoctor(json: boolean): Promise<void> {
   line(
     `  ${ok(verdict.authed)} authenticated ${pc.dim(verdict.authed ? "" : verdict.detail)}`,
   );
+  if (ssh) {
+    const hasLocal = ssh.localKeys.length > 0;
+    line(
+      `  ${ok(hasLocal)} local ssh key ${pc.dim(hasLocal ? `${ssh.localKeys.length} in ~/.ssh` : "none found")}`,
+    );
+    line(
+      `  ${ok(Boolean(ssh.registered))} ssh registered ${pc.dim(ssh.registered ? ssh.registered.fingerprint : "no local key registered on server")}`,
+    );
+  }
   if (!verdict.reachable || !verdict.authed) {
     line("");
     line(pc.dim("Run `atelier config init` to fix."));
     process.exitCode = 1;
+  } else if (ssh && !ssh.registered) {
+    line("");
+    line(pc.dim("Run `atelier ssh-key setup` to enable sandbox SSH."));
   }
 }
 

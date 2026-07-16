@@ -15,6 +15,7 @@ import { registerImage } from "./commands/image.ts";
 import { registerJobs } from "./commands/jobs.ts";
 import { registerPrebuild } from "./commands/prebuild.ts";
 import { registerSandbox } from "./commands/sandbox.ts";
+import { registerSshKey } from "./commands/ssh-key.ts";
 import { registerToolbox } from "./commands/toolbox.ts";
 import { registerToolset } from "./commands/toolset.ts";
 import { loadConfig } from "./config.ts";
@@ -47,6 +48,7 @@ registerPrebuild(program, ctx);
 registerImage(program, ctx);
 registerToolset(program, ctx);
 registerToolbox(program, ctx);
+registerSshKey(program, ctx);
 registerConfig(program, ctx);
 
 program.parseAsync(process.argv).catch((err) => {
