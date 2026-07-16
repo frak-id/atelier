@@ -57,6 +57,16 @@ export interface VolumeBackend {
   deleteSnapshot(ref: string): Promise<void>;
   /** Does the sandbox's live disk still exist? (`resume`'s PVC-reuse check). */
   volumeExists(pvcName: string): Promise<boolean>;
+  /**
+   * The volume's binding mode, when the backend has one. Used by `resume` to
+   * refuse reusing a pre-migration `Filesystem`-mode PVC through the new
+   * block-device (`volumeMode: Block`) pod spec — a mismatch k8s would
+   * otherwise reject at pod admission with an opaque error, stranding the
+   * sandbox. Optional: backends without a volumeMode concept (Docker named
+   * volumes are always a real filesystem) leave it undefined and the guard is
+   * skipped. Returns `null` when the volume is absent or the mode is
+   * unreadable. */
+  volumeMode?(pvcName: string): Promise<"Block" | "Filesystem" | null>;
 }
 
 /**

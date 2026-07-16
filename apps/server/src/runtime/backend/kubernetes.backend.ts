@@ -81,6 +81,19 @@ export class CsiVolumeBackend implements VolumeBackend {
   volumeExists(pvcName: string): Promise<boolean> {
     return kubeClient.resourceExists("PersistentVolumeClaim", pvcName);
   }
+
+  /** Read the bound PVC's `spec.volumeMode`. `volumeMode` is immutable once
+   * bound, so a PVC created before the block-volume cutover is permanently
+   * `Filesystem` (absent field defaults to `Filesystem`); `resume` uses this
+   * to refuse reusing it through the new `volumeDevices` pod spec. */
+  async volumeMode(pvcName: string): Promise<"Block" | "Filesystem" | null> {
+    const pvc = await kubeClient.getResource<{
+      spec?: { volumeMode?: string };
+    }>("PersistentVolumeClaim", pvcName);
+    if (!pvc) return null;
+    // Absent field defaults to Filesystem (k8s default).
+    return pvc.spec?.volumeMode === "Block" ? "Block" : "Filesystem";
+  }
 }
 
 /** Kubernetes sandbox orchestration plane. */

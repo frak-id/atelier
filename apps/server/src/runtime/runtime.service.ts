@@ -706,9 +706,26 @@ export class RuntimeService {
       const { image, snapshotName: sourceSnapshot } = await this.resolveSource(
         spec.source,
       );
-      const reusePvc = await this.backend.volumes.volumeExists(
-        record.pvcName ?? `sandbox-${id}`,
-      );
+      const pvcName = record.pvcName ?? `sandbox-${id}`;
+      const reusePvc = await this.backend.volumes.volumeExists(pvcName);
+      // Refuse to reuse a pre-cutover `Filesystem`-mode PVC through the new
+      // block-device (`volumeMode: Block`) pod spec: volumeMode is immutable,
+      // so k8s would reject pod admission with an opaque error and strand the
+      // sandbox in `paused`. Fail with an actionable message instead — such a
+      // sandbox must be destroyed and recreated (the block-volume migration is
+      // by natural churn; see docs/plans/toolset-inplace-update-fix-options.md
+      // §3). Backends without a volumeMode concept (Docker) skip this.
+      if (reusePvc && this.backend.volumes.volumeMode) {
+        const mode = await this.backend.volumes.volumeMode(pvcName);
+        if (mode === "Filesystem") {
+          throw new ConflictError(
+            `Sandbox ${id} has a legacy Filesystem-mode volume incompatible ` +
+              "with the block-device (virtio-blk) runtime; destroy and recreate " +
+              "it to migrate. In-place resume is not possible (volumeMode is " +
+              "immutable).",
+          );
+        }
+      }
       const toolsets = this.resolveSpecToolsets(spec);
 
       // Resume phase order: files/env -> onResume -> processes. onResume is

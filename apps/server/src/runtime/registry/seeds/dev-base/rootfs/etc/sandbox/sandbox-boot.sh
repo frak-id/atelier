@@ -31,22 +31,43 @@
 # from the pause snapshot) is mounted as-is, never reformatted. A no-op when
 # /data is already a mountpoint (the Docker backend bind-mounts a real ext4
 # named volume there directly, so there is no block device to format).
+# mkfs/mount failures MUST abort the boot: this script has no `set -e`, so an
+# unchecked failure would fall through to assemble /home/dev on the ephemeral
+# container rootfs — the pod would look healthy while every write silently
+# bypassed the PVC and was lost on pod deletion. Check each step and exit 1
+# (with diagnostics) instead. The wait-loop below then never runs; the pod
+# crash-loops visibly rather than corrupting state.
 DATA_DEVICE="/dev/atelier-data"
 if ! mountpoint -q /data; then
     if [ -b "$DATA_DEVICE" ]; then
         if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
             # Unformatted (fresh PVC): lazy init keeps first boot fast; the
             # metadata_csum default gives a journaled, crash-consistent fs so
-            # the pause `sync` + block VolumeSnapshot stays recoverable.
-            mkfs.ext4 -q -F -L atelier-data "$DATA_DEVICE"
+            # the pause `sync` + block VolumeSnapshot stays recoverable. NOT
+            # `-q`: log the format so an unexpected reformat (which would mean
+            # data loss on what should be an existing disk) is auditable.
+            echo "sandbox-boot: formatting fresh workspace device $DATA_DEVICE as ext4" >&2
+            if ! mkfs.ext4 -F -L atelier-data "$DATA_DEVICE"; then
+                echo "sandbox-boot: mkfs.ext4 failed on $DATA_DEVICE" >&2
+                lsblk 2>/dev/null >&2 || true
+                exit 1
+            fi
         fi
         mkdir -p /data
-        mount -t ext4 "$DATA_DEVICE" /data
+        if ! mount -t ext4 "$DATA_DEVICE" /data; then
+            echo "sandbox-boot: failed to mount $DATA_DEVICE at /data" >&2
+            blkid "$DATA_DEVICE" 2>/dev/null >&2 || true
+            lsblk 2>/dev/null >&2 || true
+            exit 1
+        fi
     else
         # No block device and /data not mounted: nothing backs the workspace.
         # Fail loud rather than silently assembling home on the ephemeral
-        # rootfs (which would divorce every write from the PVC).
+        # rootfs (which would divorce every write from the PVC). Dump the
+        # device list so a wrong devicePath is diagnosable at a glance.
         echo "sandbox-boot: workspace block device $DATA_DEVICE missing and /data not mounted" >&2
+        lsblk 2>/dev/null >&2 || true
+        ls -l /dev 2>/dev/null | grep -iE 'vd|atelier|disk' >&2 || true
         exit 1
     fi
 fi

@@ -13,6 +13,15 @@
  * A snapshot is another named volume, filled by a throwaway `cp -a` container
  * (no host-side CoW clone available across named volumes). Same content-hash
  * key as the CSI backend, so a prebuild stays addressable across planes.
+ *
+ * XATTR PRESERVATION: the overlay upperdir on `/data` now stores its metadata
+ * in `trusted.overlay.*` xattrs (redirect/opaque markers — the agent dropped
+ * `userxattr` for real trusted xattrs). Copying a volume must preserve them or
+ * a snapshot/resume silently loses redirect/whiteout state (deleted files
+ * reappear; renamed dirs break). That needs (a) GNU coreutils `cp` — BusyBox
+ * (alpine) `cp -a` drops xattrs — and (b) `CAP_SYS_ADMIN`, since reading and
+ * writing `trusted.*` is privileged. Hence the coreutils helper image +
+ * `--cap-add=SYS_ADMIN` below.
  */
 import type { VolumeBackend } from "./backend.types.ts";
 import { docker } from "./docker-cli.ts";
@@ -28,7 +37,10 @@ export class DockerVolumeBackend implements VolumeBackend {
   private readonly bin: string;
 
   constructor(options: DockerVolumeBackendOptions = {}) {
-    this.helperImage = options.helperImage ?? "alpine";
+    // Debian slim ships GNU coreutils (`cp -a` == `--preserve=all`, which
+    // includes xattrs) and GNU tar; BusyBox `alpine` silently drops the
+    // `trusted.overlay.*` markers the overlay upper depends on.
+    this.helperImage = options.helperImage ?? "debian:stable-slim";
     this.bin = options.dockerBin ?? "docker";
   }
 
@@ -56,6 +68,8 @@ export class DockerVolumeBackend implements VolumeBackend {
       [
         "run",
         "--rm",
+        // trusted.* xattr read (source) + write (dest) is privileged.
+        "--cap-add=SYS_ADMIN",
         "-v",
         `${from}:/from:ro`,
         "-v",
@@ -63,6 +77,8 @@ export class DockerVolumeBackend implements VolumeBackend {
         this.helperImage,
         "sh",
         "-c",
+        // GNU `cp -a` preserves xattrs (incl. trusted.overlay.*) and device
+        // nodes (overlay whiteouts). `.` copies dotfiles + the dir's xattrs.
         "cp -a /from/. /to/",
       ],
       this.bin,

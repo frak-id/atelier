@@ -14,10 +14,12 @@ process.env.ATELIER_SERVER_MODE = "mock";
 
 let RuntimeService: typeof import("./runtime.service.ts").RuntimeService;
 let stores: typeof import("./store.ts");
+let KubernetesBackend: typeof import("./backend/index.ts").KubernetesBackend;
 
 beforeAll(async () => {
   ({ RuntimeService } = await import("./runtime.service.ts"));
   stores = await import("./store.ts");
+  ({ KubernetesBackend } = await import("./backend/index.ts"));
 });
 
 const spec: SandboxSpec = {
@@ -206,5 +208,46 @@ describe("RuntimeService lifecycle", () => {
   test("deleteToolset still 404s on an unknown ref", () => {
     const { runtime } = makeRuntime();
     expect(() => runtime.deleteToolset(TOOLSET_REF)).toThrow(NotFoundError);
+  });
+
+  test("resume refuses a legacy Filesystem-mode volume with a clear error", async () => {
+    // A pre-cutover PVC is Filesystem-mode and immutable; reusing it through
+    // the new block-device pod spec would fail k8s admission opaquely and
+    // strand the sandbox. The guard turns that into an actionable error.
+    const backend = new KubernetesBackend();
+    const sandboxes = new stores.InMemorySandboxStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots: new stores.InMemorySnapshotStore(),
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "sb1" });
+    await runtime.pause("sb1");
+    // Simulate the pre-migration disk: it exists, in the old Filesystem mode.
+    backend.volumes.volumeExists = async () => true;
+    backend.volumes.volumeMode = async () => "Filesystem";
+    await expect(runtime.resume("sb1")).rejects.toThrow(/Filesystem-mode/);
+    // Left recoverable, not half-torn-down.
+    expect(sandboxes.get("sb1")?.status).toBe("paused");
+  });
+
+  test("resume proceeds when the reused volume is already Block mode", async () => {
+    const backend = new KubernetesBackend();
+    const sandboxes = new stores.InMemorySandboxStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots: new stores.InMemorySnapshotStore(),
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "sb1" });
+    await runtime.pause("sb1");
+    backend.volumes.volumeExists = async () => true;
+    backend.volumes.volumeMode = async () => "Block";
+    await runtime.resume("sb1");
+    expect(sandboxes.get("sb1")?.status).toBe("running");
   });
 });
