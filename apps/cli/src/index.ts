@@ -41,7 +41,11 @@ program
   // Bare invocation: set up if unconfigured, else open the cockpit.
   .action(async () => {
     if (!isInteractive()) return program.help();
-    if (!loadConfig().apiKey) return runSetup();
+    if (!loadConfig().apiKey) {
+      await runSetup();
+      // Bail if setup was cancelled; otherwise fall through into the cockpit.
+      if (!loadConfig().apiKey) return;
+    }
     return browseInteractive(ctx);
   });
 

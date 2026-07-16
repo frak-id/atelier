@@ -1,7 +1,7 @@
 /**
  * CLI config. Two layers, env wins over the on-disk file:
  *
- *   1. `~/.config/atelier/config.json` (written by `atelier config init`)
+ *   1. `~/.atelier/config.json` (written by `atelier login` / `config init`)
  *   2. `ATELIER_API_URL` / `ATELIER_API_KEY` env vars (override, for CI)
  *
  * The auth is the same Bearer key any API caller uses (`atl_…`/JWT minted via
@@ -9,8 +9,8 @@
  * other client (atelier-v2 §4).
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import envPaths from "env-paths";
 
 export interface CliConfig {
   baseUrl: string;
@@ -19,11 +19,11 @@ export interface CliConfig {
 
 const DEFAULT_BASE_URL = "http://localhost:4000";
 
-/** `~/.config/atelier/config.json` (no `-nodejs` suffix). */
-export const configPath: string = join(
-  envPaths("atelier", { suffix: "" }).config,
-  "config.json",
-);
+/** Everything the CLI persists lives under `~/.atelier`. */
+export const atelierDir: string = join(homedir(), ".atelier");
+
+/** `~/.atelier/config.json`. */
+export const configPath: string = join(atelierDir, "config.json");
 
 interface StoredConfig {
   baseUrl?: string;

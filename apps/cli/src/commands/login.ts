@@ -22,7 +22,7 @@ const CALLBACK_HTML = (ok: boolean) =>
   `<!doctype html><meta charset="utf-8"><title>atelier</title>` +
   `<body style="font:16px system-ui;padding:3rem;text-align:center">` +
   `<h1>${ok ? "✓ Logged in" : "✗ Login failed"}</h1>` +
-  `<p>${ok ? "You can close this tab and return to the terminal." : "Return to the terminal and try again."}</p>`;
+  `<p>${ok ? "You can now close this tab and return to the terminal." : "Return to the terminal and try again."}</p>`;
 
 const LOGIN_TIMEOUT_MS = 3 * 60 * 1000;
 
@@ -82,7 +82,9 @@ async function browserAuth(
   try {
     return await Promise.race([tokenPromise, timeout]);
   } finally {
-    server.stop(true);
+    // Keep the listener up briefly so the browser fully receives the
+    // "you can close this tab" response before we tear the socket down.
+    setTimeout(() => server.stop(true), 500);
   }
 }
 

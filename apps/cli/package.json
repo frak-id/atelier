@@ -15,7 +15,6 @@
     "@clack/prompts": "^0.11.0",
     "@elysiajs/eden": "^1.4.9",
     "commander": "^14.0.2",
-    "env-paths": "^4.0.0",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
