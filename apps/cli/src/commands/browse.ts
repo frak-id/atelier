@@ -161,15 +161,22 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
 
   const s = ui.spinner();
   s.start("Creating…");
-  // Spawn answers 202 with a job now; block on it so the cockpit only
-  // proceeds once the sandbox is actually up (job.result is the sandbox).
-  const job = unwrap(
-    // biome-ignore lint/suspicious/noExplicitAny: body is a validated spec union
-    await api.v1.sandboxes.post(body as any),
-  );
-  const result = await waitForJob<CreateSandboxResponse>(api, job);
-  s.stop(`Created ${result.id}`);
-  return result.id;
+  try {
+    // Spawn answers 202 with a job now; block on it so the cockpit only
+    // proceeds once the sandbox is actually up (job.result is the sandbox).
+    const job = unwrap(
+      // biome-ignore lint/suspicious/noExplicitAny: body is a validated spec union
+      await api.v1.sandboxes.post(body as any),
+    );
+    const result = await waitForJob<CreateSandboxResponse>(api, job);
+    s.stop(`Created ${result.id}`);
+    return result.id;
+  } catch (err) {
+    // Stop the spinner cleanly before the error propagates (a late job
+    // failure could otherwise leave it spinning on "Creating…").
+    s.stop("Failed");
+    throw err;
+  }
 }
 
 /** A live log tail that stops on `q` / Ctrl-C without exiting the cockpit. */

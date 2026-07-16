@@ -437,17 +437,19 @@ export function createV1Routes(container: ServerContainer) {
         { query: ToolsetRefSchema },
       )
       // ── sandboxes ──────────────────────────────────────────────────────
-      // Lifecycle ops are `track`ed (not `dispatch`ed): recorded in the job
-      // feed for visibility but AWAITED so the route still returns the
-      // resource inline, and unpooled so a spawn never queues behind a build.
+      // create is `dispatch`ed (non-blocking, 202 + job); the other lifecycle
+      // ops below (pause/resume/snapshot/destroy) are `track`ed — AWAITED so
+      // the route returns the resource inline, unpooled so they never queue
+      // behind a build.
       .post(
         "/sandboxes",
         ({ body, user, set }) => {
           const req = body as CreateSandboxRequest;
           // Non-blocking spawn: pre-allocate the id so the `202` job carries
-          // `metadata.sandboxId` — the console navigates straight to the
-          // detail page (which shows the `creating` record `runtime.create`
-          // persists immediately) instead of holding the button locked for the
+          // `metadata.sandboxId` — the console navigates straight to the detail
+          // page and shows its loading state (the `creating` record lands a
+          // moment later, once source resolution completes; the detail query
+          // retries the brief 404) instead of holding the button locked for the
           // whole multi-minute boot. Unpooled so a spawn never waits behind a
           // build.
           const id = safeNanoid();

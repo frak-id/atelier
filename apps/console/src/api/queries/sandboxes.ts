@@ -29,9 +29,25 @@ export function sandboxDetailQuery(id: string) {
     queryKey: queryKeys.sandboxes.detail(id),
     queryFn: async () => {
       const { data, error } = await api.v1.sandboxes({ id }).get();
-      if (error) throw new Error(errorMessage(error, "Failed to load sandbox"));
+      if (error) {
+        const err = new Error(
+          errorMessage(error, "Failed to load sandbox"),
+        ) as Error & { status?: number };
+        err.status = error.status;
+        throw err;
+      }
       return data;
     },
+    // A just-spawned sandbox is created asynchronously: `POST /sandboxes`
+    // answers 202 + job (the console navigates here immediately) before the
+    // `creating` record lands, so the first GET can 404 for a brief window
+    // (longer when the base image needs a live registry resolve). Retry 404s
+    // so the page stays in its loading skeleton and flips to the sandbox once
+    // the record appears, instead of flashing a "not found" error. Real
+    // failures (non-404) surface immediately.
+    retry: (count, err) =>
+      (err as { status?: number })?.status === 404 && count < 8,
+    retryDelay: 1000,
     refetchInterval: 5_000,
   });
 }

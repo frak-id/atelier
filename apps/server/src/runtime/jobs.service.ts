@@ -181,20 +181,24 @@ export class JobService {
   }
 
   /** A bound log sink for one job: appends chunks (split into lines) to its
-   * ring-buffer tail, LRU-evicting whole jobs past `MAX_LOG_JOBS`. */
+   * ring-buffer tail, evicting the least-recently-WRITTEN job past
+   * `MAX_LOG_JOBS`. Every write re-inserts the job at the tail of the Map (a
+   * true LRU-by-write), so a still-active job is never evicted ahead of an
+   * idle/settled one, and settled jobs age out naturally as new logs arrive. */
   private logSink(id: string): JobLog {
     return (chunk: string) => {
       let lines = this.logs.get(id);
-      if (!lines) {
-        // Evict the oldest job's log if we're at capacity (Map keeps
-        // insertion order).
+      if (lines) {
+        // Touch: move to the tail (most-recently-written) for LRU ordering.
+        this.logs.delete(id);
+      } else {
         if (this.logs.size >= MAX_LOG_JOBS) {
           const oldest = this.logs.keys().next().value;
           if (oldest !== undefined) this.logs.delete(oldest);
         }
         lines = [];
-        this.logs.set(id, lines);
       }
+      this.logs.set(id, lines);
       for (const line of chunk.split("\n")) lines.push(line);
       if (lines.length > MAX_LOG_LINES) {
         lines.splice(0, lines.length - MAX_LOG_LINES);

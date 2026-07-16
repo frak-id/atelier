@@ -76,6 +76,10 @@ function SpawnPage() {
               to: "/sandboxes/$sandboxId",
               params: { sandboxId },
             });
+          } else {
+            // Defensive: the server always sets metadata.sandboxId today, so a
+            // missing one is a regression — surface it instead of a silent no-op.
+            toast.error("Spawn accepted but no sandbox id was returned");
           }
         },
       },
