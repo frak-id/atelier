@@ -16,11 +16,13 @@ import {
   createImageBuilder,
   createSandboxBackend,
   DrizzleImageStore,
+  DrizzleJobStore,
   DrizzleSandboxStore,
   DrizzleSandboxToolsetRefStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,
   ImageBuilderService,
+  JobService,
   RuntimeService,
 } from "../runtime/index.ts";
 import {
@@ -81,6 +83,14 @@ export function createServerContainer() {
     sandboxToolsetRefs: new DrizzleSandboxToolsetRefStore(),
     images: imageStore,
   });
+  // Durable, observable lifecycle for long runtime ops (prebuild bake,
+  // toolset build/capture, sandbox lifecycle) — the api/ seam dispatches
+  // through it; internal spawn-time builds keep calling `runtime` directly
+  // (no job noise). `concurrency` bounds the pooled build jobs.
+  const jobs = new JobService({
+    store: new DrizzleJobStore(),
+    concurrency: config.jobs.concurrency,
+  });
   const dispatch = new AgentDispatch({ agentClient: agent });
   const sessions = new SessionService({
     runtime,
@@ -101,6 +111,7 @@ export function createServerContainer() {
   const serverContainer: ServerContainer = {
     control,
     runtime,
+    jobs,
     agent,
     dispatch,
     sessions,
@@ -114,6 +125,7 @@ export function createServerContainer() {
 export interface ServerContainer {
   control: ReturnType<typeof createControlContainer>;
   runtime: RuntimeService;
+  jobs: JobService;
   images: ImageBuilderService;
   agent: AgentClient;
   dispatch: AgentDispatch;

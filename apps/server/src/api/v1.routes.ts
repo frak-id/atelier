@@ -27,8 +27,12 @@ import {
   type ToolsetRef,
   ToolsetRefSchema,
 } from "@atelier/spec";
-import { Elysia, t } from "elysia";
-import { readContextDockerfile, unpackZipContext } from "../runtime/index.ts";
+import { Elysia, sse, t } from "elysia";
+import {
+  type JobRecord,
+  readContextDockerfile,
+  unpackZipContext,
+} from "../runtime/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import {
   buildGitAttributionFiles,
@@ -44,6 +48,27 @@ import {
   type ServerContainer,
 } from "./container.ts";
 import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
+
+/** A short, human label for a prebuild job's queue row — the workspace/repo
+ * metadata when present, else the source, else "prebuild". */
+function prebuildLabel(spec: PrebuildSpec): string {
+  return (
+    spec.metadata?.workspace ??
+    spec.metadata?.repo ??
+    spec.repos?.[0]?.url ??
+    ("image" in spec.source ? spec.source.image : spec.source.snapshot)
+  );
+}
+
+/** A short, human label for a sandbox-create job's queue row — the spec's
+ * opaque name/workspace metadata when present, else its source. */
+function sandboxLabel(req: CreateSandboxRequest): string {
+  return (
+    req.metadata?.name ??
+    req.metadata?.workspace ??
+    ("image" in req.source ? req.source.image : req.source.snapshot)
+  );
+}
 
 /**
  * Merge two name-keyed lists (processes/ports): `base` entries first, then
@@ -159,12 +184,55 @@ export async function createSandboxForUser(
 }
 
 export function createV1Routes(container: ServerContainer) {
-  const { runtime, control } = container;
+  const { runtime, control, jobs } = container;
   const authPlugin = createAuthPlugin(control);
 
   return (
     new Elysia({ prefix: "/v1" })
       .use(authPlugin)
+      // ── jobs ───────────────────────────────────────────────────────────
+      // The durable, observable queue for long runtime ops (prebuild bake,
+      // toolset build/capture). POSTs to those endpoints answer `202` with a
+      // `running` job; clients poll `GET /jobs/:id`, watch `GET /jobs`, or
+      // subscribe to the `/jobs/events` SSE feed, and can `cancel`.
+      .get("/jobs", ({ query }) => jobs.list(query.limit ?? 200), {
+        query: t.Object({ limit: t.Optional(t.Number()) }),
+      })
+      .get("/jobs/:id", ({ params }) => jobs.get(params.id))
+      .post("/jobs/:id/cancel", ({ params }) => jobs.cancel(params.id))
+      .get("/jobs/events", async function* ({ request }) {
+        const controller = new AbortController();
+        const queue: JobRecord[] = [];
+        let notify: (() => void) | null = null;
+        request.signal.addEventListener("abort", () => {
+          controller.abort();
+          notify?.();
+          notify = null;
+        });
+
+        jobs.subscribe(controller.signal, (job) => {
+          queue.push(job);
+          notify?.();
+          notify = null;
+        });
+
+        let eventId = 0;
+        while (!request.signal.aborted) {
+          if (queue.length === 0) {
+            await new Promise<void>((resolve) => {
+              notify = resolve;
+            });
+            if (request.signal.aborted) break;
+          }
+          while (queue.length > 0) {
+            const job = queue.shift();
+            if (!job) continue;
+            eventId++;
+            yield sse({ id: eventId, event: "job", data: job });
+          }
+        }
+        controller.abort();
+      })
       // ── images ─────────────────────────────────────────────────────────
       .get("/images", () => container.images.listImages())
       .get("/images/templates", () => container.images.listTemplates())
@@ -264,14 +332,28 @@ export function createV1Routes(container: ServerContainer) {
       .get("/prebuilds", () => runtime.listPrebuilds())
       .post(
         "/prebuilds",
-        async ({ body, query, user }) =>
-          runtime.prebuild(body as PrebuildSpec, {
-            force: query.force === true,
-            // Transient credential for cloning private repos in the build pod;
-            // scrubbed before the snapshot (never baked into the shared
-            // content-addressed artifact).
-            githubToken: control.userService.resolveGitHubToken(user.id),
-          }),
+        ({ body, query, user, set }) => {
+          const spec = body as PrebuildSpec;
+          // Transient credential for cloning private repos in the build pod;
+          // scrubbed before the snapshot (never baked into the shared
+          // content-addressed artifact). Resolved now (in request scope), not
+          // inside the background job.
+          const githubToken = control.userService.resolveGitHubToken(user.id);
+          const job = jobs.dispatch(
+            {
+              kind: "prebuild",
+              target: prebuildLabel(spec),
+              metadata: spec.metadata,
+            },
+            () =>
+              runtime.prebuild(spec, {
+                force: query.force === true,
+                githubToken,
+              }),
+          );
+          set.status = 202;
+          return job;
+        },
         {
           body: PrebuildSpecSchema,
           query: t.Object({ force: t.Optional(t.Boolean()) }),
@@ -294,7 +376,19 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/toolsets",
-        async ({ body }) => runtime.buildToolset(body as ToolsetBuildRequest),
+        ({ body, set }) => {
+          const req = body as ToolsetBuildRequest;
+          const job = jobs.dispatch(
+            {
+              kind: "toolset-build",
+              target: req.name,
+              metadata: req.metadata,
+            },
+            () => runtime.buildToolset(req),
+          );
+          set.status = 202;
+          return job;
+        },
         { body: ToolsetBuildRequestSchema },
       )
       .post(
@@ -316,16 +410,26 @@ export function createV1Routes(container: ServerContainer) {
         { query: ToolsetRefSchema },
       )
       // ── sandboxes ──────────────────────────────────────────────────────
+      // Lifecycle ops are `track`ed (not `dispatch`ed): recorded in the job
+      // feed for visibility but AWAITED so the route still returns the
+      // resource inline, and unpooled so a spawn never queues behind a build.
       .post(
         "/sandboxes",
-        async ({ body, user }) =>
-          createSandboxForUser(container, user, body as CreateSandboxRequest),
+        ({ body, user }) => {
+          const req = body as CreateSandboxRequest;
+          return jobs.track(
+            { kind: "sandbox-create", target: sandboxLabel(req) },
+            () => createSandboxForUser(container, user, req),
+          );
+        },
         { body: CreateSandboxRequestSchema },
       )
       .get("/sandboxes", () => runtime.list())
       .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))
-      .post("/sandboxes/:id/pause", async ({ params }) =>
-        runtime.pause(params.id),
+      .post("/sandboxes/:id/pause", ({ params }) =>
+        jobs.track({ kind: "sandbox-pause", target: params.id }, () =>
+          runtime.pause(params.id),
+        ),
       )
       .post(
         "/sandboxes/:id/resume",
@@ -349,12 +453,16 @@ export function createV1Routes(container: ServerContainer) {
             ...body,
             files: [...(body.files ?? []), ...gitFiles],
           };
-          return runtime.resume(params.id, merged);
+          return jobs.track({ kind: "sandbox-resume", target: params.id }, () =>
+            runtime.resume(params.id, merged),
+          );
         },
         { body: ResumeRequestSchema },
       )
       .delete("/sandboxes/:id", async ({ params, set }) => {
-        await runtime.destroy(params.id);
+        await jobs.track({ kind: "sandbox-destroy", target: params.id }, () =>
+          runtime.destroy(params.id),
+        );
         set.status = 204;
       })
       // ── live mutations ────────────────────────────────────────────────
@@ -416,13 +524,26 @@ export function createV1Routes(container: ServerContainer) {
         async ({ params, body }) => runtime.exec(params.id, body),
         { body: ExecRequestSchema },
       )
-      .post("/sandboxes/:id/snapshot", async ({ params }) =>
-        runtime.snapshot(params.id),
+      .post("/sandboxes/:id/snapshot", ({ params }) =>
+        jobs.track({ kind: "sandbox-snapshot", target: params.id }, () =>
+          runtime.snapshot(params.id),
+        ),
       )
       .post(
         "/sandboxes/:id/toolsets/capture",
-        async ({ params, body }) =>
-          runtime.captureToolset(params.id, body as ToolsetCaptureRequest),
+        ({ params, body, set }) => {
+          const req = body as ToolsetCaptureRequest;
+          const job = jobs.dispatch(
+            {
+              kind: "toolset-capture",
+              target: req.name,
+              metadata: { sandboxId: params.id },
+            },
+            () => runtime.captureToolset(params.id, req),
+          );
+          set.status = 202;
+          return job;
+        },
         { body: ToolsetCaptureRequestSchema },
       )
       // ── attach ─────────────────────────────────────────────────────────

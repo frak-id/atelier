@@ -86,4 +86,8 @@ export const queryKeys = {
     all: ["config"] as const,
     list: () => [...queryKeys.config.all, "list"] as const,
   },
+  jobs: {
+    all: ["jobs"] as const,
+    list: () => [...queryKeys.jobs.all, "list"] as const,
+  },
 } as const;

@@ -32,7 +32,6 @@ export function prebuildsListQuery() {
  * — the "rebuild" action on an existing prebuild.
  */
 export function useRunPrebuild() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
       spec,
@@ -47,9 +46,15 @@ export function useRunPrebuild() {
       if (error) throw new Error(errorMessage(error, "Prebuild failed"));
       return data;
     },
+    // The endpoint answers 202 with a `running` (or `queued`, if the pool is
+    // full) job: the bake proceeds in the background. The job is delivered to
+    // the queue cache over the SSE feed (`useJobEvents`, wired at the root),
+    // and completion + the prebuilds-list refresh arrive the same way — so no
+    // manual jobs invalidation here (it would just race the stream).
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.prebuilds.all });
-      toast.success(`Prebuild snapshot: ${data?.ref ?? "created"}`);
+      toast.success(
+        data?.status === "queued" ? "Prebuild queued" : "Prebuild started",
+      );
     },
     onError: (error) => toast.error(error.message),
   });

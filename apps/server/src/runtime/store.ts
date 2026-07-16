@@ -17,10 +17,11 @@ import type {
   SandboxStatus,
   ToolsetEntry,
 } from "@atelier/spec";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import { getDatabase } from "../shared/lib/db.ts";
 import {
   images,
+  jobs,
   sandboxes,
   sandboxToolsetRefs,
   snapshots,
@@ -146,6 +147,64 @@ export interface SandboxToolsetRefStore {
   /** Every ref mounted by at least one sandbox (live or paused), for the
    * `deleteToolset` GC guard. */
   referencedRefs(): Set<string>;
+}
+
+/** The long-running operations tracked by `JobService` (see `db/schema.ts`'s
+ * `jobs` table doc). Global, no identity scope. The `sandbox-*` kinds are
+ * lifecycle ops tracked for feed visibility (they bypass the concurrency
+ * pool); the rest are pooled throwaway-pod builds. */
+export type JobKind =
+  | "prebuild"
+  | "toolset-build"
+  | "toolset-capture"
+  | "sandbox-create"
+  | "sandbox-pause"
+  | "sandbox-resume"
+  | "sandbox-snapshot"
+  | "sandbox-destroy";
+/** `queued` = waiting for a concurrency slot (pooled jobs only). */
+export type JobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+
+/** The settled (non-cancellable, non-active) states. */
+export function isJobTerminal(status: JobStatus): boolean {
+  return status === "succeeded" || status === "failed" || status === "canceled";
+}
+
+export interface JobRecord {
+  id: string;
+  kind: JobKind;
+  status: JobStatus;
+  /** Human-facing label for the queue UI (prebuild/toolset name). */
+  target?: string;
+  /** Opaque display context (repo, slug, …). */
+  metadata?: Record<string, string>;
+  /** The operation's success payload (e.g. `{ ref }`), once `succeeded`. */
+  result?: unknown;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+}
+
+export interface JobStore {
+  create(record: JobRecord): void;
+  get(id: string): JobRecord | undefined;
+  update(id: string, patch: Partial<JobRecord>): JobRecord | undefined;
+  /** Newest first. `limit` caps the number of rows returned (the table is
+   * unbounded history; callers/endpoints want a recent tail). */
+  list(limit?: number): JobRecord[];
+  /** Bulk-settle every non-terminal row (`queued`/`running`) at boot — the
+   * restart sweep (their in-memory promise + queue entry died with the
+   * process). Returns the ids it transitioned so the caller can log/emit. */
+  failActive(reason: string): string[];
+  /** Retention: delete settled rows that finished before `beforeIso`. Returns
+   * how many were removed. Never touches non-terminal rows. */
+  deleteTerminalBefore(beforeIso: string): number;
 }
 
 // ── in-memory (tests, standalone runtime/) ─────────────────────────────────
@@ -275,6 +334,57 @@ export class InMemoryImageStore implements ImageStore {
   }
   delete(name: string): void {
     this.byName.delete(name);
+  }
+}
+
+export class InMemoryJobStore implements JobStore {
+  private readonly rows = new Map<string, JobRecord>();
+
+  create(record: JobRecord): void {
+    this.rows.set(record.id, record);
+  }
+  get(id: string): JobRecord | undefined {
+    return this.rows.get(id);
+  }
+  update(id: string, patch: Partial<JobRecord>): JobRecord | undefined {
+    const existing = this.rows.get(id);
+    if (!existing) return undefined;
+    const next: JobRecord = {
+      ...existing,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    this.rows.set(id, next);
+    return next;
+  }
+  list(limit?: number): JobRecord[] {
+    const sorted = [...this.rows.values()].sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt),
+    );
+    return limit === undefined ? sorted : sorted.slice(0, limit);
+  }
+  failActive(reason: string): string[] {
+    const ids: string[] = [];
+    for (const row of this.rows.values()) {
+      if (isJobTerminal(row.status)) continue;
+      this.update(row.id, {
+        status: "failed",
+        error: reason,
+        finishedAt: new Date().toISOString(),
+      });
+      ids.push(row.id);
+    }
+    return ids;
+  }
+  deleteTerminalBefore(beforeIso: string): number {
+    let removed = 0;
+    for (const row of [...this.rows.values()]) {
+      if (!isJobTerminal(row.status)) continue;
+      if (row.createdAt >= beforeIso) continue;
+      this.rows.delete(row.id);
+      removed++;
+    }
+    return removed;
   }
 }
 
@@ -683,5 +793,137 @@ export class DrizzleSandboxToolsetRefStore implements SandboxToolsetRefStore {
       .from(sandboxToolsetRefs)
       .all() as Array<{ ref: string }>;
     return new Set(rows.map((r) => r.ref));
+  }
+}
+
+interface JobRow {
+  id: string;
+  kind: string;
+  status: string;
+  target: string | null;
+  metadata: string | null;
+  result: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}
+
+function jobRowToRecord(row: JobRow): JobRecord {
+  return {
+    id: row.id,
+    kind: row.kind as JobKind,
+    status: row.status as JobStatus,
+    target: row.target ?? undefined,
+    metadata: row.metadata
+      ? (JSON.parse(row.metadata) as Record<string, string>)
+      : undefined,
+    result: row.result ? (JSON.parse(row.result) as unknown) : undefined,
+    error: row.error ?? undefined,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    finishedAt: row.finishedAt ?? undefined,
+  };
+}
+
+function jobRecordToRow(record: JobRecord): JobRow {
+  return {
+    id: record.id,
+    kind: record.kind,
+    status: record.status,
+    target: record.target ?? null,
+    metadata: record.metadata ? JSON.stringify(record.metadata) : null,
+    result: record.result !== undefined ? JSON.stringify(record.result) : null,
+    error: record.error ?? null,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    finishedAt: record.finishedAt ?? null,
+  };
+}
+
+export class DrizzleJobStore implements JobStore {
+  create(record: JobRecord): void {
+    getDatabase().insert(jobs).values(jobRecordToRow(record)).run();
+  }
+
+  get(id: string): JobRecord | undefined {
+    const row = getDatabase()
+      .select()
+      .from(jobs)
+      .where(eq(jobs.id, id))
+      .get() as JobRow | undefined;
+    return row ? jobRowToRecord(row) : undefined;
+  }
+
+  update(id: string, patch: Partial<JobRecord>): JobRecord | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    const next: JobRecord = {
+      ...existing,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    getDatabase()
+      .update(jobs)
+      .set(jobRecordToRow(next))
+      .where(eq(jobs.id, id))
+      .run();
+    return next;
+  }
+
+  list(limit?: number): JobRecord[] {
+    const base = getDatabase()
+      .select()
+      .from(jobs)
+      .orderBy(desc(jobs.createdAt));
+    const rows = (
+      limit === undefined ? base.all() : base.limit(limit).all()
+    ) as JobRow[];
+    return rows.map(jobRowToRecord);
+  }
+
+  deleteTerminalBefore(beforeIso: string): number {
+    const db = getDatabase();
+    const doomed = db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(
+        and(
+          inArray(jobs.status, ["succeeded", "failed", "canceled"]),
+          lt(jobs.createdAt, beforeIso),
+        ),
+      )
+      .all() as Array<{ id: string }>;
+    if (doomed.length === 0) return 0;
+    db.delete(jobs)
+      .where(
+        inArray(
+          jobs.id,
+          doomed.map((r) => r.id),
+        ),
+      )
+      .run();
+    return doomed.length;
+  }
+
+  failActive(reason: string): string[] {
+    const db = getDatabase();
+    const active = db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(inArray(jobs.status, ["queued", "running"]))
+      .all() as Array<{ id: string }>;
+    if (active.length === 0) return [];
+    const now = new Date().toISOString();
+    db.update(jobs)
+      .set({ status: "failed", error: reason, finishedAt: now, updatedAt: now })
+      .where(
+        inArray(
+          jobs.id,
+          active.map((r) => r.id),
+        ),
+      )
+      .run();
+    return active.map((r) => r.id);
   }
 }

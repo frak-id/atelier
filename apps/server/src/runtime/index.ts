@@ -15,6 +15,12 @@ export {
   type SandboxBackend,
   type VolumeBackend,
 } from "./backend/index.ts";
+export {
+  JobCanceledError,
+  type JobDispatchOptions,
+  JobService,
+  type JobServiceDeps,
+} from "./jobs.service.ts";
 export { ensureSharedSshPipeKey } from "./kube/index.ts";
 export {
   createImageBuilder,
@@ -40,6 +46,10 @@ export type {
   ImageRecord,
   ImageStatus,
   ImageStore,
+  JobKind,
+  JobRecord,
+  JobStatus,
+  JobStore,
   SandboxRecord,
   SandboxStore,
   SandboxToolsetRefEntry,
@@ -51,10 +61,12 @@ export type {
 } from "./store.ts";
 export {
   DrizzleImageStore,
+  DrizzleJobStore,
   DrizzleSandboxStore,
   DrizzleSandboxToolsetRefStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,
   InMemoryImageStore,
+  InMemoryJobStore,
   InMemorySandboxToolsetRefStore,
 } from "./store.ts";

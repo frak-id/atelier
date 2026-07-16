@@ -25,7 +25,7 @@ const log = createChildLogger("control-routes");
 const TOOLBOX_SOFT_CAP = 5;
 
 export function createControlRoutes(container: ServerContainer) {
-  const { control } = container;
+  const { control, jobs } = container;
   const authPlugin = createAuthPlugin(control);
 
   const apiKeyRoutes = new Elysia({ prefix: "/api-keys" })
@@ -240,41 +240,59 @@ export function createControlRoutes(container: ServerContainer) {
     })
     .post(
       "/:id/versions/capture",
-      async ({ user, params, body }) => {
+      ({ user, params, body, set }) => {
         const tb = control.toolboxService.get(params.id);
         requireToolboxOwnerAccess(control, tb, user.id);
         if (tb.paths.length === 0) {
           throw new ValidationError("toolbox has no paths to capture");
         }
-        // Server-authoritative capture inputs (docs/toolbox-versions.md §2
-        // invariant): a "version" must capture the toolbox's OWN paths[] to
-        // stay substitutable for the recipe-built artifact, never whatever
-        // the caller passes.
-        const { ref } = await container.runtime.captureToolset(body.sandboxId, {
-          name: `tb/${tb.ownerType}/${tb.ownerId}/${tb.slug}`,
-          paths: tb.paths,
-          exclude: [],
-          overrides: [],
-        });
-        // Best-effort drift signal (docs/toolbox-versions.md §5): the base
-        // image the sandbox was actually running at capture time.
-        const sourceImage = await container.runtime
-          .getSandboxImage(body.sandboxId)
-          .catch(() => undefined);
-        // Save, don't pin — pinning is a separate, explicit call (§7).
-        const version = control.toolboxVersionService.create(tb.id, {
-          ref,
-          description: body.description,
-          provenance: {
-            kind: "captured",
-            capturedFrom: body.sandboxId,
-            capturedBy: user.id,
-            ...(sourceImage ? { sourceImage } : {}),
+        // Long op (agent tar + secret scan + push): dispatch a durable job and
+        // answer `202`. The whole flow — capture, drift probe, version-row
+        // create, retention prune — runs in the job body so the version is the
+        // job's result once it settles.
+        const job = jobs.dispatch(
+          {
+            kind: "toolset-capture",
+            target: tb.slug,
+            metadata: { toolboxId: tb.id, sandboxId: body.sandboxId },
           },
-          recipeFingerprint: recipeFingerprint(tb),
-        });
-        pruneToolboxVersions(container, tb.id);
-        return version;
+          async () => {
+            // Server-authoritative capture inputs (docs/toolbox-versions.md §2
+            // invariant): a "version" must capture the toolbox's OWN paths[]
+            // to stay substitutable for the recipe-built artifact, never
+            // whatever the caller passes.
+            const { ref } = await container.runtime.captureToolset(
+              body.sandboxId,
+              {
+                name: `tb/${tb.ownerType}/${tb.ownerId}/${tb.slug}`,
+                paths: tb.paths,
+                exclude: [],
+                overrides: [],
+              },
+            );
+            // Best-effort drift signal (docs/toolbox-versions.md §5): the base
+            // image the sandbox was actually running at capture time.
+            const sourceImage = await container.runtime
+              .getSandboxImage(body.sandboxId)
+              .catch(() => undefined);
+            // Save, don't pin — pinning is a separate, explicit call (§7).
+            const version = control.toolboxVersionService.create(tb.id, {
+              ref,
+              description: body.description,
+              provenance: {
+                kind: "captured",
+                capturedFrom: body.sandboxId,
+                capturedBy: user.id,
+                ...(sourceImage ? { sourceImage } : {}),
+              },
+              recipeFingerprint: recipeFingerprint(tb),
+            });
+            pruneToolboxVersions(container, tb.id);
+            return version;
+          },
+        );
+        set.status = 202;
+        return job;
       },
       { body: ToolboxVersionCaptureRequestSchema },
     )

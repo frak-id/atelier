@@ -28,8 +28,12 @@ function useInvalidateToolsets() {
   };
 }
 
+// The build/capture endpoints answer 202 with a `running` (or `queued`) job;
+// the work proceeds in the background and is delivered to the queue over the
+// SSE feed (`useJobEvents`), which also refreshes the toolsets list on
+// completion. Mutations just kick the job off and report its initial state.
+
 export function useBuildToolset() {
-  const invalidate = useInvalidateToolsets();
   return useMutation({
     mutationFn: async (req: ToolsetBuildRequest) => {
       const { data, error } = await api.v1.toolsets.post(req);
@@ -37,9 +41,12 @@ export function useBuildToolset() {
         throw new Error(errorMessage(error, "Failed to build toolset"));
       return data;
     },
-    onSuccess: () => {
-      invalidate();
-      toast.success("Toolset built");
+    onSuccess: (data) => {
+      toast.success(
+        data?.status === "queued"
+          ? "Toolset build queued"
+          : "Toolset build started",
+      );
     },
     onError: (error) => toast.error(error.message),
   });
@@ -81,7 +88,6 @@ export function useRemoveToolset() {
 }
 
 export function useCaptureToolset() {
-  const invalidate = useInvalidateToolsets();
   return useMutation({
     mutationFn: async ({
       sandboxId,
@@ -94,9 +100,12 @@ export function useCaptureToolset() {
         throw new Error(errorMessage(error, "Failed to capture toolset"));
       return data;
     },
-    onSuccess: () => {
-      invalidate();
-      toast.success("Toolset captured");
+    onSuccess: (data) => {
+      toast.success(
+        data?.status === "queued"
+          ? "Toolset capture queued"
+          : "Toolset capture started",
+      );
     },
     onError: (error) => toast.error(error.message),
   });

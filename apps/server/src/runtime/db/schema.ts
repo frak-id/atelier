@@ -95,6 +95,46 @@ export const images = sqliteTable("images", {
   updatedAt: text("updated_at").notNull(),
 });
 
+/**
+ * A long-running runtime operation, made durable and observable — the read
+ * model behind `GET /v1/jobs` + the `/v1/jobs/events` SSE feed. Every
+ * multi-second/minute op the api/ seam dispatches (prebuild bake, toolset
+ * build, toolset/version capture) gets a row here so a client can poll or
+ * subscribe instead of holding a blocking request open.
+ *
+ * Global by design (no `orgId`/`userId` — the runtime carries no identity FK,
+ * see this file's header): the queue is a single shared view for now.
+ *
+ * A crash/restart is fatal to the in-flight work (the AbortController and its
+ * promise die with the process), so `reconcileOnStartup()` sweeps every
+ * `running` row to `failed` with a "rebooted" reason at boot — mirroring the
+ * `images`/`sandboxes` zombie sweeps.
+ */
+export const jobs = sqliteTable(
+  "jobs",
+  {
+    id: text("id").primaryKey(),
+    /** The `JobKind` union (see `store.ts`) — a pooled build (`prebuild`,
+     * `toolset-*`) or a tracked `sandbox-*` lifecycle op. */
+    kind: text("kind").notNull(),
+    /** The `JobStatus` union (see `store.ts`): queued → running → succeeded/
+     * failed/canceled. */
+    status: text("status").notNull(),
+    /** Human-facing label (prebuild name, toolset name) for the queue UI. */
+    target: text("target"),
+    /** JSON: opaque pass-through context for display (repo, slug, …). */
+    metadata: text("metadata"),
+    /** JSON: the operation's success result (e.g. `{ ref }`). Null until done. */
+    result: text("result"),
+    error: text("error"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    /** Set when the job settles (succeeded/failed/canceled) — for duration. */
+    finishedAt: text("finished_at"),
+  },
+  (t) => [index("idx_jobs_status").on(t.status)],
+);
+
 export const toolsets = sqliteTable(
   "toolsets",
   {

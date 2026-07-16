@@ -26,7 +26,6 @@ export function toolboxVersionsQuery(toolboxId: string) {
 }
 
 export function useCaptureToolboxVersion() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
       toolboxId,
@@ -43,14 +42,14 @@ export function useCaptureToolboxVersion() {
       if (error) throw new Error(errorMessage(error, "Failed to save version"));
       return data;
     },
-    onSuccess: (_data, { toolboxId }) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.toolboxVersions.list(toolboxId),
-      });
-      // A capture also creates a runtime toolset (docs/toolbox-versions.md
-      // §7 step 2), so the toolsets list needs to reflect it too.
-      queryClient.invalidateQueries({ queryKey: queryKeys.toolsets.all });
-      toast.success("Saved as new version");
+    // 202 + a `running`/`queued` job: the agent tar/scan/push runs in the
+    // background. The job is delivered to the queue over the SSE feed
+    // (`useJobEvents`), and the version row + toolsets list refresh land on
+    // its completion the same way.
+    onSuccess: (data) => {
+      toast.success(
+        data?.status === "queued" ? "Capture queued" : "Capture started",
+      );
     },
     onError: (error) => toast.error(error.message),
   });

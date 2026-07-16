@@ -83,6 +83,33 @@ export interface ImageLogs {
   log: string;
 }
 
+/**
+ * A durable long-running runtime op (`GET /v1/jobs`). Server-internal type
+ * (the `jobs` table is not a seam contract), defined locally so the CLI stays
+ * a pure HTTP client. `prebuild`/`toolset build`/`capture` now answer `202`
+ * with one of these; the CLI polls it to completion.
+ */
+export interface JobRecord {
+  id: string;
+  kind:
+    | "prebuild"
+    | "toolset-build"
+    | "toolset-capture"
+    | "sandbox-create"
+    | "sandbox-pause"
+    | "sandbox-resume"
+    | "sandbox-snapshot"
+    | "sandbox-destroy";
+  status: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  target?: string;
+  metadata?: Record<string, string>;
+  result?: unknown;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+}
+
 /** One server-config entry (`GET /api/config`). */
 export interface ServerConfigEntry {
   key: string;
@@ -233,8 +260,35 @@ export class AtelierClient {
     return this.req("POST", `/sandboxes/${id}/snapshot`);
   }
 
-  prebuild(spec: PrebuildSpec, force = false): Promise<SnapshotRef> {
-    return this.req("POST", `/prebuilds${force ? "?force=true" : ""}`, spec);
+  getJob(id: string): Promise<JobRecord> {
+    return this.req("GET", `/jobs/${id}`);
+  }
+
+  /**
+   * Block on a dispatched job until it settles, returning its result (the CLI
+   * wants the synchronous "wait then print the ref" UX). Polls `GET /jobs/:id`
+   * every second; throws the job's own error on failure/cancellation.
+   */
+  private async waitForJob<T>(job: JobRecord): Promise<T> {
+    let current = job;
+    while (current.status === "queued" || current.status === "running") {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      current = await this.getJob(current.id);
+    }
+    if (current.status === "succeeded") return current.result as T;
+    throw new ApiError(
+      current.status === "canceled" ? 499 : 500,
+      current.error ?? `job ${current.status}`,
+    );
+  }
+
+  async prebuild(spec: PrebuildSpec, force = false): Promise<SnapshotRef> {
+    const job = await this.req<JobRecord>(
+      "POST",
+      `/prebuilds${force ? "?force=true" : ""}`,
+      spec,
+    );
+    return this.waitForJob<SnapshotRef>(job);
   }
 
   listPrebuilds(): Promise<PrebuildRecord[]> {
@@ -286,15 +340,21 @@ export class AtelierClient {
     return this.req("GET", "/toolsets");
   }
 
-  buildToolset(req: ToolsetBuildRequest): Promise<ToolsetRef> {
-    return this.req("POST", "/toolsets", req);
+  async buildToolset(req: ToolsetBuildRequest): Promise<ToolsetRef> {
+    const job = await this.req<JobRecord>("POST", "/toolsets", req);
+    return this.waitForJob<ToolsetRef>(job);
   }
 
-  captureToolset(
+  async captureToolset(
     sandboxId: string,
     req: ToolsetCaptureRequest,
   ): Promise<ToolsetRef> {
-    return this.req("POST", `/sandboxes/${sandboxId}/toolsets/capture`, req);
+    const job = await this.req<JobRecord>(
+      "POST",
+      `/sandboxes/${sandboxId}/toolsets/capture`,
+      req,
+    );
+    return this.waitForJob<ToolsetRef>(job);
   }
 
   publishToolset(ref: string): Promise<ToolsetEntry> {
@@ -337,11 +397,18 @@ export class AtelierClient {
     return this.ctl("GET", `/toolboxes/${id}/versions`);
   }
 
-  captureToolboxVersion(
+  async captureToolboxVersion(
     id: string,
     req: ToolboxVersionCaptureRequest,
   ): Promise<ToolboxVersion> {
-    return this.ctl("POST", `/toolboxes/${id}/versions/capture`, req);
+    // Dispatched on the control plane (/api) but tracked in the same global
+    // job queue — poll it via /v1/jobs to completion.
+    const job = await this.ctl<JobRecord>(
+      "POST",
+      `/toolboxes/${id}/versions/capture`,
+      req,
+    );
+    return this.waitForJob<ToolboxVersion>(job);
   }
 
   setActiveToolboxVersion(

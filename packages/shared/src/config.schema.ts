@@ -389,6 +389,27 @@ export const RuntimeConfigSchema = Type.Object(
 export type RuntimeConfig = Static<typeof RuntimeConfigSchema>;
 
 // ---------------------------------------------------------------------------
+// Jobs — the durable, observable long-op queue (JobService).
+// ---------------------------------------------------------------------------
+
+export const JobsConfigSchema = Type.Object(
+  {
+    /**
+     * How many *pooled* jobs (prebuild bake, toolset build/capture — the
+     * expensive throwaway-pod ops) may run at once. Extra dispatches wait in
+     * the queue and start as slots free up. Sandbox lifecycle jobs
+     * (create/pause/resume/…) are tracked for visibility but bypass this
+     * limit (they must not queue behind builds, and already serialize per
+     * sandbox in the runtime).
+     */
+    concurrency: Type.Number({ default: 4, minimum: 1 }),
+  },
+  { default: {} },
+);
+
+export type JobsConfig = Static<typeof JobsConfigSchema>;
+
+// ---------------------------------------------------------------------------
 // Root config
 // ---------------------------------------------------------------------------
 
@@ -397,6 +418,7 @@ export const AtelierConfigSchema = Type.Object({
   auth: AuthConfigSchema,
   server: ServerConfigSchema,
   runtime: RuntimeConfigSchema,
+  jobs: JobsConfigSchema,
   kubernetes: KubernetesConfigSchema,
   storage: StorageConfigSchema,
   sandbox: SandboxDefaultsSchema,
@@ -419,6 +441,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SSH_GATEWAY: "domain.ssh.gateway",
   ATELIER_STORAGE_PROVIDER: "storage.provider",
   ATELIER_RUNTIME_BACKEND: "runtime.backend",
+  ATELIER_JOBS_CONCURRENCY: "jobs.concurrency",
 
   ATELIER_GITHUB_CLIENT_ID: "auth.github.clientId",
   ATELIER_GITHUB_CLIENT_SECRET: "auth.github.clientSecret",

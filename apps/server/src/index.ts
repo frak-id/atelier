@@ -59,6 +59,22 @@ await container.runtime.reconcileOnStartup();
 // Same sweep for the image builder: a `building` row with no live in-flight
 // build after a restart is a permanent ghost otherwise.
 container.images.reconcileOnStartup();
+// And for the jobs queue: a restart kills every in-flight op's promise +
+// AbortController, so any `running` row is a ghost — fail it "rebooted".
+container.jobs.reconcileOnStartup();
+
+// The `jobs` table is append-only (one row per long op forever), so retain a
+// bounded history: prune terminal rows older than a week, hourly. Unlike the
+// prebuild/git cron below, this runs in every mode (no network needed).
+const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+container.jobs.pruneTerminal(JOB_RETENTION_MS);
+new Cron("23 * * * *", { protect: true }, () => {
+  try {
+    container.jobs.pruneTerminal(JOB_RETENTION_MS);
+  } catch (err) {
+    logger.error({ err }, "jobs retention prune failed");
+  }
+});
 
 // Recompute each stored prebuild's content key against current remote HEADs
 // + base image digest, and rebuild anything that moved (runtime.service.ts

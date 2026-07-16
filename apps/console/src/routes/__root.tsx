@@ -10,8 +10,10 @@ import { Boxes, LogOut, Moon, Rocket, Settings, Sun } from "lucide-react";
 import { Toaster } from "sonner";
 import { api } from "@/api/client";
 import { currentUserQuery } from "@/api/queries/auth";
+import { JobsIndicator } from "@/components/jobs-indicator";
 import { LoginPage } from "@/components/login-page";
 import { Button } from "@/components/ui/button";
+import { useJobEvents } from "@/hooks/use-job-events";
 import { useTheme } from "@/providers/theme";
 
 export const Route = createRootRouteWithContext<{
@@ -31,6 +33,9 @@ function RootLayout() {
   const router = useRouter();
   const { data: user, isPending } = useQuery(currentUserQuery());
   const { theme, toggle } = useTheme();
+  // Global job-queue SSE — only connects once authenticated (the feed is
+  // behind auth). Called unconditionally to satisfy the rules of hooks.
+  useJobEvents(!!user);
 
   if (isPending) {
     return (
@@ -77,6 +82,7 @@ function RootLayout() {
           ))}
         </nav>
         <div className="flex items-center gap-3">
+          <JobsIndicator />
           <span className="hidden text-sm text-muted-foreground sm:inline">
             {user.username}
           </span>
