@@ -23,12 +23,9 @@ function isSnapshotSource(source: Source): source is { snapshot: string } {
   return "snapshot" in source;
 }
 
-/** Short, human summary of a prebuild's opaque metadata (workspace/repo…). */
-function metadataSummary(metadata?: Record<string, string>): string | null {
-  if (!metadata) return null;
-  const entries = Object.entries(metadata);
-  if (entries.length === 0) return null;
-  return entries.map(([k, v]) => `${k}: ${v}`).join(" · ");
+/** A short, human label for a prebuild — the first cloned repo when present. */
+function prebuildLabel(prebuild: PrebuildRecord): string | undefined {
+  return prebuild.spec?.repos?.[0]?.url;
 }
 
 /**
@@ -215,7 +212,7 @@ function SnapshotGrid({
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {prebuilds.map((prebuild: PrebuildRecord) => {
-        const summary = metadataSummary(prebuild.metadata);
+        const label = prebuildLabel(prebuild);
         const isSelected = prebuild.ref === selected;
         return (
           <button
@@ -231,7 +228,7 @@ function SnapshotGrid({
             <div className="flex flex-wrap items-center gap-2">
               <Layers className="size-4 shrink-0 text-muted-foreground" />
               <span className="truncate font-medium text-sm">
-                {summary ?? prebuild.ref}
+                {label ?? prebuild.ref}
               </span>
               {prebuild.parent ? (
                 <Badge variant="outline">chained</Badge>

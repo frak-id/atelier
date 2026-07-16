@@ -54,19 +54,9 @@ function PrebuildsPage() {
 function prebuildJobTarget(prebuild: PrebuildRecord): string | undefined {
   const source = prebuild.spec?.source;
   return (
-    prebuild.metadata?.workspace ??
-    prebuild.metadata?.repo ??
     prebuild.spec?.repos?.[0]?.url ??
     (source && "image" in source ? source.image : source?.snapshot)
   );
-}
-
-/** Short, human summary of a prebuild's opaque metadata (workspace/repo…). */
-function metadataSummary(metadata?: Record<string, string>): string | null {
-  if (!metadata) return null;
-  const entries = Object.entries(metadata);
-  if (entries.length === 0) return null;
-  return entries.map(([k, v]) => `${k}: ${v}`).join(" · ");
 }
 
 function PrebuildsList() {
@@ -104,7 +94,6 @@ function PrebuildsList() {
           <p className="text-sm text-muted-foreground">No prebuilds yet.</p>
         ) : (
           prebuilds.map((prebuild: PrebuildRecord) => {
-            const summary = metadataSummary(prebuild.metadata);
             const spec = prebuild.spec;
             return (
               <div
@@ -178,11 +167,6 @@ function PrebuildsList() {
                     </Button>
                   </div>
                 </div>
-                {summary ? (
-                  <span className="text-sm text-muted-foreground">
-                    {summary}
-                  </span>
-                ) : null}
                 <span className="truncate font-mono text-xs text-muted-foreground">
                   {prebuild.image}
                 </span>

@@ -137,12 +137,9 @@ function useAllToolboxes() {
   return results.flatMap((r) => r.data ?? []);
 }
 
-/** Short, human summary of a prebuild's opaque metadata (workspace/repo…). */
-function metadataSummary(metadata?: Record<string, string>): string | null {
-  if (!metadata) return null;
-  const entries = Object.entries(metadata);
-  if (entries.length === 0) return null;
-  return entries.map(([k, v]) => `${k}: ${v}`).join(" · ");
+/** A short, human label for a prebuild — the first cloned repo when present. */
+function prebuildLabel(prebuild: PrebuildRecord): string | undefined {
+  return prebuild.spec?.repos?.[0]?.url;
 }
 
 /** One-tap spawn from a stored prebuild snapshot, with optional harness and a
@@ -281,7 +278,7 @@ function QuickSpawnSection({
         ) : (
           <div className="space-y-2">
             {prebuilds.map((prebuild: PrebuildRecord) => {
-              const summary = metadataSummary(prebuild.metadata);
+              const label = prebuildLabel(prebuild);
               return (
                 <div
                   key={prebuild.ref}
@@ -291,7 +288,7 @@ function QuickSpawnSection({
                     <div className="flex flex-wrap items-center gap-2">
                       <Layers className="size-4 shrink-0 text-muted-foreground" />
                       <span className="truncate font-medium">
-                        {summary ?? prebuild.ref}
+                        {label ?? prebuild.ref}
                       </span>
                       {prebuild.parent ? (
                         <Badge variant="outline">chained</Badge>
