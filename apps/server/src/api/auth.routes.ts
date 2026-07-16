@@ -33,6 +33,31 @@ const log = createChildLogger("auth-routes");
 
 const JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
 
+/** CLI login sends the freshly-minted JWT to a loopback listener instead of
+ * the dashboard. Only ever redirect to the caller's own machine — never an
+ * arbitrary host — so a crafted `cli` param can't exfiltrate a token. */
+function isLoopbackRedirect(uri: string): boolean {
+  try {
+    const u = new URL(uri);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    const host = u.hostname;
+    return (
+      host === "127.0.0.1" ||
+      host === "localhost" ||
+      host === "::1" ||
+      host === "[::1]"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Append `token` to a loopback callback URL, preserving any existing query. */
+function cliCallbackUrl(redirect: string, token: string): string {
+  const sep = redirect.includes("?") ? "&" : "?";
+  return `${redirect}${sep}token=${encodeURIComponent(token)}`;
+}
+
 const MOCK_USER = {
   githubId: "12345",
   username: "mock-user",
@@ -61,61 +86,89 @@ export function createAuthRoutes(container: ServerContainer) {
   }
 
   return new Elysia({ prefix: "/auth" })
-    .get("/github", async ({ redirect, cookie }) => {
-      if (isMock()) {
-        const token = await signJwt({
-          id: MOCK_USER.githubId,
-          username: MOCK_USER.username,
-          avatarUrl: MOCK_USER.avatarUrl,
-          email: MOCK_USER.email,
-        });
+    .get(
+      "/github",
+      async ({ redirect, cookie, query }) => {
+        const cliRedirect =
+          query.cli && isLoopbackRedirect(query.cli) ? query.cli : undefined;
 
-        cookie.sandbox_token?.set({
-          value: token,
+        if (isMock()) {
+          const token = await signJwt({
+            id: MOCK_USER.githubId,
+            username: MOCK_USER.username,
+            avatarUrl: MOCK_USER.avatarUrl,
+            email: MOCK_USER.email,
+          });
+
+          userService.upsertFromLogin(
+            MOCK_USER.githubId,
+            MOCK_USER.username,
+            MOCK_USER.email,
+            MOCK_USER.avatarUrl,
+            MOCK_USER.accessToken,
+          );
+          ensurePersonalOrg(MOCK_USER.githubId, MOCK_USER.username);
+
+          // CLI login: hand the token straight back to the loopback listener
+          // (no browser session/cookie needed for the CLI).
+          if (cliRedirect) {
+            log.info("Mock: CLI login as mock-user");
+            return redirect(cliCallbackUrl(cliRedirect, token));
+          }
+
+          cookie.sandbox_token?.set({
+            value: token,
+            httpOnly: true,
+            secure: false,
+            sameSite: "none",
+            path: "/",
+            maxAge: JWT_EXPIRY_SECONDS,
+          });
+
+          log.info("Mock: user auto-logged in as mock-user");
+          return redirect("/");
+        }
+
+        // Carry the loopback target through the OAuth roundtrip so the callback
+        // can return the JWT to the CLI instead of the dashboard.
+        if (cliRedirect) {
+          cookie.cli_redirect?.set({
+            value: cliRedirect,
+            httpOnly: true,
+            secure: isProduction(),
+            sameSite: isProduction() ? "none" : "lax",
+            path: "/",
+            domain: `.${config.domain.baseDomain}`,
+            maxAge: 600,
+          });
+        }
+
+        const codeVerifier = generateCodeVerifier();
+        const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+        cookie.oauth_code_verifier?.set({
+          value: codeVerifier,
           httpOnly: true,
-          secure: false,
-          sameSite: "none",
+          secure: isProduction(),
+          sameSite: isProduction() ? "none" : "lax",
           path: "/",
-          maxAge: JWT_EXPIRY_SECONDS,
+          domain: `.${config.domain.baseDomain}`,
+          maxAge: 600,
         });
 
-        userService.upsertFromLogin(
-          MOCK_USER.githubId,
-          MOCK_USER.username,
-          MOCK_USER.email,
-          MOCK_USER.avatarUrl,
-          MOCK_USER.accessToken,
+        const url = buildOAuthRedirectUrl(
+          deriveCallbackUrl("/auth/callback"),
+          "repo read:user read:org",
+          {
+            state: nanoid(16),
+            code_challenge: codeChallenge,
+            code_challenge_method: "S256",
+          },
         );
-        ensurePersonalOrg(MOCK_USER.githubId, MOCK_USER.username);
-
-        log.info("Mock: user auto-logged in as mock-user");
-        return redirect("/");
-      }
-
-      const codeVerifier = generateCodeVerifier();
-      const codeChallenge = await generateCodeChallenge(codeVerifier);
-
-      cookie.oauth_code_verifier?.set({
-        value: codeVerifier,
-        httpOnly: true,
-        secure: isProduction(),
-        sameSite: isProduction() ? "none" : "lax",
-        path: "/",
-        domain: `.${config.domain.baseDomain}`,
-        maxAge: 600,
-      });
-
-      const url = buildOAuthRedirectUrl(
-        deriveCallbackUrl("/auth/callback"),
-        "repo read:user read:org",
-        {
-          state: nanoid(16),
-          code_challenge: codeChallenge,
-          code_challenge_method: "S256",
-        },
-      );
-      return redirect(url);
-    })
+        return redirect(url);
+      },
+      { query: t.Object({ cli: t.Optional(t.String()) }) },
+    )
     .get(
       "/callback",
       async ({ query, redirect, cookie }) => {
@@ -184,6 +237,22 @@ export function createAuthRoutes(container: ServerContainer) {
           });
 
           log.info({ username: ghUser.login }, "User logged in successfully");
+
+          // CLI login: bounce the token to the loopback listener instead of
+          // the dashboard, then clear the marker cookie.
+          const cliRedirect = cookie.cli_redirect?.value as string | undefined;
+          if (cliRedirect && isLoopbackRedirect(cliRedirect)) {
+            cookie.cli_redirect?.set({
+              value: "",
+              httpOnly: true,
+              secure: isProduction(),
+              sameSite: isProduction() ? "none" : "lax",
+              path: "/",
+              domain: `.${config.domain.baseDomain}`,
+              maxAge: 0,
+            });
+            return redirect(cliCallbackUrl(cliRedirect, token));
+          }
           return redirect(dashboardUrl);
         } catch (error) {
           log.error({ error }, "GitHub login callback failed");

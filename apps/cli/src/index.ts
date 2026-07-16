@@ -10,9 +10,10 @@
 import { Command } from "commander";
 import { ApiError } from "./client.ts";
 import { browseInteractive, registerBrowse } from "./commands/browse.ts";
-import { registerConfig, runInit } from "./commands/config.ts";
+import { registerConfig } from "./commands/config.ts";
 import { registerImage } from "./commands/image.ts";
 import { registerJobs } from "./commands/jobs.ts";
+import { registerAuth, runSetup } from "./commands/login.ts";
 import { registerPrebuild } from "./commands/prebuild.ts";
 import { registerSandbox } from "./commands/sandbox.ts";
 import { registerSecret } from "./commands/secret.ts";
@@ -40,7 +41,7 @@ program
   // Bare invocation: set up if unconfigured, else open the cockpit.
   .action(async () => {
     if (!isInteractive()) return program.help();
-    if (!loadConfig().apiKey) return runInit();
+    if (!loadConfig().apiKey) return runSetup();
     return browseInteractive(ctx);
   });
 
@@ -55,6 +56,7 @@ registerSshKey(program, ctx);
 registerSecret(program, ctx);
 registerSpec(program, ctx);
 registerWhoami(program, ctx);
+registerAuth(program, ctx);
 registerConfig(program, ctx);
 
 program.parseAsync(process.argv).catch((err) => {
