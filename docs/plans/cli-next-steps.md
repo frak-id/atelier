@@ -1,5 +1,24 @@
 # atelier CLI — Next Steps
 
+> **Update — shipped.** Items 1 and 2 below are now implemented in `apps/cli`:
+> - **Framework:** `commander` (chosen over citty) for subcommand routing +
+>   generated help; one module per group under `src/commands/`. The flat
+>   `switch`/`USAGE` string is gone. Interactive UX via `@clack/prompts`.
+> - **Transport:** Eden Treaty (`treaty<App>` from `@atelier/server`, a
+>   type-only import — same pattern as the console), replacing hand-rolled
+>   `fetch`. `src/client.ts` exposes `createClient`/`unwrap`/`waitForJob`.
+> - **Config:** persisted `~/.config/atelier/config.json` (`0600`) with env
+>   override (`ATELIER_API_URL`/`ATELIER_API_KEY` still win). Commands:
+>   `config init` (interactive setup, replaces the proposed `login`),
+>   `config doctor` (connectivity + auth), `config show`/`path`/`set`/`get`.
+> - **New surface:** `jobs` (ls/get/cancel/watch), `ssh <id>`, and an
+>   interactive `browse` (alias `i`) cockpit — pick a sandbox (harness /
+>   workspace / prebuilt shown), then shell/attach/start/stop/logs/exec/
+>   pause/resume/snapshot/remove.
+> - **Deltas from this plan:** single flat profile (no `profiles` map yet);
+>   `whoami` + shell completion + "mint a key for me" OAuth bootstrap remain
+>   open follow-ups.
+
 Status: **plan — post-v1**. The v1 CLI (`apps/cli`) is a thin, dependency-free
 client over the `/v1` runtime API and the `/api` control plane. It is fully
 functional but deliberately minimal: hand-rolled arg parsing, `fetch`-based
