@@ -265,6 +265,53 @@ short-circuit above; seam ready). Boot stops emitting the `Pipe` for
 `none`/`in-server`, which is the concrete "make sshpiper optional" change the
 proposal §5 called for.
 
+### Step 2 FOLLOW-UP — the in-server `ssh2` listener lands (deferral resolved)
+
+The deferred listener is now implemented, so `ssh.gateway=in-server` is a live
+strategy rather than an inert pod-side preparation. New pieces:
+
+- **`ssh/proxy.ts`** — the ssh2 terminate-and-re-originate proxy. Authenticates
+  the dev by publickey (username = sandboxId, verified against
+  `sshKeyService.getValidPublicKeys()` — the SAME all-valid-keys set the
+  sshpiper `Pipe` carried, so auth semantics are unchanged), dials
+  `sandbox-<id>.<ns>.svc:22` as `upstreamUser` with the shared ssh-pipe key,
+  and forwards `session` (pty/env/window-change/signal → shell/exec), the
+  `sftp` subsystem (raw byte pipe — no `sftp` listener attached, so ssh2 routes
+  it through `subsystem`), and `direct-tcpip` (Remote-SSH transport). Upstream
+  host keys ignored (ephemeral pods, cluster trust boundary — same stance as
+  the `Pipe`'s `ignore_hostkey`).
+- **`ssh/host-key.ts`** — persistent host key in the control DB secrets store
+  (`SecretService`, AES-256-GCM at rest), generated once, stable across
+  restarts + replicas — the proposal §5 decision, no k8s Secret / disk file.
+- **`shared/lib/ssh-key-openssh.ts`** — ed25519 → OpenSSH private-key encoder.
+  REQUIRED because `ssh2` rejects the PKCS8 PEM that Node's `crypto` emits for
+  ed25519 (verified empirically); it re-encodes both the fresh host key and the
+  existing shared ssh-pipe key (`getSharedSshPipeKeyOpenSSH`) into the OpenSSH
+  form ssh2 accepts. This was the one real technical risk, de-risked first.
+- **Config:** `ssh.listenPort` (default 2222) + `ssh.upstreamUser` (default
+  `dev`) added to `SshConfigSchema` (+ `ATELIER_SSH_LISTEN_PORT` /
+  `ATELIER_SSH_UPSTREAM_USER` env). Schema artifacts regenerated.
+- **Wiring:** `startSshGateway(container)` in `ssh/index.ts` (a NEW top-level
+  module, OUTSIDE `runtime/` because it needs `control/` for the host key + dev
+  keys — the boundary check forbids that inside `runtime/`). `index.ts` starts
+  it when `gateway=in-server` (non-mock) and closes it on SIGTERM/SIGINT.
+
+**DECISION — upstream target is the Service DNS, not the pod IP.** The proxy
+dials `sandbox-<id>.<ns>.svc:22` (what the `Pipe` used) rather than
+`resolveAgentEndpoint`'s pod IP: stable across pod restarts, no pod-IP race, and
+SSH (:22) is not one of the agent endpoint's mapped ports anyway. Docker/local
+in-server support is a later step (this validates on k8s first).
+
+**Verification.** New tests: `ssh/proxy.test.ts` (real ssh2 client → proxy →
+fake pod sshd: authorized-key exec forwarding + upstream-user translation,
+shell forwarding, unauthorized-key rejection), `ssh/host-key.test.ts`
+(generate-once/stable persistence), `ssh-key-openssh.test.ts` (encoder
+round-trips + ssh2 accepts). Full server suite green, typecheck + boundary
+clean. **Still needs the live cluster spike** for the two paths a fake pod
+can't exercise faithfully: `sftp` and `direct-tcpip`/editor Remote-SSH channel
+fidelity — the exact validation the original short-circuit named. Default
+stays `sshpiper` until that spike passes on `atelier.hetzner-staging.frak.id`.
+
 ---
 
 ## Step 4 — `Tar` blob rung in agent-v2 (done before step 3)
@@ -381,13 +428,16 @@ an OCI-tar prebuild would build on, so the follow-up has its foundation.
 | Step | State | Commit |
 |---|---|---|
 | 1 — SandboxBackend/VolumeBackend extraction | done | `0a77e0ff` |
-| 2 — pluggable SshGateway (sshpiper optional) | done (in-server listener deferred) | `242de191` |
+| 2 — pluggable SshGateway (sshpiper optional) | done | `242de191` |
+| 2b — in-server ssh2 listener + host-key-in-control-DB | done (k8s; live sftp/Remote-SSH spike pending) | _this change_ |
 | 4 — Tar blob rung in agent-v2 | done | `ae694560` |
 | 3 — dual-format prebuild seam + config | done (OCI-tar leaf deferred) | _this commit_ |
 
 **Deferred, infra-gated follow-ups** (each needs a live cluster/registry/guest to
-build+validate, all with the seam ready): in-server ssh2 proxy listener +
-host-key-in-control-DB; OCI-tar prebuild producer/materializer; host-FS volume
+build+validate, all with the seam ready): the in-server ssh2 listener's live
+channel-fidelity spike (`sftp` + `direct-tcpip`/Remote-SSH against a real pod;
+the listener itself now landed, see Step 2 FOLLOW-UP) and its Docker/local
+support; OCI-tar prebuild producer/materializer; host-FS volume
 providers (btrfs/reflink/copy) with the Docker/local `SandboxBackend`; the
 no-overlayfs copy-merge toolset tier; backend→UI progress events for Tier-2
 stop-then-copy.

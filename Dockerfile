@@ -54,10 +54,17 @@ COPY tsconfig.json ./
 
 # Build server → single-file Bun bundle (workspace deps inlined; bun:sqlite is
 # native to the Bun runtime, so no node_modules needed at runtime).
+#
+# ssh2's optional native accelerators are externalized: `cpu-features` (absent
+# in this image) and its prebuilt `sshcrypto.node` binding. ssh2 requires both
+# in try/catch and runs pure-JS on Bun without them (proposal §5), so keeping
+# them external degrades gracefully instead of failing the bundle.
 RUN bun build apps/server/src/index.ts \
       --target=bun \
       --outfile=dist/server.js \
-      --minify
+      --minify \
+      --external cpu-features \
+      --external '*.node'
 
 # Build console → static SPA. vite build only (typecheck is a CI gate, not a
 # packaging step); @atelier/server stays external per the vite rollup config.

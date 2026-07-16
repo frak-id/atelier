@@ -27,8 +27,9 @@ export const SshConfigSchema = Type.Object(
      *     CRD (default; k8s only).
      *   - `none`: no central SSH gateway — the sandbox pod trusts the dev's own
      *     keys, so an operator can `kubectl port-forward` and SSH directly.
-     *   - `in-server`: the in-server ssh2 proxy (reserved; not yet available —
-     *     see the implementation log's step-2 short-circuit).
+     *   - `in-server`: the built-in ssh2 proxy in the server process — no
+     *     external sshpiper. Binds `listenPort`, authenticates the dev against
+     *     the control SSH keys, and dials `pod:22` as `upstreamUser`.
      */
     gateway: Type.Union(
       [
@@ -38,6 +39,10 @@ export const SshConfigSchema = Type.Object(
       ],
       { default: "sshpiper" },
     ),
+    /** `in-server` only: the TCP port the built-in ssh2 proxy binds. */
+    listenPort: Type.Number({ default: 2222 }),
+    /** `in-server` only: the upstream user the proxy logs into the pod as. */
+    upstreamUser: Type.String({ default: "dev" }),
   },
   { default: {} },
 );
@@ -439,6 +444,8 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SSH_PROXY_PORT: "domain.ssh.port",
   ATELIER_SSH_PROXY_HOSTNAME: "domain.ssh.hostname",
   ATELIER_SSH_GATEWAY: "domain.ssh.gateway",
+  ATELIER_SSH_LISTEN_PORT: "domain.ssh.listenPort",
+  ATELIER_SSH_UPSTREAM_USER: "domain.ssh.upstreamUser",
   ATELIER_STORAGE_PROVIDER: "storage.provider",
   ATELIER_RUNTIME_BACKEND: "runtime.backend",
   ATELIER_JOBS_CONCURRENCY: "jobs.concurrency",

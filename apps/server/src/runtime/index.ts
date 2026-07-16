@@ -21,7 +21,10 @@ export {
   JobService,
   type JobServiceDeps,
 } from "./jobs.service.ts";
-export { ensureSharedSshPipeKey } from "./kube/index.ts";
+export {
+  ensureSharedSshPipeKey,
+  getSharedSshPipeKeyOpenSSH,
+} from "./kube/index.ts";
 export {
   createImageBuilder,
   type ImageBuilderBackend,

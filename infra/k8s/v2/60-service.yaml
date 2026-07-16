@@ -16,3 +16,27 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+---
+# Exposes the in-server ssh2 gateway (server container :2222) to the node on a
+# fixed NodePort. Separate from the v1 sshpiper NodePort (30022) so both can
+# coexist during the migration. Point ssh.hetzner-staging.frak.id (or the
+# users' ssh -p) at <nodeIP>:30222; open the port in ufw:
+#   sudo ufw allow 30222/tcp comment 'atelier-v2 in-server ssh'
+apiVersion: v1
+kind: Service
+metadata:
+  name: atelier-v2-ssh
+  namespace: atelier-v2-system
+  labels:
+    app.kubernetes.io/name: atelier-v2
+    app.kubernetes.io/component: ssh-gateway
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: atelier-v2
+    app.kubernetes.io/component: server
+  ports:
+    - name: ssh
+      port: 2222
+      targetPort: 2222
+      nodePort: 30222

@@ -15,6 +15,7 @@ import { ensureSharedSshPipeKey } from "./runtime/index.ts";
 import { config, isMock, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
+import { startSshGateway } from "./ssh/index.ts";
 
 const configErrors = validateConfig(config);
 if (configErrors.length > 0 && isProduction()) {
@@ -41,13 +42,16 @@ await wireBuiltinHarnesses(container);
 if (config.domain.ssh.gateway !== "none" && !isMock()) {
   await ensureSharedSshPipeKey();
 }
-if (config.domain.ssh.gateway === "in-server") {
-  logger.warn(
-    "ssh.gateway=in-server: the in-server ssh2 proxy listener is not yet " +
-      "available (see the portable-runtime implementation log). The pod side " +
-      "is prepared but SSH is inert until the listener lands.",
-  );
-}
+// The in-server ssh2 proxy replaces the external sshpiper (proposal §5). It
+// binds its own socket and lives for the process lifetime, so a redeploy drops
+// live SSH sessions (acceptable for a dev tool). Skipped in mock mode.
+const sshGateway =
+  config.domain.ssh.gateway === "in-server" && !isMock()
+    ? await startSshGateway(container).catch((err) => {
+        logger.error({ err }, "in-server ssh gateway failed to start");
+        return null;
+      })
+    : null;
 
 // Preseed config-plane defaults from env (safe hard-coded defaults otherwise).
 // DB rows always win, so this is a one-time bootstrap per key.
@@ -109,5 +113,14 @@ app.listen(
     );
   },
 );
+
+// Close the SSH listener on shutdown so a redeploy releases the port promptly.
+if (sshGateway) {
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      void sshGateway.close().finally(() => process.exit(0));
+    });
+  }
+}
 
 export type App = typeof app;

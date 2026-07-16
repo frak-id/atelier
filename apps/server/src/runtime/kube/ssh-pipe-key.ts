@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { generateKeyPairSync } from "node:crypto";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { pkcs8PemToOpenSSHEd25519 } from "../../shared/lib/ssh-key-openssh.ts";
 import { kubeClient } from "./index.ts";
 import { KubeApiError } from "./kube.client.ts";
 
@@ -42,6 +43,28 @@ function generateEd25519KeyPair(): {
 
   const publicKeyOpenSSH = `ssh-ed25519 ${blob.toString("base64")} atelier-sshpiper`;
   return { privateKeyPem, publicKeyOpenSSH };
+}
+
+/**
+ * The shared ssh-pipe key's PRIVATE material, in OpenSSH form, for the
+ * in-server ssh2 proxy to dial `dev@pod` (the pod trusts this key's public
+ * half via its mounted `authorized_keys`). sshpiper reads the same secret from
+ * a mounted volume; the in-server proxy reads it over the API instead. The
+ * secret stores a PKCS8 PEM, which `ssh2` can't load, so it is re-encoded.
+ */
+export async function getSharedSshPipeKeyOpenSSH(): Promise<string> {
+  const namespace = config.kubernetes.namespace;
+  const path = `/api/v1/namespaces/${namespace}/secrets/${SECRET_NAME}`;
+  const secret = await kubeClient.get<{ data?: Record<string, string> }>(path);
+  const privB64 = secret.data?.["ssh-privatekey"];
+  if (!privB64) {
+    throw new Error(
+      `shared ssh-pipe key secret ${SECRET_NAME} has no ssh-privatekey`,
+    );
+  }
+  const pkcs8Pem = Buffer.from(privB64, "base64").toString("utf-8");
+  return pkcs8PemToOpenSSHEd25519(pkcs8Pem, "atelier-ssh-pipe")
+    .privateKeyOpenSSH;
 }
 
 export async function ensureSharedSshPipeKey(): Promise<SharedSshPipeKey> {

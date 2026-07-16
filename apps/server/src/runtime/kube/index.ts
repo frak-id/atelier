@@ -19,7 +19,10 @@ export {
   toolHost,
   toolIngressName,
 } from "./kube.resources.ts";
-export { ensureSharedSshPipeKey } from "./ssh-pipe-key.ts";
+export {
+  ensureSharedSshPipeKey,
+  getSharedSshPipeKeyOpenSSH,
+} from "./ssh-pipe-key.ts";
 
 /**
  * Shared KubeClient singleton — configured from `config.kubernetes`.

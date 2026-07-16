@@ -17,7 +17,13 @@ data:
         "baseDomain": "hetzner-staging.frak.id",
         "dashboard": "atelier.hetzner-staging.frak.id",
         "tls": { "email": "admin@frak.id" },
-        "ssh": { "port": 2222, "hostname": "ssh.hetzner-staging.frak.id" }
+        "ssh": {
+          "port": 2222,
+          "hostname": "ssh.hetzner-staging.frak.id",
+          "gateway": "in-server",
+          "listenPort": 2222,
+          "upstreamUser": "dev"
+        }
       },
       "auth": {
         "allowedOrg": "frak-id"

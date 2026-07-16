@@ -64,6 +64,11 @@ spec:
           ports:
             - name: api
               containerPort: 4000
+            # In-server ssh2 gateway (config domain.ssh.gateway=in-server,
+            # listenPort 2222). Exposed to the node via the atelier-v2-ssh
+            # NodePort Service (60-service.yaml).
+            - name: ssh
+              containerPort: 2222
           env:
             - name: ATELIER_SERVER_MODE
               value: production

@@ -5,7 +5,9 @@
     "ssh": {
       "port": 2222,
       "hostname": "",
-      "gateway": "sshpiper"
+      "gateway": "sshpiper",
+      "listenPort": 2222,
+      "upstreamUser": "dev"
     }
   },
   "auth": {
@@ -24,6 +26,9 @@
   },
   "runtime": {
     "backend": "kubernetes"
+  },
+  "jobs": {
+    "concurrency": 4
   },
   "kubernetes": {
     "namespace": "atelier-sandboxes",
@@ -53,6 +58,7 @@
     "image": "",
     "endpoint": "",
     "dockerHost": "",
+    "platform": "linux/amd64",
     "cacheRepo": "",
     "insecureRegistry": true,
     "tls": {
