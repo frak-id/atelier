@@ -2,6 +2,7 @@
  * attach, ssh, sync, env, expose, snapshot, process. */
 import type {
   AddProcessRequest,
+  CreateSandboxResponse,
   PrebuildRepo,
   PrebuildSpec,
   ResumeRequest,
@@ -123,7 +124,10 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
       // (the server resolves + merges them); they aren't part of SandboxSpec.
       const body =
         opts.toolbox.length > 0 ? { ...spec, toolboxes: opts.toolbox } : spec;
-      const result = unwrap(await api.v1.sandboxes.post(body));
+      // Spawn now answers 202 with a `sandbox-create` job; block on it so the
+      // CLI keeps its "boot then print URLs" UX (job.result is the sandbox).
+      const job = unwrap(await api.v1.sandboxes.post(body));
+      const result = await waitForJob<CreateSandboxResponse>(api, job);
       if (ctx.json) return printJson(result);
       line(pc.bold(result.id));
       for (const u of result.urls) line(`  ${u.name}: ${pc.cyan(u.url)}`);

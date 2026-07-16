@@ -6,7 +6,7 @@ import { queryKeys } from "@/api/queries/keys";
 import { httpUrl, isCrossOrigin } from "@/lib/api-base";
 
 /**
- * Subscribe to the global job queue's SSE feed (`/v1/jobs/events`) once, at
+ * Subscribe to the global job queue SSE feed (`/v1/jobs/events`) once, at
  * the app root, and fan each event out into cache updates:
  *  - merge the job into the `jobs.list` cache (so the queue indicator is live
  *    without polling);
@@ -113,12 +113,20 @@ function mergeJob(prev: Job[] | undefined, job: Job): Job[] {
   return next;
 }
 
+/** Lifecycle ops still awaited inline by their route (pause/resume/destroy/
+ * snapshot) toast their own outcome via the mutation — don't double up.
+ * `sandbox-create` is now dispatched (non-blocking), so its completion toast
+ * DOES come from the feed. */
+const SELF_TOASTING_KINDS = new Set<Job["kind"]>([
+  "sandbox-pause",
+  "sandbox-resume",
+  "sandbox-snapshot",
+  "sandbox-destroy",
+]);
+
 function onJobSettled(queryClient: QueryClient, job: Job): void {
   if (job.status === "succeeded") invalidateForKind(queryClient, job);
-  // Lifecycle ops (`sandbox-*`) are awaited by their route, so their own
-  // mutation already toasts the outcome — don't double up. Only the async
-  // (dispatch) build jobs need a completion toast from the feed.
-  if (job.kind.startsWith("sandbox-")) return;
+  if (SELF_TOASTING_KINDS.has(job.kind)) return;
   const kindLabel = jobKindLabel(job.kind);
   const description = job.error ?? job.target ?? undefined;
   if (job.status === "succeeded") {
@@ -145,6 +153,9 @@ function invalidateForKind(queryClient: QueryClient, job: Job): void {
       queryClient.invalidateQueries({
         queryKey: queryKeys.toolboxVersions.all,
       });
+      break;
+    case "image-build":
+      queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
       break;
     case "sandbox-create":
     case "sandbox-pause":

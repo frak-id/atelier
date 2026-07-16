@@ -44,7 +44,18 @@ export interface JobDispatchOptions {
   target?: string;
   /** Opaque display context (repo, slug, sandbox id, …). */
   metadata?: Record<string, string>;
+  /** Skip the concurrency pool: start immediately, don't queue, don't count
+   * against the build slots. Fire-and-forget like a normal dispatch (returns
+   * the row, doesn't await) but with `track`-style non-gating — for latency-
+   * sensitive ops (sandbox spawn) that must never wait behind a build. */
+  unpooled?: boolean;
 }
+
+/** How many jobs' log buffers we keep in memory at once (LRU-evicted). Logs
+ * are ephemeral (never persisted) — a tail for live/recent jobs, not history. */
+const MAX_LOG_JOBS = 200;
+/** Max log lines retained per job (a ring buffer tail, like image builds). */
+const MAX_LOG_LINES = 1000;
 
 /** Raised by a job body when it observes its own `AbortSignal` and bails —
  * lets `JobService` record `canceled` instead of `failed`. */
@@ -61,7 +72,9 @@ export interface JobServiceDeps {
   concurrency?: number;
 }
 
-type JobFn = (signal: AbortSignal) => Promise<unknown>;
+/** Append a line/chunk to the job's live log (see `dispatch`/`track`). */
+export type JobLog = (chunk: string) => void;
+type JobFn = (signal: AbortSignal, log: JobLog) => Promise<unknown>;
 type JobListener = (job: JobRecord) => void;
 
 export class JobService {
@@ -70,6 +83,8 @@ export class JobService {
   /** Live cancellation handles for every RUNNING job (pooled or tracked),
    * keyed by id. Populated when a job starts, deleted when it settles. */
   private readonly controllers = new Map<string, AbortController>();
+  /** Ephemeral per-job log tails (in-memory only, LRU-capped). */
+  private readonly logs = new Map<string, string[]>();
   /** Pooled jobs accepted but not yet started (no slot free), FIFO. */
   private readonly waiting: Array<{ id: string; fn: JobFn }> = [];
   /** Ids of pooled jobs currently running — the pool's occupancy (tracked
@@ -114,6 +129,14 @@ export class JobService {
    * best-effort). Use for the expensive throwaway-pod builds.
    */
   dispatch(options: JobDispatchOptions, fn: JobFn): JobRecord {
+    // Unpooled: start now, like `track` but fire-and-forget — never queues,
+    // never counts against the build slots. For latency-sensitive ops.
+    if (options.unpooled) {
+      const job = this.createRow(options, "running");
+      this.emit(job);
+      this.run(job.id, fn, { pooled: false });
+      return this.store.get(job.id) ?? job;
+    }
     const job = this.createRow(options, "queued");
     this.emit(job);
     this.waiting.push({ id: job.id, fn });
@@ -130,14 +153,14 @@ export class JobService {
    */
   async track<T>(
     options: JobDispatchOptions,
-    fn: (signal: AbortSignal) => Promise<T>,
+    fn: (signal: AbortSignal, log: JobLog) => Promise<T>,
   ): Promise<T> {
     const job = this.createRow(options, "running");
     const controller = new AbortController();
     this.controllers.set(job.id, controller);
     this.emit(job);
     try {
-      const result = await fn(controller.signal);
+      const result = await fn(controller.signal, this.logSink(job.id));
       this.settle(job.id, { status: "succeeded", result });
       return result;
     } catch (err) {
@@ -149,6 +172,55 @@ export class JobService {
       });
       throw err;
     }
+  }
+
+  /** Read a job's live log tail (empty string if none). Paired with the
+   * `GET /v1/jobs/:id/logs` endpoint the console polls, mirroring image logs. */
+  getLog(id: string): string {
+    return (this.logs.get(id) ?? []).join("\n");
+  }
+
+  /** A bound log sink for one job: appends chunks (split into lines) to its
+   * ring-buffer tail, LRU-evicting whole jobs past `MAX_LOG_JOBS`. */
+  private logSink(id: string): JobLog {
+    return (chunk: string) => {
+      let lines = this.logs.get(id);
+      if (!lines) {
+        // Evict the oldest job's log if we're at capacity (Map keeps
+        // insertion order).
+        if (this.logs.size >= MAX_LOG_JOBS) {
+          const oldest = this.logs.keys().next().value;
+          if (oldest !== undefined) this.logs.delete(oldest);
+        }
+        lines = [];
+        this.logs.set(id, lines);
+      }
+      for (const line of chunk.split("\n")) lines.push(line);
+      if (lines.length > MAX_LOG_LINES) {
+        lines.splice(0, lines.length - MAX_LOG_LINES);
+      }
+    };
+  }
+
+  /**
+   * Run a job's body with cancellation + logging wired, settling it on the
+   * first terminal outcome. Shared by pooled starts and unpooled dispatch;
+   * `pooled` toggles the concurrency-slot bookkeeping.
+   */
+  private run(id: string, fn: JobFn, { pooled }: { pooled: boolean }): void {
+    if (pooled) this.pooledInFlight.add(id);
+    const controller = new AbortController();
+    this.controllers.set(id, controller);
+    void fn(controller.signal, this.logSink(id))
+      .then((result) => this.settle(id, { status: "succeeded", result }))
+      .catch((err) => {
+        const canceled =
+          controller.signal.aborted || err instanceof JobCanceledError;
+        this.settle(id, {
+          status: canceled ? "canceled" : "failed",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
   }
 
   /**
@@ -250,21 +322,9 @@ export class JobService {
     const job = this.store.get(id);
     // Canceled while it sat in the queue — skip (cancel already settled it).
     if (!job || job.status !== "queued") return;
-    this.pooledInFlight.add(id);
-    const controller = new AbortController();
-    this.controllers.set(id, controller);
     const updated = this.store.update(id, { status: "running" });
     if (updated) this.emit(updated);
-    void fn(controller.signal)
-      .then((result) => this.settle(id, { status: "succeeded", result }))
-      .catch((err) => {
-        const canceled =
-          controller.signal.aborted || err instanceof JobCanceledError;
-        this.settle(id, {
-          status: canceled ? "canceled" : "failed",
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
+    this.run(id, fn, { pooled: true });
   }
 
   private settle(id: string, patch: Partial<JobRecord>): JobRecord | undefined {

@@ -1,9 +1,9 @@
 /** `atelier spec` — saved SandboxSpecs (named, reusable sandbox shapes) and a
  * one-shot `spawn` to boot from one. */
-import type { SandboxSpec } from "@atelier/spec";
+import type { CreateSandboxResponse, SandboxSpec } from "@atelier/spec";
 import type { Command } from "commander";
 import pc from "picocolors";
-import { unwrap } from "../client.ts";
+import { unwrap, waitForJob } from "../client.ts";
 import type { Ctx } from "../context.ts";
 import { age, fail, line, printJson, table } from "../output.ts";
 import { readJsonc } from "../util.ts";
@@ -77,7 +77,9 @@ export function registerSpec(program: Command, ctx: Ctx): void {
     .action(async (id: string) => {
       const api = ctx.api();
       const saved = unwrap(await api.api["saved-specs"]({ id }).get());
-      const result = unwrap(await api.v1.sandboxes.post(saved.spec));
+      // 202 + job now; block on it to keep the inline "print URLs" UX.
+      const job = unwrap(await api.v1.sandboxes.post(saved.spec));
+      const result = await waitForJob<CreateSandboxResponse>(api, job);
       if (ctx.json) return printJson(result);
       line(pc.bold(result.id));
       for (const u of result.urls) line(`  ${u.name}: ${pc.cyan(u.url)}`);

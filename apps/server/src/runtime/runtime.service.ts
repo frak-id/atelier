@@ -72,6 +72,11 @@ import {
 
 const log = createChildLogger("runtime");
 
+/** Optional sink for a long op's live output (wired to the job log by the
+ * api/ seam — see `JobService.dispatch`). Kept as a plain callback so the
+ * runtime never depends on the jobs layer. */
+type OnLog = (chunk: string) => void;
+
 export interface RuntimeCreateOptions {
   /** Externally-chosen sandbox id (control assigns it). Defaults to a nanoid. */
   id?: string;
@@ -153,6 +158,7 @@ export class RuntimeService {
       force?: boolean;
       githubToken?: string;
       signal?: AbortSignal;
+      onLog?: OnLog;
     } = {},
   ): Promise<SnapshotRef> {
     const { hash, image, snapshotName } = await this.resolveContentKey(spec);
@@ -174,6 +180,7 @@ export class RuntimeService {
       snapshotName,
       options.githubToken,
       options.signal,
+      options.onLog,
     ).finally(() => {
       this.inflightPrebuilds.delete(hash);
     });
@@ -390,6 +397,7 @@ export class RuntimeService {
     snapshotName?: string,
     githubToken?: string,
     signal?: AbortSignal,
+    onLog?: OnLog,
   ): Promise<SnapshotRef> {
     const parentRef =
       "snapshot" in spec.source ? spec.source.snapshot : undefined;
@@ -417,9 +425,10 @@ export class RuntimeService {
             toFileWrites(buildGitAttributionFiles({ githubToken })),
           );
         }
-        await this.runPrebuildSteps(tempId, spec, signal);
+        await this.runPrebuildSteps(tempId, spec, signal, onLog);
         // Bail before the (irreversible) snapshot if canceled during the build.
         signal?.throwIfAborted();
+        onLog?.("Snapshotting workspace…");
         // Scrub the credential before snapshotting: the snapshot is a shared,
         // content-addressed artifact that must never carry a user's token.
         // (The file lives on the pod's ephemeral rootfs, outside the `/home/dev`
@@ -464,6 +473,7 @@ export class RuntimeService {
     tempId: string,
     spec: PrebuildSpec,
     signal?: AbortSignal,
+    onLog?: OnLog,
   ): Promise<void> {
     for (const repo of spec.repos ?? []) {
       signal?.throwIfAborted();
@@ -477,6 +487,7 @@ export class RuntimeService {
         `git clone --depth 1 ${branch}${shellQuote(repo.url)} ${shellQuote(repo.clonePath)}`,
         "dev",
         signal,
+        onLog,
       );
     }
     // Build steps also run as `dev`: they operate inside the dev-owned
@@ -485,7 +496,7 @@ export class RuntimeService {
     // needing root uses `sudo` (same convention as the guest agent's hooks).
     for (const step of spec.build ?? []) {
       signal?.throwIfAborted();
-      await this.execStep(tempId, step, "dev", signal);
+      await this.execStep(tempId, step, "dev", signal, onLog);
     }
   }
 
@@ -494,13 +505,18 @@ export class RuntimeService {
     command: string,
     user?: "dev" | "root",
     signal?: AbortSignal,
+    onLog?: OnLog,
   ): Promise<void> {
+    onLog?.(`$ ${command}`);
     const res = await this.agent.exec(tempId, command, {
       timeout: 600_000,
       user,
       signal,
     });
+    if (res.stdout.trim()) onLog?.(res.stdout.trimEnd());
+    if (res.stderr.trim()) onLog?.(res.stderr.trimEnd());
     if (res.exitCode !== 0) {
+      onLog?.(`✗ exit ${res.exitCode}`);
       throw new Error(
         `build step failed (exit ${res.exitCode}): ${command}\n${res.stderr.trim()}`,
       );
@@ -996,15 +1012,18 @@ export class RuntimeService {
   async buildToolset(
     req: ToolsetBuildRequest,
     signal?: AbortSignal,
+    onLog?: OnLog,
   ): Promise<ToolsetRef> {
     const hash = hashToolset(req);
     const existing = this.toolsets.getByHash(hash);
     if (existing) return { ref: existing.ref };
     const inflight = this.inflightToolsetBuilds.get(hash);
     if (inflight) return inflight;
-    const run = this.executeToolsetBuild(req, hash, signal).finally(() => {
-      this.inflightToolsetBuilds.delete(hash);
-    });
+    const run = this.executeToolsetBuild(req, hash, signal, onLog).finally(
+      () => {
+        this.inflightToolsetBuilds.delete(hash);
+      },
+    );
     this.inflightToolsetBuilds.set(hash, run);
     return run;
   }
@@ -1013,6 +1032,7 @@ export class RuntimeService {
     req: ToolsetBuildRequest,
     hash: string,
     signal?: AbortSignal,
+    onLog?: OnLog,
   ): Promise<ToolsetRef> {
     const source = req.source ?? { image: config.sandbox.defaultImage };
     const { image, snapshotName } = await this.resolveSource(source);
@@ -1029,9 +1049,10 @@ export class RuntimeService {
         // artifact captures (running as root would scatter bytes into /root).
         for (const step of req.build) {
           signal?.throwIfAborted();
-          await this.execStep(tempId, step, "dev", signal);
+          await this.execStep(tempId, step, "dev", signal, onLog);
         }
         signal?.throwIfAborted();
+        onLog?.("Packing and pushing toolset artifact…");
         const { digest } = await this.agent.buildToolset(
           tempId,
           { target, paths: req.paths },
@@ -1155,9 +1176,11 @@ export class RuntimeService {
     id: string,
     req: ToolsetCaptureRequest,
     signal?: AbortSignal,
+    onLog?: OnLog,
   ): Promise<ToolsetRef> {
     this.require(id);
     const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:cap-${safeNanoid()}`;
+    onLog?.(`Capturing ${req.paths.join(", ")} from ${id}…`);
     const { digest } = await this.agent.captureToolset(
       id,
       {
@@ -1168,6 +1191,7 @@ export class RuntimeService {
       },
       signal,
     );
+    onLog?.(`Pushed ${req.name}@${digest}`);
     const ref = `toolsets/${req.name}@${digest}`;
     this.toolsets.put({
       // Captures are result-keyed, not input-keyed: the digest is the

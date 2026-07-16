@@ -106,6 +106,24 @@ export function createServerContainer() {
     // Lazy read so it always reflects current runtime state — not captured
     // once at construction time (sandboxes/snapshots keep changing).
     referencedImageRefs: () => runtime.referencedImageRefs(),
+    // Bridge image builds into the durable job feed for a single pane of
+    // long ops. Execution stays entirely in ImageBuilderService; we just
+    // `track` (unpooled — image builds have their own dedup/concurrency, and
+    // must not queue behind prebuild/toolset jobs) a job that awaits the
+    // already-running build and mirrors its outcome. Logs remain on
+    // `/v1/images/:name/logs`. `.catch` swallows track's re-throw — the real
+    // error is already recorded on the image record.
+    onBuildStarted: (name, done) => {
+      void jobs
+        .track({ kind: "image-build", target: name }, async () => {
+          const record = await done;
+          if (record.status === "error") {
+            throw new Error(record.error ?? "Image build failed");
+          }
+          return { ref: record.ref, digest: record.digest };
+        })
+        .catch(() => {});
+    },
   });
 
   const serverContainer: ServerContainer = {

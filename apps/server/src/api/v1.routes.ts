@@ -38,6 +38,7 @@ import {
   buildGitAttributionFiles,
   OWNER_ID_METADATA,
 } from "../shared/lib/git-attribution.ts";
+import { safeNanoid } from "../shared/lib/id.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import {
   harnessForToolset,
@@ -112,6 +113,7 @@ export async function createSandboxForUser(
   container: ServerContainer,
   user: { id: string; username: string; email: string },
   body: CreateSandboxRequest,
+  id?: string,
 ) {
   const { runtime, control } = container;
   // The body is a spec plus the high-level references the caller picked
@@ -180,59 +182,82 @@ export async function createSandboxForUser(
     processes: mergeByName(surface.processes, enriched.processes),
     ports: mergeByName(surface.ports, enriched.ports),
   };
-  return runtime.create(withToolboxes, { authorizedKeys });
+  return runtime.create(withToolboxes, { authorizedKeys, id });
 }
 
 export function createV1Routes(container: ServerContainer) {
   const { runtime, control, jobs } = container;
   const authPlugin = createAuthPlugin(control);
 
+  // The durable, observable queue for long runtime ops (prebuild bake, toolset
+  // build/capture, sandbox spawn, image build). POSTs to those endpoints answer
+  // `202` with a job; clients poll `GET /jobs/:id`, watch `GET /jobs`, stream
+  // `GET /jobs/events` (SSE), read `GET /jobs/:id/logs`, and can `cancel`.
+  //
+  // These live in their OWN prefixed sub-app (like `agentRoutes` in
+  // sessions.routes) rather than inline on the `/v1` app: an async-generator
+  // route (the `/events` SSE feed) sharing a router tree with a static child
+  // under a param node (`/jobs/:id/logs`) trips a memoirist (Elysia router)
+  // registration bug that 404s one of them. An isolated sub-router avoids it.
+  const jobRoutes = new Elysia({ prefix: "/jobs" })
+    .use(authPlugin)
+    .get("/", ({ query }) => jobs.list(query.limit ?? 200), {
+      query: t.Object({ limit: t.Optional(t.Number()) }),
+    })
+    .get("/:id", ({ params }) => jobs.get(params.id), {
+      params: t.Object({ id: t.String() }),
+    })
+    // Live log tail for a job (build step output). Mirrors the image builder's
+    // `{ status, log }` shape; the console polls it while the job is active.
+    .get(
+      "/:id/logs",
+      ({ params }) => {
+        const job = jobs.get(params.id);
+        return { status: job.status, log: jobs.getLog(params.id) };
+      },
+      { params: t.Object({ id: t.String() }) },
+    )
+    .post("/:id/cancel", ({ params }) => jobs.cancel(params.id), {
+      params: t.Object({ id: t.String() }),
+    })
+    .get("/events", async function* ({ request }) {
+      const controller = new AbortController();
+      const queue: JobRecord[] = [];
+      let notify: (() => void) | null = null;
+      request.signal.addEventListener("abort", () => {
+        controller.abort();
+        notify?.();
+        notify = null;
+      });
+
+      jobs.subscribe(controller.signal, (job) => {
+        queue.push(job);
+        notify?.();
+        notify = null;
+      });
+
+      let eventId = 0;
+      while (!request.signal.aborted) {
+        if (queue.length === 0) {
+          await new Promise<void>((resolve) => {
+            notify = resolve;
+          });
+          if (request.signal.aborted) break;
+        }
+        while (queue.length > 0) {
+          const job = queue.shift();
+          if (!job) continue;
+          eventId++;
+          yield sse({ id: eventId, event: "job", data: job });
+        }
+      }
+      controller.abort();
+    });
+
   return (
     new Elysia({ prefix: "/v1" })
       .use(authPlugin)
-      // ── jobs ───────────────────────────────────────────────────────────
-      // The durable, observable queue for long runtime ops (prebuild bake,
-      // toolset build/capture). POSTs to those endpoints answer `202` with a
-      // `running` job; clients poll `GET /jobs/:id`, watch `GET /jobs`, or
-      // subscribe to the `/jobs/events` SSE feed, and can `cancel`.
-      .get("/jobs", ({ query }) => jobs.list(query.limit ?? 200), {
-        query: t.Object({ limit: t.Optional(t.Number()) }),
-      })
-      .get("/jobs/:id", ({ params }) => jobs.get(params.id))
-      .post("/jobs/:id/cancel", ({ params }) => jobs.cancel(params.id))
-      .get("/jobs/events", async function* ({ request }) {
-        const controller = new AbortController();
-        const queue: JobRecord[] = [];
-        let notify: (() => void) | null = null;
-        request.signal.addEventListener("abort", () => {
-          controller.abort();
-          notify?.();
-          notify = null;
-        });
-
-        jobs.subscribe(controller.signal, (job) => {
-          queue.push(job);
-          notify?.();
-          notify = null;
-        });
-
-        let eventId = 0;
-        while (!request.signal.aborted) {
-          if (queue.length === 0) {
-            await new Promise<void>((resolve) => {
-              notify = resolve;
-            });
-            if (request.signal.aborted) break;
-          }
-          while (queue.length > 0) {
-            const job = queue.shift();
-            if (!job) continue;
-            eventId++;
-            yield sse({ id: eventId, event: "job", data: job });
-          }
-        }
-        controller.abort();
-      })
+      .use(jobRoutes)
       // ── images ─────────────────────────────────────────────────────────
       .get("/images", () => container.images.listImages())
       .get("/images/templates", () => container.images.listTemplates())
@@ -345,11 +370,12 @@ export function createV1Routes(container: ServerContainer) {
               target: prebuildLabel(spec),
               metadata: spec.metadata,
             },
-            (signal) =>
+            (signal, log) =>
               runtime.prebuild(spec, {
                 force: query.force === true,
                 githubToken,
                 signal,
+                onLog: log,
               }),
           );
           set.status = 202;
@@ -385,7 +411,7 @@ export function createV1Routes(container: ServerContainer) {
               target: req.name,
               metadata: req.metadata,
             },
-            (signal) => runtime.buildToolset(req, signal),
+            (signal, log) => runtime.buildToolset(req, signal, log),
           );
           set.status = 202;
           return job;
@@ -416,12 +442,26 @@ export function createV1Routes(container: ServerContainer) {
       // resource inline, and unpooled so a spawn never queues behind a build.
       .post(
         "/sandboxes",
-        ({ body, user }) => {
+        ({ body, user, set }) => {
           const req = body as CreateSandboxRequest;
-          return jobs.track(
-            { kind: "sandbox-create", target: sandboxLabel(req) },
-            () => createSandboxForUser(container, user, req),
+          // Non-blocking spawn: pre-allocate the id so the `202` job carries
+          // `metadata.sandboxId` — the console navigates straight to the
+          // detail page (which shows the `creating` record `runtime.create`
+          // persists immediately) instead of holding the button locked for the
+          // whole multi-minute boot. Unpooled so a spawn never waits behind a
+          // build.
+          const id = safeNanoid();
+          const job = jobs.dispatch(
+            {
+              kind: "sandbox-create",
+              target: sandboxLabel(req),
+              metadata: { sandboxId: id },
+              unpooled: true,
+            },
+            () => createSandboxForUser(container, user, req, id),
           );
+          set.status = 202;
+          return job;
         },
         { body: CreateSandboxRequestSchema },
       )
@@ -553,7 +593,8 @@ export function createV1Routes(container: ServerContainer) {
               target: req.name,
               metadata: { sandboxId: params.id },
             },
-            (signal) => runtime.captureToolset(params.id, req, signal),
+            (signal, log) =>
+              runtime.captureToolset(params.id, req, signal, log),
           );
           set.status = 202;
           return job;

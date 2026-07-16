@@ -2,11 +2,11 @@
  * sandbox (or spawn a new one), then drive it (shell, browser, attach,
  * processes, logs/tail, exec, expose, env, sync, snapshot, pause/resume,
  * remove). */
-import type { SandboxState } from "@atelier/spec";
+import type { CreateSandboxResponse, SandboxState } from "@atelier/spec";
 import type { Command } from "commander";
 import pc from "picocolors";
 import { attach } from "../attach.ts";
-import { type AtelierApi, unwrap } from "../client.ts";
+import { type AtelierApi, unwrap, waitForJob } from "../client.ts";
 import type { CliConfig } from "../config.ts";
 import type { Ctx } from "../context.ts";
 import { age, line, statusColor } from "../output.ts";
@@ -161,10 +161,13 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
 
   const s = ui.spinner();
   s.start("Creating…");
-  const result = unwrap(
+  // Spawn answers 202 with a job now; block on it so the cockpit only
+  // proceeds once the sandbox is actually up (job.result is the sandbox).
+  const job = unwrap(
     // biome-ignore lint/suspicious/noExplicitAny: body is a validated spec union
     await api.v1.sandboxes.post(body as any),
   );
+  const result = await waitForJob<CreateSandboxResponse>(api, job);
   s.stop(`Created ${result.id}`);
   return result.id;
 }

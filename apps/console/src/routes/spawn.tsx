@@ -7,6 +7,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Layers, Loader2, Rocket, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { toast } from "sonner";
 import { organizationsListQuery } from "@/api/queries/organizations";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { useSpawnSandbox } from "@/api/queries/sandboxes";
@@ -64,12 +65,18 @@ function SpawnPage() {
         ...(toolboxes && toolboxes.length > 0 ? { toolboxes } : {}),
       },
       {
+        // `data` is the 202 `sandbox-create` job; its pre-allocated
+        // `metadata.sandboxId` lets us jump straight to the detail page, which
+        // renders the `creating` record and live-updates as the spawn runs.
         onSuccess: (data) => {
-          if (data)
+          const sandboxId = data?.metadata?.sandboxId;
+          if (sandboxId) {
+            toast.success("Spawning sandbox…");
             navigate({
               to: "/sandboxes/$sandboxId",
-              params: { sandboxId: data.id },
+              params: { sandboxId },
             });
+          }
         },
       },
     );

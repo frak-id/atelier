@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, X } from "lucide-react";
+import { Loader2, ScrollText, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   isJobRunning,
   type Job,
   jobKindLabel,
+  jobLogsQuery,
   jobsListQuery,
   useCancelJob,
 } from "@/api/queries/jobs";
@@ -131,47 +132,81 @@ function indicatorLabel(
   return "Jobs";
 }
 
+/** Pooled build kinds: they run through the concurrency pool, capture step
+ * output into the job log, and are the only *running* jobs the server lets you
+ * cancel (queued jobs of any kind, and these while running). Tracked kinds
+ * (sandbox-*, image-build) are unpooled/awaited and not cancellable running. */
+const POOLED_BUILD_KINDS = new Set<Job["kind"]>([
+  "prebuild",
+  "toolset-build",
+  "toolset-capture",
+]);
+
 function JobRow({ job }: { job: Job }) {
   const cancel = useCancelJob();
-  // Queued jobs (any kind) and running *pooled build* jobs are cancelable;
-  // running `sandbox-*` lifecycle ops are awaited server-side and are not.
+  const [showLogs, setShowLogs] = useState(false);
   const cancelable =
     job.status === "queued" ||
-    (job.status === "running" && !job.kind.startsWith("sandbox-"));
+    (job.status === "running" && POOLED_BUILD_KINDS.has(job.kind));
+  const hasLogs = POOLED_BUILD_KINDS.has(job.kind);
   return (
-    <div className="flex items-center gap-3 rounded-md border p-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">
-            {job.target ?? jobKindLabel(job.kind)}
-          </span>
-          <Badge variant="neutral" className="shrink-0">
-            {jobKindLabel(job.kind)}
-          </Badge>
-        </div>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {job.error ? (
-            <span className="text-danger" title={job.error}>
-              {job.error}
+    <div className="rounded-md border p-2.5">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">
+              {job.target ?? jobKindLabel(job.kind)}
             </span>
-          ) : (
-            formatRelativeTime(job.createdAt)
-          )}
-        </p>
+            <Badge variant="neutral" className="shrink-0">
+              {jobKindLabel(job.kind)}
+            </Badge>
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {job.error ? (
+              <span className="text-danger" title={job.error}>
+                {job.error}
+              </span>
+            ) : (
+              formatRelativeTime(job.createdAt)
+            )}
+          </p>
+        </div>
+        <JobStatusBadge job={job} className="shrink-0" />
+        {hasLogs ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={() => setShowLogs((v) => !v)}
+            title="Logs"
+          >
+            <ScrollText className="size-4" />
+          </Button>
+        ) : null}
+        {cancelable ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            disabled={cancel.isPending}
+            onClick={() => cancel.mutate(job.id)}
+            title={job.status === "queued" ? "Cancel queued job" : "Cancel job"}
+          >
+            <X className="size-4" />
+          </Button>
+        ) : null}
       </div>
-      <JobStatusBadge job={job} className="shrink-0" />
-      {cancelable ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="shrink-0"
-          disabled={cancel.isPending}
-          onClick={() => cancel.mutate(job.id)}
-          title={job.status === "queued" ? "Cancel queued job" : "Cancel job"}
-        >
-          <X className="size-4" />
-        </Button>
-      ) : null}
+      {hasLogs && showLogs ? <JobLogs id={job.id} /> : null}
     </div>
+  );
+}
+
+function JobLogs({ id }: { id: string }) {
+  const { data } = useQuery(jobLogsQuery(id));
+  const log = data?.log?.trim();
+  return (
+    <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 font-mono text-xs text-muted-foreground">
+      {log ? log : "No output yet."}
+    </pre>
   );
 }

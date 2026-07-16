@@ -42,6 +42,26 @@ export function jobsListQuery() {
   });
 }
 
+/**
+ * A job's live log tail (GET /v1/jobs/:id/logs) — build step output for
+ * prebuild/toolset jobs. Polls every 2s while the job is active, then stops,
+ * mirroring the image builder's log query. In-memory/ephemeral server-side.
+ */
+export function jobLogsQuery(id: string) {
+  return queryOptions({
+    queryKey: queryKeys.jobs.logs(id),
+    queryFn: async () => {
+      const { data, error } = await api.v1.jobs({ id }).logs.get();
+      if (error) throw new Error(errorMessage(error, "Failed to load logs"));
+      return data;
+    },
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "running" || status === "queued" ? 2000 : false;
+    },
+  });
+}
+
 /** Cancel a running job (POST /v1/jobs/:id/cancel). Best-effort: the row flips
  * to `canceled` immediately; work that ignores the abort drains in the
  * background. */
@@ -69,6 +89,8 @@ export function jobKindLabel(kind: Job["kind"]): string {
       return "Toolset build";
     case "toolset-capture":
       return "Toolset capture";
+    case "image-build":
+      return "Image build";
     case "sandbox-create":
       return "Spawn";
     case "sandbox-pause":

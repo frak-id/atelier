@@ -59,6 +59,11 @@ export interface ImageBuilderDeps {
    * `referencedSnapshotRefs`). Called lazily so it always reflects current
    * runtime state. */
   referencedImageRefs: () => string[];
+  /** Observability hook: called once per newly-started build with the image
+   * name and the promise that settles when the build finishes. The api/ seam
+   * wires this to `JobService` so image builds appear in the durable job feed
+   * without this service ever depending on the jobs layer. */
+  onBuildStarted?: (name: string, done: Promise<ImageRecord>) => void;
 }
 
 export class ImageBuilderService {
@@ -66,6 +71,10 @@ export class ImageBuilderService {
   private readonly builder: ImageBuilderBackend;
   private readonly registryUrl: string;
   private readonly referencedImageRefs: () => string[];
+  private readonly onBuildStarted?: (
+    name: string,
+    done: Promise<ImageRecord>,
+  ) => void;
   /** De-dupes concurrent builds of the same destination name onto one
    * execution — mirrors `RuntimeService.inflightPrebuilds`. */
   private readonly inflight = new Map<string, Promise<ImageRecord>>();
@@ -75,6 +84,7 @@ export class ImageBuilderService {
     this.builder = deps.builder;
     this.registryUrl = deps.registryUrl;
     this.referencedImageRefs = deps.referencedImageRefs;
+    this.onBuildStarted = deps.onBuildStarted;
   }
 
   // ── reads ──────────────────────────────────────────────────────────────
@@ -151,6 +161,7 @@ export class ImageBuilderService {
       this.inflight.delete(seedId);
     });
     this.inflight.set(seedId, run);
+    this.onBuildStarted?.(record.name, run);
     // Async: return the `building` record now and let the build run in the
     // background (executeBuild never rejects — it records error state). The
     // route answers 202; clients poll getImage/getBuildLog for progress.
@@ -230,6 +241,7 @@ export class ImageBuilderService {
       this.inflight.delete(name);
     });
     this.inflight.set(name, run);
+    this.onBuildStarted?.(record.name, run);
     // Async (see buildSeed): return the `building` record immediately.
     return record;
   }

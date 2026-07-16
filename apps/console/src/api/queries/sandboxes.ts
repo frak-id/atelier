@@ -174,18 +174,28 @@ export function useAddPort(id: string) {
   });
 }
 
+/**
+ * Spawn a sandbox. The endpoint now answers `202` with a `sandbox-create`
+ * JobRecord immediately (the multi-minute boot runs in the background), so the
+ * mutation resolves in ~the POST round-trip instead of locking the button for
+ * the whole spawn. The returned job carries `metadata.sandboxId` (pre-
+ * allocated server-side) — the caller navigates straight to the detail page,
+ * which shows the `creating` record and flips to `running` when the job
+ * settles (completion toast + list refresh arrive via `useJobEvents`).
+ */
 export function useSpawnSandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
     mutationFn: async (request: CreateSandboxRequest) => {
       const { data, error } = await api.v1.sandboxes.post(request);
       if (error)
-        throw new Error(errorMessage(error, "Failed to create sandbox"));
+        throw new Error(errorMessage(error, "Failed to spawn sandbox"));
       return data;
     },
     onSuccess: () => {
+      // Surface the `creating` row in the list immediately; the job feed
+      // handles the completion toast + refresh.
       invalidate();
-      toast.success("Sandbox created");
     },
     onError: (error) => toast.error(error.message),
   });
