@@ -15,9 +15,12 @@ import { registerImage } from "./commands/image.ts";
 import { registerJobs } from "./commands/jobs.ts";
 import { registerPrebuild } from "./commands/prebuild.ts";
 import { registerSandbox } from "./commands/sandbox.ts";
+import { registerSecret } from "./commands/secret.ts";
+import { registerSpec } from "./commands/spec.ts";
 import { registerSshKey } from "./commands/ssh-key.ts";
 import { registerToolbox } from "./commands/toolbox.ts";
 import { registerToolset } from "./commands/toolset.ts";
+import { registerWhoami } from "./commands/whoami.ts";
 import { loadConfig } from "./config.ts";
 import { createCtx } from "./context.ts";
 import { fail } from "./output.ts";
@@ -49,6 +52,9 @@ registerImage(program, ctx);
 registerToolset(program, ctx);
 registerToolbox(program, ctx);
 registerSshKey(program, ctx);
+registerSecret(program, ctx);
+registerSpec(program, ctx);
+registerWhoami(program, ctx);
 registerConfig(program, ctx);
 
 program.parseAsync(process.argv).catch((err) => {

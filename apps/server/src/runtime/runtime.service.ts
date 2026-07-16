@@ -861,9 +861,9 @@ export class RuntimeService {
     else await this.agent.processStop(id, name);
   }
 
-  async processLogs(id: string, name: string) {
+  async processLogs(id: string, name: string, offset?: number, limit?: number) {
     this.require(id);
-    return this.agent.processLogs(id, name);
+    return this.agent.processLogs(id, name, offset, limit);
   }
 
   /**

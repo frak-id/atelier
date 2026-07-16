@@ -97,6 +97,21 @@ export function splitRemote(arg: string): { id: string; path: string } {
   return { id: arg.slice(0, colon), path: arg.slice(colon + 1) };
 }
 
+/** Open a URL in the platform's default browser (best-effort, non-blocking). */
+export function openInBrowser(url: string): void {
+  const cmd =
+    process.platform === "darwin"
+      ? ["open", url]
+      : process.platform === "win32"
+        ? ["cmd", "/c", "start", "", url]
+        : ["xdg-open", url];
+  try {
+    Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
+  } catch {
+    // No opener available (headless/SSH) — caller prints the URL as fallback.
+  }
+}
+
 /** Parse repeatable `KEY=VALUE` pairs into a record. */
 export function parseEnvPairs(pairs: string[]): Record<string, string> {
   const env: Record<string, string> = {};

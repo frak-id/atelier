@@ -27,11 +27,11 @@ export {
 } from "./modules/saved-spec/index.ts";
 export { SecretService } from "./modules/secret/index.ts";
 export {
+  CONFIG_REGISTRY,
   type ConfigEntry,
   type ConfigKey,
   type ConfigValue,
   type ConfigValues,
-  CONFIG_REGISTRY,
   ServerConfigService,
 } from "./modules/server-config/index.ts";
 export { SshKeyService } from "./modules/ssh-key/index.ts";

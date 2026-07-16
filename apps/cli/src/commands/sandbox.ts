@@ -19,6 +19,7 @@ import {
   readJsonc,
   splitRemote,
 } from "../util.ts";
+import { followLogs } from "./logs-follow.ts";
 import { harnessOf, sshCommand } from "./sandbox-helpers.ts";
 
 const collect = (v: string, acc: string[]): string[] => {
@@ -38,6 +39,7 @@ interface UpOpts {
   memory?: string;
   bake?: boolean;
   toolset: string[];
+  toolbox: string[];
 }
 
 function buildUpSpec(opts: UpOpts): SandboxSpec {
@@ -108,10 +110,20 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
     .option("--memory <mb>", "memory MB (default 2048)")
     .option("--bake", "bake the spec's build[]/repos into a prebuild first")
     .option("--toolset <ref>", "attach a toolset (repeatable)", collect, [])
+    .option(
+      "--toolbox <selector>",
+      "select a toolbox tb/<owner>/<id>/<slug> (repeatable)",
+      collect,
+      [],
+    )
     .action(async (opts: UpOpts) => {
       const api = ctx.api();
       const spec = applyToolsets(await resolveUpSpec(api, opts), opts.toolset);
-      const result = unwrap(await api.v1.sandboxes.post(spec));
+      // `toolboxes` selectors ride alongside the spec on the create request
+      // (the server resolves + merges them); they aren't part of SandboxSpec.
+      const body =
+        opts.toolbox.length > 0 ? { ...spec, toolboxes: opts.toolbox } : spec;
+      const result = unwrap(await api.v1.sandboxes.post(body));
       if (ctx.json) return printJson(result);
       line(pc.bold(result.id));
       for (const u of result.urls) line(`  ${u.name}: ${pc.cyan(u.url)}`);
@@ -157,17 +169,29 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
   program
     .command("logs <id> <process>")
     .description("Print a process's logs")
-    .action(async (id: string, process_: string) => {
-      const { content } = unwrap(
-        await ctx
-          .api()
-          .v1.sandboxes({ id })
-          .processes({ name: process_ })
-          .logs.get(),
-      );
-      process.stdout.write(content);
-      if (content && !content.endsWith("\n")) process.stdout.write("\n");
-    });
+    .option("-f, --follow", "stream new output until Ctrl-C")
+    .action(
+      async (id: string, process_: string, opts: { follow?: boolean }) => {
+        const api = ctx.api();
+        if (opts.follow) {
+          const controller = new AbortController();
+          process.once("SIGINT", () => controller.abort());
+          await followLogs(api, id, process_, {
+            signal: controller.signal,
+            onChunk: (chunk) => process.stdout.write(chunk),
+          });
+          return;
+        }
+        const { content } = unwrap(
+          await api.v1
+            .sandboxes({ id })
+            .processes({ name: process_ })
+            .logs.get(),
+        );
+        process.stdout.write(content);
+        if (content && !content.endsWith("\n")) process.stdout.write("\n");
+      },
+    );
 
   program
     .command("exec <id>")

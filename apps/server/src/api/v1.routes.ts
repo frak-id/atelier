@@ -509,8 +509,21 @@ export function createV1Routes(container: ServerContainer) {
           }),
         },
       )
-      .get("/sandboxes/:id/processes/:name/logs", async ({ params }) =>
-        runtime.processLogs(params.id, params.name),
+      .get(
+        "/sandboxes/:id/processes/:name/logs",
+        async ({ params, query }) =>
+          runtime.processLogs(
+            params.id,
+            params.name,
+            query.offset,
+            query.limit,
+          ),
+        {
+          query: t.Object({
+            offset: t.Optional(t.Number()),
+            limit: t.Optional(t.Number()),
+          }),
+        },
       )
       .post(
         "/sandboxes/:id/ports",

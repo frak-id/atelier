@@ -28,6 +28,18 @@ export function createControlRoutes(container: ServerContainer) {
   const { control, jobs } = container;
   const authPlugin = createAuthPlugin(control);
 
+  // Bearer-authenticated identity echo (unlike `/auth/me`, which is
+  // cookie/JWT-only) so CLI/API-key callers can resolve who they are.
+  const meRoutes = new Elysia({ prefix: "/me" })
+    .use(authPlugin)
+    .get("/", ({ user }) => ({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+      organizations: control.organizationService.getByUserId(user.id),
+    }));
+
   const apiKeyRoutes = new Elysia({ prefix: "/api-keys" })
     .use(authPlugin)
     .get("/", ({ user }) => control.apiKeyService.listByUser(user.id))
@@ -390,6 +402,7 @@ export function createControlRoutes(container: ServerContainer) {
     );
 
   return new Elysia({ prefix: "/api" })
+    .use(meRoutes)
     .use(apiKeyRoutes)
     .use(sshKeyRoutes)
     .use(organizationRoutes)
