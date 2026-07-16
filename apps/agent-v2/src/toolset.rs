@@ -1068,22 +1068,28 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
     // `~/.bash_history`, any new dotfile → EACCES. `-R` would be wrong: it
     // would clobber the ownership of files copied up from the lowers.
     //
-    // `userxattr` is REQUIRED because the upper (`/data`) is a Kata virtio-fs
-    // share. Kernel overlayfs normally stores its metadata in `trusted.overlay.*`
-    // xattrs, but virtiofsd exposes only the `user.*` namespace (even with
-    // `--xattr`), so the default mount hard-fails ("failed to set xattr on
-    // upper ... upper fs missing required features"). `userxattr` (kernel
-    // ≥5.11) switches overlay to `user.overlay.*`, which virtio-fs passes
-    // through. Prereq: the `kata-clh` guest's virtiofsd must run with `--xattr`
-    // (infra/k8s — kata configuration-clh.toml). O_TMPFILE is still unsupported
-    // on virtio-fs but that is non-fatal (overlay falls back to index=off).
+    // The upper (`/data`) is a NATIVE ext4 filesystem on a virtio-blk block
+    // device (the PVC is `volumeMode: Block`; `sandbox-boot.sh` formats and
+    // mounts it), NOT a virtio-fs share — so overlayfs gets real
+    // `trusted.overlay.*` xattrs and we mount WITHOUT `userxattr`. That is the
+    // whole point of Option C (docs/plans/toolset-inplace-update-fix-options.md
+    // §3): `userxattr` forced `redirect_dir=nofollow`, which broke npm's atomic
+    // rename-then-mkdir on the first in-place replace of a lower-only toolset
+    // dir. With trusted xattrs we pass `redirect_dir=on` explicitly (don't rely
+    // on the guest kernel's CONFIG_OVERLAY_FS_REDIRECT_DIR default) so that
+    // rename works first try.
+    //
+    // Keep `index=off` and `metacopy=off`: we only need `redirect_dir` for npm.
+    // `index=on` wants file-handle export, which our squashfs lowers are built
+    // without (`-no-exports`); `metacopy=on` drags in copied-up-symlink
+    // origin-xattr paths we don't need. (§5 of the fix-options doc.)
     let overlay_script = format!(
         "set -euo pipefail\n\
          mkdir -p {upper} {work}\n\
          chown 1000:1000 {upper}\n\
          if mountpoint -q {home}; then umount {home}; fi\n\
          mount -t overlay overlay {home} \
-           -o lowerdir={lowerdir},upperdir={upper},workdir={work},userxattr\n\
+           -o lowerdir={lowerdir},upperdir={upper},workdir={work},redirect_dir=on,index=off,metacopy=off\n\
          : > {ready}\n\
          rm -f {failed}",
         upper = sh_quote(DATA_UPPER),
