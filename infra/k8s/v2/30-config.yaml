@@ -3,6 +3,11 @@
 # token) are injected via env from the atelier-v2-secrets Secret and override
 # these values. Shares the cluster's Zot/Verdaccio/TopoLVM/kata with v1 but
 # uses the v2 namespaces + the hetzner-staging.frak.id domain.
+#
+# SSH note: `listenPort` (2222) is what the in-server ssh2 proxy binds inside
+# the pod (== Service targetPort). `port` (30222) is what clients dial and is
+# advertised in the sandbox ssh URL — it must equal the NodePort in 60-service
+# because nothing binds host :2222 (no LoadBalancer / Traefik TCP entrypoint).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -18,7 +23,7 @@ data:
         "dashboard": "atelier.hetzner-staging.frak.id",
         "tls": { "email": "admin@frak.id" },
         "ssh": {
-          "port": 2222,
+          "port": 30222,
           "hostname": "ssh.hetzner-staging.frak.id",
           "gateway": "in-server",
           "listenPort": 2222,
