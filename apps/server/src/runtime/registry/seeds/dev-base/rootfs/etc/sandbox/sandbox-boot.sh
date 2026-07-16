@@ -1,8 +1,10 @@
 #!/bin/sh
 # Sandbox boot script — K8s entrypoint for Kata Container pods.
 #
-# The PVC mounts at /data (not /home/dev — see
-# docs/proposals/toolset-overlay-squashfs.md §3). /home/dev itself is a bare,
+# The workspace PVC is attached as a RAW BLOCK device and this script formats
+# (first boot) + mounts it at /data — not at /home/dev (see
+# docs/proposals/toolset-overlay-squashfs.md §3 and
+# docs/plans/toolset-inplace-update-fix-options.md §3). /home/dev itself is a bare,
 # empty mountpoint until the agent's `materialize` (crate::toolset) assembles
 # it as a SINGLE overlay (skel + any toolset squashfs lowers, upper/work on
 # `/data`) — this script does NOT mount a base overlay. That single-assembly
@@ -18,6 +20,36 @@
 # never touches the upper), then WAITS for the agent to signal
 # /run/home-ready before starting sshd. This guarantees no SSH session can
 # ever observe (or hold busy) a not-yet-assembled /home/dev.
+
+# ── Format + mount the workspace block device at /data ─────────────────
+# The workspace PVC is attached as a RAW BLOCK device (volumeMode: Block; under
+# Kata it appears as a virtio-blk node at DATA_DEVICE), NOT a pre-mounted
+# filesystem. Format it ext4 on first boot and mount it at /data so overlayfs
+# gets a real trusted.overlay.*-capable upper (no virtio-fs userxattr shim).
+# Idempotent and resume-safe: mkfs only runs when the device has no filesystem
+# (blkid probe), so a resumed disk (already ext4, carrying upper/work/toolsets
+# from the pause snapshot) is mounted as-is, never reformatted. A no-op when
+# /data is already a mountpoint (the Docker backend bind-mounts a real ext4
+# named volume there directly, so there is no block device to format).
+DATA_DEVICE="/dev/atelier-data"
+if ! mountpoint -q /data; then
+    if [ -b "$DATA_DEVICE" ]; then
+        if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
+            # Unformatted (fresh PVC): lazy init keeps first boot fast; the
+            # metadata_csum default gives a journaled, crash-consistent fs so
+            # the pause `sync` + block VolumeSnapshot stays recoverable.
+            mkfs.ext4 -q -F -L atelier-data "$DATA_DEVICE"
+        fi
+        mkdir -p /data
+        mount -t ext4 "$DATA_DEVICE" /data
+    else
+        # No block device and /data not mounted: nothing backs the workspace.
+        # Fail loud rather than silently assembling home on the ephemeral
+        # rootfs (which would divorce every write from the PVC).
+        echo "sandbox-boot: workspace block device $DATA_DEVICE missing and /data not mounted" >&2
+        exit 1
+    fi
+fi
 
 mkdir -p /data/upper /data/work /data/toolsets
 

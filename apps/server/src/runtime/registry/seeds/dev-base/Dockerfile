@@ -32,6 +32,10 @@ ENV LC_ALL=C.UTF-8
 # would use squashfs) — docs/proposals/toolset-overlay-squashfs.md §3-4.
 # Both mkfs tools are baked so one image works on either kernel. rsync: stages
 # toolset build/capture path-sets into a scratch root before packaging.
+# e2fsprogs (mkfs.ext4): the workspace PVC is attached as a raw block device;
+# sandbox-boot.sh formats it ext4 and mounts it at /data on first boot
+# (docs/plans/toolset-inplace-update-fix-options.md §3). blkid/mountpoint come
+# from util-linux (base).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chrony \
@@ -55,6 +59,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl1 \
     squashfs-tools \
     erofs-utils \
+    e2fsprogs \
     rsync \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
