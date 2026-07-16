@@ -1,14 +1,15 @@
 # kata-deploy Helm values for Atelier v2 (staging: hetzner-atelier, k3s).
 #
 # Adds a `kata-atelier-clh` runtime = stock `clh` + a Kata config.d drop-in that
-# enables virtiofsd `--xattr`. v2 sandboxes assemble `/home/dev` as a native
-# kernel overlay whose upperdir is on the virtio-fs PVC; overlayfs needs to
-# persist metadata as xattrs on the upper, the guest mounts the overlay with
-# `userxattr` (agent, toolset.rs), and virtio-fs only forwards `user.*` when
-# virtiofsd runs with `--xattr`. Baking it into a chart-managed custom runtime
-# makes it durable across kata-deploy rolls (which otherwise reset /opt/kata to
-# bundled defaults). Matched pair with the agent's `userxattr` mount option —
-# remove both together.
+# pins virtio-blk for block-mode volumes. v2 sandboxes attach the workspace PVC
+# as a RAW BLOCK device (`volumeMode: Block`); Kata passes it through to the CLH
+# guest as virtio-blk, and the guest formats/mounts a native ext4 at /data
+# (sandbox-boot.sh). overlayfs then gets real `trusted.overlay.*` xattrs — no
+# virtio-fs, no `userxattr`, no `--xattr` (Option C,
+# docs/plans/toolset-inplace-update-fix-options.md §3). This replaces the old
+# virtiofsd `--xattr` + agent `userxattr` matched pair, which is now deleted.
+# Baking the config into a chart-managed custom runtime makes it durable across
+# kata-deploy rolls (which otherwise reset /opt/kata to bundled defaults).
 #
 # The server targets this class via `infra/k8s/v2/30-config.yaml` runtimeClass
 # (env ATELIER_K8S_RUNTIME_CLASS=kata-atelier-clh).
@@ -24,7 +25,7 @@ env:
   createDefaultRuntimeClass: true
   createRuntimeClasses: true
 
-# --- Atelier: virtiofsd --xattr for the overlay-home ---
+# --- Atelier: virtio-blk passthrough for the block workspace PVC ---
 customRuntimes:
   enabled: true
   runtimes:
@@ -32,9 +33,16 @@ customRuntimes:
       baseConfig: "clh" # inherit stock clh (virtio-fs, cache mode, kernel, ...)
       dropIn: |
         [hypervisor.clh]
-        # Kata config.d drop-ins REPLACE arrays (no append), so restate the
-        # stock args and add --xattr.
-        virtio_fs_extra_args = ["--thread-pool-size=1", "--announce-submounts", "--xattr"]
+        # The workspace PVC is a block volume; pin the virtio-blk driver Kata
+        # uses to hotplug it into the guest. This is the CLH default, stated
+        # explicitly so a future stock-default change can't silently break the
+        # block-device passthrough this runtime depends on. (CLH supports only
+        # virtio-blk for block hotplug — no virtio-scsi.)
+        block_device_driver = "virtio-blk-pci"
+        # Stock virtio-fs args, restated (config.d REPLACES arrays). virtio-fs
+        # now only backs Kata's own container-rootfs share, not /data, so the
+        # atelier `--xattr` addition is gone.
+        virtio_fs_extra_args = ["--thread-pool-size=1", "--announce-submounts"]
       runtimeClass: |
         kind: RuntimeClass
         apiVersion: node.k8s.io/v1

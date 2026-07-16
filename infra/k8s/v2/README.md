@@ -14,9 +14,13 @@ v1 stack, under `atelier.hetzner-staging.frak.id`. See
   (composed-prebuild-volumes.md §6 "kill shared-binaries").
 - Runtime class: sandboxes run under `kata-atelier-clh` (`30-config.yaml`), a
   kata-deploy `customRuntimes` = stock `clh` + a Kata `config.d` drop-in that
-  enables virtiofsd `--xattr` (see `kata-atelier-values.yaml`). Required so the
-  overlay-home upperdir on the virtio-fs PVC works (guest mounts it
-  `userxattr`). Chart-managed, so it survives kata-deploy rolls.
+  pins `block_device_driver = virtio-blk-pci` (see `kata-atelier-values.yaml`).
+  The workspace PVC is a `volumeMode: Block` volume; Kata passes it to the
+  guest as virtio-blk and the guest formats/mounts ext4 at `/data`, giving
+  overlayfs real `trusted.overlay.*` (no `userxattr`) — Option C of
+  `docs/plans/toolset-inplace-update-fix-options.md`. Chart-managed, so it
+  survives kata-deploy rolls. The storage class (`topolvm-thin`) must permit
+  `Block` volumeMode and block-volume snapshots (TopoLVM thin does).
 - Images: `zot.zot.svc:5000/atelier-server:v2` + `atelier-console:v2`
   (built in-cluster via BuildKit, pushed to the internal Zot registry).
 
@@ -41,7 +45,7 @@ The GitHub OAuth app's callback URL must be
 ```sh
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/00-namespaces.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/10-rbac.yaml
-# kata custom runtime (virtiofsd --xattr) — needed once per cluster:
+# kata custom runtime (virtio-blk block passthrough) — needed once per cluster:
 helm upgrade kata-deploy oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
   --version 3.31.0 -n default -f infra/k8s/v2/kata-atelier-values.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/30-config.yaml
