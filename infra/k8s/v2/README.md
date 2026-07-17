@@ -14,7 +14,7 @@ v1 stack, under `atelier.hetzner-staging.frak.id`. See
   (composed-prebuild-volumes.md §6 "kill shared-binaries").
 - Runtime class: sandboxes run under `kata-atelier-clh` (`30-config.yaml`), a
   kata-deploy `customRuntimes` = stock `clh` + a Kata `config.d` drop-in that
-  pins `block_device_driver = virtio-blk-pci` (see `kata-atelier-values.yaml`).
+  pins `block_device_driver = virtio-blk` (see `kata-atelier-values.yaml`).
   The workspace PVC is a `volumeMode: Block` volume; Kata passes it to the
   guest as virtio-blk and the guest formats/mounts ext4 at `/data`, giving
   overlayfs real `trusted.overlay.*` (no `userxattr`) — Option C of

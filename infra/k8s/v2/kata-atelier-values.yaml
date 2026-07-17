@@ -34,11 +34,13 @@ customRuntimes:
       dropIn: |
         [hypervisor.clh]
         # The workspace PVC is a block volume; pin the virtio-blk driver Kata
-        # uses to hotplug it into the guest. This is the CLH default, stated
+        # uses to hotplug it into the guest. This is the stock clh default
+        # (stock configuration-clh.toml already sets "virtio-blk"), stated
         # explicitly so a future stock-default change can't silently break the
-        # block-device passthrough this runtime depends on. (CLH supports only
-        # virtio-blk for block hotplug — no virtio-scsi.)
-        block_device_driver = "virtio-blk-pci"
+        # block-device passthrough this runtime depends on. The Go `clh`
+        # runtime accepts ONLY "virtio-blk" here (not the runtime-rs
+        # "virtio-blk-pci" spelling, and no virtio-scsi) — it errors otherwise.
+        block_device_driver = "virtio-blk"
         # Stock virtio-fs args, restated (config.d REPLACES arrays). virtio-fs
         # now only backs Kata's own container-rootfs share, not /data, so the
         # atelier `--xattr` addition is gone.
