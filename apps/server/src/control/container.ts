@@ -1,7 +1,7 @@
 /**
  * Control's composition root. Manual-wiring convention (AGENTS.md "DI: Manual
  * wiring in container.ts"), scoped to exactly what atelier-v2 §3.1 assigns to
- * control/: identity, orgs, quotas, secrets, saved specs, org policy, and the
+ * control/: identity, orgs, quotas, secrets, org policy, and the
  * enrichment pipeline.
  */
 
@@ -20,10 +20,6 @@ import {
   OrganizationRepository,
   OrganizationService,
 } from "./modules/organization/index.ts";
-import {
-  SavedSpecRepository,
-  SavedSpecService,
-} from "./modules/saved-spec/index.ts";
 import { SecretRepository, SecretService } from "./modules/secret/index.ts";
 import {
   ServerConfigRepository,
@@ -43,7 +39,6 @@ export function createControlContainer() {
   const orgMemberRepository = new OrgMemberRepository();
   const apiKeyRepository = new ApiKeyRepository();
   const sshKeyRepository = new SshKeyRepository();
-  const savedSpecRepository = new SavedSpecRepository();
   const secretRepository = new SecretRepository();
   const orgPolicyRepository = new OrgPolicyRepository();
   const serverConfigRepository = new ServerConfigRepository();
@@ -58,7 +53,6 @@ export function createControlContainer() {
   );
   const apiKeyService = new ApiKeyService(apiKeyRepository);
   const sshKeyService = new SshKeyService(sshKeyRepository);
-  const savedSpecService = new SavedSpecService(savedSpecRepository);
   const secretService = new SecretService(secretRepository);
   const orgPolicyService = new OrgPolicyService(orgPolicyRepository);
   const serverConfigService = new ServerConfigService(serverConfigRepository);
@@ -74,7 +68,6 @@ export function createControlContainer() {
     orgMemberService,
     apiKeyService,
     sshKeyService,
-    savedSpecService,
     secretService,
     orgPolicyService,
     serverConfigService,

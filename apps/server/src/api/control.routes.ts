@@ -1,11 +1,9 @@
 /**
  * `/api/*` — control CRUD (atelier-v2 §3.1 api/ table: "/api/* → control
- * CRUD"). Identity, orgs, saved specs, secrets, org policy. Thin Elysia
+ * CRUD"). Identity, orgs, secrets, org policy. Thin Elysia
  * binding; all policy logic lives in `control/`.
  */
-import type { SandboxSpec } from "@atelier/spec";
 import {
-  SandboxSpecSchema,
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
   ToolboxVersionCaptureRequestSchema,
@@ -136,52 +134,6 @@ export function createControlRoutes(container: ServerContainer) {
         }),
       },
     );
-
-  const savedSpecRoutes = new Elysia({ prefix: "/saved-specs" })
-    .use(authPlugin)
-    .get("/", ({ user }) => {
-      const orgIds = control.orgMemberService
-        .getByUserId(user.id)
-        .map((m) => m.orgId);
-      return control.savedSpecService.getByOrgIds(orgIds);
-    })
-    .get("/:id", ({ params }) =>
-      control.savedSpecService.getByIdOrThrow(params.id),
-    )
-    .post(
-      "/",
-      ({ body }) =>
-        control.savedSpecService.create(
-          body.name,
-          body.spec as SandboxSpec,
-          body.orgId,
-        ),
-      {
-        body: t.Object({
-          name: t.String({ minLength: 1 }),
-          spec: SandboxSpecSchema,
-          orgId: t.Optional(t.String()),
-        }),
-      },
-    )
-    .patch(
-      "/:id",
-      ({ params, body }) =>
-        control.savedSpecService.update(params.id, {
-          name: body.name,
-          spec: body.spec as SandboxSpec | undefined,
-        }),
-      {
-        body: t.Object({
-          name: t.Optional(t.String()),
-          spec: t.Optional(SandboxSpecSchema),
-        }),
-      },
-    )
-    .delete("/:id", ({ params, set }) => {
-      control.savedSpecService.delete(params.id);
-      set.status = 204;
-    });
 
   const secretRoutes = new Elysia({ prefix: "/secrets" })
     .use(authPlugin)
@@ -407,7 +359,6 @@ export function createControlRoutes(container: ServerContainer) {
     .use(apiKeyRoutes)
     .use(sshKeyRoutes)
     .use(organizationRoutes)
-    .use(savedSpecRoutes)
     .use(secretRoutes)
     .use(configRoutes)
     .use(orgPolicyRoutes)

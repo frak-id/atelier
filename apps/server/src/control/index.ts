@@ -21,10 +21,6 @@ export { ApiKeyService } from "./modules/api-key/index.ts";
 export { OrgMemberService } from "./modules/org-member/index.ts";
 export { OrgPolicyService } from "./modules/org-policy/index.ts";
 export { OrganizationService } from "./modules/organization/index.ts";
-export {
-  type SavedSpec,
-  SavedSpecService,
-} from "./modules/saved-spec/index.ts";
 export { SecretService } from "./modules/secret/index.ts";
 export {
   CONFIG_REGISTRY,

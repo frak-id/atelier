@@ -39,7 +39,7 @@ export function createApp(container: ServerContainer) {
             },
             {
               name: "api",
-              description: "Control: identity, saved specs, secrets",
+              description: "Control: identity, secrets",
             },
             {
               name: "sessions",

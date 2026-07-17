@@ -1,11 +1,10 @@
 /**
  * Control-plane config tools: prebuilds, toolboxes (+ their versions, the
- * toolbox/toolset merge point \u2014 see `list_toolboxes`), and saved specs. The
+ * toolbox/toolset merge point \u2014 see `list_toolboxes`). The
  * "configure your prebuilt/toolbox from your own dev env" surface.
  */
 import {
   PrebuildSpecSchema,
-  SandboxSpecSchema,
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
 } from "@atelier/spec";
@@ -301,64 +300,5 @@ export function registerConfigTools(
         }
       },
     ),
-  );
-
-  // ── saved specs ──────────────────────────────────────────────────────
-  server.registerTool(
-    "saved_specs",
-    {
-      title: "Saved specs",
-      description:
-        "List your saved specs, get one by id, or save a new " +
-        "one \u2014 the config-from-your-dev-env loop for reusable sandbox " +
-        "shapes.",
-      inputSchema: {
-        action: z.enum(["list", "get", "save"]),
-        id: z.string().optional().describe("Required for action=get"),
-        name: z.string().optional().describe("Required for action=save"),
-        spec: z
-          .record(z.string(), z.unknown())
-          .optional()
-          .describe("Required for action=save: a SandboxSpec"),
-        orgId: z
-          .string()
-          .optional()
-          .describe("Org to save under (must be one you belong to)"),
-      },
-    },
-    safeTool(async ({ action, id, name, spec, orgId }) => {
-      switch (action) {
-        case "list": {
-          const orgIds = control.orgMemberService
-            .getByUserId(user.id)
-            .map((m) => m.orgId);
-          return text(control.savedSpecService.getByOrgIds(orgIds));
-        }
-        case "get": {
-          if (!id) throw new ValidationError("action=get requires `id`");
-          const saved = control.savedSpecService.getByIdOrThrow(id);
-          // Org-scoped specs are readable by members only (the HTTP GET
-          // /api/saved-specs/:id lacks this check — pre-existing gap, not
-          // mirrored here). Specs without an orgId are global by design
-          // (getByOrgIds lists them for everyone).
-          if (saved.orgId) {
-            control.orgMemberService.requireMembership(saved.orgId, user.id);
-          }
-          return text(saved);
-        }
-        case "save":
-          if (!name || !spec) {
-            throw new ValidationError("action=save requires `name` and `spec`");
-          }
-          if (orgId) control.orgMemberService.requireMembership(orgId, user.id);
-          return text(
-            control.savedSpecService.create(
-              name,
-              parseSpec(SandboxSpecSchema, spec, "SandboxSpec"),
-              orgId,
-            ),
-          );
-      }
-    }),
   );
 }

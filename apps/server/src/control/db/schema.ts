@@ -3,16 +3,11 @@
  * here and ONLY here". No FK to runtime's `sandboxes`/`snapshots` tables —
  * control treats the runtime as an authenticated principal talks to, not a
  * database it joins against.
- *
- * `Workspace` dies as a concept, survives as data: `savedSpecs` is
- * `{name, orgId, spec, policyRefs}` — a named, shared, spawnable spec
- * template (proposal §3.1 table).
  */
 
 import type {
   PortEntry,
   ProcessEntry,
-  SandboxSpec,
   Source,
   ToolboxVersionProvenance,
 } from "@atelier/spec";
@@ -62,30 +57,6 @@ export const orgMembers = sqliteTable(
     index("idx_org_members_user_id").on(t.userId),
     uniqueIndex("idx_org_members_org_user").on(t.orgId, t.userId),
   ],
-);
-
-/**
- * The workspace replacement: a named, shared, spawnable `SandboxSpec`
- * template. "Workspace definition" = editing a saved spec (§3.1 table).
- * `spec` may still contain `{"$secret": name}` references — those resolve at
- * the seam, not at rest here.
- */
-export const savedSpecs = sqliteTable(
-  "saved_specs",
-  {
-    id: text("id").primaryKey(),
-    orgId: text("org_id"),
-    name: text("name").notNull(),
-    spec: text("spec", { mode: "json" }).notNull().$type<SandboxSpec>(),
-    /** ids of org policy specs applied at enrichment, for audit/display. */
-    policyRefs: text("policy_refs", { mode: "json" })
-      .notNull()
-      .$type<string[]>()
-      .default([]),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (t) => [index("idx_saved_specs_org_id").on(t.orgId)],
 );
 
 /**

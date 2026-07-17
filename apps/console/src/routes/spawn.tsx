@@ -5,19 +5,12 @@ import type {
 } from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Layers, Loader2, Rocket, Trash2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { ChevronDown, Layers, Loader2, Rocket } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { organizationsListQuery } from "@/api/queries/organizations";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { useSpawnSandbox } from "@/api/queries/sandboxes";
-import {
-  type SavedSpec,
-  savedSpecsListQuery,
-  useCreateSavedSpec,
-  useDeleteSavedSpec,
-  useUpdateSavedSpec,
-} from "@/api/queries/saved-specs";
 import { toolboxesListQuery } from "@/api/queries/toolboxes";
 import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
@@ -29,18 +22,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
 
 export const Route = createFileRoute("/spawn")({
@@ -51,10 +35,6 @@ function SpawnPage() {
   const navigate = useNavigate();
   const spawn = useSpawnSandbox();
   const [editorText, setEditorText] = useState("");
-  const [editingSpec, setEditingSpec] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
 
   // `toolboxes` is optional: the builder-lens callers pass a plain spec plus
   // `toolboxes` as the second arg; it carries through the `...request` spread.
@@ -86,12 +66,8 @@ function SpawnPage() {
     );
   }
 
-  function loadIntoEditor(
-    spec: SandboxSpec,
-    savedSpec?: { id: string; name: string },
-  ) {
+  function loadIntoEditor(spec: SandboxSpec) {
     setEditorText(JSON.stringify(spec, null, 2));
-    setEditingSpec(savedSpec ?? null);
   }
 
   return (
@@ -101,16 +77,7 @@ function SpawnPage() {
       <QuickSpawnSection
         onSpawn={spawnFromSpec}
         spawnPending={spawn.isPending}
-        onOpenInEditor={(spec) => loadIntoEditor(spec)}
-      />
-
-      <SavedSpecsSection
-        onSpawn={spawnFromSpec}
-        spawnPending={spawn.isPending}
-        onEdit={(savedSpec) => loadIntoEditor(savedSpec.spec, savedSpec)}
-        onDeleted={(id) => {
-          if (editingSpec?.id === id) setEditingSpec(null);
-        }}
+        onOpenInEditor={loadIntoEditor}
       />
 
       <EditorSection
@@ -118,8 +85,6 @@ function SpawnPage() {
         onTextChange={setEditorText}
         onSpawn={spawnFromSpec}
         spawnPending={spawn.isPending}
-        editingSpec={editingSpec}
-        onStopEditing={() => setEditingSpec(null)}
       />
     </div>
   );
@@ -331,143 +296,6 @@ function QuickSpawnSection({
   );
 }
 
-// ── saved specs ──────────────────────────────────────────────────────────
-
-function SavedSpecsSection({
-  onSpawn,
-  spawnPending,
-  onEdit,
-  onDeleted,
-}: {
-  onSpawn: (request: CreateSandboxRequest) => void;
-  spawnPending: boolean;
-  onEdit: (savedSpec: SavedSpec) => void;
-  onDeleted: (id: string) => void;
-}) {
-  const {
-    data: savedSpecs,
-    isPending,
-    isError,
-    error,
-  } = useQuery(savedSpecsListQuery());
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Saved specs</CardTitle>
-        <CardDescription>One-tap spawn from a saved spec.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {isPending ? (
-          <div className="space-y-2">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : isError ? (
-          <p className="text-sm text-destructive">
-            {error instanceof Error ? error.message : "Failed to load"}
-          </p>
-        ) : !savedSpecs || savedSpecs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No saved specs yet.</p>
-        ) : (
-          savedSpecs.map((savedSpec) => (
-            <SavedSpecItem
-              key={savedSpec.id}
-              savedSpec={savedSpec}
-              onSpawn={onSpawn}
-              spawnPending={spawnPending}
-              onEdit={onEdit}
-              onDeleted={onDeleted}
-            />
-          ))
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function SavedSpecItem({
-  savedSpec,
-  onSpawn,
-  spawnPending,
-  onEdit,
-  onDeleted,
-}: {
-  savedSpec: SavedSpec;
-  onSpawn: (request: CreateSandboxRequest) => void;
-  spawnPending: boolean;
-  onEdit: (savedSpec: SavedSpec) => void;
-  onDeleted: (id: string) => void;
-}) {
-  const deleteSpec = useDeleteSavedSpec();
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  return (
-    <div className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <span className="truncate font-medium">{savedSpec.name}</span>
-        {savedSpec.orgId ? <Badge variant="outline">org</Badge> : null}
-        <span className="text-xs text-muted-foreground">
-          {formatRelativeTime(savedSpec.updatedAt)}
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          disabled={spawnPending}
-          onClick={() => onSpawn(savedSpec.spec)}
-        >
-          {spawnPending ? <Loader2 className="animate-spin" /> : <Rocket />}
-          Spawn
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => onEdit(savedSpec)}>
-          Edit
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          disabled={deleteSpec.isPending}
-          onClick={() => setConfirmOpen(true)}
-          aria-label="Delete saved spec"
-        >
-          {deleteSpec.isPending ? (
-            <Loader2 className="animate-spin" />
-          ) : (
-            <Trash2 />
-          )}
-        </Button>
-      </div>
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete saved spec?</DialogTitle>
-            <DialogDescription>
-              This permanently deletes “{savedSpec.name}”. This cannot be
-              undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                deleteSpec.mutate(savedSpec.id, {
-                  onSuccess: () => onDeleted(savedSpec.id),
-                });
-                setConfirmOpen(false);
-              }}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
 // ── editor ───────────────────────────────────────────────────────────────
 
 function EditorSection({
@@ -475,22 +303,14 @@ function EditorSection({
   onTextChange,
   onSpawn,
   spawnPending,
-  editingSpec,
-  onStopEditing,
 }: {
   text: string;
   onTextChange: (text: string) => void;
   onSpawn: (request: CreateSandboxRequest) => void;
   spawnPending: boolean;
-  editingSpec: { id: string; name: string } | null;
-  onStopEditing: () => void;
 }) {
   const [errors, setErrors] = useState<string[]>([]);
   const [validated, setValidated] = useState(false);
-  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const [saveName, setSaveName] = useState("");
-  const createSavedSpec = useCreateSavedSpec();
-  const updateSavedSpec = useUpdateSavedSpec();
 
   function validate(): SandboxSpec | undefined {
     const parsed = parseSpecJsonc(text);
@@ -513,25 +333,6 @@ function EditorSection({
   function handleSpawn() {
     const spec = validate();
     if (spec) onSpawn(spec);
-  }
-
-  function handleSaveSubmit(event: FormEvent) {
-    event.preventDefault();
-    const spec = validate();
-    if (!spec || !saveName) return;
-    createSavedSpec.mutate(
-      { name: saveName, spec },
-      { onSuccess: () => setSaveDialogOpen(false) },
-    );
-  }
-
-  function handleUpdate() {
-    const spec = validate();
-    if (!spec || !editingSpec) return;
-    updateSavedSpec.mutate(
-      { id: editingSpec.id, spec },
-      { onSuccess: onStopEditing },
-    );
   }
 
   return (
@@ -570,66 +371,8 @@ function EditorSection({
             {spawnPending ? <Loader2 className="animate-spin" /> : <Rocket />}
             Spawn
           </Button>
-          {editingSpec ? (
-            <>
-              <Button
-                variant="outline"
-                disabled={updateSavedSpec.isPending}
-                onClick={handleUpdate}
-              >
-                {updateSavedSpec.isPending ? (
-                  <Loader2 className="animate-spin" />
-                ) : null}
-                Update {editingSpec.name}
-              </Button>
-              <Button variant="ghost" onClick={onStopEditing}>
-                Cancel editing
-              </Button>
-            </>
-          ) : (
-            <Button variant="outline" onClick={() => setSaveDialogOpen(true)}>
-              Save as…
-            </Button>
-          )}
         </div>
       </CardContent>
-      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
-        <DialogContent>
-          <form onSubmit={handleSaveSubmit}>
-            <DialogHeader>
-              <DialogTitle>Save spec</DialogTitle>
-              <DialogDescription>
-                Give this spec a name to spawn it one-tap later.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-2">
-              <Label htmlFor="save-spec-name">Name</Label>
-              <Input
-                id="save-spec-name"
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                required
-                autoFocus
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setSaveDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createSavedSpec.isPending}>
-                {createSavedSpec.isPending ? (
-                  <Loader2 className="animate-spin" />
-                ) : null}
-                Save
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }

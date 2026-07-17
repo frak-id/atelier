@@ -514,15 +514,14 @@ async function bootWithLogs(
   return current.result as CreateSandboxResponse;
 }
 
-/** Spawn a new sandbox from within the cockpit: pick a core (image / saved
- * spec / prebuild), layer on toolboxes, then boot with a live progress log. */
+/** Spawn a new sandbox from within the cockpit: pick a core (image /
+ * prebuild), layer on toolboxes, then boot with a live progress log. */
 async function spawnFlow(api: AtelierApi): Promise<string | null> {
-  const source = await ui.select<"image" | "spec" | "prebuild" | "cancel">({
+  const source = await ui.select<"image" | "prebuild" | "cancel">({
     message: "New sandbox from…",
     options: [
       { value: "image", label: "Base image" },
       { value: "prebuild", label: "Prebuild (repo snapshot)" },
-      { value: "spec", label: "Saved spec" },
       { value: "cancel", label: pc.dim("Cancel") },
     ],
   });
@@ -540,17 +539,6 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
       source: { image: image.trim() },
       resources: { vcpus: 2, memoryMb: 2048 },
     };
-  } else if (source === "spec") {
-    const specs = unwrap(await api.api["saved-specs"].get());
-    if (specs.length === 0) {
-      ui.note("No saved specs. Create one with `atelier spec save`.");
-      return null;
-    }
-    const id = await ui.select<string>({
-      message: "Which spec?",
-      options: specs.map((s) => ({ value: s.id, label: s.name })),
-    });
-    body = specs.find((s) => s.id === id)?.spec as Record<string, unknown>;
   } else {
     const prebuilds = unwrap(await api.v1.prebuilds.get());
     if (prebuilds.length === 0) {

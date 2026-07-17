@@ -13,10 +13,6 @@ export const queryKeys = {
     processLogs: (id: string, name: string) =>
       [...queryKeys.sandboxes.all, "detail", id, "logs", name] as const,
   },
-  savedSpecs: {
-    all: ["saved-specs"] as const,
-    list: () => [...queryKeys.savedSpecs.all, "list"] as const,
-  },
   sessions: {
     all: (sandboxId: string) => ["sessions", sandboxId] as const,
     list: (sandboxId: string) =>

@@ -9,7 +9,7 @@
  * API-key / JWT path every other route uses \u2014 instead of a single static
  * shared token. Each MCP session is bound to the user who initialized it;
  * every tool call closes over that resolved identity, so org-scoped
- * data (secrets, policy, toolboxes, saved specs) is finally reachable from
+ * data (secrets, policy, toolboxes) is finally reachable from
  * MCP exactly as it is from the HTTP API.
  *
  * Sessions are kept in a map (one stateful transport per client), not a

@@ -20,7 +20,7 @@ import { SandboxSpecSchema, ToolboxSelectorSchema } from "./sandbox-spec.ts";
  * latest toolset build; `prebuild` is a recipe resolved (idempotently, a cache
  * hit when unchanged) to the current snapshot, overriding `source`. A plain
  * `SandboxSpec` (neither field) is still a valid body, so the
- * CLI/editor/saved-spec paths are unchanged.
+ * CLI/editor paths are unchanged.
  */
 export const CreateSandboxRequestSchema = Type.Composite(
   [

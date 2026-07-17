@@ -20,7 +20,7 @@ export function registerSystemTools(
       description:
         "Get the authenticated caller's identity and organization " +
         "memberships. Use this first to orient before calling org-scoped " +
-        "tools (create_sandbox, manage_toolbox, saved_specs).",
+        "tools (create_sandbox, manage_toolbox).",
       inputSchema: {},
     },
     async () => {

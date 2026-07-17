@@ -14,8 +14,7 @@ const log = createChildLogger("org-member-service");
 
 /**
  * The RBAC guard for the whole control layer. `requireRole` is what every
- * mutating org-scoped route calls before touching a saved spec / secret /
- * policy spec.
+ * mutating org-scoped route calls before touching a secret / policy spec.
  */
 export class OrgMemberService {
   constructor(

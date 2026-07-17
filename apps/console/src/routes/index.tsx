@@ -80,7 +80,7 @@ function MissionControlPage() {
         <EmptyState
           icon={Rocket}
           title="Spin up your first agent"
-          description="Spawn a sandbox from a prebuild or saved spec in seconds."
+          description="Spawn a sandbox from a prebuild in seconds."
           action={
             <Button asChild>
               <Link to="/spawn">Spawn a sandbox</Link>
