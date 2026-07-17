@@ -6,6 +6,8 @@
  * Trade the JWT for a long-lived API key via `POST /api/api-keys`, store it,
  * and verify with `/api/me`.
  */
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { hostname } from "node:os";
 import type { Command } from "commander";
 import pc from "picocolors";
@@ -38,31 +40,35 @@ async function browserAuth(
     rejectToken = rej;
   });
 
-  const server = Bun.serve({
-    port: 0,
-    hostname: "127.0.0.1",
-    fetch(req) {
-      const url = new URL(req.url);
-      if (url.pathname !== "/callback") {
-        return new Response("not found", { status: 404 });
-      }
-      const token = url.searchParams.get("token");
-      const err = url.searchParams.get("login_error");
-      if (token) {
-        resolveToken(token);
-        return new Response(CALLBACK_HTML(true), {
-          headers: { "content-type": "text/html" },
-        });
-      }
-      rejectToken(new Error(err ?? "no token in callback"));
-      return new Response(CALLBACK_HTML(false), {
-        status: 400,
-        headers: { "content-type": "text/html" },
-      });
-    },
+  const server = createServer((req, res) => {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (url.pathname !== "/callback") {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("not found");
+      return;
+    }
+    const token = url.searchParams.get("token");
+    const err = url.searchParams.get("login_error");
+    if (token) {
+      resolveToken(token);
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(CALLBACK_HTML(true));
+      return;
+    }
+    rejectToken(new Error(err ?? "no token in callback"));
+    res.writeHead(400, { "content-type": "text/html" });
+    res.end(CALLBACK_HTML(false));
   });
+  await new Promise<void>((res, rej) => {
+    server.once("error", rej);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", rej);
+      res();
+    });
+  });
+  const port = (server.address() as AddressInfo).port;
 
-  const redirectUri = `http://127.0.0.1:${server.port}/callback`;
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
   const authUrl = `${baseUrl}/auth/github?cli=${encodeURIComponent(redirectUri)}`;
 
   if (noBrowser) {
@@ -83,8 +89,13 @@ async function browserAuth(
     return await Promise.race([tokenPromise, timeout]);
   } finally {
     // Keep the listener up briefly so the browser fully receives the
-    // "you can close this tab" response before we tear the socket down.
-    setTimeout(() => server.stop(true), 500);
+    // "you can close this tab" response, then force the socket down.
+    // `server.close()` alone waits for the browser's keep-alive connection
+    // to idle out (~5s), which would hang the CLI — so drop connections too.
+    setTimeout(() => {
+      server.closeAllConnections();
+      server.close();
+    }, 500);
   }
 }
 

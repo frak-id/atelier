@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join as joinPath, relative as relPath } from "node:path";
 import type { PatchFilesRequest } from "@atelier/spec";
 import { fail } from "./output.ts";
+import { spawnDetached } from "./proc.ts";
 
 /** Minimal JSONC: strips `//` and block comments (string-aware), then
  * JSON.parse. Trailing commas are not supported — keep spec files valid JSON
@@ -105,11 +106,7 @@ export function openInBrowser(url: string): void {
       : process.platform === "win32"
         ? ["cmd", "/c", "start", "", url]
         : ["xdg-open", url];
-  try {
-    Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
-  } catch {
-    // No opener available (headless/SSH) — caller prints the URL as fallback.
-  }
+  spawnDetached(cmd);
 }
 
 /** Parse repeatable `KEY=VALUE` pairs into a record. */

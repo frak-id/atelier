@@ -23,6 +23,7 @@ import {
 import type { CliConfig } from "../config.ts";
 import type { Ctx } from "../context.ts";
 import { age, line, statusColor } from "../output.ts";
+import { runInherit } from "../proc.ts";
 import {
   ATELIER_KEY_PATH,
   defaultKeyLabel,
@@ -706,7 +707,7 @@ async function runAction(
         return true;
       }
       line(pc.dim(`$ ${cmd.join(" ")}`));
-      await Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"] }).exited;
+      await runInherit(cmd);
       return true;
     }
     case "open": {

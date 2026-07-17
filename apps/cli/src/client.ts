@@ -10,8 +10,8 @@ import type { CliConfig } from "./config.ts";
 
 export type AtelierApi = ReturnType<typeof treaty<App>>;
 
-/** Build the Treaty client. The base URL is split into origin so Bun's fetch
- * gets a real host; the Bearer key rides every request. */
+/** Build the Treaty client over the runtime's global `fetch`; the Bearer key
+ * rides every request. */
 export function createClient(cfg: CliConfig): AtelierApi {
   return treaty<App>(cfg.baseUrl, {
     headers: { authorization: `Bearer ${cfg.apiKey}` },

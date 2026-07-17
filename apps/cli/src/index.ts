@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * `atelier` — the typed reference client for the Atelier server API. Command
  * routing + help via commander; interactive flows via @clack/prompts; every
@@ -32,7 +32,7 @@ const program = new Command();
 program
   .name("atelier")
   .description("Client for the Atelier sandbox runtime API")
-  .version("0.1.0")
+  .version("0.1.2")
   .option("--json", "machine-readable JSON output")
   .hook("preAction", (thisCommand) => {
     ctx.json = Boolean(thisCommand.opts().json);

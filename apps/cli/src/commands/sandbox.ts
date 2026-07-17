@@ -14,6 +14,7 @@ import { attach } from "../attach.ts";
 import { type AtelierApi, unwrap, waitForJob } from "../client.ts";
 import type { Ctx } from "../context.ts";
 import { age, fail, line, printJson, statusColor, table } from "../output.ts";
+import { runInherit } from "../proc.ts";
 import {
   collectFiles,
   parseEnvPairs,
@@ -280,8 +281,7 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
         if (ctx.json) return printJson({ command: cmd.join(" ") });
         return line(cmd.join(" "));
       }
-      const proc = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"] });
-      process.exit(await proc.exited);
+      process.exit(await runInherit(cmd));
     });
 
   program

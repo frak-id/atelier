@@ -1,16 +1,16 @@
-# @atelier/cli
+# @konfeature/atelier
 
 The `atelier` CLI — a typed reference client for the [Atelier](https://github.com/frak-id/atelier) sandbox runtime and control API, built on [Eden Treaty](https://elysiajs.com/eden/overview.html).
 
 ## Install
 
 ```sh
-npm install -g @atelier/cli
+npm install -g @konfeature/atelier
 # or run without installing
-npx @atelier/cli
+npx @konfeature/atelier
 ```
 
-Requires Node.js >= 18.
+Requires [Node.js](https://nodejs.org) >= 20.
 
 ## Getting started
 

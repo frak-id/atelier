@@ -30,7 +30,7 @@ export function describeAnnotations(a: Annotations): string {
 }
 
 /**
- * Turn a sandbox's `ssh` URL into an argv for `Bun.spawn`. The runtime emits
+ * Turn a sandbox's `ssh` URL into an argv for spawning. The runtime emits
  * either a ready-made command string (`ssh id@host -p 2222`, k8s backend) or
  * an `ssh://user@host:port` URI (docker backend) — handle both.
  */

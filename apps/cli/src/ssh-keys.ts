@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
 import { join } from "node:path";
+import { runCapture } from "./proc.ts";
 
 /** Where `ssh-key setup` writes the atelier-managed keypair. */
 export const ATELIER_KEY_PATH = join(homedir(), ".ssh", "atelier_ed25519");
@@ -104,24 +105,19 @@ export async function generateAtelierKey(): Promise<LocalKey> {
     const existing = readLocalKey(`${ATELIER_KEY_PATH}.pub`);
     if (existing) return existing;
   }
-  const proc = Bun.spawn(
-    [
-      "ssh-keygen",
-      "-t",
-      "ed25519",
-      "-f",
-      ATELIER_KEY_PATH,
-      "-N",
-      "",
-      "-C",
-      defaultKeyLabel(),
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  const code = await proc.exited;
+  const { code, stderr } = await runCapture([
+    "ssh-keygen",
+    "-t",
+    "ed25519",
+    "-f",
+    ATELIER_KEY_PATH,
+    "-N",
+    "",
+    "-C",
+    defaultKeyLabel(),
+  ]);
   if (code !== 0) {
-    const err = await new Response(proc.stderr).text();
-    throw new Error(`ssh-keygen failed: ${err.trim() || `exit ${code}`}`);
+    throw new Error(`ssh-keygen failed: ${stderr.trim() || `exit ${code}`}`);
   }
   const key = readLocalKey(`${ATELIER_KEY_PATH}.pub`);
   if (!key) throw new Error("ssh-keygen did not produce a readable public key");
