@@ -48,15 +48,23 @@ function PrebuildsPage() {
   );
 }
 
-/** The queue `target` the server labels a prebuild job with (mirrors
- * `prebuildLabel` in v1.routes) — lets `<JobStatus>` match a running rebuild
- * of THIS snapshot back to its row. */
+/** The stable queue identity the server labels a prebuild job with (mirrors
+ * `prebuildLabel` in v1.routes) — lets `<JobStatus>` correlate a running
+ * rebuild back to exactly THIS row. Derived from the repos it clones
+ * (URL + branch, so the same repo on two branches stays distinct), falling
+ * back to the boot source when it clones nothing. Must stay byte-for-byte
+ * identical to the server, or the badge silently never shows. Deliberately NOT
+ * `metadata` (user-supplied display text, not an identity, and duplicated
+ * across branches). */
 function prebuildJobTarget(prebuild: PrebuildRecord): string | undefined {
-  const source = prebuild.spec?.source;
-  return (
-    prebuild.spec?.repos?.[0]?.url ??
-    (source && "image" in source ? source.image : source?.snapshot)
-  );
+  const spec = prebuild.spec;
+  if (!spec) return undefined;
+  if (spec.repos && spec.repos.length > 0) {
+    return spec.repos
+      .map((r) => (r.branch ? `${r.url}#${r.branch}` : r.url))
+      .join(", ");
+  }
+  return "image" in spec.source ? spec.source.image : spec.source.snapshot;
 }
 
 function PrebuildsList() {

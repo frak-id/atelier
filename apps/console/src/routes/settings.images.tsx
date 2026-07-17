@@ -24,6 +24,7 @@ import {
   useRegisterImage,
   useUploadImage,
 } from "@/api/queries/images";
+import { JobStatus } from "@/components/job-status";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -349,12 +350,16 @@ function ImagesCard() {
                   <Badge variant="outline">
                     {PROVENANCE_LABEL[image.provenance] ?? image.provenance}
                   </Badge>
-                  <Badge variant={STATUS_VARIANT[status]}>
-                    {status === "building" ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : null}
-                    {statusLabel(status, image.error ?? undefined)}
-                  </Badge>
+                  {status === "building" ? (
+                    // Hand live build feedback to the shared, SSE-fed job
+                    // component instead of the old status poll; the durable
+                    // ready/error badge below owns the settled state.
+                    <JobStatus kind="image-build" target={image.name} />
+                  ) : (
+                    <Badge variant={STATUS_VARIANT[status]}>
+                      {statusLabel(status, image.error ?? undefined)}
+                    </Badge>
+                  )}
                   <span className="text-xs text-muted-foreground">
                     {formatRelativeTime(image.createdAt)}
                   </span>
