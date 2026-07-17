@@ -43,7 +43,7 @@ jobs:
 
   docker:
     needs: check
-    timeout-minutes: 20
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -55,6 +55,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -93,6 +96,7 @@ jobs:
         with:
           context: .
           target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.tags || steps.meta-nightly.outputs.tags }}
           labels: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.labels || steps.meta-nightly.outputs.labels }}
@@ -101,11 +105,14 @@ jobs:
 
   agent:
     needs: check
-    timeout-minutes: 20
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -143,6 +150,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: apps/agent-v2
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.tags || steps.meta-nightly.outputs.tags }}
           labels: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.labels || steps.meta-nightly.outputs.labels }}
