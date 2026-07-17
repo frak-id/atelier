@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, ScrollText, X } from "lucide-react";
+import { Check, Loader2, ScrollText, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   isJobRunning,
@@ -36,12 +36,18 @@ export function JobsIndicator() {
   // Failure ids the user has already seen (dialog opened while they were
   // failed) — so the sticky red affordance clears once acknowledged.
   const [acked, setAcked] = useState<ReadonlySet<string>>(new Set());
+  // Failure ids the user has explicitly dismissed — frontend-only (the row
+  // stays in the DB): dropped from the default list and the failed count, but
+  // still reachable under "Show all".
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const { data: jobs } = useQuery(jobsListQuery());
 
   const running = jobs?.filter(isJobRunning).length ?? 0;
   const queued = jobs?.filter((j) => j.status === "queued").length ?? 0;
   const unackedFailed =
-    jobs?.filter((j) => j.status === "failed" && !acked.has(j.id)).length ?? 0;
+    jobs?.filter(
+      (j) => j.status === "failed" && !acked.has(j.id) && !dismissed.has(j.id),
+    ).length ?? 0;
 
   const visible = useMemo(() => {
     if (!jobs) return [];
@@ -50,9 +56,12 @@ export function JobsIndicator() {
       (j) =>
         j.status === "running" ||
         j.status === "queued" ||
-        j.status === "failed",
+        (j.status === "failed" && !dismissed.has(j.id)),
     );
-  }, [jobs, showAll]);
+  }, [jobs, showAll, dismissed]);
+
+  const dismiss = (id: string) =>
+    setDismissed((prev) => new Set(prev).add(id));
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -111,7 +120,17 @@ export function JobsIndicator() {
                 {showAll ? "No jobs yet." : "Nothing active."}
               </p>
             ) : (
-              visible.map((job) => <JobRow key={job.id} job={job} />)
+              visible.map((job) => (
+                <JobRow
+                  key={job.id}
+                  job={job}
+                  onDismiss={
+                    job.status === "failed" && !dismissed.has(job.id)
+                      ? () => dismiss(job.id)
+                      : undefined
+                  }
+                />
+              ))
             )}
           </div>
         </SheetContent>
@@ -142,7 +161,15 @@ const POOLED_BUILD_KINDS = new Set<Job["kind"]>([
   "toolset-capture",
 ]);
 
-function JobRow({ job }: { job: Job }) {
+function JobRow({
+  job,
+  onDismiss,
+}: {
+  job: Job;
+  /** Present only for a dismissable failure — hides this error from the
+   * default list (frontend-only; the row stays under "Show all"). */
+  onDismiss?: () => void;
+}) {
   const cancel = useCancelJob();
   const [showLogs, setShowLogs] = useState(false);
   const cancelable =
@@ -193,6 +220,16 @@ function JobRow({ job }: { job: Job }) {
             title={job.status === "queued" ? "Cancel queued job" : "Cancel job"}
           >
             <X className="size-4" />
+          </Button>
+        ) : onDismiss ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={onDismiss}
+            title="Dismiss error"
+          >
+            <Check className="size-4" />
           </Button>
         ) : null}
       </div>
