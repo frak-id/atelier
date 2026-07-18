@@ -3,9 +3,9 @@
 A rough, evolving list of where we want to take atelier. Order is roughly by
 priority, not a strict sequence.
 
-## 1. Cleanup v1
+## 1. Cleanup v1 ✅
 
-- Decommission the old server, helm chart, and remaining v1 deployables — see
+- [x] Decommission the old server, helm chart, and remaining v1 deployables — see
   [`proposals/v1-decommission.md`](proposals/v1-decommission.md) and
   [`proposals/v1-decommission-findings.md`](proposals/v1-decommission-findings.md).
 
@@ -16,19 +16,26 @@ priority, not a strict sequence.
 
 ## 3. Make it easier to run
 
-- Support more filesystems so it can run almost everywhere — a Docker env on a
+- [x] Support more filesystems so it can run almost everywhere — a Docker env on a
   Mac, CI, wherever.
-- Consider bringing back the `tar.gz` approach for toolsets as a fallback.
+- [x] Consider bringing back the `tar.gz` approach for toolsets as a fallback.
 - Check the latest commits for context before reworking this.
 
 ## 4. Review the CLI
 
-- Adopt a proper CLI library instead of the hand-rolled parser.
+- [x] Adopt a proper CLI library instead of the hand-rolled parser.
 - Better onboarding and overall developer experience.
 
 ## 5. Much better console / CLI onboarding
 
 - Smooth the first-run experience for the console and CLI.
+- Two-path installation:
+  - **Have a cluster?** One Helm chart installs everything (infra + server +
+    console) with minimal required values; everything else configurable via
+    the CLI or the console on first connection.
+  - **No cluster?** `atelier local up` — the CLI starts a local server against
+    the local Docker daemon and spawns sandboxes as containers (the Docker
+    runtime backend), no Kubernetes or domain needed.
 
 ## 6. In-console examples
 

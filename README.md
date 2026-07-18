@@ -1,231 +1,197 @@
 # Atelier
 
-Isolated dev environments that boot in seconds, not minutes.
+**Self-hosted VM sandboxes for AI coding agents — and the humans who supervise them.**
 
-**Self-hosted Kata Containers sandboxes with K8s orchestration.**
+Spawn an isolated dev environment in seconds, drive the AI agent inside it from
+a web console or your terminal, approve its permission requests from any device,
+and throw the whole thing away when you're done. Every sandbox is a real virtual
+machine (Kata Containers), not a container namespace.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 
-## Batteries Included
-
-Each sandbox is composed from modular pieces — an AI coding agent, an editor,
-and a browser — assembled from a declarative `SandboxSpec` and accessible from
-any device. Nothing is hardcoded: what a sandbox ships is decided by your org's
-toolboxes, harnesses, and saved specs, not by the console's source.
-
-- **AI coding harnesses** — [OpenCode](https://github.com/anomalyco/opencode)
-  (default) and **pi** ship today, both driven over ACP. Harnesses are
-  pluggable: add another by registering a composer in `@atelier/compose`;
-  the console discovers the set at runtime
-- **[code-server](https://github.com/coder/code-server)** — VS Code in the browser, zero local setup
-- **Chromium via [KasmVNC](https://kasmweb.com/kasmvnc)** — full browser inside your sandbox for previewing, testing, debugging
-- **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — multi-provider AI model proxy (Claude, Gemini, Codex); provider config is injected into every sandbox by the server enrichment seam, so you authenticate once
-
-Spawn a sandbox, drive an agent session from the console, close your laptop.
-Review the results from your phone on the ski lift — or wherever you happen to be.
-
-## Features
-
-- **Saved specs** — name a `SandboxSpec` once and spawn it one-tap later, scoped to you or an org, so your reusable sandbox shapes reflect your own stack
-- **Toolboxes & toolsets** — owner-scoped recipes (`build[]` + `paths[]`) that compile once into a versioned, content-addressed **toolset** artifact and materialize into every spawn for that user or org. Add any binary or tool (a harness, a linter, an SDK) without rebuilding a base image
-- **Pluggable harnesses** — AI coding agents integrated over ACP. OpenCode and pi ship in `@atelier/compose`; the available set is derived at runtime, not hardcoded, so a pi-first or claude-code-first org sees its own stack everywhere
-- **Agent sessions** — drive the in-sandbox agent from the console: start sessions, stream output, and answer an attention feed that aggregates permission and question requests across every sandbox. Attach to any process read-write or read-only
-- **Console** — mission control for all your sandboxes: one-tap spawn from prebuilds and saved specs, a JSONC spec editor, plus prebuild and toolbox management
-- **Prebuilds** — run expensive setup (git clone, dependency install, build) once and snapshot it. Subsequent sandboxes clone from the snapshot instantly via copy-on-write
-- **Public HTTPS for any port** — declare a port in your spec and get a public `https://{name}-{id}.your-domain.com` URL, protected by forward-auth. The editor, browser, dev servers, and per-harness web UIs all ride this same mechanism
-- **Three base images out of the box** — `dev-base` ships with Node 22 and Bun; `dev-cloud` extends it with AWS CLI, Google Cloud SDK, kubectl, and Pulumi; `dev-rust` adds a Rust toolchain
-- **SandboxSpec + compose SDK** — a sandbox is `files + processes + ports`, nothing more. `@atelier/compose` builds specs client-side from harness and preset (`vscode`, `browser`, `terminal`) fragments; the runtime never learns what a "harness" is
-- **Host CLI** — the `atelier` binary drives the `/v1` runtime API directly: `up`, `ps`, `exec`, `attach`, `pause`/`resume`, `snapshot`, `prebuild`, and `toolset`/`toolbox` management
-- **Custom npm registry** — point sandboxes at your own npm proxy (Verdaccio, Nexus, Artifactory, …) with a single `npmRegistryUrl` setting; npm/bun/yarn configs are injected automatically. Leave it empty to use the public registry
-- **SSH access** — use your regular workflow: SSH, VS Code Remote SSH, JetBrains remote. [sshpiper](https://github.com/tg123/sshpiper) provides username-based routing so `ssh sandbox-{id}@host -p 2222` just works
-- **MCP server** — AI agents can orchestrate sandboxes, saved specs, toolboxes, and sessions programmatically via the Model Context Protocol
-- **GitHub OAuth** — sign in with GitHub (optionally gated to an org) for authentication and repository/branch discovery
-- **Multi-dev per sandbox** — nothing stops multiple developers from working in the same sandbox simultaneously
-- **Config file sync** — manage global and per-scope config files, automatically synced to sandboxes
+<!-- TODO(screenshot): hero — console fleet view with live agent sessions across sandboxes -->
+> 📸 _Screenshot placeholder — **fleet view**: every sandbox and its live agent sessions, at a glance_
 
 ## Why Atelier?
 
-Atelier runs isolated development sandboxes on Kubernetes with Kata Containers.
+AI coding agents want to run commands, install packages, and touch the network.
+Giving them your laptop is scary; giving them a shared container is not much
+better. Atelier gives each agent (and each experiment, branch, or teammate) a
+**disposable micro-VM** with hardware-level isolation — cloned from a snapshot
+in under a second.
 
-- **VM isolation** — each sandbox is a real virtual machine, not a container namespace
-- **Instant cloning** — CSI VolumeSnapshots via TopoLVM clone a full environment in under a second via copy-on-write
-- **Prebuilds** — run expensive setup once, snapshot the filesystem, spawn instantly from there
-- **Simple operations** — Kubernetes-native workflows with Helm deployment
+- **VM isolation, container ergonomics** — Kata Containers micro-VMs, orchestrated as plain Kubernetes pods
+- **Boot in seconds** — prebuilds run your expensive setup (clone, install, build) once; every sandbox after that is a copy-on-write clone
+- **Agent mission control** — start agent sessions, stream output, and answer a cross-sandbox **attention feed** of permission and question requests. Close your laptop; review from your phone
+- **Harness-agnostic** — agents talk [ACP](https://agentclientprotocol.com). [OpenCode](https://github.com/anomalyco/opencode) and **pi** ship today; adding another harness is a client-side composer, not a runtime change
+- **Agents can orchestrate it too** — a built-in **MCP server** lets any AI agent spawn, exec, snapshot, and destroy sandboxes programmatically
+- **Nothing hardcoded** — a sandbox is just `files + processes + ports` described by a declarative `SandboxSpec`. The runtime has no idea what a "harness" or an "editor" is
 
-## Requirements
+<!-- TODO(screenshot): agent session with a pending permission request (Allow once / Always / Reject) -->
+> 📸 _Screenshot placeholder — **attention feed**: approve or reject an agent's permission request, with risk labels_
 
-### Hardware
+## Batteries Included
 
-- x86_64 CPU with virtualization enabled
-- Bare-metal server with KVM (`/dev/kvm` present)
-- apt-based Linux distro (Debian, Ubuntu) with systemd
+Each sandbox is composed from modular pieces, assembled from your org's
+toolboxes and saved specs:
 
-### Software
-
-| Dependency | Purpose |
-|------------|---------|
-| **[k3s](https://k3s.io)** | Lightweight Kubernetes distribution |
-| **[Helm](https://helm.sh)** | Chart-based deployment |
-| **[cert-manager](https://cert-manager.io)** | Automated TLS certificates |
-| **[kata-deploy](https://github.com/kata-containers/kata-containers)** | Kata Containers runtime (Cloud Hypervisor) |
-| **Docker** | Building server, console, and agent images |
-| **TopoLVM** *(optional)* | CSI driver for PVC snapshots — required for prebuilds |
-
-### Networking
-
-- A domain with wildcard DNS (`*.your-domain.com` → server IP)
-- Ports `80` and `443` open for HTTPS
-- Port `2222` open for SSH proxy access
+- **AI coding harness** — OpenCode (default) or pi, driven over ACP
+- **[code-server](https://github.com/coder/code-server)** — VS Code in the browser, zero local setup
+- **Chromium via [KasmVNC](https://kasmweb.com/kasmvnc)** — a full browser inside the sandbox for previewing and debugging
+- **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — multi-provider AI model proxy (Claude, Gemini, Codex); authenticate once, every sandbox inherits it
+- **Public HTTPS for any port** — declare a port, get `https://{name}-{id}.your-domain.com` behind forward-auth
+- **SSH that just works** — `ssh sandbox-{id}@host -p 2222`, VS Code Remote SSH, JetBrains remote
 
 ## Quickstart
 
-### 1. Install prerequisites on your server
+Two ways to run Atelier, depending on what you have.
+
+### Path 1 — You have a Kubernetes cluster
+
+Install the Helm chart with a minimal values file; everything else is
+configured from the console on first connection, or via the CLI.
 
 ```bash
-# k3s
-curl -sfL https://get.k3s.io | sh -
-
-# Helm
-curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-# cert-manager
-helm repo add jetstack https://charts.jetstack.io
-helm install cert-manager jetstack/cert-manager \
-  --namespace cert-manager --create-namespace --set crds.enabled=true
-
-# Kata Containers
-git clone --depth 1 https://github.com/kata-containers/kata-containers.git /tmp/kata-src
-helm install kata-deploy /tmp/kata-src/tools/packaging/kata-deploy/helm-chart/kata-deploy \
-  --set k8sDistribution=k3s \
-  --set env.createRuntimeClasses=true \
-  --set env.createDefaultRuntimeClass=true
-```
-
-### 2. Create a values file
-
-```yaml
-# values.production.yaml
-domain:
-  baseDomain: "example.com"
-  tls:
-    email: "admin@example.com"
-
-auth:
-  github:
-    clientId: "your-github-client-id"
-    clientSecret: "your-github-client-secret"
-  allowedOrg: "your-github-org"  # optional
-
-certManager:
-  enabled: true
-  cloudflare:
-    apiToken: "your-cloudflare-api-token"
-```
-
-Set the Authorization callback URL in your GitHub OAuth App to `https://sandbox.example.com/auth/callback`.
-
-### 3. Deploy the shared infra chart
-
-```bash
-helm install atelier charts/atelier/ \
+helm install atelier oci://ghcr.io/frak-id/charts/atelier \
   --namespace atelier-system --create-namespace \
-  --values values.production.yaml
+  --set domain.baseDomain=example.com \
+  --set domain.tls.email=admin@example.com \
+  --set auth.github.clientId=<client-id> \
+  --set auth.github.clientSecret=<client-secret>
 ```
 
-Or use the deploy script (builds the agent image, pushes to GHCR, deploys the chart via SSH):
+Then open `https://sandbox.example.com`, sign in with GitHub, and spawn your
+first sandbox.
+
+Full isolation (Kata micro-VMs) requires nodes with KVM (`/dev/kvm`) and the
+[kata-deploy](https://github.com/kata-containers/kata-containers) runtime;
+instant cloning requires a CSI driver with VolumeSnapshot support (we recommend
+[TopoLVM](https://github.com/topolvm/topolvm)). See the
+[Setup Guide](docs/setup.md) for prerequisites, DNS/TLS options, and the
+GitHub OAuth app.
+
+> ⚠️ The single-chart install is being consolidated — today the chart deploys
+> the shared infra and the app is applied separately; see the
+> [Setup Guide](docs/setup.md) for the current sequence and the
+> [roadmap](docs/roadmap.md) for progress.
+
+### Path 2 — No cluster? Local mode
+
+Run sandboxes on your own machine with Docker — no Kubernetes, no bare metal,
+no domain. The server ships a Docker backend (`ATELIER_RUNTIME_BACKEND=docker`)
+that runs each sandbox as a local container with the same agent, specs, and
+session machinery as the cluster path:
 
 ```bash
-VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
+npm install -g @konfeature/atelier
+
+atelier local up        # start a local server against your Docker daemon
+atelier up              # spawn your first sandbox
 ```
 
-This chart provisions cluster-wide infra only — Zot, CLIProxyAPI, sshpiper,
-cert-manager issuers, the Kata `RuntimeClass`, and the prebuild
-`VolumeSnapshotClass`. It does not deploy the server or console app.
+Local mode trades VM isolation for convenience (sandboxes are Docker
+containers), but the product — specs, agent sessions, the console, the CLI
+cockpit — works the same. Perfect for evaluating Atelier before committing a
+server to it.
 
-### 4. Deploy the server + console app
+> ⚠️ The `atelier local` one-liner is under active development; today local
+> mode means running the server yourself with the Docker backend. See the
+> [roadmap](docs/roadmap.md).
 
-The app itself (server + console, one pod) is deployed with plain manifests
-under `infra/k8s/v2/`, which point at the infra chart's Zot/CLIProxy/etc. See
-[`infra/k8s/v2/README.md`](infra/k8s/v2/README.md) for the full apply
-sequence (namespaces → RBAC → kata custom runtime → config → PVC → secret →
-deployment → service → ingress).
+<!-- TODO(screenshot/gif): CLI cockpit — `atelier` interactive browse + live boot log stream -->
+> 📸 _Screenshot placeholder — **CLI cockpit**: spawn a sandbox and watch the VM boot live from your terminal_
 
-### 5. Verify
+## Features
+
+### For working with agents
+
+- **Agent sessions** — drive the in-sandbox agent from console or CLI: start sessions, stream output, review todos, attach to any process read-write or read-only
+- **Attention feed** — permission and question requests from every sandbox aggregated in one place, with risk categorization
+- **MCP server** — 14 tools for sandbox lifecycle, exec, file patching, port exposure, prebuilds, and toolbox management; per-user authenticated sessions
+- **Pluggable harnesses** — the available harness set is derived at runtime from `@atelier/compose` composers, so a pi-first or opencode-first org sees its own stack everywhere
+
+### For fast, reproducible environments
+
+- **Prebuilds** — content-addressed snapshots keyed on the base image *and* each repo's remote HEAD; a `git push` busts the cache automatically. Prebuilds can chain on other prebuilds
+- **Toolboxes & toolsets** — user- or org-scoped recipes (`build[]` + `paths[]`) compiled once into versioned, content-addressed artifacts and mounted into every spawn as squashfs overlays. Add any binary or tool without rebuilding a base image
+- **Saved specs** — name a `SandboxSpec` once, spawn it one-tap later, scoped to you or your org
+- **Pause / resume** — snapshot a sandbox and release its compute; resume later with fresh git credentials rotated in
+- **Three base images** — `dev-base` (Node 22 + Bun), `dev-cloud` (+ AWS/GCP/kubectl/Pulumi), `dev-rust` (+ Rust toolchain)
+
+### For teams and operators
+
+- **Org policy injection** — mandate spec fragments (audit processes, compliance files, required env) server-side on every spawn, regardless of who or what created the sandbox
+- **Secrets store** — `{"$secret": "NAME"}` references in any spec field, resolved server-side, never stored in the runtime DB
+- **GitHub OAuth** — sign in with GitHub, optionally gated to an org, with repository/branch discovery
+- **Multi-dev per sandbox** — nothing stops multiple developers (or one dev + one agent) sharing a sandbox
+- **Custom npm registry** — point every sandbox at your Verdaccio/Nexus/Artifactory proxy with one setting
+- **Config file sync** — global and per-scope config files, automatically synced into sandboxes
+
+### The seam that keeps it simple
+
+A sandbox is `files + processes + ports` — nothing more. `@atelier/spec`
+defines the contract; `@atelier/compose` builds specs client-side from harness
+and preset fragments (`vscode`, `browser`, `terminal`). The runtime never
+learns what a "harness" is, so extending Atelier means composing specs, not
+patching the server.
+
+## The CLI
+
+The `atelier` binary is a full cockpit, not just a client:
 
 ```bash
-kubectl -n atelier-v2-system get pods
-kubectl -n atelier-v2-system logs -f deploy/atelier-v2 -c server
+atelier                 # interactive cockpit: pick a sandbox, act on it
+atelier up --bake --spec spec.jsonc   # spec → prebuild → sandbox, one command
+atelier ps              # list sandboxes
+atelier exec <id> -- bun test
+atelier ssh <id>        # SSH shell (keys auto-registered on first setup)
+atelier attach <id> opencode          # attach to the agent process, Ctrl-] detaches
+atelier pause <id> / resume <id> / snapshot <id>
 ```
 
-Your console is at the `domain.dashboard` you configured in
-`infra/k8s/v2/30-config.yaml`.
+Every command takes `--json` for scripting.
 
-## Helm Chart Overview
+## Architecture at a Glance
 
-`charts/atelier` deploys shared cluster infra — not the app itself:
-
-| Component | Purpose |
-|-----------|---------|
-| **Zot** | Lightweight OCI registry for base images |
-| **CLIProxyAPI** | AI model proxy with multi-provider OAuth |
-| **sshpiper** | SSH proxy with username-based routing to sandboxes |
-| **cert-manager issuers** | ClusterIssuer + wildcard TLS certs |
-| **Kata RuntimeClass** | VM isolation runtime for sandbox pods |
-
-The server + console app is deployed separately via `infra/k8s/v2/` (see
-above). Sandbox pods are created dynamically in the namespace configured by
-`kubernetes.namespace` in the app's config, using the Kata runtime class.
-
-### Key configuration
-
-```yaml
-# charts/atelier/values.yaml (shared infra)
-zot:
-  enabled: true
-  persistence:
-    size: 20Gi
-
-cliproxy:
-  enabled: true
-
-sshpiper:
-  enabled: true
-  nodePort: 30022          # external SSH port
-
-certManager:
-  enabled: true
-  cloudflare:
-    apiToken: ""
+```
+console (React SPA) ─┐
+atelier CLI ─────────┼──► server (Bun/Elysia) ──► Kubernetes + Kata Containers
+MCP clients ─────────┘         │                        │
+                               │                   sandbox pod (micro-VM)
+                               └── SQLite            ├─ atelier-agent (Rust)
+                                                     ├─ your processes
+                                                     └─ squashfs toolset overlays
 ```
 
-See [`charts/atelier/values.yaml`](charts/atelier/values.yaml) for all infra
-options, and [Advanced Configuration](docs/advanced-configuration.md) for the
-app's domain/auth/server/kubernetes/sandbox settings (set via
-`infra/k8s/v2/30-config.yaml` + the `atelier-v2-secrets` Secret).
+- **Server** — runtime orchestration, control plane (auth/orgs/secrets), ACP session bridge, MCP server, observable job queue (SSE)
+- **Agent** — a static Rust binary inside each sandbox: process supervision, file sync, PTY multiplexing, ACP relay
+- **Backends** — Kubernetes (Kata micro-VMs, VolumeSnapshot cloning) or Docker (local mode)
+
+See [Architecture](docs/architecture.md) for the full picture.
 
 ## Local Development
 
-No server or KVM needed — the server runs in mock mode:
+The server runs in mock mode — no Kubernetes, no Docker, no KVM:
 
 ```bash
 bun install
 bun run --filter @atelier/server dev   # API:     http://localhost:4000
-                                        # Swagger: http://localhost:4000/swagger
+                                       # Swagger: http://localhost:4000/swagger
 bun run --filter @atelier/console dev  # Console: http://localhost:5174
 ```
 
-The repo is a Bun monorepo: the `@atelier/server` (Bun/Elysia) and
+The repo is a Bun monorepo: `@atelier/server` (Bun/Elysia) and
 `@atelier/console` (React 19 / TanStack Router) apps, the in-pod
-`atelier-agent` (Rust, `apps/agent-v2`), the `atelier` host CLI
-(`apps/cli`), and the `@atelier/spec` / `@atelier/compose` /
-`@atelier/shared` packages. See [`AGENTS.md`](AGENTS.md) for the full layout.
+`atelier-agent` (Rust, `apps/agent-v2`), the `atelier` host CLI (`apps/cli`),
+and the `@atelier/spec` / `@atelier/compose` / `@atelier/shared` packages.
+See [`AGENTS.md`](AGENTS.md) for the full layout.
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — what Atelier is, why it's easy, and how to try it
+- [Getting Started](docs/getting-started.md) — what Atelier is and how to try it
 - [Setup Guide](docs/setup.md) — installation and configuration
 - [Recommended Infrastructure](docs/recommended-infrastructure.md) — server sizing, Hetzner + k3s recommendations, cost ballpark
-- [Advanced Configuration](docs/advanced-configuration.md) — full reference for every Helm option
+- [Advanced Configuration](docs/advanced-configuration.md) — full configuration reference
 - [Architecture](docs/architecture.md) — system design, components, and diagrams
 - [Infrastructure](docs/infrastructure.md) — networking, storage, domains, and deployment
 - [Constraints](docs/constraints.md) — critical gotchas that will save you hours
