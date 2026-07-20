@@ -15,10 +15,12 @@ import { createClient, unwrap } from "../client.ts";
 import type { CliConfig } from "../config.ts";
 import { clearConfig, loadConfig, saveConfig } from "../config.ts";
 import type { Ctx } from "../context.ts";
+import { createCtx } from "../context.ts";
 import { line } from "../output.ts";
 import * as ui from "../ui.ts";
 import { openInBrowser } from "../util.ts";
 import { runInit } from "./config.ts";
+import { bootstrapLocal } from "./local.ts";
 
 const CALLBACK_HTML = (ok: boolean) =>
   `<!doctype html><meta charset="utf-8"><title>atelier</title>` +
@@ -168,16 +170,32 @@ async function runLogout(): Promise<void> {
   line("Logged out.");
 }
 
-/** Present the first-run choice: browser login or paste a key. */
+/** Present the first-run choice: connect to a hosted server (browser login or
+ * paste a key) or spin up a local server via Docker. */
 export async function runSetup(): Promise<void> {
-  const method = await ui.select<"login" | "paste">({
+  const method = await ui.select<"login" | "paste" | "local">({
     message: "Set up atelier",
     options: [
-      { value: "login", label: "Log in with your browser (recommended)" },
-      { value: "paste", label: "Paste an API key" },
+      {
+        value: "login",
+        label: "Log in to a hosted server (browser)",
+        hint: "recommended if you have an Atelier deployment",
+      },
+      {
+        value: "paste",
+        label: "Paste an API key",
+        hint: "connect to a hosted server with an atl_… key",
+      },
+      {
+        value: "local",
+        label: "Run locally with Docker",
+        hint: "boot a self-hosted server on this machine",
+      },
     ],
   });
-  return method === "login" ? runLogin({}) : runInit();
+  if (method === "login") return runLogin({});
+  if (method === "paste") return runInit();
+  return bootstrapLocal(createCtx());
 }
 
 export function registerAuth(program: Command, _ctx: Ctx): void {

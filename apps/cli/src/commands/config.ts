@@ -126,6 +126,8 @@ async function runDoctor(json: boolean): Promise<void> {
   if (json) {
     printJson({
       configPath: cfg.configPath,
+      context: cfg.context,
+      contexts: cfg.contexts,
       baseUrl: cfg.baseUrl,
       baseUrlSource: cfg.baseUrlSource,
       apiKeyConfigured: Boolean(cfg.apiKey),
@@ -146,6 +148,9 @@ async function runDoctor(json: boolean): Promise<void> {
   const ok = (b: boolean) => (b ? pc.green("✓") : pc.red("✗"));
   line(pc.bold("atelier doctor"));
   line(`  config file   ${pc.dim(cfg.configPath)}`);
+  line(
+    `  context       ${cfg.context} ${pc.dim(`(${cfg.contexts.length} total)`)}`,
+  );
   line(`  base URL      ${cfg.baseUrl} ${pc.dim(`(${cfg.baseUrlSource})`)}`);
   line(
     `  API key       ${cfg.apiKey ? mask(cfg.apiKey) : pc.red("unset")} ${pc.dim(`(${cfg.apiKeySource})`)}`,
@@ -211,12 +216,17 @@ export function registerConfig(program: Command, ctx: Ctx): void {
       if (ctx.json) {
         return printJson({
           configPath: cur.configPath,
+          context: cur.context,
+          contexts: cur.contexts,
           baseUrl: cur.baseUrl,
           baseUrlSource: cur.baseUrlSource,
           apiKey: cur.apiKey ? mask(cur.apiKey) : null,
           apiKeySource: cur.apiKeySource,
         });
       }
+      line(
+        `context    ${cur.context} ${pc.dim(`(${cur.contexts.length} total)`)}`,
+      );
       line(`base URL   ${cur.baseUrl} ${pc.dim(`(${cur.baseUrlSource})`)}`);
       line(`API key    ${mask(cur.apiKey)} ${pc.dim(`(${cur.apiKeySource})`)}`);
       line(`config     ${pc.dim(cur.configPath)}`);

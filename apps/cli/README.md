@@ -15,7 +15,8 @@ Requires [Node.js](https://nodejs.org) >= 20.
 ## Getting started
 
 ```sh
-# First run sets you up (browser login) and drops you into the interactive cockpit
+# First run sets you up and drops you into the interactive cockpit. Choose to
+# log in to a hosted server, paste an API key, or run a local server via Docker.
 atelier
 
 # Or log in explicitly
@@ -23,6 +24,33 @@ atelier login
 
 # Configure the base URL + API key and check health
 atelier config
+```
+
+### Local server via Docker
+
+No hosted deployment? Boot one on your machine — it runs the `atelier-server`
+image with the Docker runtime backend (sandboxes become sibling containers) and
+points a `local` context at it:
+
+```sh
+atelier local up        # boot the server + wire the `local` context
+atelier local status    # container + health
+atelier local logs      # follow server logs
+atelier local down      # stop + remove (add --volume to wipe state)
+```
+
+Host networking is first-class on Linux and OrbStack; on Docker Desktop pass
+`atelier local up --network bridge`.
+
+### Contexts (switch remote / local)
+
+Each context is a `{ baseUrl, apiKey }` pair. Flip between a hosted server and a
+local one without re-authing:
+
+```sh
+atelier context ls              # list contexts (active one marked *)
+atelier context use default     # switch
+atelier context add staging --url https://staging.example.com --key atl_…
 ```
 
 ## Usage

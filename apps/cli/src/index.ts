@@ -11,8 +11,10 @@ import { Command } from "commander";
 import { ApiError } from "./client.ts";
 import { browseInteractive, registerBrowse } from "./commands/browse.ts";
 import { registerConfig } from "./commands/config.ts";
+import { registerContext } from "./commands/context.ts";
 import { registerImage } from "./commands/image.ts";
 import { registerJobs } from "./commands/jobs.ts";
+import { registerLocal } from "./commands/local.ts";
 import { registerAuth, runSetup } from "./commands/login.ts";
 import { registerPrebuild } from "./commands/prebuild.ts";
 import { registerSandbox } from "./commands/sandbox.ts";
@@ -60,6 +62,8 @@ registerSecret(program, ctx);
 registerWhoami(program, ctx);
 registerAuth(program, ctx);
 registerConfig(program, ctx);
+registerContext(program, ctx);
+registerLocal(program, ctx);
 
 program.parseAsync(process.argv).catch((err) => {
   if (err instanceof ApiError) fail(`${err.message} (HTTP ${err.status})`);

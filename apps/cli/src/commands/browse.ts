@@ -521,8 +521,16 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
   const source = await ui.select<"image" | "prebuild" | "cancel">({
     message: "New sandbox from…",
     options: [
-      { value: "image", label: "Base image" },
-      { value: "prebuild", label: "Prebuild (repo snapshot)" },
+      {
+        value: "prebuild",
+        label: "Prebuild",
+        hint: "boot from a repo snapshot you already baked — fast, deps ready",
+      },
+      {
+        value: "image",
+        label: "Base image",
+        hint: "boot straight from a Docker image ref — empty, no repo",
+      },
       { value: "cancel", label: pc.dim("Cancel") },
     ],
   });
