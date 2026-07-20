@@ -2,10 +2,9 @@
  * Thin `docker` CLI wrapper shared by the Docker sandbox + volume backends.
  * Shelling out to the CLI (vs. an SDK) keeps the dependency surface at "a
  * docker binary on PATH", which every target (native Linux, Docker Desktop,
- * OrbStack, Lima) already provides.
+ * OrbStack, Lima) already provides. Uses `Bun.spawn` (the server runtime) so
+ * we stay off `node:child_process`'s typings.
  */
-import { spawn } from "node:child_process";
-
 export interface DockerResult {
   code: number;
   stdout: string;
@@ -16,26 +15,26 @@ export interface DockerResult {
  * rejects, so callers branch on `code`). `env` overrides/extends the spawned
  * process environment (e.g. `DOCKER_HOST` for a remote daemon) — pass it so a
  * one-shot query hits the same daemon as a streamed build. */
-export function docker(
+export async function docker(
   args: string[],
   bin = "docker",
   env?: Record<string, string>,
 ): Promise<DockerResult> {
-  return new Promise((resolve) => {
-    const child = spawn(bin, args, {
-      env: env ? { ...process.env, ...env } : process.env,
+  try {
+    const child = Bun.spawn([bin, ...args], {
+      env: env ? { ...process.env, ...env } : undefined,
+      stdout: "pipe",
+      stderr: "pipe",
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => {
-      stdout += d;
-    });
-    child.stderr.on("data", (d) => {
-      stderr += d;
-    });
-    child.on("error", (e) => resolve({ code: -1, stdout, stderr: `${e}` }));
-    child.on("exit", (code) => resolve({ code: code ?? -1, stdout, stderr }));
-  });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { code, stdout, stderr };
+  } catch (e) {
+    return { code: -1, stdout: "", stderr: `${e}` };
+  }
 }
 
 /**
@@ -47,7 +46,7 @@ export function docker(
  * `signal` kills the child promptly on abort. Resolves to the exit code only
  * (never rejects) — same "branch on code" contract as {@link docker}.
  */
-export function dockerStream(
+export async function dockerStream(
   args: string[],
   onLog: (chunk: string) => void,
   options: {
@@ -57,22 +56,26 @@ export function dockerStream(
   } = {},
 ): Promise<number> {
   const { bin = "docker", env, signal } = options;
-  return new Promise((resolve) => {
-    const child = spawn(bin, args, {
-      env: env ? { ...process.env, ...env } : process.env,
+  try {
+    const child = Bun.spawn([bin, ...args], {
+      env: env ? { ...process.env, ...env } : undefined,
+      stdout: "pipe",
+      stderr: "pipe",
+      signal,
     });
-    const onAbort = () => child.kill("SIGTERM");
-    signal?.addEventListener("abort", onAbort, { once: true });
-    child.stdout.on("data", (d) => onLog(d.toString()));
-    child.stderr.on("data", (d) => onLog(d.toString()));
-    child.on("error", (e) => {
-      signal?.removeEventListener("abort", onAbort);
-      onLog(`${e}\n`);
-      resolve(-1);
-    });
-    child.on("exit", (code) => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve(code ?? -1);
-    });
-  });
+    const pump = async (stream: ReadableStream<Uint8Array>) => {
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) onLog(decoder.decode(value));
+      }
+    };
+    await Promise.all([pump(child.stdout), pump(child.stderr)]);
+    return await child.exited;
+  } catch (e) {
+    onLog(`${e}\n`);
+    return -1;
+  }
 }

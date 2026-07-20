@@ -20,7 +20,6 @@
  *     `Dockerfile -> /etc/shadow` symlink entry would have its target read
  *     and persisted by `readContextDockerfile`.
  */
-import { spawn } from "node:child_process";
 import { lstat, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, normalize } from "node:path";
@@ -29,23 +28,24 @@ import { ValidationError } from "../../shared/errors.ts";
 /** Hard cap on a build context's total unpacked size. */
 const MAX_CONTEXT_BYTES = 100 * 1024 * 1024;
 
-function run(
+async function run(
   bin: string,
   args: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(bin, args);
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => {
-      stdout += d;
+  try {
+    const child = Bun.spawn([bin, ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
     });
-    child.stderr.on("data", (d) => {
-      stderr += d;
-    });
-    child.on("error", (e) => resolve({ code: -1, stdout, stderr: `${e}` }));
-    child.on("exit", (code) => resolve({ code: code ?? -1, stdout, stderr }));
-  });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    return { code, stdout, stderr };
+  } catch (e) {
+    return { code: -1, stdout: "", stderr: `${e}` };
+  }
 }
 
 /** Reject any entry that isn't a clean relative path under the extraction

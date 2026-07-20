@@ -22,6 +22,10 @@ beforeAll(async () => {
     join(tmpdir(), "atelier-toolbox-version-test-"),
   );
   process.env.DATA_DIR = dataDir;
+  // Resolve migrations from this file's location so the suite passes from any
+  // cwd (bun test at the repo root vs. apps/server), not just when
+  // `process.cwd()/drizzle` happens to exist.
+  process.env.MIGRATIONS_DIR ??= join(import.meta.dir, "../../../../drizzle");
   const { initDatabase } = await import("../../db/client.ts");
   await initDatabase();
   ({ ToolboxRepository } = await import("../toolbox/toolbox.repository.ts"));
