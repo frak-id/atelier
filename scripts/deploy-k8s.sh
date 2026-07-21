@@ -15,8 +15,11 @@ set -euo pipefail
 #   # Skip image build (chart-only update):
 #   SKIP_BUILD=1 VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
 #
-#   # Restore a database backup after deploy:
-#   DB_RESTORE_PATH=/root/manager.db VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
+#
+# Deploys the shared cluster-infra chart (Zot, CLIProxy, sshpiper, cert-manager
+# issuers, kata runtimeclass, snapshot class). The v2 server + console app is
+# deployed separately via infra/k8s/v2. Only the sandbox agent image is built
+# here (baked into base images); the chart itself pulls upstream infra images.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -28,8 +31,6 @@ SSH_USER="${SSH_USER:-root}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-}"
 SSH_KEY_PASSPHRASE="${SSH_KEY_PASSPHRASE:-}"
 
-MANAGER_IMAGE_REPO="${IMAGE_REPO:-ghcr.io/frak-id/atelier-manager}"
-DASHBOARD_IMAGE_REPO="${DASHBOARD_IMAGE_REPO:-ghcr.io/frak-id/atelier-dashboard}"
 AGENT_IMAGE_REPO="${AGENT_IMAGE_REPO:-ghcr.io/frak-id/sandbox-agent}"
 RELEASE_NAME="${RELEASE_NAME:-atelier}"
 NAMESPACE="${NAMESPACE:-atelier-system}"
@@ -37,7 +38,6 @@ CHART_NAME="atelier"
 
 VALUES_FILE="${VALUES_FILE:-}"
 HELM_SET="${HELM_SET:-}"
-DB_RESTORE_PATH="${DB_RESTORE_PATH:-}"
 SKIP_BUILD="${SKIP_BUILD:-}"
 
 # When skipping build, default to the nightly GHCR image
@@ -52,8 +52,6 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REMOTE_DIR="/tmp/atelier-helm-deploy"
-MANAGER_IMAGE="${MANAGER_IMAGE_REPO}:${IMAGE_TAG}"
-DASHBOARD_IMAGE="${DASHBOARD_IMAGE_REPO}:${IMAGE_TAG}"
 AGENT_IMAGE="${AGENT_IMAGE_REPO}:${IMAGE_TAG}"
 
 # Replicate Helm's atelier.fullname logic: avoid "release-chartname" duplication
@@ -145,39 +143,25 @@ fi
 
 # ── Step 1: Build Docker images ──────────────────────────────────────────────
 
-build_image() {
-  local target="$1" image="$2"
-  info "Building ${target}: ${image} (linux/amd64)"
-
-  if docker buildx version >/dev/null 2>&1; then
-    docker buildx build \
-      --platform linux/amd64 \
-      --target "${target}" \
-      -t "${image}" \
-      --load \
-      "${REPO_ROOT}"
-  else
-    warn "docker buildx not available, using regular build (host must be amd64)"
-    docker build --target "${target}" -t "${image}" "${REPO_ROOT}"
-  fi
-
-  ok "${target} image built"
-}
-
 if [[ -z "$SKIP_BUILD" ]]; then
-  build_image manager "${MANAGER_IMAGE}"
-  build_image dashboard "${DASHBOARD_IMAGE}"
-
+  # Sandbox agent (apps/agent-v2, `atelier-agent`). Self-building multi-stage
+  # image — no prebuilt binary needed. NOTE: the agent is ALSO exposed as a
+  # build seed (`sandbox-agent-v2`) via the server's Images pipeline, so an
+  # operator with a configured docker builder can provision it (and dev-base)
+  # in-cluster instead. This deploy-time build stays the canonical bootstrap
+  # path: a stock k3s node has no docker daemon for the pipeline to use, and
+  # the agent image is a build input dev-base COPYs from, so it must exist
+  # before dev-base is built either way.
   info "Building agent: ${AGENT_IMAGE} (linux/amd64)"
   if docker buildx version >/dev/null 2>&1; then
     docker buildx build \
       --platform linux/amd64 \
       -t "${AGENT_IMAGE}" \
       --load \
-      -f "${REPO_ROOT}/apps/agent-rust/Dockerfile" \
-      "${REPO_ROOT}/apps/agent-rust"
+      -f "${REPO_ROOT}/apps/agent-v2/Dockerfile" \
+      "${REPO_ROOT}/apps/agent-v2"
   else
-    docker build -t "${AGENT_IMAGE}" -f "${REPO_ROOT}/apps/agent-rust/Dockerfile" "${REPO_ROOT}/apps/agent-rust"
+    docker build -t "${AGENT_IMAGE}" -f "${REPO_ROOT}/apps/agent-v2/Dockerfile" "${REPO_ROOT}/apps/agent-v2"
   fi
   ok "Agent image built"
 
@@ -185,33 +169,12 @@ if [[ -z "$SKIP_BUILD" ]]; then
 
   info "Pushing to GHCR"
 
-  if ! docker push "${MANAGER_IMAGE}" 2>/dev/null; then
-    err "docker push failed — are you logged into GHCR?"
-    echo ""
-    echo "    Run: echo \$GITHUB_TOKEN | docker login ghcr.io -u YOUR_USERNAME --password-stdin"
-    echo ""
-    exit 1
-  fi
-  ok "Pushed ${MANAGER_IMAGE}"
-
-  if ! docker push "${DASHBOARD_IMAGE}" 2>/dev/null; then
-    err "docker push failed for dashboard image"
-    exit 1
-  fi
-  ok "Pushed ${DASHBOARD_IMAGE}"
-
   docker push "${AGENT_IMAGE}" 2>/dev/null || warn "Could not push agent image to GHCR (non-fatal)"
   ok "Pushed ${AGENT_IMAGE}"
 
   # ── Step 3: Import into k3s containerd ───────────────────────────────────
 
   info "Importing images into k3s containerd"
-
-  docker save "${MANAGER_IMAGE}" | remote 'k3s ctr -n k8s.io images import -'
-  ok "Manager image imported"
-
-  docker save "${DASHBOARD_IMAGE}" | remote 'k3s ctr -n k8s.io images import -'
-  ok "Dashboard image imported"
 
   docker save "${AGENT_IMAGE}" | remote 'k3s ctr -n k8s.io images import -'
   ok "Agent image imported"
@@ -246,8 +209,6 @@ info "Running helm upgrade --install"
 
 HELM_CMD="helm upgrade --install ${RELEASE_NAME} ${REMOTE_DIR}/atelier"
 HELM_CMD+=" --namespace ${NAMESPACE} --create-namespace"
-HELM_CMD+=" --set manager.image.tag=${IMAGE_TAG}"
-HELM_CMD+=" --set dashboard.image.tag=${IMAGE_TAG}"
 
 if [[ -n "$VALUES_FILE" ]]; then
   HELM_CMD+=" --values ${REMOTE_DIR}/values-override.yaml"
@@ -264,16 +225,15 @@ ok "Helm release deployed"
 
 # ── Step 6: Configure k3s registries for the OCI registry ──────────────────
 #
-# Derives the mirror host from the deployed manager config so this step
-# works for both the bundled Zot and any external registry pointed at via
-# `zot.externalUrl` in values.
+# The chart deploys a bundled Zot as `${FULLNAME}-zot`. Override
+# REGISTRY_HOST_PORT for an external registry (zot.externalUrl in values).
 
 info "Configuring k3s registries"
 
-REGISTRY_HOST_PORT=$(remote "kubectl -n ${NAMESPACE} get configmap ${FULLNAME}-manager-config -o jsonpath='{.data.sandbox\.config\.json}' 2>/dev/null | sed -n 's/.*\"registryUrl\": *\"\\([^\"]*\\)\".*/\\1/p'" || echo "")
+REGISTRY_HOST_PORT="${REGISTRY_HOST_PORT:-${FULLNAME}-zot.${NAMESPACE}.svc:5000}"
 
 if [[ -z "$REGISTRY_HOST_PORT" ]]; then
-  warn "Could not resolve registryUrl from manager-config — skipping registries config"
+  warn "No registry host resolved — skipping registries config"
 else
   REGISTRY_HOST="${REGISTRY_HOST_PORT%:*}"
   REGISTRY_PORT="${REGISTRY_HOST_PORT##*:}"
@@ -317,25 +277,10 @@ REGEOF"
   fi
 fi
 
-# ── Step 7: Wait and verify ─────────────────────────────────────────────────
+# ── Step 7: Verify ──────────────────────────────────────────────────────────
 
-info "Waiting for rollout"
-
-if ! remote "kubectl -n ${NAMESPACE} rollout status deployment/${FULLNAME}-manager --timeout=120s"; then
-  warn "Rollout didn't complete in time — dumping diagnostics"
-  echo ""
-  remote "kubectl -n ${NAMESPACE} get pods -l app.kubernetes.io/component=manager" || true
-  echo ""
-  remote "kubectl -n ${NAMESPACE} describe pod -l app.kubernetes.io/component=manager" | tail -40 || true
-  echo ""
-  remote "kubectl -n ${NAMESPACE} logs -l app.kubernetes.io/component=manager --tail=50" || true
-  exit 1
-fi
-
-ok "Manager pod is running"
-
-echo ""
-remote "kubectl -n ${NAMESPACE} get pods"
+info "Deployed resources"
+remote "kubectl -n ${NAMESPACE} get pods" || true
 
 # ── Step 8: Sync agent image to the OCI registry ───────────────────────
 
@@ -360,37 +305,14 @@ else
   warn "Registry ClusterIP not resolved — skipping agent sync"
 fi
 
-# ── Step 9: Restore database backup (optional) ──────────────────────────────
-
-if [[ -n "$DB_RESTORE_PATH" ]]; then
-  info "Restoring database from ${DB_RESTORE_PATH}"
-
-  MANAGER_POD=$(remote "kubectl -n ${NAMESPACE} get pod -l app.kubernetes.io/component=manager -o jsonpath='{.items[0].metadata.name}'")
-
-  if [[ -n "$MANAGER_POD" ]]; then
-    remote "kubectl cp ${DB_RESTORE_PATH} ${NAMESPACE}/${MANAGER_POD}:/app/data/manager.db -c manager"
-    ok "Database copied to ${MANAGER_POD}:/app/data/manager.db"
-
-    remote "kubectl -n ${NAMESPACE} rollout restart deployment/${FULLNAME}-manager"
-    remote "kubectl -n ${NAMESPACE} rollout status deployment/${FULLNAME}-manager --timeout=60s"
-    ok "Manager restarted with restored database"
-  else
-    warn "Could not find manager pod — skipping DB restore"
-  fi
-fi
-
 # ── Done ─────────────────────────────────────────────────────────────────────
-
-SVC_NAME="${FULLNAME}-manager"
 
 info "Deployment complete!"
 echo ""
-echo "  Dashboard: https://sandbox.$(remote "kubectl -n ${NAMESPACE} get configmap ${FULLNAME}-manager-config -o jsonpath='{.data.sandbox\\.config\\.json}' 2>/dev/null" | grep -o '"baseDomain":"[^"]*"' | cut -d'"' -f4 || echo "your-domain.com")"
+echo "  This deploys the shared cluster-infra chart. The v2 server + console app"
+echo "  is deployed separately via infra/k8s/v2 (see infra/k8s/v2/README.md)."
 echo ""
-echo "  Health:    kubectl -n ${NAMESPACE} port-forward svc/${SVC_NAME} 4000:4000"
-echo "             curl http://127.0.0.1:4000/health/ready"
-echo ""
-echo "  Logs:      kubectl -n ${NAMESPACE} logs -f deploy/${SVC_NAME} -c manager"
+echo "  Pods:      kubectl -n ${NAMESPACE} get pods"
 echo ""
 echo "  Rollback:  helm uninstall ${RELEASE_NAME} -n ${NAMESPACE}"
 echo ""

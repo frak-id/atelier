@@ -1,0 +1,31 @@
+# Public entrypoint for the v2 console + server. Per-host TLS via
+# letsencrypt-frak (HTTP-01) — the cluster's Cloudflare token can't issue
+# frak.id wildcards, and *.hetzner-staging.frak.id already resolves to the
+# Traefik LB, so HTTP-01 works out of the box (same pattern as twenty/chat).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: atelier-v2
+  namespace: atelier-v2-system
+  labels:
+    app.kubernetes.io/name: atelier-v2
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-frak
+    kubernetes.io/tls-acme: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: atelier.hetzner-staging.frak.id
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: atelier-v2
+                port:
+                  number: 8080
+  tls:
+    - secretName: atelier-v2-tls
+      hosts:
+        - atelier.hetzner-staging.frak.id

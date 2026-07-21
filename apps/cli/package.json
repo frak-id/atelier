@@ -1,0 +1,57 @@
+{
+  "name": "@konfeature/atelier",
+  "version": "0.1.2",
+  "type": "module",
+  "description": "The atelier CLI — a typed client over the /v1 runtime + /api control API (Eden Treaty). API-first, CLI-second (atelier-v2 §4).",
+  "keywords": [
+    "atelier",
+    "cli",
+    "sandbox",
+    "runtime",
+    "eden",
+    "elysia"
+  ],
+  "license": "MIT",
+  "author": "KONFeature",
+  "homepage": "https://github.com/frak-id/atelier/tree/main/apps/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frak-id/atelier.git",
+    "directory": "apps/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/frak-id/atelier/issues"
+  },
+  "bin": {
+    "atelier": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepublishOnly": "node build.mjs",
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "@elysiajs/eden": "^1.4.9",
+    "commander": "^14.0.2",
+    "picocolors": "^1.1.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@atelier/spec": "workspace:*",
+    "@atelier/server": "workspace:*",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.24.0"
+  }
+}

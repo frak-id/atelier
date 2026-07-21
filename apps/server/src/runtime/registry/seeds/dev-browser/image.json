@@ -1,0 +1,26 @@
+{
+  "name": "Browser Development",
+  "description": "dev-base plus a browser-accessible desktop (Chromium, KasmVNC, Openbox). Pick this base when a sandbox uses the `browser` toolbox or otherwise needs a GUI browser — dev-base itself is browserless to stay lean.",
+  "volumeSize": 5,
+  "tools": [
+    "chromium",
+    "code-server",
+    "opencode",
+    "bun",
+    "node",
+    "git",
+    "curl",
+    "ssh",
+    "vim"
+  ],
+  "base": "dev-base",
+  "official": true,
+  "dependsOn": ["dev-base"],
+  "substitutions": [
+    {
+      "token": "atelier/dev-base:latest",
+      "kind": "seed",
+      "seed": "dev-base"
+    }
+  ]
+}

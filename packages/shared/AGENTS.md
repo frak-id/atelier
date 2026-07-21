@@ -1,6 +1,7 @@
 # @frak/atelier-shared
 
-Cross-app TypeBox schemas, config loaders, and constants. Consumed by Manager, Dashboard, and the OpenCode plugin via subpath exports.
+Cross-app TypeBox schemas, config loaders, and constants. Consumed by the
+server and the console via subpath exports.
 
 ## Exports
 
@@ -10,8 +11,6 @@ Cross-app TypeBox schemas, config loaders, and constants. Consumed by Manager, D
 | `./constants` | Shared constants (domains, ports, defaults) |
 | `./config` | `AtelierConfig` schema (TypeBox) |
 | `./config-loader` | Multi-source config loader (env + file + defaults) |
-| `./sandbox-config` | Per-sandbox config schema |
-| `./sandbox-config-loader` | Sandbox config loader |
 
 ## Schema Generation
 

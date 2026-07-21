@@ -15,9 +15,11 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  MANAGER_IMAGE: ghcr.io/frak-id/atelier-manager
-  DASHBOARD_IMAGE: ghcr.io/frak-id/atelier-dashboard
+  SERVER_IMAGE: ghcr.io/frak-id/atelier-server
+  CONSOLE_IMAGE: ghcr.io/frak-id/atelier-console
   AGENT_IMAGE: ghcr.io/frak-id/sandbox-agent
+  DEV_BASE_IMAGE: ghcr.io/frak-id/atelier-dev-base
+  DEV_BROWSER_IMAGE: ghcr.io/frak-id/atelier-dev-browser
 
 jobs:
   check:
@@ -43,18 +45,21 @@ jobs:
 
   docker:
     needs: check
-    timeout-minutes: 20
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - target: manager
-            image_env: MANAGER_IMAGE
-          - target: dashboard
-            image_env: DASHBOARD_IMAGE
+          - target: server
+            image_env: SERVER_IMAGE
+          - target: console
+            image_env: CONSOLE_IMAGE
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -93,6 +98,7 @@ jobs:
         with:
           context: .
           target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.tags || steps.meta-nightly.outputs.tags }}
           labels: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.labels || steps.meta-nightly.outputs.labels }}
@@ -101,31 +107,14 @@ jobs:
 
   agent:
     needs: check
-    timeout-minutes: 20
+    timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
-
-      - name: Install musl cross-compiler
-        run: sudo apt-get install -y musl-tools
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/agent-rust
-
-      - name: Build agent binary
-        working-directory: apps/agent-rust
-        run: |
-          cargo build --release --target x86_64-unknown-linux-musl
-          mkdir -p dist
-          cp target/x86_64-unknown-linux-musl/release/sandbox-agent dist/sandbox-agent
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -162,10 +151,82 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: apps/agent-rust
+          context: apps/agent-v2
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.tags || steps.meta-nightly.outputs.tags }}
           labels: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.labels || steps.meta-nightly.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Prebuilt sandbox base images so a fresh operator needs no in-cluster
+  # builder/registry to launch a first sandbox (`sandbox.defaultImage` can
+  # point straight at these). amd64-only: KasmVNC ships an amd64 .deb and the
+  # kata/clh sandbox runtime is amd64. dev-base bakes the agent from the
+  # freshly-published GHCR agent image; dev-browser FROMs the published
+  # dev-base — so this job runs after `agent` and builds base before browser.
+  base-images:
+    needs: [agent]
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image tags
+        id: tags
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            V="${GITHUB_REF_NAME#v}"
+            {
+              echo "agent_ref=${{ env.AGENT_IMAGE }}:${V}"
+              echo "base_ref=${{ env.DEV_BASE_IMAGE }}:${V}"
+              printf 'base_tags<<TAGS\n%s:%s\n%s:latest\nTAGS\n' \
+                "${{ env.DEV_BASE_IMAGE }}" "${V}" "${{ env.DEV_BASE_IMAGE }}"
+              printf 'browser_tags<<TAGS\n%s:%s\n%s:latest\nTAGS\n' \
+                "${{ env.DEV_BROWSER_IMAGE }}" "${V}" "${{ env.DEV_BROWSER_IMAGE }}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "agent_ref=${{ env.AGENT_IMAGE }}:nightly"
+              echo "base_ref=${{ env.DEV_BASE_IMAGE }}:nightly"
+              echo "base_tags=${{ env.DEV_BASE_IMAGE }}:nightly"
+              echo "browser_tags=${{ env.DEV_BROWSER_IMAGE }}:nightly"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      # dev-base first: dev-browser FROMs the freshly-pushed base image.
+      - name: Build and push dev-base
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/server/src/runtime/registry/seeds/dev-base
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            AGENT_IMAGE=${{ steps.tags.outputs.agent_ref }}
+          tags: ${{ steps.tags.outputs.base_tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push dev-browser
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/server/src/runtime/registry/seeds/dev-browser
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            BASE_IMAGE=${{ steps.tags.outputs.base_ref }}
+          tags: ${{ steps.tags.outputs.browser_tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -207,7 +268,7 @@ jobs:
         run: helm push atelier-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/frak-id/charts
 
   release:
-    needs: [docker, agent, helm]
+    needs: [docker, agent, base-images, helm]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
@@ -235,7 +296,9 @@ jobs:
             ## Docker Images
 
             ```bash
-            docker pull ghcr.io/frak-id/atelier-manager:${{ steps.version.outputs.version }}
-            docker pull ghcr.io/frak-id/atelier-dashboard:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/frak-id/atelier-server:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/frak-id/atelier-console:${{ steps.version.outputs.version }}
             docker pull ghcr.io/frak-id/sandbox-agent:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/frak-id/atelier-dev-base:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/frak-id/atelier-dev-browser:${{ steps.version.outputs.version }}
             ```

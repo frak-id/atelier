@@ -5,9 +5,8 @@
  * Sections:
  *   domain   — Where this runs (base domain, TLS, SSH)
  *   auth     — Who can access (GitHub OAuth, JWT, ACLs)
- *   server   — Manager API settings (mode, port, limits)
- *   sandbox  — Defaults for new sandboxes (image, git identity)
- *   advanced — Power-user overrides (VM service ports, versions)
+ *   server   — Server API settings (mode, port, limits)
+ *   sandbox  — Defaults for new sandboxes (image)
  */
 import { type Static, Type } from "@sinclair/typebox";
 
@@ -15,26 +14,35 @@ import { type Static, Type } from "@sinclair/typebox";
 // Domain
 // ---------------------------------------------------------------------------
 
-export const TlsConfigSchema = Type.Object(
-  {
-    /** Email for TLS certificate (e.g., ACME / Let's Encrypt) */
-    email: Type.String({ default: "" }),
-    /** Path to TLS certificate PEM file (manual TLS) */
-    certPath: Type.String({ default: "" }),
-    /** Path to TLS private key file (manual TLS) */
-    keyPath: Type.String({ default: "" }),
-  },
-  { default: {} },
-);
-
-export type TlsConfig = Static<typeof TlsConfigSchema>;
-
 export const SshConfigSchema = Type.Object(
   {
     /** SSH proxy listen port */
     port: Type.Number({ default: 2222 }),
     /** SSH proxy hostname — defaults to ssh.{baseDomain} if empty */
     hostname: Type.String({ default: "" }),
+    /**
+     * How SSH into sandboxes is routed (docs/proposals/portable-runtime-
+     * backends.md §5):
+     *   - `sshpiper`: the external sshpiper Deployment + a per-sandbox `Pipe`
+     *     CRD (default; k8s only).
+     *   - `none`: no central SSH gateway — the sandbox pod trusts the dev's own
+     *     keys, so an operator can `kubectl port-forward` and SSH directly.
+     *   - `in-server`: the built-in ssh2 proxy in the server process — no
+     *     external sshpiper. Binds `listenPort`, authenticates the dev against
+     *     the control SSH keys, and dials `pod:22` as `upstreamUser`.
+     */
+    gateway: Type.Union(
+      [
+        Type.Literal("sshpiper"),
+        Type.Literal("none"),
+        Type.Literal("in-server"),
+      ],
+      { default: "sshpiper" },
+    ),
+    /** `in-server` only: the TCP port the built-in ssh2 proxy binds. */
+    listenPort: Type.Number({ default: 2222 }),
+    /** `in-server` only: the upstream user the proxy logs into the pod as. */
+    upstreamUser: Type.String({ default: "dev" }),
   },
   { default: {} },
 );
@@ -47,8 +55,6 @@ export const DomainConfigSchema = Type.Object(
     baseDomain: Type.String({ default: "localhost" }),
     /** Dashboard domain — defaults to sandbox.{baseDomain} if empty */
     dashboard: Type.String({ default: "" }),
-    /** TLS / HTTPS configuration */
-    tls: TlsConfigSchema,
     /** SSH proxy configuration */
     ssh: SshConfigSchema,
   },
@@ -97,24 +103,22 @@ export const KubernetesConfigSchema = Type.Object(
   {
     /** Namespace for sandbox pods */
     namespace: Type.String({ default: "atelier-sandboxes" }),
-    /** Namespace for system components (Zot, image-build Jobs) */
-    systemNamespace: Type.String({ default: "atelier-system" }),
     /** Path to kubeconfig file (ignored when running in-cluster) */
     kubeconfig: Type.String({ default: "/etc/rancher/k3s/k3s.yaml" }),
     /** Kata Containers runtime class name */
     runtimeClass: Type.String({ default: "kata-clh" }),
     /** Ingress class name for dynamically created ingresses (e.g., traefik, nginx) */
     ingressClassName: Type.String({ default: "" }),
+    /**
+     * cert-manager ClusterIssuer used to mint a per-host TLS cert for each
+     * dynamically created tool ingress (via HTTP-01). Empty string disables
+     * TLS on tool ingresses (served over the ingress controller default).
+     */
+    toolIngressClusterIssuer: Type.String({ default: "" }),
     /** OCI registry hostname for sandbox and prebuild images (Zot) */
     registryUrl: Type.String({
       default: "zot.atelier-system.svc:5000",
     }),
-    /**
-     * Image reference for the in-pod sandbox agent, baked into base images at
-     * build time. Pin to a specific tag so a rebuild bakes in the matching
-     * agent; empty falls back to `{registryUrl}/sandbox-agent:latest`.
-     */
-    agentImage: Type.String({ default: "" }),
     /**
      * Optional npm registry URL injected into every sandbox (e.g. a private
      * Verdaccio/Nexus/Artifactory proxy). Empty string disables injection and
@@ -139,17 +143,6 @@ export const KubernetesConfigSchema = Type.Object(
     vsCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
       default: {},
     }),
-    /** Annotations to apply to OpenCode ingresses (e.g., forward-auth + header injection) */
-    openCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
-      default: {},
-    }),
-    /**
-     * Internal base URL of the manager K8s Service.
-     * Used by sandbox pods for callbacks and MCP registration.
-     * Set by the Helm chart — e.g.
-     * http://atelier-manager.atelier-system.svc:4000
-     */
-    managerUrl: Type.String({ default: "" }),
   },
   { default: {} },
 );
@@ -171,16 +164,10 @@ export const ServerConfigSchema = Type.Object(
   {
     /** Runtime mode: production (real VMs) or mock (local dev) */
     mode: RuntimeModeSchema,
-    /** Manager API port */
+    /** Server API port */
     port: Type.Number({ default: 4000 }),
-    /** Manager API bind host */
+    /** Server API bind host */
     host: Type.String({ default: "0.0.0.0" }),
-    /** Maximum concurrent sandboxes */
-    maxSandboxes: Type.Number({ default: 20 }),
-    /** Maximum active tasks */
-    maxActiveTasks: Type.Number({ default: 10 }),
-    /** Bearer token for MCP server authentication — if empty, MCP auth is disabled */
-    mcpToken: Type.String({ default: "" }),
   },
   { default: {} },
 );
@@ -191,26 +178,19 @@ export type ServerConfig = Static<typeof ServerConfigSchema>;
 // Sandbox defaults
 // ---------------------------------------------------------------------------
 
-export const SandboxGitConfigSchema = Type.Object(
-  {
-    /** Default git email for sandbox users */
-    email: Type.String({ default: "sandbox@atelier.dev" }),
-    /** Default git name for sandbox users */
-    name: Type.String({ default: "Sandbox User" }),
-  },
-  { default: {} },
-);
-
-export type SandboxGitConfig = Static<typeof SandboxGitConfigSchema>;
-
 export const SandboxDefaultsSchema = Type.Object(
   {
     /** Default image for new sandboxes */
     defaultImage: Type.String({ default: "dev-base" }),
-    /** Directory containing image definitions */
-    imagesDirectory: Type.String({ default: "/opt/atelier/infra/images" }),
-    /** Default git identity injected into sandboxes */
-    git: SandboxGitConfigSchema,
+    /**
+     * In-pod agent image the base seeds bake in via `COPY --from` (the
+     * `AGENT_IMAGE` build-arg). Defaults to the prebuilt public GHCR image so
+     * a fresh operator never has to build the Rust agent first; override to a
+     * private/mirrored ref for air-gapped clusters that can't reach GHCR.
+     */
+    agentImage: Type.String({
+      default: "ghcr.io/frak-id/sandbox-agent:latest",
+    }),
   },
   { default: {} },
 );
@@ -218,18 +198,18 @@ export const SandboxDefaultsSchema = Type.Object(
 export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
 
 // ---------------------------------------------------------------------------
-// Ports — service ports inside sandbox VMs and on the host
+// Ports — infra-level service ports.
+//
+// Only ports the server itself needs to reach live here. Tool ports (vscode,
+// browser, dev servers, opencode, …) are declared per-sandbox via `spec.ports`
+// and must NOT be duplicated here — a static entry claims the port name in the
+// Service dedup and silently shadows the spec's real entry.
 // ---------------------------------------------------------------------------
 
 export const PortsConfigSchema = Type.Object(
   {
-    vscode: Type.Number({ default: 8080 }),
-    opencode: Type.Number({ default: 3000 }),
-    browser: Type.Number({ default: 6080 }),
     terminal: Type.Number({ default: 7681 }),
     agent: Type.Number({ default: 9998 }),
-    dev: Type.Number({ default: 3001 }),
-    devApp: Type.Number({ default: 5173 }),
   },
   { default: {} },
 );
@@ -239,12 +219,22 @@ export type PortsConfig = Static<typeof PortsConfigSchema>;
 // ---------------------------------------------------------------------------
 // Image Builder
 //
-// Strategy for building base images (e.g. dev-base, dev-cloud) from
-// Dockerfiles in `sandbox.imagesDirectory`. Two strategies are supported:
+// Base images (dev-base, dev-cloud, dev-rust, ...) are server-embedded seed
+// build contexts (`apps/server/src/runtime/registry/seeds/`) plus any
+// user-supplied Dockerfile/zip or externally-registered ref (GHCR etc). This
+// section configures HOW the server builds one when asked to (`ImageBuilder‑
+// Service` / `POST /v1/images`) — three strategies are supported:
 //
+//   - docker:   shells out to a `docker` daemon (local socket, or a remote
+//               `tcp://` one via `dockerHost`/`DOCKER_HOST`). Default — the
+//               lowest-friction option, works with any Docker/OrbStack/Lima
+//               install. Not a good fit for untrusted multi-tenant builds
+//               (a shared daemon is root-equivalent); buildkit-rootless or
+//               kaniko are the safer choice there.
 //   - kaniko:   spawn a K8s Job running gcr.io/kaniko-project/executor
-//               with the build context mounted from a ConfigMap. Default;
-//               works out of the box with no external dependencies.
+//               with the build context mounted from a ConfigMap. Works out
+//               of the box with no external daemon dependency — the right
+//               fit for a stock k3s node.
 //   - buildkit: spawn a tiny `buildctl` client Job that dispatches the
 //               build to an existing BuildKit daemon at `endpoint`. Use
 //               this when the cluster already hosts a buildkitd Pod that
@@ -252,6 +242,7 @@ export type PortsConfig = Static<typeof PortsConfigSchema>;
 // ---------------------------------------------------------------------------
 
 export const ImageBuilderKindSchema = Type.Union([
+  Type.Literal("docker"),
   Type.Literal("kaniko"),
   Type.Literal("buildkit"),
 ]);
@@ -284,13 +275,19 @@ export type ImageBuilderTlsConfig = Static<typeof ImageBuilderTlsConfigSchema>;
 export const ImageBuilderConfigSchema = Type.Object(
   {
     /** Which builder strategy to use */
-    kind: Type.Union([Type.Literal("kaniko"), Type.Literal("buildkit")], {
-      default: "kaniko",
-    }),
+    kind: Type.Union(
+      [
+        Type.Literal("docker"),
+        Type.Literal("kaniko"),
+        Type.Literal("buildkit"),
+      ],
+      { default: "docker" },
+    ),
     /**
      * Override the builder image. Defaults to a sensible value per kind:
      *   - kaniko:   gcr.io/kaniko-project/executor:latest
      *   - buildkit: moby/buildkit:latest (used as the buildctl client)
+     *   - docker:   unused (the daemon itself does the build)
      */
     image: Type.String({ default: "" }),
     /**
@@ -299,6 +296,21 @@ export const ImageBuilderConfigSchema = Type.Object(
      * ignored otherwise.
      */
     endpoint: Type.String({ default: "" }),
+    /**
+     * Docker daemon URL (e.g. tcp://docker-host:2375) for kind=docker.
+     * Empty string inherits the process's own `DOCKER_HOST` / default local
+     * socket — the common case when the server runs beside (or as) the
+     * build host. Ignored for other kinds.
+     */
+    dockerHost: Type.String({ default: "" }),
+    /**
+     * Target build platform, shared by every backend (docker `--platform`,
+     * kaniko `--custom-platform`, buildkit `--opt platform`). Defaults to
+     * linux/amd64; set linux/arm64 to build for arm nodes (note the seed
+     * Dockerfiles' own amd64-pinned asset downloads must also be arch-aware
+     * for a fully arm base image).
+     */
+    platform: Type.String({ default: "linux/amd64" }),
     /**
      * Cache repository used by the builder. Defaults to
      * `${kubernetes.registryUrl}/cache` when empty.
@@ -321,34 +333,95 @@ export const ImageBuilderConfigSchema = Type.Object(
 export type ImageBuilderConfig = Static<typeof ImageBuilderConfigSchema>;
 
 // ---------------------------------------------------------------------------
-// Integrations
+// Storage
 // ---------------------------------------------------------------------------
 
-export const CLIProxyIntegrationConfigSchema = Type.Object(
+export const StorageConfigSchema = Type.Object(
   {
-    /** Internal URL of the CLIProxy service (K8s service URL) */
-    url: Type.String({ default: "" }),
-    /** API key for authenticating to the CLIProxy (Bearer token) */
-    apiKey: Type.String({ default: "" }),
-    /** Management API secret key for programmatic key management */
-    managementKey: Type.String({ default: "" }),
+    /**
+     * Which volume snapshot/clone mechanism the runtime's `VolumeBackend`
+     * uses (docs/proposals/portable-runtime-backends.md §5-6, §8). The
+     * degradation ladder:
+     *   - `csi`: CSI `VolumeSnapshot` + PVC `dataSource` clone (default; the
+     *     only provider implemented today).
+     *   - `btrfs` / `reflink` / `copy`: host-filesystem snapshot strategies for
+     *     the Docker/local backends — reserved; not yet implemented. Selecting
+     *     one currently fails fast at startup (see the implementation log's
+     *     step-3 short-circuit) rather than silently degrading.
+     *
+     * Orthogonal to the *artifact* a prebuild is stored as (VolumeSnapshot vs
+     * OCI `tar.zst`): the content-hash key is storage-agnostic, so a prebuild
+     * stays addressable across providers — the OCI-tar materialization itself
+     * is the deferred, infra-gated piece.
+     */
+    provider: Type.Union(
+      [
+        Type.Literal("csi"),
+        Type.Literal("btrfs"),
+        Type.Literal("reflink"),
+        Type.Literal("copy"),
+      ],
+      { default: "csi" },
+    ),
   },
   { default: {} },
 );
 
-export type CLIProxyIntegrationConfig = Static<
-  typeof CLIProxyIntegrationConfigSchema
->;
+export type StorageConfig = Static<typeof StorageConfigSchema>;
 
-export const IntegrationsConfigSchema = Type.Object(
+// ---------------------------------------------------------------------------
+// Runtime backend
+// ---------------------------------------------------------------------------
+
+export const RuntimeConfigSchema = Type.Object(
   {
-    /** CLIProxy AI model proxy integration */
-    cliproxy: CLIProxyIntegrationConfigSchema,
+    /**
+     * Which `SandboxBackend` orchestrates sandbox compute + network
+     * (docs/proposals/portable-runtime-backends.md §3, §8):
+     *   - `kubernetes`: Pod/Service/Ingress/PVC on a cluster (default; the only
+     *     backend implemented today). Its `kubernetes.*` config sub-tree
+     *     applies.
+     *   - `docker`: `docker run` the agent locally with published ports and a
+     *     host-dir volume — the self-host payoff; in progress.
+     *   - `local`: a bare local-process backend (Tier 3) — reserved.
+     *
+     * Selecting a backend that is not yet implemented fails fast at startup
+     * (see the implementation log) rather than silently falling back.
+     */
+    backend: Type.Union(
+      [
+        Type.Literal("kubernetes"),
+        Type.Literal("docker"),
+        Type.Literal("local"),
+      ],
+      { default: "kubernetes" },
+    ),
   },
   { default: {} },
 );
 
-export type IntegrationsConfig = Static<typeof IntegrationsConfigSchema>;
+export type RuntimeConfig = Static<typeof RuntimeConfigSchema>;
+
+// ---------------------------------------------------------------------------
+// Jobs — the durable, observable long-op queue (JobService).
+// ---------------------------------------------------------------------------
+
+export const JobsConfigSchema = Type.Object(
+  {
+    /**
+     * How many *pooled* jobs (prebuild bake, toolset build/capture — the
+     * expensive throwaway-pod ops) may run at once. Extra dispatches wait in
+     * the queue and start as slots free up. Sandbox lifecycle jobs
+     * (create/pause/resume/…) are tracked for visibility but bypass this
+     * limit (they must not queue behind builds, and already serialize per
+     * sandbox in the runtime).
+     */
+    concurrency: Type.Number({ default: 4, minimum: 1 }),
+  },
+  { default: {} },
+);
+
+export type JobsConfig = Static<typeof JobsConfigSchema>;
 
 // ---------------------------------------------------------------------------
 // Root config
@@ -358,11 +431,13 @@ export const AtelierConfigSchema = Type.Object({
   domain: DomainConfigSchema,
   auth: AuthConfigSchema,
   server: ServerConfigSchema,
+  runtime: RuntimeConfigSchema,
+  jobs: JobsConfigSchema,
   kubernetes: KubernetesConfigSchema,
+  storage: StorageConfigSchema,
   sandbox: SandboxDefaultsSchema,
   ports: PortsConfigSchema,
   imageBuilder: ImageBuilderConfigSchema,
-  integrations: IntegrationsConfigSchema,
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;
@@ -375,11 +450,14 @@ export const ENV_VAR_MAPPING = {
   ATELIER_BASE_DOMAIN: "domain.baseDomain",
   ATELIER_DASHBOARD_DOMAIN: "domain.dashboard",
 
-  ATELIER_TLS_EMAIL: "domain.tls.email",
-  ATELIER_TLS_CERT_PATH: "domain.tls.certPath",
-  ATELIER_TLS_KEY_PATH: "domain.tls.keyPath",
   ATELIER_SSH_PROXY_PORT: "domain.ssh.port",
   ATELIER_SSH_PROXY_HOSTNAME: "domain.ssh.hostname",
+  ATELIER_SSH_GATEWAY: "domain.ssh.gateway",
+  ATELIER_SSH_LISTEN_PORT: "domain.ssh.listenPort",
+  ATELIER_SSH_UPSTREAM_USER: "domain.ssh.upstreamUser",
+  ATELIER_STORAGE_PROVIDER: "storage.provider",
+  ATELIER_RUNTIME_BACKEND: "runtime.backend",
+  ATELIER_JOBS_CONCURRENCY: "jobs.concurrency",
 
   ATELIER_GITHUB_CLIENT_ID: "auth.github.clientId",
   ATELIER_GITHUB_CLIENT_SECRET: "auth.github.clientSecret",
@@ -390,47 +468,33 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SERVER_MODE: "server.mode",
   ATELIER_SERVER_PORT: "server.port",
   ATELIER_SERVER_HOST: "server.host",
-  ATELIER_MAX_SANDBOXES: "server.maxSandboxes",
-  ATELIER_MAX_ACTIVE_TASKS: "server.maxActiveTasks",
-  ATELIER_MCP_TOKEN: "server.mcpToken",
 
   ATELIER_K8S_NAMESPACE: "kubernetes.namespace",
-  ATELIER_K8S_SYSTEM_NAMESPACE: "kubernetes.systemNamespace",
   ATELIER_K8S_KUBECONFIG: "kubernetes.kubeconfig",
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
+  ATELIER_K8S_TOOL_INGRESS_ISSUER: "kubernetes.toolIngressClusterIssuer",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
-  ATELIER_K8S_AGENT_IMAGE: "kubernetes.agentImage",
   ATELIER_NPM_REGISTRY_URL: "kubernetes.npmRegistryUrl",
   ATELIER_K8S_STORAGE_CLASS: "kubernetes.storageClass",
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
   ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",
   ATELIER_K8S_INGRESS_CLASS: "kubernetes.ingressClassName",
-  ATELIER_K8S_MANAGER_URL: "kubernetes.managerUrl",
 
-  ATELIER_IMAGES_DIR: "sandbox.imagesDirectory",
   ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",
-  ATELIER_GIT_EMAIL: "sandbox.git.email",
-  ATELIER_GIT_NAME: "sandbox.git.name",
+  ATELIER_AGENT_IMAGE: "sandbox.agentImage",
 
-  ATELIER_VSCODE_PORT: "ports.vscode",
-  ATELIER_OPENCODE_PORT: "ports.opencode",
-  ATELIER_BROWSER_PORT: "ports.browser",
   ATELIER_TERMINAL_PORT: "ports.terminal",
   ATELIER_AGENT_PORT: "ports.agent",
-  ATELIER_DEV_PORT: "ports.dev",
-  ATELIER_DEV_APP_PORT: "ports.devApp",
 
   ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",
   ATELIER_IMAGE_BUILDER_IMAGE: "imageBuilder.image",
   ATELIER_IMAGE_BUILDER_ENDPOINT: "imageBuilder.endpoint",
+  ATELIER_IMAGE_BUILDER_DOCKER_HOST: "imageBuilder.dockerHost",
+  ATELIER_IMAGE_BUILDER_PLATFORM: "imageBuilder.platform",
   ATELIER_IMAGE_BUILDER_CACHE_REPO: "imageBuilder.cacheRepo",
   ATELIER_IMAGE_BUILDER_INSECURE_REGISTRY: "imageBuilder.insecureRegistry",
   ATELIER_IMAGE_BUILDER_TLS_SECRET_NAME: "imageBuilder.tls.secretName",
   ATELIER_IMAGE_BUILDER_TLS_SERVER_NAME: "imageBuilder.tls.serverName",
-
-  ATELIER_CLIPROXY_URL: "integrations.cliproxy.url",
-  ATELIER_CLIPROXY_API_KEY: "integrations.cliproxy.apiKey",
-  ATELIER_CLIPROXY_MANAGEMENT_KEY: "integrations.cliproxy.managementKey",
 } as const;
 
 export type EnvVarName = keyof typeof ENV_VAR_MAPPING;

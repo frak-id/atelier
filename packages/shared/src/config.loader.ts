@@ -147,6 +147,42 @@ export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {
   return config;
 }
 
+/**
+ * The operator-provided config sources (config file + env vars) deep-merged,
+ * WITHOUT schema defaults applied. Used to tell whether a given key was
+ * explicitly set by the operator (file/env) versus left to its default — the
+ * basis for locking a key read-only in the runtime config plane.
+ */
+export function loadProvidedConfig(
+  options: LoadConfigOptions = {},
+): Record<string, unknown> {
+  const configFile =
+    options.configFile ||
+    process.env.ATELIER_CONFIG ||
+    `/etc/atelier/${CONFIG_FILE_NAME}`;
+
+  const fileConfig = options.skipFile ? {} : loadFromFile(configFile);
+  const envConfig = options.skipEnv ? {} : loadFromEnv();
+
+  return deepMerge({}, fileConfig, envConfig);
+}
+
+/** Whether a dotted path is explicitly present in a raw (pre-defaults) config
+ * object — e.g. `hasConfigPath(loadProvidedConfig(), "kubernetes.registryUrl")`. */
+export function hasConfigPath(
+  obj: Record<string, unknown>,
+  path: string,
+): boolean {
+  const keys = path.split(".");
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current === null || typeof current !== "object") return false;
+    if (!(key in (current as Record<string, unknown>))) return false;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current !== undefined;
+}
+
 export function getConfigValue<T>(config: AtelierConfig, path: string): T {
   const keys = path.split(".");
   let current: unknown = config;
@@ -219,25 +255,6 @@ export function validateConfig(
         field: "domain.baseDomain",
         message:
           "Base domain should be configured for production (set ATELIER_BASE_DOMAIN)",
-      });
-    }
-
-    const hasCert = config.domain.tls.certPath?.trim().length > 0;
-    const hasKey = config.domain.tls.keyPath?.trim().length > 0;
-
-    if ((hasCert && !hasKey) || (!hasCert && hasKey)) {
-      errors.push({
-        field: "domain.tls",
-        message:
-          "Both tls.certPath and tls.keyPath are required for manual TLS",
-      });
-    }
-
-    if (!hasCert && !hasKey && !config.domain.tls.email) {
-      errors.push({
-        field: "domain.tls.email",
-        message:
-          "TLS email is required for automatic HTTPS (set ATELIER_TLS_EMAIL)",
       });
     }
   }

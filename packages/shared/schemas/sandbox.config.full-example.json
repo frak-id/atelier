@@ -2,14 +2,12 @@
   "domain": {
     "baseDomain": "localhost",
     "dashboard": "",
-    "tls": {
-      "email": "",
-      "certPath": "",
-      "keyPath": ""
-    },
     "ssh": {
       "port": 2222,
-      "hostname": ""
+      "hostname": "",
+      "gateway": "sshpiper",
+      "listenPort": 2222,
+      "upstreamUser": "dev"
     }
   },
   "auth": {
@@ -24,59 +22,48 @@
   "server": {
     "mode": "production",
     "port": 4000,
-    "host": "0.0.0.0",
-    "maxSandboxes": 20,
-    "maxActiveTasks": 10,
-    "mcpToken": ""
+    "host": "0.0.0.0"
+  },
+  "runtime": {
+    "backend": "kubernetes"
+  },
+  "jobs": {
+    "concurrency": 4
   },
   "kubernetes": {
     "namespace": "atelier-sandboxes",
-    "systemNamespace": "atelier-system",
     "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
     "runtimeClass": "kata-clh",
     "ingressClassName": "",
+    "toolIngressClusterIssuer": "",
     "registryUrl": "zot.atelier-system.svc:5000",
     "npmRegistryUrl": "",
     "storageClass": "",
     "volumeSnapshotClass": "",
     "defaultVolumeSize": "10Gi",
-    "vsCodeIngressAnnotations": {},
-    "openCodeIngressAnnotations": {},
-    "managerUrl": ""
+    "vsCodeIngressAnnotations": {}
+  },
+  "storage": {
+    "provider": "csi"
   },
   "sandbox": {
-    "defaultImage": "dev-base",
-    "imagesDirectory": "/opt/atelier/infra/images",
-    "git": {
-      "email": "sandbox@atelier.dev",
-      "name": "Sandbox User"
-    }
+    "defaultImage": "dev-base"
   },
   "ports": {
-    "vscode": 8080,
-    "opencode": 3000,
-    "browser": 6080,
     "terminal": 7681,
-    "agent": 9998,
-    "dev": 3001,
-    "devApp": 5173
+    "agent": 9998
   },
   "imageBuilder": {
-    "kind": "kaniko",
+    "kind": "docker",
     "image": "",
     "endpoint": "",
+    "dockerHost": "",
+    "platform": "linux/amd64",
     "cacheRepo": "",
     "insecureRegistry": true,
     "tls": {
       "secretName": "",
       "serverName": ""
-    }
-  },
-  "integrations": {
-    "cliproxy": {
-      "url": "",
-      "apiKey": "",
-      "managementKey": ""
     }
   }
 }

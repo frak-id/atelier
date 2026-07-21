@@ -1,0 +1,69 @@
+# Non-secret server config, mounted at /etc/atelier/sandbox.config.json
+# (ATELIER_CONFIG default). Secrets (GitHub OAuth, JWT, secrets key, MCP
+# token) are injected via env from the atelier-v2-secrets Secret and override
+# these values. Shares the cluster's Zot/Verdaccio/TopoLVM/kata with v1 but
+# uses the v2 namespaces + the hetzner-staging.frak.id domain.
+#
+# SSH note: `listenPort` (2222) is what the in-server ssh2 proxy binds inside
+# the pod (== Service targetPort). `port` (30222) is what clients dial and is
+# advertised in the sandbox ssh URL — it must equal the NodePort in 60-service
+# because nothing binds host :2222 (no LoadBalancer / Traefik TCP entrypoint).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atelier-v2-config
+  namespace: atelier-v2-system
+  labels:
+    app.kubernetes.io/name: atelier-v2
+data:
+  sandbox.config.json: |
+    {
+      "domain": {
+        "baseDomain": "hetzner-staging.frak.id",
+        "dashboard": "atelier.hetzner-staging.frak.id",
+        "tls": { "email": "admin@frak.id" },
+        "ssh": {
+          "port": 30222,
+          "hostname": "ssh.hetzner-staging.frak.id",
+          "gateway": "in-server",
+          "listenPort": 2222,
+          "upstreamUser": "dev"
+        }
+      },
+      "auth": {
+        "allowedOrg": "frak-id"
+      },
+      "server": {
+        "mode": "production",
+        "port": 4000,
+        "host": "0.0.0.0",
+        "maxSandboxes": 20,
+        "maxActiveTasks": 10
+      },
+      "kubernetes": {
+        "namespace": "atelier-v2-sandboxes",
+        "systemNamespace": "atelier-v2-system",
+        "runtimeClass": "kata-atelier-clh",
+        "ingressClassName": "traefik",
+        "toolIngressClusterIssuer": "letsencrypt-frak",
+        "registryUrl": "zot.zot.svc:5000",
+        "npmRegistryUrl": "http://verdaccio.verdaccio.svc:4873",
+        "storageClass": "topolvm-thin",
+        "volumeSnapshotClass": "atelier-snapshots",
+        "defaultVolumeSize": "20Gi"
+      },
+      "imageBuilder": {
+        "kind": "buildkit",
+        "endpoint": "tcp://buildkitd.buildkit.svc:1234",
+        "insecureRegistry": true,
+        "platform": "linux/amd64",
+        "tls": {
+          "secretName": "buildkit-client-tls",
+          "serverName": "buildkitd.buildkit.svc.cluster.local"
+        }
+      },
+      "sandbox": {
+        "defaultImage": "dev-base",
+        "git": { "email": "sandbox@atelier.dev", "name": "Sandbox User" }
+      }
+    }

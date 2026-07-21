@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Bump version across all workspace packages and the Rust agent.
+ * Bump version across the workspace packages and the Rust agent (agent-v2).
  *
  * Usage:
  *   bun run scripts/bump-version.ts patch
@@ -15,12 +15,12 @@ const ROOT = resolve(import.meta.dirname, "..");
 
 const PACKAGE_JSON_PATHS = [
   "package.json",
-  "apps/manager/package.json",
-  "apps/dashboard/package.json",
+  "apps/server/package.json",
+  "apps/console/package.json",
   "packages/shared/package.json",
 ];
 
-const CARGO_TOML_PATH = "apps/agent-rust/Cargo.toml";
+const CARGO_TOML_PATH = "apps/agent-v2/Cargo.toml";
 
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 

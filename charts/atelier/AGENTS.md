@@ -1,24 +1,24 @@
 # Atelier Helm Chart
 
-Single chart deploying the full Atelier stack into a k3s cluster (`atelier-system` namespace + `atelier-sandboxes` workload namespace).
+Deploys SHARED CLUSTER INFRA ONLY into a k3s cluster (`atelier-system`
+namespace) — it does not deploy the server or console app. The app is
+deployed separately via plain manifests under `infra/k8s/v2/` (see
+`infra/k8s/v2/README.md`).
 
 ## Sub-Components (toggle via values)
 
 | Component | Required | Purpose |
 |-----------|----------|---------|
-| `manager` | yes | Bun/Elysia API + SQLite PVC |
-| `dashboard` | yes | Static React SPA (nginx sidecar in manager pod) |
-| `zot` | optional | OCI registry for base images |
+| `zot` | optional | OCI registry for base images + toolset artifacts |
 | `cliproxy` | optional | Multi-provider AI model proxy |
 | `sshpiper` | optional | SSH proxy with username-based routing |
 | `certManager` | optional | Issuer + wildcard cert (assumes cert-manager installed) |
-| `kata-runtimeclass` | yes | RuntimeClass `kata-clh` for sandbox pods |
+| `kata` | yes | RuntimeClass `kata-clh` for sandbox pods |
 
 ## Conventions
 
 - **Single chart, multiple components**: every component is gated by `<component>.enabled` — leave defaults intact
 - **Wildcard cert**: `sandbox-wildcard-certificate.yaml` is required for dynamic `*.{baseDomain}` routing
-- **Shared binaries job**: `shared-binaries-job.yaml` populates a `ReadOnlyMany` PVC with code-server + opencode — sandboxes mount this read-only
 - **Traefik middlewares**: `traefik-middlewares.yaml` defines auth + rewrite middlewares referenced by sandbox Ingresses
 - **Helpers**: domain/host construction lives in `_helpers.tpl` — never inline domain logic in templates
 

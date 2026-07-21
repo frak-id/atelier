@@ -1,0 +1,1 @@
+ALTER TABLE `sandboxes` ADD `pause_snapshot_ref` text;

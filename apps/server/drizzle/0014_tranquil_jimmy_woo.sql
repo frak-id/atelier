@@ -1,0 +1,1 @@
+ALTER TABLE `saved_specs` ADD `composition` text;

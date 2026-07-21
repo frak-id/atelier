@@ -36,15 +36,27 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Bun build
 **/*.bun-build
 
-# Temp files
-apps/manager/server.js
-
 *.tar.gz
 .deploy-staging/
 
 # Sandbox config (contains deployment-specific values)
 sandbox.config.json
 values.production.yaml
-apps/agent-rust/target/
+apps/agent-v2/target/
+apps/agent-v2/dist/
 
 .omo/
+
+# Agent/ralph working dirs
+.pi-subagents/
+.ralph/
+.notes/
+# Local MCP config (holds API keys)
+.mcp.json
+
+# The sandbox-agent seed keeps only image.json committed; its Rust build
+# context is copied in from apps/agent-v2 at server-build time (see Dockerfile).
+apps/server/src/runtime/registry/seeds/sandbox-agent-v2/Dockerfile
+apps/server/src/runtime/registry/seeds/sandbox-agent-v2/Cargo.toml
+apps/server/src/runtime/registry/seeds/sandbox-agent-v2/Cargo.lock
+apps/server/src/runtime/registry/seeds/sandbox-agent-v2/src/

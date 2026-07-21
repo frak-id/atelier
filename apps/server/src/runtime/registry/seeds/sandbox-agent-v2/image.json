@@ -1,0 +1,11 @@
+{
+  "name": "Sandbox Agent",
+  "description": "In-pod Rust supervisor the base images bake in via COPY --from. The base seeds pull it from the prebuilt public image (ghcr.io/frak-id/sandbox-agent, config sandbox.agentImage) by default, so building this seed is only needed to self-host/mirror the agent in an air-gapped cluster — then point sandbox.agentImage at your own registry. Source lives in apps/agent-v2 and is copied into this seed at server-build time (in dev it builds straight from apps/agent-v2).",
+  "volumeSize": 1,
+  "tools": [],
+  "base": null,
+  "official": true,
+  "dependsOn": [],
+  "substitutions": [],
+  "contextFrom": "apps/agent-v2"
+}

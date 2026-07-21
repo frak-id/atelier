@@ -14,24 +14,6 @@
           "default": "",
           "type": "string"
         },
-        "tls": {
-          "default": {},
-          "type": "object",
-          "properties": {
-            "email": {
-              "default": "",
-              "type": "string"
-            },
-            "certPath": {
-              "default": "",
-              "type": "string"
-            },
-            "keyPath": {
-              "default": "",
-              "type": "string"
-            }
-          }
-        },
         "ssh": {
           "default": {},
           "type": "object",
@@ -42,6 +24,31 @@
             },
             "hostname": {
               "default": "",
+              "type": "string"
+            },
+            "gateway": {
+              "default": "sshpiper",
+              "anyOf": [
+                {
+                  "const": "sshpiper",
+                  "type": "string"
+                },
+                {
+                  "const": "none",
+                  "type": "string"
+                },
+                {
+                  "const": "in-server",
+                  "type": "string"
+                }
+              ]
+            },
+            "listenPort": {
+              "default": 2222,
+              "type": "number"
+            },
+            "upstreamUser": {
+              "default": "dev",
               "type": "string"
             }
           }
@@ -108,18 +115,40 @@
         "host": {
           "default": "0.0.0.0",
           "type": "string"
-        },
-        "maxSandboxes": {
-          "default": 20,
+        }
+      }
+    },
+    "runtime": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "backend": {
+          "default": "kubernetes",
+          "anyOf": [
+            {
+              "const": "kubernetes",
+              "type": "string"
+            },
+            {
+              "const": "docker",
+              "type": "string"
+            },
+            {
+              "const": "local",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    "jobs": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "default": 4,
+          "minimum": 1,
           "type": "number"
-        },
-        "maxActiveTasks": {
-          "default": 10,
-          "type": "number"
-        },
-        "mcpToken": {
-          "default": "",
-          "type": "string"
         }
       }
     },
@@ -131,10 +160,6 @@
           "default": "atelier-sandboxes",
           "type": "string"
         },
-        "systemNamespace": {
-          "default": "atelier-system",
-          "type": "string"
-        },
         "kubeconfig": {
           "default": "/etc/rancher/k3s/k3s.yaml",
           "type": "string"
@@ -144,6 +169,10 @@
           "type": "string"
         },
         "ingressClassName": {
+          "default": "",
+          "type": "string"
+        },
+        "toolIngressClusterIssuer": {
           "default": "",
           "type": "string"
         },
@@ -175,19 +204,33 @@
               "type": "string"
             }
           }
-        },
-        "openCodeIngressAnnotations": {
-          "default": {},
-          "type": "object",
-          "patternProperties": {
-            "^(.*)$": {
+        }
+      }
+    },
+    "storage": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "provider": {
+          "default": "csi",
+          "anyOf": [
+            {
+              "const": "csi",
+              "type": "string"
+            },
+            {
+              "const": "btrfs",
+              "type": "string"
+            },
+            {
+              "const": "reflink",
+              "type": "string"
+            },
+            {
+              "const": "copy",
               "type": "string"
             }
-          }
-        },
-        "managerUrl": {
-          "default": "",
-          "type": "string"
+          ]
         }
       }
     },
@@ -198,24 +241,6 @@
         "defaultImage": {
           "default": "dev-base",
           "type": "string"
-        },
-        "imagesDirectory": {
-          "default": "/opt/atelier/infra/images",
-          "type": "string"
-        },
-        "git": {
-          "default": {},
-          "type": "object",
-          "properties": {
-            "email": {
-              "default": "sandbox@atelier.dev",
-              "type": "string"
-            },
-            "name": {
-              "default": "Sandbox User",
-              "type": "string"
-            }
-          }
         }
       }
     },
@@ -223,32 +248,12 @@
       "default": {},
       "type": "object",
       "properties": {
-        "vscode": {
-          "default": 8080,
-          "type": "number"
-        },
-        "opencode": {
-          "default": 3000,
-          "type": "number"
-        },
-        "browser": {
-          "default": 6080,
-          "type": "number"
-        },
         "terminal": {
           "default": 7681,
           "type": "number"
         },
         "agent": {
           "default": 9998,
-          "type": "number"
-        },
-        "dev": {
-          "default": 3001,
-          "type": "number"
-        },
-        "devApp": {
-          "default": 5173,
           "type": "number"
         }
       }
@@ -258,8 +263,12 @@
       "type": "object",
       "properties": {
         "kind": {
-          "default": "kaniko",
+          "default": "docker",
           "anyOf": [
+            {
+              "const": "docker",
+              "type": "string"
+            },
             {
               "const": "kaniko",
               "type": "string"
@@ -276,6 +285,14 @@
         },
         "endpoint": {
           "default": "",
+          "type": "string"
+        },
+        "dockerHost": {
+          "default": "",
+          "type": "string"
+        },
+        "platform": {
+          "default": "linux/amd64",
           "type": "string"
         },
         "cacheRepo": {
@@ -295,30 +312,6 @@
               "type": "string"
             },
             "serverName": {
-              "default": "",
-              "type": "string"
-            }
-          }
-        }
-      }
-    },
-    "integrations": {
-      "default": {},
-      "type": "object",
-      "properties": {
-        "cliproxy": {
-          "default": {},
-          "type": "object",
-          "properties": {
-            "url": {
-              "default": "",
-              "type": "string"
-            },
-            "apiKey": {
-              "default": "",
-              "type": "string"
-            },
-            "managementKey": {
               "default": "",
               "type": "string"
             }

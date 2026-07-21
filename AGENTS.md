@@ -6,39 +6,43 @@ K8s (Kata Containers) orchestrator for isolated dev environments. Bun monorepo +
 
 ```
 apps/
-├── manager/      # Bun/Elysia API + DI container (orchestration core)
-├── dashboard/    # React 19 SPA (TanStack Router + Eden Treaty)
-└── agent-rust/   # In-pod HTTP agent (Hyper, ~2MB musl static)
+├── server/       # Bun/Elysia server — runtime/control/sessions/api (see apps/server/AGENTS.md)
+├── console/      # React 19 SPA (TanStack Router) — the web GUI
+├── cli/          # @atelier/cli — host CLI (compiled Bun binary)
+└── agent-v2/     # In-pod agent (`atelier-agent`, Rust, static musl scratch image)
 packages/
-├── shared/                     # TypeBox schemas, config loaders (cross-app)
-└── opencode-atelier/           # OpenCode plugin (npm-published)
-charts/atelier/   # Helm chart (K8s deploy: manager + dashboard + zot)
-infra/images/     # dev-base + dev-cloud Dockerfiles (built via Kaniko in-cluster)
-scripts/          # deploy-k8s.sh (SSH→k3s), bump-version.ts
+├── shared/       # TypeBox schemas, config loaders (cross-app)
+├── spec/         # @atelier/spec — the SandboxSpec seam contract
+└── compose/      # @atelier/compose — client-side harness/preset/spec-merge SDK
+charts/atelier/   # Helm chart (shared cluster infra: zot + cliproxy + sshpiper + certs)
+infra/images/     # dev-base + dev-cloud Dockerfiles (built via BuildKit in-cluster)
+infra/k8s/v2/     # Server + console app manifests (see infra/k8s/v2/README.md)
+scripts/          # deploy-k8s.sh (SSH→k3s, infra chart), bump-version.ts
 ```
 
 ## Where To Look
 
 | Task | Location |
 |------|----------|
-| Add API route | `apps/manager/src/api/` (import from `container.ts`) |
-| Add module/service | `apps/manager/src/modules/` (wire in `container.ts`) |
-| Multi-step workflow | `apps/manager/src/orchestrators/` (with rollback) |
-| K8s/agent integration | `apps/manager/src/infrastructure/` |
-| Sandbox internals | `apps/agent-rust/src/` (Rust, no Bun/Node) |
-| Dashboard UI | `apps/dashboard/src/components/` + `routes/` |
+| Add API route | `apps/server/src/api/` (import from `container.ts`) |
+| Runtime/control/sessions | `apps/server/src/` (see `apps/server/AGENTS.md`) |
+| K8s/agent integration | `apps/server/src/runtime/` |
+| Sandbox internals | `apps/agent-v2/src/` (Rust, no Bun/Node) |
+| Console UI | `apps/console/src/components/` + `routes/` |
 | Cross-app config | `packages/shared/src/` |
-| K8s deploy | `charts/atelier/templates/` |
-| Plugin (npm) | `packages/opencode-atelier/` |
+| Shared cluster infra | `charts/atelier/templates/` |
+| App deploy manifests | `infra/k8s/v2/` |
+| SandboxSpec contract | `packages/spec/src/` |
+| Harness/preset composition | `packages/compose/src/` |
+| Host CLI | `apps/cli/src/` |
 
 ## Commands
 
 ```bash
-bun install          # Install dependencies
-bun run dev          # Dev server (apps/manager, port 4000)
-bun run check        # Biome lint + format
-bun run typecheck    # tsgo --noEmit (per-workspace via --filter)
-bun run deploy       # Build + SSH deploy to production
+bun install                          # Install dependencies
+bun run --filter @atelier/server dev # Dev server (mock mode, port 4000)
+bun run check                        # Biome lint + format
+bun run typecheck                    # tsgo --noEmit (per-workspace via --filter)
 ```
 
 ## Critical Constraints
@@ -53,9 +57,9 @@ bun run deploy       # Build + SSH deploy to production
 
 | Component | Runtime | Why |
 |-----------|---------|-----|
-| Manager API | **Bun** | Performance, native Elysia |
-| Dashboard | **Vite/Browser** | React SPA, static deploy |
-| Sandbox Agent | **Rust** | Lightweight, TCP transport |
+| Server API | **Bun** | Performance, native Elysia |
+| Console | **Vite/Browser** | React SPA, static deploy |
+| Sandbox Agent | **Rust** | Lightweight, static musl binary |
 | CLI | **Bun** (compiled) | Native binary for host server |
 
 ## Conventions
@@ -64,7 +68,7 @@ bun run deploy       # Build + SSH deploy to production
 - **TypeScript**: Strict mode, `noUncheckedIndexedAccess`, bundler resolution
 - **Logging**: `createChildLogger("name")` — always use child logger with context
 - **Errors**: Custom hierarchy — `NotFoundError`, `ValidationError`, `ResourceExhaustedError`
-- **DI**: Manual wiring in `container.ts`, routes import from container only
+- **DI**: Manual wiring in `apps/server/src/api/container.ts`, routes import from container only
 - **Mock mode**: `ATELIER_SERVER_MODE=mock bun run dev` — no K8s needed locally
 - **No tests**: No test framework configured
 

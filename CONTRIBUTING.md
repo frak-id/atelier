@@ -6,21 +6,21 @@ Thanks for helping improve Atelier.
 
 ```bash
 bun install
-ATELIER_SERVER_MODE=mock bun run dev
+bun run --filter @atelier/server dev   # mock mode, port 4000
 ```
 
 ## Requirements
 
 - Bun (project runtime)
-- Rust toolchain (for `apps/agent-rust`)
+- Rust toolchain (for `apps/agent-v2`)
 - Docker (for image builds)
 
 ## Useful commands
 
 ```bash
-bun run check       # Biome lint + format
-bun run typecheck   # TypeScript typecheck
-bun run dev         # Manager + dashboard in dev (see apps/AGENTS.md)
+bun run check                          # Biome lint + format
+bun run typecheck                      # TypeScript typecheck
+bun run --filter @atelier/server dev   # Dev server (see AGENTS.md)
 ```
 
 ## Code style
