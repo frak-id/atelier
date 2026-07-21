@@ -13,7 +13,7 @@
  */
 
 import { SandboxError } from "../../../shared/errors.ts";
-import { config } from "../../../shared/lib/config.ts";
+import { imageBuilderConfig } from "../../../shared/lib/runtime-config.ts";
 import {
   formatBuildArgs,
   type ImageBuilderBackend,
@@ -139,7 +139,7 @@ export function buildctlArgs(
     "--local",
     `dockerfile=${WORKSPACE_DIR}`,
     "--opt",
-    `platform=${config.imageBuilder.platform ?? "linux/amd64"}`,
+    `platform=${imageBuilderConfig().platform}`,
   );
 
   args.push(

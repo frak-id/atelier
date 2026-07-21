@@ -30,7 +30,7 @@ export function useSetConfig() {
       value,
     }: {
       key: string;
-      value: boolean | number;
+      value: boolean | number | string;
     }) => {
       const { error } = await api.api.config({ key }).put({ value });
       if (error)

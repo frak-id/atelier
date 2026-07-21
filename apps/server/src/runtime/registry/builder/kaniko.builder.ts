@@ -11,7 +11,7 @@
  * maps to kaniko's `--insecure` / `--skip-tls-verify` flags (the bundled Zot
  * registry is plain HTTP); `cacheRepo` enables `--cache` against that repo.
  */
-import { config } from "../../../shared/lib/config.ts";
+import { imageBuilderConfig } from "../../../shared/lib/runtime-config.ts";
 import {
   formatBuildArgs,
   type ImageBuilderBackend,
@@ -64,7 +64,7 @@ export function kanikoArgs(req: ImageBuildRequest): string[] {
     `--destination=${req.tag}`,
     // Bare pushed digest → termination message → shared runner reads it back.
     "--digest-file=/dev/termination-log",
-    `--custom-platform=${config.imageBuilder.platform ?? "linux/amd64"}`,
+    `--custom-platform=${imageBuilderConfig().platform}`,
   ];
 
   args.push(

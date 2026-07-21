@@ -337,7 +337,11 @@ export function createControlRoutes(container: ServerContainer) {
         const value = control.serverConfigService.set(params.key, body.value);
         return { key: params.key, value };
       },
-      { body: t.Object({ value: t.Union([t.Boolean(), t.Number()]) }) },
+      {
+        body: t.Object({
+          value: t.Union([t.Boolean(), t.Number(), t.String()]),
+        }),
+      },
     );
 
   const orgPolicyRoutes = new Elysia({ prefix: "/org-policy" })

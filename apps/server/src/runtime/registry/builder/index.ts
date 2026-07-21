@@ -1,11 +1,11 @@
 /**
  * The image builder port + its backends. Mirrors `../../backend/index.ts`'s
- * `createSandboxBackend` selection pattern: `config.imageBuilder.kind`
+ * `createSandboxBackend` selection pattern: the (live) image-builder config
  * chooses the concrete backend, and a kind that isn't implemented yet fails
  * fast at construction with a clear message rather than silently degrading.
  */
 import { SandboxError } from "../../../shared/errors.ts";
-import { config } from "../../../shared/lib/config.ts";
+import { imageBuilderConfig } from "../../../shared/lib/runtime-config.ts";
 import type { ImageBuilderBackend } from "./builder.types.ts";
 import { BuildkitImageBuilder } from "./buildkit.builder.ts";
 import { DockerImageBuilder } from "./docker.builder.ts";
@@ -30,23 +30,24 @@ export { KanikoImageBuilder } from "./kaniko.builder.ts";
  * user's first build.
  */
 export function createImageBuilder(
-  kind: (typeof config.imageBuilder)["kind"] = config.imageBuilder.kind,
+  cfg = imageBuilderConfig(),
+  kind = cfg.kind,
 ): ImageBuilderBackend {
   if (kind === "docker") {
     return new DockerImageBuilder({
-      dockerHost: config.imageBuilder.dockerHost || undefined,
+      dockerHost: cfg.dockerHost || undefined,
     });
   }
   if (kind === "kaniko") {
     return new KanikoImageBuilder({
-      image: config.imageBuilder.image || undefined,
+      image: cfg.image || undefined,
     });
   }
   if (kind === "buildkit") {
     return new BuildkitImageBuilder({
-      endpoint: config.imageBuilder.endpoint || undefined,
-      image: config.imageBuilder.image || undefined,
-      tls: config.imageBuilder.tls,
+      endpoint: cfg.endpoint || undefined,
+      image: cfg.image || undefined,
+      tls: cfg.tls,
     });
   }
   throw new SandboxError(

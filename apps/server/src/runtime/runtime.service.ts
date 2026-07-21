@@ -36,6 +36,7 @@ import {
   ValidationError,
 } from "../shared/errors.ts";
 import { config, isMock } from "../shared/lib/config.ts";
+import { registryUrl } from "../shared/lib/runtime-config.ts";
 import {
   buildGitAttributionFiles,
   GIT_CREDENTIALS_PATH,
@@ -1065,7 +1066,7 @@ export class RuntimeService {
     const source = req.source ?? { image: config.sandbox.defaultImage };
     const { image, snapshotName } = await this.resolveSource(source);
     const tempId = `ts-${hash.slice(0, 12)}`;
-    const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:${hash.slice(0, 12)}`;
+    const target = `${registryUrl()}/toolsets/${req.name}:${hash.slice(0, 12)}`;
 
     return this.withThrowawayPod(
       tempId,
@@ -1186,7 +1187,7 @@ export class RuntimeService {
   /** Resolve a host-relative toolset ref (`toolsets/<name>@sha256:…`) to a
    * full pullable registry locator by prepending the configured registry. */
   resolveToolsetRef(ref: string): string {
-    return `${config.kubernetes.registryUrl}/${ref}`;
+    return `${registryUrl()}/${ref}`;
   }
 
   /**
@@ -1207,7 +1208,7 @@ export class RuntimeService {
     onLog?: OnLog,
   ): Promise<ToolsetRef> {
     this.require(id);
-    const target = `${config.kubernetes.registryUrl}/toolsets/${req.name}:cap-${safeNanoid()}`;
+    const target = `${registryUrl()}/toolsets/${req.name}:cap-${safeNanoid()}`;
     onLog?.(`Capturing ${req.paths.join(", ")} from ${id}…`);
     const { digest } = await this.agent.captureToolset(
       id,

@@ -1,12 +1,13 @@
 import { SandboxError } from "../../shared/errors.ts";
-import { config, isMock } from "../../shared/lib/config.ts";
+import { isMock } from "../../shared/lib/config.ts";
+import { registryUrl } from "../../shared/lib/runtime-config.ts";
 
 const MANIFEST_CHECK_TIMEOUT_MS = 3000;
 
 export class ImageNotAvailableError extends SandboxError {
   constructor(imageId: string) {
     super(
-      `Base image '${imageId}' is not available in the registry (${config.kubernetes.registryUrl}). ` +
+      `Base image '${imageId}' is not available in the registry (${registryUrl()}). ` +
         "Build it from the Images page before spawning sandboxes or prebuilds.",
       "IMAGE_NOT_AVAILABLE",
       409,
@@ -24,7 +25,7 @@ export class RegistryUnreachableError extends SandboxError {
   constructor(imageId: string) {
     super(
       `Could not verify base image '${imageId}' against the registry ` +
-        `(${config.kubernetes.registryUrl}) — it is unreachable or timed out. ` +
+        `(${registryUrl()}) — it is unreachable or timed out. ` +
         "Retry once the registry is reachable.",
       "REGISTRY_UNREACHABLE",
       503,
@@ -52,7 +53,7 @@ export const ImageRegistryService = {
    * near-identical HEADs (design review P2b).
    */
   async resolveOrAssert(imageId: string): Promise<ResolveOrAssertResult> {
-    const registry = config.kubernetes.registryUrl;
+    const registry = registryUrl();
     const tagged = `${registry}/${imageId}:latest`;
     if (isMock()) return { ref: tagged };
     try {
@@ -104,7 +105,7 @@ export const ImageRegistryService = {
    * never hard-fail on resolution.
    */
   async resolveImageReference(imageId: string): Promise<string> {
-    const registry = config.kubernetes.registryUrl;
+    const registry = registryUrl();
     const tagged = `${registry}/${imageId}:latest`;
     const result = await ImageRegistryService.resolveOrAssert(imageId);
     return "ref" in result ? result.ref : tagged;

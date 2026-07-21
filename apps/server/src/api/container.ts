@@ -33,6 +33,7 @@ import {
   TerminalService,
 } from "../sessions/index.ts";
 import { config } from "../shared/lib/config.ts";
+import { registryUrl } from "../shared/lib/runtime-config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 /**
@@ -101,8 +102,11 @@ export function createServerContainer() {
   const terminal = new TerminalService({ agent });
   const images = new ImageBuilderService({
     store: imageStore,
-    builder: createImageBuilder(),
-    registryUrl: config.kubernetes.registryUrl,
+    // Both read lazily so a live edit to the registry URL or builder config
+    // (console/env) applies to the next build without a restart. The backend
+    // is re-selected per build; the registry URL is re-read per use.
+    builder: () => createImageBuilder(),
+    registryUrl: () => registryUrl(),
     // Lazy read so it always reflects current runtime state — not captured
     // once at construction time (sandboxes/snapshots keep changing).
     referencedImageRefs: () => runtime.referencedImageRefs(),

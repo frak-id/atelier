@@ -17,8 +17,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
-import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { imageBuilderConfig } from "../../shared/lib/runtime-config.ts";
 import type { ImageRecord, ImageStore } from "../store.ts";
 import type { ImageBuilderBackend } from "./builder/index.ts";
 import { ImageRegistryService } from "./image-registry.service.ts";
@@ -59,8 +59,12 @@ function assertValidName(name: string): void {
 
 export interface ImageBuilderDeps {
   store: ImageStore;
-  builder: ImageBuilderBackend;
-  registryUrl: string;
+  /** Factory, not an instance: the backend is (re)selected per build so a
+   * live edit to the image-builder config (kind/endpoint/…) applies to the
+   * next build without a restart. */
+  builder: () => ImageBuilderBackend;
+  /** Read lazily so a live edit to the registry URL applies immediately. */
+  registryUrl: () => string;
   /** Every image reference a live sandbox or stored snapshot still points
    * at — the delete guard's referenced-set (mirrors `RuntimeService`'s
    * `referencedSnapshotRefs`). Called lazily so it always reflects current
@@ -75,8 +79,8 @@ export interface ImageBuilderDeps {
 
 export class ImageBuilderService {
   private readonly store: ImageStore;
-  private readonly builder: ImageBuilderBackend;
-  private readonly registryUrl: string;
+  private readonly builder: () => ImageBuilderBackend;
+  private readonly registryUrl: () => string;
   private readonly referencedImageRefs: () => string[];
   private readonly onBuildStarted?: (
     name: string,
@@ -292,7 +296,7 @@ export class ImageBuilderService {
           "the build to finish (or fail) first.",
       );
     }
-    const qualified = `${this.registryUrl}/${name}`;
+    const qualified = `${this.registryUrl()}/${name}`;
     const referenced = this.referencedImageRefs();
     const inUse = referenced.some(
       (ref) =>
@@ -359,7 +363,7 @@ export class ImageBuilderService {
     input: { contextDir: string; dockerfile: string },
     cleanup?: () => Promise<unknown>,
   ): Promise<ImageRecord> {
-    const tag = `${this.registryUrl}/${record.name}:latest`;
+    const tag = `${this.registryUrl()}/${record.name}:latest`;
     const controller = new AbortController();
     // Bound the backend call to BUILD_TIMEOUT_MS regardless of provenance:
     // the k8s builders (kaniko/buildkit) already self-bound via
@@ -396,19 +400,20 @@ export class ImageBuilderService {
       // Build-args carry no secrets here — no caller path threads any into
       // `buildArgs` (mirrors the prebuild path's discipline of injecting
       // credentials transiently via the agent, never baked/logged).
-      const { digest } = await this.builder.build(
+      const builderCfg = imageBuilderConfig();
+      const { digest } = await this.builder().build(
         {
           contextDir: input.contextDir,
           dockerfile: input.dockerfile,
           tag,
-          insecureRegistry: config.imageBuilder.insecureRegistry,
-          cacheRepo: config.imageBuilder.cacheRepo || undefined,
+          insecureRegistry: builderCfg.insecureRegistry,
+          cacheRepo: builderCfg.cacheRepo || undefined,
         },
         onLog,
         signal,
       );
       if (pendingFlush) clearTimeout(pendingFlush);
-      const ref = `${this.registryUrl}/${record.name}@${digest}`;
+      const ref = `${this.registryUrl()}/${record.name}@${digest}`;
       const updated = this.store.update(record.name, {
         status: "ready",
         digest,

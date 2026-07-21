@@ -14,6 +14,7 @@ import { initDatabase } from "./control/index.ts";
 import { ensureSharedSshPipeKey } from "./runtime/index.ts";
 import { config, isMock, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
+import { bindRuntimeConfig } from "./shared/lib/runtime-config.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 import { startSshGateway } from "./ssh/index.ts";
 
@@ -34,6 +35,10 @@ await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Control database ready");
 
 const container = createServerContainer();
+// Route the runtime-config resolver (registry URL + image builder knobs) at
+// the DB-backed config plane so console/env edits apply live. Env-set keys
+// stay authoritative and read-only (see ServerConfigService's env lock).
+bindRuntimeConfig(container.control.serverConfigService);
 await wireBuiltinHarnesses(container);
 
 // The shared SSH pipe key is only needed by strategies that proxy through it
@@ -52,10 +57,6 @@ const sshGateway =
         return null;
       })
     : null;
-
-// Preseed config-plane defaults from env (safe hard-coded defaults otherwise).
-// DB rows always win, so this is a one-time bootstrap per key.
-container.control.serverConfigService.seedFromEnv();
 
 // Sweep zombie records left by a server crash/restart: `creating` → cleanup +
 // `error`, `running` without a pod → `error` (both recoverable via resume).

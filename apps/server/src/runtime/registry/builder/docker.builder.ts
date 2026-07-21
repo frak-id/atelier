@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { config } from "../../../shared/lib/config.ts";
+import { imageBuilderConfig } from "../../../shared/lib/runtime-config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 import { docker, dockerStream } from "../../backend/docker-cli.ts";
 import {
@@ -79,7 +79,7 @@ export class DockerImageBuilder implements ImageBuilderBackend {
       const buildArgs: string[] = [
         "build",
         "--platform",
-        config.imageBuilder.platform ?? "linux/amd64",
+        imageBuilderConfig().platform,
         "-t",
         req.tag,
         "-f",

@@ -322,10 +322,10 @@ describe("ImageBuilderService.deleteImage", () => {
       store,
       service: new ImageBuilderService({
         store,
-        builder: {
+        builder: () => ({
           build: async () => ({ digest: `sha256:${"0".repeat(64)}` }),
-        },
-        registryUrl: "zot.test.svc:5000",
+        }),
+        registryUrl: () => "zot.test.svc:5000",
         referencedImageRefs: () => [],
       }),
     };

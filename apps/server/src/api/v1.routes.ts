@@ -38,7 +38,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "../shared/errors.ts";
-import { config } from "../shared/lib/config.ts";
+import { imageBuilderConfig } from "../shared/lib/runtime-config.ts";
 import {
   buildGitAttributionFiles,
   OWNER_ID_METADATA,
@@ -355,8 +355,8 @@ export function createV1Routes(container: ServerContainer) {
           // ceiling up front when that's the active builder, for the same
           // reason as the zip-upload path below.
           if (
-            (config.imageBuilder.kind === "kaniko" ||
-              config.imageBuilder.kind === "buildkit") &&
+            (imageBuilderConfig().kind === "kaniko" ||
+              imageBuilderConfig().kind === "buildkit") &&
             "dockerfile" in body &&
             exceedsK8sNativeContextCeiling(Buffer.byteLength(body.dockerfile))
           ) {
@@ -394,8 +394,8 @@ export function createV1Routes(container: ServerContainer) {
           // otherwise answer `202` and only fail once `stageContextTarball`
           // discovers it mid-build.
           if (
-            (config.imageBuilder.kind === "kaniko" ||
-              config.imageBuilder.kind === "buildkit") &&
+            (imageBuilderConfig().kind === "kaniko" ||
+              imageBuilderConfig().kind === "buildkit") &&
             exceedsK8sNativeContextCeiling(body.file.size)
           ) {
             throw new ValidationError(

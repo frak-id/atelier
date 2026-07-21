@@ -34,14 +34,16 @@ export function registerConfigTools(
     {
       title: "Server config",
       description:
-        "Read or change server-wide runtime config (e.g. prebuild git " +
-        "tracking and prebuild retention). action=list returns every key " +
-        "with its value, type, and default; action=set updates one key.",
+        "Read or change server-wide runtime config (prebuild git tracking / " +
+        "retention, the image registry URL, and image-builder settings). " +
+        "action=list returns every key with its value, type, default, and " +
+        "whether it is locked by an env var; action=set updates one key " +
+        "(rejected for env-locked keys).",
       inputSchema: {
         action: z.enum(["list", "set"]),
         key: z.string().optional().describe("Config key (required for set)"),
         value: z
-          .union([z.boolean(), z.number()])
+          .union([z.boolean(), z.number(), z.string()])
           .optional()
           .describe("New value (required for set)"),
       },
