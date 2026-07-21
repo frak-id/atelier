@@ -28,6 +28,7 @@ import {
   useContext,
 } from "../config.ts";
 import { type Ctx, createCtx } from "../context.ts";
+import { detectGitRepo, type GitRepo, shortRepo } from "../git.ts";
 import { age, line, statusColor } from "../output.ts";
 import { runInherit } from "../proc.ts";
 import {
@@ -43,6 +44,10 @@ import * as ui from "../ui.ts";
 import { openInBrowser, parseEnvPairs, readJsonc } from "../util.ts";
 import { gitAuthMenu } from "./local.ts";
 import { followLogs } from "./logs-follow.ts";
+import {
+  createPrebuildInteractive,
+  findRepoBranchPrebuild,
+} from "./prebuild-create.ts";
 import { runPrebuild } from "./sandbox.ts";
 import { describeAnnotations, sshCommand } from "./sandbox-helpers.ts";
 
@@ -67,6 +72,7 @@ async function pickSandbox(
   api: AtelierApi,
   local: boolean,
   filter?: string,
+  gitNudge?: GitNudge,
 ): Promise<string | typeof NEW | null> {
   const s = ui.spinner();
   s.start("Loading sandboxes…");
@@ -103,7 +109,13 @@ async function pickSandbox(
           ]
         : []),
       { value: IMAGES, label: pc.dim("Base images") },
-      { value: PREBUILDS, label: pc.dim("Prebuilds") },
+      {
+        value: PREBUILDS,
+        label: gitNudge ? `Prebuilds ${pc.green("✦")}` : pc.dim("Prebuilds"),
+        hint: gitNudge
+          ? pc.green(`bake ${gitNudge.label} — no prebuild yet`)
+          : undefined,
+      },
       { value: ACCOUNT, label: pc.dim("Account & SSH") },
       { value: QUIT, label: pc.dim("Quit") },
     ],
@@ -112,7 +124,7 @@ async function pickSandbox(
   if (choice === NEW) return NEW;
   if (choice === FILTER) {
     const term = await ui.text({ message: "Filter", placeholder: "repo / id" });
-    return pickSandbox(api, local, term.trim() || undefined);
+    return pickSandbox(api, local, term.trim() || undefined, gitNudge);
   }
   return choice;
 }
@@ -294,14 +306,6 @@ async function regenSsh(api: AtelierApi): Promise<void> {
     s.stop("Regenerate failed");
     ui.note(err instanceof Error ? err.message : String(err));
   }
-}
-
-/** Trim a clone URL down to `owner/name` for a compact prebuild label. */
-function shortRepo(url: string): string {
-  return url
-    .replace(/^https?:\/\/[^/]+\//, "")
-    .replace(/^git@[^:]+:/, "")
-    .replace(/\.git$/, "");
 }
 
 /** A one-line summary for a prebuild: repo@branch · build age · base image. */
@@ -1067,9 +1071,33 @@ async function imagesMenu(api: AtelierApi): Promise<void> {
   }
 }
 
+interface GitNudge {
+  repo: GitRepo;
+  /** `owner/name@branch` label for the menu hint. */
+  label: string;
+}
+
+/** When the cwd is a git checkout with no prebuild yet for its repo+branch,
+ * surface a nudge on the Prebuilds entry. Best-effort: any failure (no git, no
+ * server) just returns null. */
+async function computeGitNudge(api: AtelierApi): Promise<GitNudge | null> {
+  const repo = detectGitRepo();
+  if (!repo) return null;
+  try {
+    const rows = unwrap(await api.v1.prebuilds.get());
+    if (findRepoBranchPrebuild(rows, repo.url, repo.branch)) return null;
+  } catch {
+    return null;
+  }
+  const label = `${shortRepo(repo.url)}${repo.branch ? `@${repo.branch}` : ""}`;
+  return { repo, label };
+}
+
 /** Prebuild panel: list snapshots, then rebuild one (re-bake its spec), bake a
- * new one from a spec file, or remove one. */
+ * new one from a spec file, or remove one. Inside a git checkout with no
+ * matching prebuild, offer a one-shot "bake this repo" flow up top. */
 async function prebuildsMenu(api: AtelierApi): Promise<void> {
+  const gitRepo = detectGitRepo();
   while (true) {
     const s = ui.spinner();
     s.start("Loading prebuilds…");
@@ -1094,11 +1122,23 @@ async function prebuildsMenu(api: AtelierApi): Promise<void> {
       "prebuilds",
     );
     const rebuildable = rows.filter((p) => p.spec);
+    const gitMatch =
+      gitRepo && findRepoBranchPrebuild(rows, gitRepo.url, gitRepo.branch);
+    const canBakeGit = Boolean(gitRepo && !gitMatch);
     const action = await ui.select<
-      "rebuild" | "new" | "rm" | "refresh" | "back"
+      "git" | "rebuild" | "new" | "rm" | "refresh" | "back"
     >({
       message: "Prebuilds",
       options: [
+        ...(canBakeGit && gitRepo
+          ? [
+              {
+                value: "git" as const,
+                label: pc.green("✦ Bake prebuild for this repo"),
+                hint: `${shortRepo(gitRepo.url)}${gitRepo.branch ? `@${gitRepo.branch}` : ""}`,
+              },
+            ]
+          : []),
         ...(rebuildable.length > 0
           ? [
               {
@@ -1122,7 +1162,15 @@ async function prebuildsMenu(api: AtelierApi): Promise<void> {
     });
     if (action === "back") return;
     if (action === "refresh") continue;
-    if (action === "rebuild") {
+    if (action === "git") {
+      if (gitRepo) {
+        await createPrebuildInteractive(api, {
+          repo: gitRepo.url,
+          branch: gitRepo.branch,
+          gitRepo,
+        });
+      }
+    } else if (action === "rebuild") {
       const ref = await ui.select<string | typeof BACK>({
         message: "Rebuild which prebuild?",
         options: [
@@ -1204,7 +1252,8 @@ export async function browseInteractive(ctx: Ctx): Promise<void> {
   let local = await isBypassed(api);
   ui.intro(pc.cyan("atelier"));
   while (true) {
-    const picked = await pickSandbox(api, local);
+    const gitNudge = (await computeGitNudge(api)) ?? undefined;
+    const picked = await pickSandbox(api, local, undefined, gitNudge);
     if (!picked) break;
     if (picked === CONTEXTS) {
       if (await contextsMenu()) {
