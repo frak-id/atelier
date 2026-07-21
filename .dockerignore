@@ -3,6 +3,7 @@ node_modules
 .deploy-staging
 *.tar.gz
 apps/cli
+!apps/cli/package.json
 infra/caddy
 infra/systemd
 sandbox.config.json
