@@ -109,11 +109,14 @@ function k8sQuantity(value: unknown): string {
  * push/pull destination is concatenated as `${registryUrl}/${name}`, so a
  * stray scheme or trailing slash would produce a malformed ref. */
 function registryHost(value: unknown): string {
-  const s = requiredString(value);
+  const s = optionalString(value);
+  // Empty is valid and meaningful: "no external registry" (local Docker mode —
+  // images live in the local daemon, referenced by bare tag).
+  if (s === "") return "";
   if (/\s/.test(s) || s.includes("://")) {
     throw new ValidationError(
       `invalid registry host "${s}": use host[:port] with no scheme (e.g. ` +
-        `zot.atelier-system.svc:5000)`,
+        `zot.zot.svc:5000), or empty for local Docker`,
     );
   }
   return s.replace(/\/+$/, "");
@@ -177,12 +180,13 @@ export const CONFIG_REGISTRY = {
     type: "string",
     label: "Image registry URL",
     description:
-      "OCI registry host[:port] where sandbox and prebuild images live " +
-      "(the bundled Zot by default). No scheme — it is concatenated as " +
-      "`<registry>/<image>`. Changing it points every spawn, prebuild, and " +
-      "toolset push/pull at the new registry.",
+      "OCI registry host[:port] where sandbox and prebuild images live. No " +
+      "scheme — it is concatenated as `<registry>/<image>`. Empty (the " +
+      "default) means no external registry: images are built into and run " +
+      "from the local Docker daemon (the `atelier local up` path). A cluster " +
+      "sets it to its in-cluster registry (e.g. the bundled Zot).",
     envVar: "ATELIER_K8S_REGISTRY_URL",
-    default: "zot.atelier-system.svc:5000",
+    default: "",
     parseEnv: registryHost,
     validate: registryHost,
   } satisfies ConfigDef<string>,
@@ -245,11 +249,12 @@ export const CONFIG_REGISTRY = {
     label: "Build platform",
     description:
       "Target build platform for every backend (e.g. linux/amd64, " +
-      "linux/arm64).",
+      "linux/arm64). Empty (the default) builds for the daemon's native " +
+      "architecture — no emulation on an arm64 host.",
     envVar: "ATELIER_IMAGE_BUILDER_PLATFORM",
-    default: "linux/amd64",
-    parseEnv: requiredString,
-    validate: requiredString,
+    default: "",
+    parseEnv: optionalString,
+    validate: optionalString,
   } satisfies ConfigDef<string>,
   "imageBuilder.cacheRepo": {
     key: "imageBuilder.cacheRepo",

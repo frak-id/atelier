@@ -21,11 +21,23 @@ export function bindRuntimeConfig(svc: ServerConfigService): void {
   service = svc;
 }
 
-/** OCI registry host for sandbox/prebuild/toolset images. */
+/** OCI registry host for sandbox/prebuild/toolset images. Empty = no external
+ * registry (local Docker mode: images live in the local daemon). */
 export function registryUrl(): string {
   return service
     ? service.get("kubernetes.registryUrl")
     : config.kubernetes.registryUrl;
+}
+
+/** Prefix an image/repo name with the configured registry host, or leave it
+ * bare when none is set. A bare tag (`dev-base:latest`, `toolsets/x:y`) is a
+ * local-daemon reference the docker builder + backend use without any push or
+ * pull; a qualified ref (`<registry>/dev-base:latest`) round-trips through the
+ * cluster registry. Every `${registry}/${name}` construction goes through this
+ * so local mode never emits a broken registry-prefixed ref. */
+export function qualifyImageName(name: string): string {
+  const registry = registryUrl();
+  return registry ? `${registry}/${name}` : name;
 }
 
 /** Base image used for a sandbox/toolset build when the request names none. */

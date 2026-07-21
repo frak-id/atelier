@@ -115,9 +115,16 @@ export const KubernetesConfigSchema = Type.Object(
      * TLS on tool ingresses (served over the ingress controller default).
      */
     toolIngressClusterIssuer: Type.String({ default: "" }),
-    /** OCI registry hostname for sandbox and prebuild images (Zot) */
+    /**
+     * OCI registry hostname (`host[:port]`, no scheme) for sandbox and
+     * prebuild images. Empty (the default) means "no external registry":
+     * images are built into and run straight from the local Docker daemon
+     * (the zero-config `atelier local up` path). A Kubernetes deployment sets
+     * this to its in-cluster registry (e.g. the bundled Zot,
+     * `<release>-zot.<ns>.svc:5000`) via Helm / the mounted config file.
+     */
     registryUrl: Type.String({
-      default: "zot.atelier-system.svc:5000",
+      default: "",
     }),
     /**
      * Optional npm registry URL injected into every sandbox (e.g. a private
@@ -314,12 +321,14 @@ export const ImageBuilderConfigSchema = Type.Object(
     dockerHost: Type.String({ default: "" }),
     /**
      * Target build platform, shared by every backend (docker `--platform`,
-     * kaniko `--custom-platform`, buildkit `--opt platform`). Defaults to
-     * linux/amd64; set linux/arm64 to build for arm nodes (note the seed
-     * Dockerfiles' own amd64-pinned asset downloads must also be arch-aware
-     * for a fully arm base image).
+     * kaniko `--custom-platform`, buildkit `--opt platform`). Empty (the
+     * default) builds for the daemon's native architecture — so `local up`
+     * on an arm64 Mac builds arm64 with no emulation. Pin it (e.g.
+     * linux/amd64) for a cluster whose nodes differ from the build host
+     * (note the seed Dockerfiles' own amd64-pinned asset downloads must also
+     * be arch-aware for a fully arm base image).
      */
-    platform: Type.String({ default: "linux/amd64" }),
+    platform: Type.String({ default: "" }),
     /**
      * Cache repository used by the builder. Defaults to
      * `${kubernetes.registryUrl}/cache` when empty.

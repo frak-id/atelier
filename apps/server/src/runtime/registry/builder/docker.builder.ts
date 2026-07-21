@@ -76,10 +76,12 @@ export class DockerImageBuilder implements ImageBuilderBackend {
     await writeFile(dockerfilePath, req.dockerfile, "utf8");
 
     try {
+      const platform = imageBuilderConfig().platform;
       const buildArgs: string[] = [
         "build",
-        "--platform",
-        imageBuilderConfig().platform,
+        // Empty platform => build for the daemon's native arch (no --platform,
+        // no emulation). A cluster pins it explicitly.
+        ...(platform ? ["--platform", platform] : []),
         "-t",
         req.tag,
         "-f",
@@ -103,6 +105,16 @@ export class DockerImageBuilder implements ImageBuilderBackend {
         throw new Error(`docker build exited with code ${buildCode}`);
       }
       if (signal.aborted) throw new Error("image build aborted");
+
+      // Local Docker mode: the image already lives in the daemon after `build`
+      // — there's no registry to push to, and the sandbox backend runs it by
+      // its bare tag straight from the local store. Report the local image ID
+      // as the digest (content identity for the images row).
+      if (req.local) {
+        const digest = await this.resolveLocalImageId(req.tag);
+        log.info({ tag: req.tag, digest }, "image built (local, not pushed)");
+        return { digest };
+      }
 
       onLog(`$ docker push ${req.tag}\n`);
       const pushCode = await dockerStream(["push", req.tag], onLog, {
@@ -166,5 +178,22 @@ export class DockerImageBuilder implements ImageBuilderBackend {
       );
     }
     return match.slice(at + 1);
+  }
+
+  /** The local image's content ID (`sha256:<hex>`) via `docker inspect .Id` —
+   * used as the digest for a local (unpushed) build, which has no RepoDigest. */
+  private async resolveLocalImageId(tag: string): Promise<string> {
+    const result = await docker(
+      ["inspect", "--format", "{{.Id}}", tag],
+      this.dockerBin,
+      this.env,
+    );
+    const id = result.stdout.trim();
+    if (result.code !== 0 || !id.startsWith("sha256:")) {
+      throw new Error(
+        `failed to resolve local image id for ${tag}: ${result.stderr || id}`,
+      );
+    }
+    return id;
   }
 }

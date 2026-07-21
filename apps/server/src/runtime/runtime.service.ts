@@ -42,7 +42,10 @@ import {
 } from "../shared/lib/git-attribution.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { defaultImage, registryUrl } from "../shared/lib/runtime-config.ts";
+import {
+  defaultImage,
+  qualifyImageName,
+} from "../shared/lib/runtime-config.ts";
 import type { HookPhase } from "./agent/index.ts";
 import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
@@ -1066,7 +1069,7 @@ export class RuntimeService {
     const source = req.source ?? { image: defaultImage() };
     const { image, snapshotName } = await this.resolveSource(source);
     const tempId = `ts-${hash.slice(0, 12)}`;
-    const target = `${registryUrl()}/toolsets/${req.name}:${hash.slice(0, 12)}`;
+    const target = `${qualifyImageName(`toolsets/${req.name}`)}:${hash.slice(0, 12)}`;
 
     return this.withThrowawayPod(
       tempId,
@@ -1187,7 +1190,7 @@ export class RuntimeService {
   /** Resolve a host-relative toolset ref (`toolsets/<name>@sha256:…`) to a
    * full pullable registry locator by prepending the configured registry. */
   resolveToolsetRef(ref: string): string {
-    return `${registryUrl()}/${ref}`;
+    return qualifyImageName(ref);
   }
 
   /**
@@ -1208,7 +1211,7 @@ export class RuntimeService {
     onLog?: OnLog,
   ): Promise<ToolsetRef> {
     this.require(id);
-    const target = `${registryUrl()}/toolsets/${req.name}:cap-${safeNanoid()}`;
+    const target = `${qualifyImageName(`toolsets/${req.name}`)}:cap-${safeNanoid()}`;
     onLog?.(`Capturing ${req.paths.join(", ")} from ${id}…`);
     const { digest } = await this.agent.captureToolset(
       id,

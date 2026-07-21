@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ImageBuildRequest } from "./builder.types.ts";
 
 process.env.ATELIER_SERVER_MODE = "mock";
 
@@ -310,6 +311,51 @@ describe("DockerImageBuilder digest resolution", () => {
         new AbortController().signal,
       ),
     ).rejects.toThrow(/no RepoDigests entry for repo/);
+  });
+});
+
+// ── local Docker mode: empty registry => bare tag, no push ─────────────────
+
+describe("ImageBuilderService build (local, no registry)", () => {
+  async function buildOnce(registry: string) {
+    const store = new InMemoryImageStore();
+    let captured: ImageBuildRequest | undefined;
+    let done: Promise<unknown> | undefined;
+    const service = new ImageBuilderService({
+      store,
+      builder: () => ({
+        build: async (req) => {
+          captured = req;
+          return { digest: `sha256:${"b".repeat(64)}` };
+        },
+      }),
+      registryUrl: () => registry,
+      referencedImageRefs: () => [],
+      onBuildStarted: (_name, run) => {
+        done = run;
+      },
+    });
+    await service.buildDockerfile("dev-base", "FROM scratch");
+    await done;
+    return { store, captured };
+  }
+
+  test("empty registry: bare tag, local flag set, ref is the tag (not @digest)", async () => {
+    const { store, captured } = await buildOnce("");
+    expect(captured?.tag).toBe("dev-base:latest");
+    expect(captured?.local).toBe(true);
+    const record = store.get("dev-base");
+    expect(record?.status).toBe("ready");
+    expect(record?.ref).toBe("dev-base:latest");
+  });
+
+  test("with a registry: qualified tag, no local flag, ref is @digest", async () => {
+    const { store, captured } = await buildOnce("zot.test.svc:5000");
+    expect(captured?.tag).toBe("zot.test.svc:5000/dev-base:latest");
+    expect(captured?.local).toBeFalsy();
+    expect(store.get("dev-base")?.ref).toBe(
+      `zot.test.svc:5000/dev-base@sha256:${"b".repeat(64)}`,
+    );
   });
 });
 

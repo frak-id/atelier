@@ -306,7 +306,7 @@ export class ImageBuilderService {
           "the build to finish (or fail) first.",
       );
     }
-    const qualified = `${this.registryUrl()}/${name}`;
+    const qualified = this.qualify(name);
     const referenced = this.referencedImageRefs();
     const inUse = referenced.some(
       (ref) =>
@@ -347,6 +347,14 @@ export class ImageBuilderService {
 
   // ── shared build execution ─────────────────────────────────────────────
 
+  /** Prefix a name with the configured registry, or leave it bare when none is
+   * set (local Docker mode). Mirrors `qualifyImageName` but reads through the
+   * injected `registryUrl` dep so builds stay testable. */
+  private qualify(name: string): string {
+    const registry = this.registryUrl();
+    return registry ? `${registry}/${name}` : name;
+  }
+
   private beginBuild(fields: {
     name: string;
     provenance: ImageRecord["provenance"];
@@ -377,7 +385,10 @@ export class ImageBuilderService {
     },
     cleanup?: () => Promise<unknown>,
   ): Promise<ImageRecord> {
-    const tag = `${this.registryUrl()}/${record.name}:latest`;
+    // No configured registry => local Docker mode: bare tag, no push, and the
+    // stored ref is the tag itself (a local-daemon reference).
+    const local = !this.registryUrl();
+    const tag = `${this.qualify(record.name)}:latest`;
     const controller = new AbortController();
     // Bound the backend call to BUILD_TIMEOUT_MS regardless of provenance:
     // the k8s builders (kaniko/buildkit) already self-bound via
@@ -421,6 +432,7 @@ export class ImageBuilderService {
           contextDir: input.contextDir,
           dockerfile: input.dockerfile,
           tag,
+          local,
           buildArgs: input.buildArgs,
           insecureRegistry: builderCfg.insecureRegistry,
           cacheRepo: builderCfg.cacheRepo || undefined,
@@ -429,7 +441,7 @@ export class ImageBuilderService {
         signal,
       );
       if (pendingFlush) clearTimeout(pendingFlush);
-      const ref = `${this.registryUrl()}/${record.name}@${digest}`;
+      const ref = local ? tag : `${this.qualify(record.name)}@${digest}`;
       const updated = this.store.update(record.name, {
         status: "ready",
         digest,

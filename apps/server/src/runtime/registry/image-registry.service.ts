@@ -1,6 +1,9 @@
 import { SandboxError } from "../../shared/errors.ts";
 import { isMock } from "../../shared/lib/config.ts";
-import { registryUrl } from "../../shared/lib/runtime-config.ts";
+import {
+  qualifyImageName,
+  registryUrl,
+} from "../../shared/lib/runtime-config.ts";
 
 const MANIFEST_CHECK_TIMEOUT_MS = 3000;
 
@@ -54,8 +57,11 @@ export const ImageRegistryService = {
    */
   async resolveOrAssert(imageId: string): Promise<ResolveOrAssertResult> {
     const registry = registryUrl();
-    const tagged = `${registry}/${imageId}:latest`;
-    if (isMock()) return { ref: tagged };
+    const tagged = `${qualifyImageName(imageId)}:latest`;
+    // No external registry (local Docker) or mock: the image is a local-daemon
+    // tag — there's nothing to HEAD, so resolve to the bare tag and let
+    // `docker run` surface a real error if it isn't present locally.
+    if (isMock() || !registry) return { ref: tagged };
     try {
       const res = await fetch(
         `http://${registry}/v2/${imageId}/manifests/latest`,
@@ -105,8 +111,7 @@ export const ImageRegistryService = {
    * never hard-fail on resolution.
    */
   async resolveImageReference(imageId: string): Promise<string> {
-    const registry = registryUrl();
-    const tagged = `${registry}/${imageId}:latest`;
+    const tagged = `${qualifyImageName(imageId)}:latest`;
     const result = await ImageRegistryService.resolveOrAssert(imageId);
     return "ref" in result ? result.ref : tagged;
   },

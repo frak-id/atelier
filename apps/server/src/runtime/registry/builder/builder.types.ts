@@ -38,8 +38,15 @@ export interface ImageBuildRequest {
    * disk themselves (e.g. as a sibling file inside `contextDir`); they must
    * NOT read any `Dockerfile` that may already exist in `contextDir`. */
   dockerfile: string;
-  /** Full destination ref to build+push, e.g. `${registry}/dev-base:latest`. */
+  /** Full destination ref to build+push, e.g. `${registry}/dev-base:latest`,
+   * or a bare local tag (`dev-base:latest`) when {@link local} is set. */
   tag: string;
+  /** Local Docker mode: no external registry is configured, so build into the
+   * local daemon and do NOT push. The returned digest is the local image ID
+   * (content identity for bookkeeping) rather than a pushed manifest digest;
+   * the service stores the bare tag as the image ref. Only the docker backend
+   * honors this — kaniko/buildkit always target a registry. */
+  local?: boolean;
   /** Build-time `--build-arg`s. MUST NOT carry secrets — they land in the
    * image's build history. Use the backend's own credential mechanism for
    * anything sensitive (mirrors the prebuild path's transient, non-baked
