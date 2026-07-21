@@ -23,6 +23,7 @@ type ConfigEntry = {
   default: boolean | number | string;
   isDefault: boolean;
   locked: boolean;
+  lockedBy: "file" | "env" | null;
   envVar: string;
   updatedAt: string | null;
 };
@@ -71,9 +72,13 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
             {entry.locked ? (
               <span
                 className="text-[11px] text-amber-600"
-                title={`Locked by ${entry.envVar}`}
+                title={
+                  entry.lockedBy === "env"
+                    ? `Locked by ${entry.envVar}`
+                    : "Locked by the server config file"
+                }
               >
-                locked by env
+                {entry.lockedBy === "env" ? "locked by env" : "locked by file"}
               </span>
             ) : entry.isDefault ? (
               <span className="text-[11px] text-muted-foreground">default</span>
@@ -82,8 +87,14 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
           <p className="text-xs text-muted-foreground">{entry.description}</p>
           {entry.locked ? (
             <p className="text-[11px] text-muted-foreground">
-              Set by <code className="font-mono">{entry.envVar}</code>. Unset it
-              to edit here.
+              {entry.lockedBy === "env" ? (
+                <>
+                  Set by <code className="font-mono">{entry.envVar}</code>.
+                  Unset it to edit here.
+                </>
+              ) : (
+                <>Set in the server config file. Edit it there to change.</>
+              )}
             </p>
           ) : null}
         </div>

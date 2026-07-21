@@ -4,6 +4,7 @@ export {
   type ConfigKey,
   type ConfigValue,
   type ConfigValues,
+  configPathFor,
   isConfigKey,
 } from "./registry.ts";
 export { ServerConfigRepository } from "./server-config.repository.ts";

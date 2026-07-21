@@ -413,6 +413,21 @@ export function isConfigKey(key: string): key is ConfigKey {
   return key in CONFIG_REGISTRY;
 }
 
+/** Keys that live ONLY in the config plane (DB/env) with no counterpart in the
+ * static AtelierConfig file. Everything else mirrors a file config path whose
+ * dotted name equals the plane key (e.g. `kubernetes.registryUrl`). */
+const PLANE_ONLY_KEYS = new Set<ConfigKey>([
+  "prebuild.gitTracking",
+  "prebuild.pruneKeep",
+]);
+
+/** The AtelierConfig dotted path a key mirrors (for reading the operator's
+ * file/env value + detecting whether they set it), or undefined for plane-only
+ * keys. By construction the plane key IS the config path for mirrored keys. */
+export function configPathFor(key: ConfigKey): string | undefined {
+  return PLANE_ONLY_KEYS.has(key) ? undefined : key;
+}
+
 export function configDef(key: ConfigKey): ConfigDef<ConfigValue> {
   return CONFIG_REGISTRY[key] as ConfigDef<ConfigValue>;
 }
