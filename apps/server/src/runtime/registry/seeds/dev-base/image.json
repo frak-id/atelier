@@ -14,12 +14,6 @@
   ],
   "base": null,
   "official": true,
-  "dependsOn": ["sandbox-agent-v2"],
-  "substitutions": [
-    {
-      "token": "zot.zot.svc:5000/sandbox-agent-v2:latest",
-      "kind": "seed",
-      "seed": "sandbox-agent-v2"
-    }
-  ]
+  "dependsOn": [],
+  "substitutions": []
 }

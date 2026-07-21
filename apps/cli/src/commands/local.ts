@@ -28,6 +28,8 @@ const CONTAINER = "atelier-local-server";
 const VOLUME = "atelier-local-data";
 const CONTEXT = "local";
 const DEFAULT_IMAGE = "ghcr.io/frak-id/atelier-server:latest";
+/** Prebuilt public base image new sandboxes boot from (agent baked in). */
+const DEFAULT_SANDBOX_IMAGE = "ghcr.io/frak-id/atelier-dev-base:latest";
 const DOCKER_SOCK = "/var/run/docker.sock";
 
 /** Run `docker <args>`, capturing stdout/stderr + exit code (never rejects). */
@@ -86,6 +88,7 @@ async function waitForHealth(
 
 interface UpOpts {
   image: string;
+  sandboxImage: string;
   port: string;
   network: string;
   key: string;
@@ -129,6 +132,11 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
       "ATELIER_SERVER_MODE=mock",
       "-e",
       "ATELIER_RUNTIME_BACKEND=docker",
+      // Default new sandboxes to the prebuilt public base image so `local up`
+      // needs no in-cluster builder/registry — the docker daemon just pulls it
+      // (the agent is already baked in from GHCR at base-image build time).
+      "-e",
+      `ATELIER_DEFAULT_IMAGE=${opts.sandboxImage}`,
       "-e",
       "ATELIER_SERVER_HOST=0.0.0.0",
       "-e",
@@ -234,6 +242,11 @@ export function registerLocal(program: Command, ctx: Ctx): void {
       "Boot the local server container and point a `local` context at it",
     )
     .option("--image <ref>", "server image", DEFAULT_IMAGE)
+    .option(
+      "--sandbox-image <ref>",
+      "default base image for new sandboxes",
+      DEFAULT_SANDBOX_IMAGE,
+    )
     .option("--port <n>", "host port for the API", "4000")
     .option("--network <mode>", "docker network mode (host|bridge)", "host")
     .option("--key <token>", "API key for the local context", "local")
@@ -269,6 +282,7 @@ export const LOCAL_CONTEXT = CONTEXT;
 export async function bootstrapLocal(ctx: Ctx): Promise<void> {
   await up(ctx, {
     image: DEFAULT_IMAGE,
+    sandboxImage: DEFAULT_SANDBOX_IMAGE,
     port: "4000",
     network: "host",
     key: "local",

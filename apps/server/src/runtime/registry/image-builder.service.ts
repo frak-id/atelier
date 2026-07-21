@@ -18,7 +18,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import { imageBuilderConfig } from "../../shared/lib/runtime-config.ts";
+import {
+  agentImage,
+  imageBuilderConfig,
+} from "../../shared/lib/runtime-config.ts";
 import type { ImageRecord, ImageStore } from "../store.ts";
 import type { ImageBuilderBackend } from "./builder/index.ts";
 import { ImageRegistryService } from "./image-registry.service.ts";
@@ -165,9 +168,16 @@ export class ImageBuilderService {
     });
     // A seed's `contextDir` is permanent embedded content — NEVER cleaned up
     // (no cleanup callback), unlike a BYO/zip context.
+    //
+    // `AGENT_IMAGE`: the base seeds bake the in-pod agent via `COPY --from=
+    // ${AGENT_IMAGE}` (see dev-base's Dockerfile). Passing it here lets an
+    // operator repoint the agent at a private/mirrored ref via config; the
+    // Dockerfile's own default (public GHCR) covers the common case. Harmless
+    // for seeds that declare no such ARG (an unused build-arg is just a warn).
     const run = this.executeBuild(record, {
       contextDir: seed.contextDir,
       dockerfile,
+      buildArgs: { AGENT_IMAGE: agentImage() },
     }).finally(() => {
       this.inflight.delete(seedId);
     });
@@ -360,7 +370,11 @@ export class ImageBuilderService {
 
   private async executeBuild(
     record: ImageRecord,
-    input: { contextDir: string; dockerfile: string },
+    input: {
+      contextDir: string;
+      dockerfile: string;
+      buildArgs?: Record<string, string>;
+    },
     cleanup?: () => Promise<unknown>,
   ): Promise<ImageRecord> {
     const tag = `${this.registryUrl()}/${record.name}:latest`;
@@ -397,15 +411,17 @@ export class ImageBuilderService {
     };
 
     try {
-      // Build-args carry no secrets here — no caller path threads any into
-      // `buildArgs` (mirrors the prebuild path's discipline of injecting
-      // credentials transiently via the agent, never baked/logged).
+      // Build-args carry no secrets here — the only caller-threaded arg is a
+      // public image reference (`AGENT_IMAGE`), never a credential (mirrors
+      // the prebuild path's discipline of injecting credentials transiently
+      // via the agent, never baked/logged).
       const builderCfg = imageBuilderConfig();
       const { digest } = await this.builder().build(
         {
           contextDir: input.contextDir,
           dockerfile: input.dockerfile,
           tag,
+          buildArgs: input.buildArgs,
           insecureRegistry: builderCfg.insecureRegistry,
           cacheRepo: builderCfg.cacheRepo || undefined,
         },

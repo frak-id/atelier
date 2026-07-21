@@ -182,6 +182,15 @@ export const SandboxDefaultsSchema = Type.Object(
   {
     /** Default image for new sandboxes */
     defaultImage: Type.String({ default: "dev-base" }),
+    /**
+     * In-pod agent image the base seeds bake in via `COPY --from` (the
+     * `AGENT_IMAGE` build-arg). Defaults to the prebuilt public GHCR image so
+     * a fresh operator never has to build the Rust agent first; override to a
+     * private/mirrored ref for air-gapped clusters that can't reach GHCR.
+     */
+    agentImage: Type.String({
+      default: "ghcr.io/frak-id/sandbox-agent:latest",
+    }),
   },
   { default: {} },
 );
@@ -472,6 +481,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_INGRESS_CLASS: "kubernetes.ingressClassName",
 
   ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",
+  ATELIER_AGENT_IMAGE: "sandbox.agentImage",
 
   ATELIER_TERMINAL_PORT: "ports.terminal",
   ATELIER_AGENT_PORT: "ports.agent",

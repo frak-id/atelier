@@ -6,6 +6,13 @@
 # Build: docker build -t atelier/dev-base .
 # Export: docker export $(docker create atelier/dev-base) | tar -C ./rootfs -xf -
 
+# In-pod Rust agent, pulled from a prebuilt image (public GHCR by default) so a
+# fresh operator never has to build it first. Override with
+# `--build-arg AGENT_IMAGE=<ref>` (the server passes `sandbox.agentImage`) to
+# use a private/mirrored agent — e.g. an air-gapped cluster's own registry.
+ARG AGENT_IMAGE=ghcr.io/frak-id/sandbox-agent:latest
+FROM ${AGENT_IMAGE} AS agent
+
 FROM node:22-slim
 
 
@@ -115,9 +122,10 @@ RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony \
     && echo 'dev ALL=(root) NOPASSWD: /usr/sbin/chronyd, /usr/bin/chronyc' > /etc/sudoers.d/chrony \
     && chmod 440 /etc/sudoers.d/chrony
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
-# v2 agent binary (apps/agent-v2 ships it at /atelier-agent). The in-pod path
-# stays /usr/local/bin/sandbox-agent so sandbox-boot.sh is unchanged.
-COPY --from=zot.zot.svc:5000/sandbox-agent-v2:latest /atelier-agent /usr/local/bin/sandbox-agent
+# v2 agent binary from the `agent` stage above (apps/agent-v2 ships it at
+# /atelier-agent). The in-pod path stays /usr/local/bin/sandbox-agent so
+# sandbox-boot.sh is unchanged.
+COPY --from=agent /atelier-agent /usr/local/bin/sandbox-agent
 RUN chmod +x /usr/local/bin/sandbox-agent
 
 # /home/skel is the read-only overlay lower for /home/dev

@@ -316,6 +316,20 @@ export const CONFIG_REGISTRY = {
     parseEnv: requiredString,
     validate: requiredString,
   } satisfies ConfigDef<string>,
+  "sandbox.agentImage": {
+    key: "sandbox.agentImage",
+    type: "string",
+    label: "In-pod agent image",
+    description:
+      "Prebuilt Rust agent image the base seeds bake in via the AGENT_IMAGE " +
+      "build-arg (COPY --from). Defaults to the public GHCR image so no " +
+      "in-cluster agent build is needed; point it at a private/mirrored ref " +
+      "for air-gapped clusters that cannot reach GHCR.",
+    envVar: "ATELIER_AGENT_IMAGE",
+    default: "ghcr.io/frak-id/sandbox-agent:latest",
+    parseEnv: requiredString,
+    validate: requiredString,
+  } satisfies ConfigDef<string>,
   "kubernetes.npmRegistryUrl": {
     key: "kubernetes.npmRegistryUrl",
     type: "string",
@@ -398,6 +412,7 @@ export interface ConfigValues {
   "imageBuilder.tls.secretName": string;
   "imageBuilder.tls.serverName": string;
   "sandbox.defaultImage": string;
+  "sandbox.agentImage": string;
   "kubernetes.npmRegistryUrl": string;
   "kubernetes.defaultVolumeSize": string;
   "kubernetes.storageClass": string;

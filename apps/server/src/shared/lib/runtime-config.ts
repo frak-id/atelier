@@ -35,6 +35,15 @@ export function defaultImage(): string {
     : config.sandbox.defaultImage;
 }
 
+/** In-pod agent image the base seeds bake in via the `AGENT_IMAGE` build-arg
+ * (default: the prebuilt public GHCR image, so no in-cluster agent build is
+ * needed). Override for air-gapped clusters that mirror it privately. */
+export function agentImage(): string {
+  return service
+    ? service.get("sandbox.agentImage")
+    : config.sandbox.agentImage;
+}
+
 /** Optional private npm registry injected into sandboxes ("" = disabled). */
 export function npmRegistryUrl(): string {
   return service
