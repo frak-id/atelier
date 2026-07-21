@@ -1,6 +1,6 @@
 {
   "name": "@konfeature/atelier",
-  "version": "0.1.2",
+  "version": "3.0.0",
   "type": "module",
   "description": "The atelier CLI — a typed client over the /v1 runtime + /api control API (Eden Treaty). API-first, CLI-second (atelier-v2 §4).",
   "keywords": [

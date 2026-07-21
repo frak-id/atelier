@@ -18,9 +18,17 @@ const PACKAGE_JSON_PATHS = [
   "apps/server/package.json",
   "apps/console/package.json",
   "packages/shared/package.json",
+  "apps/cli/package.json",
 ];
 
 const CARGO_TOML_PATH = "apps/agent-v2/Cargo.toml";
+const CARGO_LOCK_PATH = "apps/agent-v2/Cargo.lock";
+const CARGO_CRATE_NAME = "atelier-agent";
+
+// The CLI is bundled by esbuild, so its `--version` string is baked in at build
+// time from a hardcoded `.version("…")` call rather than read from package.json
+// at runtime. Keep it in lockstep with apps/cli/package.json.
+const CLI_ENTRY_PATH = "apps/cli/src/index.ts";
 
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
@@ -87,6 +95,46 @@ function updateCargoToml(filePath: string, newVersion: string): void {
   writeFileSync(fullPath, replaced);
 }
 
+/**
+ * Keep Cargo.lock in lockstep with Cargo.toml. The agent Docker build runs
+ * `cargo build --locked`, which aborts if the lockfile's recorded version for
+ * the local crate drifts from Cargo.toml — so bumping the manifest without
+ * touching the lockfile breaks every release build. The crate is a path member
+ * with no checksum, so a targeted version replacement in its `[[package]]`
+ * block is sufficient (no network / cargo toolchain needed).
+ */
+function updateCliVersion(filePath: string, newVersion: string): void {
+  const fullPath = resolve(ROOT, filePath);
+  const content = readFileSync(fullPath, "utf-8");
+
+  const replaced = content.replace(
+    /(\.version\()"[^"]*"(\))/,
+    `$1"${newVersion}"$2`,
+  );
+
+  if (replaced === content) {
+    throw new Error(`Could not find .version("…") call in ${filePath}`);
+  }
+
+  writeFileSync(fullPath, replaced);
+}
+
+function updateCargoLock(filePath: string, newVersion: string): void {
+  const fullPath = resolve(ROOT, filePath);
+  const content = readFileSync(fullPath, "utf-8");
+
+  const re = new RegExp(`(name = "${CARGO_CRATE_NAME}"\\nversion = )"[^"]*"`);
+  const replaced = content.replace(re, `$1"${newVersion}"`);
+
+  if (replaced === content) {
+    throw new Error(
+      `Could not find ${CARGO_CRATE_NAME} version entry in ${filePath}`,
+    );
+  }
+
+  writeFileSync(fullPath, replaced);
+}
+
 const arg = process.argv[2];
 
 if (!arg) {
@@ -121,5 +169,11 @@ for (const pkgPath of PACKAGE_JSON_PATHS) {
 
 updateCargoToml(CARGO_TOML_PATH, next);
 console.log(`  ✓ ${CARGO_TOML_PATH}`);
+
+updateCargoLock(CARGO_LOCK_PATH, next);
+console.log(`  ✓ ${CARGO_LOCK_PATH}`);
+
+updateCliVersion(CLI_ENTRY_PATH, next);
+console.log(`  ✓ ${CLI_ENTRY_PATH}`);
 
 console.log(`\nDone. All manifests updated to ${next}.`);

@@ -34,7 +34,7 @@ const program = new Command();
 program
   .name("atelier")
   .description("Client for the Atelier sandbox runtime API")
-  .version("0.1.2")
+  .version("3.0.0")
   .option("--json", "machine-readable JSON output")
   .hook("preAction", (thisCommand) => {
     ctx.json = Boolean(thisCommand.opts().json);
