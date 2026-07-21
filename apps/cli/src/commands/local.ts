@@ -361,7 +361,17 @@ async function resolveGitToken(opts: UpOpts): Promise<GitTokenResult> {
     return { token: undefined, mode };
   }
 
-  type ChosenMode = Exclude<GitAuthMode, "ask">;
+  // mode === "ask", interactive
+  return chooseGitAuthInteractive();
+}
+
+type ChosenMode = Exclude<GitAuthMode, "ask">;
+
+/** Interactive picker for the git-auth source: detects what's available (gh /
+ * env), records the choice (+consent) to ~/.atelier/local.json, and resolves
+ * the token for it. Shared by `up`'s ask-mode and the cockpit's GitHub-auth
+ * menu. Assumes an interactive TTY. Never prints the token value. */
+async function chooseGitAuthInteractive(): Promise<GitTokenResult> {
   const envToken = envGitToken();
   const ghToken = await ghAuthToken();
   const options: { value: ChosenMode; label: string; hint?: string }[] = [];
@@ -409,6 +419,70 @@ async function resolveGitToken(opts: UpOpts): Promise<GitTokenResult> {
   // chosen === "pat"
   const pat = await promptForPat();
   return { token: pat ? await gated(pat) : undefined, mode: chosen };
+}
+
+/** Cockpit panel (interactive `atelier`) for local mode's private-repo token.
+ * Shows the current preference + whether a token resolves right now (never the
+ * value), lets you change the source or reset it, and explains how it applies
+ * (the running server keeps its booted token until recreated). */
+export async function gitAuthMenu(): Promise<void> {
+  const s = loadLocalSettings();
+  const running = await runState(CONTAINER).catch(() => "absent" as const);
+  ui.note(
+    [
+      `source: ${s.gitAuth ?? "ask (unset)"}`,
+      `consent: ${s.tokenConsent ? "granted" : "not granted"}`,
+      `stored PAT: ${s.pat ? "yes" : "no"}`,
+      `local server: ${running}`,
+    ].join("\n"),
+    "GitHub auth (local)",
+  );
+
+  const configured = Boolean(s.gitAuth || s.pat || s.tokenConsent);
+  const action = await ui.select<"change" | "reset" | "back">({
+    message: "GitHub auth for private repos in local sandboxes",
+    options: [
+      {
+        value: "change",
+        label: "Change token source",
+        hint: "gh / env / paste a PAT / none",
+      },
+      ...(configured
+        ? [
+            {
+              value: "reset" as const,
+              label: "Reset (clear source, stored PAT + consent)",
+            },
+          ]
+        : []),
+      { value: "back", label: pc.dim("Back") },
+    ],
+  });
+  if (action === "back") return;
+  if (action === "reset") {
+    saveLocalSettings({
+      gitAuth: undefined,
+      pat: undefined,
+      tokenConsent: undefined,
+    });
+    ui.note(
+      "Cleared. New sandboxes get no token until you set a source again.",
+    );
+    return;
+  }
+
+  const { token, mode } = await chooseGitAuthInteractive();
+  const applies =
+    running === "running"
+      ? "The running local server keeps its current token — recreate it to apply: `atelier local down` then `atelier local up`."
+      : "Applies next time you run `atelier local up`.";
+  ui.note(
+    `${mode}: ${
+      token
+        ? "token resolved — private repos enabled"
+        : "no token — public repos only"
+    }\n${applies}`,
+  );
 }
 
 async function ensureDocker(): Promise<void> {

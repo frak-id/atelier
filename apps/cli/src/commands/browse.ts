@@ -7,6 +7,7 @@
 import type {
   CreateSandboxResponse,
   PrebuildRecord,
+  PrebuildSpec,
   SandboxState,
   ToolboxConfig,
 } from "@atelier/spec";
@@ -20,8 +21,13 @@ import {
   unwrap,
   waitForJob,
 } from "../client.ts";
-import type { CliConfig } from "../config.ts";
-import type { Ctx } from "../context.ts";
+import {
+  type CliConfig,
+  currentContext,
+  listContexts,
+  useContext,
+} from "../config.ts";
+import { type Ctx, createCtx } from "../context.ts";
 import { age, line, statusColor } from "../output.ts";
 import { runInherit } from "../proc.ts";
 import {
@@ -34,8 +40,10 @@ import {
   removeAtelierKey,
 } from "../ssh-keys.ts";
 import * as ui from "../ui.ts";
-import { openInBrowser, parseEnvPairs } from "../util.ts";
+import { openInBrowser, parseEnvPairs, readJsonc } from "../util.ts";
+import { gitAuthMenu } from "./local.ts";
 import { followLogs } from "./logs-follow.ts";
+import { runPrebuild } from "./sandbox.ts";
 import { describeAnnotations, sshCommand } from "./sandbox-helpers.ts";
 
 const BACK = Symbol("back");
@@ -43,13 +51,21 @@ const NEW = "__new__";
 const QUIT = "__quit__";
 const FILTER = "__filter__";
 const ACCOUNT = "__account__";
+const CONTEXTS = "__contexts__";
+const GITAUTH = "__gitauth__";
+const IMAGES = "__images__";
+const PREBUILDS = "__prebuilds__";
 
 const ok = (v: boolean): string => (v ? pc.green("✓") : pc.red("✗"));
+
+const maskKey = (key: string): string =>
+  key ? `${key.slice(0, 6)}…${key.slice(-4)}` : pc.dim("(unset)");
 
 /** Pick a sandbox from the live list, with an optional name filter and entries
  * to spawn a new one or quit. Returns an id, `NEW`, or null (quit). */
 async function pickSandbox(
   api: AtelierApi,
+  local: boolean,
   filter?: string,
 ): Promise<string | typeof NEW | null> {
   const s = ui.spinner();
@@ -76,6 +92,18 @@ async function pickSandbox(
         label: `${r.id}  ${statusColor(r.status)}`,
         hint: `${describeAnnotations(r.annotations)} · ${age(r.createdAt)}`,
       })),
+      { value: CONTEXTS, label: pc.dim("Contexts"), hint: currentContext() },
+      ...(local
+        ? [
+            {
+              value: GITAUTH,
+              label: pc.dim("GitHub auth"),
+              hint: "private-repo token for sandboxes",
+            },
+          ]
+        : []),
+      { value: IMAGES, label: pc.dim("Base images") },
+      { value: PREBUILDS, label: pc.dim("Prebuilds") },
       { value: ACCOUNT, label: pc.dim("Account & SSH") },
       { value: QUIT, label: pc.dim("Quit") },
     ],
@@ -84,7 +112,7 @@ async function pickSandbox(
   if (choice === NEW) return NEW;
   if (choice === FILTER) {
     const term = await ui.text({ message: "Filter", placeholder: "repo / id" });
-    return pickSandbox(api, term.trim() || undefined);
+    return pickSandbox(api, local, term.trim() || undefined);
   }
   return choice;
 }
@@ -831,6 +859,338 @@ async function runAction(
   }
 }
 
+// ── management panels ────────────────────────────────────────────────────────
+
+/** Does the server bypass auth (local/mock)? Gates the GitHub-auth panel — a
+ * public, best-effort probe (any failure just hides it). */
+async function isBypassed(api: AtelierApi): Promise<boolean> {
+  try {
+    const res = await api.auth.mode.get();
+    return Boolean(res.data?.bypassed);
+  } catch {
+    return false;
+  }
+}
+
+/** List contexts and switch the active one (the cockpit twin of `context ls`
+ * + `use`). Returns true when the active context changed, so the caller can
+ * rebuild its client. */
+async function contextsMenu(): Promise<boolean> {
+  const rows = listContexts();
+  if (rows.length === 0) {
+    ui.note("No contexts. Run `atelier login` or `atelier local up`.");
+    return false;
+  }
+  const current = currentContext();
+  const choice = await ui.select<string | typeof BACK>({
+    message: "Switch context",
+    options: [
+      ...rows.map((r) => ({
+        value: r.name,
+        label: `${r.current ? pc.green("●") : " "} ${r.current ? pc.bold(r.name) : r.name}`,
+        hint: `${r.baseUrl || pc.dim("(unset)")} · ${maskKey(r.apiKey)}`,
+      })),
+      { value: BACK, label: pc.dim("Back") },
+    ],
+  });
+  if (choice === BACK || choice === current) return false;
+  try {
+    useContext(choice as string);
+    ui.note(`Switched to ${pc.bold(choice as string)}`);
+    return true;
+  } catch (err) {
+    ui.note(err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
+const imageIcon = (status: string): string =>
+  status === "ready"
+    ? pc.green("✓")
+    : status === "error"
+      ? pc.red("✗")
+      : pc.yellow("…");
+
+type ImageRow = Awaited<
+  ReturnType<AtelierApi["v1"]["images"]["get"]>
+>["data"] extends (infer T)[] | null
+  ? T
+  : never;
+
+/** Poll an image build's log endpoint, streaming new lines until it settles. */
+async function streamImageBuild(api: AtelierApi, name: string): Promise<void> {
+  line(pc.dim(`building ${name} — this can take a while`));
+  let printed = 0;
+  while (true) {
+    let res: { status: string; log: string };
+    try {
+      res = unwrap(await api.v1.images({ name }).logs.get());
+    } catch {
+      break;
+    }
+    if (res.log.length > printed) {
+      for (const l of res.log.slice(printed).split("\n")) {
+        if (l) line(pc.dim(`  ${l}`));
+      }
+      printed = res.log.length;
+    }
+    if (res.status !== "building") {
+      line(
+        res.status === "ready"
+          ? pc.green(`✓ ${name} ready`)
+          : pc.red(`✗ ${name} ${res.status}`),
+      );
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+/** Build (or force-rebuild) a base image from an embedded seed template. */
+async function buildImageFlow(
+  api: AtelierApi,
+  images: ImageRow[],
+): Promise<void> {
+  const templates = unwrap(await api.v1.images.templates.get());
+  if (templates.length === 0) {
+    ui.note("No seed templates available on this server.");
+    return;
+  }
+  const built = new Set(
+    images
+      .filter((i) => i.provenance === "seed")
+      .map((i) => i.seedId ?? i.name),
+  );
+  const seed = await ui.select<string | typeof BACK>({
+    message: "Build which base image?",
+    options: [
+      ...templates.map((t) => ({
+        value: t.id,
+        label: t.id,
+        hint: [
+          t.description,
+          t.dependsOn.length ? `needs ${t.dependsOn.join(",")}` : "",
+          built.has(t.id) ? pc.green("built") : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      })),
+      { value: BACK, label: pc.dim("Back") },
+    ],
+  });
+  if (seed === BACK) return;
+  let force = false;
+  if (built.has(seed as string)) {
+    const yes = await ui.confirm({
+      message: `${seed} is already built — rebuild from scratch?`,
+      initialValue: true,
+    });
+    if (!yes) return;
+    force = true;
+  }
+  const record = unwrap(
+    await api.v1.images.post({ seed: seed as string, force }),
+  );
+  await streamImageBuild(api, record.name);
+}
+
+/** Base-image panel: list images, then build/rebuild from a seed or read a
+ * build log. */
+async function imagesMenu(api: AtelierApi): Promise<void> {
+  while (true) {
+    const s = ui.spinner();
+    s.start("Loading images…");
+    let images: ImageRow[];
+    try {
+      images = unwrap(await api.v1.images.get());
+      s.stop(`${images.length} image(s)`);
+    } catch (err) {
+      s.stop("Failed to load images");
+      ui.note(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    ui.note(
+      images.length > 0
+        ? images
+            .map(
+              (i) =>
+                `${imageIcon(i.status)} ${i.name}  ${pc.dim(i.provenance)}  ${pc.dim(i.ref ?? "")}`,
+            )
+            .join("\n")
+        : pc.dim("none built yet"),
+      "base images",
+    );
+    const action = await ui.select<"build" | "logs" | "refresh" | "back">({
+      message: "Base images",
+      options: [
+        {
+          value: "build",
+          label: "Build / rebuild an image",
+          hint: "from an embedded seed template",
+        },
+        ...(images.length > 0
+          ? [{ value: "logs" as const, label: "View a build log" }]
+          : []),
+        { value: "refresh", label: pc.dim("Refresh") },
+        { value: "back", label: pc.dim("Back") },
+      ],
+    });
+    if (action === "back") return;
+    if (action === "refresh") continue;
+    if (action === "build") {
+      await buildImageFlow(api, images);
+      continue;
+    }
+    // logs
+    const name = await ui.select<string | typeof BACK>({
+      message: "Log for which image?",
+      options: [
+        ...images.map((i) => ({
+          value: i.name,
+          label: i.name,
+          hint: i.status,
+        })),
+        { value: BACK, label: pc.dim("Back") },
+      ],
+    });
+    if (name === BACK) continue;
+    const img = images.find((i) => i.name === name);
+    if (img?.status === "building") {
+      await streamImageBuild(api, name as string);
+    } else {
+      const res = unwrap(
+        await api.v1.images({ name: name as string }).logs.get(),
+      );
+      line(`status: ${statusColor(res.status)}`);
+      if (res.log) line(pc.dim(res.log.trimEnd()));
+    }
+  }
+}
+
+/** Prebuild panel: list snapshots, then rebuild one (re-bake its spec), bake a
+ * new one from a spec file, or remove one. */
+async function prebuildsMenu(api: AtelierApi): Promise<void> {
+  while (true) {
+    const s = ui.spinner();
+    s.start("Loading prebuilds…");
+    let rows: PrebuildRecord[];
+    try {
+      rows = unwrap(await api.v1.prebuilds.get());
+      s.stop(`${rows.length} prebuild(s)`);
+    } catch (err) {
+      s.stop("Failed to load prebuilds");
+      ui.note(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    ui.note(
+      rows.length > 0
+        ? rows
+            .map(
+              (p) =>
+                `${p.ref}  ${p.inUse ? pc.green("in-use") : pc.dim("unused")}  ${pc.dim(prebuildHint(p))}`,
+            )
+            .join("\n")
+        : pc.dim("none baked yet"),
+      "prebuilds",
+    );
+    const rebuildable = rows.filter((p) => p.spec);
+    const action = await ui.select<
+      "rebuild" | "new" | "rm" | "refresh" | "back"
+    >({
+      message: "Prebuilds",
+      options: [
+        ...(rebuildable.length > 0
+          ? [
+              {
+                value: "rebuild" as const,
+                label: "Rebuild a prebuild",
+                hint: "re-bake its spec, bypassing the cache",
+              },
+            ]
+          : []),
+        {
+          value: "new",
+          label: "Bake a new prebuild",
+          hint: "from a local spec file",
+        },
+        ...(rows.length > 0
+          ? [{ value: "rm" as const, label: pc.red("Remove a prebuild") }]
+          : []),
+        { value: "refresh", label: pc.dim("Refresh") },
+        { value: "back", label: pc.dim("Back") },
+      ],
+    });
+    if (action === "back") return;
+    if (action === "refresh") continue;
+    if (action === "rebuild") {
+      const ref = await ui.select<string | typeof BACK>({
+        message: "Rebuild which prebuild?",
+        options: [
+          ...rebuildable.map((p) => ({
+            value: p.ref,
+            label: p.ref,
+            hint: prebuildHint(p),
+          })),
+          { value: BACK, label: pc.dim("Back") },
+        ],
+      });
+      if (ref === BACK) continue;
+      const p = rebuildable.find((x) => x.ref === ref);
+      if (!p?.spec) continue;
+      const sp = ui.spinner();
+      sp.start(`Rebuilding ${ref}…`);
+      try {
+        const out = await runPrebuild(api, p.spec, true);
+        sp.stop(`Rebuilt ${out.ref}`);
+      } catch (err) {
+        sp.stop("Rebuild failed", 1);
+        ui.note(err instanceof Error ? err.message : String(err));
+      }
+    } else if (action === "new") {
+      const file = await ui.text({
+        message: "Prebuild spec file",
+        placeholder: "./prebuild.json",
+      });
+      if (!file.trim()) continue;
+      let spec: PrebuildSpec;
+      try {
+        spec = readJsonc<PrebuildSpec>(file.trim());
+      } catch (err) {
+        ui.note(`Can't read spec: ${err instanceof Error ? err.message : err}`);
+        continue;
+      }
+      const sp = ui.spinner();
+      sp.start("Baking prebuild…");
+      try {
+        const out = await runPrebuild(api, spec, false);
+        sp.stop(`Baked ${out.ref}`);
+      } catch (err) {
+        sp.stop("Bake failed", 1);
+        ui.note(err instanceof Error ? err.message : String(err));
+      }
+    } else if (action === "rm") {
+      const ref = await ui.select<string | typeof BACK>({
+        message: "Remove which prebuild?",
+        options: [
+          ...rows.map((p) => ({ value: p.ref, label: p.ref })),
+          { value: BACK, label: pc.dim("Back") },
+        ],
+      });
+      if (ref === BACK) continue;
+      const yes = await ui.confirm({
+        message: `Remove ${ref}?`,
+        initialValue: false,
+      });
+      if (!yes) continue;
+      await api.v1
+        .prebuilds({ ref: ref as string })
+        .delete()
+        .then(unwrap);
+      ui.note(`Removed ${ref}`);
+    }
+  }
+}
+
 /** The interactive cockpit loop — reused by `atelier browse` and by bare
  * `atelier` (no args). */
 export async function browseInteractive(ctx: Ctx): Promise<void> {
@@ -838,13 +1198,45 @@ export async function browseInteractive(ctx: Ctx): Promise<void> {
     line(pc.red("browse needs an interactive terminal"));
     process.exit(1);
   }
-  const api = ctx.api();
-  const cfg = ctx.config();
+  let api = ctx.api();
+  let cfg = ctx.config();
   let sshReady = await computeSshReady(api);
+  let local = await isBypassed(api);
   ui.intro(pc.cyan("atelier"));
   while (true) {
-    const picked = await pickSandbox(api);
+    const picked = await pickSandbox(api, local);
     if (!picked) break;
+    if (picked === CONTEXTS) {
+      if (await contextsMenu()) {
+        // Rebuild the client against the newly-active context.
+        try {
+          const next = createCtx();
+          api = next.api();
+          cfg = next.config();
+          sshReady = await computeSshReady(api);
+          local = await isBypassed(api);
+        } catch (err) {
+          ui.note(
+            `Switched, but this context isn't usable: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+      }
+      continue;
+    }
+    if (picked === GITAUTH) {
+      await gitAuthMenu();
+      continue;
+    }
+    if (picked === IMAGES) {
+      await imagesMenu(api);
+      continue;
+    }
+    if (picked === PREBUILDS) {
+      await prebuildsMenu(api);
+      continue;
+    }
     if (picked === ACCOUNT) {
       await accountMenu(api);
       // SSH may have been set up / regenerated in the panel.
