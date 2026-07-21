@@ -52,6 +52,9 @@ export const MAX_CONTEXT_BYTES = 900_000;
 const POD_APPEAR_TIMEOUT_MS = 120_000;
 const BUILD_TIMEOUT_MS = 30 * 60_000;
 const POLL_INTERVAL_MS = 2_000;
+/** Bound for the best-effort non-follow log read on a failed/quiet build, so a
+ * wedged API server can't hang the build's teardown. */
+const LOG_CAPTURE_TIMEOUT_MS = 10_000;
 
 /** The build container both backends inject into the shared Job scaffold. */
 export interface BuildContainerSpec {
@@ -372,6 +375,25 @@ async function watchBuildJob(
   } finally {
     streaming = false;
     await logs.catch(() => {});
+    // The live `follow` stream can produce nothing when the build container
+    // error-exits fast: we attach while it's still `PodInitializing`, and by
+    // the time we re-attach it has terminated. Do a one-shot non-follow read
+    // of the finished container so the actual build error (e.g. an unresolved
+    // base image) still reaches the console build log instead of a silent
+    // failure. The Job keeps its pod around (`ttlSecondsAfterFinished`), so
+    // the terminated container's logs are still readable here.
+    if (!delivered) {
+      await kubeClient
+        .streamPodLogs(podName, relay, {
+          container: BUILD_CONTAINER,
+          namespace: ns,
+          follow: false,
+          signal: AbortSignal.timeout(LOG_CAPTURE_TIMEOUT_MS),
+        })
+        .catch((err) => {
+          lastLogErr = err;
+        });
+    }
     if (!delivered) {
       log.warn(
         { job: name, pod: podName, err: lastLogErr },

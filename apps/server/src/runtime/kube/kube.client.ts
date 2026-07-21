@@ -255,6 +255,9 @@ export class KubeClient {
     options: {
       container?: string;
       namespace?: string;
+      /** `false` reads the container's logs once and returns (a terminated
+       * container's full output) instead of tailing a live container. */
+      follow?: boolean;
       signal?: AbortSignal;
     } = {},
   ): Promise<void> {
@@ -262,16 +265,24 @@ export class KubeClient {
 
     const namespace = options.namespace ?? this.namespace;
     const auth = await this.getAuthConfig();
-    const query = new URLSearchParams({ follow: "true" });
+    const query = new URLSearchParams({
+      follow: options.follow === false ? "false" : "true",
+    });
     if (options.container) query.set("container", options.container);
     const url = this.buildUrl(
       auth.server,
       `/api/v1/namespaces/${namespace}/pods/${podName}/log?${query}`,
     );
 
+    // `Accept: */*`, not `text/plain`: the log subresource streams text/plain
+    // on success, but ANY error (e.g. the container is still `PodInitializing`)
+    // comes back as a JSON `Status` object. Pinning `text/plain` makes the API
+    // server reject that error body with a misleading 406 that masks the real
+    // reason; `*/*` lets the success stream and the error Status both through
+    // (mirrors what `kubectl logs` sends).
     const response = await fetch(url, {
       method: "GET",
-      headers: this.buildHeaders(auth, { Accept: "text/plain" }),
+      headers: this.buildHeaders(auth, { Accept: "*/*" }),
       signal: options.signal,
       tls: auth.tls,
     } as BunRequestInit);
