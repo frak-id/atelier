@@ -29,10 +29,28 @@ import * as ui from "../ui.ts";
 const CONTAINER = "atelier-local-server";
 const VOLUME = "atelier-local-data";
 const CONTEXT = "local";
-const DEFAULT_IMAGE = "ghcr.io/frak-id/atelier-server:latest";
+/** The two images `local up` runs. The tag is picked by the release channel
+ * (`latest` by default, or `nightly` for the bleeding-edge CI build). */
+const SERVER_IMAGE_REPO = "ghcr.io/frak-id/atelier-server";
 /** Prebuilt public base image new sandboxes boot from (agent baked in). */
-const DEFAULT_SANDBOX_IMAGE = "ghcr.io/frak-id/atelier-dev-base:latest";
+const SANDBOX_IMAGE_REPO = "ghcr.io/frak-id/atelier-dev-base";
+const DEFAULT_CHANNEL = "latest";
 const DOCKER_SOCK = "/var/run/docker.sock";
+
+/** Resolve the server + sandbox image refs for a run. An explicit --image /
+ * --sandbox-image always wins; otherwise --nightly flips both to the `nightly`
+ * tag together (so the server and its default base image stay in lockstep). */
+function resolveImages(opts: {
+  image?: string;
+  sandboxImage?: string;
+  nightly?: boolean;
+}): { image: string; sandboxImage: string } {
+  const channel = opts.nightly ? "nightly" : DEFAULT_CHANNEL;
+  return {
+    image: opts.image ?? `${SERVER_IMAGE_REPO}:${channel}`,
+    sandboxImage: opts.sandboxImage ?? `${SANDBOX_IMAGE_REPO}:${channel}`,
+  };
+}
 
 /** Run `docker <args>`, capturing stdout/stderr + exit code (never rejects). */
 function docker(
@@ -89,8 +107,9 @@ async function waitForHealth(
 }
 
 interface UpOpts {
-  image: string;
-  sandboxImage: string;
+  image?: string;
+  sandboxImage?: string;
+  nightly?: boolean;
   port: string;
   network: string;
   key: string;
@@ -101,6 +120,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
   const port = Number(opts.port);
   if (!Number.isFinite(port)) fail("--port must be a number");
   const baseUrl = `http://127.0.0.1:${port}`;
+  const { image, sandboxImage } = resolveImages(opts);
 
   const s = ui.spinner();
   s.start("Starting local server…");
@@ -138,7 +158,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
       // needs no in-cluster builder/registry — the docker daemon just pulls it
       // (the agent is already baked in from GHCR at base-image build time).
       "-e",
-      `ATELIER_DEFAULT_IMAGE=${opts.sandboxImage}`,
+      `ATELIER_DEFAULT_IMAGE=${sandboxImage}`,
       "-e",
       "ATELIER_SERVER_HOST=0.0.0.0",
       "-e",
@@ -146,7 +166,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
     ];
     // Bridge networking can't bind the host port implicitly — publish it.
     if (opts.network !== "host") runArgs.push("-p", `${port}:${port}`);
-    runArgs.push(opts.image);
+    runArgs.push(image);
     const res = await docker(runArgs);
     if (res.code !== 0) {
       s.stop("Failed to start", 1);
@@ -243,11 +263,15 @@ export function registerLocal(program: Command, ctx: Ctx): void {
     .description(
       "Boot the local server container and point a `local` context at it",
     )
-    .option("--image <ref>", "server image", DEFAULT_IMAGE)
+    .option(
+      "--nightly",
+      "use the bleeding-edge `nightly` images instead of `latest`",
+      false,
+    )
+    .option("--image <ref>", "server image (overrides --nightly)")
     .option(
       "--sandbox-image <ref>",
-      "default base image for new sandboxes",
-      DEFAULT_SANDBOX_IMAGE,
+      "default base image for new sandboxes (overrides --nightly)",
     )
     .option("--port <n>", "host port for the API", "4000")
     .option("--network <mode>", "docker network mode (host|bridge)", "host")
@@ -283,8 +307,6 @@ export const LOCAL_CONTEXT = CONTEXT;
 /** Shared by onboarding: boot local + wire the context (interactive spinner). */
 export async function bootstrapLocal(ctx: Ctx): Promise<void> {
   await up(ctx, {
-    image: DEFAULT_IMAGE,
-    sandboxImage: DEFAULT_SANDBOX_IMAGE,
     port: "4000",
     network: "host",
     key: "local",
