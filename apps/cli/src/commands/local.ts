@@ -5,8 +5,10 @@
  *   - `--network host` so the Docker runtime backend (which dials sandboxes at
  *     `127.0.0.1:<published>`) can reach the sibling containers it spawns;
  *   - the Docker socket mounted, so the server can `docker run` those siblings;
- *   - `ATELIER_SERVER_MODE=mock` (no GitHub OAuth needed — any token maps to a
- *     mock user) + `ATELIER_RUNTIME_BACKEND=docker`;
+ *   - `ATELIER_SERVER_MODE=local` — real runtime (so the Docker backend
+ *     actually drives sandboxes) but auth is bypassed (any token maps to a
+ *     single local user, no GitHub OAuth app) — plus
+ *     `ATELIER_RUNTIME_BACKEND=docker`;
  *   - a named volume for the sqlite DB at `/data`.
  * It then waits for `/health` and points a `local` context at it.
  *
@@ -129,7 +131,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
       "-e",
       "DATA_DIR=/data",
       "-e",
-      "ATELIER_SERVER_MODE=mock",
+      "ATELIER_SERVER_MODE=local",
       "-e",
       "ATELIER_RUNTIME_BACKEND=docker",
       // Default new sandboxes to the prebuilt public base image so `local up`
@@ -163,8 +165,8 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
   }
   hs.stop("Server healthy");
 
-  // Mock mode accepts any non-`atl_` token as the mock user — so a placeholder
-  // key is all the local context needs.
+  // Local mode bypasses auth: any non-`atl_` token maps to the single local
+  // user — so a placeholder key is all the local context needs.
   upsertContext(CONTEXT, { baseUrl, apiKey: opts.key });
   if (ctx.json) {
     return printJson({ container: CONTAINER, baseUrl, context: CONTEXT });

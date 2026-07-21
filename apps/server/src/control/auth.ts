@@ -5,7 +5,7 @@
  */
 import * as jose from "jose";
 import { UnauthorizedError } from "../shared/errors.ts";
-import { config, isMock } from "../shared/lib/config.ts";
+import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import type { ApiKeyService } from "./modules/api-key/index.ts";
 import type { UserService } from "./modules/user/index.ts";
 
@@ -38,7 +38,7 @@ export async function signJwt(
 }
 
 export async function verifyJwt(token: string): Promise<AuthUser | null> {
-  if (isMock()) {
+  if (isAuthBypassed()) {
     return {
       id: "12345",
       username: "mock-user",

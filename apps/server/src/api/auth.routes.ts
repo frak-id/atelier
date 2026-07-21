@@ -23,7 +23,7 @@ import {
   config,
   dashboardUrl,
   deriveCallbackUrl,
-  isMock,
+  isAuthBypassed,
   isProduction,
 } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -92,7 +92,7 @@ export function createAuthRoutes(container: ServerContainer) {
         const cliRedirect =
           query.cli && isLoopbackRedirect(query.cli) ? query.cli : undefined;
 
-        if (isMock()) {
+        if (isAuthBypassed()) {
           const token = await signJwt({
             id: MOCK_USER.githubId,
             username: MOCK_USER.username,

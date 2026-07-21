@@ -12,7 +12,7 @@ import {
 import { createApp } from "./api/index.ts";
 import { initDatabase } from "./control/index.ts";
 import { ensureSharedSshPipeKey } from "./runtime/index.ts";
-import { config, isMock, isProduction } from "./shared/lib/config.ts";
+import { config, isLocal, isMock, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 import { bindRuntimeConfig } from "./shared/lib/runtime-config.ts";
@@ -44,14 +44,16 @@ await wireBuiltinHarnesses(container);
 // The shared SSH pipe key is only needed by strategies that proxy through it
 // (`sshpiper`, `in-server`); `none` mounts the dev's own keys per-sandbox, so
 // pre-warming a shared k8s Secret there would be dead infra (proposal §5).
-if (config.domain.ssh.gateway !== "none" && !isMock()) {
+// Skipped in mock (no runtime) and local (Docker backend, no cluster/sshpiper —
+// its k8s Secret provisioning would fail against a nonexistent API server).
+if (config.domain.ssh.gateway !== "none" && !isMock() && !isLocal()) {
   await ensureSharedSshPipeKey();
 }
 // The in-server ssh2 proxy replaces the external sshpiper (proposal §5). It
 // binds its own socket and lives for the process lifetime, so a redeploy drops
-// live SSH sessions (acceptable for a dev tool). Skipped in mock mode.
+// live SSH sessions (acceptable for a dev tool). Skipped in mock + local modes.
 const sshGateway =
-  config.domain.ssh.gateway === "in-server" && !isMock()
+  config.domain.ssh.gateway === "in-server" && !isMock() && !isLocal()
     ? await startSshGateway(container).catch((err) => {
         logger.error({ err }, "in-server ssh gateway failed to start");
         return null;

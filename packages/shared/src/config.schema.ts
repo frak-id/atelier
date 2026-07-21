@@ -154,15 +154,24 @@ export type KubernetesConfig = Static<typeof KubernetesConfigSchema>;
 // ---------------------------------------------------------------------------
 
 export const RuntimeModeSchema = Type.Union([
+  // Real cluster runtime + GitHub OAuth + secure cookies.
   Type.Literal("production"),
+  // Everything stubbed: the agent/kube clients return canned data and auth is
+  // bypassed. For server/console development with no runtime at all.
   Type.Literal("mock"),
+  // Real runtime (typically the Docker backend) but auth is bypassed and
+  // cluster-only infra (sshpiper key, SSH gateway) is skipped. This is the
+  // self-hosted single-user laptop path (`atelier local up`): sandboxes are
+  // real containers the server actually drives, without a GitHub OAuth app.
+  Type.Literal("local"),
 ]);
 
 export type RuntimeMode = Static<typeof RuntimeModeSchema>;
 
 export const ServerConfigSchema = Type.Object(
   {
-    /** Runtime mode: production (real VMs) or mock (local dev) */
+    /** Runtime mode: production (real VMs), mock (fully stubbed dev), or local
+     * (real runtime, bypassed auth — the `atelier local up` laptop path). */
     mode: RuntimeModeSchema,
     /** Server API port */
     port: Type.Number({ default: 4000 }),

@@ -2,7 +2,7 @@
  * Post-GitHub-OAuth authorization gate: is this GitHub user allowed to use
  * the platform at all (org membership or a static allowlist).
  */
-import { config, isMock } from "../shared/lib/config.ts";
+import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("authorization-policy");
@@ -17,7 +17,7 @@ export async function isUserAuthorized(
   accessToken: string,
   username: string,
 ): Promise<boolean> {
-  if (isMock()) return true;
+  if (isAuthBypassed()) return true;
 
   if (config.auth.allowedOrg) {
     try {

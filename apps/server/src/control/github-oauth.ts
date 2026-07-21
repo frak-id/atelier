@@ -1,4 +1,4 @@
-import { config, isMock } from "../shared/lib/config.ts";
+import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 const log = createChildLogger("github");
@@ -35,8 +35,8 @@ export async function exchangeCodeForToken(
   code: string,
   codeVerifier?: string,
 ): Promise<string> {
-  if (isMock()) {
-    log.debug("Mock: returning mock access token");
+  if (isAuthBypassed()) {
+    log.debug("Auth bypassed: returning mock access token");
     return `mock-access-token-${code}`;
   }
 
@@ -72,8 +72,8 @@ export async function exchangeCodeForToken(
 export async function fetchGitHubUser(
   accessToken: string,
 ): Promise<GitHubUser> {
-  if (isMock()) {
-    log.debug("Mock: returning mock GitHub user");
+  if (isAuthBypassed()) {
+    log.debug("Auth bypassed: returning mock GitHub user");
     return {
       id: 12345,
       login: "mock-user",

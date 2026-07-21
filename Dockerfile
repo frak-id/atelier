@@ -36,6 +36,14 @@ FROM oven/bun:1 AS builder
 
 WORKDIR /build
 
+# `bun build` constant-folds `process.env.NODE_ENV` into the bundle at build
+# time. The logger only wires up the pino-pretty transport (a thread-stream
+# worker that resolves worker.js from node_modules) when NODE_ENV !== production
+# — which the slim runtime image can't satisfy. Pin it here so the server bundle
+# bakes in JSON logging and boots cleanly in every server mode (incl. mock /
+# `atelier local up`); dev keeps pretty logs via the unbundled `bun run dev`.
+ENV NODE_ENV=production
+
 # Installed node_modules from the deps stage (root + per-workspace symlinks)
 COPY --from=deps /build/node_modules node_modules
 COPY --from=deps /build/packages/shared/node_modules packages/shared/node_modules

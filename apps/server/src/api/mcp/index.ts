@@ -25,7 +25,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { Elysia } from "elysia";
 import type { AuthUser } from "../../control/index.ts";
-import { isMock } from "../../shared/lib/config.ts";
+import { isAuthBypassed } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ServerContainer } from "../container.ts";
 import { registerConfigTools } from "./tools/config.ts";
@@ -40,7 +40,7 @@ const log = createChildLogger("mcp");
 const SESSION_IDLE_MS = 30 * 60 * 1000;
 
 /** Any non-empty placeholder — `resolveToken`/`verifyJwt` ignore its content
- * under `isMock()`. */
+ * when auth is bypassed (mock/local). */
 const MOCK_TOKEN = "mock";
 
 interface McpSession {
@@ -72,11 +72,12 @@ async function resolveMcpUser(
   request: Request,
 ): Promise<AuthUser> {
   const token = bearerFrom(request);
-  // Mock mode has no real bearer token to send; `resolveToken` throws on a
-  // missing token even in mock mode, but `verifyJwt` (which it delegates to
-  // for non-`atl_` tokens) ignores its input entirely under isMock() and
-  // always returns the fixed mock user — so any non-empty placeholder works.
-  if (isMock() && !token) {
+  // Auth-bypassed modes (mock/local) have no real bearer token to send;
+  // `resolveToken` throws on a missing token, but `verifyJwt` (which it
+  // delegates to for non-`atl_` tokens) ignores its input entirely when auth
+  // is bypassed and always returns the fixed mock user — so any non-empty
+  // placeholder works.
+  if (isAuthBypassed() && !token) {
     return container.control.authService.resolveToken(MOCK_TOKEN);
   }
   return container.control.authService.resolveToken(token);
