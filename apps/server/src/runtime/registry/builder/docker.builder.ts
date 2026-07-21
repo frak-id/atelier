@@ -16,8 +16,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { imageBuilderConfig } from "../../../shared/lib/runtime-config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
+import { imageBuilderConfig } from "../../../shared/lib/runtime-config.ts";
 import { docker, dockerStream } from "../../backend/docker-cli.ts";
 import {
   formatBuildArgs,

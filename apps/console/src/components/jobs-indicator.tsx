@@ -60,8 +60,7 @@ export function JobsIndicator() {
     );
   }, [jobs, showAll, dismissed]);
 
-  const dismiss = (id: string) =>
-    setDismissed((prev) => new Set(prev).add(id));
+  const dismiss = (id: string) => setDismissed((prev) => new Set(prev).add(id));
 
   function handleOpenChange(next: boolean) {
     setOpen(next);

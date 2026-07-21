@@ -32,9 +32,8 @@ import {
   SessionService,
   TerminalService,
 } from "../sessions/index.ts";
-import { config } from "../shared/lib/config.ts";
-import { registryUrl } from "../shared/lib/runtime-config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { registryUrl } from "../shared/lib/runtime-config.ts";
 
 /**
  * Wire the built-in harnesses. Two independent, both OPTIONAL, extension
@@ -90,7 +89,8 @@ export function createServerContainer() {
   // (no job noise). `concurrency` bounds the pooled build jobs.
   const jobs = new JobService({
     store: new DrizzleJobStore(),
-    concurrency: config.jobs.concurrency,
+    // Lazy so a live edit to jobs.concurrency re-bounds the pool.
+    concurrency: () => control.serverConfigService.get("jobs.concurrency"),
   });
   const dispatch = new AgentDispatch({ agentClient: agent });
   const sessions = new SessionService({

@@ -73,6 +73,38 @@ function requiredString(value: unknown): string {
   return s;
 }
 
+/** A positive integer (>= 1) — for pool sizes and the like. */
+function positiveInt(value: unknown): number {
+  const n = typeof value === "string" ? Number(value) : value;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 1) {
+    throw new ValidationError(`expected an integer >= 1, got "${value}"`);
+  }
+  return n;
+}
+
+/** Empty (disabled) or a parseable absolute URL — for optional upstream URLs. */
+function optionalUrl(value: unknown): string {
+  const s = optionalString(value);
+  if (s === "") return "";
+  try {
+    new URL(s);
+  } catch {
+    throw new ValidationError(`invalid URL "${s}"`);
+  }
+  return s;
+}
+
+/** A Kubernetes resource quantity, e.g. `10Gi` / `512Mi` / `2G`. */
+function k8sQuantity(value: unknown): string {
+  const s = requiredString(value);
+  if (!/^\d+(\.\d+)?(Ki|Mi|Gi|Ti|Pi|Ei|K|M|G|T|P|E)?$/.test(s)) {
+    throw new ValidationError(
+      `invalid quantity "${s}": expected a K8s size like 10Gi or 512Mi`,
+    );
+  }
+  return s;
+}
+
 /** An OCI registry host: `host[:port][/path]`, no scheme, no whitespace — the
  * push/pull destination is concatenated as `${registryUrl}/${name}`, so a
  * stray scheme or trailing slash would produce a malformed ref. */
@@ -268,6 +300,85 @@ export const CONFIG_REGISTRY = {
     parseEnv: optionalString,
     validate: optionalString,
   } satisfies ConfigDef<string>,
+
+  // ── sandbox defaults + infra selection (read per spawn/prebuild/snapshot,
+  //    so console edits apply to the next sandbox). ─────────────────────────
+  "sandbox.defaultImage": {
+    key: "sandbox.defaultImage",
+    type: "string",
+    label: "Default sandbox image",
+    description:
+      "Base image used for a new sandbox (or toolset build) when the request " +
+      "does not name one. A built image / seed name (e.g. dev-base) or a " +
+      "registered external ref.",
+    envVar: "ATELIER_DEFAULT_IMAGE",
+    default: "dev-base",
+    parseEnv: requiredString,
+    validate: requiredString,
+  } satisfies ConfigDef<string>,
+  "kubernetes.npmRegistryUrl": {
+    key: "kubernetes.npmRegistryUrl",
+    type: "string",
+    label: "npm registry URL",
+    description:
+      "Optional private npm registry (Verdaccio/Nexus/Artifactory) injected " +
+      "into every sandbox's npm/bun/yarn config. Empty leaves sandboxes on " +
+      "the public npm registry. Must be a full URL (https://…).",
+    envVar: "ATELIER_NPM_REGISTRY_URL",
+    default: "",
+    parseEnv: optionalUrl,
+    validate: optionalUrl,
+  } satisfies ConfigDef<string>,
+  "kubernetes.defaultVolumeSize": {
+    key: "kubernetes.defaultVolumeSize",
+    type: "string",
+    label: "Default volume size",
+    description:
+      "Default sandbox PVC size (K8s quantity, e.g. 10Gi) when a request " +
+      "does not set an explicit disk size.",
+    envVar: "ATELIER_K8S_DEFAULT_VOLUME_SIZE",
+    default: "10Gi",
+    parseEnv: k8sQuantity,
+    validate: k8sQuantity,
+  } satisfies ConfigDef<string>,
+  "kubernetes.storageClass": {
+    key: "kubernetes.storageClass",
+    type: "string",
+    label: "Storage class",
+    description:
+      "StorageClass for sandbox PVCs. Empty uses the cluster default. Must " +
+      "support Block volumes + block-volume VolumeSnapshots (e.g. " +
+      "topolvm-thin).",
+    envVar: "ATELIER_K8S_STORAGE_CLASS",
+    default: "",
+    parseEnv: optionalString,
+    validate: optionalString,
+  } satisfies ConfigDef<string>,
+  "kubernetes.volumeSnapshotClass": {
+    key: "kubernetes.volumeSnapshotClass",
+    type: "string",
+    label: "Volume snapshot class",
+    description:
+      "VolumeSnapshotClass for prebuild snapshots (required for instant " +
+      "clone-from-prebuild). Empty uses the cluster default.",
+    envVar: "ATELIER_K8S_VOLUME_SNAPSHOT_CLASS",
+    default: "",
+    parseEnv: optionalString,
+    validate: optionalString,
+  } satisfies ConfigDef<string>,
+  "jobs.concurrency": {
+    key: "jobs.concurrency",
+    type: "number",
+    label: "Build job concurrency",
+    description:
+      "How many pooled build jobs (prebuild bake, toolset build/capture) may " +
+      "run at once. Extra dispatches queue. Sandbox lifecycle jobs bypass " +
+      "this limit.",
+    envVar: "ATELIER_JOBS_CONCURRENCY",
+    default: 4,
+    parseEnv: positiveInt,
+    validate: positiveInt,
+  } satisfies ConfigDef<number>,
 } as const;
 
 export type ConfigKey = keyof typeof CONFIG_REGISTRY;
@@ -286,6 +397,12 @@ export interface ConfigValues {
   "imageBuilder.insecureRegistry": boolean;
   "imageBuilder.tls.secretName": string;
   "imageBuilder.tls.serverName": string;
+  "sandbox.defaultImage": string;
+  "kubernetes.npmRegistryUrl": string;
+  "kubernetes.defaultVolumeSize": string;
+  "kubernetes.storageClass": string;
+  "kubernetes.volumeSnapshotClass": string;
+  "jobs.concurrency": number;
 }
 
 export const CONFIG_DEFS = Object.values(

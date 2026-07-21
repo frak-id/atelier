@@ -14,8 +14,8 @@ import { initDatabase } from "./control/index.ts";
 import { ensureSharedSshPipeKey } from "./runtime/index.ts";
 import { config, isMock, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
-import { bindRuntimeConfig } from "./shared/lib/runtime-config.ts";
 import { appPaths } from "./shared/lib/paths.ts";
+import { bindRuntimeConfig } from "./shared/lib/runtime-config.ts";
 import { startSshGateway } from "./ssh/index.ts";
 
 const configErrors = validateConfig(config);

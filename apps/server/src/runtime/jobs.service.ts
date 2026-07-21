@@ -68,8 +68,10 @@ export class JobCanceledError extends Error {
 
 export interface JobServiceDeps {
   store?: JobStore;
-  /** Max POOLED jobs in flight at once (default 4). `track` jobs bypass it. */
-  concurrency?: number;
+  /** Max POOLED jobs in flight at once (default 4). `track` jobs bypass it.
+   * A function is read on every pump so a live config edit re-bounds the pool
+   * (a lowered limit just stops starting new jobs; in-flight ones finish). */
+  concurrency?: number | (() => number);
 }
 
 /** Append a line/chunk to the job's live log (see `dispatch`/`track`). */
@@ -79,7 +81,7 @@ type JobListener = (job: JobRecord) => void;
 
 export class JobService {
   private readonly store: JobStore;
-  private readonly concurrency: number;
+  private readonly concurrency: () => number;
   /** Live cancellation handles for every RUNNING job (pooled or tracked),
    * keyed by id. Populated when a job starts, deleted when it settles. */
   private readonly controllers = new Map<string, AbortController>();
@@ -94,7 +96,9 @@ export class JobService {
 
   constructor(deps: JobServiceDeps = {}) {
     this.store = deps.store ?? new InMemoryJobStore();
-    this.concurrency = Math.max(1, deps.concurrency ?? 4);
+    const c = deps.concurrency;
+    const read = typeof c === "function" ? c : () => c ?? 4;
+    this.concurrency = () => Math.max(1, read());
   }
 
   list(limit?: number): JobRecord[] {
@@ -314,7 +318,7 @@ export class JobService {
   /** Start as many waiting pooled jobs as free slots allow (FIFO). */
   private pump(): void {
     while (
-      this.pooledInFlight.size < this.concurrency &&
+      this.pooledInFlight.size < this.concurrency() &&
       this.waiting.length > 0
     ) {
       const next = this.waiting.shift();

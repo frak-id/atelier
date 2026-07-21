@@ -28,6 +28,41 @@ export function registryUrl(): string {
     : config.kubernetes.registryUrl;
 }
 
+/** Base image used for a sandbox/toolset build when the request names none. */
+export function defaultImage(): string {
+  return service
+    ? service.get("sandbox.defaultImage")
+    : config.sandbox.defaultImage;
+}
+
+/** Optional private npm registry injected into sandboxes ("" = disabled). */
+export function npmRegistryUrl(): string {
+  return service
+    ? service.get("kubernetes.npmRegistryUrl")
+    : config.kubernetes.npmRegistryUrl;
+}
+
+/** Default sandbox PVC size (K8s quantity) when a request sets no disk size. */
+export function defaultVolumeSize(): string {
+  return service
+    ? service.get("kubernetes.defaultVolumeSize")
+    : config.kubernetes.defaultVolumeSize;
+}
+
+/** StorageClass for sandbox PVCs ("" = cluster default). */
+export function storageClass(): string {
+  return service
+    ? service.get("kubernetes.storageClass")
+    : config.kubernetes.storageClass;
+}
+
+/** VolumeSnapshotClass for prebuild snapshots ("" = cluster default). */
+export function volumeSnapshotClass(): string {
+  return service
+    ? service.get("kubernetes.volumeSnapshotClass")
+    : config.kubernetes.volumeSnapshotClass;
+}
+
 export interface ResolvedImageBuilder {
   kind: "docker" | "kaniko" | "buildkit";
   image: string;

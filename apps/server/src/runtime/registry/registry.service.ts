@@ -1,10 +1,6 @@
 import { VM } from "@frak/atelier-shared/constants";
-import { config } from "../../shared/lib/config.ts";
+import { npmRegistryUrl } from "../../shared/lib/runtime-config.ts";
 import type { FileWrite } from "../agent/agent.types.ts";
-
-function npmRegistryUrl(): string {
-  return config.kubernetes.npmRegistryUrl;
-}
 
 export const RegistryService = {
   /**

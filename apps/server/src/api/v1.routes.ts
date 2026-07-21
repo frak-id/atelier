@@ -38,12 +38,12 @@ import {
   NotFoundError,
   ValidationError,
 } from "../shared/errors.ts";
-import { imageBuilderConfig } from "../shared/lib/runtime-config.ts";
 import {
   buildGitAttributionFiles,
   OWNER_ID_METADATA,
 } from "../shared/lib/git-attribution.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
+import { imageBuilderConfig } from "../shared/lib/runtime-config.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import {
   harnessForToolset,

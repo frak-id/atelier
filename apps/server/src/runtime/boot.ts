@@ -8,8 +8,8 @@
  */
 import type { SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
-import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { defaultVolumeSize } from "../shared/lib/runtime-config.ts";
 import type { AgentClient } from "./agent/index.ts";
 import { provisionAgent } from "./boot-agent.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
@@ -85,7 +85,7 @@ export async function bootSandbox(
   const volumeSize =
     spec.resources.diskGb != null
       ? `${spec.resources.diskGb}Gi`
-      : config.kubernetes.defaultVolumeSize;
+      : defaultVolumeSize();
 
   const agentPassword = generatePassword(32);
 

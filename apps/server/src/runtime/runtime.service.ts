@@ -35,14 +35,14 @@ import {
   SandboxError,
   ValidationError,
 } from "../shared/errors.ts";
-import { config, isMock } from "../shared/lib/config.ts";
-import { registryUrl } from "../shared/lib/runtime-config.ts";
+import { isMock } from "../shared/lib/config.ts";
 import {
   buildGitAttributionFiles,
   GIT_CREDENTIALS_PATH,
 } from "../shared/lib/git-attribution.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { defaultImage, registryUrl } from "../shared/lib/runtime-config.ts";
 import type { HookPhase } from "./agent/index.ts";
 import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
@@ -1063,7 +1063,7 @@ export class RuntimeService {
     signal?: AbortSignal,
     onLog?: OnLog,
   ): Promise<ToolsetRef> {
-    const source = req.source ?? { image: config.sandbox.defaultImage };
+    const source = req.source ?? { image: defaultImage() };
     const { image, snapshotName } = await this.resolveSource(source);
     const tempId = `ts-${hash.slice(0, 12)}`;
     const target = `${registryUrl()}/toolsets/${req.name}:${hash.slice(0, 12)}`;
@@ -1261,7 +1261,7 @@ export class RuntimeService {
    * without importing `shared/lib/config` across the runtime/control
    * boundary. */
   defaultImage(): string {
-    return config.sandbox.defaultImage;
+    return defaultImage();
   }
 
   /** Resolve a spec's `toolsets[]` to full pull references for materialize,

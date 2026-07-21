@@ -1,5 +1,9 @@
 import { VM } from "@frak/atelier-shared/constants";
 import { config } from "../../shared/lib/config.ts";
+import {
+  storageClass,
+  volumeSnapshotClass,
+} from "../../shared/lib/runtime-config.ts";
 
 export type KubeResource = {
   apiVersion: string;
@@ -303,7 +307,7 @@ export type PvcOptions = {
 export function buildPvc(options: PvcOptions): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
   const storageClassName =
-    options.storageClassName || config.kubernetes.storageClass || undefined;
+    options.storageClassName || storageClass() || undefined;
 
   const spec: Record<string, unknown> = {
     accessModes: ["ReadWriteOnce"],
@@ -356,9 +360,7 @@ export function buildVolumeSnapshot(
 ): KubeResource {
   const namespace = options.namespace ?? config.kubernetes.namespace;
   const volumeSnapshotClassName =
-    options.volumeSnapshotClassName ||
-    config.kubernetes.volumeSnapshotClass ||
-    undefined;
+    options.volumeSnapshotClassName || volumeSnapshotClass() || undefined;
 
   const spec: Record<string, unknown> = {
     source: {
