@@ -15,8 +15,15 @@ const LOGIN_ERRORS: Record<string, string> = {
   callback_failed: "Sign-in failed during the GitHub callback. Try again.",
 };
 
+/** Guards against an auto-login redirect loop if the local session cookie
+ * fails to stick for some reason (per browser tab). */
+const LOCAL_AUTOLOGIN_GUARD = "atelier_local_autologin";
+
 export function LoginPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Until we know the server's auth mode, don't flash the GitHub card: a
+  // local/mock server auto-logs the user in, so we redirect instead.
+  const [checkingMode, setCheckingMode] = useState(true);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -30,8 +37,43 @@ export function LoginPage() {
         "",
         `${window.location.pathname}${query ? `?${query}` : ""}`,
       );
+      // A failed login means don't bounce straight back into it — show the
+      // manual button so the user can retry / read the error.
+      setCheckingMode(false);
+      return;
     }
+
+    // Auth-bypassed servers (local/mock) have no real GitHub login: hitting
+    // /auth/github just mints the local session and redirects home. Do that
+    // transparently so `atelier local up` never asks the user for GitHub.
+    let cancelled = false;
+    fetch(httpUrl("/auth/mode"), { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : { bypassed: false }))
+      .then((data: { bypassed?: boolean }) => {
+        if (cancelled) return;
+        const alreadyTried = sessionStorage.getItem(LOCAL_AUTOLOGIN_GUARD);
+        if (data?.bypassed && !alreadyTried) {
+          sessionStorage.setItem(LOCAL_AUTOLOGIN_GUARD, "1");
+          window.location.href = httpUrl("/auth/github");
+          return;
+        }
+        setCheckingMode(false);
+      })
+      .catch(() => {
+        if (!cancelled) setCheckingMode(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  if (checkingMode) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-background">
+        <div className="size-6 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-4">

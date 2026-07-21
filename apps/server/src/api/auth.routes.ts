@@ -85,7 +85,7 @@ export function createAuthRoutes(container: ServerContainer) {
     // explicitly, not mandated as an org baseline).
   }
 
-  return new Elysia({ prefix: "/auth" })
+  const authRoutes = new Elysia({ prefix: "/auth" })
     .get(
       "/github",
       async ({ redirect, cookie, query }) => {
@@ -116,16 +116,21 @@ export function createAuthRoutes(container: ServerContainer) {
             return redirect(cliCallbackUrl(cliRedirect, token));
           }
 
+          // Same-origin over http://localhost (console nginx proxies to the
+          // server): `SameSite=None` REQUIRES `Secure`, which browsers reject
+          // on plain http — so the cookie would silently never be stored and
+          // the console would loop back to the login screen. `lax` is correct
+          // for a same-origin session cookie and works without `Secure`.
           cookie.sandbox_token?.set({
             value: token,
             httpOnly: true,
             secure: false,
-            sameSite: "none",
+            sameSite: "lax",
             path: "/",
             maxAge: JWT_EXPIRY_SECONDS,
           });
 
-          log.info("Mock: user auto-logged in as mock-user");
+          log.info("Auth bypassed: user auto-logged in as local user");
           return redirect("/");
         }
 
@@ -267,6 +272,9 @@ export function createAuthRoutes(container: ServerContainer) {
         }),
       },
     )
+    // Public: lets the console detect an auth-bypassed (local/mock) server so
+    // it can drop the user straight in instead of showing a GitHub button.
+    .get("/mode", () => ({ bypassed: isAuthBypassed() }))
     .get("/me", async ({ cookie, set }) => {
       const token = cookie.sandbox_token?.value as string | undefined;
       if (!token) {
@@ -325,4 +333,5 @@ export function createAuthRoutes(container: ServerContainer) {
       log.info({ username: user.username }, "API token generated");
       return { token: apiToken };
     });
+  return authRoutes;
 }
