@@ -9,7 +9,6 @@
 FROM node:22-slim
 
 
-ARG KASMVNC_VERSION=1.4.0
 ARG ORAS_VERSION=1.2.0
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
@@ -53,10 +52,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     iputils-ping \
     nfs-common \
-    chromium \
-    fonts-liberation \
-    openbox \
-    libegl1 \
     squashfs-tools \
     erofs-utils \
     e2fsprogs \
@@ -67,13 +62,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name 'en*' -exec rm -rf {} + \
     && rm -rf /var/cache/apt
 
-# Layer 2: KasmVNC (cached unless KASMVNC_VERSION changes)
-RUN curl -fsSL -o /tmp/kasmvnc.deb "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_bookworm_${KASMVNC_VERSION}_amd64.deb" \
-    && apt-get update && apt-get install -y --no-install-recommends /tmp/kasmvnc.deb \
-    && rm -f /tmp/kasmvnc.deb \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Layer 2b: oras (OCI artifact CLI) — the guest agent shells out to it to
+# Layer 2: oras (OCI artifact CLI) — the guest agent shells out to it to
 # push/pull toolset artifacts to/from the in-cluster zot registry
 # (composed-prebuild-volumes.md). Static linux/amd64 binary; no runtime deps.
 RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_amd64.tar.gz" \
@@ -121,7 +110,6 @@ RUN echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/local-bin.sh \
     && printf '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n' > /etc/profile.d/99-sandbox-secrets.sh
 COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 COPY --chown=dev:dev rootfs/etc/sandbox/ /etc/sandbox/
-COPY rootfs/etc/xdg/openbox/ /etc/xdg/openbox/
 COPY rootfs/etc/chrony/chrony.conf /etc/chrony/chrony.conf
 RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony \
     && echo 'dev ALL=(root) NOPASSWD: /usr/sbin/chronyd, /usr/bin/chronyc' > /etc/sudoers.d/chrony \

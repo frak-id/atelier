@@ -1,12 +1,12 @@
 # Getting Started
 
-Atelier gives you **isolated, VM-grade dev environments that boot in seconds**, self-hosted on your own Kubernetes cluster. One Helm install, and every developer (or AI agent) gets a full sandbox — VS Code, an AI coding agent, and a browser — accessible from any device.
+Atelier gives you **isolated, VM-grade dev environments that boot in seconds**, self-hosted on your own Kubernetes cluster. One Helm install, and every developer (or AI agent) gets a full sandbox — VS Code, an AI coding agent, and an optional browser desktop — accessible from any device.
 
 ## The Pitch
 
 - **Spawn a sandbox in seconds** — copy-on-write snapshots clone a fully prepared environment (repo cloned, deps installed, build warm) in under a second
 - **Real VM isolation** — Kata Containers run each sandbox in its own lightweight VM, not just a container namespace
-- **Batteries included** — every sandbox ships with [code-server](https://github.com/coder/code-server) (VS Code in the browser), [OpenCode](https://github.com/anomalyco/opencode) (AI coding agent), Chromium via KasmVNC, and access to a multi-provider AI proxy
+- **Batteries included** — every sandbox ships with [code-server](https://github.com/coder/code-server) (VS Code in the browser), [OpenCode](https://github.com/anomalyco/opencode) (AI coding agent), and access to a multi-provider AI proxy; an in-sandbox Chromium desktop (KasmVNC) is opt-in via the `dev-browser` base / `browser` toolbox
 - **Work from anywhere** — push a task to OpenCode from the console, close your laptop, review the result from your phone
 - **Self-hosted & simple** — one bare-metal server, k3s, and a single Helm chart. No SaaS, no per-seat pricing, your code never leaves your infrastructure
 

@@ -413,8 +413,9 @@ export function resolveToolboxHarness(
  * Collect the processes + ports every toolbox applied to this spawn
  * contributes (entities-toolbox.md). A toolbox is not just files: it can carry
  * a tool's *running surface* — vscode's `code-server` process + its port, or
- * the browser stack's kasmvnc/openbox/chromium (binaries baked into the base
- * image, so no `build`/`paths`). `refs` is the full applied set (auto-injected
+ * the browser stack's kasmvnc/openbox/chromium (binaries baked into the
+ * dev-browser base image, so no `build`/`paths`; a browserless base like
+ * dev-base won't have them). `refs` is the full applied set (auto-injected
  * + explicitly selected). Returns a spec fragment the caller merges in.
  */
 export function resolveToolboxSurface(
