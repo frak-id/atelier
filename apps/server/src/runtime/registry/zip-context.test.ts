@@ -96,7 +96,7 @@ async function buildOversizedZip(): Promise<string> {
   const bigFile = join(stageDir, "big.bin");
   // 105MB of zeros — over the 100MB cap, compresses to a few KB.
   const dd = Bun.spawnSync(
-    ["dd", "if=/dev/zero", `of=${bigFile}`, "bs=1m", "count=105"],
+    ["dd", "if=/dev/zero", `of=${bigFile}`, "bs=1M", "count=105"],
     { stdout: "pipe", stderr: "pipe" },
   );
   if (dd.exitCode !== 0) {
