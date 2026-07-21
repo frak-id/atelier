@@ -1,6 +1,6 @@
 {
   "name": "@atelier/console",
-  "version": "0.1.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "description": "Atelier v2 GUI — the primary product surface over @atelier/server. Tauri-ready.",
