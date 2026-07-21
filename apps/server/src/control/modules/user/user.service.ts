@@ -1,4 +1,5 @@
 import { NotFoundError } from "../../../shared/errors.ts";
+import { isAuthBypassed } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 import type { User } from "../../types.ts";
 import type { UserRepository } from "./user.repository.ts";
@@ -60,6 +61,15 @@ export class UserService {
    * org membership instead (flagged as a v1 carryover, not re-solved here).
    */
   resolveGitHubToken(userId?: string): string | undefined {
+    // local/mock modes have no real GitHub OAuth token (the stored user's
+    // token, if any, is a fake placeholder) — `atelier local up` instead
+    // injects the host's own token via ATELIER_GITHUB_TOKEN. Returning
+    // undefined when it's absent (rather than falling through to the fake
+    // token below) avoids writing a bogus credential into the sandbox, so
+    // public repos still clone cleanly.
+    if (isAuthBypassed()) {
+      return process.env.ATELIER_GITHUB_TOKEN?.trim() || undefined;
+    }
     if (userId) {
       const token = this.getById(userId)?.githubAccessToken;
       if (token) return token;

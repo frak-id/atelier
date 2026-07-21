@@ -24,9 +24,19 @@ import pc from "picocolors";
 import { createClient } from "../client.ts";
 import { atelierDir, loadConfig, upsertContext } from "../config.ts";
 import type { Ctx } from "../context.ts";
+import { loadLocalSettings, saveLocalSettings } from "../local-settings.ts";
 import { fail, line, printJson } from "../output.ts";
 import { runInherit } from "../proc.ts";
 import * as ui from "../ui.ts";
+
+const GIT_AUTH_MODES = ["gh", "env", "pat", "none", "ask"] as const;
+type GitAuthMode = (typeof GIT_AUTH_MODES)[number];
+
+const GIT_AUTH_CONSENT_NOTE =
+  "The token is injected into sandboxes so agents can clone/push your " +
+  "private repos. It's a transient credential (scrubbed before any " +
+  "snapshot), but an AI agent running in the sandbox can read — and could " +
+  "exfiltrate — it.";
 
 const CONTAINER = "atelier-local-server";
 const VOLUME = "atelier-local-data";
@@ -180,12 +190,17 @@ async function runConsole(
   if (res.code !== 0) fail(res.stderr.trim() || "docker run failed (console)");
 }
 
-/** Run `docker <args>`, capturing stdout/stderr + exit code (never rejects). */
+/** Run `docker <args>`, capturing stdout/stderr + exit code (never rejects).
+ * `extraEnv` is merged into the child's environment (used to pass a secret via
+ * the process env + `-e NAME` rather than argv, so it never shows in `ps`). */
 function docker(
   args: string[],
+  extraEnv?: Record<string, string>,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn("docker", args);
+    const child = extraEnv
+      ? spawn("docker", args, { env: { ...process.env, ...extraEnv } })
+      : spawn("docker", args);
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => {
@@ -197,6 +212,203 @@ function docker(
     child.on("error", (e) => resolve({ code: -1, stdout, stderr: `${e}` }));
     child.on("exit", (code) => resolve({ code: code ?? -1, stdout, stderr }));
   });
+}
+
+/** Run `gh <args>`, capturing stdout/stderr + exit code (never rejects) —
+ * mirrors `docker()` above. Used only to read a token, never to print it. */
+function gh(
+  args: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn("gh", args);
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => {
+      stdout += d;
+    });
+    child.stderr.on("data", (d) => {
+      stderr += d;
+    });
+    child.on("error", (e) => resolve({ code: -1, stdout, stderr: `${e}` }));
+    child.on("exit", (code) => resolve({ code: code ?? -1, stdout, stderr }));
+  });
+}
+
+/** Best-effort `gh auth token` — undefined if `gh` is missing, unauthenticated,
+ * or the call otherwise fails. Never throws, never prints the token. */
+async function ghAuthToken(): Promise<string | undefined> {
+  const res = await gh(["auth", "token"]);
+  if (res.code !== 0) return undefined;
+  const token = res.stdout.trim();
+  return token || undefined;
+}
+
+function envGitToken(): string | undefined {
+  return (
+    process.env.ATELIER_GITHUB_TOKEN?.trim() ||
+    process.env.GITHUB_TOKEN?.trim() ||
+    undefined
+  );
+}
+
+/** Ask for consent before a resolved token is actually injected, unless the
+ * user already opted in (persisted) or we're non-interactive (scripted use
+ * implies consent — but still say so, once, without printing the token). */
+async function ensureTokenConsent(): Promise<boolean> {
+  if (loadLocalSettings().tokenConsent) return true;
+  if (!ui.isInteractive()) {
+    line(pc.dim("Injecting host GitHub token into local sandboxes."));
+    return true;
+  }
+  const ok = await ui.confirm({
+    message: `${GIT_AUTH_CONSENT_NOTE} Continue?`,
+    initialValue: true,
+  });
+  if (ok) saveLocalSettings({ tokenConsent: true });
+  return ok;
+}
+
+interface GitTokenResult {
+  token: string | undefined;
+  mode: GitAuthMode;
+}
+
+/** Gate a resolved token behind one-time consent (persisted). Declining
+ * returns undefined — the caller proceeds without a token, not an error. */
+async function gated(token: string): Promise<string | undefined> {
+  return (await ensureTokenConsent()) ? token : undefined;
+}
+
+/** Prompt for and persist a pasted PAT; empty input aborts (no token). */
+async function promptForPat(): Promise<string | undefined> {
+  const pat = (
+    await ui.password({ message: "GitHub personal access token" })
+  ).trim();
+  if (!pat) return undefined;
+  saveLocalSettings({ pat });
+  return pat;
+}
+
+/** Resolve the GitHub token (if any) to inject into local sandboxes as
+ * ATELIER_GITHUB_TOKEN. Mode precedence: --git-auth flag > persisted
+ * ~/.atelier/local.json choice > "ask". Never prints the token value. */
+async function resolveGitToken(opts: UpOpts): Promise<GitTokenResult> {
+  if (opts.gitAuth && !GIT_AUTH_MODES.includes(opts.gitAuth as GitAuthMode)) {
+    fail(
+      `--git-auth must be one of: ${GIT_AUTH_MODES.join("|")} (got "${opts.gitAuth}")`,
+    );
+  }
+  const mode: GitAuthMode =
+    (opts.gitAuth as GitAuthMode | undefined) ??
+    loadLocalSettings().gitAuth ??
+    "ask";
+
+  if (mode === "none") return { token: undefined, mode };
+
+  if (mode === "env") {
+    const token = envGitToken();
+    if (!token) {
+      line(
+        pc.dim(
+          "--git-auth env: no ATELIER_GITHUB_TOKEN/GITHUB_TOKEN found — private repos won't clone.",
+        ),
+      );
+      return { token: undefined, mode };
+    }
+    return { token: await gated(token), mode };
+  }
+
+  if (mode === "gh") {
+    const token = await ghAuthToken();
+    if (!token) {
+      line(
+        pc.dim(
+          "--git-auth gh: no token from `gh auth token` — run `gh auth login`, or private repos won't clone.",
+        ),
+      );
+      return { token: undefined, mode };
+    }
+    return { token: await gated(token), mode };
+  }
+
+  if (mode === "pat") {
+    const stored = loadLocalSettings().pat;
+    if (stored) return { token: await gated(stored), mode };
+    if (!ui.isInteractive()) {
+      line(
+        pc.dim(
+          "--git-auth pat: no stored token and not interactive — private repos won't clone.",
+        ),
+      );
+      return { token: undefined, mode };
+    }
+    const pat = await promptForPat();
+    return { token: pat ? await gated(pat) : undefined, mode };
+  }
+
+  // mode === "ask"
+  if (!ui.isInteractive()) {
+    // Scripted / non-TTY: NEVER inject an ambient credential without an
+    // explicit choice. `ask` is the default, and auto-detecting here would
+    // silently bake e.g. a CI runner's GITHUB_TOKEN into a long-lived
+    // container. Default to no token; scripted callers opt in explicitly with
+    // `--git-auth env|gh|pat`.
+    line(
+      pc.dim(
+        "git auth: skipped (non-interactive) — pass --git-auth env|gh|pat to inject a token.",
+      ),
+    );
+    return { token: undefined, mode };
+  }
+
+  type ChosenMode = Exclude<GitAuthMode, "ask">;
+  const envToken = envGitToken();
+  const ghToken = await ghAuthToken();
+  const options: { value: ChosenMode; label: string; hint?: string }[] = [];
+  if (ghToken) {
+    options.push({
+      value: "gh",
+      label: "Use GitHub CLI token (gh auth token)",
+      hint: "recommended — reuses your existing gh login",
+    });
+  }
+  if (envToken) {
+    options.push({
+      value: "env",
+      label: "Use ATELIER_GITHUB_TOKEN/GITHUB_TOKEN from your env",
+    });
+  }
+  options.push(
+    { value: "pat", label: "Paste a Personal Access Token" },
+    { value: "none", label: "None — public repos only" },
+  );
+
+  const chosen = await ui.select<ChosenMode>({
+    message: `Git auth for private repos in sandboxes? ${GIT_AUTH_CONSENT_NOTE}`,
+    options,
+  });
+  // The selection itself is the consent (the note is in the prompt above), so
+  // record it — otherwise `gated()` below would prompt a second time.
+  saveLocalSettings(
+    chosen === "none"
+      ? { gitAuth: chosen }
+      : { gitAuth: chosen, tokenConsent: true },
+  );
+
+  if (chosen === "none") return { token: undefined, mode: chosen };
+  if (chosen === "env") {
+    return {
+      token: envToken ? await gated(envToken) : undefined,
+      mode: chosen,
+    };
+  }
+  if (chosen === "gh") {
+    return { token: ghToken ? await gated(ghToken) : undefined, mode: chosen };
+  }
+
+  // chosen === "pat"
+  const pat = await promptForPat();
+  return { token: pat ? await gated(pat) : undefined, mode: chosen };
 }
 
 async function ensureDocker(): Promise<void> {
@@ -241,6 +453,7 @@ interface UpOpts {
   nightly?: boolean;
   console?: boolean;
   consolePort?: string;
+  gitAuth?: string;
   port: string;
   network: string;
   key: string;
@@ -248,17 +461,26 @@ interface UpOpts {
 
 async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
   await ensureDocker();
+  // Validate up-front so a bad --git-auth errors even when the container
+  // already exists (the create-only resolveGitToken path is skipped then).
+  if (opts.gitAuth && !GIT_AUTH_MODES.includes(opts.gitAuth as GitAuthMode)) {
+    fail(
+      `--git-auth must be one of: ${GIT_AUTH_MODES.join("|")} (got "${opts.gitAuth}")`,
+    );
+  }
   const port = Number(opts.port);
   if (!Number.isFinite(port)) fail("--port must be a number");
   const baseUrl = `http://127.0.0.1:${port}`;
   const { image, consoleImage, sandboxImage } = resolveImages(opts);
 
-  const s = ui.spinner();
-  s.start("Starting local server…");
   const state = await containerState();
+  let gitToken: string | undefined;
+  let gitAuthMode: GitAuthMode = loadLocalSettings().gitAuth ?? "ask";
   if (state === "running") {
-    s.stop("Already running");
+    line(pc.dim("Server already running."));
   } else if (state === "stopped") {
+    const s = ui.spinner();
+    s.start("Starting local server…");
     const res = await docker(["start", CONTAINER]);
     if (res.code !== 0) {
       s.stop("Failed to start", 1);
@@ -266,6 +488,12 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
     }
     s.stop("Restarted existing container");
   } else {
+    // Resolved before the spinner so an interactive prompt (ask mode) never
+    // races a spinner re-render; only the create path needs this — an
+    // existing container's env (including any injected token) is already
+    // baked in, so the `start`/`running` branches above skip it entirely.
+    ({ token: gitToken, mode: gitAuthMode } = await resolveGitToken(opts));
+
     const runArgs = [
       "run",
       "-d",
@@ -295,10 +523,19 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
       "-e",
       `ATELIER_SERVER_PORT=${port}`,
     ];
+    // Pass the token by NAME only (`-e ATELIER_GITHUB_TOKEN`) and hand the
+    // value through the child's env below, so the secret never appears in the
+    // `docker run` argv (visible via `ps`/proc cmdline to other local users).
+    if (gitToken) runArgs.push("-e", "ATELIER_GITHUB_TOKEN");
     // Bridge networking can't bind the host port implicitly — publish it.
     if (opts.network !== "host") runArgs.push("-p", `${port}:${port}`);
     runArgs.push(image);
-    const res = await docker(runArgs);
+    const s = ui.spinner();
+    s.start("Starting container…");
+    const res = await docker(
+      runArgs,
+      gitToken ? { ATELIER_GITHUB_TOKEN: gitToken } : undefined,
+    );
     if (res.code !== 0) {
       s.stop("Failed to start", 1);
       fail(res.stderr.trim() || "docker run failed");
@@ -333,6 +570,8 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
       baseUrl,
       consoleUrl,
       context: CONTEXT,
+      gitAuth: gitAuthMode,
+      githubToken: Boolean(gitToken),
     });
   }
   line(pc.green(`✓ local server ready at ${pc.cyan(baseUrl)}`));
@@ -340,6 +579,17 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
     line(pc.green(`✓ console ready at ${pc.cyan(consoleUrl)}`));
   }
   line(pc.dim(`  context "${CONTEXT}" is now active`));
+  // Only meaningful when we actually created the container; a restart reuses
+  // the existing env (token already baked in or not), so don't mislead.
+  if (state === "absent") {
+    line(
+      pc.dim(
+        gitToken
+          ? `  git auth: ${gitAuthMode} (private repos enabled)`
+          : `  git auth: ${gitAuthMode} (public repos only)`,
+      ),
+    );
+  }
   line(
     pc.dim(
       consoleUrl
@@ -442,6 +692,11 @@ export function registerLocal(program: Command, ctx: Ctx): void {
       DEFAULT_CONSOLE_PORT,
     )
     .option("--no-console", "don't start the console UI container")
+    .option(
+      "--git-auth <mode>",
+      "how to inject a GitHub token for private repos in sandboxes: " +
+        "gh|env|pat|none|ask (default: ask once, then remembered)",
+    )
     .option("--network <mode>", "docker network mode (host|bridge)", "host")
     .option("--key <token>", "API key for the local context", "local")
     .action((opts: UpOpts) => up(ctx, opts));
