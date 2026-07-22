@@ -515,9 +515,19 @@ export class RuntimeService {
     onLog?: OnLog,
   ): Promise<void> {
     onLog?.(`$ ${command}`);
+    // Run `dev` steps from /home/dev, not the agent's own cwd (which is `/`,
+    // root-owned 0755 — dev can't create anything there). Every dev prebuild/
+    // toolset step assumes the home it captures: a relative `git clone <repo>
+    // <clonePath>` or a `cd <clonePath> && …` build step must resolve under
+    // /home/dev, and toolset installs must land in the captured path-sets.
+    // The `/exec` route (unlike the terminal, which defaults to SHELL_HOME)
+    // inherits the agent's cwd when no workdir is given, so pin it here. Root
+    // steps keep inheriting `/` (root can write there; they use absolute paths
+    // or sudo).
     const res = await this.agent.exec(tempId, command, {
       timeout: 600_000,
       user,
+      workdir: user === "dev" ? "/home/dev" : undefined,
       signal,
     });
     if (res.stdout.trim()) onLog?.(res.stdout.trimEnd());
