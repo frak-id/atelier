@@ -54,6 +54,15 @@ export function buildGitAttributionFiles(opts: {
     sections.push(
       "[credential]",
       `\thelper = store --file=${GIT_CREDENTIALS_PATH}`,
+      // Rewrite SSH GitHub remotes to HTTPS so they authenticate through the
+      // token credential helper above. Atelier provisions no outbound SSH key
+      // for GitHub, so an `git@github.com:…` / `ssh://git@github.com/…` remote
+      // (a common paste, and the default clone URL many tools emit) would
+      // otherwise fail with "Could not read from remote repository". The token
+      // credential works only over HTTPS, so this makes both URL shapes auth.
+      '[url "https://github.com/"]',
+      "\tinsteadOf = git@github.com:",
+      "\tinsteadOf = ssh://git@github.com/",
     );
   }
   if (opts.identity) {
