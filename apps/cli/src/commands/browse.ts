@@ -28,7 +28,12 @@ import {
   useContext,
 } from "../config.ts";
 import { type Ctx, createCtx } from "../context.ts";
-import { detectGitRepo, type GitRepo, shortRepo } from "../git.ts";
+import {
+  deriveClonePath,
+  detectGitRepo,
+  type GitRepo,
+  shortRepo,
+} from "../git.ts";
 import { age, line, statusColor } from "../output.ts";
 import { runInherit } from "../proc.ts";
 import {
@@ -47,6 +52,7 @@ import { followLogs } from "./logs-follow.ts";
 import {
   createPrebuildInteractive,
   findRepoBranchPrebuild,
+  prebuildRepoBranch,
 } from "./prebuild-create.ts";
 import { runPrebuild } from "./sandbox.ts";
 import { describeAnnotations, sshCommand } from "./sandbox-helpers.ts";
@@ -547,12 +553,113 @@ async function bootWithLogs(
   return current.result as CreateSandboxResponse;
 }
 
-/** Spawn a new sandbox from within the cockpit: pick a core (image /
- * prebuild), layer on toolboxes, then boot with a live progress log. */
+/** Layer on toolboxes, then post + boot a sandbox body with a live progress
+ * log. Returns the new sandbox id (throws on boot failure). */
+async function bootSandbox(
+  api: AtelierApi,
+  body: Record<string, unknown>,
+): Promise<string> {
+  const toolboxes = await pickToolboxes(api);
+  const finalBody = toolboxes.length > 0 ? { ...body, toolboxes } : body;
+  const job = unwrap(
+    // biome-ignore lint/suspicious/noExplicitAny: body is a validated spec union
+    await api.v1.sandboxes.post(finalBody as any),
+  );
+  try {
+    const result = await bootWithLogs(api, job);
+    line(pc.green(`✓ ${result.id} ready`));
+    return result.id;
+  } catch (err) {
+    line(pc.red("boot failed"));
+    throw err;
+  }
+}
+
+interface RepoBoot {
+  prebuild: PrebuildRecord;
+  /** The prebuild targets this repo AND the checked-out branch. */
+  branchMatch: boolean;
+  /** Where the repo lives inside the sandbox (for a post-boot git pull). */
+  clonePath: string;
+}
+
+/** Inside a git checkout, find a prebuild to fast-boot from: an exact
+ * repo+branch match first, else any prebuild for the same repo (a different
+ * branch, which we'll `git pull` to after boot). Best-effort — null on any
+ * failure. */
+async function findRepoBoot(
+  api: AtelierApi,
+  gitRepo: GitRepo,
+): Promise<RepoBoot | null> {
+  try {
+    const rows = unwrap(await api.v1.prebuilds.get());
+    const exact = findRepoBranchPrebuild(rows, gitRepo.url, gitRepo.branch);
+    const want = shortRepo(gitRepo.url).toLowerCase();
+    const match =
+      exact ??
+      rows.find((p) => {
+        const rb = prebuildRepoBranch(p);
+        return rb.url && shortRepo(rb.url).toLowerCase() === want;
+      });
+    if (!match) return null;
+    const clonePath =
+      match.spec?.repos?.[0]?.clonePath ?? deriveClonePath(gitRepo.url);
+    return { prebuild: match, branchMatch: Boolean(exact), clonePath };
+  } catch {
+    return null;
+  }
+}
+
+/** After booting from a repo prebuild whose branch differs from the local
+ * checkout, fetch + switch to the wanted branch inside the sandbox so it
+ * matches the cwd. Best-effort: reports the exec result, never throws. */
+async function pullBranchInSandbox(
+  api: AtelierApi,
+  id: string,
+  clonePath: string,
+  branch: string,
+): Promise<void> {
+  const command = `cd ${clonePath} && git fetch --all --prune && git checkout ${branch} && git pull --ff-only`;
+  line(pc.dim(`$ ${command}`));
+  const s = ui.spinner();
+  s.start(`Pulling ${branch}…`);
+  try {
+    const res = unwrap(await api.v1.sandboxes({ id }).exec.post({ command }));
+    s.stop(`git pull exited ${res.exitCode}`);
+    if (res.stdout) line(pc.dim(res.stdout.trimEnd()));
+    if (res.stderr) line(pc.red(res.stderr.trimEnd()));
+  } catch (err) {
+    s.stop("git pull failed", 1);
+    ui.note(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** Spawn a new sandbox from within the cockpit: pick a core (this repo's
+ * prebuild / image / prebuild), layer on toolboxes, then boot with a live
+ * progress log. */
 async function spawnFlow(api: AtelierApi): Promise<string | null> {
-  const source = await ui.select<"image" | "prebuild" | "cancel">({
+  const gitRepo = detectGitRepo();
+  const repoBoot = gitRepo ? await findRepoBoot(api, gitRepo) : null;
+  const repoLabel = gitRepo
+    ? `${shortRepo(gitRepo.url)}${gitRepo.branch ? `@${gitRepo.branch}` : ""}`
+    : "";
+
+  const source = await ui.select<"repo" | "image" | "prebuild" | "cancel">({
     message: "New sandbox from…",
     options: [
+      ...(repoBoot && gitRepo
+        ? [
+            {
+              value: "repo" as const,
+              label: pc.green(`✦ Boot sandbox for ${repoLabel}`),
+              hint: repoBoot.branchMatch
+                ? "from this repo's prebuild — deps ready"
+                : `prebuild is a different branch — will git pull ${
+                    gitRepo.branch ?? "current"
+                  } inside`,
+            },
+          ]
+        : []),
       {
         value: "prebuild",
         label: "Prebuild",
@@ -567,6 +674,18 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
     ],
   });
   if (source === "cancel") return null;
+
+  // ── fast path: boot from the current repo's prebuild ────────────────────
+  if (source === "repo" && repoBoot && gitRepo) {
+    const id = await bootSandbox(api, {
+      source: { snapshot: repoBoot.prebuild.ref },
+      resources: { vcpus: 2, memoryMb: 2048 },
+    });
+    if (!repoBoot.branchMatch && gitRepo.branch) {
+      await pullBranchInSandbox(api, id, repoBoot.clonePath, gitRepo.branch);
+    }
+    return id;
+  }
 
   // ── 1. core source ──────────────────────────────────────────────────────
   let body: Record<string, unknown> | undefined;
@@ -601,23 +720,7 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
   }
   if (!body) return null;
 
-  // ── 2. toolboxes ────────────────────────────────────────────────────────
-  const toolboxes = await pickToolboxes(api);
-  const finalBody = toolboxes.length > 0 ? { ...body, toolboxes } : body;
-
-  // ── 3. boot (streaming the progress log) ────────────────────────────────
-  const job = unwrap(
-    // biome-ignore lint/suspicious/noExplicitAny: body is a validated spec union
-    await api.v1.sandboxes.post(finalBody as any),
-  );
-  try {
-    const result = await bootWithLogs(api, job);
-    line(pc.green(`✓ ${result.id} ready`));
-    return result.id;
-  } catch (err) {
-    line(pc.red("boot failed"));
-    throw err;
-  }
+  return bootSandbox(api, body);
 }
 
 /** A live log tail that stops on `q` / Ctrl-C without exiting the cockpit. */
@@ -1220,7 +1323,11 @@ async function prebuildsMenu(api: AtelierApi): Promise<void> {
       const ref = await ui.select<string | typeof BACK>({
         message: "Remove which prebuild?",
         options: [
-          ...rows.map((p) => ({ value: p.ref, label: p.ref })),
+          ...rows.map((p) => ({
+            value: p.ref,
+            label: p.ref,
+            hint: prebuildHint(p),
+          })),
           { value: BACK, label: pc.dim("Back") },
         ],
       });
