@@ -168,7 +168,10 @@ export class RuntimeService {
       onLog?: OnLog;
     } = {},
   ): Promise<SnapshotRef> {
-    const { hash, image, snapshotName } = await this.resolveContentKey(spec);
+    const { hash, image, snapshotName } = await this.resolveContentKey(
+      spec,
+      options.githubToken,
+    );
     if (!options.force) {
       const existing = this.snapshots.getByHash(hash);
       if (existing) {
@@ -351,7 +354,10 @@ export class RuntimeService {
    * intentionally excluded (atelier-v2 §2): it carries build-time secrets
    * (tokens) that must never enter a persisted content key, and is treated
    * as credential material rather than artifact-identifying input. */
-  private async resolveContentKey(spec: PrebuildSpec): Promise<{
+  private async resolveContentKey(
+    spec: PrebuildSpec,
+    githubToken?: string,
+  ): Promise<{
     hash: string;
     image: string;
     snapshotName?: string;
@@ -359,7 +365,7 @@ export class RuntimeService {
   }> {
     const { image, snapshotName } = await this.resolveSource(spec.source);
     const { heads: repoHeads, complete: repoHeadsComplete } =
-      await this.resolveRepoHeads(spec.repos);
+      await this.resolveRepoHeads(spec.repos, githubToken);
     const keyed = {
       source: spec.source,
       image,
@@ -380,12 +386,13 @@ export class RuntimeService {
    * avoid acting on a partial (and therefore flappy) key. */
   private async resolveRepoHeads(
     repos: PrebuildSpec["repos"],
+    githubToken?: string,
   ): Promise<{ heads: Record<string, string>; complete: boolean }> {
     if (!repos?.length || isMock()) return { heads: {}, complete: true };
     const resolved = await Promise.all(
       repos.map(async (repo) => ({
         clonePath: repo.clonePath,
-        head: await getRemoteCommitHash(repo.url, repo.branch),
+        head: await getRemoteCommitHash(repo.url, repo.branch, githubToken),
       })),
     );
     const heads: Record<string, string> = {};
@@ -447,6 +454,18 @@ export class RuntimeService {
               log.warn({ tempId, err }, "git credential scrub failed"),
             );
         }
+        // Flush the guest filesystem before snapshotting. The workspace is a
+        // raw block device the Kata guest formats + mounts ext4, so a build
+        // step's writes (e.g. `git clone`'s objects/refs/checkout) can still
+        // sit in the guest page cache after the step returns exit 0. The CSI
+        // VolumeSnapshot captures the underlying block device, so without this
+        // `sync` it can snapshot a torn filesystem — the classic symptom being
+        // a baked repo with only a partial `.git` (leftover `shallow.lock`,
+        // empty `HEAD`, no working tree) and no files. Mirrors the pre-pause
+        // sync; awaited so the flush completes before the snapshot is taken.
+        await this.agent
+          .exec(tempId, "sync", { user: "root", timeout: 30_000 })
+          .catch((err) => log.warn({ tempId, err }, "pre-snapshot sync failed"));
         // The content hash is 64 hex chars — over the 63-byte k8s label cap — so
         // it rides as an annotation (no length cap), not a label.
         await this.snapshotPvc(
