@@ -6,11 +6,7 @@ import pc from "picocolors";
 import { unwrap, waitForJob } from "../client.ts";
 import type { Ctx } from "../context.ts";
 import { fail, line, printJson, table } from "../output.ts";
-
-const collect = (v: string, acc: string[]): string[] => {
-  acc.push(v);
-  return acc;
-};
+import { collect } from "../util.ts";
 
 /** Resolve `--org <id>` → `org:<id>` or `--mine` → `user`; nothing → caller's
  * own (server default). */

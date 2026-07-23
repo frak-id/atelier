@@ -8,17 +8,12 @@ import type { Ctx } from "../context.ts";
 import { detectGitRepo } from "../git.ts";
 import { age, line, printJson, table } from "../output.ts";
 import * as ui from "../ui.ts";
-import { readJsonc } from "../util.ts";
+import { collect, readJsonc } from "../util.ts";
 import {
   createPrebuildFromArgs,
   createPrebuildInteractive,
 } from "./prebuild-create.ts";
 import { runPrebuild } from "./sandbox.ts";
-
-const collect = (v: string, acc: string[]): string[] => {
-  acc.push(v);
-  return acc;
-};
 
 export function registerPrebuild(program: Command, ctx: Ctx): void {
   const prebuild = program

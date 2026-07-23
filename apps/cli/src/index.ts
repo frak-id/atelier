@@ -28,13 +28,19 @@ import { createCtx } from "./context.ts";
 import { fail } from "./output.ts";
 import { isInteractive } from "./ui.ts";
 
+/** Injected by esbuild (`define`) from package.json at build time; falls back
+ * to a dev sentinel when run unbundled (e.g. via tsx). */
+declare const __ATELIER_VERSION__: string | undefined;
+const VERSION =
+  typeof __ATELIER_VERSION__ === "string" ? __ATELIER_VERSION__ : "0.0.0-dev";
+
 const ctx = createCtx();
 const program = new Command();
 
 program
   .name("atelier")
   .description("Client for the Atelier sandbox runtime API")
-  .version("3.0.0")
+  .version(VERSION)
   .option("--json", "machine-readable JSON output")
   .hook("preAction", (thisCommand) => {
     ctx.json = Boolean(thisCommand.opts().json);

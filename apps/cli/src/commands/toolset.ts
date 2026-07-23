@@ -6,12 +6,7 @@ import pc from "picocolors";
 import { unwrap, waitForJob } from "../client.ts";
 import type { Ctx } from "../context.ts";
 import { line, printJson, table } from "../output.ts";
-import { readJsonc } from "../util.ts";
-
-const collect = (v: string, acc: string[]): string[] => {
-  acc.push(v);
-  return acc;
-};
+import { collect, readJsonc } from "../util.ts";
 
 export function registerToolset(program: Command, ctx: Ctx): void {
   const toolset = program

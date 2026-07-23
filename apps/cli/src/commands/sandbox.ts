@@ -16,6 +16,7 @@ import type { Ctx } from "../context.ts";
 import { age, fail, line, printJson, statusColor, table } from "../output.ts";
 import { runInherit } from "../proc.ts";
 import {
+  collect,
   collectFiles,
   parseEnvPairs,
   readJsonc,
@@ -23,11 +24,6 @@ import {
 } from "../util.ts";
 import { followLogs } from "./logs-follow.ts";
 import { harnessOf, sshCommand } from "./sandbox-helpers.ts";
-
-const collect = (v: string, acc: string[]): string[] => {
-  acc.push(v);
-  return acc;
-};
 
 /** Authoring superset: a runtime spec plus the bake-only `build`/`repos` steps
  * that `--bake` extracts into a prebuild. */

@@ -10,6 +10,13 @@ export function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+/** Green ✓ / red ✗ for a boolean check (doctor rows, readiness badges). */
+export const ok = (b: boolean): string => (b ? pc.green("✓") : pc.red("✗"));
+
+/** Redact a bearer secret to `atl_ab…wxyz` for display, or `(unset)`. */
+export const maskKey = (key: string): string =>
+  key ? `${key.slice(0, 6)}…${key.slice(-4)}` : pc.dim("(unset)");
+
 export function line(text = ""): void {
   process.stdout.write(`${text}\n`);
 }

@@ -16,7 +16,6 @@
  * `--network bridge` and reach the API on the mapped port (sandbox agent
  * dialing may need Linux — mirrors the DockerBackend's own constraints).
  */
-import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Command } from "commander";
@@ -25,8 +24,8 @@ import { createClient } from "../client.ts";
 import { atelierDir, loadConfig, upsertContext } from "../config.ts";
 import type { Ctx } from "../context.ts";
 import { loadLocalSettings, saveLocalSettings } from "../local-settings.ts";
-import { fail, line, printJson } from "../output.ts";
-import { runInherit } from "../proc.ts";
+import { fail, line, ok, printJson } from "../output.ts";
+import { runCapture, runInherit } from "../proc.ts";
 import * as ui from "../ui.ts";
 
 const GIT_AUTH_MODES = ["gh", "env", "pat", "none", "ask"] as const;
@@ -193,46 +192,12 @@ async function runConsole(
 /** Run `docker <args>`, capturing stdout/stderr + exit code (never rejects).
  * `extraEnv` is merged into the child's environment (used to pass a secret via
  * the process env + `-e NAME` rather than argv, so it never shows in `ps`). */
-function docker(
-  args: string[],
-  extraEnv?: Record<string, string>,
-): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = extraEnv
-      ? spawn("docker", args, { env: { ...process.env, ...extraEnv } })
-      : spawn("docker", args);
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => {
-      stdout += d;
-    });
-    child.stderr.on("data", (d) => {
-      stderr += d;
-    });
-    child.on("error", (e) => resolve({ code: -1, stdout, stderr: `${e}` }));
-    child.on("exit", (code) => resolve({ code: code ?? -1, stdout, stderr }));
-  });
-}
+const docker = (args: string[], extraEnv?: Record<string, string>) =>
+  runCapture(["docker", ...args], extraEnv ? { env: extraEnv } : undefined);
 
-/** Run `gh <args>`, capturing stdout/stderr + exit code (never rejects) —
- * mirrors `docker()` above. Used only to read a token, never to print it. */
-function gh(
-  args: string[],
-): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn("gh", args);
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => {
-      stdout += d;
-    });
-    child.stderr.on("data", (d) => {
-      stderr += d;
-    });
-    child.on("error", (e) => resolve({ code: -1, stdout, stderr: `${e}` }));
-    child.on("exit", (code) => resolve({ code: code ?? -1, stdout, stderr }));
-  });
-}
+/** Run `gh <args>`, capturing stdout/stderr + exit code (never rejects). Used
+ * only to read a token, never to print it. */
+const gh = (args: string[]) => runCapture(["gh", ...args]);
 
 /** Best-effort `gh auth token` — undefined if `gh` is missing, unauthenticated,
  * or the call otherwise fails. Never throws, never prints the token. */
@@ -260,12 +225,12 @@ async function ensureTokenConsent(): Promise<boolean> {
     line(pc.dim("Injecting host GitHub token into local sandboxes."));
     return true;
   }
-  const ok = await ui.confirm({
+  const consented = await ui.confirm({
     message: `${GIT_AUTH_CONSENT_NOTE} Continue?`,
     initialValue: true,
   });
-  if (ok) saveLocalSettings({ tokenConsent: true });
-  return ok;
+  if (consented) saveLocalSettings({ tokenConsent: true });
+  return consented;
 }
 
 interface GitTokenResult {
@@ -495,13 +460,6 @@ async function ensureDocker(): Promise<void> {
   }
 }
 
-/** Container run-state: "running", "stopped", or "absent". */
-async function containerState(): Promise<"running" | "stopped" | "absent"> {
-  const res = await docker(["inspect", "-f", "{{.State.Running}}", CONTAINER]);
-  if (res.code !== 0) return "absent";
-  return res.stdout.trim() === "true" ? "running" : "stopped";
-}
-
 async function waitForHealth(
   baseUrl: string,
   timeoutMs = 45_000,
@@ -547,7 +505,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
   const baseUrl = `http://127.0.0.1:${port}`;
   const { image, consoleImage, sandboxImage } = resolveImages(opts);
 
-  const state = await containerState();
+  const state = await runState(CONTAINER);
   let gitToken: string | undefined;
   let gitAuthMode: GitAuthMode = loadLocalSettings().gitAuth ?? "ask";
   if (state === "running") {
@@ -703,7 +661,7 @@ async function down(ctx: Ctx, opts: { volume: boolean }): Promise<void> {
 
 async function status(ctx: Ctx): Promise<void> {
   await ensureDocker();
-  const state = await containerState();
+  const state = await runState(CONTAINER);
   const consoleState = await runState(CONSOLE_CONTAINER);
   const cfg = loadConfig();
   const localUrl =
@@ -723,7 +681,6 @@ async function status(ctx: Ctx): Promise<void> {
       contextActive: cfg.context === CONTEXT,
     });
   }
-  const ok = (b: boolean) => (b ? pc.green("✓") : pc.red("✗"));
   const stateColor = (st: string) =>
     st === "running" ? pc.green(st) : pc.dim(st);
   line(pc.bold("atelier local"));

@@ -60,6 +60,11 @@ export type JobRecord = NonNullable<
   Awaited<ReturnType<AtelierApi["v1"]["jobs"]["get"]>>["data"]
 >[number];
 
+/** A base-image record — shape derived from the live route type. */
+export type ImageRow = NonNullable<
+  Awaited<ReturnType<AtelierApi["v1"]["images"]["get"]>>["data"]
+>[number];
+
 /** Block on a dispatched job until it settles, returning its result. The
  * async endpoints (prebuild bake, toolset build/capture) answer `202` with a
  * `running` job; the CLI polls to keep the "wait then print the ref" UX. */

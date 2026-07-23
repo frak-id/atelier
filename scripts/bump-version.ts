@@ -25,10 +25,9 @@ const CARGO_TOML_PATH = "apps/agent-v2/Cargo.toml";
 const CARGO_LOCK_PATH = "apps/agent-v2/Cargo.lock";
 const CARGO_CRATE_NAME = "atelier-agent";
 
-// The CLI is bundled by esbuild, so its `--version` string is baked in at build
-// time from a hardcoded `.version("…")` call rather than read from package.json
-// at runtime. Keep it in lockstep with apps/cli/package.json.
-const CLI_ENTRY_PATH = "apps/cli/src/index.ts";
+// The CLI's `--version` string is injected by esbuild at build time from
+// apps/cli/package.json (see apps/cli/build.mjs), so bumping the package.json
+// above is all that's needed — no source edit to keep in lockstep.
 
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
@@ -103,22 +102,6 @@ function updateCargoToml(filePath: string, newVersion: string): void {
  * with no checksum, so a targeted version replacement in its `[[package]]`
  * block is sufficient (no network / cargo toolchain needed).
  */
-function updateCliVersion(filePath: string, newVersion: string): void {
-  const fullPath = resolve(ROOT, filePath);
-  const content = readFileSync(fullPath, "utf-8");
-
-  const replaced = content.replace(
-    /(\.version\()"[^"]*"(\))/,
-    `$1"${newVersion}"$2`,
-  );
-
-  if (replaced === content) {
-    throw new Error(`Could not find .version("…") call in ${filePath}`);
-  }
-
-  writeFileSync(fullPath, replaced);
-}
-
 function updateCargoLock(filePath: string, newVersion: string): void {
   const fullPath = resolve(ROOT, filePath);
   const content = readFileSync(fullPath, "utf-8");
@@ -172,8 +155,5 @@ console.log(`  ✓ ${CARGO_TOML_PATH}`);
 
 updateCargoLock(CARGO_LOCK_PATH, next);
 console.log(`  ✓ ${CARGO_LOCK_PATH}`);
-
-updateCliVersion(CLI_ENTRY_PATH, next);
-console.log(`  ✓ ${CLI_ENTRY_PATH}`);
 
 console.log(`\nDone. All manifests updated to ${next}.`);

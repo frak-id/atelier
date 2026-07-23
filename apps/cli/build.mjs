@@ -10,6 +10,7 @@ import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { build } from "esbuild";
 
 const outfile = "dist/index.js";
+const { version } = JSON.parse(readFileSync("package.json", "utf8"));
 
 await build({
   entryPoints: ["src/index.ts"],
@@ -19,6 +20,9 @@ await build({
   bundle: true,
   minify: true,
   external: ["commander", "picocolors", "@clack/prompts", "@elysiajs/eden", "ws"],
+  // Bake the published package version into the bundle so `atelier --version`
+  // can never drift from package.json (esbuild replaces the identifier).
+  define: { __ATELIER_VERSION__: JSON.stringify(version) },
   outfile,
 });
 

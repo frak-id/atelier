@@ -109,6 +109,12 @@ export function openInBrowser(url: string): void {
   spawnDetached(cmd);
 }
 
+/** Commander accumulator for repeatable options: `.option("--x", d, collect, [])`. */
+export const collect = (v: string, acc: string[]): string[] => {
+  acc.push(v);
+  return acc;
+};
+
 /** Parse repeatable `KEY=VALUE` pairs into a record. */
 export function parseEnvPairs(pairs: string[]): Record<string, string> {
   const env: Record<string, string> = {};

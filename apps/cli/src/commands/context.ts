@@ -11,10 +11,7 @@ import {
   useContext,
 } from "../config.ts";
 import type { Ctx } from "../context.ts";
-import { fail, line, printJson, table } from "../output.ts";
-
-const mask = (key: string): string =>
-  key ? `${key.slice(0, 6)}…${key.slice(-4)}` : pc.dim("(unset)");
+import { fail, line, maskKey, printJson, table } from "../output.ts";
 
 export function registerContext(program: Command, ctx: Ctx): void {
   const context = program
@@ -97,7 +94,7 @@ function listAction(ctx: Ctx): void {
       r.current ? pc.green("*") : " ",
       r.current ? pc.bold(r.name) : r.name,
       r.baseUrl || pc.dim("(unset)"),
-      mask(r.apiKey),
+      maskKey(r.apiKey),
     ]),
   );
 }

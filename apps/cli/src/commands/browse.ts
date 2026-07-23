@@ -17,6 +17,7 @@ import { attach } from "../attach.ts";
 import {
   ApiError,
   type AtelierApi,
+  type ImageRow,
   type JobRecord,
   unwrap,
   waitForJob,
@@ -34,7 +35,7 @@ import {
   type GitRepo,
   shortRepo,
 } from "../git.ts";
-import { age, line, statusColor } from "../output.ts";
+import { age, line, maskKey, ok, statusColor } from "../output.ts";
 import { runInherit } from "../proc.ts";
 import {
   ATELIER_KEY_PATH,
@@ -66,11 +67,6 @@ const CONTEXTS = "__contexts__";
 const GITAUTH = "__gitauth__";
 const IMAGES = "__images__";
 const PREBUILDS = "__prebuilds__";
-
-const ok = (v: boolean): string => (v ? pc.green("✓") : pc.red("✗"));
-
-const maskKey = (key: string): string =>
-  key ? `${key.slice(0, 6)}…${key.slice(-4)}` : pc.dim("(unset)");
 
 /** Pick a sandbox from the live list, with an optional name filter and entries
  * to spawn a new one or quit. Returns an id, `NEW`, or null (quit). */
@@ -1017,12 +1013,6 @@ const imageIcon = (status: string): string =>
     : status === "error"
       ? pc.red("✗")
       : pc.yellow("…");
-
-type ImageRow = Awaited<
-  ReturnType<AtelierApi["v1"]["images"]["get"]>
->["data"] extends (infer T)[] | null
-  ? T
-  : never;
 
 /** Poll an image build's log endpoint, streaming new lines until it settles. */
 async function streamImageBuild(api: AtelierApi, name: string): Promise<void> {

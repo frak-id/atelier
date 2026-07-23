@@ -7,7 +7,7 @@
  * checkout, every step is a one-keystroke accept. */
 import type { PrebuildRecord, PrebuildSpec } from "@atelier/spec";
 import pc from "picocolors";
-import { type AtelierApi, unwrap } from "../client.ts";
+import { type AtelierApi, type ImageRow, unwrap } from "../client.ts";
 import { detectSetupSteps } from "../detect.ts";
 import {
   deriveClonePath,
@@ -94,12 +94,6 @@ export function buildPrebuildSpec(input: SpecInput): PrebuildSpec {
     metadata,
   };
 }
-
-type ImageRow = Awaited<
-  ReturnType<AtelierApi["v1"]["images"]["get"]>
->["data"] extends (infer T)[] | null
-  ? T
-  : never;
 
 /** Ready base images the prebuild can boot from. */
 async function readyImages(api: AtelierApi): Promise<ImageRow[]> {

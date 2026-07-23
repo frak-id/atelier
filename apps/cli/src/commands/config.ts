@@ -11,7 +11,15 @@ import {
   updateConfig,
 } from "../config.ts";
 import type { Ctx } from "../context.ts";
-import { fail, line, printJson, statusColor, table } from "../output.ts";
+import {
+  fail,
+  line,
+  maskKey,
+  ok,
+  printJson,
+  statusColor,
+  table,
+} from "../output.ts";
 import { type LocalKey, listLocalKeys } from "../ssh-keys.ts";
 import * as ui from "../ui.ts";
 
@@ -66,9 +74,6 @@ async function probe(cfg: CliConfig): Promise<{
   }
   return { reachable: true, authed: true, detail: "ok" };
 }
-
-const mask = (key: string): string =>
-  key ? `${key.slice(0, 6)}…${key.slice(-4)}` : pc.dim("(unset)");
 
 export async function runInit(): Promise<void> {
   const current = loadConfig();
@@ -145,7 +150,6 @@ async function runDoctor(json: boolean): Promise<void> {
     });
     return;
   }
-  const ok = (b: boolean) => (b ? pc.green("✓") : pc.red("✗"));
   line(pc.bold("atelier doctor"));
   line(`  config file   ${pc.dim(cfg.configPath)}`);
   line(
@@ -153,7 +157,7 @@ async function runDoctor(json: boolean): Promise<void> {
   );
   line(`  base URL      ${cfg.baseUrl} ${pc.dim(`(${cfg.baseUrlSource})`)}`);
   line(
-    `  API key       ${cfg.apiKey ? mask(cfg.apiKey) : pc.red("unset")} ${pc.dim(`(${cfg.apiKeySource})`)}`,
+    `  API key       ${cfg.apiKey ? maskKey(cfg.apiKey) : pc.red("unset")} ${pc.dim(`(${cfg.apiKeySource})`)}`,
   );
   line(
     `  ${ok(verdict.reachable)} reachable    ${pc.dim(verdict.reachable ? cfg.baseUrl : verdict.detail)}`,
@@ -220,7 +224,7 @@ export function registerConfig(program: Command, ctx: Ctx): void {
           contexts: cur.contexts,
           baseUrl: cur.baseUrl,
           baseUrlSource: cur.baseUrlSource,
-          apiKey: cur.apiKey ? mask(cur.apiKey) : null,
+          apiKey: cur.apiKey ? maskKey(cur.apiKey) : null,
           apiKeySource: cur.apiKeySource,
         });
       }
@@ -228,7 +232,9 @@ export function registerConfig(program: Command, ctx: Ctx): void {
         `context    ${cur.context} ${pc.dim(`(${cur.contexts.length} total)`)}`,
       );
       line(`base URL   ${cur.baseUrl} ${pc.dim(`(${cur.baseUrlSource})`)}`);
-      line(`API key    ${mask(cur.apiKey)} ${pc.dim(`(${cur.apiKeySource})`)}`);
+      line(
+        `API key    ${maskKey(cur.apiKey)} ${pc.dim(`(${cur.apiKeySource})`)}`,
+      );
       line(`config     ${pc.dim(cur.configPath)}`);
     });
 
