@@ -23,6 +23,17 @@ export async function attach(
   };
 
   await new Promise<void>((resolve, reject) => {
+    // A transport error can emit both `error` and `close`; settle + restore the
+    // terminal exactly once.
+    let settled = false;
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      stdin.off("data", onData);
+      restore();
+      if (err) reject(err);
+      else resolve();
+    };
     const onData = (chunk: Buffer) => {
       // Ctrl-] (0x1d) detaches locally without killing the remote process.
       if (chunk.length === 1 && chunk[0] === 0x1d) {
@@ -43,15 +54,7 @@ export async function attach(
         process.stdout.write(data.toString());
       }
     });
-    ws.on("close", () => {
-      stdin.off("data", onData);
-      restore();
-      resolve();
-    });
-    ws.on("error", () => {
-      stdin.off("data", onData);
-      restore();
-      reject(new Error(`attach failed: ${url}`));
-    });
+    ws.on("close", () => finish());
+    ws.on("error", () => finish(new Error(`attach failed: ${url}`)));
   });
 }

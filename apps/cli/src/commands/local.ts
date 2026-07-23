@@ -31,6 +31,15 @@ import * as ui from "../ui.ts";
 const GIT_AUTH_MODES = ["gh", "env", "pat", "none", "ask"] as const;
 type GitAuthMode = (typeof GIT_AUTH_MODES)[number];
 
+/** Reject an unknown `--git-auth` value with a listing of the valid modes. */
+function assertGitAuthMode(value: string | undefined): void {
+  if (value && !GIT_AUTH_MODES.includes(value as GitAuthMode)) {
+    fail(
+      `--git-auth must be one of: ${GIT_AUTH_MODES.join("|")} (got "${value}")`,
+    );
+  }
+}
+
 const GIT_AUTH_CONSENT_NOTE =
   "The token is injected into sandboxes so agents can clone/push your " +
   "private repos. It's a transient credential (scrubbed before any " +
@@ -258,11 +267,7 @@ async function promptForPat(): Promise<string | undefined> {
  * ATELIER_GITHUB_TOKEN. Mode precedence: --git-auth flag > persisted
  * ~/.atelier/local.json choice > "ask". Never prints the token value. */
 async function resolveGitToken(opts: UpOpts): Promise<GitTokenResult> {
-  if (opts.gitAuth && !GIT_AUTH_MODES.includes(opts.gitAuth as GitAuthMode)) {
-    fail(
-      `--git-auth must be one of: ${GIT_AUTH_MODES.join("|")} (got "${opts.gitAuth}")`,
-    );
-  }
+  assertGitAuthMode(opts.gitAuth);
   const mode: GitAuthMode =
     (opts.gitAuth as GitAuthMode | undefined) ??
     loadLocalSettings().gitAuth ??
@@ -495,11 +500,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
   await ensureDocker();
   // Validate up-front so a bad --git-auth errors even when the container
   // already exists (the create-only resolveGitToken path is skipped then).
-  if (opts.gitAuth && !GIT_AUTH_MODES.includes(opts.gitAuth as GitAuthMode)) {
-    fail(
-      `--git-auth must be one of: ${GIT_AUTH_MODES.join("|")} (got "${opts.gitAuth}")`,
-    );
-  }
+  assertGitAuthMode(opts.gitAuth);
   const port = Number(opts.port);
   if (!Number.isFinite(port)) fail("--port must be a number");
   const baseUrl = `http://127.0.0.1:${port}`;

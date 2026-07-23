@@ -65,6 +65,12 @@ export type ImageRow = NonNullable<
   Awaited<ReturnType<AtelierApi["v1"]["images"]["get"]>>["data"]
 >[number];
 
+/** The create-sandbox request body (a spec plus optional toolbox selectors),
+ * taken from the live route type so the cockpit can build one without `any`. */
+export type CreateSandboxBody = Parameters<
+  AtelierApi["v1"]["sandboxes"]["post"]
+>[0];
+
 /** Block on a dispatched job until it settles, returning its result. The
  * async endpoints (prebuild bake, toolset build/capture, sandbox create) answer
  * `202` with a `running` job; the CLI polls to keep the "wait then print the

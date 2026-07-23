@@ -16,6 +16,7 @@ import pc from "picocolors";
 import { attach } from "../attach.ts";
 import {
   type AtelierApi,
+  type CreateSandboxBody,
   type ImageRow,
   type JobRecord,
   unwrap,
@@ -538,14 +539,12 @@ async function bootWithLogs(
  * log. Returns the new sandbox id (throws on boot failure). */
 async function bootSandbox(
   api: AtelierApi,
-  body: Record<string, unknown>,
+  body: CreateSandboxBody,
 ): Promise<string> {
   const toolboxes = await pickToolboxes(api);
-  const finalBody = toolboxes.length > 0 ? { ...body, toolboxes } : body;
-  const job = unwrap(
-    // biome-ignore lint/suspicious/noExplicitAny: body is a validated spec union
-    await api.v1.sandboxes.post(finalBody as any),
-  );
+  const finalBody: CreateSandboxBody =
+    toolboxes.length > 0 ? { ...body, toolboxes } : body;
+  const job = unwrap(await api.v1.sandboxes.post(finalBody));
   try {
     const result = await bootWithLogs(api, job);
     line(pc.green(`✓ ${result.id} ready`));
@@ -669,7 +668,7 @@ async function spawnFlow(api: AtelierApi): Promise<string | null> {
   }
 
   // ── 1. core source ──────────────────────────────────────────────────────
-  let body: Record<string, unknown> | undefined;
+  let body: CreateSandboxBody | undefined;
   if (source === "image") {
     const image = await ui.text({
       message: "Image ref",

@@ -120,7 +120,7 @@ export function parseEnvPairs(pairs: string[]): Record<string, string> {
   const env: Record<string, string> = {};
   for (const pair of pairs) {
     const eq = pair.indexOf("=");
-    if (eq === -1) fail(`expected KEY=VALUE, got "${pair}"`);
+    if (eq <= 0) fail(`expected KEY=VALUE, got "${pair}"`);
     env[pair.slice(0, eq)] = pair.slice(eq + 1);
   }
   return env;

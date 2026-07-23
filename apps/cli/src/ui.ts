@@ -1,6 +1,8 @@
 /** Interactive prompt helpers on top of @clack/prompts. Every wrapper handles
  * Ctrl-C / Esc uniformly: print "cancelled" and exit 0 (a user abort is not an
  * error). */
+
+import type { MultiSelectOptions, SelectOptions } from "@clack/prompts";
 import * as clack from "@clack/prompts";
 
 /** Bail out cleanly when the user cancels a clack prompt. */
@@ -26,15 +28,16 @@ export function spinner(): {
   return clack.spinner();
 }
 
+// clack's `Option<Value>` is a conditional type (`Value extends Primitive ? …`)
+// that can't resolve against an unconstrained generic, so these wrappers need a
+// single cast to clack's own options type — our `label`-required shape always
+// satisfies the non-primitive branch.
 export async function select<T>(opts: {
   message: string;
   options: { value: T; label: string; hint?: string }[];
   initialValue?: T;
 }): Promise<T> {
-  const r = await clack.select(
-    opts as unknown as Parameters<typeof clack.select>[0],
-  );
-  return orCancel(r as T | symbol);
+  return orCancel(await clack.select(opts as SelectOptions<T>));
 }
 
 export async function multiselect<T>(opts: {
@@ -43,10 +46,7 @@ export async function multiselect<T>(opts: {
   required?: boolean;
   initialValues?: T[];
 }): Promise<T[]> {
-  const r = await clack.multiselect(
-    opts as unknown as Parameters<typeof clack.multiselect>[0],
-  );
-  return orCancel(r as T[] | symbol);
+  return orCancel(await clack.multiselect(opts as MultiSelectOptions<T>));
 }
 
 export async function text(opts: {
