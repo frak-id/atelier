@@ -66,18 +66,28 @@ export type ImageRow = NonNullable<
 >[number];
 
 /** Block on a dispatched job until it settles, returning its result. The
- * async endpoints (prebuild bake, toolset build/capture) answer `202` with a
- * `running` job; the CLI polls to keep the "wait then print the ref" UX. */
+ * async endpoints (prebuild bake, toolset build/capture, sandbox create) answer
+ * `202` with a `running` job; the CLI polls to keep the "wait then print the
+ * ref" UX.
+ *
+ * `onTick` is awaited after every poll — including the initial state and the
+ * terminal one — so callers can stream progress (e.g. a boot log) and still see
+ * the final output before a failure throws. */
 export async function waitForJob<T>(
   api: AtelierApi,
   job: JobRecord,
-  onTick?: (job: JobRecord) => void,
+  opts: {
+    onTick?: (job: JobRecord) => void | Promise<void>;
+    intervalMs?: number;
+  } = {},
 ): Promise<T> {
+  const intervalMs = opts.intervalMs ?? 1000;
   let current = job;
+  await opts.onTick?.(current);
   while (current.status === "queued" || current.status === "running") {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
     current = unwrap(await api.v1.jobs({ id: current.id }).get());
-    onTick?.(current);
+    await opts.onTick?.(current);
   }
   if (current.status === "succeeded") return current.result as T;
   throw new ApiError(

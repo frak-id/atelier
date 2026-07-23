@@ -15,7 +15,6 @@ import type { Command } from "commander";
 import pc from "picocolors";
 import { attach } from "../attach.ts";
 import {
-  ApiError,
   type AtelierApi,
   type ImageRow,
   type JobRecord,
@@ -35,16 +34,23 @@ import {
   type GitRepo,
   shortRepo,
 } from "../git.ts";
-import { age, line, maskKey, ok, statusColor } from "../output.ts";
+import {
+  age,
+  line,
+  maskKey,
+  ok,
+  printLogDelta,
+  statusColor,
+} from "../output.ts";
 import { runInherit } from "../proc.ts";
 import {
   ATELIER_KEY_PATH,
   defaultKeyLabel,
   generateAtelierKey,
   type LocalKey,
-  listLocalKeys,
   readLocalKey,
   removeAtelierKey,
+  resolveSshRegistration,
 } from "../ssh-keys.ts";
 import * as ui from "../ui.ts";
 import { openInBrowser, parseEnvPairs, readJsonc } from "../util.ts";
@@ -191,12 +197,9 @@ async function accountMenu(api: AtelierApi): Promise<void> {
   let localCount = 0;
   try {
     me = await loadMe(api);
-    const remote = unwrap(await api.api["ssh-keys"].get());
-    const localKeys = listLocalKeys();
-    localCount = localKeys.length;
-    registered = localKeys.find((k) =>
-      remote.some((r) => r.fingerprint === k.fingerprint),
-    );
+    const ssh = await resolveSshRegistration(api);
+    localCount = ssh.localKeys.length;
+    registered = ssh.registered;
     s.stop("Account");
   } catch (err) {
     s.stop("Failed to load account");
@@ -312,9 +315,7 @@ async function regenSsh(api: AtelierApi): Promise<void> {
 
 /** A one-line summary for a prebuild: repo@branch · build age · base image. */
 function prebuildHint(p: PrebuildRecord): string {
-  const repo =
-    p.spec?.repos?.[0]?.url ?? p.metadata?.repo ?? p.metadata?.workspace;
-  const branch = p.spec?.repos?.[0]?.branch ?? p.metadata?.branch;
+  const { url: repo, branch } = prebuildRepoBranch(p);
   const parts: string[] = [];
   if (repo) parts.push(shortRepo(repo) + (branch ? `@${branch}` : ""));
   parts.push(`built ${age(p.createdAt)} ago`);
@@ -520,33 +521,17 @@ async function bootWithLogs(
 ): Promise<CreateSandboxResponse> {
   line(pc.dim("booting…"));
   let printed = 0;
-  let current = job;
-  const flush = async () => {
-    try {
-      const { log } = unwrap(await api.v1.jobs({ id: current.id }).logs.get());
-      if (log.length > printed) {
-        for (const l of log.slice(printed).split("\n")) {
-          if (l) line(pc.dim(`  ${l}`));
-        }
-        printed = log.length;
+  return waitForJob<CreateSandboxResponse>(api, job, {
+    intervalMs: 900,
+    onTick: async (j) => {
+      try {
+        const { log } = unwrap(await api.v1.jobs({ id: j.id }).logs.get());
+        printed = printLogDelta(log, printed);
+      } catch {
+        // Log endpoint is best-effort; keep polling status.
       }
-    } catch {
-      // Log endpoint is best-effort; keep polling status.
-    }
-  };
-  while (current.status === "queued" || current.status === "running") {
-    await flush();
-    await new Promise((r) => setTimeout(r, 900));
-    current = unwrap(await api.v1.jobs({ id: current.id }).get());
-  }
-  await flush();
-  if (current.status !== "succeeded") {
-    throw new ApiError(
-      current.status === "canceled" ? 499 : 500,
-      current.error ?? `boot ${current.status}`,
-    );
-  }
-  return current.result as CreateSandboxResponse;
+    },
+  });
 }
 
 /** Layer on toolboxes, then post + boot a sandbox body with a live progress
@@ -769,11 +754,7 @@ type Action =
  * session; when false the SSH shell option is hidden entirely. */
 async function computeSshReady(api: AtelierApi): Promise<boolean> {
   try {
-    const local = listLocalKeys();
-    if (local.length === 0) return false;
-    const remote = unwrap(await api.api["ssh-keys"].get());
-    const registered = new Set(remote.map((k) => k.fingerprint));
-    return local.some((k) => registered.has(k.fingerprint));
+    return Boolean((await resolveSshRegistration(api)).registered);
   } catch {
     return false;
   }
@@ -1025,12 +1006,7 @@ async function streamImageBuild(api: AtelierApi, name: string): Promise<void> {
     } catch {
       break;
     }
-    if (res.log.length > printed) {
-      for (const l of res.log.slice(printed).split("\n")) {
-        if (l) line(pc.dim(`  ${l}`));
-      }
-      printed = res.log.length;
-    }
+    printed = printLogDelta(res.log, printed);
     if (res.status !== "building") {
       line(
         res.status === "ready"

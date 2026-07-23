@@ -60,6 +60,17 @@ export function table(headers: string[], rows: string[][]): void {
   }
 }
 
+/** Print the new lines appended to a growing log string since `printed` chars,
+ * dimmed + indented; returns the new offset. Shared by the job-boot and
+ * image-build log tails. */
+export function printLogDelta(log: string, printed: number): number {
+  if (log.length <= printed) return printed;
+  for (const l of log.slice(printed).split("\n")) {
+    if (l) line(pc.dim(`  ${l}`));
+  }
+  return log.length;
+}
+
 /** Relative age like `3m`, `2h`, `5d` from an ISO timestamp. */
 export function age(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

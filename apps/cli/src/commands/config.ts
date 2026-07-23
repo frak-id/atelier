@@ -20,23 +20,12 @@ import {
   statusColor,
   table,
 } from "../output.ts";
-import { type LocalKey, listLocalKeys } from "../ssh-keys.ts";
+import { resolveSshRegistration } from "../ssh-keys.ts";
 import * as ui from "../ui.ts";
 
 /** SSH readiness: which local keys exist and whether any is registered on the
  * server (the prerequisite for `atelier ssh`). Only meaningful once authed. */
-async function probeSsh(cfg: CliConfig): Promise<{
-  localKeys: LocalKey[];
-  registered: LocalKey | undefined;
-}> {
-  const local = listLocalKeys();
-  const remote = unwrap(await createClient(cfg).api["ssh-keys"].get());
-  const registeredFps = new Set(remote.map((k) => k.fingerprint));
-  return {
-    localKeys: local,
-    registered: local.find((k) => registeredFps.has(k.fingerprint)),
-  };
-}
+const probeSsh = (cfg: CliConfig) => resolveSshRegistration(createClient(cfg));
 
 /** Probe a config: connectivity (`/health`, no auth) then auth (`/api/config`,
  * needs a valid Bearer). Returns a per-check verdict for `doctor`. */

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
 import { join } from "node:path";
+import { type AtelierApi, unwrap } from "./client.ts";
 import { runCapture } from "./proc.ts";
 
 /** Where `ssh-key setup` writes the atelier-managed keypair. */
@@ -75,6 +76,24 @@ export function listLocalKeys(): LocalKey[] {
 
 export const atelierKeyExists = (): boolean =>
   existsSync(`${ATELIER_KEY_PATH}.pub`);
+
+/** Cross-reference local `~/.ssh` public keys against the keys registered on
+ * the server: returns every local key plus the first one the server knows
+ * (undefined when none is registered). The single source of truth for SSH
+ * readiness — used by `config doctor`, the cockpit's Account panel, and the
+ * cockpit's shell gating. */
+export async function resolveSshRegistration(api: AtelierApi): Promise<{
+  localKeys: LocalKey[];
+  registered: LocalKey | undefined;
+}> {
+  const localKeys = listLocalKeys();
+  const remote = unwrap(await api.api["ssh-keys"].get());
+  const registeredFps = new Set(remote.map((k) => k.fingerprint));
+  return {
+    localKeys,
+    registered: localKeys.find((k) => registeredFps.has(k.fingerprint)),
+  };
+}
 
 /** Delete the atelier-managed keypair (both halves) if present — used by
  * `regenerate`, which then writes a fresh one. */
