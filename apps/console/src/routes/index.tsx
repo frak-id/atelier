@@ -89,8 +89,8 @@ function MissionControlPage() {
         />
       ) : (
         <>
-          <FleetSessionsSection sandboxes={sandboxes} />
           <SandboxesSection sandboxes={sandboxes} />
+          <FleetSessionsSection sandboxes={sandboxes} />
         </>
       )}
     </div>
