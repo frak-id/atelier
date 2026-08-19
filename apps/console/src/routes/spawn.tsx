@@ -128,7 +128,7 @@ function QuickSpawnSection({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advanced, setAdvanced] = useState({
     vcpus: "2",
-    memoryMb: "2048",
+    memoryMb: "4096",
   });
   const [selectedToolboxes, setSelectedToolboxes] = useState<Set<string>>(
     new Set(),
