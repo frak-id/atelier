@@ -33,6 +33,18 @@ const log = createChildLogger("auth-routes");
 
 const JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
 
+/** Scopes requested from GitHub at login. The resulting token is handed to
+ * sandboxes as the git credential, so it bounds what the agent can push:
+ * `workflow` is what allows commits that touch `.github/workflows/*` (GitHub
+ * rejects such a push with a `refusing to allow an OAuth App to create or
+ * update workflow` error otherwise).
+ *
+ * Adding a scope here only takes effect on a *new* authorization: GitHub
+ * grants are additive and already-stored tokens keep their old scope set, so
+ * existing users must sign out and back in (which triggers GitHub's consent
+ * screen for the added scope). */
+const GITHUB_OAUTH_SCOPES = "repo workflow read:user read:org";
+
 /** CLI login sends the freshly-minted JWT to a loopback listener instead of
  * the dashboard. Only ever redirect to the caller's own machine — never an
  * arbitrary host — so a crafted `cli` param can't exfiltrate a token. */
@@ -163,7 +175,7 @@ export function createAuthRoutes(container: ServerContainer) {
 
         const url = buildOAuthRedirectUrl(
           deriveCallbackUrl("/auth/callback"),
-          "repo read:user read:org",
+          GITHUB_OAUTH_SCOPES,
           {
             state: nanoid(16),
             code_challenge: codeChallenge,
