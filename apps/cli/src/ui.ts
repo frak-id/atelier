@@ -14,6 +14,19 @@ export function orCancel<T>(value: T | symbol): T {
   return value as T;
 }
 
+/** @clack/prompts v1 widened `validate` to receive `string | undefined` (and to
+ * allow returning an Error). Our call sites all assume a plain string, so
+ * normalise the value here rather than touching every prompt. */
+function adaptValidate<T extends { validate?: (v: string) => string | undefined }>(
+  opts: T,
+): Omit<T, "validate"> & {
+  validate?: (v: string | undefined) => string | undefined;
+} {
+  const { validate, ...rest } = opts;
+  if (!validate) return rest;
+  return { ...rest, validate: (v: string | undefined) => validate(v ?? "") };
+}
+
 export const intro = (msg: string): void => clack.intro(msg);
 export const outro = (msg: string): void => clack.outro(msg);
 export const note = (msg: string, title?: string): void =>
@@ -56,14 +69,14 @@ export async function text(opts: {
   defaultValue?: string;
   validate?: (v: string) => string | undefined;
 }): Promise<string> {
-  return orCancel(await clack.text(opts));
+  return orCancel(await clack.text(adaptValidate(opts)));
 }
 
 export async function password(opts: {
   message: string;
   validate?: (v: string) => string | undefined;
 }): Promise<string> {
-  return orCancel(await clack.password(opts));
+  return orCancel(await clack.password(adaptValidate(opts)));
 }
 
 export async function confirm(opts: {

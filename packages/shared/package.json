@@ -11,12 +11,12 @@
   },
   "scripts": {
     "generate-schema": "bun run scripts/generate-schema.ts",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.0"
+    "@sinclair/typebox": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.12"
+    "@types/bun": "catalog:"
   }
 }

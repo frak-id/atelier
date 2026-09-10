@@ -9,13 +9,13 @@
     "./harnesses/opencode": "./src/harnesses/opencode.ts"
   },
   "scripts": {
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@atelier/spec": "workspace:*",
     "@frak/atelier-shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.12"
+    "@types/bun": "catalog:"
   }
 }

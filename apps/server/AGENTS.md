@@ -41,7 +41,7 @@ files + processes + ports, composed client-side by `@atelier/compose`.
 ```bash
 ATELIER_SERVER_MODE=mock bun run --watch src/index.ts   # dev, no K8s needed
 bun run scripts/check-boundaries.ts                       # enforce module boundaries
-bun run typecheck                                          # tsgo --noEmit
+bun run typecheck                                          # tsc --noEmit
 bunx drizzle-kit generate                                  # control/db schema migration
 ```
 

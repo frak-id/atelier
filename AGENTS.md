@@ -42,8 +42,20 @@ scripts/          # deploy-k8s.sh (SSH→k3s, infra chart), bump-version.ts
 bun install                          # Install dependencies
 bun run --filter @atelier/server dev # Dev server (mock mode, port 4000)
 bun run check                        # Biome lint + format
-bun run typecheck                    # tsgo --noEmit (per-workspace via --filter)
+bun run typecheck                    # tsc --noEmit (per-workspace via --filter)
 ```
+
+## Dependency versions
+
+Versions shared by two or more workspaces live in the **Bun catalog** in the root
+`package.json` (`workspaces.catalog`). Those workspaces declare the dependency as
+`"catalog:"` instead of a literal range, so a version is bumped in exactly one place
+and workspaces cannot silently drift apart.
+
+Currently catalogued: `@elysiajs/eden`, `@sinclair/typebox`, `@types/bun`, `typescript`.
+
+When a dependency becomes used by a second workspace, move it into the catalog and
+replace both ranges with `"catalog:"`. Single-workspace dependencies keep a normal range.
 
 ## Critical Constraints
 

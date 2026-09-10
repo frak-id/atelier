@@ -9,33 +9,33 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root"
-import { Route as SpawnRouteImport } from "./routes/spawn"
-import { Route as SettingsRouteImport } from "./routes/settings"
 import { Route as IndexRouteImport } from "./routes/index"
-import { Route as SettingsIndexRouteImport } from "./routes/settings.index"
-import { Route as SettingsToolsetsRouteImport } from "./routes/settings.toolsets"
-import { Route as SettingsToolboxesRouteImport } from "./routes/settings.toolboxes"
-import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
-import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
-import { Route as SettingsPrebuildsRouteImport } from "./routes/settings.prebuilds"
-import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
-import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
-import { Route as SettingsImagesRouteImport } from "./routes/settings.images"
-import { Route as SettingsConfigRouteImport } from "./routes/settings.config"
-import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
+import { Route as SettingsRouteImport } from "./routes/settings"
+import { Route as SpawnRouteImport } from "./routes/spawn"
 import { Route as SandboxesSandboxIdRouteImport } from "./routes/sandboxes.$sandboxId"
-import { Route as SettingsToolboxesIndexRouteImport } from "./routes/settings.toolboxes.index"
-import { Route as SettingsPrebuildsIndexRouteImport } from "./routes/settings.prebuilds.index"
+import { Route as SettingsIndexRouteImport } from "./routes/settings.index"
+import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
+import { Route as SettingsConfigRouteImport } from "./routes/settings.config"
+import { Route as SettingsImagesRouteImport } from "./routes/settings.images"
+import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
+import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
+import { Route as SettingsPrebuildsRouteImport } from "./routes/settings.prebuilds"
+import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
+import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
+import { Route as SettingsToolboxesRouteImport } from "./routes/settings.toolboxes"
+import { Route as SettingsToolsetsRouteImport } from "./routes/settings.toolsets"
 import { Route as SandboxesSandboxIdIndexRouteImport } from "./routes/sandboxes.$sandboxId.index"
-import { Route as SettingsToolboxesNewRouteImport } from "./routes/settings.toolboxes.new"
-import { Route as SettingsToolboxesIdRouteImport } from "./routes/settings.toolboxes.$id"
-import { Route as SettingsPrebuildsNewRouteImport } from "./routes/settings.prebuilds.new"
-import { Route as SettingsPrebuildsRefRouteImport } from "./routes/settings.prebuilds.$ref"
 import { Route as SandboxesSandboxIdSessionsRouteImport } from "./routes/sandboxes.$sandboxId.sessions"
+import { Route as SettingsPrebuildsIndexRouteImport } from "./routes/settings.prebuilds.index"
+import { Route as SettingsPrebuildsRefRouteImport } from "./routes/settings.prebuilds.$ref"
+import { Route as SettingsPrebuildsNewRouteImport } from "./routes/settings.prebuilds.new"
+import { Route as SettingsToolboxesIndexRouteImport } from "./routes/settings.toolboxes.index"
+import { Route as SettingsToolboxesIdRouteImport } from "./routes/settings.toolboxes.$id"
+import { Route as SettingsToolboxesNewRouteImport } from "./routes/settings.toolboxes.new"
 
-const SpawnRoute = SpawnRouteImport.update({
-  id: "/spawn",
-  path: "/spawn",
+const IndexRoute = IndexRouteImport.update({
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -43,9 +43,14 @@ const SettingsRoute = SettingsRouteImport.update({
   path: "/settings",
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+const SpawnRoute = SpawnRouteImport.update({
+  id: "/spawn",
+  path: "/spawn",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SandboxesSandboxIdRoute = SandboxesSandboxIdRouteImport.update({
+  id: "/sandboxes/$sandboxId",
+  path: "/sandboxes/$sandboxId",
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
@@ -53,44 +58,9 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   path: "/",
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsToolsetsRoute = SettingsToolsetsRouteImport.update({
-  id: "/toolsets",
-  path: "/toolsets",
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsToolboxesRoute = SettingsToolboxesRouteImport.update({
-  id: "/toolboxes",
-  path: "/toolboxes",
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsSshKeysRoute = SettingsSshKeysRouteImport.update({
-  id: "/ssh-keys",
-  path: "/ssh-keys",
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsSecretsRoute = SettingsSecretsRouteImport.update({
-  id: "/secrets",
-  path: "/secrets",
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsPrebuildsRoute = SettingsPrebuildsRouteImport.update({
-  id: "/prebuilds",
-  path: "/prebuilds",
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsPolicyRoute = SettingsPolicyRouteImport.update({
-  id: "/policy",
-  path: "/policy",
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsOrganizationsRoute = SettingsOrganizationsRouteImport.update({
-  id: "/organizations",
-  path: "/organizations",
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsImagesRoute = SettingsImagesRouteImport.update({
-  id: "/images",
-  path: "/images",
+const SettingsApiKeysRoute = SettingsApiKeysRouteImport.update({
+  id: "/api-keys",
+  path: "/api-keys",
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsConfigRoute = SettingsConfigRouteImport.update({
@@ -98,50 +68,50 @@ const SettingsConfigRoute = SettingsConfigRouteImport.update({
   path: "/config",
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsApiKeysRoute = SettingsApiKeysRouteImport.update({
-  id: "/api-keys",
-  path: "/api-keys",
+const SettingsImagesRoute = SettingsImagesRouteImport.update({
+  id: "/images",
+  path: "/images",
   getParentRoute: () => SettingsRoute,
 } as any)
-const SandboxesSandboxIdRoute = SandboxesSandboxIdRouteImport.update({
-  id: "/sandboxes/$sandboxId",
-  path: "/sandboxes/$sandboxId",
-  getParentRoute: () => rootRouteImport,
+const SettingsOrganizationsRoute = SettingsOrganizationsRouteImport.update({
+  id: "/organizations",
+  path: "/organizations",
+  getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsToolboxesIndexRoute = SettingsToolboxesIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => SettingsToolboxesRoute,
+const SettingsPolicyRoute = SettingsPolicyRouteImport.update({
+  id: "/policy",
+  path: "/policy",
+  getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsPrebuildsIndexRoute = SettingsPrebuildsIndexRouteImport.update({
-  id: "/",
-  path: "/",
-  getParentRoute: () => SettingsPrebuildsRoute,
+const SettingsPrebuildsRoute = SettingsPrebuildsRouteImport.update({
+  id: "/prebuilds",
+  path: "/prebuilds",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSecretsRoute = SettingsSecretsRouteImport.update({
+  id: "/secrets",
+  path: "/secrets",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSshKeysRoute = SettingsSshKeysRouteImport.update({
+  id: "/ssh-keys",
+  path: "/ssh-keys",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsToolboxesRoute = SettingsToolboxesRouteImport.update({
+  id: "/toolboxes",
+  path: "/toolboxes",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsToolsetsRoute = SettingsToolsetsRouteImport.update({
+  id: "/toolsets",
+  path: "/toolsets",
+  getParentRoute: () => SettingsRoute,
 } as any)
 const SandboxesSandboxIdIndexRoute = SandboxesSandboxIdIndexRouteImport.update({
   id: "/",
   path: "/",
   getParentRoute: () => SandboxesSandboxIdRoute,
-} as any)
-const SettingsToolboxesNewRoute = SettingsToolboxesNewRouteImport.update({
-  id: "/new",
-  path: "/new",
-  getParentRoute: () => SettingsToolboxesRoute,
-} as any)
-const SettingsToolboxesIdRoute = SettingsToolboxesIdRouteImport.update({
-  id: "/$id",
-  path: "/$id",
-  getParentRoute: () => SettingsToolboxesRoute,
-} as any)
-const SettingsPrebuildsNewRoute = SettingsPrebuildsNewRouteImport.update({
-  id: "/new",
-  path: "/new",
-  getParentRoute: () => SettingsPrebuildsRoute,
-} as any)
-const SettingsPrebuildsRefRoute = SettingsPrebuildsRefRouteImport.update({
-  id: "/$ref",
-  path: "/$ref",
-  getParentRoute: () => SettingsPrebuildsRoute,
 } as any)
 const SandboxesSandboxIdSessionsRoute =
   SandboxesSandboxIdSessionsRouteImport.update({
@@ -149,6 +119,36 @@ const SandboxesSandboxIdSessionsRoute =
     path: "/sessions",
     getParentRoute: () => SandboxesSandboxIdRoute,
   } as any)
+const SettingsPrebuildsIndexRoute = SettingsPrebuildsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => SettingsPrebuildsRoute,
+} as any)
+const SettingsPrebuildsRefRoute = SettingsPrebuildsRefRouteImport.update({
+  id: "/$ref",
+  path: "/$ref",
+  getParentRoute: () => SettingsPrebuildsRoute,
+} as any)
+const SettingsPrebuildsNewRoute = SettingsPrebuildsNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => SettingsPrebuildsRoute,
+} as any)
+const SettingsToolboxesIndexRoute = SettingsToolboxesIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => SettingsToolboxesRoute,
+} as any)
+const SettingsToolboxesIdRoute = SettingsToolboxesIdRouteImport.update({
+  id: "/$id",
+  path: "/$id",
+  getParentRoute: () => SettingsToolboxesRoute,
+} as any)
+const SettingsToolboxesNewRoute = SettingsToolboxesNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => SettingsToolboxesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
@@ -305,11 +305,11 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    "/spawn": {
-      id: "/spawn"
-      path: "/spawn"
-      fullPath: "/spawn"
-      preLoaderRoute: typeof SpawnRouteImport
+    "/": {
+      id: "/"
+      path: "/"
+      fullPath: "/"
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/settings": {
@@ -319,11 +319,18 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/": {
-      id: "/"
-      path: "/"
-      fullPath: "/"
-      preLoaderRoute: typeof IndexRouteImport
+    "/spawn": {
+      id: "/spawn"
+      path: "/spawn"
+      fullPath: "/spawn"
+      preLoaderRoute: typeof SpawnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/sandboxes/$sandboxId": {
+      id: "/sandboxes/$sandboxId"
+      path: "/sandboxes/$sandboxId"
+      fullPath: "/sandboxes/$sandboxId"
+      preLoaderRoute: typeof SandboxesSandboxIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/settings/": {
@@ -333,60 +340,11 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
     }
-    "/settings/toolsets": {
-      id: "/settings/toolsets"
-      path: "/toolsets"
-      fullPath: "/settings/toolsets"
-      preLoaderRoute: typeof SettingsToolsetsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    "/settings/toolboxes": {
-      id: "/settings/toolboxes"
-      path: "/toolboxes"
-      fullPath: "/settings/toolboxes"
-      preLoaderRoute: typeof SettingsToolboxesRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    "/settings/ssh-keys": {
-      id: "/settings/ssh-keys"
-      path: "/ssh-keys"
-      fullPath: "/settings/ssh-keys"
-      preLoaderRoute: typeof SettingsSshKeysRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    "/settings/secrets": {
-      id: "/settings/secrets"
-      path: "/secrets"
-      fullPath: "/settings/secrets"
-      preLoaderRoute: typeof SettingsSecretsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    "/settings/prebuilds": {
-      id: "/settings/prebuilds"
-      path: "/prebuilds"
-      fullPath: "/settings/prebuilds"
-      preLoaderRoute: typeof SettingsPrebuildsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    "/settings/policy": {
-      id: "/settings/policy"
-      path: "/policy"
-      fullPath: "/settings/policy"
-      preLoaderRoute: typeof SettingsPolicyRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    "/settings/organizations": {
-      id: "/settings/organizations"
-      path: "/organizations"
-      fullPath: "/settings/organizations"
-      preLoaderRoute: typeof SettingsOrganizationsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    "/settings/images": {
-      id: "/settings/images"
-      path: "/images"
-      fullPath: "/settings/images"
-      preLoaderRoute: typeof SettingsImagesRouteImport
+    "/settings/api-keys": {
+      id: "/settings/api-keys"
+      path: "/api-keys"
+      fullPath: "/settings/api-keys"
+      preLoaderRoute: typeof SettingsApiKeysRouteImport
       parentRoute: typeof SettingsRoute
     }
     "/settings/config": {
@@ -396,33 +354,61 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsConfigRouteImport
       parentRoute: typeof SettingsRoute
     }
-    "/settings/api-keys": {
-      id: "/settings/api-keys"
-      path: "/api-keys"
-      fullPath: "/settings/api-keys"
-      preLoaderRoute: typeof SettingsApiKeysRouteImport
+    "/settings/images": {
+      id: "/settings/images"
+      path: "/images"
+      fullPath: "/settings/images"
+      preLoaderRoute: typeof SettingsImagesRouteImport
       parentRoute: typeof SettingsRoute
     }
-    "/sandboxes/$sandboxId": {
-      id: "/sandboxes/$sandboxId"
-      path: "/sandboxes/$sandboxId"
-      fullPath: "/sandboxes/$sandboxId"
-      preLoaderRoute: typeof SandboxesSandboxIdRouteImport
-      parentRoute: typeof rootRouteImport
+    "/settings/organizations": {
+      id: "/settings/organizations"
+      path: "/organizations"
+      fullPath: "/settings/organizations"
+      preLoaderRoute: typeof SettingsOrganizationsRouteImport
+      parentRoute: typeof SettingsRoute
     }
-    "/settings/toolboxes/": {
-      id: "/settings/toolboxes/"
-      path: "/"
-      fullPath: "/settings/toolboxes/"
-      preLoaderRoute: typeof SettingsToolboxesIndexRouteImport
-      parentRoute: typeof SettingsToolboxesRoute
+    "/settings/policy": {
+      id: "/settings/policy"
+      path: "/policy"
+      fullPath: "/settings/policy"
+      preLoaderRoute: typeof SettingsPolicyRouteImport
+      parentRoute: typeof SettingsRoute
     }
-    "/settings/prebuilds/": {
-      id: "/settings/prebuilds/"
-      path: "/"
-      fullPath: "/settings/prebuilds/"
-      preLoaderRoute: typeof SettingsPrebuildsIndexRouteImport
-      parentRoute: typeof SettingsPrebuildsRoute
+    "/settings/prebuilds": {
+      id: "/settings/prebuilds"
+      path: "/prebuilds"
+      fullPath: "/settings/prebuilds"
+      preLoaderRoute: typeof SettingsPrebuildsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/secrets": {
+      id: "/settings/secrets"
+      path: "/secrets"
+      fullPath: "/settings/secrets"
+      preLoaderRoute: typeof SettingsSecretsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/ssh-keys": {
+      id: "/settings/ssh-keys"
+      path: "/ssh-keys"
+      fullPath: "/settings/ssh-keys"
+      preLoaderRoute: typeof SettingsSshKeysRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/toolboxes": {
+      id: "/settings/toolboxes"
+      path: "/toolboxes"
+      fullPath: "/settings/toolboxes"
+      preLoaderRoute: typeof SettingsToolboxesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/toolsets": {
+      id: "/settings/toolsets"
+      path: "/toolsets"
+      fullPath: "/settings/toolsets"
+      preLoaderRoute: typeof SettingsToolsetsRouteImport
+      parentRoute: typeof SettingsRoute
     }
     "/sandboxes/$sandboxId/": {
       id: "/sandboxes/$sandboxId/"
@@ -431,25 +417,18 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SandboxesSandboxIdIndexRouteImport
       parentRoute: typeof SandboxesSandboxIdRoute
     }
-    "/settings/toolboxes/new": {
-      id: "/settings/toolboxes/new"
-      path: "/new"
-      fullPath: "/settings/toolboxes/new"
-      preLoaderRoute: typeof SettingsToolboxesNewRouteImport
-      parentRoute: typeof SettingsToolboxesRoute
+    "/sandboxes/$sandboxId/sessions": {
+      id: "/sandboxes/$sandboxId/sessions"
+      path: "/sessions"
+      fullPath: "/sandboxes/$sandboxId/sessions"
+      preLoaderRoute: typeof SandboxesSandboxIdSessionsRouteImport
+      parentRoute: typeof SandboxesSandboxIdRoute
     }
-    "/settings/toolboxes/$id": {
-      id: "/settings/toolboxes/$id"
-      path: "/$id"
-      fullPath: "/settings/toolboxes/$id"
-      preLoaderRoute: typeof SettingsToolboxesIdRouteImport
-      parentRoute: typeof SettingsToolboxesRoute
-    }
-    "/settings/prebuilds/new": {
-      id: "/settings/prebuilds/new"
-      path: "/new"
-      fullPath: "/settings/prebuilds/new"
-      preLoaderRoute: typeof SettingsPrebuildsNewRouteImport
+    "/settings/prebuilds/": {
+      id: "/settings/prebuilds/"
+      path: "/"
+      fullPath: "/settings/prebuilds/"
+      preLoaderRoute: typeof SettingsPrebuildsIndexRouteImport
       parentRoute: typeof SettingsPrebuildsRoute
     }
     "/settings/prebuilds/$ref": {
@@ -459,12 +438,33 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsPrebuildsRefRouteImport
       parentRoute: typeof SettingsPrebuildsRoute
     }
-    "/sandboxes/$sandboxId/sessions": {
-      id: "/sandboxes/$sandboxId/sessions"
-      path: "/sessions"
-      fullPath: "/sandboxes/$sandboxId/sessions"
-      preLoaderRoute: typeof SandboxesSandboxIdSessionsRouteImport
-      parentRoute: typeof SandboxesSandboxIdRoute
+    "/settings/prebuilds/new": {
+      id: "/settings/prebuilds/new"
+      path: "/new"
+      fullPath: "/settings/prebuilds/new"
+      preLoaderRoute: typeof SettingsPrebuildsNewRouteImport
+      parentRoute: typeof SettingsPrebuildsRoute
+    }
+    "/settings/toolboxes/": {
+      id: "/settings/toolboxes/"
+      path: "/"
+      fullPath: "/settings/toolboxes/"
+      preLoaderRoute: typeof SettingsToolboxesIndexRouteImport
+      parentRoute: typeof SettingsToolboxesRoute
+    }
+    "/settings/toolboxes/$id": {
+      id: "/settings/toolboxes/$id"
+      path: "/$id"
+      fullPath: "/settings/toolboxes/$id"
+      preLoaderRoute: typeof SettingsToolboxesIdRouteImport
+      parentRoute: typeof SettingsToolboxesRoute
+    }
+    "/settings/toolboxes/new": {
+      id: "/settings/toolboxes/new"
+      path: "/new"
+      fullPath: "/settings/toolboxes/new"
+      preLoaderRoute: typeof SettingsToolboxesNewRouteImport
+      parentRoute: typeof SettingsToolboxesRoute
     }
   }
 }

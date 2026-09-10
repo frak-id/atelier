@@ -18,7 +18,7 @@ cd apps/console && bun run dev
 ## Build
 
 ```sh
-bun run build      # tsgo --noEmit && vite build → dist/ (static)
+bun run build      # tsc --noEmit && vite build → dist/ (static)
 ```
 
 ## Container / parallel deploy
