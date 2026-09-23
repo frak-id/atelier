@@ -9,6 +9,15 @@ const log = createChildLogger("kube-client");
 const MAX_ATTEMPTS = 3;
 const BASE_DELAY_MS = 200;
 
+/** `strategic` works only on built-in kinds; `merge` (RFC 7386) is the one
+ * patch flavour CRDs accept without a declared patch strategy. */
+export type KubePatchType = "strategic" | "merge";
+
+const PATCH_CONTENT_TYPES: Record<KubePatchType, string> = {
+  strategic: "application/strategic-merge-patch+json",
+  merge: "application/merge-patch+json",
+};
+
 type KubeClientConfig = {
   kubeconfig?: string;
   namespace?: string;
@@ -75,13 +84,15 @@ export class KubeClient {
     await this.request(path, { method: "DELETE" });
   }
 
-  async patch<T>(path: string, body: unknown): Promise<T> {
+  async patch<T>(
+    path: string,
+    body: unknown,
+    type: KubePatchType = "strategic",
+  ): Promise<T> {
     return this.request<T>(path, {
       method: "PATCH",
       body,
-      headers: {
-        "Content-Type": "application/strategic-merge-patch+json",
-      },
+      headers: { "Content-Type": PATCH_CONTENT_TYPES[type] },
     });
   }
 
@@ -110,19 +121,22 @@ export class KubeClient {
     await this.delete(path);
   }
 
-  /** Strategic-merge-patch a namespaced resource by kind/name. */
+  /** Patch a namespaced resource by kind/name. Built-in kinds default to
+   * strategic-merge; custom resources (e.g. sshpiper `Pipe`) MUST pass
+   * `"merge"` — the API server rejects strategic-merge on CRDs with a 415. */
   async patchResource(
     kind: string,
     name: string,
     body: unknown,
     namespace = this.namespace,
+    type: KubePatchType = "strategic",
   ): Promise<void> {
     if (isMock()) {
       return;
     }
 
     const path = resourceItemPath(kind, name, namespace);
-    await this.patch(path, body);
+    await this.patch(path, body, type);
   }
 
   async deleteLabeledResources(

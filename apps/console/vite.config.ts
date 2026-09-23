@@ -18,7 +18,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@": resolve(__dirname, "./src"),
+      "@": resolve(import.meta.dirname, "./src"),
     },
   },
   server: {
@@ -37,8 +37,9 @@ export default defineConfig({
     sourcemap: false,
     // `@atelier/server` is a type-only import (Eden `App` type). Never let a
     // stray value import pull the Bun/Node server graph into the browser
-    // bundle — fail loudly instead.
-    rollupOptions: {
+    // bundle — fail loudly instead. (`rolldownOptions`: Vite 8 bundles with
+    // Rolldown; `rollupOptions` is only a deprecated alias.)
+    rolldownOptions: {
       external: ["@atelier/server"],
     },
   },

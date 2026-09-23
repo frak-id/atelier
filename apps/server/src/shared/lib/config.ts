@@ -1,4 +1,7 @@
-import { loadConfig, loadProvidedConfig } from "@frak/atelier-shared";
+import {
+  loadConfig,
+  loadProvidedConfig,
+} from "@frak/atelier-shared/config-loader";
 
 export const config = loadConfig();
 

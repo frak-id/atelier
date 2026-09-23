@@ -1,4 +1,11 @@
 /**
+ * DEPRECATED — upstream Kaniko (`GoogleContainerTools/kaniko`) was archived
+ * by Google in 2025 and receives no further updates. Kept selectable (the
+ * image is pinned to a known-good tag already in use, no forced migration)
+ * but the recommended zero-daemon in-cluster builder is now `buildkit` with
+ * no `endpoint` set (`BuildkitImageBuilder`'s daemonless mode) — same "no
+ * daemon needed" property, actively maintained codebase.
+ *
  * Kaniko implementation of `ImageBuilderBackend` — the zero-daemon,
  * cluster-native builder. Runs `gcr.io/kaniko-project/executor` as a one-shot
  * Job (see `./k8s-build-job.ts`) that builds the context unpacked at

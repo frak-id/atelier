@@ -62,6 +62,10 @@ export interface BuildContainerSpec {
   command?: string[];
   args: string[];
   env?: { name: string; value: string }[];
+  /** Container-level `securityContext` override (e.g. the seccomp/AppArmor
+   * Unconfined + non-root UID rootless BuildKit needs — see
+   * `buildkit.builder.ts`'s `ROOTLESS_SECURITY_CONTEXT`). */
+  securityContext?: Record<string, unknown>;
   /** Extra volumes (e.g. a buildkit client-TLS secret) merged into the pod. */
   volumes?: unknown[];
   /** Extra mounts for the build container, paired with `volumes`. */
@@ -214,6 +218,9 @@ export function buildJobManifest(
               ...(container.command ? { command: container.command } : {}),
               args: container.args,
               ...(container.env ? { env: container.env } : {}),
+              ...(container.securityContext
+                ? { securityContext: container.securityContext }
+                : {}),
               terminationMessagePolicy: "File",
               volumeMounts: [
                 { name: "workspace", mountPath: WORKSPACE_DIR },

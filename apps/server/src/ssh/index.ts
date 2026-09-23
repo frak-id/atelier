@@ -45,7 +45,15 @@ export async function startSshGateway(
     // Dial the sandbox's Service DNS on port 22 — the same target the sshpiper
     // `Pipe` used (stable across pod restarts, no pod-IP race).
     if (!/^[a-z0-9-]+$/i.test(sandboxId)) return null;
-    return { host: `sandbox-${sandboxId}.${namespace}.svc`, port: 22 };
+    return {
+      host: `sandbox-${sandboxId}.${namespace}.svc`,
+      port: 22,
+      // Pin against the sshd host key the agent reported at this sandbox's
+      // last boot/resume, when known (a cheap in-memory store read, see
+      // RuntimeService.getSshHostKeys) — undefined falls back to the proxy's
+      // unpinned stance (old-agent sandbox, or not yet fetched).
+      hostKeys: container.runtime.getSshHostKeys(sandboxId),
+    };
   };
 
   const gateway = await startInServerSshGateway({

@@ -10,7 +10,7 @@ npm install -g @konfeature/atelier
 npx @konfeature/atelier
 ```
 
-Requires [Node.js](https://nodejs.org) >= 20.
+Requires [Node.js](https://nodejs.org) >= 22.12.
 
 ## Getting started
 

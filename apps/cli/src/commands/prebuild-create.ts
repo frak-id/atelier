@@ -190,7 +190,7 @@ export async function createPrebuildInteractive(
     const out = await runPrebuild(api, spec, seed.force ?? false);
     s.stop(`Baked ${out.ref}`);
   } catch (err) {
-    s.stop("Bake failed", 1);
+    s.error("Bake failed");
     ui.note(err instanceof Error ? err.message : String(err));
   }
 }

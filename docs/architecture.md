@@ -25,7 +25,7 @@
 | Storage | **TopoLVM** (CSI) | LVM thin provisioning, PVC snapshots |
 | Reverse Proxy | **Traefik** (k3s built-in) + **K8s Ingress** | Dynamic routing, HTTPS |
 | TLS | **cert-manager** (Cloudflare DNS-01) | Wildcard certificates |
-| Base Image Builds | **BuildKit** (`buildctl`, in-cluster) | Base OCI image builds against a shared buildkitd daemon |
+| Base Image Builds | **BuildKit** (`buildctl`, in-cluster) | Base OCI image builds — daemonless by default (`imageBuilder.endpoint` empty), or against a shared buildkitd daemon when set. Kaniko is also selectable (`imageBuilder.kind=kaniko`) but deprecated — upstream archived in 2025 |
 | Toolset Builds | **In-pod agent** | Content-addressed toolset artifacts (opencode, code-server, org toolboxes), built in a throwaway sandbox, pushed to Zot |
 | Registry | **Zot** | Lightweight OCI registry for base images + toolsets |
 | Database | **SQLite** (Drizzle ORM) | Sandbox, control-plane, and session state |

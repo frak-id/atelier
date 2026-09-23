@@ -438,3 +438,42 @@ ships.
   Tier 1/2 promises (container, not VM) and where untrusted specs must not run.
 - **Deferred — per-sandbox upstream keys:** revisit only if removing sshpiper
   shifts the threat model enough to justify the blast-radius reduction.
+
+### Addendum: SSH host-key pinning (2026-09)
+
+The two host-key stances this doc called "acceptable" above — `ignore_hostkey:
+true` on the `Pipe` and `hostVerifier: () => true` in the proxy — had a sharper
+edge than "ephemeral pods churn host keys": the dev-base image baked host keys
+with `ssh-keygen -A` at BUILD time, so every sandbox shared one host key AND
+its private half shipped inside the public `ghcr.io/frak-id/atelier-dev-base`
+image. Fixed:
+
+- The Dockerfile no longer bakes host keys; `sandbox-boot.sh` runs
+  `ssh-keygen -A` fresh on every boot, before starting the agent (per-sandbox,
+  per-boot keys, nothing secret distributed).
+- The agent exposes the public half at `GET /ssh/host-keys`
+  (`apps/agent-v2/src/ssh.rs`) — the agent's HTTP control plane is the
+  already-authenticated channel the runtime dials, so this is sound key
+  distribution, not SSH-level TOFU.
+- The runtime fetches the key right after boot/resume and PINS it: the
+  sshpiper `Pipe` gets `known_hosts_data` set (`ignore_hostkey: false`) via a
+  PATCH once the agent reports the key (`ssh-gateway.ts`'s `pinHostKey`,
+  `kube/ssh-known-hosts.ts` for the `known_hosts` formatting); the in-server
+  proxy's `hostVerifier` (`ssh/proxy.ts`) checks the upstream against the same
+  key, read from `SandboxRecord.generated.sshHostKeys`
+  (`RuntimeService.getSshHostKeys`).
+- Both mechanisms keep the OLD unpinned behavior as a graceful fallback: an
+  old-agent sandbox (pre-pinning image, `/ssh/host-keys` 404s) or a fetch
+  failure just never gets a pin, so SSH keeps working exactly as before —
+  pinning is additive, never a hard requirement.
+- The `none` strategy and the CLI's `atelier ssh` are unaffected: clients
+  always dial the gateway's own (stable) host key, not the sandbox's — see
+  `apps/cli/src/commands/sandbox-helpers.ts`'s `sshCommand`. The one path this
+  doesn't cover is an operator who manually `kubectl port-forward`s straight
+  to a sandbox pod under the `none` strategy: that pod's host key now rotates
+  every boot (previously it didn't, since it was baked and shared), so a
+  cached `known_hosts` entry for a directly-port-forwarded pod will trip
+  "REMOTE HOST IDENTIFICATION HAS CHANGED" after a restart. This is a
+  pre-existing manual/debug workflow (`none` exists precisely so an operator
+  can port-forward), not the `atelier ssh` path, and is called out here rather
+  than silently accepted.

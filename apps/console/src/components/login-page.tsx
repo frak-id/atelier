@@ -1,4 +1,3 @@
-import { Github } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -7,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { GithubIcon } from "@/components/ui/github-icon";
 import { httpUrl } from "@/lib/api-base";
 
 const LOGIN_ERRORS: Record<string, string> = {
@@ -94,7 +94,7 @@ export function LoginPage() {
               window.location.href = httpUrl("/auth/github");
             }}
           >
-            <Github className="mr-2 size-4" />
+            <GithubIcon className="mr-2 size-4" />
             Continue with GitHub
           </Button>
         </div>

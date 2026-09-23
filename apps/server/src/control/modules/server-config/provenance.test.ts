@@ -9,7 +9,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasConfigPath, loadProvidedConfig } from "@frak/atelier-shared";
+import {
+  hasConfigPath,
+  loadProvidedConfig,
+} from "@frak/atelier-shared/config-loader";
 
 function writeConfig(contents: unknown): string {
   const dir = mkdtempSync(join(tmpdir(), "atelier-config-"));

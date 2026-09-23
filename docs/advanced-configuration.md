@@ -110,12 +110,17 @@ sandboxes via the Model Context Protocol (`/mcp`). Agents authenticate with
 
 ## Base images (dev-base, dev-cloud)
 
-Base images are **not** built by the server at runtime — there is no
-build-from-UI feature in v2. They're built in-cluster with BuildKit
-(`buildctl`) against a shared `buildkitd` and pushed to Zot; see
+Production base images are typically built out-of-band with the cluster's
+BuildKit (`buildctl`) against a shared `buildkitd` and pushed to Zot; see
 `infra/k8s/v2/deploy.sh` and [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md#rebuild-images-in-cluster-no-local-docker).
-The `imageBuilder.*` config schema (kaniko/buildkit) still exists in
-`packages/shared` for a planned server-side rebuild but is currently unread.
+The server also has a server-side build API (`POST /v1/images`,
+`ImageBuilderService`) that uses the `imageBuilder.*` config — it's what the
+`kind`/`endpoint`/etc. schema below actually drives; there's just no
+build-from-console UI on top of it yet. `imageBuilder.kind=buildkit` with no
+`endpoint` (the default) runs BuildKit daemonless in a one-shot Job, so an
+in-cluster build needs no pre-existing daemon — the same zero-dependency
+property `kind=kaniko` offered, without depending on the now-archived
+upstream Kaniko project. `kind=kaniko` stays selectable but is deprecated.
 
 ## Infra chart values (`charts/atelier/values.yaml`)
 

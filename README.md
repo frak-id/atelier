@@ -107,7 +107,7 @@ server to it.
 
 - **Agent sessions** — drive the in-sandbox agent from console or CLI: start sessions, stream output, review todos, attach to any process read-write or read-only
 - **Attention feed** — permission and question requests from every sandbox aggregated in one place, with risk categorization
-- **MCP server** — 14 tools for sandbox lifecycle, exec, file patching, port exposure, prebuilds, and toolbox management; per-user authenticated sessions
+- **MCP server** — 13 tools for sandbox lifecycle, exec, file patching, port exposure, prebuilds, and toolbox management; per-user authenticated sessions
 - **Pluggable harnesses** — the available harness set is derived at runtime from `@atelier/compose` composers, so a pi-first or opencode-first org sees its own stack everywhere
 
 ### For fast, reproducible environments
@@ -116,7 +116,7 @@ server to it.
 - **Toolboxes & toolsets** — user- or org-scoped recipes (`build[]` + `paths[]`) compiled once into versioned, content-addressed artifacts and mounted into every spawn as squashfs overlays. Add any binary or tool without rebuilding a base image
 - **Saved specs** — name a `SandboxSpec` once, spawn it one-tap later, scoped to you or your org
 - **Pause / resume** — snapshot a sandbox and release its compute; resume later with fresh git credentials rotated in
-- **Three base images** — `dev-base` (Node 22 + Bun), `dev-cloud` (+ AWS/GCP/kubectl/Pulumi), `dev-rust` (+ Rust toolchain)
+- **Four base images** — `dev-base` (Node 24 + Bun), `dev-cloud` (+ AWS/GCP/kubectl/Pulumi), `dev-rust` (+ Rust toolchain), `dev-browser` (+ Chromium/KasmVNC desktop). Shipped as build seeds the server builds into your registry on demand; `dev-base` and `dev-browser` are also published to GHCR
 
 ### For teams and operators
 

@@ -147,7 +147,7 @@ export async function prebuildsMenu(api: AtelierApi): Promise<void> {
         const out = await runPrebuild(api, p.spec, true);
         sp.stop(`Rebuilt ${out.ref}`);
       } catch (err) {
-        sp.stop("Rebuild failed", 1);
+        sp.error("Rebuild failed");
         ui.note(err instanceof Error ? err.message : String(err));
       }
     } else if (action === "new") {
@@ -169,7 +169,7 @@ export async function prebuildsMenu(api: AtelierApi): Promise<void> {
         const out = await runPrebuild(api, spec, false);
         sp.stop(`Baked ${out.ref}`);
       } catch (err) {
-        sp.stop("Bake failed", 1);
+        sp.error("Bake failed");
         ui.note(err instanceof Error ? err.message : String(err));
       }
     } else if (action === "rm") {

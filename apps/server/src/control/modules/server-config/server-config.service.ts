@@ -8,7 +8,10 @@
  * `set`, so the console/CLI/MCP can display but never change them. When a key
  * is NOT locked, resolution for `get` is: stored console override → default.
  */
-import { getConfigValue, hasConfigPath } from "@frak/atelier-shared";
+import {
+  getConfigValue,
+  hasConfigPath,
+} from "@frak/atelier-shared/config-loader";
 import { ValidationError } from "../../../shared/errors.ts";
 import { config, providedConfig } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";

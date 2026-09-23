@@ -24,8 +24,16 @@ export { KanikoImageBuilder } from "./kaniko.builder.ts";
  * Select the image builder backend from `config.imageBuilder.kind`:
  *   - docker:   shells out to a Docker daemon (local/remote). Lowest
  *               friction; needs a daemon (a stock k3s node has none).
- *   - kaniko:   runs a kaniko Job in-cluster — no daemon at all.
- *   - buildkit: dispatches to an existing buildkitd via a buildctl Job.
+ *   - buildkit: the recommended in-cluster builder. With no
+ *               `imageBuilder.endpoint` (the default) it runs BuildKit
+ *               itself daemonless inside the one-shot build Job — no
+ *               external daemon needed, the same "zero daemon" deal kaniko
+ *               offered. With an endpoint set it dispatches to an existing
+ *               buildkitd via a `buildctl` Job instead.
+ *   - kaniko:   runs a kaniko Job in-cluster — no daemon at all, but
+ *               DEPRECATED: upstream Kaniko was archived by Google in 2025
+ *               and receives no more updates. Kept selectable (no forced
+ *               migration); prefer buildkit for new deployments.
  * An unknown kind fails fast here (at construction/startup), never on a
  * user's first build.
  */

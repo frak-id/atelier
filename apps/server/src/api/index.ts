@@ -4,7 +4,7 @@
  * `/mcp → same three`.
  */
 import { cors } from "@elysiajs/cors";
-import { swagger } from "@elysiajs/swagger";
+import { openapi } from "@elysiajs/openapi";
 import { Elysia } from "elysia";
 import { SandboxError } from "../shared/errors.ts";
 import { dashboardUrl, isProduction } from "../shared/lib/config.ts";
@@ -21,7 +21,9 @@ export function createApp(container: ServerContainer) {
   return new Elysia()
     .use(cors({ origin: dashboardUrl, credentials: true }))
     .use(
-      swagger({
+      // Keep the historical `/swagger` path: the console nginx proxies it and
+      // operators have it bookmarked. The spec itself is at `/swagger/json`.
+      openapi({
         path: "/swagger",
         documentation: {
           info: {

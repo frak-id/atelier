@@ -86,7 +86,7 @@ export async function runInit(): Promise<void> {
   s.start("Verifying…");
   const verdict = await probe(cfg);
   if (!verdict.reachable) {
-    s.stop(pc.red(`Cannot reach ${cfg.baseUrl}: ${verdict.detail}`), 1);
+    s.error(pc.red(`Cannot reach ${cfg.baseUrl}: ${verdict.detail}`));
     const proceed = await ui.confirm({
       message: "Save anyway?",
       initialValue: false,
@@ -96,7 +96,7 @@ export async function runInit(): Promise<void> {
       return;
     }
   } else if (!verdict.authed) {
-    s.stop(pc.red(`Auth failed: ${verdict.detail}`), 1);
+    s.error(pc.red(`Auth failed: ${verdict.detail}`));
     const proceed = await ui.confirm({
       message: "Save anyway?",
       initialValue: false,

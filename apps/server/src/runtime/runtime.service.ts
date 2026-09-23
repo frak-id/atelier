@@ -630,17 +630,22 @@ export class RuntimeService {
       await this.runPhase(id, "postStart");
       progress("sandbox running");
 
+      const generated = {
+        agentPassword: boot.agentPassword,
+        podIp: boot.podIp,
+        sshHostKeys: boot.sshHostKeys ?? undefined,
+      };
       this.sandboxes.update(id, {
         status: "running",
         podName: boot.podName,
         pvcName: boot.pvcName,
-        generated: { agentPassword: boot.agentPassword, podIp: boot.podIp },
+        generated,
       });
 
       return {
         id,
         urls: await this.urlsFor(id, spec),
-        generated: { agentPassword: boot.agentPassword, podIp: boot.podIp },
+        generated,
       };
     } catch (error) {
       // A failure in a post-boot phase (hooks/reconcile/primary gate) would
@@ -667,6 +672,18 @@ export class RuntimeService {
       metadata: record.metadata,
       annotations: record.spec.annotations,
     };
+  }
+
+  /**
+   * The sandbox's pinned sshd host public key line(s), as last reported by
+   * the agent at boot/resume — undefined when unknown (not yet booted since
+   * this feature shipped, or an old-agent sandbox that has none). A cheap,
+   * synchronous store read (no agent round-trip): used by the in-server SSH
+   * gateway (ssh/proxy.ts) to verify the upstream host key per connection,
+   * so it must stay fast.
+   */
+  getSshHostKeys(id: string): string[] | undefined {
+    return this.sandboxes.get(id)?.generated.sshHostKeys;
   }
 
   /** All sandboxes, from persistence only (no agent round-trips). Live
@@ -805,7 +822,11 @@ export class RuntimeService {
         spec,
         status: "running",
         pauseSnapshotRef: undefined,
-        generated: { agentPassword: boot.agentPassword, podIp: boot.podIp },
+        generated: {
+          agentPassword: boot.agentPassword,
+          podIp: boot.podIp,
+          sshHostKeys: boot.sshHostKeys ?? undefined,
+        },
       });
     });
     return this.get(id);

@@ -5,14 +5,23 @@
 import type { MultiSelectOptions, SelectOptions } from "@clack/prompts";
 import * as clack from "@clack/prompts";
 
+/** clack's cancel sentinel (a `unique symbol`, not exported by name). Typing
+ * the parameter with the exact symbol lets inference strip it from `T`. */
+type CancelSymbol = Extract<Awaited<ReturnType<typeof clack.text>>, symbol>;
+
 /** Bail out cleanly when the user cancels a clack prompt. */
-export function orCancel<T>(value: T | symbol): T {
+export function orCancel<T>(value: T | CancelSymbol): T {
   if (clack.isCancel(value)) {
     clack.cancel("Cancelled.");
     process.exit(0);
   }
-  return value as T;
+  return value;
 }
+
+/** clack 1.x validators receive `string | undefined` (empty input); ours take
+ * a plain string, so normalise before delegating. */
+const adaptValidate = (validate?: (v: string) => string | undefined) =>
+  validate && ((v: string | undefined) => validate(v ?? ""));
 
 export const intro = (msg: string): void => clack.intro(msg);
 export const outro = (msg: string): void => clack.outro(msg);
@@ -22,7 +31,9 @@ export const logMsg = clack.log;
 
 export function spinner(): {
   start: (msg?: string) => void;
-  stop: (msg?: string, code?: number) => void;
+  stop: (msg?: string) => void;
+  error: (msg?: string) => void;
+  cancel: (msg?: string) => void;
   message: (msg?: string) => void;
 } {
   return clack.spinner();
@@ -56,14 +67,18 @@ export async function text(opts: {
   defaultValue?: string;
   validate?: (v: string) => string | undefined;
 }): Promise<string> {
-  return orCancel(await clack.text(opts));
+  return orCancel(
+    await clack.text({ ...opts, validate: adaptValidate(opts.validate) }),
+  );
 }
 
 export async function password(opts: {
   message: string;
   validate?: (v: string) => string | undefined;
 }): Promise<string> {
-  return orCancel(await clack.password(opts));
+  return orCancel(
+    await clack.password({ ...opts, validate: adaptValidate(opts.validate) }),
+  );
 }
 
 export async function confirm(opts: {

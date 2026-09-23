@@ -71,6 +71,10 @@ export interface BootOutput {
   pvcName: string;
   agentPassword: string;
   podIp: string;
+  /** The sandbox's sshd host public key line(s), as reported by the agent
+   * right after boot — `null` when unavailable (old agent image, or the
+   * fetch failed). See `ProvisionAgentResult` for the exact semantics. */
+  sshHostKeys: string[] | null;
 }
 
 export async function bootSandbox(
@@ -127,9 +131,31 @@ export async function bootSandbox(
 
     // Backend-neutral tail (wait for agent -> materialize -> config -> files);
     // shared with the Docker backend via provisionAgent.
-    const podIp = await provisionAgent(sandboxId, spec, input, agent);
+    const { podIp, sshHostKeys } = await provisionAgent(
+      sandboxId,
+      spec,
+      input,
+      agent,
+    );
 
-    return { podName, pvcName, agentPassword, podIp };
+    // Upgrade the Pipe created above from its unpinned fallback to the real
+    // pinned key, now that the agent has reported it. Every boot/resume
+    // refreshes the pin (host keys regenerate per boot — sandbox-boot.sh); a
+    // failed/unavailable fetch just leaves the Pipe on the unpinned fallback,
+    // so this never fails the boot (backward compat with old-agent sandboxes).
+    if (sshHostKeys && sshHostKeys.length > 0) {
+      await ssh.pinHostKey(sshHostKeys).catch((error) => {
+        log.warn(
+          {
+            sandboxId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "Failed to pin sandbox ssh host key; SSH stays on the unpinned fallback",
+        );
+      });
+    }
+
+    return { podName, pvcName, agentPassword, podIp, sshHostKeys };
   } catch (error) {
     log.error(
       {

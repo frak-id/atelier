@@ -50,7 +50,12 @@ spec:
                   host:
                     type: string
                   ignore_hostkey:
+                    description: Deprecated and ignored. Leave known_hosts_data empty to skip host key verification.
                     type: boolean
+                  # Base64 known_hosts pinning the sandbox's sshd key. Must be
+                  # declared here: structural CRD schemas prune unknown fields.
+                  known_hosts_data:
+                    type: string
                   private_key_secret:
                     properties:
                       name:

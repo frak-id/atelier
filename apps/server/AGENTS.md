@@ -41,7 +41,7 @@ files + processes + ports, composed client-side by `@atelier/compose`.
 ```bash
 ATELIER_SERVER_MODE=mock bun run --watch src/index.ts   # dev, no K8s needed
 bun run scripts/check-boundaries.ts                       # enforce module boundaries
-bun run typecheck                                          # tsgo --noEmit
+bun run typecheck                                          # tsc --noEmit (TypeScript 7)
 bunx drizzle-kit generate                                  # control/db schema migration
 ```
 
@@ -84,9 +84,12 @@ exposes the existing capability so the GUI can offer a read-only attach.
   agent-v2's `/atelier-agent` there, so `sandbox-boot.sh` is unchanged).
   Deferred to M3/M6: `agent.operations.serviceList` + `sessions/acp` still use
   the v1 `service*`/`acp*` client methods (migrate then delete them).
-- **Event bus / dashboard SSE / cron jobs** (auth-sync watcher, prebuild
-  staleness, cliproxy refresh) are v1 features not yet ported — deferred to
-  the milestone that needs them (§6 milestones 3–4), not silently dropped.
+- **Event bus / dashboard SSE** (auth-sync watcher, cliproxy refresh) are
+  v1 features not yet ported — deferred to the milestone that needs them
+  (§6 milestones 3–4), not silently dropped. Prebuild staleness *is*
+  ported: `index.ts` schedules `refreshStalePrebuilds` +
+  `pruneUnusedPrebuilds` as a `Bun.cron("*/30 * * * *")` job, gated on the
+  `prebuild.gitTracking` config and skipped in mock mode.
 - **Org resolution in `/v1/sandboxes`** is a stub (`orgId = undefined`) —
   saved specs and secrets are org-scoped in the schema already; wiring the
   request → org lookup is pending real multi-org product decisions.

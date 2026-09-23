@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import ssh2, { type Connection } from "ssh2";
 import { generateOpenSSHEd25519 } from "../shared/lib/ssh-key-openssh.ts";
-import { startInServerSshGateway } from "./proxy.ts";
+import { buildHostVerifier, startInServerSshGateway } from "./proxy.ts";
 
 const { Server, Client } = ssh2;
 
@@ -76,22 +76,32 @@ async function withGateway(
     devKey: string;
     otherKey: string;
     podUser: () => string;
+    podHostKeyPublic: string;
   }) => Promise<void>,
+  options: { pinnedHostKeys?: "pod" | string[] } = {},
 ): Promise<void> {
   const proxyHostKey = generateOpenSSHEd25519("proxy-host").privateKeyOpenSSH;
   const shared = generateOpenSSHEd25519("shared-upstream");
   const dev = generateOpenSSHEd25519("dev");
   const other = generateOpenSSHEd25519("other");
+  const podHostKey = generateOpenSSHEd25519("pod-host");
 
   // The fake pod trusts the shared key's public half (what the proxy dials with).
   const sharedParsed = ssh2.utils.parseKey(shared.privateKeyOpenSSH);
   if (sharedParsed instanceof Error) throw sharedParsed;
 
   const pod = await startFakePod({
-    hostKey: generateOpenSSHEd25519("pod-host").privateKeyOpenSSH,
+    hostKey: podHostKey.privateKeyOpenSSH,
     trustedPubSSH: sharedParsed.getPublicSSH(),
     expectUser: "dev",
   });
+
+  // "pod" pins the pod's OWN real host key (generated above, before the pod
+  // even starts) — a match; an explicit array lets a test pin a WRONG key.
+  const pinnedHostKeys =
+    options.pinnedHostKeys === "pod"
+      ? [podHostKey.publicKeyOpenSSH]
+      : options.pinnedHostKeys;
 
   const gateway = await startInServerSshGateway({
     listenPort: 0,
@@ -100,7 +110,11 @@ async function withGateway(
     upstreamUser: "dev",
     upstreamPrivateKey: shared.privateKeyOpenSSH,
     authorizedKeys: () => [dev.publicKeyOpenSSH],
-    resolveUpstream: () => ({ host: "127.0.0.1", port: pod.port }),
+    resolveUpstream: () => ({
+      host: "127.0.0.1",
+      port: pod.port,
+      hostKeys: pinnedHostKeys,
+    }),
   });
 
   try {
@@ -109,6 +123,7 @@ async function withGateway(
       devKey: dev.privateKeyOpenSSH,
       otherKey: other.privateKeyOpenSSH,
       podUser: pod.lastUser,
+      podHostKeyPublic: podHostKey.publicKeyOpenSSH,
     });
   } finally {
     await gateway.close();
@@ -190,5 +205,80 @@ describe("in-server ssh proxy", () => {
         }),
       ).rejects.toThrow();
     });
+  });
+});
+
+describe("in-server ssh proxy host-key pinning", () => {
+  test("no pinned key: connects (today's unpinned fallback)", async () => {
+    await withGateway(async (ctx) => {
+      const client = await connect({
+        port: ctx.port,
+        username: "sb-abc123",
+        privateKey: ctx.devKey,
+      });
+      client.end();
+    });
+  });
+
+  test("pinned key matches the pod's real host key: connects", async () => {
+    await withGateway(
+      async (ctx) => {
+        const client = await connect({
+          port: ctx.port,
+          username: "sb-abc123",
+          privateKey: ctx.devKey,
+        });
+        client.end();
+      },
+      { pinnedHostKeys: "pod" },
+    );
+  });
+});
+
+// `buildHostVerifier` unit-tested directly, not end-to-end: a rejected
+// hostVerifier tears down the upstream mid-handshake, which the real ssh2
+// server implementation surfaces as an internal `KEY_EXCHANGE_FAILED`
+// disconnect on the DEV-facing socket too (both ends of `connectUpstream`
+// share the same raw TCP teardown timing) — an ssh2-internal artifact of the
+// abrupt `client.end()`, not something this module's behavior hinges on.
+// Exercising the verifier function directly is the stable, deterministic way
+// to pin its accept/reject contract.
+describe("buildHostVerifier", () => {
+  test("no pinned keys: accepts anything (today's unpinned fallback)", () => {
+    const verify = buildHostVerifier("sb-1", undefined);
+    expect(verify(Buffer.from("anything"))).toBe(true);
+    expect(buildHostVerifier("sb-1", [])(Buffer.from("anything"))).toBe(true);
+  });
+
+  test("pinned key: accepts an exact match, rejects everything else", () => {
+    const real = generateOpenSSHEd25519("real-host");
+    const wrong = generateOpenSSHEd25519("wrong-host");
+    const realParsed = ssh2.utils.parseKey(real.privateKeyOpenSSH);
+    const wrongParsed = ssh2.utils.parseKey(wrong.privateKeyOpenSSH);
+    if (realParsed instanceof Error || wrongParsed instanceof Error) {
+      throw realParsed instanceof Error ? realParsed : wrongParsed;
+    }
+
+    const verify = buildHostVerifier("sb-1", [real.publicKeyOpenSSH]);
+    expect(verify(realParsed.getPublicSSH())).toBe(true);
+    expect(verify(wrongParsed.getPublicSSH())).toBe(false);
+  });
+
+  test("multiple pinned lines: matches any one of them", () => {
+    const a = generateOpenSSHEd25519("host-a");
+    const b = generateOpenSSHEd25519("host-b");
+    const wrong = generateOpenSSHEd25519("host-c");
+    const bParsed = ssh2.utils.parseKey(b.privateKeyOpenSSH);
+    const wrongParsed = ssh2.utils.parseKey(wrong.privateKeyOpenSSH);
+    if (bParsed instanceof Error || wrongParsed instanceof Error) {
+      throw bParsed instanceof Error ? bParsed : wrongParsed;
+    }
+
+    const verify = buildHostVerifier("sb-1", [
+      a.publicKeyOpenSSH,
+      b.publicKeyOpenSSH,
+    ]);
+    expect(verify(bParsed.getPublicSSH())).toBe(true);
+    expect(verify(wrongParsed.getPublicSSH())).toBe(false);
   });
 });

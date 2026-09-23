@@ -358,7 +358,7 @@ async fn handle_conn(stream: TcpStream, id: String, registry: Arc<TerminalRegist
         (chunks, terminal.output.subscribe())
     };
     for chunk in chunks {
-        if sink.send(Message::Binary(chunk.to_vec())).await.is_err() {
+        if sink.send(Message::Binary(chunk)).await.is_err() {
             return;
         }
     }
@@ -368,7 +368,7 @@ async fn handle_conn(stream: TcpStream, id: String, registry: Arc<TerminalRegist
         // behind); either way stop, so a lagged client reconnects and replays
         // rather than render a gapped stream.
         while let Ok(data) = rx.recv().await {
-            if sink.send(Message::Binary(data.to_vec())).await.is_err() {
+            if sink.send(Message::Binary(data)).await.is_err() {
                 break;
             }
         }
@@ -382,7 +382,7 @@ async fn handle_conn(stream: TcpStream, id: String, registry: Arc<TerminalRegist
             match msg {
                 // Bytes are keystrokes into the shell.
                 Message::Binary(b) => {
-                    if write_tx.send(b).await.is_err() {
+                    if write_tx.send(Vec::from(b)).await.is_err() {
                         break;
                     }
                 }

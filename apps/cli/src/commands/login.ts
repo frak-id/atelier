@@ -131,7 +131,7 @@ export async function runLogin(opts: LoginOpts): Promise<void> {
   try {
     jwt = await browserAuth(normalized, opts.browser === false);
   } catch (err) {
-    s.stop(pc.red(err instanceof Error ? err.message : String(err)), 1);
+    s.error(pc.red(err instanceof Error ? err.message : String(err)));
     ui.outro("Not logged in.");
     process.exitCode = 1;
     return;

@@ -14,8 +14,12 @@
  *   - `direct-tcpip` — port forwarding, which is what VS Code / Cursor / editor
  *     Remote-SSH rides on.
  *
- * Upstream host keys are ignored: pods are ephemeral inside the cluster trust
- * boundary (the same stance the sshpiper `Pipe` took with `ignore_hostkey`).
+ * Upstream host keys are pinned when known: `resolveUpstream` returns the
+ * sandbox's real sshd host key(s) (fetched from the agent at boot/resume,
+ * see ssh-gateway.ts), and `hostVerifier` checks the upstream against them
+ * (`buildHostVerifier` below). An old-agent sandbox or a not-yet-fetched key
+ * falls back to trusting the upstream unconditionally — the same stance the
+ * sshpiper `Pipe` takes before it has a pin (`ignore_hostkey`).
  * SSH sessions live in this process, so a server redeploy drops live
  * connections — acceptable for a dev tool, stated honestly in the proposal.
  */
@@ -40,6 +44,12 @@ const log = createChildLogger("ssh-gateway");
 export interface UpstreamTarget {
   host: string;
   port: number;
+  /** The sandbox's real sshd host public key line(s) (OpenSSH format), when
+   * known — pins `hostVerifier` against them. Undefined/empty falls back to
+   * trusting the upstream unconditionally (an old-agent sandbox, or the key
+   * hasn't been fetched yet), the same stance the sshpiper `Pipe` takes with
+   * `ignore_hostkey` before it has a pin. */
+  hostKeys?: string[];
 }
 
 export interface InServerSshGatewayDeps {
@@ -77,6 +87,31 @@ export interface InServerSshGateway {
 /** Constant-time compare of two public-key blobs. */
 function keyEquals(a: Buffer, b: Buffer): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Build a `hostVerifier` for `ssh2.Client.connect()` pinned to `hostKeys`.
+ * Without `hostHash` configured, ssh2 hands the verifier the raw upstream
+ * public-key wire blob (not a hash) — the same format `ParsedKey.getPublicSSH()`
+ * returns for a parsed `known_hosts`-style line, so comparison is a direct
+ * `keyEquals`. Falls back to accept-any when no pinned keys are available
+ * (old-agent sandbox / not yet fetched) — today's unpinned stance, logged
+ * once per connection at debug so the gap is auditable without being noisy.
+ */
+export function buildHostVerifier(
+  sandboxId: string,
+  hostKeyLines: string[] | undefined,
+): (keyBuf: Buffer) => boolean {
+  const pinned = hostKeyLines?.length ? parseAuthorizedKeys(hostKeyLines) : [];
+  if (pinned.length === 0) {
+    log.debug(
+      { sandboxId },
+      "no pinned ssh host key for sandbox; skipping upstream host verification",
+    );
+    return () => true;
+  }
+  return (keyBuf: Buffer) =>
+    pinned.some((k) => keyEquals(k.getPublicSSH(), keyBuf));
 }
 
 /** Parse the configured authorized keys, dropping any that don't parse. */
@@ -367,8 +402,10 @@ async function connectUpstream(
     port: target.port,
     username: deps.upstreamUser,
     privateKey: deps.upstreamPrivateKey,
-    // Ephemeral pods churn host keys; we are inside the cluster trust boundary.
-    hostVerifier: () => true,
+    // Pinned against the sandbox's real host key when known (target.hostKeys,
+    // resolved from SandboxRecord.generated.sshHostKeys); unconditional trust
+    // otherwise — see buildHostVerifier.
+    hostVerifier: buildHostVerifier(sandboxId, target.hostKeys),
     keepaliveInterval: 15_000,
     readyTimeout: 20_000,
   });
