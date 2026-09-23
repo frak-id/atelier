@@ -96,6 +96,19 @@ while [ "$i" -lt 8 ]; do
     i=$((i + 1))
 done
 
+# ── SSH host keys ────────────────────────────────────────────────────
+# The image ships NO /etc/ssh/ssh_host_* (see the Dockerfile): baking them
+# in would share one host key across every sandbox AND ship the private
+# halves inside the public image. Generate fresh, per-boot keys here —
+# BEFORE starting the agent below — so `GET /ssh/host-keys` (apps/agent-v2/
+# src/ssh.rs) can report the real key as soon as the agent is reachable; the
+# server pins whatever it gets back into the sshpiper Pipe / in-server proxy
+# right after boot. `-A` only (re)generates keys that are missing, so this is
+# a no-op on a resumed disk... except /etc/ssh lives on the container's
+# EPHEMERAL rootfs (not /data), so every restart regenerates — intentional:
+# per-boot keys, nothing persisted to leak.
+ssh-keygen -A >/dev/null 2>&1
+
 # ── SSH key staging ───────────────────────────────────────────────────
 # The sshpiper public key is mounted by K8s from the atelier-ssh-pipe-key
 # Secret. Write it into the overlay upperdir now — /home/dev isn't mounted

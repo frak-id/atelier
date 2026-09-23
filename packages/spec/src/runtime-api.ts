@@ -17,6 +17,12 @@ export const GeneratedSchema = Type.Object(
     agentPassword: Type.Optional(Type.String()),
     podIp: Type.Optional(Type.String()),
     tokens: Type.Optional(Type.Record(Type.String(), Type.String())),
+    /** The sandbox's sshd host public key line(s) (OpenSSH format), as last
+     * reported by the agent's `GET /ssh/host-keys` at boot/resume — the
+     * runtime's SSH host-key pinning (see ssh-gateway.ts / ssh/proxy.ts).
+     * Undefined when unknown: not yet fetched, or an old-agent sandbox
+     * (pre-pinning image) that never reports one. */
+    sshHostKeys: Type.Optional(Type.Array(Type.String())),
   },
   { additionalProperties: true, $id: "Generated" },
 );

@@ -55,6 +55,12 @@ pub async fn route(
             None => error(StatusCode::NOT_FOUND, "No config pushed yet"),
         },
         (&Method::PUT, "/config") => handle_put_config(req, store).await,
+        // SSH host-key pinning (see ssh.rs): the sandbox's sshd public host
+        // key(s), regenerated fresh every boot (no more baked-in keys).
+        (&Method::GET, "/ssh/host-keys") => json(
+            StatusCode::OK,
+            serde_json::json!({ "keys": crate::ssh::host_keys() }),
+        ),
         (&Method::GET, "/processes") => json(
             StatusCode::OK,
             serde_json::json!({ "processes": supervisor.list().await }),

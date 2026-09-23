@@ -21,9 +21,11 @@
 import { Buffer } from "node:buffer";
 import { config } from "../shared/lib/config.ts";
 import {
+  buildKnownHostsData,
   buildSshPipe,
   ensureSharedSshPipeKey,
   type KubeResource,
+  kubeClient,
 } from "./kube/index.ts";
 
 export interface SshGatewayBoot {
@@ -33,7 +35,20 @@ export interface SshGatewayBoot {
   /** Extra resources to create in the boot batch (a `Pipe`, or the per-sandbox
    * authorized-keys Secret for `none`). */
   resources: KubeResource[];
+  /**
+   * Pin the sandbox's real sshd host key(s) onto the Pipe this boot created,
+   * once the agent reports them (`GET /ssh/host-keys` — the Pipe is created
+   * up front on the unpinned fallback so boot never blocks on the agent for
+   * SSH to work). A no-op for `none`/`in-server` (no Pipe to patch — the
+   * in-server proxy pins from `SandboxRecord.generated.sshHostKeys` instead,
+   * see runtime.service.ts + ssh/proxy.ts). Called fresh on every boot AND
+   * resume: host keys regenerate every boot (sandbox-boot.sh), so a stale
+   * pin from a prior boot must be overwritten, not just set once.
+   */
+  pinHostKey: (hostKeys: string[]) => Promise<void>;
 }
+
+const noopPin: SshGatewayBoot["pinHostKey"] = async () => {};
 
 /** Per-sandbox Secret holding the dev's own authorized keys (the `none`
  * strategy). Restartable: recreated on every boot, deleted on pause/rollback. */
@@ -53,13 +68,14 @@ export async function resolveSshGatewayBoot(
   if (strategy === "none") {
     // No proxy holds a shared key, so the pod must trust the dev's own keys for
     // a port-forwarding operator to authenticate. No keys ⇒ SSH simply off.
-    if (!authorizedKeysData) return { resources: [] };
+    if (!authorizedKeysData) return { resources: [], pinHostKey: noopPin };
     const secretName = sshAuthKeysSecretName(sandboxId);
     return {
       podAuthKeysSecret: secretName,
       resources: [
         buildAuthKeysSecret(sandboxId, secretName, authorizedKeysData),
       ],
+      pinHostKey: noopPin,
     };
   }
 
@@ -67,17 +83,54 @@ export async function resolveSshGatewayBoot(
   // proxy does the hop); `sshpiper` additionally emits the routing Pipe.
   const sharedKey = await ensureSharedSshPipeKey();
   const resources: KubeResource[] = [];
+  let pinHostKey = noopPin;
   if (strategy === "sshpiper") {
+    const targetHost = `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`;
     resources.push(
       buildSshPipe({
         sandboxId,
-        targetHost: `sandbox-${sandboxId}.${config.kubernetes.namespace}.svc`,
+        targetHost,
         authorizedKeysData,
         privateKeySecretName: sharedKey.secretName,
       }),
     );
+    pinHostKey = (hostKeys) =>
+      pinSshPipeHostKey(sandboxId, targetHost, hostKeys);
   }
-  return { podAuthKeysSecret: sharedKey.secretName, resources };
+  return { podAuthKeysSecret: sharedKey.secretName, resources, pinHostKey };
+}
+
+/**
+ * PATCH the Pipe's `to` with the sandbox's real sshd host key(s) — pinning
+ * verification (`known_hosts_data` set, `ignore_hostkey: false`). A JSON
+ * merge-patch scoped to `spec.to` so `spec.from` (the dev's authorized_keys)
+ * is left untouched. `known_hosts_data` from an empty `hostKeys` is
+ * impossible here (the caller only invokes `pinHostKey` with a non-empty
+ * list — see boot.ts), but `buildKnownHostsData` returning `undefined` is
+ * still handled defensively by skipping the patch rather than pinning an
+ * empty/broken value.
+ */
+async function pinSshPipeHostKey(
+  sandboxId: string,
+  targetHost: string,
+  hostKeys: string[],
+): Promise<void> {
+  const knownHostsData = buildKnownHostsData(targetHost, 22, hostKeys);
+  if (!knownHostsData) return;
+  // `Pipe` is a CRD: strategic-merge is rejected (415), so JSON merge-patch.
+  // `known_hosts_data` must also be declared in the chart's Pipe CRD schema,
+  // or the API server prunes it on write (charts/.../sshpiper-crd.yaml).
+  await kubeClient.patchResource(
+    "Pipe",
+    `ssh-${sandboxId}`,
+    {
+      spec: {
+        to: { known_hosts_data: knownHostsData, ignore_hostkey: false },
+      },
+    },
+    undefined,
+    "merge",
+  );
 }
 
 function encodeAuthorizedKeys(publicKeys?: string[]): string | undefined {

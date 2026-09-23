@@ -213,6 +213,34 @@ export class AgentClient {
   }
 
   /**
+   * Fetch the sandbox's sshd host public key line(s) (`GET /ssh/host-keys`)
+   * — SSH host-key pinning (ssh-gateway.ts / ssh/proxy.ts). Returns `null`
+   * on ANY failure, not just a 404: an old-agent sandbox (pre-pinning image)
+   * 404s, but a transient timeout looks the same to the caller ("couldn't
+   * pin this time") — both fall back to the unpinned strategy rather than
+   * failing boot, so there is no reason to distinguish them here. Logged
+   * once per call at debug (not warn): the unpinned fallback is a normal,
+   * expected steady state for any sandbox on an old image, not an error.
+   */
+  async getSshHostKeys(sandboxId: string): Promise<string[] | null> {
+    if (isMock()) return null;
+    try {
+      const res = await this.request<{ keys: string[] }>(
+        sandboxId,
+        "/ssh/host-keys",
+      );
+      return res.keys;
+    } catch (err) {
+      log.debug(
+        { sandboxId, err: err instanceof Error ? err.message : String(err) },
+        "Could not fetch ssh host keys; SSH stays on the unpinned fallback " +
+          "(expected for sandboxes on an old agent image)",
+      );
+      return null;
+    }
+  }
+
+  /**
    * Push the projected config into the guest agent (`PUT /config`). The v2
    * agent stores + validates it but does NOT autostart processes — the runtime
    * drives the phase order (postCreate -> reconcile -> postStart) explicitly.

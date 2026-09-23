@@ -19,6 +19,7 @@ export {
   toolHost,
   toolIngressName,
 } from "./kube.resources.ts";
+export { buildKnownHostsData, knownHostsPattern } from "./ssh-known-hosts.ts";
 export {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,

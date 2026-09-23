@@ -82,17 +82,21 @@ RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/release
     && oras version
 
 # Layer 3: Locale + user setup + SSH config (rarely changes)
-# ssh-keygen -A bakes host keys into the image so they are not regenerated on
-# every boot. Sandboxes share host keys, which is safe here: SSH only enters via
-# sshpiper, whose Pipe carries no known_hosts_data (host-key checks skipped;
-# no client ever pins a sandbox key).
+# Deliberately NO `ssh-keygen -A` here: baking host keys into the image would
+# ship every sandbox's PRIVATE key inside the public dev-base image (anyone
+# could impersonate any sandbox to the gateway) and every sandbox would share
+# the same host key. `sandbox-boot.sh` runs `ssh-keygen -A` fresh on every
+# boot instead (per-sandbox, per-boot keys, nothing secret distributed), and
+# the agent's `GET /ssh/host-keys` lets the server pin the real key into the
+# sshpiper `Pipe` / in-server proxy — see docs/proposals/portable-runtime-
+# backends.md §5 and apps/agent-v2/src/ssh.rs.
 RUN usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
     && mkdir -p /var/run/sshd \
+    && rm -f /etc/ssh/ssh_host_* \
     && sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config \
     && sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config \
-    && sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config \
-    && ssh-keygen -A
+    && sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
 
 # Layer 4: Bun runtime (cached unless install script changes)
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \

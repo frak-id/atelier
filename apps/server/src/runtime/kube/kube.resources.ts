@@ -392,6 +392,13 @@ export type SshPipeOptions = {
   privateKeySecretName?: string;
   namespace?: string;
   workspaceId?: string;
+  /** base64 `known_hosts` content pinning the sandbox's real sshd host
+   * key(s) (build with `buildKnownHostsData` — ssh-known-hosts.ts).
+   * Undefined at initial Pipe creation (the sandbox's sshd hasn't reported a
+   * key to the agent yet) — boot patches it in once the agent does (see
+   * ssh-gateway.ts's `pinHostKey`), so every Pipe starts on the unpinned
+   * fallback and upgrades in place. */
+  knownHostsData?: string;
 };
 
 export function buildSshPipe(options: SshPipeOptions): KubeResource {
@@ -427,10 +434,23 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
       to: {
         host: `${options.targetHost}:22`,
         username: "dev",
-        // sshpiper >= 1.6 ignores this flag: host-key checks are skipped
-        // because `known_hosts_data` is left empty. Kept so an operator
-        // pinning an older sshpiperd image gets the same behaviour.
-        ignore_hostkey: true,
+        ...(options.knownHostsData
+          ? {
+              // Pinned: sshpiper verifies the upstream sshd against this
+              // known_hosts content (see ssh-known-hosts.ts for the exact
+              // host-pattern format it must match).
+              known_hosts_data: options.knownHostsData,
+              ignore_hostkey: false,
+            }
+          : {
+              // Not pinned yet (fresh Pipe, or an old-agent sandbox that
+              // never reports a key) — sshpiper >= 1.6 treats empty
+              // `known_hosts_data` as "skip verification" regardless of this
+              // flag; kept true so an operator pinning an older sshpiperd
+              // image gets the same (unpinned) behaviour rather than a
+              // surprise rejection.
+              ignore_hostkey: true,
+            }),
         ...(options.privateKeySecretName && {
           private_key_secret: { name: options.privateKeySecretName },
         }),

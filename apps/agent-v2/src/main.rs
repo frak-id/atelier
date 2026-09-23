@@ -20,6 +20,7 @@ mod hooks;
 mod limits;
 mod readiness;
 mod router;
+mod ssh;
 mod store;
 mod supervisor;
 mod terminal;
