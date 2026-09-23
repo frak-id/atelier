@@ -290,7 +290,16 @@ export type ImageBuilderTlsConfig = Static<typeof ImageBuilderTlsConfigSchema>;
 
 export const ImageBuilderConfigSchema = Type.Object(
   {
-    /** Which builder strategy to use */
+    /**
+     * Which builder strategy to use. `buildkit` (with `endpoint` left
+     * empty) is the recommended zero-daemon, in-cluster choice — it runs
+     * BuildKit itself daemonless inside the one-shot build Job. `kaniko` is
+     * DEPRECATED (upstream archived by Google in 2025, no more updates) but
+     * stays selectable. `docker` is the local/remote daemon backend used by
+     * `atelier local up` — it stays the schema default because it's what
+     * local mode needs; Kubernetes deployments set `kind` explicitly (see
+     * `infra/k8s/v2/30-config.yaml`).
+     */
     kind: Type.Union(
       [
         Type.Literal("docker"),
@@ -301,15 +310,22 @@ export const ImageBuilderConfigSchema = Type.Object(
     ),
     /**
      * Override the builder image. Defaults to a sensible value per kind:
-     *   - kaniko:   gcr.io/kaniko-project/executor:latest
-     *   - buildkit: moby/buildkit:latest (used as the buildctl client)
+     *   - buildkit: moby/buildkit:v0.33.0 as the buildctl CLIENT (when
+     *               `endpoint` is set), or moby/buildkit:v0.33.0-rootless
+     *               run DAEMONLESS in the build Job (when `endpoint` is
+     *               empty — the default, no external daemon needed)
+     *   - kaniko:   gcr.io/kaniko-project/executor:latest (deprecated — see
+     *               `kind` above)
      *   - docker:   unused (the daemon itself does the build)
      */
     image: Type.String({ default: "" }),
     /**
      * Address of an existing BuildKit daemon (e.g.
-     * tcp://buildkitd.buildkit.svc:1234). Required when kind=buildkit;
-     * ignored otherwise.
+     * tcp://buildkitd.buildkit.svc:1234). Only relevant when kind=buildkit.
+     * Empty (the default) runs BuildKit daemonless inside the one-shot
+     * build Job instead of dispatching to an external daemon — no cluster
+     * pre-req needed. Set this only if you already host a shared buildkitd
+     * Pod you'd rather reuse.
      */
     endpoint: Type.String({ default: "" }),
     /**

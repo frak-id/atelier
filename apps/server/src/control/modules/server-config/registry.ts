@@ -197,8 +197,11 @@ export const CONFIG_REGISTRY = {
     label: "Image builder",
     description:
       "Which build backend to use: docker (shell out to a Docker daemon), " +
-      "kaniko (a K8s Job, no daemon), or buildkit (dispatch to an existing " +
-      "buildkitd). buildkit requires an endpoint below.",
+      "buildkit (recommended for in-cluster builds — runs daemonless with " +
+      "no endpoint set, or dispatches to an existing buildkitd if you set " +
+      "one below), or kaniko (a K8s Job, no daemon — DEPRECATED: upstream " +
+      "archived by Google in 2025, no more updates; kept selectable but " +
+      "prefer buildkit).",
     envVar: "ATELIER_IMAGE_BUILDER_KIND",
     default: "docker",
     parseEnv: validateBuilderKind,
@@ -209,9 +212,9 @@ export const CONFIG_REGISTRY = {
     type: "string",
     label: "Builder image override",
     description:
-      "Override the builder image (kaniko executor / buildkit buildctl " +
-      "client). Empty uses the sensible per-kind default. Ignored for the " +
-      "docker backend.",
+      "Override the builder image (buildkit client/daemon or the " +
+      "deprecated kaniko executor). Empty uses the sensible per-kind " +
+      "default. Ignored for the docker backend.",
     envVar: "ATELIER_IMAGE_BUILDER_IMAGE",
     default: "",
     parseEnv: optionalString,
@@ -223,8 +226,9 @@ export const CONFIG_REGISTRY = {
     label: "BuildKit endpoint",
     description:
       "Address of an existing buildkitd daemon (e.g. " +
-      "tcp://buildkitd.buildkit.svc:1234). Required when the builder is " +
-      "buildkit; ignored otherwise.",
+      "tcp://buildkitd.buildkit.svc:1234). Only used when the builder is " +
+      "buildkit. Leave empty (the default) to run BuildKit daemonless in " +
+      "the one-shot build Job instead — no external daemon needed.",
     envVar: "ATELIER_IMAGE_BUILDER_ENDPOINT",
     default: "",
     parseEnv: optionalString,

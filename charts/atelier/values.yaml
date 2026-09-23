@@ -118,23 +118,39 @@ ports:
 
 # -- Image builder for base images (dev-base, dev-cloud, …)
 #
-# Two strategies are supported:
-#   - kaniko   (default): spawns a K8s Job that runs Kaniko. Works
-#                          out of the box; no external deps.
-#   - buildkit          : dispatches builds to an EXISTING BuildKit
-#                          daemon (a Pod you already host). Only a
-#                          small `buildctl` Job is created per build.
+# NOTE: as of this writing no chart template actually reads
+# `.Values.imageBuilder` — the running server gets its imageBuilder.* config
+# from `infra/k8s/v2/30-config.yaml` (the app config ConfigMap), not from
+# this chart. This block is dead config today; it's kept accurate anyway so
+# it's ready if/when a template (or a doc pointing here) starts consuming it.
+#
+# Three strategies are supported:
+#   - buildkit (default, recommended): with `endpoint` left empty, runs
+#                          BuildKit itself daemonless inside the one-shot
+#                          build Job — no external daemon needed, works out
+#                          of the box like kaniko used to. Set `endpoint` to
+#                          dispatch instead to an EXISTING BuildKit daemon
+#                          (a Pod you already host) via a small `buildctl`
+#                          client Job per build.
+#   - kaniko             : spawns a K8s Job that runs Kaniko. DEPRECATED —
+#                          upstream Kaniko was archived by Google in 2025
+#                          and gets no more updates. Still selectable, not
+#                          recommended for new deployments.
 #
 # The cache repo defaults to `${kubernetes.registryUrl}/cache` (the
 # bundled Zot). Override `cacheRepo` to push the layer cache elsewhere.
 imageBuilder:
-  kind: kaniko
+  kind: buildkit
   # -- Builder image. Per-kind defaults are used when empty:
-  #     kaniko   → gcr.io/kaniko-project/executor:latest
-  #     buildkit → moby/buildkit:latest (used as the buildctl client)
+  #     buildkit → moby/buildkit:v0.33.0 as the buildctl client (endpoint
+  #                set), or moby/buildkit:v0.33.0-rootless run daemonless
+  #                (endpoint empty, the default)
+  #     kaniko   → gcr.io/kaniko-project/executor:latest (deprecated)
   image: ""
-  # -- BuildKit daemon address. REQUIRED when kind=buildkit.
-  #    Example: tcp://buildkitd.buildkit.svc:1234
+  # -- BuildKit daemon address. Only used when kind=buildkit. Leave empty
+  #    (the default) to run BuildKit daemonless in the build Job — no
+  #    external daemon needed. Set to dispatch to an existing daemon instead,
+  #    e.g. tcp://buildkitd.buildkit.svc:1234
   endpoint: ""
   # -- Cache repository (empty = ${kubernetes.registryUrl}/cache)
   cacheRepo: ""
