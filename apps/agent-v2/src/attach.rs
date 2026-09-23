@@ -417,7 +417,7 @@ async fn handle_conn(
         (chunks, endpoint.output.subscribe())
     };
     for chunk in chunks {
-        if sink.send(Message::Binary(chunk.to_vec())).await.is_err() {
+        if sink.send(Message::Binary(chunk)).await.is_err() {
             return;
         }
     }
@@ -444,7 +444,7 @@ async fn handle_conn(
         loop {
             match rx.recv().await {
                 Ok(data) => {
-                    if sink.send(Message::Binary(data.to_vec())).await.is_err() {
+                    if sink.send(Message::Binary(data)).await.is_err() {
                         break;
                     }
                 }
@@ -477,7 +477,7 @@ async fn handle_conn(
             };
             let Some(Ok(msg)) = next else { break };
             let data = match msg {
-                Message::Binary(b) => b.to_vec(),
+                Message::Binary(b) => Vec::from(b),
                 Message::Text(t) => t.as_bytes().to_vec(),
                 Message::Close(_) => break,
                 _ => continue,
