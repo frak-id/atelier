@@ -20,6 +20,7 @@ bun run --filter @atelier/server dev   # mock mode, port 4000
 ```bash
 bun run check                          # Biome lint + format
 bun run typecheck                      # TypeScript typecheck
+bun test                               # Run the bun:test suite (repo root)
 bun run --filter @atelier/server dev   # Dev server (see AGENTS.md)
 ```
 
@@ -33,7 +34,7 @@ bun run --filter @atelier/server dev   # Dev server (see AGENTS.md)
 
 1. Open an issue first for large changes
 2. Keep PRs small and scoped
-3. Run `bun run check` and `bun run typecheck`
+3. Run `bun run check`, `bun run typecheck`, and `bun test`
 4. Update docs when behavior changes
 
 ## Security

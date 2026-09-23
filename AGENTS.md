@@ -70,7 +70,9 @@ bun run typecheck                    # tsc --noEmit (TypeScript 7 native, per-wo
 - **Errors**: Custom hierarchy — `NotFoundError`, `ValidationError`, `ResourceExhaustedError`
 - **DI**: Manual wiring in `apps/server/src/api/container.ts`, routes import from container only
 - **Mock mode**: `ATELIER_SERVER_MODE=mock bun run dev` — no K8s needed locally
-- **No tests**: No test framework configured
+- **Tests**: `bun:test`, colocated as `*.test.ts` next to the code under
+  test (e.g. `apps/server/src/runtime/runtime.lifecycle.test.ts`). Run the
+  whole suite with `bun test` from the repo root; CI runs the same command
 
 See each app's AGENTS.md for component-specific guidelines.
 

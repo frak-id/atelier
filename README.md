@@ -107,7 +107,7 @@ server to it.
 
 - **Agent sessions** — drive the in-sandbox agent from console or CLI: start sessions, stream output, review todos, attach to any process read-write or read-only
 - **Attention feed** — permission and question requests from every sandbox aggregated in one place, with risk categorization
-- **MCP server** — 14 tools for sandbox lifecycle, exec, file patching, port exposure, prebuilds, and toolbox management; per-user authenticated sessions
+- **MCP server** — 13 tools for sandbox lifecycle, exec, file patching, port exposure, prebuilds, and toolbox management; per-user authenticated sessions
 - **Pluggable harnesses** — the available harness set is derived at runtime from `@atelier/compose` composers, so a pi-first or opencode-first org sees its own stack everywhere
 
 ### For fast, reproducible environments
