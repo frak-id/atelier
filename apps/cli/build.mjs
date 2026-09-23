@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Bundles the CLI into a single ESM file for npm publication. The CLI is
- * engine-generic and runs on any modern Node (>=20) — its runtime deps
+ * engine-generic and runs on any modern Node (>=22.12) — its runtime deps
  * (commander, picocolors, @clack/prompts, @elysiajs/eden, ws) stay external
  * and the type-only `@atelier/*` workspace imports are erased by the bundler.
  * Run the published artifact with `npx @konfeature/atelier`.
@@ -16,7 +16,7 @@ await build({
   entryPoints: ["src/index.ts"],
   platform: "node",
   format: "esm",
-  target: "node20",
+  target: "node22",
   bundle: true,
   minify: true,
   external: ["commander", "picocolors", "@clack/prompts", "@elysiajs/eden", "ws"],

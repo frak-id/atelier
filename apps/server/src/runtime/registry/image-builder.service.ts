@@ -149,7 +149,7 @@ export class ImageBuilderService {
 
     for (const parentName of seed.dependsOn) {
       const parent = this.store.get(parentName);
-      if (!parent || parent.status !== "ready") {
+      if (parent?.status !== "ready") {
         throw new ValidationError(
           `Seed '${seedId}' depends on '${parentName}', which has not been ` +
             `built yet. Build '${parentName}' first.`,

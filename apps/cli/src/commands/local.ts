@@ -296,7 +296,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
     s.start("Starting local server…");
     const res = await docker(["start", CONTAINER]);
     if (res.code !== 0) {
-      s.stop("Failed to start", 1);
+      s.error("Failed to start");
       fail(res.stderr.trim() || "docker start failed");
     }
     s.stop("Restarted existing container");
@@ -352,7 +352,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
       gitToken ? { ATELIER_GITHUB_TOKEN: gitToken } : undefined,
     );
     if (res.code !== 0) {
-      s.stop("Failed to start", 1);
+      s.error("Failed to start");
       fail(res.stderr.trim() || "docker run failed");
     }
     s.stop("Container started");
@@ -362,7 +362,7 @@ async function up(ctx: Ctx, opts: UpOpts): Promise<void> {
   hs.start(`Waiting for ${baseUrl}/health…`);
   const healthy = await waitForHealth(baseUrl);
   if (!healthy) {
-    hs.stop("Server didn't come up", 1);
+    hs.error("Server didn't come up");
     line(pc.dim(`Check logs with \`atelier local logs\``));
     fail("timed out waiting for /health");
   }
@@ -421,7 +421,7 @@ async function down(ctx: Ctx, opts: { volume: boolean }): Promise<void> {
   // Remove both the server and the console container (either may be absent).
   const rm = await docker(["rm", "-f", CONTAINER, CONSOLE_CONTAINER]);
   if (rm.code !== 0 && !/no such container/i.test(rm.stderr)) {
-    s.stop("Failed", 1);
+    s.error("Failed");
     fail(rm.stderr.trim() || "docker rm failed");
   }
   if (opts.volume) await docker(["volume", "rm", "-f", VOLUME]);

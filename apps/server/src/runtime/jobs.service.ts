@@ -329,7 +329,7 @@ export class JobService {
   private beginPooled(id: string, fn: JobFn): void {
     const job = this.store.get(id);
     // Canceled while it sat in the queue — skip (cancel already settled it).
-    if (!job || job.status !== "queued") return;
+    if (job?.status !== "queued") return;
     const updated = this.store.update(id, { status: "running" });
     if (updated) this.emit(updated);
     this.run(id, fn, { pooled: true });

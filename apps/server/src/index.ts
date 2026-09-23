@@ -4,7 +4,6 @@
  * composition root and starts listening.
  */
 import { validateConfig } from "@frak/atelier-shared";
-import { Cron } from "croner";
 import {
   createServerContainer,
   wireBuiltinHarnesses,
@@ -73,9 +72,14 @@ container.jobs.reconcileOnStartup();
 // The `jobs` table is append-only (one row per long op forever), so retain a
 // bounded history: prune terminal rows older than a week, hourly. Unlike the
 // prebuild/git cron below, this runs in every mode (no network needed).
+//
+// Scheduling uses Bun's in-process `Bun.cron`: the next fire is computed only
+// once the handler (and its returned Promise) settles, so runs never overlap.
+// A throw/rejection escaping a handler surfaces as an uncaught error (which
+// exits the process), so every handler body MUST stay fully try/catch-guarded.
 const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 container.jobs.pruneTerminal(JOB_RETENTION_MS);
-new Cron("23 * * * *", { protect: true }, () => {
+Bun.cron("23 * * * *", () => {
   try {
     container.jobs.pruneTerminal(JOB_RETENTION_MS);
   } catch (err) {
@@ -89,12 +93,12 @@ new Cron("23 * * * *", { protect: true }, () => {
 // on the `prebuild.gitTracking` config (read every tick, so a live toggle
 // takes effect without a restart). Skipped in mock mode (no network git).
 if (!isMock()) {
-  // `protect: true` skips a tick if the previous run is still going, so a slow
-  // pass (many repos / slow remotes) can't stack overlapping refresh runs.
-  new Cron("*/30 * * * *", { protect: true }, async () => {
+  // Bun.cron never overlaps runs, so a slow pass (many repos / slow remotes)
+  // delays the next tick instead of stacking concurrent refresh runs.
+  Bun.cron("*/30 * * * *", async () => {
     const { serverConfigService } = container.control;
-    if (!serverConfigService.get("prebuild.gitTracking")) return;
     try {
+      if (!serverConfigService.get("prebuild.gitTracking")) return;
       await container.runtime.refreshStalePrebuilds();
       await container.runtime.pruneUnusedPrebuilds(
         serverConfigService.get("prebuild.pruneKeep"),

@@ -1,17 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreBinaries": [
-    "top",
-    "awk",
-    "free",
-    "tail",
-    "ip",
-    "bridge",
-    "umount",
-    "tsgo",
-    "tar",
-    "ssh-add"
-  ],
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
       "entry": ["scripts/*.ts"]
@@ -33,7 +21,8 @@
     },
     "apps/server": {
       "project": ["src/**/*.ts"],
-      "ignoreDependencies": ["pino-pretty"]
+      "ignoreDependencies": ["pino-pretty"],
+      "entry": ["src/**/*.test.ts"]
     }
   }
 }

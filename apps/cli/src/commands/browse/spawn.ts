@@ -119,7 +119,7 @@ async function pullBranchInSandbox(
     if (res.stdout) line(pc.dim(res.stdout.trimEnd()));
     if (res.stderr) line(pc.red(res.stderr.trimEnd()));
   } catch (err) {
-    s.stop("git pull failed", 1);
+    s.error("git pull failed");
     ui.note(err instanceof Error ? err.message : String(err));
   }
 }

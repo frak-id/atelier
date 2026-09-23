@@ -42,7 +42,7 @@ scripts/          # deploy-k8s.sh (SSH→k3s, infra chart), bump-version.ts
 bun install                          # Install dependencies
 bun run --filter @atelier/server dev # Dev server (mock mode, port 4000)
 bun run check                        # Biome lint + format
-bun run typecheck                    # tsgo --noEmit (per-workspace via --filter)
+bun run typecheck                    # tsc --noEmit (TypeScript 7 native, per-workspace via --filter)
 ```
 
 ## Critical Constraints

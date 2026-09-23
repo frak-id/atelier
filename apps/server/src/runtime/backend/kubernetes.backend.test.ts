@@ -21,11 +21,12 @@ describe("createVolumeBackend", () => {
     expect(createVolumeBackend()).toBeInstanceOf(CsiVolumeBackend);
   });
 
-  test.each([
-    "btrfs",
-    "reflink",
-    "copy",
-  ] as const)("%s is reserved and fails fast", (provider) => {
-    expect(() => createVolumeBackend(provider)).toThrow(/not yet implemented/);
-  });
+  test.each(["btrfs", "reflink", "copy"] as const)(
+    "%s is reserved and fails fast",
+    (provider) => {
+      expect(() => createVolumeBackend(provider)).toThrow(
+        /not yet implemented/,
+      );
+    },
+  );
 });
