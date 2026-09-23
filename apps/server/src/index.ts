@@ -3,7 +3,7 @@
  * (atelier-v2 §3.1) — this file is the only place that constructs the
  * composition root and starts listening.
  */
-import { validateConfig } from "@frak/atelier-shared";
+import { validateConfig } from "@frak/atelier-shared/config-loader";
 import {
   createServerContainer,
   wireBuiltinHarnesses,
