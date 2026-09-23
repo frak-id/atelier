@@ -15,7 +15,6 @@ packages/
 ├── spec/         # @atelier/spec — the SandboxSpec seam contract
 └── compose/      # @atelier/compose — client-side harness/preset/spec-merge SDK
 charts/atelier/   # Helm chart (shared cluster infra: zot + cliproxy + sshpiper + certs)
-infra/images/     # dev-base + dev-cloud Dockerfiles (built via BuildKit in-cluster)
 infra/k8s/v2/     # Server + console app manifests (see infra/k8s/v2/README.md)
 scripts/          # deploy-k8s.sh (SSH→k3s, infra chart), bump-version.ts
 ```
@@ -28,6 +27,7 @@ scripts/          # deploy-k8s.sh (SSH→k3s, infra chart), bump-version.ts
 | Runtime/control/sessions | `apps/server/src/` (see `apps/server/AGENTS.md`) |
 | K8s/agent integration | `apps/server/src/runtime/` |
 | Sandbox internals | `apps/agent-v2/src/` (Rust, no Bun/Node) |
+| Base images (dev-base/cloud/rust/browser) | `apps/server/src/runtime/registry/seeds/` (Dockerfile + rootfs, built by the server's image builder) |
 | Console UI | `apps/console/src/components/` + `routes/` |
 | Cross-app config | `packages/shared/src/` |
 | Shared cluster infra | `charts/atelier/templates/` |
