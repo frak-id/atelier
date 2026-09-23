@@ -13,10 +13,13 @@
 ARG AGENT_IMAGE=ghcr.io/frak-id/sandbox-agent:latest
 FROM ${AGENT_IMAGE} AS agent
 
-FROM node:22-slim
+# Pin the Debian codename explicitly: dev-browser installs a KasmVNC .deb built
+# for this exact release, so a silent upstream flip of `-slim` to a newer Debian
+# would break it. Bump the codename and the KasmVNC asset together.
+FROM node:24-bookworm-slim
 
 
-ARG ORAS_VERSION=1.2.0
+ARG ORAS_VERSION=1.3.4
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
 ENV USER=dev
@@ -81,7 +84,8 @@ RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/release
 # Layer 3: Locale + user setup + SSH config (rarely changes)
 # ssh-keygen -A bakes host keys into the image so they are not regenerated on
 # every boot. Sandboxes share host keys, which is safe here: SSH only enters via
-# sshpiper, which sets ignore_hostkey: true (no client ever pins a sandbox key).
+# sshpiper, whose Pipe carries no known_hosts_data (host-key checks skipped;
+# no client ever pins a sandbox key).
 RUN usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
     && mkdir -p /var/run/sshd \

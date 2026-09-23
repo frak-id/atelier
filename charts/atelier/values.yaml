@@ -162,7 +162,7 @@ zot:
   externalUrl: ""
   image:
     repository: ghcr.io/project-zot/zot-linux-amd64
-    tag: "v2.1.14"
+    tag: "v2.1.21"
     pullPolicy: IfNotPresent
   persistence:
     size: 20Gi
@@ -298,7 +298,7 @@ sshpiper:
   enabled: true
   image:
     repository: farmer1992/sshpiperd
-    tag: "v1.5.3"
+    tag: "v1.6.1"
     pullPolicy: IfNotPresent
   # SSH listen port (exposed via NodePort)
   port: 2222

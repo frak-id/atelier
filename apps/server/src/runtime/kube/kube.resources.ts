@@ -427,6 +427,9 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
       to: {
         host: `${options.targetHost}:22`,
         username: "dev",
+        // sshpiper >= 1.6 ignores this flag: host-key checks are skipped
+        // because `known_hosts_data` is left empty. Kept so an operator
+        // pinning an older sshpiperd image gets the same behaviour.
         ignore_hostkey: true,
         ...(options.privateKeySecretName && {
           private_key_secret: { name: options.privateKeySecretName },
