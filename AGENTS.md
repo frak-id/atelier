@@ -33,6 +33,7 @@ Dockerfile        # Multi-target: `server` and `console` images
 | Sandbox internals | `apps/agent-v2/src/` (Rust, no Bun/Node) |
 | Base images (dev-base/cloud/rust/browser) | `apps/server/src/runtime/registry/seeds/` (Dockerfile + rootfs, built by the server's image builder) |
 | Console UI | `apps/console/src/components/` + `routes/` |
+| Launchpad (non-tech surface) | `packages/spec/src/launchpad-spec.ts`, `apps/server/src/api/launchpad.routes.ts`, `apps/server/src/control/modules/launchpad/`, console `routes/launchpad.*` + `components/launchpad/` |
 | Cross-app config | `packages/shared/src/` |
 | Shared cluster infra | `charts/atelier/templates/` |
 | App deploy manifests | `infra/k8s/v2/` |

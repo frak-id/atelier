@@ -307,6 +307,7 @@ The server exposes its API on port 4000, split into three surfaces plus MCP:
 |-------|--------|--------------|
 | Health | `/health`, `/health/live`, `/health/ready` | Liveness and readiness probes |
 | Runtime (mechanism) | `/v1/sandboxes`, `/v1/prebuilds`, `/v1/toolsets` | Sandbox lifecycle: prebuild/boot/pause/resume/destroy, files/env/processes/ports/exec/attach |
+| Launchpad | `/api/launchpad/*` | Non-technical surface: starter catalog/authoring, launch, workspace lifecycle (see [proposals/launchpad.md](proposals/launchpad.md)) |
 | Control (policy) | `/api/organizations`, `/api/saved-specs`, `/api/secrets`, `/api/toolboxes`, `/api/api-keys`, `/api/ssh-keys`, `/api/org-policy`, `/api/config`, `/api/capabilities` | Identity, orgs, saved specs, secrets, toolboxes |
 | Sessions | `/sessions/*` | Agent app-tier: ACP client sessions, terminal |
 | Auth | `/auth/*` | GitHub OAuth |

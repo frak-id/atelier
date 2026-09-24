@@ -41,6 +41,10 @@ priority, not a strict sequence.
 
 - Ship examples directly in the console — a dev companion for the product team,
   that kind of thing.
+- [x] **Launchpad v1** — dev teams publish starters (prebuild + toolboxes +
+  context + the tools to open); non-technical teams launch them in one click
+  and get their tools embedded, with named workspaces to come back to. See
+  [`proposals/launchpad.md`](proposals/launchpad.md) (follow-ups listed there).
 
 ## 7. Plugin system
 

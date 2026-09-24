@@ -1,6 +1,10 @@
 # Launchpad — a non-technical surface over Atelier
 
 > Status: **v1 implemented** on `feat/launchpad`.
+> Code: contract `packages/spec/src/launchpad-spec.ts` · storage
+> `apps/server/src/control/modules/launchpad/` (migration `0023_launchpad`) ·
+> seam `apps/server/src/api/launchpad.routes.ts` · console
+> `routes/launchpad.*`, `routes/settings.launchpad.*`, `components/launchpad/`.
 > Roadmap: §6 "In-console examples — a dev companion for the product team".
 
 ## 1. Problem
@@ -176,7 +180,22 @@ POST   /api/launchpad/workspaces/:id/retry
 DELETE /api/launchpad/workspaces/:id            destroy sandbox + row
 ```
 
-## 6. Follow-ups
+## 6. Known limits (v1)
+
+- **Org secrets resolve against the launcher's first org** (the existing
+  `resolveOrgId` Phase 0 simplification). An org starter launched by a
+  member of several orgs can pick up the wrong org's secrets and policy
+  until the multi-org header lands.
+- **Workspaces are private to their launcher.** The developer console still
+  lists every sandbox (unchanged `/v1` behavior).
+- **Embeddability can't be auto-detected.** The author picks
+  embed/external per tool, and "open in a new tab" is always offered.
+- **Autostart starts gating processes only.** It uses the same set as the
+  console's service gate (`gatingProcessNames`). A tool whose web process
+  needs a sibling started first relies on that process's `after`
+  dependency (see `design/ui-evolution.md` §3.3, pi-web).
+
+## 7. Follow-ups
 
 - "Publish as starter" from a running sandbox (the highest-leverage authoring
   entry point, `ui-evolution.md` §6).
