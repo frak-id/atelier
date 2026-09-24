@@ -159,9 +159,26 @@ failed before the record existed is re-dispatched with the same id.
   root layout switches shells by pathname.
 - Starter authoring: **Settings → Launchpad** (list + page editor, using the
   toolbox editor's `SpecEditorShell` visual↔JSON pattern). The visual form
-  covers presentation, services and the common recipe fields (boot source
-  from a stored prebuild or an image, toolboxes, resources). JSON mode
-  exposes the whole recipe.
+  covers presentation, services and the common recipe fields (boot source,
+  toolboxes, resources). JSON mode exposes the whole recipe.
+- **Boot source** (`StarterBootSource`; the recipe mapping is the pure,
+  tested `lib/starter-recipe.ts`) is two modes, matching how a recipe
+  is actually shaped (§4.1): **a stored prebuild** — pick any prebuild from
+  `GET /v1/prebuilds` (labelled by `prebuildTitle`, so a multi-repo dev
+  prebuild reads as `a + b` / `a + N more`), with a read-only summary of the
+  repos it clones (`prebuildRepoLabel` + clone path) and its base image;
+  follows the prebuild's own updates when it has a `spec` (`recipe.prebuild`
+  set), else pins the snapshot ref (`recipe.source.snapshot`) for a hand-made
+  snapshot with no spec — or **set it up here** — a base image plus **any
+  number of git repositories** (URL, branch, clone path) and ordered setup
+  steps, run from the home directory. With no repos and no steps this is
+  just a plain image boot (`recipe.source`, no `recipe.prebuild`); with
+  either, it's a full inline `PrebuildSpec` (`recipe.prebuild`, mirrored into
+  `recipe.source`) — the same shape Settings → Prebuilds authors, just
+  authored inline. A "Customize" action copies a selected stored prebuild's
+  spec into the second mode as a one-off starting point. "Create a Launchpad
+  starter" from a stored prebuild (`/settings/launchpad/new?prebuild=<ref>`)
+  seeds the first mode with that prebuild, title `Work on <prebuildTitle>`.
 
 ## 5. API
 
@@ -183,6 +200,18 @@ DELETE /api/launchpad/workspaces/:id            destroy sandbox + row (already g
 
 ## 6. Known limits (v1)
 
+- **Repos are cloned at bake time with the launcher's GitHub token.** A
+  starter's inline `recipe.prebuild.repos` clone exactly like a Settings →
+  Prebuilds repo: the launcher who first bakes it (or triggers a rebake
+  after a push) needs read access to every repo it lists, via their own
+  GitHub token — the same seam `createSandboxForUser` already resolves
+  prebuilds through (`apps/server/src/api/v1.routes.ts`). Clones are shallow
+  (`git clone --depth 1`), and the content key includes each repo's current
+  remote HEAD, so a push busts the cache and the next launch re-bakes
+  (`apps/server/src/runtime/runtime.service.ts`). Once booted, every sandbox
+  gets its own github.com credential helper + ssh→https rewrite
+  (`git-attribution.ts`), so `git pull`/`git push` from inside the workspace
+  work with the CURRENT user's token, independent of who baked it.
 - **Org secrets resolve against the launcher's first org** (the existing
   `resolveOrgId` Phase 0 simplification). An org starter launched by a
   member of several orgs can pick up the wrong org's secrets and policy

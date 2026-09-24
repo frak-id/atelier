@@ -16,22 +16,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDefaultImage } from "@/hooks/use-repo-catalog";
 import { parseStarterInput } from "@/lib/spec";
+import { blankStarterInput } from "@/lib/starter-recipe";
 
-function toInput(starter: StarterRecord | undefined, image: string) {
-  if (!starter) {
-    return {
-      title: "",
-      description: "",
-      icon: "sparkles",
-      guide: "",
-      published: true,
-      recipe: {
-        source: { image },
-        resources: { vcpus: 2, memoryMb: 4096 },
-      },
-      services: [],
-    } satisfies StarterInput;
-  }
+function toInput(
+  starter: StarterRecord | undefined,
+  image: string,
+  initial: StarterInput | undefined,
+) {
+  if (!starter) return initial ?? blankStarterInput(image);
   return {
     title: starter.title,
     description: starter.description,
@@ -43,6 +35,8 @@ function toInput(starter: StarterRecord | undefined, image: string) {
   } satisfies StarterInput;
 }
 
+const GIT_URL_RE = /^(https?:\/\/|git@)/;
+
 /** Visual-form problems the schema alone wouldn't catch, in author words. */
 function formProblems(input: StarterInput): string[] {
   const problems = [...starterInputProblems(input)];
@@ -50,6 +44,21 @@ function formProblems(input: StarterInput): string[] {
   const { source } = input.recipe;
   if ("image" in source && !source.image.trim() && !input.recipe.prebuild) {
     problems.push("Pick what the workspace boots from.");
+  }
+  const repos = input.recipe.prebuild?.repos ?? [];
+  const clonePaths = new Set<string>();
+  for (const repo of repos) {
+    if (!repo.url.trim() || !GIT_URL_RE.test(repo.url.trim())) {
+      problems.push(
+        "Every git repository needs a URL starting with https:// or git@.",
+      );
+    }
+    if (!repo.clonePath.trim()) {
+      problems.push("Every git repository needs a clone path.");
+    } else if (clonePaths.has(repo.clonePath.trim())) {
+      problems.push(`Clone path "${repo.clonePath.trim()}" is used twice.`);
+    }
+    clonePaths.add(repo.clonePath.trim());
   }
   for (const service of input.services) {
     if (!service.label.trim()) problems.push("Every tool needs a label.");
@@ -65,6 +74,21 @@ function formProblems(input: StarterInput): string[] {
   return [...new Set(problems)];
 }
 
+/** Drop blank setup steps before saving — a stray blank line while typing
+ * isn't a validation error, just noise to discard. */
+function cleanInput(input: StarterInput): StarterInput {
+  const { prebuild } = input.recipe;
+  if (!prebuild?.build) return input;
+  const build = prebuild.build.map((s) => s.trim()).filter(Boolean);
+  return {
+    ...input,
+    recipe: {
+      ...input.recipe,
+      prebuild: { ...prebuild, build: build.length > 0 ? build : undefined },
+    },
+  };
+}
+
 /**
  * Author a Launchpad starter: what a non-technical user sees (title, icon,
  * description, guide), what boots (prebuild or image + toolboxes +
@@ -77,9 +101,13 @@ function formProblems(input: StarterInput): string[] {
 export function StarterEditor({
   starter,
   owner,
+  initial,
 }: {
   starter?: StarterRecord;
   owner: string;
+  /** Seeds a new starter's input (e.g. from `?prebuild=<ref>`); ignored when
+   * editing an existing starter. */
+  initial?: StarterInput;
 }) {
   const navigate = useNavigate();
   const defaultImage = useDefaultImage();
@@ -87,14 +115,15 @@ export function StarterEditor({
   const update = useUpdateStarter();
   const launch = useLaunchStarter();
   const [input, setInput] = useState<StarterInput>(() =>
-    toInput(starter, defaultImage),
+    toInput(starter, defaultImage, initial),
   );
   const [problems, setProblems] = useState<string[]>([]);
   const pending = create.isPending || update.isPending;
 
   function handleSave(api: SpecEditorApi<StarterInput>) {
-    const value = api.resolve();
-    if (!value) return;
+    const resolved = api.resolve();
+    if (!resolved) return;
+    const value = cleanInput(resolved);
     const found = formProblems(value);
     setProblems(found);
     if (found.length > 0) return;
