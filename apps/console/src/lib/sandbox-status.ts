@@ -1,4 +1,7 @@
-import type { SandboxStatus } from "@atelier/spec";
+import {
+  LAUNCHPAD_STARTER_ANNOTATION,
+  type SandboxStatus,
+} from "@atelier/spec";
 import type { BadgeVariant } from "@/components/ui/badge";
 
 const STATUS_PRESENTATION: Record<
@@ -36,4 +39,12 @@ export function ownerFromAnnotations(
   annotations: Record<string, string> | undefined,
 ): string | undefined {
   return annotations?.[OWNER_ANNOTATION_KEY];
+}
+
+/** The Launchpad starter a sandbox was launched from (stamped server-side by
+ * `starterLaunchRequest`), or undefined for a developer-spawned sandbox. */
+export function launchpadStarterFromAnnotations(
+  annotations: Record<string, string> | undefined,
+): string | undefined {
+  return annotations?.[LAUNCHPAD_STARTER_ANNOTATION];
 }

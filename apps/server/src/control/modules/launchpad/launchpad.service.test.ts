@@ -72,7 +72,7 @@ describe("StarterService", () => {
     );
   });
 
-  test("update keeps absent keys and clears icon/guide with an empty string", () => {
+  test("update keeps absent keys and clears icon/guide with null", () => {
     const service = starters();
     const owner = { type: "org", id: "org-update" } as const;
     const created = service.create(
@@ -83,7 +83,7 @@ describe("StarterService", () => {
     expect(renamed.title).toBe("Renamed");
     expect(renamed.icon).toBe("bot");
     expect(renamed.guide).toBe("Open Pi.");
-    const cleared = service.update(created.id, { icon: "", guide: "" });
+    const cleared = service.update(created.id, { icon: null, guide: null });
     expect(cleared.icon).toBeUndefined();
     expect(cleared.guide).toBeUndefined();
     // Persisted, not just returned.

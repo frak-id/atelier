@@ -41,7 +41,7 @@ function LaunchpadPage() {
             to: "/launchpad/w/$workspaceId",
             params: { workspaceId: workspace.id },
             // Opens the name field so it's easy to say what this is for.
-            search: { fresh: true },
+            search: { edit: true },
           });
         },
       },

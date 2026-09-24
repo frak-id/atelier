@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { LogOut, Moon, Sparkles, SquareTerminal, Sun } from "lucide-react";
+import { Sparkles, SquareTerminal } from "lucide-react";
 import type { ReactNode } from "react";
+import { AccountControls } from "@/components/account-controls";
 import { Button } from "@/components/ui/button";
-import { useTheme } from "@/providers/theme";
 
 /**
  * The Launchpad's own chrome: a wordmark, a quiet way out to the developer
@@ -18,7 +18,6 @@ export function LaunchpadShell({
   onLogout: () => void;
   children: ReactNode;
 }) {
-  const { theme, toggle } = useTheme();
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b bg-background/95 px-4 backdrop-blur">
@@ -38,25 +37,7 @@ export function LaunchpadShell({
               <span className="hidden sm:inline">Developer console</span>
             </Link>
           </Button>
-          <span className="hidden px-2 text-sm text-muted-foreground md:inline">
-            {username}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggle}
-            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
-          >
-            {theme === "dark" ? <Sun /> : <Moon />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onLogout}
-            title="Sign out"
-          >
-            <LogOut />
-          </Button>
+          <AccountControls username={username} onLogout={onLogout} />
         </div>
       </header>
       <main className="flex min-h-0 flex-1 flex-col">{children}</main>

@@ -3,7 +3,8 @@
 > Status: **v1 implemented** on `feat/launchpad`.
 > Code: contract `packages/spec/src/launchpad-spec.ts` · storage
 > `apps/server/src/control/modules/launchpad/` (migration `0023_launchpad`) ·
-> seam `apps/server/src/api/launchpad.routes.ts` · console
+> seam `apps/server/src/api/launchpad.lifecycle.ts` (routes:
+> `launchpad.routes.ts`) · console
 > `routes/launchpad.*`, `routes/settings.launchpad.*`, `components/launchpad/`.
 > Roadmap: §6 "In-console examples — a dev companion for the product team".
 
@@ -167,7 +168,7 @@ failed before the record existed is re-dispatched with the same id.
 ```
 GET    /api/launchpad/starters?owner=…          authoring list (owner-scoped)
 POST   /api/launchpad/starters?owner=…          create
-PATCH  /api/launchpad/starters/:id              update (stored-owner authz)
+PATCH  /api/launchpad/starters/:id              update (stored-owner authz; `null` clears icon/guide)
 DELETE /api/launchpad/starters/:id
 GET    /api/launchpad/catalog                   published starters visible to the caller
 POST   /api/launchpad/starters/:id/launch       { title?, description? } → Workspace (202)
@@ -176,8 +177,8 @@ GET    /api/launchpad/workspaces/:id            + resolved services (live readin
 PATCH  /api/launchpad/workspaces/:id            { title?, description? }
 POST   /api/launchpad/workspaces/:id/sleep      pause
 POST   /api/launchpad/workspaces/:id/wake       resume (+ git creds refresh + autostart)
-POST   /api/launchpad/workspaces/:id/retry
-DELETE /api/launchpad/workspaces/:id            destroy sandbox + row
+POST   /api/launchpad/workspaces/:id/retry      resume in place, or relaunch (same launch authz)
+DELETE /api/launchpad/workspaces/:id            destroy sandbox + row (already gone = fine)
 ```
 
 ## 6. Known limits (v1)
@@ -187,9 +188,12 @@ DELETE /api/launchpad/workspaces/:id            destroy sandbox + row
   member of several orgs can pick up the wrong org's secrets and policy
   until the multi-org header lands.
 - **Workspaces are private to their launcher.** The developer console still
-  lists every sandbox (unchanged `/v1` behavior).
+  lists every sandbox (unchanged `/v1` behavior), with a "Launchpad" badge
+  read from the `atelier.dev/launchpad-starter` annotation.
 - **Embeddability can't be auto-detected.** The author picks
   embed/external per tool, and "open in a new tab" is always offered.
+  Embedded frames are sandboxed without top-navigation: an author-chosen
+  URL can't navigate the Launchpad away.
 - **Autostart starts gating processes only.** It uses the same set as the
   console's service gate (`gatingProcessNames`). A tool whose web process
   needs a sibling started first relies on that process's `after`

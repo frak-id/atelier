@@ -1,6 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
+import { serverConfigQuery } from "@/api/queries/server-config";
 import { StarterEditor } from "@/components/launchpad/starter-editor";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/settings/launchpad/new")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -11,6 +14,9 @@ export const Route = createFileRoute("/settings/launchpad/new")({
 
 function NewStarterPage() {
   const { owner } = Route.useSearch();
+  // The form seeds its image from the server's default: wait for it (an
+  // error falls back to the built-in default) instead of baking in a guess.
+  const config = useQuery(serverConfigQuery());
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <Link
@@ -21,7 +27,11 @@ function NewStarterPage() {
         Back to starters
       </Link>
       <h1 className="text-xl font-semibold">New starter</h1>
-      <StarterEditor owner={owner} />
+      {config.isPending ? (
+        <Skeleton className="h-96 w-full" />
+      ) : (
+        <StarterEditor owner={owner} />
+      )}
     </div>
   );
 }

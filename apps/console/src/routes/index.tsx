@@ -18,6 +18,7 @@ import {
   useDeleteSession,
 } from "@/api/queries/sessions";
 import { ImmersiveView } from "@/components/immersive-view";
+import { LaunchpadBadge } from "@/components/launchpad/launchpad-badge";
 import { LaunchpadBanner } from "@/components/launchpad/launchpad-banner";
 import {
   SessionsByRepo,
@@ -244,6 +245,10 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
           <Badge variant={status.variant}>{status.label}</Badge>
           {harness ? <Badge variant="outline">{harness}</Badge> : null}
           {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
+          <LaunchpadBadge
+            sandboxId={sandbox.id}
+            annotations={sandbox.annotations}
+          />
           {sandbox.status === "running" ? (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <StatusDot variant={sessionCount > 0 ? "info" : "neutral"} />

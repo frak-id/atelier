@@ -90,6 +90,15 @@ describe("StarterInputSchema", () => {
     expect(Value.Check(StarterPatchSchema, { nope: 1 })).toBe(false);
   });
 
+  test("a patch clears icon/guide with null, never with an empty icon", () => {
+    // What the console's editor sends when the author removes both.
+    expect(Value.Check(StarterPatchSchema, { icon: null, guide: null })).toBe(
+      true,
+    );
+    expect(Value.Check(StarterPatchSchema, { icon: "" })).toBe(false);
+    expect(Value.Check(StarterPatchSchema, { title: "" })).toBe(false);
+  });
+
   test("duplicate service ids are reported", () => {
     const services: LaunchpadService[] = [
       { id: "a", label: "A", target: { port: "web" } },

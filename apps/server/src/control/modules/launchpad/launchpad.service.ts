@@ -31,7 +31,7 @@ function assertValid(input: Pick<StarterInput, "services">): void {
 }
 
 /** Trim, and treat an all-blank optional text as "unset". */
-function optionalText(value: string | undefined): string | undefined {
+function optionalText(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 }
@@ -48,8 +48,12 @@ export class StarterService {
     return this.repository.listPublished(owners);
   }
 
+  find(id: string): Starter | undefined {
+    return this.repository.getById(id);
+  }
+
   get(id: string): Starter {
-    const starter = this.repository.getById(id);
+    const starter = this.find(id);
     if (!starter) throw new NotFoundError("Starter", id);
     return starter;
   }
@@ -80,7 +84,7 @@ export class StarterService {
     return this.repository.create(starter);
   }
 
-  /** Absent keys keep their value; an empty `icon`/`guide` clears it. */
+  /** Absent keys keep their value; `null` (or blank) clears `icon`/`guide`. */
   update(id: string, patch: StarterPatch): Starter {
     const existing = this.get(id);
     const merged: Starter = {
@@ -97,6 +101,7 @@ export class StarterService {
     if (patch.icon !== undefined) merged.icon = optionalText(patch.icon);
     if (patch.guide !== undefined) merged.guide = optionalText(patch.guide);
     assertValid(merged);
+    log.info({ starterId: id }, "Starter updated");
     return this.repository.save(merged);
   }
 
@@ -136,6 +141,15 @@ export class WorkspaceService {
     snapshot: WorkspaceSnapshot;
   }): WorkspaceRecord {
     const now = new Date().toISOString();
+    log.info(
+      {
+        sandboxId: input.sandboxId,
+        userId: input.userId,
+        starterId: input.starterId,
+        jobId: input.jobId,
+      },
+      "Workspace created",
+    );
     return this.repository.create({
       sandboxId: input.sandboxId,
       userId: input.userId,
@@ -159,6 +173,7 @@ export class WorkspaceService {
     if (patch.title !== undefined && !title) {
       throw new ValidationError("A workspace needs a name");
     }
+    log.info({ sandboxId, userId }, "Workspace renamed");
     this.repository.update(sandboxId, {
       ...(title ? { title } : {}),
       ...(patch.description !== undefined
@@ -171,18 +186,23 @@ export class WorkspaceService {
   /** Point the row at its latest lifecycle job (launch, retry, wake-up) and
    * bump its recency. A retry also refreshes the starter snapshot. */
   setJob(sandboxId: string, jobId: string, snapshot?: WorkspaceSnapshot): void {
+    log.info(
+      { sandboxId, jobId, snapshotRefreshed: Boolean(snapshot) },
+      "Workspace job set",
+    );
     this.repository.update(sandboxId, {
       jobId,
       ...(snapshot ? { snapshot } : {}),
     });
   }
 
-  /** Bump recency (wake-up) so it floats to the top of "jump back in". */
+  /** Bump recency (sleep) so it floats to the top of "jump back in". */
   touch(sandboxId: string): void {
     this.repository.update(sandboxId, {});
   }
 
   delete(sandboxId: string): void {
     this.repository.delete(sandboxId);
+    log.info({ sandboxId }, "Workspace deleted");
   }
 }

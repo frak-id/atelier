@@ -18,6 +18,7 @@ import {
   CreateSandboxRequestSchema,
 } from "./create-request.ts";
 import type { SandboxStatus, SandboxUrl } from "./runtime-api.ts";
+import { ToolboxOwnerTypeSchema } from "./toolbox-config-spec.ts";
 
 // ── icons ───────────────────────────────────────────────────────────────────
 
@@ -112,40 +113,69 @@ export type LaunchpadService = Static<typeof LaunchpadServiceSchema>;
 
 // ── starters ────────────────────────────────────────────────────────────────
 
-/** What an author submits to create a starter (and the base for a patch). */
+// Field schemas shared by the input, patch and stored shapes.
+const StarterTitleSchema = Type.String({ minLength: 1, maxLength: 80 });
+const StarterDescriptionSchema = Type.String({ maxLength: 400 });
+/** Short plain-language how-to shown on the workspace page. */
+const GuideSchema = Type.String({ maxLength: 4000 });
+const ServicesSchema = Type.Array(LaunchpadServiceSchema, { maxItems: 20 });
+
+/** What an author submits to create a starter. */
 export const StarterInputSchema = Type.Object(
   {
-    title: Type.String({ minLength: 1, maxLength: 80 }),
-    description: Type.String({ maxLength: 400 }),
+    title: StarterTitleSchema,
+    description: StarterDescriptionSchema,
     icon: Type.Optional(IconSchema),
-    /** Short plain-language how-to shown on the workspace page. */
-    guide: Type.Optional(Type.String({ maxLength: 4000 })),
+    guide: Type.Optional(GuideSchema),
     /** Listed on the Launchpad. Unpublished starters stay authoring-only. */
     published: Type.Optional(Type.Boolean()),
     /** The spawn recipe, exactly what `POST /v1/sandboxes` accepts. */
     recipe: CreateSandboxRequestSchema,
-    services: Type.Array(LaunchpadServiceSchema, { maxItems: 20 }),
+    services: ServicesSchema,
   },
   { additionalProperties: false, $id: "StarterInput" },
 );
 export type StarterInput = Static<typeof StarterInputSchema>;
 
-export const StarterPatchSchema = Type.Partial(StarterInputSchema, {
-  additionalProperties: false,
-  $id: "StarterPatch",
-});
+/**
+ * Partial update. An absent key keeps its value; `null` clears the optional
+ * `icon`/`guide` (JSON drops `undefined`, so clearing needs an explicit
+ * value) — mirrors `ToolboxConfigPatchSchema`.
+ */
+export const StarterPatchSchema = Type.Object(
+  {
+    title: Type.Optional(StarterTitleSchema),
+    description: Type.Optional(StarterDescriptionSchema),
+    icon: Type.Optional(Type.Union([IconSchema, Type.Null()])),
+    guide: Type.Optional(Type.Union([GuideSchema, Type.Null()])),
+    published: Type.Optional(Type.Boolean()),
+    recipe: Type.Optional(CreateSandboxRequestSchema),
+    services: Type.Optional(ServicesSchema),
+  },
+  { additionalProperties: false, $id: "StarterPatch" },
+);
 export type StarterPatch = Static<typeof StarterPatchSchema>;
 
 /** A stored starter. Owned like a toolbox: an org (the tech team's curated
  * catalog) or a user (a personal one). */
-export interface Starter extends StarterInput {
-  id: string;
-  ownerType: "org" | "user";
-  ownerId: string;
-  published: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+export const StarterSchema = Type.Object(
+  {
+    id: Type.String(),
+    ownerType: ToolboxOwnerTypeSchema,
+    ownerId: Type.String(),
+    title: StarterTitleSchema,
+    description: StarterDescriptionSchema,
+    icon: Type.Optional(IconSchema),
+    guide: Type.Optional(GuideSchema),
+    published: Type.Boolean(),
+    recipe: CreateSandboxRequestSchema,
+    services: ServicesSchema,
+    createdAt: Type.String(),
+    updatedAt: Type.String(),
+  },
+  { additionalProperties: false, $id: "Starter" },
+);
+export type Starter = Static<typeof StarterSchema>;
 
 /**
  * Cross-field checks the schema can't express. Returns human-readable
@@ -171,12 +201,16 @@ export function starterInputProblems(
 /** The starter's presentation, frozen at launch: editing or deleting the
  * starter later never breaks a workspace, and the tiles stay consistent with
  * the spec the sandbox actually booted. */
-export interface WorkspaceSnapshot {
-  starterTitle: string;
-  icon?: string;
-  guide?: string;
-  services: LaunchpadService[];
-}
+export const WorkspaceSnapshotSchema = Type.Object(
+  {
+    starterTitle: Type.String(),
+    icon: Type.Optional(IconSchema),
+    guide: Type.Optional(GuideSchema),
+    services: ServicesSchema,
+  },
+  { additionalProperties: false, $id: "WorkspaceSnapshot" },
+);
+export type WorkspaceSnapshot = Static<typeof WorkspaceSnapshotSchema>;
 
 export const LaunchRequestSchema = Type.Object(
   {
@@ -209,6 +243,8 @@ export type WorkspacePhase =
   | "failed"
   | "gone";
 
+/** Mirrors the server's `JobStatus` (apps/server/src/runtime/store.ts): the
+ * spec package can't import the server, so keep the two in sync by hand. */
 type JobStatusLike = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
 /**

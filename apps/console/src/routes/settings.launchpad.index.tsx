@@ -7,14 +7,12 @@ import {
   startersQuery,
   useDeleteStarter,
 } from "@/api/queries/launchpad";
-import { organizationsListQuery } from "@/api/queries/organizations";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { OwnerScopeSelect } from "@/components/owner-scope-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Label } from "@/components/ui/label";
-import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 import { LaunchpadIconView } from "@/lib/launchpad";
@@ -25,7 +23,6 @@ export const Route = createFileRoute("/settings/launchpad/")({
 
 function LaunchpadSettingsPage() {
   const [owner, setOwner] = useState("user");
-  const { data: orgs } = useQuery(organizationsListQuery());
   const {
     data: starters,
     isPending,
@@ -46,19 +43,12 @@ function LaunchpadSettingsPage() {
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="w-full space-y-1 sm:max-w-xs">
-          <Label htmlFor="starter-scope">Scope</Label>
-          <NativeSelect
+          <OwnerScopeSelect
             id="starter-scope"
+            personalLabel="My starters"
             value={owner}
-            onChange={(e) => setOwner(e.target.value)}
-          >
-            <option value="user">My starters</option>
-            {orgs?.map((org) => (
-              <option key={org.id} value={`org:${org.id}`}>
-                {org.name} (org)
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={setOwner}
+          />
         </div>
         <Button size="sm" asChild>
           <Link to="/settings/launchpad/new" search={{ owner }}>
