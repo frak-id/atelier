@@ -5,7 +5,11 @@
  * (defaulting to the checked-out one) → choose a clone path → pick/enter setup
  * commands → confirm → bake. Seeded with the detected local repo so, inside a
  * checkout, every step is a one-keystroke accept. */
-import type { PrebuildRecord, PrebuildSpec } from "@atelier/spec";
+import {
+  buildRepoPrebuildSpec,
+  findRepoBranchPrebuild,
+  prebuildRepoBranch,
+} from "@atelier/spec/repo-prebuild";
 import pc from "picocolors";
 import { type AtelierApi, type ImageRow, unwrap } from "../client.ts";
 import { detectSetupSteps } from "../detect.ts";
@@ -24,76 +28,14 @@ const REPO_URL_RE = /^(https?:\/\/|git@|ssh:\/\/|git:\/\/).+/i;
 
 const CUSTOM = "__custom__";
 
-/** The repo + branch a prebuild targets, read from its spec first (authoritative)
- * then falling back to the opaque metadata the console stamps. */
-export function prebuildRepoBranch(p: PrebuildRecord): {
-  url?: string;
-  branch?: string;
-} {
-  const url =
-    p.spec?.repos?.[0]?.url ?? p.metadata?.repo ?? p.metadata?.workspace;
-  const branch = p.spec?.repos?.[0]?.branch ?? p.metadata?.branch;
-  return { url, branch };
-}
-
-/** Find an existing prebuild that already covers this repo + branch. Repos are
- * compared by normalized `owner/name`; branches by exact string, where an
- * undefined branch on either side means "the default branch". */
-export function findRepoBranchPrebuild(
-  rows: PrebuildRecord[],
-  url: string,
-  branch?: string,
-): PrebuildRecord | undefined {
-  const wantRepo = shortRepo(url).toLowerCase();
-  const wantBranch = branch?.trim() || undefined;
-  return rows.find((p) => {
-    const rb = prebuildRepoBranch(p);
-    if (!rb.url) return false;
-    if (shortRepo(rb.url).toLowerCase() !== wantRepo) return false;
-    return (rb.branch?.trim() || undefined) === wantBranch;
-  });
-}
-
-interface SpecInput {
-  repo: string;
-  branch?: string;
-  image: string;
-  clonePath: string;
-  /** Raw setup commands; each is scoped to `clonePath` (see `inRepoDir`). */
-  build?: string[];
-}
-
-/** Build steps run as `dev` from the home dir in a fresh shell each — so a bare
- * `npm ci` would miss the repo. Prefix each with `cd <clonePath> &&` unless the
- * user already cd'd somewhere themselves. */
-function inRepoDir(step: string, clonePath: string): string {
-  return /^\s*cd\s/.test(step) ? step : `cd ${clonePath} && ${step}`;
-}
-
-/** Assemble the PrebuildSpec: boot from `image`, clone `repo@branch` into
- * `clonePath`, run the (repo-scoped) build steps, and stamp repo/branch
- * metadata so the listing can recognize it later (and `findRepoBranchPrebuild`
- * can dedupe). */
-export function buildPrebuildSpec(input: SpecInput): PrebuildSpec {
-  const metadata: Record<string, string> = { repo: input.repo };
-  if (input.branch) metadata.branch = input.branch;
-  const build = (input.build ?? [])
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => inRepoDir(s, input.clonePath));
-  return {
-    source: { image: input.image },
-    repos: [
-      {
-        url: input.repo,
-        ...(input.branch ? { branch: input.branch } : {}),
-        clonePath: input.clonePath,
-      },
-    ],
-    ...(build.length > 0 ? { build } : {}),
-    metadata,
-  };
-}
+// Repo identity, dedupe and spec assembly are shared with the console via
+// `@atelier/spec/repo-prebuild`, so both surfaces recognize each other's
+// prebuilds. Re-exported under the names the browse menus already import.
+export {
+  buildRepoPrebuildSpec as buildPrebuildSpec,
+  findRepoBranchPrebuild,
+  prebuildRepoBranch,
+};
 
 /** Ready base images the prebuild can boot from. */
 async function readyImages(api: AtelierApi): Promise<ImageRow[]> {
@@ -183,7 +125,7 @@ export async function createPrebuildInteractive(
   if (!yes) return;
 
   // ── 7. bake ───────────────────────────────────────────────────────────────
-  const spec = buildPrebuildSpec({ repo, branch, image, clonePath, build });
+  const spec = buildRepoPrebuildSpec({ repo, branch, image, clonePath, build });
   const s = ui.spinner();
   s.start("Baking prebuild…");
   try {
@@ -236,7 +178,7 @@ async function pickBranch(
 
 /** Setup-command step: sniff the local checkout for install commands, let the
  * user keep/drop each (all preselected), then loop for any manual extras. The
- * repo-dir prefix is added later in `buildPrebuildSpec`, so these stay bare. */
+ * repo-dir prefix is added later in `buildRepoPrebuildSpec`, so these stay bare. */
 async function pickBuildSteps(
   seed: PrebuildCreateSeed,
   repo: string,
@@ -314,7 +256,7 @@ export async function createPrebuildFromArgs(
       : sameRepo && args.detect
         ? detectSetupSteps(args.detect.root)
         : [];
-  const spec = buildPrebuildSpec({
+  const spec = buildRepoPrebuildSpec({
     repo,
     branch: args.branch?.trim() || undefined,
     image,

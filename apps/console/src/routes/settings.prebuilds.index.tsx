@@ -1,4 +1,9 @@
-import type { PrebuildRecord } from "@atelier/spec";
+import {
+  type PrebuildRecord,
+  prebuildJobTarget,
+  prebuildRepoBranch,
+  repoShortName,
+} from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Layers, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
@@ -10,6 +15,7 @@ import {
 } from "@/api/queries/prebuilds";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { JobStatus } from "@/components/job-status";
+import { RepoCatalogCard } from "@/components/repos/repo-catalog-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,43 +34,26 @@ export const Route = createFileRoute("/settings/prebuilds/")({
 
 /**
  * The repo tier beside the toolset tier (composed-prebuild-volumes.md):
- * content-addressed VolumeSnapshots, chained, node-local. No list endpoint
- * exists server-side (snapshots are an internal runtime concern; only build
- * is exposed) — this mirrors the CLI's `atelier prebuild <file>` exactly.
+ * content-addressed VolumeSnapshots, chained, node-local. The top card lists
+ * the user's GitHub repos with one-click prebuild creation. The list below
+ * is every stored snapshot, including ones made by hand or from the CLI.
  */
 function PrebuildsPage() {
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button asChild size="sm">
-          <Link to="/settings/prebuilds/new">
-            <Plus />
-            New prebuild
-          </Link>
-        </Button>
-      </div>
+    <div className="space-y-4">
+      <RepoCatalogCard />
       <PrebuildsList />
     </div>
   );
 }
 
-/** The stable queue identity the server labels a prebuild job with (mirrors
- * `prebuildLabel` in v1.routes) — lets `<JobStatus>` correlate a running
- * rebuild back to exactly THIS row. Derived from the repos it clones
- * (URL + branch, so the same repo on two branches stays distinct), falling
- * back to the boot source when it clones nothing. Must stay byte-for-byte
- * identical to the server, or the badge silently never shows. Deliberately NOT
- * `metadata` (user-supplied display text, not an identity, and duplicated
- * across branches). */
-function prebuildJobTarget(prebuild: PrebuildRecord): string | undefined {
-  const spec = prebuild.spec;
-  if (!spec) return undefined;
-  if (spec.repos && spec.repos.length > 0) {
-    return spec.repos
-      .map((r) => (r.branch ? `${r.url}#${r.branch}` : r.url))
-      .join(", ");
-  }
-  return "image" in spec.source ? spec.source.image : spec.source.snapshot;
+/** Title for a stored prebuild: `owner/name` (+ `#branch`) for repo
+ * prebuilds, falling back to the ref for image-only or chained ones. */
+function prebuildTitle(prebuild: PrebuildRecord): string {
+  const { url, branch } = prebuildRepoBranch(prebuild);
+  if (!url) return prebuild.ref;
+  const name = repoShortName(url);
+  return branch ? `${name}#${branch}` : name;
 }
 
 function PrebuildsList() {
@@ -80,16 +69,24 @@ function PrebuildsList() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Prebuilds</CardTitle>
-        <CardDescription>
-          Stored workspace snapshots, reusable as a boot{" "}
-          <code>source.snapshot</code>. One-tap spawn from the{" "}
-          <a href="/spawn" className="underline">
-            Spawn
-          </a>{" "}
-          page.
-        </CardDescription>
+      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+        <div className="space-y-1.5">
+          <CardTitle>Stored prebuilds</CardTitle>
+          <CardDescription>
+            Every workspace snapshot, reusable as a boot{" "}
+            <code>source.snapshot</code>. Spawn from one on the{" "}
+            <Link to="/spawn" className="underline">
+              Spawn
+            </Link>{" "}
+            page.
+          </CardDescription>
+        </div>
+        <Button asChild size="sm" variant="outline" className="shrink-0">
+          <Link to="/settings/prebuilds/new">
+            <Plus />
+            New prebuild
+          </Link>
+        </Button>
       </CardHeader>
       <CardContent className="space-y-2">
         {isPending ? (
@@ -99,7 +96,9 @@ function PrebuildsList() {
             {error instanceof Error ? error.message : "Failed to load"}
           </p>
         ) : !prebuilds || prebuilds.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No prebuilds yet.</p>
+          <p className="text-sm text-muted-foreground">
+            No prebuilds yet. Create one from a repository above.
+          </p>
         ) : (
           prebuilds.map((prebuild: PrebuildRecord) => {
             const spec = prebuild.spec;
@@ -110,12 +109,12 @@ function PrebuildsList() {
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <Layers className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-mono text-sm">
-                    {prebuild.ref}
+                  <span className="truncate text-sm font-medium">
+                    {prebuildTitle(prebuild)}
                   </span>
                   <JobStatus
                     kind="prebuild"
-                    target={prebuildJobTarget(prebuild)}
+                    target={spec ? prebuildJobTarget(spec) : undefined}
                   />
                   {prebuild.parent ? (
                     <Badge variant="outline">chained</Badge>
@@ -176,7 +175,7 @@ function PrebuildsList() {
                   </div>
                 </div>
                 <span className="truncate font-mono text-xs text-muted-foreground">
-                  {prebuild.image}
+                  {prebuild.ref} · {prebuild.image}
                 </span>
               </div>
             );

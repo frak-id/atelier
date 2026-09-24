@@ -62,6 +62,18 @@ export const queryKeys = {
     all: ["prebuilds"] as const,
     list: () => [...queryKeys.prebuilds.all, "list"] as const,
   },
+  github: {
+    all: ["github"] as const,
+    repos: () => [...queryKeys.github.all, "repos"] as const,
+    inspect: (owner: string, name: string, ref?: string) =>
+      [
+        ...queryKeys.github.all,
+        "inspect",
+        owner.toLowerCase(),
+        name.toLowerCase(),
+        ref ?? "",
+      ] as const,
+  },
   images: {
     all: ["images"] as const,
     list: () => [...queryKeys.images.all, "list"] as const,

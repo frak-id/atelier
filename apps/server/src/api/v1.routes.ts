@@ -18,6 +18,7 @@ import {
   PatchFilesRequestSchema,
   type PrebuildSpec,
   PrebuildSpecSchema,
+  prebuildJobTarget,
   ResumeRequestSchema,
   type SandboxSpec,
   type ToolsetBuildRequest,
@@ -103,23 +104,6 @@ function requireImageOperator(
         "least one organization.",
     );
   }
-}
-
-/** A stable, branch-aware identity for a prebuild job's queue row — derived
- * from the repos it clones (URL + branch, so the same repo on two branches are
- * distinct jobs), falling back to the boot source when it clones nothing. It
- * doubles as the row's display label AND the key `<JobStatus>` correlates a
- * running rebuild back to its row by, so it must stay byte-for-byte identical
- * to the console's `prebuildJobTarget`. Deliberately NOT the opaque `metadata`
- * (user-supplied display text, not an identity, and duplicated across
- * branches — which would let one running job light up two rows). */
-function prebuildLabel(spec: PrebuildSpec): string {
-  if (spec.repos && spec.repos.length > 0) {
-    return spec.repos
-      .map((r) => (r.branch ? `${r.url}#${r.branch}` : r.url))
-      .join(", ");
-  }
-  return "image" in spec.source ? spec.source.image : spec.source.snapshot;
 }
 
 /** A short, human label for a sandbox-create job's queue row — the spec's
@@ -476,7 +460,7 @@ export function createV1Routes(container: ServerContainer) {
           const job = jobs.dispatch(
             {
               kind: "prebuild",
-              target: prebuildLabel(spec),
+              target: prebuildJobTarget(spec),
               metadata: spec.metadata,
             },
             (signal, log) =>

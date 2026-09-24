@@ -1,10 +1,12 @@
-import type {
-  CreateSandboxRequest,
-  PrebuildRecord,
-  SandboxSpec,
+import {
+  type CreateSandboxRequest,
+  type PrebuildRecord,
+  prebuildRepoBranch,
+  repoShortName,
+  type SandboxSpec,
 } from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Layers, Loader2, Rocket } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -12,6 +14,7 @@ import { organizationsListQuery } from "@/api/queries/organizations";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { useSpawnSandbox } from "@/api/queries/sandboxes";
 import { toolboxesListQuery } from "@/api/queries/toolboxes";
+import { RepoSpawnCard } from "@/components/repos/repo-spawn-card";
 import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,45 +28,78 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatRelativeTime } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
 
+interface SpawnSearch {
+  /** `owner/name` of a GitHub repo to preselect (deep link). */
+  repo?: string;
+  /** Non-default branch to preselect. */
+  branch?: string;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 export const Route = createFileRoute("/spawn")({
+  validateSearch: (search: Record<string, unknown>): SpawnSearch => ({
+    repo: optionalString(search.repo),
+    branch: optionalString(search.branch),
+  }),
   component: SpawnPage,
 });
 
 function SpawnPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const spawn = useSpawnSandbox();
   const [editorText, setEditorText] = useState("");
+  const [resources, setResources] = useState({ vcpus: "2", memoryMb: "4096" });
+  const [selectedToolboxes, setSelectedToolboxes] = useState<Set<string>>(
+    new Set(),
+  );
 
-  // `toolboxes` is optional: the builder-lens callers pass a plain spec plus
-  // `toolboxes` as the second arg; it carries through the `...request` spread.
-  function spawnFromSpec(request: CreateSandboxRequest, toolboxes?: string[]) {
-    spawn.mutate(
-      {
-        ...request,
-        ...(toolboxes && toolboxes.length > 0 ? { toolboxes } : {}),
+  /** The spec skeleton every spawn path starts from: the shared resources.
+   * The harness and any tool surfaces (vscode, browser, …) come from the
+   * toolboxes applied to the spawn, never from hardcoded UI toggles. */
+  function baseSpec(image: string): SandboxSpec {
+    return composeSpec({
+      image,
+      vcpus: Math.max(1, Math.round(Number(resources.vcpus) || 1)),
+      memoryMb: Math.max(256, Math.round(Number(resources.memoryMb) || 256)),
+    });
+  }
+
+  /** Spawn with the page's selected toolboxes layered on top. */
+  function spawnWithOptions(request: CreateSandboxRequest) {
+    const toolboxes = [...selectedToolboxes];
+    spawnFromSpec({
+      ...request,
+      ...(toolboxes.length > 0 ? { toolboxes } : {}),
+    });
+  }
+
+  function spawnFromSpec(request: CreateSandboxRequest) {
+    spawn.mutate(request, {
+      // `data` is the 202 `sandbox-create` job; its pre-allocated
+      // `metadata.sandboxId` lets us jump straight to the detail page, which
+      // renders the `creating` record and live-updates as the spawn runs.
+      onSuccess: (data) => {
+        const sandboxId = data?.metadata?.sandboxId;
+        if (sandboxId) {
+          toast.success("Spawning sandbox…");
+          navigate({
+            to: "/sandboxes/$sandboxId",
+            params: { sandboxId },
+          });
+        } else {
+          // Defensive: the server always sets metadata.sandboxId today, so a
+          // missing one is a regression. Surface it, don't silently no-op.
+          toast.error("Spawn accepted but no sandbox id was returned");
+        }
       },
-      {
-        // `data` is the 202 `sandbox-create` job; its pre-allocated
-        // `metadata.sandboxId` lets us jump straight to the detail page, which
-        // renders the `creating` record and live-updates as the spawn runs.
-        onSuccess: (data) => {
-          const sandboxId = data?.metadata?.sandboxId;
-          if (sandboxId) {
-            toast.success("Spawning sandbox…");
-            navigate({
-              to: "/sandboxes/$sandboxId",
-              params: { sandboxId },
-            });
-          } else {
-            // Defensive: the server always sets metadata.sandboxId today, so a
-            // missing one is a regression — surface it instead of a silent no-op.
-            toast.error("Spawn accepted but no sandbox id was returned");
-          }
-        },
-      },
-    );
+    });
   }
 
   function loadIntoEditor(spec: SandboxSpec) {
@@ -74,8 +110,33 @@ function SpawnPage() {
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">Spawn a sandbox</h1>
 
-      <QuickSpawnSection
-        onSpawn={spawnFromSpec}
+      <RepoSpawnCard
+        repo={search.repo}
+        branch={search.branch}
+        onSelectionChange={(next) =>
+          navigate({
+            to: "/spawn",
+            search: next,
+            replace: true,
+            // Picking a repo/branch is in-page state, not a page change.
+            resetScroll: false,
+          })
+        }
+        baseSpec={baseSpec}
+        onSpawn={spawnWithOptions}
+        spawnPending={spawn.isPending}
+      />
+
+      <SpawnOptionsCard
+        resources={resources}
+        onResourcesChange={setResources}
+        selectedToolboxes={selectedToolboxes}
+        onSelectedToolboxesChange={setSelectedToolboxes}
+      />
+
+      <PrebuildSpawnSection
+        baseSpec={baseSpec}
+        onSpawn={spawnWithOptions}
         spawnPending={spawn.isPending}
         onOpenInEditor={loadIntoEditor}
       />
@@ -90,9 +151,9 @@ function SpawnPage() {
   );
 }
 
-// ── quick spawn (prebuild + toolboxes) ──────────────────────
+// ── shared spawn options (toolboxes + resources) ───────────────────────────
 
-/** Every toolbox the caller can apply — their own + each org's, flattened. */
+/** Every toolbox the caller can apply: their own + each org's, flattened. */
 function useAllToolboxes() {
   const { data: orgs } = useQuery(organizationsListQuery());
   const owners = ["user", ...(orgs ?? []).map((org) => `org:${org.id}`)];
@@ -102,118 +163,83 @@ function useAllToolboxes() {
   return results.flatMap((r) => r.data ?? []);
 }
 
-/** A short, human label for a prebuild — the first cloned repo when present. */
-function prebuildLabel(prebuild: PrebuildRecord): string | undefined {
-  return prebuild.spec?.repos?.[0]?.url;
-}
-
-/** One-tap spawn from a stored prebuild snapshot, with optional harness and a
- * shared toolset selection layered on top (`source.snapshot` + `toolsets`). */
-function QuickSpawnSection({
-  onSpawn,
-  spawnPending,
-  onOpenInEditor,
+function SpawnOptionsCard({
+  resources,
+  onResourcesChange,
+  selectedToolboxes,
+  onSelectedToolboxesChange,
 }: {
-  onSpawn: (request: CreateSandboxRequest, toolboxes?: string[]) => void;
-  spawnPending: boolean;
-  onOpenInEditor: (spec: SandboxSpec) => void;
+  resources: { vcpus: string; memoryMb: string };
+  onResourcesChange: (next: { vcpus: string; memoryMb: string }) => void;
+  selectedToolboxes: Set<string>;
+  onSelectedToolboxesChange: (next: Set<string>) => void;
 }) {
-  const {
-    data: prebuilds,
-    isPending,
-    isError,
-    error,
-  } = useQuery(prebuildsListQuery());
   const toolboxes = useAllToolboxes();
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [advanced, setAdvanced] = useState({
-    vcpus: "2",
-    memoryMb: "4096",
-  });
-  const [selectedToolboxes, setSelectedToolboxes] = useState<Set<string>>(
-    new Set(),
-  );
-
-  function setAdv<K extends keyof typeof advanced>(
-    key: K,
-    value: (typeof advanced)[K],
-  ) {
-    setAdvanced((current) => ({ ...current, [key]: value }));
-  }
 
   function toggleToolbox(selector: string) {
-    setSelectedToolboxes((current) => {
-      const next = new Set(current);
-      if (next.has(selector)) next.delete(selector);
-      else next.add(selector);
-      return next;
-    });
+    const next = new Set(selectedToolboxes);
+    if (next.has(selector)) next.delete(selector);
+    else next.add(selector);
+    onSelectedToolboxesChange(next);
   }
-
-  function buildSpec(snapshotRef: string): SandboxSpec {
-    // No harness or tool presets here: the harness AND any tool surfaces
-    // (vscode, browser, …) come from the toolboxes applied to the spawn,
-    // never hardcoded UI toggles.
-    const base = composeSpec({
-      image: "unused",
-      vcpus: Math.max(1, Math.round(Number(advanced.vcpus) || 1)),
-      memoryMb: Math.max(256, Math.round(Number(advanced.memoryMb) || 256)),
-    });
-    return { ...base, source: { snapshot: snapshotRef } };
-  }
-
-  const pickedToolboxes = () => [...selectedToolboxes];
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Quick spawn from a prebuild</CardTitle>
-        <CardDescription>
-          Boot straight from a workspace snapshot, with toolsets layered on top.
-        </CardDescription>
+      <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+        <div className="space-y-1.5">
+          <CardTitle className="text-base">Spawn options</CardTitle>
+          <CardDescription>
+            Applied to every spawn on this page: toolboxes layered on top and
+            the sandbox's resources.
+          </CardDescription>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-expanded={advancedOpen}
+          onClick={() => setAdvancedOpen((open) => !open)}
+        >
+          <ChevronDown
+            className={
+              advancedOpen
+                ? "rotate-180 transition-transform"
+                : "transition-transform"
+            }
+          />
+          Resources
+          <span className="text-muted-foreground">
+            {resources.vcpus} vCPU · {resources.memoryMb} MB
+          </span>
+        </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={() => setAdvancedOpen((open) => !open)}
-          >
-            <ChevronDown
-              className={
-                advancedOpen
-                  ? "rotate-180 transition-transform"
-                  : "transition-transform"
-              }
-            />
-            Advanced
-          </Button>
-        </div>
         {advancedOpen ? (
-          <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor="quick-vcpus">vCPUs</Label>
-                <Input
-                  id="quick-vcpus"
-                  type="number"
-                  min={1}
-                  value={advanced.vcpus}
-                  onChange={(e) => setAdv("vcpus", e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="quick-memory">Memory (MB)</Label>
-                <Input
-                  id="quick-memory"
-                  type="number"
-                  min={256}
-                  value={advanced.memoryMb}
-                  onChange={(e) => setAdv("memoryMb", e.target.value)}
-                />
-              </div>
+          <div className="grid grid-cols-1 gap-3 rounded-md border bg-muted/20 p-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="spawn-vcpus">vCPUs</Label>
+              <Input
+                id="spawn-vcpus"
+                type="number"
+                min={1}
+                value={resources.vcpus}
+                onChange={(e) =>
+                  onResourcesChange({ ...resources, vcpus: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="spawn-memory">Memory (MB)</Label>
+              <Input
+                id="spawn-memory"
+                type="number"
+                min={256}
+                value={resources.memoryMb}
+                onChange={(e) =>
+                  onResourcesChange({ ...resources, memoryMb: e.target.value })
+                }
+              />
             </div>
           </div>
         ) : null}
@@ -226,7 +252,60 @@ function QuickSpawnSection({
               onToggle={toggleToolbox}
             />
           </div>
-        ) : null}
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No toolboxes yet. Add one under Settings → Toolboxes to layer a
+            harness or tools onto your sandboxes.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── spawn from a stored prebuild ───────────────────────────────────────────
+
+/** A short, human label for a prebuild: `owner/name` of its cloned repo. */
+function prebuildLabel(prebuild: PrebuildRecord): string | undefined {
+  const { url, branch } = prebuildRepoBranch(prebuild);
+  if (!url) return undefined;
+  const name = repoShortName(url);
+  return branch ? `${name}#${branch}` : name;
+}
+
+/** One-tap spawn from ANY stored prebuild snapshot (including hand-written
+ * and chained ones the repo card doesn't cover). */
+function PrebuildSpawnSection({
+  baseSpec,
+  onSpawn,
+  spawnPending,
+  onOpenInEditor,
+}: {
+  baseSpec: (image: string) => SandboxSpec;
+  onSpawn: (request: CreateSandboxRequest) => void;
+  spawnPending: boolean;
+  onOpenInEditor: (spec: SandboxSpec) => void;
+}) {
+  const {
+    data: prebuilds,
+    isPending,
+    isError,
+    error,
+  } = useQuery(prebuildsListQuery());
+
+  function buildSpec(snapshotRef: string): SandboxSpec {
+    return { ...baseSpec("unused"), source: { snapshot: snapshotRef } };
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Spawn from a stored prebuild</CardTitle>
+        <CardDescription>
+          Boot straight from any workspace snapshot, with the options above.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
         {isPending ? (
           <div className="space-y-2">
             <Skeleton className="h-14 w-full" />
@@ -238,58 +317,61 @@ function QuickSpawnSection({
           </p>
         ) : !prebuilds || prebuilds.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No prebuilds yet. Create one under Settings → Prebuilds.
+            No prebuilds yet. Pick a repository above, or create one under{" "}
+            <Link to="/settings/prebuilds" className="underline">
+              Settings → Prebuilds
+            </Link>
+            .
           </p>
         ) : (
-          <div className="space-y-2">
-            {prebuilds.map((prebuild: PrebuildRecord) => {
-              const label = prebuildLabel(prebuild);
-              return (
-                <div
-                  key={prebuild.ref}
-                  className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Layers className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate font-medium">
-                        {label ?? prebuild.ref}
-                      </span>
-                      {prebuild.parent ? (
-                        <Badge variant="outline">chained</Badge>
-                      ) : null}
-                    </div>
-                    <span className="truncate font-mono text-xs text-muted-foreground">
-                      {prebuild.ref}
+          prebuilds.map((prebuild: PrebuildRecord) => {
+            const label = prebuildLabel(prebuild);
+            return (
+              <div
+                key={prebuild.ref}
+                className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Layers className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate font-medium">
+                      {label ?? prebuild.ref}
+                    </span>
+                    {prebuild.parent ? (
+                      <Badge variant="outline">chained</Badge>
+                    ) : null}
+                    <span className="text-xs text-muted-foreground">
+                      {formatRelativeTime(prebuild.createdAt)}
                     </span>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      size="sm"
-                      disabled={spawnPending}
-                      onClick={() =>
-                        onSpawn(buildSpec(prebuild.ref), pickedToolboxes())
-                      }
-                    >
-                      {spawnPending ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        <Rocket />
-                      )}
-                      Spawn
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onOpenInEditor(buildSpec(prebuild.ref))}
-                    >
-                      Editor
-                    </Button>
-                  </div>
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {prebuild.ref}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    size="sm"
+                    disabled={spawnPending}
+                    onClick={() => onSpawn(buildSpec(prebuild.ref))}
+                  >
+                    {spawnPending ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Rocket />
+                    )}
+                    Spawn
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onOpenInEditor(buildSpec(prebuild.ref))}
+                  >
+                    Editor
+                  </Button>
+                </div>
+              </div>
+            );
+          })
         )}
       </CardContent>
     </Card>

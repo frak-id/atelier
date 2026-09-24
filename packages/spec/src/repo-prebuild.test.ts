@@ -1,0 +1,207 @@
+import { describe, expect, test } from "bun:test";
+import type { PrebuildRecord } from "./prebuild-spec.ts";
+import {
+  buildRepoPrebuildSpec,
+  detectSetupSteps,
+  findRepoBranchPrebuild,
+  findRepoPrebuilds,
+  prebuildJobTarget,
+  repoCloneName,
+  repoKey,
+  repoShortName,
+} from "./repo-prebuild.ts";
+
+function record(
+  ref: string,
+  url: string,
+  branch?: string,
+  extra: Partial<PrebuildRecord> = {},
+): PrebuildRecord {
+  return {
+    ref,
+    hash: `h-${ref}`,
+    image: "dev-base:latest",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    spec: {
+      source: { image: "dev-base" },
+      repos: [{ url, ...(branch ? { branch } : {}), clonePath: "repo" }],
+    },
+    ...extra,
+  };
+}
+
+describe("repoKey", () => {
+  test("https, scp and ssh spellings of one repo collapse to one key", () => {
+    const keys = [
+      "https://github.com/Frak-Id/Atelier",
+      "https://github.com/frak-id/atelier.git",
+      "https://github.com/frak-id/atelier/",
+      "git@github.com:frak-id/atelier.git",
+      "ssh://git@github.com/frak-id/atelier.git",
+      "ssh://git@github.com:22/frak-id/atelier",
+      "https://x-access-token:abc@github.com/frak-id/atelier",
+    ].map(repoKey);
+    expect(new Set(keys)).toEqual(new Set(["github.com/frak-id/atelier"]));
+  });
+
+  test("the host is part of the identity", () => {
+    expect(repoKey("https://gitlab.com/frak-id/atelier")).not.toBe(
+      repoKey("https://github.com/frak-id/atelier"),
+    );
+  });
+});
+
+describe("repoShortName / repoCloneName", () => {
+  test("owner/name without host, casing preserved", () => {
+    expect(repoShortName("https://github.com/Frak-Id/Atelier.git")).toBe(
+      "Frak-Id/Atelier",
+    );
+    expect(repoShortName("git@github.com:frak-id/atelier.git")).toBe(
+      "frak-id/atelier",
+    );
+    expect(repoShortName("not a url")).toBe("not a url");
+  });
+
+  test("clone name is the last segment", () => {
+    expect(repoCloneName("https://github.com/frak-id/atelier.git")).toBe(
+      "atelier",
+    );
+    expect(repoCloneName("git@github.com:frak-id/wallet")).toBe("wallet");
+    expect(repoCloneName("")).toBe("repo");
+  });
+});
+
+describe("prebuildJobTarget", () => {
+  test("url#branch per repo, falling back to the source", () => {
+    expect(
+      prebuildJobTarget({
+        source: { image: "dev-base" },
+        repos: [
+          { url: "https://github.com/a/b", branch: "dev", clonePath: "b" },
+          { url: "https://github.com/a/c", clonePath: "c" },
+        ],
+      }),
+    ).toBe("https://github.com/a/b#dev, https://github.com/a/c");
+    expect(prebuildJobTarget({ source: { snapshot: "snap-1" } })).toBe(
+      "snap-1",
+    );
+  });
+});
+
+describe("findRepoPrebuilds / findRepoBranchPrebuild", () => {
+  const rows = [
+    record("snap-new", "https://github.com/frak-id/atelier.git", "main"),
+    record("snap-dev", "git@github.com:frak-id/atelier.git", "dev"),
+    record("snap-default", "https://github.com/frak-id/atelier"),
+    record("snap-other", "https://github.com/frak-id/wallet"),
+    // metadata-only (no spec) records still match on metadata.repo
+    {
+      ref: "snap-meta",
+      hash: "h",
+      image: "dev-base:latest",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      metadata: { repo: "https://github.com/frak-id/meta", branch: "main" },
+    },
+  ];
+
+  test("all branches of a repo, in input order", () => {
+    expect(
+      findRepoPrebuilds(rows, "https://github.com/FRAK-ID/atelier").map(
+        (r) => r.ref,
+      ),
+    ).toEqual(["snap-new", "snap-dev", "snap-default"]);
+    expect(
+      findRepoPrebuilds(rows, "https://github.com/frak-id/meta").map(
+        (r) => r.ref,
+      ),
+    ).toEqual(["snap-meta"]);
+  });
+
+  test("exact branch match without a default-branch hint", () => {
+    const url = "https://github.com/frak-id/atelier";
+    expect(findRepoBranchPrebuild(rows, url, "dev")?.ref).toBe("snap-dev");
+    expect(findRepoBranchPrebuild(rows, url)?.ref).toBe("snap-default");
+    expect(findRepoBranchPrebuild(rows, url, "main")?.ref).toBe("snap-new");
+    expect(findRepoBranchPrebuild(rows, url, "nope")).toBeUndefined();
+  });
+
+  test("default-branch hint equates an omitted branch with it", () => {
+    const url = "https://github.com/frak-id/atelier";
+    // newest-first: the explicit `main` bake wins over the implicit one
+    expect(findRepoBranchPrebuild(rows, url, undefined, "main")?.ref).toBe(
+      "snap-new",
+    );
+    const onlyImplicit = rows.filter((r) => r.ref !== "snap-new");
+    expect(findRepoBranchPrebuild(onlyImplicit, url, "main", "main")?.ref).toBe(
+      "snap-default",
+    );
+  });
+});
+
+describe("detectSetupSteps", () => {
+  const from = (files: string[]) => {
+    const set = new Set(files);
+    return detectSetupSteps((f) => set.has(f));
+  };
+
+  test("node package manager from lockfile", () => {
+    expect(from(["package.json", "bun.lock"])).toEqual(["bun install"]);
+    expect(from(["package.json", "pnpm-lock.yaml"])).toEqual([
+      "pnpm install --frozen-lockfile",
+    ]);
+    expect(from(["package.json", "package-lock.json"])).toEqual(["npm ci"]);
+    expect(from(["package.json"])).toEqual(["npm install"]);
+  });
+
+  test("multi-stack repos yield one step per ecosystem", () => {
+    expect(
+      from(["package.json", "yarn.lock", "Cargo.toml", "poetry.lock"]),
+    ).toEqual([
+      "yarn install --frozen-lockfile",
+      "poetry install",
+      "cargo fetch",
+    ]);
+    expect(from(["README.md"])).toEqual([]);
+  });
+});
+
+describe("buildRepoPrebuildSpec", () => {
+  test("scopes steps to the clone path and stamps metadata", () => {
+    expect(
+      buildRepoPrebuildSpec({
+        repo: " https://github.com/frak-id/atelier ",
+        branch: "dev",
+        image: "dev-base",
+        build: ["bun install", " ", "cd other && make"],
+      }),
+    ).toEqual({
+      source: { image: "dev-base" },
+      repos: [
+        {
+          url: "https://github.com/frak-id/atelier",
+          branch: "dev",
+          clonePath: "atelier",
+        },
+      ],
+      build: ["cd atelier && bun install", "cd other && make"],
+      metadata: { repo: "https://github.com/frak-id/atelier", branch: "dev" },
+    });
+  });
+
+  test("default branch and no steps stay omitted", () => {
+    const spec = buildRepoPrebuildSpec({
+      repo: "https://github.com/frak-id/atelier",
+      branch: "  ",
+      image: "dev-base",
+      clonePath: "work/atelier",
+    });
+    expect(spec.repos?.[0]).toEqual({
+      url: "https://github.com/frak-id/atelier",
+      clonePath: "work/atelier",
+    });
+    expect(spec.build).toBeUndefined();
+    expect(spec.metadata).toEqual({
+      repo: "https://github.com/frak-id/atelier",
+    });
+  });
+});

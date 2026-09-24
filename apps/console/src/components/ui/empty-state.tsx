@@ -1,5 +1,4 @@
-import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -14,7 +13,9 @@ export function EmptyState({
   action,
   className,
 }: {
-  icon: LucideIcon;
+  /** A lucide icon, or any icon component taking `className` (e.g. the
+   * inlined GitHub mark). */
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   title: string;
   description?: string;
   action?: ReactNode;
