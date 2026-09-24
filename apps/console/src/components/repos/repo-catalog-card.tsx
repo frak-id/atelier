@@ -1,4 +1,4 @@
-import { normalizeBranch, prebuildRepoBranch } from "@atelier/spec";
+import { normalizeBranch, prebuildRepoFor } from "@atelier/spec";
 import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -339,7 +339,11 @@ function RepoRow({
   // Each button acts on one branch, so it only waits for THAT branch's job:
   // create/retry bakes the default branch, rebuild re-bakes `latest`'s.
   const defaultJob = activeJobForBranch(entry, undefined);
-  const latestBranch = latest ? prebuildRepoBranch(latest).branch : undefined;
+  // The branch THIS repo is cloned at in `latest`, which may be a multi-repo
+  // prebuild where it isn't the first repo.
+  const latestBranch = latest
+    ? prebuildRepoFor(latest, repo.cloneUrl)?.branch
+    : undefined;
   const rebuildJob = latest
     ? activeJobForBranch(entry, latestBranch)
     : undefined;
@@ -464,7 +468,10 @@ function StatusSlot({
     // An omitted branch IS the default branch: count them as one.
     const branches = new Set(
       prebuilds.map((p) =>
-        normalizeBranch(prebuildRepoBranch(p).branch, entry.repo.defaultBranch),
+        normalizeBranch(
+          prebuildRepoFor(p, entry.repo.cloneUrl)?.branch,
+          entry.repo.defaultBranch,
+        ),
       ),
     ).size;
     content = (

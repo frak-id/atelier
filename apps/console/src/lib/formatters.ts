@@ -1,6 +1,7 @@
 import {
   type PrebuildRecord,
-  prebuildRepoBranch,
+  type PrebuildRepo,
+  prebuildRepos,
   repoShortName,
 } from "@atelier/spec";
 
@@ -34,9 +35,24 @@ export function repoBranchLabel(name: string, branch?: string): string {
   return branch ? `${name}#${branch}` : name;
 }
 
-/** Title for a stored prebuild: `owner/name` (+ `#branch`) for repo
- * prebuilds, falling back to the snapshot ref for image-only ones. */
+/** `owner/name#branch` for one repo a prebuild clones. */
+export function prebuildRepoLabel(repo: PrebuildRepo): string {
+  return repoBranchLabel(repoShortName(repo.url), repo.branch);
+}
+
+/** Title for a stored prebuild, from the repos it clones (every one counts,
+ * see `prebuildRepos`): one repo reads `owner/name#branch`, several read
+ * `a + b` or `a + 2 more`. A prebuild that clones nothing is named by its
+ * base image, and a hand-made snapshot (no spec) by its ref. Never from the
+ * opaque `metadata`. */
 export function prebuildTitle(prebuild: PrebuildRecord): string {
-  const { url, branch } = prebuildRepoBranch(prebuild);
-  return url ? repoBranchLabel(repoShortName(url), branch) : prebuild.ref;
+  const labels = prebuildRepos(prebuild).map(prebuildRepoLabel);
+  const [first, second] = labels;
+  if (first === undefined) {
+    const source = prebuild.spec?.source;
+    return source && "image" in source ? source.image : prebuild.ref;
+  }
+  if (labels.length === 1) return first;
+  if (labels.length === 2) return `${first} + ${second}`;
+  return `${first} + ${labels.length - 1} more`;
 }

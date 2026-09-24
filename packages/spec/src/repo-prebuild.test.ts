@@ -8,6 +8,8 @@ import {
   normalizeBranch,
   parsePrebuildJobTarget,
   prebuildJobTarget,
+  prebuildRepoFor,
+  prebuildRepos,
   repoCloneName,
   repoKey,
   repoShortName,
@@ -136,7 +138,7 @@ describe("findRepoPrebuilds / findRepoBranchPrebuild", () => {
     record("snap-dev", "git@github.com:frak-id/atelier.git", "dev"),
     record("snap-default", "https://github.com/frak-id/atelier"),
     record("snap-other", "https://github.com/frak-id/wallet"),
-    // metadata-only (no spec) records still match on metadata.repo
+    // A spec-less (hand-made) snapshot: its metadata never identifies a repo.
     {
       ref: "snap-meta",
       hash: "h",
@@ -152,11 +154,9 @@ describe("findRepoPrebuilds / findRepoBranchPrebuild", () => {
         (r) => r.ref,
       ),
     ).toEqual(["snap-new", "snap-dev", "snap-default"]);
-    expect(
-      findRepoPrebuilds(rows, "https://github.com/frak-id/meta").map(
-        (r) => r.ref,
-      ),
-    ).toEqual(["snap-meta"]);
+    expect(findRepoPrebuilds(rows, "https://github.com/frak-id/meta")).toEqual(
+      [],
+    );
   });
 
   test("exact branch match without a default-branch hint", () => {
@@ -176,6 +176,54 @@ describe("findRepoPrebuilds / findRepoBranchPrebuild", () => {
     const onlyImplicit = rows.filter((r) => r.ref !== "snap-new");
     expect(findRepoBranchPrebuild(onlyImplicit, url, "main", "main")?.ref).toBe(
       "snap-default",
+    );
+  });
+});
+
+describe("multi-repo prebuilds", () => {
+  const multi: PrebuildRecord = {
+    ref: "snap-multi",
+    hash: "h-multi",
+    image: "dev-base:latest",
+    createdAt: "2026-02-01T00:00:00.000Z",
+    spec: {
+      source: { image: "dev-base" },
+      repos: [
+        { url: "https://github.com/frak-id/wallet", clonePath: "wallet" },
+        {
+          url: "git@github.com:frak-id/atelier.git",
+          branch: "dev",
+          clonePath: "code/atelier",
+        },
+      ],
+    },
+  };
+  const url = "https://github.com/frak-id/atelier";
+
+  test("every repo counts, not just the first", () => {
+    expect(prebuildRepos(multi).map((r) => r.clonePath)).toEqual([
+      "wallet",
+      "code/atelier",
+    ]);
+    expect(prebuildRepoFor(multi, url)?.clonePath).toBe("code/atelier");
+    expect(prebuildRepoFor(multi, "https://github.com/frak-id/nope")).toBe(
+      undefined,
+    );
+    expect(findRepoPrebuilds([multi], url).map((r) => r.ref)).toEqual([
+      "snap-multi",
+    ]);
+  });
+
+  test("branch matching uses that repo's own branch", () => {
+    expect(findRepoBranchPrebuild([multi], url, "dev")?.ref).toBe("snap-multi");
+    expect(findRepoBranchPrebuild([multi], url)).toBeUndefined();
+  });
+
+  test("a dedicated repo prebuild wins over a newer multi-repo one", () => {
+    const dedicated = record("snap-solo", `${url}.git`, "dev");
+    // newest-first input: the multi-repo bake is the newer one
+    expect(findRepoBranchPrebuild([multi, dedicated], url, "dev")?.ref).toBe(
+      "snap-solo",
     );
   });
 });
@@ -208,7 +256,7 @@ describe("detectSetupSteps", () => {
 });
 
 describe("buildRepoPrebuildSpec", () => {
-  test("scopes steps to the clone path and stamps metadata", () => {
+  test("scopes steps to the clone path, without metadata", () => {
     expect(
       buildRepoPrebuildSpec({
         repo: " https://github.com/frak-id/atelier ",
@@ -226,7 +274,6 @@ describe("buildRepoPrebuildSpec", () => {
         },
       ],
       build: ["cd atelier && bun install", "cd other && make"],
-      metadata: { repo: "https://github.com/frak-id/atelier", branch: "dev" },
     });
   });
 
@@ -242,8 +289,6 @@ describe("buildRepoPrebuildSpec", () => {
       clonePath: "work/atelier",
     });
     expect(spec.build).toBeUndefined();
-    expect(spec.metadata).toEqual({
-      repo: "https://github.com/frak-id/atelier",
-    });
+    expect(spec.metadata).toBeUndefined();
   });
 });

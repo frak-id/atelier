@@ -6,8 +6,15 @@ import { StarterEditor } from "@/components/launchpad/starter-editor";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/settings/launchpad/new")({
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { owner: string; prebuild?: string } => ({
     owner: typeof search.owner === "string" ? search.owner : "user",
+    // Start from a stored prebuild (its ref): "Create a Launchpad starter"
+    // on the prebuilds page.
+    ...(typeof search.prebuild === "string" && search.prebuild
+      ? { prebuild: search.prebuild }
+      : {}),
   }),
   component: NewStarterPage,
 });

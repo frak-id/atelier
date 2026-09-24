@@ -32,7 +32,8 @@ export const PrebuildSpecSchema = Type.Object(
     repos: Type.Optional(Type.Array(PrebuildRepoSchema)),
     /** Ordered, fail-fast shell steps baked into the snapshot. */
     build: Type.Optional(Type.Array(Type.String())),
-    /** Opaque pass-through for observability. */
+    /** Opaque pass-through for observability. Never identifies what a
+     * prebuild contains: `repos` does (see `prebuildRepos`). */
     metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
   },
   {
@@ -61,8 +62,9 @@ export const SnapshotRefSchema = Type.Object(
 export type SnapshotRef = Static<typeof SnapshotRefSchema>;
 
 /** A stored prebuild snapshot, as returned by `GET /v1/prebuilds`. Carries
- * the base image, opaque metadata (workspace/repo/branch…) and creation time
- * so the console can list prebuilds and one-tap spawn from them. */
+ * the base image, the original spec (its `repos` say what it contains),
+ * opaque metadata and creation time so clients can list prebuilds and
+ * one-tap spawn from them. */
 export const PrebuildRecordSchema = Type.Object(
   {
     ref: Type.String(),
