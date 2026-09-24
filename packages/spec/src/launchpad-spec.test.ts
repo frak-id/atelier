@@ -188,17 +188,30 @@ describe("autostartProcesses", () => {
 });
 
 describe("workspacePhase", () => {
-  test("the runtime record wins when it exists", () => {
+  test("a running record is ready, whatever the job says", () => {
     expect(workspacePhase("running", "running")).toBe("ready");
-    expect(workspacePhase("creating", "running")).toBe("starting");
-    expect(workspacePhase("paused", undefined)).toBe("sleeping");
-    expect(workspacePhase("stopped", "succeeded")).toBe("sleeping");
-    expect(workspacePhase("error", "failed")).toBe("failed");
+    expect(workspacePhase("running", "failed")).toBe("ready");
   });
 
-  test("before the record lands, the launch job decides", () => {
+  test("an active job means preparing (no record) or starting (waking)", () => {
     expect(workspacePhase(undefined, "queued")).toBe("preparing");
     expect(workspacePhase(undefined, "running")).toBe("preparing");
+    // A resuming sandbox stays `paused` until it's back.
+    expect(workspacePhase("paused", "running")).toBe("starting");
+    expect(workspacePhase("error", "running")).toBe("starting");
+    expect(workspacePhase("creating", "running")).toBe("starting");
+  });
+
+  test("a settled job defers to the record", () => {
+    expect(workspacePhase("paused", undefined)).toBe("sleeping");
+    // A failed wake-up restores the paused record: still asleep.
+    expect(workspacePhase("paused", "failed")).toBe("sleeping");
+    expect(workspacePhase("stopped", "succeeded")).toBe("sleeping");
+    expect(workspacePhase("error", "failed")).toBe("failed");
+    expect(workspacePhase("creating", undefined)).toBe("starting");
+  });
+
+  test("no record: failed launch, or gone", () => {
     expect(workspacePhase(undefined, "failed")).toBe("failed");
     expect(workspacePhase(undefined, "canceled")).toBe("failed");
     expect(workspacePhase(undefined, "succeeded")).toBe("gone");

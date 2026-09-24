@@ -74,7 +74,9 @@ export class WorkspaceRepository {
 
   update(
     sandboxId: string,
-    patch: Partial<Pick<WorkspaceRecord, "title" | "description" | "jobId">>,
+    patch: Partial<
+      Pick<WorkspaceRecord, "title" | "description" | "jobId" | "snapshot">
+    >,
   ): void {
     getDatabase()
       .update(launchpadWorkspaces)

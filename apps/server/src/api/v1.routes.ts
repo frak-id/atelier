@@ -19,6 +19,7 @@ import {
   type PrebuildSpec,
   PrebuildSpecSchema,
   prebuildJobTarget,
+  type ResumeRequest,
   ResumeRequestSchema,
   type SandboxSpec,
   type ToolsetBuildRequest,
@@ -231,6 +232,34 @@ export async function createSandboxForUser(
     ports: mergeByName(surface.ports, enriched.ports),
   };
   return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
+}
+
+/**
+ * Resume a sandbox with its owner's git credentials refreshed (the
+ * credential-rotation primitive). The owner is re-resolved from the persisted
+ * owner-id metadata, so it's stable regardless of who triggers the resume,
+ * and fresh git files are merged over the persisted (possibly stale) ones.
+ * Shared by `POST /v1/sandboxes/:id/resume` and the Launchpad wake-up.
+ */
+export async function resumeWithFreshCredentials(
+  container: ServerContainer,
+  id: string,
+  body: ResumeRequest = {},
+) {
+  const { runtime, control } = container;
+  const state = await runtime.get(id);
+  const ownerId = state.metadata?.[OWNER_ID_METADATA];
+  const ownerUser = ownerId ? control.userService.getById(ownerId) : undefined;
+  const gitFiles = buildGitAttributionFiles({
+    identity: ownerUser
+      ? { name: ownerUser.username, email: ownerUser.email }
+      : undefined,
+    githubToken: control.userService.resolveGitHubToken(ownerId),
+  });
+  return runtime.resume(id, {
+    ...body,
+    files: [...(body.files ?? []), ...gitFiles],
+  });
 }
 
 export function createV1Routes(container: ServerContainer) {
@@ -570,30 +599,10 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/sandboxes/:id/resume",
-        async ({ params, body }) => {
-          // Refresh the owner's git credentials on resume (the credential
-          // rotation primitive): re-resolve the owner from the persisted
-          // owner-id metadata — stable regardless of who triggers the resume —
-          // and merge fresh git files over the persisted (possibly stale) ones.
-          const state = await runtime.get(params.id);
-          const ownerId = state.metadata?.[OWNER_ID_METADATA];
-          const ownerUser = ownerId
-            ? control.userService.getById(ownerId)
-            : undefined;
-          const gitFiles = buildGitAttributionFiles({
-            identity: ownerUser
-              ? { name: ownerUser.username, email: ownerUser.email }
-              : undefined,
-            githubToken: control.userService.resolveGitHubToken(ownerId),
-          });
-          const merged = {
-            ...body,
-            files: [...(body.files ?? []), ...gitFiles],
-          };
-          return jobs.track({ kind: "sandbox-resume", target: params.id }, () =>
-            runtime.resume(params.id, merged),
-          );
-        },
+        async ({ params, body }) =>
+          jobs.track({ kind: "sandbox-resume", target: params.id }, () =>
+            resumeWithFreshCredentials(container, params.id, body),
+          ),
         { body: ResumeRequestSchema },
       )
       .delete("/sandboxes/:id", async ({ params, set }) => {

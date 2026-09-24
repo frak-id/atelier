@@ -168,9 +168,13 @@ export class WorkspaceService {
     return this.getOwned(sandboxId, userId);
   }
 
-  /** Point the row at a new launch job (retry) and bump its recency. */
-  setJob(sandboxId: string, jobId: string): void {
-    this.repository.update(sandboxId, { jobId });
+  /** Point the row at its latest lifecycle job (launch, retry, wake-up) and
+   * bump its recency. A retry also refreshes the starter snapshot. */
+  setJob(sandboxId: string, jobId: string, snapshot?: WorkspaceSnapshot): void {
+    this.repository.update(sandboxId, {
+      jobId,
+      ...(snapshot ? { snapshot } : {}),
+    });
   }
 
   /** Bump recency (wake-up) so it floats to the top of "jump back in". */

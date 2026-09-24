@@ -114,19 +114,24 @@ description, snapshot JSON, created_at, updated_at)`.
   Editing or deleting a starter never breaks an existing workspace, and it
   stays consistent with the spec the sandbox actually booted.
 
-**Status** is derived at read time in `api/` (the only layer that sees both):
+**Status** is derived at read time in `api/` (the only layer that sees both)
+from the runtime record and the workspace's latest lifecycle job (launch,
+retry or wake-up; `jobId` always points at the newest):
 
-| Runtime record | Launch job | Phase | Copy |
+| Runtime record | Latest job | Phase | Copy |
 |---|---|---|---|
+| running | any | `ready` | "Ready" |
 | — | queued/running | `preparing` | "Setting things up…" |
-| creating | — | `starting` | "Starting…" |
-| running | — | `ready` | "Ready" |
-| paused/stopped | — | `sleeping` | "Sleeping" |
-| error | — | `failed` | "Something went wrong" |
+| any other | queued/running | `starting` | "Starting…" / "Waking up…" |
+| creating | settled | `starting` | "Starting…" |
+| paused/stopped | settled | `sleeping` | "Sleeping" |
+| error | settled | `failed` | "Something went wrong" |
 | — | failed/canceled | `failed` | job error |
-| — | succeeded | *(gone)* | row pruned: sandbox destroyed elsewhere |
+| — | succeeded / none | *(gone)* | row pruned: sandbox destroyed elsewhere |
 
-The pure mapping (`workspacePhase`) lives in `@atelier/spec`.
+The job wins while it's active because a resuming sandbox stays `paused`
+until it's back. A failed wake-up restores `paused`, so the workspace reads
+as asleep again. The pure mapping (`workspacePhase`) lives in `@atelier/spec`.
 
 Retry: an `error` record resumes (the runtime's recovery path). A launch that
 failed before the record existed is re-dispatched with the same id.

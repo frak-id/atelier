@@ -212,17 +212,21 @@ export type WorkspacePhase =
 type JobStatusLike = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
 /**
- * Map (runtime record status, launch job status) → phase. The runtime record
- * wins when it exists; before it lands (source resolution, prebuild bake)
- * only the job says anything.
+ * Map (runtime record status, latest lifecycle job status) → phase. The job
+ * is the workspace's most recent launch or wake-up: while it's active it says
+ * more than the record (a resuming sandbox stays `paused` until it's back),
+ * and before the record lands (source resolution, prebuild bake) it's the
+ * only signal. A running record always wins: that's the goal state.
  */
 export function workspacePhase(
   sandboxStatus: SandboxStatus | undefined,
   jobStatus: JobStatusLike | undefined,
 ): WorkspacePhase {
+  if (sandboxStatus === "running") return "ready";
+  if (jobStatus === "queued" || jobStatus === "running") {
+    return sandboxStatus ? "starting" : "preparing";
+  }
   switch (sandboxStatus) {
-    case "running":
-      return "ready";
     case "creating":
       return "starting";
     case "paused":
@@ -231,17 +235,9 @@ export function workspacePhase(
     case "error":
       return "failed";
   }
-  switch (jobStatus) {
-    case "queued":
-    case "running":
-      return "preparing";
-    case "failed":
-    case "canceled":
-      return "failed";
-    default:
-      // Succeeded with no record, or no job at all: the sandbox is gone.
-      return "gone";
-  }
+  // No record: the launch failed before it landed, or the sandbox was
+  // destroyed elsewhere (succeeded job, or no job left at all).
+  return jobStatus === "failed" || jobStatus === "canceled" ? "failed" : "gone";
 }
 
 /** A service resolved against a live sandbox, ready to render. */
