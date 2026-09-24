@@ -1,0 +1,17 @@
+{
+  "name": "Open-Inspect",
+  "description": "dev-base plus the Open-Inspect sandbox runtime (supervisor, OpenCode and Claude harnesses, brokered git credentials). The boot image of Open-Inspect's `atelier` sandbox provider. Source lives in integrations/open-inspect and is copied into this seed at server-build time (in dev it builds straight from there).",
+  "volumeSize": 10,
+  "tools": ["open-inspect", "opencode", "claude", "python", "node", "chrome", "git", "gh"],
+  "base": "dev-base",
+  "official": true,
+  "dependsOn": ["dev-base"],
+  "substitutions": [
+    {
+      "token": "atelier/dev-base:latest",
+      "kind": "seed",
+      "seed": "dev-base"
+    }
+  ],
+  "contextFrom": "integrations/open-inspect"
+}

@@ -107,6 +107,13 @@ COPY apps/agent-v2/Dockerfile apps/agent-v2/Cargo.toml apps/agent-v2/Cargo.lock 
      ./seeds/sandbox-agent-v2/
 COPY apps/agent-v2/src ./seeds/sandbox-agent-v2/src
 
+# Same for the open-inspect seed: its context lives in integrations/open-inspect.
+COPY integrations/open-inspect/Dockerfile \
+     integrations/open-inspect/upstream.env \
+     integrations/open-inspect/checkout.sh \
+     integrations/open-inspect/atelier-provider.patch \
+     ./seeds/open-inspect/
+
 ENV NODE_ENV=production \
     ATELIER_SERVER_MODE=production \
     DATA_DIR=/app/data \

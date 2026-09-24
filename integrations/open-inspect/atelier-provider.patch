@@ -1,0 +1,2578 @@
+diff --git a/.env.example b/.env.example
+index b5643654..e6ed2918 100644
+--- a/.env.example
++++ b/.env.example
+@@ -225,6 +225,12 @@ E2B_TEMPLATE_ID=
+ E2B_SANDBOX_TIMEOUT_SECONDS=
+ E2B_AUTO_PAUSE=
+ 
++# Atelier. Cloudflare: secret var.atelier_api_key; var.atelier_api_url,
++# var.atelier_image. ATELIER_IMAGE defaults to "open-inspect" when unset.
++ATELIER_API_URL=
++ATELIER_API_KEY=
++ATELIER_IMAGE=
++
+ # ---------------------------------------------------------------------------
+ # Models
+ # ---------------------------------------------------------------------------
+diff --git a/.github/workflows/terraform.yml b/.github/workflows/terraform.yml
+index b6a50248..dfca6c81 100644
+--- a/.github/workflows/terraform.yml
++++ b/.github/workflows/terraform.yml
+@@ -308,6 +308,9 @@ jobs:
+           TF_VAR_e2b_auto_pause: "${{ vars.E2B_AUTO_PAUSE || secrets.E2B_AUTO_PAUSE || 'true' }}"
+           TF_VAR_e2b_template_cpu: "${{ vars.E2B_TEMPLATE_CPU || secrets.E2B_TEMPLATE_CPU || '2' }}"
+           TF_VAR_e2b_template_memory_mb: "${{ vars.E2B_TEMPLATE_MEMORY_MB || secrets.E2B_TEMPLATE_MEMORY_MB || '4096' }}"
++          TF_VAR_atelier_api_url: ${{ vars.ATELIER_API_URL || secrets.ATELIER_API_URL }}
++          TF_VAR_atelier_api_key: ${{ secrets.ATELIER_API_KEY }}
++          TF_VAR_atelier_image: "${{ vars.ATELIER_IMAGE || secrets.ATELIER_IMAGE || 'open-inspect' }}"
+ 
+       - name: Post Plan Results
+         uses: actions/github-script@v8
+@@ -498,6 +501,9 @@ jobs:
+           TF_VAR_e2b_auto_pause: "${{ vars.E2B_AUTO_PAUSE || secrets.E2B_AUTO_PAUSE || 'true' }}"
+           TF_VAR_e2b_template_cpu: "${{ vars.E2B_TEMPLATE_CPU || secrets.E2B_TEMPLATE_CPU || '2' }}"
+           TF_VAR_e2b_template_memory_mb: "${{ vars.E2B_TEMPLATE_MEMORY_MB || secrets.E2B_TEMPLATE_MEMORY_MB || '4096' }}"
++          TF_VAR_atelier_api_url: ${{ vars.ATELIER_API_URL || secrets.ATELIER_API_URL }}
++          TF_VAR_atelier_api_key: ${{ secrets.ATELIER_API_KEY }}
++          TF_VAR_atelier_image: "${{ vars.ATELIER_IMAGE || secrets.ATELIER_IMAGE || 'open-inspect' }}"
+           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+ 
+diff --git a/docs/ATELIER_SANDBOX_PROVIDER.md b/docs/ATELIER_SANDBOX_PROVIDER.md
+new file mode 100644
+index 00000000..eecd2be0
+--- /dev/null
++++ b/docs/ATELIER_SANDBOX_PROVIDER.md
+@@ -0,0 +1,61 @@
++# Atelier Sandbox Provider
++
++[Atelier](https://github.com/frak-id/atelier) orchestrates isolated dev sandboxes (Kata Containers
++on Kubernetes, or Docker) behind a small REST API. With `SANDBOX_PROVIDER=atelier` the control plane
++calls that API directly; there is no shim service to deploy.
++
++## Prerequisites
++
++- An **Atelier server** reachable from the control plane.
++- An **Atelier API key** (`atl_…`) for the Atelier user sessions run as. Every session sandbox is
++  owned by that user.
++- The **`open-inspect` image** built in Atelier: its `open-inspect` seed layers this repository's
++  sandbox runtime on Atelier's `dev-base`, from the bundle
++  `python3 packages/sandbox-images/cli.py pack --provider atelier` produces (see
++  [`integrations/open-inspect`](https://github.com/frak-id/atelier/tree/main/integrations/open-inspect)
++  in the Atelier repository). `build --provider atelier` is refused here: Atelier builds it.
++- The **control plane URL** reachable from Atelier sandboxes, like every provider.
++
++## Configuration
++
++| Env var            | Terraform variable | Required | Notes                                                        |
++| ------------------ | ------------------ | -------- | ------------------------------------------------------------ |
++| `SANDBOX_PROVIDER` | `sandbox_provider` | yes      | `"atelier"`                                                  |
++| `ATELIER_API_URL`  | `atelier_api_url`  | yes      | Atelier server origin, e.g. `https://atelier.example.com`    |
++| `ATELIER_API_KEY`  | `atelier_api_key`  | yes      | Atelier API key, sent as a Bearer token. Sensitive.          |
++| `ATELIER_IMAGE`    | `atelier_image`    | no       | Atelier image sessions boot from. Defaults to `open-inspect` |
++
++Per-session `cpuCores` / `memoryMib` settings map to Atelier's `resources.vcpus` (rounded up) and
++`resources.memoryMb`; unset, sessions get 2 vCPUs and 4096 MiB. Atelier never expires a sandbox on
++its own, so the sandbox timeout setting does not apply.
++
++Like Daytona and E2B, the provider has no fleet-wide model key: add the keys for your models (e.g.
++`ANTHROPIC_API_KEY`) as global secrets in Settings > Secrets. See [Secrets Management](SECRETS.md).
++
++## Lifecycle
++
++| Open-Inspect             | Atelier                                                                             |
++| ------------------------ | ----------------------------------------------------------------------------------- |
++| Spawn                    | `POST /v1/sandboxes` (`personalize: false`), then wait for its `sandbox-create` job |
++| Inactivity stop          | `POST /v1/sandboxes/:id/pause`: the disk is snapshotted, compute released           |
++| Next prompt after a stop | `POST /v1/sandboxes/:id/resume`: same disk, runtime restarted (no-op when running)  |
++| Destroy                  | `DELETE /v1/sandboxes/:id`                                                          |
++
++`personalize: false` keeps Atelier from applying its user's toolboxes, default harness and git
++credentials: git access goes through Open-Inspect's brokered credential helper, as on every
++provider. The session environment is set on the runtime process only, not sandbox-wide.
++
++The spawn waits for the create job for up to 200 seconds, just under the control plane's 240-second
++connect watchdog: the job succeeds when the runtime starts, which is when its bridge connects, so a
++failed boot reports Atelier's own error. The first boot on a node that has not pulled the image yet
++can exceed that; pre-pull the image on Atelier's nodes.
++
++## Limits
++
++- **No prebuilt repository or environment images**: sessions clone and run setup on every fresh
++  spawn (resumes keep the disk).
++- **No code-server, web terminal, VNC or tunnel URLs**: Atelier's in-pod agent holds `0.0.0.0:7681`
++  and forwards declared ports from `0.0.0.0`, which collides with services that bind the pod
++  interface themselves. Sessions that enable them log a warning and run without them.
++- The runtime runs as Atelier's unprivileged `dev` user, and only `/home/dev` survives a stop (the
++  image points `/workspace` into it).
+diff --git a/docs/GETTING_STARTED.md b/docs/GETTING_STARTED.md
+index ddd31103..5712456e 100644
+--- a/docs/GETTING_STARTED.md
++++ b/docs/GETTING_STARTED.md
+@@ -15,11 +15,11 @@ This guide walks you through deploying your own instance of Open-Inspect using T
+ 
+ Open-Inspect uses Terraform to automate deployment across multiple cloud providers:
+ 
+-| Provider                                                                     | Purpose                          | What Terraform Creates                                                                                          |
+-| ---------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+-| **Cloudflare**                                                               | Control plane, session state     | Workers, KV namespaces, Durable Objects, D1 Database                                                            |
+-| **Vercel** _or_ **Cloudflare Workers**                                       | Web application                  | Project + env vars (Vercel) _or_ Worker via OpenNext (Cloudflare)                                               |
+-| **Modal**, **Daytona**, **Vercel Sandboxes**, **OpenComputer**, _or_ **E2B** | Sandbox execution infrastructure | Modal app deployment, Daytona/Vercel API config, OpenComputer template/API config, _or_ E2B template/API config |
++| Provider                                                                                  | Purpose                          | What Terraform Creates                                                                                                                     |
++| ----------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
++| **Cloudflare**                                                                            | Control plane, session state     | Workers, KV namespaces, Durable Objects, D1 Database                                                                                       |
++| **Vercel** _or_ **Cloudflare Workers**                                                    | Web application                  | Project + env vars (Vercel) _or_ Worker via OpenNext (Cloudflare)                                                                          |
++| **Modal**, **Daytona**, **Vercel Sandboxes**, **OpenComputer**, **E2B**, _or_ **Atelier** | Sandbox execution infrastructure | Modal app deployment, Daytona/Vercel API config, OpenComputer template/API config, E2B template/API config, _or_ Atelier server/API config |
+ 
+ > **Web platform choice**: Set `web_platform` in your `terraform.tfvars` to `"vercel"` (default) or
+ > `"cloudflare"`. The Cloudflare option deploys the Next.js app as a Cloudflare Worker using
+@@ -45,6 +45,7 @@ Create accounts on these services before continuing:
+ | [Vercel Sandboxes](https://vercel.com) _(optional)_       | Sandbox infrastructure when `sandbox_provider = "vercel"`       |
+ | [OpenComputer](https://app.opencomputer.dev) _(optional)_ | Sandbox infrastructure when `sandbox_provider = "opencomputer"` |
+ | [E2B](https://e2b.dev) _(optional)_                       | Sandbox infrastructure when `sandbox_provider = "e2b"`          |
++| Atelier _(optional)_                                      | Sandbox infrastructure when `sandbox_provider = "atelier"`      |
+ | [GitHub](https://github.com/settings/developers)          | OAuth + repository access                                       |
+ | [Anthropic](https://console.anthropic.com)                | Claude API                                                      |
+ | [Slack](https://api.slack.com/apps) _(optional)_          | Slack bot integration                                           |
+@@ -266,6 +267,19 @@ For the full runtime, lifecycle, and configuration model, see
+ > plan to use — `ANTHROPIC_API_KEY` for Claude — as a **global secret** in Settings > Secrets after
+ > deploying. See [Secrets Management](SECRETS.md) for details.
+ 
++### Atelier
++
++> Only required when `sandbox_provider = "atelier"`.
++
++Set `sandbox_provider = "atelier"`, `atelier_api_url` and `atelier_api_key` (an API key of the
++Atelier user sessions run as); `atelier_image` defaults to `"open-inspect"`. Atelier builds that
++image itself, so there is no image step here. See
++[Atelier Sandbox Provider](ATELIER_SANDBOX_PROVIDER.md) for prerequisites, lifecycle and limits.
++
++> **Important**: like Daytona and E2B, the Atelier provider has no fleet-wide model key. Add the key
++> for the models you plan to use — `ANTHROPIC_API_KEY` for Claude — as a **global secret** in
++> Settings > Secrets after deploying. See [Secrets Management](SECRETS.md) for details.
++
+ ### Anthropic
+ 
+ Required by the default configuration: the Slack bot is enabled by default and its classifier runs
+@@ -537,7 +551,7 @@ modal_workspace             = "your-modal-workspace"
+ modal_environment           = "your-modal-environment"
+ modal_environment_web_suffix = "your-modal-web-suffix" # Lowercase letters, digits, dashes; empty for https://workspace--... endpoints
+ 
+-# Sandbox provider: "modal" (default), "daytona", or "vercel"
++# Sandbox provider: "modal" (default), "daytona", "vercel", "opencomputer", "e2b", or "atelier"
+ # sandbox_provider          = "modal"
+ 
+ # Daytona (only required when sandbox_provider = "daytona")
+@@ -558,6 +572,11 @@ modal_environment_web_suffix = "your-modal-web-suffix" # Lowercase letters, digi
+ # e2b_api_key               = "your-e2b-api-key"        # runtime REST API key (also auths the build)
+ # e2b_template_id           = "open-inspect-sandbox"
+ 
++# Atelier (only required when sandbox_provider = "atelier")
++# atelier_api_url           = "https://atelier.example.com"
++# atelier_api_key           = "your-atelier-api-key"
++# atelier_image             = "open-inspect"
++
+ # GitHub App repository access (required in every deployment)
+ github_app_id              = "123456"
+ github_app_installation_id = "12345678"
+@@ -1074,6 +1093,10 @@ DAYTONA_TARGET
+ DAYTONA_TOOLBOX_API_URL
+ DAYTONA_PREBUILDS_ENABLED
+ 
++# Atelier
++ATELIER_API_URL
++ATELIER_IMAGE
++
+ # Vercel Sandbox
+ VERCEL_SANDBOX_PROJECT_ID
+ VERCEL_SANDBOX_TEAM_ID
+@@ -1138,6 +1161,9 @@ Secrets for credentials:
+ | `DAYTONA_TARGET`                   | Optional Daytona target name                                                                |
+ | `DAYTONA_TOOLBOX_API_URL`          | Optional Daytona toolbox proxy override; empty uses the proxy each sandbox reports          |
+ | `DAYTONA_PREBUILDS_ENABLED`        | `true` to admit new Daytona prebuilt-image builds and boot from them (default: `false`)     |
++| `ATELIER_API_URL`                  | Atelier server URL _(only if `sandbox_provider = "atelier"`)_                               |
++| `ATELIER_API_KEY`                  | Atelier API key _(only if `sandbox_provider = "atelier"`)_                                  |
++| `ATELIER_IMAGE`                    | Atelier image sessions boot from (defaults to `open-inspect`)                               |
+ | `VERCEL_SANDBOX_TOKEN`             | Vercel API token _(only if `sandbox_provider = "vercel"`)_                                  |
+ | `VERCEL_SANDBOX_PROJECT_ID`        | Vercel project ID for sandbox sessions _(only if `sandbox_provider = "vercel"`)_            |
+ | `VERCEL_SANDBOX_TEAM_ID`           | Optional Vercel team/account ID for sandbox sessions                                        |
+diff --git a/packages/control-plane/src/node/config.ts b/packages/control-plane/src/node/config.ts
+index 6c6f85a6..808bdaa4 100644
+--- a/packages/control-plane/src/node/config.ts
++++ b/packages/control-plane/src/node/config.ts
+@@ -87,6 +87,9 @@ const ENV_CONFIG_KEYS = {
+   E2B_TEMPLATE_ID: true,
+   E2B_SANDBOX_TIMEOUT_SECONDS: true,
+   E2B_AUTO_PAUSE: true,
++  ATELIER_API_URL: true,
++  ATELIER_API_KEY: true,
++  ATELIER_IMAGE: true,
+   SANDBOX_INACTIVITY_TIMEOUT_MS: true,
+   SANDBOX_BOOT_TIMEOUT_MS: true,
+   EXECUTION_TIMEOUT_MS: true,
+diff --git a/packages/control-plane/src/sandbox/atelier-rest-client.test.ts b/packages/control-plane/src/sandbox/atelier-rest-client.test.ts
+new file mode 100644
+index 00000000..5976cd5f
+--- /dev/null
++++ b/packages/control-plane/src/sandbox/atelier-rest-client.test.ts
+@@ -0,0 +1,335 @@
++/**
++ * Unit tests for AtelierRestClient.
++ *
++ * Tests URL construction, auth headers, request bodies, zod parsing, and
++ * error classification (404/409/4xx/5xx/network/timeout).
++ */
++
++import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
++import {
++  AtelierApiError,
++  AtelierConflictError,
++  AtelierNotFoundError,
++  AtelierRestClient,
++  type AtelierCreateSandboxParams,
++  type AtelierRestConfig,
++} from "./atelier-rest-client";
++
++const defaultConfig: AtelierRestConfig = {
++  apiUrl: "https://atelier.test",
++  apiKey: "atl_test-key",
++};
++
++function jsonResponse(body: unknown, status = 200): Response {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "content-type": "application/json" },
++  });
++}
++
++function emptyResponse(status = 204): Response {
++  return new Response(null, { status });
++}
++
++const jobBody = {
++  id: "job-1",
++  kind: "sandbox-create",
++  status: "running",
++  target: "atelier-1",
++  metadata: { sandboxId: "sb-1" },
++  createdAt: "2026-01-01T00:00:00Z",
++  updatedAt: "2026-01-01T00:00:00Z",
++};
++
++const sandboxBody = {
++  id: "sb-1",
++  status: "running",
++  urls: [],
++  processes: [],
++  metadata: {},
++};
++
++let fetchSpy: ReturnType<typeof vi.fn>;
++
++beforeEach(() => {
++  fetchSpy = vi.fn();
++  vi.stubGlobal("fetch", fetchSpy);
++});
++
++afterEach(() => {
++  vi.restoreAllMocks();
++});
++
++describe("AtelierRestClient", () => {
++  describe("constructor validation", () => {
++    it("throws when apiUrl is missing", () => {
++      expect(() => new AtelierRestClient({ ...defaultConfig, apiUrl: "" })).toThrow(
++        "requires apiUrl"
++      );
++    });
++
++    it("throws when apiKey is missing", () => {
++      expect(() => new AtelierRestClient({ ...defaultConfig, apiKey: "" })).toThrow(
++        "requires apiKey"
++      );
++    });
++
++    it("tolerates a trailing slash on apiUrl and appends /v1", async () => {
++      const client = new AtelierRestClient({ ...defaultConfig, apiUrl: "https://atelier.test///" });
++      fetchSpy.mockResolvedValue(jsonResponse(sandboxBody));
++      await client.getSandbox("sb-1");
++      expect(fetchSpy).toHaveBeenCalledWith(
++        "https://atelier.test/v1/sandboxes/sb-1",
++        expect.anything()
++      );
++    });
++  });
++
++  describe("auth headers", () => {
++    it("sends Bearer token and JSON content-type", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse(sandboxBody));
++
++      await client.getSandbox("sb-1");
++
++      const [, init] = fetchSpy.mock.calls[0];
++      expect(init.headers).toEqual(
++        expect.objectContaining({
++          Authorization: "Bearer atl_test-key",
++          "Content-Type": "application/json",
++        })
++      );
++    });
++  });
++
++  describe("createSandbox", () => {
++    it("POSTs /v1/sandboxes with the exact request body and parses the job", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse(jobBody, 202));
++
++      const params: AtelierCreateSandboxParams = {
++        source: { image: "open-inspect" },
++        resources: { vcpus: 2, memoryMb: 4096 },
++        processes: [
++          {
++            name: "open-inspect",
++            command: "/opt/openinspect/python/bin/python -m sandbox_runtime.entrypoint",
++            user: "dev",
++            cwd: "/home/dev",
++            env: { FOO: "bar" },
++            primary: true,
++          },
++        ],
++        metadata: { name: "sb-1" },
++        personalize: false,
++      };
++
++      const job = await client.createSandbox(params);
++
++      const [url, init] = fetchSpy.mock.calls[0];
++      expect(url).toBe("https://atelier.test/v1/sandboxes");
++      expect(init.method).toBe("POST");
++      expect(JSON.parse(init.body as string)).toEqual(params);
++      expect(job.id).toBe("job-1");
++      expect(job.metadata?.sandboxId).toBe("sb-1");
++    });
++
++    it("redacts the request body (which carries session secrets) from a create error message", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(
++        jsonResponse(
++          { error: "VALIDATION_ERROR", message: "SANDBOX_AUTH_TOKEN=leaked-secret" },
++          400
++        )
++      );
++
++      await expect(
++        client.createSandbox({
++          source: { image: "open-inspect" },
++          resources: { vcpus: 2, memoryMb: 4096 },
++          processes: [
++            {
++              name: "open-inspect",
++              command: "cmd",
++              user: "dev",
++              cwd: "/home/dev",
++              env: {},
++              primary: true,
++            },
++          ],
++          metadata: {},
++          personalize: false,
++        })
++      ).rejects.toMatchObject({
++        message: expect.not.stringContaining("leaked-secret"),
++      });
++    });
++  });
++
++  describe("getJob", () => {
++    it("GETs /v1/jobs/:id", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse(jobBody));
++
++      const job = await client.getJob("job-1");
++
++      expect(fetchSpy).toHaveBeenCalledWith(
++        "https://atelier.test/v1/jobs/job-1",
++        expect.objectContaining({ method: "GET" })
++      );
++      expect(job.status).toBe("running");
++    });
++
++    it("throws AtelierApiError on an invalid job body", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse({ id: "job-1" }));
++
++      await expect(client.getJob("job-1")).rejects.toBeInstanceOf(AtelierApiError);
++    });
++  });
++
++  describe("getSandbox", () => {
++    it("GETs /v1/sandboxes/:id", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse(sandboxBody));
++
++      const sandbox = await client.getSandbox("sb-1");
++
++      expect(fetchSpy).toHaveBeenCalledWith(
++        "https://atelier.test/v1/sandboxes/sb-1",
++        expect.objectContaining({ method: "GET" })
++      );
++      expect(sandbox.status).toBe("running");
++    });
++  });
++
++  describe("pauseSandbox", () => {
++    it("POSTs /v1/sandboxes/:id/pause with no body and parses ref/hash", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse({ ref: "snap-1", hash: "abc" }));
++
++      const result = await client.pauseSandbox("sb-1");
++
++      const [url, init] = fetchSpy.mock.calls[0];
++      expect(url).toBe("https://atelier.test/v1/sandboxes/sb-1/pause");
++      expect(init.method).toBe("POST");
++      expect(init.body).toBeUndefined();
++      expect(result).toEqual({ ref: "snap-1", hash: "abc" });
++    });
++  });
++
++  describe("resumeSandbox", () => {
++    it("POSTs /v1/sandboxes/:id/resume with an empty JSON object body", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse(sandboxBody));
++
++      await client.resumeSandbox("sb-1");
++
++      const [url, init] = fetchSpy.mock.calls[0];
++      expect(url).toBe("https://atelier.test/v1/sandboxes/sb-1/resume");
++      expect(init.method).toBe("POST");
++      expect(JSON.parse(init.body as string)).toEqual({});
++    });
++  });
++
++  describe("deleteSandbox", () => {
++    it("DELETEs /v1/sandboxes/:id", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(emptyResponse(204));
++
++      await client.deleteSandbox("sb-1");
++
++      expect(fetchSpy).toHaveBeenCalledWith(
++        "https://atelier.test/v1/sandboxes/sb-1",
++        expect.objectContaining({ method: "DELETE" })
++      );
++    });
++  });
++
++  describe("error mapping", () => {
++    it("maps 404 to AtelierNotFoundError", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse({ error: "NOT_FOUND", message: "not found" }, 404));
++
++      await expect(client.getSandbox("sb-1")).rejects.toBeInstanceOf(AtelierNotFoundError);
++    });
++
++    it("maps 409 to AtelierConflictError", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse({ error: "CONFLICT", message: "not paused" }, 409));
++
++      await expect(client.resumeSandbox("sb-1")).rejects.toBeInstanceOf(AtelierConflictError);
++    });
++
++    it("maps other 4xx to AtelierApiError with the status and provider code", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(
++        jsonResponse({ error: "VALIDATION_ERROR", message: "bad request" }, 400)
++      );
++
++      try {
++        await client.getSandbox("sb-1");
++        expect.unreachable("expected rejection");
++      } catch (error) {
++        expect(error).toBeInstanceOf(AtelierApiError);
++        const apiError = error as AtelierApiError;
++        expect(apiError.status).toBe(400);
++        expect(apiError.code).toBe("VALIDATION_ERROR");
++      }
++    });
++
++    it("maps 5xx to AtelierApiError with the status", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(jsonResponse({ error: "INTERNAL_ERROR", message: "boom" }, 500));
++
++      await expect(client.getSandbox("sb-1")).rejects.toMatchObject({
++        status: 500,
++      });
++    });
++
++    it("propagates a network failure", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockRejectedValue(new TypeError("fetch failed"));
++
++      await expect(client.getSandbox("sb-1")).rejects.toThrow("fetch failed");
++    });
++
++    it("maps a timeout to an Error whose message says timeout", async () => {
++      vi.useFakeTimers();
++      try {
++        const client = new AtelierRestClient(defaultConfig);
++        fetchSpy.mockImplementation(
++          (_url: string, init: RequestInit) =>
++            new Promise((_resolve, reject) => {
++              init.signal?.addEventListener("abort", () => {
++                const abortError = new Error("The operation was aborted");
++                abortError.name = "AbortError";
++                reject(abortError);
++              });
++            })
++        );
++
++        const promise = client.getSandbox("sb-1");
++        const assertion = expect(promise).rejects.toThrow(/timeout/i);
++        await vi.runAllTimersAsync();
++        await assertion;
++      } finally {
++        vi.useRealTimers();
++      }
++    });
++
++    it("redacts the API key from an error body excerpt", async () => {
++      const client = new AtelierRestClient(defaultConfig);
++      fetchSpy.mockResolvedValue(
++        jsonResponse(
++          { error: "VALIDATION_ERROR", message: `key ${defaultConfig.apiKey} invalid` },
++          400
++        )
++      );
++
++      await expect(client.getSandbox("sb-1")).rejects.toMatchObject({
++        message: expect.not.stringContaining(defaultConfig.apiKey),
++      });
++    });
++  });
++});
+diff --git a/packages/control-plane/src/sandbox/atelier-rest-client.ts b/packages/control-plane/src/sandbox/atelier-rest-client.ts
+new file mode 100644
+index 00000000..fa837cc9
+--- /dev/null
++++ b/packages/control-plane/src/sandbox/atelier-rest-client.ts
+@@ -0,0 +1,392 @@
++/**
++ * Direct REST client for the Atelier sandbox API.
++ *
++ * All endpoints live under `${apiUrl}/v1`, Bearer-authenticated with an
++ * Atelier API key. `POST /v1/sandboxes` only enqueues a `sandbox-create` job
++ * (202) carrying the pre-allocated sandbox id in `metadata.sandboxId`; the
++ * provider polls `GET /v1/jobs/:id` until the job settles.
++ */
++
++import { createLogger } from "../logger";
++import { z } from "zod";
++
++const log = createLogger("atelier-rest-client");
++
++export interface AtelierRestConfig {
++  /** Atelier server origin, e.g. "https://atelier.example.com" (a trailing slash is tolerated). */
++  apiUrl: string;
++  /** Atelier API key ("atl_..."), sent as Bearer. */
++  apiKey: string;
++}
++
++// ---------------------------------------------------------------------------
++// Per-operation timeouts (ms)
++// ---------------------------------------------------------------------------
++
++/** The create call itself only enqueues a job; it does not wait for the boot. */
++const TIMEOUT_CREATE_MS = 30_000;
++const TIMEOUT_JOB_GET_MS = 15_000;
++const TIMEOUT_SANDBOX_GET_MS = 15_000;
++/** Awaited: the disk is snapshotted and compute released before this returns. */
++const TIMEOUT_PAUSE_MS = 60_000;
++/** Awaited: reuses the same disk and restarts the declared processes, then returns booted. */
++const TIMEOUT_RESUME_MS = 120_000;
++const TIMEOUT_DELETE_MS = 30_000;
++
++/** Longest provider error body kept on an error message. */
++const MAX_ERROR_BODY_CHARS = 300;
++
++// ---------------------------------------------------------------------------
++// Wire shapes
++// ---------------------------------------------------------------------------
++
++export const ATELIER_JOB_STATUSES = [
++  "queued",
++  "running",
++  "succeeded",
++  "failed",
++  "canceled",
++] as const;
++export type AtelierJobStatus = (typeof ATELIER_JOB_STATUSES)[number];
++
++export const ATELIER_SANDBOX_STATUSES = [
++  "creating",
++  "running",
++  "paused",
++  "stopped",
++  "error",
++] as const;
++export type AtelierSandboxStatus = (typeof ATELIER_SANDBOX_STATUSES)[number];
++
++const optionalString = z.string().nullish().catch(undefined);
++
++const atelierJobSchema = z.object({
++  id: z.string(),
++  kind: z.string(),
++  status: z.enum(ATELIER_JOB_STATUSES),
++  target: optionalString,
++  /** `metadata.sandboxId` is the Atelier sandbox id, pre-allocated at create. */
++  metadata: z.record(z.string(), z.string()).nullish().catch(undefined),
++  error: optionalString,
++  result: z.unknown().optional(),
++  createdAt: optionalString,
++  updatedAt: optionalString,
++});
++
++export type AtelierJob = z.infer<typeof atelierJobSchema>;
++
++const atelierSandboxSchema = z.object({
++  id: z.string(),
++  status: z.enum(ATELIER_SANDBOX_STATUSES),
++  metadata: z.record(z.string(), z.string()).nullish().catch(undefined),
++});
++
++export type AtelierSandbox = z.infer<typeof atelierSandboxSchema>;
++
++const atelierPauseResponseSchema = z.object({
++  ref: z.string(),
++  hash: z.string(),
++});
++
++export type AtelierPauseResponse = z.infer<typeof atelierPauseResponseSchema>;
++
++// ---------------------------------------------------------------------------
++// Request types
++// ---------------------------------------------------------------------------
++
++export interface AtelierCreateSandboxProcess {
++  name: string;
++  command: string;
++  user: string;
++  cwd: string;
++  env: Record<string, string>;
++  primary: true;
++}
++
++export interface AtelierCreateSandboxParams {
++  source: { image: string };
++  resources: { vcpus: number; memoryMb: number };
++  processes: [AtelierCreateSandboxProcess];
++  metadata: Record<string, string>;
++  /**
++   * Must be `false`: Open-Inspect brokers its own git credentials via a
++   * system credential helper baked into the image, and Atelier must not
++   * apply the calling user's personal environment (toolboxes, harness,
++   * git identity) on top of it.
++   */
++  personalize: false;
++}
++
++// ---------------------------------------------------------------------------
++// Errors
++// ---------------------------------------------------------------------------
++
++/** Thrown when Atelier returns 404 — the resource no longer exists. */
++export class AtelierNotFoundError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "AtelierNotFoundError";
++  }
++}
++
++/** Thrown when Atelier returns 409 — the sandbox is not in a state the call accepts. */
++export class AtelierConflictError extends Error {
++  constructor(message: string) {
++    super(message);
++    this.name = "AtelierConflictError";
++  }
++}
++
++/**
++ * Non-404/409 Atelier API error. Carries the HTTP status for classification
++ * and, when Atelier reported one, its own error code.
++ *
++ * The message never carries the request body: `processes[0].env` carries the
++ * session's secrets (SANDBOX_AUTH_TOKEN and any user env vars), and an error
++ * message reaches structured logs and failure tooltips.
++ */
++export class AtelierApiError extends Error {
++  constructor(
++    message: string,
++    public readonly status: number,
++    public readonly code?: string
++  ) {
++    super(message);
++    this.name = "AtelierApiError";
++  }
++}
++
++// ---------------------------------------------------------------------------
++// Client
++// ---------------------------------------------------------------------------
++
++type AtelierMethod = "DELETE" | "GET" | "POST";
++
++interface AtelierRequest {
++  method: AtelierMethod;
++  path: string;
++  timeoutMs: number;
++  body?: unknown;
++  signal?: AbortSignal;
++  /** Drop the response body from the error message — set on the create call, whose body carries secrets. */
++  redactBody?: boolean;
++}
++
++export class AtelierRestClient {
++  private readonly baseUrl: string;
++
++  constructor(public readonly config: AtelierRestConfig) {
++    if (!config.apiUrl) {
++      throw new Error("AtelierRestClient requires apiUrl");
++    }
++    if (!config.apiKey) {
++      throw new Error("AtelierRestClient requires apiKey");
++    }
++    this.baseUrl = `${trimTrailingSlashes(config.apiUrl)}/v1`;
++  }
++
++  // -----------------------------------------------------------------------
++  // Sandbox lifecycle
++  // -----------------------------------------------------------------------
++
++  /** Enqueue a sandbox create. Returns the job record; the caller polls {@link getJob}. */
++  async createSandbox(
++    params: AtelierCreateSandboxParams,
++    signal?: AbortSignal
++  ): Promise<AtelierJob> {
++    const startMs = Date.now();
++    try {
++      return await this.requestJson(atelierJobSchema, {
++        method: "POST",
++        path: "/sandboxes",
++        timeoutMs: TIMEOUT_CREATE_MS,
++        body: params,
++        signal,
++        redactBody: true,
++      });
++    } finally {
++      log.info("atelier.create_sandbox", { duration_ms: Date.now() - startMs });
++    }
++  }
++
++  async getJob(jobId: string, signal?: AbortSignal): Promise<AtelierJob> {
++    return this.requestJson(atelierJobSchema, {
++      method: "GET",
++      path: `/jobs/${encodeURIComponent(jobId)}`,
++      timeoutMs: TIMEOUT_JOB_GET_MS,
++      signal,
++    });
++  }
++
++  async getSandbox(id: string, signal?: AbortSignal): Promise<AtelierSandbox> {
++    return this.requestJson(atelierSandboxSchema, {
++      method: "GET",
++      path: `/sandboxes/${encodeURIComponent(id)}`,
++      timeoutMs: TIMEOUT_SANDBOX_GET_MS,
++      signal,
++    });
++  }
++
++  /** Snapshot the disk, release compute, keep the volume. 409 when not `running`. */
++  async pauseSandbox(id: string, signal?: AbortSignal): Promise<AtelierPauseResponse> {
++    return this.requestJson(atelierPauseResponseSchema, {
++      method: "POST",
++      path: `/sandboxes/${encodeURIComponent(id)}/pause`,
++      timeoutMs: TIMEOUT_PAUSE_MS,
++      signal,
++    });
++  }
++
++  /** Resume from the same disk, restarting declared processes. 409 unless `paused`/`error`. Body must be `{}`. */
++  async resumeSandbox(id: string, signal?: AbortSignal): Promise<AtelierSandbox> {
++    return this.requestJson(atelierSandboxSchema, {
++      method: "POST",
++      path: `/sandboxes/${encodeURIComponent(id)}/resume`,
++      timeoutMs: TIMEOUT_RESUME_MS,
++      body: {},
++      signal,
++    });
++  }
++
++  /** Allowed from any status. 404 is the caller's to treat as already-deleted. */
++  async deleteSandbox(id: string, signal?: AbortSignal): Promise<void> {
++    await this.requestVoid({
++      method: "DELETE",
++      path: `/sandboxes/${encodeURIComponent(id)}`,
++      timeoutMs: TIMEOUT_DELETE_MS,
++      signal,
++    });
++  }
++
++  // -----------------------------------------------------------------------
++  // Internals
++  // -----------------------------------------------------------------------
++
++  private getHeaders(): Record<string, string> {
++    return {
++      "Content-Type": "application/json",
++      Authorization: `Bearer ${this.config.apiKey}`,
++    };
++  }
++
++  /**
++   * Request whose success body is required: it must be JSON and must satisfy
++   * `schema`, otherwise the call fails as an invalid response.
++   */
++  private requestJson<T>(schema: z.ZodType<T>, request: AtelierRequest): Promise<T> {
++    return this.send(request, async (response) =>
++      this.parseJson(schema, await response.text(), response.status)
++    );
++  }
++
++  /** Command whose success body carries nothing we act on (204 or an empty/unused 200). */
++  private requestVoid(request: AtelierRequest): Promise<void> {
++    return this.send<void>(request, () => {});
++  }
++
++  private parseJson<T>(schema: z.ZodType<T>, text: string, status: number): T {
++    let payload: unknown;
++    try {
++      payload = JSON.parse(text);
++    } catch {
++      throw new AtelierApiError("Invalid Atelier API response", status);
++    }
++    const parsed = schema.safeParse(payload);
++    if (!parsed.success) {
++      throw new AtelierApiError("Invalid Atelier API response", status);
++    }
++    return parsed.data;
++  }
++
++  private async send<T>(
++    request: AtelierRequest,
++    consume: (response: Response) => T | Promise<T>
++  ): Promise<T> {
++    const url = `${this.baseUrl}${request.path}`;
++    const controller = new AbortController();
++    const timeoutId = setTimeout(() => controller.abort(), request.timeoutMs);
++
++    try {
++      const init: RequestInit = {
++        method: request.method,
++        headers: this.getHeaders(),
++        signal: request.signal
++          ? AbortSignal.any([controller.signal, request.signal])
++          : controller.signal,
++      };
++      if (request.body !== undefined) {
++        init.body = JSON.stringify(request.body);
++      }
++
++      const response = await fetch(url, init);
++
++      if (response.status === 404) {
++        await response.text();
++        throw new AtelierNotFoundError(`Atelier resource not found: ${request.path}`);
++      }
++      if (response.status === 409) {
++        await response.text();
++        throw new AtelierConflictError(`Atelier conflict: ${request.path}`);
++      }
++
++      if (!response.ok) {
++        const text = await response.text();
++        const code = this.errorCode(text);
++        throw new AtelierApiError(
++          this.errorMessage(request, response.status, text),
++          response.status,
++          code
++        );
++      }
++
++      return await consume(response);
++    } catch (error) {
++      // Not an AtelierApiError: a plain Error whose message says "timeout" so the
++      // provider's network-error classifier (SandboxProviderError.isTransientNetworkError)
++      // recognizes it as transient without an HTTP status to key off of.
++      if (error instanceof Error && error.name === "AbortError") {
++        throw new Error(
++          `Atelier request timeout after ${request.timeoutMs}ms (${request.method} ${request.path})`
++        );
++      }
++      throw error;
++    } finally {
++      clearTimeout(timeoutId);
++    }
++  }
++
++  private errorCode(body: string): string | undefined {
++    try {
++      const parsed = JSON.parse(body) as { error?: unknown };
++      return typeof parsed.error === "string" ? parsed.error : undefined;
++    } catch {
++      return undefined;
++    }
++  }
++
++  private errorMessage(request: AtelierRequest, status: number, body: string): string {
++    const endpoint = `${request.method} ${request.path}`;
++    if (request.redactBody) {
++      return `Atelier API error ${status} on ${endpoint}`;
++    }
++    const excerpt = this.sanitizeBody(body);
++    return excerpt
++      ? `Atelier API error ${status} on ${endpoint}: ${excerpt}`
++      : `Atelier API error ${status} on ${endpoint}`;
++  }
++
++  private sanitizeBody(body: string): string {
++    const redacted = body.split(this.config.apiKey).join("[redacted]").trim();
++    return redacted.length > MAX_ERROR_BODY_CHARS
++      ? `${redacted.slice(0, MAX_ERROR_BODY_CHARS)}...`
++      : redacted;
++  }
++}
++
++function trimTrailingSlashes(url: string): string {
++  return url.replace(/\/+$/, "");
++}
++
++export function createAtelierRestClient(config: AtelierRestConfig): AtelierRestClient {
++  return new AtelierRestClient(config);
++}
+diff --git a/packages/control-plane/src/sandbox/provider-factory.test.ts b/packages/control-plane/src/sandbox/provider-factory.test.ts
+index 273fc7be..525408e3 100644
+--- a/packages/control-plane/src/sandbox/provider-factory.test.ts
++++ b/packages/control-plane/src/sandbox/provider-factory.test.ts
+@@ -79,6 +79,26 @@ describe("createSandboxProviderFromEnv", () => {
+     );
+   });
+ 
++  it("requires Atelier credentials", () => {
++    expect(() => createSandboxProviderFromEnv(createEnv({}), "atelier")).toThrow(
++      "ATELIER_API_URL and ATELIER_API_KEY are required"
++    );
++    expect(() =>
++      createSandboxProviderFromEnv(
++        createEnv({ ATELIER_API_URL: "https://atelier.test" }),
++        "atelier"
++      )
++    ).toThrow("ATELIER_API_URL and ATELIER_API_KEY are required");
++  });
++
++  it("creates an Atelier provider defaulting the image to open-inspect", () => {
++    const provider = createSandboxProviderFromEnv(
++      createEnv({ ATELIER_API_URL: "https://atelier.test", ATELIER_API_KEY: "atl_key" }),
++      "atelier"
++    );
++    expect(provider.name).toBe("atelier");
++  });
++
+   it("requires an OpenComputer template for starts but not existing-session cleanup", () => {
+     const env = createEnv({
+       OPENCOMPUTER_API_URL: "https://opencomputer.test",
+diff --git a/packages/control-plane/src/sandbox/provider-factory.ts b/packages/control-plane/src/sandbox/provider-factory.ts
+index 271aaa0d..df1c0b83 100644
+--- a/packages/control-plane/src/sandbox/provider-factory.ts
++++ b/packages/control-plane/src/sandbox/provider-factory.ts
+@@ -1,9 +1,15 @@
++import { createAtelierRestClient, type AtelierRestClient } from "./atelier-rest-client";
+ import { createModalClient } from "./client";
+ import { createDaytonaRestClient, type DaytonaRestClient } from "./daytona-rest-client";
+ import { createE2BRestClient } from "./e2b-rest-client";
+ import { createOpenComputerRestClient } from "./opencomputer-rest-client";
+ import { resolveSandboxBackendName, type SandboxBackendName } from "./provider-name";
+ import type { SandboxProvider } from "./provider";
++import {
++  createAtelierProvider,
++  DEFAULT_ATELIER_IMAGE,
++  type AtelierSandboxProvider,
++} from "./providers/atelier-provider";
+ import { createDaytonaProvider, type DaytonaSandboxProvider } from "./providers/daytona-provider";
+ import {
+   createE2BProvider,
+@@ -145,6 +151,24 @@ function createDaytonaProviderFromEnv(env: Env): DaytonaSandboxProvider {
+   });
+ }
+ 
++function createAtelierProviderFromEnv(env: Env): AtelierSandboxProvider {
++  if (!env.ATELIER_API_URL || !env.ATELIER_API_KEY) {
++    throw new Error(
++      "ATELIER_API_URL and ATELIER_API_KEY are required when SANDBOX_PROVIDER=atelier"
++    );
++  }
++
++  const client: AtelierRestClient = createAtelierRestClient({
++    apiUrl: env.ATELIER_API_URL,
++    apiKey: env.ATELIER_API_KEY,
++  });
++
++  return createAtelierProvider(client, {
++    scmProvider: resolveScmProviderFromEnv(env.SCM_PROVIDER),
++    image: env.ATELIER_IMAGE || DEFAULT_ATELIER_IMAGE,
++  });
++}
++
+ function createE2BProviderFromEnv(env: Env): E2BSandboxProvider {
+   if (!env.E2B_API_KEY || !env.E2B_TEMPLATE_ID) {
+     throw new Error("E2B_API_KEY and E2B_TEMPLATE_ID are required when SANDBOX_PROVIDER=e2b");
+@@ -169,6 +193,7 @@ function createE2BProviderFromEnv(env: Env): E2BSandboxProvider {
+ }
+ 
+ export function createSandboxProviderFromEnv(env: Env, backend: "daytona"): DaytonaSandboxProvider;
++export function createSandboxProviderFromEnv(env: Env, backend: "atelier"): AtelierSandboxProvider;
+ export function createSandboxProviderFromEnv(env: Env, backend: "e2b"): E2BSandboxProvider;
+ export function createSandboxProviderFromEnv(env: Env, backend: "modal"): ModalSandboxProvider;
+ export function createSandboxProviderFromEnv(env: Env, backend: "vercel"): VercelSandboxProvider;
+@@ -200,6 +225,8 @@ export function createSandboxProviderFromEnv(
+       return createE2BProviderFromEnv(env);
+     case "modal":
+       return createModalProviderFromEnv(env);
++    case "atelier":
++      return createAtelierProviderFromEnv(env);
+   }
+ }
+ 
+diff --git a/packages/control-plane/src/sandbox/providers/atelier-provider.test.ts b/packages/control-plane/src/sandbox/providers/atelier-provider.test.ts
+new file mode 100644
+index 00000000..63181b0c
+--- /dev/null
++++ b/packages/control-plane/src/sandbox/providers/atelier-provider.test.ts
+@@ -0,0 +1,570 @@
++/**
++ * Unit tests for AtelierSandboxProvider.
++ *
++ * Tests create (env assembly, resources, boot markers, job polling, failure
++ * cleanup), resume state handling, and stop preserve/destroy paths. `fetch`
++ * is not touched — the Atelier REST client is mocked directly.
++ */
++
++import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
++import {
++  AtelierConflictError,
++  AtelierNotFoundError,
++  type AtelierJob,
++  type AtelierRestClient,
++  type AtelierSandbox,
++} from "../atelier-rest-client";
++import { SandboxProviderError } from "../provider";
++import type { CreateSandboxConfig, ResumeConfig, StopConfig } from "../provider";
++import {
++  AtelierSandboxProvider,
++  DEFAULT_ATELIER_IMAGE,
++  type AtelierProviderConfig,
++} from "./atelier-provider";
++
++// ==================== Mock factories ====================
++
++function createMockClient(
++  overrides: Partial<{
++    createSandbox: (params: unknown) => Promise<AtelierJob>;
++    getJob: (id: string) => Promise<AtelierJob>;
++    getSandbox: (id: string) => Promise<AtelierSandbox>;
++    pauseSandbox: (id: string) => Promise<{ ref: string; hash: string }>;
++    resumeSandbox: (id: string) => Promise<AtelierSandbox>;
++    deleteSandbox: (id: string) => Promise<void>;
++  }> = {}
++): AtelierRestClient {
++  return {
++    createSandbox: vi.fn(
++      async (): Promise<AtelierJob> => ({
++        id: "job-1",
++        kind: "sandbox-create",
++        status: "succeeded",
++        metadata: { sandboxId: "atelier-sb-1" },
++      })
++    ),
++    getJob: vi.fn(
++      async (): Promise<AtelierJob> => ({
++        id: "job-1",
++        kind: "sandbox-create",
++        status: "succeeded",
++        metadata: { sandboxId: "atelier-sb-1" },
++      })
++    ),
++    getSandbox: vi.fn(
++      async (): Promise<AtelierSandbox> => ({ id: "atelier-sb-1", status: "running" })
++    ),
++    pauseSandbox: vi.fn(async () => ({ ref: "snap-1", hash: "abc" })),
++    resumeSandbox: vi.fn(
++      async (): Promise<AtelierSandbox> => ({ id: "atelier-sb-1", status: "running" })
++    ),
++    deleteSandbox: vi.fn(async () => {}),
++    ...overrides,
++  } as unknown as AtelierRestClient;
++}
++
++const defaultProviderConfig: AtelierProviderConfig = {
++  scmProvider: "github",
++  image: DEFAULT_ATELIER_IMAGE,
++};
++
++const baseCreateConfig: CreateSandboxConfig = {
++  sessionId: "session-123",
++  sandboxId: "sandbox-456",
++  repoOwner: "testowner",
++  repoName: "testrepo",
++  controlPlaneUrl: "https://control-plane.test",
++  sandboxAuthToken: "auth-token-abc",
++  harness: "opencode" as const,
++  provider: "anthropic",
++  model: "anthropic/claude-sonnet-4-5",
++};
++
++const baseResumeConfig: ResumeConfig = {
++  providerObjectId: "atelier-sb-1",
++  sessionId: "session-123",
++  sandboxId: "sandbox-456",
++};
++
++const baseStopConfig: StopConfig = {
++  providerObjectId: "atelier-sb-1",
++  sessionId: "session-123",
++  reason: "inactivity_timeout",
++  intent: "preserve",
++};
++
++describe("AtelierSandboxProvider", () => {
++  beforeEach(() => {
++    vi.useFakeTimers();
++  });
++
++  afterEach(() => {
++    vi.useRealTimers();
++    vi.restoreAllMocks();
++  });
++
++  describe("capabilities", () => {
++    it("reports correct capabilities", () => {
++      const provider = new AtelierSandboxProvider(createMockClient(), defaultProviderConfig);
++      expect(provider.name).toBe("atelier");
++      expect(provider.capabilities).toEqual({
++        supportsSandboxTimeout: false,
++        supportsSnapshots: false,
++        supportsRestore: false,
++        supportsPersistentResume: true,
++        supportsExplicitStop: true,
++      });
++    });
++  });
++
++  describe("createSandbox", () => {
++    it("happy path: sends the exact request body and returns providerObjectId with lifetime none", async () => {
++      const client = createMockClient();
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.createSandbox(baseCreateConfig);
++
++      expect(result.sandboxId).toBe("sandbox-456");
++      expect(result.providerObjectId).toBe("atelier-sb-1");
++      expect(result.createdAt).toBeGreaterThan(0);
++      expect(result.lifetime).toMatchObject({ kind: "none" });
++      // No access URLs of any kind — browser extras are unsupported.
++      expect(result.codeServerUrl).toBeUndefined();
++      expect(result.ttydUrl).toBeUndefined();
++      expect(result.vncAccess).toBeUndefined();
++      expect(result.tunnelUrls).toBeUndefined();
++
++      const createCall = (client.createSandbox as ReturnType<typeof vi.fn>).mock.calls[0][0];
++      expect(createCall.personalize).toBe(false);
++      expect(createCall.source).toEqual({ image: "open-inspect" });
++      expect(createCall.resources).toEqual({ vcpus: 2, memoryMb: 4096 });
++      expect(createCall.processes).toHaveLength(1);
++      const process = createCall.processes[0];
++      expect(process.name).toBe("open-inspect");
++      expect(process.command).toBe(
++        "/opt/openinspect/python/bin/python -m sandbox_runtime.entrypoint"
++      );
++      expect(process.user).toBe("dev");
++      expect(process.cwd).toBe("/home/dev");
++      expect(process.primary).toBe(true);
++      expect(createCall.metadata).toEqual({
++        name: "open-inspect-sandbox-456",
++        "open-inspect.session-id": "session-123",
++        "open-inspect.sandbox-id": "sandbox-456",
++        "open-inspect.repo": "testowner/testrepo",
++      });
++
++      // env rides the process, not the spec-level env: there is no top-level `env` key.
++      expect(createCall.env).toBeUndefined();
++      const env = process.env as Record<string, string>;
++      expect(env.SESSION_CONFIG).toBeDefined();
++      expect(env.CONTROL_PLANE_URL).toBe("https://control-plane.test");
++      expect(env.SANDBOX_AUTH_TOKEN).toBe("auth-token-abc");
++      expect(env.VCS_HOST).toBe("github.com");
++      expect(env.OI_DEFERRED_START).toBe("false");
++      expect(env.IMAGE_BUILD_MODE).toBe("false");
++      expect(env.RESTORED_FROM_SNAPSHOT).toBe("false");
++      expect(env.FROM_REPO_IMAGE).toBe("false");
++      // No code-server/terminal/VNC keys at all.
++      expect(env.CODE_SERVER_PORT).toBeUndefined();
++      expect(env.CODE_SERVER_PASSWORD).toBeUndefined();
++      expect(env.VNC_PASSWORD).toBeUndefined();
++      expect(env.NOVNC_PORT).toBeUndefined();
++      expect(env.TTYD_PROXY_PORT).toBeUndefined();
++      expect(env.TERMINAL_ENABLED).toBe("");
++    });
++
++    it("omits the repo metadata key for no-repository sandboxes", async () => {
++      const client = createMockClient();
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      await provider.createSandbox({ ...baseCreateConfig, repoOwner: null, repoName: null });
++
++      const createCall = (client.createSandbox as ReturnType<typeof vi.fn>).mock.calls[0][0];
++      expect(createCall.metadata).toEqual({
++        name: "open-inspect-sandbox-456",
++        "open-inspect.session-id": "session-123",
++        "open-inspect.sandbox-id": "sandbox-456",
++      });
++    });
++
++    it("maps resources from sandboxSettings (ceil vcpus, round memory, floors)", async () => {
++      const client = createMockClient();
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      await provider.createSandbox({
++        ...baseCreateConfig,
++        sandboxSettings: { cpuCores: 1.2, memoryMib: 300.4 },
++      });
++
++      const createCall = (client.createSandbox as ReturnType<typeof vi.fn>).mock.calls[0][0];
++      expect(createCall.resources).toEqual({ vcpus: 2, memoryMb: 300 });
++    });
++
++    it("floors resources at the provider minimums", async () => {
++      const client = createMockClient();
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      await provider.createSandbox({
++        ...baseCreateConfig,
++        sandboxSettings: { cpuCores: 0.1, memoryMib: 10 },
++      });
++
++      const createCall = (client.createSandbox as ReturnType<typeof vi.fn>).mock.calls[0][0];
++      expect(createCall.resources).toEqual({ vcpus: 1, memoryMb: 256 });
++    });
++
++    it("uses provider defaults when sandboxSettings resources are explicitly null", async () => {
++      const client = createMockClient();
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      await provider.createSandbox({
++        ...baseCreateConfig,
++        sandboxSettings: { cpuCores: null, memoryMib: null },
++      });
++
++      const createCall = (client.createSandbox as ReturnType<typeof vi.fn>).mock.calls[0][0];
++      expect(createCall.resources).toEqual({ vcpus: 2, memoryMb: 4096 });
++    });
++
++    it("uses the configured image", async () => {
++      const client = createMockClient();
++      const provider = new AtelierSandboxProvider(client, {
++        ...defaultProviderConfig,
++        image: "custom-image",
++      });
++
++      await provider.createSandbox(baseCreateConfig);
++
++      const createCall = (client.createSandbox as ReturnType<typeof vi.fn>).mock.calls[0][0];
++      expect(createCall.source).toEqual({ image: "custom-image" });
++    });
++
++    it("polls the create job until it succeeds", async () => {
++      const client = createMockClient({
++        getJob: vi
++          .fn()
++          .mockResolvedValueOnce({
++            id: "job-1",
++            kind: "sandbox-create",
++            status: "queued",
++            metadata: { sandboxId: "atelier-sb-1" },
++          })
++          .mockResolvedValueOnce({
++            id: "job-1",
++            kind: "sandbox-create",
++            status: "running",
++            metadata: { sandboxId: "atelier-sb-1" },
++          })
++          .mockResolvedValueOnce({
++            id: "job-1",
++            kind: "sandbox-create",
++            status: "succeeded",
++            metadata: { sandboxId: "atelier-sb-1" },
++          }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const promise = provider.createSandbox(baseCreateConfig);
++      await vi.runAllTimersAsync();
++      const result = await promise;
++
++      expect(result.providerObjectId).toBe("atelier-sb-1");
++      expect(client.getJob).toHaveBeenCalledTimes(3);
++    });
++
++    it("keeps polling through a transient error reading the job", async () => {
++      const client = createMockClient({
++        getJob: vi
++          .fn()
++          .mockRejectedValueOnce(new Error("fetch failed"))
++          .mockResolvedValueOnce({
++            id: "job-1",
++            kind: "sandbox-create",
++            status: "succeeded",
++            metadata: { sandboxId: "atelier-sb-1" },
++          }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const promise = provider.createSandbox(baseCreateConfig);
++      await vi.runAllTimersAsync();
++      const result = await promise;
++
++      expect(result.providerObjectId).toBe("atelier-sb-1");
++      expect(client.getJob).toHaveBeenCalledTimes(2);
++      expect(client.deleteSandbox).not.toHaveBeenCalled();
++    });
++
++    it("on job failure: deletes the sandbox and throws a permanent SandboxProviderError", async () => {
++      const client = createMockClient({
++        getJob: vi.fn().mockResolvedValue({
++          id: "job-1",
++          kind: "sandbox-create",
++          status: "failed",
++          error: "image pull failed",
++          metadata: { sandboxId: "atelier-sb-1" },
++        }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const promise = provider.createSandbox(baseCreateConfig);
++      const rejectedPromise: Promise<SandboxProviderError> = promise.catch((e) => e);
++      await vi.runAllTimersAsync();
++      const rejected = await rejectedPromise;
++      expect(rejected).toBeInstanceOf(SandboxProviderError);
++      expect(rejected.errorType).toBe("permanent");
++      expect(rejected.message).toContain("image pull failed");
++      expect(client.deleteSandbox).toHaveBeenCalledWith("atelier-sb-1");
++    });
++
++    it("on job failure: ignores a 404 from the best-effort delete", async () => {
++      const client = createMockClient({
++        getJob: vi.fn().mockResolvedValue({
++          id: "job-1",
++          kind: "sandbox-create",
++          status: "failed",
++          error: "boom",
++          metadata: { sandboxId: "atelier-sb-1" },
++        }),
++        deleteSandbox: vi.fn().mockRejectedValue(new AtelierNotFoundError("gone")),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const promise = provider.createSandbox(baseCreateConfig);
++      const rejectedPromise: Promise<SandboxProviderError> = promise.catch((e) => e);
++      await vi.runAllTimersAsync();
++      expect((await rejectedPromise).errorType).toBe("permanent");
++    });
++
++    it("on deadline exceeded: deletes the sandbox and throws a transient SandboxProviderError", async () => {
++      const client = createMockClient({
++        getJob: vi.fn().mockResolvedValue({
++          id: "job-1",
++          kind: "sandbox-create",
++          status: "running",
++          metadata: { sandboxId: "atelier-sb-1" },
++        }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const promise = provider.createSandbox(baseCreateConfig);
++      const rejectedPromise: Promise<SandboxProviderError> = promise.catch((e) => e);
++      // The deadline (ATELIER_CREATE_TIMEOUT_MS, 200_000ms) is well under the
++      // control plane's 240_000ms connect watchdog; advance well past it.
++      await vi.advanceTimersByTimeAsync(210_000);
++      expect((await rejectedPromise).errorType).toBe("transient");
++      expect(client.deleteSandbox).toHaveBeenCalledWith("atelier-sb-1");
++    });
++
++    it("throws a permanent error when the job metadata omits a sandbox id", async () => {
++      const client = createMockClient({
++        createSandbox: vi.fn().mockResolvedValue({
++          id: "job-1",
++          kind: "sandbox-create",
++          status: "running",
++          metadata: {},
++        }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      await expect(provider.createSandbox(baseCreateConfig)).rejects.toMatchObject({
++        errorType: "permanent",
++      });
++    });
++  });
++
++  describe("resumeSandbox", () => {
++    it("returns shouldSpawnFresh when the sandbox no longer exists (404)", async () => {
++      const client = createMockClient({
++        getSandbox: vi.fn().mockRejectedValue(new AtelierNotFoundError("gone")),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(false);
++      if (!result.success) expect(result.shouldSpawnFresh).toBe(true);
++    });
++
++    it("succeeds without calling resume when already running", async () => {
++      const client = createMockClient({
++        getSandbox: vi.fn().mockResolvedValue({ id: "atelier-sb-1", status: "running" }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(true);
++      if (result.success) expect(result.lifetime).toMatchObject({ kind: "none" });
++      expect(client.resumeSandbox).not.toHaveBeenCalled();
++    });
++
++    it("calls resume when paused", async () => {
++      const client = createMockClient({
++        getSandbox: vi.fn().mockResolvedValue({ id: "atelier-sb-1", status: "paused" }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(true);
++      expect(client.resumeSandbox).toHaveBeenCalledWith("atelier-sb-1");
++    });
++
++    it("calls resume when in error state", async () => {
++      const client = createMockClient({
++        getSandbox: vi.fn().mockResolvedValue({ id: "atelier-sb-1", status: "error" }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(true);
++      expect(client.resumeSandbox).toHaveBeenCalledWith("atelier-sb-1");
++    });
++
++    it("on a 409 race: re-reads and succeeds if now running", async () => {
++      const client = createMockClient({
++        getSandbox: vi
++          .fn()
++          .mockResolvedValueOnce({ id: "atelier-sb-1", status: "paused" })
++          .mockResolvedValueOnce({ id: "atelier-sb-1", status: "running" }),
++        resumeSandbox: vi.fn().mockRejectedValue(new AtelierConflictError("conflict")),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(true);
++    });
++
++    it("on a 409 race: fails if the re-read is not running", async () => {
++      const client = createMockClient({
++        getSandbox: vi
++          .fn()
++          .mockResolvedValueOnce({ id: "atelier-sb-1", status: "paused" })
++          .mockResolvedValueOnce({ id: "atelier-sb-1", status: "stopped" }),
++        resumeSandbox: vi.fn().mockRejectedValue(new AtelierConflictError("conflict")),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(false);
++    });
++
++    it("returns shouldSpawnFresh when stopped", async () => {
++      const client = createMockClient({
++        getSandbox: vi.fn().mockResolvedValue({ id: "atelier-sb-1", status: "stopped" }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(false);
++      if (!result.success) expect(result.shouldSpawnFresh).toBe(true);
++    });
++
++    it("fails without spawning fresh while the sandbox is still creating", async () => {
++      const client = createMockClient({
++        getSandbox: vi.fn().mockResolvedValue({ id: "atelier-sb-1", status: "creating" }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(false);
++      if (!result.success) expect(result.shouldSpawnFresh).toBeUndefined();
++      expect(client.resumeSandbox).not.toHaveBeenCalled();
++    });
++
++    it("on a 409 race: spawns fresh if the sandbox was deleted meanwhile", async () => {
++      const client = createMockClient({
++        getSandbox: vi
++          .fn()
++          .mockResolvedValueOnce({ id: "atelier-sb-1", status: "paused" })
++          .mockRejectedValueOnce(new AtelierNotFoundError("gone")),
++        resumeSandbox: vi.fn().mockRejectedValue(new AtelierConflictError("conflict")),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.resumeSandbox(baseResumeConfig);
++
++      expect(result.success).toBe(false);
++      if (!result.success) expect(result.shouldSpawnFresh).toBe(true);
++    });
++  });
++
++  describe("stopSandbox", () => {
++    it("destroy intent deletes the sandbox", async () => {
++      const client = createMockClient();
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.stopSandbox({ ...baseStopConfig, intent: "destroy" });
++
++      expect(result.success).toBe(true);
++      expect(client.deleteSandbox).toHaveBeenCalledWith("atelier-sb-1", undefined);
++    });
++
++    it("destroy intent treats a 404 as success", async () => {
++      const client = createMockClient({
++        deleteSandbox: vi.fn().mockRejectedValue(new AtelierNotFoundError("gone")),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.stopSandbox({ ...baseStopConfig, intent: "destroy" });
++
++      expect(result.success).toBe(true);
++    });
++
++    it("preserve intent pauses the sandbox", async () => {
++      const client = createMockClient();
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.stopSandbox({ ...baseStopConfig, intent: "preserve" });
++
++      expect(result.success).toBe(true);
++      expect(client.pauseSandbox).toHaveBeenCalledWith("atelier-sb-1", undefined);
++    });
++
++    it("preserve intent fails when the sandbox disappeared (404) before verification", async () => {
++      const client = createMockClient({
++        pauseSandbox: vi.fn().mockRejectedValue(new AtelierNotFoundError("gone")),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.stopSandbox({ ...baseStopConfig, intent: "preserve" });
++
++      expect(result.success).toBe(false);
++      if (!result.success) {
++        expect(result.error).toContain("disappeared before graceful shutdown was verified");
++      }
++    });
++
++    it("preserve intent on a 409: re-reads and succeeds if paused", async () => {
++      const client = createMockClient({
++        pauseSandbox: vi.fn().mockRejectedValue(new AtelierConflictError("conflict")),
++        getSandbox: vi.fn().mockResolvedValue({ id: "atelier-sb-1", status: "paused" }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.stopSandbox({ ...baseStopConfig, intent: "preserve" });
++
++      expect(result.success).toBe(true);
++    });
++
++    it("preserve intent on a 409: fails with state if not paused", async () => {
++      const client = createMockClient({
++        pauseSandbox: vi.fn().mockRejectedValue(new AtelierConflictError("conflict")),
++        getSandbox: vi.fn().mockResolvedValue({ id: "atelier-sb-1", status: "running" }),
++      });
++      const provider = new AtelierSandboxProvider(client, defaultProviderConfig);
++
++      const result = await provider.stopSandbox({ ...baseStopConfig, intent: "preserve" });
++
++      expect(result.success).toBe(false);
++      if (!result.success) expect(result.error).toContain("running");
++    });
++  });
++});
+diff --git a/packages/control-plane/src/sandbox/providers/atelier-provider.ts b/packages/control-plane/src/sandbox/providers/atelier-provider.ts
+new file mode 100644
+index 00000000..522ac3b7
+--- /dev/null
++++ b/packages/control-plane/src/sandbox/providers/atelier-provider.ts
+@@ -0,0 +1,495 @@
++/**
++ * Atelier sandbox provider — calls the Atelier REST API directly.
++ *
++ * Modeled on `daytona-provider.ts` (persistent resume + explicit stop): an
++ * ordinary stop pauses the sandbox (disk kept, compute released) and the next
++ * spawn resumes it in place.
++ *
++ * v1 limits:
++ * - No prebuilt repo/environment images: "atelier" is not an image-build
++ *   provider, so every session boots from `ATELIER_IMAGE` and
++ *   `FROM_REPO_IMAGE` is always "false".
++ * - No browser access extras (code-server, terminal, VNC, tunnel URLs):
++ *   Atelier's in-pod agent owns 0.0.0.0:7681 and forwards declared ports from
++ *   0.0.0.0, which collides with services that bind the pod interface
++ *   themselves. No Atelier `ports` are declared and no access URLs returned.
++ */
++
++import { createLogger } from "../../logger";
++import type { SourceControlProviderName } from "../../source-control";
++import type {
++  AtelierCreateSandboxParams,
++  AtelierJob,
++  AtelierRestClient,
++} from "../atelier-rest-client";
++import {
++  AtelierApiError,
++  AtelierConflictError,
++  AtelierNotFoundError,
++} from "../atelier-rest-client";
++import {
++  buildSandboxEnvVars,
++  DEFERRED_START_ENV_VAR,
++  IMAGE_BUILD_MODE_ENV_VAR,
++  scmCloneIdentity,
++  type ScmCloneIdentity,
++} from "../sandbox-env";
++import type { SandboxPortPlan } from "./port-resolution";
++import {
++  SandboxProviderError,
++  signalUntilDeadline,
++  type CreateSandboxConfig,
++  type CreateSandboxResult,
++  type ResumeConfig,
++  type ResumeResult,
++  type SandboxProvider,
++  type SandboxProviderCapabilities,
++  type StopConfig,
++  type StopResult,
++} from "../provider";
++
++const log = createLogger("atelier-provider");
++
++// ---------------------------------------------------------------------------
++// Constants
++// ---------------------------------------------------------------------------
++
++/** Atelier seed image name, when `ATELIER_IMAGE` is unset. Defined once, here. */
++export const DEFAULT_ATELIER_IMAGE = "open-inspect";
++
++/** Provider default vCPUs, when `sandboxSettings.cpuCores` is unset or null. */
++const DEFAULT_ATELIER_VCPUS = 2;
++/** Provider default memory (MiB), when `sandboxSettings.memoryMib` is unset or null. */
++const DEFAULT_ATELIER_MEMORY_MB = 4096;
++const MIN_ATELIER_VCPUS = 1;
++const MIN_ATELIER_MEMORY_MB = 256;
++
++/**
++ * How long a create waits for the Atelier `sandbox-create` job.
++ *
++ * The job succeeds once the runtime process has started, which is when its
++ * bridge connects. Keep this just under `CONNECT_WATCHDOG_MS`
++ * (`sandbox/lifecycle/decisions.ts`), after which the sandbox is judged dead
++ * anyway: waiting longer buys nothing, and failing first reports Atelier's own
++ * error instead of a generic connect timeout. A first boot on a node that has
++ * not pulled the image yet may exceed it; pre-pull the image rather than
++ * raising this past the watchdog.
++ */
++const ATELIER_CREATE_TIMEOUT_MS = 200_000;
++/** How often the create job is re-read while waiting. */
++const CREATE_JOB_POLL_INTERVAL_MS = 3_000;
++
++const ATELIER_PROCESS_NAME = "open-inspect";
++const ATELIER_PROCESS_COMMAND = "/opt/openinspect/python/bin/python -m sandbox_runtime.entrypoint";
++const ATELIER_PROCESS_USER = "dev";
++const ATELIER_PROCESS_CWD = "/home/dev";
++
++/**
++ * Browser access extras are unsupported (see module docstring), so every
++ * service and tunnel port stays disabled whatever the session settings ask.
++ */
++const ATELIER_PORT_PLAN: SandboxPortPlan = {
++  reservedPorts: [],
++  extraTunnelPorts: [],
++  allExposedPorts: [],
++};
++
++// ---------------------------------------------------------------------------
++// Provider config
++// ---------------------------------------------------------------------------
++
++export interface AtelierProviderConfig {
++  scmProvider: SourceControlProviderName;
++  /** Atelier image to boot sessions from — `ATELIER_IMAGE`, else `DEFAULT_ATELIER_IMAGE`. */
++  image: string;
++}
++
++// ---------------------------------------------------------------------------
++// Provider
++// ---------------------------------------------------------------------------
++
++export class AtelierSandboxProvider implements SandboxProvider {
++  readonly name = "atelier";
++
++  readonly capabilities: SandboxProviderCapabilities = {
++    supportsSandboxTimeout: false,
++    supportsSnapshots: false,
++    supportsRestore: false,
++    supportsPersistentResume: true,
++    supportsExplicitStop: true,
++  };
++
++  constructor(
++    private readonly client: AtelierRestClient,
++    private readonly providerConfig: AtelierProviderConfig
++  ) {}
++
++  // -----------------------------------------------------------------------
++  // SandboxProvider interface
++  // -----------------------------------------------------------------------
++
++  async createSandbox(config: CreateSandboxConfig): Promise<CreateSandboxResult> {
++    warnUnsupportedAccess(config);
++    try {
++      const envVars = this.buildEnvVars(config);
++      const resources = resolveAtelierResources(config.sandboxSettings);
++
++      const body: AtelierCreateSandboxParams = {
++        source: { image: this.providerConfig.image },
++        resources,
++        processes: [
++          {
++            name: ATELIER_PROCESS_NAME,
++            command: ATELIER_PROCESS_COMMAND,
++            user: ATELIER_PROCESS_USER,
++            cwd: ATELIER_PROCESS_CWD,
++            env: envVars,
++            primary: true,
++          },
++        ],
++        metadata: this.buildMetadata(config),
++        personalize: false,
++      };
++
++      const job = await this.client.createSandbox(body);
++      const atelierSandboxId = job.metadata?.sandboxId;
++      if (!atelierSandboxId) {
++        throw new SandboxProviderError(
++          "Atelier sandbox create did not return a sandbox id in job metadata",
++          "permanent"
++        );
++      }
++
++      await this.waitForCreateJob(job.id, atelierSandboxId);
++
++      return {
++        sandboxId: config.sandboxId,
++        providerObjectId: atelierSandboxId,
++        createdAt: Date.now(),
++        lifetime: { kind: "none", observedAtMs: Date.now() },
++      };
++    } catch (error) {
++      if (error instanceof SandboxProviderError) throw error;
++      throw classifyAtelierError("Failed to create Atelier sandbox", error);
++    }
++  }
++
++  async resumeSandbox(config: ResumeConfig): Promise<ResumeResult> {
++    try {
++      let sandbox;
++      try {
++        sandbox = await this.client.getSandbox(config.providerObjectId);
++      } catch (error) {
++        if (error instanceof AtelierNotFoundError) {
++          return {
++            success: false,
++            error: "Sandbox no longer exists in Atelier",
++            shouldSpawnFresh: true,
++          };
++        }
++        throw error;
++      }
++
++      if (sandbox.status === "running") {
++        return {
++          success: true,
++          providerObjectId: sandbox.id,
++          lifetime: { kind: "none", observedAtMs: Date.now() },
++        };
++      }
++
++      if (sandbox.status === "paused" || sandbox.status === "error") {
++        try {
++          await this.client.resumeSandbox(config.providerObjectId);
++        } catch (error) {
++          if (!(error instanceof AtelierConflictError)) throw error;
++          // Raced another resume (or a delete): judge by the state it left.
++          return await this.resumeResultAfterConflict(config.providerObjectId);
++        }
++        return {
++          success: true,
++          providerObjectId: config.providerObjectId,
++          lifetime: { kind: "none", observedAtMs: Date.now() },
++        };
++      }
++
++      if (sandbox.status === "stopped") {
++        return {
++          success: false,
++          error: "Sandbox is stopped in Atelier",
++          shouldSpawnFresh: true,
++        };
++      }
++
++      // "creating": mid-boot from an earlier create — neither resumable in
++      // place nor safe to replace yet.
++      return { success: false, error: "Sandbox is still being created in Atelier" };
++    } catch (error) {
++      if (error instanceof SandboxProviderError) throw error;
++      throw classifyAtelierError("Failed to resume Atelier sandbox", error);
++    }
++  }
++
++  async stopSandbox(config: StopConfig): Promise<StopResult> {
++    const signal = signalUntilDeadline(config.deadlineAtMs, config.signal);
++    try {
++      try {
++        if (config.intent === "destroy") {
++          await this.client.deleteSandbox(config.providerObjectId, signal);
++        } else {
++          try {
++            await this.client.pauseSandbox(config.providerObjectId, signal);
++          } catch (error) {
++            if (error instanceof AtelierConflictError) {
++              const reread = await this.client.getSandbox(config.providerObjectId, signal);
++              if (reread.status === "paused") return { success: true };
++              return {
++                success: false,
++                error: `Sandbox state was ${reread.status} after pause conflict`,
++              };
++            }
++            throw error;
++          }
++        }
++      } catch (error) {
++        if (error instanceof AtelierNotFoundError) {
++          if (config.intent === "preserve") {
++            return {
++              success: false,
++              error: "Sandbox disappeared before graceful shutdown was verified",
++            };
++          }
++          return { success: true };
++        }
++        throw error;
++      }
++      return { success: true };
++    } catch (error) {
++      if (error instanceof SandboxProviderError) throw error;
++      throw classifyAtelierError(
++        `Failed to ${config.intent === "destroy" ? "delete" : "pause"} Atelier sandbox`,
++        error
++      );
++    }
++  }
++
++  // -----------------------------------------------------------------------
++  // Env var assembly
++  // -----------------------------------------------------------------------
++
++  /**
++   * The session env, delivered on the **process** (`processes[0].env`), not
++   * the spec-level `env`: spec-level env is exported to every login shell in
++   * the sandbox, and the session auth token must stay scoped to the runtime
++   * process.
++   */
++  private buildEnvVars(config: CreateSandboxConfig): Record<string, string> {
++    const envVars = buildSandboxEnvVars(config, {
++      scmIdentity: this.cloneIdentity(),
++      portPlan: ATELIER_PORT_PLAN,
++      emitDisabledTerminalEnv: true,
++    });
++
++    // Boot markers are stated explicitly, never merely omitted (see
++    // daytona-provider.ts for why): a value baked into an image can never
++    // decide how a session boots. Atelier has no snapshot/prebuilt-image
++    // support, so RESTORED_FROM_SNAPSHOT and FROM_REPO_IMAGE are always
++    // "false" — the OI_REPO_IMAGE_* callback-contract keys are never set.
++    Object.assign(envVars, {
++      [DEFERRED_START_ENV_VAR]: "false",
++      [IMAGE_BUILD_MODE_ENV_VAR]: "false",
++      RESTORED_FROM_SNAPSHOT: "false",
++      FROM_REPO_IMAGE: "false",
++    });
++    return envVars;
++  }
++
++  private async resumeResultAfterConflict(providerObjectId: string): Promise<ResumeResult> {
++    let sandbox;
++    try {
++      sandbox = await this.client.getSandbox(providerObjectId);
++    } catch (error) {
++      if (error instanceof AtelierNotFoundError) {
++        return {
++          success: false,
++          error: "Sandbox no longer exists in Atelier",
++          shouldSpawnFresh: true,
++        };
++      }
++      throw error;
++    }
++    if (sandbox.status === "running") {
++      return {
++        success: true,
++        providerObjectId: sandbox.id,
++        lifetime: { kind: "none", observedAtMs: Date.now() },
++      };
++    }
++    return { success: false, error: `Sandbox state was ${sandbox.status} after resume conflict` };
++  }
++
++  private cloneIdentity(): ScmCloneIdentity {
++    return scmCloneIdentity(this.providerConfig.scmProvider);
++  }
++
++  private buildMetadata(config: CreateSandboxConfig): Record<string, string> {
++    const metadata: Record<string, string> = {
++      name: `open-inspect-${config.sandboxId}`,
++      "open-inspect.session-id": config.sessionId,
++      "open-inspect.sandbox-id": config.sandboxId,
++    };
++    if (config.repoOwner && config.repoName) {
++      metadata["open-inspect.repo"] = `${config.repoOwner}/${config.repoName}`;
++    }
++    return metadata;
++  }
++
++  // -----------------------------------------------------------------------
++  // Create-job polling
++  // -----------------------------------------------------------------------
++
++  /**
++   * Wait for the `sandbox-create` job to settle. On `failed`/`canceled` or at
++   * the deadline, best-effort delete the pre-allocated sandbox before throwing,
++   * so a failed create never leaks it. A transient error reading the job is
++   * retried on the next poll: a single blip must not fail a healthy boot.
++   */
++  private async waitForCreateJob(jobId: string, atelierSandboxId: string): Promise<void> {
++    const deadlineAtMs = Date.now() + ATELIER_CREATE_TIMEOUT_MS;
++    for (;;) {
++      const job = await this.readCreateJob(jobId, atelierSandboxId);
++      if (job?.status === "succeeded") return;
++
++      if (job?.status === "failed" || job?.status === "canceled") {
++        await this.bestEffortDelete(atelierSandboxId);
++        throw new SandboxProviderError(
++          `Atelier sandbox create job ${job.status}: ${job.error ?? "no error message reported"}`,
++          "permanent"
++        );
++      }
++
++      if (Date.now() >= deadlineAtMs) {
++        await this.bestEffortDelete(atelierSandboxId);
++        throw new SandboxProviderError(
++          `Atelier sandbox create job did not complete within ${ATELIER_CREATE_TIMEOUT_MS}ms`,
++          "transient"
++        );
++      }
++
++      await delay(CREATE_JOB_POLL_INTERVAL_MS);
++    }
++  }
++
++  /** The job, or undefined when reading it failed transiently. */
++  private async readCreateJob(
++    jobId: string,
++    atelierSandboxId: string
++  ): Promise<AtelierJob | undefined> {
++    try {
++      return await this.client.getJob(jobId);
++    } catch (error) {
++      const classified = classifyAtelierError("Failed to read Atelier create job", error);
++      if (classified.errorType === "permanent") throw classified;
++      log.warn("atelier.create_job_poll_failed", {
++        sandbox_id: atelierSandboxId,
++        error: classified.message,
++      });
++      return undefined;
++    }
++  }
++
++  private async bestEffortDelete(atelierSandboxId: string): Promise<void> {
++    try {
++      await this.client.deleteSandbox(atelierSandboxId);
++    } catch (error) {
++      if (error instanceof AtelierNotFoundError) return;
++      log.warn("atelier.cleanup_delete_failed", {
++        sandbox_id: atelierSandboxId,
++        error: error instanceof Error ? error.message : String(error),
++      });
++    }
++  }
++}
++
++// ---------------------------------------------------------------------------
++// Helpers
++// ---------------------------------------------------------------------------
++
++/** Log what a session asked for that Atelier cannot provide (see module docstring). */
++function warnUnsupportedAccess(config: CreateSandboxConfig): void {
++  const settings = config.sandboxSettings;
++  const requested = [
++    config.codeServerEnabled && "code-server",
++    config.vncEnabled && "vnc",
++    settings?.terminalEnabled && "terminal",
++    settings?.tunnelPorts?.length && "tunnel ports",
++  ].filter(Boolean);
++  if (requested.length > 0) {
++    log.warn("atelier.access_unsupported", {
++      session_id: config.sessionId,
++      requested: requested.join(", "),
++    });
++  }
++}
++
++function delay(ms: number): Promise<void> {
++  return new Promise((resolve) => setTimeout(resolve, ms));
++}
++
++/**
++ * `sandboxSettings.cpuCores`/`memoryMib` → Atelier `resources`, per the
++ * contract: `vcpus = max(1, ceil(cpuCores))`, `memoryMb = max(256,
++ * round(memoryMib))`, provider defaults (2 vCPUs, 4096 MiB) when a setting is
++ * unset or explicitly null.
++ */
++function resolveAtelierResources(sandboxSettings: CreateSandboxConfig["sandboxSettings"]): {
++  vcpus: number;
++  memoryMb: number;
++} {
++  const cpuCores = sandboxSettings?.cpuCores;
++  const memoryMib = sandboxSettings?.memoryMib;
++  const vcpus =
++    cpuCores === undefined || cpuCores === null
++      ? DEFAULT_ATELIER_VCPUS
++      : Math.max(MIN_ATELIER_VCPUS, Math.ceil(cpuCores));
++  const memoryMb =
++    memoryMib === undefined || memoryMib === null
++      ? DEFAULT_ATELIER_MEMORY_MB
++      : Math.max(MIN_ATELIER_MEMORY_MB, Math.round(memoryMib));
++  return { vcpus, memoryMb };
++}
++
++/**
++ * The control-plane classification of a failed Atelier call.
++ *
++ * HTTP 429 and every 5xx are transient (rate limiting and
++ * provider-side failure are both worth retrying without tripping the circuit
++ * breaker); every other 4xx is permanent. `SandboxProviderError.isTransientStatus`
++ * only recognizes 502/503/504, so this classifies 429/5xx directly rather than
++ * deferring to it.
++ */
++function classifyAtelierError(message: string, error: unknown): SandboxProviderError {
++  if (error instanceof AtelierApiError) {
++    const transient = error.status === 429 || error.status >= 500;
++    return new SandboxProviderError(
++      `${message}: ${error.message}`,
++      transient ? "transient" : "permanent",
++      error
++    );
++  }
++  if (error instanceof AtelierNotFoundError || error instanceof AtelierConflictError) {
++    return SandboxProviderError.fromFetchError(`${message}: ${error.message}`, error);
++  }
++  return SandboxProviderError.fromFetchError(message, error);
++}
++
++// ---------------------------------------------------------------------------
++// Factory
++// ---------------------------------------------------------------------------
++
++export function createAtelierProvider(
++  client: AtelierRestClient,
++  providerConfig: AtelierProviderConfig
++): AtelierSandboxProvider {
++  return new AtelierSandboxProvider(client, providerConfig);
++}
+diff --git a/packages/control-plane/src/types.ts b/packages/control-plane/src/types.ts
+index d1f082ad..d286cf38 100644
+--- a/packages/control-plane/src/types.ts
++++ b/packages/control-plane/src/types.ts
+@@ -62,7 +62,7 @@ export interface EnvConfig {
+   ALLOWED_GITHUB_ORGS?: string;
+   UNSAFE_ALLOW_ALL_USERS?: string;
+   CF_ACCOUNT_ID?: string; // Cloudflare account ID
+-  SANDBOX_PROVIDER?: string; // "modal" (default), "daytona", "vercel", "opencomputer", or "e2b"
++  SANDBOX_PROVIDER?: string; // "modal" (default), "daytona", "vercel", "opencomputer", "e2b", or "atelier"
+   MODAL_WORKSPACE?: string; // Modal workspace name
+   MODAL_ENVIRONMENT?: string; // Modal environment name for dashboard URLs
+   MODAL_ENVIRONMENT_WEB_SUFFIX?: string; // Modal environment web suffix for endpoint URLs
+@@ -93,6 +93,10 @@ export interface EnvConfig {
+   E2B_SANDBOX_TIMEOUT_SECONDS?: string; // Sandbox TTL in seconds; Hobby plans must set 3300
+   E2B_AUTO_PAUSE?: string; // "true" (default) pauses on TTL expiry (resumable, auto-resumes) instead of killing
+ 
++  ATELIER_API_URL?: string; // Atelier server origin (client appends /v1/...)
++  ATELIER_API_KEY?: string; // Atelier API key (atl_...), sent as Bearer
++  ATELIER_IMAGE?: string; // Atelier image name to boot sessions from (default "open-inspect")
++
+   // Sandbox lifecycle configuration
+   SANDBOX_INACTIVITY_TIMEOUT_MS?: string; // Inactivity timeout in ms (default: 600000 = 10 min)
+   SANDBOX_BOOT_TIMEOUT_MS?: string; // Longest a connected sandbox may boot before it is failed, in ms; defaults to DEFAULT_BOOT_BUDGET_CONFIG
+diff --git a/packages/sandbox-images/README.md b/packages/sandbox-images/README.md
+index 0571c5bb..956a8ae1 100644
+--- a/packages/sandbox-images/README.md
++++ b/packages/sandbox-images/README.md
+@@ -2,7 +2,8 @@
+ 
+ One build-only package owns platform dependencies for Modal, Daytona, E2B, Vercel, and OpenComputer.
+ Provider adapters own native creation, uploads, snapshots, restores, provider overlays, and cleanup.
+-The control plane does not consume build hashes or dependency inventories.
++The control plane does not consume build hashes or dependency inventories. Atelier builds its image
++itself from `pack --provider atelier`, so `build` refuses that provider.
+ 
+ ## Update dependencies
+ 
+@@ -38,6 +39,7 @@ credentials and create billable temporary sandboxes; they do not deploy the cont
+ | E2B          | E2B_API_KEY, E2B_TEMPLATE_ID name prefix; optional API URL/CPU/memory       |
+ | Vercel       | VERCEL_TOKEN, VERCEL_PROJECT_ID; optional team/API URL                      |
+ | OpenComputer | OPENCOMPUTER_API_KEY; optional API URL/template prefix                      |
++| Atelier      | Not applicable — Atelier builds this image itself from the packed bundle    |
+ 
+ ```bash
+ npm run sandbox:images -- build --provider e2b --output /tmp/e2b-image.json
+diff --git a/packages/sandbox-images/src/sandbox_images/bundle.py b/packages/sandbox-images/src/sandbox_images/bundle.py
+index d42a1c7b..eaa4ca34 100644
+--- a/packages/sandbox-images/src/sandbox_images/bundle.py
++++ b/packages/sandbox-images/src/sandbox_images/bundle.py
+@@ -15,7 +15,7 @@ from typing import Any, NamedTuple, TypedDict
+ from .configuration import IMAGE_PACKAGE, RUNTIME_PACKAGE, read_json, runtime_environment
+ from .locks import update_locks
+ 
+-PROVIDERS = ("modal", "daytona", "e2b", "vercel", "opencomputer")
++PROVIDERS = ("modal", "daytona", "e2b", "vercel", "opencomputer", "atelier")
+ EXCLUDED = {
+     ".terraform",
+     ".git",
+@@ -44,6 +44,10 @@ INFRA_MODULES = {
+     "vercel": "vercel-sandbox-infra",
+     "opencomputer": "opencomputer-infra",
+ }
++# Providers whose image is built outside this repository (Atelier builds its own image from
++# the packed bundle) contribute no packages/{provider}-infra or terraform/modules/{...} paths
++# to the build hash: there is nothing in this checkout for those paths to name.
++NO_REPO_INFRA_PROVIDERS = frozenset({"atelier"})
+ 
+ 
+ class ImageTarget(TypedDict):
+@@ -141,8 +145,14 @@ def plan_image(root: Path, provider: str) -> ImagePlan:
+         IMAGE_PACKAGE / "pyproject.toml",
+         IMAGE_PACKAGE / "uv.lock",
+         IMAGE_PACKAGE / "targets.json",
+-        Path(f"packages/{provider}-infra"),
+-        Path(f"terraform/modules/{INFRA_MODULES[provider]}"),
++        *(
++            ()
++            if provider in NO_REPO_INFRA_PROVIDERS
++            else (
++                Path(f"packages/{provider}-infra"),
++                Path(f"terraform/modules/{INFRA_MODULES[provider]}"),
++            )
++        ),
+     )
+     if provider in ("vercel", "opencomputer"):
+         paths += (Path("package-lock.json"),)
+diff --git a/packages/sandbox-images/src/sandbox_images/native.py b/packages/sandbox-images/src/sandbox_images/native.py
+index 5e084e78..d75305c8 100644
+--- a/packages/sandbox-images/src/sandbox_images/native.py
++++ b/packages/sandbox-images/src/sandbox_images/native.py
+@@ -16,6 +16,13 @@ from .locks import update_locks
+ def build_image(root: Path, provider: str) -> dict[str, Any]:
+     if provider not in PROVIDERS:
+         raise ValueError("Unknown image provider")
++    if provider == "atelier":
++        raise ValueError(
++            "Atelier builds the 'atelier' image itself, as a seed layered on its dev-base, "
++            "from the bundle produced by "
++            "'python3 packages/sandbox-images/cli.py pack --provider atelier'. "
++            "Open-Inspect has no native builder for this provider."
++        )
+     update_locks(root, check=True)
+     environment = dict(os.environ)
+     commands = {
+diff --git a/packages/sandbox-images/targets.json b/packages/sandbox-images/targets.json
+index 6dfcfcc6..6514e175 100644
+--- a/packages/sandbox-images/targets.json
++++ b/packages/sandbox-images/targets.json
+@@ -33,5 +33,12 @@
+     "node": "24",
+     "user": "sandbox",
+     "home": "/home/sandbox"
++  },
++  "atelier": {
++    "os": "debian",
++    "base": "atelier/dev-base",
++    "node": "24",
++    "user": "dev",
++    "home": "/home/dev"
+   }
+ }
+diff --git a/packages/sandbox-images/tests/test_bundle.py b/packages/sandbox-images/tests/test_bundle.py
+index 7ee324c1..19082be2 100644
+--- a/packages/sandbox-images/tests/test_bundle.py
++++ b/packages/sandbox-images/tests/test_bundle.py
+@@ -125,6 +125,26 @@ def test_each_caller_gets_a_fresh_context_without_reusing_extra_files(tmp_path):
+     assert not (second.directory / ".env").exists()
+ 
+ 
++def test_atelier_plan_uses_dev_user_and_home(checkout):
++    plan = plan_image(checkout, "atelier")
++    assert plan["target"]["user"] == "dev"
++    assert plan["target"]["home"] == "/home/dev"
++    assert plan["runtimeEnv"]["HOME"] == "/home/dev"
++
++
++def test_atelier_image_config_has_provider_specific_runtime_vars(checkout, tmp_path):
++    packed = pack_bundle(checkout, "atelier", tmp_path / "bundles")
++    script = (packed.directory / "image-config.sh").read_text()
++    assert "export OI_RUNTIME_USER=dev" in script
++    assert "export OI_RUNTIME_HOME=/home/dev" in script
++    assert "export OI_OS=debian" in script
++
++
++def test_atelier_infra_paths_do_not_exist_in_this_repo(checkout):
++    assert not (checkout / "packages/atelier-infra").exists()
++    assert not (checkout / "terraform/modules/atelier-infra").exists()
++
++
+ def test_missing_payload_fails_closed(checkout):
+     (checkout / "packages/sandbox-runtime/uv.lock").unlink()
+     with pytest.raises(FileNotFoundError):
+diff --git a/packages/sandbox-images/tests/test_native.py b/packages/sandbox-images/tests/test_native.py
+index 2a2b919c..de7ea6d4 100644
+--- a/packages/sandbox-images/tests/test_native.py
++++ b/packages/sandbox-images/tests/test_native.py
+@@ -33,3 +33,14 @@ def test_stale_locks_prevent_native_allocation(monkeypatch, tmp_path):
+     with pytest.raises(ValueError, match="stale"):
+         native.build_image(tmp_path, "e2b")
+     run.assert_not_called()
++
++
++def test_atelier_build_refuses_with_a_clear_message(monkeypatch, tmp_path):
++    update_locks = Mock()
++    monkeypatch.setattr(native, "update_locks", update_locks)
++    run = Mock()
++    monkeypatch.setattr(native.subprocess, "run", run)
++    with pytest.raises(ValueError, match="Atelier builds the 'atelier' image itself"):
++        native.build_image(tmp_path, "atelier")
++    update_locks.assert_not_called()
++    run.assert_not_called()
+diff --git a/packages/shared/src/types/integrations.ts b/packages/shared/src/types/integrations.ts
+index 5b82121d..2509a556 100644
+--- a/packages/shared/src/types/integrations.ts
++++ b/packages/shared/src/types/integrations.ts
+@@ -286,6 +286,7 @@ export const SANDBOX_PROVIDER_NAMES = [
+   "vercel",
+   "opencomputer",
+   "e2b",
++  "atelier",
+ ] as const;
+ 
+ export type SandboxProviderName = (typeof SANDBOX_PROVIDER_NAMES)[number];
+@@ -297,6 +298,7 @@ const SANDBOX_SETTING_CAPABILITIES = {
+   vercel: DEFAULT_SANDBOX_SETTING_CAPABILITIES,
+   opencomputer: { resources: false, timeout: true },
+   e2b: { resources: false, timeout: true },
++  atelier: { resources: true, timeout: false },
+ } satisfies Record<SandboxProviderName, { resources: boolean; timeout: boolean }>;
+ 
+ export function isSandboxProviderName(provider: string): provider is SandboxProviderName {
+diff --git a/provider-accounts.md b/provider-accounts.md
+index 67e4faa5..ac5172e2 100644
+--- a/provider-accounts.md
++++ b/provider-accounts.md
+@@ -1487,5 +1487,6 @@ selection, billing disclosure, and failure behavior.
+ - [How It Works](docs/HOW_IT_WORKS.md)
+ - [Session Snapshot Handoff ADR](docs/adr/0003-session-snapshot-handoff.md)
+ - [E2B Sandbox Provider](docs/E2B_SANDBOX_PROVIDER.md)
++- [Atelier Sandbox Provider](docs/ATELIER_SANDBOX_PROVIDER.md)
+ - [Vercel Sandbox Provider](docs/VERCEL_SANDBOX_PROVIDER.md)
+ - [OpenComputer Provider](docs/OPENCOMPUTER_PROVIDER.md)
+diff --git a/terraform/README.md b/terraform/README.md
+index 333568b0..dbc7964a 100644
+--- a/terraform/README.md
++++ b/terraform/README.md
+@@ -7,12 +7,13 @@ Terraform.
+ 
+ The infrastructure spans multiple cloud providers:
+ 
+-| Provider       | Resources                                            | Terraform Support                   |
+-| -------------- | ---------------------------------------------------- | ----------------------------------- |
+-| **Cloudflare** | Workers, KV Namespaces, Durable Objects, D1 Database | Native provider                     |
+-| **Vercel**     | Next.js Web App, optional sandbox sessions           | Native provider + Sandbox API calls |
+-| **Modal**      | Optional sandbox infrastructure                      | CLI wrapper (no provider exists)    |
+-| **Daytona**    | Optional sandbox snapshots                           | REST API wrapper                    |
++| Provider       | Resources                                            | Terraform Support                                       |
++| -------------- | ---------------------------------------------------- | ------------------------------------------------------- |
++| **Cloudflare** | Workers, KV Namespaces, Durable Objects, D1 Database | Native provider                                         |
++| **Vercel**     | Next.js Web App, optional sandbox sessions           | Native provider + Sandbox API calls                     |
++| **Modal**      | Optional sandbox infrastructure                      | CLI wrapper (no provider exists)                        |
++| **Daytona**    | Optional sandbox snapshots                           | REST API wrapper                                        |
++| **Atelier**    | Optional sandbox sessions (no snapshots/restore)     | REST API wrapper; image built by Atelier, not Terraform |
+ 
+ ## Directory Structure
+ 
+@@ -233,6 +234,11 @@ DAYTONA_BASE_SNAPSHOT            # Prefix for the Terraform-managed base snapsho
+ DAYTONA_BASE_SNAPSHOT_MEMORY_GIB # Optional; defaults to 2
+ DAYTONA_TARGET # Optional
+ 
++# Atelier (only if SANDBOX_PROVIDER=atelier)
++ATELIER_API_URL
++ATELIER_API_KEY
++ATELIER_IMAGE # Optional; defaults to open-inspect
++
+ # Vercel Sandboxes (only if SANDBOX_PROVIDER=vercel)
+ VERCEL_SANDBOX_TOKEN
+ VERCEL_SANDBOX_PROJECT_ID
+diff --git a/terraform/environments/production/locals.tf b/terraform/environments/production/locals.tf
+index d3c65896..27680fd5 100644
+--- a/terraform/environments/production/locals.tf
++++ b/terraform/environments/production/locals.tf
+@@ -5,6 +5,7 @@ locals {
+   use_vercel_backend       = var.sandbox_provider == "vercel"
+   use_opencomputer_backend = var.sandbox_provider == "opencomputer"
+   use_e2b_backend          = var.sandbox_provider == "e2b"
++  use_atelier_backend      = var.sandbox_provider == "atelier"
+ 
+   # A complete OAuth credential pair is the deployment's provider enablement
+   # declaration. Runtime validation mirrors these plan-time invariants.
+diff --git a/terraform/environments/production/terraform.tfvars.example b/terraform/environments/production/terraform.tfvars.example
+index b6be1fe1..7a04c00f 100644
+--- a/terraform/environments/production/terraform.tfvars.example
++++ b/terraform/environments/production/terraform.tfvars.example
+@@ -120,6 +120,15 @@ e2b_template_id = ""           # e.g., "open-inspect-sandbox"
+ # sandbox on inbound activity. Default true; set false to kill on timeout.
+ # e2b_auto_pause = true
+ 
++# Atelier
++# Only required when sandbox_provider = "atelier"
++# Atelier (Bun/Elysia) orchestrates Kata/k8s or Docker dev sandboxes. Atelier builds
++# the "atelier_image" sandbox image itself from packages/sandbox-images (pack
++# --provider atelier); there is no Terraform-managed base image build here.
++atelier_api_url = ""          # e.g., "https://atelier.example.com"
++atelier_api_key = ""          # atl_... API key, Bearer auth
++# atelier_image = "open-inspect" # Atelier seed image name; default matches the seed built from this repo
++
+ # =============================================================================
+ # GitHub App Credentials
+ # =============================================================================
+@@ -293,6 +302,7 @@ nextauth_secret = ""
+ # - "vercel": Vercel Sandbox API with filesystem snapshot restore
+ # - "opencomputer": OpenComputer declarative-template sandboxes with hibernate/resume
+ # - "e2b": direct E2B REST API integration with pause/resume
++# - "atelier": direct Atelier REST API integration with pause/resume (no snapshots)
+ sandbox_provider = "modal"
+ 
+ # Platform for the web app deployment
+diff --git a/terraform/environments/production/tests/atelier_credentials_pairing.tftest.hcl b/terraform/environments/production/tests/atelier_credentials_pairing.tftest.hcl
+new file mode 100644
+index 00000000..91ce0c32
+--- /dev/null
++++ b/terraform/environments/production/tests/atelier_credentials_pairing.tftest.hcl
+@@ -0,0 +1,78 @@
++# Atelier credentials are kept after a deployment switches to another sandbox
++# backend, so the control plane can still finalize and reclaim what Atelier
++# created. That reclamation needs the URL as much as the key: the adapter
++# factory refuses to build a client without both. A key retained without a URL
++# is therefore not a lesser configuration, it is a broken one.
++
++mock_provider "cloudflare" {}
++mock_provider "external" {
++  mock_data "external" {
++    defaults = {
++      result = {
++        hash = "test-source-hash"
++      }
++    }
++  }
++}
++mock_provider "local" {}
++mock_provider "null" {}
++mock_provider "random" {}
++mock_provider "vercel" {}
++
++variables {
++  cloudflare_api_token        = "test-cloudflare-token"
++  cloudflare_account_id       = "test-account"
++  cloudflare_worker_subdomain = "test-account"
++  github_app_id               = "1"
++  github_app_private_key      = "test-private-key"
++  github_app_installation_id  = "1"
++  anthropic_api_key           = "test-anthropic-key"
++  token_encryption_key        = "test-token-key"
++  repo_secrets_encryption_key = "test-repo-key"
++  nextauth_secret             = "test-browser-auth-secret-with-32-characters"
++  deployment_name             = "atelier-credentials-pairing-test"
++
++  # The deployment has moved off Atelier; the credentials outlive the switch.
++  sandbox_provider   = "modal"
++  modal_token_id     = "test-modal-token-id"
++  modal_token_secret = "test-modal-token-secret"
++  modal_workspace    = "test-workspace"
++  modal_api_secret   = "test-modal-api-secret"
++  atelier_api_key    = "test-atelier-key"
++
++  web_platform      = "cloudflare"
++  project_root      = "../../../"
++  enable_github_bot = false
++  enable_slack_bot  = false
++  enable_linear_bot = false
++
++  github_client_id     = "github-id"
++  github_client_secret = "github-secret"
++  allowed_users        = "octocat"
++}
++
++run "retained_atelier_credentials_stay_bound_after_a_provider_switch" {
++  command = plan
++
++  variables {
++    atelier_api_url = "https://atelier.example.com"
++  }
++
++  assert {
++    condition = (
++      contains(module.control_plane_worker.plain_text_binding_names, "ATELIER_API_URL") &&
++      contains(module.control_plane_worker.secret_binding_names, "ATELIER_API_KEY")
++    )
++    error_message = "Retained Atelier credentials must stay bound so existing sandboxes remain reclaimable."
++  }
++}
++
++run "rejects_a_retained_atelier_key_without_a_url" {
++  command = plan
++
++  variables {
++    atelier_api_url = ""
++  }
++
++  expect_failures = [var.atelier_api_url]
++}
+diff --git a/terraform/environments/production/variables.tf b/terraform/environments/production/variables.tf
+index fd041ad6..39a5dce6 100644
+--- a/terraform/environments/production/variables.tf
++++ b/terraform/environments/production/variables.tf
+@@ -548,6 +548,43 @@ variable "opencomputer_template" {
+   default     = ""
+ }
+ 
++variable "atelier_api_url" {
++  description = "Base URL for the Atelier REST API (e.g. https://atelier.example.com); the client appends /v1/..."
++  type        = string
++  default     = ""
++
++  validation {
++    condition     = var.sandbox_provider != "atelier" || length(trimspace(var.atelier_api_url)) > 0
++    error_message = "atelier_api_url must be set when sandbox_provider = 'atelier'."
++  }
++
++  # Atelier credentials outlive the backend that used them: the control plane
++  # keeps reclaiming sandboxes after a provider switch, and it refuses to
++  # build an Atelier client unless both the URL and the key are set.
++  validation {
++    condition     = trimspace(var.atelier_api_key) == "" || length(trimspace(var.atelier_api_url)) > 0
++    error_message = "atelier_api_url must be set whenever atelier_api_key is set, so the control plane can still reclaim existing Atelier sandboxes after switching sandbox_provider."
++  }
++}
++
++variable "atelier_api_key" {
++  description = "API key for the Atelier REST API (atl_..., Bearer auth)"
++  type        = string
++  sensitive   = true
++  default     = ""
++
++  validation {
++    condition     = var.sandbox_provider != "atelier" || length(trimspace(var.atelier_api_key)) > 0
++    error_message = "atelier_api_key must be set when sandbox_provider = 'atelier'."
++  }
++}
++
++variable "atelier_image" {
++  description = "Atelier image name to boot sessions from (the Atelier seed image that installs the Open-Inspect runtime)"
++  type        = string
++  default     = "open-inspect"
++}
++
+ variable "vercel_sandbox_token" {
+   description = "Vercel API token for the Vercel Sandbox API"
+   type        = string
+@@ -674,13 +711,13 @@ variable "nextauth_secret" {
+ # =============================================================================
+ 
+ variable "sandbox_provider" {
+-  description = "Sandbox backend for session execution: 'modal', 'daytona', 'vercel', 'opencomputer', or 'e2b'"
++  description = "Sandbox backend for session execution: 'modal', 'daytona', 'vercel', 'opencomputer', 'e2b', or 'atelier'"
+   type        = string
+   default     = "modal"
+ 
+   validation {
+-    condition     = contains(["modal", "daytona", "vercel", "opencomputer", "e2b"], var.sandbox_provider)
+-    error_message = "sandbox_provider must be 'modal', 'daytona', 'vercel', 'opencomputer', or 'e2b'."
++    condition     = contains(["modal", "daytona", "vercel", "opencomputer", "e2b", "atelier"], var.sandbox_provider)
++    error_message = "sandbox_provider must be 'modal', 'daytona', 'vercel', 'opencomputer', 'e2b', or 'atelier'."
+   }
+ }
+ 
+diff --git a/terraform/environments/production/workers-control-plane.tf b/terraform/environments/production/workers-control-plane.tf
+index dc90293f..b7280810 100644
+--- a/terraform/environments/production/workers-control-plane.tf
++++ b/terraform/environments/production/workers-control-plane.tf
+@@ -163,6 +163,13 @@ module "control_plane_worker" {
+       E2B_TEMPLATE_ID             = { value = module.e2b_infra[0].template_id }
+       E2B_SANDBOX_TIMEOUT_SECONDS = { value = tostring(var.e2b_sandbox_timeout_seconds) }
+       E2B_AUTO_PAUSE              = { value = tostring(var.e2b_auto_pause) }
++    } : {},
++    # Bound whenever Atelier credentials exist, not only while it is the active
++    # backend: a deployment that has switched providers still needs to reach
++    # Atelier to reclaim sandboxes it created (same pattern as Daytona above).
++    trimspace(var.atelier_api_key) != "" ? {
++      ATELIER_API_URL = { value = var.atelier_api_url }
++      ATELIER_IMAGE   = { value = var.atelier_image }
+     } : {}
+   )
+ 
+@@ -214,6 +221,9 @@ module "control_plane_worker" {
+     local.use_e2b_backend ? {
+       E2B_API_KEY = { value = var.e2b_api_key }
+     } : {},
++    trimspace(var.atelier_api_key) != "" ? {
++      ATELIER_API_KEY = { value = var.atelier_api_key }
++    } : {},
+     # Slack bot token enables the agent-initiated `slack-notify` endpoint.
+     # Shares the variable with the slack-bot worker; bound here so the same
+     # token can authorize chat.postMessage from agent tool calls.
