@@ -358,6 +358,34 @@ export function createControlRoutes(container: ServerContainer) {
       { body: t.Record(t.String(), t.Unknown()) },
     );
 
+  // The caller's GitHub repositories (their OWN OAuth token, never another
+  // user's): the console's quick-prebuild picker lists them, and `inspect`
+  // prefills the create form with branches + detected setup steps.
+  const githubRoutes = new Elysia({ prefix: "/github" })
+    .use(authPlugin)
+    .get(
+      "/repos",
+      ({ user, query }) =>
+        control.gitHubRepoService.listRepos(user.id, {
+          refresh: query.refresh === true,
+        }),
+      { query: t.Object({ refresh: t.Optional(t.Boolean()) }) },
+    )
+    .get(
+      "/repos/:owner/:name",
+      ({ user, params, query }) =>
+        control.gitHubRepoService.inspectRepo(
+          user.id,
+          params.owner,
+          params.name,
+          query.ref,
+        ),
+      {
+        params: t.Object({ owner: t.String(), name: t.String() }),
+        query: t.Object({ ref: t.Optional(t.String()) }),
+      },
+    );
+
   return new Elysia({ prefix: "/api" })
     .use(meRoutes)
     .use(apiKeyRoutes)
@@ -366,5 +394,6 @@ export function createControlRoutes(container: ServerContainer) {
     .use(secretRoutes)
     .use(configRoutes)
     .use(orgPolicyRoutes)
-    .use(toolboxRoutes);
+    .use(toolboxRoutes)
+    .use(githubRoutes);
 }

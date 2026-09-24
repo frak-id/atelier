@@ -66,19 +66,3 @@ export function listBranches(cwd: string = process.cwd()): string[] {
     .filter((l) => l && l !== "HEAD");
   return Array.from(new Set(names));
 }
-
-/** Trim a clone URL down to `owner/name` for a compact label / comparison
- * (drops scheme, git@ user, and the trailing `.git`). */
-export function shortRepo(url: string): string {
-  return url
-    .replace(/^https?:\/\/[^/]+\//, "")
-    .replace(/^git@[^:]+:/, "")
-    .replace(/\.git$/, "")
-    .replace(/\/$/, "");
-}
-
-/** The default clone path for a repo: its bare name (last path segment). */
-export function deriveClonePath(url: string): string {
-  const name = shortRepo(url).split("/").pop() ?? "repo";
-  return name || "repo";
-}

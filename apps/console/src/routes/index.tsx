@@ -18,6 +18,8 @@ import {
   useDeleteSession,
 } from "@/api/queries/sessions";
 import { ImmersiveView } from "@/components/immersive-view";
+import { LaunchpadBadge } from "@/components/launchpad/launchpad-badge";
+import { LaunchpadBanner } from "@/components/launchpad/launchpad-banner";
 import {
   SessionsByRepo,
   SessionsByRepoSkeleton,
@@ -64,6 +66,7 @@ function MissionControlPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      <LaunchpadBanner />
       {isPending ? (
         <div className="space-y-2">
           <Skeleton className="h-16 w-full" />
@@ -242,6 +245,10 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
           <Badge variant={status.variant}>{status.label}</Badge>
           {harness ? <Badge variant="outline">{harness}</Badge> : null}
           {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
+          <LaunchpadBadge
+            sandboxId={sandbox.id}
+            annotations={sandbox.annotations}
+          />
           {sandbox.status === "running" ? (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <StatusDot variant={sessionCount > 0 ? "info" : "neutral"} />

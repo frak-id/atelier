@@ -12,11 +12,13 @@ import { Route as rootRouteImport } from "./routes/__root"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as SettingsRouteImport } from "./routes/settings"
 import { Route as SpawnRouteImport } from "./routes/spawn"
+import { Route as LaunchpadIndexRouteImport } from "./routes/launchpad.index"
 import { Route as SandboxesSandboxIdRouteImport } from "./routes/sandboxes.$sandboxId"
 import { Route as SettingsIndexRouteImport } from "./routes/settings.index"
 import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
 import { Route as SettingsConfigRouteImport } from "./routes/settings.config"
 import { Route as SettingsImagesRouteImport } from "./routes/settings.images"
+import { Route as SettingsLaunchpadRouteImport } from "./routes/settings.launchpad"
 import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
 import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
 import { Route as SettingsPrebuildsRouteImport } from "./routes/settings.prebuilds"
@@ -24,8 +26,12 @@ import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
 import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsToolboxesRouteImport } from "./routes/settings.toolboxes"
 import { Route as SettingsToolsetsRouteImport } from "./routes/settings.toolsets"
+import { Route as LaunchpadWWorkspaceIdRouteImport } from "./routes/launchpad.w.$workspaceId"
 import { Route as SandboxesSandboxIdIndexRouteImport } from "./routes/sandboxes.$sandboxId.index"
 import { Route as SandboxesSandboxIdSessionsRouteImport } from "./routes/sandboxes.$sandboxId.sessions"
+import { Route as SettingsLaunchpadIndexRouteImport } from "./routes/settings.launchpad.index"
+import { Route as SettingsLaunchpadIdRouteImport } from "./routes/settings.launchpad.$id"
+import { Route as SettingsLaunchpadNewRouteImport } from "./routes/settings.launchpad.new"
 import { Route as SettingsPrebuildsIndexRouteImport } from "./routes/settings.prebuilds.index"
 import { Route as SettingsPrebuildsRefRouteImport } from "./routes/settings.prebuilds.$ref"
 import { Route as SettingsPrebuildsNewRouteImport } from "./routes/settings.prebuilds.new"
@@ -46,6 +52,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const SpawnRoute = SpawnRouteImport.update({
   id: "/spawn",
   path: "/spawn",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LaunchpadIndexRoute = LaunchpadIndexRouteImport.update({
+  id: "/launchpad/",
+  path: "/launchpad/",
   getParentRoute: () => rootRouteImport,
 } as any)
 const SandboxesSandboxIdRoute = SandboxesSandboxIdRouteImport.update({
@@ -71,6 +82,11 @@ const SettingsConfigRoute = SettingsConfigRouteImport.update({
 const SettingsImagesRoute = SettingsImagesRouteImport.update({
   id: "/images",
   path: "/images",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsLaunchpadRoute = SettingsLaunchpadRouteImport.update({
+  id: "/launchpad",
+  path: "/launchpad",
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsOrganizationsRoute = SettingsOrganizationsRouteImport.update({
@@ -108,6 +124,11 @@ const SettingsToolsetsRoute = SettingsToolsetsRouteImport.update({
   path: "/toolsets",
   getParentRoute: () => SettingsRoute,
 } as any)
+const LaunchpadWWorkspaceIdRoute = LaunchpadWWorkspaceIdRouteImport.update({
+  id: "/launchpad/w/$workspaceId",
+  path: "/launchpad/w/$workspaceId",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SandboxesSandboxIdIndexRoute = SandboxesSandboxIdIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -119,6 +140,21 @@ const SandboxesSandboxIdSessionsRoute =
     path: "/sessions",
     getParentRoute: () => SandboxesSandboxIdRoute,
   } as any)
+const SettingsLaunchpadIndexRoute = SettingsLaunchpadIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => SettingsLaunchpadRoute,
+} as any)
+const SettingsLaunchpadIdRoute = SettingsLaunchpadIdRouteImport.update({
+  id: "/$id",
+  path: "/$id",
+  getParentRoute: () => SettingsLaunchpadRoute,
+} as any)
+const SettingsLaunchpadNewRoute = SettingsLaunchpadNewRouteImport.update({
+  id: "/new",
+  path: "/new",
+  getParentRoute: () => SettingsLaunchpadRoute,
+} as any)
 const SettingsPrebuildsIndexRoute = SettingsPrebuildsIndexRouteImport.update({
   id: "/",
   path: "/",
@@ -158,6 +194,7 @@ export interface FileRoutesByFullPath {
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/config": typeof SettingsConfigRoute
   "/settings/images": typeof SettingsImagesRoute
+  "/settings/launchpad": typeof SettingsLaunchpadRouteWithChildren
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/prebuilds": typeof SettingsPrebuildsRouteWithChildren
@@ -165,13 +202,18 @@ export interface FileRoutesByFullPath {
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
   "/settings/toolsets": typeof SettingsToolsetsRoute
+  "/launchpad/": typeof LaunchpadIndexRoute
   "/settings/": typeof SettingsIndexRoute
+  "/launchpad/w/$workspaceId": typeof LaunchpadWWorkspaceIdRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/settings/launchpad/$id": typeof SettingsLaunchpadIdRoute
+  "/settings/launchpad/new": typeof SettingsLaunchpadNewRoute
   "/settings/prebuilds/$ref": typeof SettingsPrebuildsRefRoute
   "/settings/prebuilds/new": typeof SettingsPrebuildsNewRoute
   "/settings/toolboxes/$id": typeof SettingsToolboxesIdRoute
   "/settings/toolboxes/new": typeof SettingsToolboxesNewRoute
   "/sandboxes/$sandboxId/": typeof SandboxesSandboxIdIndexRoute
+  "/settings/launchpad/": typeof SettingsLaunchpadIndexRoute
   "/settings/prebuilds/": typeof SettingsPrebuildsIndexRoute
   "/settings/toolboxes/": typeof SettingsToolboxesIndexRoute
 }
@@ -186,13 +228,18 @@ export interface FileRoutesByTo {
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolsets": typeof SettingsToolsetsRoute
+  "/launchpad": typeof LaunchpadIndexRoute
   "/settings": typeof SettingsIndexRoute
+  "/launchpad/w/$workspaceId": typeof LaunchpadWWorkspaceIdRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/settings/launchpad/$id": typeof SettingsLaunchpadIdRoute
+  "/settings/launchpad/new": typeof SettingsLaunchpadNewRoute
   "/settings/prebuilds/$ref": typeof SettingsPrebuildsRefRoute
   "/settings/prebuilds/new": typeof SettingsPrebuildsNewRoute
   "/settings/toolboxes/$id": typeof SettingsToolboxesIdRoute
   "/settings/toolboxes/new": typeof SettingsToolboxesNewRoute
   "/sandboxes/$sandboxId": typeof SandboxesSandboxIdIndexRoute
+  "/settings/launchpad": typeof SettingsLaunchpadIndexRoute
   "/settings/prebuilds": typeof SettingsPrebuildsIndexRoute
   "/settings/toolboxes": typeof SettingsToolboxesIndexRoute
 }
@@ -205,6 +252,7 @@ export interface FileRoutesById {
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/config": typeof SettingsConfigRoute
   "/settings/images": typeof SettingsImagesRoute
+  "/settings/launchpad": typeof SettingsLaunchpadRouteWithChildren
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/prebuilds": typeof SettingsPrebuildsRouteWithChildren
@@ -212,13 +260,18 @@ export interface FileRoutesById {
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
   "/settings/toolsets": typeof SettingsToolsetsRoute
+  "/launchpad/": typeof LaunchpadIndexRoute
   "/settings/": typeof SettingsIndexRoute
+  "/launchpad/w/$workspaceId": typeof LaunchpadWWorkspaceIdRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
+  "/settings/launchpad/$id": typeof SettingsLaunchpadIdRoute
+  "/settings/launchpad/new": typeof SettingsLaunchpadNewRoute
   "/settings/prebuilds/$ref": typeof SettingsPrebuildsRefRoute
   "/settings/prebuilds/new": typeof SettingsPrebuildsNewRoute
   "/settings/toolboxes/$id": typeof SettingsToolboxesIdRoute
   "/settings/toolboxes/new": typeof SettingsToolboxesNewRoute
   "/sandboxes/$sandboxId/": typeof SandboxesSandboxIdIndexRoute
+  "/settings/launchpad/": typeof SettingsLaunchpadIndexRoute
   "/settings/prebuilds/": typeof SettingsPrebuildsIndexRoute
   "/settings/toolboxes/": typeof SettingsToolboxesIndexRoute
 }
@@ -232,6 +285,7 @@ export interface FileRouteTypes {
     | "/settings/api-keys"
     | "/settings/config"
     | "/settings/images"
+    | "/settings/launchpad"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/prebuilds"
@@ -239,13 +293,18 @@ export interface FileRouteTypes {
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
     | "/settings/toolsets"
+    | "/launchpad/"
     | "/settings/"
+    | "/launchpad/w/$workspaceId"
     | "/sandboxes/$sandboxId/sessions"
+    | "/settings/launchpad/$id"
+    | "/settings/launchpad/new"
     | "/settings/prebuilds/$ref"
     | "/settings/prebuilds/new"
     | "/settings/toolboxes/$id"
     | "/settings/toolboxes/new"
     | "/sandboxes/$sandboxId/"
+    | "/settings/launchpad/"
     | "/settings/prebuilds/"
     | "/settings/toolboxes/"
   fileRoutesByTo: FileRoutesByTo
@@ -260,13 +319,18 @@ export interface FileRouteTypes {
     | "/settings/secrets"
     | "/settings/ssh-keys"
     | "/settings/toolsets"
+    | "/launchpad"
     | "/settings"
+    | "/launchpad/w/$workspaceId"
     | "/sandboxes/$sandboxId/sessions"
+    | "/settings/launchpad/$id"
+    | "/settings/launchpad/new"
     | "/settings/prebuilds/$ref"
     | "/settings/prebuilds/new"
     | "/settings/toolboxes/$id"
     | "/settings/toolboxes/new"
     | "/sandboxes/$sandboxId"
+    | "/settings/launchpad"
     | "/settings/prebuilds"
     | "/settings/toolboxes"
   id:
@@ -278,6 +342,7 @@ export interface FileRouteTypes {
     | "/settings/api-keys"
     | "/settings/config"
     | "/settings/images"
+    | "/settings/launchpad"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/prebuilds"
@@ -285,13 +350,18 @@ export interface FileRouteTypes {
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
     | "/settings/toolsets"
+    | "/launchpad/"
     | "/settings/"
+    | "/launchpad/w/$workspaceId"
     | "/sandboxes/$sandboxId/sessions"
+    | "/settings/launchpad/$id"
+    | "/settings/launchpad/new"
     | "/settings/prebuilds/$ref"
     | "/settings/prebuilds/new"
     | "/settings/toolboxes/$id"
     | "/settings/toolboxes/new"
     | "/sandboxes/$sandboxId/"
+    | "/settings/launchpad/"
     | "/settings/prebuilds/"
     | "/settings/toolboxes/"
   fileRoutesById: FileRoutesById
@@ -301,6 +371,8 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRouteWithChildren
   SpawnRoute: typeof SpawnRoute
   SandboxesSandboxIdRoute: typeof SandboxesSandboxIdRouteWithChildren
+  LaunchpadIndexRoute: typeof LaunchpadIndexRoute
+  LaunchpadWWorkspaceIdRoute: typeof LaunchpadWWorkspaceIdRoute
 }
 
 declare module "@tanstack/react-router" {
@@ -324,6 +396,13 @@ declare module "@tanstack/react-router" {
       path: "/spawn"
       fullPath: "/spawn"
       preLoaderRoute: typeof SpawnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/launchpad/": {
+      id: "/launchpad/"
+      path: "/launchpad"
+      fullPath: "/launchpad/"
+      preLoaderRoute: typeof LaunchpadIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/sandboxes/$sandboxId": {
@@ -359,6 +438,13 @@ declare module "@tanstack/react-router" {
       path: "/images"
       fullPath: "/settings/images"
       preLoaderRoute: typeof SettingsImagesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/launchpad": {
+      id: "/settings/launchpad"
+      path: "/launchpad"
+      fullPath: "/settings/launchpad"
+      preLoaderRoute: typeof SettingsLaunchpadRouteImport
       parentRoute: typeof SettingsRoute
     }
     "/settings/organizations": {
@@ -410,6 +496,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsToolsetsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    "/launchpad/w/$workspaceId": {
+      id: "/launchpad/w/$workspaceId"
+      path: "/launchpad/w/$workspaceId"
+      fullPath: "/launchpad/w/$workspaceId"
+      preLoaderRoute: typeof LaunchpadWWorkspaceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/sandboxes/$sandboxId/": {
       id: "/sandboxes/$sandboxId/"
       path: "/"
@@ -423,6 +516,27 @@ declare module "@tanstack/react-router" {
       fullPath: "/sandboxes/$sandboxId/sessions"
       preLoaderRoute: typeof SandboxesSandboxIdSessionsRouteImport
       parentRoute: typeof SandboxesSandboxIdRoute
+    }
+    "/settings/launchpad/": {
+      id: "/settings/launchpad/"
+      path: "/"
+      fullPath: "/settings/launchpad/"
+      preLoaderRoute: typeof SettingsLaunchpadIndexRouteImport
+      parentRoute: typeof SettingsLaunchpadRoute
+    }
+    "/settings/launchpad/$id": {
+      id: "/settings/launchpad/$id"
+      path: "/$id"
+      fullPath: "/settings/launchpad/$id"
+      preLoaderRoute: typeof SettingsLaunchpadIdRouteImport
+      parentRoute: typeof SettingsLaunchpadRoute
+    }
+    "/settings/launchpad/new": {
+      id: "/settings/launchpad/new"
+      path: "/new"
+      fullPath: "/settings/launchpad/new"
+      preLoaderRoute: typeof SettingsLaunchpadNewRouteImport
+      parentRoute: typeof SettingsLaunchpadRoute
     }
     "/settings/prebuilds/": {
       id: "/settings/prebuilds/"
@@ -469,6 +583,21 @@ declare module "@tanstack/react-router" {
   }
 }
 
+interface SettingsLaunchpadRouteChildren {
+  SettingsLaunchpadIdRoute: typeof SettingsLaunchpadIdRoute
+  SettingsLaunchpadNewRoute: typeof SettingsLaunchpadNewRoute
+  SettingsLaunchpadIndexRoute: typeof SettingsLaunchpadIndexRoute
+}
+
+const SettingsLaunchpadRouteChildren: SettingsLaunchpadRouteChildren = {
+  SettingsLaunchpadIdRoute: SettingsLaunchpadIdRoute,
+  SettingsLaunchpadNewRoute: SettingsLaunchpadNewRoute,
+  SettingsLaunchpadIndexRoute: SettingsLaunchpadIndexRoute,
+}
+
+const SettingsLaunchpadRouteWithChildren =
+  SettingsLaunchpadRoute._addFileChildren(SettingsLaunchpadRouteChildren)
+
 interface SettingsPrebuildsRouteChildren {
   SettingsPrebuildsRefRoute: typeof SettingsPrebuildsRefRoute
   SettingsPrebuildsNewRoute: typeof SettingsPrebuildsNewRoute
@@ -503,6 +632,7 @@ interface SettingsRouteChildren {
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
   SettingsConfigRoute: typeof SettingsConfigRoute
   SettingsImagesRoute: typeof SettingsImagesRoute
+  SettingsLaunchpadRoute: typeof SettingsLaunchpadRouteWithChildren
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsPolicyRoute: typeof SettingsPolicyRoute
   SettingsPrebuildsRoute: typeof SettingsPrebuildsRouteWithChildren
@@ -517,6 +647,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiKeysRoute: SettingsApiKeysRoute,
   SettingsConfigRoute: SettingsConfigRoute,
   SettingsImagesRoute: SettingsImagesRoute,
+  SettingsLaunchpadRoute: SettingsLaunchpadRouteWithChildren,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsPolicyRoute: SettingsPolicyRoute,
   SettingsPrebuildsRoute: SettingsPrebuildsRouteWithChildren,
@@ -549,6 +680,8 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRouteWithChildren,
   SpawnRoute: SpawnRoute,
   SandboxesSandboxIdRoute: SandboxesSandboxIdRouteWithChildren,
+  LaunchpadIndexRoute: LaunchpadIndexRoute,
+  LaunchpadWWorkspaceIdRoute: LaunchpadWWorkspaceIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

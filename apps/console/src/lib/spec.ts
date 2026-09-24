@@ -1,11 +1,14 @@
 import type {
   PrebuildSpec,
   SandboxSpec,
+  StarterInput,
   ToolboxConfigInput,
 } from "@atelier/spec";
 import {
   PrebuildSpecSchema,
   SandboxSpecSchema,
+  StarterInputSchema,
+  starterInputProblems,
   ToolboxConfigInputSchema,
 } from "@atelier/spec";
 import type { TSchema } from "@sinclair/typebox";
@@ -60,6 +63,23 @@ export function parseToolboxInput(
     ToolboxConfigInputSchema,
     parsed.value,
   );
+}
+
+/** Parse JSONC text then validate against `StarterInputSchema` (plus the
+ * cross-field checks the server runs) — the Launchpad starter editor's JSON
+ * mode. */
+export function parseStarterInput(
+  text: string,
+): { ok: true; value: StarterInput } | { ok: false; errors: string[] } {
+  const parsed = parseSpecJsonc(text);
+  if (!parsed.ok) return parsed;
+  const result = validateAgainst<StarterInput>(
+    StarterInputSchema,
+    parsed.value,
+  );
+  if (!result.ok) return result;
+  const problems = starterInputProblems(result.value);
+  return problems.length > 0 ? { ok: false, errors: problems } : result;
 }
 
 function describeParseError(error: ParseError): string {

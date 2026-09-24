@@ -5,16 +5,17 @@ import {
   Link,
   Outlet,
   useRouter,
+  useRouterState,
 } from "@tanstack/react-router";
-import { Boxes, LogOut, Moon, Rocket, Settings, Sun } from "lucide-react";
+import { Boxes, Rocket, Settings, Sparkles } from "lucide-react";
 import { Toaster } from "sonner";
 import { api } from "@/api/client";
 import { currentUserQuery } from "@/api/queries/auth";
+import { AccountControls } from "@/components/account-controls";
 import { JobsIndicator } from "@/components/jobs-indicator";
+import { LaunchpadShell } from "@/components/launchpad/launchpad-shell";
 import { LoginPage } from "@/components/login-page";
-import { Button } from "@/components/ui/button";
 import { useJobEvents } from "@/hooks/use-job-events";
-import { useTheme } from "@/providers/theme";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -25,6 +26,7 @@ export const Route = createRootRouteWithContext<{
 const NAV_ITEMS = [
   { to: "/", label: "Sandboxes", icon: Boxes, exact: true },
   { to: "/spawn", label: "Spawn", icon: Rocket, exact: true },
+  { to: "/launchpad", label: "Launchpad", icon: Sparkles, exact: false },
   { to: "/settings", label: "Settings", icon: Settings, exact: false },
 ] as const;
 
@@ -32,7 +34,10 @@ function RootLayout() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { data: user, isPending } = useQuery(currentUserQuery());
-  const { theme, toggle } = useTheme();
+  // The Launchpad (non-technical surface) renders in its own, lighter shell.
+  const isLaunchpad = useRouterState({
+    select: (state) => state.location.pathname.startsWith("/launchpad"),
+  });
   // Global job-queue SSE — only connects once authenticated (the feed is
   // behind auth). Called unconditionally to satisfy the rules of hooks.
   useJobEvents(!!user);
@@ -63,6 +68,17 @@ function RootLayout() {
     }
   }
 
+  if (isLaunchpad) {
+    return (
+      <>
+        <LaunchpadShell username={user.username} onLogout={handleLogout}>
+          <Outlet />
+        </LaunchpadShell>
+        <Toaster richColors position="top-right" />
+      </>
+    );
+  }
+
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur">
@@ -83,24 +99,7 @@ function RootLayout() {
         </nav>
         <div className="flex items-center gap-3">
           <JobsIndicator />
-          <span className="hidden text-sm text-muted-foreground sm:inline">
-            {user.username}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggle}
-            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
-          >
-            {theme === "dark" ? (
-              <Sun className="size-4" />
-            ) : (
-              <Moon className="size-4" />
-            )}
-          </Button>
-          <Button variant="ghost" size="icon" onClick={handleLogout}>
-            <LogOut className="size-4" />
-          </Button>
+          <AccountControls username={user.username} onLogout={handleLogout} />
         </div>
       </header>
       <main className="flex-1 p-4">

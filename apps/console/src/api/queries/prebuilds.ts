@@ -7,6 +7,7 @@ import {
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import { errorMessage } from "./error";
+import type { Job } from "./jobs";
 import { queryKeys } from "./keys";
 
 /** List stored prebuild snapshots (GET /v1/prebuilds) — the read side, for
@@ -32,6 +33,7 @@ export function prebuildsListQuery() {
  * — the "rebuild" action on an existing prebuild.
  */
 export function useRunPrebuild() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
       spec,
@@ -39,6 +41,8 @@ export function useRunPrebuild() {
     }: {
       spec: PrebuildSpec;
       force?: boolean;
+      /** Human label for the toast (e.g. `owner/repo`). */
+      label?: string;
     }) => {
       const { data, error } = await api.v1.prebuilds.post(spec, {
         query: { force: force ?? false },
@@ -47,13 +51,22 @@ export function useRunPrebuild() {
       return data;
     },
     // The endpoint answers 202 with a `running` (or `queued`, if the pool is
-    // full) job: the bake proceeds in the background. The job is delivered to
-    // the queue cache over the SSE feed (`useJobEvents`, wired at the root),
-    // and completion + the prebuilds-list refresh arrive the same way — so no
-    // manual jobs invalidation here (it would just race the stream).
-    onSuccess: (data) => {
+    // full) job: the bake proceeds in the background. The SSE feed
+    // (`useJobEvents`) owns the job's lifecycle in the queue cache, including
+    // completion and the prebuilds-list refresh, so there is no invalidation
+    // here (a refetch would race the stream). The one thing done here is to
+    // seed the returned job when the feed hasn't delivered it yet, so a
+    // repo row flips to "building" the instant the POST returns. It never
+    // overwrites an existing entry: the feed may already hold a newer state.
+    onSuccess: (job, { label }) => {
+      if (job) {
+        queryClient.setQueryData<Job[]>(queryKeys.jobs.list(), (prev) =>
+          prev?.some((j) => j.id === job.id) ? prev : [job, ...(prev ?? [])],
+        );
+      }
+      const verb = job?.status === "queued" ? "queued" : "started";
       toast.success(
-        data?.status === "queued" ? "Prebuild queued" : "Prebuild started",
+        label ? `Prebuild ${verb} for ${label}` : `Prebuild ${verb}`,
       );
     },
     onError: (error) => toast.error(error.message),

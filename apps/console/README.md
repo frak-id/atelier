@@ -42,11 +42,17 @@ docker build -f Dockerfile.v2 --target console -t atelier-console .
 
 ## Surfaces
 
-- `/` — sandbox fleet (status, harness, lifecycle actions)
+- `/` — sandbox fleet (status, harness, lifecycle actions), with a banner to the Launchpad
+- `/launchpad` — the non-technical surface: "What are you working on?", the
+  user's workspaces and the published starters (own shell, no dev chrome)
+- `/launchpad/w/$id` — one workspace: name/note, plain-English status,
+  embedded tools, guide, sleep/wake/delete
 - `/sandboxes/$id` — detail (urls, processes, logs, ports, read-only attach)
 - `/sandboxes/$id/sessions` — live ACP sessions, todos, permissions, terminals
 - `/spawn` — saved specs, compose presets, JSONC spec editor
 - `/settings/*` — operator console (api-keys, ssh-keys, secrets, orgs, policy, catalog)
+- `/settings/launchpad` — author the Launchpad's starters (see
+  `docs/proposals/launchpad.md`)
 
 ## Tauri readiness
 

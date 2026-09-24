@@ -2,6 +2,12 @@
  * prebuild / a prebuild / a base image), layer on toolboxes, then boot with a
  * live progress log. */
 import type { CreateSandboxResponse, PrebuildRecord } from "@atelier/spec";
+import {
+  findRepoBranchPrebuild,
+  findRepoPrebuilds,
+  repoCloneName,
+  repoShortName,
+} from "@atelier/spec/repo-prebuild";
 import pc from "picocolors";
 import {
   type AtelierApi,
@@ -10,18 +16,9 @@ import {
   unwrap,
   waitForJob,
 } from "../../client.ts";
-import {
-  deriveClonePath,
-  detectGitRepo,
-  type GitRepo,
-  shortRepo,
-} from "../../git.ts";
+import { detectGitRepo, type GitRepo } from "../../git.ts";
 import { line, printLogDelta } from "../../output.ts";
 import * as ui from "../../ui.ts";
-import {
-  findRepoBranchPrebuild,
-  prebuildRepoBranch,
-} from "../prebuild-create.ts";
 import { prebuildHint } from "./prebuilds.ts";
 import { pickToolboxes } from "./toolboxes.ts";
 
@@ -84,16 +81,11 @@ async function findRepoBoot(
   try {
     const rows = unwrap(await api.v1.prebuilds.get());
     const exact = findRepoBranchPrebuild(rows, gitRepo.url, gitRepo.branch);
-    const want = shortRepo(gitRepo.url).toLowerCase();
-    const match =
-      exact ??
-      rows.find((p) => {
-        const rb = prebuildRepoBranch(p);
-        return rb.url && shortRepo(rb.url).toLowerCase() === want;
-      });
+    // Else the newest bake of this repo on any branch.
+    const match = exact ?? findRepoPrebuilds(rows, gitRepo.url)[0];
     if (!match) return null;
     const clonePath =
-      match.spec?.repos?.[0]?.clonePath ?? deriveClonePath(gitRepo.url);
+      match.spec?.repos?.[0]?.clonePath ?? repoCloneName(gitRepo.url);
     return { prebuild: match, branchMatch: Boolean(exact), clonePath };
   } catch {
     return null;
@@ -131,7 +123,7 @@ export async function spawnFlow(api: AtelierApi): Promise<string | null> {
   const gitRepo = detectGitRepo();
   const repoBoot = gitRepo ? await findRepoBoot(api, gitRepo) : null;
   const repoLabel = gitRepo
-    ? `${shortRepo(gitRepo.url)}${gitRepo.branch ? `@${gitRepo.branch}` : ""}`
+    ? `${repoShortName(gitRepo.url)}${gitRepo.branch ? `@${gitRepo.branch}` : ""}`
     : "";
 
   const source = await ui.select<"repo" | "image" | "prebuild" | "cancel">({

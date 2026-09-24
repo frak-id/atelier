@@ -18,6 +18,8 @@ import {
   PatchFilesRequestSchema,
   type PrebuildSpec,
   PrebuildSpecSchema,
+  prebuildJobTarget,
+  type ResumeRequest,
   ResumeRequestSchema,
   type SandboxSpec,
   type ToolsetBuildRequest,
@@ -103,23 +105,6 @@ function requireImageOperator(
         "least one organization.",
     );
   }
-}
-
-/** A stable, branch-aware identity for a prebuild job's queue row — derived
- * from the repos it clones (URL + branch, so the same repo on two branches are
- * distinct jobs), falling back to the boot source when it clones nothing. It
- * doubles as the row's display label AND the key `<JobStatus>` correlates a
- * running rebuild back to its row by, so it must stay byte-for-byte identical
- * to the console's `prebuildJobTarget`. Deliberately NOT the opaque `metadata`
- * (user-supplied display text, not an identity, and duplicated across
- * branches — which would let one running job light up two rows). */
-function prebuildLabel(spec: PrebuildSpec): string {
-  if (spec.repos && spec.repos.length > 0) {
-    return spec.repos
-      .map((r) => (r.branch ? `${r.url}#${r.branch}` : r.url))
-      .join(", ");
-  }
-  return "image" in spec.source ? spec.source.image : spec.source.snapshot;
 }
 
 /** A short, human label for a sandbox-create job's queue row — the spec's
@@ -247,6 +232,32 @@ export async function createSandboxForUser(
     ports: mergeByName(surface.ports, enriched.ports),
   };
   return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
+}
+
+/**
+ * A resume body with the owner's git credentials refreshed (the
+ * credential-rotation primitive). The owner is re-resolved from the persisted
+ * owner-id metadata, so it's stable regardless of who triggers the resume,
+ * and fresh git files are merged over the persisted (possibly stale) ones.
+ * Shared by `POST /v1/sandboxes/:id/resume` and the Launchpad wake-up.
+ * Throws `NotFoundError` for an unknown sandbox.
+ */
+export async function withFreshCredentials(
+  container: ServerContainer,
+  id: string,
+  body: ResumeRequest = {},
+): Promise<ResumeRequest> {
+  const { runtime, control } = container;
+  const state = await runtime.get(id);
+  const ownerId = state.metadata?.[OWNER_ID_METADATA];
+  const ownerUser = ownerId ? control.userService.getById(ownerId) : undefined;
+  const gitFiles = buildGitAttributionFiles({
+    identity: ownerUser
+      ? { name: ownerUser.username, email: ownerUser.email }
+      : undefined,
+    githubToken: control.userService.resolveGitHubToken(ownerId),
+  });
+  return { ...body, files: [...(body.files ?? []), ...gitFiles] };
 }
 
 export function createV1Routes(container: ServerContainer) {
@@ -476,7 +487,7 @@ export function createV1Routes(container: ServerContainer) {
           const job = jobs.dispatch(
             {
               kind: "prebuild",
-              target: prebuildLabel(spec),
+              target: prebuildJobTarget(spec),
               metadata: spec.metadata,
             },
             (signal, log) =>
@@ -587,25 +598,8 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/sandboxes/:id/resume",
         async ({ params, body }) => {
-          // Refresh the owner's git credentials on resume (the credential
-          // rotation primitive): re-resolve the owner from the persisted
-          // owner-id metadata — stable regardless of who triggers the resume —
-          // and merge fresh git files over the persisted (possibly stale) ones.
-          const state = await runtime.get(params.id);
-          const ownerId = state.metadata?.[OWNER_ID_METADATA];
-          const ownerUser = ownerId
-            ? control.userService.getById(ownerId)
-            : undefined;
-          const gitFiles = buildGitAttributionFiles({
-            identity: ownerUser
-              ? { name: ownerUser.username, email: ownerUser.email }
-              : undefined,
-            githubToken: control.userService.resolveGitHubToken(ownerId),
-          });
-          const merged = {
-            ...body,
-            files: [...(body.files ?? []), ...gitFiles],
-          };
+          // Resolved before the job opens: an unknown id is a plain 404.
+          const merged = await withFreshCredentials(container, params.id, body);
           return jobs.track({ kind: "sandbox-resume", target: params.id }, () =>
             runtime.resume(params.id, merged),
           );

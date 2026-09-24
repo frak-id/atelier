@@ -62,6 +62,18 @@ export const queryKeys = {
     all: ["prebuilds"] as const,
     list: () => [...queryKeys.prebuilds.all, "list"] as const,
   },
+  github: {
+    all: ["github"] as const,
+    repos: () => [...queryKeys.github.all, "repos"] as const,
+    inspect: (owner: string, name: string, ref?: string) =>
+      [
+        ...queryKeys.github.all,
+        "inspect",
+        owner.toLowerCase(),
+        name.toLowerCase(),
+        ref ?? "",
+      ] as const,
+  },
   images: {
     all: ["images"] as const,
     list: () => [...queryKeys.images.all, "list"] as const,
@@ -81,6 +93,15 @@ export const queryKeys = {
   config: {
     all: ["config"] as const,
     list: () => [...queryKeys.config.all, "list"] as const,
+  },
+  launchpad: {
+    all: ["launchpad"] as const,
+    catalog: () => [...queryKeys.launchpad.all, "catalog"] as const,
+    starters: (owner?: string) =>
+      [...queryKeys.launchpad.all, "starters", owner ?? "user"] as const,
+    workspaces: () => [...queryKeys.launchpad.all, "workspaces"] as const,
+    workspace: (id: string) =>
+      [...queryKeys.launchpad.all, "workspaces", id] as const,
   },
   jobs: {
     all: ["jobs"] as const,

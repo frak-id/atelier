@@ -18,7 +18,6 @@ import {
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
-import { organizationsListQuery } from "@/api/queries/organizations";
 import {
   toolboxVersionsQuery,
   useDeleteToolboxVersion,
@@ -27,11 +26,11 @@ import {
 import { toolboxesListQuery, useDeleteToolbox } from "@/api/queries/toolboxes";
 import { toolsetsListQuery } from "@/api/queries/toolsets";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { OwnerScopeSelect } from "@/components/owner-scope-select";
 import { ToolsetsSection } from "@/components/toolsets-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 
@@ -42,44 +41,6 @@ export const Route = createFileRoute("/settings/toolboxes/")({
 /** The artifact name a toolbox compiles into at spawn (`resolveToolboxRefs`). */
 function toolboxArtifactName(toolbox: ToolboxConfig): string {
   return `tb/${toolbox.ownerType}/${toolbox.ownerId}/${toolbox.slug}`;
-}
-
-/**
- * Scope selector over the caller's toolbox owners: "My Toolboxes" (identity-
- * scoped, `user`) plus each org the caller belongs to (`org:<id>`). The value
- * is the `?owner=` string passed straight to the API.
- */
-function ScopeSelect({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (owner: string) => void;
-}) {
-  const { data: orgs, isError } = useQuery(organizationsListQuery());
-  return (
-    <div className="space-y-1">
-      <Label htmlFor="toolbox-scope">Scope</Label>
-      <select
-        id="toolbox-scope"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        <option value="user">My Toolboxes</option>
-        {orgs?.map((org) => (
-          <option key={org.id} value={`org:${org.id}`}>
-            {org.name} (org)
-          </option>
-        ))}
-      </select>
-      {isError ? (
-        <p className="text-xs text-destructive">
-          Failed to load organizations.
-        </p>
-      ) : null}
-    </div>
-  );
 }
 
 function ToolboxesPage() {
@@ -106,7 +67,12 @@ function ToolboxesPage() {
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="w-full sm:max-w-xs">
-            <ScopeSelect value={owner} onChange={setOwner} />
+            <OwnerScopeSelect
+              id="toolbox-scope"
+              personalLabel="My Toolboxes"
+              value={owner}
+              onChange={setOwner}
+            />
           </div>
           <Button size="sm" asChild>
             <Link to="/settings/toolboxes/new" search={{ owner }}>

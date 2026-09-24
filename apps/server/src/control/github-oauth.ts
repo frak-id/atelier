@@ -1,11 +1,11 @@
 import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { githubApiGet } from "./github-api.ts";
 
 const log = createChildLogger("github");
 
 const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
-const GITHUB_USER_URL = "https://api.github.com/user";
 
 export interface GitHubUser {
   id: number;
@@ -81,13 +81,7 @@ export async function fetchGitHubUser(
     };
   }
 
-  const response = await fetch(GITHUB_USER_URL, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
+  const response = await githubApiGet(accessToken, "/user");
 
   if (!response.ok) {
     throw new Error(`GitHub user fetch failed: ${response.status}`);

@@ -4,9 +4,9 @@
  */
 import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { githubApiGet } from "./github-api.ts";
 
 const log = createChildLogger("authorization-policy");
-const GITHUB_USER_ORGS_URL = "https://api.github.com/user/orgs";
 
 interface GitHubOrg {
   login: string;
@@ -43,13 +43,7 @@ async function checkOrgMembership(
   accessToken: string,
   orgName: string,
 ): Promise<boolean> {
-  const response = await fetch(GITHUB_USER_ORGS_URL, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
+  const response = await githubApiGet(accessToken, "/user/orgs");
   if (!response.ok) {
     throw new Error(`GitHub orgs fetch failed: ${response.status}`);
   }
