@@ -11,6 +11,7 @@ const TABS = [
   { to: "/settings/organizations", label: "Organizations" },
   { to: "/settings/policy", label: "Org Policy" },
   { to: "/settings/toolboxes", label: "Toolboxes & Toolsets" },
+  { to: "/settings/launchpad", label: "Launchpad" },
   { to: "/settings/prebuilds", label: "Prebuilds" },
   { to: "/settings/images", label: "Images" },
   { to: "/settings/config", label: "Config" },

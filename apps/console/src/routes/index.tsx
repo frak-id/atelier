@@ -18,6 +18,7 @@ import {
   useDeleteSession,
 } from "@/api/queries/sessions";
 import { ImmersiveView } from "@/components/immersive-view";
+import { LaunchpadBanner } from "@/components/launchpad/launchpad-banner";
 import {
   SessionsByRepo,
   SessionsByRepoSkeleton,
@@ -64,6 +65,7 @@ function MissionControlPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      <LaunchpadBanner />
       {isPending ? (
         <div className="space-y-2">
           <Skeleton className="h-16 w-full" />

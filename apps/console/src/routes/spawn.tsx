@@ -3,15 +3,13 @@ import type {
   PrebuildRecord,
   SandboxSpec,
 } from "@atelier/spec";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Layers, Loader2, Rocket } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { organizationsListQuery } from "@/api/queries/organizations";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { useSpawnSandbox } from "@/api/queries/sandboxes";
-import { toolboxesListQuery } from "@/api/queries/toolboxes";
 import { RepoSpawnCard } from "@/components/repos/repo-spawn-card";
 import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAllToolboxes } from "@/hooks/use-all-toolboxes";
 import { formatRelativeTime, prebuildTitle } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
 
@@ -150,16 +149,6 @@ function SpawnPage() {
 }
 
 // ── shared spawn options (toolboxes + resources) ───────────────────────────
-
-/** Every toolbox the caller can apply: their own + each org's, flattened. */
-function useAllToolboxes() {
-  const { data: orgs } = useQuery(organizationsListQuery());
-  const owners = ["user", ...(orgs ?? []).map((org) => `org:${org.id}`)];
-  const results = useQueries({
-    queries: owners.map((owner) => toolboxesListQuery(owner)),
-  });
-  return results.flatMap((r) => r.data ?? []);
-}
 
 function SpawnOptionsCard({
   resources,

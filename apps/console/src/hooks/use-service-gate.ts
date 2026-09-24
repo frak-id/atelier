@@ -36,7 +36,12 @@ export interface ServiceGate {
  */
 export function useServiceGate(
   sandboxId: string,
-  url: Pick<SandboxUrl, "url" | "processes" | "ready"> | undefined,
+  url: (Pick<SandboxUrl, "processes" | "ready"> & { url?: string }) | undefined,
+  options: {
+    /** Replace the default start (the developer-console process action,
+     * which toasts per process) — e.g. the Launchpad's quiet start. */
+    startProcesses?: (names: string[]) => void;
+  } = {},
 ): ServiceGate {
   const processAction = useProcessAction(sandboxId);
   const gating = url?.processes ?? [];
@@ -70,6 +75,10 @@ export function useServiceGate(
   function start() {
     if (gating.length === 0 || ready || starting) return;
     setStarting(true);
+    if (options.startProcesses) {
+      options.startProcesses(gating);
+      return;
+    }
     for (const name of gating) {
       processAction.mutate({ name, action: "start" });
     }

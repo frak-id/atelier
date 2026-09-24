@@ -94,6 +94,15 @@ export const queryKeys = {
     all: ["config"] as const,
     list: () => [...queryKeys.config.all, "list"] as const,
   },
+  launchpad: {
+    all: ["launchpad"] as const,
+    catalog: () => [...queryKeys.launchpad.all, "catalog"] as const,
+    starters: (owner?: string) =>
+      [...queryKeys.launchpad.all, "starters", owner ?? "user"] as const,
+    workspaces: () => [...queryKeys.launchpad.all, "workspaces"] as const,
+    workspace: (id: string) =>
+      [...queryKeys.launchpad.all, "workspaces", id] as const,
+  },
   jobs: {
     all: ["jobs"] as const,
     list: () => [...queryKeys.jobs.all, "list"] as const,
