@@ -54,3 +54,8 @@ priority, not a strict sequence.
   - Other git providers, and potentially usage without git at all.
   - A "mission control" plugin like v1, a kanban board, etc.
   - Could be externally hosted since we have a proper API.
+- [x] **Open-Inspect on Atelier** — an open-source background coding agent
+  (Slack / GitHub / Linear / web → PRs) using Atelier as its sandbox provider.
+  See [`integrations/open-inspect`](../integrations/open-inspect/README.md);
+  the longer-term company agent is in
+  [`research/company-agent-prior-art.md`](research/company-agent-prior-art.md).
