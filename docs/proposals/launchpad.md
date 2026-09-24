@@ -83,7 +83,6 @@ org policy, git attribution). A non-technical caller never supplies a spec.
   icon?: "eye",                 // curated lucide key, see LAUNCHPAD_ICONS
   target: { port: "web", path?: "/admin" } | { url: "https://…" },
   open?: "embed" | "external",  // default embed
-  autostart?: boolean,          // default true for port targets
 }
 ```
 
@@ -93,11 +92,14 @@ org policy, git attribution). A non-technical caller never supplies a spec.
 - A `url` target is a static link (staging, docs, a Figma file). A
   `{sandboxId}` placeholder in it is substituted, so it can also point to a
   preview environment keyed by the sandbox.
-- **Autostart**: lazy processes (toolbox-contributed pi-web, code-server, a
-  dev server) are started by the server right after launch and after every
-  wake-up, for every port service with `autostart !== false`. The tech team
-  says "boot these", and the consumer never sees a "Start" button unless
-  something crashed.
+- **Lazy tools start when opened.** A port's gating processes (a toolbox's
+  pi-web or code-server, a prebuild's dev server) follow the one lazy
+  workflow: `lazy: true` means "start on first access", and opening the
+  tool is that access. The workspace page uses the developer console's
+  service gate (`useServiceGate`) with `startOnOpen`, so the consumer never
+  looks for a "Start" button; one only appears if a start failed. An
+  `external` tool is started first, then offered as a link. Processes that
+  aren't lazy start with the sandbox, as anywhere else.
 - A starter with no services falls back to every public URL of the sandbox
   (except `ssh`), all embedded.
 
@@ -159,9 +161,32 @@ failed before the record existed is re-dispatched with the same id.
   root layout switches shells by pathname.
 - Starter authoring: **Settings → Launchpad** (list + page editor, using the
   toolbox editor's `SpecEditorShell` visual↔JSON pattern). The visual form
-  covers presentation, services and the common recipe fields (boot source
-  from a stored prebuild or an image, toolboxes, resources). JSON mode
-  exposes the whole recipe.
+  covers presentation, services and the common recipe fields (boot source,
+  toolboxes, resources). JSON mode exposes the whole recipe.
+- **Boot source** (`StarterBootSource`; the recipe mapping is the pure,
+  tested `lib/starter-recipe.ts`) is two modes, matching how a recipe
+  is actually shaped (§4.1): **a stored prebuild** — pick any prebuild from
+  `GET /v1/prebuilds` (labelled by `prebuildTitle`, so a multi-repo dev
+  prebuild reads as `a + b` / `a + N more`), with a read-only summary of the
+  repos it clones (`prebuildRepoLabel` + clone path) and its base image;
+  follows the prebuild's own updates when it has a `spec` (`recipe.prebuild`
+  set), else pins the snapshot ref (`recipe.source.snapshot`) for a hand-made
+  snapshot with no spec — or **set it up here** — a base image plus **any
+  number of git repositories** (URL, branch, clone path) and ordered setup
+  steps, run from the home directory. With no repos and no steps this is
+  just a plain image boot (`recipe.source`, no `recipe.prebuild`); with
+  either, it's a full inline `PrebuildSpec` (`recipe.prebuild`, mirrored into
+  `recipe.source`) — the same shape Settings → Prebuilds authors, just
+  authored inline. A "Customize" action copies a selected stored prebuild's
+  spec into the second mode as a one-off starting point. "Create a Launchpad
+  starter" from a stored prebuild (`/settings/launchpad/new?prebuild=<ref>`)
+  seeds the first mode with that prebuild, title `Work on <prebuildTitle>`.
+
+- **Dev servers become tools.** A prebuild declares its projects' dev
+  servers in the toolbox scheme (`processes` + `ports`, several for a
+  monorepo), on a stored prebuild or in "Set it up here". Its public ports
+  are suggested first when adding a tool: point a "Preview" tile at one,
+  and opening it starts the (lazy) dev server.
 
 ## 5. API
 
@@ -176,13 +201,25 @@ GET    /api/launchpad/workspaces                caller's workspaces + phase
 GET    /api/launchpad/workspaces/:id            + resolved services (live readiness)
 PATCH  /api/launchpad/workspaces/:id            { title?, description? }
 POST   /api/launchpad/workspaces/:id/sleep      pause
-POST   /api/launchpad/workspaces/:id/wake       resume (+ git creds refresh + autostart)
+POST   /api/launchpad/workspaces/:id/wake       resume (+ git creds refresh)
 POST   /api/launchpad/workspaces/:id/retry      resume in place, or relaunch (same launch authz)
 DELETE /api/launchpad/workspaces/:id            destroy sandbox + row (already gone = fine)
 ```
 
 ## 6. Known limits (v1)
 
+- **Repos are cloned at bake time with the launcher's GitHub token.** A
+  starter's inline `recipe.prebuild.repos` clone exactly like a Settings →
+  Prebuilds repo: the launcher who first bakes it (or triggers a rebake
+  after a push) needs read access to every repo it lists, via their own
+  GitHub token — the same seam `createSandboxForUser` already resolves
+  prebuilds through (`apps/server/src/api/v1.routes.ts`). Clones are shallow
+  (`git clone --depth 1`), and the content key includes each repo's current
+  remote HEAD, so a push busts the cache and the next launch re-bakes
+  (`apps/server/src/runtime/runtime.service.ts`). Once booted, every sandbox
+  gets its own github.com credential helper + ssh→https rewrite
+  (`git-attribution.ts`), so `git pull`/`git push` from inside the workspace
+  work with the CURRENT user's token, independent of who baked it.
 - **Org secrets resolve against the launcher's first org** (the existing
   `resolveOrgId` Phase 0 simplification). An org starter launched by a
   member of several orgs can pick up the wrong org's secrets and policy
@@ -194,10 +231,10 @@ DELETE /api/launchpad/workspaces/:id            destroy sandbox + row (already g
   embed/external per tool, and "open in a new tab" is always offered.
   Embedded frames are sandboxed without top-navigation: an author-chosen
   URL can't navigate the Launchpad away.
-- **Autostart starts gating processes only.** It uses the same set as the
-  console's service gate (`gatingProcessNames`). A tool whose web process
-  needs a sibling started first relies on that process's `after`
-  dependency (see `design/ui-evolution.md` §3.3, pi-web).
+- **Opening a tool starts its gating processes only** (`gatingProcessNames`,
+  the runtime's rule). A tool whose web process needs a sibling started
+  first relies on that process's `after` dependency (see
+  `design/ui-evolution.md` §3.3, pi-web).
 
 ## 7. Follow-ups
 

@@ -2,7 +2,6 @@ import { LAUNCHPAD_ICONS, type LaunchpadService } from "@atelier/spec";
 import { AppWindow, ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { useId } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -124,7 +123,6 @@ function ServiceRow({
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }) {
-  const id = useId();
   const isPort = "port" in service.target;
 
   return (
@@ -261,24 +259,6 @@ function ServiceRow({
             onChange={(open) => onChange({ ...service, open })}
           />
         </div>
-        {isPort ? (
-          <label
-            htmlFor={`${id}-autostart`}
-            className="flex items-center gap-2 text-sm"
-          >
-            <Checkbox
-              id={`${id}-autostart`}
-              checked={service.autostart !== false}
-              onChange={(e) =>
-                onChange({
-                  ...service,
-                  autostart: e.target.checked ? undefined : false,
-                })
-              }
-            />
-            Start it automatically
-          </label>
-        ) : null}
         <NativeSelect
           aria-label="Icon"
           value={service.icon ?? ""}

@@ -1,7 +1,7 @@
 import { type PrebuildRecord, prebuildJobTarget } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Layers, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Pencil, Plus, RefreshCw, Rocket, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
   prebuildsListQuery,
@@ -10,6 +10,7 @@ import {
 } from "@/api/queries/prebuilds";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { JobStatus } from "@/components/job-status";
+import { PrebuildContents } from "@/components/prebuild-contents";
 import { RepoCatalogCard } from "@/components/repos/repo-catalog-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime, prebuildTitle } from "@/lib/formatters";
+import {
+  formatRelativeTime,
+  prebuildTitle,
+  rebuildTitle,
+} from "@/lib/formatters";
 
 export const Route = createFileRoute("/settings/prebuilds/")({
   component: PrebuildsPage,
@@ -134,10 +139,9 @@ function StoredPrebuildRow({
   const spec = prebuild.spec;
   const title = prebuildTitle(prebuild);
   return (
-    <div className="flex flex-col gap-1 rounded-md border p-3">
+    <div className="flex flex-col gap-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Layers className="size-4 shrink-0 text-muted-foreground" />
-        <span className="truncate text-sm font-medium">{title}</span>
+        <PrebuildContents prebuild={prebuild} className="flex-1" />
         <JobStatus
           kind="prebuild"
           target={spec ? prebuildJobTarget(spec) : undefined}
@@ -148,6 +152,16 @@ function StoredPrebuildRow({
           {formatRelativeTime(prebuild.createdAt)}
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link
+              to="/settings/launchpad/new"
+              search={{ owner: "user", prebuild: prebuild.ref }}
+              title="Create a Launchpad starter that boots from this prebuild"
+            >
+              <Rocket />
+              Launchpad starter
+            </Link>
+          </Button>
           {spec ? (
             <>
               <Button asChild variant="outline" size="sm">
@@ -163,6 +177,7 @@ function StoredPrebuildRow({
                 variant="outline"
                 size="sm"
                 loading={runPrebuild.isPending}
+                title={rebuildTitle(prebuild)}
                 onClick={() =>
                   runPrebuild.mutate({ spec, force: true, label: title })
                 }

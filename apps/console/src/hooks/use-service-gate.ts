@@ -39,8 +39,14 @@ export function useServiceGate(
   url: (Pick<SandboxUrl, "processes" | "ready"> & { url?: string }) | undefined,
   options: {
     /** Replace the default start (the developer-console process action,
-     * which toasts per process) — e.g. the Launchpad's quiet start. */
-    startProcesses?: (names: string[]) => void;
+     * which toasts per process) — e.g. the Launchpad's quiet start. A
+     * rejected promise re-enables `start` (the start failed). */
+    startProcesses?: (names: string[]) => Promise<unknown>;
+    /** Opening the service IS its first access (a lazy process's trigger):
+     * start it on mount instead of waiting for a click. Tried once per
+     * service; if that start fails, `start` is the retry. The Launchpad,
+     * whose users shouldn't have to find a Start button. */
+    startOnOpen?: boolean;
   } = {},
 ): ServiceGate {
   const processAction = useProcessAction(sandboxId);
@@ -55,6 +61,7 @@ export function useServiceGate(
   const [starting, setStarting] = useState(false);
   const [graced, setGraced] = useState(false);
   const gracedForRef = useRef<string | undefined>(undefined);
+  const openedForRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (gatingKey === "") return;
@@ -76,7 +83,7 @@ export function useServiceGate(
     if (gating.length === 0 || ready || starting) return;
     setStarting(true);
     if (options.startProcesses) {
-      options.startProcesses(gating);
+      options.startProcesses(gating).catch(() => setStarting(false));
       return;
     }
     for (const name of gating) {
@@ -84,16 +91,34 @@ export function useServiceGate(
     }
   }
 
+  // Start-on-open: once per service (keyed by its url), never in a loop.
+  const openKey = `${url?.url ?? ""}|${gatingKey}`;
+  const opening =
+    options.startOnOpen === true &&
+    gating.length > 0 &&
+    !ready &&
+    openedForRef.current !== openKey;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `start` is recreated every render; keyed on the service instead
+  useEffect(() => {
+    // The ref, not the render-time flag: a re-run (StrictMode's double
+    // effect in dev) must not start twice.
+    if (!opening || openedForRef.current === openKey) return;
+    openedForRef.current = openKey;
+    start();
+  }, [opening, openKey]);
+
   if (gating.length === 0) {
     return { status: "pass-through", canMount: true, start, starting: false };
   }
   if (ready && graced) {
     return { status: "ready", canMount: true, start, starting: false };
   }
+  // About to start on open counts as starting: no Start-button flash.
+  const busy = starting || opening || (ready && !graced);
   return {
-    status: starting || (ready && !graced) ? "starting" : "stopped",
+    status: busy ? "starting" : "stopped",
     canMount: false,
     start,
-    starting: starting || (ready && !graced),
+    starting: busy,
   };
 }

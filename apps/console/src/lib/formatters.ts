@@ -1,6 +1,7 @@
 import {
   type PrebuildRecord,
-  prebuildRepoBranch,
+  type PrebuildRepo,
+  prebuildRepos,
   repoShortName,
 } from "@atelier/spec";
 
@@ -34,9 +35,45 @@ export function repoBranchLabel(name: string, branch?: string): string {
   return branch ? `${name}#${branch}` : name;
 }
 
-/** Title for a stored prebuild: `owner/name` (+ `#branch`) for repo
- * prebuilds, falling back to the snapshot ref for image-only ones. */
+/** `1 repo`, `3 repos`: a count with its (regular) plural noun. */
+export function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** `, with 2 other repos` when `prebuild` clones repos besides the one the
+ * user picked (spawning or rebuilding it brings them along), else "". */
+export function otherReposNote(prebuild: PrebuildRecord | undefined): string {
+  const others = prebuild ? prebuildRepos(prebuild).length - 1 : 0;
+  return others > 0 ? `, with ${countLabel(others, "other repo")}` : "";
+}
+
+/** `owner/name#branch` for one repo a prebuild clones. */
+export function prebuildRepoLabel(repo: PrebuildRepo): string {
+  return repoBranchLabel(repoShortName(repo.url), repo.branch);
+}
+
+/** Title for a stored prebuild, from the repos it clones (every one counts,
+ * see `prebuildRepos`): one repo reads `owner/name#branch`, several read
+ * `a + b` or `a + 2 more`. A prebuild that clones nothing is named by its
+ * base image, and a hand-made snapshot (no spec) by its ref. Never from the
+ * opaque `metadata`. */
 export function prebuildTitle(prebuild: PrebuildRecord): string {
-  const { url, branch } = prebuildRepoBranch(prebuild);
-  return url ? repoBranchLabel(repoShortName(url), branch) : prebuild.ref;
+  const labels = prebuildRepos(prebuild).map(prebuildRepoLabel);
+  const [first, second] = labels;
+  if (first === undefined) {
+    const source = prebuild.spec?.source;
+    return source && "image" in source ? source.image : prebuild.ref;
+  }
+  if (labels.length === 1) return first;
+  if (labels.length === 2) return `${first} + ${second}`;
+  return `${first} + ${labels.length - 1} more`;
+}
+
+/** The Rebuild button's tooltip: a multi-repo prebuild re-bakes every repo
+ * it clones, not just the one a row is about. */
+export function rebuildTitle(prebuild: PrebuildRecord | undefined): string {
+  const count = prebuild ? prebuildRepos(prebuild).length : 0;
+  return count > 1
+    ? `Rebuilds all ${count} repos of this prebuild from their latest commits`
+    : "Rebuild from the latest commit";
 }

@@ -11,7 +11,9 @@ import {
   type AddPortRequest,
   type AddProcessRequest,
   type CreateSandboxResponse,
+  canonicalJson,
   type ExecRequest,
+  gatingProcessNames,
   isSecretRef,
   type PatchEnvRequest,
   type PatchFilesRequest,
@@ -20,6 +22,7 @@ import {
   type PrebuildSpec,
   type ProcessStatus,
   type ResumeRequest,
+  runtimeSurfaceOf,
   type SandboxSpec,
   type SandboxState,
   type SandboxSummary,
@@ -52,7 +55,6 @@ import { specToAgentConfig } from "./agent-config.ts";
 import { createSandboxBackend, type SandboxBackend } from "./backend/index.ts";
 import type { BootOutput } from "./boot.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
-import { gatingProcessNames } from "./ports.ts";
 import {
   ImageNotAvailableError,
   ImageRegistryService,
@@ -175,6 +177,7 @@ export class RuntimeService {
     if (!options.force) {
       const existing = this.snapshots.getByHash(hash);
       if (existing) {
+        this.refreshRuntimeSurface(existing, spec);
         return { ref: existing.ref, hash, parent: existing.parent };
       }
     }
@@ -196,6 +199,34 @@ export class RuntimeService {
     });
     this.inflightPrebuilds.set(hash, run);
     return run;
+  }
+
+  /**
+   * A cache hit's spec may differ from the stored one in what the key leaves
+   * out. Keep its runtime surface (`processes`/`ports`, applied at boot — see
+   * `prebuildSpec`) current on the stored record, so editing it takes effect
+   * on the next spawn without a re-bake.
+   */
+  private refreshRuntimeSurface(
+    existing: SnapshotRecord,
+    spec: PrebuildSpec,
+  ): void {
+    if (!existing.spec) return;
+    const surface = runtimeSurfaceOf(spec);
+    if (
+      canonicalJson(runtimeSurfaceOf(existing.spec)) === canonicalJson(surface)
+    ) {
+      return;
+    }
+    const { processes: _p, ports: _q, ...baked } = existing.spec;
+    this.snapshots.put({ ...existing, spec: { ...baked, ...surface } });
+    log.info({ ref: existing.ref }, "prebuild processes/ports updated");
+  }
+
+  /** The recipe a stored prebuild was baked from, or `undefined` for any
+   * other snapshot (pause, manual) or an unknown ref. */
+  prebuildSpec(ref: string): PrebuildSpec | undefined {
+    return this.snapshots.get(ref)?.spec;
   }
 
   /** List stored prebuild snapshots, newest first — the read side of

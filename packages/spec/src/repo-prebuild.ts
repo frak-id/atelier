@@ -10,6 +10,7 @@
  * prebuild is missing, and a job label that drifts from the client's
  * correlation key silently hides the live "building" badge.
  */
+import { canonicalJson } from "./canonical-json.ts";
 import type {
   PrebuildRecord,
   PrebuildRepo,
@@ -80,31 +81,33 @@ export function prebuildJobTarget(spec: PrebuildSpec): string {
   return "image" in spec.source ? spec.source.image : spec.source.snapshot;
 }
 
-/** The repo + branch a prebuild targets. The spec's first repo is
- * authoritative; the opaque `metadata.repo`/`metadata.branch` that clients
- * stamp is the fallback. */
-export function prebuildRepoBranch(record: PrebuildRecord): {
-  url?: string;
-  branch?: string;
-} {
-  const repo: PrebuildRepo | undefined = record.spec?.repos?.[0];
-  const url = repo?.url ?? record.metadata?.repo ?? record.metadata?.workspace;
-  const branch = repo?.branch ?? record.metadata?.branch;
-  return { url, branch: branch?.trim() || undefined };
+/** Every repo a prebuild clones, in clone order. Read from its spec only: a
+ * hand-made snapshot (no spec) clones nothing we know of. `metadata` is an
+ * opaque client pass-through and never identifies a repo. */
+export function prebuildRepos(
+  record: Pick<PrebuildRecord, "spec">,
+): PrebuildRepo[] {
+  return record.spec?.repos ?? [];
 }
 
-/** Every stored prebuild whose primary repo is `url`, on any branch. Keeps
- * the input order, and `GET /v1/prebuilds` is newest-first, so `[0]` is the
- * most recent bake. */
+/** The prebuild's clone of `url` (by `repoKey`), wherever it sits among its
+ * repos, or `undefined` when it doesn't clone that repo. */
+export function prebuildRepoFor(
+  record: Pick<PrebuildRecord, "spec">,
+  url: string,
+): PrebuildRepo | undefined {
+  const want = repoKey(url);
+  return prebuildRepos(record).find((repo) => repoKey(repo.url) === want);
+}
+
+/** Every stored prebuild that clones `url`, on any branch and at any
+ * position (a multi-repo dev prebuild counts). Keeps the input order, and
+ * `GET /v1/prebuilds` is newest-first, so `[0]` is the most recent bake. */
 export function findRepoPrebuilds(
   records: readonly PrebuildRecord[],
   url: string,
 ): PrebuildRecord[] {
-  const want = repoKey(url);
-  return records.filter((record) => {
-    const rb = prebuildRepoBranch(record);
-    return rb.url !== undefined && repoKey(rb.url) === want;
-  });
+  return records.filter((record) => prebuildRepoFor(record, url) !== undefined);
 }
 
 /**
@@ -124,10 +127,12 @@ export function normalizeBranch(
 }
 
 /**
- * The most recent prebuild covering `url` on `branch`. An omitted branch
- * (on either the query or the record) means "the default branch". When the
- * caller knows the repo's `defaultBranch`, an explicit `main` and an omitted
- * branch are treated as equal. Without that hint only exact matches count.
+ * The prebuild to boot for `url` on `branch`. An omitted branch (on either
+ * the query or the record's clone of the repo) means "the default branch".
+ * When the caller knows the repo's `defaultBranch`, an explicit `main` and an
+ * omitted branch are treated as equal. Without that hint only exact matches
+ * count. A prebuild that clones only this repo (a quick repo prebuild) wins
+ * over a multi-repo one that also clones it; newest first within each.
  */
 export function findRepoBranchPrebuild(
   records: readonly PrebuildRecord[],
@@ -136,10 +141,13 @@ export function findRepoBranchPrebuild(
   defaultBranch?: string,
 ): PrebuildRecord | undefined {
   const want = normalizeBranch(branch, defaultBranch);
-  return findRepoPrebuilds(records, url).find(
+  const matches = findRepoPrebuilds(records, url).filter(
     (record) =>
-      normalizeBranch(prebuildRepoBranch(record).branch, defaultBranch) ===
+      normalizeBranch(prebuildRepoFor(record, url)?.branch, defaultBranch) ===
       want,
+  );
+  return (
+    matches.find((record) => prebuildRepos(record).length === 1) ?? matches[0]
   );
 }
 
@@ -218,14 +226,12 @@ interface RepoPrebuildInput {
 }
 
 /** Assemble a single-repo PrebuildSpec: boot from `image`, clone
- * `repo@branch` into `clonePath`, run the repo-scoped build steps, and
- * stamp `repo`/`branch` metadata so listings can recognize it later. */
+ * `repo@branch` into `clonePath` and run the repo-scoped build steps.
+ * Listings recognize it by its `repos`, so no metadata is stamped. */
 export function buildRepoPrebuildSpec(input: RepoPrebuildInput): PrebuildSpec {
   const repo = input.repo.trim();
   const branch = input.branch?.trim() || undefined;
   const clonePath = input.clonePath?.trim() || repoCloneName(repo);
-  const metadata: Record<string, string> = { repo };
-  if (branch) metadata.branch = branch;
   const build = (input.build ?? [])
     .map((s) => s.trim())
     .filter(Boolean)
@@ -234,6 +240,28 @@ export function buildRepoPrebuildSpec(input: RepoPrebuildInput): PrebuildSpec {
     source: { image: input.image },
     repos: [{ url: repo, ...(branch ? { branch } : {}), clonePath }],
     ...(build.length > 0 ? { build } : {}),
-    metadata,
   };
+}
+
+// ── runtime surface ─────────────────────────────────────────────────────────
+
+/** The spec as it bakes: without the runtime surface (`processes`/`ports`),
+ * which is applied at boot and never enters the snapshot key. */
+function bakedPart(
+  spec: PrebuildSpec,
+): Omit<PrebuildSpec, "processes" | "ports"> {
+  const { processes: _processes, ports: _ports, ...baked } = spec;
+  return baked;
+}
+
+/** An edit to `before` that only changes its processes/ports: it bakes the
+ * same snapshot, so it saves without a rebuild. */
+export function runtimeOnlyEdit(
+  before: PrebuildSpec,
+  after: PrebuildSpec,
+): boolean {
+  return (
+    canonicalJson(bakedPart(before)) === canonicalJson(bakedPart(after)) &&
+    canonicalJson(before) !== canonicalJson(after)
+  );
 }

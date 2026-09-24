@@ -5,6 +5,7 @@ import type { CreateSandboxResponse, PrebuildRecord } from "@atelier/spec";
 import {
   findRepoBranchPrebuild,
   findRepoPrebuilds,
+  prebuildRepoFor,
   repoCloneName,
   repoShortName,
 } from "@atelier/spec/repo-prebuild";
@@ -84,8 +85,10 @@ async function findRepoBoot(
     // Else the newest bake of this repo on any branch.
     const match = exact ?? findRepoPrebuilds(rows, gitRepo.url)[0];
     if (!match) return null;
+    // Where THIS repo is cloned: a multi-repo prebuild may clone it second.
     const clonePath =
-      match.spec?.repos?.[0]?.clonePath ?? repoCloneName(gitRepo.url);
+      prebuildRepoFor(match, gitRepo.url)?.clonePath ??
+      repoCloneName(gitRepo.url);
     return { prebuild: match, branchMatch: Boolean(exact), clonePath };
   } catch {
     return null;

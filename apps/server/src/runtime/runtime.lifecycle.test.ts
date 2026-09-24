@@ -251,3 +251,56 @@ describe("RuntimeService lifecycle", () => {
     expect(sandboxes.get("sb1")?.status).toBe("running");
   });
 });
+
+describe("prebuild processes/ports", () => {
+  const baked = {
+    source: { image: "registry.test/base:1" },
+    repos: [{ url: "https://github.com/acme/mono", clonePath: "mono" }],
+    build: ["cd mono && bun install"],
+  };
+  // A monorepo: two dev servers, the toolbox scheme.
+  const surface = {
+    processes: [
+      {
+        name: "web",
+        command: "bun run dev",
+        cwd: "/home/dev/mono/apps/web",
+        lazy: true,
+      },
+      {
+        name: "api",
+        command: "bun run dev",
+        cwd: "/home/dev/mono/apps/api",
+        lazy: true,
+      },
+    ],
+    ports: [
+      { name: "web", port: 5173, public: true },
+      { name: "api", port: 3000, public: true },
+    ],
+  };
+
+  test("never enter the snapshot key; a cache hit keeps them current", async () => {
+    const { runtime } = makeRuntime();
+    const first = await runtime.prebuild(baked);
+    // Same snapshot: adding (or editing) processes/ports doesn't re-bake…
+    const second = await runtime.prebuild({ ...baked, ...surface });
+    expect(second).toEqual(first);
+    // …but the stored recipe, applied at boot, now carries them.
+    const stored = runtime.prebuildSpec(first.ref);
+    expect(stored?.processes).toEqual(surface.processes);
+    expect(stored?.ports).toEqual(surface.ports);
+    expect(stored?.build).toEqual(baked.build);
+    // Removing them sticks too.
+    await runtime.prebuild(baked);
+    expect(runtime.prebuildSpec(first.ref)?.ports).toBeUndefined();
+    expect(runtime.listPrebuilds()).toHaveLength(1);
+  });
+
+  test("prebuildSpec is undefined for a pause snapshot", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.create(spec, { id: "sb1" });
+    const snap = await runtime.pause("sb1");
+    expect(runtime.prebuildSpec(snap.ref)).toBeUndefined();
+  });
+});

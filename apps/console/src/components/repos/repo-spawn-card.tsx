@@ -29,7 +29,11 @@ import {
   useRepoCatalog,
   useRepoInspection,
 } from "@/hooks/use-repo-catalog";
-import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
+import {
+  formatRelativeTime,
+  otherReposNote,
+  repoBranchLabel,
+} from "@/lib/formatters";
 import { activeJobForBranch } from "@/lib/repo-catalog";
 import { cn } from "@/lib/utils";
 import { RepoIdentity } from "./repo-identity";
@@ -358,6 +362,7 @@ function SelectedRepo({
 
       <SpawnPlan
         matchedAt={matched?.createdAt}
+        otherRepos={otherReposNote(matched)}
         building={buildingThis}
         steps={inspection.suggestedBuild}
         stepsPending={!stepsReady}
@@ -398,11 +403,15 @@ function SelectedRepo({
  * will roughly take. */
 function SpawnPlan({
   matchedAt,
+  otherRepos,
   building,
   steps,
   stepsPending,
 }: {
   matchedAt?: string;
+  /** `otherReposNote` of the matched prebuild: spawning it brings the
+   * other repos it clones along too. */
+  otherRepos: string;
   building: boolean;
   steps?: string[];
   stepsPending: boolean;
@@ -411,7 +420,8 @@ function SpawnPlan({
     return (
       <p className="flex items-start gap-2 rounded-md border border-success/30 bg-success/10 p-2.5 text-sm text-success">
         <Zap className="mt-0.5 size-4 shrink-0" />
-        Boots instantly from the prebuild built {formatRelativeTime(matchedAt)}.
+        Boots instantly from the prebuild built {formatRelativeTime(matchedAt)}
+        {otherRepos}.
       </p>
     );
   }

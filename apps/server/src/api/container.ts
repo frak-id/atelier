@@ -6,6 +6,7 @@
 import type {
   PortEntry,
   ProcessEntry,
+  RuntimeSurface,
   ToolboxConfig,
   ToolboxOwner,
   ToolsetRef,
@@ -412,7 +413,7 @@ export function resolveToolboxHarness(
 /**
  * Collect the processes + ports every toolbox applied to this spawn
  * contributes (entities-toolbox.md). A toolbox is not just files: it can carry
- * a tool's *running surface* — vscode's `code-server` process + its port, or
+ * a tool's *runtime surface* — vscode's `code-server` process + its port, or
  * the browser stack's kasmvnc/openbox/chromium (binaries baked into the
  * dev-browser base image, so no `build`/`paths`; a browserless base like
  * dev-base won't have them). `refs` is the full applied set (auto-injected
@@ -421,7 +422,7 @@ export function resolveToolboxHarness(
 export function resolveToolboxSurface(
   container: ServerContainer,
   refs: { ref: string }[],
-): { processes: ProcessEntry[]; ports: PortEntry[] } {
+): Required<RuntimeSurface> {
   const processes: ProcessEntry[] = [];
   const ports: PortEntry[] = [];
   const seen = new Set<string>();

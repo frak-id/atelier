@@ -3,7 +3,7 @@
 import type { PrebuildRecord, PrebuildSpec } from "@atelier/spec";
 import {
   findRepoBranchPrebuild,
-  prebuildRepoBranch,
+  prebuildRepos,
   repoShortName,
 } from "@atelier/spec/repo-prebuild";
 import pc from "picocolors";
@@ -16,11 +16,17 @@ import { createPrebuildInteractive } from "../prebuild-create.ts";
 import { runPrebuild } from "../sandbox.ts";
 import { BACK } from "./common.ts";
 
-/** A one-line summary for a prebuild: repo@branch · build age · base image. */
+/** A one-line summary for a prebuild: every repo it clones (repo@branch),
+ * build age, base image. */
 export function prebuildHint(p: PrebuildRecord): string {
-  const { url: repo, branch } = prebuildRepoBranch(p);
-  const parts: string[] = [];
-  if (repo) parts.push(repoShortName(repo) + (branch ? `@${branch}` : ""));
+  const parts = prebuildRepos(p).map(
+    (r) => repoShortName(r.url) + (r.branch ? `@${r.branch}` : ""),
+  );
+  // Its dev servers: the ports a sandbox booted from it serves.
+  const served = (p.spec?.ports ?? []).filter((port) => port.public);
+  if (served.length > 0) {
+    parts.push(`serves ${served.map((s) => `${s.name}:${s.port}`).join(", ")}`);
+  }
   parts.push(`built ${age(p.createdAt)} ago`);
   if (p.image) parts.push(p.image);
   return parts.join(" · ");

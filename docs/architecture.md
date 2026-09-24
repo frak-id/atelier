@@ -105,6 +105,19 @@ Prebuilds run expensive initialization (git clone, dependency install, build)
 **once** and snapshot the PVC as a CSI VolumeSnapshot via TopoLVM. Subsequent
 sandboxes clone from this snapshot instantly via copy-on-write and boot fresh.
 
+A prebuild can clone any number of repos and declare its projects' dev
+servers as a **runtime surface in the toolbox scheme**
+(`packages/spec/src/runtime-surface.ts`): `processes` + `ports` (several
+for a monorepo), each process `lazy` or not. It's runtime content, not
+snapshot content: it never enters the content key (editing it never
+re-bakes, and a cache hit refreshes it on the stored record). Every sandbox
+that boots from the prebuild gets it, layered by name at the
+`createSandboxForUser` seam (`api/spawn-surface.ts`): the prebuild's, then
+its toolboxes' (a toolbox beats a same-name prebuild entry, with a
+warning), then the spec's own. A `lazy` process starts on first access: the
+developer console's service gate, and the Launchpad, where opening a tool
+is that access.
+
 ### Toolsets (content-addressed tool delivery)
 
 Tools like code-server, opencode, and org-defined toolboxes are **not**

@@ -9,6 +9,7 @@ import {
   useUpdateStarter,
 } from "@/api/queries/launchpad";
 import { StarterVisualForm } from "@/components/launchpad/starter-form";
+import { repoProblems } from "@/components/repos-field";
 import {
   type SpecEditorApi,
   SpecEditorShell,
@@ -16,22 +17,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDefaultImage } from "@/hooks/use-repo-catalog";
 import { parseStarterInput } from "@/lib/spec";
+import { blankStarterInput } from "@/lib/starter-recipe";
 
-function toInput(starter: StarterRecord | undefined, image: string) {
-  if (!starter) {
-    return {
-      title: "",
-      description: "",
-      icon: "sparkles",
-      guide: "",
-      published: true,
-      recipe: {
-        source: { image },
-        resources: { vcpus: 2, memoryMb: 4096 },
-      },
-      services: [],
-    } satisfies StarterInput;
-  }
+function toInput(
+  starter: StarterRecord | undefined,
+  image: string,
+  initial: StarterInput | undefined,
+) {
+  if (!starter) return initial ?? blankStarterInput(image);
   return {
     title: starter.title,
     description: starter.description,
@@ -51,6 +44,7 @@ function formProblems(input: StarterInput): string[] {
   if ("image" in source && !source.image.trim() && !input.recipe.prebuild) {
     problems.push("Pick what the workspace boots from.");
   }
+  problems.push(...repoProblems(input.recipe.prebuild?.repos ?? []));
   for (const service of input.services) {
     if (!service.label.trim()) problems.push("Every tool needs a label.");
     if ("port" in service.target && !service.target.port.trim()) {
@@ -65,6 +59,27 @@ function formProblems(input: StarterInput): string[] {
   return [...new Set(problems)];
 }
 
+/** Drop blank setup steps and blank-URL repo rows before saving (the JSON
+ * mode can hold them too) — a stray blank line or a half-added repo isn't
+ * a validation error, just noise to discard. */
+function cleanInput(input: StarterInput): StarterInput {
+  const { prebuild } = input.recipe;
+  if (!prebuild) return input;
+  const build = prebuild.build?.map((s) => s.trim()).filter(Boolean) ?? [];
+  const repos = prebuild.repos?.filter((r) => r.url.trim()) ?? [];
+  return {
+    ...input,
+    recipe: {
+      ...input.recipe,
+      prebuild: {
+        ...prebuild,
+        build: build.length > 0 ? build : undefined,
+        repos: repos.length > 0 ? repos : undefined,
+      },
+    },
+  };
+}
+
 /**
  * Author a Launchpad starter: what a non-technical user sees (title, icon,
  * description, guide), what boots (prebuild or image + toolboxes +
@@ -77,9 +92,13 @@ function formProblems(input: StarterInput): string[] {
 export function StarterEditor({
   starter,
   owner,
+  initial,
 }: {
   starter?: StarterRecord;
   owner: string;
+  /** Seeds a new starter's input (e.g. from `?prebuild=<ref>`); ignored when
+   * editing an existing starter. */
+  initial?: StarterInput;
 }) {
   const navigate = useNavigate();
   const defaultImage = useDefaultImage();
@@ -87,14 +106,19 @@ export function StarterEditor({
   const update = useUpdateStarter();
   const launch = useLaunchStarter();
   const [input, setInput] = useState<StarterInput>(() =>
-    toInput(starter, defaultImage),
+    toInput(starter, defaultImage, initial),
   );
   const [problems, setProblems] = useState<string[]>([]);
+  // The dev servers' JSON validates locally: block Save while it doesn't
+  // parse, so a stale value is never saved.
+  const [visualValid, setVisualValid] = useState(true);
   const pending = create.isPending || update.isPending;
 
   function handleSave(api: SpecEditorApi<StarterInput>) {
-    const value = api.resolve();
-    if (!value) return;
+    if (api.mode === "visual" && !visualValid) return;
+    const resolved = api.resolve();
+    if (!resolved) return;
+    const value = cleanInput(resolved);
     const found = formProblems(value);
     setProblems(found);
     if (found.length > 0) return;
@@ -141,7 +165,11 @@ export function StarterEditor({
         onSpecChange={setInput}
         parse={parseStarterInput}
         renderVisual={(spec, onChange) => (
-          <StarterVisualForm spec={spec} onChange={onChange} />
+          <StarterVisualForm
+            spec={spec}
+            onChange={onChange}
+            onValidityChange={setVisualValid}
+          />
         )}
         footer={(api) => (
           <>
@@ -154,7 +182,7 @@ export function StarterEditor({
             </Button>
             <Button
               type="button"
-              disabled={pending}
+              disabled={pending || (api.mode === "visual" && !visualValid)}
               onClick={() => handleSave(api)}
             >
               {pending ? <Loader2 className="animate-spin" /> : null}

@@ -1,10 +1,12 @@
-import type { PrebuildRepo, PrebuildSpec, Source } from "@atelier/spec";
+import { type PrebuildSpec, runtimeOnlyEdit, type Source } from "@atelier/spec";
 import { useNavigate } from "@tanstack/react-router";
-import { Hammer, Loader2, Plus, Trash2 } from "lucide-react";
+import { Hammer, Loader2, Save } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRunPrebuild } from "@/api/queries/prebuilds";
 import { ImageSourcePicker } from "@/components/image-source-picker";
+import { ReposField, repoProblems } from "@/components/repos-field";
+import { RuntimeSurfaceField } from "@/components/runtime-surface-field";
 import {
   type SpecEditorApi,
   SpecEditorShell,
@@ -17,7 +19,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { parsePrebuildSpec } from "@/lib/spec";
 
@@ -30,16 +31,6 @@ function linesToArray(text: string): string[] {
 
 function arrayToLines(values: string[] | undefined): string {
   return (values ?? []).join("\n");
-}
-
-/** `git@host:org/repo.git` or `https://host/org/repo(.git)?` → `repo`. Best
- * effort only — the smart clonePath default, never a hard requirement (the
- * user can always type over it). */
-function repoNameFromUrl(url: string): string {
-  const trimmed = url.trim().replace(/\/+$/, "");
-  if (!trimmed) return "";
-  const lastSegment = trimmed.split(/[/:]/).pop() ?? "";
-  return lastSegment.replace(/\.git$/i, "");
 }
 
 const EMPTY_SPEC: PrebuildSpec = { source: { image: "" } };
@@ -73,22 +64,34 @@ export function PrebuildEditor({ spec: initialSpec }: { spec?: PrebuildSpec }) {
   const runPrebuild = useRunPrebuild();
   const [spec, setSpec] = useState<PrebuildSpec>(initialSpec ?? EMPTY_SPEC);
   const isEditing = initialSpec !== undefined;
+  /** Only processes/ports changed: same snapshot, nothing to rebuild. */
+  const surfaceOnly = (next: PrebuildSpec) =>
+    initialSpec !== undefined && runtimeOnlyEdit(initialSpec, next);
+  // The processes/ports JSON fields validate locally: block Run while one
+  // doesn't parse, so a stale value is never sent.
+  const [visualValid, setVisualValid] = useState(true);
+
+  // The footer's label and the run judge the same (cleaned) spec.
+  const savesOnly = surfaceOnly(cleanSpec(spec));
 
   function handleRun(api: SpecEditorApi<PrebuildSpec>) {
+    if (api.mode === "visual" && !visualValid) return;
     const value = api.resolve();
     if (!value) return;
     if (!sourceRef(value.source).trim()) {
       toast.error("Pick a base image or chain a prebuild snapshot.");
       return;
     }
-    // Drop half-typed repo rows (a blank url is meaningless) before running.
-    const repos = value.repos?.filter((repo) => repo.url.trim());
-    const cleaned: PrebuildSpec = {
-      ...value,
-      repos: repos && repos.length > 0 ? repos : undefined,
-    };
+    const cleaned = cleanSpec(value);
+    const problem = repoProblems(cleaned.repos ?? [])[0];
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     runPrebuild.mutate(
-      { spec: cleaned, force: isEditing },
+      // Editing re-bakes on purpose (force), unless only processes/ports
+      // changed: they apply at boot, and the cache hit stores them.
+      { spec: cleaned, force: isEditing && !surfaceOnly(cleaned) },
       {
         onSuccess: () => {
           navigate({ to: "/settings/prebuilds" });
@@ -104,28 +107,47 @@ export function PrebuildEditor({ spec: initialSpec }: { spec?: PrebuildSpec }) {
       parse={parsePrebuildSpec}
       jsonPlaceholder={JSON_PLACEHOLDER}
       renderVisual={(current, onChange) => (
-        <PrebuildVisualForm spec={current} onChange={onChange} />
+        <PrebuildVisualForm
+          spec={current}
+          onChange={onChange}
+          onValidityChange={setVisualValid}
+        />
       )}
       footer={(api) => (
-        <Button disabled={runPrebuild.isPending} onClick={() => handleRun(api)}>
+        <Button
+          disabled={
+            runPrebuild.isPending || (api.mode === "visual" && !visualValid)
+          }
+          onClick={() => handleRun(api)}
+        >
           {runPrebuild.isPending ? (
             <Loader2 className="animate-spin" />
+          ) : savesOnly ? (
+            <Save />
           ) : (
             <Hammer />
           )}
-          Run prebuild
+          {savesOnly ? "Save (no rebuild)" : "Run prebuild"}
         </Button>
       )}
     />
   );
 }
 
+/** Drop half-typed repo rows (a blank url is meaningless) before running. */
+function cleanSpec(spec: PrebuildSpec): PrebuildSpec {
+  const repos = spec.repos?.filter((repo) => repo.url.trim()) ?? [];
+  return { ...spec, repos: repos.length > 0 ? repos : undefined };
+}
+
 function PrebuildVisualForm({
   spec,
   onChange,
+  onValidityChange,
 }: {
   spec: PrebuildSpec;
   onChange: (spec: PrebuildSpec) => void;
+  onValidityChange: (valid: boolean) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -191,118 +213,50 @@ function PrebuildVisualForm({
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Dev servers</CardTitle>
+          <CardDescription>
+            What every sandbox booted from this prebuild runs: its projects' dev
+            servers and watchers (several for a monorepo), in the toolbox
+            scheme. Applied at boot, so changing them never rebuilds.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RuntimeSurfaceField
+            value={{ processes: spec.processes, ports: spec.ports }}
+            onChange={({ processes, ports }) => {
+              const { processes: _p, ports: _q, ...rest } = spec;
+              onChange({
+                ...rest,
+                ...(processes?.length ? { processes } : {}),
+                ...(ports?.length ? { ports } : {}),
+              });
+            }}
+            onValidityChange={onValidityChange}
+            hint={
+              <>
+                Run as <code>"user": "dev"</code> with a <code>cwd</code> in the
+                clone path. A port is gated by the process of the same name (or
+                whose <code>readiness.port</code> probes it); mark it{" "}
+                <code>"lazy": true</code> to start it on first open. A served
+                app must listen on <code>0.0.0.0</code>.
+              </>
+            }
+            placeholders={{
+              processes:
+                '[{"name":"web","command":"bun run dev","cwd":"/home/dev/app/apps/web","user":"dev","lazy":true,"readiness":{"port":5173}}]',
+              ports:
+                '[{"name":"web","port":5173,"public":true,"auth":"forward"}]',
+            }}
+          />
+        </CardContent>
+      </Card>
+
       <p className="text-xs text-muted-foreground">
         <code>env</code>, <code>files</code> and <code>metadata</code> are
         available in the JSON editor above.
       </p>
-    </div>
-  );
-}
-
-function ReposField({
-  repos,
-  onChange,
-}: {
-  repos: PrebuildRepo[] | undefined;
-  onChange: (repos: PrebuildRepo[]) => void;
-}) {
-  // `repos` (from a visual edit or a JSON→visual switch) is the single source
-  // of truth — no local row state to keep in sync.
-  const rows = repos ?? [];
-
-  function commit(nextRows: PrebuildRepo[]) {
-    onChange(
-      nextRows.map((repo) => {
-        const branch = repo.branch?.trim();
-        return { ...repo, branch: branch ? branch : undefined };
-      }),
-    );
-  }
-
-  function updateRow(index: number, patch: Partial<PrebuildRepo>) {
-    commit(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-  }
-
-  function updateUrl(index: number, url: string) {
-    const row = rows[index];
-    if (!row) return;
-    // Keep auto-filling the clone path from the repo name until the user
-    // types one that diverges from the derived default — no dirty flag needed,
-    // the comparison is stateless and survives every re-render.
-    const shouldAutoFill = row.clonePath === repoNameFromUrl(row.url);
-    updateRow(index, {
-      url,
-      clonePath: shouldAutoFill ? repoNameFromUrl(url) : row.clonePath,
-    });
-  }
-
-  function addRow() {
-    commit([...rows, { url: "", branch: "", clonePath: "" }]);
-  }
-
-  function removeRow(index: number) {
-    commit(rows.filter((_, i) => i !== index));
-  }
-
-  return (
-    <div className="space-y-3">
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No repos yet.</p>
-      ) : (
-        rows.map((row, index) => (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: rows have no stable id; reordering isn't supported
-            key={index}
-            className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-end"
-          >
-            <div className="flex-1 space-y-1">
-              <Label htmlFor={`repo-url-${index}`}>URL</Label>
-              <Input
-                id={`repo-url-${index}`}
-                value={row.url}
-                onChange={(e) => updateUrl(index, e.target.value)}
-                placeholder="https://github.com/org/repo"
-                className="font-mono"
-              />
-            </div>
-            <div className="space-y-1 sm:w-32">
-              <Label htmlFor={`repo-branch-${index}`}>Branch</Label>
-              <Input
-                id={`repo-branch-${index}`}
-                value={row.branch ?? ""}
-                onChange={(e) => updateRow(index, { branch: e.target.value })}
-                placeholder="main"
-                className="font-mono"
-              />
-            </div>
-            <div className="space-y-1 sm:w-48">
-              <Label htmlFor={`repo-clonepath-${index}`}>Clone path</Label>
-              <Input
-                id={`repo-clonepath-${index}`}
-                value={row.clonePath}
-                onChange={(e) =>
-                  updateRow(index, { clonePath: e.target.value })
-                }
-                placeholder="repo-name"
-                className="font-mono"
-              />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={() => removeRow(index)}
-              aria-label="Remove repo"
-            >
-              <Trash2 />
-            </Button>
-          </div>
-        ))
-      )}
-      <Button type="button" variant="outline" size="sm" onClick={addRow}>
-        <Plus />
-        Add repo
-      </Button>
     </div>
   );
 }

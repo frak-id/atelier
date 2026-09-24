@@ -8,7 +8,11 @@
  * not this package).
  */
 import { type Static, Type } from "@sinclair/typebox";
-import { PortSchema, ProcessSchema, SourceSchema } from "./sandbox-spec.ts";
+import {
+  SurfacePortsSchema,
+  SurfaceProcessesSchema,
+} from "./runtime-surface.ts";
+import { SourceSchema } from "./sandbox-spec.ts";
 
 /**
  * Toolbox owner axis (entities-toolbox.md). A toolbox belongs to either an
@@ -64,19 +68,15 @@ export const ToolboxHarnessSchema = Type.String({
 });
 
 /**
- * Processes/ports a toolbox contributes to a spawn's spec (entities-toolbox.md).
- * A toolbox is not just files: it can carry the *running surface* of a tool —
- * e.g. vscode's `code-server` process + its public port, or the browser
- * stack's kasmvnc/openbox/chromium processes (whose binaries are baked into
- * the base image, so `build`/`paths` are empty). Merged into the spec at the
- * api/ seam for every toolbox applied to the spawn (auto-injected or picked).
- * Mark long-running surfaces `lazy: true` so they start on demand from the
- * sandbox UI rather than at boot.
+ * Caller-supplied shape for create (and the base for patch).
+ *
+ * A toolbox is not just files: its `processes`/`ports` carry the *runtime
+ * surface* of a tool (`runtime-surface.ts`, entities-toolbox.md) — e.g.
+ * vscode's `code-server` process + its public port, or the browser stack's
+ * kasmvnc/openbox/chromium processes (whose binaries are baked into the
+ * base image, so `build`/`paths` are empty). Mark long-running ones
+ * `lazy: true` so they start on first access rather than at boot.
  */
-const ToolboxProcessesSchema = Type.Array(ProcessSchema, { maxItems: 50 });
-const ToolboxPortsSchema = Type.Array(PortSchema, { maxItems: 50 });
-
-/** Caller-supplied shape for create (and the base for patch). */
 export const ToolboxConfigInputSchema = Type.Object(
   {
     slug: ToolboxSlugSchema,
@@ -85,8 +85,8 @@ export const ToolboxConfigInputSchema = Type.Object(
     build: BuildStepsSchema,
     paths: ToolboxPathsSchema,
     harness: Type.Optional(ToolboxHarnessSchema),
-    processes: Type.Optional(ToolboxProcessesSchema),
-    ports: Type.Optional(ToolboxPortsSchema),
+    processes: Type.Optional(SurfaceProcessesSchema),
+    ports: Type.Optional(SurfacePortsSchema),
     /**
      * Auto-inject this toolbox into every one of the owner's spawns. When
      * false the toolbox is still fully usable — it just isn't applied unless
@@ -111,8 +111,8 @@ export const ToolboxConfigSchema = Type.Object(
     build: BuildStepsSchema,
     paths: ToolboxPathsSchema,
     harness: Type.Optional(ToolboxHarnessSchema),
-    processes: Type.Optional(ToolboxProcessesSchema),
-    ports: Type.Optional(ToolboxPortsSchema),
+    processes: Type.Optional(SurfaceProcessesSchema),
+    ports: Type.Optional(SurfacePortsSchema),
     autoInject: Type.Boolean(),
     createdAt: Type.String(),
     updatedAt: Type.String(),
@@ -137,8 +137,8 @@ export const ToolboxConfigPatchSchema = Type.Object(
     build: Type.Optional(BuildStepsSchema),
     paths: Type.Optional(ToolboxPathsSchema),
     harness: Type.Optional(Type.Union([ToolboxHarnessSchema, Type.Null()])),
-    processes: Type.Optional(ToolboxProcessesSchema),
-    ports: Type.Optional(ToolboxPortsSchema),
+    processes: Type.Optional(SurfaceProcessesSchema),
+    ports: Type.Optional(SurfacePortsSchema),
     autoInject: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false, $id: "ToolboxConfigPatch" },

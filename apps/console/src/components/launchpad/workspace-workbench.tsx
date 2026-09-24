@@ -67,7 +67,9 @@ export function WorkspaceWorkbench({
   }, [fullscreen]);
 
   function choose(service: Service) {
-    if (service.open === "external" && service.url) {
+    // An external tool that needs nothing started opens right away; a lazy
+    // one shows its notice first, which starts it (see `ExternalNotice`).
+    if (service.open === "external" && service.url && isRunning(service)) {
       window.open(service.url, "_blank", "noopener,noreferrer");
       return;
     }
@@ -146,7 +148,7 @@ export function WorkspaceWorkbench({
               </div>
             ))}
           {current && current.open === "external" ? (
-            <ExternalNotice service={current} />
+            <ExternalNotice workspaceId={workspace.id} service={current} />
           ) : null}
         </div>
       </section>
@@ -154,15 +156,19 @@ export function WorkspaceWorkbench({
   );
 }
 
+/** Nothing to start: no gating processes, or they're up. */
+function isRunning(service: Service): boolean {
+  return !service.processes?.length || service.ready === true;
+}
+
 function serviceDot(service: Service): {
   variant: "success" | "info" | "neutral" | "danger";
   label: string;
 } {
   if (!service.url) return { variant: "danger", label: "Unavailable" };
-  if (!service.processes || service.ready) {
-    return { variant: "success", label: "Ready" };
-  }
-  return { variant: "info", label: "Starting" };
+  if (isRunning(service)) return { variant: "success", label: "Ready" };
+  // A lazy tool: it starts when it's opened.
+  return { variant: "neutral", label: "Starts when opened" };
 }
 
 function ServiceTile({
@@ -209,11 +215,7 @@ function ServiceTile({
             </span>
           ) : null}
         </span>
-        <StatusDot
-          variant={dot.variant}
-          pulse={dot.label === "Starting"}
-          className="mr-1"
-        />
+        <StatusDot variant={dot.variant} className="mr-1" />
         <span className="sr-only">{dot.label}</span>
       </button>
     </div>
@@ -270,8 +272,8 @@ function FrameToolbar({
 /**
  * One embedded tool. The iframe mounts only once the tool's processes report
  * ready (plus a short grace), never earlier: an early mount is what lands on
- * a blank "Bad Gateway". The server already started the tool at launch, so
- * the manual start is a quiet fallback, not the main path.
+ * a blank "Bad Gateway". A lazy tool starts when it's opened — the developer
+ * console's service gate, with opening as its first access.
  */
 function ServiceFrame({
   workspaceId,
@@ -280,20 +282,8 @@ function ServiceFrame({
   workspaceId: string;
   service: Service;
 }) {
-  const start = useStartServiceProcesses(workspaceId);
-  const gate = useServiceGate(workspaceId, service, {
-    startProcesses: (names) => start.mutate(names),
-  });
+  const gate = useLaunchpadGate(workspaceId, service);
   const [reloadKey, setReloadKey] = useState(0);
-  // The server starts declared tools right after the workspace comes up, so
-  // a "Start" button would only confuse at first. Offer it as a fallback
-  // once the tool has taken unusually long.
-  const [patient, setPatient] = useState(true);
-  useEffect(() => {
-    if (gate.canMount) return;
-    const timer = setTimeout(() => setPatient(false), 20_000);
-    return () => clearTimeout(timer);
-  }, [gate.canMount]);
 
   if (!service.url) {
     return (
@@ -304,25 +294,7 @@ function ServiceFrame({
     );
   }
 
-  if (!gate.canMount) {
-    return (
-      <CenteredNote icon={Loader2} spin>
-        <span className="block">Getting {service.label} ready…</span>
-        {!patient ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4"
-            loading={gate.starting}
-            onClick={() => gate.start()}
-          >
-            <Play />
-            Start {service.label}
-          </Button>
-        ) : null}
-      </CenteredNote>
-    );
-  }
+  if (!gate.canMount) return <GateNote service={service} gate={gate} />;
 
   return (
     <div className="relative h-full w-full">
@@ -352,7 +324,60 @@ function ServiceFrame({
   );
 }
 
-function ExternalNotice({ service }: { service: Service }) {
+/** The Launchpad's service gate: quiet starts (no per-process toasts), and
+ * opening a tool is what starts it. */
+function useLaunchpadGate(workspaceId: string, service: Service) {
+  const start = useStartServiceProcesses(workspaceId);
+  return useServiceGate(workspaceId, service, {
+    startProcesses: (names) => start.mutateAsync(names),
+    startOnOpen: true,
+  });
+}
+
+/** Starting (or, if that failed, a way to try again). */
+function GateNote({
+  service,
+  gate,
+}: {
+  service: Service;
+  gate: ReturnType<typeof useServiceGate>;
+}) {
+  if (gate.starting) {
+    return (
+      <CenteredNote icon={Loader2} spin>
+        Getting {service.label} ready…
+      </CenteredNote>
+    );
+  }
+  return (
+    <CenteredNote icon={AlertTriangle}>
+      <span className="block">{service.label} didn't start.</span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-4"
+        onClick={() => gate.start()}
+      >
+        <Play />
+        Try again
+      </Button>
+    </CenteredNote>
+  );
+}
+
+/** A tool that opens in its own tab: started first when it's lazy (a new
+ * tab on a stopped tool would land on a Bad Gateway), then a button. */
+function ExternalNotice({
+  workspaceId,
+  service,
+}: {
+  workspaceId: string;
+  service: Service;
+}) {
+  const gate = useLaunchpadGate(workspaceId, service);
+  if (service.url && !gate.canMount) {
+    return <GateNote service={service} gate={gate} />;
+  }
   return (
     <CenteredNote icon={ExternalLink}>
       <span className="block">{service.label} opens in its own tab.</span>

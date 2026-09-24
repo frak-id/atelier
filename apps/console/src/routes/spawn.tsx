@@ -5,11 +5,12 @@ import type {
 } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Layers, Loader2, Rocket } from "lucide-react";
+import { ChevronDown, Loader2, Rocket } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { useSpawnSandbox } from "@/api/queries/sandboxes";
+import { PrebuildContents } from "@/components/prebuild-contents";
 import { RepoSpawnCard } from "@/components/repos/repo-spawn-card";
 import { ToolboxPicker } from "@/components/toolbox-picker";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAllToolboxes } from "@/hooks/use-all-toolboxes";
-import { formatRelativeTime, prebuildTitle } from "@/lib/formatters";
+import { formatRelativeTime } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
 
 interface SpawnSearch {
@@ -309,12 +310,9 @@ function PrebuildSpawnSection({
                 key={prebuild.ref}
                 className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex min-w-0 flex-col gap-0.5">
+                <div className="flex min-w-0 flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Layers className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate font-medium">
-                      {prebuildTitle(prebuild)}
-                    </span>
+                    <PrebuildContents prebuild={prebuild} />
                     {prebuild.parent ? (
                       <Badge variant="outline">chained</Badge>
                     ) : null}

@@ -34,7 +34,7 @@ every resume; `mergeResume` (`runtime.service.ts`) appends those onto
 `spec.files`, and `resume()` **persists** the merged spec. Every pause/resume
 cycle grows `spec.files` with another `/etc/gitconfig` + credentials pair.
 Same-path entries should replace, not append (path-keyed merge, like
-`mergeByName`).
+`mergeSpecs` in `@atelier/compose`).
 
 ### B4. `destroy()` deletes the record even when cleanup failed
 `runtime/cleanup.ts` swallows every error and `destroy()`

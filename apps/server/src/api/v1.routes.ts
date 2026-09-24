@@ -45,6 +45,7 @@ import {
   OWNER_ID_METADATA,
 } from "../shared/lib/git-attribution.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
 import { imageBuilderConfig } from "../shared/lib/runtime-config.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import {
@@ -55,7 +56,10 @@ import {
   resolveToolboxSurface,
   type ServerContainer,
 } from "./container.ts";
+import { spawnSurface } from "./spawn-surface.ts";
 import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
+
+const log = createChildLogger("v1-routes");
 
 /**
  * H7: the active cluster-native builder (kaniko/buildkit) packages the whole
@@ -115,22 +119,6 @@ function sandboxLabel(req: CreateSandboxRequest): string {
     req.metadata?.workspace ??
     ("image" in req.source ? req.source.image : req.source.snapshot)
   );
-}
-
-/**
- * Merge two name-keyed lists (processes/ports): `base` entries first, then
- * `override` entries — a same-name entry in `override` (the spec's own) wins.
- */
-function mergeByName<T extends { name: string }>(
-  base: T[],
-  override: T[] | undefined,
-): T[] | undefined {
-  if (!override || override.length === 0)
-    return base.length > 0 ? base : undefined;
-  const byName = new Map<string, T>();
-  for (const e of base) byName.set(e.name, e);
-  for (const e of override) byName.set(e.name, e);
-  return [...byName.values()];
 }
 
 /**
@@ -222,14 +210,29 @@ export async function createSandboxForUser(
     seen.add(t.ref);
     return true;
   });
-  // Merge the processes + ports every applied toolbox contributes (its
-  // tool's running surface), keyed by name (spec's own win).
-  const surface = resolveToolboxSurface(container, applied);
+  // The runtime surface: the prebuild's dev servers (its recipe's, or the
+  // stored prebuild's for a pinned snapshot), then the toolboxes' tools,
+  // then the spec's own (see `spawnSurface` for who wins).
+  const surface = spawnSurface({
+    prebuild:
+      prebuild ??
+      ("snapshot" in spec.source
+        ? runtime.prebuildSpec(spec.source.snapshot)
+        : undefined),
+    toolboxes: resolveToolboxSurface(container, applied),
+    own: enriched,
+  });
+  if (surface.shadowed.length > 0) {
+    log.warn(
+      { id, shadowed: surface.shadowed },
+      "toolbox entries replace same-name prebuild processes/ports",
+    );
+  }
   const withToolboxes: SandboxSpec = {
     ...enriched,
     toolsets,
-    processes: mergeByName(surface.processes, enriched.processes),
-    ports: mergeByName(surface.ports, enriched.ports),
+    processes: surface.processes,
+    ports: surface.ports,
   };
   return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
 }
