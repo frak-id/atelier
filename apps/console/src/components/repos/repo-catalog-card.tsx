@@ -1,3 +1,4 @@
+import { normalizeBranch, prebuildRepoBranch } from "@atelier/spec";
 import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -33,8 +34,9 @@ import {
   useQuickPrebuild,
   useRepoCatalog,
 } from "@/hooks/use-repo-catalog";
-import { formatRelativeTime } from "@/lib/formatters";
+import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
 import {
+  activeJobForBranch,
   type CatalogFilter,
   catalogCounts,
   filterCatalog,
@@ -215,6 +217,7 @@ export function RepoCatalogCard() {
         ) : null}
       </CardContent>
       <QuickPrebuildDialog
+        repoName={customizing}
         entry={customizeEntry}
         onOpenChange={(open) => {
           if (!open) setCustomizing(undefined);
@@ -333,7 +336,15 @@ function RepoRow({
 }) {
   const runPrebuild = useRunPrebuild();
   const { repo, latest, state } = entry;
-  const busy = preparing || state === "building";
+  // Each button acts on one branch, so it only waits for THAT branch's job:
+  // create/retry bakes the default branch, rebuild re-bakes `latest`'s.
+  const defaultJob = activeJobForBranch(entry, undefined);
+  const latestBranch = latest ? prebuildRepoBranch(latest).branch : undefined;
+  const rebuildJob = latest
+    ? activeJobForBranch(entry, latestBranch)
+    : undefined;
+  const createBusy = preparing || defaultJob !== undefined;
+  const branchSuffix = normalizeBranch(latestBranch, repo.defaultBranch);
 
   return (
     <li className="group flex flex-col gap-2 px-3 py-2.5 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-4">
@@ -350,35 +361,48 @@ function RepoRow({
               ? "Prebuild another branch or change setup steps"
               : "Choose branch, base image and setup steps"
           }
-          disabled={busy}
           onClick={onCustomize}
         >
           <SlidersHorizontal />
         </Button>
-        {state === "prebuilt" && latest ? (
+        {latest ? (
+          // Stays spawnable while a rebuild runs: the current bake is fine.
           <>
             <Button
               variant="ghost"
               size="icon"
               className="size-8"
               aria-label={`Rebuild the prebuild for ${repo.fullName}`}
-              title="Rebuild from the latest commit"
-              disabled={busy || runPrebuild.isPending || !latest.spec}
+              title={
+                rebuildJob
+                  ? "Already rebuilding"
+                  : "Rebuild from the latest commit"
+              }
+              disabled={
+                rebuildJob !== undefined ||
+                runPrebuild.isPending ||
+                !latest.spec
+              }
               onClick={() => {
                 if (latest.spec)
                   runPrebuild.mutate({
                     spec: latest.spec,
                     force: true,
-                    label: repo.fullName,
+                    label: repoBranchLabel(repo.fullName, branchSuffix),
                   });
               }}
             >
               <RefreshCw
-                className={runPrebuild.isPending ? "animate-spin" : ""}
+                className={
+                  runPrebuild.isPending || rebuildJob ? "animate-spin" : ""
+                }
               />
             </Button>
             <Button asChild size="sm" className="w-[132px]">
-              <Link to="/spawn" search={{ repo: repo.fullName }}>
+              <Link
+                to="/spawn"
+                search={{ repo: repo.fullName, branch: branchSuffix }}
+              >
                 <Rocket />
                 Spawn
               </Link>
@@ -390,10 +414,10 @@ function RepoRow({
             variant={state === "failed" ? "outline" : "default"}
             className="w-[132px]"
             loading={preparing}
-            disabled={busy}
+            disabled={createBusy}
             title={
-              state === "building"
-                ? "A prebuild is already building for this repo"
+              defaultJob
+                ? "The default branch is already building"
                 : "Clone the default branch, install detected dependencies, and snapshot it"
             }
             onClick={onCreate}
@@ -401,10 +425,10 @@ function RepoRow({
             {preparing ? null : state === "failed" ? <RefreshCw /> : <Hammer />}
             {preparing
               ? "Preparing…"
-              : state === "failed"
-                ? "Retry"
-                : state === "building"
-                  ? "Building…"
+              : defaultJob
+                ? "Building…"
+                : state === "failed"
+                  ? "Retry"
                   : "Create prebuild"}
           </Button>
         )}
@@ -439,8 +463,8 @@ function StatusSlot({
   } else if (state === "prebuilt" && latest) {
     // An omitted branch IS the default branch: count them as one.
     const branches = new Set(
-      prebuilds.map(
-        (p) => p.spec?.repos?.[0]?.branch ?? entry.repo.defaultBranch,
+      prebuilds.map((p) =>
+        normalizeBranch(prebuildRepoBranch(p).branch, entry.repo.defaultBranch),
       ),
     ).size;
     content = (

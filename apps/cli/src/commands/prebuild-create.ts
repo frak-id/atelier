@@ -7,18 +7,14 @@
  * checkout, every step is a one-keystroke accept. */
 import {
   buildRepoPrebuildSpec,
-  findRepoBranchPrebuild,
-  prebuildRepoBranch,
+  repoCloneName,
+  repoKey,
+  repoShortName,
 } from "@atelier/spec/repo-prebuild";
 import pc from "picocolors";
 import { type AtelierApi, type ImageRow, unwrap } from "../client.ts";
 import { detectSetupSteps } from "../detect.ts";
-import {
-  deriveClonePath,
-  type GitRepo,
-  listBranches,
-  shortRepo,
-} from "../git.ts";
+import { type GitRepo, listBranches } from "../git.ts";
 import { fail } from "../output.ts";
 import * as ui from "../ui.ts";
 import { runPrebuild } from "./sandbox.ts";
@@ -27,15 +23,6 @@ import { runPrebuild } from "./sandbox.ts";
 const REPO_URL_RE = /^(https?:\/\/|git@|ssh:\/\/|git:\/\/).+/i;
 
 const CUSTOM = "__custom__";
-
-// Repo identity, dedupe and spec assembly are shared with the console via
-// `@atelier/spec/repo-prebuild`, so both surfaces recognize each other's
-// prebuilds. Re-exported under the names the browse menus already import.
-export {
-  buildRepoPrebuildSpec as buildPrebuildSpec,
-  findRepoBranchPrebuild,
-  prebuildRepoBranch,
-};
 
 /** Ready base images the prebuild can boot from. */
 async function readyImages(api: AtelierApi): Promise<ImageRow[]> {
@@ -101,7 +88,7 @@ export async function createPrebuildInteractive(
   const clonePath = (
     await ui.text({
       message: "Clone path inside the sandbox",
-      initialValue: seed.clonePath ?? deriveClonePath(repo),
+      initialValue: seed.clonePath ?? repoCloneName(repo),
       validate: (v) => (v.trim() ? undefined : "required"),
     })
   ).trim();
@@ -113,7 +100,7 @@ export async function createPrebuildInteractive(
   // ── 6. confirm ────────────────────────────────────────────────────────────
   ui.note(
     [
-      `repo:   ${shortRepo(repo)}`,
+      `repo:   ${repoShortName(repo)}`,
       `branch: ${branch ?? pc.dim("(default)")}`,
       `image:  ${image}`,
       `path:   ${clonePath}`,
@@ -185,9 +172,7 @@ async function pickBuildSteps(
 ): Promise<string[]> {
   // Only trust local detection when the seed checkout is actually this repo —
   // a `--repo` pointing elsewhere must not inherit the cwd's lockfiles.
-  const sameRepo =
-    seed.gitRepo &&
-    shortRepo(seed.gitRepo.url).toLowerCase() === shortRepo(repo).toLowerCase();
+  const sameRepo = seed.gitRepo && repoKey(seed.gitRepo.url) === repoKey(repo);
   const detected =
     sameRepo && seed.gitRepo ? detectSetupSteps(seed.gitRepo.root) : [];
 
@@ -247,9 +232,7 @@ export async function createPrebuildFromArgs(
   // Explicit --build wins; otherwise auto-detect, but only when the detected
   // checkout is this same repo (never inherit an unrelated cwd's lockfiles).
   const explicit = (args.build ?? []).map((s) => s.trim()).filter(Boolean);
-  const sameRepo =
-    args.detect &&
-    shortRepo(args.detect.url).toLowerCase() === shortRepo(repo).toLowerCase();
+  const sameRepo = args.detect && repoKey(args.detect.url) === repoKey(repo);
   const build =
     explicit.length > 0
       ? explicit
@@ -260,7 +243,7 @@ export async function createPrebuildFromArgs(
     repo,
     branch: args.branch?.trim() || undefined,
     image,
-    clonePath: args.clonePath?.trim() || deriveClonePath(repo),
+    clonePath: args.clonePath?.trim() || repoCloneName(repo),
     build,
   });
   return runPrebuild(api, spec, args.force ?? false);

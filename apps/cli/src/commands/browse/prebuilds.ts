@@ -1,17 +1,18 @@
 /** The cockpit's Prebuilds panel + the shared prebuild descriptors it and the
  * spawn flow render. */
 import type { PrebuildRecord, PrebuildSpec } from "@atelier/spec";
+import {
+  findRepoBranchPrebuild,
+  prebuildRepoBranch,
+  repoShortName,
+} from "@atelier/spec/repo-prebuild";
 import pc from "picocolors";
 import { type AtelierApi, unwrap } from "../../client.ts";
-import { detectGitRepo, type GitRepo, shortRepo } from "../../git.ts";
+import { detectGitRepo, type GitRepo } from "../../git.ts";
 import { age } from "../../output.ts";
 import * as ui from "../../ui.ts";
 import { readJsonc } from "../../util.ts";
-import {
-  createPrebuildInteractive,
-  findRepoBranchPrebuild,
-  prebuildRepoBranch,
-} from "../prebuild-create.ts";
+import { createPrebuildInteractive } from "../prebuild-create.ts";
 import { runPrebuild } from "../sandbox.ts";
 import { BACK } from "./common.ts";
 
@@ -19,7 +20,7 @@ import { BACK } from "./common.ts";
 export function prebuildHint(p: PrebuildRecord): string {
   const { url: repo, branch } = prebuildRepoBranch(p);
   const parts: string[] = [];
-  if (repo) parts.push(shortRepo(repo) + (branch ? `@${branch}` : ""));
+  if (repo) parts.push(repoShortName(repo) + (branch ? `@${branch}` : ""));
   parts.push(`built ${age(p.createdAt)} ago`);
   if (p.image) parts.push(p.image);
   return parts.join(" · ");
@@ -45,7 +46,7 @@ export async function computeGitNudge(
   } catch {
     return null;
   }
-  const label = `${shortRepo(repo.url)}${repo.branch ? `@${repo.branch}` : ""}`;
+  const label = `${repoShortName(repo.url)}${repo.branch ? `@${repo.branch}` : ""}`;
   return { repo, label };
 }
 
@@ -91,7 +92,7 @@ export async function prebuildsMenu(api: AtelierApi): Promise<void> {
               {
                 value: "git" as const,
                 label: pc.green("✦ Bake prebuild for this repo"),
-                hint: `${shortRepo(gitRepo.url)}${gitRepo.branch ? `@${gitRepo.branch}` : ""}`,
+                hint: `${repoShortName(gitRepo.url)}${gitRepo.branch ? `@${gitRepo.branch}` : ""}`,
               },
             ]
           : []),

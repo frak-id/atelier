@@ -5,6 +5,8 @@ import {
   detectSetupSteps,
   findRepoBranchPrebuild,
   findRepoPrebuilds,
+  normalizeBranch,
+  parsePrebuildJobTarget,
   prebuildJobTarget,
   repoCloneName,
   repoKey,
@@ -85,6 +87,46 @@ describe("prebuildJobTarget", () => {
     expect(prebuildJobTarget({ source: { snapshot: "snap-1" } })).toBe(
       "snap-1",
     );
+  });
+});
+
+describe("parsePrebuildJobTarget", () => {
+  test("inverts prebuildJobTarget into repo keys + branches", () => {
+    const target = prebuildJobTarget({
+      source: { image: "dev-base" },
+      repos: [
+        { url: "git@github.com:A/B.git", branch: "feat/x", clonePath: "b" },
+        { url: "https://github.com/a/c", clonePath: "c" },
+      ],
+    });
+    expect(parsePrebuildJobTarget(target)).toEqual([
+      { key: "github.com/a/b", branch: "feat/x" },
+      { key: "github.com/a/c", branch: undefined },
+    ]);
+  });
+
+  test("empty and blank targets parse to nothing", () => {
+    expect(parsePrebuildJobTarget(undefined)).toEqual([]);
+    expect(parsePrebuildJobTarget("")).toEqual([]);
+  });
+});
+
+describe("normalizeBranch", () => {
+  test("the default branch and blanks collapse to undefined", () => {
+    expect(normalizeBranch("main", "main")).toBeUndefined();
+    expect(normalizeBranch(" main ", "main")).toBeUndefined();
+    expect(normalizeBranch("", "main")).toBeUndefined();
+    expect(normalizeBranch(undefined, "main")).toBeUndefined();
+    expect(normalizeBranch(" dev ", "main")).toBe("dev");
+  });
+
+  test("case-sensitive, like git", () => {
+    expect(normalizeBranch("Main", "main")).toBe("Main");
+  });
+
+  test("without a default-branch hint only blanks collapse", () => {
+    expect(normalizeBranch("main")).toBe("main");
+    expect(normalizeBranch("  ")).toBeUndefined();
   });
 });
 

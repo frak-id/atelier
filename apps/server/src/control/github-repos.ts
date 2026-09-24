@@ -21,11 +21,11 @@ import {
 } from "../shared/errors.ts";
 import { isAuthBypassed, isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { githubApiGet } from "./github-api.ts";
 import type { UserService } from "./modules/user/index.ts";
 
 const log = createChildLogger("github-repos");
 
-const GITHUB_API = "https://api.github.com";
 /** 100 per page (GitHub's max) × 5 pages. Sorted by last push, so the cap
  * only drops long-dormant repos. `truncated` tells the client when it hit. */
 const PER_PAGE = 100;
@@ -226,7 +226,8 @@ export class GitHubRepoService {
       );
     }
 
-    const cacheKey = `${userId}\0${owner}/${name}\0${ref ?? ""}`.toLowerCase();
+    // GitHub owner/repo names are case-insensitive; git branches are not.
+    const cacheKey = `${userId}\0${owner.toLowerCase()}/${name.toLowerCase()}\0${ref ?? ""}`;
     const cached = this.inspectCache.get(cacheKey);
     if (cached && cached.expiresAt > this.now()) return cached.value;
 
@@ -274,8 +275,6 @@ export class GitHubRepoService {
     return value;
   }
 
-  /** GET a GitHub API path. `resource` names the thing for a 404 message
-   * (e.g. `owner/name`), never the raw API path. */
   /** Drop expired entries once a cache grows past a bound, so a long-lived
    * server doesn't accumulate one entry per repo/branch ever inspected. */
   private pruneExpired<T>(cache: Map<string, CacheEntry<T>>): void {
@@ -286,6 +285,8 @@ export class GitHubRepoService {
     }
   }
 
+  /** GET a GitHub API path. `resource` names the thing for a 404 message
+   * (e.g. `owner/name`), never the raw API path. */
   private async get<T>(
     token: string,
     path: string,
@@ -293,13 +294,7 @@ export class GitHubRepoService {
   ): Promise<T> {
     let response: Response;
     try {
-      response = await this.fetch(`${GITHUB_API}${path}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
-      });
+      response = await githubApiGet(token, path, this.fetch);
     } catch (err) {
       log.warn({ err, path }, "GitHub request failed");
       throw new GitHubUpstreamError("Could not reach GitHub");

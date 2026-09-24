@@ -108,6 +108,22 @@ export function findRepoPrebuilds(
 }
 
 /**
+ * The canonical spelling of a branch in a prebuild spec: trimmed, and
+ * `undefined` for the repo's default branch. "No branch" IS the default
+ * branch, so writing specs through this makes a one-click create, a
+ * customized create and a first spawn of the same branch produce the SAME
+ * spec (same hash, one bake), and makes matching treat `main` and omitted
+ * as equal. Without a `defaultBranch` hint only blanks collapse.
+ */
+export function normalizeBranch(
+  branch: string | undefined,
+  defaultBranch?: string,
+): string | undefined {
+  const trimmed = branch?.trim() || undefined;
+  return trimmed === defaultBranch?.trim() ? undefined : trimmed;
+}
+
+/**
  * The most recent prebuild covering `url` on `branch`. An omitted branch
  * (on either the query or the record) means "the default branch". When the
  * caller knows the repo's `defaultBranch`, an explicit `main` and an omitted
@@ -119,14 +135,31 @@ export function findRepoBranchPrebuild(
   branch?: string,
   defaultBranch?: string,
 ): PrebuildRecord | undefined {
-  const normalize = (b: string | undefined) => {
-    const trimmed = b?.trim() || undefined;
-    return trimmed ?? defaultBranch?.trim() ?? undefined;
-  };
-  const want = normalize(branch);
+  const want = normalizeBranch(branch, defaultBranch);
   return findRepoPrebuilds(records, url).find(
-    (record) => normalize(prebuildRepoBranch(record).branch) === want,
+    (record) =>
+      normalizeBranch(prebuildRepoBranch(record).branch, defaultBranch) ===
+      want,
   );
+}
+
+/** Split a prebuild job target (see `prebuildJobTarget`) back into the repos
+ * it bakes: `repoKey` identity plus the raw `#branch`, if any. Targets that
+ * aren't repo-shaped (an image or snapshot fallback) still parse, and just
+ * never match a repo. */
+export function parsePrebuildJobTarget(
+  target: string | undefined,
+): { key: string; branch?: string }[] {
+  if (!target) return [];
+  return target
+    .split(", ")
+    .map((part) => {
+      const hash = part.indexOf("#");
+      const url = (hash === -1 ? part : part.slice(0, hash)).trim();
+      const branch = hash === -1 ? undefined : part.slice(hash + 1).trim();
+      return { key: url ? repoKey(url) : "", branch: branch || undefined };
+    })
+    .filter((t) => t.key !== "");
 }
 
 /**

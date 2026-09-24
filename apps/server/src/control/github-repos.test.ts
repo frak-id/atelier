@@ -199,6 +199,22 @@ describe("GitHubRepoService.inspectRepo", () => {
     expect(out.branches).toEqual(["main"]);
   });
 
+  test("caches per repo case-insensitively but per branch case-sensitively", async () => {
+    const { service, calls } = setup((url) =>
+      url.pathname.endsWith("/branches")
+        ? json([])
+        : url.pathname.endsWith("/contents/")
+          ? json([])
+          : json(rawRepo(0, { full_name: "org/app" })),
+    );
+    await service.inspectRepo("1", "org", "app", "Feat");
+    const perInspect = calls.length;
+    await service.inspectRepo("1", "ORG", "App", "Feat");
+    expect(calls).toHaveLength(perInspect);
+    await service.inspectRepo("1", "org", "app", "feat");
+    expect(calls).toHaveLength(perInspect * 2);
+  });
+
   test("rejects path-injection names and unknown repos", async () => {
     const { service, calls } = setup(() => json({}, 404));
     await expect(service.inspectRepo("1", "org", "../x")).rejects.toThrow(

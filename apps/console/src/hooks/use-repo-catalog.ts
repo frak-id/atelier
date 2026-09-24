@@ -10,7 +10,11 @@ import {
 import { type Job, jobsListQuery } from "@/api/queries/jobs";
 import { prebuildsListQuery, useRunPrebuild } from "@/api/queries/prebuilds";
 import { serverConfigQuery } from "@/api/queries/server-config";
-import { buildRepoCatalog, type CatalogEntry } from "@/lib/repo-catalog";
+import {
+  activeJobForBranch,
+  buildRepoCatalog,
+  type CatalogEntry,
+} from "@/lib/repo-catalog";
 
 export type RepoCatalogEntry = CatalogEntry<GitHubRepo, Job>;
 
@@ -60,6 +64,33 @@ export function useRepoCatalog() {
 }
 
 /**
+ * What a branch picker + setup-step preview need for one repo: the branch
+ * list (from the default-branch inspection, which is fetched once and
+ * shared) and the setup steps detected on `branch` (`undefined` = default).
+ * Both inspections are cached per repo+branch, so switching back and forth
+ * is instant.
+ */
+export function useRepoInspection(
+  repo: GitHubRepo,
+  branch: string | undefined,
+  options: { enabled?: boolean } = {},
+) {
+  const enabled = options.enabled ?? true;
+  const base = useQuery(githubRepoInspectQuery(repo.owner, repo.name));
+  const atBranch = useQuery({
+    ...githubRepoInspectQuery(repo.owner, repo.name, branch),
+    enabled,
+  });
+  return {
+    branches: base.data?.branches ?? [repo.defaultBranch],
+    suggestedBuild: atBranch.data?.suggestedBuild,
+    /** No answer for this branch yet. A failed inspection is NOT
+     * detecting: it just means "no steps" and must never block a submit. */
+    detecting: enabled && atBranch.isPending,
+  };
+}
+
+/**
  * The one-click path: inspect the repo (default branch + detected setup
  * steps), assemble the spec with the shared `buildRepoPrebuildSpec`, and
  * dispatch the bake. It returns a per-repo pending set, so every row owns
@@ -77,7 +108,12 @@ export function useQuickPrebuild() {
   const create = useCallback(
     async (entry: RepoCatalogEntry) => {
       const { repo } = entry;
-      if (entry.activeJob || inflight.current.has(repo.fullName)) return;
+      // One-click always bakes the default branch.
+      if (
+        activeJobForBranch(entry, undefined) ||
+        inflight.current.has(repo.fullName)
+      )
+        return;
       inflight.current.add(repo.fullName);
       setPending((prev) => new Set(prev).add(repo.fullName));
       try {

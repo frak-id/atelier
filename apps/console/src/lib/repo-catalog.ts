@@ -9,7 +9,9 @@
 import {
   findRepoBranchPrebuild,
   findRepoPrebuilds,
+  normalizeBranch,
   type PrebuildRecord,
+  parsePrebuildJobTarget,
   repoKey,
 } from "@atelier/spec";
 
@@ -46,22 +48,15 @@ export interface CatalogEntry<R extends CatalogRepo, J extends CatalogJob> {
   /** The prebuild a spawn would use: default branch preferred, else the
    * newest on any branch. */
   latest?: PrebuildRecord;
-  /** An in-flight (queued/running) prebuild job for the repo. */
+  /** Every in-flight (queued/running) prebuild job for the repo, any
+   * branch, newest first. Use `activeJobForBranch` for one branch. */
+  activeJobs: J[];
+  /** The newest in-flight job on any branch (`activeJobs[0]`), for the
+   * repo-level "building" badge. */
   activeJob?: J;
   /** The newest prebuild job, when it failed AND nothing was baked after it.
    * It can coexist with `latest` (a rebuild failed but an older bake exists). */
   failedJob?: J;
-}
-
-/** The repo keys a prebuild job targets. The job target is
- * `prebuildJobTarget(spec)`, i.e. `url[#branch]` joined with `, `. */
-export function jobRepoKeys(target: string | undefined): string[] {
-  if (!target) return [];
-  return target
-    .split(", ")
-    .map((part) => part.split("#")[0]?.trim() ?? "")
-    .filter(Boolean)
-    .map(repoKey);
 }
 
 const ACTIVE = new Set(["queued", "running"]);
@@ -78,7 +73,8 @@ export function buildRepoCatalog<R extends CatalogRepo, J extends CatalogJob>(
   const jobsByRepo = new Map<string, J[]>();
   for (const job of jobs) {
     if (job.kind !== "prebuild") continue;
-    for (const key of new Set(jobRepoKeys(job.target))) {
+    const keys = parsePrebuildJobTarget(job.target).map((t) => t.key);
+    for (const key of new Set(keys)) {
       const list = jobsByRepo.get(key);
       if (list) list.push(job);
       else jobsByRepo.set(key, [job]);
@@ -95,7 +91,8 @@ export function buildRepoCatalog<R extends CatalogRepo, J extends CatalogJob>(
         repo.defaultBranch,
       ) ?? repoPrebuilds[0];
     const repoJobs = jobsByRepo.get(repoKey(repo.cloneUrl)) ?? [];
-    const activeJob = repoJobs.find((j) => ACTIVE.has(j.status));
+    const activeJobs = repoJobs.filter((j) => ACTIVE.has(j.status));
+    const activeJob = activeJobs[0];
     const newest = repoJobs[0];
     const failedJob =
       newest?.status === "failed" &&
@@ -114,10 +111,28 @@ export function buildRepoCatalog<R extends CatalogRepo, J extends CatalogJob>(
       state,
       prebuilds: repoPrebuilds,
       latest,
+      activeJobs,
       activeJob,
       failedJob,
     };
   });
+}
+
+/** The in-flight prebuild job baking `branch` of the entry's repo, if any.
+ * Matches on the parsed job target (repo identity + normalized branch), so
+ * `main` vs omitted and https vs scp spellings still line up. */
+export function activeJobForBranch<J extends CatalogJob>(
+  entry: Pick<CatalogEntry<CatalogRepo, J>, "repo" | "activeJobs">,
+  branch: string | undefined,
+): J | undefined {
+  const { cloneUrl, defaultBranch } = entry.repo;
+  const key = repoKey(cloneUrl);
+  const want = normalizeBranch(branch, defaultBranch);
+  return entry.activeJobs.find((job) =>
+    parsePrebuildJobTarget(job.target).some(
+      (t) => t.key === key && normalizeBranch(t.branch, defaultBranch) === want,
+    ),
+  );
 }
 
 export type CatalogFilter = "all" | "needs" | "prebuilt";

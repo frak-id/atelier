@@ -1,12 +1,7 @@
-import {
-  type PrebuildRecord,
-  prebuildJobTarget,
-  prebuildRepoBranch,
-  repoShortName,
-} from "@atelier/spec";
+import { type PrebuildRecord, prebuildJobTarget } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Layers, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Layers, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
   prebuildsListQuery,
@@ -26,7 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/formatters";
+import { formatRelativeTime, prebuildTitle } from "@/lib/formatters";
 
 export const Route = createFileRoute("/settings/prebuilds/")({
   component: PrebuildsPage,
@@ -47,15 +42,6 @@ function PrebuildsPage() {
   );
 }
 
-/** Title for a stored prebuild: `owner/name` (+ `#branch`) for repo
- * prebuilds, falling back to the ref for image-only or chained ones. */
-function prebuildTitle(prebuild: PrebuildRecord): string {
-  const { url, branch } = prebuildRepoBranch(prebuild);
-  if (!url) return prebuild.ref;
-  const name = repoShortName(url);
-  return branch ? `${name}#${branch}` : name;
-}
-
 function PrebuildsList() {
   const {
     data: prebuilds,
@@ -63,7 +49,6 @@ function PrebuildsList() {
     isError,
     error,
   } = useQuery(prebuildsListQuery());
-  const runPrebuild = useRunPrebuild();
   const deletePrebuild = useDeletePrebuild();
   const [pendingDelete, setPendingDelete] = useState<string | undefined>();
 
@@ -100,86 +85,17 @@ function PrebuildsList() {
             No prebuilds yet. Create one from a repository above.
           </p>
         ) : (
-          prebuilds.map((prebuild: PrebuildRecord) => {
-            const spec = prebuild.spec;
-            return (
-              <div
-                key={prebuild.ref}
-                className="flex flex-col gap-1 rounded-md border p-3"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Layers className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate text-sm font-medium">
-                    {prebuildTitle(prebuild)}
-                  </span>
-                  <JobStatus
-                    kind="prebuild"
-                    target={spec ? prebuildJobTarget(spec) : undefined}
-                  />
-                  {prebuild.parent ? (
-                    <Badge variant="outline">chained</Badge>
-                  ) : null}
-                  {prebuild.inUse ? (
-                    <Badge variant="secondary">in use</Badge>
-                  ) : null}
-                  <span className="text-xs text-muted-foreground">
-                    {formatRelativeTime(prebuild.createdAt)}
-                  </span>
-                  <div className="ml-auto flex items-center gap-2">
-                    {spec ? (
-                      <>
-                        <Button asChild variant="outline" size="sm">
-                          <Link
-                            to="/settings/prebuilds/$ref"
-                            params={{ ref: prebuild.ref }}
-                          >
-                            <Pencil />
-                            Edit
-                          </Link>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={runPrebuild.isPending}
-                          onClick={() =>
-                            runPrebuild.mutate({ spec, force: true })
-                          }
-                        >
-                          {runPrebuild.isPending ? (
-                            <Loader2 className="animate-spin" />
-                          ) : (
-                            <RefreshCw />
-                          )}
-                          Rebuild
-                        </Button>
-                      </>
-                    ) : null}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={prebuild.inUse || deletePrebuild.isPending}
-                      title={
-                        prebuild.inUse
-                          ? "In use by a sandbox or a chained prebuild"
-                          : "Delete this snapshot"
-                      }
-                      onClick={() => setPendingDelete(prebuild.ref)}
-                    >
-                      {deletePrebuild.isPending ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        <Trash2 />
-                      )}
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-                <span className="truncate font-mono text-xs text-muted-foreground">
-                  {prebuild.ref} · {prebuild.image}
-                </span>
-              </div>
-            );
-          })
+          prebuilds.map((prebuild: PrebuildRecord) => (
+            <StoredPrebuildRow
+              key={prebuild.ref}
+              prebuild={prebuild}
+              deleting={
+                deletePrebuild.isPending &&
+                deletePrebuild.variables === prebuild.ref
+              }
+              onDelete={() => setPendingDelete(prebuild.ref)}
+            />
+          ))
         )}
       </CardContent>
       <ConfirmDialog
@@ -200,5 +116,82 @@ function PrebuildsList() {
         }}
       />
     </Card>
+  );
+}
+
+/** One stored snapshot. Owns its Rebuild mutation, so rebuilding one row
+ * doesn't lock every other row's button. */
+function StoredPrebuildRow({
+  prebuild,
+  deleting,
+  onDelete,
+}: {
+  prebuild: PrebuildRecord;
+  deleting: boolean;
+  onDelete: () => void;
+}) {
+  const runPrebuild = useRunPrebuild();
+  const spec = prebuild.spec;
+  const title = prebuildTitle(prebuild);
+  return (
+    <div className="flex flex-col gap-1 rounded-md border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Layers className="size-4 shrink-0 text-muted-foreground" />
+        <span className="truncate text-sm font-medium">{title}</span>
+        <JobStatus
+          kind="prebuild"
+          target={spec ? prebuildJobTarget(spec) : undefined}
+        />
+        {prebuild.parent ? <Badge variant="outline">chained</Badge> : null}
+        {prebuild.inUse ? <Badge variant="secondary">in use</Badge> : null}
+        <span className="text-xs text-muted-foreground">
+          {formatRelativeTime(prebuild.createdAt)}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {spec ? (
+            <>
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  to="/settings/prebuilds/$ref"
+                  params={{ ref: prebuild.ref }}
+                >
+                  <Pencil />
+                  Edit
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                loading={runPrebuild.isPending}
+                onClick={() =>
+                  runPrebuild.mutate({ spec, force: true, label: title })
+                }
+              >
+                {runPrebuild.isPending ? null : <RefreshCw />}
+                Rebuild
+              </Button>
+            </>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={prebuild.inUse}
+            loading={deleting}
+            title={
+              prebuild.inUse
+                ? "In use by a sandbox or a chained prebuild"
+                : "Delete this snapshot"
+            }
+            onClick={onDelete}
+          >
+            {deleting ? null : <Trash2 />}
+            Delete
+          </Button>
+        </div>
+      </div>
+      <span className="truncate font-mono text-xs text-muted-foreground">
+        {prebuild.ref} · {prebuild.image}
+      </span>
+    </div>
   );
 }

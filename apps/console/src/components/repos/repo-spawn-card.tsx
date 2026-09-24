@@ -2,13 +2,13 @@ import {
   buildRepoPrebuildSpec,
   type CreateSandboxRequest,
   findRepoBranchPrebuild,
+  normalizeBranch,
   type SandboxSpec,
 } from "@atelier/spec";
-import { useQuery } from "@tanstack/react-query";
 import { Hammer, Loader2, Rocket, Search, Timer, X, Zap } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
-import { githubRepoInspectQuery } from "@/api/queries/github";
 import { useRunPrebuild } from "@/api/queries/prebuilds";
+import { JobStatusBadge } from "@/components/job-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,8 +27,10 @@ import {
   type RepoCatalogEntry,
   useDefaultImage,
   useRepoCatalog,
+  useRepoInspection,
 } from "@/hooks/use-repo-catalog";
-import { formatRelativeTime } from "@/lib/formatters";
+import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
+import { activeJobForBranch } from "@/lib/repo-catalog";
 import { cn } from "@/lib/utils";
 import { RepoIdentity } from "./repo-identity";
 
@@ -174,6 +176,9 @@ function RepoPicker({
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           role="combobox"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          // The list is always shown under the input, never collapsed.
           aria-expanded="true"
           aria-controls={listId}
           aria-activedescendant={
@@ -239,9 +244,7 @@ function RepoPicker({
                   Prebuilt
                 </Badge>
               ) : entry.activeJob ? (
-                <Badge variant="info" className="shrink-0">
-                  Building
-                </Badge>
+                <JobStatusBadge job={entry.activeJob} className="shrink-0" />
               ) : (
                 <span className="shrink-0 text-xs text-muted-foreground">
                   No prebuild
@@ -277,20 +280,15 @@ function SelectedRepo({
   const defaultImage = useDefaultImage();
   const runPrebuild = useRunPrebuild();
 
-  const branch = branchParamIn?.trim() || repo.defaultBranch;
-  // The default branch is spelled "no branch" in specs, so a spawn and the
+  // The spec spelling (default branch = undefined), so a spawn and the
   // Prebuilds tab's one-click create produce the same recipe (same hash).
-  const branchParam = branch === repo.defaultBranch ? undefined : branch;
+  const branchParam = normalizeBranch(branchParamIn, repo.defaultBranch);
+  const branch = branchParam ?? repo.defaultBranch;
 
-  const base = useQuery(githubRepoInspectQuery(repo.owner, repo.name));
-  const atBranch = useQuery(
-    githubRepoInspectQuery(repo.owner, repo.name, branchParam),
-  );
-  const branches = useMemo(() => {
-    const list = base.data?.branches ?? [repo.defaultBranch];
-    // Keep a deep-linked branch selectable even beyond the listed 100.
-    return list.includes(branch) ? list : [...list, branch];
-  }, [base.data, repo.defaultBranch, branch]);
+  const inspection = useRepoInspection(repo, branchParam);
+  const listed = inspection.branches;
+  // Keep a deep-linked branch selectable even beyond the listed 100.
+  const branches = listed.includes(branch) ? listed : [...listed, branch];
 
   const matched = findRepoBranchPrebuild(
     entry.prebuilds,
@@ -298,18 +296,15 @@ function SelectedRepo({
     branchParam,
     repo.defaultBranch,
   );
-  const buildingThis =
-    entry.activeJob?.target ===
-    (branchParam ? `${repo.cloneUrl}#${branchParam}` : repo.cloneUrl);
-  // The recipe path needs the detected steps; a failed inspection just
-  // means "no steps" and must not block the spawn.
-  const stepsReady = !atBranch.isPending;
+  const buildingThis = activeJobForBranch(entry, branchParam) !== undefined;
+  // The recipe path needs the detected steps (see `useRepoInspection`).
+  const stepsReady = !inspection.detecting;
   const recipe = () =>
     buildRepoPrebuildSpec({
       repo: repo.cloneUrl,
       branch: branchParam,
       image: defaultImage,
-      build: atBranch.data?.suggestedBuild,
+      build: inspection.suggestedBuild,
     });
   const metadata = {
     name: repo.name,
@@ -350,11 +345,7 @@ function SelectedRepo({
           id={`${ids}-branch`}
           value={branch}
           onChange={(e) =>
-            onBranchChange(
-              e.target.value === repo.defaultBranch
-                ? undefined
-                : e.target.value,
-            )
+            onBranchChange(normalizeBranch(e.target.value, repo.defaultBranch))
           }
         >
           {branches.map((b) => (
@@ -368,7 +359,7 @@ function SelectedRepo({
       <SpawnPlan
         matchedAt={matched?.createdAt}
         building={buildingThis}
-        steps={atBranch.data?.suggestedBuild}
+        steps={inspection.suggestedBuild}
         stepsPending={!stepsReady}
       />
 
@@ -390,9 +381,7 @@ function SelectedRepo({
             onClick={() =>
               runPrebuild.mutate({
                 spec: recipe(),
-                label: branchParam
-                  ? `${repo.fullName}#${branchParam}`
-                  : repo.fullName,
+                label: repoBranchLabel(repo.fullName, branchParam),
               })
             }
           >

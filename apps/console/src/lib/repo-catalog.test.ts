@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { PrebuildRecord } from "@atelier/spec";
 import {
+  activeJobForBranch,
   buildRepoCatalog,
   type CatalogJob,
   type CatalogRepo,
   catalogCounts,
   filterCatalog,
-  jobRepoKeys,
 } from "./repo-catalog.ts";
 
 function repo(fullName: string, extra: Partial<CatalogRepo> = {}) {
@@ -51,15 +51,6 @@ function job(
 ): CatalogJob {
   return { id, kind: "prebuild", status, target, createdAt, ...extra };
 }
-
-describe("jobRepoKeys", () => {
-  test("splits multi-repo targets and strips branches", () => {
-    expect(
-      jobRepoKeys("https://github.com/a/b.git#dev, git@github.com:a/c.git"),
-    ).toEqual(["github.com/a/b", "github.com/a/c"]);
-    expect(jobRepoKeys(undefined)).toEqual([]);
-  });
-});
 
 describe("buildRepoCatalog", () => {
   const atelier = repo("frak-id/atelier");
@@ -121,6 +112,32 @@ describe("buildRepoCatalog", () => {
     );
     expect(out[0]?.state).toBe("prebuilt");
     expect(out[0]?.failedJob?.id).toBe("j");
+  });
+
+  test("tracks every in-flight branch, not just the newest", () => {
+    const out = buildRepoCatalog(
+      [atelier],
+      [],
+      [
+        // newest: a feature branch (scp spelling, from the CLI)
+        job("jf", "git@github.com:frak-id/atelier.git#feat", "running", "3"),
+        // older: the default branch, spelled explicitly
+        job("jm", `${atelier.cloneUrl}#main`, "queued", "2"),
+        job("jd", `${atelier.cloneUrl}#dev`, "succeeded", "1"),
+      ],
+    );
+    const entry = out[0];
+    if (!entry) throw new Error("missing entry");
+    expect(entry.state).toBe("building");
+    expect(entry.activeJobs.map((j) => j.id)).toEqual(["jf", "jm"]);
+    expect(entry.activeJob?.id).toBe("jf");
+    // The default branch matches omitted AND explicit `main`
+    expect(activeJobForBranch(entry, undefined)?.id).toBe("jm");
+    expect(activeJobForBranch(entry, "main")?.id).toBe("jm");
+    expect(activeJobForBranch(entry, "feat")?.id).toBe("jf");
+    // Finished and unrelated branches aren't "building"
+    expect(activeJobForBranch(entry, "dev")).toBeUndefined();
+    expect(activeJobForBranch(entry, "Feat")).toBeUndefined();
   });
 
   test("latest prefers the default branch over a newer feature branch", () => {

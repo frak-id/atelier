@@ -1,14 +1,15 @@
 import {
   buildRepoPrebuildSpec,
   findRepoBranchPrebuild,
+  normalizeBranch,
   repoCloneName,
 } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
-import { Hammer, Info } from "lucide-react";
+import { AlertTriangle, Hammer, Info } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
-import { githubRepoInspectQuery } from "@/api/queries/github";
 import { imagesListQuery } from "@/api/queries/images";
 import { useRunPrebuild } from "@/api/queries/prebuilds";
+import { JobStatusBadge } from "@/components/job-status";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,8 +26,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   type RepoCatalogEntry,
   useDefaultImage,
+  useRepoInspection,
 } from "@/hooks/use-repo-catalog";
-import { formatRelativeTime } from "@/lib/formatters";
+import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
+import { activeJobForBranch } from "@/lib/repo-catalog";
 import { RepoIdentity } from "./repo-identity";
 
 const OTHER_BRANCH = "\0other";
@@ -38,26 +41,60 @@ const OTHER_BRANCH = "\0other";
  * the GitHub inspection), so Enter alone reproduces the one-click result.
  */
 export function QuickPrebuildDialog({
+  repoName,
   entry,
   onOpenChange,
 }: {
-  /** The repo to prebuild; `undefined` closes the dialog. */
+  /** `owner/name` being customized; `undefined` closes the dialog. */
+  repoName: string | undefined;
+  /** Its live catalog entry. Missing while open = the repo left the list
+   * (access revoked, refreshed away): say so instead of vanishing. */
   entry: RepoCatalogEntry | undefined;
   onOpenChange: (open: boolean) => void;
 }) {
+  const close = () => onOpenChange(false);
   return (
-    <Dialog open={entry !== undefined} onOpenChange={onOpenChange}>
+    <Dialog open={repoName !== undefined} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         {entry ? (
           // Keyed so a different repo always starts from a fresh form.
           <QuickPrebuildForm
             key={entry.repo.fullName}
             entry={entry}
-            onDone={() => onOpenChange(false)}
+            onDone={close}
           />
+        ) : repoName ? (
+          <RepoGone repoName={repoName} onClose={close} />
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function RepoGone({
+  repoName,
+  onClose,
+}: {
+  repoName: string;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <AlertTriangle className="size-4 text-warning" />
+          Repository no longer available
+        </DialogTitle>
+        <DialogDescription>
+          <span className="font-mono">{repoName}</span> isn't in your GitHub
+          repository list anymore. Your access may have changed. Anything
+          already prebuilt stays under Stored prebuilds.
+        </DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button onClick={onClose}>Close</Button>
+      </DialogFooter>
+    </>
   );
 }
 
@@ -83,21 +120,19 @@ function QuickPrebuildForm({
 
   const branch =
     branchChoice === OTHER_BRANCH ? customBranch.trim() : branchChoice;
-  const isDefaultBranch = !branch || branch === repo.defaultBranch;
-  const refParam = isDefaultBranch ? undefined : branch;
+  const refParam = normalizeBranch(branch, repo.defaultBranch);
 
-  const base = useQuery(githubRepoInspectQuery(repo.owner, repo.name));
-  const atBranch = useQuery({
-    ...githubRepoInspectQuery(repo.owner, repo.name, refParam),
+  const inspection = useRepoInspection(repo, refParam, {
     // A half-typed custom branch would 404 on every keystroke.
     enabled: branchChoice !== OTHER_BRANCH || branch.length > 0,
   });
   const images = useQuery(imagesListQuery());
 
-  const branches = base.data?.branches ?? [repo.defaultBranch];
-  const suggested = atBranch.data?.suggestedBuild;
+  const { branches, suggestedBuild: suggested } = inspection;
   const steps = stepsText ?? suggested?.join("\n") ?? "";
-  const detecting = stepsText === undefined && atBranch.isFetching;
+  // Until the user types their own steps, the spec depends on detection:
+  // submitting early would bake a step-less prebuild with a different hash.
+  const detecting = stepsText === undefined && inspection.detecting;
 
   const readyImages = (images.data ?? [])
     .filter((i) => i.status === "ready")
@@ -111,9 +146,11 @@ function QuickPrebuildForm({
     refParam,
     repo.defaultBranch,
   );
+  const buildingJob = activeJobForBranch(entry, refParam);
   const canSubmit =
     !runPrebuild.isPending &&
-    !entry.activeJob &&
+    !buildingJob &&
+    !detecting &&
     branch.length > 0 &&
     clonePath.trim().length > 0;
 
@@ -131,7 +168,7 @@ function QuickPrebuildForm({
       {
         spec,
         force: existing !== undefined,
-        label: refParam ? `${repo.fullName}#${refParam}` : repo.fullName,
+        label: repoBranchLabel(repo.fullName, refParam),
       },
       { onSuccess: onDone },
     );
@@ -242,6 +279,14 @@ function QuickPrebuildForm({
         </p>
       ) : null}
 
+      {buildingJob ? (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <JobStatusBadge job={buildingJob} />
+          This branch is building right now. You can rebuild it once it
+          finishes.
+        </p>
+      ) : null}
+
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
           Cancel
@@ -250,7 +295,13 @@ function QuickPrebuildForm({
           type="submit"
           disabled={!canSubmit}
           loading={runPrebuild.isPending}
-          title={entry.activeJob ? "A prebuild is already building" : undefined}
+          title={
+            buildingJob
+              ? "This branch is already building"
+              : detecting
+                ? "Detecting setup steps…"
+                : undefined
+          }
         >
           {runPrebuild.isPending ? null : <Hammer />}
           {existing ? "Rebuild prebuild" : "Create prebuild"}

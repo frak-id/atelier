@@ -1,9 +1,7 @@
-import {
-  type CreateSandboxRequest,
-  type PrebuildRecord,
-  prebuildRepoBranch,
-  repoShortName,
-  type SandboxSpec,
+import type {
+  CreateSandboxRequest,
+  PrebuildRecord,
+  SandboxSpec,
 } from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -28,7 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/formatters";
+import { formatRelativeTime, prebuildTitle } from "@/lib/formatters";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
 
 interface SpawnSearch {
@@ -265,14 +263,6 @@ function SpawnOptionsCard({
 
 // ── spawn from a stored prebuild ───────────────────────────────────────────
 
-/** A short, human label for a prebuild: `owner/name` of its cloned repo. */
-function prebuildLabel(prebuild: PrebuildRecord): string | undefined {
-  const { url, branch } = prebuildRepoBranch(prebuild);
-  if (!url) return undefined;
-  const name = repoShortName(url);
-  return branch ? `${name}#${branch}` : name;
-}
-
 /** One-tap spawn from ANY stored prebuild snapshot (including hand-written
  * and chained ones the repo card doesn't cover). */
 function PrebuildSpawnSection({
@@ -325,7 +315,6 @@ function PrebuildSpawnSection({
           </p>
         ) : (
           prebuilds.map((prebuild: PrebuildRecord) => {
-            const label = prebuildLabel(prebuild);
             return (
               <div
                 key={prebuild.ref}
@@ -335,7 +324,7 @@ function PrebuildSpawnSection({
                   <div className="flex flex-wrap items-center gap-2">
                     <Layers className="size-4 shrink-0 text-muted-foreground" />
                     <span className="truncate font-medium">
-                      {label ?? prebuild.ref}
+                      {prebuildTitle(prebuild)}
                     </span>
                     {prebuild.parent ? (
                       <Badge variant="outline">chained</Badge>
