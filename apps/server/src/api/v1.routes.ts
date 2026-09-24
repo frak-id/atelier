@@ -235,17 +235,18 @@ export async function createSandboxForUser(
 }
 
 /**
- * Resume a sandbox with its owner's git credentials refreshed (the
+ * A resume body with the owner's git credentials refreshed (the
  * credential-rotation primitive). The owner is re-resolved from the persisted
  * owner-id metadata, so it's stable regardless of who triggers the resume,
  * and fresh git files are merged over the persisted (possibly stale) ones.
  * Shared by `POST /v1/sandboxes/:id/resume` and the Launchpad wake-up.
+ * Throws `NotFoundError` for an unknown sandbox.
  */
-export async function resumeWithFreshCredentials(
+export async function withFreshCredentials(
   container: ServerContainer,
   id: string,
   body: ResumeRequest = {},
-) {
+): Promise<ResumeRequest> {
   const { runtime, control } = container;
   const state = await runtime.get(id);
   const ownerId = state.metadata?.[OWNER_ID_METADATA];
@@ -256,10 +257,7 @@ export async function resumeWithFreshCredentials(
       : undefined,
     githubToken: control.userService.resolveGitHubToken(ownerId),
   });
-  return runtime.resume(id, {
-    ...body,
-    files: [...(body.files ?? []), ...gitFiles],
-  });
+  return { ...body, files: [...(body.files ?? []), ...gitFiles] };
 }
 
 export function createV1Routes(container: ServerContainer) {
@@ -599,10 +597,13 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/sandboxes/:id/resume",
-        async ({ params, body }) =>
-          jobs.track({ kind: "sandbox-resume", target: params.id }, () =>
-            resumeWithFreshCredentials(container, params.id, body),
-          ),
+        async ({ params, body }) => {
+          // Resolved before the job opens: an unknown id is a plain 404.
+          const merged = await withFreshCredentials(container, params.id, body);
+          return jobs.track({ kind: "sandbox-resume", target: params.id }, () =>
+            runtime.resume(params.id, merged),
+          );
+        },
         { body: ResumeRequestSchema },
       )
       .delete("/sandboxes/:id", async ({ params, set }) => {

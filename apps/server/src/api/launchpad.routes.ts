@@ -38,10 +38,7 @@ import {
   requireToolboxOwnerAccess,
   resolveOwner,
 } from "./toolbox-access.ts";
-import {
-  createSandboxForUser,
-  resumeWithFreshCredentials,
-} from "./v1.routes.ts";
+import { createSandboxForUser, withFreshCredentials } from "./v1.routes.ts";
 
 const log = createChildLogger("launchpad-routes");
 
@@ -208,9 +205,9 @@ export function createLaunchpadRoutes(container: ServerContainer) {
         unpooled: true,
       },
       async (_signal, progress) => {
-        const resumed = await resumeWithFreshCredentials(
-          container,
+        const resumed = await runtime.resume(
           record.sandboxId,
+          await withFreshCredentials(container, record.sandboxId),
         );
         await autostart(record.sandboxId, record.snapshot.services, progress);
         return resumed;
