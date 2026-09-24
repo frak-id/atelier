@@ -10,6 +10,7 @@
  * prebuild is missing, and a job label that drifts from the client's
  * correlation key silently hides the live "building" badge.
  */
+import { canonicalJson } from "./canonical-json.ts";
 import type {
   PrebuildRecord,
   PrebuildRepo,
@@ -240,4 +241,27 @@ export function buildRepoPrebuildSpec(input: RepoPrebuildInput): PrebuildSpec {
     repos: [{ url: repo, ...(branch ? { branch } : {}), clonePath }],
     ...(build.length > 0 ? { build } : {}),
   };
+}
+
+// ── runtime surface ─────────────────────────────────────────────────────────
+
+/** The spec as it bakes: without the runtime surface (`processes`/`ports`),
+ * which is applied at boot and never enters the snapshot key. */
+function bakedPart(
+  spec: PrebuildSpec,
+): Omit<PrebuildSpec, "processes" | "ports"> {
+  const { processes: _processes, ports: _ports, ...baked } = spec;
+  return baked;
+}
+
+/** An edit to `before` that only changes its processes/ports: it bakes the
+ * same snapshot, so it saves without a rebuild. */
+export function runtimeOnlyEdit(
+  before: PrebuildSpec,
+  after: PrebuildSpec,
+): boolean {
+  return (
+    canonicalJson(bakedPart(before)) === canonicalJson(bakedPart(after)) &&
+    canonicalJson(before) !== canonicalJson(after)
+  );
 }

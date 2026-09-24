@@ -7,6 +7,10 @@
  * content (files/env/processes/ports/postStart) never enters the key.
  */
 import { type Static, Type } from "@sinclair/typebox";
+import {
+  SurfacePortsSchema,
+  SurfaceProcessesSchema,
+} from "./runtime-surface.ts";
 import { FileSchema, SourceSchema } from "./sandbox-spec.ts";
 
 /** A repo to clone into the prebuild before running build steps. */
@@ -32,6 +36,15 @@ export const PrebuildSpecSchema = Type.Object(
     repos: Type.Optional(Type.Array(PrebuildRepoSchema)),
     /** Ordered, fail-fast shell steps baked into the snapshot. */
     build: Type.Optional(Type.Array(Type.String())),
+    /**
+     * The runtime surface every sandbox booted from this prebuild gets, in
+     * the toolbox scheme (`runtime-surface.ts`): its projects' dev servers
+     * and watchers (several for a monorepo), each `lazy` or not, and the
+     * ports they serve. Runtime content: never in the snapshot key, so
+     * editing it never re-bakes.
+     */
+    processes: Type.Optional(SurfaceProcessesSchema),
+    ports: Type.Optional(SurfacePortsSchema),
     /** Opaque pass-through for observability. Never identifies what a
      * prebuild contains: `repos` does (see `prebuildRepos`). */
     metadata: Type.Optional(Type.Record(Type.String(), Type.String())),

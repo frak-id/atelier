@@ -9,6 +9,7 @@ import {
   useUpdateStarter,
 } from "@/api/queries/launchpad";
 import { StarterVisualForm } from "@/components/launchpad/starter-form";
+import { repoProblems } from "@/components/repos-field";
 import {
   type SpecEditorApi,
   SpecEditorShell,
@@ -35,8 +36,6 @@ function toInput(
   } satisfies StarterInput;
 }
 
-const GIT_URL_RE = /^(https?:\/\/|git@)/;
-
 /** Visual-form problems the schema alone wouldn't catch, in author words. */
 function formProblems(input: StarterInput): string[] {
   const problems = [...starterInputProblems(input)];
@@ -45,21 +44,7 @@ function formProblems(input: StarterInput): string[] {
   if ("image" in source && !source.image.trim() && !input.recipe.prebuild) {
     problems.push("Pick what the workspace boots from.");
   }
-  const repos = input.recipe.prebuild?.repos ?? [];
-  const clonePaths = new Set<string>();
-  for (const repo of repos) {
-    if (!repo.url.trim() || !GIT_URL_RE.test(repo.url.trim())) {
-      problems.push(
-        "Every git repository needs a URL starting with https:// or git@.",
-      );
-    }
-    if (!repo.clonePath.trim()) {
-      problems.push("Every git repository needs a clone path.");
-    } else if (clonePaths.has(repo.clonePath.trim())) {
-      problems.push(`Clone path "${repo.clonePath.trim()}" is used twice.`);
-    }
-    clonePaths.add(repo.clonePath.trim());
-  }
+  problems.push(...repoProblems(input.recipe.prebuild?.repos ?? []));
   for (const service of input.services) {
     if (!service.label.trim()) problems.push("Every tool needs a label.");
     if ("port" in service.target && !service.target.port.trim()) {
@@ -74,17 +59,23 @@ function formProblems(input: StarterInput): string[] {
   return [...new Set(problems)];
 }
 
-/** Drop blank setup steps before saving — a stray blank line while typing
- * isn't a validation error, just noise to discard. */
+/** Drop blank setup steps and blank-URL repo rows before saving (the JSON
+ * mode can hold them too) — a stray blank line or a half-added repo isn't
+ * a validation error, just noise to discard. */
 function cleanInput(input: StarterInput): StarterInput {
   const { prebuild } = input.recipe;
-  if (!prebuild?.build) return input;
-  const build = prebuild.build.map((s) => s.trim()).filter(Boolean);
+  if (!prebuild) return input;
+  const build = prebuild.build?.map((s) => s.trim()).filter(Boolean) ?? [];
+  const repos = prebuild.repos?.filter((r) => r.url.trim()) ?? [];
   return {
     ...input,
     recipe: {
       ...input.recipe,
-      prebuild: { ...prebuild, build: build.length > 0 ? build : undefined },
+      prebuild: {
+        ...prebuild,
+        build: build.length > 0 ? build : undefined,
+        repos: repos.length > 0 ? repos : undefined,
+      },
     },
   };
 }
@@ -118,9 +109,13 @@ export function StarterEditor({
     toInput(starter, defaultImage, initial),
   );
   const [problems, setProblems] = useState<string[]>([]);
+  // The dev servers' JSON validates locally: block Save while it doesn't
+  // parse, so a stale value is never saved.
+  const [visualValid, setVisualValid] = useState(true);
   const pending = create.isPending || update.isPending;
 
   function handleSave(api: SpecEditorApi<StarterInput>) {
+    if (api.mode === "visual" && !visualValid) return;
     const resolved = api.resolve();
     if (!resolved) return;
     const value = cleanInput(resolved);
@@ -170,7 +165,11 @@ export function StarterEditor({
         onSpecChange={setInput}
         parse={parseStarterInput}
         renderVisual={(spec, onChange) => (
-          <StarterVisualForm spec={spec} onChange={onChange} />
+          <StarterVisualForm
+            spec={spec}
+            onChange={onChange}
+            onValidityChange={setVisualValid}
+          />
         )}
         footer={(api) => (
           <>
@@ -183,7 +182,7 @@ export function StarterEditor({
             </Button>
             <Button
               type="button"
-              disabled={pending}
+              disabled={pending || (api.mode === "visual" && !visualValid)}
               onClick={() => handleSave(api)}
             >
               {pending ? <Loader2 className="animate-spin" /> : null}

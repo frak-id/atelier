@@ -1,9 +1,10 @@
 import type { ToolboxConfig, ToolboxConfigInput } from "@atelier/spec";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { useState } from "react";
 import { useCreateToolbox, useUpdateToolbox } from "@/api/queries/toolboxes";
 import { ImageSourcePicker } from "@/components/image-source-picker";
+import { RuntimeSurfaceField } from "@/components/runtime-surface-field";
 import {
   type SpecEditorApi,
   SpecEditorShell,
@@ -150,67 +151,6 @@ function ToolboxVisualForm({
   isEditing: boolean;
   onValidityChange: (valid: boolean) => void;
 }) {
-  const [advancedOpen, setAdvancedOpen] = useState(
-    () =>
-      (spec.processes && spec.processes.length > 0) ||
-      (spec.ports && spec.ports.length > 0),
-  );
-  const [processesText, setProcessesText] = useState(() =>
-    spec.processes ? JSON.stringify(spec.processes, null, 2) : "",
-  );
-  const [portsText, setPortsText] = useState(() =>
-    spec.ports ? JSON.stringify(spec.ports, null, 2) : "",
-  );
-  const [processesError, setProcessesError] = useState<string | undefined>();
-  const [portsError, setPortsError] = useState<string | undefined>();
-
-  // Report combined Advanced-field validity up so Save can be gated. Runs on
-  // mount too, so a remount (visual↔JSON toggle) re-establishes the state.
-  useEffect(() => {
-    onValidityChange(!processesError && !portsError);
-  }, [processesError, portsError, onValidityChange]);
-
-  function commitProcesses(text: string) {
-    setProcessesText(text);
-    const trimmed = text.trim();
-    if (!trimmed) {
-      setProcessesError(undefined);
-      onChange({ ...spec, processes: undefined });
-      return;
-    }
-    try {
-      const value = JSON.parse(trimmed);
-      if (!Array.isArray(value))
-        throw new Error("Processes must be a JSON array");
-      setProcessesError(undefined);
-      onChange({ ...spec, processes: value });
-    } catch (err) {
-      setProcessesError(
-        err instanceof Error ? err.message : "Processes is not valid JSON",
-      );
-    }
-  }
-
-  function commitPorts(text: string) {
-    setPortsText(text);
-    const trimmed = text.trim();
-    if (!trimmed) {
-      setPortsError(undefined);
-      onChange({ ...spec, ports: undefined });
-      return;
-    }
-    try {
-      const value = JSON.parse(trimmed);
-      if (!Array.isArray(value)) throw new Error("Ports must be a JSON array");
-      setPortsError(undefined);
-      onChange({ ...spec, ports: value });
-    } catch (err) {
-      setPortsError(
-        err instanceof Error ? err.message : "Ports is not valid JSON",
-      );
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -314,61 +254,26 @@ function ToolboxVisualForm({
       </p>
 
       <div className="border-t pt-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-expanded={advancedOpen}
-          onClick={() => setAdvancedOpen((open) => !open)}
-        >
-          {advancedOpen ? <ChevronDown /> : <ChevronRight />}
-          Advanced (processes &amp; ports)
-        </Button>
-        {advancedOpen ? (
-          <div className="mt-3 space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="toolbox-processes">
-                Processes (JSON array, optional)
-              </Label>
-              <textarea
-                id="toolbox-processes"
-                value={processesText}
-                onChange={(e) => commitProcesses(e.target.value)}
-                spellCheck={false}
-                placeholder={
-                  '[{"name":"vscode","command":"code-server ...","lazy":true,"readiness":{"port":8080}}]'
-                }
-                className="min-h-24 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
-              />
-              {processesError ? (
-                <p className="text-sm text-destructive">{processesError}</p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                The tool's running surface. Mark long-running ones{" "}
-                <code>"lazy": true</code> so they start on demand from the
-                sandbox view.
-              </p>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="toolbox-ports">
-                Ports (JSON array, optional)
-              </Label>
-              <textarea
-                id="toolbox-ports"
-                value={portsText}
-                onChange={(e) => commitPorts(e.target.value)}
-                spellCheck={false}
-                placeholder={
-                  '[{"name":"vscode","port":8080,"public":true,"auth":"forward"}]'
-                }
-                className="min-h-16 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
-              />
-              {portsError ? (
-                <p className="text-sm text-destructive">{portsError}</p>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
+        <RuntimeSurfaceField
+          value={{ processes: spec.processes, ports: spec.ports }}
+          onChange={({ processes, ports }) =>
+            onChange({ ...spec, processes, ports })
+          }
+          onValidityChange={onValidityChange}
+          hint={
+            <>
+              The tool's runtime surface. Mark long-running ones{" "}
+              <code>"lazy": true</code> so they start on demand from the sandbox
+              view.
+            </>
+          }
+          placeholders={{
+            processes:
+              '[{"name":"vscode","command":"code-server ...","lazy":true,"readiness":{"port":8080}}]',
+            ports:
+              '[{"name":"vscode","port":8080,"public":true,"auth":"forward"}]',
+          }}
+        />
       </div>
     </div>
   );

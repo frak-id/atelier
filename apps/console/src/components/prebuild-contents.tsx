@@ -1,11 +1,14 @@
 import {
+  gatingProcessNames,
+  type PortEntry,
   type PrebuildRecord,
   type PrebuildRepo,
+  type ProcessEntry,
   prebuildRepos,
   repoKey,
   repoShortName,
 } from "@atelier/spec";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Play } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { GithubIcon } from "@/components/ui/github-icon";
 import { countLabel, prebuildRepoLabel } from "@/lib/formatters";
@@ -46,13 +49,48 @@ function RepoChip({ repo }: { repo: PrebuildRepo }) {
   );
 }
 
+/** A port a sandbox booted from the prebuild serves (its dev server), with
+ * the commands behind it (`gatingProcessNames`, the runtime's own rule) in
+ * the tooltip. */
+function PortChip({
+  port,
+  processes = [],
+}: {
+  port: PortEntry;
+  processes?: ProcessEntry[];
+}) {
+  const gating = gatingProcessNames(port, processes);
+  const gates = processes.filter((p) => gating.includes(p.name));
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 font-normal"
+      title={
+        gates.length > 0
+          ? gates
+              .map(
+                (p) => `${p.command}${p.lazy ? " (starts on first open)" : ""}`,
+              )
+              .join("\n")
+          : `Port ${port.port}`
+      }
+    >
+      <Play className="size-2.5 shrink-0 fill-current text-success" />
+      <span className="font-mono">
+        {port.name}:{port.port}
+      </span>
+    </Badge>
+  );
+}
+
 /**
  * What a prebuild contains, read from `record.spec` only — never from the
  * opaque `metadata` (see `packages/spec/src/repo-prebuild.ts`): every repo
- * it clones (owner/name, branch, clone path), its base image and its number
- * of setup steps. A spec-less record (hand-made, or from before specs were
- * stored) reads as its ref alone. Chips wrap, so this stays readable with
- * one repo or five.
+ * it clones (owner/name, branch, clone path), the ports it serves (its dev
+ * servers), its base image and its number of setup steps.
+ *
+ * A spec-less record (hand-made, or from before specs were stored) reads as
+ * its ref alone. Chips wrap, so this stays readable with one repo or five.
  */
 export function PrebuildContents({
   prebuild,
@@ -79,6 +117,11 @@ export function PrebuildContents({
       {repos.map((repo) => (
         <RepoChip key={repo.clonePath} repo={repo} />
       ))}
+      {(spec.ports ?? [])
+        .filter((port) => port.public)
+        .map((port) => (
+          <PortChip key={port.name} port={port} processes={spec.processes} />
+        ))}
       {image ? (
         <Badge
           variant="neutral"

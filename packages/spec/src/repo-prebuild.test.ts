@@ -13,6 +13,7 @@ import {
   repoCloneName,
   repoKey,
   repoShortName,
+  runtimeOnlyEdit,
 } from "./repo-prebuild.ts";
 
 function record(
@@ -290,5 +291,45 @@ describe("buildRepoPrebuildSpec", () => {
     });
     expect(spec.build).toBeUndefined();
     expect(spec.metadata).toBeUndefined();
+  });
+});
+
+describe("runtimeOnlyEdit", () => {
+  const base = {
+    source: { image: "dev-base" },
+    repos: [{ url: "https://github.com/acme/mono", clonePath: "mono" }],
+  };
+
+  test("processes/ports edits bake the same snapshot", () => {
+    const withSurface = {
+      ...base,
+      processes: [
+        {
+          name: "web",
+          command: "bun run dev",
+          cwd: "/home/dev/mono/apps/web",
+          lazy: true,
+        },
+        { name: "api", command: "bun run dev", cwd: "/home/dev/mono/apps/api" },
+      ],
+      ports: [
+        { name: "web", port: 5173, public: true },
+        { name: "api", port: 3000, public: true },
+      ],
+    };
+    expect(runtimeOnlyEdit(base, withSurface)).toBe(true);
+    expect(runtimeOnlyEdit(withSurface, { ...withSurface, ports: [] })).toBe(
+      true,
+    );
+  });
+
+  test("anything baked (or no change at all) is not runtime-only", () => {
+    expect(runtimeOnlyEdit(base, base)).toBe(false);
+    // Reordered keys are no change.
+    expect(
+      runtimeOnlyEdit(base, { repos: base.repos, source: base.source }),
+    ).toBe(false);
+    expect(runtimeOnlyEdit(base, { ...base, build: ["make"] })).toBe(false);
+    expect(runtimeOnlyEdit(base, { ...base, env: { CI: "1" } })).toBe(false);
   });
 });

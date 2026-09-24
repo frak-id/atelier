@@ -2,7 +2,7 @@
  * Launchpad control-plane storage (docs/proposals/launchpad.md): starters
  * (the tech team's curated recipes) and workspaces (a user's launched
  * sandboxes, with their own title/description). Pure config + identity
- * storage — launching, status and autostart live at the api/ seam, which is
+ * storage — launching and status live at the api/ seam, which is
  * the only layer that sees both control and runtime.
  */
 import {

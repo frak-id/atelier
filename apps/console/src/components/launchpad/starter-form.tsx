@@ -1,9 +1,12 @@
 import {
   LAUNCHPAD_ICONS,
+  type PrebuildSpec,
   type StarterInput,
   type ToolboxConfig,
 } from "@atelier/spec";
+import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useId } from "react";
+import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { StarterBootSource } from "@/components/launchpad/starter-boot-source";
 import { StarterServices } from "@/components/launchpad/starter-services";
 import { ToolboxPicker } from "@/components/toolbox-picker";
@@ -12,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAllToolboxes } from "@/hooks/use-all-toolboxes";
 import { LaunchpadIconView } from "@/lib/launchpad";
+import { recipePrebuildSpec } from "@/lib/starter-recipe";
 import { cn } from "@/lib/utils";
 
 /** The starter editor's visual mode: presentation, boot source, tools and
@@ -40,12 +44,16 @@ function Section({
 export function StarterVisualForm({
   spec,
   onChange,
+  onValidityChange,
 }: {
   spec: StarterInput;
   onChange: (spec: StarterInput) => void;
+  /** False while a JSON field in the form doesn't parse (block Save). */
+  onValidityChange: (valid: boolean) => void;
 }) {
   const id = useId();
   const toolboxes = useAllToolboxes();
+  const { data: prebuilds = [] } = useQuery(prebuildsListQuery());
   const recipe = spec.recipe;
   const setRecipe = (next: StarterInput["recipe"]) =>
     onChange({ ...spec, recipe: next });
@@ -103,7 +111,11 @@ export function StarterVisualForm({
         title="What boots"
         hint="A prebuild boots in seconds with the repo and dependencies already set up."
       >
-        <StarterBootSource recipe={recipe} onChange={setRecipe} />
+        <StarterBootSource
+          recipe={recipe}
+          onChange={setRecipe}
+          onValidityChange={onValidityChange}
+        />
         {toolboxes.length > 0 ? (
           <div className="space-y-1">
             <Label>Toolboxes</Label>
@@ -169,12 +181,16 @@ export function StarterVisualForm({
 
       <Section
         title="Tools"
-        hint="The buttons your team gets in the workspace. Port tools are started automatically after launch and after every wake-up."
+        hint="The buttons your team gets in the workspace. A tool behind a lazy process starts it when it's first opened."
       >
         <StarterServices
           services={spec.services}
           onChange={(services) => onChange({ ...spec, services })}
-          portSuggestions={portSuggestions(spec, toolboxes)}
+          portSuggestions={portSuggestions(
+            spec,
+            toolboxes,
+            recipePrebuildSpec(spec.recipe, prebuilds),
+          )}
         />
       </Section>
 
@@ -196,14 +212,19 @@ export function StarterVisualForm({
   );
 }
 
-/** Port names worth suggesting: the recipe's own ports plus those of every
- * applied toolbox (auto-injected or picked). */
+/** Port names worth suggesting: the ports of the prebuild it boots (its dev
+ * servers, the likely "Preview"), the recipe's own ports, then those of
+ * every applied toolbox (auto-injected or picked). */
 function portSuggestions(
   spec: StarterInput,
   toolboxes: ToolboxConfig[],
+  prebuild: PrebuildSpec | undefined,
 ): string[] {
   const picked = new Set(spec.recipe.toolboxes ?? []);
   const names = new Set<string>();
+  for (const port of prebuild?.ports ?? []) {
+    if (port.public) names.add(port.name);
+  }
   for (const port of spec.recipe.ports ?? []) names.add(port.name);
   for (const tb of toolboxes) {
     const selector = `tb/${tb.ownerType}/${tb.ownerId}/${tb.slug}`;

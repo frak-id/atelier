@@ -5,11 +5,14 @@
  * editor, the prebuild picker and the "new starter from this prebuild" link
  * share one rule, and it's unit-tested directly.
  */
-import type {
-  PrebuildRecord,
-  PrebuildRepo,
-  PrebuildSpec,
-  StarterInput,
+import {
+  canonicalJson,
+  type PrebuildRecord,
+  type PrebuildRepo,
+  type PrebuildSpec,
+  type RuntimeSurface,
+  runtimeSurfaceOf,
+  type StarterInput,
 } from "@atelier/spec";
 
 type Recipe = StarterInput["recipe"];
@@ -53,8 +56,9 @@ export function matchStoredPrebuild(
   prebuilds: readonly PrebuildRecord[],
 ): PrebuildRecord | undefined {
   if (recipe.prebuild) {
-    const want = JSON.stringify(recipe.prebuild);
-    return prebuilds.find((p) => p.spec && JSON.stringify(p.spec) === want);
+    // Canonical: storage round-trips don't keep key order.
+    const want = canonicalJson(recipe.prebuild);
+    return prebuilds.find((p) => p.spec && canonicalJson(p.spec) === want);
   }
   if ("snapshot" in recipe.source) {
     const ref = recipe.source.snapshot;
@@ -74,14 +78,16 @@ export function bootMode(
 }
 
 /**
- * The "set it up here" form: base image, repos, and setup steps as the raw
+ * The "set it up here" form: base image, repos, setup steps as the raw
  * textarea text (so a trailing space or an empty line being typed survives
- * a render; it's only cleaned when written into the recipe).
+ * a render; it's only cleaned when written into the recipe), and the
+ * projects' dev servers (`processes`/`ports`, the toolbox scheme).
  */
 export interface CustomBoot {
   image: string;
   repos: PrebuildRepo[];
   steps: string;
+  surface: RuntimeSurface;
 }
 
 /** The custom form for `recipe` (also: "Customize" a followed prebuild). */
@@ -91,15 +97,17 @@ export function customBootOf(recipe: Recipe, defaultImage: string): CustomBoot {
     image: "image" in source ? source.image : defaultImage,
     repos: recipe.prebuild?.repos ?? [],
     steps: (recipe.prebuild?.build ?? []).join("\n"),
+    surface: runtimeSurfaceOf(recipe.prebuild ?? {}),
   };
 }
 
 /**
  * Write the custom form into `recipe`. Nothing to clone or build boots the
- * image directly (no prebuild); otherwise an inline prebuild bakes on the
- * first launch. Blank repo rows and blank steps are dropped, and prebuild
- * fields the form doesn't show (`files`, `env`, set in JSON mode or carried
- * over by "Customize") are kept.
+ * image directly (no prebuild, and so no dev servers: they run projects);
+ * otherwise an inline prebuild bakes on the first launch, and its
+ * processes/ports run in every workspace. Blank repo rows and blank steps
+ * are dropped, and prebuild fields the form doesn't show (`files`, `env`,
+ * set in JSON mode or carried over by "Customize") are kept.
  */
 export function withCustomBoot(recipe: Recipe, boot: CustomBoot): Recipe {
   const { prebuild: previous, ...rest } = recipe;
@@ -122,6 +130,20 @@ export function withCustomBoot(recipe: Recipe, boot: CustomBoot): Recipe {
       source,
       ...(repos.length > 0 ? { repos } : {}),
       ...(build.length > 0 ? { build } : {}),
+      ...runtimeSurfaceOf(boot.surface),
     },
   };
+}
+
+/** The prebuild recipe `recipe` boots with: its own (followed or set up
+ * here), or the stored one it pins. Its processes/ports are what the server
+ * adds at launch, like a toolbox's. */
+export function recipePrebuildSpec(
+  recipe: Recipe,
+  prebuilds: readonly PrebuildRecord[],
+): PrebuildSpec | undefined {
+  if (recipe.prebuild) return recipe.prebuild;
+  if (!("snapshot" in recipe.source)) return undefined;
+  const ref = recipe.source.snapshot;
+  return prebuilds.find((p) => p.ref === ref)?.spec;
 }

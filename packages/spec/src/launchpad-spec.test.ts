@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Value } from "@sinclair/typebox/value";
 import {
-  autostartProcesses,
   LAUNCHPAD_STARTER_ANNOTATION,
   type LaunchpadService,
   resolveWorkspaceServices,
@@ -58,7 +57,6 @@ describe("StarterInputSchema", () => {
           label: "Preview",
           target: { port: "web", path: "/fr" },
           open: "external",
-          autostart: false,
         },
         {
           id: "staging",
@@ -165,34 +163,6 @@ describe("resolveWorkspaceServices", () => {
     const resolved = resolveWorkspaceServices([], URLS, "abc");
     expect(resolved.map((s) => s.id)).toEqual(["pi", "web", "vscode"]);
     expect(resolved.every((s) => s.open === "embed")).toBe(true);
-  });
-});
-
-describe("autostartProcesses", () => {
-  test("starts the gating processes of not-ready port services only", () => {
-    const services: LaunchpadService[] = [
-      { id: "agent", label: "Pi", target: { port: "pi" } },
-      // Already ready: nothing to start.
-      { id: "preview", label: "Preview", target: { port: "web" } },
-      // Opted out.
-      {
-        id: "code",
-        label: "Code",
-        target: { port: "vscode" },
-        autostart: false,
-      },
-      { id: "link", label: "Link", target: { url: "https://x.dev" } },
-      // Duplicate port: processes deduped.
-      { id: "agent-2", label: "Pi again", target: { port: "pi" } },
-    ];
-    expect(autostartProcesses(services, URLS)).toEqual([
-      "pi-web-sessiond",
-      "pi",
-    ]);
-  });
-
-  test("undeclared services never autostart", () => {
-    expect(autostartProcesses([], URLS)).toEqual([]);
   });
 });
 

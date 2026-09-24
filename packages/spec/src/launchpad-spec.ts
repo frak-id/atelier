@@ -8,7 +8,7 @@
  * seam turns a starter's `recipe` into the same `CreateSandboxRequest` a
  * developer would POST, so enrichment/toolboxes/org policy apply unchanged.
  *
- * The pure helpers below (service resolution, autostart set, phase mapping,
+ * The pure helpers below (service resolution, phase mapping,
  * launch-request assembly) are shared by the server and the console, with no
  * Node or DOM APIs.
  */
@@ -103,9 +103,6 @@ export const LaunchpadServiceSchema = Type.Object(
     open: Type.Optional(
       Type.Union([Type.Literal("embed"), Type.Literal("external")]),
     ),
-    /** Start the port's (lazy) gating processes right after launch and on
-     * every wake-up. Default true; ignored for `url` targets. */
-    autostart: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false, $id: "LaunchpadService" },
 );
@@ -350,27 +347,6 @@ export function resolveWorkspaceServices(
       ...(match.ready !== undefined ? { ready: match.ready } : {}),
     };
   });
-}
-
-/**
- * The processes to start so the declared services come up: the gating
- * processes of every port service with `autostart !== false` that isn't
- * ready yet, deduped. Undeclared (fallback) services never autostart — the
- * author didn't ask for them.
- */
-export function autostartProcesses(
-  services: readonly LaunchpadService[],
-  urls: readonly SandboxUrl[],
-): string[] {
-  const names = new Set<string>();
-  for (const service of services) {
-    if (service.autostart === false || !("port" in service.target)) continue;
-    const { port } = service.target;
-    const match = urls.find((u) => u.name === port);
-    if (!match || match.ready === true) continue;
-    for (const name of match.processes ?? []) names.add(name);
-  }
-  return [...names];
 }
 
 /** Annotation carrying the starter id on a launched sandbox (display only —

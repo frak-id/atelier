@@ -1,11 +1,12 @@
-import type { PrebuildSpec, Source } from "@atelier/spec";
+import { type PrebuildSpec, runtimeOnlyEdit, type Source } from "@atelier/spec";
 import { useNavigate } from "@tanstack/react-router";
-import { Hammer, Loader2 } from "lucide-react";
+import { Hammer, Loader2, Save } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRunPrebuild } from "@/api/queries/prebuilds";
 import { ImageSourcePicker } from "@/components/image-source-picker";
-import { ReposField } from "@/components/repos-field";
+import { ReposField, repoProblems } from "@/components/repos-field";
+import { RuntimeSurfaceField } from "@/components/runtime-surface-field";
 import {
   type SpecEditorApi,
   SpecEditorShell,
@@ -63,22 +64,34 @@ export function PrebuildEditor({ spec: initialSpec }: { spec?: PrebuildSpec }) {
   const runPrebuild = useRunPrebuild();
   const [spec, setSpec] = useState<PrebuildSpec>(initialSpec ?? EMPTY_SPEC);
   const isEditing = initialSpec !== undefined;
+  /** Only processes/ports changed: same snapshot, nothing to rebuild. */
+  const surfaceOnly = (next: PrebuildSpec) =>
+    initialSpec !== undefined && runtimeOnlyEdit(initialSpec, next);
+  // The processes/ports JSON fields validate locally: block Run while one
+  // doesn't parse, so a stale value is never sent.
+  const [visualValid, setVisualValid] = useState(true);
+
+  // The footer's label and the run judge the same (cleaned) spec.
+  const savesOnly = surfaceOnly(cleanSpec(spec));
 
   function handleRun(api: SpecEditorApi<PrebuildSpec>) {
+    if (api.mode === "visual" && !visualValid) return;
     const value = api.resolve();
     if (!value) return;
     if (!sourceRef(value.source).trim()) {
       toast.error("Pick a base image or chain a prebuild snapshot.");
       return;
     }
-    // Drop half-typed repo rows (a blank url is meaningless) before running.
-    const repos = value.repos?.filter((repo) => repo.url.trim());
-    const cleaned: PrebuildSpec = {
-      ...value,
-      repos: repos && repos.length > 0 ? repos : undefined,
-    };
+    const cleaned = cleanSpec(value);
+    const problem = repoProblems(cleaned.repos ?? [])[0];
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     runPrebuild.mutate(
-      { spec: cleaned, force: isEditing },
+      // Editing re-bakes on purpose (force), unless only processes/ports
+      // changed: they apply at boot, and the cache hit stores them.
+      { spec: cleaned, force: isEditing && !surfaceOnly(cleaned) },
       {
         onSuccess: () => {
           navigate({ to: "/settings/prebuilds" });
@@ -94,28 +107,47 @@ export function PrebuildEditor({ spec: initialSpec }: { spec?: PrebuildSpec }) {
       parse={parsePrebuildSpec}
       jsonPlaceholder={JSON_PLACEHOLDER}
       renderVisual={(current, onChange) => (
-        <PrebuildVisualForm spec={current} onChange={onChange} />
+        <PrebuildVisualForm
+          spec={current}
+          onChange={onChange}
+          onValidityChange={setVisualValid}
+        />
       )}
       footer={(api) => (
-        <Button disabled={runPrebuild.isPending} onClick={() => handleRun(api)}>
+        <Button
+          disabled={
+            runPrebuild.isPending || (api.mode === "visual" && !visualValid)
+          }
+          onClick={() => handleRun(api)}
+        >
           {runPrebuild.isPending ? (
             <Loader2 className="animate-spin" />
+          ) : savesOnly ? (
+            <Save />
           ) : (
             <Hammer />
           )}
-          Run prebuild
+          {savesOnly ? "Save (no rebuild)" : "Run prebuild"}
         </Button>
       )}
     />
   );
 }
 
+/** Drop half-typed repo rows (a blank url is meaningless) before running. */
+function cleanSpec(spec: PrebuildSpec): PrebuildSpec {
+  const repos = spec.repos?.filter((repo) => repo.url.trim()) ?? [];
+  return { ...spec, repos: repos.length > 0 ? repos : undefined };
+}
+
 function PrebuildVisualForm({
   spec,
   onChange,
+  onValidityChange,
 }: {
   spec: PrebuildSpec;
   onChange: (spec: PrebuildSpec) => void;
+  onValidityChange: (valid: boolean) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -177,6 +209,46 @@ function PrebuildVisualForm({
             spellCheck={false}
             placeholder="cd workspace/repo && bun install"
             className="min-h-32 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Dev servers</CardTitle>
+          <CardDescription>
+            What every sandbox booted from this prebuild runs: its projects' dev
+            servers and watchers (several for a monorepo), in the toolbox
+            scheme. Applied at boot, so changing them never rebuilds.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RuntimeSurfaceField
+            value={{ processes: spec.processes, ports: spec.ports }}
+            onChange={({ processes, ports }) => {
+              const { processes: _p, ports: _q, ...rest } = spec;
+              onChange({
+                ...rest,
+                ...(processes?.length ? { processes } : {}),
+                ...(ports?.length ? { ports } : {}),
+              });
+            }}
+            onValidityChange={onValidityChange}
+            hint={
+              <>
+                Run as <code>"user": "dev"</code> with a <code>cwd</code> in the
+                clone path. A port is gated by the process of the same name (or
+                whose <code>readiness.port</code> probes it); mark it{" "}
+                <code>"lazy": true</code> to start it on first open. A served
+                app must listen on <code>0.0.0.0</code>.
+              </>
+            }
+            placeholders={{
+              processes:
+                '[{"name":"web","command":"bun run dev","cwd":"/home/dev/app/apps/web","user":"dev","lazy":true,"readiness":{"port":5173}}]',
+              ports:
+                '[{"name":"web","port":5173,"public":true,"auth":"forward"}]',
+            }}
           />
         </CardContent>
       </Card>

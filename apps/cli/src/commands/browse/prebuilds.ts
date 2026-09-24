@@ -22,6 +22,11 @@ export function prebuildHint(p: PrebuildRecord): string {
   const parts = prebuildRepos(p).map(
     (r) => repoShortName(r.url) + (r.branch ? `@${r.branch}` : ""),
   );
+  // Its dev servers: the ports a sandbox booted from it serves.
+  const served = (p.spec?.ports ?? []).filter((port) => port.public);
+  if (served.length > 0) {
+    parts.push(`serves ${served.map((s) => `${s.name}:${s.port}`).join(", ")}`);
+  }
   parts.push(`built ${age(p.createdAt)} ago`);
   if (p.image) parts.push(p.image);
   return parts.join(" · ");

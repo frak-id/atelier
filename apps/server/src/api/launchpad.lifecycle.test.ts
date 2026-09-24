@@ -53,7 +53,6 @@ interface FakeSandbox {
 /** Just enough runtime for the lifecycle: an in-memory record map. */
 function fakeRuntime() {
   const sandboxes = new Map<string, FakeSandbox>();
-  const started: string[] = [];
   const require = (id: string) => {
     const sandbox = sandboxes.get(id);
     if (!sandbox) throw new NotFoundError("Sandbox", id);
@@ -79,12 +78,8 @@ function fakeRuntime() {
       require(id);
       sandboxes.delete(id);
     },
-    processAction: async (id: string, name: string) => {
-      require(id);
-      started.push(name);
-    },
   };
-  return { sandboxes, started, runtime };
+  return { sandboxes, runtime };
 }
 
 const PI_URL: SandboxUrl = {
@@ -166,8 +161,8 @@ function latestJob(userId: string, id: string): string | undefined {
 // ── tests ───────────────────────────────────────────────────────────────────
 
 describe("launch", () => {
-  test("launches the recipe, autostarts services and reaches ready", async () => {
-    const { lifecycle, jobs, created, started } = setup();
+  test("launches the recipe and reaches ready, tools left lazy", async () => {
+    const { lifecycle, jobs, created } = setup();
     const user = newUser();
     const starter = control.starterService.create(
       { type: "user", id: user.id },
@@ -182,9 +177,15 @@ describe("launch", () => {
     expect(created[0]?.annotations?.["atelier.dev/launchpad-starter"]).toBe(
       starter.id,
     );
-    expect(started).toEqual(["pi-web"]);
     const [listed] = lifecycle.list(user.id);
     expect(listed?.phase).toBe("ready");
+    // A lazy tool starts on first open (the service gate), not at launch.
+    const detail = await lifecycle.detail(view.id, user.id);
+    expect(detail.services[0]).toMatchObject({
+      label: "Assistant",
+      processes: ["pi-web"],
+      ready: false,
+    });
   });
 
   test("a failed launch is `failed` with the job's error, and retry relaunches", async () => {

@@ -10,6 +10,7 @@ import { githubReposQuery } from "@/api/queries/github";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { ImageSourcePicker } from "@/components/image-source-picker";
 import { ReposField } from "@/components/repos-field";
+import { RuntimeSurfaceField } from "@/components/runtime-surface-field";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -38,9 +39,12 @@ type Mode = "stored" | "custom";
 export function StarterBootSource({
   recipe,
   onChange,
+  onValidityChange,
 }: {
   recipe: Recipe;
   onChange: (recipe: Recipe) => void;
+  /** False while the dev servers' JSON doesn't parse (block Save). */
+  onValidityChange: (valid: boolean) => void;
 }) {
   const defaultImage = useDefaultImage();
   const prebuildsQuery = useQuery(prebuildsListQuery());
@@ -101,6 +105,7 @@ export function StarterBootSource({
           boot={boot}
           baked={recipe.prebuild !== undefined}
           onChange={commitBoot}
+          onValidityChange={onValidityChange}
           urlSuggestions={urlSuggestions}
         />
       )}
@@ -163,8 +168,8 @@ function StoredPrebuildPicker({
           "A hand-made snapshot: pinned as-is (it has no recipe to rebuild)."
         ) : pinned ? (
           <>
-            Pinned to <code>{pinned}</code>, which no longer
-            exists. Pick another one.
+            Pinned to <code>{pinned}</code>, which no longer exists. Pick
+            another one.
           </>
         ) : (
           "Pick one. Until you do, the starter keeps its current set-up."
@@ -188,6 +193,7 @@ function PrebuildSummary({
 }) {
   const { spec } = prebuild;
   const repos = prebuildRepos(prebuild);
+  const servedPorts = (spec?.ports ?? []).filter((port) => port.public);
   return (
     <div className="space-y-1.5 rounded-md border p-3 text-sm">
       <p className="text-muted-foreground">
@@ -210,6 +216,18 @@ function PrebuildSummary({
       ) : (
         <p className="text-xs text-muted-foreground">No repos cloned.</p>
       )}
+      {servedPorts.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Serves{" "}
+          {servedPorts.map((port, i) => (
+            <span key={port.name}>
+              {i > 0 ? ", " : ""}
+              <code>{port.name}</code>
+            </span>
+          ))}
+          : pick them for tools below.
+        </p>
+      ) : null}
       {spec ? (
         <Button type="button" variant="outline" size="sm" onClick={onCustomize}>
           <Pencil />
@@ -224,12 +242,14 @@ function CustomBootSource({
   boot,
   baked,
   onChange,
+  onValidityChange,
   urlSuggestions,
 }: {
   boot: CustomBoot;
   /** Something to clone or build: the first launch bakes it. */
   baked: boolean;
   onChange: (boot: CustomBoot) => void;
+  onValidityChange: (valid: boolean) => void;
   urlSuggestions: string[];
 }) {
   return (
@@ -270,6 +290,27 @@ function CustomBootSource({
           <code>cd &lt;clone path&gt; &amp;&amp;</code>.
         </p>
       </div>
+      {boot.repos.some((r) => r.url.trim()) ? (
+        <RuntimeSurfaceField
+          value={boot.surface}
+          onChange={(surface) => onChange({ ...boot, surface })}
+          onValidityChange={onValidityChange}
+          hint={
+            <>
+              The projects' dev servers, in the toolbox scheme: a{" "}
+              <code>cwd</code> in the clone path, <code>"lazy": true</code> to
+              start it when its tool is first opened, and a public port to point
+              a tool at. It must listen on <code>0.0.0.0</code>.
+            </>
+          }
+          placeholders={{
+            processes:
+              '[{"name":"web","command":"bun run dev","cwd":"/home/dev/web","user":"dev","lazy":true,"readiness":{"port":5173}}]',
+            ports:
+              '[{"name":"web","port":5173,"public":true,"auth":"forward"}]',
+          }}
+        />
+      ) : null}
       <p className="text-xs text-muted-foreground">
         {baked
           ? "The first launch builds this (it can take a few minutes); later launches reuse it until a repository gets a new commit."

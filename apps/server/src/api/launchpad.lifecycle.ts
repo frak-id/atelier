@@ -5,17 +5,16 @@
  *
  * Launching reads the stored recipe (a consumer never supplies a spec) and
  * runs it through the exact `POST /v1/sandboxes` path (`createSandbox`:
- * enrichment, toolboxes, org policy, git attribution), then starts the
- * services the author declared. A workspace's phase is derived from the
- * runtime record + its latest lifecycle job.
+ * enrichment, toolboxes, org policy, git attribution). Its tools' lazy
+ * processes start on first open, through the same service gate as the
+ * developer console. A workspace's phase is derived from the runtime record
+ * + its latest lifecycle job.
  *
  * Runtime, jobs and the two `/v1` seam functions are injected so the whole
  * lifecycle is testable against a fake runtime (launchpad.lifecycle.test.ts).
  */
 import {
-  autostartProcesses,
   type CreateSandboxRequest,
-  type LaunchpadService,
   type LaunchRequest,
   type ResolvedService,
   type ResumeRequest,
@@ -40,14 +39,11 @@ import type {
 } from "../runtime/index.ts";
 import { ConflictError, NotFoundError } from "../shared/errors.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
-import { createChildLogger } from "../shared/lib/logger.ts";
 import {
   readableOwners,
   requireOwnerReadAccess,
   requireToolboxOwnerAccess,
 } from "./toolbox-access.ts";
-
-const log = createChildLogger("launchpad");
 
 /** A workspace as the Launchpad renders it. */
 export interface WorkspaceView {
@@ -85,7 +81,7 @@ export interface LaunchpadLifecycleDeps {
   control: ControlContainer;
   runtime: Pick<
     RuntimeService,
-    "list" | "get" | "pause" | "resume" | "destroy" | "processAction"
+    "list" | "get" | "pause" | "resume" | "destroy"
   >;
   jobs: Pick<JobService, "get" | "dispatch" | "track">;
   /** `POST /v1/sandboxes`'s create path (`createSandboxForUser`). */
@@ -356,30 +352,6 @@ export class LaunchpadLifecycle {
     return view;
   }
 
-  /** Start the declared services' lazy processes. Best-effort: a service
-   * that won't start must not fail a launch that otherwise succeeded — the
-   * tile shows it as stopped, with a manual start. */
-  private async autostart(
-    sandboxId: string,
-    services: LaunchpadService[],
-    progress: (msg: string) => void,
-  ): Promise<void> {
-    const { runtime } = this.deps;
-    const state = await runtime.get(sandboxId);
-    const names = autostartProcesses(services, state.urls);
-    if (names.length === 0) return;
-    progress(`starting ${names.join(", ")}…`);
-    await Promise.all(
-      names.map((name) =>
-        runtime
-          .processAction(sandboxId, name, "start")
-          .catch((err) =>
-            log.warn({ sandboxId, name, err }, "autostart failed"),
-          ),
-      ),
-    );
-  }
-
   private dispatchLaunch(
     user: AuthUser,
     sandboxId: string,
@@ -395,16 +367,8 @@ export class LaunchpadLifecycle {
         // Latency-sensitive: never queue behind a build.
         unpooled: true,
       },
-      async (_signal, progress) => {
-        const created = await this.deps.createSandbox(
-          user,
-          request,
-          sandboxId,
-          progress,
-        );
-        await this.autostart(sandboxId, starter.services, progress);
-        return created;
-      },
+      (_signal, progress) =>
+        this.deps.createSandbox(user, request, sandboxId, progress),
     );
   }
 
@@ -419,14 +383,11 @@ export class LaunchpadLifecycle {
         metadata: { sandboxId },
         unpooled: true,
       },
-      async (_signal, progress) => {
-        const resumed = await this.deps.runtime.resume(
+      async () =>
+        this.deps.runtime.resume(
           sandboxId,
           await this.deps.resumeBody(sandboxId),
-        );
-        await this.autostart(sandboxId, record.snapshot.services, progress);
-        return resumed;
-      },
+        ),
     );
     this.deps.control.workspaceService.setJob(sandboxId, job.id);
     return job;

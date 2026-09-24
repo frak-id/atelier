@@ -83,7 +83,6 @@ org policy, git attribution). A non-technical caller never supplies a spec.
   icon?: "eye",                 // curated lucide key, see LAUNCHPAD_ICONS
   target: { port: "web", path?: "/admin" } | { url: "https://…" },
   open?: "embed" | "external",  // default embed
-  autostart?: boolean,          // default true for port targets
 }
 ```
 
@@ -93,11 +92,14 @@ org policy, git attribution). A non-technical caller never supplies a spec.
 - A `url` target is a static link (staging, docs, a Figma file). A
   `{sandboxId}` placeholder in it is substituted, so it can also point to a
   preview environment keyed by the sandbox.
-- **Autostart**: lazy processes (toolbox-contributed pi-web, code-server, a
-  dev server) are started by the server right after launch and after every
-  wake-up, for every port service with `autostart !== false`. The tech team
-  says "boot these", and the consumer never sees a "Start" button unless
-  something crashed.
+- **Lazy tools start when opened.** A port's gating processes (a toolbox's
+  pi-web or code-server, a prebuild's dev server) follow the one lazy
+  workflow: `lazy: true` means "start on first access", and opening the
+  tool is that access. The workspace page uses the developer console's
+  service gate (`useServiceGate`) with `startOnOpen`, so the consumer never
+  looks for a "Start" button; one only appears if a start failed. An
+  `external` tool is started first, then offered as a link. Processes that
+  aren't lazy start with the sandbox, as anywhere else.
 - A starter with no services falls back to every public URL of the sandbox
   (except `ssh`), all embedded.
 
@@ -180,6 +182,12 @@ failed before the record existed is re-dispatched with the same id.
   starter" from a stored prebuild (`/settings/launchpad/new?prebuild=<ref>`)
   seeds the first mode with that prebuild, title `Work on <prebuildTitle>`.
 
+- **Dev servers become tools.** A prebuild declares its projects' dev
+  servers in the toolbox scheme (`processes` + `ports`, several for a
+  monorepo), on a stored prebuild or in "Set it up here". Its public ports
+  are suggested first when adding a tool: point a "Preview" tile at one,
+  and opening it starts the (lazy) dev server.
+
 ## 5. API
 
 ```
@@ -193,7 +201,7 @@ GET    /api/launchpad/workspaces                caller's workspaces + phase
 GET    /api/launchpad/workspaces/:id            + resolved services (live readiness)
 PATCH  /api/launchpad/workspaces/:id            { title?, description? }
 POST   /api/launchpad/workspaces/:id/sleep      pause
-POST   /api/launchpad/workspaces/:id/wake       resume (+ git creds refresh + autostart)
+POST   /api/launchpad/workspaces/:id/wake       resume (+ git creds refresh)
 POST   /api/launchpad/workspaces/:id/retry      resume in place, or relaunch (same launch authz)
 DELETE /api/launchpad/workspaces/:id            destroy sandbox + row (already gone = fine)
 ```
@@ -223,10 +231,10 @@ DELETE /api/launchpad/workspaces/:id            destroy sandbox + row (already g
   embed/external per tool, and "open in a new tab" is always offered.
   Embedded frames are sandboxed without top-navigation: an author-chosen
   URL can't navigate the Launchpad away.
-- **Autostart starts gating processes only.** It uses the same set as the
-  console's service gate (`gatingProcessNames`). A tool whose web process
-  needs a sibling started first relies on that process's `after`
-  dependency (see `design/ui-evolution.md` §3.3, pi-web).
+- **Opening a tool starts its gating processes only** (`gatingProcessNames`,
+  the runtime's rule). A tool whose web process needs a sibling started
+  first relies on that process's `after` dependency (see
+  `design/ui-evolution.md` §3.3, pi-web).
 
 ## 7. Follow-ups
 
