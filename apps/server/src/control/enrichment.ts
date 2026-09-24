@@ -54,28 +54,37 @@ export interface EnrichmentOptions {
   toolboxHarnessId?: string;
   /** The sandbox owner — injects git identity/credentials + owner display. */
   owner?: OwnerContext;
+  /**
+   * `false` when an external control plane owns the sandbox
+   * (`CreateSandboxRequest.personalize`): the org's default harness is not
+   * composed in. Org policy fragments and secret resolution still apply.
+   */
+  personalize?: boolean;
 }
 
 /**
  * Compose the winning harness into the spec when it doesn't already declare
  * one. Precedence: the spec's own harness (a `atelier.dev/harness` annotation,
  * composed client-side) > a toolbox-declared harness > the org policy's
- * `harness`. Composition only happens for the two lower tiers; a spec that
- * already carries a harness is returned untouched (it wins).
+ * `harness` (skipped when `withOrgDefault` is false: an unpersonalized spawn).
+ * Composition only happens for the two lower tiers; a spec that already
+ * carries a harness is returned untouched (it wins).
  */
 function injectHarness(
   spec: SandboxSpec,
   orgId: string | undefined,
   orgPolicy: OrgPolicyService,
   toolboxHarnessId: string | undefined,
+  withOrgDefault: boolean,
 ): SandboxSpec {
   if (spec.annotations?.[HARNESS_ANNOTATION]) return spec;
 
-  const orgFragment = orgId
-    ? (orgPolicy.getByOrgId(orgId)?.fragment as
-        | { harness?: unknown }
-        | undefined)
-    : undefined;
+  const orgFragment =
+    orgId && withOrgDefault
+      ? (orgPolicy.getByOrgId(orgId)?.fragment as
+          | { harness?: unknown }
+          | undefined)
+      : undefined;
   const orgHarness =
     typeof orgFragment?.harness === "string" ? orgFragment.harness : undefined;
 
@@ -254,6 +263,7 @@ export async function enrichSpec(
     orgId,
     deps.orgPolicy,
     opts.toolboxHarnessId,
+    opts.personalize !== false,
   );
   const withHosts = injectDevServerHosts(withHarness, config.domain.baseDomain);
   const resolved = await resolveSecrets(withHosts, orgId, deps.secrets);

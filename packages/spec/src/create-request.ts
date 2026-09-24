@@ -21,6 +21,12 @@ import { SandboxSpecSchema, ToolboxSelectorSchema } from "./sandbox-spec.ts";
  * hit when unchanged) to the current snapshot, overriding `source`. A plain
  * `SandboxSpec` (neither field) is still a valid body, so the
  * CLI/editor paths are unchanged.
+ *
+ * `personalize: false` is for an external control plane that owns the
+ * sandbox's content and identity (e.g. Open-Inspect): the seam then skips the
+ * caller's personal environment — auto-injected org/user toolboxes, the org's
+ * default harness, and the caller's git identity + credentials. Org policy
+ * fragments and secret resolution always apply.
  */
 export const CreateSandboxRequestSchema = Type.Composite(
   [
@@ -28,6 +34,14 @@ export const CreateSandboxRequestSchema = Type.Composite(
     Type.Object({
       toolboxes: Type.Optional(Type.Array(ToolboxSelectorSchema)),
       prebuild: Type.Optional(PrebuildSpecSchema),
+      personalize: Type.Optional(
+        Type.Boolean({
+          description:
+            "Apply the caller's auto-injected toolboxes, default harness and " +
+            "git identity/credentials (default true). Set false when an " +
+            "external control plane owns the sandbox.",
+        }),
+      ),
     }),
   ],
   { additionalProperties: false, $id: "CreateSandboxRequest" },

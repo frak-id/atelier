@@ -157,9 +157,14 @@ export async function createSandboxForUser(
 ) {
   const { runtime, control } = container;
   // The body is a spec plus the high-level references the caller picked
-  // (`toolboxes` selectors, a `prebuild` recipe); strip them so the runtime
-  // only ever sees a resolved spec.
-  const { toolboxes: selectors = [], prebuild, ...specFields } = body;
+  // (`toolboxes` selectors, a `prebuild` recipe, `personalize`); strip them
+  // so the runtime only ever sees a resolved spec.
+  const {
+    toolboxes: selectors = [],
+    prebuild,
+    personalize = true,
+    ...specFields
+  } = body;
   let spec = specFields as SandboxSpec;
   // A template built from a prebuild carries the recipe, not a pinned ref:
   // resolve it to the current snapshot (idempotent — a cache hit when
@@ -175,17 +180,23 @@ export async function createSandboxForUser(
   const orgId = resolveOrgId(control, user.id);
   const authorizedKeys = control.sshKeyService.getValidPublicKeys();
   // The sandbox owner (git user): identity for attribution/display + GitHub
-  // token for the injected credential helper.
-  const owner = {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    githubToken: control.userService.resolveGitHubToken(user.id),
-  };
+  // token for the injected credential helper. An unpersonalized sandbox has
+  // none — its control plane brings its own git identity and credentials.
+  const owner = personalize
+    ? {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        githubToken: control.userService.resolveGitHubToken(user.id),
+      }
+    : undefined;
   // Auto-inject org (baseline) then user (personal overlay) toolboxes,
-  // oldest-first (R6), then the explicitly-picked ones.
+  // oldest-first (R6), then the explicitly-picked ones. An unpersonalized
+  // sandbox gets only the ones it explicitly picked.
   const [autoInjectRefs, selectedRefs] = await Promise.all([
-    resolveToolboxRefs(container, { orgId, userId: user.id }),
+    personalize
+      ? resolveToolboxRefs(container, { orgId, userId: user.id })
+      : [],
     resolveSelectedToolboxes(container, selectors),
   ]);
   // Every toolbox applied to this spawn, as parseable `tb/…` handles — auto-
@@ -202,6 +213,7 @@ export async function createSandboxForUser(
   const enriched = await control.enrichSpec(spec, orgId, {
     toolboxHarnessId,
     owner,
+    personalize,
   });
   // Dedupe materialized refs (a toolbox can be both auto-injected and
   // picked) so the agent never extracts the same artifact twice.
@@ -252,6 +264,8 @@ export async function createSandboxForUser(
  * credential-rotation primitive). The owner is re-resolved from the persisted
  * owner-id metadata, so it's stable regardless of who triggers the resume,
  * and fresh git files are merged over the persisted (possibly stale) ones.
+ * A sandbox without an owner (created with `personalize: false`) never had
+ * git credentials injected and gets none on resume either.
  * Shared by `POST /v1/sandboxes/:id/resume` and the Launchpad wake-up.
  * Throws `NotFoundError` for an unknown sandbox.
  */
@@ -263,7 +277,8 @@ export async function withFreshCredentials(
   const { runtime, control } = container;
   const state = await runtime.get(id);
   const ownerId = state.metadata?.[OWNER_ID_METADATA];
-  const ownerUser = ownerId ? control.userService.getById(ownerId) : undefined;
+  if (!ownerId) return body;
+  const ownerUser = control.userService.getById(ownerId);
   const gitFiles = buildGitAttributionFiles({
     identity: ownerUser
       ? { name: ownerUser.username, email: ownerUser.email }
