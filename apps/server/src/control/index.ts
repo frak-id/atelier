@@ -18,6 +18,11 @@ export {
   generateCodeVerifier,
 } from "./github-oauth.ts";
 export { ApiKeyService } from "./modules/api-key/index.ts";
+export {
+  StarterService,
+  type WorkspaceRecord,
+  WorkspaceService,
+} from "./modules/launchpad/index.ts";
 export { OrgMemberService } from "./modules/org-member/index.ts";
 export { OrgPolicyService } from "./modules/org-policy/index.ts";
 export { OrganizationService } from "./modules/organization/index.ts";

@@ -10,6 +10,12 @@ import { type EnrichmentOptions, enrichSpec } from "./enrichment.ts";
 import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import {
+  StarterRepository,
+  StarterService,
+  WorkspaceRepository,
+  WorkspaceService,
+} from "./modules/launchpad/index.ts";
+import {
   OrgMemberRepository,
   OrgMemberService,
 } from "./modules/org-member/index.ts";
@@ -61,6 +67,8 @@ export function createControlContainer() {
   const toolboxVersionService = new ToolboxVersionService(
     toolboxVersionRepository,
   );
+  const starterService = new StarterService(new StarterRepository());
+  const workspaceService = new WorkspaceService(new WorkspaceRepository());
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
 
@@ -77,6 +85,8 @@ export function createControlContainer() {
     toolboxVersionService,
     authService,
     gitHubRepoService,
+    starterService,
+    workspaceService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
     enrichSpec: (

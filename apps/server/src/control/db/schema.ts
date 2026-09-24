@@ -6,10 +6,13 @@
  */
 
 import type {
+  CreateSandboxRequest,
+  LaunchpadService,
   PortEntry,
   ProcessEntry,
   Source,
   ToolboxVersionProvenance,
+  WorkspaceSnapshot,
 } from "@atelier/spec";
 import {
   index,
@@ -201,6 +204,60 @@ export const entityToolboxVersions = sqliteTable(
     createdAt: text("created_at").notNull(),
   },
   (t) => [index("idx_entity_toolbox_versions_toolbox").on(t.toolboxId)],
+);
+
+/**
+ * Launchpad starters (docs/proposals/launchpad.md): a dev team's curated,
+ * one-click recipe for non-technical users. Owned like a toolbox (`org` = the
+ * tech team's catalog, `user` = personal). `recipe` is a full
+ * `CreateSandboxRequest`; `services` are the tiles a workspace surfaces.
+ */
+export const launchpadStarters = sqliteTable(
+  "launchpad_starters",
+  {
+    id: text("id").primaryKey(),
+    ownerType: text("owner_type", { enum: toolboxOwnerTypeValues }).notNull(),
+    ownerId: text("owner_id").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    icon: text("icon"),
+    guide: text("guide"),
+    published: integer("published").notNull().default(1),
+    recipe: text("recipe", { mode: "json" })
+      .notNull()
+      .$type<CreateSandboxRequest>(),
+    services: text("services", { mode: "json" })
+      .notNull()
+      .$type<LaunchpadService[]>(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("idx_launchpad_starters_owner").on(t.ownerType, t.ownerId)],
+);
+
+/**
+ * A sandbox launched from a starter, keyed by the (pre-allocated) sandbox id.
+ * No FK to runtime's `sandboxes` (the row exists before the record lands, and
+ * outlives it until pruned). Title/description are the user's own words;
+ * `snapshot` freezes the starter's presentation at launch. `jobId` is the
+ * launch job, read while the runtime record doesn't exist yet.
+ */
+export const launchpadWorkspaces = sqliteTable(
+  "launchpad_workspaces",
+  {
+    sandboxId: text("sandbox_id").primaryKey(),
+    userId: text("user_id").notNull(),
+    starterId: text("starter_id"),
+    jobId: text("job_id"),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    snapshot: text("snapshot", { mode: "json" })
+      .notNull()
+      .$type<WorkspaceSnapshot>(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("idx_launchpad_workspaces_user").on(t.userId)],
 );
 
 export const settings = sqliteTable("settings", {
