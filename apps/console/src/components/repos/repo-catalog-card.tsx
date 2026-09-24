@@ -34,7 +34,11 @@ import {
   useQuickPrebuild,
   useRepoCatalog,
 } from "@/hooks/use-repo-catalog";
-import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
+import {
+  formatRelativeTime,
+  rebuildTitle,
+  repoBranchLabel,
+} from "@/lib/formatters";
 import {
   activeJobForBranch,
   type CatalogFilter,
@@ -377,11 +381,7 @@ function RepoRow({
               size="icon"
               className="size-8"
               aria-label={`Rebuild the prebuild for ${repo.fullName}`}
-              title={
-                rebuildJob
-                  ? "Already rebuilding"
-                  : "Rebuild from the latest commit"
-              }
+              title={rebuildJob ? "Already rebuilding" : rebuildTitle(latest)}
               disabled={
                 rebuildJob !== undefined ||
                 runPrebuild.isPending ||

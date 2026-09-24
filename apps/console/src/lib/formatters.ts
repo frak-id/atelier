@@ -35,6 +35,18 @@ export function repoBranchLabel(name: string, branch?: string): string {
   return branch ? `${name}#${branch}` : name;
 }
 
+/** `1 repo`, `3 repos`: a count with its (regular) plural noun. */
+export function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** `, with 2 other repos` when `prebuild` clones repos besides the one the
+ * user picked (spawning or rebuilding it brings them along), else "". */
+export function otherReposNote(prebuild: PrebuildRecord | undefined): string {
+  const others = prebuild ? prebuildRepos(prebuild).length - 1 : 0;
+  return others > 0 ? `, with ${countLabel(others, "other repo")}` : "";
+}
+
 /** `owner/name#branch` for one repo a prebuild clones. */
 export function prebuildRepoLabel(repo: PrebuildRepo): string {
   return repoBranchLabel(repoShortName(repo.url), repo.branch);
@@ -55,4 +67,13 @@ export function prebuildTitle(prebuild: PrebuildRecord): string {
   if (labels.length === 1) return first;
   if (labels.length === 2) return `${first} + ${second}`;
   return `${first} + ${labels.length - 1} more`;
+}
+
+/** The Rebuild button's tooltip: a multi-repo prebuild re-bakes every repo
+ * it clones, not just the one a row is about. */
+export function rebuildTitle(prebuild: PrebuildRecord | undefined): string {
+  const count = prebuild ? prebuildRepos(prebuild).length : 0;
+  return count > 1
+    ? `Rebuilds all ${count} repos of this prebuild from their latest commits`
+    : "Rebuild from the latest commit";
 }

@@ -42,6 +42,23 @@ function prebuild(
   };
 }
 
+function multiRepoPrebuild(
+  ref: string,
+  urls: string[],
+  createdAt: string,
+): PrebuildRecord {
+  return {
+    ref,
+    hash: ref,
+    image: "dev-base:latest",
+    createdAt,
+    spec: {
+      source: { image: "dev-base" },
+      repos: urls.map((url, i) => ({ url, clonePath: `repo-${i}` })),
+    },
+  };
+}
+
 function job(
   id: string,
   target: string,
@@ -138,6 +155,24 @@ describe("buildRepoCatalog", () => {
     // Finished and unrelated branches aren't "building"
     expect(activeJobForBranch(entry, "dev")).toBeUndefined();
     expect(activeJobForBranch(entry, "Feat")).toBeUndefined();
+  });
+
+  test("a repo cloned as the 2nd repo of a multi-repo prebuild is prebuilt", () => {
+    const out = buildRepoCatalog(
+      [wallet],
+      [
+        multiRepoPrebuild(
+          "snap-dev",
+          [atelier.cloneUrl, wallet.cloneUrl],
+          "2026-09-10",
+        ),
+      ],
+      [],
+    );
+    expect(out[0]?.state).toBe("prebuilt");
+    expect(out[0]?.latest?.ref).toBe("snap-dev");
+    expect(out[0]?.latest?.createdAt).toBe("2026-09-10");
+    expect(out[0]?.prebuilds.map((p) => p.ref)).toEqual(["snap-dev"]);
   });
 
   test("latest prefers the default branch over a newer feature branch", () => {

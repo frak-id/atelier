@@ -28,7 +28,11 @@ import {
   useDefaultImage,
   useRepoInspection,
 } from "@/hooks/use-repo-catalog";
-import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
+import {
+  formatRelativeTime,
+  otherReposNote,
+  repoBranchLabel,
+} from "@/lib/formatters";
 import { activeJobForBranch } from "@/lib/repo-catalog";
 import { RepoIdentity } from "./repo-identity";
 
@@ -274,8 +278,9 @@ function QuickPrebuildForm({
         <p className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning">
           <Info className="mt-px size-3.5 shrink-0" />
           This branch already has a prebuild (built{" "}
-          {formatRelativeTime(existing.createdAt)}). Creating it again rebuilds
-          it from scratch.
+          {formatRelativeTime(existing.createdAt)}
+          {otherReposNote(existing)}
+          ). Creating it again rebuilds it from scratch.
         </p>
       ) : null}
 
