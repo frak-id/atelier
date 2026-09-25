@@ -59,3 +59,8 @@ priority, not a strict sequence.
   See [`integrations/open-inspect`](../integrations/open-inspect/README.md);
   the longer-term company agent is in
   [`research/company-agent-prior-art.md`](research/company-agent-prior-art.md).
+- [ ] **Company knowledge hub** — governed memory (review queue, erase with
+  cascade), a temporal knowledge graph and a code index re-built on push,
+  served to agents over MCP. First slice in `packages/knowledge` +
+  `apps/hub`; see
+  [`proposals/company-knowledge.md`](proposals/company-knowledge.md).

@@ -9,13 +9,15 @@ Rust in-pod agent.
 ```
 apps/
 ├── server/       # @atelier/server — Bun/Elysia: runtime/control/sessions/api (see apps/server/AGENTS.md)
+├── hub/          # @atelier/hub — company-knowledge hub: REST + MCP + push webhook over @atelier/knowledge
 ├── console/      # @atelier/console — React 19 SPA (Vite, TanStack Router), the web GUI
 ├── cli/          # @konfeature/atelier — host CLI (npm package, esbuild-bundled for Node)
 └── agent-v2/     # In-pod agent (`atelier-agent`, Rust, static musl scratch image)
 packages/
 ├── shared/       # @frak/atelier-shared — TypeBox schemas, constants, config loader
 ├── spec/         # @atelier/spec — the SandboxSpec seam contract
-└── compose/      # @atelier/compose — client-side harness/preset/spec-merge SDK
+├── compose/      # @atelier/compose — client-side harness/preset/spec-merge SDK
+└── knowledge/    # @atelier/knowledge — governed memory, temporal knowledge graph, hybrid search, code indexer (bun:sqlite)
 integrations/     # Third-party systems on Atelier (open-inspect: sandbox provider patch + image seed context)
 charts/atelier/   # Helm chart: shared cluster infra (zot, cliproxy, sshpiper, cert-manager issuers, kata runtimeclass, snapshot class)
 infra/k8s/v2/     # Server + console app manifests (see infra/k8s/v2/README.md)
@@ -41,6 +43,7 @@ Dockerfile        # Multi-target: `server` and `console` images
 | SandboxSpec contract | `packages/spec/src/` |
 | Harness/preset composition | `packages/compose/src/` |
 | Host CLI | `apps/cli/src/` |
+| Company knowledge (memory, graph, code index) | `packages/knowledge/src/` (domain) + `apps/hub/src/` (REST/MCP/webhook); design in `docs/proposals/company-knowledge.md` |
 | Open-Inspect integration | `integrations/open-inspect/` (seed: `apps/server/src/runtime/registry/seeds/open-inspect/`) |
 
 ## Commands
@@ -68,6 +71,7 @@ plus `helm lint charts/atelier`.
 | **Sandbox agent** | Rust only, NO Bun/Node APIs | Lightweight static binary, no AVX dependency |
 | **Server module boundaries** | `runtime/` never imports `control/`/`sessions/`; others use runtime's barrel only | Extraction seam; enforced by `check:boundary` |
 | **Browser-safe shared barrel** | The `@frak/atelier-shared` root export stays Node-free; the Node loader is `@frak/atelier-shared/config-loader` | The console bundles the root barrel |
+| **Hub isolation** | `apps/hub` imports `@atelier/knowledge` only, never `apps/server` | Separate deployable, talks to Atelier through its public API |
 | **K8s Ingress** | Per-tool Ingress created via `KubeClient` (`buildToolIngress`) | Host-based routing for sandbox tools |
 
 ## Runtimes

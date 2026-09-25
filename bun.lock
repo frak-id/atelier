@@ -74,6 +74,20 @@
         "vite": "^8.3.0",
       },
     },
+    "apps/hub": {
+      "name": "@atelier/hub",
+      "version": "0.1.0",
+      "dependencies": {
+        "@atelier/knowledge": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.30.0",
+        "elysia": "^1.4.30",
+        "pino": "^10.3.1",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.2",
+      },
+    },
     "apps/server": {
       "name": "@atelier/server",
       "version": "3.0.2",
@@ -150,6 +164,8 @@
     "@atelier/compose": ["@atelier/compose@workspace:packages/compose"],
 
     "@atelier/console": ["@atelier/console@workspace:apps/console"],
+
+    "@atelier/hub": ["@atelier/hub@workspace:apps/hub"],
 
     "@atelier/knowledge": ["@atelier/knowledge@workspace:packages/knowledge"],
 

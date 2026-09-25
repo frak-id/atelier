@@ -1,15 +1,17 @@
 # --------------------------------------------------------------------------
 # Atelier — multi-stage, multi-target Docker build
 #
-# Produces TWO images from one Dockerfile:
+# Produces THREE images from one Dockerfile:
 #
 #   server   — Bun API server, apps/server        (ghcr.io/frak-id/atelier-server)
 #   console  — nginx serving apps/console SPA +    (ghcr.io/frak-id/atelier-console)
 #              reverse-proxying to the server
+#   hub      — company-knowledge hub, apps/hub     (ghcr.io/frak-id/atelier-hub)
 #
 # Build:
 #   docker build --target server  -t atelier-server  .
 #   docker build --target console -t atelier-console .
+#   docker build --target hub     -t atelier-hub     .
 # --------------------------------------------------------------------------
 
 # ── Stage 1: install dependencies ─────────────────────────────────────────
@@ -25,7 +27,9 @@ COPY package.json bun.lock ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/spec/package.json packages/spec/
 COPY packages/compose/package.json packages/compose/
+COPY packages/knowledge/package.json packages/knowledge/
 COPY apps/server/package.json apps/server/
+COPY apps/hub/package.json apps/hub/
 COPY apps/console/package.json apps/console/
 COPY apps/cli/package.json apps/cli/
 
@@ -126,6 +130,46 @@ RUN mkdir -p /app/data
 EXPOSE 4000
 
 CMD ["bun", "server.js"]
+
+# ── Stage: build hub ──────────────────────────────────────────────────────
+# Separate from `builder` so server/console builds don't pay for it.
+FROM oven/bun:1 AS hub-builder
+
+WORKDIR /build
+ENV NODE_ENV=production
+
+COPY --from=deps /build/node_modules node_modules
+COPY --from=deps /build/packages/knowledge/node_modules packages/knowledge/node_modules
+COPY --from=deps /build/apps/hub/node_modules apps/hub/node_modules
+COPY packages/knowledge packages/knowledge
+COPY apps/hub apps/hub
+COPY tsconfig.json ./
+
+RUN bun build apps/hub/src/index.ts \
+      --target=bun \
+      --outfile=dist/hub.js \
+      --minify
+
+# ── Target: hub ───────────────────────────────────────────────────────────
+FROM oven/bun:1-slim AS hub
+
+# git fetches the tracked repositories for indexing.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=hub-builder /build/dist/hub.js ./hub.js
+
+ENV NODE_ENV=production \
+    HUB_DATA_DIR=/app/data \
+    HUB_CONFIG=/app/config/hub.config.json
+
+# knowledge.db + repository checkouts (mount a PVC here in k8s)
+RUN mkdir -p /app/data /app/config
+
+EXPOSE 4100
+
+CMD ["bun", "hub.js"]
 
 # ── Target: console (nginx sidecar) ───────────────────────────────────────
 FROM nginx:alpine AS console

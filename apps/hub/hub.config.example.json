@@ -1,0 +1,28 @@
+{
+  "port": 4100,
+  "dataDir": ".hub-data",
+  "reindexIntervalMinutes": 360,
+  "teams": {
+    "team:platform": ["user:alice", "user:bob"]
+  },
+  "repos": [
+    { "repo": "frak-id/atelier", "branch": "main", "readers": ["org"] }
+  ],
+  "embeddings": { "provider": "hashing", "dimensions": 256 },
+  "tokens": [
+    {
+      "name": "alice",
+      "sha256": "<sha256 from `bun run cli token`>",
+      "actor": { "kind": "human", "id": "user:alice" },
+      "scopes": ["read", "propose", "review", "index"],
+      "audience": ["user:alice"]
+    },
+    {
+      "name": "sandbox-agents",
+      "sha256": "<sha256>",
+      "actor": { "kind": "agent", "id": "agent:worker" },
+      "scopes": ["read", "propose"],
+      "audience": ["org"]
+    }
+  ]
+}

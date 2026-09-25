@@ -15,7 +15,9 @@
 > ([`integrations/open-inspect`](../../integrations/open-inspect/README.md)):
 > Open-Inspect keeps the channels, sessions and PR loop; Atelier is its
 > sandbox provider (`personalize: false` spawns from the `open-inspect`
-> seed). The hub, memory and code-knowledge layers below remain future work.
+> seed). The memory, knowledge-graph and code-index layers (phases 2–3)
+> started as `packages/knowledge` + `apps/hub`: see
+> [`proposals/company-knowledge.md`](../proposals/company-knowledge.md).
 
 ---
 
