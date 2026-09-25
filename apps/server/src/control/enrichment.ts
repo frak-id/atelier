@@ -1,9 +1,11 @@
 /**
- * Bounded spec enrichment — the ONLY two mutations control performs on a spec
- * as it crosses the seam (atelier-v2 §3.2):
+ * Bounded spec enrichment — the mutations control performs on a spec as it
+ * crosses the seam (atelier-v2 §3.2):
  *   (a) secret resolution — replace `{"$secret": name}` references with values;
  *   (b) org-policy injection — append operator-mandated entries (an audit
- *       process, a compliance file) from the org's policy spec.
+ *       process, a compliance file) from the org's policy spec;
+ *   plus the harness composition, the owner's git attribution, and the
+ *   sandbox domain for dev servers' host checks (`injectDevServerHosts`).
  *
  * No merger, no catalog, no fragment resolution — append/substitute steps,
  * deterministic, tiny. A dev hand-crafting a spec against the raw API still
@@ -95,6 +97,40 @@ function injectHarness(
     log.warn({ harnessId, err }, "unknown harness; leaving spec unharnessed");
     return spec;
   }
+}
+
+/** Vite's documented env hook for extra `server.allowedHosts` entries. */
+export const VITE_ALLOWED_HOSTS_ENV = "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS";
+
+/**
+ * Let dev servers answer on the sandbox URLs without touching the repos.
+ * Vite's DNS-rebinding guard rejects any `Host` it doesn't know (only
+ * `localhost`, `*.localhost` and IPs pass), and a sandbox port is served at
+ * `{name}-{sandboxId}.{baseDomain}`. One `.{baseDomain}` entry allows the
+ * domain and every subdomain (Vite ≥ 6.1: Astro, Nuxt, SvelteKit, React
+ * Router…). Safe here: the only way in is the ingress, behind forward auth.
+ *
+ * Sandbox-wide `env`, so it reaches supervised processes, hooks and terminal
+ * shells alike. Skipped on a `localhost` domain (already allowed); the spec's
+ * own value wins.
+ */
+export function injectDevServerHosts(
+  spec: SandboxSpec,
+  baseDomain: string,
+): SandboxSpec {
+  const domain = baseDomain
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, "")
+    .replace(/^\.+|\.+$/g, "");
+  if (!domain || domain === "localhost" || domain.endsWith(".localhost")) {
+    return spec;
+  }
+  if (spec.env?.[VITE_ALLOWED_HOSTS_ENV] !== undefined) return spec;
+  return {
+    ...spec,
+    env: { ...spec.env, [VITE_ALLOWED_HOSTS_ENV]: `.${domain}` },
+  };
 }
 
 /** Replace every `{"$secret": name}` reference in the spec with its value. */
@@ -219,7 +255,8 @@ export async function enrichSpec(
     deps.orgPolicy,
     opts.toolboxHarnessId,
   );
-  const resolved = await resolveSecrets(withHarness, orgId, deps.secrets);
+  const withHosts = injectDevServerHosts(withHarness, config.domain.baseDomain);
+  const resolved = await resolveSecrets(withHosts, orgId, deps.secrets);
   // Injected last: the credential file carries a GitHub token (not a `$secret`
   // ref), so it must skip the secret-resolution pass entirely.
   return injectGitAttribution(resolved, opts.owner);
