@@ -246,12 +246,27 @@ export function buildRepoPrebuildSpec(input: RepoPrebuildInput): PrebuildSpec {
 // ── runtime surface ─────────────────────────────────────────────────────────
 
 /** The spec as it bakes: without the runtime surface (`processes`/`ports`),
- * which is applied at boot and never enters the snapshot key. */
-function bakedPart(
+ * which is applied at boot and never enters the snapshot key. A recipe
+ * carried this way (a Launchpad starter following a stored prebuild) has no
+ * opinion on the dev servers: every spawn gets the stored recipe's current
+ * ones. */
+export function withoutSurface(
   spec: PrebuildSpec,
 ): Omit<PrebuildSpec, "processes" | "ports"> {
   const { processes: _processes, ports: _ports, ...baked } = spec;
   return baked;
+}
+
+/**
+ * A prebuild's recipe identity: what all its snapshots share across re-bakes
+ * (a git push busts the content key, not the recipe). Everything but the
+ * runtime surface and the opaque metadata, canonical so key order never
+ * matters. The server groups snapshots by it to share their dev servers;
+ * clients use it to tell which stored prebuild a copied recipe follows.
+ */
+export function prebuildRecipeKey(spec: PrebuildSpec): string {
+  const { metadata: _metadata, ...recipe } = withoutSurface(spec);
+  return canonicalJson(recipe);
 }
 
 /** An edit to `before` that only changes its processes/ports: it bakes the
@@ -261,7 +276,8 @@ export function runtimeOnlyEdit(
   after: PrebuildSpec,
 ): boolean {
   return (
-    canonicalJson(bakedPart(before)) === canonicalJson(bakedPart(after)) &&
+    canonicalJson(withoutSurface(before)) ===
+      canonicalJson(withoutSurface(after)) &&
     canonicalJson(before) !== canonicalJson(after)
   );
 }

@@ -1,18 +1,27 @@
 /**
  * How a Launchpad starter's recipe maps to its boot source: a stored
- * prebuild (followed by its spec, or pinned by snapshot ref) or one set up in
- * the starter itself (base image + git repos + setup steps). Pure, so the
+ * prebuild (followed by its recipe, or pinned by snapshot ref) or one set up
+ * in the starter itself (base image + git repos + setup steps). Pure, so the
  * editor, the prebuild picker and the "new starter from this prebuild" link
  * share one rule, and it's unit-tested directly.
+ *
+ * A followed prebuild is carried *without* its dev servers
+ * (`withoutSurface`): the server then boots every launch with the stored
+ * recipe's current ones, so editing them on the prebuild reaches the
+ * starter. Dev servers in `recipe.prebuild` are the starter's own and win
+ * over the prebuild's ("set it up here").
  */
 import {
   canonicalJson,
+  type LaunchpadService,
   type PrebuildRecord,
   type PrebuildRepo,
   type PrebuildSpec,
+  prebuildRecipeKey,
   type RuntimeSurface,
   runtimeSurfaceOf,
   type StarterInput,
+  withoutSurface,
 } from "@atelier/spec";
 
 type Recipe = StarterInput["recipe"];
@@ -35,9 +44,10 @@ export function blankStarterInput(image: string): StarterInput {
 
 /**
  * Boot `recipe` from a stored prebuild. With its spec stored, the recipe
- * carries it and every launch re-resolves it (a cache hit when unchanged),
- * so a rebuilt prebuild reaches new workspaces. A hand-made snapshot has no
- * spec and can only be pinned by ref.
+ * carries it minus the dev servers, and every launch re-resolves it (a cache
+ * hit when unchanged): a rebuilt prebuild and edited dev servers both reach
+ * new workspaces. A hand-made snapshot has no spec and can only be pinned by
+ * ref.
  */
 export function withStoredPrebuild(
   recipe: Recipe,
@@ -45,26 +55,71 @@ export function withStoredPrebuild(
 ): Recipe {
   const { prebuild: _drop, ...rest } = recipe;
   return record.spec
-    ? { ...rest, source: record.spec.source, prebuild: record.spec }
+    ? {
+        ...rest,
+        source: record.spec.source,
+        prebuild: withoutSurface(record.spec),
+      }
     : { ...rest, source: { snapshot: record.ref } };
 }
 
-/** The stored prebuild `recipe` boots from, if any: by spec (followed) or by
- * pinned snapshot ref. */
-export function matchStoredPrebuild(
+/** The stored prebuild whose recipe `recipe` bakes (dev servers aside), or
+ * that it pins by snapshot ref. Snapshots of one recipe share their dev
+ * servers, and the list is newest-first, so the first match is the one. */
+function storedPrebuildOf(
   recipe: Recipe,
   prebuilds: readonly PrebuildRecord[],
 ): PrebuildRecord | undefined {
   if (recipe.prebuild) {
-    // Canonical: storage round-trips don't keep key order.
-    const want = canonicalJson(recipe.prebuild);
-    return prebuilds.find((p) => p.spec && canonicalJson(p.spec) === want);
+    const key = prebuildRecipeKey(recipe.prebuild);
+    return prebuilds.find((p) => p.spec && prebuildRecipeKey(p.spec) === key);
   }
   if ("snapshot" in recipe.source) {
     const ref = recipe.source.snapshot;
     return prebuilds.find((p) => p.ref === ref);
   }
   return undefined;
+}
+
+function hasDevServers(surface: RuntimeSurface): boolean {
+  const own = runtimeSurfaceOf(surface);
+  return own.processes !== undefined || own.ports !== undefined;
+}
+
+/**
+ * The stored prebuild `recipe` follows, if any: same recipe and no dev
+ * servers of its own (or a copy equal to the prebuild's, as starters saved
+ * before they were followed carry: see `followedRecipe`), or pinned by
+ * snapshot ref. A recipe with its own, different dev servers was set up
+ * here, even when it bakes the same thing.
+ */
+export function matchStoredPrebuild(
+  recipe: Recipe,
+  prebuilds: readonly PrebuildRecord[],
+): PrebuildRecord | undefined {
+  const stored = storedPrebuildOf(recipe, prebuilds);
+  if (!stored || !recipe.prebuild || !hasDevServers(recipe.prebuild)) {
+    return stored;
+  }
+  const own = canonicalJson(runtimeSurfaceOf(recipe.prebuild));
+  const theirs = canonicalJson(runtimeSurfaceOf(stored.spec ?? {}));
+  return own === theirs ? stored : undefined;
+}
+
+/**
+ * `recipe` rewritten to follow its stored prebuild by reference, when it
+ * matches one but still carries a copy of its dev servers (a starter saved
+ * before starters followed them, or typed in JSON mode): the same boot
+ * today, but only the reference picks up later edits. Applied on save.
+ * `undefined` when there's nothing to do.
+ */
+export function followedRecipe(
+  recipe: Recipe,
+  prebuilds: readonly PrebuildRecord[],
+): Recipe | undefined {
+  if (!recipe.prebuild || !hasDevServers(recipe.prebuild)) return undefined;
+  const matched = matchStoredPrebuild(recipe, prebuilds);
+  return matched ? withStoredPrebuild(recipe, matched) : undefined;
 }
 
 /** Which editor mode fits `recipe`: a pinned snapshot or a spec equal to a
@@ -90,14 +145,19 @@ export interface CustomBoot {
   surface: RuntimeSurface;
 }
 
-/** The custom form for `recipe` (also: "Customize" a followed prebuild). */
-export function customBootOf(recipe: Recipe, defaultImage: string): CustomBoot {
+/** The custom form for `recipe` (also: "Customize" a followed prebuild,
+ * which starts from its current dev servers, looked up in `prebuilds`). */
+export function customBootOf(
+  recipe: Recipe,
+  defaultImage: string,
+  prebuilds: readonly PrebuildRecord[] = [],
+): CustomBoot {
   const source = recipe.prebuild?.source ?? recipe.source;
   return {
     image: "image" in source ? source.image : defaultImage,
     repos: recipe.prebuild?.repos ?? [],
     steps: (recipe.prebuild?.build ?? []).join("\n"),
-    surface: runtimeSurfaceOf(recipe.prebuild ?? {}),
+    surface: recipeDevServers(recipe, prebuilds),
   };
 }
 
@@ -135,15 +195,44 @@ export function withCustomBoot(recipe: Recipe, boot: CustomBoot): Recipe {
   };
 }
 
-/** The prebuild recipe `recipe` boots with: its own (followed or set up
- * here), or the stored one it pins. Its processes/ports are what the server
- * adds at launch, like a toolbox's. */
-export function recipePrebuildSpec(
+/**
+ * The dev servers a launch of `recipe` gets from what it boots, as the
+ * server resolves them (`createSandboxForUser`): the recipe's own when it
+ * declares any, else the stored prebuild's current ones (followed or
+ * pinned). The server adds them at launch, like a toolbox's.
+ */
+export function recipeDevServers(
   recipe: Recipe,
   prebuilds: readonly PrebuildRecord[],
-): PrebuildSpec | undefined {
-  if (recipe.prebuild) return recipe.prebuild;
-  if (!("snapshot" in recipe.source)) return undefined;
-  const ref = recipe.source.snapshot;
-  return prebuilds.find((p) => p.ref === ref)?.spec;
+): RuntimeSurface {
+  if (recipe.prebuild && hasDevServers(recipe.prebuild)) {
+    return runtimeSurfaceOf(recipe.prebuild);
+  }
+  return runtimeSurfaceOf(storedPrebuildOf(recipe, prebuilds)?.spec ?? {});
+}
+
+/** The public ports of `surface`, by name: what a tool tile can open. */
+function publicPorts(surface: RuntimeSurface): Set<string> {
+  return new Set(
+    (surface.ports ?? []).filter((p) => p.public).map((p) => p.name),
+  );
+}
+
+/**
+ * The tools that dev servers `next` would leave with nothing to open: they
+ * point at a public port of `before` that `next` drops or makes private.
+ * Ports the dev servers never served (a toolbox's, the org's) aren't judged:
+ * the console can't see them all.
+ */
+export function orphanedTools(
+  services: readonly LaunchpadService[],
+  before: RuntimeSurface,
+  next: RuntimeSurface,
+): LaunchpadService[] {
+  const had = publicPorts(before);
+  const has = publicPorts(next);
+  return services.filter(
+    (s) =>
+      "port" in s.target && had.has(s.target.port) && !has.has(s.target.port),
+  );
 }

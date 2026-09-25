@@ -1,4 +1,11 @@
-import type { PrebuildSpec, RuntimeSurface } from "@atelier/spec";
+import {
+  type PrebuildRecord,
+  type PrebuildSpec,
+  prebuildRecipeKey,
+  type RuntimeSurface,
+  runtimeSurfaceOf,
+  withoutSurface,
+} from "@atelier/spec";
 import {
   queryOptions,
   useMutation,
@@ -77,7 +84,8 @@ export function useRunPrebuild() {
  * Save a stored prebuild's dev servers (PATCH /v1/prebuilds/:ref/surface):
  * no content-key resolution and no bake, so it saves even when a repo got
  * new commits since the bake. Applied at boot, to every snapshot of the
- * recipe; empty lists clear them.
+ * recipe; empty lists clear them. The list shows the saved ones right away
+ * (on every snapshot of the recipe, like the server), then refetches.
  */
 export function useSavePrebuildSurface() {
   const queryClient = useQueryClient();
@@ -97,7 +105,20 @@ export function useSavePrebuildSurface() {
         throw new Error(errorMessage(error, "Failed to save dev servers"));
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (stored) => {
+      if (stored) {
+        const key = prebuildRecipeKey(stored);
+        const surface = runtimeSurfaceOf(stored);
+        queryClient.setQueryData<PrebuildRecord[]>(
+          queryKeys.prebuilds.list(),
+          (prev) =>
+            prev?.map((p) =>
+              p.spec && prebuildRecipeKey(p.spec) === key
+                ? { ...p, spec: { ...withoutSurface(p.spec), ...surface } }
+                : p,
+            ),
+        );
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.prebuilds.all });
       toast.success("Dev servers saved");
     },

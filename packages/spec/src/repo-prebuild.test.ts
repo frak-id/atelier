@@ -8,12 +8,14 @@ import {
   normalizeBranch,
   parsePrebuildJobTarget,
   prebuildJobTarget,
+  prebuildRecipeKey,
   prebuildRepoFor,
   prebuildRepos,
   repoCloneName,
   repoKey,
   repoShortName,
   runtimeOnlyEdit,
+  withoutSurface,
 } from "./repo-prebuild.ts";
 
 function record(
@@ -331,5 +333,56 @@ describe("runtimeOnlyEdit", () => {
     ).toBe(false);
     expect(runtimeOnlyEdit(base, { ...base, build: ["make"] })).toBe(false);
     expect(runtimeOnlyEdit(base, { ...base, env: { CI: "1" } })).toBe(false);
+  });
+});
+
+describe("recipe identity", () => {
+  const base = {
+    source: { image: "dev-base" },
+    repos: [{ url: "https://github.com/acme/mono", clonePath: "mono" }],
+    build: ["cd mono && bun install"],
+  };
+  const surface = {
+    processes: [{ name: "web", command: "bun run dev", lazy: true }],
+    ports: [{ name: "web", port: 5173, public: true }],
+  };
+
+  test("withoutSurface drops only processes/ports", () => {
+    const spec = { ...base, ...surface, metadata: { repo: "acme/mono" } };
+    expect(withoutSurface(spec)).toEqual({
+      ...base,
+      metadata: { repo: "acme/mono" },
+    });
+  });
+
+  test("the surface, metadata and key order never change the recipe", () => {
+    const key = prebuildRecipeKey(base);
+    expect(prebuildRecipeKey({ ...base, ...surface })).toBe(key);
+    expect(prebuildRecipeKey({ ...base, metadata: { a: "b" } })).toBe(key);
+    expect(
+      prebuildRecipeKey({
+        build: base.build,
+        repos: base.repos,
+        source: base.source,
+      }),
+    ).toBe(key);
+  });
+
+  test("anything baked does", () => {
+    const key = prebuildRecipeKey(base);
+    expect(prebuildRecipeKey({ ...base, build: ["make"] })).not.toBe(key);
+    expect(prebuildRecipeKey({ ...base, env: { CI: "1" } })).not.toBe(key);
+    expect(
+      prebuildRecipeKey({
+        ...base,
+        repos: [
+          {
+            url: "https://github.com/acme/mono",
+            branch: "dev",
+            clonePath: "mono",
+          },
+        ],
+      }),
+    ).not.toBe(key);
   });
 });

@@ -1,4 +1,9 @@
-import { type StarterInput, starterInputProblems } from "@atelier/spec";
+import {
+  type PrebuildRecord,
+  type StarterInput,
+  starterInputProblems,
+} from "@atelier/spec";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Loader2, Rocket } from "lucide-react";
 import { useState } from "react";
@@ -8,6 +13,7 @@ import {
   useLaunchStarter,
   useUpdateStarter,
 } from "@/api/queries/launchpad";
+import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { StarterVisualForm } from "@/components/launchpad/starter-form";
 import { repoProblems } from "@/components/repos-field";
 import {
@@ -17,7 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useDefaultImage } from "@/hooks/use-repo-catalog";
 import { parseStarterInput } from "@/lib/spec";
-import { blankStarterInput } from "@/lib/starter-recipe";
+import { blankStarterInput, followedRecipe } from "@/lib/starter-recipe";
 
 function toInput(
   starter: StarterRecord | undefined,
@@ -80,6 +86,18 @@ function cleanInput(input: StarterInput): StarterInput {
   };
 }
 
+/** A recipe carrying a copy of its stored prebuild's dev servers (saved
+ * before starters followed them, or typed in JSON mode) is saved following
+ * them by reference: the same boot, but later edits to the prebuild reach
+ * it. */
+function followInput(
+  input: StarterInput,
+  prebuilds: readonly PrebuildRecord[],
+): StarterInput {
+  const recipe = followedRecipe(input.recipe, prebuilds);
+  return recipe ? { ...input, recipe } : input;
+}
+
 /**
  * Author a Launchpad starter: what a non-technical user sees (title, icon,
  * description, guide), what boots (prebuild or image + toolboxes +
@@ -108,9 +126,11 @@ export function StarterEditor({
   const [input, setInput] = useState<StarterInput>(() =>
     toInput(starter, defaultImage, initial),
   );
+  const { data: prebuilds = [] } = useQuery(prebuildsListQuery());
   const [problems, setProblems] = useState<string[]>([]);
-  // The dev servers' JSON validates locally: block Save while it doesn't
-  // parse, so a stale value is never saved.
+  // The dev servers validate locally: block Save while they have a blocking
+  // issue (or, for a followed prebuild's, unsaved changes), so a stale value
+  // is never saved.
   const [visualValid, setVisualValid] = useState(true);
   const pending = create.isPending || update.isPending;
 
@@ -118,7 +138,7 @@ export function StarterEditor({
     if (api.mode === "visual" && !visualValid) return;
     const resolved = api.resolve();
     if (!resolved) return;
-    const value = cleanInput(resolved);
+    const value = followInput(cleanInput(resolved), prebuilds);
     const found = formProblems(value);
     setProblems(found);
     if (found.length > 0) return;

@@ -170,8 +170,9 @@ failed before the record existed is re-dispatched with the same id.
   prebuild reads as `a + b` / `a + N more`), with a read-only summary of the
   repos it clones (`prebuildRepoLabel` + clone path) and its base image;
   follows the prebuild's own updates when it has a `spec` (`recipe.prebuild`
-  set), else pins the snapshot ref (`recipe.source.snapshot`) for a hand-made
-  snapshot with no spec — or **set it up here** — a base image plus **any
+  set, carried *without* its dev servers so each launch gets the prebuild's
+  current ones), else pins the snapshot ref (`recipe.source.snapshot`) for a
+  hand-made snapshot with no spec — or **set it up here** — a base image plus **any
   number of git repositories** (URL, branch, clone path) and ordered setup
   steps, run from the home directory. With no repos and no steps this is
   just a plain image boot (`recipe.source`, no `recipe.prebuild`); with
@@ -187,6 +188,20 @@ failed before the record existed is re-dispatched with the same id.
   monorepo), on a stored prebuild or in "Set it up here". Its public ports
   are suggested first when adding a tool: point a "Preview" tile at one,
   and opening it starts the (lazy) dev server.
+- **One source of truth for a followed prebuild's dev servers.** They stay
+  the prebuild's: the starter editor shows them under the picked prebuild
+  and saves an edit *on the prebuild* (`PATCH /v1/prebuilds/:ref/surface`,
+  no rebuild), so it reaches every starter and sandbox booting it on their
+  next launch; the starter's Save waits while such an edit is unsaved. An
+  edit that drops (or makes private) a port one of the starter's tools opens
+  is warned about. Dev servers in `recipe.prebuild` are a starter's own
+  ("Set it up here", or "Customize", which starts from the prebuild's
+  current ones) and win over the prebuild's at launch. A recipe carrying a
+  copy equal to its prebuild's (saved before starters followed them, or
+  typed in JSON mode) is rewritten to follow by reference on its next save
+  (`followedRecipe`). Leaving the prebuild with unsaved dev-server edits
+  ("Customize", "Set it up here") carries them into the starter's own set-up;
+  picking another prebuild waits until they're saved or undone.
 
 ## 5. API
 

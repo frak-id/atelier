@@ -1,6 +1,6 @@
 import {
   LAUNCHPAD_ICONS,
-  type PrebuildSpec,
+  type RuntimeSurface,
   type StarterInput,
   type ToolboxConfig,
 } from "@atelier/spec";
@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAllToolboxes } from "@/hooks/use-all-toolboxes";
 import { LaunchpadIconView } from "@/lib/launchpad";
-import { recipePrebuildSpec } from "@/lib/starter-recipe";
+import { recipeDevServers } from "@/lib/starter-recipe";
 import { cn } from "@/lib/utils";
 
 /** The starter editor's visual mode: presentation, boot source, tools and
@@ -113,6 +113,7 @@ export function StarterVisualForm({
       >
         <StarterBootSource
           recipe={recipe}
+          services={spec.services}
           onChange={setRecipe}
           onValidityChange={onValidityChange}
         />
@@ -189,7 +190,7 @@ export function StarterVisualForm({
           portSuggestions={portSuggestions(
             spec,
             toolboxes,
-            recipePrebuildSpec(spec.recipe, prebuilds),
+            recipeDevServers(spec.recipe, prebuilds),
           )}
         />
       </Section>
@@ -212,17 +213,17 @@ export function StarterVisualForm({
   );
 }
 
-/** Port names worth suggesting: the ports of the prebuild it boots (its dev
- * servers, the likely "Preview"), the recipe's own ports, then those of
+/** Port names worth suggesting: the public ports of the dev servers it
+ * boots with (the likely "Preview"), the recipe's own ports, then those of
  * every applied toolbox (auto-injected or picked). */
 function portSuggestions(
   spec: StarterInput,
   toolboxes: ToolboxConfig[],
-  prebuild: PrebuildSpec | undefined,
+  devServers: RuntimeSurface,
 ): string[] {
   const picked = new Set(spec.recipe.toolboxes ?? []);
   const names = new Set<string>();
-  for (const port of prebuild?.ports ?? []) {
+  for (const port of devServers.ports ?? []) {
     if (port.public) names.add(port.name);
   }
   for (const port of spec.recipe.ports ?? []) names.add(port.name);

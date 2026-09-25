@@ -297,6 +297,60 @@ describe("prebuild processes/ports", () => {
     expect(runtime.listPrebuilds()).toHaveLength(1);
   });
 
+  // A Launchpad starter's stale copy of the dev servers, from before an edit.
+  const stale = {
+    processes: [{ name: "web", command: "npm start", lazy: true }],
+    ports: [{ name: "web", port: 3000, public: true }],
+  };
+
+  test("a spawn's bake never overwrites them", async () => {
+    const { runtime } = makeRuntime();
+    const old = await runtime.prebuild(baked);
+    runtime.setPrebuildSurface(old.ref, surface);
+    // The repo moved: the spawn re-resolving the starter's recipe bakes.
+    const fresh = await runtime.prebuild(
+      { ...baked, ...stale },
+      { force: true },
+    );
+    expect(runtime.prebuildSurface(old.ref)).toEqual(surface);
+    expect(runtime.prebuildSurface(fresh.ref)).toEqual(surface);
+    expect(runtime.prebuildSpec(fresh.ref)?.ports).toEqual(surface.ports);
+  });
+
+  test("a recipe's first bake records what it declares", async () => {
+    const { runtime } = makeRuntime();
+    // A "set it up here" starter's inline recipe, launched for the first time.
+    const { ref } = await runtime.prebuild({ ...baked, ...surface });
+    expect(runtime.prebuildSurface(ref)).toEqual(surface);
+  });
+
+  test("an explicit rebuild saves them, on every snapshot", async () => {
+    const { runtime } = makeRuntime();
+    const old = await runtime.prebuild({ ...baked, ...surface });
+    const fresh = await runtime.prebuild(
+      { ...baked, ...stale },
+      { force: true, saveSurface: true },
+    );
+    expect(runtime.prebuildSurface(fresh.ref)).toEqual(stale);
+    expect(runtime.prebuildSpec(old.ref)?.ports).toEqual(stale.ports);
+  });
+
+  test("a save joining a spawn's in-flight bake still saves", async () => {
+    const { runtime } = makeRuntime();
+    const old = await runtime.prebuild(baked);
+    // Same content, concurrently: the save dedupes onto the spawn's bake.
+    const [spawned, saved] = await Promise.all([
+      runtime.prebuild({ ...baked, ...stale }, { force: true }),
+      runtime.prebuild(
+        { ...baked, ...surface },
+        { force: true, saveSurface: true },
+      ),
+    ]);
+    expect(saved.ref).toBe(spawned.ref);
+    expect(runtime.prebuildSurface(spawned.ref)).toEqual(surface);
+    expect(runtime.prebuildSurface(old.ref)).toEqual(surface);
+  });
+
   test("a spawn re-resolving a copied recipe never clears them", async () => {
     const { runtime } = makeRuntime();
     const { ref } = await runtime.prebuild(baked);

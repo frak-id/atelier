@@ -109,8 +109,11 @@ A prebuild can clone any number of repos and declare its projects' dev
 servers as a **runtime surface in the toolbox scheme**
 (`packages/spec/src/runtime-surface.ts`): `processes` + `ports` (several
 for a monorepo), each process `lazy` or not. It's runtime content, not
-snapshot content: it never enters the content key (editing it never
-re-bakes, and a cache hit refreshes it on the stored record). Every sandbox
+snapshot content: it never enters the content key, so editing it never
+re-bakes. It's a setting of the prebuild's *recipe* (`prebuildRecipeKey`),
+shared by every snapshot of it, and only an explicit save writes it
+(`POST /v1/prebuilds`, `PATCH /v1/prebuilds/:ref/surface`): a spawn
+re-resolving a recipe never does, even when it bakes. Every sandbox
 that boots from the prebuild gets it, layered by name at the
 `createSandboxForUser` seam (`api/spawn-surface.ts`): the prebuild's, then
 its toolboxes' (a toolbox beats a same-name prebuild entry, with a
