@@ -172,18 +172,16 @@ export class SqliteGraphStore implements GraphStore {
         .run({ sourceKey, now });
       return result.changes;
     }
-    const placeholders = keepIds.map((_, i) => `$keep${i}`).join(", ");
-    const params: Record<string, string | number> = { sourceKey, now };
-    keepIds.forEach((id, i) => {
-      params[`keep${i}`] = id;
-    });
+    // One JSON parameter, not one bind per id: an index with
+    // `includeFiles` can keep tens of thousands of entities, past sqlite's
+    // bind-parameter limit.
     const result = this.db
       .query(
         `UPDATE entities SET retired_at = $now
          WHERE source_key = $sourceKey AND retired_at IS NULL
-           AND id NOT IN (${placeholders})`,
+           AND id NOT IN (SELECT value FROM json_each($keep))`,
       )
-      .run(params);
+      .run({ sourceKey, now, keep: JSON.stringify(keepIds) });
     return result.changes;
   }
 
@@ -361,7 +359,10 @@ export class SqliteGraphStore implements GraphStore {
   neighbors(query: NeighborQuery): Subgraph {
     const depth = Math.min(query.depth ?? 1, 4);
     const direction = query.direction ?? "both";
-    const limit = query.limit ?? 200;
+    const limit = Math.min(query.limit ?? 200, 1000);
+    // Facts are capped too: one high fan-out node (a team owning hundreds
+    // of packages) must not make a depth-1 query unbounded.
+    const factLimit = limit * 4;
     const asOf = query.asOf;
     const now = this.clock();
 
@@ -370,9 +371,10 @@ export class SqliteGraphStore implements GraphStore {
     let currentFrontier = [query.entityId];
 
     for (let d = 0; d < depth; d++) {
-      if (currentFrontier.length === 0) break;
+      if (currentFrontier.length === 0 || factsById.size >= factLimit) break;
       const nextFrontier: string[] = [];
       for (const nodeId of currentFrontier) {
+        if (factsById.size >= factLimit) break;
         const rows = this.queryFactsTouching(
           nodeId,
           direction,
@@ -386,6 +388,7 @@ export class SqliteGraphStore implements GraphStore {
           if (!isVisible(fact.readers, query.audience, this.access)) {
             continue;
           }
+          if (factsById.size >= factLimit) break;
           factsById.set(fact.id, fact);
           const otherId = fact.from === nodeId ? fact.to : fact.from;
           if (otherId === query.entityId) continue;

@@ -100,7 +100,10 @@ function redact(message: string, token?: string): string {
 
 export class IndexRunner {
   private readonly running = new Map<string, Promise<IndexRun>>();
-  private readonly pending = new Map<string, string>();
+  private readonly pending = new Map<
+    string,
+    { trigger: string; force: boolean }
+  >();
 
   constructor(private readonly deps: IndexRunnerDeps) {
     deps.db.run(`CREATE TABLE IF NOT EXISTS hub_index_runs (
@@ -131,7 +134,12 @@ export class IndexRunner {
   trigger(repo: RepoConfig, trigger: string, force = false): Promise<IndexRun> {
     const inFlight = this.running.get(repo.repo);
     if (inFlight) {
-      this.pending.set(repo.repo, trigger);
+      // Collapse into one follow-up; a forced request stays forced.
+      const prev = this.pending.get(repo.repo);
+      this.pending.set(repo.repo, {
+        trigger,
+        force: force || (prev?.force ?? false),
+      });
       return inFlight;
     }
     const run = this.execute(repo, trigger, force).finally(() => {
@@ -139,7 +147,7 @@ export class IndexRunner {
       const next = this.pending.get(repo.repo);
       if (next !== undefined) {
         this.pending.delete(repo.repo);
-        void this.trigger(repo, next);
+        void this.trigger(repo, next.trigger, next.force);
       }
     });
     this.running.set(repo.repo, run);

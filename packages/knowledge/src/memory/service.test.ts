@@ -349,3 +349,94 @@ describe("MemoryService lifecycle", () => {
     expect(() => svc.approve("nope", human)).toThrow(NotFoundError);
   });
 });
+
+describe("MemoryService review findings", () => {
+  test("auto-activation ignores caller-chosen readers", () => {
+    const svc = new MemoryService(openKnowledgeDb(":memory:"));
+    const m = svc.propose(
+      {
+        scope: { kind: "user", id: "alice" },
+        kind: "preference",
+        content: "prefers terse answers",
+        readers: ["org"],
+      },
+      agent,
+    );
+    expect(m.status).toBe("active");
+    expect(m.readers).toEqual(["user:alice"]);
+  });
+
+  test("caller-chosen readers are kept when a human reviews", () => {
+    const svc = new MemoryService(openKnowledgeDb(":memory:"));
+    const m = svc.propose(
+      {
+        scope: { kind: "team", id: "platform" },
+        kind: "fact",
+        content: "the staging cluster is in fsn1",
+        readers: ["org"],
+      },
+      agent,
+    );
+    expect(m.status).toBe("proposed");
+    expect(m.readers).toEqual(["org"]);
+  });
+
+  test("a duplicate the proposer can't see is not returned", () => {
+    const svc = new MemoryService(openKnowledgeDb(":memory:"));
+    const input = {
+      scope: { kind: "team" as const, id: "platform" },
+      kind: "fact" as const,
+      content: "Secret: the DR site is in Helsinki",
+    };
+    const first = svc.propose(input, agent);
+    const blind = svc.propose(input, agent, { canSee: () => false });
+    expect(blind.id).not.toBe(first.id);
+    const sighted = svc.propose(input, agent, { canSee: () => true });
+    expect(sighted.id).toBe(first.id);
+  });
+
+  test("a memory's facts are never readable more widely than it", () => {
+    const graph = fakeGraph();
+    const svc = new MemoryService(openKnowledgeDb(":memory:"), { graph });
+    const m = svc.propose(
+      {
+        scope: { kind: "team", id: "platform" },
+        kind: "ownership",
+        content: "platform owns the vault",
+        facts: [
+          {
+            type: "owns",
+            from: "team:platform",
+            to: "service:vault",
+            readers: ["org"],
+          },
+        ],
+      },
+      agent,
+    );
+    svc.approve(m.id, human);
+    expect(graph.asserted.at(-1)?.facts[0]?.readers).toEqual(["team:platform"]);
+  });
+
+  test("the erase audit reports what was actually deleted", async () => {
+    const db = openKnowledgeDb(":memory:");
+    const svc = new MemoryService(db);
+    const m = svc.propose(
+      { scope: { kind: "org", id: "" }, kind: "fact", content: "x is y" },
+      agent,
+    );
+    db.query(
+      `INSERT INTO embeddings (owner_kind, owner_id, model, dimensions,
+         vector, content_hash, created_at)
+       VALUES ('memory', $id, 'm', 1, x'00000000', 'h', 0)`,
+    ).run({ id: m.id });
+    await svc.erase([m.id], human, "test");
+    const row = db
+      .query("SELECT detail FROM audit WHERE action = 'memory.erase'")
+      .get() as { detail: string };
+    expect(JSON.parse(row.detail).cascade).toEqual({
+      memory: 1,
+      embedding: 1,
+    });
+  });
+});

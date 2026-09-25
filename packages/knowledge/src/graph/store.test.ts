@@ -328,3 +328,36 @@ describe("SqliteGraphStore entities", () => {
     expect(visible.every((e) => e.readers.includes("org"))).toBe(true);
   });
 });
+
+describe("SqliteGraphStore review findings", () => {
+  test("neighbors caps facts on a high fan-out node", () => {
+    const { store } = makeStore();
+    store.upsertEntities([team]);
+    const facts: FactInput[] = Array.from({ length: 100 }, (_, i) => ({
+      type: "owns",
+      from: "team:payments",
+      to: `service:s${i}`,
+    }));
+    store.assertFacts({ key: "manual" }, facts);
+    const sub = store.neighbors({
+      entityId: "team:payments",
+      audience: ["org"],
+      limit: 5,
+    });
+    expect(sub.facts.length).toBe(20);
+  });
+
+  test("retireEntities keeps a set larger than sqlite's bind limit", () => {
+    const { store } = makeStore();
+    const many: EntityInput[] = Array.from({ length: 40_000 }, (_, i) => ({
+      id: `file:r:${i}`,
+      type: "file",
+      name: `${i}`,
+      attrs: {},
+      readers: ["org"],
+    }));
+    store.upsertEntities(many, { sourceKey: "indexer:r" });
+    const keep = many.slice(1).map((e) => e.id);
+    expect(store.retireEntities("indexer:r", keep)).toBe(1);
+  });
+});

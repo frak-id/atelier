@@ -74,13 +74,29 @@ export function readMemory(
   return memory;
 }
 
+/** What a non-reviewer learns back from proposing. */
+export interface ProposalReceipt {
+  id: string;
+  status: Memory["status"];
+}
+
+/**
+ * Reviewers get the memory back; everyone else a receipt. Duplicate
+ * detection only matches memories the caller could already read, so
+ * proposing can't confirm or reveal memories outside its audience.
+ */
 export function proposeMemory(
   hub: HubServices,
   caller: Caller,
   input: ProposeMemoryInput,
-): Memory {
+): Memory | ProposalReceipt {
   requireScope(caller, "propose");
-  return hub.memory.propose(input, caller.actor);
+  const reviewer = caller.scopes.has("review");
+  const memory = hub.memory.propose(input, caller.actor, {
+    canSee: (m) =>
+      reviewer || isVisible(m.readers, caller.audience, hub.access),
+  });
+  return reviewer ? memory : { id: memory.id, status: memory.status };
 }
 
 export function flagMemory(

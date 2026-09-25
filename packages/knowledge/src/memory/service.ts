@@ -6,7 +6,6 @@
  */
 import { AuditLog } from "../audit.ts";
 import type { KnowledgeDb } from "../db.ts";
-import { Derivations } from "../derivations.ts";
 import { eraseRecords } from "../erasure.ts";
 import {
   ForbiddenError,
@@ -32,7 +31,7 @@ import type {
   Provenance,
   RecordRef,
 } from "../types.ts";
-import { newId, opt, parseJson } from "../util.ts";
+import { intersectReaders, newId, opt, parseJson } from "../util.ts";
 import { defaultMemoryPolicy } from "./policy.ts";
 
 /** bun:sqlite `strict:true` bind values; JSON columns are pre-stringified. */
@@ -184,7 +183,6 @@ export class MemoryService {
   private readonly clock: () => number;
   private readonly hooks: ErasureHook[];
   private readonly audit: AuditLog;
-  private readonly derivations: Derivations;
 
   constructor(
     private readonly db: KnowledgeDb,
@@ -195,7 +193,6 @@ export class MemoryService {
     this.clock = opts?.clock ?? (() => Date.now());
     this.hooks = opts?.hooks ?? [];
     this.audit = new AuditLog(db);
-    this.derivations = new Derivations(db);
   }
 
   // ── lifecycle ─────────────────────────────────────────────────────────
@@ -203,9 +200,18 @@ export class MemoryService {
   /**
    * Any actor may propose. Exact duplicates (same scope, normalized
    * content) among proposed/active memories return the existing row
-   * instead of creating a new one. Policy decides auto-activation.
+   * instead of creating a new one — but only when `opts.canSee` says the
+   * proposer may see it; otherwise a new proposal is created, so
+   * proposing can't be used to probe for memories outside one's audience.
+   *
+   * Policy decides auto-activation. An auto-activated memory always gets
+   * the policy's default readers: caller-chosen readers need a review.
    */
-  propose(input: ProposeMemoryInput, actor: Actor): Memory {
+  propose(
+    input: ProposeMemoryInput,
+    actor: Actor,
+    opts: { canSee?: (memory: Memory) => boolean } = {},
+  ): Memory {
     const content = normalizeContent(input.content);
     assertContentLength(content);
     if (input.scope.kind !== "org" && !input.scope.id) {
@@ -226,13 +232,15 @@ export class MemoryService {
     }
 
     const dup = this.findDuplicate(input.scope, content);
-    if (dup) return dup;
+    if (dup && (opts.canSee?.(dup) ?? true)) return dup;
 
     const now = this.clock();
     const proposeInput = { ...input, content };
     const autoActivate = this.policy.autoActivate(proposeInput, actor);
     const status: MemoryStatus = autoActivate ? "active" : "proposed";
-    const readers = input.readers ?? this.policy.defaultReaders(input.scope);
+    const readers = autoActivate
+      ? this.policy.defaultReaders(input.scope)
+      : (input.readers ?? this.policy.defaultReaders(input.scope));
 
     const memory: Memory = {
       id: newId("mem"),
@@ -483,51 +491,41 @@ export class MemoryService {
       id: row.id,
     }));
 
-    // Cascade counts must be gathered before erasure removes the
-    // derivation rows and facts they describe.
-    const cascade = new Map<string, Record<string, number>>();
-    for (const row of rows) {
-      const descendants = this.derivations.descendants({
-        kind: "memory",
-        id: row.id,
-      });
-      const factRow = this.db
-        .query("SELECT COUNT(*) as n FROM facts WHERE source_key = $key")
-        .get({ key: `memory:${row.id}` }) as { n: number };
-      const byKind: Record<string, number> = {};
-      for (const d of descendants) byKind[d.kind] = (byKind[d.kind] ?? 0) + 1;
-      if (factRow.n > 0) byKind.fact = (byKind.fact ?? 0) + factRow.n;
-      cascade.set(row.id, byKind);
-    }
-
-    const report = await eraseRecords(this.db, roots, {
+    // Pointer cleanup and the audit entries commit with the deletes: an
+    // erase must never happen without its audit trail. The cascade counts
+    // come from what was actually deleted, for the whole call.
+    return eraseRecords(this.db, roots, {
       hooks: this.hooks,
-    });
-
-    this.db.transaction(() => {
-      for (const row of rows) {
-        this.db
-          .query("UPDATE memories SET supersedes = NULL WHERE supersedes = $id")
-          .run({ id: row.id });
-        this.db
-          .query(
-            `UPDATE memories SET superseded_by = NULL
+      inTransaction: (report) => {
+        const cascade: Record<string, number> = {};
+        for (const ref of [...report.erased, ...report.external]) {
+          cascade[ref.kind] = (cascade[ref.kind] ?? 0) + 1;
+        }
+        for (const row of rows) {
+          this.db
+            .query(
+              "UPDATE memories SET supersedes = NULL WHERE supersedes = $id",
+            )
+            .run({ id: row.id });
+          this.db
+            .query(
+              `UPDATE memories SET superseded_by = NULL
              WHERE superseded_by = $id`,
-          )
-          .run({ id: row.id });
-        this.audit.append(
-          actor,
-          "memory.erase",
-          { kind: "memory", id: row.id },
-          {
-            ...(reason ? { reason } : {}),
-            cascade: cascade.get(row.id) ?? {},
-          },
-        );
-      }
-    })();
-
-    return report;
+            )
+            .run({ id: row.id });
+          this.audit.append(
+            actor,
+            "memory.erase",
+            { kind: "memory", id: row.id },
+            {
+              ...(reason ? { reason } : {}),
+              batch: rows.length,
+              cascade,
+            },
+          );
+        }
+      },
+    });
   }
 
   /** Bumps `use_count`/`last_used_at`; silently skips missing ids. */
@@ -676,9 +674,13 @@ export class MemoryService {
     if (!this.graph) return;
     this.graph.assertFacts(
       { key: `memory:${memory.id}`, revision: String(memory.updatedAt) },
+      // A claim is never readable more widely than the memory carrying it.
       memory.facts.map((fact) => ({
         ...fact,
-        readers: fact.readers ?? memory.readers,
+        readers: intersectReaders(
+          fact.readers ?? memory.readers,
+          memory.readers,
+        ),
       })),
     );
   }

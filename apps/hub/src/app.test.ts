@@ -137,6 +137,35 @@ describe("auth", () => {
   });
 });
 
+describe("proposing never reveals what the caller can't read", () => {
+  test("non-reviewers get a receipt; invisible duplicates stay hidden", async () => {
+    const input = {
+      scope: { kind: "team", id: "platform" },
+      kind: "fact",
+      content: "The DR site is in Helsinki.",
+      provenance: [{ kind: "slack", ref: "C9/p1", quote: "secret quote" }],
+    };
+    const byAlice = await call(alice.token, "POST", "/api/memories", input);
+    expect(byAlice.body.provenance).toHaveLength(1); // reviewer: full row
+
+    const byBot = await call(bot.token, "POST", "/api/memories", input);
+    expect(Object.keys(byBot.body).sort()).toEqual(["id", "status"]);
+    expect(byBot.body.id).not.toBe(byAlice.body.id);
+  });
+
+  test("an agent can't auto-publish org-wide through a preference", async () => {
+    const res = await call(bot.token, "POST", "/api/memories", {
+      scope: { kind: "user", id: "bob" },
+      kind: "preference",
+      content: "bob likes emoji",
+      readers: ["org"],
+    });
+    expect(res.body.status).toBe("active");
+    const seen = await call(bot.token, "GET", "/api/search?q=emoji");
+    expect(seen.body).toEqual([]);
+  });
+});
+
 describe("memory governance over HTTP", () => {
   let id: string;
 

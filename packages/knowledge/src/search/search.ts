@@ -188,13 +188,12 @@ export class KnowledgeSearch {
     return hits;
   }
 
+  /** A no-op without an embedder: FTS-only search has nothing to embed. */
   async embedPending(
     opts: { kinds?: SearchKind[]; batchSize?: number } = {},
   ): Promise<{ embedded: number; skipped: number }> {
     const embedder = this.embedder;
-    if (!embedder) {
-      throw new ValidationError("embedPending requires an embedder");
-    }
+    if (!embedder) return { embedded: 0, skipped: 0 };
     const kinds = opts.kinds ?? (["memory", "entity", "document"] as const);
     const batchSize = opts.batchSize ?? 32;
 

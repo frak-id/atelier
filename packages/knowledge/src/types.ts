@@ -509,7 +509,8 @@ export interface EntityFilter {
 export interface GraphStore {
   /**
    * Inserts or updates entities (by id). `sourceKey` records who asserted
-   * them and un-retires a previously retired entity.
+   * them (last writer wins, see the proposal's known limitations) and
+   * un-retires a previously retired entity.
    */
   upsertEntities(
     entities: EntityInput[],

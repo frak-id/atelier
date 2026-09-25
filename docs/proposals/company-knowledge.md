@@ -52,7 +52,7 @@ same extraction rule as the research doc's §2.
 | **Raw SQL, not drizzle** | FTS5 external-content tables and triggers aren't modelled by drizzle; the schema is small |
 | **Three record kinds, three lifecycles** | *Memory* is revocable and human-governed. *Graph facts* are derived and temporal. *Documents* are rebuilt from sources. Mixing them is how "erase" ends up impossible |
 | **Agents propose, humans activate** | Default policy auto-activates only user-scoped preferences. Everything else lands in the review queue |
-| **Erase is a hard delete with a cascade** | A `derivations` table (parent → child) is written from day one. Erasing a memory deletes it, its embeddings, FTS rows, the graph facts it asserted, and every derived record; `external` derivations (a cached transcript, a skill PR) are reported to `ErasureHook`s. The audit trail records *that* it was erased and by whom, never the content |
+| **Erase is a hard delete with a cascade** | Erasing a memory deletes it, its FTS rows and embeddings, and every graph fact it asserted (history included), in one transaction with its audit entry. Records a memory *owns* are erased by owner; artifacts built *from* it and stored as their own records (a summary, a wiki chunk quoting it, an `external` transcript reported to `ErasureHook`s) go through the `derivations` table, which producers must `link`. Nothing links yet: the code wiki (next steps) is its first producer. The audit trail records *that* it was erased, by whom and the cascade counts, never the content |
 | **Temporal facts, asserted per source** | A source (`indexer:<repo>`, `memory:<id>`) re-asserts its whole set. Facts it no longer states are invalidated (`validTo`), not deleted, so "what did X depend on last month" works (`asOf`) |
 | **Memories can carry facts** | "team:payments owns service:billing" as a structured claim, asserted under `memory:<id>` while active, retracted when flagged/archived, deleted on erase. This is how human knowledge enters the graph |
 | **Audience rule enforced in the store layer** | A record is used only if every audience principal is covered by one of its readers (group membership via an `AccessResolver`). Search over-fetches and filters so ACL-filtered hits don't starve results |
@@ -86,6 +86,19 @@ same extraction rule as the research doc's §2.
    once Open-Inspect's bots are not enough.
 6. **Evals** before anything structural (SCIP): 20–30 real questions against
    the current graph + docs + memory.
+
+## Known limitations
+
+- **Shared entity ids across sources.** An entity asserted by several
+  sources (`team:platform` in two repos' CODEOWNERS) records only the last
+  asserting source, so the other source's re-index won't retire it. Harmless
+  today (a stale team entity still resolves), but a per-source entity table
+  is needed before retirement drives anything.
+- **Duplicate proposals across audiences.** A proposer who can't see an
+  existing identical memory creates a second proposal rather than learning
+  the first exists. Reviewers merge them.
+- **A forced re-index requested during a run** is folded into the follow-up
+  run; `?wait=true` returns the in-flight run, not the forced one.
 
 ## Open questions
 

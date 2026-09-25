@@ -198,9 +198,9 @@ describe("KnowledgeSearch.embedPending", () => {
     expect(third).toEqual({ embedded: 1, skipped: 0 });
   });
 
-  test("throws without an embedder configured", async () => {
+  test("is a no-op without an embedder (FTS-only deployments)", async () => {
     const db = openKnowledgeDb(":memory:");
     const search = new KnowledgeSearch(db);
-    await expect(search.embedPending()).rejects.toBeInstanceOf(ValidationError);
+    expect(await search.embedPending()).toEqual({ embedded: 0, skipped: 0 });
   });
 });

@@ -93,11 +93,24 @@ function eraseOne(
  * transaction. Returns a report of what was deleted (for `external`
  * records, what the caller must clean up itself) and then runs `hooks`
  * against that report — after commit, since they cannot participate in it.
+ *
+ * Records a DB record owns directly (its embeddings, the graph facts a
+ * memory asserted) are erased by owner. `derivations` covers everything
+ * else: artifacts built *from* a record but stored as records of their
+ * own (a summary document, a wiki chunk quoting a memory, an external
+ * transcript). Producers of such artifacts must `Derivations.link` them.
+ *
+ * `inTransaction` runs inside the same transaction after the deletes, so
+ * bookkeeping that must be atomic with the erase (the audit entry) can't
+ * be lost to a crash between two commits.
  */
 export async function eraseRecords(
   db: KnowledgeDb,
   roots: RecordRef[],
-  opts?: { hooks?: ErasureHook[] },
+  opts?: {
+    hooks?: ErasureHook[];
+    inTransaction?: (report: ErasureReport) => void;
+  },
 ): Promise<ErasureReport> {
   const derivations = new Derivations(db);
   const report: ErasureReport = { roots, erased: [], external: [] };
@@ -123,6 +136,7 @@ export async function eraseRecords(
       eraseOne(db, ref, report);
       derivations.removeAll(ref);
     }
+    opts?.inTransaction?.(report);
   });
   run();
 
