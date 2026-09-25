@@ -9,6 +9,7 @@ import {
   Maximize2,
   MessagesSquare,
   Minimize2,
+  Pencil,
   Play,
   Radio,
   Square,
@@ -31,6 +32,7 @@ import { useCaptureToolset } from "@/api/queries/toolsets";
 import { ImmersiveView } from "@/components/immersive-view";
 import { LaunchpadBadge } from "@/components/launchpad/launchpad-badge";
 import { MultiTerminal } from "@/components/multi-terminal";
+import { RenameSandboxDialog } from "@/components/rename-sandbox-dialog";
 import { TerminalView } from "@/components/terminal-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,6 +59,7 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { useServiceGate } from "@/hooks/use-service-gate";
 import {
   harnessFromAnnotations,
+  sandboxNameFromAnnotations,
   sandboxStatusPresentation,
 } from "@/lib/sandbox-status";
 
@@ -75,6 +78,7 @@ function SandboxDetailPage() {
   } = useQuery(sandboxDetailQuery(sandboxId));
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [immersive, setImmersive] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const pause = usePauseSandbox();
   const resume = useResumeSandbox();
   const destroy = useDestroySandbox();
@@ -111,6 +115,7 @@ function SandboxDetailPage() {
 
   const status = sandboxStatusPresentation(sandbox.status);
   const harness = harnessFromAnnotations(sandbox.annotations);
+  const name = sandboxNameFromAnnotations(sandbox.annotations);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -120,7 +125,26 @@ function SandboxDetailPage() {
             Fleet
           </Link>
           <span className="text-muted-foreground">/</span>
-          <span className="truncate font-mono text-sm">{sandbox.id}</span>
+          {name ? (
+            <>
+              <span className="truncate text-sm font-medium">{name}</span>
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                {sandbox.id}
+              </span>
+            </>
+          ) : (
+            <span className="truncate font-mono text-sm">{sandbox.id}</span>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => setRenameOpen(true)}
+            aria-label="Rename sandbox"
+            title="Rename"
+          >
+            <Pencil className="size-3.5" />
+          </Button>
           <Badge variant={status.variant}>{status.label}</Badge>
           {harness ? <Badge variant="outline">{harness}</Badge> : null}
           <LaunchpadBadge
@@ -232,6 +256,13 @@ function SandboxDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RenameSandboxDialog
+        sandboxId={sandbox.id}
+        currentName={name}
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+      />
 
       {immersive ? (
         <ImmersiveView sandbox={sandbox} onClose={() => setImmersive(false)} />

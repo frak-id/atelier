@@ -144,6 +144,25 @@ export function useSnapshotSandbox() {
   });
 }
 
+/** Set the sandbox's display name; an empty `name` clears it. */
+export function useRenameSandbox() {
+  const invalidate = useInvalidateSandboxes();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const { error } = await api.v1
+        .sandboxes({ id })
+        .patch({ name: name.trim() || null });
+      if (error)
+        throw new Error(errorMessage(error, "Failed to rename sandbox"));
+    },
+    onSuccess: (_data, { name }) => {
+      invalidate();
+      toast.success(name.trim() ? "Sandbox renamed" : "Sandbox name cleared");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
 export function useProcessAction(id: string) {
   const invalidate = useInvalidateSandboxes();
   return useMutation({

@@ -1,5 +1,6 @@
 import {
   LAUNCHPAD_STARTER_ANNOTATION,
+  SANDBOX_NAME_ANNOTATION,
   type SandboxStatus,
 } from "@atelier/spec";
 import type { BadgeVariant } from "@/components/ui/badge";
@@ -39,6 +40,13 @@ export function ownerFromAnnotations(
   annotations: Record<string, string> | undefined,
 ): string | undefined {
   return annotations?.[OWNER_ANNOTATION_KEY];
+}
+
+/** The user-chosen display name, or undefined when never set (show the id). */
+export function sandboxNameFromAnnotations(
+  annotations: Record<string, string> | undefined,
+): string | undefined {
+  return annotations?.[SANDBOX_NAME_ANNOTATION]?.trim() || undefined;
 }
 
 /** The Launchpad starter a sandbox was launched from (stamped server-side by

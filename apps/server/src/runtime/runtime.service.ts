@@ -24,7 +24,9 @@ import {
   prebuildRecipeKey,
   type ResumeRequest,
   type RuntimeSurface,
+  repoKey,
   runtimeSurfaceOf,
+  type SandboxRepo,
   type SandboxSpec,
   type SandboxState,
   type SandboxSummary,
@@ -784,12 +786,46 @@ export class RuntimeService {
   /** All sandboxes, from persistence only (no agent round-trips). Live
    * process health is on `get(id)`. */
   list(): SandboxSummary[] {
-    return this.sandboxes.list().map((r) => ({
-      id: r.id,
-      status: r.status,
-      createdAt: r.createdAt,
-      annotations: r.spec.annotations,
-    }));
+    const snapshots = new Map(this.snapshots.list().map((s) => [s.ref, s]));
+    return this.sandboxes.list().map((r) => {
+      const repos = sourceRepos(r.spec, snapshots);
+      return {
+        id: r.id,
+        status: r.status,
+        createdAt: r.createdAt,
+        annotations: r.spec.annotations,
+        ...(repos.length > 0 ? { repos } : {}),
+      };
+    });
+  }
+
+  /**
+   * Set (or, with `undefined`, remove) one display annotation. Annotations
+   * are display hints the runtime never reads, so this touches no pod and
+   * takes no op lock: a rename must not wait out a multi-minute resume. The
+   * read-modify-write is synchronous, so it can't interleave with another
+   * write; the async spec writers keep the stored annotations (see
+   * `withStoredAnnotations`) so they can't clobber it either.
+   */
+  setAnnotation(id: string, key: string, value: string | undefined): void {
+    const record = this.require(id);
+    const { [key]: _previous, ...rest } = record.spec.annotations ?? {};
+    const annotations = value === undefined ? rest : { ...rest, [key]: value };
+    this.sandboxes.update(id, {
+      spec: {
+        ...record.spec,
+        annotations:
+          Object.keys(annotations).length > 0 ? annotations : undefined,
+      },
+    });
+  }
+
+  /** `spec` with the annotations currently stored for `id`. For a spec built
+   * from a record read before an `await`: `setAnnotation` may have run in
+   * between, and its write must survive this one. */
+  private withStoredAnnotations(id: string, spec: SandboxSpec): SandboxSpec {
+    const stored = this.sandboxes.get(id);
+    return stored ? { ...spec, annotations: stored.spec.annotations } : spec;
   }
 
   // ── pause / resume ─────────────────────────────────────────────────────
@@ -914,7 +950,7 @@ export class RuntimeService {
       // drop the pointer (the VolumeSnapshot itself is GC'd by destroy's
       // label sweep, or overwritten by the next pause).
       this.sandboxes.update(id, {
-        spec,
+        spec: this.withStoredAnnotations(id, spec),
         status: "running",
         pauseSnapshotRef: undefined,
         generated: {
@@ -1030,7 +1066,9 @@ export class RuntimeService {
     // the push succeeds, so the store never claims env the agent didn't get.
     // Does not mutate running processes' env (stated honestly, atelier-v2 §2).
     await this.agent.putConfig(id, specToAgentConfig(id, nextSpec));
-    this.sandboxes.update(id, { spec: nextSpec });
+    this.sandboxes.update(id, {
+      spec: this.withStoredAnnotations(id, nextSpec),
+    });
     await this.runPhase(id, "envChanged");
   }
 
@@ -1073,7 +1111,7 @@ export class RuntimeService {
     };
     rejectUnresolvedSecrets(spec);
     await this.agent.putConfig(id, specToAgentConfig(id, spec));
-    this.sandboxes.update(id, { spec });
+    this.sandboxes.update(id, { spec: this.withStoredAnnotations(id, spec) });
     if (!req.lazy) await this.agent.processStart(id, req.name);
   }
 
@@ -1635,6 +1673,43 @@ function rejectUnresolvedSecrets(spec: SandboxSpec): void {
         "Secrets must be resolved by control before crossing the seam.",
     );
   }
+}
+
+/** Deepest prebuild chain `sourceRepos` walks: a guard against a corrupt
+ * `parent` loop, far past any real chain. */
+const MAX_PREBUILD_CHAIN = 16;
+
+/**
+ * The repos a sandbox booted with: those cloned by the prebuild snapshot it
+ * boots from and by every prebuild that one is chained on, root first,
+ * deduped by `repoKey` (the nearest bake's branch wins). Empty for an image
+ * source, or a snapshot without a recipe (a pause or manual snapshot).
+ */
+function sourceRepos(
+  spec: SandboxSpec,
+  snapshots: ReadonlyMap<string, SnapshotRecord>,
+): SandboxRepo[] {
+  if (!("snapshot" in spec.source)) return [];
+  const chain: SnapshotRecord[] = [];
+  const seen = new Set<string>();
+  let ref: string | undefined = spec.source.snapshot;
+  while (ref && !seen.has(ref) && chain.length < MAX_PREBUILD_CHAIN) {
+    seen.add(ref);
+    const snap = snapshots.get(ref);
+    if (!snap) break;
+    chain.push(snap);
+    ref = snap.parent;
+  }
+  const repos = new Map<string, SandboxRepo>();
+  for (const snap of chain.reverse()) {
+    for (const repo of snap.spec?.repos ?? []) {
+      repos.set(repoKey(repo.url), {
+        url: repo.url,
+        ...(repo.branch ? { branch: repo.branch } : {}),
+      });
+    }
+  }
+  return [...repos.values()];
 }
 
 function mergeResume(spec: SandboxSpec, req: ResumeRequest): SandboxSpec {

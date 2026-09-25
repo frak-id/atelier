@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { MultiTerminal } from "@/components/multi-terminal";
 import { Button } from "@/components/ui/button";
 import { useServiceGate } from "@/hooks/use-service-gate";
-import { harnessFromAnnotations } from "@/lib/sandbox-status";
+import {
+  harnessFromAnnotations,
+  sandboxNameFromAnnotations,
+} from "@/lib/sandbox-status";
 import { cn } from "@/lib/utils";
 
 export const TERMINAL_TAB = "__terminal__";
@@ -46,6 +49,7 @@ export function ImmersiveView({
   const [active, setActive] = useState<string>(() =>
     preferredInitialTab(sandbox),
   );
+  const name = sandboxNameFromAnnotations(sandbox.annotations);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -58,7 +62,13 @@ export function ImmersiveView({
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-        <span className="truncate font-mono text-sm">{sandbox.id}</span>
+        {name ? (
+          <span className="truncate text-sm font-medium" title={sandbox.id}>
+            {name}
+          </span>
+        ) : (
+          <span className="truncate font-mono text-sm">{sandbox.id}</span>
+        )}
         <div className="ml-2 flex items-center gap-1 overflow-x-auto">
           <button
             type="button"

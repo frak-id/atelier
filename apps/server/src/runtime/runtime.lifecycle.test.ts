@@ -413,3 +413,134 @@ describe("prebuild processes/ports", () => {
     expect(runtime.prebuildSpec(snap.ref)).toBeUndefined();
   });
 });
+
+describe("display annotations", () => {
+  test("setAnnotation sets and clears one key, keeping the others", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await runtime.create(
+      { ...spec, annotations: { "atelier.dev/owner": "alice" } },
+      { id: "sb1" },
+    );
+    runtime.setAnnotation("sb1", "atelier.dev/name", "my box");
+    expect(sandboxes.get("sb1")?.spec.annotations).toEqual({
+      "atelier.dev/owner": "alice",
+      "atelier.dev/name": "my box",
+    });
+    runtime.setAnnotation("sb1", "atelier.dev/name", undefined);
+    expect(sandboxes.get("sb1")?.spec.annotations).toEqual({
+      "atelier.dev/owner": "alice",
+    });
+  });
+
+  test("setAnnotation on an unknown sandbox is a 404", () => {
+    const { runtime } = makeRuntime();
+    expect(() => runtime.setAnnotation("nope", "k", "v")).toThrow(
+      NotFoundError,
+    );
+  });
+
+  test("a rename made during a resume survives it", async () => {
+    const backend = new KubernetesBackend();
+    const sandboxes = new stores.InMemorySandboxStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots: new stores.InMemorySnapshotStore(),
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "sb1" });
+    await runtime.pause("sb1");
+    // Awaited by resume after it has read the record: rename right there.
+    backend.volumes.volumeExists = async () => {
+      runtime.setAnnotation("sb1", "atelier.dev/name", "renamed");
+      return false;
+    };
+    await runtime.resume("sb1");
+    const record = sandboxes.get("sb1");
+    expect(record?.status).toBe("running");
+    expect(record?.spec.annotations?.["atelier.dev/name"]).toBe("renamed");
+  });
+});
+
+describe("list() repos", () => {
+  const repo = (url: string, branch?: string) => ({
+    url,
+    ...(branch ? { branch } : {}),
+    clonePath: "r",
+  });
+
+  function putPrebuild(
+    snapshots: InstanceType<typeof stores.InMemorySnapshotStore>,
+    ref: string,
+    repos: ReturnType<typeof repo>[],
+    parent?: string,
+  ) {
+    snapshots.put({
+      hash: `h-${ref}`,
+      ref,
+      image: "registry.test/base:1",
+      parent,
+      spec: {
+        source: parent
+          ? { snapshot: parent }
+          : { image: "registry.test/base:1" },
+        repos,
+      },
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  test("an image-booted sandbox has no repos", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.create(spec, { id: "sb1" });
+    expect(runtime.list()[0]?.repos).toBeUndefined();
+  });
+
+  test("a prebuild-booted sandbox lists its prebuild's repos", async () => {
+    const { runtime, snapshots, sandboxes } = makeRuntime();
+    putPrebuild(snapshots, "snap-a", [
+      repo("https://github.com/acme/site", "dev"),
+    ]);
+    sandboxes.create({
+      id: "sb1",
+      spec: { ...spec, source: { snapshot: "snap-a" } },
+      status: "running",
+      generated: {},
+      metadata: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    expect(runtime.list()[0]?.repos).toEqual([
+      { url: "https://github.com/acme/site", branch: "dev" },
+    ]);
+  });
+
+  test("a chained prebuild inherits its parents' repos, root first", async () => {
+    const { runtime, snapshots, sandboxes } = makeRuntime();
+    putPrebuild(snapshots, "snap-root", [
+      repo("https://github.com/acme/api"),
+      repo("https://github.com/acme/web", "main"),
+    ]);
+    putPrebuild(
+      snapshots,
+      "snap-child",
+      [repo("git@github.com:acme/web.git", "feat")],
+      "snap-root",
+    );
+    sandboxes.create({
+      id: "sb1",
+      spec: { ...spec, source: { snapshot: "snap-child" } },
+      status: "paused",
+      generated: {},
+      metadata: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    // Deduped by repo identity; the nearer bake's branch wins.
+    expect(runtime.list()[0]?.repos).toEqual([
+      { url: "https://github.com/acme/api" },
+      { url: "git@github.com:acme/web.git", branch: "feat" },
+    ]);
+  });
+});

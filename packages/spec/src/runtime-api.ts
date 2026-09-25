@@ -98,6 +98,16 @@ export type SandboxState = Static<typeof SandboxStateSchema>;
 
 // ── list ─────────────────────────────────────────────────────────────────────
 
+/** A git repo a sandbox was booted with, as cloned by its prebuild. */
+export const SandboxRepoSchema = Type.Object(
+  {
+    url: Type.String(),
+    branch: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+export type SandboxRepo = Static<typeof SandboxRepoSchema>;
+
 /** Lightweight sandbox row for `GET /v1/sandboxes` (`atelier ps`): from the
  * persisted record only — no per-sandbox agent round-trips. Live process
  * health is on `GET /v1/sandboxes/:id`. */
@@ -107,10 +117,38 @@ export const SandboxSummarySchema = Type.Object(
     status: SandboxStatusSchema,
     createdAt: Type.String(),
     annotations: Type.Optional(Type.Record(Type.String(), Type.String())),
+    /** The repos cloned by the prebuild the sandbox booted from (its whole
+     * chain, root first). Absent when it booted from a bare image or a
+     * snapshot with no known recipe. */
+    repos: Type.Optional(Type.Array(SandboxRepoSchema)),
   },
   { additionalProperties: false, $id: "SandboxSummary" },
 );
 export type SandboxSummary = Static<typeof SandboxSummarySchema>;
+
+// ── update ───────────────────────────────────────────────────────────────────
+
+/** Annotation carrying the user-chosen display name of a sandbox. Display
+ * only: the id stays the sandbox's identity everywhere. */
+export const SANDBOX_NAME_ANNOTATION = "atelier.dev/name";
+
+/** Longest accepted sandbox display name, in characters. */
+export const SANDBOX_NAME_MAX_LENGTH = 64;
+
+/** `PATCH /v1/sandboxes/:id`. `name`: set the display name; `null` or a
+ * blank string clears it (the console falls back to the id). */
+export const UpdateSandboxRequestSchema = Type.Object(
+  {
+    name: Type.Optional(
+      Type.Union([
+        Type.String({ maxLength: SANDBOX_NAME_MAX_LENGTH }),
+        Type.Null(),
+      ]),
+    ),
+  },
+  { additionalProperties: false, $id: "UpdateSandboxRequest" },
+);
+export type UpdateSandboxRequest = Static<typeof UpdateSandboxRequestSchema>;
 
 // ── resume ───────────────────────────────────────────────────────────────────
 

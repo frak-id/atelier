@@ -1,8 +1,8 @@
-import type { SandboxSummary } from "@atelier/spec";
+import { repoShortName, type SandboxSummary } from "@atelier/spec";
 import type { AgentSession, AgentSessionStatus } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Loader2, Pause, Play, Rocket, Trash2 } from "lucide-react";
+import { Loader2, Pause, Pencil, Play, Rocket, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
   sandboxDetailQuery,
@@ -20,6 +20,7 @@ import {
 import { ImmersiveView } from "@/components/immersive-view";
 import { LaunchpadBadge } from "@/components/launchpad/launchpad-badge";
 import { LaunchpadBanner } from "@/components/launchpad/launchpad-banner";
+import { RenameSandboxDialog } from "@/components/rename-sandbox-dialog";
 import {
   SessionsByRepo,
   SessionsByRepoSkeleton,
@@ -42,13 +43,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { GithubIcon } from "@/components/ui/github-icon";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusDot } from "@/components/ui/status-dot";
 import { useAgentEvents } from "@/hooks/use-agent-events";
-import { formatRelativeTime } from "@/lib/formatters";
+import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
 import {
   harnessFromAnnotations,
   ownerFromAnnotations,
+  sandboxNameFromAnnotations,
   sandboxStatusPresentation,
 } from "@/lib/sandbox-status";
 
@@ -219,19 +221,37 @@ function SandboxesSection({ sandboxes }: { sandboxes: SandboxSummary[] }) {
   );
 }
 
+/** The repos a sandbox booted with, as one muted line: `owner/name#branch`,
+ * comma-separated for a multi-repo prebuild. */
+function SandboxRepos({
+  repos,
+}: {
+  repos: NonNullable<SandboxSummary["repos"]>;
+}) {
+  const label = repos
+    .map((repo) => repoBranchLabel(repoShortName(repo.url), repo.branch))
+    .join(", ");
+  return (
+    <span
+      className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+      title={repos.map((repo) => repo.url).join("\n")}
+    >
+      <GithubIcon className="size-3 shrink-0" />
+      <span className="truncate font-mono">{label}</span>
+    </span>
+  );
+}
+
 function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const pause = usePauseSandbox();
   const resume = useResumeSandbox();
   const destroy = useDestroySandbox();
   const status = sandboxStatusPresentation(sandbox.status);
   const harness = harnessFromAnnotations(sandbox.annotations);
   const owner = ownerFromAnnotations(sandbox.annotations);
-  const { data: sessions } = useQuery({
-    ...sessionsListQuery(sandbox.id),
-    enabled: sandbox.status === "running",
-  });
-  const sessionCount = sessions?.length ?? 0;
+  const name = sandboxNameFromAnnotations(sandbox.annotations);
 
   return (
     <Card>
@@ -239,29 +259,40 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
         <Link
           to="/sandboxes/$sandboxId"
           params={{ sandboxId: sandbox.id }}
-          className="flex flex-1 flex-wrap items-center gap-2 min-w-0"
+          className="flex min-w-0 flex-1 flex-col gap-1"
         >
-          <span className="truncate font-mono text-sm">{sandbox.id}</span>
-          <Badge variant={status.variant}>{status.label}</Badge>
-          {harness ? <Badge variant="outline">{harness}</Badge> : null}
-          {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
-          <LaunchpadBadge
-            sandboxId={sandbox.id}
-            annotations={sandbox.annotations}
-          />
-          {sandbox.status === "running" ? (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <StatusDot variant={sessionCount > 0 ? "info" : "neutral"} />
-              {sessionCount > 0
-                ? `${sessionCount} session${sessionCount === 1 ? "" : "s"}`
-                : "no session"}
+          <span className="flex flex-wrap items-center gap-2 min-w-0">
+            {name ? (
+              <span className="truncate text-sm font-medium" title={sandbox.id}>
+                {name}
+              </span>
+            ) : (
+              <span className="truncate font-mono text-sm">{sandbox.id}</span>
+            )}
+            <Badge variant={status.variant}>{status.label}</Badge>
+            {harness ? <Badge variant="outline">{harness}</Badge> : null}
+            {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
+            <LaunchpadBadge
+              sandboxId={sandbox.id}
+              annotations={sandbox.annotations}
+            />
+            <span className="text-xs text-muted-foreground">
+              {formatRelativeTime(sandbox.createdAt)}
             </span>
-          ) : null}
-          <span className="text-xs text-muted-foreground">
-            {formatRelativeTime(sandbox.createdAt)}
           </span>
+          {sandbox.repos && sandbox.repos.length > 0 ? (
+            <SandboxRepos repos={sandbox.repos} />
+          ) : null}
         </Link>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setRenameOpen(true)}
+            aria-label="Rename sandbox"
+          >
+            <Pencil />
+          </Button>
           {sandbox.status === "running" ? (
             <Button
               variant="outline"
@@ -313,8 +344,8 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
             <DialogTitle>Destroy sandbox?</DialogTitle>
             <DialogDescription>
               This permanently deletes{" "}
-              <span className="font-mono">{sandbox.id}</span>. This cannot be
-              undone.
+              <span className="font-mono">{sandbox.id}</span>
+              {name ? ` (${name})` : ""}. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -334,6 +365,12 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <RenameSandboxDialog
+        sandboxId={sandbox.id}
+        currentName={name}
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+      />
     </Card>
   );
 }

@@ -22,6 +22,7 @@ import {
   type ResumeRequest,
   ResumeRequestSchema,
   runtimeSurfaceOf,
+  SANDBOX_NAME_ANNOTATION,
   type SandboxSpec,
   SurfacePortsSchema,
   SurfaceProcessesSchema,
@@ -31,6 +32,7 @@ import {
   ToolsetCaptureRequestSchema,
   type ToolsetRef,
   ToolsetRefSchema,
+  UpdateSandboxRequestSchema,
 } from "@atelier/spec";
 import { Elysia, sse, t } from "elysia";
 import {
@@ -617,6 +619,19 @@ export function createV1Routes(container: ServerContainer) {
       )
       .get("/sandboxes", () => runtime.list())
       .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))
+      // Display-only edits (today: the name). A blank or `null` name clears
+      // it; the console then falls back to the id.
+      .patch(
+        "/sandboxes/:id",
+        ({ params, body, set }) => {
+          if (body.name !== undefined) {
+            const name = body.name?.trim() || undefined;
+            runtime.setAnnotation(params.id, SANDBOX_NAME_ANNOTATION, name);
+          }
+          set.status = 204;
+        },
+        { body: UpdateSandboxRequestSchema },
+      )
       .post("/sandboxes/:id/pause", ({ params }) =>
         jobs.track({ kind: "sandbox-pause", target: params.id }, () =>
           runtime.pause(params.id),
