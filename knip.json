@@ -23,6 +23,13 @@
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["pino-pretty"],
       "entry": ["src/**/*.test.ts"]
+    },
+    "packages/knowledge": {
+      "project": ["src/**/*.ts"]
+    },
+    "apps/hub": {
+      "project": ["src/**/*.ts"],
+      "entry": ["src/index.ts", "src/**/*.test.ts"]
     }
   }
 }

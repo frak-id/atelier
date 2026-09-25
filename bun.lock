@@ -112,6 +112,13 @@
         "@types/bun": "^1.4.2",
       },
     },
+    "packages/knowledge": {
+      "name": "@atelier/knowledge",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "^1.4.2",
+      },
+    },
     "packages/shared": {
       "name": "@frak/atelier-shared",
       "version": "3.0.2",
@@ -143,6 +150,8 @@
     "@atelier/compose": ["@atelier/compose@workspace:packages/compose"],
 
     "@atelier/console": ["@atelier/console@workspace:apps/console"],
+
+    "@atelier/knowledge": ["@atelier/knowledge@workspace:packages/knowledge"],
 
     "@atelier/server": ["@atelier/server@workspace:apps/server"],
 

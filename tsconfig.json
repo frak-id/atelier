@@ -29,7 +29,9 @@
     { "path": "./apps/cli" },
     { "path": "./packages/shared" },
     { "path": "./packages/spec" },
-    { "path": "./packages/compose" }
+    { "path": "./packages/compose" },
+    { "path": "./packages/knowledge" },
+    { "path": "./apps/hub" }
   ],
   "files": []
 }

@@ -1,0 +1,16 @@
+{
+  "name": "@atelier/knowledge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Company knowledge: governed memory, a temporal knowledge graph, audience-scoped hybrid search and a code indexer. Bun + bun:sqlite, no server.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2"
+  }
+}
