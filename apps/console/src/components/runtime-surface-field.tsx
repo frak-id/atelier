@@ -279,7 +279,7 @@ function ServiceCard({
           onChange={(e) => patch({ command: e.target.value })}
           spellCheck={false}
           rows={1}
-          placeholder="bun run dev --host 0.0.0.0"
+          placeholder="bun run dev"
           className="field-sizing-content max-h-40 min-h-9 w-full resize-none rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs"
         />
         <FieldError message={issues.command} />
@@ -870,8 +870,7 @@ function ExposureHint({ name, port }: { name: string; port: PortEntry }) {
         <p className="pl-5">
           <code className="text-foreground/80">
             {name || "name"}-‹sandbox›.‹domain›
-          </code>{" "}
-          · the server must listen on <code>0.0.0.0</code>
+          </code>
         </p>
       ) : null}
     </div>

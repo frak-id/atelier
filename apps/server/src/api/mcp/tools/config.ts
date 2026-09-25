@@ -90,6 +90,7 @@ export function registerConfigTools(
               {
                 force,
                 githubToken: control.userService.resolveGitHubToken(user.id),
+                saveSurface: true,
               },
             ),
           );

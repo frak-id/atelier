@@ -58,7 +58,7 @@ function EditPrebuildPage() {
           </Link>
         </p>
       ) : (
-        <PrebuildEditor key={ref} spec={record.spec} />
+        <PrebuildEditor key={ref} prebuildRef={ref} spec={record.spec} />
       )}
     </div>
   );

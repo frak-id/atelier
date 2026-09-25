@@ -2,11 +2,13 @@
 //! `Readiness` variant (config.rs), kept dependency-free to hold the binary
 //! size envelope. A probe returns `true` once, and the supervisor latches it.
 //!
-//! - `port`: a loopback TCP connect succeeds.
+//! - `port`: a loopback TCP connect succeeds, on `127.0.0.1` or `::1` (a
+//!   dev server on `localhost` binds whichever it resolves to first).
 //! - `http`: a raw HTTP/1.1 GET returns a 2xx/3xx status line (https falls
 //!   back to a TCP connect — TLS would cost a dependency for a liveness gate).
 //! - `cmd`: a login shell runs the command and it exits 0.
 
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -45,8 +47,13 @@ pub struct ProbeCtx {
 }
 
 async fn probe_port(port: u16) -> bool {
+    connects((Ipv4Addr::LOCALHOST, port).into()).await
+        || connects((Ipv6Addr::LOCALHOST, port).into()).await
+}
+
+async fn connects(addr: SocketAddr) -> bool {
     matches!(
-        tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(("127.0.0.1", port))).await,
+        tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr)).await,
         Ok(Ok(_))
     )
 }
@@ -59,9 +66,7 @@ async fn probe_http(url: &str) -> bool {
     if is_tls {
         return probe_port(port).await;
     }
-    let Ok(Ok(mut stream)) =
-        tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host.as_str(), port))).await
-    else {
+    let Some(mut stream) = connect_http(&host, port).await else {
         return false;
     };
     let req =
@@ -78,6 +83,28 @@ async fn probe_http(url: &str) -> bool {
         .nth(1)
         .and_then(|code| code.parse::<u16>().ok())
         .is_some_and(|code| (200..400).contains(&code))
+}
+
+/// A loopback host (a bare readiness path resolves to `127.0.0.1`) is tried
+/// on both stacks, like a port probe.
+async fn connect_http(host: &str, port: u16) -> Option<TcpStream> {
+    let loopback = matches!(host, "127.0.0.1" | "localhost" | "[::1]" | "::1");
+    let attempt = |addr: SocketAddr| async move {
+        tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
+            .await
+            .ok()?
+            .ok()
+    };
+    if loopback {
+        if let Some(s) = attempt((Ipv4Addr::LOCALHOST, port).into()).await {
+            return Some(s);
+        }
+        return attempt((Ipv6Addr::LOCALHOST, port).into()).await;
+    }
+    tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host, port)))
+        .await
+        .ok()?
+        .ok()
 }
 
 async fn probe_cmd(cmd: &str, ctx: &ProbeCtx) -> bool {
@@ -151,6 +178,16 @@ mod tests {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(probe_port(port).await);
+    }
+
+    #[tokio::test]
+    async fn port_probe_detects_a_v6_loopback_listener() {
+        // A dev server on `localhost` resolved to ::1 (astro, vite).
+        let Ok(listener) = tokio::net::TcpListener::bind("[::1]:0").await else {
+            return; // no IPv6 loopback on this host
+        };
         let port = listener.local_addr().unwrap().port();
         assert!(probe_port(port).await);
     }

@@ -96,8 +96,9 @@ async fn main() {
         None => println!("atelier-agent: no config yet; waiting for runtime push"),
     }
 
-    // Generic N-port forwarder: exposes each ports[] entry on 0.0.0.0 so the
-    // K8s Service reaches loopback-bound dev servers. Reconciles on push.
+    // Generic N-port forwarder: bridges each ports[] entry from the pod IP to
+    // a loopback-bound dev server (127.0.0.1 or ::1), so the K8s Service
+    // reaches it without `--host`. Reconciles on push.
     {
         let store = store.clone();
         tokio::spawn(async move {

@@ -1,4 +1,4 @@
-import type { PrebuildSpec } from "@atelier/spec";
+import type { PrebuildSpec, RuntimeSurface } from "@atelier/spec";
 import {
   queryOptions,
   useMutation,
@@ -68,6 +68,38 @@ export function useRunPrebuild() {
       toast.success(
         label ? `Prebuild ${verb} for ${label}` : `Prebuild ${verb}`,
       );
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+/**
+ * Save a stored prebuild's dev servers (PATCH /v1/prebuilds/:ref/surface):
+ * no content-key resolution and no bake, so it saves even when a repo got
+ * new commits since the bake. Applied at boot, to every snapshot of the
+ * recipe; empty lists clear them.
+ */
+export function useSavePrebuildSurface() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      ref,
+      surface,
+    }: {
+      ref: string;
+      surface: RuntimeSurface;
+    }) => {
+      const { data, error } = await api.v1.prebuilds({ ref }).surface.patch({
+        processes: surface.processes ?? [],
+        ports: surface.ports ?? [],
+      });
+      if (error)
+        throw new Error(errorMessage(error, "Failed to save dev servers"));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.prebuilds.all });
+      toast.success("Dev servers saved");
     },
     onError: (error) => toast.error(error.message),
   });

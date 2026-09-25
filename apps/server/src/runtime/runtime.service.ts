@@ -22,6 +22,7 @@ import {
   type PrebuildSpec,
   type ProcessStatus,
   type ResumeRequest,
+  type RuntimeSurface,
   runtimeSurfaceOf,
   type SandboxSpec,
   type SandboxState,
@@ -160,6 +161,12 @@ export class RuntimeService {
    * explicit "rebuild" action and by `refreshStalePrebuilds`. Concurrent
    * calls for the same hash dedupe onto one execution (deterministic temp pod
    * name would otherwise collide).
+   *
+   * The runtime surface (`processes`/`ports`) is a setting of the *recipe*,
+   * shared by all its snapshots (see `setPrebuildSurface`), and a spec
+   * without one has no opinion on it: a bake inherits the recipe's, and a
+   * spawn re-resolving a copied recipe never clears it. `saveSurface` (the
+   * explicit `POST /prebuilds`) stores a declared surface on a cache hit.
    */
   async prebuild(
     spec: PrebuildSpec,
@@ -168,6 +175,7 @@ export class RuntimeService {
       githubToken?: string;
       signal?: AbortSignal;
       onLog?: OnLog;
+      saveSurface?: boolean;
     } = {},
   ): Promise<SnapshotRef> {
     const { hash, image, snapshotName } = await this.resolveContentKey(
@@ -177,56 +185,105 @@ export class RuntimeService {
     if (!options.force) {
       const existing = this.snapshots.getByHash(hash);
       if (existing) {
-        this.refreshRuntimeSurface(existing, spec);
+        const declared = runtimeSurfaceOf(spec);
+        if (options.saveSurface && hasSurface(declared)) {
+          this.writeRecipeSurface(existing, declared);
+        }
         return { ref: existing.ref, hash, parent: existing.parent };
       }
     }
+    // Nothing declared: the bake inherits the recipe's dev servers (a
+    // stale-prebuild refresh, a re-run from a copied recipe). Declared: they
+    // become the recipe's, on its older snapshots too.
+    const declared = runtimeSurfaceOf(spec);
+    const toBake = hasSurface(declared)
+      ? spec
+      : { ...spec, ...this.recipeSurface(spec) };
     // A concurrent request for the same content shares the in-flight build
     // (and thus the first caller's cancellation) — cancel is best-effort, so
     // a later job deduped onto an existing run may not observe its own signal.
     const inflight = this.inflightPrebuilds.get(hash);
     if (inflight) return inflight;
     const run = this.executePrebuild(
-      spec,
+      toBake,
       hash,
       image,
       snapshotName,
       options.githubToken,
       options.signal,
       options.onLog,
-    ).finally(() => {
-      this.inflightPrebuilds.delete(hash);
-    });
+    )
+      .then((snapshot) => {
+        const baked = this.snapshots.get(snapshot.ref);
+        if (baked && hasSurface(declared)) {
+          this.writeRecipeSurface(baked, declared);
+        }
+        return snapshot;
+      })
+      .finally(() => {
+        this.inflightPrebuilds.delete(hash);
+      });
     this.inflightPrebuilds.set(hash, run);
     return run;
   }
 
   /**
-   * A cache hit's spec may differ from the stored one in what the key leaves
-   * out. Keep its runtime surface (`processes`/`ports`, applied at boot — see
-   * `prebuildSpec`) current on the stored record, so editing it takes effect
-   * on the next spawn without a re-bake.
+   * Set a stored prebuild's runtime surface (its dev servers, applied at
+   * boot) without resolving or baking anything: the "save, no rebuild"
+   * action. Applied to every snapshot of the same recipe, so a snapshot
+   * re-baked after a push (a newer ref of the same recipe) gets it too.
+   * An empty surface clears it.
    */
-  private refreshRuntimeSurface(
-    existing: SnapshotRecord,
-    spec: PrebuildSpec,
+  setPrebuildSurface(ref: string, surface: RuntimeSurface): PrebuildSpec {
+    const record = this.snapshots.get(ref);
+    if (!record?.spec) throw new NotFoundError("Prebuild", ref);
+    this.writeRecipeSurface(record, runtimeSurfaceOf(surface));
+    return this.snapshots.get(ref)?.spec ?? record.spec;
+  }
+
+  /** The snapshots baked from the same recipe as `spec` (every re-bake
+   * after a push is another one), newest first. */
+  private recipeSnapshots(spec: PrebuildSpec): SnapshotRecord[] {
+    const key = recipeKey(spec);
+    return this.snapshots
+      .list()
+      .filter((s) => s.spec && recipeKey(s.spec) === key)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  /** The recipe's current dev servers: the newest of its snapshots' (they
+   * agree unless written before surfaces were shared). */
+  private recipeSurface(spec: PrebuildSpec): RuntimeSurface {
+    const [newest] = this.recipeSnapshots(spec);
+    return newest?.spec ? runtimeSurfaceOf(newest.spec) : {};
+  }
+
+  private writeRecipeSurface(
+    record: SnapshotRecord,
+    surface: RuntimeSurface,
   ): void {
-    if (!existing.spec) return;
-    const surface = runtimeSurfaceOf(spec);
-    if (
-      canonicalJson(runtimeSurfaceOf(existing.spec)) === canonicalJson(surface)
-    ) {
-      return;
+    if (!record.spec) return;
+    const want = canonicalJson(surface);
+    for (const snap of this.recipeSnapshots(record.spec)) {
+      if (!snap.spec) continue;
+      if (canonicalJson(runtimeSurfaceOf(snap.spec)) === want) continue;
+      const { processes: _p, ports: _q, ...baked } = snap.spec;
+      this.snapshots.put({ ...snap, spec: { ...baked, ...surface } });
+      log.info({ ref: snap.ref }, "prebuild processes/ports updated");
     }
-    const { processes: _p, ports: _q, ...baked } = existing.spec;
-    this.snapshots.put({ ...existing, spec: { ...baked, ...surface } });
-    log.info({ ref: existing.ref }, "prebuild processes/ports updated");
   }
 
   /** The recipe a stored prebuild was baked from, or `undefined` for any
    * other snapshot (pause, manual) or an unknown ref. */
   prebuildSpec(ref: string): PrebuildSpec | undefined {
     return this.snapshots.get(ref)?.spec;
+  }
+
+  /** The dev servers a sandbox booted from snapshot `ref` gets: its
+   * recipe's current ones (`{}` for a pause/manual snapshot). */
+  prebuildSurface(ref: string): RuntimeSurface {
+    const spec = this.snapshots.get(ref)?.spec;
+    return spec ? this.recipeSurface(spec) : {};
   }
 
   /** List stored prebuild snapshots, newest first — the read side of
@@ -496,7 +553,9 @@ export class RuntimeService {
         // sync; awaited so the flush completes before the snapshot is taken.
         await this.agent
           .exec(tempId, "sync", { user: "root", timeout: 30_000 })
-          .catch((err) => log.warn({ tempId, err }, "pre-snapshot sync failed"));
+          .catch((err) =>
+            log.warn({ tempId, err }, "pre-snapshot sync failed"),
+          );
         // The content hash is 64 hex chars — over the 63-byte k8s label cap — so
         // it rides as an annotation (no length cap), not a label.
         await this.snapshotPvc(
@@ -1527,6 +1586,18 @@ export class RuntimeService {
 }
 
 // ── module helpers ─────────────────────────────────────────────────────────
+
+function hasSurface(surface: RuntimeSurface): boolean {
+  return Boolean(surface.processes?.length || surface.ports?.length);
+}
+
+/** A prebuild's recipe identity: what its snapshots share across re-bakes
+ * (a push busts the content key, not the recipe). Everything but the
+ * runtime surface and the opaque metadata. */
+function recipeKey(spec: PrebuildSpec): string {
+  const { processes: _p, ports: _q, metadata: _m, ...recipe } = spec;
+  return canonicalJson(recipe);
+}
 
 /** `spec.toolsets` has no schema-level uniqueness guarantee — TypeBox lacks
  * `uniqueItems` (see the doc comment on `SandboxSpecSchema.toolsets`) and

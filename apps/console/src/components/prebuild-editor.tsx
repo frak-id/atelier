@@ -3,7 +3,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { Hammer, Loader2, Save } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useRunPrebuild } from "@/api/queries/prebuilds";
+import {
+  useRunPrebuild,
+  useSavePrebuildSurface,
+} from "@/api/queries/prebuilds";
 import { ImageSourcePicker } from "@/components/image-source-picker";
 import { ReposField, repoProblems } from "@/components/repos-field";
 import { RuntimeSurfaceField } from "@/components/runtime-surface-field";
@@ -54,20 +57,31 @@ const JSON_PLACEHOLDER = `{
  * through the shell's toggle, just without a dedicated visual sub-form (they
  * are rarer, free-shaped inputs not worth a bespoke UI yet).
  *
- * `spec` seeds edit mode (a prebuild record replay); omitted for create.
- * Running always re-runs the *current* spec — content-addressing makes an
- * unchanged edit an instant cache hit, so there is no separate "update"
- * action, just "Run prebuild" (`force` set when editing an existing ref, to
- * bypass any stale cache short-circuit on identical content).
+ * `spec` + `prebuildRef` seed edit mode (a prebuild record replay); omitted
+ * for create. Running re-bakes the *current* spec (`force` when editing, to
+ * bypass any stale cache short-circuit on identical content). An edit that
+ * only touches the dev servers saves them on the stored prebuild instead
+ * (`PATCH …/surface`): no content-key resolution, so it can't turn into a
+ * re-bake when a repo got new commits since.
  */
-export function PrebuildEditor({ spec: initialSpec }: { spec?: PrebuildSpec }) {
+export function PrebuildEditor({
+  spec: initialSpec,
+  prebuildRef,
+}: {
+  spec?: PrebuildSpec;
+  prebuildRef?: string;
+}) {
   const navigate = useNavigate();
   const runPrebuild = useRunPrebuild();
+  const saveSurface = useSavePrebuildSurface();
+  const isPending = runPrebuild.isPending || saveSurface.isPending;
   const [spec, setSpec] = useState<PrebuildSpec>(initialSpec ?? EMPTY_SPEC);
   const isEditing = initialSpec !== undefined;
   /** Only processes/ports changed: same snapshot, nothing to rebuild. */
   const surfaceOnly = (next: PrebuildSpec) =>
-    initialSpec !== undefined && runtimeOnlyEdit(initialSpec, next);
+    initialSpec !== undefined &&
+    prebuildRef !== undefined &&
+    runtimeOnlyEdit(initialSpec, next);
   // The dev-servers form validates locally (names, ports, readiness): block
   // Run while it has a blocking issue.
   const [visualValid, setVisualValid] = useState(true);
@@ -89,16 +103,13 @@ export function PrebuildEditor({ spec: initialSpec }: { spec?: PrebuildSpec }) {
       toast.error(problem);
       return;
     }
-    runPrebuild.mutate(
-      // Editing re-bakes on purpose (force), unless only processes/ports
-      // changed: they apply at boot, and the cache hit stores them.
-      { spec: cleaned, force: isEditing && !surfaceOnly(cleaned) },
-      {
-        onSuccess: () => {
-          navigate({ to: "/settings/prebuilds" });
-        },
-      },
-    );
+    const done = { onSuccess: () => navigate({ to: "/settings/prebuilds" }) };
+    if (prebuildRef && surfaceOnly(cleaned)) {
+      saveSurface.mutate({ ref: prebuildRef, surface: cleaned }, done);
+      return;
+    }
+    // Editing re-bakes on purpose (force).
+    runPrebuild.mutate({ spec: cleaned, force: isEditing }, done);
   }
 
   return (
@@ -116,12 +127,10 @@ export function PrebuildEditor({ spec: initialSpec }: { spec?: PrebuildSpec }) {
       )}
       footer={(api) => (
         <Button
-          disabled={
-            runPrebuild.isPending || (api.mode === "visual" && !visualValid)
-          }
+          disabled={isPending || (api.mode === "visual" && !visualValid)}
           onClick={() => handleRun(api)}
         >
-          {runPrebuild.isPending ? (
+          {isPending ? (
             <Loader2 className="animate-spin" />
           ) : savesOnly ? (
             <Save />

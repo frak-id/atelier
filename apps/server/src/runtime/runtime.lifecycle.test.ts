@@ -280,21 +280,76 @@ describe("prebuild processes/ports", () => {
     ],
   };
 
-  test("never enter the snapshot key; a cache hit keeps them current", async () => {
+  test("never enter the snapshot key; an explicit create saves them", async () => {
     const { runtime } = makeRuntime();
     const first = await runtime.prebuild(baked);
     // Same snapshot: adding (or editing) processes/ports doesn't re-bake…
-    const second = await runtime.prebuild({ ...baked, ...surface });
+    const second = await runtime.prebuild(
+      { ...baked, ...surface },
+      { saveSurface: true },
+    );
     expect(second).toEqual(first);
     // …but the stored recipe, applied at boot, now carries them.
     const stored = runtime.prebuildSpec(first.ref);
     expect(stored?.processes).toEqual(surface.processes);
     expect(stored?.ports).toEqual(surface.ports);
     expect(stored?.build).toEqual(baked.build);
-    // Removing them sticks too.
-    await runtime.prebuild(baked);
-    expect(runtime.prebuildSpec(first.ref)?.ports).toBeUndefined();
     expect(runtime.listPrebuilds()).toHaveLength(1);
+  });
+
+  test("a spawn re-resolving a copied recipe never clears them", async () => {
+    const { runtime } = makeRuntime();
+    const { ref } = await runtime.prebuild(baked);
+    runtime.setPrebuildSurface(ref, surface);
+    // A Launchpad starter following the prebuild carries the pre-edit copy.
+    await runtime.prebuild(baked);
+    await runtime.prebuild({ ...baked, ...surface, ports: [] });
+    expect(runtime.prebuildSpec(ref)?.processes).toEqual(surface.processes);
+    expect(runtime.prebuildSurface(ref)).toEqual(surface);
+  });
+
+  test("setPrebuildSurface saves and clears, without a bake", async () => {
+    const { runtime } = makeRuntime();
+    const { ref } = await runtime.prebuild(baked);
+    const saved = runtime.setPrebuildSurface(ref, surface);
+    expect(saved.ports).toEqual(surface.ports);
+    runtime.setPrebuildSurface(ref, { processes: [], ports: [] });
+    expect(runtime.prebuildSpec(ref)).toEqual(baked);
+    expect(runtime.listPrebuilds()).toHaveLength(1);
+    expect(() => runtime.setPrebuildSurface("snap-nope", surface)).toThrow();
+  });
+
+  test("a forced re-bake from a copy inherits them", async () => {
+    const { runtime } = makeRuntime();
+    const old = await runtime.prebuild(baked);
+    runtime.setPrebuildSurface(old.ref, surface);
+    // Forced re-bake from a surface-less copy (the quick-prebuild dialog).
+    await runtime.prebuild(baked, { force: true });
+    expect(runtime.prebuildSpec(old.ref)?.processes).toEqual(surface.processes);
+  });
+
+  test("a save reaches every snapshot of the recipe", async () => {
+    const { runtime, snapshots } = makeRuntime();
+    const old = await runtime.prebuild(baked);
+    // The same recipe re-baked after a push: another hash, another ref.
+    snapshots.put({
+      hash: "h-newer",
+      ref: "snap-newer",
+      image: "registry.test/base:1",
+      spec: { ...baked, metadata: { repo: "acme/mono" } },
+      createdAt: new Date(Date.now() + 1000).toISOString(),
+    });
+    runtime.setPrebuildSurface(old.ref, surface);
+    expect(runtime.prebuildSpec("snap-newer")?.ports).toEqual(surface.ports);
+    expect(runtime.prebuildSurface("snap-newer")).toEqual(surface);
+  });
+
+  test("a different recipe keeps its own", async () => {
+    const { runtime } = makeRuntime();
+    const a = await runtime.prebuild(baked);
+    runtime.setPrebuildSurface(a.ref, surface);
+    const b = await runtime.prebuild({ ...baked, build: ["true"] });
+    expect(runtime.prebuildSurface(b.ref)).toEqual({});
   });
 
   test("prebuildSpec is undefined for a pause snapshot", async () => {

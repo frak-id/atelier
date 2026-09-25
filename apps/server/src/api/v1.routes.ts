@@ -21,7 +21,10 @@ import {
   prebuildJobTarget,
   type ResumeRequest,
   ResumeRequestSchema,
+  runtimeSurfaceOf,
   type SandboxSpec,
+  SurfacePortsSchema,
+  SurfaceProcessesSchema,
   type ToolsetBuildRequest,
   ToolsetBuildRequestSchema,
   type ToolsetCaptureRequest,
@@ -210,15 +213,20 @@ export async function createSandboxForUser(
     seen.add(t.ref);
     return true;
   });
-  // The runtime surface: the prebuild's dev servers (its recipe's, or the
-  // stored prebuild's for a pinned snapshot), then the toolboxes' tools,
-  // then the spec's own (see `spawnSurface` for who wins).
+  // The runtime surface: the prebuild's dev servers, then the toolboxes'
+  // tools, then the spec's own (see `spawnSurface` for who wins). A recipe
+  // that declares dev servers brings its own (a Launchpad custom boot);
+  // otherwise they're the stored recipe's current ones, so a copied recipe
+  // (a starter following a prebuild) or a pinned snapshot never misses
+  // dev servers edited since.
+  const declared = prebuild ? runtimeSurfaceOf(prebuild) : {};
   const surface = spawnSurface({
     prebuild:
-      prebuild ??
-      ("snapshot" in spec.source
-        ? runtime.prebuildSpec(spec.source.snapshot)
-        : undefined),
+      declared.processes || declared.ports
+        ? declared
+        : "snapshot" in spec.source
+          ? runtime.prebuildSurface(spec.source.snapshot)
+          : undefined,
     toolboxes: resolveToolboxSurface(container, applied),
     own: enriched,
   });
@@ -499,6 +507,9 @@ export function createV1Routes(container: ServerContainer) {
                 githubToken,
                 signal,
                 onLog: log,
+                // The explicit create: a declared surface is saved on a
+                // cache hit (a spawn's re-resolve never writes it).
+                saveSurface: true,
               }),
           );
           set.status = 202;
@@ -507,6 +518,19 @@ export function createV1Routes(container: ServerContainer) {
         {
           body: PrebuildSpecSchema,
           query: t.Object({ force: t.Optional(t.Boolean()) }),
+        },
+      )
+      // Save a prebuild's dev servers, no resolve, no bake: applied at boot,
+      // to every snapshot of its recipe. Empty lists clear them.
+      .patch(
+        "/prebuilds/:ref/surface",
+        ({ params, body }) => runtime.setPrebuildSurface(params.ref, body),
+        {
+          params: t.Object({ ref: t.String() }),
+          body: t.Object({
+            processes: t.Optional(SurfaceProcessesSchema),
+            ports: t.Optional(SurfacePortsSchema),
+          }),
         },
       )
       .delete(

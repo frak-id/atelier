@@ -3,6 +3,7 @@ import {
   findRepoBranchPrebuild,
   normalizeBranch,
   repoCloneName,
+  runtimeSurfaceOf,
 } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Hammer, Info } from "lucide-react";
@@ -168,9 +169,13 @@ function QuickPrebuildForm({
       clonePath,
       build: steps.split("\n"),
     });
+    // A rebuild keeps the prebuild's dev servers (this form doesn't show
+    // them): changed steps or image make a new recipe, which wouldn't
+    // inherit them otherwise.
+    const surface = runtimeSurfaceOf(existing?.spec ?? {});
     runPrebuild.mutate(
       {
-        spec,
+        spec: { ...spec, ...surface },
         force: existing !== undefined,
         label: repoBranchLabel(repo.fullName, refParam),
       },
