@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { cloneCwds } from "@/lib/runtime-surface";
 import { parsePrebuildSpec } from "@/lib/spec";
 
 function linesToArray(text: string): string[] {
@@ -67,8 +68,8 @@ export function PrebuildEditor({ spec: initialSpec }: { spec?: PrebuildSpec }) {
   /** Only processes/ports changed: same snapshot, nothing to rebuild. */
   const surfaceOnly = (next: PrebuildSpec) =>
     initialSpec !== undefined && runtimeOnlyEdit(initialSpec, next);
-  // The processes/ports JSON fields validate locally: block Run while one
-  // doesn't parse, so a stale value is never sent.
+  // The dev-servers form validates locally (names, ports, readiness): block
+  // Run while it has a blocking issue.
   const [visualValid, setVisualValid] = useState(true);
 
   // The footer's label and the run judge the same (cleaned) spec.
@@ -218,8 +219,8 @@ function PrebuildVisualForm({
           <CardTitle className="text-base">Dev servers</CardTitle>
           <CardDescription>
             What every sandbox booted from this prebuild runs: its projects' dev
-            servers and watchers (several for a monorepo), in the toolbox
-            scheme. Applied at boot, so changing them never rebuilds.
+            servers and watchers (several for a monorepo). Applied at boot, so
+            changing them never rebuilds.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -234,21 +235,13 @@ function PrebuildVisualForm({
               });
             }}
             onValidityChange={onValidityChange}
-            hint={
-              <>
-                Run as <code>"user": "dev"</code> with a <code>cwd</code> in the
-                clone path. A port is gated by the process of the same name (or
-                whose <code>readiness.port</code> probes it); mark it{" "}
-                <code>"lazy": true</code> to start it on first open. A served
-                app must listen on <code>0.0.0.0</code>.
-              </>
-            }
-            placeholders={{
-              processes:
-                '[{"name":"web","command":"bun run dev","cwd":"/home/dev/app/apps/web","user":"dev","lazy":true,"readiness":{"port":5173}}]',
-              ports:
-                '[{"name":"web","port":5173,"public":true,"auth":"forward"}]',
+            defaults={{
+              user: "dev",
+              lazy: true,
+              cwd: cloneCwds(spec.repos)[0],
             }}
+            cwdSuggestions={cloneCwds(spec.repos)}
+            emptyText="No dev servers: sandboxes boot with just the cloned code."
           />
         </CardContent>
       </Card>

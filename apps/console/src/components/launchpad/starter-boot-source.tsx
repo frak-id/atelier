@@ -18,6 +18,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDefaultImage } from "@/hooks/use-repo-catalog";
 import { prebuildRepoLabel, prebuildTitle } from "@/lib/formatters";
+import { cloneCwds } from "@/lib/runtime-surface";
 import {
   bootMode,
   type CustomBoot,
@@ -291,25 +292,22 @@ function CustomBootSource({
         </p>
       </div>
       {boot.repos.some((r) => r.url.trim()) ? (
-        <RuntimeSurfaceField
-          value={boot.surface}
-          onChange={(surface) => onChange({ ...boot, surface })}
-          onValidityChange={onValidityChange}
-          hint={
-            <>
-              The projects' dev servers, in the toolbox scheme: a{" "}
-              <code>cwd</code> in the clone path, <code>"lazy": true</code> to
-              start it when its tool is first opened, and a public port to point
-              a tool at. It must listen on <code>0.0.0.0</code>.
-            </>
-          }
-          placeholders={{
-            processes:
-              '[{"name":"web","command":"bun run dev","cwd":"/home/dev/web","user":"dev","lazy":true,"readiness":{"port":5173}}]',
-            ports:
-              '[{"name":"web","port":5173,"public":true,"auth":"forward"}]',
-          }}
-        />
+        <div className="space-y-1">
+          <Label>Dev servers</Label>
+          <RuntimeSurfaceField
+            value={boot.surface}
+            onChange={(surface) => onChange({ ...boot, surface })}
+            onValidityChange={onValidityChange}
+            defaults={{
+              user: "dev",
+              lazy: true,
+              cwd: cloneCwds(boot.repos)[0],
+            }}
+            cwdSuggestions={cloneCwds(boot.repos)}
+            emptyText="No dev servers yet."
+            hint="Give a server a public port to point a tool at it below."
+          />
+        </div>
       ) : null}
       <p className="text-xs text-muted-foreground">
         {baked

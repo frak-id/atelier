@@ -65,9 +65,9 @@ export function ToolboxEditor({
   const [input, setInput] = useState<ToolboxConfigInput>(() =>
     toInput(toolbox),
   );
-  // The Advanced (processes/ports) JSON sub-fields validate locally, outside
-  // the shell's whole-spec parse; track their validity so Save can't persist a
-  // stale value while a sub-field is broken.
+  // The processes/ports form validates locally (names, ports, readiness),
+  // outside the shell's whole-spec parse; track it so Save can't persist a
+  // surface with a blocking issue.
   const [visualValid, setVisualValid] = useState(true);
 
   function handleSave(api: SpecEditorApi<ToolboxConfigInput>) {
@@ -253,26 +253,22 @@ function ToolboxVisualForm({
         spawn). On = applied to all of this owner's sandboxes.
       </p>
 
-      <div className="border-t pt-3">
+      <div className="space-y-2 border-t pt-3">
+        <div className="space-y-1">
+          <Label>Processes &amp; ports (optional)</Label>
+          <p className="text-xs text-muted-foreground">
+            The tool's runtime surface, e.g. a web IDE and the port it serves.
+            Start heavy ones when first opened so idle sandboxes stay light.
+          </p>
+        </div>
         <RuntimeSurfaceField
           value={{ processes: spec.processes, ports: spec.ports }}
           onChange={({ processes, ports }) =>
             onChange({ ...spec, processes, ports })
           }
           onValidityChange={onValidityChange}
-          hint={
-            <>
-              The tool's runtime surface. Mark long-running ones{" "}
-              <code>"lazy": true</code> so they start on demand from the sandbox
-              view.
-            </>
-          }
-          placeholders={{
-            processes:
-              '[{"name":"vscode","command":"code-server ...","lazy":true,"readiness":{"port":8080}}]',
-            ports:
-              '[{"name":"vscode","port":8080,"public":true,"auth":"forward"}]',
-          }}
+          defaults={{ lazy: true, port: 8080 }}
+          emptyText="Files only: this toolbox runs nothing."
         />
       </div>
     </div>
