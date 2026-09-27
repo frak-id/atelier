@@ -15,23 +15,15 @@ import { Elysia, t } from "elysia";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
 import {
-  LaunchpadLifecycle,
+  createLaunchpadLifecycle,
   type WorkspaceDetail,
 } from "./launchpad.lifecycle.ts";
 import { requireToolboxOwnerAccess, resolveOwner } from "./toolbox-access.ts";
-import { createSandboxForUser, withFreshCredentials } from "./v1.routes.ts";
 
 export function createLaunchpadRoutes(container: ServerContainer) {
-  const { control, runtime, jobs } = container;
+  const { control } = container;
   const authPlugin = createAuthPlugin(control);
-  const lifecycle = new LaunchpadLifecycle({
-    control,
-    runtime,
-    jobs,
-    createSandbox: (user, request, sandboxId, progress) =>
-      createSandboxForUser(container, user, request, sandboxId, progress),
-    resumeBody: (sandboxId) => withFreshCredentials(container, sandboxId),
-  });
+  const lifecycle = createLaunchpadLifecycle(container);
 
   const starterRoutes = new Elysia({ prefix: "/starters" })
     .use(authPlugin)

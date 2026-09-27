@@ -39,11 +39,13 @@ import type {
 } from "../runtime/index.ts";
 import { ConflictError, NotFoundError } from "../shared/errors.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
+import type { ServerContainer } from "./container.ts";
 import {
   readableOwners,
   requireOwnerReadAccess,
   requireToolboxOwnerAccess,
 } from "./toolbox-access.ts";
+import { createSandboxForUser, withFreshCredentials } from "./v1.routes.ts";
 
 /** A workspace as the Launchpad renders it. */
 export interface WorkspaceView {
@@ -392,4 +394,25 @@ export class LaunchpadLifecycle {
     this.deps.control.workspaceService.setJob(sandboxId, job.id);
     return job;
   }
+}
+
+/**
+ * Wire a `LaunchpadLifecycle` against a full server container: the
+ * `createSandbox`/`resumeBody` closures onto the exact `POST /v1/sandboxes`
+ * create path and the wake-up credential refresh (`v1.routes.ts`). Shared by
+ * `createLaunchpadRoutes` and the MCP `launchpad_*` tools so neither
+ * duplicates the wiring.
+ */
+export function createLaunchpadLifecycle(
+  container: ServerContainer,
+): LaunchpadLifecycle {
+  const { control, runtime, jobs } = container;
+  return new LaunchpadLifecycle({
+    control,
+    runtime,
+    jobs,
+    createSandbox: (user, request, sandboxId, progress) =>
+      createSandboxForUser(container, user, request, sandboxId, progress),
+    resumeBody: (sandboxId) => withFreshCredentials(container, sandboxId),
+  });
 }

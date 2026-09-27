@@ -59,3 +59,11 @@ priority, not a strict sequence.
   See [`integrations/open-inspect`](../integrations/open-inspect/README.md);
   the longer-term company agent is in
   [`research/company-agent-prior-art.md`](research/company-agent-prior-art.md).
+- [ ] **Company knowledge (Onyx + CodeWiki)**: Slack / GitHub / Linear /
+  Notion indexed in Onyx, a CodeWiki-generated codebase wiki pushed into it,
+  a chat agent that can launch Launchpad workspaces, and Onyx's MCP for
+  coding agents. Config in [`integrations/onyx`](../integrations/onyx/README.md)
+  and [`integrations/codewiki`](../integrations/codewiki/README.md); design in
+  [`proposals/company-knowledge.md`](proposals/company-knowledge.md). Next:
+  deploy, Onyx MCP in the org toolbox, monthly Slack-window apply.
+

@@ -16,7 +16,7 @@ packages/
 ├── shared/       # @frak/atelier-shared — TypeBox schemas, constants, config loader
 ├── spec/         # @atelier/spec — the SandboxSpec seam contract
 └── compose/      # @atelier/compose — client-side harness/preset/spec-merge SDK
-integrations/     # Third-party systems on Atelier (open-inspect: sandbox provider patch + image seed context)
+integrations/     # Third-party systems on Atelier: open-inspect (sandbox provider), onyx (company knowledge), codewiki (codebase wiki → Onyx)
 charts/atelier/   # Helm chart: shared cluster infra (zot, cliproxy, sshpiper, cert-manager issuers, kata runtimeclass, snapshot class)
 infra/k8s/v2/     # Server + console app manifests (see infra/k8s/v2/README.md)
 infra/nginx/      # Console nginx config (SPA + reverse proxy to the server)
@@ -42,6 +42,7 @@ Dockerfile        # Multi-target: `server` and `console` images
 | Harness/preset composition | `packages/compose/src/` |
 | Host CLI | `apps/cli/src/` |
 | Open-Inspect integration | `integrations/open-inspect/` (seed: `apps/server/src/runtime/registry/seeds/open-inspect/`) |
+| Company knowledge (Onyx, codebase wiki) | `integrations/onyx/` (Helm + Terraform), `integrations/codewiki/` (sync job); Launchpad MCP tools in `apps/server/src/api/mcp/tools/launchpad.ts`; design in `docs/proposals/company-knowledge.md` |
 
 ## Commands
 

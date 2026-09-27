@@ -1,0 +1,18 @@
+{
+  "CI_CD_Workflows": {
+    "path": ".github/workflows/",
+    "components": [".github/workflows/ci.yml::check"],
+    "children": {
+      "CI_CD_Workflows_Continuous_Integration": {
+        "path": ".github/workflows/",
+        "components": [".github/workflows/ci.yml::check"],
+        "children": {}
+      }
+    }
+  },
+  "Repository_Configuration_&_Tooling": {
+    "path": ".",
+    "components": ["biome.json::biome.json"],
+    "children": {}
+  }
+}

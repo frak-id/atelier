@@ -1,0 +1,106 @@
+# Runs the sync once every 30 min. `concurrencyPolicy: Forbid` because two
+# overlapping runs would both `git fetch` into the same PVC checkout and race
+# on state/<repo>.json; a full first-time build already takes hours (see
+# README "cost/time expectations"), so overlap is the normal case for a new
+# repo's first few scheduled ticks, not an edge case.
+#
+# ONYX_URL: the Onyx API service this chart renders (helm template
+# integrations/onyx/helm — `onyx.resourceName (list . "api-service")` with
+# release name "onyx" -> `onyx-api-service`, ClusterIP port 8080, see
+# integrations/onyx/helm/values.yaml / deploy.sh for release+namespace).
+# No path prefix needed in-cluster — the ingress's `/api` stripPrefix
+# Middleware only exists for the external Traefik route, the Service itself
+# already serves /onyx-api/... at its root.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: codewiki-sync
+  namespace: onyx
+  labels:
+    app.kubernetes.io/name: codewiki-sync
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # First builds of a large monorepo take hours (sequential page
+      # generation, ~1.7 min/page — see README); give it room before the
+      # job controller kills it as stuck.
+      activeDeadlineSeconds: 28800 # 8h
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: codewiki-sync
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+          containers:
+            - name: codewiki-sync
+              image: zot.zot.svc:5000/atelier-codewiki-sync:latest
+              imagePullPolicy: Always
+              env:
+                - name: CODEWIKI_REPOS
+                  value: "frak-id/atelier@main"
+                - name: DATA_DIR
+                  value: /data
+                - name: LLM_BASE_URL
+                  value: "http://atelier-cliproxy.atelier-system.svc.cluster.local:8317/v1"
+                - name: CODEWIKI_MODEL
+                  value: "claude-sonnet-5"
+                - name: CODEWIKI_FALLBACK_MODEL
+                  value: "claude-haiku-4-5"
+                # Findings from a real run on this repo (~640 files): the
+                # 32768 default truncates LLM clustering output and CodeWiki
+                # silently falls back to a useless whole-repo mode. 64000
+                # fixed it — see README "The max-tokens finding".
+                - name: CODEWIKI_MAX_TOKENS
+                  value: "64000"
+                - name: ONYX_URL
+                  value: "http://onyx-api-service.onyx.svc.cluster.local:8080"
+                # `terraform output wiki_cc_pair_id` from
+                # integrations/onyx/terraform (not sensitive, an integer id).
+                - name: ONYX_CC_PAIR_ID
+                  value: "REPLACE_WITH_TERRAFORM_OUTPUT_wiki_cc_pair_id"
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: codewiki-sync-secrets
+                      key: GITHUB_TOKEN
+                      optional: true
+                - name: LLM_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: codewiki-sync-secrets
+                      key: LLM_API_KEY
+                - name: ONYX_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: codewiki-sync-secrets
+                      key: ONYX_API_KEY
+              # CodeWiki's own analysis (tree-sitter parsing + graph
+              # clustering) is CPU/memory-light; the actual cost is wall-clock
+              # time waiting on sequential LLM calls, not local compute.
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 1Gi
+                limits:
+                  cpu: "2"
+                  memory: 4Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: codewiki-sync-data

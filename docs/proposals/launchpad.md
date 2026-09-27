@@ -38,9 +38,12 @@ Launchpad, and the header gains a Launchpad entry.
 - **No chat UI.** A starter surfaces whatever the tech team exposes: pi-web,
   opencode's web UI, a dev server, code-server. The ACP session surface stays
   on the developer console.
-- No "save this sandbox as a starter" from a sandbox page, no CLI/MCP surface,
+- No "save this sandbox as a starter" from a sandbox page, no CLI surface,
   no sharing of a workspace between users, no parameterized starters
   (`repo-url` params from `design/ui-evolution.md` §2.2). All additive later.
+  (MCP has a Launchpad surface — `launchpad_catalog`/`launchpad_launch`/
+  `launchpad_workspaces`/`launchpad_workspace`/`launchpad_workspace_action` —
+  so an agent can drive it on the user's behalf; the CLI does not yet.)
 
 ## 3. Prior art
 
@@ -258,4 +261,5 @@ DELETE /api/launchpad/workspaces/:id            destroy sandbox + row (already g
 - Parameterized starters (repo/branch picker for the consumer).
 - Idle auto-sleep for Launchpad workspaces (non-technical users won't pause).
 - Workspace sharing ("send this preview to a colleague").
-- CLI/MCP parity (`atelier launchpad …`).
+- CLI parity (`atelier launchpad …`) — MCP already has one (`launchpad_*`
+  tools in `apps/server/src/api/mcp/tools/launchpad.ts`).

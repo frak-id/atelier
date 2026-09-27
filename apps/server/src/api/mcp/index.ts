@@ -29,6 +29,7 @@ import { isAuthBypassed } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ServerContainer } from "../container.ts";
 import { registerConfigTools } from "./tools/config.ts";
+import { registerLaunchpadTools } from "./tools/launchpad.ts";
 import { registerSandboxTools } from "./tools/sandbox.ts";
 import { registerSystemTools } from "./tools/system.ts";
 
@@ -58,6 +59,7 @@ function createMcpServer(
   registerSystemTools(server, container, user);
   registerSandboxTools(server, container, user);
   registerConfigTools(server, container, user);
+  registerLaunchpadTools(server, container, user);
   return server;
 }
 

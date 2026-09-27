@@ -1,0 +1,21 @@
+# codewiki-sync lives in the `onyx` namespace, next to the Onyx release it
+# feeds (see integrations/onyx/deploy.sh — `NS="onyx"`). The PVC persists
+# three things across CronJob runs, all under DATA_DIR=/data:
+#   repos/<owner>/<repo>  — shallow checkouts (re-fetched each run)
+#   wiki/<owner>/<repo>   — CodeWiki output (docs + temp/ dep graph +
+#                           metadata.json) — required for `--update` to be
+#                           incremental instead of a full rebuild every time
+#   state/<owner>__<repo>.json — last-synced commit + per-page content hashes
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: codewiki-sync-data
+  namespace: onyx
+  labels:
+    app.kubernetes.io/name: codewiki-sync
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi

@@ -28,6 +28,7 @@ COPY packages/compose/package.json packages/compose/
 COPY apps/server/package.json apps/server/
 COPY apps/console/package.json apps/console/
 COPY apps/cli/package.json apps/cli/
+COPY integrations/codewiki/package.json integrations/codewiki/
 
 RUN bun install --frozen-lockfile
 

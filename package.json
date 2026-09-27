@@ -22,7 +22,8 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "integrations/codewiki"
   ],
   "overrides": {
     "@types/bun": "^1.4.2",

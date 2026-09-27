@@ -15,7 +15,11 @@
 > ([`integrations/open-inspect`](../../integrations/open-inspect/README.md)):
 > Open-Inspect keeps the channels, sessions and PR loop; Atelier is its
 > sandbox provider (`personalize: false` spawns from the `open-inspect`
-> seed). The hub, memory and code-knowledge layers below remain future work.
+> seed). Company knowledge then went to **Onyx + CodeWiki** instead of the
+> in-house hub, memory and code-knowledge layers sketched below (permissions
+> and erasure were dropped as requirements): see
+> [`proposals/company-knowledge.md`](../proposals/company-knowledge.md) and
+> [`company-knowledge-tools.md`](company-knowledge-tools.md).
 
 ---
 

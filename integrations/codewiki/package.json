@@ -1,0 +1,14 @@
+{
+  "name": "@atelier/codewiki-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Syncs CodeWiki-generated codebase documentation into Onyx via the ingestion API.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "bun run src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2"
+  }
+}

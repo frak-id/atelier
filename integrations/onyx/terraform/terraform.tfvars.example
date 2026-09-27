@@ -1,0 +1,44 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values. Never commit
+# terraform.tfvars.
+
+onyx_url     = "https://onyx.hetzner-staging.frak.id"
+onyx_api_key = "on_REPLACE_ME" # bootstrap key created by hand, see README
+
+llm_api_key = "REPLACE_ME" # cliproxy bearer token
+# llm_model / llm_base_url / llm_provider default correctly, override only if needed.
+
+# --- GitHub (empty github_repos = connector disabled) ------------------------
+github_owner = "frak-id"
+github_repos = ["atelier"]
+github_token = "github_pat_REPLACE_ME"
+
+# --- Slack (empty slack_bot_token = connector disabled) ----------------------
+slack_bot_token      = "xoxb-REPLACE_ME"
+slack_channels        = [] # empty = every public channel the bot can see
+slack_history_months = 6
+
+# --- Linear (empty = disabled) -----------------------------------------------
+linear_api_key = ""
+
+# --- Notion (empty notion_token = disabled) ----------------------------------
+notion_token         = ""
+notion_root_page_id  = ""
+
+# --- Gmail (off by default) ---------------------------------------------------
+gmail_enabled               = false
+gmail_service_account_json  = ""
+gmail_primary_admin_email   = ""
+
+# --- Atelier MCP --------------------------------------------------------------
+atelier_mcp_url       = "https://atelier.hetzner-staging.frak.id/mcp"
+atelier_admin_api_key = "atl_REPLACE_ME" # the applying admin's own Atelier API key
+
+# atelier.tf now discovers the Atelier MCP server's tool ids itself (and
+# the built-in Search tool id) via Onyx's own REST API — see atelier.tf's
+# header comment and README "Known limitations: two-step MCP tool
+# attachment". Leave these at their defaults ([] / null); only set them by
+# hand as an escape hatch if that discovery is unreliable in your
+# environment.
+# atelier_tool_ids      = []
+# atelier_search_tool_id = null
+# extra_tool_ids         = []
