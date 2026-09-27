@@ -100,7 +100,20 @@ spec:
               volumeMounts:
                 - name: data
                   mountPath: /data
+                # Ephemeral per-run state that must NEVER land on the PVC:
+                # the LLM API key's ~/.codewiki/credentials.json (see
+                # src/codewiki.ts, mkdtemp'd under os.tmpdir() == /tmp and
+                # rm -rf'd in a finally) and the git GIT_ASKPASS wrapper
+                # script (src/git.ts). readOnlyRootFilesystem isn't set here,
+                # so /tmp would otherwise be the container's writable layer,
+                # which is fine too, but an emptyDir keeps it off any node
+                # disk quota tied to the image/writable-layer size and makes
+                # the "nothing secret persists" property explicit.
+                - name: tmp
+                  mountPath: /tmp
           volumes:
             - name: data
               persistentVolumeClaim:
                 claimName: codewiki-sync-data
+            - name: tmp
+              emptyDir: {}

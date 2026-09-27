@@ -36,9 +36,11 @@ every 30 min):
 3. Configures `codewiki` non-interactively (provider `openai-compatible`,
    pointed at the in-cluster cliproxy) and runs `codewiki generate` into
    `DATA_DIR/wiki/<owner>/<repo>` — `--update` if that directory already has
-   a previous build (`metadata.json` present), a full build otherwise. If
-   `--update` fails, retries once as a full build (a corrupted/incompatible
-   saved graph shouldn't wedge the repo forever).
+   a *complete* previous build (`metadata.json` present), a full build
+   otherwise. If `--update` fails, retries once as a full build (a
+   corrupted/incompatible saved graph shouldn't wedge the repo forever). See
+   "Resuming an interrupted build" below for what happens when a full build
+   itself gets killed partway through.
 4. Reads every top-level `*.md` page CodeWiki wrote (not `temp/`, which is
    its dependency-graph cache, not a doc), turns each into an Onyx ingestion
    document (`src/pages.ts`): sections split on `## ` headings, a GitHub
@@ -47,13 +49,59 @@ every 30 min):
 5. Diffs each page's content hash against the last sync: only calls
    `POST /onyx-api/ingestion` for pages that are new or changed, and
    `DELETE /onyx-api/ingestion/<id>` for pages that existed in the last sync
-   but weren't produced this time (a module was merged/removed).
+   but weren't produced this time (a module was merged/removed). A 404 on
+   delete (the page is already gone) counts as success — it's idempotent.
 6. Saves `state/<owner>__<repo>.json` (`{ lastCommit, pages: {id: hash} }`)
-   atomically (write-then-rename) so a crash mid-sync can't corrupt it.
+   atomically (write-then-rename) after **every individual** upsert/delete,
+   not just once at the end — so a crash mid-loop (Onyx 5xx after retries,
+   pod eviction) doesn't redo already-applied changes on the next run, and
+   can't corrupt the file either.
 
 One repo failing (bad token, `codewiki` crash, Onyx 5xx after retries) is
 logged and skipped — it never stops the other configured repos, and the
 process exits non-zero if any repo failed.
+
+## Resuming an interrupted build
+
+A full build can take hours (see "Cost / time expectations"), so it's normal
+for the CronJob's pod to get killed mid-generation (`activeDeadlineSeconds`,
+a node drain, an OOM). CodeWiki only writes `metadata.json` — the file this
+job uses to decide `--update` vs. a full build — right at the very end of a
+successful run (`documentation_generator.py`), so an interrupted full build
+leaves `DATA_DIR/wiki/<owner>/<repo>` with some `*.md` module pages but no
+`metadata.json`.
+
+The next run detects this exact state (pages present, no `metadata.json`)
+and treats it as **resume, not restart**: it does *not* delete the existing
+pages and does *not* pass `--update` (there's no saved dependency graph yet
+for `--update` to diff against). It runs a plain `codewiki generate` and
+answers CodeWiki's interactive "`<dir>` already contains documentation.
+Overwrite?" confirmation (`click.confirm` in `codewiki/cli/commands/generate.py`
+— this fires whenever `not --update and *.md files exist`, and this job's
+stdin is never a TTY) with `"y\n"` on the subprocess's stdin. Confirming does
+**not** delete anything itself — it just lets `generate()` proceed, and its
+module-processing loop skips every module whose `.md` already exists on disk
+(`documentation_generator.py`, `generate_module_documentation`, the comment
+above `processing_order = self.get_processing_order(...)`: *"every module
+whose .md already exists short-circuits in
+run_module_agent/generate_parent_module_docs"*) — so only the modules that
+never finished actually cost an LLM call.
+
+Only a **genuine first build** — no state file for the repo under
+`DATA_DIR/state/` *and* no `*.md` pages already in the wiki dir — wipes the
+wiki dir first, to clear out any stray `temp/`/`module_tree.json` from an
+even earlier abandoned attempt before CodeWiki writes anything real.
+
+## Repos removed from `CODEWIKI_REPOS`
+
+Dropping a repo from `CODEWIKI_REPOS` does **not** delete anything by
+itself — every sync run additionally scans `DATA_DIR/state/*.json` for any
+`<owner>__<repo>.json` whose repo is no longer configured. For each one it
+finds, it deletes every page id in that file's `pages` map from Onyx, then
+removes the state file and the repo's `DATA_DIR/repos/<owner>/<repo>` and
+`DATA_DIR/wiki/<owner>/<repo>` directories. It only acts on a state file
+that has the exact `{lastCommit, pages}` shape this job writes — anything
+else is left alone and logged. `DRY_RUN=1` only logs what would be removed.
 
 ## The max-tokens finding
 
@@ -78,6 +126,38 @@ single enormous page and a flat `module_tree.json`, that's this failure mode
   it once by hand (`bun run src/index.ts --repo owner/name`, same image,
   outside the CronJob's 30-min cadence) to seed `DATA_DIR` before letting the
   CronJob take over.
+
+## Secrets and where they live
+
+- **`LLM_API_KEY`** (the cliproxy/LLM credential) is never passed to the
+  `codewiki` CLI as an argv value — argv is visible to every process on the
+  node via `/proc/<pid>/cmdline` for as long as the subprocess runs, which
+  for a multi-hour `codewiki generate` is not a short window. Instead, each
+  run creates an **ephemeral `HOME`** (`mkdtemp` under `os.tmpdir()` —
+  `/tmp`, backed by the `tmp` `emptyDir` volume in `k8s/20-cronjob.yaml`,
+  never the `DATA_DIR` PVC) and writes `<homeDir>/.codewiki/credentials.json`
+  (mode `0600`, `{"api_key": "..."}` — the exact schema
+  `codewiki/cli/config_manager.py`'s `_save_api_key_to_file`/
+  `_load_api_key_from_file` read/write). `codewiki config set` then runs
+  *without* `--api-key`; `config.py`'s `config_set` only requires at least
+  one option to be set, and `generate`'s `ConfigManager.get_api_key()` falls
+  back to that file. The ephemeral `HOME` is removed (`rm -rf`, in a
+  `finally`) after every run, whether it succeeded or not — nothing
+  CodeWiki writes under `HOME` needs to survive between runs (the `--update`
+  cache is the saved dependency graph inside the *output* dir,
+  `DATA_DIR/wiki/<owner>/<repo>`, not `HOME`). `CODEWIKI_NO_KEYRING=1` is
+  still set so CodeWiki never tries a system keyring/dbus in the container.
+- **`GITHUB_TOKEN`** is never embedded in a git remote URL either (same
+  `/proc/<pid>/cmdline` exposure, and `git`'s own error messages would then
+  also risk echoing it — this job still redacts those defensively, but not
+  embedding it in the first place is the real fix). Instead the URL only
+  carries the `x-access-token` username, and the token is supplied via
+  `GIT_ASKPASS` pointed at a tiny per-call shell script (written to a
+  private tmp dir, mode `0700`, removed after the call) that prints the
+  token from an env var never present in any argv. `GIT_TERMINAL_PROMPT=0`
+  is also set so a private/missing repo fails cleanly instead of hanging.
+- **`ONYX_API_KEY`** is only ever sent as an `Authorization: Bearer` header
+  (`src/onyx.ts`), never logged or written to disk.
 
 ## Setup
 
@@ -145,12 +225,19 @@ for a real generation.
 ## Files
 
 - `src/config.ts` — env parsing/validation.
-- `src/git.ts` — shallow fetch + cheap remote-HEAD check.
-- `src/codewiki.ts` — configures and runs the `codewiki` CLI.
+- `src/git.ts` — shallow fetch + cheap remote-HEAD check; supplies
+  `GITHUB_TOKEN` via a per-call `GIT_ASKPASS` script, never the remote URL.
+- `src/codewiki.ts` — configures and runs the `codewiki` CLI against an
+  ephemeral, per-run `HOME` (`~/.codewiki/credentials.json` for the LLM key,
+  never `--api-key` on argv); decides full vs. `--update` vs. resume.
 - `src/pages.ts` — wiki dir → Onyx documents (+ content hashing).
-- `src/onyx.ts` — minimal ingestion API client (upsert/delete/list, retries).
-- `src/sync.ts` — per-repo orchestration + state diffing; `syncAll` never
-  lets one repo's failure stop the rest.
+- `src/onyx.ts` — minimal ingestion API client (upsert/delete/list,
+  retries; delete is idempotent — a 404 counts as success).
+- `src/sync.ts` — per-repo orchestration + state diffing (saved
+  incrementally after every upsert/delete); `syncAll` never lets one repo's
+  failure stop the rest, and also reconciles/deletes state + Onyx pages for
+  repos removed from `CODEWIKI_REPOS` (see "Repos removed from
+  CODEWIKI_REPOS" above).
 - `src/index.ts` — CLI entrypoint (`--repo`, `--path`, `FORCE`,
   `SKIP_GENERATE` env vars).
 - `Dockerfile` — `python:3.12-slim` + CodeWiki (pinned commit, installed from

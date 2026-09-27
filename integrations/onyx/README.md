@@ -260,6 +260,13 @@ config pointed at cliproxy, and the secret assembled from the table above.
 
 ## Known limitations
 
+- **Terraform state holds secrets.** The API keys Terraform creates
+  (`wiki_sync_api_key`, `agents_api_key`) are stored in plaintext in
+  `terraform.tfstate`; `sensitive = true` only hides them from CLI output.
+  State is local by default (`.gitignore` excludes it): keep it on an
+  encrypted remote backend or treat the file as a secret. Connector tokens
+  and the Atelier admin key use write-only arguments and never reach state.
+
 - **CPU embedding throughput** ([onyx-dot-app/onyx#8396](https://github.com/onyx-dot-app/onyx/issues/8396)):
   the CPU-only embedding model server has a reported ~30-50x slowdown under
   concurrent load (unbounded default `ThreadPoolExecutor`). Fine for a small

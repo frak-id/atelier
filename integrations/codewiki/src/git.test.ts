@@ -1,18 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import type { RepoRef } from "./config.ts";
-import { fetchBranch, type GitRunner, remoteHeadSha } from "./git.ts";
+import {
+  fetchBranch,
+  type GitRunner,
+  type GitRunOptions,
+  remoteHeadSha,
+} from "./git.ts";
 
 const ref: RepoRef = { owner: "frak-id", repo: "atelier", branch: "main" };
 
 function fakeRunner(
-  handler: (args: string[], cwd?: string) => Promise<string> | string,
-): { runner: GitRunner; calls: { args: string[]; cwd?: string }[] } {
-  const calls: { args: string[]; cwd?: string }[] = [];
+  handler: (args: string[], opts?: GitRunOptions) => Promise<string> | string,
+): { runner: GitRunner; calls: { args: string[]; opts?: GitRunOptions }[] } {
+  const calls: { args: string[]; opts?: GitRunOptions }[] = [];
   return {
     runner: {
-      async run(args, cwd) {
-        calls.push({ args, cwd });
-        return handler(args, cwd);
+      async run(args, opts) {
+        calls.push({ args, opts });
+        return handler(args, opts);
       },
     },
     calls,
@@ -20,21 +25,37 @@ function fakeRunner(
 }
 
 describe("remoteHeadSha", () => {
-  test("passes an authed URL as an argv value and parses the sha", async () => {
+  test("never puts the token in argv — only the x-access-token username", async () => {
     const { runner, calls } = fakeRunner(() => "abc123\trefs/heads/main");
     const sha = await remoteHeadSha(ref, "ghp_secret", runner);
     expect(sha).toBe("abc123");
     expect(calls[0]?.args).toEqual([
       "ls-remote",
-      "https://x-access-token:ghp_secret@github.com/frak-id/atelier.git",
+      "https://x-access-token@github.com/frak-id/atelier.git",
       "refs/heads/main",
     ]);
+    for (const call of calls) {
+      for (const arg of call.args) {
+        expect(arg).not.toContain("ghp_secret");
+      }
+    }
   });
 
-  test("uses an unauthenticated URL when no token is given", async () => {
+  test("supplies the token via GIT_ASKPASS env, not the URL", async () => {
+    const { runner, calls } = fakeRunner(() => "abc123\trefs/heads/main");
+    await remoteHeadSha(ref, "ghp_secret", runner);
+    const env = calls[0]?.opts?.env;
+    expect(env?.GIT_TERMINAL_PROMPT).toBe("0");
+    expect(env?.GIT_ASKPASS).toBeTruthy();
+    expect(env?.CODEWIKI_GIT_ASKPASS_TOKEN).toBe("ghp_secret");
+  });
+
+  test("uses an unauthenticated URL and no askpass when no token is given", async () => {
     const { runner, calls } = fakeRunner(() => "abc123\trefs/heads/main");
     await remoteHeadSha(ref, undefined, runner);
     expect(calls[0]?.args[1]).toBe("https://github.com/frak-id/atelier.git");
+    expect(calls[0]?.opts?.env?.GIT_ASKPASS).toBeUndefined();
+    expect(calls[0]?.opts?.env?.GIT_TERMINAL_PROMPT).toBe("0");
   });
 
   test("redacts the token from a thrown error", async () => {
@@ -59,7 +80,7 @@ describe("remoteHeadSha", () => {
 });
 
 describe("fetchBranch", () => {
-  test("runs init, fetch (authed URL), checkout, rev-parse in order", async () => {
+  test("runs init, fetch (unauthed URL), checkout, rev-parse in order", async () => {
     const { runner, calls } = fakeRunner((args) =>
       args[0] === "rev-parse" ? "deadbeef" : "",
     );
@@ -73,9 +94,25 @@ describe("fetchBranch", () => {
     ]);
     const fetchCall = calls.find((c) => c.args[0] === "fetch");
     expect(fetchCall?.args).toContain(
-      "https://x-access-token:ghp_secret@github.com/frak-id/atelier.git",
+      "https://x-access-token@github.com/frak-id/atelier.git",
     );
-    expect(fetchCall?.cwd).toBe("/tmp/checkout");
+    expect(fetchCall?.opts?.cwd).toBe("/tmp/checkout");
+    for (const call of calls) {
+      for (const arg of call.args) {
+        expect(arg).not.toContain("ghp_secret");
+      }
+    }
+  });
+
+  test("every git invocation gets the same askpass env", async () => {
+    const { runner, calls } = fakeRunner((args) =>
+      args[0] === "rev-parse" ? "deadbeef" : "",
+    );
+    await fetchBranch(ref, "/tmp/checkout", "ghp_secret", runner);
+    for (const call of calls) {
+      expect(call.opts?.env?.GIT_ASKPASS).toBeTruthy();
+      expect(call.opts?.env?.CODEWIKI_GIT_ASKPASS_TOKEN).toBe("ghp_secret");
+    }
   });
 
   test("redacts the token from a thrown error", async () => {

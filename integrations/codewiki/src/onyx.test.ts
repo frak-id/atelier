@@ -142,6 +142,47 @@ describe("OnyxClient.delete", () => {
     );
     expect(calls[0]?.init.method).toBe("DELETE");
   });
+
+  test("treats a 404 (already deleted) as success", async () => {
+    const { fn, calls } = fakeFetch(
+      () => new Response("not found", { status: 404 }),
+    );
+    const client = new OnyxClient({
+      baseUrl: "http://onyx",
+      apiKey: "k",
+      ccPairId: 1,
+      fetchImpl: fn,
+    });
+    await expect(client.delete("already-gone")).resolves.toBeUndefined();
+    expect(calls).toHaveLength(1);
+  });
+
+  test("still throws on a non-404 4xx", async () => {
+    const { fn } = fakeFetch(() => new Response("nope", { status: 403 }));
+    const client = new OnyxClient({
+      baseUrl: "http://onyx",
+      apiKey: "k",
+      ccPairId: 1,
+      fetchImpl: fn,
+    });
+    await expect(client.delete("x")).rejects.toBeInstanceOf(OnyxError);
+  });
+
+  test("still retries and eventually throws on repeated 5xx", async () => {
+    const { fn, calls } = fakeFetch(
+      () => new Response("down", { status: 500 }),
+    );
+    const client = new OnyxClient({
+      baseUrl: "http://onyx",
+      apiKey: "k",
+      ccPairId: 1,
+      fetchImpl: fn,
+      retryDelayMs: 1,
+      maxRetries: 1,
+    });
+    await expect(client.delete("x")).rejects.toBeInstanceOf(OnyxError);
+    expect(calls).toHaveLength(2);
+  });
 });
 
 describe("OnyxClient.list", () => {

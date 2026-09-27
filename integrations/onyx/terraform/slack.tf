@@ -22,7 +22,8 @@
 # So the only correct mechanism is: recompute indexing_start = now - N months
 # on a schedule, which — because indexing_start is force-replace — recreates
 # the connector (a fresh onyx_connector row) and, transitively, the cc_pair
-# (whose connector_id changed). Per the provider's cc_pair.md: "Destroying a
+# (connector_id has stringplanmodifier.RequiresReplace() in the provider's
+# internal/provider/cc_pair_resource.go). Per the provider's cc_pair.md: "Destroying a
 # pair also removes the documents it indexed, which Onyx does in the
 # background" — so each monthly replace deletes the old cc_pair's indexed
 # Slack docs and the new cc_pair backfills exactly the last N months again.

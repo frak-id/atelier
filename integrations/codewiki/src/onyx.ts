@@ -124,11 +124,22 @@ export class OnyxClient {
     });
   }
 
+  /** Idempotent: a 404 (the document is already gone — a previous run's
+   * delete succeeded but crashed before saving state, or it was removed
+   * out-of-band) counts as success, not a failure that would abort the
+   * whole sync. */
   async delete(documentId: string): Promise<void> {
-    await this.request(
-      "DELETE",
-      `/onyx-api/ingestion/${encodeURIComponent(documentId)}`,
-    );
+    try {
+      await this.request(
+        "DELETE",
+        `/onyx-api/ingestion/${encodeURIComponent(documentId)}`,
+      );
+    } catch (err) {
+      if (err instanceof OnyxError && err.status === 404) {
+        return;
+      }
+      throw err;
+    }
   }
 
   async list(): Promise<IngestedDoc[]> {

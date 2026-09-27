@@ -1,9 +1,20 @@
 /** Orchestrates one sync pass over every configured repo: skip-if-unchanged,
  * fetch, run CodeWiki, diff pages against saved state, push only what
  * changed to Onyx, and persist the new state atomically. One repo's failure
- * never stops the others. */
+ * never stops the others. Also reconciles `DATA_DIR/state/` against the
+ * current `CODEWIKI_REPOS` list, deleting Onyx pages (and local state) for
+ * any repo that's been removed from config — see {@link cleanupOrphanedState}. */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { runCodewiki } from "./codewiki.ts";
@@ -18,16 +29,27 @@ export interface RepoState {
   pages: Record<string, string>;
 }
 
-function statePathFor(dataDir: string, ref: RepoRef): string {
+type RepoDirKey = Pick<RepoRef, "owner" | "repo">;
+
+function statePathFor(dataDir: string, ref: RepoDirKey): string {
   return path.join(dataDir, "state", `${ref.owner}__${ref.repo}.json`);
 }
 
-function checkoutDirFor(dataDir: string, ref: RepoRef): string {
+function checkoutDirFor(dataDir: string, ref: RepoDirKey): string {
   return path.join(dataDir, "repos", ref.owner, ref.repo);
 }
 
-function wikiDirFor(dataDir: string, ref: RepoRef): string {
+function wikiDirFor(dataDir: string, ref: RepoDirKey): string {
   return path.join(dataDir, "wiki", ref.owner, ref.repo);
+}
+
+async function wikiDirHasPages(wikiDir: string): Promise<boolean> {
+  try {
+    const entries = await readdir(wikiDir);
+    return entries.some((name) => name.endsWith(".md"));
+  } catch {
+    return false;
+  }
 }
 
 export async function loadState(
@@ -157,29 +179,41 @@ export async function syncOne(opts: SyncOneOptions): Promise<SyncOneResult> {
     } catch {
       hasPreviousOutput = false;
     }
+    const hasExistingPages = await wikiDirHasPages(wikiDir);
 
     if (!opts.skipGenerate) {
       if (!config.llmApiKey) {
         throw new Error("LLM_API_KEY is required to run codewiki generate");
       }
       await mkdir(wikiDir, { recursive: true });
-      const result = await codewiki.run(
-        {
-          homeDir: path.join(config.dataDir, "codewiki-home"),
-          llmBaseUrl: config.llmBaseUrl,
-          llmApiKey: config.llmApiKey,
-          mainModel: config.codewikiModel,
-          fallbackModel: config.codewikiFallbackModel,
-          maxTokens: config.codewikiMaxTokens,
-          exclude: config.codewikiExclude,
-          checkoutDir,
-          wikiDir,
-          hasPreviousOutput,
-        },
-        log,
-      );
-      if (!result.ok) {
-        throw new Error(`codewiki generate failed for ${repoLabel}`);
+      // Ephemeral, per-run HOME: `~/.codewiki/credentials.json` (written by
+      // runCodewiki) must never land on the PVC (DATA_DIR), only in
+      // container-local /tmp — see git.ts/codewiki.ts headers and the
+      // README's "Secrets" section. Removed in `finally` regardless of
+      // outcome.
+      const homeDir = await mkdtemp(path.join(tmpdir(), "codewiki-home-"));
+      try {
+        const result = await codewiki.run(
+          {
+            homeDir,
+            llmBaseUrl: config.llmBaseUrl,
+            llmApiKey: config.llmApiKey,
+            mainModel: config.codewikiModel,
+            fallbackModel: config.codewikiFallbackModel,
+            maxTokens: config.codewikiMaxTokens,
+            exclude: config.codewikiExclude,
+            checkoutDir,
+            wikiDir,
+            hasPreviousOutput,
+            hasExistingPages,
+          },
+          log,
+        );
+        if (!result.ok) {
+          throw new Error(`codewiki generate failed for ${repoLabel}`);
+        }
+      } finally {
+        await rm(homeDir, { recursive: true, force: true });
       }
     }
 
@@ -209,18 +243,35 @@ export async function syncOne(opts: SyncOneOptions): Promise<SyncOneResult> {
       for (const id of diff.deleteIds) log(`[dry-run]   delete ${id}`);
     } else {
       const onyx = opts.onyx ?? onyxOpsFor(config);
+      // Persist state after every individual upsert/delete (not just once
+      // at the end): if this loop dies partway through (Onyx 5xx after
+      // retries, OOM, pod eviction), the next run's diff starts from
+      // whatever actually landed instead of redoing already-applied
+      // changes. `commit` is only recorded once every page op succeeds, so
+      // a crash mid-loop still re-checks the same commit next time (safe:
+      // `pages` already reflects real progress, so the diff against it is
+      // small).
+      const workingState: RepoState = {
+        lastCommit: previousState?.lastCommit ?? "",
+        pages: { ...(previousState?.pages ?? {}) },
+      };
       for (const id of diff.upsertIds) {
         const doc = documentsById.get(id);
         if (!doc) continue;
         await onyx.upsert(doc);
+        workingState.pages[id] = currentHashes[id] as string;
+        await saveState(statePath, workingState);
       }
       for (const id of diff.deleteIds) {
+        // OnyxClient.delete treats 404 as success (idempotent) — a delete
+        // that's already happened (e.g. a previous crashed run got this far
+        // but died before saveState) is not an error here.
         await onyx.delete(id);
+        delete workingState.pages[id];
+        await saveState(statePath, workingState);
       }
-      await saveState(statePath, {
-        lastCommit: commit ?? previousState?.lastCommit ?? "",
-        pages: currentHashes,
-      });
+      workingState.lastCommit = commit ?? previousState?.lastCommit ?? "";
+      await saveState(statePath, workingState);
     }
 
     return {
@@ -273,6 +324,147 @@ function onyxOpsFor(config: SyncConfig): OnyxOps {
   };
 }
 
+interface StateFileEntry {
+  path: string;
+  owner: string;
+  repo: string;
+}
+
+async function listStateFiles(dataDir: string): Promise<StateFileEntry[]> {
+  const stateDir = path.join(dataDir, "state");
+  let names: string[];
+  try {
+    names = await readdir(stateDir);
+  } catch {
+    return [];
+  }
+  const entries: StateFileEntry[] = [];
+  for (const name of names) {
+    if (!name.endsWith(".json") || name.endsWith(".json.tmp")) continue;
+    const stem = name.slice(0, -".json".length);
+    const sepIndex = stem.indexOf("__");
+    if (sepIndex === -1) continue;
+    const owner = stem.slice(0, sepIndex);
+    const repo = stem.slice(sepIndex + 2);
+    if (!owner || !repo) continue;
+    entries.push({ path: path.join(stateDir, name), owner, repo });
+  }
+  return entries;
+}
+
+/** Validates that a parsed JSON value has exactly the shape {@link saveState}
+ * writes (`{lastCommit: string, pages: Record<string,string>}`) — guards
+ * {@link cleanupOrphanedState} against acting on a file under
+ * `DATA_DIR/state/` that this tool didn't write, or a corrupted one. */
+function isRepoState(value: unknown): value is RepoState {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.lastCommit !== "string") return false;
+  if (
+    typeof v.pages !== "object" ||
+    v.pages === null ||
+    Array.isArray(v.pages)
+  ) {
+    return false;
+  }
+  return Object.values(v.pages as Record<string, unknown>).every(
+    (hash) => typeof hash === "string",
+  );
+}
+
+export interface OrphanResult {
+  repo: string;
+  status: "removed" | "failed";
+  deleted: string[];
+  error?: string;
+}
+
+/** A repo dropped from `CODEWIKI_REPOS` keeps its state file and its Onyx
+ * pages forever unless something reconciles `DATA_DIR/state/` against the
+ * current config — this does that: for every `state/<owner>__<repo>.json`
+ * whose repo is no longer in `configuredRepos`, deletes each page id in its
+ * `pages` map from Onyx, then removes the state file and (best-effort) the
+ * repo's checkout/wiki dirs. `DRY_RUN` only logs what would be removed. */
+export async function cleanupOrphanedState(
+  config: SyncConfig,
+  configuredRepos: RepoRef[],
+  onyx: OnyxOps,
+  log: (line: string) => void,
+): Promise<OrphanResult[]> {
+  const configured = new Set(
+    configuredRepos.map((r) => `${r.owner}/${r.repo}`),
+  );
+  const entries = await listStateFiles(config.dataDir);
+  const results: OrphanResult[] = [];
+
+  for (const entry of entries) {
+    const repoLabel = `${entry.owner}/${entry.repo}`;
+    if (configured.has(repoLabel)) continue;
+
+    let state: RepoState;
+    try {
+      const raw = await readFile(entry.path, "utf8");
+      const parsed = JSON.parse(raw);
+      if (!isRepoState(parsed)) {
+        log(
+          `[orphan] ${repoLabel}: state file has an unexpected shape, ` +
+            "leaving it alone",
+        );
+        continue;
+      }
+      state = parsed;
+    } catch (err) {
+      log(
+        `[orphan] ${repoLabel}: could not read state file, leaving it ` +
+          `alone (${err instanceof Error ? err.message : String(err)})`,
+      );
+      continue;
+    }
+
+    const ids = Object.keys(state.pages);
+
+    if (config.dryRun) {
+      log(
+        `[dry-run] ${repoLabel}: no longer in CODEWIKI_REPOS — would ` +
+          `delete ${ids.length} page(s) and its state file`,
+      );
+      results.push({ repo: repoLabel, status: "removed", deleted: ids });
+      continue;
+    }
+
+    const deleted: string[] = [];
+    try {
+      for (const id of ids) {
+        await onyx.delete(id);
+        deleted.push(id);
+      }
+      await rm(entry.path, { force: true });
+      await rm(checkoutDirFor(config.dataDir, entry), {
+        recursive: true,
+        force: true,
+      });
+      await rm(wikiDirFor(config.dataDir, entry), {
+        recursive: true,
+        force: true,
+      });
+      log(
+        `[orphan] ${repoLabel}: removed ${deleted.length} page(s) and its ` +
+          "state file (no longer in CODEWIKI_REPOS)",
+      );
+      results.push({ repo: repoLabel, status: "removed", deleted });
+    } catch (err) {
+      results.push({
+        repo: repoLabel,
+        status: "failed",
+        deleted,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return results;
+}
+
 export interface SyncAllOptions {
   config: SyncConfig;
   force?: boolean;
@@ -287,11 +479,18 @@ export interface SyncAllOptions {
 
 export interface SyncAllResult {
   results: SyncOneResult[];
+  /** Repos found under `DATA_DIR/state/` that are no longer in
+   * `CODEWIKI_REPOS` and were reconciled (or attempted to be) — see
+   * {@link cleanupOrphanedState}. Always empty in local/dev mode
+   * (`--path`), since that operates on a single ad hoc checkout, not the
+   * full `DATA_DIR` the CronJob manages. */
+  orphans: OrphanResult[];
   failed: boolean;
 }
 
 /** Runs {@link syncOne} for every configured repo (or just `onlyRepo`),
- * never letting one repo's failure abort the rest. */
+ * never letting one repo's failure abort the rest, then reconciles orphaned
+ * state (see {@link cleanupOrphanedState}). */
 export async function syncAll(opts: SyncAllOptions): Promise<SyncAllResult> {
   const targets = opts.onlyRepo
     ? opts.config.repos.filter((r) => `${r.owner}/${r.repo}` === opts.onlyRepo)
@@ -306,6 +505,7 @@ export async function syncAll(opts: SyncAllOptions): Promise<SyncAllResult> {
           error: "repo not in CODEWIKI_REPOS",
         },
       ],
+      orphans: [],
       failed: true,
     };
   }
@@ -326,5 +526,38 @@ export async function syncAll(opts: SyncAllOptions): Promise<SyncAllResult> {
     results.push(result);
   }
 
-  return { results, failed: results.some((r) => r.status === "failed") };
+  let orphans: OrphanResult[] = [];
+  if (!opts.localPath) {
+    const log = opts.log ?? (() => {});
+    try {
+      const onyx =
+        opts.onyx ??
+        (opts.config.dryRun
+          ? { upsert: async () => {}, delete: async () => {} }
+          : onyxOpsFor(opts.config));
+      orphans = await cleanupOrphanedState(
+        opts.config,
+        opts.config.repos,
+        onyx,
+        log,
+      );
+    } catch (err) {
+      orphans = [
+        {
+          repo: "orphan-cleanup",
+          status: "failed",
+          deleted: [],
+          error: err instanceof Error ? err.message : String(err),
+        },
+      ];
+    }
+  }
+
+  return {
+    results,
+    orphans,
+    failed:
+      results.some((r) => r.status === "failed") ||
+      orphans.some((o) => o.status === "failed"),
+  };
 }

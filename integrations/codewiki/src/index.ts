@@ -32,7 +32,7 @@ async function main() {
     (process.env.SKIP_GENERATE ?? "").toLowerCase(),
   );
 
-  const { results, failed } = await syncAll({
+  const { results, orphans, failed } = await syncAll({
     config,
     force,
     onlyRepo: repo,
@@ -51,6 +51,16 @@ async function main() {
       );
     } else {
       console.error(`[fail] ${result.repo}: ${result.error}`);
+    }
+  }
+
+  for (const orphan of orphans) {
+    if (orphan.status === "removed") {
+      console.log(
+        `[orphan] ${orphan.repo}: removed ${orphan.deleted.length} page(s)`,
+      );
+    } else {
+      console.error(`[orphan-fail] ${orphan.repo}: ${orphan.error}`);
     }
   }
 

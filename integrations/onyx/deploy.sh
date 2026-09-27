@@ -111,8 +111,11 @@ helm --kube-context "$CTX" upgrade --install "$RELEASE" onyx/onyx \
   -f helm/values.yaml
 
 say "Waiting for api/webserver rollout"
-K -n "$NS" rollout status "deploy/${RELEASE}-api" --timeout=300s
-K -n "$NS" rollout status "deploy/${RELEASE}-webserver" --timeout=180s
+# Deployment names from the chart's templates (onyx.resourceName + suffix):
+# api-deployment.yaml -> <release>-api-server, webserver-deployment.yaml ->
+# <release>-web-server. (<release>-api / -webserver are the Services.)
+K -n "$NS" rollout status "deploy/${RELEASE}-api-server" --timeout=300s
+K -n "$NS" rollout status "deploy/${RELEASE}-web-server" --timeout=180s
 
 say "Done"
 K -n "$NS" get pods -o wide

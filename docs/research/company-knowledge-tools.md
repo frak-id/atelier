@@ -77,7 +77,10 @@ CodeWiki run on this monorepo (Sonnet 5 through cliproxy):
   CI, release pipeline, versioning, image maintenance), 12–15 KB each,
   cross-linked, with job/flow diagrams, and accurate in the pages
   spot-checked, noticeably deeper than the prototype's area recaps.
-- Pages are written one at a time (~1.7 min each), so a first build of a
-  monorepo takes hours; later runs use `--update`.
+- Pages are written one at a time (~2 min each): the evaluation run was
+  stopped after 20 pages (~40 min, a fraction of the 27 modules and their
+  sub-modules), so a first build of this monorepo takes a few hours. Later
+  runs use `--update`, and an interrupted first build resumes where it
+  stopped.
 - No Rust or Go analyzer: `apps/agent-v2` gets thin coverage.
 - The PyPI package named `codewiki` is an unrelated project: install from git.

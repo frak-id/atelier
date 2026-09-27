@@ -132,7 +132,10 @@ auth:
 # ---------------------------------------------------------------------------
 # Our own Ingress + Traefik Middleware (see the DEVIATION note above).
 # Host: onyx.hetzner-staging.frak.id. One shared TLS secret for all three
-# paths (same host -> cert-manager issues once). Requires the `traefik.io`
+# paths. Only the webserver Ingress carries the cert-manager annotations, so
+# cert-manager creates exactly one Certificate owning `onyx-tls`; the api and
+# mcp Ingresses just reference that secret (three annotated Ingresses would
+# create three Certificates fighting over one secret). Requires the `traefik.io`
 # Middleware CRD group (already used by charts/atelier/templates/
 # traefik-middlewares.yaml on this cluster) — if this cluster's Traefik only
 # has the older `middleware.crd.traefik.io` CRDs, change apiVersion below to
@@ -191,8 +194,6 @@ extraManifests:
       name: onyx-api
       namespace: {{ .Release.Namespace }}
       annotations:
-        cert-manager.io/cluster-issuer: letsencrypt-frak
-        kubernetes.io/tls-acme: "true"
         traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-onyx-api-stripprefix@kubernetescrd
     spec:
       ingressClassName: traefik
@@ -218,8 +219,6 @@ extraManifests:
       name: onyx-mcp
       namespace: {{ .Release.Namespace }}
       annotations:
-        cert-manager.io/cluster-issuer: letsencrypt-frak
-        kubernetes.io/tls-acme: "true"
         traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-onyx-mcp-stripprefix@kubernetescrd
     spec:
       ingressClassName: traefik
