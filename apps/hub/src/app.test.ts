@@ -287,6 +287,42 @@ describe("GitHub webhook → index", () => {
   });
 });
 
+describe("config", () => {
+  test("effective config minus secrets, with booleans for which are set", async () => {
+    const denied = await call(bot.token, "GET", "/api/config");
+    expect(denied.status).toBe(403);
+
+    const res = await call(alice.token, "GET", "/api/config");
+    expect(res.status).toBe(200);
+    expect(res.body.secrets).toBeUndefined();
+    expect(res.body.llm.model).toBe("claude-sonnet-5");
+    expect(res.body.retention.slackMonths).toBe(6);
+    expect(res.body.secretsSet).toEqual({
+      webhookSecret: true,
+      gitToken: false,
+      embeddingsApiKey: false,
+      llmApiKey: false,
+    });
+  });
+});
+
+describe("recaps (no recap runner configured — no llm key in this test hub)", () => {
+  test("listing recaps for an un-recapped repo is empty, not an error", async () => {
+    const res = await call(alice.token, "GET", `/api/recaps?repo=${REPO}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ repo: REPO, overview: undefined, areas: [] });
+  });
+
+  test("reading a missing area 404s", async () => {
+    const res = await call(
+      alice.token,
+      "GET",
+      `/api/recaps/area?repo=${REPO}&area=overview`,
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("MCP", () => {
   async function rpc(
     body: unknown,
@@ -349,8 +385,24 @@ describe("MCP", () => {
         "knowledge_search",
         "memory_propose",
         "graph_neighbors",
+        "codebase_recap",
       ]),
     );
+
+    const recap = await rpc(
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: { name: "codebase_recap", arguments: { repo: REPO } },
+      },
+      session ?? "",
+    );
+    const recapResult = recap.message.result as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    expect(recapResult.isError).toBe(true);
 
     const result = await rpc(
       {

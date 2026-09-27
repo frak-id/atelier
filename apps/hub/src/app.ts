@@ -302,6 +302,19 @@ export function createHubApp(hub: HubServices) {
       });
     })
 
+    // ── config ────────────────────────────────────────────────────────
+    .get("/config", ({ caller }) => ops.effectiveConfig(hub, caller))
+
+    // ── codebase recaps ──────────────────────────────────────────────
+    .get("/recaps", ({ caller, query }) => {
+      if (!query.repo) throw new NotFoundError("repo", "");
+      return ops.recapStatus(hub, caller, query.repo);
+    })
+    .get("/recaps/area", ({ caller, query }) => {
+      if (!query.repo || !query.area) throw new NotFoundError("area", "");
+      return ops.readRecapArea(hub, caller, query.repo, query.area);
+    })
+
     // ── documents & indexing ──────────────────────────────────────────
     .get("/documents/collections", ({ caller }) => {
       requireScope(caller, "read");

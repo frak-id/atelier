@@ -19,6 +19,7 @@ import {
 import { TokenAuth } from "./auth.ts";
 import type { EmbeddingsConfig, HubConfig } from "./config.ts";
 import { IndexRunner, type IndexRunnerDeps } from "./indexing.ts";
+import { RecapRunner } from "./recaps/runner.ts";
 
 export interface HubServices {
   config: HubConfig;
@@ -30,6 +31,7 @@ export interface HubServices {
   audit: AuditLog;
   search: KnowledgeSearch;
   indexer: IndexRunner;
+  recaps?: RecapRunner;
 }
 
 function createEmbedder(
@@ -53,7 +55,7 @@ export function createHubServices(
   opts: {
     /** `":memory:"` in tests; default `<dataDir>/knowledge.db`. */
     dbPath?: string;
-    indexer?: Pick<IndexRunnerDeps, "checkout" | "extract">;
+    indexer?: Pick<IndexRunnerDeps, "checkout" | "extract" | "recaps">;
   } = {},
 ): HubServices {
   mkdirSync(config.dataDir, { recursive: true });
@@ -67,6 +69,28 @@ export function createHubServices(
     config.secrets.embeddingsApiKey,
   );
   const search = new KnowledgeSearch(db, { embedder });
+
+  // Recaps only run with an LLM key: no key means nothing to call.
+  const recaps =
+    config.recaps.enabled && config.secrets.llmApiKey
+      ? new RecapRunner({
+          db,
+          documents,
+          llm: config.llm,
+          apiKey: config.secrets.llmApiKey,
+          piCommand: config.recaps.piCommand,
+          concurrency: config.recaps.concurrency,
+          timeoutMinutes: config.recaps.timeoutMinutes,
+          maxAreas: config.recaps.maxAreas,
+          secrets: [
+            config.secrets.gitToken,
+            config.secrets.webhookSecret,
+            config.secrets.llmApiKey,
+            config.secrets.embeddingsApiKey,
+          ],
+        })
+      : undefined;
+
   return {
     config,
     db,
@@ -76,6 +100,7 @@ export function createHubServices(
     memory: new MemoryService(db, { graph }),
     audit: new AuditLog(db),
     search,
+    recaps,
     indexer: new IndexRunner({
       db,
       graph,
@@ -83,6 +108,7 @@ export function createHubServices(
       search,
       dataDir: config.dataDir,
       gitToken: config.secrets.gitToken,
+      recaps,
       ...opts.indexer,
     }),
   };

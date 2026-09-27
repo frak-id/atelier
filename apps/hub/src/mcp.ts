@@ -221,9 +221,40 @@ function createServer(hub: HubServices, caller: Caller): McpServer {
           branch: r.branch,
           revision: last?.revision,
           indexedAt: last?.finishedAt,
+          recaps: last?.recaps,
         };
       }),
     ),
+  );
+
+  server.registerTool(
+    "codebase_recap",
+    {
+      title: "Codebase recap",
+      description:
+        "An LLM-written recap of a tracked repository: what it is, its " +
+        "architecture, key flows, conventions and gotchas. Defaults to " +
+        "the repo-wide overview; pass an area id (listed in the result) " +
+        "for one area's recap.",
+      inputSchema: {
+        repo: z.string().describe("owner/name, as tracked by the hub"),
+        area: z
+          .string()
+          .optional()
+          .describe(
+            "An area id from a previous call, or omitted for the overview",
+          ),
+      },
+    },
+    safe(({ repo, area }) => {
+      const status = ops.recapStatus(hub, caller, repo);
+      const id = area ?? "overview";
+      const found = ops.readRecapArea(hub, caller, repo, id);
+      return {
+        area: found,
+        availableAreas: status.areas.map((a) => ({ id: a.id, title: a.title })),
+      };
+    }),
   );
 
   return server;

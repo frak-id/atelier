@@ -4,6 +4,8 @@
  *   bun run src/cli.ts token                          mint a bearer token
  *   bun run src/cli.ts index <dir> --repo o/n [--revision sha] [--files]
  *                                                     index a local checkout
+ *   bun run src/cli.ts recap <dir> --repo o/n [--force]
+ *                                        index + recap a local checkout
  *   bun run src/cli.ts search <query…>
  */
 import { resolve } from "node:path";
@@ -29,6 +31,7 @@ const { positionals, values } = parseArgs({
     repo: { type: "string" },
     revision: { type: "string" },
     files: { type: "boolean", default: false },
+    force: { type: "boolean", default: false },
   },
 });
 const [command, ...rest] = positionals;
@@ -72,6 +75,37 @@ switch (command) {
     for (const w of index.warnings) console.warn(`warning: ${w}`);
     break;
   }
+  case "recap": {
+    const dir = resolve(rest[0] ?? ".");
+    if (!values.repo) throw new Error("--repo owner/name is required");
+    const revision = values.revision ?? (await gitHead(dir)) ?? "local";
+    const hub = createHubServices(loadConfig());
+    if (!hub.recaps) {
+      throw new Error(
+        "recaps disabled: set HUB_LLM_API_KEY and enable recaps.enabled",
+      );
+    }
+    const index = await indexRepository({
+      root: dir,
+      repo: values.repo,
+      revision,
+      includeFiles: values.files,
+    });
+    applyIndex(index, { graph: hub.graph, documents: hub.documents });
+    const report = await hub.recaps.update({
+      repo: { repo: values.repo, branch: "local" },
+      dir,
+      revision,
+      index,
+      force: values.force,
+      changes: async () => {
+        throw new Error("no history for a local recap: full regenerate only");
+      },
+    });
+    await hub.search.embedPending();
+    console.log(JSON.stringify(report, null, 2));
+    break;
+  }
   case "search": {
     const hub = createHubServices(loadConfig());
     const hits = await hub.search.search({
@@ -85,6 +119,9 @@ switch (command) {
     break;
   }
   default:
-    console.error("usage: cli.ts token | index <dir> --repo o/n | search <q>");
+    console.error(
+      "usage: cli.ts token | index <dir> --repo o/n | " +
+        "recap <dir> --repo o/n [--force] | search <q>",
+    );
     process.exit(1);
 }

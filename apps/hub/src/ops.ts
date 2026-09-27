@@ -15,6 +15,8 @@ import {
   type Subgraph,
 } from "@atelier/knowledge";
 import { type Caller, requireScope } from "./auth.ts";
+import type { HubConfig } from "./config.ts";
+import type { RecapArea } from "./recaps/runner.ts";
 import type { HubServices } from "./services.ts";
 
 export interface SearchParams {
@@ -129,4 +131,75 @@ export function neighbors(
     asOf: opts.asOf,
     limit: opts.limit,
   });
+}
+
+export interface RecapAreaSummary {
+  id: string;
+  title: string;
+  paths: string[];
+  why: string;
+  revision: string;
+}
+
+export interface RecapStatus {
+  repo: string;
+  overview?: { revision: string };
+  areas: RecapAreaSummary[];
+}
+
+/** Areas without bodies (light enough to list) plus the overview's status. */
+export function recapStatus(
+  hub: HubServices,
+  caller: Caller,
+  repo: string,
+): RecapStatus {
+  requireScope(caller, "read");
+  const areas = hub.recaps?.listAreas(repo) ?? [];
+  const overview = areas.find((a) => a.id === "overview");
+  return {
+    repo,
+    overview: overview ? { revision: overview.revision } : undefined,
+    areas: areas
+      .filter((a) => a.id !== "overview")
+      .map((a) => ({
+        id: a.id,
+        title: a.title,
+        paths: a.paths,
+        why: a.why,
+        revision: a.revision,
+      })),
+  };
+}
+
+/** The full recap for one area, or `"overview"`. */
+export function readRecapArea(
+  hub: HubServices,
+  caller: Caller,
+  repo: string,
+  area: string,
+): RecapArea {
+  requireScope(caller, "read");
+  const found = hub.recaps?.getArea(repo, area);
+  if (!found) throw new NotFoundError("recap area", `${repo}/${area}`);
+  return found;
+}
+
+/** The effective config, secrets replaced by whether they are set. */
+export function effectiveConfig(
+  hub: HubServices,
+  caller: Caller,
+): Omit<HubConfig, "secrets"> & {
+  secretsSet: Record<keyof HubConfig["secrets"], boolean>;
+} {
+  requireScope(caller, "review");
+  const { secrets, ...rest } = hub.config;
+  return {
+    ...rest,
+    secretsSet: {
+      webhookSecret: !!secrets.webhookSecret,
+      gitToken: !!secrets.gitToken,
+      embeddingsApiKey: !!secrets.embeddingsApiKey,
+      llmApiKey: !!secrets.llmApiKey,
+    },
+  };
 }

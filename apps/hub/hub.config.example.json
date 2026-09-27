@@ -2,8 +2,22 @@
   "port": 4100,
   "dataDir": ".hub-data",
   "reindexIntervalMinutes": 360,
-  "repos": [{ "repo": "frak-id/atelier", "branch": "main" }],
+  "repos": [{ "repo": "frak-id/atelier", "branch": "main", "recaps": true }],
   "embeddings": { "provider": "hashing", "dimensions": 256 },
+  "llm": {
+    "baseUrl": "http://atelier-cliproxy.atelier-system.svc.cluster.local:8317",
+    "api": "anthropic-messages",
+    "model": "claude-sonnet-5",
+    "thinking": "medium"
+  },
+  "retention": { "slackMonths": 6 },
+  "recaps": {
+    "enabled": true,
+    "piCommand": ["pi"],
+    "concurrency": 2,
+    "timeoutMinutes": 20,
+    "maxAreas": 30
+  },
   "tokens": [
     {
       "name": "alice",

@@ -24,10 +24,16 @@ import {
 } from "@atelier/knowledge";
 import type { RepoConfig } from "./config.ts";
 import { createLogger } from "./logger.ts";
+import type { RecapReport, RecapRunner } from "./recaps/runner.ts";
 
 const log = createLogger("indexing");
 
 export type IndexRunStatus = "running" | "succeeded" | "failed" | "skipped";
+
+export type RecapRunOutcome =
+  | RecapReport
+  | { skipped: string }
+  | { error: string };
 
 export interface IndexRun {
   id: string;
@@ -36,6 +42,7 @@ export interface IndexRun {
   status: IndexRunStatus;
   revision?: string;
   report?: ApplyIndexReport;
+  recaps?: RecapRunOutcome;
   warnings: number;
   error?: string;
   startedAt: number;
@@ -49,6 +56,8 @@ export interface IndexRunnerDeps {
   search: KnowledgeSearch;
   dataDir: string;
   gitToken?: string;
+  /** Set only when recaps are globally enabled and an LLM key is configured. */
+  recaps?: RecapRunner;
   /** Overridable for tests (no network). */
   checkout?: (repo: RepoConfig, dir: string) => Promise<string>;
   extract?: (
@@ -63,6 +72,7 @@ interface RunRow {
   status: IndexRunStatus;
   revision: string | null;
   report: string | null;
+  recaps: string | null;
   warnings: number;
   error: string | null;
   started_at: number;
@@ -112,6 +122,7 @@ export class IndexRunner {
       status      TEXT NOT NULL,
       revision    TEXT,
       report      TEXT,
+      recaps      TEXT,
       warnings    INTEGER NOT NULL DEFAULT 0,
       error       TEXT,
       started_at  INTEGER NOT NULL,
@@ -175,6 +186,7 @@ export class IndexRunner {
       status: r.status,
       revision: r.revision ?? undefined,
       report: r.report ? (JSON.parse(r.report) as ApplyIndexReport) : undefined,
+      recaps: r.recaps ? (JSON.parse(r.recaps) as RecapRunOutcome) : undefined,
       warnings: r.warnings,
       error: r.error ?? undefined,
       startedAt: r.started_at,
@@ -190,9 +202,9 @@ export class IndexRunner {
     this.deps.db
       .query(
         `INSERT OR REPLACE INTO hub_index_runs
-         (id, repo, trigger, status, revision, report, warnings, error,
-          started_at, finished_at)
-         VALUES ($id, $repo, $trigger, $status, $revision, $report,
+         (id, repo, trigger, status, revision, report, recaps, warnings,
+          error, started_at, finished_at)
+         VALUES ($id, $repo, $trigger, $status, $revision, $report, $recaps,
           $warnings, $error, $started_at, $finished_at)`,
       )
       .run({
@@ -202,6 +214,7 @@ export class IndexRunner {
         status: run.status,
         revision: run.revision ?? null,
         report: run.report ? JSON.stringify(run.report) : null,
+        recaps: run.recaps ? JSON.stringify(run.recaps) : null,
         warnings: run.warnings,
         error: run.error ?? null,
         started_at: run.startedAt,
@@ -247,6 +260,7 @@ export class IndexRunner {
         graph: this.deps.graph,
         documents: this.deps.documents,
       });
+      run.recaps = await this.runRecaps(repo, dir, run.revision, index, force);
       await this.deps.search.embedPending();
       run.status = "succeeded";
       log.info({ repo: repo.repo, revision: run.revision }, "indexed");
@@ -277,5 +291,77 @@ export class IndexRunner {
     await git(["checkout", "--quiet", "--force", "FETCH_HEAD"], dir);
     await git(["clean", "-qfdx"], dir);
     return git(["rev-parse", "HEAD"], dir);
+  }
+
+  /**
+   * Codebase recaps never fail the index run: a thrown error or a disabled
+   * repo is reported on the run, not raised.
+   */
+  private async runRecaps(
+    repo: RepoConfig,
+    dir: string,
+    revision: string,
+    index: RepositoryIndex,
+    force: boolean,
+  ): Promise<RecapRunOutcome> {
+    if (!this.deps.recaps) {
+      return { skipped: "recaps disabled, or no llm api key configured" };
+    }
+    if (repo.recaps === false) {
+      return { skipped: "recaps disabled for this repo" };
+    }
+    try {
+      const report = await this.deps.recaps.update({
+        repo,
+        dir,
+        revision,
+        index,
+        force,
+        changes: (base) => this.changesSince(repo, dir, base),
+      });
+      log.info(
+        {
+          repo: repo.repo,
+          planned: report.planned,
+          regenerated: report.regenerated.length,
+        },
+        "recaps updated",
+      );
+      return report;
+    } catch (error) {
+      const message = redact(
+        error instanceof Error ? error.message : String(error),
+        this.deps.gitToken,
+      );
+      log.error({ repo: repo.repo, error: message }, "recap run failed");
+      return { error: message };
+    }
+  }
+
+  /**
+   * The files (and a diff, restricted to given paths) changed since `base`:
+   * a shallow fetch of `base` into the same checkout, then a git diff.
+   * Any failure (e.g. `base` unreachable after history rewrites) bubbles up
+   * so the caller can fall back to a full regenerate without replanning.
+   */
+  private async changesSince(
+    repo: RepoConfig,
+    dir: string,
+    base: string,
+  ): Promise<{ files: string[]; diff: (paths: string[]) => Promise<string> }> {
+    const url = authedUrl(
+      repo.cloneUrl ?? `https://github.com/${repo.repo}.git`,
+      this.deps.gitToken,
+    );
+    await git(["fetch", "--quiet", "--depth", "1", url, base], dir);
+    const raw = await git(["diff", "--name-only", base, "HEAD"], dir);
+    const files = raw
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return {
+      files,
+      diff: (paths) => git(["diff", base, "HEAD", "--", ...paths], dir),
+    };
   }
 }

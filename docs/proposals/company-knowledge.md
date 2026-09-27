@@ -108,8 +108,13 @@ headless [pi](https://pi.dev) with the hub's LLM settings:
 1. **Plan** (first run, or when a push touches files no area covers): pi
    explores the checkout, fed the structural map (workspaces, dependencies,
    CODEOWNERS), and writes `areas.json`: a list of areas `{id, title, paths}`
-   sized to be explainable in one recap. A small repo gets one area; a
-   monorepo gets one per app/package, or per group of small packages.
+   sized to be explainable in one recap. The map includes files and lines
+   per directory, and the prompt targets ~10k lines per area: a small repo
+   gets one area, a large app is split along its modules, small packages
+   are grouped. On this monorepo (Sonnet 5, concurrency 4, 5½ min) it
+   produced 15 areas: `apps/server` as runtime / control / api / core /
+   migrations, the console as routes+lib / components, `spec`+`compose`+
+   `shared` grouped, `hub`+`knowledge` grouped.
 2. **Recap**: one pi run per area writes `<area>.md` (purpose, architecture,
    key flows, entry points, conventions, gotchas, how it connects to other
    areas), plus one repo overview.

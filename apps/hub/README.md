@@ -36,9 +36,69 @@ Secrets come from the environment, never the config file:
 | `HUB_WEBHOOK_SECRET` | Enables `/webhooks/github` (HMAC `X-Hub-Signature-256`) |
 | `HUB_GIT_TOKEN` | Fetches private repos (a GitHub App installation token is ideal) |
 | `HUB_EMBEDDINGS_API_KEY` | For `embeddings.provider: "openai-compatible"` |
+| `HUB_LLM_API_KEY` | The hub's LLM (cliproxy client key), for codebase recaps |
+| `HUB_LLM_BASE_URL`, `HUB_LLM_MODEL` | Override `llm.baseUrl` / `llm.model` |
+| `HUB_SLACK_RETENTION_MONTHS` | Override `retention.slackMonths` |
 
 Container image: `docker build --target hub .` (mount `/app/data` and
-`/app/config/hub.config.json`).
+`/app/config/hub.config.json`). Includes a Node runtime + `pi` for recaps
+(see below); everything else is Bun.
+
+### Config reference
+
+| Setting | Default | Notes |
+|---|---|---|
+| `llm.baseUrl` | the cluster's cliproxy | any Anthropic- or OpenAI-compatible endpoint |
+| `llm.api` | `"anthropic-messages"` | or `"openai-completions"` |
+| `llm.model` | `"claude-sonnet-5"` | used for recaps (and later, summaries) |
+| `llm.thinking` | `"medium"` | `off` \| `minimal` \| `low` \| `medium` \| `high` |
+| `retention.slackMonths` | `6` | **not used yet**: sizes the daily sweep the future Slack connector will run; kept here so the config shape is settled |
+| `recaps.enabled` | `true` | globally; also needs `HUB_LLM_API_KEY` set |
+| `recaps.piCommand` | `["pi"]` | argv prefix for the pi CLI |
+| `recaps.concurrency` | `2` | areas recapped in parallel |
+| `recaps.timeoutMinutes` | `20` | per pi invocation |
+| `recaps.maxAreas` | `30` | upper bound a plan may declare |
+| `repos[].recaps` | `true` | set `false` to opt a repo out |
+
+`GET /api/config` (scope `review`) returns the effective config with
+secrets replaced by booleans (`secretsSet.llmApiKey`, …).
+
+### Codebase recaps
+
+After every successful index run, if recaps are enabled for the repo and
+`HUB_LLM_API_KEY` is set, a headless [`pi`](https://github.com/earendil-works/pi)
+explores the checkout and writes/updates its recaps:
+
+1. **Plan** (first run, force, or a push that touches files no area
+   covers): pi is given a structural map (packages/crates, their internal
+   deps, CODEOWNERS, top-level dirs) and returns the areas it wants —
+   one for a small repo, one per app/package (or group of small packages)
+   for a monorepo.
+2. **Recap**: one pi run per area writes a markdown recap (purpose,
+   architecture, key flows, entry points, conventions, gotchas,
+   connections to other areas); a final tools-less run writes the repo
+   overview from the areas' recaps.
+3. **On push**: only the areas whose paths match the diff since their last
+   recapped revision are regenerated, given their previous recap and the
+   diff. A changed file that matches no area triggers a re-plan; a failed
+   area keeps its previous recap and is retried next run.
+
+Recaps are stored as documents (collection `recap:<owner/name>`, chunked
+by `## ` heading) and as full bodies in `hub_recap_areas`. Read them with
+`GET /api/recaps?repo=` (areas + overview status), `GET
+/api/recaps/area?repo=&area=` (one area's body, or `area=overview`), or
+the `codebase_recap` MCP tool. `bun run cli recap <dir> --repo o/n
+[--force]` indexes and recaps a local checkout, like `cli index`.
+
+**Security note**: pi runs with `read, grep, find, ls` only (never `bash`,
+`write` or `edit`), a throwaway `$HOME`/config dir per run, and an
+environment holding only `PATH`, `HOME`, `PI_CODING_AGENT_DIR`,
+`PI_OFFLINE` and the LLM key — never the hub's own environment. It can
+still read anything on the hub's filesystem the checkout directory allows
+(mitigated by running it in its own dir), and redaction of known secrets
+from its output is best-effort string matching, not a guarantee. Moving
+the run into an Atelier sandbox built from the repo's prebuild is the
+planned hardening (`docs/proposals/company-knowledge.md`).
 
 ## Access model
 
@@ -57,7 +117,8 @@ an **actor** and **scopes**:
 
 **MCP** (`/mcp`, streamable HTTP, bearer token): `knowledge_search`,
 `memory_propose`, `memory_flag`, `graph_entity`, `graph_neighbors`,
-`index_status`. Serving a memory through search counts as a use (audited).
+`index_status`, `codebase_recap`. Serving a memory through search counts
+as a use (audited).
 
 **REST** (`/api`, bearer token):
 
@@ -74,6 +135,8 @@ an **actor** and **scopes**:
 | `GET /graph/entities?type=` · `GET /graph/entities/:id?history=&as_of=` · `GET /graph/neighbors?id=&depth=&direction=&types=` | read |
 | `GET /documents/collections` · `GET /index/repos` · `GET /index/runs` | read |
 | `POST /index/repos/:owner/:name?force=&wait=` | index |
+| `GET /recaps?repo=` · `GET /recaps/area?repo=&area=` | read |
+| `GET /config` | review |
 
 **Webhook**: `POST /webhooks/github`. Push to a tracked branch → queued
 re-index (bursts collapse into one follow-up run; unchanged revisions skip).

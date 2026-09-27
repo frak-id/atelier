@@ -150,6 +150,14 @@ RUN bun build apps/hub/src/index.ts \
       --outfile=dist/hub.js \
       --minify
 
+# ── Stage: pi (the headless coding agent CLI, for codebase recaps) ───────
+# pi is Node-only (crashes under Bun): a separate small Node image, its
+# binary and the standalone `node` copied into the hub target below rather
+# than installing all of Node there.
+FROM node:24-slim AS pi
+
+RUN npm install -g --prefix /opt/pi @earendil-works/pi-coding-agent@0.87.1
+
 # ── Target: hub ───────────────────────────────────────────────────────────
 FROM oven/bun:1-slim AS hub
 
@@ -159,6 +167,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 
 WORKDIR /app
 COPY --from=hub-builder /build/dist/hub.js ./hub.js
+
+# pi (Node-only) for codebase recaps: the standalone node binary it needs
+# plus its globally-installed package, on PATH as `pi`.
+COPY --from=pi /usr/local/bin/node /usr/local/bin/node
+COPY --from=pi /opt/pi /opt/pi
+ENV PATH="/opt/pi/bin:${PATH}"
 
 ENV NODE_ENV=production \
     HUB_DATA_DIR=/app/data \
