@@ -5,14 +5,12 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  type AccessResolver,
   AuditLog,
   type Embedder,
   HashingEmbedder,
   type KnowledgeDb,
   KnowledgeSearch,
   MemoryService,
-  membershipResolver,
   OpenAICompatibleEmbedder,
   openKnowledgeDb,
   SqliteDocumentStore,
@@ -26,7 +24,6 @@ export interface HubServices {
   config: HubConfig;
   db: KnowledgeDb;
   auth: TokenAuth;
-  access: AccessResolver;
   graph: SqliteGraphStore;
   documents: SqliteDocumentStore;
   memory: MemoryService;
@@ -63,19 +60,17 @@ export function createHubServices(
   const db = openKnowledgeDb(
     opts.dbPath ?? join(config.dataDir, "knowledge.db"),
   );
-  const access = membershipResolver(config.teams);
-  const graph = new SqliteGraphStore(db, { access });
+  const graph = new SqliteGraphStore(db);
   const documents = new SqliteDocumentStore(db);
   const embedder = createEmbedder(
     config.embeddings,
     config.secrets.embeddingsApiKey,
   );
-  const search = new KnowledgeSearch(db, { embedder, access });
+  const search = new KnowledgeSearch(db, { embedder });
   return {
     config,
     db,
     auth: new TokenAuth(config.tokens),
-    access,
     graph,
     documents,
     memory: new MemoryService(db, { graph }),

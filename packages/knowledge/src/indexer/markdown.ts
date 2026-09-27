@@ -3,7 +3,7 @@
  * oversized chunks on paragraph boundaries, dedupe GitHub-style anchor
  * slugs the way GitHub itself does (`-1`, `-2`, …).
  */
-import type { DocumentInput, Readers } from "../types.ts";
+import type { DocumentInput } from "../types.ts";
 import { sha256 } from "../util.ts";
 import { readRepoFile, rpath } from "./files.ts";
 import { findOwner, sortOwners } from "./model.ts";
@@ -127,7 +127,6 @@ function buildFileDocuments(
     repo: string;
     revision: string;
     webUrl?: string;
-    readers: Readers;
     entityIds: string[];
   },
 ): DocumentInput[] {
@@ -174,7 +173,6 @@ function buildFileDocuments(
         url: opts.webUrl ? `${opts.webUrl}/${path}#${slug}` : undefined,
         revision: opts.revision,
         entityIds: opts.entityIds,
-        readers: opts.readers,
         hash: sha256(`${title}\n${partBody}`),
       });
     });
@@ -186,7 +184,6 @@ export interface MarkdownScanOpts {
   repo: string;
   revision: string;
   webUrl?: string;
-  readers: Readers;
   owners: { dir: string; entityId: string }[];
 }
 
@@ -216,7 +213,6 @@ export async function buildDocuments(
           repo: opts.repo,
           revision: opts.revision,
           webUrl: opts.webUrl,
-          readers: opts.readers,
           entityIds,
         }),
       );

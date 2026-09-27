@@ -16,7 +16,6 @@ interface DocumentRow {
   url: string | null;
   revision: string | null;
   entity_ids: string;
-  readers: string;
   hash: string;
   updated_at: number;
 }
@@ -31,7 +30,6 @@ function mapDocument(row: DocumentRow): Document {
     url: opt(row.url),
     revision: opt(row.revision),
     entityIds: parseJson(row.entity_ids, []),
-    readers: parseJson(row.readers, []),
     hash: row.hash,
     updatedAt: row.updated_at,
   };
@@ -53,10 +51,10 @@ export class SqliteDocumentStore implements DocumentStore {
     const upsert = this.db.query(
       `INSERT INTO documents
          (id, collection, title, body, path, url, revision, entity_ids,
-          readers, hash, updated_at)
+          hash, updated_at)
        VALUES
          ($id, $collection, $title, $body, $path, $url, $revision,
-          $entityIds, $readers, $hash, $now)
+          $entityIds, $hash, $now)
        ON CONFLICT(id) DO UPDATE SET
          collection = excluded.collection,
          title = excluded.title,
@@ -65,7 +63,6 @@ export class SqliteDocumentStore implements DocumentStore {
          url = excluded.url,
          revision = excluded.revision,
          entity_ids = excluded.entity_ids,
-         readers = excluded.readers,
          hash = excluded.hash,
          updated_at = $now`,
     );
@@ -96,7 +93,6 @@ export class SqliteDocumentStore implements DocumentStore {
           url: doc.url ?? null,
           revision: doc.revision ?? null,
           entityIds: JSON.stringify(doc.entityIds),
-          readers: JSON.stringify(doc.readers),
           hash: doc.hash,
           now,
         });

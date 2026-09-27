@@ -6,7 +6,6 @@ const token = {
   sha256: "a".repeat(64),
   actor: { kind: "agent" as const, id: "agent:bot" },
   scopes: ["read" as const],
-  audience: ["org"],
 };
 
 describe("parseConfig", () => {

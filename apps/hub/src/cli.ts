@@ -4,7 +4,7 @@
  *   bun run src/cli.ts token                          mint a bearer token
  *   bun run src/cli.ts index <dir> --repo o/n [--revision sha] [--files]
  *                                                     index a local checkout
- *   bun run src/cli.ts search <query…> [--audience org,user:x]
+ *   bun run src/cli.ts search <query…>
  */
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -29,7 +29,6 @@ const { positionals, values } = parseArgs({
     repo: { type: "string" },
     revision: { type: "string" },
     files: { type: "boolean", default: false },
-    audience: { type: "string", default: "org" },
   },
 });
 const [command, ...rest] = positionals;
@@ -46,7 +45,6 @@ switch (command) {
           sha256,
           actor: { kind: "human", id: "user:me" },
           scopes: ["read", "propose", "review", "index"],
-          audience: ["user:me"],
         },
         null,
         2,
@@ -78,7 +76,6 @@ switch (command) {
     const hub = createHubServices(loadConfig());
     const hits = await hub.search.search({
       text: rest.join(" "),
-      audience: (values.audience ?? "org").split(","),
       limit: 10,
     });
     for (const h of hits) {

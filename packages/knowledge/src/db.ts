@@ -24,7 +24,6 @@ const MIGRATIONS: string[] = [
     content       TEXT NOT NULL,
     tags          TEXT NOT NULL DEFAULT '[]',
     status        TEXT NOT NULL,
-    readers       TEXT NOT NULL DEFAULT '[]',
     entity_ids    TEXT NOT NULL DEFAULT '[]',
     facts         TEXT NOT NULL DEFAULT '[]',
     provenance    TEXT NOT NULL DEFAULT '[]',
@@ -70,7 +69,6 @@ const MIGRATIONS: string[] = [
     name        TEXT NOT NULL,
     summary     TEXT,
     attrs       TEXT NOT NULL DEFAULT '{}',
-    readers     TEXT NOT NULL DEFAULT '[]',
     source_key  TEXT,
     retired_at  INTEGER,
     created_at  INTEGER NOT NULL,
@@ -108,7 +106,6 @@ const MIGRATIONS: string[] = [
     fingerprint     TEXT NOT NULL,
     source_key      TEXT NOT NULL,
     source_revision TEXT,
-    readers         TEXT NOT NULL DEFAULT '[]',
     valid_from      INTEGER NOT NULL,
     valid_to        INTEGER,
     recorded_at     INTEGER NOT NULL,
@@ -127,7 +124,6 @@ const MIGRATIONS: string[] = [
     url         TEXT,
     revision    TEXT,
     entity_ids  TEXT NOT NULL DEFAULT '[]',
-    readers     TEXT NOT NULL DEFAULT '[]',
     hash        TEXT NOT NULL,
     updated_at  INTEGER NOT NULL
   );

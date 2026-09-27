@@ -42,16 +42,14 @@ Container image: `docker build --target hub .` (mount `/app/data` and
 
 ## Access model
 
-Tokens carry an **actor**, **scopes** and an **audience**.
+Company knowledge is readable by everyone who can call the hub: there are
+no per-record permissions, audiences or reader lists. The only control
+over what's visible is what gets ingested in the first place. Tokens carry
+an **actor** and **scopes**:
 
 - `read`: search, graph, active memories. `propose`: propose / flag memories
-  (what agents get). `review`: the governance queue, audit log, and
-  every memory regardless of audience. `index`: trigger re-indexing.
-- **Audience** = who will see the answer. A record is used only if *every*
-  audience principal can read it (`teams` in the config expands group
-  membership). A Slack gateway answering in `#general` asks as `["org"]` and
-  never sees `team:platform`-only memories. A request may pass `audience=`
-  only with principals listed in the token's `mayAddress`.
+  (what agents get). `review`: the governance queue, audit log, and every
+  memory. `index`: trigger re-indexing.
 - Only humans approve, edit, restore, archive and erase. Agents propose and
   flag.
 
@@ -65,7 +63,7 @@ Tokens carry an **actor**, **scopes** and an **audience**.
 
 | Route | Scope |
 |---|---|
-| `GET /search?q=&kinds=&entity=&limit=&audience=` | read |
+| `GET /search?q=&kinds=&entity=&limit=` | read |
 | `GET /memories?status=&kind=&tags=&entity=&scope_kind=&scope_id=` · `GET /memories/:id` | read (review: all) |
 | `POST /memories` | propose |
 | `POST /memories/:id/flag` | propose |

@@ -50,7 +50,6 @@ beforeAll(() => {
   const config: HubConfig = parseConfig(
     {
       dataDir,
-      teams: { "team:platform": ["user:alice"] },
       repos: [{ repo: REPO, branch: "main" }],
       embeddings: { provider: "hashing", dimensions: 64 },
       tokens: [
@@ -59,21 +58,18 @@ beforeAll(() => {
           sha256: alice.sha256,
           actor: { kind: "human", id: "user:alice" },
           scopes: ["read", "propose", "review", "index"],
-          audience: ["user:alice"],
         },
         {
           name: "bot",
           sha256: bot.sha256,
           actor: { kind: "agent", id: "agent:bot" },
           scopes: ["read", "propose"],
-          audience: ["org"],
         },
         {
           name: "reader",
           sha256: reader.sha256,
           actor: { kind: "agent", id: "agent:reader" },
           scopes: ["read"],
-          audience: ["org"],
         },
       ],
     },
@@ -121,48 +117,24 @@ describe("auth", () => {
     expect(me.body.actor.id).toBe("agent:bot");
   });
 
-  test("scopes and audience are enforced", async () => {
+  test("scopes are enforced", async () => {
     const propose = await call(reader.token, "POST", "/api/memories", {
       scope: { kind: "org" },
       kind: "fact",
       content: "x",
     });
     expect(propose.status).toBe(403);
-    const escalate = await call(
-      bot.token,
-      "GET",
-      "/api/search?q=x&audience=user:alice",
-    );
-    expect(escalate.status).toBe(403);
-  });
-});
-
-describe("proposing never reveals what the caller can't read", () => {
-  test("non-reviewers get a receipt; invisible duplicates stay hidden", async () => {
-    const input = {
-      scope: { kind: "team", id: "platform" },
-      kind: "fact",
-      content: "The DR site is in Helsinki.",
-      provenance: [{ kind: "slack", ref: "C9/p1", quote: "secret quote" }],
-    };
-    const byAlice = await call(alice.token, "POST", "/api/memories", input);
-    expect(byAlice.body.provenance).toHaveLength(1); // reviewer: full row
-
-    const byBot = await call(bot.token, "POST", "/api/memories", input);
-    expect(Object.keys(byBot.body).sort()).toEqual(["id", "status"]);
-    expect(byBot.body.id).not.toBe(byAlice.body.id);
   });
 
-  test("an agent can't auto-publish org-wide through a preference", async () => {
+  test("an agent's user-preference auto-activates", async () => {
     const res = await call(bot.token, "POST", "/api/memories", {
       scope: { kind: "user", id: "bob" },
       kind: "preference",
       content: "bob likes emoji",
-      readers: ["org"],
     });
     expect(res.body.status).toBe("active");
     const seen = await call(bot.token, "GET", "/api/search?q=emoji");
-    expect(seen.body).toEqual([]);
+    expect(seen.body.map((h: { id: string }) => h.id)).toContain(res.body.id);
   });
 });
 
@@ -200,14 +172,14 @@ describe("memory governance over HTTP", () => {
     expect(ok.body.status).toBe("active");
   });
 
-  test("the audience rule: team memory reaches alice, not a public reply", async () => {
+  test("an active memory is readable by any caller with the read scope", async () => {
     const forAlice = await call(alice.token, "GET", "/api/search?q=ingress");
     expect(forAlice.body.map((h: { id: string }) => h.id)).toContain(id);
 
-    const inPublic = await call(bot.token, "GET", "/api/search?q=ingress");
-    expect(inPublic.body).toEqual([]);
+    const forBot = await call(bot.token, "GET", "/api/search?q=ingress");
+    expect(forBot.body.map((h: { id: string }) => h.id)).toContain(id);
     const direct = await call(bot.token, "GET", `/api/memories/${id}`);
-    expect(direct.status).toBe(404);
+    expect(direct.status).toBe(200);
   });
 
   test("the memory's structured claim is in the graph", async () => {
@@ -219,9 +191,7 @@ describe("memory governance over HTTP", () => {
     // team:platform has no entity row, so traversal starts nowhere — but
     // factsFor on the service end still shows the claim.
     expect(res.status).toBe(200);
-    const facts = hub.graph.factsFor("service:ingress", {
-      audience: ["user:alice"],
-    });
+    const facts = hub.graph.factsFor("service:ingress");
     expect(facts.map((f) => f.source.key)).toEqual([`memory:${id}`]);
   });
 
@@ -229,17 +199,7 @@ describe("memory governance over HTTP", () => {
     const flagged = await call(bot.token, "POST", `/api/memories/${id}/flag`, {
       reason: "reorg",
     });
-    // The bot can't see a team memory, so it can't flag it either.
-    expect(flagged.status).toBe(404);
-    const byAlice = await call(
-      alice.token,
-      "POST",
-      `/api/memories/${id}/flag`,
-      {
-        reason: "reorg",
-      },
-    );
-    expect(byAlice.body.status).toBe("stale");
+    expect(flagged.body.status).toBe("stale");
 
     const erased = await call(alice.token, "POST", "/api/memories/erase", {
       ids: [id],
@@ -252,10 +212,7 @@ describe("memory governance over HTTP", () => {
       404,
     );
     expect(
-      hub.graph.factsFor("service:ingress", {
-        audience: ["user:alice"],
-        includeHistory: true,
-      }),
+      hub.graph.factsFor("service:ingress", { includeHistory: true }),
     ).toEqual([]);
     const audit = await call(alice.token, "GET", `/api/audit?target_id=${id}`);
     const actions = audit.body.map((e: { action: string }) => e.action);

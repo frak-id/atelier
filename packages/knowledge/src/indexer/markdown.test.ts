@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { ORG_PRINCIPAL } from "../types.ts";
 import { buildDocuments, githubSlug } from "./markdown.ts";
 import { cleanupFixture, writeFixture } from "./test-helpers.ts";
 
@@ -22,7 +21,6 @@ async function scan(files: Record<string, string>) {
     repo: "acme/widgets",
     revision: "deadbeef",
     webUrl: "https://github.com/acme/widgets/blob/deadbeef",
-    readers: [ORG_PRINCIPAL],
     owners: [],
   });
 }

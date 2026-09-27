@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { openKnowledgeDb } from "../db.ts";
 import type { EntityInput, FactInput } from "../types.ts";
-import { membershipResolver } from "../util.ts";
 import { SqliteGraphStore } from "./store.ts";
 
 function makeStore(clock?: () => number) {
@@ -14,14 +13,12 @@ const team: EntityInput = {
   type: "team",
   name: "Payments",
   attrs: {},
-  readers: ["org"],
 };
 const service: EntityInput = {
   id: "service:billing",
   type: "service",
   name: "Billing",
   attrs: {},
-  readers: ["org"],
 };
 
 describe("SqliteGraphStore.assertFacts", () => {
@@ -53,20 +50,14 @@ describe("SqliteGraphStore.assertFacts", () => {
     const third = store.assertFacts({ key: "memory:m1" }, []);
     expect(third.invalidated).toBe(1);
 
-    const currentFacts = store.factsFor("team:payments", {
-      audience: ["org"],
-    });
+    const currentFacts = store.factsFor("team:payments");
     expect(currentFacts).toHaveLength(0);
 
-    const historicalFacts = store.factsFor("team:payments", {
-      audience: ["org"],
-      asOf: 1500,
-    });
+    const historicalFacts = store.factsFor("team:payments", { asOf: 1500 });
     expect(historicalFacts).toHaveLength(1);
     expect(historicalFacts[0]?.type).toBe("owns");
 
     const fullHistory = store.factsFor("team:payments", {
-      audience: ["org"],
       includeHistory: true,
     });
     expect(fullHistory).toHaveLength(1);
@@ -95,14 +86,9 @@ describe("SqliteGraphStore.retractSource", () => {
     ]);
     const count = store.retractSource("memory:m1");
     expect(count).toBe(1);
-    expect(store.factsFor("team:payments", { audience: ["org"] })).toHaveLength(
-      0,
-    );
+    expect(store.factsFor("team:payments")).toHaveLength(0);
     expect(
-      store.factsFor("team:payments", {
-        audience: ["org"],
-        includeHistory: true,
-      }),
+      store.factsFor("team:payments", { includeHistory: true }),
     ).toHaveLength(1);
   });
 
@@ -115,10 +101,7 @@ describe("SqliteGraphStore.retractSource", () => {
     const count = store.retractSource("memory:m1", { hard: true });
     expect(count).toBe(1);
     expect(
-      store.factsFor("team:payments", {
-        audience: ["org"],
-        includeHistory: true,
-      }),
+      store.factsFor("team:payments", { includeHistory: true }),
     ).toHaveLength(0);
   });
 });
@@ -134,7 +117,6 @@ describe("SqliteGraphStore.neighbors", () => {
         type: "person",
         name: "Alice",
         attrs: {},
-        readers: ["org"],
       },
     ]);
     store.assertFacts({ key: "s1" }, [
@@ -145,7 +127,6 @@ describe("SqliteGraphStore.neighbors", () => {
     const outOnly = store.neighbors({
       entityId: "team:payments",
       direction: "out",
-      audience: ["org"],
       depth: 1,
     });
     expect(outOnly.entities.map((e) => e.id)).toEqual(["service:billing"]);
@@ -153,7 +134,6 @@ describe("SqliteGraphStore.neighbors", () => {
     const inOnly = store.neighbors({
       entityId: "service:billing",
       direction: "in",
-      audience: ["org"],
       depth: 1,
     });
     expect(inOnly.entities.map((e) => e.id).sort()).toEqual([
@@ -164,93 +144,12 @@ describe("SqliteGraphStore.neighbors", () => {
     const depth2 = store.neighbors({
       entityId: "team:payments",
       direction: "both",
-      audience: ["org"],
       depth: 2,
     });
     expect(depth2.entities.map((e) => e.id).sort()).toEqual([
       "person:alice",
       "service:billing",
     ]);
-  });
-
-  test("ACL: team reader hidden from a user unless membership covers them", () => {
-    const db = openKnowledgeDb(":memory:");
-    const access = membershipResolver({ "team:a": ["user:bob"] });
-    const store = new SqliteGraphStore(db, { access });
-    store.upsertEntities([
-      { id: "team:a", type: "team", name: "A", attrs: {}, readers: ["org"] },
-      {
-        id: "service:x",
-        type: "service",
-        name: "X",
-        attrs: {},
-        readers: ["org"],
-      },
-    ]);
-    store.assertFacts({ key: "s1" }, [
-      {
-        type: "owns",
-        from: "team:a",
-        to: "service:x",
-        readers: ["team:a"],
-      },
-    ]);
-
-    const asBob = store.neighbors({
-      entityId: "team:a",
-      audience: ["user:bob"],
-      direction: "out",
-    });
-    expect(asBob.facts).toHaveLength(1);
-
-    const asCarol = store.neighbors({
-      entityId: "team:a",
-      audience: ["user:carol"],
-      direction: "out",
-    });
-    expect(asCarol.facts).toHaveLength(0);
-  });
-
-  test("ACL: mixed audience needs every principal covered", () => {
-    const db = openKnowledgeDb(":memory:");
-    const access = membershipResolver({
-      "channel:x": ["user:y"],
-      "team:a": ["user:y"],
-    });
-    const store = new SqliteGraphStore(db, { access });
-    store.upsertEntities([
-      { id: "team:a", type: "team", name: "A", attrs: {}, readers: ["org"] },
-      {
-        id: "service:x",
-        type: "service",
-        name: "X",
-        attrs: {},
-        readers: ["org"],
-      },
-    ]);
-    store.assertFacts({ key: "s1" }, [
-      {
-        type: "owns",
-        from: "team:a",
-        to: "service:x",
-        readers: ["channel:x"],
-      },
-    ]);
-
-    // channel:x covers user:y, but not user:z -> mixed audience fails
-    const mixed = store.neighbors({
-      entityId: "team:a",
-      audience: ["channel:x", "user:z"],
-      direction: "out",
-    });
-    expect(mixed.facts).toHaveLength(0);
-
-    const single = store.neighbors({
-      entityId: "team:a",
-      audience: ["channel:x"],
-      direction: "out",
-    });
-    expect(single.facts).toHaveLength(1);
   });
 
   test("retired entities are hidden unless asOf", () => {
@@ -263,7 +162,6 @@ describe("SqliteGraphStore.neighbors", () => {
 
     const now = store.neighbors({
       entityId: "team:payments",
-      audience: ["org"],
       direction: "out",
     });
     expect(now.entities).toHaveLength(0);
@@ -271,7 +169,6 @@ describe("SqliteGraphStore.neighbors", () => {
 
     const historical = store.neighbors({
       entityId: "team:payments",
-      audience: ["org"],
       direction: "out",
       asOf: Date.now() + 60_000,
     });
@@ -287,13 +184,12 @@ describe("SqliteGraphStore.neighbors", () => {
     ]);
     const result = store.neighbors({
       entityId: "team:ghost",
-      audience: ["org"],
       direction: "both",
       depth: 3,
     });
-    // both facts touching the ghost node are visible and returned, but
-    // service:billing (which has a row) is the only resolvable entity, and
-    // BFS never continues past service:other's absent row.
+    // both facts touching the ghost node are returned, but service:billing
+    // (which has a row) is the only resolvable entity, and BFS never
+    // continues past service:other's absent row.
     expect(result.facts).toHaveLength(2);
     expect(result.entities.map((e) => e.id)).toEqual(["service:billing"]);
   });
@@ -313,19 +209,20 @@ describe("SqliteGraphStore entities", () => {
     expect(updated?.name).toBe("Payments Team");
   });
 
-  test("listEntities filters by visibility and pages fully", () => {
+  test("listEntities pages with plain SQL limit/offset", () => {
     const { store } = makeStore();
     const entities: EntityInput[] = Array.from({ length: 20 }, (_, i) => ({
       id: `team:t${i}`,
       type: "team",
       name: `T${i}`,
       attrs: {},
-      readers: i % 2 === 0 ? ["org"] : ["team:secret"],
     }));
     store.upsertEntities(entities);
-    const visible = store.listEntities({ audience: ["org"], limit: 100 });
-    expect(visible).toHaveLength(10);
-    expect(visible.every((e) => e.readers.includes("org"))).toBe(true);
+    const all = store.listEntities({ limit: 100 });
+    expect(all).toHaveLength(20);
+    const page = store.listEntities({ limit: 5, offset: 5 });
+    expect(page).toHaveLength(5);
+    expect(page.map((e) => e.id)).toEqual(all.slice(5, 10).map((e) => e.id));
   });
 });
 
@@ -341,7 +238,6 @@ describe("SqliteGraphStore review findings", () => {
     store.assertFacts({ key: "manual" }, facts);
     const sub = store.neighbors({
       entityId: "team:payments",
-      audience: ["org"],
       limit: 5,
     });
     expect(sub.facts.length).toBe(20);
@@ -354,7 +250,6 @@ describe("SqliteGraphStore review findings", () => {
       type: "file",
       name: `${i}`,
       attrs: {},
-      readers: ["org"],
     }));
     store.upsertEntities(many, { sourceKey: "indexer:r" });
     const keep = many.slice(1).map((e) => e.id);

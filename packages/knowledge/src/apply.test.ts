@@ -15,14 +15,12 @@ function baseIndex(overrides: Partial<RepositoryIndex> = {}): RepositoryIndex {
         type: "package",
         name: "@atelier/knowledge",
         attrs: {},
-        readers: ["org"],
       },
       {
         id: "package:@atelier/spec",
         type: "package",
         name: "@atelier/spec",
         attrs: {},
-        readers: ["org"],
       },
     ],
     facts: [
@@ -39,7 +37,6 @@ function baseIndex(overrides: Partial<RepositoryIndex> = {}): RepositoryIndex {
         title: "README",
         body: "hello",
         entityIds: [],
-        readers: ["org"],
         hash: "h1",
       },
     ],
@@ -76,7 +73,6 @@ describe("applyIndex", () => {
           type: "package",
           name: "@atelier/knowledge",
           attrs: {},
-          readers: ["org"],
         },
       ],
       facts: [],
@@ -89,9 +85,7 @@ describe("applyIndex", () => {
     expect(spec?.retiredAt).toBeDefined();
 
     expect(report.facts.invalidated).toBe(1);
-    expect(
-      graph.factsFor("package:@atelier/knowledge", { audience: ["org"] }),
-    ).toHaveLength(0);
+    expect(graph.factsFor("package:@atelier/knowledge")).toHaveLength(0);
 
     expect(report.documents.removed).toBe(1);
     expect(documents.get("doc:readme")).toBeUndefined();

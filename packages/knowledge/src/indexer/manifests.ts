@@ -3,7 +3,7 @@
  * `contains`/`depends_on` facts. Bad manifests are warnings, not throws —
  * one broken `package.json` shouldn't fail an entire index run.
  */
-import type { EntityInput, FactInput, Readers } from "../types.ts";
+import type { EntityInput, FactInput } from "../types.ts";
 import { readRepoFile, rpath } from "./files.ts";
 import type { CrateInfo, PackageInfo } from "./model.ts";
 import { extractReadmeLede } from "./readme.ts";
@@ -19,7 +19,6 @@ export interface ManifestScanResult {
 export interface ScanOpts {
   repo: string;
   revision: string;
-  readers: Readers;
   webUrl?: string;
   includeExternalDeps: boolean;
 }
@@ -74,7 +73,6 @@ export async function scanManifests(
   const entities: EntityInput[] = [];
   const facts: FactInput[] = [];
   const fileSet = new Set(files);
-  const { readers } = opts;
   const repoEntityId = `repo:${opts.repo}`;
 
   const repoReadme = await findDirReadme(root, fileSet, "");
@@ -87,7 +85,6 @@ export async function scanManifests(
       revision: opts.revision,
       ...(opts.webUrl ? { webUrl: opts.webUrl } : {}),
     },
-    readers,
   });
 
   // ── npm packages ──────────────────────────────────────────────────────
@@ -137,14 +134,12 @@ export async function scanManifests(
         private: json.private === true,
         ecosystem: "npm",
       },
-      readers,
     });
     facts.push({
       type: "contains",
       from: repoEntityId,
       to: entityId,
       attrs: {},
-      readers,
     });
 
     for (const field of NPM_DEP_FIELDS) {
@@ -159,7 +154,6 @@ export async function scanManifests(
             from: entityId,
             to: internal,
             attrs: { kind: field },
-            readers,
           });
         } else if (opts.includeExternalDeps) {
           const depId = `dependency:npm:${depName}`;
@@ -169,7 +163,6 @@ export async function scanManifests(
               type: "dependency",
               name: depName,
               attrs: { ecosystem: "npm" },
-              readers,
             });
           }
           facts.push({
@@ -177,7 +170,6 @@ export async function scanManifests(
             from: entityId,
             to: depId,
             attrs: { kind: field },
-            readers,
           });
         }
       }
@@ -228,14 +220,12 @@ export async function scanManifests(
         ...(typeof pkg.version === "string" ? { version: pkg.version } : {}),
         ecosystem: "cargo",
       },
-      readers,
     });
     facts.push({
       type: "contains",
       from: repoEntityId,
       to: entityId,
       attrs: {},
-      readers,
     });
 
     for (const field of CARGO_DEP_FIELDS) {
@@ -266,7 +256,6 @@ export async function scanManifests(
           from: entityId,
           to: target,
           attrs: { kind: field },
-          readers,
         });
       }
     }
@@ -298,14 +287,12 @@ export async function scanManifests(
             : {}),
           ecosystem: "pypi",
         },
-        readers,
       });
       facts.push({
         type: "contains",
         from: repoEntityId,
         to: entityId,
         attrs: {},
-        readers,
       });
     } catch (err) {
       warnings.push(`unparseable manifest ${file}: ${(err as Error).message}`);
@@ -330,14 +317,12 @@ export async function scanManifests(
       type: "package",
       name: moduleName,
       attrs: { path: dir, ecosystem: "go" },
-      readers,
     });
     facts.push({
       type: "contains",
       from: repoEntityId,
       to: entityId,
       attrs: {},
-      readers,
     });
   }
 

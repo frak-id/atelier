@@ -15,7 +15,6 @@ function doc(
     title: id,
     body,
     entityIds: [],
-    readers: ["org"],
     hash: sha256(body),
   };
 }

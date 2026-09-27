@@ -11,7 +11,6 @@ import type {
   IndexRepositoryInput,
   RepositoryIndex,
 } from "../types.ts";
-import { ORG_PRINCIPAL } from "../types.ts";
 import { buildCodeownersFacts } from "./codeowners.ts";
 import { listRepoFiles } from "./files.ts";
 import { scanImports } from "./imports.ts";
@@ -61,7 +60,6 @@ export async function indexRepository(
   input: IndexRepositoryInput,
 ): Promise<RepositoryIndex> {
   const start = Date.now();
-  const readers = input.readers ?? [ORG_PRINCIPAL];
   const includeExternalDeps = input.includeExternalDeps ?? false;
   const includeFiles = input.includeFiles ?? false;
 
@@ -71,7 +69,6 @@ export async function indexRepository(
   const manifestResult = await scanManifests(input.root, files, {
     repo: input.repo,
     revision: input.revision,
-    readers,
     webUrl: input.webUrl,
     includeExternalDeps,
   });
@@ -81,7 +78,6 @@ export async function indexRepository(
     files,
     npmPackages: manifestResult.npmPackages,
     crates: manifestResult.crates,
-    readers,
     includeFiles,
   });
 
@@ -97,7 +93,6 @@ export async function indexRepository(
   ];
   const codeownersResult = await buildCodeownersFacts(input.root, fileSet, {
     repo: input.repo,
-    readers,
     dirs: ownerDirs,
   });
 
@@ -105,7 +100,6 @@ export async function indexRepository(
     repo: input.repo,
     revision: input.revision,
     webUrl: input.webUrl,
-    readers,
     owners: ownerDirs,
   });
 

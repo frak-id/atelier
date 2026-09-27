@@ -3,7 +3,7 @@
  * `*`, `**`, `?`) plus "last matching rule wins" resolution, the same
  * semantics GitHub uses to pick an owner for a path.
  */
-import type { EntityInput, FactInput, Readers } from "../types.ts";
+import type { EntityInput, FactInput } from "../types.ts";
 import { readRepoFile } from "./files.ts";
 
 const CODEOWNERS_LOCATIONS = [
@@ -121,7 +121,6 @@ export function ownerName(owner: string): string {
 
 export interface CodeownersFactsOpts {
   repo: string;
-  readers: Readers;
   /** Package/crate directories to resolve owners for (`""` = root only). */
   dirs: { dir: string; entityId: string }[];
 }
@@ -154,7 +153,6 @@ export async function buildCodeownersFacts(
         type: id.startsWith("team:") ? "team" : "person",
         name: ownerName(owner),
         attrs: {},
-        readers: opts.readers,
       });
     }
     return id;
@@ -169,7 +167,6 @@ export async function buildCodeownersFacts(
         from: emitOwner(owner),
         to: entityId,
         attrs: { pattern: rule.pattern },
-        readers: opts.readers,
       });
     }
   }
@@ -182,7 +179,6 @@ export async function buildCodeownersFacts(
         from: emitOwner(owner),
         to: `repo:${opts.repo}`,
         attrs: { pattern: rootRule.pattern },
-        readers: opts.readers,
       });
     }
   }

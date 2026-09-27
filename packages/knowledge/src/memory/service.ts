@@ -31,7 +31,7 @@ import type {
   Provenance,
   RecordRef,
 } from "../types.ts";
-import { intersectReaders, newId, opt, parseJson } from "../util.ts";
+import { newId, opt, parseJson } from "../util.ts";
 import { defaultMemoryPolicy } from "./policy.ts";
 
 /** bun:sqlite `strict:true` bind values; JSON columns are pre-stringified. */
@@ -45,7 +45,6 @@ interface MemoryRow {
   content: string;
   tags: string;
   status: string;
-  readers: string;
   entity_ids: string;
   facts: string;
   provenance: string;
@@ -73,7 +72,6 @@ function rowToMemory(row: MemoryRow): Memory {
     content: row.content,
     tags: parseJson<string[]>(row.tags, []),
     status: row.status as MemoryStatus,
-    readers: parseJson<string[]>(row.readers, []),
     entityIds: parseJson<string[]>(row.entity_ids, []),
     facts: parseJson<FactInput[]>(row.facts, []),
     provenance: parseJson<Provenance[]>(row.provenance, []),
@@ -105,7 +103,6 @@ function toParams(memory: Memory): SqlParams {
     content: memory.content,
     tags: JSON.stringify(memory.tags),
     status: memory.status,
-    readers: JSON.stringify(memory.readers),
     entityIds: JSON.stringify(memory.entityIds),
     facts: JSON.stringify(memory.facts),
     provenance: JSON.stringify(memory.provenance),
@@ -149,7 +146,6 @@ function applyPatch(memory: Memory, patch: MemoryPatch): Memory {
     next.content = content;
   }
   if (patch.tags !== undefined) next.tags = patch.tags;
-  if (patch.readers !== undefined) next.readers = patch.readers;
   if (patch.entityIds !== undefined) next.entityIds = patch.entityIds;
   if (patch.facts !== undefined) next.facts = patch.facts;
   if (patch.scope !== undefined) {
@@ -200,18 +196,11 @@ export class MemoryService {
   /**
    * Any actor may propose. Exact duplicates (same scope, normalized
    * content) among proposed/active memories return the existing row
-   * instead of creating a new one — but only when `opts.canSee` says the
-   * proposer may see it; otherwise a new proposal is created, so
-   * proposing can't be used to probe for memories outside one's audience.
+   * instead of creating a new one.
    *
-   * Policy decides auto-activation. An auto-activated memory always gets
-   * the policy's default readers: caller-chosen readers need a review.
+   * Policy decides auto-activation.
    */
-  propose(
-    input: ProposeMemoryInput,
-    actor: Actor,
-    opts: { canSee?: (memory: Memory) => boolean } = {},
-  ): Memory {
+  propose(input: ProposeMemoryInput, actor: Actor): Memory {
     const content = normalizeContent(input.content);
     assertContentLength(content);
     if (input.scope.kind !== "org" && !input.scope.id) {
@@ -232,15 +221,12 @@ export class MemoryService {
     }
 
     const dup = this.findDuplicate(input.scope, content);
-    if (dup && (opts.canSee?.(dup) ?? true)) return dup;
+    if (dup) return dup;
 
     const now = this.clock();
     const proposeInput = { ...input, content };
     const autoActivate = this.policy.autoActivate(proposeInput, actor);
     const status: MemoryStatus = autoActivate ? "active" : "proposed";
-    const readers = autoActivate
-      ? this.policy.defaultReaders(input.scope)
-      : (input.readers ?? this.policy.defaultReaders(input.scope));
 
     const memory: Memory = {
       id: newId("mem"),
@@ -249,7 +235,6 @@ export class MemoryService {
       content,
       tags: input.tags ?? [],
       status,
-      readers,
       entityIds: input.entityIds ?? [],
       facts: input.facts ?? [],
       provenance: input.provenance ?? [],
@@ -674,14 +659,7 @@ export class MemoryService {
     if (!this.graph) return;
     this.graph.assertFacts(
       { key: `memory:${memory.id}`, revision: String(memory.updatedAt) },
-      // A claim is never readable more widely than the memory carrying it.
-      memory.facts.map((fact) => ({
-        ...fact,
-        readers: intersectReaders(
-          fact.readers ?? memory.readers,
-          memory.readers,
-        ),
-      })),
+      memory.facts,
     );
   }
 
@@ -693,13 +671,13 @@ export class MemoryService {
     this.db
       .query(
         `INSERT INTO memories (
-          id, scope_kind, scope_id, kind, content, tags, status, readers,
+          id, scope_kind, scope_id, kind, content, tags, status,
           entity_ids, facts, provenance, created_by, reviewed_by,
           review_note, valid_from, valid_to, supersedes, superseded_by,
           use_count, last_used_at, created_at, updated_at
         ) VALUES (
           $id, $scopeKind, $scopeId, $kind, $content, $tags, $status,
-          $readers, $entityIds, $facts, $provenance, $createdBy,
+          $entityIds, $facts, $provenance, $createdBy,
           $reviewedBy, $reviewNote, $validFrom, $validTo, $supersedes,
           $supersededBy, $useCount, $lastUsedAt, $createdAt, $updatedAt
         )`,
@@ -713,7 +691,7 @@ export class MemoryService {
         `UPDATE memories SET
           scope_kind = $scopeKind, scope_id = $scopeId, kind = $kind,
           content = $content, tags = $tags, status = $status,
-          readers = $readers, entity_ids = $entityIds, facts = $facts,
+          entity_ids = $entityIds, facts = $facts,
           provenance = $provenance, reviewed_by = $reviewedBy,
           review_note = $reviewNote, valid_from = $validFrom,
           valid_to = $validTo, supersedes = $supersedes,

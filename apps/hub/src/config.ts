@@ -6,14 +6,14 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Actor, Principal } from "@atelier/knowledge";
+import type { Actor } from "@atelier/knowledge";
 
 /**
  * What a token may do:
- * - `read`: search, graph, active memories visible to its audience.
+ * - `read`: search, graph, active memories.
  * - `propose`: propose memories, flag them as wrong (agents get this).
  * - `review`: the governance queue: approve/reject/edit/restore/archive/
- *   erase, and read every memory and the audit log regardless of audience.
+ *   erase, and read every memory and the audit log.
  * - `index`: trigger re-indexing.
  */
 export type HubScope = "read" | "propose" | "review" | "index";
@@ -31,18 +31,6 @@ export interface TokenConfig {
   sha256: string;
   actor: Actor;
   scopes: HubScope[];
-  /**
-   * Default audience of this caller's answers: who will see them. A Slack
-   * gateway answering in public channels uses `["org"]`; a personal
-   * assistant for alice uses `["user:alice"]`.
-   */
-  audience: Principal[];
-  /**
-   * Principals a request may name as its audience instead of the default
-   * (a gateway that computes each reply's audience itself). `"*"` allows
-   * any. Default: the `audience` list only.
-   */
-  mayAddress?: Principal[];
 }
 
 export interface RepoConfig {
@@ -51,8 +39,6 @@ export interface RepoConfig {
   branch: string;
   /** Default `https://github.com/<repo>.git`. */
   cloneUrl?: string;
-  /** Default `["org"]`. Private repos should narrow this. */
-  readers?: Principal[];
   includeFiles?: boolean;
   includeExternalDeps?: boolean;
 }
@@ -71,8 +57,6 @@ export interface HubConfig {
   /** DB and repository checkouts live here. */
   dataDir: string;
   tokens: TokenConfig[];
-  /** Group → members, for audience checks (`team:platform` → users). */
-  teams: Record<Principal, Principal[]>;
   repos: RepoConfig[];
   embeddings?: EmbeddingsConfig;
   /** Periodic full re-index (catches missed webhooks); 0 disables. */
@@ -102,7 +86,6 @@ function validateToken(token: TokenConfig, index: number): void {
   for (const scope of token.scopes ?? []) {
     if (!HUB_SCOPES.includes(scope)) fail(`${where}: unknown scope ${scope}`);
   }
-  if (!token.audience?.length) fail(`${where}.audience must not be empty`);
 }
 
 function validateRepo(repo: RepoConfig, index: number): void {
@@ -121,7 +104,6 @@ export function parseConfig(
     port: Number(env.HUB_PORT ?? file.port ?? 4100),
     dataDir: resolve(env.HUB_DATA_DIR ?? file.dataDir ?? ".hub-data"),
     tokens: file.tokens ?? [],
-    teams: file.teams ?? {},
     repos: file.repos ?? [],
     embeddings: file.embeddings,
     reindexIntervalMinutes: file.reindexIntervalMinutes ?? 360,

@@ -70,7 +70,6 @@ const ProvenanceBody = t.Object({
 const PatchBody = t.Object({
   content: t.Optional(t.String()),
   tags: t.Optional(t.Array(t.String())),
-  readers: t.Optional(t.Array(t.String())),
   entityIds: t.Optional(t.Array(t.String())),
   facts: t.Optional(t.Array(FactBody)),
   scope: t.Optional(ScopeBody),
@@ -119,7 +118,6 @@ export function createHubApp(hub: HubServices) {
       token: caller.token,
       actor: caller.actor,
       scopes: [...caller.scopes],
-      audience: caller.audience,
     }))
     .get("/search", ({ caller, query }) =>
       ops.search(hub, caller, {
@@ -127,7 +125,6 @@ export function createHubApp(hub: HubServices) {
         kinds: list(query.kinds) as SearchKind[] | undefined,
         limit: num(query.limit),
         entityId: query.entity,
-        audience: query.audience,
         includeStale: query.stale === "true",
       }),
     )
@@ -136,11 +133,11 @@ export function createHubApp(hub: HubServices) {
     .get("/memories", ({ caller, query }) => {
       const filter = memoryFilter(query);
       if (caller.scopes.has("review")) return hub.memory.list(filter);
-      // Readers: active only, then the audience filter.
+      // Readers see active memories only; reviewers hit the branch above.
       requireScope(caller, "read");
       return hub.memory.list({ ...filter, status: ["active"] }).filter((m) => {
         try {
-          ops.readMemory(hub, caller, m.id, query.audience);
+          ops.readMemory(hub, caller, m.id);
           return true;
         } catch {
           return false;
@@ -151,8 +148,8 @@ export function createHubApp(hub: HubServices) {
       requireScope(caller, "review");
       return hub.memory.reviewQueue(num(query.limit) ?? 50);
     })
-    .get("/memories/:id", ({ caller, params, query }) =>
-      ops.readMemory(hub, caller, params.id, query.audience),
+    .get("/memories/:id", ({ caller, params }) =>
+      ops.readMemory(hub, caller, params.id),
     )
     .post(
       "/memories",
@@ -171,7 +168,6 @@ export function createHubApp(hub: HubServices) {
           kind: t.String(),
           content: t.String(),
           tags: t.Optional(t.Array(t.String())),
-          readers: t.Optional(t.Array(t.String())),
           entityIds: t.Optional(t.Array(t.String())),
           facts: t.Optional(t.Array(FactBody)),
           provenance: t.Optional(t.Array(ProvenanceBody)),
@@ -282,7 +278,6 @@ export function createHubApp(hub: HubServices) {
     .get("/graph/entities", ({ caller, query }) => {
       requireScope(caller, "read");
       return hub.graph.listEntities({
-        audience: caller.audience,
         type: query.type,
         includeRetired: query.retired === "true",
         limit: num(query.limit),
@@ -291,7 +286,6 @@ export function createHubApp(hub: HubServices) {
     })
     .get("/graph/entities/:id", ({ caller, params, query }) =>
       ops.readEntity(hub, caller, decodeURIComponent(params.id), {
-        audience: query.audience,
         asOf: num(query.as_of),
         history: query.history === "true",
       }),
@@ -305,7 +299,6 @@ export function createHubApp(hub: HubServices) {
         types: list(query.types),
         asOf: num(query.as_of),
         limit: num(query.limit),
-        audience: query.audience,
       });
     })
 

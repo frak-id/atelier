@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { openKnowledgeDb } from "../db.ts";
 import { SqliteDocumentStore } from "../documents/store.ts";
-import { ValidationError } from "../errors.ts";
 import { SqliteGraphStore } from "../graph/store.ts";
 import { HashingEmbedder } from "./embedders.ts";
 import { buildFtsQuery, KnowledgeSearch } from "./search.ts";
@@ -12,23 +11,21 @@ function seedMemory(
     id: string;
     content: string;
     status: string;
-    readers: string[];
   }> = {},
 ) {
   const id = overrides.id ?? "mem:1";
   db.query(
     `INSERT INTO memories
-       (id, scope_kind, scope_id, kind, content, tags, status, readers,
+       (id, scope_kind, scope_id, kind, content, tags, status,
         entity_ids, facts, provenance, created_by, valid_from, use_count,
         created_at, updated_at)
      VALUES
-       ($id, 'org', '', 'fact', $content, '[]', $status, $readers,
+       ($id, 'org', '', 'fact', $content, '[]', $status,
         '[]', '[]', '[]', '{"kind":"human","id":"user:a"}', 0, 0, 0, 0)`,
   ).run({
     id,
     content: overrides.content ?? "Kubernetes runs the Atelier control plane",
     status: overrides.status ?? "active",
-    readers: JSON.stringify(overrides.readers ?? ["org"]),
   });
 }
 
@@ -51,14 +48,6 @@ describe("buildFtsQuery", () => {
 });
 
 describe("KnowledgeSearch.search", () => {
-  test("rejects an empty audience", async () => {
-    const db = openKnowledgeDb(":memory:");
-    const search = new KnowledgeSearch(db);
-    await expect(
-      search.search({ text: "x", audience: [] }),
-    ).rejects.toBeInstanceOf(ValidationError);
-  });
-
   test("FTS ranks better matches first", async () => {
     const db = openKnowledgeDb(":memory:");
     seedMemory(db, {
@@ -72,27 +61,10 @@ describe("KnowledgeSearch.search", () => {
     const search = new KnowledgeSearch(db);
     const hits = await search.search({
       text: "kubernetes",
-      audience: ["org"],
       kinds: ["memory"],
     });
     expect(hits[0]?.id).toBe("mem:1");
     expect(hits.every((h) => h.matchedBy.includes("fts"))).toBe(true);
-  });
-
-  test("ACL-filters hits the audience can't read", async () => {
-    const db = openKnowledgeDb(":memory:");
-    seedMemory(db, {
-      id: "mem:secret",
-      content: "kubernetes secret rotation runbook",
-      readers: ["team:secret"],
-    });
-    const search = new KnowledgeSearch(db);
-    const asOrg = await search.search({
-      text: "kubernetes",
-      audience: ["org"],
-      kinds: ["memory"],
-    });
-    expect(asOrg.map((h) => h.id)).not.toContain("mem:secret");
   });
 
   test("defaults to active memories only", async () => {
@@ -102,14 +74,12 @@ describe("KnowledgeSearch.search", () => {
     const search = new KnowledgeSearch(db);
     const hits = await search.search({
       text: "kubernetes",
-      audience: ["org"],
       kinds: ["memory"],
     });
     expect(hits.map((h) => h.id)).toEqual(["mem:active"]);
 
     const includingProposed = await search.search({
       text: "kubernetes",
-      audience: ["org"],
       kinds: ["memory"],
       memoryStatus: ["active", "proposed"],
     });
@@ -127,7 +97,6 @@ describe("KnowledgeSearch.search", () => {
     await search.embedPending({ kinds: ["memory"] });
     const hits = await search.search({
       text: "atelier sandbox",
-      audience: ["org"],
       kinds: ["memory"],
     });
     expect(hits).toHaveLength(1);
@@ -145,7 +114,6 @@ describe("KnowledgeSearch.search", () => {
         name: "@atelier/spec",
         summary: "The SandboxSpec contract",
         attrs: {},
-        readers: ["org"],
       },
     ]);
     const documents = new SqliteDocumentStore(db);
@@ -157,21 +125,18 @@ describe("KnowledgeSearch.search", () => {
         body: "Explains the sandbox spec contract in detail",
         url: "https://example.com/readme",
         entityIds: [],
-        readers: ["org"],
         hash: "h1",
       },
     ]);
     const search = new KnowledgeSearch(db);
     const entityHits = await search.search({
       text: "spec contract",
-      audience: ["org"],
       kinds: ["entity"],
     });
     expect(entityHits[0]?.title).toBe("@atelier/spec (package)");
 
     const docHits = await search.search({
       text: "spec contract",
-      audience: ["org"],
       kinds: ["document"],
     });
     expect(docHits[0]?.url).toBe("https://example.com/readme");

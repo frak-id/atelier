@@ -3,61 +3,30 @@
  * search, indexer) codes against these types; the SQL shape behind them
  * lives in `db.ts`. See `docs/proposals/company-knowledge.md`.
  *
+ * Company knowledge is readable by everyone who can call the hub: there
+ * are no per-record permissions, audiences or reader lists. The only
+ * control over what's visible is what gets ingested in the first place.
+ *
  * Three kinds of record, three lifecycles:
  * - **Memory**: a revocable fact someone may want reviewed, corrected or
  *   erased ("team X owns service Y"). Agents only *propose*; policy or a
  *   human activates. Erase is a hard delete that cascades to everything
  *   derived from it.
  * - **Graph** (entities + facts): structure, mostly *derived* (the code
- *   indexer, approved memories). Facts are temporal: re-asserting a source
- *   invalidates what it no longer says instead of deleting history.
- * - **Documents**: chunked text corpora (repo docs today, a generated code
- *   wiki later). Rebuilt from sources, never edited by hand.
+ *   indexer, approved memories). Facts are temporal: re-asserting a
+ *   source invalidates what it no longer says instead of deleting
+ *   history.
+ * - **Documents**: chunked text corpora (repo docs today, a generated
+ *   code wiki later). Rebuilt from sources, never edited by hand.
  *
  * Timestamps are epoch milliseconds (numbers), ids are opaque strings.
  */
-
-// ── Principals & access ────────────────────────────────────────────────────
-
-/**
- * A principal string: `org` (everyone in the company), `team:<slug>`,
- * `user:<id>`, `channel:<id>`, `repo:<owner/name>`, … Open-ended on purpose;
- * the only built-in meaning is {@link ORG_PRINCIPAL}.
- */
-export type Principal = string;
-
-/** Readable by the whole company. */
-export const ORG_PRINCIPAL = "org";
-
-/**
- * Who a record may be shown to. A record is visible to a reply's
- * {@link Audience} only if *every* audience principal is covered by one of
- * the record's readers (see {@link AccessResolver}). This is the "an answer
- * may only use sources the whole audience can read" rule.
- */
-export type Readers = Principal[];
-
-/**
- * The audience of an answer: the principals it will be shown to (a Slack
- * channel, an issue's visibility, e-mail recipients, one user in a DM).
- * An empty audience is invalid for reads — callers must say who is asking.
- */
-export type Audience = Principal[];
-
-/**
- * Decides whether `principal` is covered by a reader (membership expansion,
- * e.g. `user:alice` ∈ `team:platform`). The default resolver only knows
- * exact matches and that {@link ORG_PRINCIPAL} covers everyone.
- */
-export interface AccessResolver {
-  covers(reader: Principal, principal: Principal): boolean;
-}
 
 // ── Actors, provenance, derivations ────────────────────────────────────────
 
 export type ActorKind = "human" | "agent" | "system";
 
-/** Who did something. `id` is a principal-like string (`user:alice`). */
+/** Who did something. `id` is a stable string (`user:alice`). */
 export interface Actor {
   kind: ActorKind;
   id: string;
@@ -114,7 +83,7 @@ export interface Derivation {
 
 export type MemoryScopeKind = "org" | "team" | "repo" | "channel" | "user";
 
-/** What a memory is about / who it applies to (not who may read it). */
+/** What a memory is about (not a confidentiality boundary). */
 export interface MemoryScope {
   kind: MemoryScopeKind;
   /** Empty string for `org`. */
@@ -154,7 +123,6 @@ export interface Memory {
   content: string;
   tags: string[];
   status: MemoryStatus;
-  readers: Readers;
   /** Graph entities this memory is about (`package:@atelier/spec`, …). */
   entityIds: string[];
   /**
@@ -186,8 +154,6 @@ export interface ProposeMemoryInput {
   kind: MemoryKind;
   content: string;
   tags?: string[];
-  /** Defaults to readers derived from the scope (see memory policy). */
-  readers?: Readers;
   entityIds?: string[];
   facts?: FactInput[];
   provenance?: Provenance[];
@@ -201,7 +167,6 @@ export interface ProposeMemoryInput {
 export interface MemoryPatch {
   content?: string;
   tags?: string[];
-  readers?: Readers;
   entityIds?: string[];
   facts?: FactInput[];
   scope?: MemoryScope;
@@ -225,12 +190,11 @@ export interface MemoryFilter {
 
 /**
  * Decides whether a proposal activates without review. Default: only
- * `user`-scoped `preference`s auto-activate; everything else needs a human.
+ * `user`-scoped `preference`s auto-activate; everything else needs a
+ * human.
  */
 export interface MemoryPolicy {
   autoActivate(input: ProposeMemoryInput, actor: Actor): boolean;
-  /** Readers when the proposal doesn't set them. */
-  defaultReaders(scope: MemoryScope): Readers;
 }
 
 // ── Audit ──────────────────────────────────────────────────────────────────
@@ -303,7 +267,6 @@ export interface Entity {
   /** Short human description (package.json `description`, README lede). */
   summary?: string;
   attrs: Record<string, unknown>;
-  readers: Readers;
   /**
    * Set when the source that produced the entity stopped mentioning it (a
    * package removed from the repo). Kept so historical facts still resolve;
@@ -350,7 +313,6 @@ export interface Fact {
   to: string;
   attrs: Record<string, unknown>;
   source: FactSource;
-  readers: Readers;
   /** World time: when it became true / stopped being true. */
   validFrom: number;
   validTo?: number;
@@ -364,7 +326,6 @@ export interface FactInput {
   from: string;
   to: string;
   attrs?: Record<string, unknown>;
-  readers?: Readers;
   validFrom?: number;
 }
 
@@ -385,7 +346,6 @@ export interface NeighborQuery {
   depth?: number;
   /** Graph as of this world time; default now (current facts only). */
   asOf?: number;
-  audience: Audience;
   limit?: number;
 }
 
@@ -409,7 +369,6 @@ export interface Document {
   /** Revision the text was taken at (commit sha). */
   revision?: string;
   entityIds: string[];
-  readers: Readers;
   /** Content hash, lets re-indexing skip unchanged chunks. */
   hash: string;
   updatedAt: number;
@@ -423,7 +382,6 @@ export type SearchKind = "memory" | "entity" | "document";
 
 export interface SearchQuery {
   text: string;
-  audience: Audience;
   kinds?: SearchKind[];
   limit?: number;
   /** Memory statuses to include (default `["active"]`). */
@@ -463,8 +421,6 @@ export interface IndexRepositoryInput {
   repo: string;
   /** Commit sha (or any revision label) of the checkout. */
   revision: string;
-  /** Default `[ORG_PRINCIPAL]`; private repos should pass narrower readers. */
-  readers?: Readers;
   /** Base URL for citations, e.g. `https://github.com/owner/name/blob/<rev>`. */
   webUrl?: string;
   /** Emit one `file` entity per source file (default false: packages only). */
@@ -497,7 +453,6 @@ export interface RepositoryIndex {
 // ── Store interfaces (implemented in graph/ and documents/) ─────────────────
 
 export interface EntityFilter {
-  audience: Audience;
   type?: EntityType;
   /** Entities last asserted by this source. */
   sourceKey?: string;
@@ -521,14 +476,13 @@ export interface GraphStore {
    * `retiredAt`, never deletes). Returns how many were retired.
    */
   retireEntities(sourceKey: string, keepIds: string[]): number;
-  /** Unfiltered by audience: callers enforce access. */
   getEntity(id: string): Entity | undefined;
   listEntities(filter: EntityFilter): Entity[];
   /**
    * Replaces the fact set of `source.key`: facts not currently valid are
    * inserted, identical current facts are left alone, current facts of the
    * source absent from `facts` are invalidated (`validTo` and
-   * `invalidatedAt` = now). Identity is (type, from, to, attrs, readers).
+   * `invalidatedAt` = now). Identity is (type, from, to, attrs).
    */
   assertFacts(
     source: FactSource,
@@ -540,18 +494,17 @@ export interface GraphStore {
    * (history included) with `hard` — the erasure path. Returns the count.
    */
   retractSource(sourceKey: string, opts?: { hard?: boolean }): number;
-  /** Facts touching an entity, visible to the audience. */
+  /** Facts touching an entity. */
   factsFor(
     entityId: string,
-    opts: {
-      audience: Audience;
+    opts?: {
       direction?: Direction;
       asOf?: number;
       /** Include invalidated facts (full history). */
       includeHistory?: boolean;
     },
   ): Fact[];
-  /** Breadth-first expansion; only visible entities and facts. */
+  /** Breadth-first expansion. */
   neighbors(query: NeighborQuery): Subgraph;
 }
 
@@ -564,7 +517,6 @@ export interface DocumentStore {
     collection: string,
     docs: DocumentInput[],
   ): { upserted: number; unchanged: number; removed: number };
-  /** Unfiltered by audience: callers enforce access. */
   get(id: string): Document | undefined;
   list(
     collection: string,

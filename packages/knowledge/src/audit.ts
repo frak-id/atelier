@@ -97,7 +97,7 @@ export class AuditLog {
     params.limit = filter.limit ?? 100;
     const rows = this.db
       .query(
-        `SELECT * FROM audit ${where} ORDER BY at DESC, id DESC LIMIT $limit`,
+        `SELECT * FROM audit ${where} ORDER BY at DESC, rowid DESC LIMIT $limit`,
       )
       .all(params) as AuditRow[];
     return rows.map(rowToEntry);

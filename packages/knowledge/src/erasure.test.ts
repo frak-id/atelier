@@ -37,10 +37,10 @@ describe("eraseRecords", () => {
     ).run();
     db.query(
       `INSERT INTO facts
-         (id, type, from_id, to_id, fingerprint, source_key, readers,
+         (id, type, from_id, to_id, fingerprint, source_key,
           valid_from, recorded_at)
        VALUES ('f1', 'owns', 'team:payments', 'service:billing', 'fp',
-       'memory:m1', '[]', 0, 0)`,
+       'memory:m1', 0, 0)`,
     ).run();
 
     derivations.link(

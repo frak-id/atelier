@@ -1,35 +1,24 @@
 /**
- * Audience-scoped hybrid search: FTS5 (bm25) and, when an embedder is
- * configured, brute-force vector similarity, fused with Reciprocal Rank
- * Fusion. Visibility is enforced in-process (over-fetch, then filter) so
- * ACL-hidden hits don't starve the result page.
+ * Hybrid search over company knowledge: FTS5 (bm25) and, when an embedder
+ * is configured, brute-force vector similarity, fused with Reciprocal Rank
+ * Fusion.
  */
 import type { Database } from "bun:sqlite";
-import { ValidationError } from "../errors.ts";
 import type {
-  AccessResolver,
   Embedder,
   MemoryStatus,
   Provenance,
-  Readers,
   SearchHit,
   SearchKind,
   SearchQuery,
 } from "../types.ts";
-import {
-  defaultAccessResolver,
-  isVisible,
-  opt,
-  parseJson,
-  sha256,
-} from "../util.ts";
+import { opt, parseJson, sha256 } from "../util.ts";
 
 const RRF_K = 60;
 
 interface Candidate {
   kind: SearchKind;
   id: string;
-  readers: Readers;
   entityIds: string[];
   title: string;
   snippet: string;
@@ -83,25 +72,19 @@ function dot(a: Float32Array, b: Float32Array): number {
 
 export interface KnowledgeSearchOptions {
   embedder?: Embedder;
-  access?: AccessResolver;
 }
 
 export class KnowledgeSearch {
   private readonly embedder: Embedder | undefined;
-  private readonly access: AccessResolver;
 
   constructor(
     private readonly db: Database,
     opts: KnowledgeSearchOptions = {},
   ) {
     this.embedder = opts.embedder;
-    this.access = opts.access ?? defaultAccessResolver;
   }
 
   async search(query: SearchQuery): Promise<SearchHit[]> {
-    if (query.audience.length === 0) {
-      throw new ValidationError("search requires a non-empty audience");
-    }
     const kinds = query.kinds ?? (["memory", "entity", "document"] as const);
     const limit = query.limit ?? 20;
     const overFetch = Math.max(limit * 5, 50);
@@ -166,9 +149,6 @@ export class KnowledgeSearch {
 
     const hits: SearchHit[] = [];
     for (const { candidate, score, matchedBy } of scored) {
-      if (!isVisible(candidate.readers, query.audience, this.access)) {
-        continue;
-      }
       if (query.entityId && !this.matchesEntity(candidate, query.entityId)) {
         continue;
       }
@@ -301,7 +281,7 @@ export class KnowledgeSearch {
     });
     const rows = this.db
       .query(
-        `SELECT m.id, m.content, m.tags, m.readers, m.entity_ids,
+        `SELECT m.id, m.content, m.tags, m.entity_ids,
                 m.provenance,
                 snippet(memories_fts, 0, '', '', '…', 12) AS snippet
          FROM memories_fts
@@ -314,7 +294,6 @@ export class KnowledgeSearch {
       id: string;
       content: string;
       tags: string;
-      readers: string;
       entity_ids: string;
       provenance: string;
       snippet: string;
@@ -322,7 +301,6 @@ export class KnowledgeSearch {
     return rows.map((row) => ({
       kind: "memory" as const,
       id: row.id,
-      readers: parseJson(row.readers, []),
       entityIds: parseJson(row.entity_ids, []),
       title: memoryTitle(row.content),
       snippet: row.snippet || truncate(row.content),
@@ -333,7 +311,7 @@ export class KnowledgeSearch {
   private ftsEntities(ftsQuery: string, limit: number): Candidate[] {
     const rows = this.db
       .query(
-        `SELECT e.id, e.type, e.name, e.summary, e.readers,
+        `SELECT e.id, e.type, e.name, e.summary,
                 snippet(entities_fts, 2, '', '', '…', 12) AS snippet
          FROM entities_fts
          JOIN entities e ON e.rowid = entities_fts.rowid
@@ -346,13 +324,11 @@ export class KnowledgeSearch {
       type: string;
       name: string;
       summary: string | null;
-      readers: string;
       snippet: string;
     }[];
     return rows.map((row) => ({
       kind: "entity" as const,
       id: row.id,
-      readers: parseJson(row.readers, []),
       entityIds: [row.id],
       title: `${row.name} (${row.type})`,
       snippet: row.snippet || truncate(row.summary ?? ""),
@@ -362,7 +338,7 @@ export class KnowledgeSearch {
   private ftsDocuments(ftsQuery: string, limit: number): Candidate[] {
     const rows = this.db
       .query(
-        `SELECT d.id, d.title, d.body, d.url, d.entity_ids, d.readers,
+        `SELECT d.id, d.title, d.body, d.url, d.entity_ids,
                 snippet(documents_fts, 1, '', '', '…', 20) AS snippet
          FROM documents_fts
          JOIN documents d ON d.rowid = documents_fts.rowid
@@ -376,13 +352,11 @@ export class KnowledgeSearch {
       body: string;
       url: string | null;
       entity_ids: string;
-      readers: string;
       snippet: string;
     }[];
     return rows.map((row) => ({
       kind: "document" as const,
       id: row.id,
-      readers: parseJson(row.readers, []),
       entityIds: parseJson(row.entity_ids, []),
       title: row.title,
       snippet: row.snippet || truncate(row.body),
@@ -403,7 +377,7 @@ export class KnowledgeSearch {
     });
     const rows = this.db
       .query(
-        `SELECT m.id, m.content, m.readers, m.entity_ids, m.provenance,
+        `SELECT m.id, m.content, m.entity_ids, m.provenance,
                 em.vector AS vector
          FROM embeddings em
          JOIN memories m ON m.id = em.owner_id
@@ -413,7 +387,6 @@ export class KnowledgeSearch {
       .all(params) as {
       id: string;
       content: string;
-      readers: string;
       entity_ids: string;
       provenance: string;
       vector: Uint8Array;
@@ -421,7 +394,6 @@ export class KnowledgeSearch {
     return this.rankByVector(rows, queryVector, limit).map((row) => ({
       kind: "memory" as const,
       id: row.id,
-      readers: parseJson(row.readers, []),
       entityIds: parseJson(row.entity_ids, []),
       title: memoryTitle(row.content),
       snippet: truncate(row.content),
@@ -436,7 +408,7 @@ export class KnowledgeSearch {
     if (!this.embedder) return [];
     const rows = this.db
       .query(
-        `SELECT e.id, e.type, e.name, e.summary, e.readers,
+        `SELECT e.id, e.type, e.name, e.summary,
                 em.vector AS vector
          FROM embeddings em
          JOIN entities e ON e.id = em.owner_id
@@ -448,13 +420,11 @@ export class KnowledgeSearch {
       type: string;
       name: string;
       summary: string | null;
-      readers: string;
       vector: Uint8Array;
     }[];
     return this.rankByVector(rows, queryVector, limit).map((row) => ({
       kind: "entity" as const,
       id: row.id,
-      readers: parseJson(row.readers, []),
       entityIds: [row.id],
       title: `${row.name} (${row.type})`,
       snippet: truncate(row.summary ?? ""),
@@ -468,7 +438,7 @@ export class KnowledgeSearch {
     if (!this.embedder) return [];
     const rows = this.db
       .query(
-        `SELECT d.id, d.title, d.body, d.url, d.entity_ids, d.readers,
+        `SELECT d.id, d.title, d.body, d.url, d.entity_ids,
                 em.vector AS vector
          FROM embeddings em
          JOIN documents d ON d.id = em.owner_id
@@ -480,13 +450,11 @@ export class KnowledgeSearch {
       body: string;
       url: string | null;
       entity_ids: string;
-      readers: string;
       vector: Uint8Array;
     }[];
     return this.rankByVector(rows, queryVector, limit).map((row) => ({
       kind: "document" as const,
       id: row.id,
-      readers: parseJson(row.readers, []),
       entityIds: parseJson(row.entity_ids, []),
       title: row.title,
       snippet: truncate(row.body),

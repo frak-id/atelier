@@ -1,9 +1,7 @@
 /**
  * `/mcp`: the knowledge tools for agents: a worker in an Atelier sandbox,
  * an Open-Inspect session, a developer's own harness. Each session is bound
- * to the token that initialized it; tools inherit that token's scopes and
- * audience, so an agent answering in a public channel can't read a team's
- * private memories by asking.
+ * to the token that initialized it; tools inherit that token's scopes.
  *
  * Stateful sessions (a transport per client), like `apps/server`'s `/mcp`:
  * OpenCode's MCP client stalls on the stateless handshake.

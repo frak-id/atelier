@@ -1,110 +1,135 @@
-# Company knowledge: governed memory, knowledge graph, code index
+# Company knowledge: what the company knows, available to every agent
 
 > Status: **first slice implemented** on `feat/company-knowledge`
-> (`packages/knowledge`, `apps/hub`). Builds on
+> (`packages/knowledge`, `apps/hub`): memory governance, graph, search, a
+> structural repo indexer, the hub (REST + MCP + push webhook). **Direction
+> revised** (this doc): the knowledge base is built from company *sources*
+> (Slack, GitHub, Linear, Notion, e-mail) and from LLM-written *codebase
+> recaps*, not from code. Storage moves to Postgres + pgvector.
+> Builds on
 > [`research/company-agent-prior-art.md`](../research/company-agent-prior-art.md)
-> (phases 2–3) and the Open-Inspect integration
+> and the Open-Inspect integration
 > ([`integrations/open-inspect`](../../integrations/open-inspect/README.md)).
 
-## Why this slice first
+## What goes in
 
-The research found the "ticket/Slack → sandbox → PR" loop well covered.
-Open-Inspect on Atelier already runs it. What nobody ships is:
+| Content | From | How it's kept fresh |
+|---|---|---|
+| **Codebase recaps** | An agent in an Atelier sandbox started from the repo's prebuild. One recap per repo, plus one per package/area for monorepos and complex codebases | On push, only the recaps of areas whose files changed are regenerated |
+| **Conversations** | Slack channels and threads | Events API + backfill with a cursor |
+| **Tickets and code discussion** | Linear issues and comments; GitHub issues, PRs, reviews, discussions | Webhooks + backfill |
+| **Documents** | Notion pages and databases | Periodic sync (Notion has no reliable change webhooks) |
+| **E-mail** (later) | Selected shared mailboxes | Gmail push / IMAP poll |
+| **Memories** | Proposed by agents or people, approved by a human | Governed lifecycle (below) |
 
-1. **Governed memory**: facts agents learn, reviewed by humans, correctable,
-   bulk-retirable on a context switch, and **erasable end-to-end**.
-2. **A code knowledge layer re-indexed on push**, answering "who owns /
-   who imports / how does X work" without spawning a sandbox.
-3. **Audience-correct retrieval**: an answer in a public channel must not
-   use a private source.
+**No code is stored.** Agents that need code read it in a sandbox. The
+structural indexer (workspaces, dependencies, CODEOWNERS) stays as a helper:
+it tells the recap job which areas a push touched and gives the LLM a map of
+the repo.
 
-These are also the parts every later piece (concierge, workers, Open-Inspect
-sessions, a developer's own harness) consumes, through one MCP endpoint. So
-they come before the channels, which Open-Inspect covers for now.
+## Access: company-wide, no filtering
 
-## Shape
+Everything in the knowledge base is readable by every agent and person that
+can call the hub. There are no per-record permissions, audiences or identity
+mapping.
 
-```
-packages/knowledge  (@atelier/knowledge: pure domain, Bun + bun:sqlite, no server)
-  types.ts            the contract
-  db.ts               schema (FTS5 external-content tables + triggers), user_version migrations
-  memory/             MemoryService (lifecycle, policy), audit.ts, derivations.ts, erasure.ts
-  graph/ documents/   SqliteGraphStore (temporal facts), SqliteDocumentStore
-  search/             KnowledgeSearch (FTS5 + vectors, RRF), embedders
-  indexer/            indexRepository: checkout → RepositoryIndex (pure)
-  apply.ts            RepositoryIndex → stores
+- **Hub tokens** keep outsiders out, and **scopes** separate reading,
+  proposing, reviewing and indexing.
+- **What is ingested is the only control.** Each connector syncs an explicit
+  allowlist (channels, Notion spaces, Linear teams, repos, mailboxes).
+  Whatever is synced is visible to everyone. Default: public Slack channels
+  only; no DMs, no private channels, no personal mailboxes unless listed.
+- **Caveat:** an agent that answers *outsiders* (e.g. on a public repo's
+  issues) must not get the hub's MCP, or it can quote internal knowledge.
 
-apps/hub            (@atelier/hub: Elysia deployable)
-  /api  REST          search, memories + review queue + erase, graph, index runs
-  /mcp  MCP           knowledge_search, memory_propose, memory_flag, graph_entity,
-                      graph_neighbors, index_status
-  /webhooks/github    push → IndexRunner (fetch → index → apply → embed)
-```
+## Data model
 
-The hub imports only `@atelier/knowledge`. It does not import `apps/server`,
-same extraction rule as the research doc's §2.
+| Layer | What | Notes |
+|---|---|---|
+| **Sources** | A connector instance + its allowlist + sync cursor | `slack`, `github`, `linear`, `notion`, `email`, `recap` |
+| **Items** | One record per thread, issue, PR, page, e-mail, recap | Source id + URL, author, timestamps, title, body, links. Upserted on edit, **erased** when deleted at the source |
+| **Chunks + embeddings** | Search units | A Slack thread is chunked as a conversation, not per message |
+| **Summaries** | LLM-derived: thread and ticket digests, decision logs | Linked to their items in `derivations`: erasing an item erases what was built from it |
+| **Memories** | Durable facts, human-approved | Unchanged: propose → review → active → stale/archived → erase |
+| **Graph** | Repos, packages, teams, people, tickets, channels and the links between them | "PR #12 fixes LIN-340, discussed in this thread". Temporal facts per source |
 
-## Decisions
+## Storage: Postgres + pgvector
+
+Slack, Linear, GitHub and Notion history is hundreds of thousands to millions
+of prose chunks, which is where vector search earns its keep, and where
+sqlite's brute-force scan stops working. One Postgres keeps items, chunks,
+vectors (HNSW), full-text search (`tsvector`), memories, graph and audit in
+one transactional store, so an erase (item → chunks → vectors → summaries →
+audit) stays atomic. A standalone vector DB would split that across two
+systems. The first slice's sqlite store is ported; its tests carry over.
+
+## Access by LLMs
+
+The hub's MCP (`knowledge_search`, `memory_propose`, `memory_flag`,
+`graph_entity`, `graph_neighbors`, `index_status`, plus `item_get` for full
+threads/pages) is the only way in. Wiring it into agents:
+
+1. **Launchpad / Atelier sandboxes**: the company toolbox adds the hub's MCP
+   entry with a hub token, so every harness (pi-web, opencode, …) can search
+   company knowledge while it works.
+2. **Open-Inspect sessions**: same MCP entry, plus a post-session step that
+   proposes memories from the thread.
+3. **Later, a hub concierge** with a chat surface in Launchpad: answers from
+   the knowledge base and launches workspaces through Atelier's API.
+
+## Plan
+
+1. Drop the permission layer (done) and **port to Postgres + pgvector**, with
+   the sources → items → chunks model.
+2. **Codebase recaps** (headless pi, above) + **GitHub connector**
+   (issues, PRs, reviews).
+3. **Slack** connector (public channels allowlist).
+4. **Linear**, then **Notion**.
+5. **Wire the MCP** into the Launchpad toolbox and Open-Inspect.
+6. **E-mail** (shared mailboxes only).
+7. Concierge + Launchpad chat.
+
+## Hub configuration (decided)
+
+| Setting | Default | Notes |
+|---|---|---|
+| `llm.baseUrl` | `http://atelier-cliproxy.atelier-system.svc.cluster.local:8317` | The cluster's cliproxy. Any Anthropic- or OpenAI-compatible endpoint works |
+| `llm.api` | `anthropic-messages` | or `openai-completions` |
+| `llm.model` | `claude-sonnet-5` | Used for recaps and summaries |
+| `llm.thinking` | `medium` | |
+| `HUB_LLM_API_KEY` (env) | — | cliproxy client key; never in the JSON config |
+| `retention.slackMonths` | `6` | Slack messages older than this are not synced and are erased by a daily sweep (with what was derived from them) |
+
+## Codebase recaps: a headless pi explores the repo
+
+The LLM decides the granularity, not a fixed rule. A recap run starts a
+headless [pi](https://pi.dev) with the hub's LLM settings:
+
+1. **Plan** (first run, or when a push touches files no area covers): pi
+   explores the checkout, fed the structural map (workspaces, dependencies,
+   CODEOWNERS), and writes `areas.json`: a list of areas `{id, title, paths}`
+   sized to be explainable in one recap. A small repo gets one area; a
+   monorepo gets one per app/package, or per group of small packages.
+2. **Recap**: one pi run per area writes `<area>.md` (purpose, architecture,
+   key flows, entry points, conventions, gotchas, how it connects to other
+   areas), plus one repo overview.
+3. **On push**: the diff since the last recapped revision maps to the areas
+   whose `paths` match; only those are regenerated, given their previous
+   recap and the diff.
+
+Recaps become documents (source `recap`) and `documented_by` facts in the
+graph. pi runs with `read, grep, find, ls, write` only (no `bash`), a
+throwaway config dir and an environment holding only the LLM key, in the
+hub's shallow checkout. Moving the run into an Atelier sandbox built from the
+repo's prebuild (for repos that need their toolchain to be understood) is a
+later executor behind the same interface.
+
+## Decisions (first slice, still valid)
 
 | Decision | Why |
 |---|---|
-| **sqlite (bun:sqlite + FTS5), not Postgres + pgvector yet** | Same operational footprint as the Atelier server (one file, one PVC), zero services to run, fully testable in-memory. Brute-force cosine is fine to ~100k vectors. The stores sit behind `GraphStore` / `DocumentStore` interfaces; Postgres is a swap when scale or multi-writer needs it |
-| **Raw SQL, not drizzle** | FTS5 external-content tables and triggers aren't modelled by drizzle; the schema is small |
-| **Three record kinds, three lifecycles** | *Memory* is revocable and human-governed. *Graph facts* are derived and temporal. *Documents* are rebuilt from sources. Mixing them is how "erase" ends up impossible |
-| **Agents propose, humans activate** | Default policy auto-activates only user-scoped preferences. Everything else lands in the review queue |
-| **Erase is a hard delete with a cascade** | Erasing a memory deletes it, its FTS rows and embeddings, and every graph fact it asserted (history included), in one transaction with its audit entry. Records a memory *owns* are erased by owner; artifacts built *from* it and stored as their own records (a summary, a wiki chunk quoting it, an `external` transcript reported to `ErasureHook`s) go through the `derivations` table, which producers must `link`. Nothing links yet: the code wiki (next steps) is its first producer. The audit trail records *that* it was erased, by whom and the cascade counts, never the content |
-| **Temporal facts, asserted per source** | A source (`indexer:<repo>`, `memory:<id>`) re-asserts its whole set. Facts it no longer states are invalidated (`validTo`), not deleted, so "what did X depend on last month" works (`asOf`) |
-| **Memories can carry facts** | "team:payments owns service:billing" as a structured claim, asserted under `memory:<id>` while active, retracted when flagged/archived, deleted on erase. This is how human knowledge enters the graph |
-| **Audience rule enforced in the store layer** | A record is used only if every audience principal is covered by one of its readers (group membership via an `AccessResolver`). Search over-fetches and filters so ACL-filtered hits don't starve results |
-| **Deterministic indexer first, LLM wiki later** | Workspaces, manifests, internal deps, cross-package imports, CODEOWNERS, markdown docs chunked by heading. Cheap, exact, re-runs on every push. The indexer output (`RepositoryIndex`) is plain JSON, so it can be produced anywhere, including an Atelier sandbox |
-| **Pluggable embeddings** | `HashingEmbedder` (deterministic, offline, dev/tests) or any OpenAI-compatible `/embeddings` endpoint. Vectors are keyed by `(record, model)` + content hash, so model switches and edits re-embed lazily |
-
-## Next steps (ordered)
-
-1. **Console: review queue + audit** (`apps/console`): approve / edit /
-   reject / merge, bulk archive by tag and date, erase with the report shown.
-   The REST API is ready for it.
-2. **Wire agents to the hub**:
-   - Atelier: a `hub` MCP entry in the company skills toolbox, so every
-     sandbox harness gets `knowledge_search` / `memory_propose` with a
-     per-sandbox agent token.
-   - Open-Inspect: extend `integrations/open-inspect` so sessions receive the
-     hub MCP server, and a post-session hook proposes memories from the
-     thread (the "memory curator" role).
-3. **Index in a sandbox from the prebuild** (research §5, layer 2):
-   `IndexRunner.checkout/extract` become "spawn an Atelier sandbox from the
-   repo's prebuild, run `indexRepository`, return the JSON". Same stores.
-   Then add the **LLM code wiki** as another document collection
-   (`wiki:<repo>`), regenerated per changed package only.
-4. **Atelier prerequisites** from the research's phase 0 that the hub now
-   needs: service-account API keys (the hub's Atelier identity), push →
-   prebuild refresh (the same webhook can fan out), headless ACP permission
-   policy.
-5. **Concierge**: a cheap, sandbox-less agent in the hub that answers from
-   `knowledge_search` + graph, and hands a brief to a worker (Open-Inspect
-   session or Atelier sandbox) when a change is needed. Channels via Chat SDK
-   once Open-Inspect's bots are not enough.
-6. **Evals** before anything structural (SCIP): 20–30 real questions against
-   the current graph + docs + memory.
-
-## Known limitations
-
-- **Shared entity ids across sources.** An entity asserted by several
-  sources (`team:platform` in two repos' CODEOWNERS) records only the last
-  asserting source, so the other source's re-index won't retire it. Harmless
-  today (a stale team entity still resolves), but a per-source entity table
-  is needed before retirement drives anything.
-- **Duplicate proposals across audiences.** A proposer who can't see an
-  existing identical memory creates a second proposal rather than learning
-  the first exists. Reviewers merge them.
-- **A forced re-index requested during a run** is folded into the follow-up
-  run; `?wait=true` returns the in-flight run, not the forced one.
-
-## Open questions
-
-- Who reviews org-scoped memories: per-team owners from CODEOWNERS (the
-  graph already knows them) or a single knowledge owner?
-- Should `ownership` facts from CODEOWNERS and from approved memories be
-  reconciled (conflict surfaced in the review queue)?
-- Identity: hub principals (`user:alice`) vs Atelier user ids vs Slack/GitHub
-  ids. A small identity map is needed before real ACLs from channels.
+| **Three lifecycles** | *Memory* is revocable and human-governed. *Graph facts* are derived and temporal. *Items/documents* mirror their source. Mixing them is how "erase" ends up impossible |
+| **Agents propose, humans activate** | Only a user's own preferences auto-activate |
+| **Erase is a hard delete with a cascade** | A record, what it owns (chunks, vectors, the graph facts a memory asserted) and everything linked in `derivations`, in one transaction with a content-free audit entry |
+| **Temporal facts, asserted per source** | Re-asserting a source invalidates what it no longer states instead of deleting it, so past states stay queryable |
+| **Pluggable embeddings** | Any OpenAI-compatible endpoint; a deterministic hashing embedder for tests. Vectors keyed by record, model and content hash |

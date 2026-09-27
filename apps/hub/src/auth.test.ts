@@ -1,11 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  AuthError,
-  mintToken,
-  requireScope,
-  resolveAudience,
-  TokenAuth,
-} from "./auth.ts";
+import { AuthError, mintToken, requireScope, TokenAuth } from "./auth.ts";
 
 const minted = mintToken();
 const auth = new TokenAuth([
@@ -14,8 +8,6 @@ const auth = new TokenAuth([
     sha256: minted.sha256,
     actor: { kind: "agent", id: "agent:slack" },
     scopes: ["read", "propose"],
-    audience: ["org"],
-    mayAddress: ["org", "channel:C1"],
   },
 ]);
 
@@ -43,12 +35,5 @@ describe("TokenAuth", () => {
     const caller = auth.authenticate(minted.token);
     expect(() => requireScope(caller, "read")).not.toThrow();
     expect(() => requireScope(caller, "review")).toThrow(AuthError);
-  });
-
-  test("a request may only address principals the token allows", () => {
-    const caller = auth.authenticate(minted.token);
-    expect(resolveAudience(caller)).toEqual(["org"]);
-    expect(resolveAudience(caller, "channel:C1")).toEqual(["channel:C1"]);
-    expect(() => resolveAudience(caller, ["user:ceo"])).toThrow(/may not/);
   });
 });

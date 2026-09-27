@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { ORG_PRINCIPAL } from "../types.ts";
 import { indexRepository } from "./index.ts";
 import { cleanupFixture, writeFixture } from "./test-helpers.ts";
 
@@ -79,35 +78,30 @@ describe("indexRepository (no .git → walk fallback)", () => {
       from: "package:@acme/console",
       to: "package:@acme/shared",
       attrs: { kind: "dependencies" },
-      readers: [ORG_PRINCIPAL],
     });
     expect(result.facts).toContainEqual({
       type: "imports",
       from: "package:@acme/console",
       to: "package:@acme/shared",
       attrs: { files: 1 },
-      readers: [ORG_PRINCIPAL],
     });
     expect(result.facts).toContainEqual({
       type: "imports",
       from: "file:acme/widgets:apps/console/src/index.ts",
       to: "file:acme/widgets:apps/console/src/local.ts",
       attrs: {},
-      readers: [ORG_PRINCIPAL],
     });
     expect(result.facts).toContainEqual({
       type: "owns",
       from: "team:frontend",
       to: "package:@acme/console",
       attrs: { pattern: "/apps/console/" },
-      readers: [ORG_PRINCIPAL],
     });
     expect(result.facts).toContainEqual({
       type: "owns",
       from: "team:platform",
       to: "repo:acme/widgets",
       attrs: { pattern: "*" },
-      readers: [ORG_PRINCIPAL],
     });
     // packages/shared has no CODEOWNERS rule of its own, so it falls back
     // to the repo-wide catch-all ("*" matches every path).
@@ -116,7 +110,6 @@ describe("indexRepository (no .git → walk fallback)", () => {
       from: "team:platform",
       to: "package:@acme/shared",
       attrs: { pattern: "*" },
-      readers: [ORG_PRINCIPAL],
     });
 
     const doc = result.documents.find((d) =>
@@ -150,20 +143,6 @@ describe("indexRepository (no .git → walk fallback)", () => {
       stats: { ...r.stats, durationMs: 0 },
     });
     expect(strip(first)).toEqual(strip(second));
-  });
-
-  test("defaults readers to [org] and respects custom readers", async () => {
-    root = await writeFixture({
-      "package.json": JSON.stringify({ name: "root" }),
-    });
-    const result = await indexRepository({
-      root,
-      repo: "acme/x",
-      revision: "r1",
-      readers: ["team:secret"],
-    });
-    expect(result.entities.length).toBeGreaterThan(0);
-    for (const e of result.entities) expect(e.readers).toEqual(["team:secret"]);
   });
 });
 

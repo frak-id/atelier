@@ -6,9 +6,7 @@
  */
 import type { Database } from "bun:sqlite";
 import type {
-  AccessResolver,
   AssertReport,
-  Audience,
   Direction,
   Entity,
   EntityFilter,
@@ -19,18 +17,9 @@ import type {
   FactType,
   GraphStore,
   NeighborQuery,
-  Readers,
   Subgraph,
 } from "../types.ts";
-import {
-  canonicalJson,
-  defaultAccessResolver,
-  isVisible,
-  newId,
-  opt,
-  parseJson,
-  sha256,
-} from "../util.ts";
+import { canonicalJson, newId, opt, parseJson, sha256 } from "../util.ts";
 
 interface EntityRow {
   id: string;
@@ -38,7 +27,6 @@ interface EntityRow {
   name: string;
   summary: string | null;
   attrs: string;
-  readers: string;
   source_key: string | null;
   retired_at: number | null;
   created_at: number;
@@ -54,7 +42,6 @@ interface FactRow {
   fingerprint: string;
   source_key: string;
   source_revision: string | null;
-  readers: string;
   valid_from: number;
   valid_to: number | null;
   recorded_at: number;
@@ -68,7 +55,6 @@ function mapEntity(row: EntityRow): Entity {
     name: row.name,
     summary: opt(row.summary),
     attrs: parseJson(row.attrs, {}),
-    readers: parseJson(row.readers, []),
     sourceKey: opt(row.source_key),
     retiredAt: opt(row.retired_at),
     createdAt: row.created_at,
@@ -84,7 +70,6 @@ function mapFact(row: FactRow): Fact {
     to: row.to_id,
     attrs: parseJson(row.attrs, {}),
     source: { key: row.source_key, revision: opt(row.source_revision) },
-    readers: parseJson(row.readers, []),
     validFrom: row.valid_from,
     validTo: opt(row.valid_to),
     recordedAt: row.recorded_at,
@@ -92,33 +77,27 @@ function mapFact(row: FactRow): Fact {
   };
 }
 
-/** Fingerprint identity for fact dedup/diffing: `(type, from, to, attrs, readers)`. */
+/** Fingerprint identity for fact dedup/diffing: `(type, from, to, attrs)`. */
 function fingerprint(
   type: FactType,
   from: string,
   to: string,
   attrs: Record<string, unknown>,
-  readers: Readers,
 ): string {
-  return sha256(
-    canonicalJson({ type, from, to, attrs, readers: [...readers].sort() }),
-  );
+  return sha256(canonicalJson({ type, from, to, attrs }));
 }
 
 export interface SqliteGraphStoreOptions {
-  access?: AccessResolver;
   clock?: () => number;
 }
 
 export class SqliteGraphStore implements GraphStore {
-  private readonly access: AccessResolver;
   private readonly clock: () => number;
 
   constructor(
     private readonly db: Database,
     opts: SqliteGraphStoreOptions = {},
   ) {
-    this.access = opts.access ?? defaultAccessResolver;
     this.clock = opts.clock ?? (() => Date.now());
   }
 
@@ -129,17 +108,16 @@ export class SqliteGraphStore implements GraphStore {
     const now = this.clock();
     const stmt = this.db.query(
       `INSERT INTO entities
-         (id, type, name, summary, attrs, readers, source_key,
+         (id, type, name, summary, attrs, source_key,
           retired_at, created_at, updated_at)
        VALUES
-         ($id, $type, $name, $summary, $attrs, $readers, $sourceKey,
+         ($id, $type, $name, $summary, $attrs, $sourceKey,
           NULL, $now, $now)
        ON CONFLICT(id) DO UPDATE SET
          type = excluded.type,
          name = excluded.name,
          summary = excluded.summary,
          attrs = excluded.attrs,
-         readers = excluded.readers,
          source_key = coalesce($sourceKey, entities.source_key),
          retired_at = NULL,
          updated_at = $now`,
@@ -152,7 +130,6 @@ export class SqliteGraphStore implements GraphStore {
           name: entity.name,
           summary: entity.summary ?? null,
           attrs: JSON.stringify(entity.attrs),
-          readers: JSON.stringify(entity.readers),
           sourceKey: opts.sourceKey ?? null,
           now,
         });
@@ -195,7 +172,6 @@ export class SqliteGraphStore implements GraphStore {
   listEntities(filter: EntityFilter): Entity[] {
     const limit = filter.limit ?? 200;
     const offset = filter.offset ?? 0;
-    const pageSize = Math.max(limit * 5, 50);
     const conditions: string[] = [];
     const params: Record<string, string | number> = {};
     if (filter.type !== undefined) {
@@ -212,34 +188,14 @@ export class SqliteGraphStore implements GraphStore {
     const where =
       conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    const result: Entity[] = [];
-    let skipped = 0;
-    let dbOffset = 0;
-    for (;;) {
-      const rows = this.db
-        .query(
-          `SELECT * FROM entities ${where}
-           ORDER BY created_at, id
-           LIMIT $limit OFFSET $offset`,
-        )
-        .all({ ...params, limit: pageSize, offset: dbOffset }) as EntityRow[];
-      if (rows.length === 0) break;
-      for (const row of rows) {
-        const entity = mapEntity(row);
-        if (!isVisible(entity.readers, filter.audience, this.access)) {
-          continue;
-        }
-        if (skipped < offset) {
-          skipped++;
-          continue;
-        }
-        result.push(entity);
-        if (result.length >= limit) break;
-      }
-      dbOffset += rows.length;
-      if (result.length >= limit || rows.length < pageSize) break;
-    }
-    return result;
+    const rows = this.db
+      .query(
+        `SELECT * FROM entities ${where}
+         ORDER BY created_at, id
+         LIMIT $limit OFFSET $offset`,
+      )
+      .all({ ...params, limit, offset }) as EntityRow[];
+    return rows.map(mapEntity);
   }
 
   assertFacts(
@@ -250,13 +206,12 @@ export class SqliteGraphStore implements GraphStore {
     const now = opts.now ?? this.clock();
     const deduped = new Map<
       string,
-      { input: FactInput; readers: Readers; attrs: Record<string, unknown> }
+      { input: FactInput; attrs: Record<string, unknown> }
     >();
     for (const input of facts) {
-      const readers = input.readers ?? ["org"];
       const attrs = input.attrs ?? {};
-      const fp = fingerprint(input.type, input.from, input.to, attrs, readers);
-      if (!deduped.has(fp)) deduped.set(fp, { input, readers, attrs });
+      const fp = fingerprint(input.type, input.from, input.to, attrs);
+      if (!deduped.has(fp)) deduped.set(fp, { input, attrs });
     }
 
     const currentRows = this.db
@@ -274,11 +229,11 @@ export class SqliteGraphStore implements GraphStore {
     const insert = this.db.query(
       `INSERT INTO facts
          (id, type, from_id, to_id, attrs, fingerprint, source_key,
-          source_revision, readers, valid_from, valid_to, recorded_at,
+          source_revision, valid_from, valid_to, recorded_at,
           invalidated_at)
        VALUES
          ($id, $type, $from, $to, $attrs, $fingerprint, $sourceKey,
-          $sourceRevision, $readers, $validFrom, NULL, $recordedAt, NULL)`,
+          $sourceRevision, $validFrom, NULL, $recordedAt, NULL)`,
     );
     const invalidate = this.db.query(
       `UPDATE facts SET valid_to = $now, invalidated_at = $now
@@ -286,7 +241,7 @@ export class SqliteGraphStore implements GraphStore {
     );
 
     this.db.transaction(() => {
-      for (const [fp, { input, readers, attrs }] of deduped) {
+      for (const [fp, { input, attrs }] of deduped) {
         const existing = current.get(fp);
         if (existing) {
           current.delete(fp);
@@ -302,7 +257,6 @@ export class SqliteGraphStore implements GraphStore {
           fingerprint: fp,
           sourceKey: source.key,
           sourceRevision: source.revision ?? null,
-          readers: JSON.stringify(readers),
           validFrom: input.validFrom ?? now,
           recordedAt: now,
         });
@@ -337,11 +291,10 @@ export class SqliteGraphStore implements GraphStore {
   factsFor(
     entityId: string,
     opts: {
-      audience: Audience;
       direction?: Direction;
       asOf?: number;
       includeHistory?: boolean;
-    },
+    } = {},
   ): Fact[] {
     const rows = this.queryFactsTouching(
       entityId,
@@ -351,9 +304,7 @@ export class SqliteGraphStore implements GraphStore {
       opts.includeHistory ? undefined : this.clock(),
       opts.includeHistory ?? false,
     );
-    return rows
-      .map(mapFact)
-      .filter((fact) => isVisible(fact.readers, opts.audience, this.access));
+    return rows.map(mapFact);
   }
 
   neighbors(query: NeighborQuery): Subgraph {
@@ -385,9 +336,6 @@ export class SqliteGraphStore implements GraphStore {
         );
         for (const row of rows) {
           const fact = mapFact(row);
-          if (!isVisible(fact.readers, query.audience, this.access)) {
-            continue;
-          }
           if (factsById.size >= factLimit) break;
           factsById.set(fact.id, fact);
           const otherId = fact.from === nodeId ? fact.to : fact.from;
@@ -397,9 +345,6 @@ export class SqliteGraphStore implements GraphStore {
           const entity = this.getEntity(otherId);
           if (!entity) continue; // no row: fact kept, no traversal
           if (!asOf && entity.retiredAt) continue;
-          if (!isVisible(entity.readers, query.audience, this.access)) {
-            continue;
-          }
           entitiesById.set(otherId, entity);
           nextFrontier.push(otherId);
         }
@@ -413,7 +358,7 @@ export class SqliteGraphStore implements GraphStore {
     };
   }
 
-  /** Raw fact rows touching `nodeId`, time-filtered but not ACL-filtered. */
+  /** Raw fact rows touching `nodeId`, time-filtered only. */
   private queryFactsTouching(
     nodeId: string,
     direction: Direction,

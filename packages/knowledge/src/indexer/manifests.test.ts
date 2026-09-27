@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { ORG_PRINCIPAL } from "../types.ts";
 import { listRepoFiles } from "./files.ts";
 import { scanManifests } from "./manifests.ts";
 import { cleanupFixture, writeFixture } from "./test-helpers.ts";
@@ -19,7 +18,6 @@ async function scan(
   return scanManifests(root, listed, {
     repo: "acme/widgets",
     revision: "abc123",
-    readers: [ORG_PRINCIPAL],
     includeExternalDeps: false,
     ...opts,
   });
@@ -66,7 +64,6 @@ describe("scanManifests — npm workspaces", () => {
       from: "package:@acme/a",
       to: "package:@acme/b",
       attrs: { kind: "dependencies" },
-      readers: [ORG_PRINCIPAL],
     });
     // external dep skipped without includeExternalDeps
     expect(result.entities.some((e) => e.id === "dependency:npm:lodash")).toBe(
@@ -81,7 +78,6 @@ describe("scanManifests — npm workspaces", () => {
       from: "repo:acme/widgets",
       to: "package:@acme/a",
       attrs: {},
-      readers: [ORG_PRINCIPAL],
     });
     expect(result.warnings).toEqual([]);
   });
@@ -105,7 +101,6 @@ describe("scanManifests — npm workspaces", () => {
       from: "package:@acme/a",
       to: "dependency:npm:lodash",
       attrs: { kind: "dependencies" },
-      readers: [ORG_PRINCIPAL],
     });
   });
 
@@ -157,7 +152,6 @@ describe("scanManifests — Cargo crates", () => {
       from: "crate:widgets-cli",
       to: "crate:widgets-core",
       attrs: { kind: "dependencies" },
-      readers: [ORG_PRINCIPAL],
     });
     // external crate dep never turned into a fact (path/name didn't match)
     expect(result.facts.some((f) => f.to === "crate:serde")).toBe(false);

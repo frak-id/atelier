@@ -1,13 +1,11 @@
 /**
  * Every read and write goes through here, whether it came from REST or MCP,
- * so scope checks, audience resolution and use-tracking can't drift between
- * the two surfaces.
+ * so scope checks and use-tracking can't drift between the two surfaces.
  */
 import {
   type Direction,
   type Entity,
   type Fact,
-  isVisible,
   type Memory,
   type MemoryStatus,
   NotFoundError,
@@ -16,7 +14,7 @@ import {
   type SearchKind,
   type Subgraph,
 } from "@atelier/knowledge";
-import { type Caller, requireScope, resolveAudience } from "./auth.ts";
+import { type Caller, requireScope } from "./auth.ts";
 import type { HubServices } from "./services.ts";
 
 export interface SearchParams {
@@ -24,7 +22,6 @@ export interface SearchParams {
   kinds?: SearchKind[];
   limit?: number;
   entityId?: string;
-  audience?: string[] | string;
   /** Reviewers may also search stale/proposed memories. */
   includeStale?: boolean;
 }
@@ -35,13 +32,11 @@ export async function search(
   params: SearchParams,
 ): Promise<SearchHit[]> {
   requireScope(caller, "read");
-  const audience = resolveAudience(caller, params.audience);
   const memoryStatus: MemoryStatus[] = params.includeStale
     ? ["active", "stale"]
     : ["active"];
   const hits = await hub.search.search({
     text: params.query,
-    audience,
     kinds: params.kinds,
     limit: Math.min(params.limit ?? 10, 50),
     entityId: params.entityId,
@@ -54,49 +49,31 @@ export async function search(
 
 /**
  * A memory as the caller may see it: reviewers see everything (governance
- * needs it); readers only active memories visible to their audience.
- * Invisible and missing look the same, so ids don't leak existence.
+ * needs it); readers only active/stale memories. Missing looks the same
+ * as not-yet-active, so ids don't leak lifecycle state.
  */
 export function readMemory(
   hub: HubServices,
   caller: Caller,
   id: string,
-  audience?: string[] | string,
 ): Memory {
   const memory = hub.memory.get(id);
   if (memory && caller.scopes.has("review")) return memory;
   requireScope(caller, "read");
   const visible =
-    memory &&
-    (memory.status === "active" || memory.status === "stale") &&
-    isVisible(memory.readers, resolveAudience(caller, audience), hub.access);
+    memory && (memory.status === "active" || memory.status === "stale");
   if (!visible) throw new NotFoundError("memory", id);
   return memory;
 }
 
-/** What a non-reviewer learns back from proposing. */
-export interface ProposalReceipt {
-  id: string;
-  status: Memory["status"];
-}
-
-/**
- * Reviewers get the memory back; everyone else a receipt. Duplicate
- * detection only matches memories the caller could already read, so
- * proposing can't confirm or reveal memories outside its audience.
- */
+/** Propose a memory; an exact duplicate returns the existing one. */
 export function proposeMemory(
   hub: HubServices,
   caller: Caller,
   input: ProposeMemoryInput,
-): Memory | ProposalReceipt {
+): Memory {
   requireScope(caller, "propose");
-  const reviewer = caller.scopes.has("review");
-  const memory = hub.memory.propose(input, caller.actor, {
-    canSee: (m) =>
-      reviewer || isVisible(m.readers, caller.audience, hub.access),
-  });
-  return reviewer ? memory : { id: memory.id, status: memory.status };
+  return hub.memory.propose(input, caller.actor);
 }
 
 export function flagMemory(
@@ -119,16 +96,12 @@ export function readEntity(
   hub: HubServices,
   caller: Caller,
   id: string,
-  opts: { audience?: string[] | string; asOf?: number; history?: boolean },
+  opts: { asOf?: number; history?: boolean },
 ): EntityView {
   requireScope(caller, "read");
-  const audience = resolveAudience(caller, opts.audience);
   const entity = hub.graph.getEntity(id);
-  if (!entity || !isVisible(entity.readers, audience, hub.access)) {
-    throw new NotFoundError("entity", id);
-  }
+  if (!entity) throw new NotFoundError("entity", id);
   const facts = hub.graph.factsFor(id, {
-    audience,
     asOf: opts.asOf,
     includeHistory: opts.history,
   });
@@ -145,7 +118,6 @@ export function neighbors(
     types?: string[];
     asOf?: number;
     limit?: number;
-    audience?: string[] | string;
   },
 ): Subgraph {
   requireScope(caller, "read");
@@ -156,6 +128,5 @@ export function neighbors(
     factTypes: opts.types,
     asOf: opts.asOf,
     limit: opts.limit,
-    audience: resolveAudience(caller, opts.audience),
   });
 }

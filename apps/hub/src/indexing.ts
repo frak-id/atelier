@@ -20,7 +20,6 @@ import {
   type KnowledgeDb,
   type KnowledgeSearch,
   newId,
-  ORG_PRINCIPAL,
   type RepositoryIndex,
 } from "@atelier/knowledge";
 import type { RepoConfig } from "./config.ts";
@@ -239,7 +238,6 @@ export class IndexRunner {
         root: dir,
         repo: repo.repo,
         revision: run.revision,
-        readers: repo.readers ?? [ORG_PRINCIPAL],
         webUrl: `https://github.com/${repo.repo}/blob/${run.revision}`,
         includeFiles: repo.includeFiles,
         includeExternalDeps: repo.includeExternalDeps,

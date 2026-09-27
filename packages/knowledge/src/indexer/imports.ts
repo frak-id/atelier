@@ -6,7 +6,7 @@
  * real parser" tradeoff this package's prior-art doc makes for a derived,
  * best-effort index.
  */
-import type { EntityInput, FactInput, Readers } from "../types.ts";
+import type { EntityInput, FactInput } from "../types.ts";
 import { readRepoFile, rpath } from "./files.ts";
 import type { PackageInfo } from "./model.ts";
 import { findOwner, sortOwners } from "./model.ts";
@@ -82,7 +82,6 @@ export interface ImportScanOpts {
   files: string[];
   npmPackages: PackageInfo[];
   crates: { entityId: string; dir: string }[];
-  readers: Readers;
   includeFiles: boolean;
 }
 
@@ -100,7 +99,6 @@ export async function scanImports(
   const facts: FactInput[] = [];
   const warnings: string[] = [];
   const fileSet = new Set(opts.files);
-  const { readers } = opts;
 
   const npmOwners = sortOwners(
     opts.npmPackages.map((p) => ({ dir: p.dir, entityId: p.entityId })),
@@ -126,7 +124,6 @@ export async function scanImports(
         type: "file",
         name: rpath.basename(file),
         attrs: { path: file },
-        readers,
       });
       if (owner) {
         facts.push({
@@ -134,7 +131,6 @@ export async function scanImports(
           from: owner,
           to: fileId,
           attrs: {},
-          readers,
         });
       }
     }
@@ -165,7 +161,6 @@ export async function scanImports(
           from: `file:${opts.repo}:${file}`,
           to: `file:${opts.repo}:${resolved}`,
           attrs: {},
-          readers,
         });
         continue;
       }
@@ -191,7 +186,6 @@ export async function scanImports(
         from,
         to,
         attrs: { files: files.size },
-        readers,
       });
     }
   }

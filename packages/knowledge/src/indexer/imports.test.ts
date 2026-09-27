@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { ORG_PRINCIPAL } from "../types.ts";
 import { listRepoFiles } from "./files.ts";
 import { scanImports } from "./imports.ts";
 import { cleanupFixture, writeFixture } from "./test-helpers.ts";
@@ -37,7 +36,6 @@ describe("scanImports", () => {
         { entityId: "package:@acme/b", name: "@acme/b", dir: "packages/b" },
       ],
       crates: [],
-      readers: [ORG_PRINCIPAL],
       includeFiles: false,
     });
     const importFact = result.facts.find((f) => f.type === "imports");
@@ -46,7 +44,6 @@ describe("scanImports", () => {
       from: "package:@acme/a",
       to: "package:@acme/b",
       attrs: { files: 1 },
-      readers: [ORG_PRINCIPAL],
     });
   });
 
@@ -68,7 +65,6 @@ describe("scanImports", () => {
         { entityId: "package:@acme/a", name: "@acme/a", dir: "packages/a" },
       ],
       crates: [],
-      readers: [ORG_PRINCIPAL],
       includeFiles: true,
     });
 
@@ -83,21 +79,18 @@ describe("scanImports", () => {
       from: "package:@acme/a",
       to: "file:acme/widgets:packages/a/src/index.ts",
       attrs: {},
-      readers: [ORG_PRINCIPAL],
     });
     expect(result.facts).toContainEqual({
       type: "imports",
       from: "file:acme/widgets:packages/a/src/index.ts",
       to: "file:acme/widgets:packages/a/src/helper.ts",
       attrs: {},
-      readers: [ORG_PRINCIPAL],
     });
     expect(result.facts).toContainEqual({
       type: "imports",
       from: "file:acme/widgets:packages/a/src/index.ts",
       to: "file:acme/widgets:packages/a/lib/other.js",
       attrs: {},
-      readers: [ORG_PRINCIPAL],
     });
   });
 });
