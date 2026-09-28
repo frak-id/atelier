@@ -1,7 +1,7 @@
 import { NotFoundError } from "../../../shared/errors.ts";
 import { isAuthBypassed } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
-import type { User } from "../../types.ts";
+import type { DirectoryUser, User } from "../../types.ts";
 import type { UserRepository } from "./user.repository.ts";
 
 const log = createChildLogger("user-service");
@@ -11,6 +11,11 @@ export class UserService {
 
   getAll(): User[] {
     return this.userRepository.getAll();
+  }
+
+  /** Every registered user with their org memberships (no tokens). */
+  listDirectory(): DirectoryUser[] {
+    return this.userRepository.listDirectory();
   }
 
   getById(id: string): User | undefined {

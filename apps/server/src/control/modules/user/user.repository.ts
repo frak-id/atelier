@@ -1,7 +1,7 @@
-import { eq, isNotNull } from "drizzle-orm";
+import { asc, eq, isNotNull } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
-import { users } from "../../db/schema.ts";
-import type { User } from "../../types.ts";
+import { organizations, orgMembers, users } from "../../db/schema.ts";
+import type { DirectoryUser, User } from "../../types.ts";
 
 function rowToUser(row: typeof users.$inferSelect): User {
   return {
@@ -19,6 +19,62 @@ function rowToUser(row: typeof users.$inferSelect): User {
 export class UserRepository {
   getAll(): User[] {
     return getDatabase().select().from(users).all().map(rowToUser);
+  }
+
+  /**
+   * Every user with their org memberships, oldest account first. Built from
+   * one left join (a user with no membership still appears). Deliberately
+   * never selects `github_access_token`.
+   */
+  listDirectory(): DirectoryUser[] {
+    const rows = getDatabase()
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+        personalOrgId: users.personalOrgId,
+        createdAt: users.createdAt,
+        lastLoginAt: users.lastLoginAt,
+        orgId: organizations.id,
+        orgName: organizations.name,
+        orgSlug: organizations.slug,
+        orgPersonal: organizations.personal,
+        role: orgMembers.role,
+      })
+      .from(users)
+      .leftJoin(orgMembers, eq(orgMembers.userId, users.id))
+      .leftJoin(organizations, eq(organizations.id, orgMembers.orgId))
+      .orderBy(asc(users.createdAt), asc(organizations.name))
+      .all();
+
+    const byId = new Map<string, DirectoryUser>();
+    for (const row of rows) {
+      let entry = byId.get(row.id);
+      if (!entry) {
+        entry = {
+          id: row.id,
+          username: row.username,
+          email: row.email,
+          avatarUrl: row.avatarUrl ?? undefined,
+          personalOrgId: row.personalOrgId ?? undefined,
+          createdAt: row.createdAt,
+          lastLoginAt: row.lastLoginAt,
+          organizations: [],
+        };
+        byId.set(row.id, entry);
+      }
+      if (row.orgId && row.orgName && row.orgSlug && row.role) {
+        entry.organizations.push({
+          id: row.orgId,
+          name: row.orgName,
+          slug: row.orgSlug,
+          personal: row.orgPersonal === "true",
+          role: row.role,
+        });
+      }
+    }
+    return [...byId.values()];
   }
 
   getById(id: string): User | undefined {

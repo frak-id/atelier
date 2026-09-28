@@ -37,6 +37,13 @@ export class ToolboxVersionService {
     return this.repository.getById(id);
   }
 
+  /** Which toolbox recorded this artifact ref (or bare registry name).
+   * Lets the spawn seam map an artifact named after a toolbox's PREVIOUS
+   * owner (it was moved; refs are immutable) back to the toolbox. */
+  findToolboxIdByRef(refOrName: string): string | undefined {
+    return this.repository.findToolboxIdByRef(refOrName);
+  }
+
   create(
     toolboxId: string,
     input: {

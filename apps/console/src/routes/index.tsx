@@ -4,6 +4,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2, Pause, Pencil, Play, Rocket, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import {
   sandboxDetailQuery,
   sandboxListQuery,
@@ -49,6 +50,7 @@ import { useAgentEvents } from "@/hooks/use-agent-events";
 import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
 import {
   harnessFromAnnotations,
+  orgIdFromAnnotations,
   ownerFromAnnotations,
   sandboxNameFromAnnotations,
   sandboxStatusPresentation,
@@ -202,7 +204,16 @@ function FleetSessionsSection({ sandboxes }: { sandboxes: SandboxSummary[] }) {
   );
 }
 
+/** Org id → org name, for the fleet's org badges; only orgs the caller
+ * belongs to resolve (a sandbox in an org they've since left just shows no
+ * badge, never a raw id). */
+function useOrgNameById(): Map<string, string> {
+  const { data: orgs } = useQuery(organizationsListQuery());
+  return new Map((orgs ?? []).map((org) => [org.id, org.name] as const));
+}
+
 function SandboxesSection({ sandboxes }: { sandboxes: SandboxSummary[] }) {
+  const orgNameById = useOrgNameById();
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-medium text-muted-foreground">Sandboxes</h2>
@@ -214,7 +225,11 @@ function SandboxesSection({ sandboxes }: { sandboxes: SandboxSummary[] }) {
             String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")),
           )
           .map((sandbox) => (
-            <SandboxRow key={sandbox.id} sandbox={sandbox} />
+            <SandboxRow
+              key={sandbox.id}
+              sandbox={sandbox}
+              orgNameById={orgNameById}
+            />
           ))}
       </div>
     </section>
@@ -242,7 +257,13 @@ function SandboxRepos({
   );
 }
 
-function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
+function SandboxRow({
+  sandbox,
+  orgNameById,
+}: {
+  sandbox: SandboxSummary;
+  orgNameById: Map<string, string>;
+}) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const pause = usePauseSandbox();
@@ -252,6 +273,8 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
   const harness = harnessFromAnnotations(sandbox.annotations);
   const owner = ownerFromAnnotations(sandbox.annotations);
   const name = sandboxNameFromAnnotations(sandbox.annotations);
+  const orgId = orgIdFromAnnotations(sandbox.annotations);
+  const orgName = orgId ? orgNameById.get(orgId) : undefined;
 
   return (
     <Card>
@@ -272,6 +295,7 @@ function SandboxRow({ sandbox }: { sandbox: SandboxSummary }) {
             <Badge variant={status.variant}>{status.label}</Badge>
             {harness ? <Badge variant="outline">{harness}</Badge> : null}
             {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
+            {orgName ? <Badge variant="outline">{orgName}</Badge> : null}
             <LaunchpadBadge
               sandboxId={sandbox.id}
               annotations={sandbox.annotations}

@@ -40,6 +40,27 @@ export interface OrganizationWithRole extends Organization {
   role: OrgMemberRole;
 }
 
+/**
+ * A user as the directory (`GET /api/users`) exposes them: identity + their
+ * memberships, never the stored GitHub token.
+ */
+export interface DirectoryUser {
+  id: string;
+  username: string;
+  email: string;
+  avatarUrl?: string;
+  personalOrgId?: string;
+  createdAt: string;
+  lastLoginAt: string;
+  organizations: {
+    id: string;
+    name: string;
+    slug: string;
+    personal: boolean;
+    role: OrgMemberRole;
+  }[];
+}
+
 export interface ApiKey {
   id: string;
   userId: string;

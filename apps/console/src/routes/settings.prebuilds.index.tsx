@@ -155,7 +155,7 @@ function StoredPrebuildRow({
           <Button asChild variant="outline" size="sm">
             <Link
               to="/settings/launchpad/new"
-              search={{ owner: "user", prebuild: prebuild.ref }}
+              search={{ owner: "", prebuild: prebuild.ref }}
               title="Create a Launchpad starter that boots from this prebuild"
             >
               <Rocket />

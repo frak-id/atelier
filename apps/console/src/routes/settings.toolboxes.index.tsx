@@ -1,8 +1,4 @@
-import type {
-  ToolboxConfig,
-  ToolboxVersion,
-  ToolsetEntry,
-} from "@atelier/spec";
+import type { ToolboxConfig, ToolsetEntry } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -15,12 +11,16 @@ import {
   PinOff,
   Plus,
   Trash2,
+  Upload,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import {
+  type ToolboxVersionWithArtifact,
   toolboxVersionsQuery,
   useDeleteToolboxVersion,
+  usePublishToolboxVersion,
   useSetActiveToolboxVersion,
 } from "@/api/queries/toolbox-versions";
 import { toolboxesListQuery, useDeleteToolbox } from "@/api/queries/toolboxes";
@@ -31,6 +31,14 @@ import { ToolsetsSection } from "@/components/toolsets-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 
@@ -52,9 +60,20 @@ function ToolboxesPage() {
     error,
   } = useQuery(toolboxesListQuery(owner));
   const { data: toolsets } = useQuery(toolsetsListQuery());
+  const { data: orgs } = useQuery(organizationsListQuery());
   const artifactByName = new Map(
     (toolsets ?? []).map((toolset) => [toolset.name, toolset] as const),
   );
+  // Publish requires toolbox-owner access: always true for the personal
+  // scope, owner/admin-of-the-org for an org scope (mirrors the server's
+  // `requireToolboxOwnerAccess`).
+  const orgId = owner.startsWith("org:") ? owner.slice(4) : undefined;
+  const canManage = orgId
+    ? (orgs?.some(
+        (org) =>
+          org.id === orgId && (org.role === "owner" || org.role === "admin"),
+      ) ?? false)
+    : true;
 
   return (
     <div className="space-y-6">
@@ -98,6 +117,7 @@ function ToolboxesPage() {
                 key={toolbox.id}
                 toolbox={toolbox}
                 owner={owner}
+                canManage={canManage}
                 artifact={artifactByName.get(toolboxArtifactName(toolbox))}
               />
             ))}
@@ -112,10 +132,12 @@ function ToolboxesPage() {
 function ToolboxRow({
   toolbox,
   owner,
+  canManage,
   artifact,
 }: {
   toolbox: ToolboxConfig;
   owner: string;
+  canManage: boolean;
   artifact: ToolsetEntry | undefined;
 }) {
   const deleteToolbox = useDeleteToolbox();
@@ -199,7 +221,10 @@ function ToolboxRow({
           {/* Mounted only while open — mirrors ProcessLogs' mount-gate so N
            * toolbox rows don't fire N version queries on page load. */}
           {versionsOpen ? (
-            <ToolboxVersionsPanel toolboxId={toolbox.id} />
+            <ToolboxVersionsPanel
+              toolboxId={toolbox.id}
+              canManage={canManage}
+            />
           ) : null}
         </div>
       </CardContent>
@@ -223,14 +248,23 @@ function ToolboxRow({
 /** Per-toolbox version history: label, description, provenance, pin/unpin,
  * delete, and a "recipe changed since pin" drift badge on the active row
  * (docs/toolbox-versions.md §3, §7). */
-function ToolboxVersionsPanel({ toolboxId }: { toolboxId: string }) {
+function ToolboxVersionsPanel({
+  toolboxId,
+  canManage,
+}: {
+  toolboxId: string;
+  canManage: boolean;
+}) {
   const { data, isPending, isError, error } = useQuery(
     toolboxVersionsQuery(toolboxId),
   );
   const setActive = useSetActiveToolboxVersion();
   const deleteVersion = useDeleteToolboxVersion();
   const [pendingDelete, setPendingDelete] = useState<
-    ToolboxVersion | undefined
+    ToolboxVersionWithArtifact | undefined
+  >();
+  const [pendingPublish, setPendingPublish] = useState<
+    ToolboxVersionWithArtifact | undefined
   >();
 
   if (isPending) return <Skeleton className="mt-2 h-10 w-full" />;
@@ -284,7 +318,24 @@ function ToolboxVersionsPanel({ toolboxId }: { toolboxId: string }) {
             {baseDrifted ? (
               <Badge variant="warning">base image changed since capture</Badge>
             ) : null}
+            {version.artifact ? (
+              <Badge
+                variant={version.artifact.private ? "outline" : "secondary"}
+              >
+                {version.artifact.private ? "private" : "published"}
+              </Badge>
+            ) : null}
             <div className="ml-auto flex shrink-0 gap-1">
+              {canManage && version.artifact?.private ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPendingPublish(version)}
+                >
+                  <Upload />
+                  Publish
+                </Button>
+              ) : null}
               {isActive ? (
                 <Button
                   variant="outline"
@@ -344,6 +395,78 @@ function ToolboxVersionsPanel({ toolboxId }: { toolboxId: string }) {
             deleteVersion.mutate({ toolboxId, versionId: pendingDelete.id });
         }}
       />
+      <PublishVersionDialog
+        toolboxId={toolboxId}
+        version={pendingPublish}
+        onOpenChange={(next) => {
+          if (!next) setPendingPublish(undefined);
+        }}
+      />
     </div>
+  );
+}
+
+/** Confirms flipping a version's artifact from private to shareable: same
+ * bytes, same digest, just a widened audience — so it can be pinned on an
+ * org toolbox or moved into an org and replayed into every member's
+ * sandbox. Lists the artifact's paths and warns to scrub credentials from
+ * them first, since publishing can't be undone. */
+function PublishVersionDialog({
+  toolboxId,
+  version,
+  onOpenChange,
+}: {
+  toolboxId: string;
+  version: ToolboxVersionWithArtifact | undefined;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const publish = usePublishToolboxVersion();
+
+  return (
+    <Dialog open={version !== undefined} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Publish v{version?.label}?</DialogTitle>
+          <DialogDescription>
+            Publishing marks this exact snapshot — same files, same digest — as
+            shareable, so it can be pinned on an org toolbox or moved to an
+            organization and replayed into every member's sandbox. This cannot
+            be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-2">
+          <p className="text-sm text-muted-foreground">
+            This artifact materializes these paths:
+          </p>
+          <ul className="space-y-1 font-mono text-sm">
+            {version?.artifact?.paths.map((path) => (
+              <li key={path}>{path}</li>
+            ))}
+          </ul>
+          <p className="text-sm text-destructive">
+            Make sure none of them contain personal credentials (API keys, auth
+            tokens) before publishing.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            disabled={publish.isPending}
+            onClick={() => {
+              if (version)
+                publish.mutate(
+                  { toolboxId, versionId: version.id },
+                  { onSuccess: () => onOpenChange(false) },
+                );
+            }}
+          >
+            {publish.isPending ? <Loader2 className="animate-spin" /> : null}
+            Publish
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -23,6 +23,7 @@ import {
   ResumeRequestSchema,
   runtimeSurfaceOf,
   SANDBOX_NAME_ANNOTATION,
+  SANDBOX_ORG_ANNOTATION,
   type SandboxSpec,
   SurfacePortsSchema,
   SurfaceProcessesSchema,
@@ -127,18 +128,28 @@ function sandboxLabel(req: CreateSandboxRequest): string {
 }
 
 /**
- * Resolve the caller's org for enrichment: first org membership, falling
- * back to their personal org. Both are synchronous control reads — no org
- * header/param support yet, so multi-org users resolve to their first
- * membership (documented Phase 0 simplification, see PHASE0.md).
+ * The org a spawn runs in (whose secrets, policy and auto-injected toolboxes
+ * it gets). An explicit `requested` org must be one the caller belongs to.
+ * Absent, it's the caller's personal org, else their oldest membership, else
+ * none (spawn bare — an org-less user still gets their own toolboxes).
  */
-function resolveOrgId(
+export function resolveOrgId(
   control: ServerContainer["control"],
   userId: string,
+  requested?: string,
 ): string | undefined {
+  if (requested) {
+    control.orgMemberService.requireMembership(requested, userId);
+    return requested;
+  }
   const memberships = control.orgMemberService.getByUserId(userId);
-  if (memberships[0]) return memberships[0].orgId;
-  return control.userService.getById(userId)?.personalOrgId;
+  const personal = control.userService.getById(userId)?.personalOrgId;
+  if (personal && memberships.some((m) => m.orgId === personal)) {
+    return personal;
+  }
+  return [...memberships].sort((a, b) =>
+    a.joinedAt.localeCompare(b.joinedAt),
+  )[0]?.orgId;
 }
 
 /**
@@ -159,7 +170,14 @@ export async function createSandboxForUser(
   // The body is a spec plus the high-level references the caller picked
   // (`toolboxes` selectors, a `prebuild` recipe); strip them so the runtime
   // only ever sees a resolved spec.
-  const { toolboxes: selectors = [], prebuild, ...specFields } = body;
+  const {
+    toolboxes: selectors = [],
+    prebuild,
+    orgId: requestedOrgId,
+    ...specFields
+  } = body;
+  // Resolved first: an unauthorized org must fail before any build work.
+  const orgId = resolveOrgId(control, user.id, requestedOrgId);
   let spec = specFields as SandboxSpec;
   // A template built from a prebuild carries the recipe, not a pinned ref:
   // resolve it to the current snapshot (idempotent — a cache hit when
@@ -172,7 +190,6 @@ export async function createSandboxForUser(
     spec = { ...spec, source: { snapshot: snapshot.ref } };
   }
   if (selectors.length > 0) onProgress?.("resolving toolboxes…");
-  const orgId = resolveOrgId(control, user.id);
   const authorizedKeys = control.sshKeyService.getValidPublicKeys();
   // The sandbox owner (git user): identity for attribution/display + GitHub
   // token for the injected credential helper.
@@ -243,6 +260,14 @@ export async function createSandboxForUser(
     toolsets,
     processes: surface.processes,
     ports: surface.ports,
+    ...(orgId
+      ? {
+          annotations: {
+            ...enriched.annotations,
+            [SANDBOX_ORG_ANNOTATION]: orgId,
+          },
+        }
+      : {}),
   };
   return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
 }
@@ -594,6 +619,8 @@ export function createV1Routes(container: ServerContainer) {
         "/sandboxes",
         ({ body, user, set }) => {
           const req = body as CreateSandboxRequest;
+          // Fail an org the caller can't use now (403), not in the job.
+          resolveOrgId(control, user.id, req.orgId);
           // Non-blocking spawn: pre-allocate the id so the `202` job carries
           // `metadata.sandboxId` — the console navigates straight to the detail
           // page and shows its loading state (the `creating` record lands a

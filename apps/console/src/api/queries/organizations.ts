@@ -65,7 +65,98 @@ export function useAddOrgMember(orgId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.organizations.members(orgId),
       });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       toast.success("Member added");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useRenameOrganization(orgId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { name?: string; slug?: string }) => {
+      const { data, error } = await api.api
+        .organizations({ id: orgId })
+        .patch(body);
+      if (error)
+        throw new Error(errorMessage(error, "Failed to update organization"));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      toast.success("Organization updated");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useDeleteOrganization() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (orgId: string) => {
+      const { error } = await api.api.organizations({ id: orgId }).delete();
+      if (error)
+        throw new Error(errorMessage(error, "Failed to delete organization"));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      toast.success("Organization deleted");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useUpdateOrgMemberRole(orgId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      userId,
+      role,
+    }: {
+      userId: string;
+      role: OrgMemberRole;
+    }) => {
+      const { error } = await api.api
+        .organizations({ id: orgId })
+        .members({ userId })
+        .patch({ role });
+      if (error)
+        throw new Error(errorMessage(error, "Failed to update member role"));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.organizations.members(orgId),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      toast.success("Role updated");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+/** Removes a member, or — when `userId` is the caller — leaves the org (same
+ * endpoint on the server; `isSelf` only changes the toast copy). */
+export function useRemoveOrgMember(orgId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ userId }: { userId: string; isSelf?: boolean }) => {
+      const { error } = await api.api
+        .organizations({ id: orgId })
+        .members({ userId })
+        .delete();
+      if (error)
+        throw new Error(errorMessage(error, "Failed to remove member"));
+    },
+    onSuccess: (_data, { isSelf }) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.organizations.members(orgId),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
+      toast.success(isSelf ? "Left organization" : "Member removed");
     },
     onError: (error) => toast.error(error.message),
   });

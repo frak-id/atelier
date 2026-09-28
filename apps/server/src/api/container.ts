@@ -265,16 +265,17 @@ export async function resolveSelectedToolboxes(
 ): Promise<ToolsetRef[]> {
   const resolved = await Promise.all(
     selectors.map((selector) => {
-      const parsed = parseToolboxRef(selector);
-      if (!parsed) return undefined;
-      const config = container.control.toolboxService.getByOwnerAndSlug(
-        parsed.owner,
-        parsed.slug,
-      );
+      const config = toolboxForRef(container, selector);
       if (!config || config.build.length === 0 || config.paths.length === 0) {
         return undefined;
       }
-      return resolveToolboxToRef(container, parsed.owner, config);
+      // Build under the toolbox's CURRENT owner (a stale selector may still
+      // name its previous one).
+      return resolveToolboxToRef(
+        container,
+        { type: config.ownerType, id: config.ownerId },
+        config,
+      );
     }),
   );
   return resolved.filter((ref) => ref !== undefined);
@@ -365,21 +366,43 @@ function parseToolboxRef(
 }
 
 /**
+ * The toolbox behind a `tb/…` selector, artifact ref or registry name.
+ *
+ * The owner+slug encoded in the name is the fast path, but it's the owner at
+ * BUILD time: a toolbox moved to another owner (ownership transfer) keeps its
+ * pinned version and older artifacts, all named after the previous owner. The
+ * version table maps those back to the toolbox. A digest-pinned ref is an
+ * exact artifact identity, so it's looked up there first (a new toolbox later
+ * created with the same owner+slug must not claim the moved one's artifact).
+ */
+export function toolboxForRef(
+  container: ServerContainer,
+  ref: string,
+): ToolboxConfig | undefined {
+  const parsed = parseToolboxRef(ref);
+  if (!parsed) return undefined;
+  const { toolboxService, toolboxVersionService } = container.control;
+  const byVersion = () => {
+    const id = toolboxVersionService.findToolboxIdByRef(ref);
+    return id ? toolboxService.find(id) : undefined;
+  };
+  const byName = () =>
+    toolboxService.getByOwnerAndSlug(parsed.owner, parsed.slug);
+  return ref.includes("@")
+    ? (byVersion() ?? byName())
+    : (byName() ?? byVersion());
+}
+
+/**
  * The harness the toolbox behind a single toolset name declares, if any.
- * Viewer-independent (unlike the compose map): looks the toolbox up by the
- * owner+slug encoded in the `tb/<owner>/<slug>` name. Used to enrich the
- * global toolset list so the compose surface can tag any toolset.
+ * Viewer-independent (unlike the compose map). Used to enrich the global
+ * toolset list so the compose surface can tag any toolset.
  */
 export function harnessForToolset(
   container: ServerContainer,
   name: string,
 ): string | undefined {
-  const parsed = parseToolboxRef(name);
-  if (!parsed) return undefined;
-  return container.control.toolboxService.getByOwnerAndSlug(
-    parsed.owner,
-    parsed.slug,
-  )?.harness;
+  return toolboxForRef(container, name)?.harness;
 }
 
 /**
@@ -397,14 +420,9 @@ export function resolveToolboxHarness(
   let userHarness: string | undefined;
   let orgHarness: string | undefined;
   for (const { ref } of refs) {
-    const parsed = parseToolboxRef(ref);
-    if (!parsed) continue;
-    const config = container.control.toolboxService.getByOwnerAndSlug(
-      parsed.owner,
-      parsed.slug,
-    );
+    const config = toolboxForRef(container, ref);
     if (!config?.harness) continue;
-    if (parsed.owner.type === "user") userHarness = config.harness;
+    if (config.ownerType === "user") userHarness = config.harness;
     else orgHarness = config.harness;
   }
   return userHarness ?? orgHarness;
@@ -427,18 +445,13 @@ export function resolveToolboxSurface(
   const ports: PortEntry[] = [];
   const seen = new Set<string>();
   for (const { ref } of refs) {
-    const parsed = parseToolboxRef(ref);
-    if (!parsed) continue;
-    // A toolbox can be present twice (auto-injected + selected); apply once.
-    const key = `${parsed.owner.type}/${parsed.owner.id}/${parsed.slug}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const config = container.control.toolboxService.getByOwnerAndSlug(
-      parsed.owner,
-      parsed.slug,
-    );
-    if (config?.processes) processes.push(...config.processes);
-    if (config?.ports) ports.push(...config.ports);
+    const config = toolboxForRef(container, ref);
+    // A toolbox can be present twice (auto-injected + selected, or under an
+    // old and a new name after a move); apply once.
+    if (!config || seen.has(config.id)) continue;
+    seen.add(config.id);
+    if (config.processes) processes.push(...config.processes);
+    if (config.ports) ports.push(...config.ports);
   }
   return { processes, ports };
 }

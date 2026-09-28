@@ -99,10 +99,14 @@ export class OrganizationRepository {
     return updated;
   }
 
+  /** Delete the org and its memberships together (no FKs to cascade). */
   delete(id: string): boolean {
     const existing = this.getById(id);
     if (!existing) return false;
-    getDatabase().delete(organizations).where(eq(organizations.id, id)).run();
+    getDatabase().transaction((tx) => {
+      tx.delete(orgMembers).where(eq(orgMembers.orgId, id)).run();
+      tx.delete(organizations).where(eq(organizations.id, id)).run();
+    });
     return true;
   }
 

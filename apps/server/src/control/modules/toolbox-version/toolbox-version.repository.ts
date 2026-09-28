@@ -58,6 +58,30 @@ export class ToolboxVersionRepository {
     return row ? rowToVersion(row) : undefined;
   }
 
+  /** The toolbox that recorded an artifact: by exact `ref`, or — for a bare
+   * registry name with no `@digest` (`tb/user/42/pi-web`) — by any version
+   * stored under that name. */
+  findToolboxIdByRef(refOrName: string): string | undefined {
+    const exact = getDatabase()
+      .select({ toolboxId: entityToolboxVersions.toolboxId })
+      .from(entityToolboxVersions)
+      .where(eq(entityToolboxVersions.ref, refOrName))
+      .get();
+    if (exact || refOrName.includes("@")) return exact?.toolboxId;
+    return getDatabase()
+      .select({
+        toolboxId: entityToolboxVersions.toolboxId,
+        ref: entityToolboxVersions.ref,
+      })
+      .from(entityToolboxVersions)
+      .where(sql`instr(${entityToolboxVersions.ref}, ${`${refOrName}@`}) > 0`)
+      .all()
+      .find(
+        ({ ref }) =>
+          ref.startsWith(`${refOrName}@`) || ref.includes(`/${refOrName}@`),
+      )?.toolboxId;
+  }
+
   create(record: ToolboxVersion): ToolboxVersion {
     getDatabase()
       .insert(entityToolboxVersions)

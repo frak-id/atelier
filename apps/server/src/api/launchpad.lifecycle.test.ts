@@ -188,6 +188,23 @@ describe("launch", () => {
     });
   });
 
+  test("a member launching an org starter runs in the starter's org", async () => {
+    const { lifecycle, jobs, created } = setup();
+    const author = newUser();
+    const launcher = newUser();
+    const org = control.organizationService.create("Team", `lp-${userSeq}`);
+    control.orgMemberService.addMember(org.id, author.id, "owner");
+    control.orgMemberService.addMember(org.id, launcher.id, "viewer");
+    const starter = control.starterService.create(
+      { type: "org", id: org.id },
+      starterInput({ recipe: { ...starterInput().recipe, orgId: "nope" } }),
+    );
+
+    const view = lifecycle.launch(launcher, starter.id, {});
+    await settle(jobs, latestJob(launcher.id, view.id));
+    expect(created[0]?.orgId).toBe(org.id);
+  });
+
   test("a failed launch is `failed` with the job's error, and retry relaunches", async () => {
     const { lifecycle, jobs } = setup({ failCreate: true });
     const user = newUser();

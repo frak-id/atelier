@@ -12,6 +12,7 @@ import {
   WorkspacePatchSchema,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
+import { ValidationError } from "../shared/errors.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
 import {
@@ -46,11 +47,17 @@ export function createLaunchpadRoutes(container: ServerContainer) {
     )
     .post(
       "/",
-      ({ user, query, body }) =>
-        control.starterService.create(
-          resolveOwner(control, user.id, query.owner, true),
-          body,
-        ),
+      ({ user, query, body }) => {
+        const owner = resolveOwner(control, user.id, query.owner, true);
+        // A starter is a team's recipe: it belongs to an org (a personal org
+        // counts) and launches in it, whoever launches it.
+        if (owner.type !== "org") {
+          throw new ValidationError(
+            "A Launchpad starter belongs to an organization: use owner=org:<id>",
+          );
+        }
+        return control.starterService.create(owner, body);
+      },
       {
         query: t.Object({ owner: t.Optional(t.String()) }),
         body: StarterInputSchema,

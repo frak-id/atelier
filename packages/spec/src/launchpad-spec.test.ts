@@ -199,10 +199,25 @@ describe("workspacePhase", () => {
 });
 
 describe("starterLaunchRequest", () => {
+  test("runs in the starter's org, never a recipe-supplied one", () => {
+    const request = starterLaunchRequest(
+      {
+        id: "st1",
+        ownerType: "org",
+        ownerId: "team",
+        recipe: { ...recipe, orgId: "elsewhere" },
+      },
+      "t",
+    );
+    expect(request.orgId).toBe("team");
+  });
+
   test("stamps the title and the starter annotation, keeps the recipe", () => {
     const request = starterLaunchRequest(
       {
         id: "st1",
+        ownerType: "org",
+        ownerId: "o1",
         recipe: {
           ...recipe,
           metadata: { team: "growth" },
@@ -214,6 +229,7 @@ describe("starterLaunchRequest", () => {
     );
     expect(request).toEqual({
       ...recipe,
+      orgId: "o1",
       toolboxes: ["tb/org/o1/pi-stack"],
       metadata: { team: "growth", name: "Spring campaign" },
       annotations: {

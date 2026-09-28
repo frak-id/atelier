@@ -1,14 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ExternalLink, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type StarterRecord,
   startersQuery,
   useDeleteStarter,
 } from "@/api/queries/launchpad";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { OwnerScopeSelect } from "@/components/owner-scope-select";
+import { OrgOwnerSelect } from "@/components/org-owner-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,19 +17,28 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 import { LaunchpadIconView } from "@/lib/launchpad";
+import { pickDefaultOrgId } from "@/lib/orgs";
 
 export const Route = createFileRoute("/settings/launchpad/")({
   component: LaunchpadSettingsPage,
 });
 
 function LaunchpadSettingsPage() {
-  const [owner, setOwner] = useState("user");
+  const { data: orgs } = useQuery(organizationsListQuery());
+  const [owner, setOwner] = useState("");
+  // Default to the caller's personal org once it's loaded; the picker still
+  // lets them switch to any other org they belong to.
+  useEffect(() => {
+    if (!owner && orgs && orgs.length > 0) {
+      setOwner(`org:${pickDefaultOrgId(orgs)}`);
+    }
+  }, [orgs, owner]);
   const {
     data: starters,
     isPending,
     isError,
     error,
-  } = useQuery(startersQuery(owner));
+  } = useQuery({ ...startersQuery(owner), enabled: !!owner });
 
   return (
     <div className="space-y-4">
@@ -38,14 +48,14 @@ function LaunchpadSettingsPage() {
           Launchpad
         </Link>
         : a friendly card that boots a prepared workspace (a prebuild,
-        toolboxes, context) and opens the tools you choose. Org starters are
-        visible to every member of the org.
+        toolboxes, context) and opens the tools you choose. A starter belongs to
+        an organization, is visible to its members, and launches with that
+        organization's secrets, policy and toolboxes.
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="w-full space-y-1 sm:max-w-xs">
-          <OwnerScopeSelect
+          <OrgOwnerSelect
             id="starter-scope"
-            personalLabel="My starters"
             value={owner}
             onChange={setOwner}
           />

@@ -50,6 +50,15 @@ export const queryKeys = {
     members: (orgId: string) =>
       [...queryKeys.organizations.all, "members", orgId] as const,
   },
+  users: {
+    all: ["users"] as const,
+    directory: () => [...queryKeys.users.all, "directory"] as const,
+  },
+  transfers: {
+    all: ["transfers"] as const,
+    preview: (from: string, to: string) =>
+      [...queryKeys.transfers.all, "preview", from, to] as const,
+  },
   orgPolicy: {
     all: ["org-policy"] as const,
     detail: (orgId: string) => [...queryKeys.orgPolicy.all, orgId] as const,

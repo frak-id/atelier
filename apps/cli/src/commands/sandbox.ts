@@ -38,6 +38,21 @@ interface UpOpts {
   bake?: boolean;
   toolset: string[];
   toolbox: string[];
+  org?: string;
+}
+
+/** Resolve `--org` (an id or a slug) against the caller's own orgs. */
+async function resolveOrgFlag(api: AtelierApi, org: string): Promise<string> {
+  const me = unwrap(await api.api.me.get());
+  const match = me.organizations.find((o) => o.id === org || o.slug === org);
+  if (!match) {
+    fail(
+      `not a member of an org '${org}' (yours: ${
+        me.organizations.map((o) => o.slug).join(", ") || "none"
+      })`,
+    );
+  }
+  return match.id;
 }
 
 function buildUpSpec(opts: UpOpts): SandboxSpec {
@@ -114,13 +129,21 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
       collect,
       [],
     )
+    .option(
+      "--org <id|slug>",
+      "organization to run in: its secrets, policy and toolboxes (default: your personal org)",
+    )
     .action(async (opts: UpOpts) => {
       const api = ctx.api();
+      const orgId = opts.org ? await resolveOrgFlag(api, opts.org) : undefined;
       const spec = applyToolsets(await resolveUpSpec(api, opts), opts.toolset);
-      // `toolboxes` selectors ride alongside the spec on the create request
-      // (the server resolves + merges them); they aren't part of SandboxSpec.
-      const body =
-        opts.toolbox.length > 0 ? { ...spec, toolboxes: opts.toolbox } : spec;
+      // `toolboxes` selectors and the org ride alongside the spec on the
+      // create request (the server resolves them); they aren't SandboxSpec.
+      const body = {
+        ...spec,
+        ...(opts.toolbox.length > 0 ? { toolboxes: opts.toolbox } : {}),
+        ...(orgId ? { orgId } : {}),
+      };
       // Spawn now answers 202 with a `sandbox-create` job; block on it so the
       // CLI keeps its "boot then print URLs" UX (job.result is the sandbox).
       const job = unwrap(await api.v1.sandboxes.post(body));

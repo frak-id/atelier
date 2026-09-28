@@ -356,15 +356,18 @@ export const LAUNCHPAD_STARTER_ANNOTATION = "atelier.dev/launchpad-starter";
 /**
  * The `CreateSandboxRequest` a launch sends through the seam: the starter's
  * recipe, stamped with the workspace title (the job queue label) and the
- * starter annotation. Server-side only — a consumer never supplies a spec.
+ * starter annotation, and run in the starter's org (its secrets, policy and
+ * toolboxes — whoever launches it). Server-side only — a consumer never
+ * supplies a spec.
  */
 export function starterLaunchRequest(
-  starter: Pick<Starter, "id" | "recipe">,
+  starter: Pick<Starter, "id" | "recipe" | "ownerType" | "ownerId">,
   title: string,
 ): CreateSandboxRequest {
-  const { recipe } = starter;
+  const { orgId: _ignored, ...recipe } = starter.recipe;
   return {
     ...recipe,
+    ...(starter.ownerType === "org" ? { orgId: starter.ownerId } : {}),
     metadata: { ...recipe.metadata, name: title },
     annotations: {
       ...recipe.annotations,

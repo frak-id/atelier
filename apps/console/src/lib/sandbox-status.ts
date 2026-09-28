@@ -1,6 +1,7 @@
 import {
   LAUNCHPAD_STARTER_ANNOTATION,
   SANDBOX_NAME_ANNOTATION,
+  SANDBOX_ORG_ANNOTATION,
   type SandboxStatus,
 } from "@atelier/spec";
 import type { BadgeVariant } from "@/components/ui/badge";
@@ -55,4 +56,12 @@ export function launchpadStarterFromAnnotations(
   annotations: Record<string, string> | undefined,
 ): string | undefined {
   return annotations?.[LAUNCHPAD_STARTER_ANNOTATION];
+}
+
+/** The org a sandbox runs in (`orgId` on `POST /v1/sandboxes`, absent for
+ * one spawned before this annotation existed), or undefined. */
+export function orgIdFromAnnotations(
+  annotations: Record<string, string> | undefined,
+): string | undefined {
+  return annotations?.[SANDBOX_ORG_ANNOTATION];
 }

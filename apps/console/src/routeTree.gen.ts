@@ -26,6 +26,7 @@ import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
 import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsToolboxesRouteImport } from "./routes/settings.toolboxes"
 import { Route as SettingsToolsetsRouteImport } from "./routes/settings.toolsets"
+import { Route as SettingsUsersRouteImport } from "./routes/settings.users"
 import { Route as LaunchpadWWorkspaceIdRouteImport } from "./routes/launchpad.w.$workspaceId"
 import { Route as SandboxesSandboxIdIndexRouteImport } from "./routes/sandboxes.$sandboxId.index"
 import { Route as SandboxesSandboxIdSessionsRouteImport } from "./routes/sandboxes.$sandboxId.sessions"
@@ -124,6 +125,11 @@ const SettingsToolsetsRoute = SettingsToolsetsRouteImport.update({
   path: "/toolsets",
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsUsersRoute = SettingsUsersRouteImport.update({
+  id: "/users",
+  path: "/users",
+  getParentRoute: () => SettingsRoute,
+} as any)
 const LaunchpadWWorkspaceIdRoute = LaunchpadWWorkspaceIdRouteImport.update({
   id: "/launchpad/w/$workspaceId",
   path: "/launchpad/w/$workspaceId",
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
   "/settings/toolsets": typeof SettingsToolsetsRoute
+  "/settings/users": typeof SettingsUsersRoute
   "/launchpad/": typeof LaunchpadIndexRoute
   "/settings/": typeof SettingsIndexRoute
   "/launchpad/w/$workspaceId": typeof LaunchpadWWorkspaceIdRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolsets": typeof SettingsToolsetsRoute
+  "/settings/users": typeof SettingsUsersRoute
   "/launchpad": typeof LaunchpadIndexRoute
   "/settings": typeof SettingsIndexRoute
   "/launchpad/w/$workspaceId": typeof LaunchpadWWorkspaceIdRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
   "/settings/toolsets": typeof SettingsToolsetsRoute
+  "/settings/users": typeof SettingsUsersRoute
   "/launchpad/": typeof LaunchpadIndexRoute
   "/settings/": typeof SettingsIndexRoute
   "/launchpad/w/$workspaceId": typeof LaunchpadWWorkspaceIdRoute
@@ -293,6 +302,7 @@ export interface FileRouteTypes {
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
     | "/settings/toolsets"
+    | "/settings/users"
     | "/launchpad/"
     | "/settings/"
     | "/launchpad/w/$workspaceId"
@@ -319,6 +329,7 @@ export interface FileRouteTypes {
     | "/settings/secrets"
     | "/settings/ssh-keys"
     | "/settings/toolsets"
+    | "/settings/users"
     | "/launchpad"
     | "/settings"
     | "/launchpad/w/$workspaceId"
@@ -350,6 +361,7 @@ export interface FileRouteTypes {
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
     | "/settings/toolsets"
+    | "/settings/users"
     | "/launchpad/"
     | "/settings/"
     | "/launchpad/w/$workspaceId"
@@ -496,6 +508,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsToolsetsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    "/settings/users": {
+      id: "/settings/users"
+      path: "/users"
+      fullPath: "/settings/users"
+      preLoaderRoute: typeof SettingsUsersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     "/launchpad/w/$workspaceId": {
       id: "/launchpad/w/$workspaceId"
       path: "/launchpad/w/$workspaceId"
@@ -640,6 +659,7 @@ interface SettingsRouteChildren {
   SettingsSshKeysRoute: typeof SettingsSshKeysRoute
   SettingsToolboxesRoute: typeof SettingsToolboxesRouteWithChildren
   SettingsToolsetsRoute: typeof SettingsToolsetsRoute
+  SettingsUsersRoute: typeof SettingsUsersRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
@@ -655,6 +675,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsSshKeysRoute: SettingsSshKeysRoute,
   SettingsToolboxesRoute: SettingsToolboxesRouteWithChildren,
   SettingsToolsetsRoute: SettingsToolsetsRoute,
+  SettingsUsersRoute: SettingsUsersRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 

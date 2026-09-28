@@ -37,6 +37,11 @@ export class ToolboxService {
     return this.repository.listAutoInject(owner);
   }
 
+  /** Non-throwing lookup by id. */
+  find(id: string): ToolboxConfig | undefined {
+    return this.repository.getById(id);
+  }
+
   get(id: string): ToolboxConfig {
     const config = this.repository.getById(id);
     if (!config) throw new NotFoundError("ToolboxConfig", id);

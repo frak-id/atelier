@@ -132,6 +132,11 @@ export type SandboxSummary = Static<typeof SandboxSummarySchema>;
  * only: the id stays the sandbox's identity everywhere. */
 export const SANDBOX_NAME_ANNOTATION = "atelier.dev/name";
 
+/** Annotation carrying the id of the organization a sandbox was created in
+ * (whose secrets, policy and toolboxes it got). Display only: enrichment
+ * happens once, at create. */
+export const SANDBOX_ORG_ANNOTATION = "atelier.dev/org-id";
+
 /** Longest accepted sandbox display name, in characters. */
 export const SANDBOX_NAME_MAX_LENGTH = 64;
 

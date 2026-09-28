@@ -52,6 +52,25 @@ export class OrgMemberService {
     return member;
   }
 
+  /**
+   * Add `userId` on behalf of `actorId`: owner/admin only, and only an owner
+   * may grant `owner` (same rule as `updateRole`).
+   */
+  inviteMember(
+    orgId: string,
+    actorId: string,
+    userId: string,
+    role: OrgMemberRole = "member",
+  ): OrgMember {
+    const actor = this.requireRole(orgId, actorId, ["owner", "admin"]);
+    if (role === "owner" && actor.role !== "owner") {
+      throw new ForbiddenError("Only an owner can add an owner");
+    }
+    return this.addMember(orgId, userId, role);
+  }
+
+  /** Unchecked insert — for system paths (org creation, personal org
+   * bootstrap). Caller-driven adds go through `inviteMember`. */
   addMember(
     orgId: string,
     userId: string,
@@ -78,39 +97,70 @@ export class OrgMemberService {
     return member;
   }
 
-  updateRole(orgId: string, userId: string, role: OrgMemberRole): OrgMember {
-    const member = this.getMembership(orgId, userId);
-    if (!member) throw new NotFoundError("OrgMember", `${orgId}/${userId}`);
-
+  /**
+   * Change `targetId`'s role on behalf of `actorId`. Owners manage anyone;
+   * admins manage non-owners only and can't grant `owner`. An org always
+   * keeps at least one owner.
+   */
+  updateRole(
+    orgId: string,
+    actorId: string,
+    targetId: string,
+    role: OrgMemberRole,
+  ): OrgMember {
+    const actor = this.requireRole(orgId, actorId, ["owner", "admin"]);
+    const member = this.getMembership(orgId, targetId);
+    if (!member) throw new NotFoundError("OrgMember", `${orgId}/${targetId}`);
+    if (
+      actor.role !== "owner" &&
+      (member.role === "owner" || role === "owner")
+    ) {
+      throw new ForbiddenError("Only an owner can manage owners");
+    }
     if (member.role === "owner" && role !== "owner") {
-      const ownerCount = this.orgMemberRepository
-        .getByOrgId(orgId)
-        .filter((m) => m.role === "owner").length;
-      if (ownerCount === 1) {
-        throw new ValidationError("Cannot remove the last owner");
-      }
+      this.assertNotLastOwner(orgId);
     }
 
     this.orgMemberRepository.updateRole(member.id, role);
-    const updated = this.orgMemberRepository.getByOrgAndUser(orgId, userId);
+    const updated = this.orgMemberRepository.getByOrgAndUser(orgId, targetId);
     if (!updated) throw new Error("Failed to update member");
+    log.info({ orgId, actorId, targetId, role }, "Member role changed");
     return updated;
   }
 
-  removeMember(orgId: string, userId: string): void {
-    const member = this.getMembership(orgId, userId);
-    if (!member) throw new NotFoundError("OrgMember", `${orgId}/${userId}`);
-
-    if (member.role === "owner") {
-      const ownerCount = this.orgMemberRepository
-        .getByOrgId(orgId)
-        .filter((m) => m.role === "owner").length;
-      if (ownerCount === 1) {
-        throw new ValidationError("Cannot remove the last owner");
+  /**
+   * Remove `targetId` from the org on behalf of `actorId`. Anyone may leave
+   * (`actorId === targetId`); otherwise owners remove anyone and admins
+   * remove non-owners. The last owner can never leave or be removed.
+   */
+  removeMember(orgId: string, actorId: string, targetId: string): void {
+    const member = this.getMembership(orgId, targetId);
+    if (actorId === targetId) {
+      if (!member)
+        throw new ForbiddenError("Not a member of this organization");
+    } else {
+      const actor = this.requireRole(orgId, actorId, ["owner", "admin"]);
+      if (!member) {
+        throw new NotFoundError("OrgMember", `${orgId}/${targetId}`);
+      }
+      if (actor.role !== "owner" && member.role === "owner") {
+        throw new ForbiddenError("Only an owner can remove an owner");
       }
     }
+    if (member.role === "owner") this.assertNotLastOwner(orgId);
 
-    this.orgMemberRepository.deleteByOrgAndUser(orgId, userId);
-    log.info({ orgId, userId }, "Member removed from organization");
+    this.orgMemberRepository.deleteByOrgAndUser(orgId, targetId);
+    log.info({ orgId, actorId, targetId }, "Member removed from organization");
+  }
+
+  private assertNotLastOwner(orgId: string): void {
+    const owners = this.orgMemberRepository
+      .getByOrgId(orgId)
+      .filter((m) => m.role === "owner").length;
+    if (owners <= 1) {
+      throw new ValidationError(
+        "An organization needs at least one owner: promote someone else first",
+      );
+    }
   }
 }

@@ -21,6 +21,10 @@ import { SandboxSpecSchema, ToolboxSelectorSchema } from "./sandbox-spec.ts";
  * hit when unchanged) to the current snapshot, overriding `source`. A plain
  * `SandboxSpec` (neither field) is still a valid body, so the
  * CLI/editor paths are unchanged.
+ *
+ * `orgId` picks the organization the sandbox runs in: its secrets, policy
+ * and auto-injected toolboxes. The caller must be a member; absent, it's
+ * the caller's personal org.
  */
 export const CreateSandboxRequestSchema = Type.Composite(
   [
@@ -28,6 +32,7 @@ export const CreateSandboxRequestSchema = Type.Composite(
     Type.Object({
       toolboxes: Type.Optional(Type.Array(ToolboxSelectorSchema)),
       prebuild: Type.Optional(PrebuildSpecSchema),
+      orgId: Type.Optional(Type.String({ minLength: 1 })),
     }),
   ],
   { additionalProperties: false, $id: "CreateSandboxRequest" },

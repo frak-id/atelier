@@ -27,6 +27,10 @@ import {
   OrganizationRepository,
   OrganizationService,
 } from "./modules/organization/index.ts";
+import {
+  OwnershipTransferRepository,
+  OwnershipTransferService,
+} from "./modules/ownership-transfer/index.ts";
 import { SecretRepository, SecretService } from "./modules/secret/index.ts";
 import {
   ServerConfigRepository,
@@ -69,6 +73,9 @@ export function createControlContainer() {
   );
   const starterService = new StarterService(new StarterRepository());
   const workspaceService = new WorkspaceService(new WorkspaceRepository());
+  const ownershipTransferService = new OwnershipTransferService(
+    new OwnershipTransferRepository(),
+  );
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
 
@@ -87,6 +94,7 @@ export function createControlContainer() {
     gitHubRepoService,
     starterService,
     workspaceService,
+    ownershipTransferService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
     enrichSpec: (

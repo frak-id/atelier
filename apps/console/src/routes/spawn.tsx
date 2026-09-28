@@ -6,10 +6,12 @@ import type {
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Loader2, Rocket } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { useSpawnSandbox } from "@/api/queries/sandboxes";
+import { OrgSelect } from "@/components/org-select";
 import { PrebuildContents } from "@/components/prebuild-contents";
 import { RepoSpawnCard } from "@/components/repos/repo-spawn-card";
 import { ToolboxPicker } from "@/components/toolbox-picker";
@@ -27,6 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAllToolboxes } from "@/hooks/use-all-toolboxes";
 import { formatRelativeTime } from "@/lib/formatters";
+import { pickDefaultOrgId } from "@/lib/orgs";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
 
 interface SpawnSearch {
@@ -57,6 +60,15 @@ function SpawnPage() {
   const [selectedToolboxes, setSelectedToolboxes] = useState<Set<string>>(
     new Set(),
   );
+  const { data: orgs } = useQuery(organizationsListQuery());
+  const [orgId, setOrgId] = useState("");
+  // Default to the caller's personal org once it's loaded; the picker still
+  // lets them run the spawn in any other org they belong to.
+  useEffect(() => {
+    if (!orgId && orgs && orgs.length > 0) {
+      setOrgId(pickDefaultOrgId(orgs));
+    }
+  }, [orgs, orgId]);
 
   /** The spec skeleton every spawn path starts from: the shared resources.
    * The harness and any tool surfaces (vscode, browser, …) come from the
@@ -79,7 +91,12 @@ function SpawnPage() {
   }
 
   function spawnFromSpec(request: CreateSandboxRequest) {
-    spawn.mutate(request, {
+    // The org this sandbox runs in (its secrets, policy, auto-injected
+    // toolboxes): the picker's choice, unless the request already names one
+    // (e.g. typed directly into the JSON editor).
+    const withOrg: CreateSandboxRequest =
+      orgId && request.orgId === undefined ? { ...request, orgId } : request;
+    spawn.mutate(withOrg, {
       // `data` is the 202 `sandbox-create` job; its pre-allocated
       // `metadata.sandboxId` lets us jump straight to the detail page, which
       // renders the `creating` record and live-updates as the spawn runs.
@@ -107,6 +124,8 @@ function SpawnPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">Spawn a sandbox</h1>
+
+      <OrgPickerCard orgId={orgId} onOrgIdChange={setOrgId} />
 
       <RepoSpawnCard
         repo={search.repo}
@@ -146,6 +165,34 @@ function SpawnPage() {
         spawnPending={spawn.isPending}
       />
     </div>
+  );
+}
+
+// ── organization picker ─────────────────────────────────────────────────
+
+function OrgPickerCard({
+  orgId,
+  onOrgIdChange,
+}: {
+  orgId: string;
+  onOrgIdChange: (orgId: string) => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="space-y-2 pt-4">
+        <div className="max-w-xs">
+          <OrgSelect
+            id="spawn-org"
+            value={orgId}
+            onChange={onOrgIdChange}
+            markPersonal
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Uses this organization's secrets, policy and toolboxes.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

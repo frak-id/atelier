@@ -2,25 +2,39 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
 import { startersQuery } from "@/api/queries/launchpad";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import { StarterEditor } from "@/components/launchpad/starter-editor";
 import { Skeleton } from "@/components/ui/skeleton";
+import { pickDefaultOrgId } from "@/lib/orgs";
 
 export const Route = createFileRoute("/settings/launchpad/$id")({
   validateSearch: (search: Record<string, unknown>) => ({
-    owner: typeof search.owner === "string" ? search.owner : "user",
+    // "" (or a stale "user" deep link) resolves to the caller's personal org
+    // below — a starter always belongs to an org now.
+    owner: typeof search.owner === "string" ? search.owner : "",
   }),
   component: EditStarterPage,
 });
 
 function EditStarterPage() {
   const { id } = Route.useParams();
-  const { owner } = Route.useSearch();
+  const { owner: ownerParam } = Route.useSearch();
+  const ownerIsOrg = ownerParam.startsWith("org:");
+  const orgsQuery = useQuery({
+    ...organizationsListQuery(),
+    enabled: !ownerIsOrg,
+  });
+  const owner = ownerIsOrg
+    ? ownerParam
+    : orgsQuery.data
+      ? `org:${pickDefaultOrgId(orgsQuery.data)}`
+      : "";
   const {
     data: starters,
     isPending,
     isError,
     error,
-  } = useQuery(startersQuery(owner));
+  } = useQuery({ ...startersQuery(owner), enabled: !!owner });
   const starter = starters?.find((s) => s.id === id);
 
   return (

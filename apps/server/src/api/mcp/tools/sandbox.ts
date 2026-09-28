@@ -32,9 +32,10 @@ export function registerSandboxTools(
       title: "Create sandbox",
       description:
         "Boot a new sandbox from a SandboxSpec, optionally with " +
-        "`toolboxes` selectors and/or a `prebuild` recipe. Applies your " +
-        "org's + your own auto-injected toolboxes and org policy, same as " +
-        "the CLI/dashboard.",
+        "`toolboxes` selectors and/or a `prebuild` recipe. Applies the " +
+        "org's (`orgId`, default: your personal org) + your own " +
+        "auto-injected toolboxes, its secrets and org policy, same as the " +
+        "CLI/dashboard.",
       inputSchema: {
         spec: z.record(z.string(), z.unknown()),
         toolboxes: z
@@ -45,9 +46,15 @@ export function registerSandboxTools(
           .record(z.string(), z.unknown())
           .optional()
           .describe("A prebuild recipe to resolve as this sandbox's source"),
+        orgId: z
+          .string()
+          .optional()
+          .describe(
+            "Organization to run in (see whoami); default: your personal org",
+          ),
       },
     },
-    safeTool(async ({ spec, toolboxes, prebuild }) => {
+    safeTool(async ({ spec, toolboxes, prebuild, orgId }) => {
       // Same boundary validation Elysia's schema guard gives the HTTP route.
       const body = parseSpec(
         CreateSandboxRequestSchema,
@@ -55,6 +62,7 @@ export function registerSandboxTools(
           ...spec,
           ...(toolboxes ? { toolboxes } : {}),
           ...(prebuild ? { prebuild } : {}),
+          ...(orgId ? { orgId } : {}),
         },
         "CreateSandboxRequest",
       );

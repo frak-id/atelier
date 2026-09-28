@@ -2,19 +2,25 @@ import type { PrebuildRecord, StarterInput } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { serverConfigQuery } from "@/api/queries/server-config";
 import { StarterEditor } from "@/components/launchpad/starter-editor";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDefaultImage } from "@/hooks/use-repo-catalog";
 import { prebuildTitle } from "@/lib/formatters";
+import { pickDefaultOrgId } from "@/lib/orgs";
 import { blankStarterInput, withStoredPrebuild } from "@/lib/starter-recipe";
 
 export const Route = createFileRoute("/settings/launchpad/new")({
   validateSearch: (
     search: Record<string, unknown>,
   ): { owner: string; prebuild?: string } => ({
-    owner: typeof search.owner === "string" ? search.owner : "user",
+    // "" (and any non-"org:<id>" value, e.g. a stale "user" deep link) means
+    // "not chosen yet": NewStarterPage resolves it to the caller's personal
+    // org once organizations load. A starter can never be created under the
+    // `user` scope any more — it always belongs to an org.
+    owner: typeof search.owner === "string" ? search.owner : "",
     // Start from a stored prebuild (its ref): "Create a Launchpad starter"
     // on the prebuilds page.
     ...(typeof search.prebuild === "string" && search.prebuild
@@ -39,7 +45,7 @@ function starterFromPrebuild(
 }
 
 function NewStarterPage() {
-  const { owner, prebuild: prebuildRef } = Route.useSearch();
+  const { owner: ownerParam, prebuild: prebuildRef } = Route.useSearch();
   // The form seeds its image from the server's default: wait for it (an
   // error falls back to the built-in default) instead of baking in a guess.
   const config = useQuery(serverConfigQuery());
@@ -48,9 +54,23 @@ function NewStarterPage() {
     ...prebuildsListQuery(),
     enabled: !!prebuildRef,
   });
+  // A starter always belongs to an org: an explicit `org:<id>` search param
+  // (set by the starters list's scope picker) wins; anything else ("", a
+  // stale "user" deep link) resolves to the caller's personal org.
+  const ownerIsOrg = ownerParam.startsWith("org:");
+  const orgsQuery = useQuery({
+    ...organizationsListQuery(),
+    enabled: !ownerIsOrg,
+  });
+  const owner = ownerIsOrg
+    ? ownerParam
+    : orgsQuery.data
+      ? `org:${pickDefaultOrgId(orgsQuery.data)}`
+      : "";
 
   const waitingOnPrebuild = !!prebuildRef && prebuildsList.isPending;
-  const pending = config.isPending || waitingOnPrebuild;
+  const waitingOnOrg = !ownerIsOrg && !owner;
+  const pending = config.isPending || waitingOnPrebuild || waitingOnOrg;
 
   let initial: StarterInput | undefined;
   let notice: string | undefined;
