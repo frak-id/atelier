@@ -19,6 +19,18 @@ cargo build --release --target x86_64-unknown-linux-musl
 
 Kata Containers needs `/dev/kvm` on the host. Standard cloud VMs without nested virtualization will not run sandboxes — use bare metal. If sandbox pods stay in `ContainerCreating`, check that the RuntimeClass named by `kubernetes.runtimeClass` exists (`kata-atelier-clh` in the shipped config) and `/dev/kvm` is present. If they stay `Pending`, the node may be missing the `kata-deploy.katacontainers.io/default=true` label the RuntimeClass selects on.
 
+## Sandbox Memory: the Pod Limit Must Bound the Whole VM
+
+The host charges a sandbox VM's guest RAM to the pod's memory cgroup, so if guest RAM + VMM overhead exceeds `limits.memory` + RuntimeClass overhead, the host OOM-kills the **whole VM** once the guest fills its RAM with page cache, which a build always does eventually. The pod restarts and in-flight work is lost; prebuild pods died this way on hetzner-atelier.
+
+- **Go runtime (`kata-atelier-clh`)**: guest RAM = limit + `default_memory` (2 GiB), always larger than the cgroup. Cannot be made safe by tuning the pod.
+- **runtime-rs (`kata-atelier-clh-rs`)**: guest RAM = limit (static sizing). A runaway process hits the guest OOM killer instead, and the VM survives. This holds only with all three of: `block_device_cache_direct = true` in the runtime drop-in, a 384Mi RuntimeClass overhead, and a thin-pool backing device that doesn't charge buffered host page cache to pods (on hetzner-atelier, the loop device must be attached with `losetup --direct-io=on`). See `infra/k8s/v2/kata-atelier-values.yaml`.
+- `spec.resources.memoryMb` is therefore the guest's entire RAM under runtime-rs: size it for the workload, including page cache.
+
+Diagnose with `dmesg -T | grep "Killed process"` on the node (the victim is `cloud-hyperviso`), or `oom_kill` in the pod cgroup's `memory.events`.
+
+**AMD nodes (runtime-rs only)**: if every VM start fails with `SEV not supported`, the host has `kvm_amd sev=Y` without usable SEV (e.g. Ryzen). Set `options kvm_amd sev=0` in `/etc/modprobe.d/` and reload `kvm_amd` with no VMs running, or reboot.
+
 ## Prebuilds Require CSI Snapshots
 
 Prebuilds need a CSI driver with VolumeSnapshot support (e.g. TopoLVM) **and** the CSI snapshot controller. Without them, the server disables prebuilds automatically at startup — sandboxes still work, they just boot the slow path (clone + init every time).

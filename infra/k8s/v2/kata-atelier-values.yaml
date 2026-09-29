@@ -1,10 +1,16 @@
-# REFERENCE ONLY — NOT APPLIED FROM THIS REPO. The kata-deploy release on
-# hetzner-atelier is owned by infra-core (Pulumi, alongside cert-manager and
-# TopoLVM) since the kata-deploy 4.2 upgrade. Atelier relies only on the
-# RuntimeClass name `kata-atelier-clh` (30-config.yaml). This file records
-# what atelier needs from that runtime — the drop-in below and the reasons for
-# it — so a change on either side can be checked against it. Last applied from
-# here: chart 3.31.0.
+# kata-deploy Helm values for Atelier v2 — what atelier needs from the Kata
+# runtime. Self-hosters install kata-deploy with this file (docs/setup.md).
+# On hetzner-atelier the release is owned by infra-core (Pulumi,
+# infra/hetzner/kata.ts) since the kata-deploy 4.2 upgrade and is NOT applied
+# from here; keep the two in sync when either side changes. Chart: 4.2.0.
+#
+# Atelier relies only on a RuntimeClass name (30-config.yaml
+# `kubernetes.runtimeClass`). Two are defined:
+#   - kata-atelier-clh-rs : runtime-rs Cloud Hypervisor (the target runtime).
+#   - kata-atelier-clh    : Go-runtime Cloud Hypervisor (deprecated upstream
+#                           since Kata 4.0; kept as the rollback target).
+# Workspace disks are compatible both ways: a disk formatted under one mounts
+# unchanged under the other, so switching is a config flip + pause/resume.
 #
 # Guest requirements (sandbox-boot.sh + agent-v2 toolset.rs):
 #   - `volumeDevices` raw block PVCs honoured at their devicePath
@@ -12,53 +18,84 @@
 #   - guest kernel: ext4, overlayfs (redirect_dir), loop, erofs + LZ4
 #     (existing toolset blobs are erofs -zlz4hc; the CLH guest has no squashfs).
 #   - no io.katacontainers.* annotations are used.
-# Moving to runtime-rs (`clh-runtime-rs`): the drop-in needs the runtime-rs
-# spelling `virtio-blk-pci` (see below); raw block passthrough must be
-# verified there first — the whole storage design depends on it.
 #
-# kata-deploy Helm values for Atelier v2 (staging: hetzner-atelier, k3s).
+# Why runtime-rs (validated on hetzner-atelier, 2026-09-29): the Go runtime
+# sizes guest RAM as the pod memory limit PLUS default_memory (2 GiB), larger
+# than the pod's cgroup. Once page cache fills the guest, the host OOM-kills
+# the whole VM (prebuild pods died this way). runtime-rs sizes the guest to
+# the limit (static_sandbox_resource_mgmt), so a runaway workload hits the
+# guest OOM killer instead. Three settings make that hold under write load:
+#   1. `block_device_cache_direct = true` (drop-in below): the VMM opens the
+#      PVC with O_DIRECT, so no host page cache is charged to the pod.
+#   2. RuntimeClass overhead 384Mi (the 130Mi default does not cover
+#      cloud-hypervisor + virtiofsd + shim + kernel memory).
+#   3. Node: the thin pool's backing device must not charge buffered host
+#      page cache to pods. On hetzner-atelier that is a loop device over a
+#      file, which MUST be attached with `losetup --direct-io=on`.
 #
-# Adds a `kata-atelier-clh` runtime = stock `clh` + a Kata config.d drop-in that
-# pins virtio-blk for block-mode volumes. v2 sandboxes attach the workspace PVC
-# as a RAW BLOCK device (`volumeMode: Block`); Kata passes it through to the CLH
-# guest as virtio-blk, and the guest formats/mounts a native ext4 at /data
-# (sandbox-boot.sh). overlayfs then gets real `trusted.overlay.*` xattrs — no
-# virtio-fs, no `userxattr`, no `--xattr` (Option C,
-# docs/plans/toolset-inplace-update-fix-options.md §3). This replaces the old
-# virtiofsd `--xattr` + agent `userxattr` matched pair, which is now deleted.
-# Baking the config into a kata-deploy custom runtime makes it durable across
+# Node prerequisite for runtime-rs on AMD: if `kvm_amd` reports `sev=Y` but
+# the CPU has no usable SEV (e.g. Ryzen), Kata 4.2's runtime-rs CLH backend
+# fails every VM start with "SEV not supported" (it probes guest protection
+# unconditionally). Set `options kvm_amd sev=0` in /etc/modprobe.d and reload
+# kvm_amd (no VMs running) or reboot.
+#
+# Workspace PVC: raw block (`volumeMode: Block`), passed to the guest as
+# virtio-blk (`vdb`) and formatted/mounted ext4 at /data by sandbox-boot.sh,
+# so overlayfs gets real `trusted.overlay.*` xattrs — no virtio-fs for /data
+# (Option C, docs/plans/toolset-inplace-update-fix-options.md §3). virtio-fs
+# only backs Kata's own container-rootfs share. Not supported by either
+# runtime: discard/fstrim on the PVC (runtime-rs only enables discard for
+# block-plain emptyDir), so deleted workspace data is not returned to the
+# thin pool.
+#
+# Baking both into kata-deploy custom runtimes makes them durable across
 # kata-deploy rolls (which otherwise reset /opt/kata to bundled defaults).
-#
-# The server targets this class via `infra/k8s/v2/30-config.yaml` runtimeClass
-# (env ATELIER_K8S_RUNTIME_CLASS=kata-atelier-clh). Since chart 4.2 the
-# RuntimeClass also gets pod overhead (250m CPU / 130Mi) and a
-# `kata-deploy.katacontainers.io/default=true` nodeSelector, added by the chart.
+# The chart adds a `kata-deploy.katacontainers.io/default=true` nodeSelector
+# to each RuntimeClass, and the base config's overhead unless one is given.
 
-# --- preserved from the existing release ---
 k8sDistribution: k3s
-env:
-  createDefaultRuntimeClass: true
-  createRuntimeClasses: true
+# Chart 4.2 keys (the old `env.createDefaultRuntimeClass` /
+# `env.createRuntimeClasses` are ignored since 4.x).
+runtimeClasses:
+  enabled: true
+  createDefault: false
 
-# --- Atelier: virtio-blk passthrough for the block workspace PVC ---
 customRuntimes:
   enabled: true
   runtimes:
+    # --- target: runtime-rs Cloud Hypervisor ---
+    atelier-clh-rs:
+      baseConfig: "clh-runtime-rs" # stock runtime-rs clh (kernel, virtio-fs, static sizing)
+      dropIn: |
+        [hypervisor.clh]
+        # runtime-rs spelling of the virtio-blk driver used to hotplug the
+        # block workspace PVC (the stock default, stated so a stock change
+        # can't silently break passthrough).
+        block_device_driver = "virtio-blk-pci"
+        # O_DIRECT on the PVC: no host page cache charged to the pod (VM OOM kills)
+        block_device_cache_direct = true
+      runtimeClass: |
+        kind: RuntimeClass
+        apiVersion: node.k8s.io/v1
+        metadata:
+          name: kata-atelier-clh-rs
+          labels:
+            app.kubernetes.io/managed-by: kata-deploy
+        handler: kata-atelier-clh-rs
+        overhead:
+          podFixed:
+            cpu: 250m
+            memory: 384Mi
+
+    # --- rollback: Go-runtime Cloud Hypervisor (deprecated upstream) ---
     atelier-clh:
       baseConfig: "clh" # inherit stock clh (virtio-fs, cache mode, kernel, ...)
       dropIn: |
         [hypervisor.clh]
-        # The workspace PVC is a block volume; pin the virtio-blk driver Kata
-        # uses to hotplug it into the guest. This is the stock clh default
-        # (stock configuration-clh.toml already sets "virtio-blk"), stated
-        # explicitly so a future stock-default change can't silently break the
-        # block-device passthrough this runtime depends on. The Go `clh`
-        # runtime accepts ONLY "virtio-blk" here (not the runtime-rs
-        # "virtio-blk-pci" spelling, and no virtio-scsi) — it errors otherwise.
+        # The Go `clh` runtime accepts ONLY "virtio-blk" here (not the
+        # runtime-rs "virtio-blk-pci" spelling, and no virtio-scsi).
         block_device_driver = "virtio-blk"
-        # Stock virtio-fs args, restated (config.d REPLACES arrays). virtio-fs
-        # now only backs Kata's own container-rootfs share, not /data, so the
-        # atelier `--xattr` addition is gone.
+        # Stock virtio-fs args, restated (config.d REPLACES arrays).
         virtio_fs_extra_args = ["--thread-pool-size=1", "--announce-submounts"]
       runtimeClass: |
         kind: RuntimeClass
