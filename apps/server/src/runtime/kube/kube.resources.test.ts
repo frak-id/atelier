@@ -49,6 +49,39 @@ describe("buildSandboxPod workspace volume", () => {
   });
 });
 
+describe("buildSandboxPod fresh-volume marker (sandbox-boot.sh mkfs guard)", () => {
+  const envOf = (opts: { pvcName?: string; freshVolume?: boolean }) => {
+    const pod = buildSandboxPod({
+      sandboxId: "abc123",
+      image: "img",
+      agentPassword: "pw",
+      ...opts,
+    });
+    const c = (pod.spec as { containers: Array<{ env: unknown[] }> })
+      .containers[0];
+    return (c?.env ?? []) as Array<{ name: string; value: string }>;
+  };
+  const marker = (env: Array<{ name: string; value: string }>) =>
+    env.find((e) => e.name === VM.DATA_FRESH_ENV);
+
+  test("set to 1 only for a freshly created blank PVC", () => {
+    expect(
+      marker(envOf({ pvcName: "sandbox-abc123", freshVolume: true })),
+    ).toEqual({ name: VM.DATA_FRESH_ENV, value: "1" });
+  });
+
+  test("absent for a reused or snapshot-cloned PVC (default)", () => {
+    expect(marker(envOf({ pvcName: "sandbox-abc123" }))).toBeUndefined();
+    expect(
+      marker(envOf({ pvcName: "sandbox-abc123", freshVolume: false })),
+    ).toBeUndefined();
+  });
+
+  test("absent when there is no PVC at all", () => {
+    expect(marker(envOf({ freshVolume: true }))).toBeUndefined();
+  });
+});
+
 describe("buildSshPipe", () => {
   test("no knownHostsData: unpinned fallback (ignore_hostkey, no known_hosts_data)", () => {
     const pipe = buildSshPipe({

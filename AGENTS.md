@@ -16,10 +16,9 @@ packages/
 ├── shared/       # @frak/atelier-shared — TypeBox schemas, constants, config loader
 ├── spec/         # @atelier/spec — the SandboxSpec seam contract
 └── compose/      # @atelier/compose — client-side harness/preset/spec-merge SDK
-charts/atelier/   # Helm chart: shared cluster infra (zot, cliproxy, sshpiper, cert-manager issuers, kata runtimeclass, snapshot class)
-infra/k8s/v2/     # Server + console app manifests (see infra/k8s/v2/README.md)
+infra/k8s/v2/     # Server + console app manifests (see infra/k8s/v2/README.md; cluster infra is NOT deployed from this repo)
 infra/nginx/      # Console nginx config (SPA + reverse proxy to the server)
-scripts/          # deploy-k8s.sh (SSH → k3s: agent image + infra chart), bump-version.ts
+scripts/          # bump-version.ts
 Dockerfile        # Multi-target: `server` and `console` images
 ```
 
@@ -35,7 +34,6 @@ Dockerfile        # Multi-target: `server` and `console` images
 | Console UI | `apps/console/src/components/` + `routes/` |
 | Launchpad (non-tech surface) | `packages/spec/src/launchpad-spec.ts`, `apps/server/src/api/launchpad.{routes,lifecycle}.ts`, `apps/server/src/control/modules/launchpad/`, console `routes/launchpad.*` + `components/launchpad/` |
 | Cross-app config | `packages/shared/src/` |
-| Shared cluster infra | `charts/atelier/templates/` |
 | App deploy manifests | `infra/k8s/v2/` |
 | SandboxSpec contract | `packages/spec/src/` |
 | Harness/preset composition | `packages/compose/src/` |
@@ -56,8 +54,7 @@ bun run --filter @atelier/server check:boundary  # Server module-boundary rules
 cd apps/agent-v2 && cargo test        # Agent tests (cargo clippy --all-targets for lint)
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint, check, typecheck and `bun test`,
-plus `helm lint charts/atelier`.
+CI (`.github/workflows/ci.yml`) runs lint, check, typecheck and `bun test`.
 
 ## Critical Constraints
 

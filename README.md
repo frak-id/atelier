@@ -48,32 +48,20 @@ Two ways to run Atelier, depending on what you have.
 
 ### Path 1 — You have a Kubernetes cluster
 
-Install the Helm chart with a minimal values file; everything else is
-configured from the console on first connection, or via the CLI.
-
-```bash
-helm install atelier oci://ghcr.io/frak-id/charts/atelier \
-  --namespace atelier-system --create-namespace \
-  --set domain.baseDomain=example.com \
-  --set domain.tls.email=admin@example.com \
-  --set auth.github.clientId=<client-id> \
-  --set auth.github.clientSecret=<client-secret>
-```
-
-Then open `https://sandbox.example.com`, sign in with GitHub, and spawn your
-first sandbox.
+Apply the server + console manifests under [`infra/k8s/v2`](infra/k8s/v2/README.md)
+(namespaces, RBAC, a config ConfigMap, a Secret for GitHub OAuth, the
+Deployment/Service/Ingress). Everything else is configured from the console on
+first connection, or via the CLI. Then open your dashboard domain, sign in with
+GitHub, and spawn your first sandbox.
 
 Full isolation (Kata micro-VMs) requires nodes with KVM (`/dev/kvm`) and the
 [kata-deploy](https://github.com/kata-containers/kata-containers) runtime;
 instant cloning requires a CSI driver with VolumeSnapshot support (we recommend
-[TopoLVM](https://github.com/topolvm/topolvm)). See the
+[TopoLVM](https://github.com/topolvm/topolvm)). Atelier does not install that
+cluster infra itself (Kata, cert-manager, TopoLVM, an OCI registry, BuildKit):
+it references it by name from the app config. See the
 [Setup Guide](docs/setup.md) for prerequisites, DNS/TLS options, and the
 GitHub OAuth app.
-
-> ⚠️ The single-chart install is being consolidated — today the chart deploys
-> the shared infra and the app is applied separately; see the
-> [Setup Guide](docs/setup.md) for the current sequence and the
-> [roadmap](docs/roadmap.md) for progress.
 
 ### Path 2 — No cluster? Local mode
 

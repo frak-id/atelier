@@ -1,3 +1,21 @@
+# REFERENCE ONLY — NOT APPLIED FROM THIS REPO. The kata-deploy release on
+# hetzner-atelier is owned by infra-core (Pulumi, alongside cert-manager and
+# TopoLVM) since the kata-deploy 4.2 upgrade. Atelier relies only on the
+# RuntimeClass name `kata-atelier-clh` (30-config.yaml). This file records
+# what atelier needs from that runtime — the drop-in below and the reasons for
+# it — so a change on either side can be checked against it. Last applied from
+# here: chart 3.31.0.
+#
+# Guest requirements (sandbox-boot.sh + agent-v2 toolset.rs):
+#   - `volumeDevices` raw block PVCs honoured at their devicePath
+#     (/dev/atelier-data), i.e. virtio-blk passthrough of volumeMode: Block.
+#   - guest kernel: ext4, overlayfs (redirect_dir), loop, erofs + LZ4
+#     (existing toolset blobs are erofs -zlz4hc; the CLH guest has no squashfs).
+#   - no io.katacontainers.* annotations are used.
+# Moving to runtime-rs (`clh-runtime-rs`): the drop-in needs the runtime-rs
+# spelling `virtio-blk-pci` (see below); raw block passthrough must be
+# verified there first — the whole storage design depends on it.
+#
 # kata-deploy Helm values for Atelier v2 (staging: hetzner-atelier, k3s).
 #
 # Adds a `kata-atelier-clh` runtime = stock `clh` + a Kata config.d drop-in that
@@ -8,16 +26,13 @@
 # virtio-fs, no `userxattr`, no `--xattr` (Option C,
 # docs/plans/toolset-inplace-update-fix-options.md §3). This replaces the old
 # virtiofsd `--xattr` + agent `userxattr` matched pair, which is now deleted.
-# Baking the config into a chart-managed custom runtime makes it durable across
+# Baking the config into a kata-deploy custom runtime makes it durable across
 # kata-deploy rolls (which otherwise reset /opt/kata to bundled defaults).
 #
 # The server targets this class via `infra/k8s/v2/30-config.yaml` runtimeClass
-# (env ATELIER_K8S_RUNTIME_CLASS=kata-atelier-clh).
-#
-# Apply:
-#   helm upgrade kata-deploy \
-#     oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
-#     --version 3.31.0 -n default -f infra/k8s/v2/kata-atelier-values.yaml
+# (env ATELIER_K8S_RUNTIME_CLASS=kata-atelier-clh). Since chart 4.2 the
+# RuntimeClass also gets pod overhead (250m CPU / 130Mi) and a
+# `kata-deploy.katacontainers.io/default=true` nodeSelector, added by the chart.
 
 # --- preserved from the existing release ---
 k8sDistribution: k3s

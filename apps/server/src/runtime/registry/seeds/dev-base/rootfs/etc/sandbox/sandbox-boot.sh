@@ -26,11 +26,28 @@
 # Kata it appears as a virtio-blk node at DATA_DEVICE), NOT a pre-mounted
 # filesystem. Format it ext4 on first boot and mount it at /data so overlayfs
 # gets a real trusted.overlay.*-capable upper (no virtio-fs userxattr shim).
-# Idempotent and resume-safe: mkfs only runs when the device has no filesystem
-# (blkid probe), so a resumed disk (already ext4, carrying upper/work/toolsets
-# from the pause snapshot) is mounted as-is, never reformatted. A no-op when
-# /data is already a mountpoint (the Docker backend bind-mounts a real ext4
-# named volume there directly, so there is no block device to format).
+# A no-op when /data is already a mountpoint (the Docker backend bind-mounts a
+# real ext4 named volume there directly, so there is no block device).
+#
+# mkfs guard — formatting is destructive and irreversible, so it requires
+# positive proof the volume is new, not merely "blkid saw nothing". ALL of:
+#   1. $ATELIER_DATA_FRESH = 1: the server sets it only when it created the
+#      PVC blank in this boot (no snapshot dataSource, not a resumed PVC —
+#      boot.ts `freshVolume`). A resumed or prebuild/pause-snapshot clone
+#      never carries it, so those disks can never be formatted here.
+#   2. `blkid -p` (low-level probe, no cache) exits EXACTLY 2 = "no
+#      signature". Any other non-zero (8 = ambiguous signatures, 4 = usage/
+#      probe error, 127 = missing binary) is NOT evidence of emptiness.
+#   3. The first FRESH_PROBE_BYTES read back as zeros. The env var lives in the
+#      pod spec, so a never-paused sandbox whose containers restart in place
+#      (host reboot, kata upgrade) still has it; this content check is what
+#      protects that disk: our ext4 always has its superblock at byte 1024,
+#      and a fresh topolvm-thin LV reads all-zero. It also catches a device
+#      that reads with errors (cmp exits 2) — blkid reports those as "2" too.
+# Anything else with no recognisable filesystem REFUSES (exit 1, diagnostics,
+# disk untouched): a crash-looping pod is recoverable, a wiped workspace is
+# not. A disk with a signature is mounted as-is; if it isn't ext4 the mount
+# fails and we exit 1 — we never format over an existing signature.
 # mkfs/mount failures MUST abort the boot: this script has no `set -e`, so an
 # unchecked failure would fall through to assemble /home/dev on the ephemeral
 # container rootfs — the pod would look healthy while every write silently
@@ -38,21 +55,43 @@
 # (with diagnostics) instead. The wait-loop below then never runs; the pod
 # crash-loops visibly rather than corrupting state.
 DATA_DEVICE="/dev/atelier-data"
+FRESH_PROBE_BYTES=1048576
+
+# Refuse to touch the device: log why plus enough state to diagnose, exit 1.
+refuse_data_device() {
+    echo "sandbox-boot: REFUSING to format $DATA_DEVICE: $1" >&2
+    echo "sandbox-boot: disk left untouched; if it really is disposable, destroy and recreate the sandbox" >&2
+    blkid -p "$DATA_DEVICE" >&2 2>&1 || true
+    lsblk -o NAME,MAJ:MIN,SIZE,RO,TYPE,FSTYPE 2>/dev/null >&2 || true
+    exit 1
+}
+
 if ! mountpoint -q /data; then
     if [ -b "$DATA_DEVICE" ]; then
-        if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
-            # Unformatted (fresh PVC): lazy init keeps first boot fast; the
-            # metadata_csum default gives a journaled, crash-consistent fs so
-            # the pause `sync` + block VolumeSnapshot stays recoverable. NOT
-            # `-q`: log the format so an unexpected reformat (which would mean
-            # data loss on what should be an existing disk) is auditable.
-            echo "sandbox-boot: formatting fresh workspace device $DATA_DEVICE as ext4" >&2
-            if ! mkfs.ext4 -F -L atelier-data "$DATA_DEVICE"; then
-                echo "sandbox-boot: mkfs.ext4 failed on $DATA_DEVICE" >&2
-                lsblk 2>/dev/null >&2 || true
-                exit 1
-            fi
-        fi
+        blkid -p "$DATA_DEVICE" >/dev/null 2>&1
+        probe=$?
+        case "$probe" in
+            0) ;; # has a signature: mount as-is below, never reformat
+            2)
+                if [ "${ATELIER_DATA_FRESH:-}" != "1" ]; then
+                    refuse_data_device "no filesystem found, but the server did not mark this volume as new (resumed or snapshot-cloned disk)"
+                fi
+                if ! cmp -s -n "$FRESH_PROBE_BYTES" "$DATA_DEVICE" /dev/zero; then
+                    refuse_data_device "no filesystem found, but the first $FRESH_PROBE_BYTES bytes are not zero (or unreadable)"
+                fi
+                # Proven new: lazy init keeps first boot fast; the
+                # metadata_csum default gives a journaled, crash-consistent fs
+                # so the pause `sync` + block VolumeSnapshot stays recoverable.
+                # NOT `-q`: every format is logged, so it is auditable.
+                echo "sandbox-boot: formatting new workspace device $DATA_DEVICE as ext4" >&2
+                if ! mkfs.ext4 -F -L atelier-data "$DATA_DEVICE"; then
+                    echo "sandbox-boot: mkfs.ext4 failed on $DATA_DEVICE" >&2
+                    lsblk 2>/dev/null >&2 || true
+                    exit 1
+                fi
+                ;;
+            *) refuse_data_device "blkid -p probe failed (exit $probe), cannot tell whether the disk holds data" ;;
+        esac
         mkdir -p /data
         if ! mount -t ext4 "$DATA_DEVICE" /data; then
             echo "sandbox-boot: failed to mount $DATA_DEVICE at /data" >&2

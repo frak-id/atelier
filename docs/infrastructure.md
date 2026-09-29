@@ -95,24 +95,20 @@ TopoLVM Thin Pool (LVM VG on node)
 | Workspace PVC | Sandbox namespace | Per-sandbox data volume (from VolumeSnapshot); `/data/upper` + `/data/work` back the `/home/dev` overlay |
 | VolumeSnapshot | Sandbox namespace | Prebuild snapshots (CoW clones for new PVCs) |
 | Server + Console Deployment + PVC | App system namespace (`infra/k8s/v2`, e.g. `atelier-v2-system`) | API + SPA + SQLite database |
-| Zot Deployment + PVC | Infra chart namespace (`charts/atelier`) | OCI registry for base images + toolset artifacts |
+| OCI registry (Zot) | Cluster infra (not deployed by atelier) | Base images + toolset artifacts (`kubernetes.registryUrl`) |
 
 ## Deployment
 
-Two independent pieces:
+Atelier deploys only **the server + console app**: plain manifests under
+`infra/k8s/v2/`, applied with `kubectl`. See
+[`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md) for the apply sequence
+and how to rebuild images in-cluster with BuildKit.
 
-1. **Shared cluster infra** — the `charts/atelier` Helm chart (Zot, CLIProxy,
-   sshpiper, cert-manager issuers, Kata RuntimeClass, snapshot class). From a
-   dev machine:
-
-   ```bash
-   VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
-   ```
-
-2. **The server + console app** — plain manifests under `infra/k8s/v2/`,
-   applied directly with `kubectl`/`helm` for the Kata custom runtime. See
-   [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md) for the full apply
-   sequence and how to rebuild images in-cluster with BuildKit.
+The shared cluster infra (kata-deploy and the `kata-atelier-clh` runtime,
+cert-manager + ClusterIssuers, TopoLVM + the snapshot class, Zot, BuildKit,
+CLIProxy) is **not** deployed from this repo — on hetzner-atelier infra-core
+owns it. The app config references it by name; the list is in
+`infra/k8s/v2/README.md` ("Cluster prerequisites").
 
 ## Resource Cleanup
 

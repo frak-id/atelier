@@ -78,8 +78,9 @@ exposes the existing capability so the GUI can offer a read-only attach.
   ConfigMap-mounted) + `files/write`, then drives the phase order (postCreate
   -> reconcile -> primary `/health` gate -> postStart). Live-ops routes
   (process start/stop/logs/status, attach, addProcess) all target the v2
-  agent's `/processes` + unified attach bridge (:9997). `scripts/deploy-k8s.sh`
-  builds the agent from `apps/agent-v2` (self-building multi-stage image); the
+  agent's `/processes` + unified attach bridge (:9997). The agent image is
+  built from `apps/agent-v2` (self-building multi-stage image: the release
+  workflow, or `infra/k8s/v2/deploy.sh agent` in-cluster); the
   in-pod binary path stays `/usr/local/bin/sandbox-agent` (dev-base COPYs
   agent-v2's `/atelier-agent` there, so `sandbox-boot.sh` is unchanged).
   Deferred to M3/M6: `agent.operations.serviceList` + `sessions/acp` still use

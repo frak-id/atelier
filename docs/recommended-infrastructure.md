@@ -8,7 +8,7 @@ A single **Hetzner dedicated server (AX-line)** running k3s is the sweet spot: c
 
 ## Sizing Guide
 
-Each sandbox is a VM with its own kernel, plus the workloads inside it (code-server, OpenCode, Chromium, your dev servers). Budget roughly **2–4 GB RAM and 1–2 vCPU per active sandbox**, plus ~4 GB for the system (k3s, the server, Zot, CLIProxy, sshpiper).
+Each sandbox is a VM with its own kernel, plus the workloads inside it (code-server, OpenCode, Chromium, your dev servers). Budget roughly **2–4 GB RAM and 1–2 vCPU per active sandbox**, plus ~4 GB for the system (k3s, the server, Zot, CLIProxy). Kata also adds a fixed per-sandbox scheduling overhead (250m CPU / 130Mi with kata-deploy 4.2).
 
 | Team size | Concurrent sandboxes | RAM | CPU | Storage |
 |-----------|---------------------|-----|-----|---------|
@@ -34,15 +34,15 @@ Other bare-metal providers work equally well (OVH, Scaleway Elastic Metal, a hom
 Bare-metal server (Debian 12)
 └── k3s (single node, built-in Traefik ingress)
     ├── kata-deploy        → Kata Containers runtime (Cloud Hypervisor)
-    ├── cert-manager       → wildcard TLS via Cloudflare DNS-01
+    ├── cert-manager       → per-host TLS via a ClusterIssuer (HTTP-01)
     ├── TopoLVM            → LVM thin-provisioned PVCs + CSI snapshots
-    ├── Atelier infra chart → Zot, CLIProxy, sshpiper, cert-manager issuers, Kata RuntimeClass
+    ├── Zot + BuildKit     → OCI registry + image builds
     └── Atelier app (infra/k8s/v2) → server + console
 ```
 
 ### Why single-node k3s?
 
-- One server keeps operations trivial: one kubeconfig, one Helm release, one thing to back up
+- One server keeps operations trivial: one kubeconfig, one thing to back up
 - TopoLVM snapshots are node-local — instant copy-on-write cloning works best when all sandboxes share the node's LVM thin pool
 - Vertical scaling (a bigger Hetzner box) goes a long way before multi-node is worth the complexity
 
@@ -57,13 +57,12 @@ vgcreate atelier-vg /dev/nvme1n1
 lvcreate -l 95%FREE --thinpool pool0 atelier-vg
 ```
 
-Then install TopoLVM pointing `device-classes` at `atelier-vg` (see [Setup Guide](setup.md#4-storage-and-snapshots-optional)). Without this, Atelier still works — prebuilds are just disabled automatically.
+Then install TopoLVM pointing `device-classes` at `atelier-vg` (see [Setup Guide](setup.md#5-storage-and-snapshots-optional--required-for-prebuilds)). Without this, Atelier still works — prebuilds are just disabled automatically.
 
 ## DNS & Networking
 
-- Put your domain on **Cloudflare** (currently the only supported DNS-01 solver for the wildcard certificate)
 - Create records: `your-domain.com` → server IP, `*.your-domain.com` → server IP
-- Open inbound ports: `80`, `443` (Traefik), `2222` (sshpiper NodePort, mapped from `30022` or via firewall DNAT)
+- Open inbound ports: `80`, `443` (Traefik), `30222` (the server's SSH gateway NodePort)
 - Recommended hardening on Hetzner: use the Robot firewall to restrict everything else; consider allow-listing port `6443` (k3s API) to your own IP
 
 ## Cost Ballpark
@@ -83,6 +82,6 @@ The state that matters:
 
 - **Server SQLite database** — PVC for the v2 server (workspaces, tasks, settings)
 - **Zot registry** — base images (rebuildable from Dockerfiles, but backups save time)
-- **Your values file + secrets** — keep `values.production.yaml` in a private repo or vault
+- **Your app config + secrets** — keep your `30-config.yaml` edits and the `atelier-v2-secrets` values in a private repo or vault
 
 Sandboxes themselves are disposable by design — anything important should live in git.

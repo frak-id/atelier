@@ -86,6 +86,10 @@ export async function bootSandbox(
   const podName = `sandbox-${sandboxId}`;
   const pvcName = `sandbox-${sandboxId}`;
   const usedSnapshot = Boolean(input.snapshotName);
+  // Blank only when WE create it here without a snapshot dataSource — a
+  // reused (resume) or snapshot-cloned PVC already carries ext4 and must never
+  // be formatted (see sandbox-boot.sh's mkfs guard).
+  const freshVolume = !input.reusePvc && !usedSnapshot;
   const volumeSize =
     spec.resources.diskGb != null
       ? `${spec.resources.diskGb}Gi`
@@ -124,6 +128,7 @@ export async function bootSandbox(
         image: input.image,
         agentPassword,
         pvcName,
+        freshVolume,
         podAuthKeysSecret: ssh.podAuthKeysSecret,
         sshResources: ssh.resources,
       }),
@@ -164,9 +169,47 @@ export async function bootSandbox(
       },
       "Boot failed, cleaning up allocated resources",
     );
-    if (input.preserveDisk) await deleteRestartableResources(sandboxId);
-    else await cleanupSandboxResources(sandboxId);
+    if (input.preserveDisk) {
+      await deleteRestartableResources(sandboxId);
+      // A resume that booted from scratch (no PVC, no snapshot) created a
+      // blank PVC in THIS call; it holds no user data. Keeping it would make
+      // the retry reuse it WITHOUT the fresh marker, and if this boot died
+      // before mkfs (e.g. pod Pending past the agent wait during a kata
+      // upgrade), sandbox-boot.sh would refuse the unformatted disk forever.
+      // Drop it so the retry recreates it fresh. The pod is already gone
+      // (deleteRestartableResources waits), so pvc-protection won't stall.
+      if (freshVolume) await deleteFreshPvc(sandboxId, pvcName);
+    } else await cleanupSandboxResources(sandboxId);
     throw error;
+  }
+}
+
+async function deleteFreshPvc(
+  sandboxId: string,
+  pvcName: string,
+): Promise<void> {
+  try {
+    await kubeClient.deleteResource("PersistentVolumeClaim", pvcName);
+    const gone = await kubeClient.waitForResourceDeleted(
+      "PersistentVolumeClaim",
+      pvcName,
+      { timeout: POD_DELETE_TIMEOUT_MS },
+    );
+    if (!gone) {
+      log.warn(
+        { sandboxId, pvcName },
+        "Blank PVC still terminating after a failed from-scratch resume; a retry before it is gone may refuse the unformatted disk",
+      );
+    }
+  } catch (error) {
+    log.warn(
+      {
+        sandboxId,
+        pvcName,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      "Failed to drop the blank PVC after a failed from-scratch resume; a retry may refuse the unformatted disk",
+    );
   }
 }
 
@@ -174,6 +217,8 @@ interface ResourceSpec {
   image: string;
   agentPassword: string;
   pvcName: string;
+  /** The PVC was just created blank — the only case the guest may mkfs it. */
+  freshVolume: boolean;
   /** Secret the pod mounts as its authorized_keys source (resolved by the SSH
    * gateway strategy); undefined disables in-pod SSH. */
   podAuthKeysSecret?: string;
@@ -193,6 +238,7 @@ function createSandboxResources(
         image: r.image,
         agentPassword: r.agentPassword,
         pvcName: r.pvcName,
+        freshVolume: r.freshVolume,
         sshPipeKeySecret: r.podAuthKeysSecret,
         requests: {
           cpu: `${Math.max(250, spec.resources.vcpus * 250)}m`,

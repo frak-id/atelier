@@ -1,6 +1,6 @@
 # Getting Started
 
-Atelier gives you **isolated, VM-grade dev environments that boot in seconds**, self-hosted on your own Kubernetes cluster. One Helm install, and every developer (or AI agent) gets a full sandbox — VS Code, an AI coding agent, and an optional browser desktop — accessible from any device.
+Atelier gives you **isolated, VM-grade dev environments that boot in seconds**, self-hosted on your own Kubernetes cluster. One deploy, and every developer (or AI agent) gets a full sandbox — VS Code, an AI coding agent, and an optional browser desktop — accessible from any device.
 
 ## The Pitch
 
@@ -8,7 +8,7 @@ Atelier gives you **isolated, VM-grade dev environments that boot in seconds**, 
 - **Real VM isolation** — Kata Containers run each sandbox in its own lightweight VM, not just a container namespace
 - **Batteries included** — every sandbox ships with [code-server](https://github.com/coder/code-server) (VS Code in the browser), [OpenCode](https://github.com/anomalyco/opencode) (AI coding agent), and access to a multi-provider AI proxy; an in-sandbox Chromium desktop (KasmVNC) is opt-in via the `dev-browser` base / `browser` toolbox
 - **Work from anywhere** — push a task to OpenCode from the console, close your laptop, review the result from your phone
-- **Self-hosted & simple** — one bare-metal server, k3s, and a single Helm chart. No SaaS, no per-seat pricing, your code never leaves your infrastructure
+- **Self-hosted & simple** — one bare-metal server, k3s, and a handful of manifests. No SaaS, no per-seat pricing, your code never leaves your infrastructure
 
 ## How Easy Is It to Use?
 
@@ -38,40 +38,22 @@ helm repo add jetstack https://charts.jetstack.io
 helm install cert-manager jetstack/cert-manager \
   --namespace cert-manager --create-namespace --set crds.enabled=true
 
-# 4. Kata Containers (VM isolation)
-git clone --depth 1 https://github.com/kata-containers/kata-containers.git /tmp/kata-src
-helm install kata-deploy /tmp/kata-src/tools/packaging/kata-deploy/helm-chart/kata-deploy \
-  --set k8sDistribution=k3s \
-  --set env.createRuntimeClasses=true \
-  --set env.createDefaultRuntimeClass=true
+# 4. Kata Containers (VM isolation) + the atelier custom runtime
+#    (kata-atelier-clh: virtio-blk block passthrough for the workspace volume)
+helm install kata-deploy \
+  oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
+  -n default -f infra/k8s/v2/kata-atelier-values.yaml
 
-# 5. Atelier shared infra (Zot, CLIProxy, sshpiper, cert-manager issuers)
-helm install atelier charts/atelier/ \
-  --namespace atelier-system --create-namespace \
-  --values values.production.yaml
+# 5. Cluster infra atelier references by name (not bundled): a ClusterIssuer,
+#    TopoLVM + a VolumeSnapshotClass, an OCI registry (e.g. Zot) and BuildKit
 
 # 6. Atelier server + console app — see infra/k8s/v2/README.md
 ```
 
-A minimal `values.production.yaml` needs only your domain, a GitHub OAuth app, and a Cloudflare API token for wildcard TLS:
+The app config (`infra/k8s/v2/30-config.yaml`) needs your domain, the names of
+those cluster resources, and a Secret with your GitHub OAuth app.
 
-```yaml
-domain:
-  baseDomain: "example.com"
-  tls:
-    email: "admin@example.com"
-
-auth:
-  github:
-    clientId: "your-github-client-id"
-    clientSecret: "your-github-client-secret"
-
-certManager:
-  cloudflare:
-    apiToken: "your-cloudflare-api-token"
-```
-
-Full step-by-step instructions (including optional TopoLVM for prebuilds): [Setup Guide](setup.md).
+Full step-by-step instructions: [Setup Guide](setup.md).
 
 ## Requirements
 
@@ -92,7 +74,7 @@ Full step-by-step instructions (including optional TopoLVM for prebuilds): [Setu
 | Dependency | Purpose |
 |------------|---------|
 | [k3s](https://k3s.io) | Lightweight Kubernetes distribution |
-| [Helm](https://helm.sh) | Chart-based deployment |
+| [Helm](https://helm.sh) | Installs the cluster dependencies below |
 | [cert-manager](https://cert-manager.io) | Automated TLS certificates |
 | [kata-deploy](https://github.com/kata-containers/kata-containers) | Kata Containers runtime (Cloud Hypervisor) |
 | TopoLVM *(optional)* | CSI snapshots — required for prebuilds / instant cloning |
@@ -100,8 +82,7 @@ Full step-by-step instructions (including optional TopoLVM for prebuilds): [Setu
 ### Networking
 
 - A domain with **wildcard DNS** (`*.your-domain.com` → server IP)
-- Ports `80` / `443` open (HTTPS), port `2222` open (SSH proxy)
-- A Cloudflare-managed DNS zone (currently the only supported DNS-01 solver for wildcard certificates)
+- Ports `80` / `443` open (HTTP-01 challenges + HTTPS), and the SSH NodePort (`30222` by default)
 
 ## Try It Without a Server
 
@@ -118,5 +99,5 @@ bun run --filter @atelier/console dev  # Console: http://localhost:5174
 
 - [Setup Guide](setup.md) — full installation walkthrough and troubleshooting
 - [Recommended Infrastructure](recommended-infrastructure.md) — what server to rent and how to size it
-- [Advanced Configuration](advanced-configuration.md) — every Helm option explained
+- [Advanced Configuration](advanced-configuration.md) — server configuration explained
 - [Architecture](architecture.md) — how it all fits together

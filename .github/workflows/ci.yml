@@ -36,18 +36,3 @@ jobs:
 
       - name: Test
         run: bun test
-
-  helm-lint:
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Helm
-        uses: azure/setup-helm@v5
-        with:
-          version: "v3.22.0"
-
-      - name: Lint chart
-        run: helm lint charts/atelier

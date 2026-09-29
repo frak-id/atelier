@@ -1,8 +1,31 @@
 # Atelier v2 — staging deploy (`hetzner-atelier`)
 
-Standalone manifests to run the v2 server + console in parallel with the live
-v1 stack, under `atelier.hetzner-staging.frak.id`. See
-`.notes/deploy-v2-staging.md` for the full feasibility write-up.
+Standalone manifests for the v2 server + console under
+`atelier.hetzner-staging.frak.id`. See `.notes/deploy-v2-staging.md` for the
+full feasibility write-up.
+
+## Cluster prerequisites (not managed from this repo)
+
+Shared cluster infra is consumed by name only; nothing in this repo installs
+or configures it. infra-core owns kata-deploy, cert-manager + the
+ClusterIssuers, TopoLVM, Zot and CLIProxy (Pulumi). The old `charts/atelier`
+infra chart and `scripts/deploy-k8s.sh` were removed so they can't conflict
+with it.
+
+| Dependency | Name atelier relies on | Where it's referenced |
+|------------|------------------------|-----------------------|
+| kata-deploy | RuntimeClass `kata-atelier-clh` | `30-config.yaml` `kubernetes.runtimeClass` |
+| TopoLVM | StorageClass `topolvm-thin` (Block volumeMode + block snapshots) | `30-config.yaml` `kubernetes.storageClass` |
+| CSI snapshots | VolumeSnapshotClass `atelier-snapshots` | `30-config.yaml` `kubernetes.volumeSnapshotClass` |
+| Zot | `zot.zot.svc:5000` (plain HTTP, k3s `registries.yaml` mirror) | `30-config.yaml` `kubernetes.registryUrl`, `deploy.sh` |
+| BuildKit | `tcp://buildkitd.buildkit.svc:1234` + Secret `buildkit-client-tls` | `30-config.yaml` `imageBuilder` |
+| cert-manager | ClusterIssuer `letsencrypt-frak` | `30-config.yaml` `toolIngressClusterIssuer`, `70-ingress.yaml` |
+| Verdaccio | `http://verdaccio.verdaccio.svc:4873` | `30-config.yaml` `npmRegistryUrl` |
+| Traefik | IngressClass `traefik` | `30-config.yaml`, `70-ingress.yaml` |
+
+The atelier-side requirements on the Kata runtime (what the sandbox guest
+assumes) are recorded in `kata-atelier-values.yaml`; keep infra-core's
+release in sync with it when either side changes.
 
 ## What it deploys
 
@@ -18,8 +41,9 @@ v1 stack, under `atelier.hetzner-staging.frak.id`. See
   The workspace PVC is a `volumeMode: Block` volume; Kata passes it to the
   guest as virtio-blk and the guest formats/mounts ext4 at `/data`, giving
   overlayfs real `trusted.overlay.*` (no `userxattr`) — Option C of
-  `docs/plans/toolset-inplace-update-fix-options.md`. Chart-managed, so it
-  survives kata-deploy rolls. The storage class (`topolvm-thin`) must permit
+  `docs/plans/toolset-inplace-update-fix-options.md`. Defined as a
+  kata-deploy custom runtime (infra-core's release), so it survives
+  kata-deploy rolls. The storage class (`topolvm-thin`) must permit
   `Block` volumeMode and block-volume snapshots (TopoLVM thin does).
 - Images: `zot.zot.svc:5000/atelier-server:v2` + `atelier-console:v2`
   (built in-cluster via BuildKit, pushed to the internal Zot registry).
@@ -45,9 +69,8 @@ The GitHub OAuth app's callback URL must be
 ```sh
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/00-namespaces.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/10-rbac.yaml
-# kata custom runtime (virtio-blk block passthrough) — needed once per cluster:
-helm upgrade kata-deploy oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
-  --version 3.31.0 -n default -f infra/k8s/v2/kata-atelier-values.yaml
+# check the infra-core prerequisites above exist (at least the runtime class):
+kubectl --context hetzner-atelier get runtimeclass kata-atelier-clh
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/30-config.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/40-server-pvc.yaml
 # create the secret (above), then:

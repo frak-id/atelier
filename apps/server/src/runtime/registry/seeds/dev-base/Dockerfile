@@ -44,7 +44,8 @@ ENV LC_ALL=C.UTF-8
 # e2fsprogs (mkfs.ext4): the workspace PVC is attached as a raw block device;
 # sandbox-boot.sh formats it ext4 and mounts it at /data on first boot
 # (docs/plans/toolset-inplace-update-fix-options.md §3). blkid/mountpoint come
-# from util-linux (base).
+# from util-linux and cmp (the mkfs guard's zero-probe) from diffutils — both
+# Essential in Debian, so present in -slim.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chrony \

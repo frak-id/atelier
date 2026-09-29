@@ -1,4 +1,4 @@
-# RBAC for the v2 server — mirrors charts/atelier/templates/rbac.yaml.
+# RBAC for the v2 server.
 # ServiceAccount in atelier-v2-system; cluster-scoped read for PVs/namespaces/
 # runtimeclasses/volumesnapshotclasses; namespaced write in the system and
 # sandbox namespaces for the resources the runtime creates.

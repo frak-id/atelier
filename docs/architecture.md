@@ -48,16 +48,12 @@ atelier/
 │   ├── shared/            # TypeBox schemas, config loaders (cross-app)
 │   ├── spec/               # @atelier/spec — the SandboxSpec seam contract
 │   └── compose/            # @atelier/compose — harness/preset/spec-merge SDK
-├── charts/
-│   └── atelier/            # Helm chart — SHARED CLUSTER INFRA ONLY
-│                            # (Zot, CLIProxy, sshpiper, cert-manager, kata,
-│                            #  snapshot class). Does not deploy the app.
 ├── infra/
 │   ├── images/             # Base image Dockerfiles (dev-base, dev-cloud)
 │   ├── nginx/               # Console nginx config (console.conf)
 │   └── k8s/v2/              # Server + console app manifests (the deploy)
 └── scripts/
-    └── deploy-k8s.sh        # Build agent image + push + helm deploy the infra chart
+    └── bump-version.ts      # Release version bump
 ```
 
 ---

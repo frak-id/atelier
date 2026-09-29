@@ -30,6 +30,10 @@ export type SandboxPodOptions = {
   workspaceId?: string;
   namespace?: string;
   pvcName?: string;
+  /** True only when `pvcName` was just created blank (no snapshot clone, not
+   * a resumed PVC). Exposed to the guest as `VM.DATA_FRESH_ENV=1`: the ONLY
+   * condition under which `sandbox-boot.sh` may mkfs the workspace device. */
+  freshVolume?: boolean;
   requests?: Partial<ResourceSpec>;
   limits?: Partial<ResourceSpec>;
   sshPipeKeySecret?: string;
@@ -161,6 +165,9 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
               name: "AGENT_PASSWORD",
               value: options.agentPassword,
             },
+            ...(options.pvcName && options.freshVolume
+              ? [{ name: VM.DATA_FRESH_ENV, value: "1" }]
+              : []),
           ],
           resources: {
             requests: {

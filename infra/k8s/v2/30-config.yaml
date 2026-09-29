@@ -1,8 +1,14 @@
 # Non-secret server config, mounted at /etc/atelier/sandbox.config.json
 # (ATELIER_CONFIG default). Secrets (GitHub OAuth, JWT, secrets key, MCP
 # token) are injected via env from the atelier-v2-secrets Secret and override
-# these values. Shares the cluster's Zot/Verdaccio/TopoLVM/kata with v1 but
-# uses the v2 namespaces + the hetzner-staging.frak.id domain.
+# these values. Zot/Verdaccio/TopoLVM/kata/BuildKit/cert-manager are shared
+# cluster infra owned by infra-core, referenced here by name only (see
+# README.md "Cluster prerequisites").
+#
+# NOTE: `server.maxSandboxes` / `server.maxActiveTasks` are NOT in the server
+# config schema and nothing enforces them: the only cap on concurrent
+# sandboxes today is what the node can schedule (~13 at the 4Gi default with
+# the kata-deploy 4.2 pod overhead).
 #
 # SSH note: `listenPort` (2222) is what the in-server ssh2 proxy binds inside
 # the pod (== Service targetPort). `port` (30222) is what clients dial and is

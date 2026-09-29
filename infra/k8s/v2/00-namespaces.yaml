@@ -1,6 +1,5 @@
-# Atelier v2 — parallel-to-v1 staging deploy on hetzner-atelier.
-# System components (server + console) and a dedicated sandbox namespace,
-# fully isolated from the live v1 stack (atelier-system / atelier-sandboxes).
+# Atelier v2 — staging deploy on hetzner-atelier.
+# System components (server + console) and a dedicated sandbox namespace.
 apiVersion: v1
 kind: Namespace
 metadata:

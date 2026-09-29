@@ -17,7 +17,7 @@ cargo build --release --target x86_64-unknown-linux-musl
 
 ## KVM Is Mandatory
 
-Kata Containers needs `/dev/kvm` on the host. Standard cloud VMs without nested virtualization will not run sandboxes — use bare metal. If sandbox pods stay in `ContainerCreating`, check that the `kata-clh` RuntimeClass exists and `/dev/kvm` is present.
+Kata Containers needs `/dev/kvm` on the host. Standard cloud VMs without nested virtualization will not run sandboxes — use bare metal. If sandbox pods stay in `ContainerCreating`, check that the RuntimeClass named by `kubernetes.runtimeClass` exists (`kata-atelier-clh` in the shipped config) and `/dev/kvm` is present. If they stay `Pending`, the node may be missing the `kata-deploy.katacontainers.io/default=true` label the RuntimeClass selects on.
 
 ## Prebuilds Require CSI Snapshots
 
@@ -26,10 +26,6 @@ Prebuilds need a CSI driver with VolumeSnapshot support (e.g. TopoLVM) **and** t
 ## OpenCode Config Is Read Once
 
 OpenCode reads `~/.config/opencode/opencode.json` (plugins + the baked CLIProxy API key) at bootstrap and never re-reads it. The spawn ordering `create CLIProxy key → sync configs → start opencode` cannot be reordered — opencode must not start before the config write lands.
-
-## CLIProxy Config Overwrites
-
-With `cliproxy.configSeedStrategy: hash-sync`, a `helm upgrade` that changes `apiKeys`, `extraConfig`, or `port` **overwrites** any changes made via the management UI. The default `seed-once` preserves UI changes but ignores later Helm value changes until the PVC is wiped.
 
 ## Cloudflare
 

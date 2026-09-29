@@ -15,9 +15,8 @@ New to Atelier? Read [Getting Started](getting-started.md) first. Choosing hardw
 - Debian 12 (Bookworm) or Ubuntu 22.04+ with systemd.
 
 ### Networking
-- A domain with wildcard DNS support, managed on **Cloudflare** (currently the only supported DNS-01 solver for wildcard certificates).
-- `your-domain.com` and `*.your-domain.com` pointing to the server IP.
-- Open inbound ports: `80` (HTTP), `443` (HTTPS), `2222` (SSH proxy).
+- A domain with wildcard DNS: `your-domain.com` and `*.your-domain.com` pointing to the server IP (each sandbox tool gets its own `{tool}-{id}.your-domain.com` host).
+- Open inbound ports: `80` (HTTP, also used by HTTP-01 certificate challenges), `443` (HTTPS), and the SSH NodePort (`30222` by default).
 
 Verify virtualization before going further:
 
@@ -29,6 +28,10 @@ grep -cE 'vmx|svm' /proc/cpuinfo # must be > 0
 ## Prerequisites
 
 Before installing Atelier, your cluster needs several system components.
+Atelier does not install any of them: the app config
+(`infra/k8s/v2/30-config.yaml`) references each one by name. The table in
+[`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md#cluster-prerequisites-not-managed-from-this-repo)
+lists which config key points at which resource.
 
 ### 1. k3s
 
@@ -46,9 +49,11 @@ kubectl get nodes   # node should be Ready
 curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
 
-### 3. cert-manager
+### 3. cert-manager + a ClusterIssuer
 
-Atelier uses cert-manager for automatic wildcard TLS certificates via Let's Encrypt:
+The console Ingress and every per-sandbox tool Ingress get a per-host Let's
+Encrypt certificate from a ClusterIssuer you create (HTTP-01 is enough; no
+wildcard certificate is needed):
 
 ```bash
 helm repo add jetstack https://charts.jetstack.io
@@ -57,24 +62,46 @@ helm install cert-manager jetstack/cert-manager \
   --namespace cert-manager \
   --create-namespace \
   --set crds.enabled=true
+
+kubectl apply -f - <<'EOF'
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    email: admin@your-domain.com
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+EOF
 ```
 
-### 4. Kata Containers
+Set its name in `30-config.yaml` (`kubernetes.toolIngressClusterIssuer`) and in
+the `cert-manager.io/cluster-issuer` annotation of `70-ingress.yaml`.
 
-Kata Containers provides the VM isolation for sandboxes. Install the runtime with `kata-deploy`:
+### 4. Kata Containers + the atelier runtime
+
+Kata Containers provides the VM isolation for sandboxes. Atelier needs the
+`kata-atelier-clh` custom runtime (stock Cloud Hypervisor + a drop-in pinning
+virtio-blk for the raw-block workspace volume). Install `kata-deploy` with the
+reference values from this repo:
 
 ```bash
-git clone --depth 1 https://github.com/kata-containers/kata-containers.git /tmp/kata-src
-helm install kata-deploy /tmp/kata-src/tools/packaging/kata-deploy/helm-chart/kata-deploy \
-  --set k8sDistribution=k3s \
-  --set env.createRuntimeClasses=true \
-  --set env.createDefaultRuntimeClass=true
+helm install kata-deploy \
+  oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
+  -n default -f infra/k8s/v2/kata-atelier-values.yaml
 ```
 
-Verify the `kata-clh` RuntimeClass exists:
+Verify the RuntimeClass exists and the node is labelled:
 
 ```bash
-kubectl get runtimeclass kata-clh
+kubectl get runtimeclass kata-atelier-clh
+kubectl get node -L kata-deploy.katacontainers.io/default
 ```
 
 ### 5. Storage and snapshots (optional — required for prebuilds)
@@ -110,20 +137,36 @@ helm install topolvm topolvm/topolvm \
   --set lvmd.deviceClasses[0].default=true
 ```
 
-Then enable snapshots in your Atelier values (step below):
+Create a VolumeSnapshotClass for it:
 
-```yaml
-kubernetes:
-  storageClass: topolvm-provisioner
-snapshots:
-  createSnapshotClass: true
-  driver: topolvm.io
+```bash
+kubectl apply -f - <<'EOF'
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: atelier-snapshots
+driver: topolvm.io
+deletionPolicy: Delete
+EOF
 ```
 
-## Installation
+Then point `kubernetes.storageClass` (the TopoLVM StorageClass; it must allow
+`volumeMode: Block`) and `kubernetes.volumeSnapshotClass` at them in
+`infra/k8s/v2/30-config.yaml`.
 
-Installation has two independent phases: the **shared infra chart**
-(`charts/atelier`) and the **server + console app** (`infra/k8s/v2`).
+### 6. OCI registry and image builds
+
+Base images and toolset artifacts are pushed to an OCI registry the cluster can
+pull from (e.g. [Zot](https://zotregistry.dev)); set it as
+`kubernetes.registryUrl` (`host:port`). A plain-HTTP in-cluster registry must
+also be declared as a mirror in `/etc/rancher/k3s/registries.yaml` so
+containerd can pull from it.
+
+Images are built with BuildKit (`imageBuilder` in `30-config.yaml`). Point
+`imageBuilder.endpoint` at an existing `buildkitd`, or leave it empty to run
+BuildKit daemonless inside the build Job.
+
+## Installation
 
 ### 1. Create a GitHub OAuth App
 
@@ -132,43 +175,7 @@ Atelier authenticates users via GitHub OAuth. Create an OAuth App at <https://gi
 - **Homepage URL**: `https://atelier.your-domain.com`
 - **Authorization callback URL**: `https://atelier.your-domain.com/auth/callback`
 
-### 2. Create a Cloudflare API token
-
-cert-manager needs a Cloudflare API token to solve the DNS-01 challenge for the wildcard certificate. Create one with `Zone → DNS → Edit` permission on your domain's zone.
-
-### 3. Prepare values.yaml (shared infra chart)
-
-Create a `values.production.yaml`. This is the minimal working configuration:
-
-```yaml
-certManager:
-  cloudflare:
-    apiToken: "your-cloudflare-token"
-```
-
-Every available option is documented in [Advanced Configuration](advanced-configuration.md).
-
-### 4. Deploy the shared infra chart
-
-From the repository root:
-
-```bash
-helm upgrade --install atelier ./charts/atelier \
-  --namespace atelier-system \
-  --create-namespace \
-  --values values.production.yaml
-```
-
-Alternatively, from a dev machine, the deploy script builds the sandbox agent image, pushes it, and deploys the chart over SSH:
-
-```bash
-VALUES_FILE=./values.production.yaml ./scripts/deploy-k8s.sh
-```
-
-This gives you Zot, CLIProxyAPI, sshpiper, cert-manager issuers, and the Kata
-`RuntimeClass` — but not the app itself yet.
-
-### 5. Deploy the server + console app
+### 2. Deploy the server + console app
 
 Edit `infra/k8s/v2/30-config.yaml` for your domain and cluster settings (see
 [Advanced Configuration](advanced-configuration.md#app-configuration-infrak8sv230-configyaml--secrets)),
@@ -179,9 +186,6 @@ token, CLIProxy key), then apply the manifests in order — full sequence in
 ```bash
 kubectl apply -f infra/k8s/v2/00-namespaces.yaml
 kubectl apply -f infra/k8s/v2/10-rbac.yaml
-# kata custom runtime (virtiofsd --xattr) — needed once per cluster:
-helm upgrade kata-deploy oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
-  --version 3.31.0 -n default -f infra/k8s/v2/kata-atelier-values.yaml
 kubectl apply -f infra/k8s/v2/30-config.yaml
 kubectl apply -f infra/k8s/v2/40-server-pvc.yaml
 # create the atelier-v2-secrets Secret, then:
@@ -190,29 +194,25 @@ kubectl apply -f infra/k8s/v2/60-service.yaml
 kubectl apply -f infra/k8s/v2/70-ingress.yaml
 ```
 
-### 6. Expose the SSH proxy (optional)
+### 3. Expose SSH (optional)
 
-sshpiper listens on NodePort `30022`. To offer SSH on the documented port `2222`, add a DNAT rule on the host:
-
-```bash
-iptables -t nat -A PREROUTING -p tcp --dport 2222 -j REDIRECT --to-port 30022
-```
-
-(or adjust `sshpiper.nodePort` / your firewall to taste).
+The server runs its own SSH gateway (`domain.ssh.gateway: in-server`),
+exposed by `60-service.yaml` on NodePort `30222`. Open that port on the host
+firewall. `domain.ssh.port` in `30-config.yaml` must equal the NodePort: it's
+the port advertised in each sandbox's SSH URL.
 
 ## Post-install
 
 ### Verify deployment
 
 ```bash
-kubectl get pods -n atelier-system      # shared infra
 kubectl get pods -n atelier-v2-system   # server + console app
 ```
 
-All pods should reach `Running`. The wildcard certificate can take a couple of minutes:
+The pod should reach `Running`. The console certificate can take a couple of minutes:
 
 ```bash
-kubectl get certificates -n atelier-system   # READY should become True
+kubectl get certificates -n atelier-v2-system   # READY should become True
 ```
 
 ### Access the console
@@ -236,23 +236,19 @@ sandboxes spawn instantly from a snapshot.
 
 ## Updating
 
-Pull the latest changes and run the Helm upgrade again:
-
-```bash
-helm upgrade atelier ./charts/atelier \
-  --namespace atelier-system \
-  --values values.production.yaml
-```
-
-> **Note:** if you changed `cliproxy.apiKeys`, `cliproxy.extraConfig`, or ports, check the [CLIProxy config seeding warning](advanced-configuration.md#cliproxyapi-ai-model-proxy) first.
+Rebuild the server + console images and roll the Deployment (see
+[`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md#rebuild-images-in-cluster-no-local-docker)),
+and re-apply any changed manifests under `infra/k8s/v2/`.
 
 ## Manual TLS
 
 If you prefer to manage certificates manually instead of using cert-manager:
 
-1. Set `certManager.enabled: false` in your values.
-2. Create a TLS secret named `atelier-tls` in the `atelier-system` namespace containing your wildcard certificate.
-3. Update the ingress configuration to reference this secret.
+1. Remove the cert-manager annotations from `70-ingress.yaml` and create the
+   TLS Secret it references (`spec.tls[].secretName`) yourself.
+2. Leave `kubernetes.toolIngressClusterIssuer` empty in `30-config.yaml` and
+   provide the per-tool TLS some other way (e.g. a wildcard default
+   certificate in Traefik).
 
 ## Troubleshooting
 
@@ -275,14 +271,15 @@ kubectl describe pod -n atelier-v2-sandboxes <pod-name>
 
 ### Common issues
 
-- **Sandbox pods stuck in `ContainerCreating`** — ensure `/dev/kvm` exists on the host and `kubectl get runtimeclass kata-clh` succeeds. Check `kubectl get pods -n kube-system -l name=kata-deploy`.
+- **Sandbox pods stuck in `ContainerCreating`** — ensure `/dev/kvm` exists on the host and `kubectl get runtimeclass kata-atelier-clh` succeeds. Check `kubectl get pods -n kube-system -l name=kata-deploy`.
+- **Sandbox pods stuck in `Pending`** — the `kata-atelier-clh` RuntimeClass only schedules onto nodes labelled `kata-deploy.katacontainers.io/default=true` (set by kata-deploy), and adds a per-pod overhead of 250m CPU / 130Mi: check `kubectl describe pod` for the scheduling reason.
 - **TLS certificate pending** — inspect cert-manager:
   ```bash
-  kubectl get certificates -n atelier-system
+  kubectl get certificates -A
   kubectl get challenges --all-namespaces
   kubectl logs -n cert-manager -l app.kubernetes.io/component=controller
   ```
-  Most often the Cloudflare token lacks DNS edit permission on the zone.
-- **Prebuilds disabled at startup** — the server couldn't find a working VolumeSnapshotClass. Verify the snapshot controller and TopoLVM are installed and `snapshots.driver` (chart) / `kubernetes.volumeSnapshotClass` (app config) match your CSI driver.
+  With HTTP-01, port 80 must be reachable from the internet and the host must resolve to the server.
+- **Prebuilds disabled at startup** — the server couldn't find a working VolumeSnapshotClass. Verify the snapshot controller and TopoLVM are installed and the VolumeSnapshotClass named by `kubernetes.volumeSnapshotClass` (app config) uses your CSI driver.
 - **DNS resolution** — verify both `your-domain.com` and `*.your-domain.com` resolve to the server's public IP.
 - **WebSockets dropping behind Cloudflare proxy** — disable Rocket Loader (see [Constraints](constraints.md#cloudflare)).

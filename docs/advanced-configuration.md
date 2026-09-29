@@ -1,29 +1,18 @@
 # Advanced Configuration
 
-Atelier's deploy topology is split in two:
+Atelier deploys only the server + console app: plain Kubernetes manifests
+under **`infra/k8s/v2`** (Deployment, Service, Ingress, config ConfigMap,
+secrets, PVC, RBAC). See [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md)
+for the full apply sequence.
 
-- **`charts/atelier`** — the shared cluster infra Helm chart: Zot (OCI
-  registry), CLIProxyAPI, sshpiper, cert-manager issuers + wildcard certs,
-  the Kata `RuntimeClass`, and the prebuild `VolumeSnapshotClass`. It does
-  **not** deploy the server or console app.
-- **`infra/k8s/v2`** — plain Kubernetes manifests for the server + console
-  app itself (Deployment, Service, Ingress, config ConfigMap, secrets, PVC,
-  RBAC). See [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md) for the
-  full apply sequence.
+Cluster infra (Kata runtime, cert-manager ClusterIssuer, TopoLVM + snapshot
+class, OCI registry, BuildKit, CLIProxy) is installed separately and
+referenced by name from the app config; see the [Setup Guide](setup.md#prerequisites).
 
-This page documents the infra chart's values (`charts/atelier/values.yaml`).
 For app-level settings (domain, auth, ports, sandbox defaults, MCP token,
 CLIProxy wiring), edit `infra/k8s/v2/30-config.yaml` (non-secret config,
 mounted as `/etc/atelier/sandbox.config.json`) and the `atelier-v2-secrets`
 Secret (credentials) — see the schema reference below.
-
-Apply infra chart changes with:
-
-```bash
-helm upgrade atelier ./charts/atelier \
-  --namespace atelier-system \
-  --values values.production.yaml
-```
 
 ## App configuration (`infra/k8s/v2/30-config.yaml` + secrets)
 
@@ -122,165 +111,19 @@ in-cluster build needs no pre-existing daemon — the same zero-dependency
 property `kind=kaniko` offered, without depending on the now-archived
 upstream Kaniko project. `kind=kaniko` stays selectable but is deprecated.
 
-## Infra chart values (`charts/atelier/values.yaml`)
-
-### Ingress
-
-```yaml
-ingress:
-  className: traefik             # traefik (k3s default) | nginx | …
-  annotations: {}
-```
-
-### In-pod sandbox agent
-
-```yaml
-agent:
-  image:
-    repository: ghcr.io/frak-id/sandbox-agent
-    tag: ""                      # Empty defaults to the chart appVersion
-```
-
-Not run directly — the binary is baked into base images at build time
-(`/usr/local/bin/sandbox-agent`, from `apps/agent-v2`). Set `repository: ""`
-to fall back to the in-registry `<registryUrl>/sandbox-agent:latest`.
-
-### Zot (OCI Registry)
-
-```yaml
-zot:
-  enabled: true
-  externalUrl: ""              # Use an existing registry instead (host:port, no scheme).
-                               # Skips the bundled Zot deployment entirely.
-  image:
-    repository: ghcr.io/project-zot/zot-linux-amd64
-    tag: "v2.1.14"
-  persistence:
-    size: 20Gi
-    storageClass: ""
-  port: 5000
-```
-
-### CLIProxyAPI (AI model proxy)
-
-Wraps Claude, Gemini, Codex, Qwen, etc. into OpenAI-compatible endpoints with a management UI at `/management.html`.
-
-```yaml
-cliproxy:
-  enabled: true
-  port: 8317
-  configSeedStrategy: "seed-once"  # seed-once | hash-sync (see warning below)
-  managementKey: ""                # Management UI key (auto-generated if empty)
-  managerApiKey: ""                # Key the app uses to fetch models (auto-generated)
-  apiKeys: []                      # Bearer tokens for proxy clients
-  extraConfig: {}                  # Merged into config.yaml (provider keys, aliases, …)
-  persistence:
-    size: 1Gi
-```
-
-> **Warning:** with `configSeedStrategy: hash-sync`, a `helm upgrade` that changes `apiKeys`, `extraConfig`, or `port` **overwrites** any config made through the management UI. `seed-once` (default) preserves UI changes but ignores later Helm value changes.
-
-Example `extraConfig`:
-
-```yaml
-cliproxy:
-  extraConfig:
-    gemini-api-key:
-      - api-key: "AIzaSy..."
-    proxy-url: "socks5://proxy:1080"
-```
-
-### sshpiper (SSH proxy)
-
-Username-based SSH routing: `ssh sandbox-{id}@your-host -p 2222`.
-
-```yaml
-sshpiper:
-  enabled: true
-  port: 2222          # SSH listen port inside the cluster
-  nodePort: 30022     # External NodePort (0 = auto-assign)
-  logLevel: "info"    # trace | debug | info | warn | error
-```
-
-To expose plain port `2222` externally, DNAT `2222 → 30022` on the host firewall, or set k3s' service node port range to include 2222.
-
-### cert-manager Integration
-
-```yaml
-certManager:
-  enabled: true
-  namespace: cert-manager            # Where cert-manager is installed
-  createIssuer: true                 # Set false if you manage ClusterIssuers externally
-  issuerName: letsencrypt-prod       # or letsencrypt-staging while testing
-  server: https://acme-v02.api.letsencrypt.org/directory
-  cloudflare:
-    apiToken: ""                     # Chart creates the Secret when set
-    apiTokenSecretRef:               # Or reference a pre-created Secret
-      name: cloudflare-api-token
-      key: api-token
-```
-
-Currently **only Cloudflare DNS-01** is supported for the wildcard certificate.
-
-### Kata Containers runtime class
-
-```yaml
-kata:
-  createRuntimeClass: false    # kata-deploy usually creates it; set true to manage in-chart
-  handler: kata-clh
-```
-
-Prerequisites: kata-deploy must be installed in the cluster.
-
-### Snapshot support (for prebuilds)
-
-Prebuilds use CSI VolumeSnapshots to clone workspace filesystems instantly.
-Without a CSI driver + snapshot controller, prebuilds are automatically
-disabled at startup — everything else still works.
-
-```yaml
-snapshots:
-  createSnapshotClass: false   # Let the chart create a VolumeSnapshotClass
-  driver: ""                   # CSI driver name, e.g. "topolvm.io" or "ebs.csi.aws.com"
-  deletionPolicy: Delete       # Delete | Retain
-```
-
-### Global / RBAC
-
-```yaml
-global:
-  imagePullSecrets: []           # e.g. [{ name: regcred }]
-
-serviceAccount:
-  create: true
-  name: ""
-  annotations: {}
-
-rbac:
-  create: true
-```
-
 ## Recipes
 
-### Use an external registry instead of Zot
+### Use a different OCI registry
 
-```yaml
-# charts/atelier/values.yaml
-zot:
-  enabled: false
-  externalUrl: "registry.internal:5000"
-```
-
-Then point the app's `kubernetes.registryUrl` (in `infra/k8s/v2/30-config.yaml`) at the same host:port.
+Point the app's `kubernetes.registryUrl` (in `infra/k8s/v2/30-config.yaml`) at
+the registry's `host:port` (no scheme). A plain-HTTP registry must also be a
+mirror in the node's `/etc/rancher/k3s/registries.yaml`.
 
 ### Enable prebuilds with TopoLVM
 
-```yaml
-# charts/atelier/values.yaml
-snapshots:
-  createSnapshotClass: true
-  driver: topolvm.io
-```
+Create a `VolumeSnapshotClass` for the `topolvm.io` driver (see
+[Setup → Storage and snapshots](setup.md#5-storage-and-snapshots-optional--required-for-prebuilds)),
+then reference it and a Block-capable TopoLVM StorageClass:
 
 ```jsonc
 // infra/k8s/v2/30-config.yaml

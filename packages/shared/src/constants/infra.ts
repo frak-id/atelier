@@ -20,4 +20,10 @@ export const VM = {
    * `volumeDevices[].devicePath` requests; `sandbox-boot.sh` mkfs's it on
    * first boot (idempotent) and mounts it at `DATA`. */
   DATA_DEVICE: "/dev/atelier-data",
+  /** Pod env var set to "1" ONLY when the server just created the workspace
+   * PVC blank (no snapshot `dataSource`, not a resumed PVC). `sandbox-boot.sh`
+   * refuses to mkfs `DATA_DEVICE` without it, so a resumed or snapshot-cloned
+   * disk that `blkid` fails to recognise (e.g. a device-presentation change
+   * after a Kata upgrade) fails the boot loudly instead of being wiped. */
+  DATA_FRESH_ENV: "ATELIER_DATA_FRESH",
 } as const;
