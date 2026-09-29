@@ -38,6 +38,24 @@ Exits 0 only if every check passes:
 
 `MEM=4Gi` tests a bigger pod (default 2Gi, the tightest common size).
 
+## `extended.sh <runtimeClass>`
+
+The other runtime-dependent paths, still at pod level:
+
+| Check | What it proves |
+|-------|----------------|
+| Toolset build + capture | `mkfs.erofs` + `oras push` from inside the guest (`POST /toolsets/build`, `/toolsets/capture`) |
+| Built artifact in a new VM | The pushed toolset materializes and runs in a fresh sandbox |
+| Pause/resume shape | Guest `sync`, VolumeSnapshot of the live PVC, clone, boot the clone: no reformat, data intact, home assembled |
+| SSH | `ssh dev@<pod IP>` with the Secret-mounted key (the sshpiper / in-server proxy path) |
+
+It pushes two tiny probes to `toolsets/kata-eval/probe` in Zot and deletes
+them at the end.
+
+Not covered at pod level (runtime-independent or server-side, so check them
+through Atelier after a cutover): tool ingresses, the terminal WebSocket,
+the server's own prebuild orchestration.
+
 ## `bench.sh <runtimeClass>...`
 
 Cold boot to agent-healthy (`BOOT_RUNS`, default 3), raw disk I/O (fio,
@@ -52,7 +70,7 @@ overlay, one class at a time. `MEM` defaults to 4Gi.
 |------------------|--------|
 | `kata-atelier-clh` (Go runtime) | Memory bound FAILS at any overhead: guest RAM = limit + 2 GiB |
 | stock `kata-clh-runtime-rs` (130Mi, no cache_direct) | 11/15: memory bound FAILS (host OOM kill) |
-| `kata-atelier-clh-rs` settings (384Mi + `block_device_cache_direct`) | **15/15** at 2Gi (peak 2096/2432 Mi), memory bound also passes at 4Gi (peak 4139/4480 Mi) |
+| `kata-atelier-clh-rs` (infra-core release: 384Mi + `block_device_cache_direct`) | **15/15** at 2Gi (peak 2092/2432 Mi), **13/13** at 4Gi (peak 4137/4480 Mi); `extended.sh` **8/8** |
 
 The memory bound needs all three: runtime-rs static sizing +
 `block_device_cache_direct = true`, the 384Mi overhead, and loop direct I/O
