@@ -1731,13 +1731,25 @@ function mergeResume(spec: SandboxSpec, req: ResumeRequest): SandboxSpec {
   };
 }
 
+/** Resources for the throwaway build pods (prebuild bake, toolset build).
+ * Under the Kata runtime-rs class the guest gets exactly `memoryMb` of RAM
+ * (static sizing); the Go runtime gave it `memoryMb` + a 2 GiB default on top,
+ * sized past the pod's cgroup limit, and those pods were OOM-killed whole by
+ * the host once page cache filled the guest. 4096 keeps the guest RAM these
+ * builds ran with before (2048 + 2048) while the pod limit now really bounds
+ * it: a runaway build hits the guest OOM killer, not a host VM kill. */
+const BUILD_POD_RESOURCES: SandboxSpec["resources"] = {
+  vcpus: 2,
+  memoryMb: 4096,
+};
+
 /** Synthesize the minimal SandboxSpec the prebuild pod boots from: source +
- * default resources + staged files + build env. No processes/ports (nothing
+ * build resources + staged files + build env. No processes/ports (nothing
  * to supervise or expose while baking). */
 function prebuildToSpec(spec: PrebuildSpec): SandboxSpec {
   return {
     source: spec.source,
-    resources: { vcpus: 2, memoryMb: 2048 },
+    resources: BUILD_POD_RESOURCES,
     files: spec.files,
     env: spec.env,
   };
@@ -1765,7 +1777,7 @@ function shellQuote(arg: string): string {
 }
 
 /** Synthesize the minimal SandboxSpec a toolset build pod boots from: source +
- * default resources + build env. No processes/ports/files — nothing to
+ * build resources + build env. No processes/ports/files — nothing to
  * supervise or expose while installing tools into the home. */
 function toolsetToSpec(
   source: SandboxSpec["source"],
@@ -1773,7 +1785,7 @@ function toolsetToSpec(
 ): SandboxSpec {
   return {
     source,
-    resources: { vcpus: 2, memoryMb: 2048 },
+    resources: BUILD_POD_RESOURCES,
     ...(env && { env }),
   };
 }

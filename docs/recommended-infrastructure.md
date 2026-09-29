@@ -8,7 +8,7 @@ A single **Hetzner dedicated server (AX-line)** running k3s is the sweet spot: c
 
 ## Sizing Guide
 
-Each sandbox is a VM with its own kernel, plus the workloads inside it (code-server, OpenCode, Chromium, your dev servers). Budget roughly **2–4 GB RAM and 1–2 vCPU per active sandbox**, plus ~4 GB for the system (k3s, the server, Zot, CLIProxy). Kata also adds a fixed per-sandbox scheduling overhead (250m CPU / 130Mi with kata-deploy 4.2).
+Each sandbox is a VM with its own kernel, plus the workloads inside it (code-server, OpenCode, Chromium, your dev servers). Budget roughly **2–4 GB RAM and 1–2 vCPU per active sandbox**, plus ~4 GB for the system (k3s, the server, Zot, CLIProxy). Kata also adds a fixed per-sandbox scheduling overhead (250m CPU / 384Mi with the `kata-atelier-clh-rs` runtime). A sandbox's memory size is its VM's entire RAM, page cache included.
 
 | Team size | Concurrent sandboxes | RAM | CPU | Storage |
 |-----------|---------------------|-----|-----|---------|

@@ -105,6 +105,10 @@
             {
               "const": "mock",
               "type": "string"
+            },
+            {
+              "const": "local",
+              "type": "string"
             }
           ]
         },
@@ -165,7 +169,7 @@
           "type": "string"
         },
         "runtimeClass": {
-          "default": "kata-clh",
+          "default": "kata-atelier-clh-rs",
           "type": "string"
         },
         "ingressClassName": {
@@ -177,7 +181,7 @@
           "type": "string"
         },
         "registryUrl": {
-          "default": "zot.atelier-system.svc:5000",
+          "default": "",
           "type": "string"
         },
         "npmRegistryUrl": {
@@ -241,6 +245,10 @@
         "defaultImage": {
           "default": "dev-base",
           "type": "string"
+        },
+        "agentImage": {
+          "default": "ghcr.io/frak-id/sandbox-agent:latest",
+          "type": "string"
         }
       }
     },
@@ -292,7 +300,7 @@
           "type": "string"
         },
         "platform": {
-          "default": "linux/amd64",
+          "default": "",
           "type": "string"
         },
         "cacheRepo": {

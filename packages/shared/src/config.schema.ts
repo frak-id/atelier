@@ -105,8 +105,9 @@ export const KubernetesConfigSchema = Type.Object(
     namespace: Type.String({ default: "atelier-sandboxes" }),
     /** Path to kubeconfig file (ignored when running in-cluster) */
     kubeconfig: Type.String({ default: "/etc/rancher/k3s/k3s.yaml" }),
-    /** Kata Containers runtime class name */
-    runtimeClass: Type.String({ default: "kata-clh" }),
+    /** Kata Containers runtime class name: the runtime-rs custom runtime from
+     * infra/k8s/v2/kata-atelier-values.yaml (guest RAM == pod memory limit) */
+    runtimeClass: Type.String({ default: "kata-atelier-clh-rs" }),
     /** Ingress class name for dynamically created ingresses (e.g., traefik, nginx) */
     ingressClassName: Type.String({ default: "" }),
     /**

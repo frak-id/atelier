@@ -33,10 +33,10 @@
   "kubernetes": {
     "namespace": "atelier-sandboxes",
     "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
-    "runtimeClass": "kata-clh",
+    "runtimeClass": "kata-atelier-clh-rs",
     "ingressClassName": "",
     "toolIngressClusterIssuer": "",
-    "registryUrl": "zot.atelier-system.svc:5000",
+    "registryUrl": "",
     "npmRegistryUrl": "",
     "storageClass": "",
     "volumeSnapshotClass": "",
@@ -47,7 +47,8 @@
     "provider": "csi"
   },
   "sandbox": {
-    "defaultImage": "dev-base"
+    "defaultImage": "dev-base",
+    "agentImage": "ghcr.io/frak-id/sandbox-agent:latest"
   },
   "ports": {
     "terminal": 7681,
@@ -58,7 +59,7 @@
     "image": "",
     "endpoint": "",
     "dockerHost": "",
-    "platform": "linux/amd64",
+    "platform": "",
     "cacheRepo": "",
     "insecureRegistry": true,
     "tls": {
