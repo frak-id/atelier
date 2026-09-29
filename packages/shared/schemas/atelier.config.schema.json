@@ -169,7 +169,7 @@
           "type": "string"
         },
         "runtimeClass": {
-          "default": "kata-clh",
+          "default": "kata-atelier-clh-rs",
           "type": "string"
         },
         "ingressClassName": {

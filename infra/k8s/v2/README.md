@@ -14,7 +14,8 @@ with it.
 
 | Dependency | Name atelier relies on | Where it's referenced |
 |------------|------------------------|-----------------------|
-| kata-deploy | RuntimeClass `kata-atelier-clh` | `30-config.yaml` `kubernetes.runtimeClass` |
+| kata-deploy | RuntimeClass `kata-atelier-clh-rs` (`kata-atelier-clh` = rollback) | `30-config.yaml` `kubernetes.runtimeClass` |
+| Node | thin-pool loop device with `--direct-io=on`; `kvm_amd sev=0` on AMD | `kata-atelier-values.yaml` header, `docs/constraints.md` |
 | TopoLVM | StorageClass `topolvm-thin` (Block volumeMode + block snapshots) | `30-config.yaml` `kubernetes.storageClass` |
 | CSI snapshots | VolumeSnapshotClass `atelier-snapshots` | `30-config.yaml` `kubernetes.volumeSnapshotClass` |
 | Zot | `zot.zot.svc:5000` (plain HTTP, k3s `registries.yaml` mirror) | `30-config.yaml` `kubernetes.registryUrl`, `deploy.sh` |
@@ -35,9 +36,14 @@ release in sync with it when either side changes.
   code-server are the `org-toolbox` built toolset artifact (published to Zot,
   materialized by the guest agent at boot into `~/.local`) — no PVC/Job
   (composed-prebuild-volumes.md §6 "kill shared-binaries").
-- Runtime class: sandboxes run under `kata-atelier-clh` (`30-config.yaml`), a
-  kata-deploy `customRuntimes` = stock `clh` + a Kata `config.d` drop-in that
-  pins `block_device_driver = virtio-blk` (see `kata-atelier-values.yaml`).
+- Runtime class: sandboxes run under `kata-atelier-clh-rs` (`30-config.yaml`),
+  a kata-deploy `customRuntimes` = stock runtime-rs `clh-runtime-rs` + a Kata
+  `config.d` drop-in (virtio-blk + `block_device_cache_direct`) and a 384Mi
+  pod overhead, so the pod memory limit bounds the whole VM (see
+  `kata-atelier-values.yaml`). `kata-atelier-clh` (Go runtime) stays defined
+  as the rollback: workspace disks move between the two unchanged, so a
+  rollback is flipping `runtimeClass` back + pause/resume. Gate any runtime
+  change with `kata-eval/validate.sh` (see `kata-eval/README.md`).
   The workspace PVC is a `volumeMode: Block` volume; Kata passes it to the
   guest as virtio-blk and the guest formats/mounts ext4 at `/data`, giving
   overlayfs real `trusted.overlay.*` (no `userxattr`) — Option C of
@@ -70,7 +76,7 @@ The GitHub OAuth app's callback URL must be
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/00-namespaces.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/10-rbac.yaml
 # check the infra-core prerequisites above exist (at least the runtime class):
-kubectl --context hetzner-atelier get runtimeclass kata-atelier-clh
+kubectl --context hetzner-atelier get runtimeclass kata-atelier-clh-rs
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/30-config.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/v2/40-server-pvc.yaml
 # create the secret (above), then:

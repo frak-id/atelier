@@ -104,7 +104,7 @@ Atelier deploys only **the server + console app**: plain manifests under
 [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md) for the apply sequence
 and how to rebuild images in-cluster with BuildKit.
 
-The shared cluster infra (kata-deploy and the `kata-atelier-clh` runtime,
+The shared cluster infra (kata-deploy and the `kata-atelier-clh-rs` runtime,
 cert-manager + ClusterIssuers, TopoLVM + the snapshot class, Zot, BuildKit,
 CLIProxy) is **not** deployed from this repo — on hetzner-atelier infra-core
 owns it. The app config references it by name; the list is in

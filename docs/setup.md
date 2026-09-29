@@ -87,9 +87,10 @@ the `cert-manager.io/cluster-issuer` annotation of `70-ingress.yaml`.
 ### 4. Kata Containers + the atelier runtime
 
 Kata Containers provides the VM isolation for sandboxes. Atelier needs the
-`kata-atelier-clh` custom runtime (stock Cloud Hypervisor + a drop-in pinning
-virtio-blk for the raw-block workspace volume). Install `kata-deploy` with the
-reference values from this repo:
+`kata-atelier-clh-rs` custom runtime (runtime-rs Cloud Hypervisor + a drop-in
+for the raw-block workspace volume, with a 384Mi pod overhead). Install
+`kata-deploy` with the values from this repo, which also define the
+Go-runtime `kata-atelier-clh` as a rollback:
 
 ```bash
 helm install kata-deploy \
@@ -100,9 +101,20 @@ helm install kata-deploy \
 Verify the RuntimeClass exists and the node is labelled:
 
 ```bash
-kubectl get runtimeclass kata-atelier-clh
+kubectl get runtimeclass kata-atelier-clh-rs
 kubectl get node -L kata-deploy.katacontainers.io/default
 ```
+
+Two node settings keep the pod memory limit bounding the whole VM, and on AMD
+hosts let runtime-rs start at all. See [Constraints](constraints.md) and the
+header of `infra/k8s/v2/kata-atelier-values.yaml`:
+
+- If the LVM thin pool sits on a loop device over a file, attach it with
+  `losetup --direct-io=on`.
+- On AMD CPUs without usable SEV (e.g. Ryzen): `options kvm_amd sev=0` in
+  `/etc/modprobe.d/`, then reload `kvm_amd` or reboot.
+
+`infra/k8s/v2/kata-eval/validate.sh kata-atelier-clh-rs` checks the result.
 
 ### 5. Storage and snapshots (optional — required for prebuilds)
 
@@ -271,8 +283,8 @@ kubectl describe pod -n atelier-v2-sandboxes <pod-name>
 
 ### Common issues
 
-- **Sandbox pods stuck in `ContainerCreating`** — ensure `/dev/kvm` exists on the host and `kubectl get runtimeclass kata-atelier-clh` succeeds. Check `kubectl get pods -n kube-system -l name=kata-deploy`.
-- **Sandbox pods stuck in `Pending`** — the `kata-atelier-clh` RuntimeClass only schedules onto nodes labelled `kata-deploy.katacontainers.io/default=true` (set by kata-deploy), and adds a per-pod overhead of 250m CPU / 130Mi: check `kubectl describe pod` for the scheduling reason.
+- **Sandbox pods stuck in `ContainerCreating`** — ensure `/dev/kvm` exists on the host and `kubectl get runtimeclass kata-atelier-clh-rs` succeeds. On AMD, a `SEV not supported` event means `kvm_amd sev` must be disabled (see above). Check `kubectl get pods -n kube-system -l name=kata-deploy`.
+- **Sandbox pods stuck in `Pending`** — the `kata-atelier-clh-rs` RuntimeClass only schedules onto nodes labelled `kata-deploy.katacontainers.io/default=true` (set by kata-deploy), and adds a per-pod overhead of 250m CPU / 384Mi: check `kubectl describe pod` for the scheduling reason.
 - **TLS certificate pending** — inspect cert-manager:
   ```bash
   kubectl get certificates -A

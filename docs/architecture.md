@@ -149,7 +149,7 @@ process starts (see [Constraints](constraints.md#toolsets-are-content-addressed-
 │    │         │        │        │                                │
 │ ┌──▼───┐ ┌──▼───┐ ┌──▼───┐ ┌──▼───┐                           │
 │ │Pod 1 │ │Pod 2 │ │Pod 3 │ │Pod n │  Kata sandbox pods        │
-│ │10.42 │ │10.42 │ │10.42 │ │10.42 │  (runtimeClass: kata-clh) │
+│ │10.42 │ │10.42 │ │10.42 │ │10.42 │  (kata-atelier-clh-rs)    │
 │ └──────┘ └──────┘ └──────┘ └──────┘                            │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -194,7 +194,7 @@ Server and console run as two containers in **one pod** (same origin, so the
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Kata Sandbox Pod                              │
-│                    (runtimeClassName: kata-clh)                  │
+│                    (runtimeClassName: kata-atelier-clh-rs)       │
 │                                                                 │
 │  Resources (configurable per sandbox):                          │
 │  ├── CPU: 500m-2000m (requests/limits)                          │

@@ -39,7 +39,8 @@ helm install cert-manager jetstack/cert-manager \
   --namespace cert-manager --create-namespace --set crds.enabled=true
 
 # 4. Kata Containers (VM isolation) + the atelier custom runtime
-#    (kata-atelier-clh: virtio-blk block passthrough for the workspace volume)
+#    (kata-atelier-clh-rs: runtime-rs Cloud Hypervisor, block passthrough for
+#    the workspace volume; see docs/setup.md for the two node settings)
 helm install kata-deploy \
   oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
   -n default -f infra/k8s/v2/kata-atelier-values.yaml

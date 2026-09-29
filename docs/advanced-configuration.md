@@ -42,7 +42,7 @@ The server reads a layered config: env vars > the mounted
   "kubernetes": {
     "namespace": "atelier-v2-sandboxes",
     "systemNamespace": "atelier-v2-system",
-    "runtimeClass": "kata-atelier-clh",
+    "runtimeClass": "kata-atelier-clh-rs",
     "ingressClassName": "traefik",
     "toolIngressClusterIssuer": "letsencrypt-prod",
     "registryUrl": "zot.zot.svc:5000",

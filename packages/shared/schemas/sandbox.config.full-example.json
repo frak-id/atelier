@@ -33,7 +33,7 @@
   "kubernetes": {
     "namespace": "atelier-sandboxes",
     "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
-    "runtimeClass": "kata-clh",
+    "runtimeClass": "kata-atelier-clh-rs",
     "ingressClassName": "",
     "toolIngressClusterIssuer": "",
     "registryUrl": "",

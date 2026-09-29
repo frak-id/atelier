@@ -17,7 +17,7 @@ cargo build --release --target x86_64-unknown-linux-musl
 
 ## KVM Is Mandatory
 
-Kata Containers needs `/dev/kvm` on the host. Standard cloud VMs without nested virtualization will not run sandboxes — use bare metal. If sandbox pods stay in `ContainerCreating`, check that the RuntimeClass named by `kubernetes.runtimeClass` exists (`kata-atelier-clh` in the shipped config) and `/dev/kvm` is present. If they stay `Pending`, the node may be missing the `kata-deploy.katacontainers.io/default=true` label the RuntimeClass selects on.
+Kata Containers needs `/dev/kvm` on the host. Standard cloud VMs without nested virtualization will not run sandboxes — use bare metal. If sandbox pods stay in `ContainerCreating`, check that the RuntimeClass named by `kubernetes.runtimeClass` exists (`kata-atelier-clh-rs` in the shipped config) and `/dev/kvm` is present. If they stay `Pending`, the node may be missing the `kata-deploy.katacontainers.io/default=true` label the RuntimeClass selects on.
 
 ## Sandbox Memory: the Pod Limit Must Bound the Whole VM
 
