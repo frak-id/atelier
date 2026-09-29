@@ -96,6 +96,9 @@ export async function bootSandbox(
       : defaultVolumeSize();
 
   const agentPassword = generatePassword(32);
+  // uid of the PVC THIS call created, set only once the API server confirmed
+  // the create. The only PVC a failed boot may delete (see the catch below).
+  let createdPvcUid: string | undefined;
 
   try {
     // The SSH gateway strategy decides which secret the pod trusts as its
@@ -103,27 +106,31 @@ export async function bootSandbox(
     // key Secret) — sshpiper is optional (proposal §5).
     const ssh = await resolveSshGatewayBoot(sandboxId, input.authorizedKeys);
 
-    // All resources create in one concurrent batch, PVC included: a pod may
-    // reference a PVC that doesn't exist yet (it just stays unschedulable
-    // until the PVC-add event requeues it — level-triggered, same as
-    // StatefulSets), and within this batch the PVC create lands well before
-    // the pod is scheduled. local-path uses WaitForFirstConsumer: the PVC
-    // binds only when the pod referencing it is scheduled, so there is no
-    // separate waitForPvcBound.
+    // The PVC is created FIRST, on its own, and everything else only after
+    // the API server confirmed it. If that create fails (409: a same-name PVC
+    // already exists, e.g. `resume` wrongly concluded there was none), we
+    // abort before any pod exists — so no pod ever carries the fresh-volume
+    // marker against a disk this call didn't create, and the catch below
+    // knows exactly which PVC (by uid) is ours to roll back. It only needs
+    // to exist, not be bound: WaitForFirstConsumer binds it when the pod is
+    // scheduled, so there is no separate waitForPvcBound.
+    if (!input.reusePvc) {
+      const pvc = await kubeClient.createResource(
+        buildPvc({
+          name: pvcName,
+          size: volumeSize,
+          snapshotName: usedSnapshot ? input.snapshotName : undefined,
+          labels: {
+            "atelier.dev/sandbox": sandboxId,
+            "atelier.dev/component": "sandbox",
+          },
+        }),
+      );
+      createdPvcUid = pvc.metadata?.uid;
+    }
+
+    // The rest create in one concurrent batch.
     await Promise.all([
-      input.reusePvc
-        ? undefined
-        : kubeClient.createResource(
-            buildPvc({
-              name: pvcName,
-              size: volumeSize,
-              snapshotName: usedSnapshot ? input.snapshotName : undefined,
-              labels: {
-                "atelier.dev/sandbox": sandboxId,
-                "atelier.dev/component": "sandbox",
-              },
-            }),
-          ),
       ...createSandboxResources(sandboxId, spec, {
         image: input.image,
         agentPassword,
@@ -178,7 +185,14 @@ export async function bootSandbox(
       // upgrade), sandbox-boot.sh would refuse the unformatted disk forever.
       // Drop it so the retry recreates it fresh. The pod is already gone
       // (deleteRestartableResources waits), so pvc-protection won't stall.
-      if (freshVolume) await deleteFreshPvc(sandboxId, pvcName);
+      //
+      // Only ever the PVC this call CREATED: no confirmed create (it 409'd,
+      // errored, or never ran) means no uid and no delete — a same-name PVC
+      // we didn't make may hold a workspace. The uid precondition makes the
+      // API server enforce that too.
+      if (freshVolume && createdPvcUid) {
+        await deleteFreshPvc(sandboxId, pvcName, createdPvcUid);
+      }
     } else await cleanupSandboxResources(sandboxId);
     throw error;
   }
@@ -187,9 +201,15 @@ export async function bootSandbox(
 async function deleteFreshPvc(
   sandboxId: string,
   pvcName: string,
+  uid: string,
 ): Promise<void> {
   try {
-    await kubeClient.deleteResource("PersistentVolumeClaim", pvcName);
+    await kubeClient.deleteResource(
+      "PersistentVolumeClaim",
+      pvcName,
+      undefined,
+      { preconditions: { uid } },
+    );
     const gone = await kubeClient.waitForResourceDeleted(
       "PersistentVolumeClaim",
       pvcName,

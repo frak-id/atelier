@@ -58,6 +58,20 @@ export class KubeApiError extends SandboxError {
   }
 }
 
+/** A definitive "this object does not exist" answer from the API server — the
+ * ONLY error that may be read as absence. Anything else (5xx, 429 after
+ * retries, transport failure, 403) means "unknown", never "absent". */
+export function isKubeNotFound(err: unknown): boolean {
+  return err instanceof KubeApiError && err.status === 404;
+}
+
+/** Optional `DeleteOptions` for a single-object delete. `preconditions.uid`
+ * makes the API server refuse (409) to delete anything but that exact object,
+ * so a same-name object created by someone else can never be removed. */
+export type KubeDeleteOptions = {
+  preconditions?: { uid?: string; resourceVersion?: string };
+};
+
 export class KubeClient {
   public readonly namespace: string;
   private readonly kubeconfigPath: string;
@@ -80,8 +94,13 @@ export class KubeClient {
     return this.request<T>(path, { method: "POST", body });
   }
 
-  async delete(path: string): Promise<void> {
-    await this.request(path, { method: "DELETE" });
+  async delete(path: string, options?: KubeDeleteOptions): Promise<void> {
+    await this.request(path, {
+      method: "DELETE",
+      ...(options && {
+        body: { apiVersion: "v1", kind: "DeleteOptions", ...options },
+      }),
+    });
   }
 
   async patch<T>(
@@ -112,13 +131,14 @@ export class KubeClient {
     kind: string,
     name: string,
     namespace = this.namespace,
+    options?: KubeDeleteOptions,
   ): Promise<void> {
     if (isMock()) {
       return;
     }
 
     const path = resourceItemPath(kind, name, namespace);
-    await this.delete(path);
+    await this.delete(path, options);
   }
 
   /** Patch a namespaced resource by kind/name. Built-in kinds default to
@@ -344,6 +364,10 @@ export class KubeClient {
     return false;
   }
 
+  /** `false` ONLY on a 404; any other failure (API server down, 5xx after
+   * retries, 403) is rethrown. Callers make destructive decisions from this
+   * answer — e.g. `resume` derives "no PVC, boot a blank one" from it — so an
+   * unreachable API server must fail the operation, not read as "absent". */
   async resourceExists(
     kind: string,
     name: string,
@@ -354,14 +378,16 @@ export class KubeClient {
       const path = resourceItemPath(kind, name, namespace);
       await this.get(path);
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (isKubeNotFound(err)) return false;
+      throw err;
     }
   }
 
-  /** Fetch a namespaced resource, or `null` if absent/unreadable. Mock-safe
-   * (returns `null` under mock mode). Thin typed wrapper over `get` for
-   * callers that need to read a field (e.g. a PVC's `spec.volumeMode`). */
+  /** Fetch a namespaced resource, or `null` ONLY if it does not exist (404);
+   * any other failure is rethrown (same reasoning as `resourceExists`).
+   * Mock-safe (returns `null` under mock mode). Thin typed wrapper over `get`
+   * for callers that need to read a field (e.g. a PVC's `spec.volumeMode`). */
   async getResource<T = unknown>(
     kind: string,
     name: string,
@@ -370,8 +396,9 @@ export class KubeClient {
     if (isMock()) return null;
     try {
       return await this.get<T>(resourceItemPath(kind, name, namespace));
-    } catch {
-      return null;
+    } catch (err) {
+      if (isKubeNotFound(err)) return null;
+      throw err;
     }
   }
 
@@ -392,7 +419,18 @@ export class KubeClient {
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeout) {
-      if (!(await this.resourceExists(kind, name, namespace))) return true;
+      try {
+        if (!(await this.resourceExists(kind, name, namespace))) return true;
+      } catch (err) {
+        // Unknown is not "deleted": keep polling through a transient API
+        // failure (e.g. a k3s restart) and let the timeout decide. Not
+        // rethrown — this runs inside cleanup paths that must not mask the
+        // error that triggered them.
+        log.warn(
+          { kind, name, err },
+          "existence check failed while waiting for deletion; retrying",
+        );
+      }
       await Bun.sleep(pollInterval);
     }
 

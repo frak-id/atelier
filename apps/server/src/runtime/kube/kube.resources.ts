@@ -11,6 +11,8 @@ export type KubeResource = {
   metadata: {
     name: string;
     namespace?: string;
+    /** Server-assigned; present on objects the API server returned. */
+    uid?: string;
     labels?: Record<string, string>;
     annotations?: Record<string, string>;
   };
