@@ -1,5 +1,5 @@
 import type { ProcessStatus, SandboxUrl } from "@atelier/spec";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ChevronDown,
@@ -16,6 +16,7 @@ import {
   Star,
 } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import {
   processLogsQuery,
   sandboxDetailQuery,
@@ -599,9 +600,31 @@ function ExposePortSection({ sandboxId }: { sandboxId: string }) {
  * derives `paths`/`exclude` from the toolbox itself.
  */
 function SaveToolsetForToolboxSection({ sandboxId }: { sandboxId: string }) {
-  const { data: toolboxes } = useQuery(toolboxesListQuery("user"));
+  const { data: orgs, isPending: orgsPending } = useQuery(
+    organizationsListQuery(),
+  );
+  // Capturing needs toolbox-owner access (mirrors the server's
+  // `requireToolboxOwnerAccess`): always for personal toolboxes,
+  // owner/admin for an org's. Orgs where the caller is a plain member are
+  // skipped — the server would reject the capture anyway.
+  const owners = [
+    { owner: "user", label: "My toolboxes" },
+    ...(orgs ?? [])
+      .filter((org) => org.role === "owner" || org.role === "admin")
+      .map((org) => ({ owner: `org:${org.id}`, label: `${org.name} (org)` })),
+  ];
+  const results = useQueries({
+    queries: owners.map(({ owner }) => toolboxesListQuery(owner)),
+  });
+  const groups = owners
+    .map(({ owner, label }, i) => ({
+      owner,
+      label,
+      toolboxes: (results[i]?.data ?? []).filter((tb) => tb.paths.length > 0),
+    }))
+    .filter((group) => group.toolboxes.length > 0);
+  const isLoading = orgsPending || results.some((r) => r.isPending);
   const captureVersion = useCaptureToolboxVersion();
-  const capturable = (toolboxes ?? []).filter((tb) => tb.paths.length > 0);
 
   const [toolboxId, setToolboxId] = useState("");
   const [description, setDescription] = useState("");
@@ -632,10 +655,13 @@ function SaveToolsetForToolboxSection({ sandboxId }: { sandboxId: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {capturable.length === 0 ? (
+        {isLoading ? (
+          <Skeleton className="h-9 w-full" />
+        ) : groups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            None of your toolboxes have <code>paths[]</code> configured yet
-            (nothing to capture). Add paths in{" "}
+            None of the toolboxes you manage (personal, or in orgs where you are
+            owner/admin) have <code>paths[]</code> configured yet (nothing to
+            capture). Add paths in{" "}
             <Link to="/settings/toolboxes" className="underline">
               Settings → Toolboxes
             </Link>
@@ -655,10 +681,14 @@ function SaveToolsetForToolboxSection({ sandboxId }: { sandboxId: string }) {
                 <option value="" disabled>
                   Select a toolbox…
                 </option>
-                {capturable.map((tb) => (
-                  <option key={tb.id} value={tb.id}>
-                    {tb.slug}
-                  </option>
+                {groups.map((group) => (
+                  <optgroup key={group.owner} label={group.label}>
+                    {group.toolboxes.map((tb) => (
+                      <option key={tb.id} value={tb.id}>
+                        {tb.slug}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
