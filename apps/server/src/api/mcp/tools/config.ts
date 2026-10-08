@@ -1,12 +1,14 @@
 /**
- * Control-plane config tools: server config (read-only), prebuilds,
- * toolboxes (+ their versions, the toolbox/toolset merge point — see
- * `list_toolboxes`). The "configure your prebuilt/toolbox from your own dev
- * env" surface.
+ * Control-plane config tools: prebuilds and toolboxes (+ their versions, the
+ * toolbox/toolset merge point — see `list_toolboxes`). The "configure your
+ * prebuilt/toolbox from your own dev env" surface.
  *
- * Listings come in two sizes: the default ("simple") is what an agent needs
- * to pick and act on an item; `detail: "advanced"` adds the provenance,
- * hashes, recipes and version history that are only occasionally useful.
+ * Server-wide config is deliberately not exposed: it is operator business
+ * (console / CLI), and no agent flow needs it.
+ *
+ * `list_toolboxes` comes in two sizes: the default ("simple") is what an
+ * agent needs to pick and act on a toolbox; `detail: "advanced"` adds the
+ * recipe and version history (ids that `pin_version` takes).
  */
 import {
   type PrebuildRecord,
@@ -162,63 +164,12 @@ function injectionRank(tb: ToolboxConfig): number {
   return tb.ownerType === "org" ? 0 : 1;
 }
 
-function firstSentence(value: string): string {
-  return value.split(/(?<=\.)\s/)[0] ?? value;
-}
-
 export function registerConfigTools(
   server: McpServer,
   container: ServerContainer,
   user: AuthUser,
 ): void {
   const { runtime, control } = container;
-
-  // ── server config (the config plane, read-only over MCP) ─────────────
-  server.registerTool(
-    "server_config",
-    {
-      title: "Server config",
-      description:
-        "Read server-wide runtime config: default sandbox image / vCPUs / " +
-        "memory, prebuild retention, the image registry, image-builder " +
-        "settings. Read-only here: only an operator changes it (console or " +
-        "CLI). `source` says where a value comes from (default, console, " +
-        "file or env).",
-      inputSchema: {
-        prefix: z
-          .string()
-          .optional()
-          .describe(
-            'Only keys starting with this, e.g. "sandbox." or "prebuild."',
-          ),
-        detail: detailSchema,
-      },
-    },
-    safeTool(async ({ prefix, detail }) => {
-      const advanced = detail === "advanced";
-      const entries = control.serverConfigService
-        .list()
-        .filter((e) => !prefix || e.key.startsWith(prefix))
-        .map((e) => ({
-          key: e.key,
-          value: e.value,
-          type: e.type,
-          ...(e.options ? { options: e.options } : {}),
-          source: e.lockedBy ?? (e.isDefault ? "default" : "console"),
-          hint: firstSentence(e.description),
-          ...(advanced
-            ? {
-                label: e.label,
-                description: e.description,
-                default: e.default,
-                envVar: e.envVar,
-                updatedAt: e.updatedAt,
-              }
-            : {}),
-        }));
-      return text(entries);
-    }),
-  );
 
   // ── prebuilds ────────────────────────────────────────────────────────
   server.registerTool(

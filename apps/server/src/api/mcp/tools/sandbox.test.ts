@@ -230,9 +230,9 @@ describe("create_sandbox", () => {
 });
 
 describe("read tools", () => {
-  test("list_sandboxes: newest first, name promoted, no annotation map", async () => {
+  test("get_sandbox without id lists: newest first, name promoted, no annotation map", async () => {
     const { call } = await setup();
-    const res = await call("list_sandboxes");
+    const res = await call("get_sandbox");
     expect(res.data).toEqual([
       {
         id: "new",
@@ -245,7 +245,7 @@ describe("read tools", () => {
     ]);
     expect(res.raw).not.toContain("annotations");
 
-    const paused = await call("list_sandboxes", { status: "paused" });
+    const paused = await call("get_sandbox", { status: "paused" });
     expect(paused.data.map((s: { id: string }) => s.id)).toEqual(["old"]);
   });
 
@@ -268,6 +268,23 @@ describe("read tools", () => {
     expect(verbose.data.metadata).toEqual(STATE.metadata);
     expect(verbose.data.urls[0].processes).toEqual(["web"]);
     expect(verbose.raw).not.toContain(SECRET);
+  });
+
+  test("get_sandbox rejects params of the other mode", async () => {
+    const { call } = await setup();
+
+    const listVerbose = await call("get_sandbox", { verbose: true });
+    expect(listVerbose.isError).toBe(true);
+    expect(listVerbose.data.error).toBe("VALIDATION_ERROR");
+    expect(listVerbose.data.message).toContain("`verbose`");
+
+    const readFilter = await call("get_sandbox", {
+      id: "sbx-1",
+      status: "running",
+    });
+    expect(readFilter.isError).toBe(true);
+    expect(readFilter.data.error).toBe("VALIDATION_ERROR");
+    expect(readFilter.data.message).toContain("`status`");
   });
 
   test("whoami has no email or user id, and names the default org", async () => {

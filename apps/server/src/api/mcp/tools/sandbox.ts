@@ -19,7 +19,7 @@ import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
 import type { ServerContainer } from "../../container.ts";
 import { createSandboxForUser } from "../../v1.routes.ts";
-import { keepTail, safeTool, text } from "../format.ts";
+import { keepTail, rejectParams, safeTool, text } from "../format.ts";
 import { parseSpec } from "../validate.ts";
 
 /** `exec` default: a clean agent-side timeout rather than an MCP client one
@@ -126,7 +126,7 @@ export function registerSandboxTools(
         "Boot a new sandbox and wait until it is up (can take a minute or " +
         "more). Returns its `id` and public `urls`; use `get_sandbox` for " +
         "process health and ssh, then `exec`, `patch_files` or " +
-        "`dispatch_task`. Your org's secrets and policy and your " +
+        "`send_prompt`. Your org's secrets and policy and your " +
         "auto-included toolboxes (see `list_toolboxes`) are applied " +
         "automatically. Minimal call: " +
         '`{"spec":{"source":{"image":"dev-base"}}}`.',
@@ -196,21 +196,52 @@ export function registerSandboxTools(
   );
 
   server.registerTool(
-    "list_sandboxes",
+    "get_sandbox",
     {
-      title: "List sandboxes",
+      title: "Get a sandbox, or list sandboxes",
       description:
-        "List all sandboxes (id, status, name, repos, creation date), " +
-        "newest first, optionally filtered by status. Summaries only: call " +
-        "`get_sandbox` for URLs and process health.",
+        "With `id`: read that sandbox's status, openable `urls` (`ready` = " +
+        "the process behind it is up), `ssh` command, and live `processes` " +
+        "(their `name` is what `manage_process` takes). Check this before " +
+        "`exec`: only a `running` sandbox accepts commands; `paused` or " +
+        "`error` ones need `sandbox_lifecycle` action=resume. Without " +
+        "`id`: list all sandboxes (id, status, name, repos, creation " +
+        "date), newest first, optionally filtered by `status`; summaries " +
+        "only, call again with an `id` for URLs and process health.",
       inputSchema: {
+        id: z
+          .string()
+          .optional()
+          .describe(
+            "Sandbox to read (from create_sandbox / this tool's list). " +
+              "Omit to list sandboxes.",
+          ),
         status: z
           .enum(["creating", "running", "paused", "error"])
           .optional()
-          .describe("Only sandboxes in this status"),
+          .describe("List only: sandboxes in this status"),
+        verbose: z
+          .boolean()
+          .optional()
+          .describe(
+            "One sandbox only: also return `metadata` and which processes " +
+              "gate each URL. Rarely needed.",
+          ),
       },
     },
-    safeTool(async ({ status }) => {
+    safeTool(async ({ id, status, verbose }) => {
+      if (id !== undefined) {
+        rejectParams(
+          { status },
+          "only filters the sandbox list (omit `id` to list)",
+        );
+        return text(sandboxView(await runtime.get(id), verbose));
+      }
+
+      rejectParams(
+        { verbose },
+        "only applies when reading one sandbox (pass `id`)",
+      );
       const all = runtime.list();
       const rows = (status ? all.filter((s) => s.status === status) : all)
         .map((s) => {
@@ -226,34 +257,6 @@ export function registerSandboxTools(
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       return text(rows);
     }),
-  );
-
-  server.registerTool(
-    "get_sandbox",
-    {
-      title: "Get sandbox",
-      description:
-        "Read a sandbox's status, openable `urls` (`ready` = the process " +
-        "behind it is up), `ssh` command, and live `processes` (their " +
-        "`name` is what `manage_process` takes). Check this before `exec`: " +
-        "only a `running` sandbox accepts commands; `paused` or `error` " +
-        "ones need `sandbox_lifecycle` action=resume.",
-      inputSchema: {
-        id: z
-          .string()
-          .describe("Sandbox id (from create_sandbox/list_sandboxes)"),
-        verbose: z
-          .boolean()
-          .optional()
-          .describe(
-            "Also return `metadata` and which processes gate each URL. " +
-              "Rarely needed.",
-          ),
-      },
-    },
-    safeTool(async ({ id, verbose }) =>
-      text(sandboxView(await runtime.get(id), verbose)),
-    ),
   );
 
   server.registerTool(
@@ -304,7 +307,7 @@ export function registerSandboxTools(
         "normal result, not an error. Runs as the `dev` user in its home " +
         "by default. Output is cut to its last `maxOutputChars` " +
         "(`truncated: true` when so). For anything long-running or " +
-        "that outlives the call, use `manage_process` or `dispatch_task` " +
+        "that outlives the call, use `manage_process` or `send_prompt` " +
         "instead of a long `timeoutMs`.",
       inputSchema: {
         id: z.string().describe("Sandbox id"),

@@ -535,60 +535,17 @@ describe("manage_toolbox", () => {
   });
 });
 
-// ── server_config ───────────────────────────────────────────────────────────
+// ── tool surface ────────────────────────────────────────────────────────────
 
-describe("server_config", () => {
-  test("is read-only: no way to set a value", async () => {
-    const { call } = await connectAs(newUser());
-    // `action`/`key`/`value` are not arguments any more: they are ignored and
-    // this is just a (valid) list, so nothing is written.
-    const res = await call("server_config", {
-      action: "set",
-      key: "sandbox.defaultImage",
-      value: "evil",
-    });
-    expect(res.isError).toBe(false);
-    const image = res.data.find(
-      (e: { key: string }) => e.key === "sandbox.defaultImage",
-    );
-    expect(image.value).not.toBe("evil");
-  });
-
-  test("prefix filters and simple entries stay small", async () => {
-    const { call } = await connectAs(newUser());
-    const res = await call("server_config", { prefix: "sandbox.default" });
-    const keys = res.data.map((e: { key: string }) => e.key);
-    expect(keys).toEqual(
-      expect.arrayContaining([
-        "sandbox.defaultImage",
-        "sandbox.defaultVcpus",
-        "sandbox.defaultMemoryMb",
-      ]),
-    );
-    const memory = res.data.find(
-      (e: { key: string }) => e.key === "sandbox.defaultMemoryMb",
-    );
-    expect(memory).toMatchObject({
-      value: 4096,
-      type: "number",
-      source: "default",
-    });
-    expect(memory).not.toHaveProperty("envVar");
-    expect(memory).not.toHaveProperty("label");
-    expect(memory).not.toHaveProperty("updatedAt");
-  });
-
-  test("advanced restores the operator metadata", async () => {
-    const { call } = await connectAs(newUser());
-    const res = await call("server_config", {
-      prefix: "sandbox.defaultVcpus",
-      detail: "advanced",
-    });
-    expect(res.data[0]).toMatchObject({
-      envVar: "ATELIER_DEFAULT_VCPUS",
-      default: 2,
-      label: expect.any(String),
-      description: expect.any(String),
-    });
+describe("config tool surface", () => {
+  test("server-wide config is not exposed over MCP", async () => {
+    const { toolNames } = await connectAs(newUser());
+    // Operator business (console / CLI); no agent flow needs it, and it was
+    // read-only anyway. Guard against it creeping back in.
+    expect(await toolNames()).toEqual([
+      "list_toolboxes",
+      "manage_prebuilds",
+      "manage_toolbox",
+    ]);
   });
 });

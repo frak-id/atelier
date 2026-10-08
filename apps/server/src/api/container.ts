@@ -101,7 +101,7 @@ export function createServerContainer() {
     // bridge, so there is nothing per-harness to resolve.
     surface: (sandboxId) => new AcpSessionSurface(dispatch, sandboxId),
   });
-  // Fire-and-forget agent prompts (MCP `dispatch_task`): server-driven ACP
+  // Fire-and-forget agent prompts (MCP `send_prompt`): server-driven ACP
   // sessions with captured replies. In-memory; see task.service.ts.
   const tasks = new AgentTaskService({ runtime, dispatch });
   const terminal = new TerminalService({ agent });

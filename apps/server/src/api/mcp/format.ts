@@ -6,7 +6,7 @@
  * Results are compact JSON (no pretty-printing): the reader is a model, and
  * indentation is pure token cost.
  */
-import { SandboxError } from "../../shared/errors.ts";
+import { SandboxError, ValidationError } from "../../shared/errors.ts";
 
 export function text(value: unknown, isError = false) {
   return {
@@ -37,6 +37,22 @@ export function safeTool<Args extends unknown[], R>(
       return errorResult(error);
     }
   };
+}
+
+/**
+ * For tools that cover several modes (e.g. `get_sandbox` reads one sandbox
+ * or lists them): reject params that were passed but do not apply in the
+ * mode the call resolved to, naming them, instead of silently ignoring a
+ * param the caller believes is in effect.
+ */
+export function rejectParams(
+  params: Record<string, unknown>,
+  why: string,
+): void {
+  const given = Object.keys(params)
+    .filter((k) => params[k] !== undefined)
+    .map((k) => `\`${k}\``);
+  if (given.length > 0) throw new ValidationError(`${given.join(", ")} ${why}`);
 }
 
 /**

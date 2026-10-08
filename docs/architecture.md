@@ -341,17 +341,26 @@ of the service types, built in `api/mcp/tools/*.ts` (the services and the
   record).
 - **Simple by default, `detail: "advanced"` on request** where the extra is
   actually needed by another tool call (`list_toolboxes`: version ids for
-  `manage_toolbox pin_version`; `server_config`: full descriptions). Simple is
-  what is needed to pick and act on an item; advanced adds the recipe and
-  version history.
+  `manage_toolbox pin_version`). Simple is what is needed to pick and act on
+  an item; advanced adds the recipe and version history.
+- **Few tools, related operations merged.** Every tool is a choice the agent
+  has to make and a schema it pays for in each session, so the surface is
+  kept to 14 tools (pinned by `api/mcp/tools/surface.test.ts`): `get_sandbox`
+  reads one sandbox or, without `id`, lists them; `send_prompt` starts a task
+  (`sandboxId`) or continues one (`taskId`); `get_task` reads one task or
+  lists them; `manage_task` cancels, closes or answers a permission request.
+  Params that only apply in one mode are **rejected** in the other (a
+  `VALIDATION_ERROR` naming them), never silently ignored, so a caller can't
+  believe e.g. `autoApprove` is on when it isn't.
 - **Bounded output.** `exec` and process `logs` return the *tail*
   (`maxOutputChars` / `maxChars`, `truncated: true` when cut); `get_task`
   caps the reply (`maxChars`).
 - **Mutations confirm with something useful** (`{ id, status }`, the new
   `ref`, a `url`), not a bare `{ ok: true }`; partial failures (`patch_files`)
   are `isError` results listing what failed.
-- `server_config` is **read-only** over MCP: there is no server-admin role,
-  so only the console/CLI can change it.
+- Server-wide config (`/api/config`) is **not exposed** over MCP: there is no
+  server-admin role, so it is operator business for the console/CLI, and no
+  agent flow needs it.
 - `create_sandbox` takes an optional `spec.resources` (each field too); the
   seam (`createSandboxForUser`) fills the gaps from the
   `sandbox.defaultVcpus` / `sandbox.defaultMemoryMb` config keys, so HTTP,
@@ -364,13 +373,14 @@ of the service types, built in `api/mcp/tools/*.ts` (the services and the
 ### Agent tasks over MCP
 
 Besides the sandbox/config tools, `/mcp` lets a caller hand work to the coding
-agent inside a sandbox and collect the result later (`dispatch_task`,
-`get_task`, `send_prompt`, `list_tasks`, `reply_permission`, `manage_task`).
+agent inside a sandbox and collect the result later (`send_prompt`,
+`get_task`, `manage_task`).
 A *task* is one server-driven ACP session (`AgentDispatch.openSession`) plus
 bookkeeping, implemented by `AgentTaskService` in `sessions/task.service.ts`;
 the MCP tools in `api/mcp/tools/tasks.ts` are a thin binding.
 
-- `dispatch_task` returns immediately; each prompt runs as a background *turn*.
+- `send_prompt` returns immediately; each prompt runs as a background *turn*
+  (`sandboxId` starts a task, `taskId` adds a turn to an existing one).
   `get_task` (optionally long-polling via `waitSeconds`, capped at 50s to stay
   under typical MCP request timeouts) reports `running` / `waiting_permission` /
   `idle` / `failed` / `cancelled` plus the reply. The reply is captured from the
@@ -379,9 +389,10 @@ the MCP tools in `api/mcp/tools/tasks.ts` are a thin binding.
   runs: `turn.progress` and recent `toolCalls`). The default view is a summary
   (`turnCount`, no prompt/session ids/timestamps); `view: "full"` returns every
   segment instead of `reply`, and `maxChars` bounds the reply.
-- Permission requests block the agent until answered: `reply_permission`
-  (`requestId` from `pendingPermissions`, `decision` once/always/reject), or
-  `autoApprove` at dispatch to allow each request once, unattended.
+- Permission requests block the agent until answered: `manage_task` with
+  `action: "reply_permission"` (`requestId` from `pendingPermissions`,
+  `decision` once/always/reject), or `autoApprove` when starting the task to
+  allow each request once, unattended.
 - State is **in memory** and per server process (a restart forgets tasks; the
   agent-side session survives in the sandbox). Tasks are scoped to the user who
   dispatched them, capped per user, and closed after an hour without activity,
