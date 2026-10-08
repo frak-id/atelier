@@ -325,4 +325,26 @@ The server exposes its API on port 4000, split into three surfaces plus MCP:
 | Auth | `/auth/*` | GitHub OAuth |
 | MCP | `/mcp` | Same three surfaces exposed as MCP tools for AI agents |
 
+### Agent tasks over MCP
+
+Besides the sandbox/config tools, `/mcp` lets a caller hand work to the coding
+agent inside a sandbox and collect the result later (`dispatch_task`,
+`get_task`, `send_prompt`, `list_tasks`, `reply_permission`, `manage_task`).
+A *task* is one server-driven ACP session (`AgentDispatch.openSession`) plus
+bookkeeping, implemented by `AgentTaskService` in `sessions/task.service.ts`;
+the MCP tools in `api/mcp/tools/tasks.ts` are a thin binding.
+
+- `dispatch_task` returns immediately; each prompt runs as a background *turn*.
+  `get_task` (optionally long-polling via `waitSeconds`, capped at 50s to stay
+  under typical MCP request timeouts) reports `running` / `waiting_permission` /
+  `idle` / `failed` / `cancelled` plus the reply. The reply is captured from the
+  streamed `agent_message_chunk` updates ACP doesn't retain; `turn.reply` is the
+  agent's concluding message, `full` returns every segment.
+- Permission requests block the agent until answered: `reply_permission`, or
+  `autoApprove` at dispatch to allow each request once, unattended.
+- State is **in memory** and per server process (a restart forgets tasks; the
+  agent-side session survives in the sandbox). Tasks are scoped to the user who
+  dispatched them, capped per user, and closed after an hour without activity,
+  which releases the session's hold on the shared ACP connection.
+
 Full API documentation is available at `/swagger` when the server is running.

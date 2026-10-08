@@ -52,11 +52,14 @@ consume. Reaches sandboxes only through the runtime attach API.
 - **CLI** (`apps/cli`, `atelier`): up (+`--bake`), ps, get, logs, exec, pause,
   resume, rm, attach, sync, expose, snapshot, prebuild, catalog. Thin `/v1`
   client, no server imports.
-- **MCP** (`/mcp`): 13 tools, per-user identity (`atl_` API key or JWT via
+- **MCP** (`/mcp`): 19 tools, per-user identity (`atl_` API key or JWT via
   `resolveToken`, one session per client). Sandbox lifecycle
   (create/list/get/sandbox_lifecycle/exec/manage_process/patch_files/
   expose_port) plus config tools (manage_prebuilds/list_toolboxes/
-  manage_toolbox/saved_specs) and whoami. `list_toolboxes` inlines each
+  manage_toolbox/saved_specs), agent tasks (dispatch_task/get_task/
+  send_prompt/list_tasks/reply_permission/manage_task — hand a prompt to the
+  sandbox's agent and collect the reply, see `docs/architecture.md`) and
+  whoami. `list_toolboxes` inlines each
   toolbox's versions — no separate toolset tools, since a toolset is just a
   toolbox version's built artifact.
 - **GUI**: the read API + SSE it needs already exist; the React app is the

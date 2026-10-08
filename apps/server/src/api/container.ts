@@ -29,6 +29,7 @@ import {
 import {
   AcpSessionSurface,
   AgentDispatch,
+  AgentTaskService,
   registerHarnessDispatch,
   SessionService,
   TerminalService,
@@ -100,6 +101,9 @@ export function createServerContainer() {
     // bridge, so there is nothing per-harness to resolve.
     surface: (sandboxId) => new AcpSessionSurface(dispatch, sandboxId),
   });
+  // Fire-and-forget agent prompts (MCP `dispatch_task`): server-driven ACP
+  // sessions with captured replies. In-memory; see task.service.ts.
+  const tasks = new AgentTaskService({ runtime, dispatch });
   const terminal = new TerminalService({ agent });
   const images = new ImageBuilderService({
     store: imageStore,
@@ -138,6 +142,7 @@ export function createServerContainer() {
     agent,
     dispatch,
     sessions,
+    tasks,
     terminal,
     images,
     registerHarnessDispatch,
@@ -153,6 +158,7 @@ export interface ServerContainer {
   agent: AgentClient;
   dispatch: AgentDispatch;
   sessions: SessionService;
+  tasks: AgentTaskService;
   terminal: TerminalService;
   registerHarnessDispatch: typeof registerHarnessDispatch;
 }

@@ -26,4 +26,5 @@ export type {
   HarnessSessionSurface,
   InterventionResult,
 } from "./session-surface.ts";
+export { AgentTaskService } from "./task.service.ts";
 export { TerminalService } from "./terminal.service.ts";

@@ -31,6 +31,7 @@ import type { ServerContainer } from "../container.ts";
 import { registerConfigTools } from "./tools/config.ts";
 import { registerSandboxTools } from "./tools/sandbox.ts";
 import { registerSystemTools } from "./tools/system.ts";
+import { registerTaskTools } from "./tools/tasks.ts";
 
 const log = createChildLogger("mcp");
 
@@ -57,6 +58,7 @@ function createMcpServer(
   const server = new McpServer({ name: "atelier-server", version: "0.1.0" });
   registerSystemTools(server, container, user);
   registerSandboxTools(server, container, user);
+  registerTaskTools(server, container, user);
   registerConfigTools(server, container, user);
   return server;
 }
