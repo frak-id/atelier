@@ -54,7 +54,7 @@ import {
   defaultImage,
   qualifyImageName,
 } from "../shared/lib/runtime-config.ts";
-import type { HookPhase } from "./agent/index.ts";
+import type { HookPhase, WriteFilesResult } from "./agent/index.ts";
 import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
 import { createSandboxBackend, type SandboxBackend } from "./backend/index.ts";
@@ -1047,9 +1047,14 @@ export class RuntimeService {
 
   // ── live mutations ─────────────────────────────────────────────────────
 
-  async patchFiles(id: string, files: PatchFilesRequest): Promise<void> {
+  /** Live-push files. Returns the agent's per-file results (a file can fail
+   * to write without failing the call) so callers can report them. */
+  async patchFiles(
+    id: string,
+    files: PatchFilesRequest,
+  ): Promise<WriteFilesResult> {
     this.require(id);
-    await this.agent.writeFiles(id, toFileWrites(files));
+    return this.agent.writeFiles(id, toFileWrites(files));
   }
 
   /**

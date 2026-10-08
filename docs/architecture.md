@@ -325,6 +325,42 @@ The server exposes its API on port 4000, split into three surfaces plus MCP:
 | Auth | `/auth/*` | GitHub OAuth |
 | MCP | `/mcp` | Same three surfaces exposed as MCP tools for AI agents |
 
+### MCP output conventions
+
+`/mcp` is read by models, not people, so every tool returns a *projection*
+of the service types, built in `api/mcp/tools/*.ts` (the services and the
+`/v1` + `/api` wire types are untouched):
+
+- **Compact JSON** (`text()` in `api/mcp/format.ts`): no pretty-printing.
+- **Never credentials or internals.** `create_sandbox` returns `{ id, urls }`
+  (no `generated`: agent password, pod IP, ssh host keys); `get_sandbox` and
+  `sandbox_lifecycle resume` share one projection (`ssh` split out of `urls`);
+  `manage_prebuilds` lists only `{ ref, createdAt, repos }` (no base image,
+  hash, metadata, or the recipe's env values and file contents, which can be
+  literal secrets; the console, CLI and `GET /v1/prebuilds` keep the full
+  record).
+- **Simple by default, `detail: "advanced"` on request** where the extra is
+  actually needed by another tool call (`list_toolboxes`: version ids for
+  `manage_toolbox pin_version`; `server_config`: full descriptions). Simple is
+  what is needed to pick and act on an item; advanced adds the recipe and
+  version history.
+- **Bounded output.** `exec` and process `logs` return the *tail*
+  (`maxOutputChars` / `maxChars`, `truncated: true` when cut); `get_task`
+  caps the reply (`maxChars`).
+- **Mutations confirm with something useful** (`{ id, status }`, the new
+  `ref`, a `url`), not a bare `{ ok: true }`; partial failures (`patch_files`)
+  are `isError` results listing what failed.
+- `server_config` is **read-only** over MCP: there is no server-admin role,
+  so only the console/CLI can change it.
+- `create_sandbox` takes an optional `spec.resources` (each field too); the
+  seam (`createSandboxForUser`) fills the gaps from the
+  `sandbox.defaultVcpus` / `sandbox.defaultMemoryMb` config keys, so HTTP,
+  MCP and Launchpad behave alike.
+- `list_toolboxes` lists your toolboxes **and** those of every org you belong
+  to. `autoInclude` / `appliesTo` say what a new sandbox gets: your own
+  auto-included toolboxes go into every sandbox you create, an org's only
+  into sandboxes created in that org (`resolveToolboxRefs`).
+
 ### Agent tasks over MCP
 
 Besides the sandbox/config tools, `/mcp` lets a caller hand work to the coding
@@ -339,8 +375,12 @@ the MCP tools in `api/mcp/tools/tasks.ts` are a thin binding.
   under typical MCP request timeouts) reports `running` / `waiting_permission` /
   `idle` / `failed` / `cancelled` plus the reply. The reply is captured from the
   streamed `agent_message_chunk` updates ACP doesn't retain; `turn.reply` is the
-  agent's concluding message, `full` returns every segment.
-- Permission requests block the agent until answered: `reply_permission`, or
+  agent's concluding message and only appears once the turn has ended (while it
+  runs: `turn.progress` and recent `toolCalls`). The default view is a summary
+  (`turnCount`, no prompt/session ids/timestamps); `view: "full"` returns every
+  segment instead of `reply`, and `maxChars` bounds the reply.
+- Permission requests block the agent until answered: `reply_permission`
+  (`requestId` from `pendingPermissions`, `decision` once/always/reject), or
   `autoApprove` at dispatch to allow each request once, unattended.
 - State is **in memory** and per server process (a restart forgets tasks; the
   agent-side session survives in the sandbox). Tasks are scoped to the user who

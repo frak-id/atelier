@@ -1,12 +1,13 @@
 /**
- * `whoami` \u2014 lets an agent self-orient (identity, org memberships) before
+ * `whoami` — lets an agent self-orient (identity, org memberships) before
  * calling any other tool. The MCP session is per-user (`mcp/index.ts`), so
  * this is the caller's own view, no lookup input needed.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AuthUser } from "../../../control/index.ts";
 import type { ServerContainer } from "../../container.ts";
-import { text } from "../format.ts";
+import { resolveOrgId } from "../../v1.routes.ts";
+import { safeTool, text } from "../format.ts";
 
 export function registerSystemTools(
   server: McpServer,
@@ -18,25 +19,28 @@ export function registerSystemTools(
     {
       title: "Who am I",
       description:
-        "Get the authenticated caller's identity and organization " +
-        "memberships. Use this first to orient before calling org-scoped " +
-        "tools (create_sandbox, manage_toolbox).",
+        "Get your username and organization memberships. Use this first " +
+        "to orient before org-scoped tools: `defaultOrgId` is the org " +
+        "`create_sandbox` runs in when you pass no `orgId`, and `orgs[]." +
+        "orgId` are the values `orgId` and `list_toolboxes` (as " +
+        "`org:<orgId>`) accept.",
       inputSchema: {},
     },
-    async () => {
+    safeTool(async () => {
       const { control } = container;
       const memberships = control.orgMemberService.getByUserId(user.id);
       const orgs = memberships.map((m) => ({
         orgId: m.orgId,
-        role: m.role,
         name: control.organizationService.getById(m.orgId)?.name ?? null,
+        role: m.role,
       }));
       const personalOrgId = control.userService.getById(user.id)?.personalOrgId;
       return text({
-        user: { id: user.id, username: user.username, email: user.email },
+        username: user.username,
         orgs,
-        personalOrgId,
+        ...(personalOrgId ? { personalOrgId } : {}),
+        defaultOrgId: resolveOrgId(control, user.id),
       });
-    },
+    }),
   );
 }

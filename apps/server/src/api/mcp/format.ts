@@ -2,12 +2,15 @@
  * Shared MCP tool result formatting: curated `text()` results,
  * `isError: true` for failures instead of letting exceptions bubble to a raw
  * 500-shaped MCP error.
+ *
+ * Results are compact JSON (no pretty-printing): the reader is a model, and
+ * indentation is pure token cost.
  */
 import { SandboxError } from "../../shared/errors.ts";
 
 export function text(value: unknown, isError = false) {
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+    content: [{ type: "text" as const, text: JSON.stringify(value) }],
     ...(isError && { isError: true }),
   };
 }
@@ -33,5 +36,22 @@ export function safeTool<Args extends unknown[], R>(
     } catch (error) {
       return errorResult(error);
     }
+  };
+}
+
+/**
+ * Bound `value` to its last `max` characters (the end of command output, a
+ * log or an agent reply is what matters). When something was cut, a short
+ * marker line says how much, so the model never mistakes it for the whole.
+ */
+export function keepTail(
+  value: string,
+  max: number,
+): { text: string; truncated: boolean } {
+  if (value.length <= max) return { text: value, truncated: false };
+  const dropped = value.length - max;
+  return {
+    text: `[… ${dropped} earlier chars truncated]\n${value.slice(-max)}`,
+    truncated: true,
   };
 }

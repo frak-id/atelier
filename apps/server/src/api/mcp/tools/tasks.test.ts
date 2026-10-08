@@ -102,9 +102,13 @@ describe("agent task tools", () => {
     expect(dispatched.isError).toBe(false);
     expect(dispatched.data).toMatchObject({
       sandboxId: SANDBOX,
-      sessionId: SESSION,
       status: "running",
+      turnCount: 1,
     });
+    // The summary view leaves internal ids and echoed input out.
+    expect(dispatched.data).not.toHaveProperty("sessionId");
+    expect(dispatched.data).not.toHaveProperty("cwd");
+    expect(dispatched.data.turn).not.toHaveProperty("prompt");
     const taskId = dispatched.data.taskId as string;
 
     // Long-poll: the 1s wait must return as soon as the turn finishes.
@@ -136,11 +140,17 @@ describe("agent task tools", () => {
 
     const listed = await call("list_tasks", { sandboxId: SANDBOX });
     expect(listed.data).toHaveLength(1);
-    expect(listed.data[0]).toMatchObject({ taskId, turns: 2, status: "idle" });
+    expect(listed.data[0]).toMatchObject({
+      taskId,
+      turnCount: 2,
+      status: "idle",
+    });
+    expect(listed.data[0]).not.toHaveProperty("sessionId");
+    expect((await call("list_tasks", { status: "running" })).data).toEqual([]);
 
     expect(await call("manage_task", { taskId, action: "close" })).toEqual({
       isError: false,
-      data: { ok: true },
+      data: { taskId, status: "closed" },
     });
     expect(fake.state.closed).toBe(1);
     expect((await call("list_tasks", {})).data).toEqual([]);
@@ -157,15 +167,65 @@ describe("agent task tools", () => {
 
     const blocked = await call("get_task", { taskId: data.taskId });
     expect(blocked.data.status).toBe("waiting_permission");
-    expect(blocked.data.pendingPermissions[0]).toMatchObject({ id: "perm-1" });
+    expect(blocked.data.pendingPermissions[0]).toMatchObject({
+      requestId: "perm-1",
+    });
 
     const answered = await call("reply_permission", {
       taskId: data.taskId,
       requestId: "perm-1",
-      reply: "once",
+      decision: "once",
     });
-    expect(answered.data.status).toBe("running");
+    expect(answered.data).toEqual({ taskId: data.taskId, status: "running" });
     expect(fake.replies).toEqual([{ id: "perm-1", reply: "once" }]);
+
+    // Nothing pending any more: the field is left out, not an empty list.
+    const after = await call("get_task", { taskId: data.taskId });
+    expect(after.data).not.toHaveProperty("pendingPermissions");
+  });
+
+  test("a running turn reports progress, not a reply", async () => {
+    const { fake, tasks } = setup();
+    const call = await connect(tasks, "user-1");
+    const { data } = await call("dispatch_task", {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+
+    fake.say("looking at the repo");
+    const running = await call("get_task", { taskId: data.taskId });
+    expect(running.data.status).toBe("running");
+    expect(running.data.turn.progress).toBe("looking at the repo");
+    expect(running.data.turn).not.toHaveProperty("reply");
+
+    fake.finish();
+    const done = await call("get_task", { taskId: data.taskId });
+    expect(done.data.turn.reply).toBe("looking at the repo");
+    expect(done.data.turn).not.toHaveProperty("progress");
+  });
+
+  test("view=full adds the transcript; maxChars bounds the reply", async () => {
+    const { fake, tasks } = setup();
+    const call = await connect(tasks, "user-1");
+    const { data } = await call("dispatch_task", {
+      sandboxId: SANDBOX,
+      prompt: "explain",
+    });
+    fake.say(`${"a".repeat(500)}END`);
+    fake.finish();
+
+    const cut = await call("get_task", { taskId: data.taskId, maxChars: 100 });
+    expect(cut.data.turn.truncated).toBe(true);
+    expect(cut.data.turn.reply).toContain("earlier chars truncated");
+    expect(cut.data.turn.reply.endsWith("END")).toBe(true);
+
+    const full = await call("get_task", { taskId: data.taskId, view: "full" });
+    expect(full.data).toMatchObject({
+      sessionId: SESSION,
+      turn: { prompt: "explain" },
+    });
+    expect(full.data.turn.segments).toHaveLength(1);
+    expect(full.data.turn).not.toHaveProperty("reply");
   });
 
   test("manage_task cancel stops the turn", async () => {
