@@ -142,7 +142,8 @@ export function StarterVisualForm({
               id={`${id}-vcpus`}
               type="number"
               min={1}
-              value={recipe.resources.vcpus}
+              placeholder="server default"
+              value={recipe.resources?.vcpus ?? ""}
               onChange={(e) =>
                 setRecipe({
                   ...recipe,
@@ -161,7 +162,8 @@ export function StarterVisualForm({
               type="number"
               min={256}
               step={256}
-              value={recipe.resources.memoryMb}
+              placeholder="server default"
+              value={recipe.resources?.memoryMb ?? ""}
               onChange={(e) =>
                 setRecipe({
                   ...recipe,

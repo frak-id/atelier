@@ -12,7 +12,11 @@
  */
 import { type Static, Type } from "@sinclair/typebox";
 import { PrebuildSpecSchema } from "./prebuild-spec.ts";
-import { SandboxSpecSchema, ToolboxSelectorSchema } from "./sandbox-spec.ts";
+import {
+  ResourcesSchema,
+  SandboxSpecSchema,
+  ToolboxSelectorSchema,
+} from "./sandbox-spec.ts";
 
 /**
  * The `POST /v1/sandboxes` body: a `SandboxSpec` plus optional high-level
@@ -25,11 +29,17 @@ import { SandboxSpecSchema, ToolboxSelectorSchema } from "./sandbox-spec.ts";
  * `orgId` picks the organization the sandbox runs in: its secrets, policy
  * and auto-injected toolboxes. The caller must be a member; absent, it's
  * the caller's personal org.
+ *
+ * `resources` is optional here (and each field inside it): the seam fills
+ * whatever is missing from the server's `sandbox.defaultVcpus` /
+ * `sandbox.defaultMemoryMb` config, so the runtime's `SandboxSpec` still sees
+ * a complete `resources`.
  */
 export const CreateSandboxRequestSchema = Type.Composite(
   [
-    SandboxSpecSchema,
+    Type.Omit(SandboxSpecSchema, ["resources"]),
     Type.Object({
+      resources: Type.Optional(Type.Partial(ResourcesSchema)),
       toolboxes: Type.Optional(Type.Array(ToolboxSelectorSchema)),
       prebuild: Type.Optional(PrebuildSpecSchema),
       orgId: Type.Optional(Type.String({ minLength: 1 })),

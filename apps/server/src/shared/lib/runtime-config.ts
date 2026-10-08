@@ -47,6 +47,21 @@ export function defaultImage(): string {
     : config.sandbox.defaultImage;
 }
 
+/** vCPUs a sandbox gets when its create request omits `resources.vcpus`. */
+export function defaultVcpus(): number {
+  return service
+    ? service.get("sandbox.defaultVcpus")
+    : config.sandbox.defaultVcpus;
+}
+
+/** Guest RAM (MB) a sandbox gets when its create request omits
+ * `resources.memoryMb`. */
+export function defaultMemoryMb(): number {
+  return service
+    ? service.get("sandbox.defaultMemoryMb")
+    : config.sandbox.defaultMemoryMb;
+}
+
 /** In-pod agent image the base seeds bake in via the `AGENT_IMAGE` build-arg
  * (default: the prebuilt public GHCR image, so no in-cluster agent build is
  * needed). Override for air-gapped clusters that mirror it privately. */

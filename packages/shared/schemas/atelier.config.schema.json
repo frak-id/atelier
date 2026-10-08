@@ -92,9 +92,7 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "properties": {
         "mode": {
           "anyOf": [
@@ -249,6 +247,16 @@
         "agentImage": {
           "default": "ghcr.io/frak-id/sandbox-agent:latest",
           "type": "string"
+        },
+        "defaultVcpus": {
+          "default": 2,
+          "minimum": 1,
+          "type": "number"
+        },
+        "defaultMemoryMb": {
+          "default": 4096,
+          "minimum": 256,
+          "type": "number"
         }
       }
     },

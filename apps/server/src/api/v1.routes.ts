@@ -52,7 +52,11 @@ import {
 } from "../shared/lib/git-attribution.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { imageBuilderConfig } from "../shared/lib/runtime-config.ts";
+import {
+  defaultMemoryMb,
+  defaultVcpus,
+  imageBuilderConfig,
+} from "../shared/lib/runtime-config.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import {
   harnessForToolset,
@@ -174,11 +178,21 @@ export async function createSandboxForUser(
     toolboxes: selectors = [],
     prebuild,
     orgId: requestedOrgId,
+    resources,
     ...specFields
   } = body;
   // Resolved first: an unauthorized org must fail before any build work.
   const orgId = resolveOrgId(control, user.id, requestedOrgId);
-  let spec = specFields as SandboxSpec;
+  // `resources` is optional on the request (each field too): fill the gaps
+  // from the server's defaults so the runtime always sees a complete spec.
+  let spec: SandboxSpec = {
+    ...specFields,
+    resources: {
+      ...resources,
+      vcpus: resources?.vcpus ?? defaultVcpus(),
+      memoryMb: resources?.memoryMb ?? defaultMemoryMb(),
+    },
+  };
   // A template built from a prebuild carries the recipe, not a pinned ref:
   // resolve it to the current snapshot (idempotent — a cache hit when
   // unchanged) so an updated prebuild is picked up here.

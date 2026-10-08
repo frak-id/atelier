@@ -82,6 +82,15 @@ function positiveInt(value: unknown): number {
   return n;
 }
 
+/** An integer >= 256 — for guest RAM in MB. */
+function memoryMb(value: unknown): number {
+  const n = typeof value === "string" ? Number(value) : value;
+  if (typeof n !== "number" || !Number.isInteger(n) || n < 256) {
+    throw new ValidationError(`expected an integer >= 256, got "${value}"`);
+  }
+  return n;
+}
+
 /** Empty (disabled) or a parseable absolute URL — for optional upstream URLs. */
 function optionalUrl(value: unknown): string {
   const s = optionalString(value);
@@ -325,6 +334,30 @@ export const CONFIG_REGISTRY = {
     parseEnv: requiredString,
     validate: requiredString,
   } satisfies ConfigDef<string>,
+  "sandbox.defaultVcpus": {
+    key: "sandbox.defaultVcpus",
+    type: "number",
+    label: "Default sandbox vCPUs",
+    description:
+      "vCPUs given to a new sandbox whose create request omits " +
+      "`resources.vcpus`.",
+    envVar: "ATELIER_DEFAULT_VCPUS",
+    default: 2,
+    parseEnv: positiveInt,
+    validate: positiveInt,
+  } satisfies ConfigDef<number>,
+  "sandbox.defaultMemoryMb": {
+    key: "sandbox.defaultMemoryMb",
+    type: "number",
+    label: "Default sandbox memory (MB)",
+    description:
+      "Guest RAM in MB given to a new sandbox whose create request omits " +
+      "`resources.memoryMb`.",
+    envVar: "ATELIER_DEFAULT_MEMORY_MB",
+    default: 4096,
+    parseEnv: memoryMb,
+    validate: memoryMb,
+  } satisfies ConfigDef<number>,
   "sandbox.agentImage": {
     key: "sandbox.agentImage",
     type: "string",
@@ -422,6 +455,8 @@ export interface ConfigValues {
   "imageBuilder.tls.serverName": string;
   "sandbox.defaultImage": string;
   "sandbox.agentImage": string;
+  "sandbox.defaultVcpus": number;
+  "sandbox.defaultMemoryMb": number;
   "kubernetes.npmRegistryUrl": string;
   "kubernetes.defaultVolumeSize": string;
   "kubernetes.storageClass": string;

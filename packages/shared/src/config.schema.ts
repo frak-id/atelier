@@ -208,6 +208,16 @@ export const SandboxDefaultsSchema = Type.Object(
     agentImage: Type.String({
       default: "ghcr.io/frak-id/sandbox-agent:latest",
     }),
+    /**
+     * vCPUs a sandbox gets when its create request omits `resources.vcpus`
+     * (MCP agents, API callers that don't care).
+     */
+    defaultVcpus: Type.Number({ default: 2, minimum: 1 }),
+    /**
+     * Guest RAM (MB) a sandbox gets when its create request omits
+     * `resources.memoryMb`. Under runtime-rs this is the whole guest RAM.
+     */
+    defaultMemoryMb: Type.Number({ default: 4096, minimum: 256 }),
   },
   { default: {} },
 );
@@ -517,6 +527,8 @@ export const ENV_VAR_MAPPING = {
 
   ATELIER_DEFAULT_IMAGE: "sandbox.defaultImage",
   ATELIER_AGENT_IMAGE: "sandbox.agentImage",
+  ATELIER_DEFAULT_VCPUS: "sandbox.defaultVcpus",
+  ATELIER_DEFAULT_MEMORY_MB: "sandbox.defaultMemoryMb",
 
   ATELIER_TERMINAL_PORT: "ports.terminal",
   ATELIER_AGENT_PORT: "ports.agent",
