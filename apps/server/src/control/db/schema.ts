@@ -14,6 +14,7 @@ import type {
   ToolboxVersionProvenance,
   WorkspaceSnapshot,
 } from "@atelier/spec";
+import type { SteeryNotifyPolicy } from "@frak/atelier-shared";
 import {
   index,
   integer,
@@ -263,5 +264,15 @@ export const launchpadWorkspaces = sqliteTable(
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value", { mode: "json" }).notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+/** Per-org policy for asking permission prompts on a person's phone
+ * (Steery). Its API key is the org secret `STEERY_API_KEY`, never here. */
+export const steeryNotifyPolicies = sqliteTable("steery_notify_policies", {
+  orgId: text("org_id").primaryKey(),
+  policy: text("policy", { mode: "json" })
+    .notNull()
+    .$type<SteeryNotifyPolicy>(),
   updatedAt: text("updated_at").notNull(),
 });

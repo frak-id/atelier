@@ -37,6 +37,10 @@ import {
   ServerConfigService,
 } from "./modules/server-config/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
+import {
+  SteeryNotifyRepository,
+  SteeryNotifyService,
+} from "./modules/steery-notify/index.ts";
 import { ToolboxRepository, ToolboxService } from "./modules/toolbox/index.ts";
 import {
   ToolboxVersionRepository,
@@ -79,6 +83,9 @@ export function createControlContainer() {
   );
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
+  const steeryNotifyService = new SteeryNotifyService(
+    new SteeryNotifyRepository(),
+  );
 
   return {
     userService,
@@ -96,6 +103,7 @@ export function createControlContainer() {
     starterService,
     workspaceService,
     ownershipTransferService,
+    steeryNotifyService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
     enrichSpec: (

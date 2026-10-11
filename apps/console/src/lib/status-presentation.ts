@@ -1,4 +1,8 @@
-import type { AgentSessionStatus, AgentTodo } from "@frak/atelier-shared";
+import type {
+  AgentSessionStatus,
+  AgentTodo,
+  PermissionRisk,
+} from "@frak/atelier-shared";
 import type { VariantProps } from "class-variance-authority";
 import type { BadgeVariant } from "@/components/ui/badge";
 import type { statusDotVariants } from "@/components/ui/status-dot";
@@ -76,52 +80,6 @@ export function summarizeTodos(todos: AgentTodo[]): string | null {
   const current = todos.find((t) => t.status === "in_progress");
   const progress = `${completed}/${todos.length}`;
   return current ? `${progress} · "${current.content}"` : progress;
-}
-
-// ── permission humanising (plain-language prompts, IMPLEMENTATION_PLAN.md §5.2) ──
-
-export type PermissionRisk = "low" | "medium" | "high";
-
-export interface PermissionPresentation {
-  /** Plain-language label — what the agent wants to do. */
-  what: string;
-  risk: PermissionRisk;
-  riskLabel: string;
-}
-
-/**
- * `permission` is free text from the harness (an ACP tool-call title/kind,
- * e.g. "Edit file", "bash", "webfetch") — there's no fixed enum to switch on
- * (see packages/shared/src/agent.schema.ts). Humanise + classify risk with a
- * keyword heuristic; unknown kinds fall back to a medium-risk, verbatim label
- * rather than guessing low (never under-warn on something we don't recognise).
- */
-export function permissionPresentation(
-  permission: string,
-): PermissionPresentation {
-  const lower = permission.toLowerCase();
-  const has = (...needles: string[]) => needles.some((n) => lower.includes(n));
-
-  if (has("delete", "remove", "rm ")) {
-    return { what: "Delete files", risk: "high", riskLabel: "Destructive" };
-  }
-  if (has("exec", "bash", "shell", "run")) {
-    return { what: "Run a command", risk: "high", riskLabel: "Runs code" };
-  }
-  if (has("write", "edit", "patch", "create")) {
-    return { what: "Edit files", risk: "medium", riskLabel: "Changes files" };
-  }
-  if (has("fetch", "network", "http", "web")) {
-    return {
-      what: "Access the network",
-      risk: "medium",
-      riskLabel: "Network access",
-    };
-  }
-  if (has("read", "view", "list")) {
-    return { what: "Read files", risk: "low", riskLabel: "Read-only" };
-  }
-  return { what: permission, risk: "medium", riskLabel: "Unrecognised" };
 }
 
 export function riskBadgeVariant(risk: PermissionRisk): BadgeVariant {
