@@ -570,3 +570,48 @@ describe("list() metadata filter", () => {
     expect(runtime.list().find((s) => s.id === "sb3")?.metadata).toEqual({});
   });
 });
+
+describe("fork()", () => {
+  test("boots a copy from a fresh snapshot with the source's spec", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await runtime.create(
+      {
+        ...specWithToolset(),
+        env: { A: "1" },
+        metadata: { steery: "host", "steery-key": "k1" },
+        annotations: { "atelier.dev/name": "src", keep: "yes" },
+      },
+      { id: "src" },
+    );
+
+    await runtime.fork(
+      "src",
+      { metadata: { steery: "host", "steery-key": "k2" }, name: "copy" },
+      { id: "dst" },
+    );
+
+    const copy = sandboxes.get("dst");
+    expect(copy?.status).toBe("running");
+    expect(copy?.spec.source).toEqual({
+      snapshot: expect.stringMatching(/^snap-/),
+    });
+    expect(copy?.spec.env).toEqual({ A: "1" });
+    expect(copy?.spec.toolsets).toEqual([{ ref: TOOLSET_REF }]);
+    expect(copy?.metadata).toEqual({ steery: "host", "steery-key": "k2" });
+    expect(copy?.spec.annotations).toEqual({
+      "atelier.dev/name": "copy",
+      keep: "yes",
+    });
+    expect(sandboxes.get("src")?.status).toBe("running");
+  });
+
+  test("an unnamed fork drops the source's name", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await runtime.create(
+      { ...spec, annotations: { "atelier.dev/name": "src" } },
+      { id: "src" },
+    );
+    await runtime.fork("src", { metadata: {} }, { id: "dst" });
+    expect(sandboxes.get("dst")?.spec.annotations).toEqual({});
+  });
+});

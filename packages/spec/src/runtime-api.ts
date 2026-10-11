@@ -158,6 +158,20 @@ export const UpdateSandboxRequestSchema = Type.Object(
 );
 export type UpdateSandboxRequest = Static<typeof UpdateSandboxRequestSchema>;
 
+// ── fork ─────────────────────────────────────────────────────────────────────
+
+/** `POST /v1/sandboxes/:id/fork`: snapshot the sandbox and boot a copy of it
+ * from that snapshot with its spec. `name` is the copy's display name;
+ * `metadata` replaces the source's. */
+export const ForkSandboxRequestSchema = Type.Object(
+  {
+    name: Type.Optional(Type.String({ maxLength: SANDBOX_NAME_MAX_LENGTH })),
+    metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
+  },
+  { additionalProperties: false, $id: "ForkSandboxRequest" },
+);
+export type ForkSandboxRequest = Static<typeof ForkSandboxRequestSchema>;
+
 // ── resume ───────────────────────────────────────────────────────────────────
 
 export const ResumeRequestSchema = Type.Object(

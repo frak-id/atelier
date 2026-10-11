@@ -14,6 +14,7 @@ import {
   type CreateSandboxRequest,
   CreateSandboxRequestSchema,
   ExecRequestSchema,
+  ForkSandboxRequestSchema,
   PatchEnvRequestSchema,
   PatchFilesRequestSchema,
   type PrebuildSpec,
@@ -800,6 +801,40 @@ export function createV1Routes(container: ServerContainer) {
         jobs.track({ kind: "sandbox-snapshot", target: params.id }, () =>
           runtime.snapshot(params.id),
         ),
+      )
+      // Fork is a spawn: `202` with a `sandbox-create` job whose
+      // `metadata.sandboxId` is the copy's pre-allocated id, exactly like
+      // `POST /sandboxes`. The job snapshots the source, then boots the copy.
+      .post(
+        "/sandboxes/:id/fork",
+        ({ params, body, set }) => {
+          // An unknown source is a plain 404, not a failed job.
+          if (!runtime.list().some((s) => s.id === params.id)) {
+            throw new NotFoundError("Sandbox", params.id);
+          }
+          const id = safeNanoid();
+          const job = jobs.dispatch(
+            {
+              kind: "sandbox-create",
+              target: body.name ?? `fork of ${params.id}`,
+              metadata: { sandboxId: id, forkOf: params.id },
+              unpooled: true,
+            },
+            (_signal, log) =>
+              runtime.fork(
+                params.id,
+                { metadata: body.metadata ?? {}, name: body.name?.trim() },
+                {
+                  id,
+                  authorizedKeys: control.sshKeyService.getValidPublicKeys(),
+                  onProgress: log,
+                },
+              ),
+          );
+          set.status = 202;
+          return job;
+        },
+        { body: ForkSandboxRequestSchema },
       )
       .post(
         "/sandboxes/:id/toolsets/capture",

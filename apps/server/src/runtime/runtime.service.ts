@@ -26,6 +26,7 @@ import {
   type RuntimeSurface,
   repoKey,
   runtimeSurfaceOf,
+  SANDBOX_NAME_ANNOTATION,
   type SandboxRepo,
   type SandboxSpec,
   type SandboxState,
@@ -1210,6 +1211,36 @@ export class RuntimeService {
       createdAt: new Date().toISOString(),
     });
     return { ref, hash };
+  }
+
+  /**
+   * Snapshot sandbox `sourceId` and boot a new sandbox from that snapshot
+   * with the source's spec (toolsets, env, files, processes, ports, hooks).
+   * `metadata` replaces the source's; `name` sets the display name (absent:
+   * none, so the copy never poses as its source). The snapshot holds the
+   * source's op lock, the boot the new id's.
+   */
+  async fork(
+    sourceId: string,
+    fork: { metadata: Record<string, string>; name?: string },
+    options: RuntimeCreateOptions = {},
+  ): Promise<CreateSandboxResponse> {
+    options.onProgress?.(`snapshotting ${sourceId}…`);
+    const { ref } = await this.snapshot(sourceId);
+    const { spec } = this.require(sourceId);
+    const { [SANDBOX_NAME_ANNOTATION]: _name, ...annotations } =
+      spec.annotations ?? {};
+    return this.create(
+      {
+        ...spec,
+        source: { snapshot: ref },
+        metadata: fork.metadata,
+        annotations: fork.name
+          ? { ...annotations, [SANDBOX_NAME_ANNOTATION]: fork.name }
+          : annotations,
+      },
+      options,
+    );
   }
 
   /** Snapshot `pvcName` into `ref` via the volume backend (create + wait,
