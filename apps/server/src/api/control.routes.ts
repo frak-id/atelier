@@ -12,14 +12,15 @@ import { Elysia, t } from "elysia";
 import { type ControlContainer, recipeFingerprint } from "../control/index.ts";
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
 } from "../shared/errors.ts";
+import { isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import { pruneToolboxVersions, type ServerContainer } from "./container.ts";
 import { requireSandboxAccess, requireSourceAccess } from "./sandbox-guard.ts";
-import { requireServerOperator } from "./operator-access.ts";
 import { requireToolboxOwnerAccess, resolveOwner } from "./toolbox-access.ts";
 
 const log = createChildLogger("control-routes");
@@ -299,15 +300,18 @@ export function createControlRoutes(container: ServerContainer) {
     );
 
   // Org secrets: list = any member, set/delete = owner/admin. Global
-  // (org-less) secrets are injected into every org's sandboxes, so they are
-  // operator-only (see `requireServerOperator`).
+  // (org-less) secrets hold server-owned values (e.g. the SSH gateway host
+  // key), so they are server-managed — manageable over the API only when auth
+  // is bypassed (mock/local single-user modes).
   const requireSecretAccess = (
     userId: string,
     orgId: string | undefined,
     write: boolean,
   ) => {
     if (!orgId) {
-      requireServerOperator(control, userId, "Managing global secrets");
+      if (!isAuthBypassed()) {
+        throw new ForbiddenError("Global secrets are server-managed");
+      }
     } else if (write) {
       control.orgMemberService.requireRole(orgId, userId, ["owner", "admin"]);
     } else {

@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import { organizationsListQuery } from "@/api/queries/organizations";
 import {
   secretsListQuery,
   useCreateSecret,
@@ -22,33 +23,55 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
+import { pickDefaultOrgId } from "@/lib/orgs";
 
 export const Route = createFileRoute("/settings/secrets")({
   component: SecretsPage,
 });
 
 function SecretsPage() {
+  const { data: orgs } = useQuery(organizationsListQuery());
   const [orgId, setOrgId] = useState("");
+
+  // Default to the personal org (same pick as the spawn page). Global
+  // (org-less) secrets are server-managed and not editable from here.
+  useEffect(() => {
+    if (!orgId && orgs && orgs.length > 0) {
+      setOrgId(pickDefaultOrgId(orgs));
+    }
+  }, [orgs, orgId]);
+
+  return (
+    <div className="space-y-3">
+      <div className="w-full sm:max-w-xs">
+        <OrgSelect
+          id="secret-org"
+          value={orgId}
+          onChange={setOrgId}
+          markPersonal
+        />
+      </div>
+      {orgId ? (
+        <SecretsList orgId={orgId} />
+      ) : (
+        <Skeleton className="h-16 w-full" />
+      )}
+    </div>
+  );
+}
+
+function SecretsList({ orgId }: { orgId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const scope = orgId || undefined;
   const {
     data: secrets,
     isPending,
     isError,
     error,
-  } = useQuery(secretsListQuery(scope));
+  } = useQuery(secretsListQuery(orgId));
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="w-full sm:max-w-xs">
-          <OrgSelect
-            id="secret-org"
-            value={orgId}
-            onChange={setOrgId}
-            noneLabel="Personal (no org)"
-          />
-        </div>
+      <div className="flex justify-end">
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           <Plus />
           Add secret
@@ -62,7 +85,7 @@ function SecretsPage() {
         </p>
       ) : secrets.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No secrets in this scope.
+          No secrets in this organization.
         </p>
       ) : (
         <div className="space-y-2">
@@ -74,7 +97,7 @@ function SecretsPage() {
       <AddSecretDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        orgId={scope}
+        orgId={orgId}
       />
     </div>
   );
@@ -136,7 +159,7 @@ function AddSecretDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  orgId?: string;
+  orgId: string;
 }) {
   const createSecret = useCreateSecret();
   const [name, setName] = useState("");

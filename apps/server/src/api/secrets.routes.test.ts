@@ -151,21 +151,31 @@ describe("org secrets", () => {
 });
 
 describe("global (org-less) secrets", () => {
-  test("only an owner/admin of some org may list, set or delete", async () => {
-    const plain = makeUser([[makeOrg(), "member"]]);
-    const operator = makeUser([[makeOrg(), "admin"]]);
-    const body = { name: "GLOBAL_TEST", value: "v" };
+  const body = { name: "GLOBAL_TEST", value: "v" };
 
-    expect((await call(plain, "GET", "")).status).toBe(403);
-    expect((await call(plain, "POST", "", body)).status).toBe(403);
+  test("are server-managed: refused even for an org owner", async () => {
+    const owner = makeUser([[makeOrg(), "owner"]]);
+    const global = await control.secretService.set(undefined, "G", "v");
 
-    expect((await call(operator, "GET", "")).status).toBe(200);
-    const created = await call(operator, "POST", "", body);
-    expect(created.status).toBe(200);
-    const { id } = (await created.json()) as { id: string };
+    expect((await call(owner, "GET", "")).status).toBe(403);
+    expect((await call(owner, "POST", "", body)).status).toBe(403);
+    expect((await call(owner, "DELETE", `/${global.id}`)).status).toBe(403);
+    expect(control.secretService.getById(global.id).name).toBe("G");
+  });
 
-    expect((await call(plain, "DELETE", `/${id}`)).status).toBe(403);
-    expect(control.secretService.getById(id).name).toBe("GLOBAL_TEST");
-    expect((await call(operator, "DELETE", `/${id}`)).status).toBe(204);
+  test("are manageable when auth is bypassed (mock/local)", async () => {
+    const { config } = await import("../shared/lib/config.ts");
+    const previous = config.server.mode;
+    config.server.mode = "local";
+    try {
+      const user = makeUser();
+      expect((await call(user, "GET", "")).status).toBe(200);
+      const created = await call(user, "POST", "", body);
+      expect(created.status).toBe(200);
+      const { id } = (await created.json()) as { id: string };
+      expect((await call(user, "DELETE", `/${id}`)).status).toBe(204);
+    } finally {
+      config.server.mode = previous;
+    }
   });
 });
