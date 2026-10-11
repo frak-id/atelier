@@ -95,9 +95,10 @@ notifications** in the console, or `GET`/`PUT /api/steery-notify/:orgId`
 | `tools` | `[]` | Only prompts whose ACP tool kind or title is listed; empty = all |
 | `steeryUrl` | `https://steery.dev` | The Steery server |
 
-The Steery API key is the org secret `STEERY_API_KEY`. Set it in the same
-card, as `apiKey` in the `PUT` body, or under **Settings → Secrets**. The
-requests are raised as the person who owns that key.
+The Steery API key is the org secret `STEERY_API_KEY`: make one with
+`steery keys create --name atelier` (its `secret` shows once). Set it in the
+same card, as `apiKey` in the `PUT` body, or under **Settings → Secrets**.
+The requests are raised as the person who owns that key.
 
 ```bash
 curl -X PUT "$ATELIER/api/steery-notify/$ORG" \
