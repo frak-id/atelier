@@ -24,6 +24,19 @@ export class SecretService {
     }));
   }
 
+  /** Metadata of one secret (no value); throws `NotFoundError` if unknown. */
+  getById(id: string): Secret {
+    const row = this.secretRepository.getById(id);
+    if (!row) throw new NotFoundError("Secret", id);
+    return {
+      id: row.id,
+      orgId: row.orgId ?? undefined,
+      name: row.name,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
   async set(
     orgId: string | undefined,
     name: string,

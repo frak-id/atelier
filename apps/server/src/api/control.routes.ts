@@ -10,11 +10,16 @@ import {
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
 import { type ControlContainer, recipeFingerprint } from "../control/index.ts";
-import { ConflictError, ValidationError } from "../shared/errors.ts";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../shared/errors.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import { pruneToolboxVersions, type ServerContainer } from "./container.ts";
 import { requireSandboxAccess, requireSourceAccess } from "./sandbox-guard.ts";
+import { requireServerOperator } from "./operator-access.ts";
 import { requireToolboxOwnerAccess, resolveOwner } from "./toolbox-access.ts";
 
 const log = createChildLogger("control-routes");
@@ -293,15 +298,41 @@ export function createControlRoutes(container: ServerContainer) {
       },
     );
 
+  // Org secrets: list = any member, set/delete = owner/admin. Global
+  // (org-less) secrets are injected into every org's sandboxes, so they are
+  // operator-only (see `requireServerOperator`).
+  const requireSecretAccess = (
+    userId: string,
+    orgId: string | undefined,
+    write: boolean,
+  ) => {
+    if (!orgId) {
+      requireServerOperator(control, userId, "Managing global secrets");
+    } else if (write) {
+      control.orgMemberService.requireRole(orgId, userId, ["owner", "admin"]);
+    } else {
+      control.orgMemberService.requireMembership(orgId, userId);
+    }
+  };
+
   const secretRoutes = new Elysia({ prefix: "/secrets" })
     .use(authPlugin)
-    .get("/", ({ query }) => control.secretService.list(query.orgId), {
-      query: t.Object({ orgId: t.Optional(t.String()) }),
-    })
+    .get(
+      "/",
+      ({ user, query }) => {
+        requireSecretAccess(user.id, query.orgId, false);
+        return control.secretService.list(query.orgId);
+      },
+      {
+        query: t.Object({ orgId: t.Optional(t.String()) }),
+      },
+    )
     .post(
       "/",
-      ({ body }) =>
-        control.secretService.set(body.orgId, body.name, body.value),
+      ({ user, body }) => {
+        requireSecretAccess(user.id, body.orgId, true);
+        return control.secretService.set(body.orgId, body.name, body.value);
+      },
       {
         body: t.Object({
           orgId: t.Optional(t.String()),
@@ -310,7 +341,17 @@ export function createControlRoutes(container: ServerContainer) {
         }),
       },
     )
-    .delete("/:id", ({ params, set }) => {
+    .delete("/:id", ({ user, params, set }) => {
+      const secret = control.secretService.getById(params.id);
+      // A secret of an org the caller isn't in is reported as unknown (404),
+      // not 403, so ids of foreign orgs' secrets don't leak.
+      if (
+        secret.orgId &&
+        !control.orgMemberService.getMembership(secret.orgId, user.id)
+      ) {
+        throw new NotFoundError("Secret", params.id);
+      }
+      requireSecretAccess(user.id, secret.orgId, true);
       control.secretService.delete(params.id);
       set.status = 204;
     });

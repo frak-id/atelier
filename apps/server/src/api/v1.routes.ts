@@ -45,11 +45,7 @@ import {
   readContextDockerfile,
   unpackZipContext,
 } from "../runtime/index.ts";
-import {
-  ForbiddenError,
-  NotFoundError,
-  ValidationError,
-} from "../shared/errors.ts";
+import { NotFoundError, ValidationError } from "../shared/errors.ts";
 import {
   buildGitAttributionFiles,
   OWNER_ID_METADATA,
@@ -76,6 +72,7 @@ import {
   requireSourceAccess,
   sandboxAccessGuard,
 } from "./sandbox-guard.ts";
+import { requireServerOperator } from "./operator-access.ts";
 import { spawnSurface } from "./spawn-surface.ts";
 import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
 
@@ -101,34 +98,6 @@ const MAX_K8S_NATIVE_CONTEXT_BYTES = 900_000;
  * input already over the ceiling can be rejected immediately. */
 function exceedsK8sNativeContextCeiling(rawBytes: number): boolean {
   return rawBytes > MAX_K8S_NATIVE_CONTEXT_BYTES;
-}
-
-/**
- * S3: `/v1/images*` accepts an arbitrary Dockerfile and (with the default
- * `imageBuilder.kind=docker`) runs it as a root-equivalent build against the
- * host's docker daemon — gate build/upload/register/delete behind an
- * elevated role. There is genuinely no server-wide admin/operator role today
- * (see `control.routes.ts`'s `configRoutes` comment: "no server-admin role
- * yet"). This reuses control's existing org-scoped RBAC primitive
- * (`OrgMemberService.requireRole`, `OrgMemberRole = owner|admin|member|
- * viewer`) as the smallest correct proxy: the caller must be `owner` or
- * `admin` of at least one organization they belong to. Revisit once a real
- * server-wide admin role exists — this is an explicit assumption, not a new
- * permissions system.
- */
-function requireImageOperator(
-  control: ServerContainer["control"],
-  userId: string,
-): void {
-  const isOperator = control.orgMemberService
-    .getByUserId(userId)
-    .some((m) => m.role === "owner" || m.role === "admin");
-  if (!isOperator) {
-    throw new ForbiddenError(
-      "Building or managing images requires an owner/admin role in at " +
-        "least one organization.",
-    );
-  }
 }
 
 /** A short, human label for a sandbox-create job's queue row — the spec's
@@ -575,7 +544,11 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/images",
         async ({ body, user, set }) => {
-          requireImageOperator(control, user.id);
+          requireServerOperator(
+            control,
+            user.id,
+            "Building or managing images",
+          );
           // H7: a plain-dockerfile build's context is just the Dockerfile
           // text itself — still worth bounding against the k8s-native
           // ceiling up front when that's the active builder, for the same
@@ -614,7 +587,11 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/images/upload",
         async ({ body, user, set }) => {
-          requireImageOperator(control, user.id);
+          requireServerOperator(
+            control,
+            user.id,
+            "Building or managing images",
+          );
           // H7: reject a BYO/zip context over the active k8s-native builder's
           // real ceiling synchronously, at accept time — before this would
           // otherwise answer `202` and only fail once `stageContextTarball`
@@ -674,7 +651,11 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/images/register",
         ({ body, user }) => {
-          requireImageOperator(control, user.id);
+          requireServerOperator(
+            control,
+            user.id,
+            "Building or managing images",
+          );
           return container.images.registerExternal(body.name, body.ref);
         },
         { body: t.Object({ name: t.String(), ref: t.String() }) },
@@ -682,7 +663,11 @@ export function createV1Routes(container: ServerContainer) {
       .delete(
         "/images/:name",
         ({ params, user, set }) => {
-          requireImageOperator(control, user.id);
+          requireServerOperator(
+            control,
+            user.id,
+            "Building or managing images",
+          );
           container.images.deleteImage(params.name);
           set.status = 204;
         },
