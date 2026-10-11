@@ -3,26 +3,40 @@
 [Steery](https://steery.dev) puts the questions your agents ask on your
 phone. Atelier works with it in three ways, each optional:
 
-- **Steery's `atelier` adapter**: Steery runs each conversation in its own
-  Atelier sandbox.
+- **The `atelier` adapter** (`apps/steery-adapter`): Steery runs each
+  conversation in its own Atelier sandbox.
 - **The `steery` toolbox**: every sandbox of an org carries the `steery`
   CLI, so agents inside it can ask you through Steery.
 - **Permission notifier**: an agent's permission prompt in a sandbox is also
   raised as a Steery request, so you can answer it away from the console.
 
-## Steery's `atelier` adapter
+## The `atelier` adapter
 
-Steery's `atelier` adapter makes an Atelier server a machine Steery runs
-conversations on: each conversation gets its own sandbox, made from the
-image or snapshot you name, with your org's toolboxes, secrets and policy
-applied as for any spawn. Give it the server's URL and an Atelier API key
-(**Settings → API Keys**, `atl_…`):
+`apps/steery-adapter` is a Steery adapter (Steery's program protocol, built
+on [`steery-sdk`](https://github.com/steery-dev/sdk)) that makes an Atelier
+server a machine Steery runs conversations on: each conversation gets its own
+sandbox, made from the image or snapshot you name, with your org's toolboxes,
+secrets and policy applied as for any spawn. It needs nothing from Steery
+beyond its public CLI. Build it, add it to `steery`, and set the machine up
+with the server's URL and an Atelier API key (**Settings → API Keys**,
+`atl_…`):
 
 ```bash
-ATELIER_API_KEY=atl_… curl -fsSL https://steery.dev/install.sh | sh -s -- \
-  --adapter atelier --setting ATELIER_URL=https://atelier.example.com \
-  --setting ATELIER_API_KEY
+cd apps/steery-adapter && cargo build --release --locked
+steery programs add target/release/steery-adapter-atelier
+ATELIER_API_KEY=atl_… steery setup --adapter atelier \
+  --setting ATELIER_URL=https://atelier.example.com --setting ATELIER_API_KEY
 ```
+
+The computer that runs it needs an OpenSSH client (`ssh`, `ssh-keygen`).
+Check a build against a server with
+`steery programs test target/release/steery-adapter-atelier --setting ATELIER_URL=… --setting ATELIER_API_KEY`;
+`cargo test` runs its own tests.
+
+| Setting | | |
+|---|---|---|
+| `ATELIER_URL` | required | your Atelier server |
+| `ATELIER_API_KEY` | secret, required | an Atelier API key (`atl_…`) |
 
 The adapter uses only the public API:
 

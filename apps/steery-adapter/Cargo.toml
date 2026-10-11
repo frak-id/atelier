@@ -1,0 +1,22 @@
+[package]
+name = "steery-adapter-atelier"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Atelier's adapter for Steery: it makes, pauses, resumes, forks and reaches Atelier sandboxes as Steery hosts, through Atelier's REST API."
+
+[dependencies]
+steery-sdk = { git = "https://github.com/steery-dev/sdk", tag = "v3.0.0" }
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "http2"] }
+parking_lot = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["parsing"] }
+tokio = { version = "1", features = ["rt", "macros", "time", "process", "sync", "io-util"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["net"] }
+
+# Its own workspace, so it builds alone.
+[workspace]
