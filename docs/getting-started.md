@@ -16,7 +16,7 @@ Once deployed, daily usage is entirely console-driven:
 
 1. **Define a workspace** — point it at your git repos, set init commands (`bun install`, `npm run build`, …), dev commands, ports, and secrets
 2. **(Optional) Run a prebuild** — Atelier runs the expensive setup once and snapshots the result
-3. **Spawn sandboxes** — each one clones from the snapshot instantly. Open VS Code in your browser, or SSH in with your usual tooling (`ssh sandbox-{id}@your-host -p 2222`)
+3. **Spawn sandboxes** — each one clones from the snapshot instantly. Open VS Code in your browser, or SSH in with your usual tooling (`ssh sandbox-{id}@your-host -p 2222`). A key reaches a sandbox only when its owner created it or belongs to the org it runs in.
 4. **Dispatch AI tasks** — create a coding task from the console; Atelier spawns a sandbox, creates a branch, launches OpenCode with your prompt, and tracks progress
 5. **Preview with auto-HTTPS** — dev commands get a public `https://dev-{name}-{id}.your-domain.com` URL with streaming logs
 

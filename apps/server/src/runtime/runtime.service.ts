@@ -784,6 +784,23 @@ export class RuntimeService {
     return this.sandboxes.get(id)?.generated.sshHostKeys;
   }
 
+  /** A sandbox's opaque metadata and annotations, or undefined when it is
+   * unknown. A synchronous store read like `getSshHostKeys`: the SSH gateway
+   * calls it on every authentication attempt. */
+  getLabels(
+    id: string,
+  ):
+    | { metadata: Record<string, string>; annotations: Record<string, string> }
+    | undefined {
+    const record = this.sandboxes.get(id);
+    return (
+      record && {
+        metadata: record.metadata,
+        annotations: record.spec.annotations ?? {},
+      }
+    );
+  }
+
   /** All sandboxes, from persistence only (no agent round-trips). Live
    * process health is on `get(id)`. With `metadata`, only those whose
    * metadata holds every one of its pairs. */

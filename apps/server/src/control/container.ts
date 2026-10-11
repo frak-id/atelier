@@ -43,6 +43,7 @@ import {
   ToolboxVersionService,
 } from "./modules/toolbox-version/index.ts";
 import { UserRepository, UserService } from "./modules/user/index.ts";
+import { type SandboxLabels, sandboxSshKeys } from "./sandbox-access.ts";
 
 export function createControlContainer() {
   const userRepository = new UserRepository();
@@ -110,6 +111,12 @@ export function createControlContainer() {
           orgPolicy: orgPolicyService,
         },
         opts,
+      ),
+    /** The SSH public keys allowed into one sandbox (see sandbox-access.ts). */
+    sandboxSshKeys: (labels: SandboxLabels) =>
+      sandboxSshKeys(
+        { sshKeys: sshKeyService, orgMembers: orgMemberService },
+        labels,
       ),
   };
 }

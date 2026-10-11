@@ -228,7 +228,6 @@ export async function createSandboxForUser(
     spec = { ...spec, source: { snapshot: snapshot.ref } };
   }
   if (selectors.length > 0) onProgress?.("resolving toolboxes…");
-  const authorizedKeys = control.sshKeyService.getValidPublicKeys();
   // The sandbox owner (git user): identity for attribution/display + GitHub
   // token for the injected credential helper.
   const owner = {
@@ -307,6 +306,8 @@ export async function createSandboxForUser(
         }
       : {}),
   };
+  // Keys of the people who may reach it (its owner, its org's members).
+  const authorizedKeys = control.sandboxSshKeys(withToolboxes);
   return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
 }
 
@@ -807,11 +808,13 @@ export function createV1Routes(container: ServerContainer) {
       // `POST /sandboxes`. The job snapshots the source, then boots the copy.
       .post(
         "/sandboxes/:id/fork",
-        ({ params, body, set }) => {
+        ({ params, body, user, set }) => {
           // An unknown source is a plain 404, not a failed job.
-          if (!runtime.list().some((s) => s.id === params.id)) {
-            throw new NotFoundError("Sandbox", params.id);
-          }
+          const source = runtime.getLabels(params.id);
+          if (!source) throw new NotFoundError("Sandbox", params.id);
+          // The caller owns the copy (resume re-resolves git credentials
+          // from it); it stays in the source's org.
+          const metadata = { ...body.metadata, [OWNER_ID_METADATA]: user.id };
           const id = safeNanoid();
           const job = jobs.dispatch(
             {
@@ -823,10 +826,13 @@ export function createV1Routes(container: ServerContainer) {
             (_signal, log) =>
               runtime.fork(
                 params.id,
-                { metadata: body.metadata ?? {}, name: body.name?.trim() },
+                { metadata, name: body.name?.trim() },
                 {
                   id,
-                  authorizedKeys: control.sshKeyService.getValidPublicKeys(),
+                  authorizedKeys: control.sandboxSshKeys({
+                    metadata,
+                    annotations: source.annotations,
+                  }),
                   onProgress: log,
                 },
               ),
