@@ -184,7 +184,7 @@ See [`AGENTS.md`](AGENTS.md) for the full layout.
 - [Infrastructure](docs/infrastructure.md) — networking, storage, domains, and deployment
 - [Constraints](docs/constraints.md) — critical gotchas that will save you hours
 - [Code Patterns](docs/patterns.md) — conventions for contributors
-- [Steery](docs/integrations/steery.md) — answer agents' permission prompts on your phone
+- [Steery](docs/integrations/steery.md) — run Steery conversations in sandboxes, the `steery` toolbox, and answering permission prompts on your phone
 
 ## Contributing
 

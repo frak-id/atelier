@@ -1,10 +1,73 @@
 # Steery
 
 [Steery](https://steery.dev) puts the questions your agents ask on your
-phone. Atelier works with it in two ways:
+phone. Atelier works with it in three ways, each optional:
 
+- **Steery's `atelier` adapter**: Steery runs each conversation in its own
+  Atelier sandbox.
+- **The `steery` toolbox**: every sandbox of an org carries the `steery`
+  CLI, so agents inside it can ask you through Steery.
 - **Permission notifier**: an agent's permission prompt in a sandbox is also
   raised as a Steery request, so you can answer it away from the console.
+
+## Steery's `atelier` adapter
+
+Steery's `atelier` adapter makes an Atelier server a machine Steery runs
+conversations on: each conversation gets its own sandbox, made from the
+image or snapshot you name, with your org's toolboxes, secrets and policy
+applied as for any spawn. Give it the server's URL and an Atelier API key
+(**Settings → API Keys**, `atl_…`):
+
+```bash
+ATELIER_API_KEY=atl_… curl -fsSL https://steery.dev/install.sh | sh -s -- \
+  --adapter atelier --setting ATELIER_URL=https://atelier.example.com \
+  --setting ATELIER_API_KEY
+```
+
+The adapter uses only the public API:
+
+- `GET /v1/sandboxes?metadata={"steery":"host"}` lists its sandboxes; each
+  carries `metadata.steery-key`, the conversation it belongs to.
+- `POST /v1/sandboxes` creates one (a `202` job), `POST
+  /v1/sandboxes/:id/pause` / `resume` / `DELETE` manage it, and
+  `POST /v1/sandboxes/:id/fork` copies one (snapshot + new sandbox with the
+  same spec, a `202` job like create).
+- `PATCH /v1/sandboxes/:id/files` writes files; commands run over the SSH
+  gateway (`ssh -p <port> <sandboxId>@<host>`) with an ed25519 key it
+  registers under `POST /api/ssh-keys`. The gateway admits a key only into
+  sandboxes its owner created or whose org they belong to.
+
+## The `steery` toolbox
+
+An org toolbox, auto-injected, that installs the `steery` CLI into
+`~/.local/bin` of every sandbox in the org. Create it as an org owner or
+admin, with the CLI:
+
+```bash
+atelier toolbox create steery --org "$ORG" \
+  --desc "The Steery CLI, so agents can ask you on your phone" \
+  --build 'curl -fsSL https://steery.dev/install.sh | sh -s -- --install-only --to "$HOME/.local/bin"' \
+  --path .local/bin/steery --path .local/bin/.steery
+```
+
+or the API (the console's **Settings → Toolboxes → New** takes the same
+fields):
+
+```bash
+curl -X POST "$ATELIER/api/toolboxes?owner=org:$ORG" \
+  -H "Authorization: Bearer $ATELIER_API_KEY" -H 'content-type: application/json' \
+  -d '{
+    "slug": "steery",
+    "description": "The Steery CLI, so agents can ask you on your phone",
+    "build": ["curl -fsSL https://steery.dev/install.sh | sh -s -- --install-only --to \"$HOME/.local/bin\""],
+    "paths": [".local/bin/steery", ".local/bin/.steery"],
+    "autoInject": true
+  }'
+```
+
+`--install-only` puts the binary and its programs in place without signing
+in; a person signs a sandbox in with `steery setup` in its terminal.
+Rebuilding the toolbox (a new version) picks up a newer `steery`.
 
 ## Permission notifier
 
