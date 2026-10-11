@@ -544,3 +544,29 @@ describe("list() repos", () => {
     ]);
   });
 });
+
+describe("list() metadata filter", () => {
+  test("keeps only sandboxes whose metadata holds every pair", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.create(
+      { ...spec, metadata: { steery: "host", "steery-key": "k1" } },
+      { id: "sb1" },
+    );
+    await runtime.create(
+      { ...spec, metadata: { steery: "host" } },
+      { id: "sb2" },
+    );
+    await runtime.create(spec, { id: "sb3" });
+
+    const ids = (filter?: Record<string, string>) =>
+      runtime
+        .list(filter)
+        .map((s) => s.id)
+        .sort();
+    expect(ids()).toEqual(["sb1", "sb2", "sb3"]);
+    expect(ids({ steery: "host" })).toEqual(["sb1", "sb2"]);
+    expect(ids({ steery: "host", "steery-key": "k1" })).toEqual(["sb1"]);
+    expect(ids({ steery: "other" })).toEqual([]);
+    expect(runtime.list().find((s) => s.id === "sb3")?.metadata).toEqual({});
+  });
+});

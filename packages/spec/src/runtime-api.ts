@@ -116,6 +116,9 @@ export const SandboxSummarySchema = Type.Object(
     id: Type.String(),
     status: SandboxStatusSchema,
     createdAt: Type.String(),
+    /** The spec's opaque metadata (`{}` when it had none): what
+     * `GET /v1/sandboxes?metadata=` filters on. */
+    metadata: Type.Record(Type.String(), Type.String()),
     annotations: Type.Optional(Type.Record(Type.String(), Type.String())),
     /** The repos cloned by the prebuild the sandbox booted from (its whole
      * chain, root first). Absent when it booted from a bare image or a

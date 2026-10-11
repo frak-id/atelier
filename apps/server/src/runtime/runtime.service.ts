@@ -784,19 +784,25 @@ export class RuntimeService {
   }
 
   /** All sandboxes, from persistence only (no agent round-trips). Live
-   * process health is on `get(id)`. */
-  list(): SandboxSummary[] {
+   * process health is on `get(id)`. With `metadata`, only those whose
+   * metadata holds every one of its pairs. */
+  list(metadata: Record<string, string> = {}): SandboxSummary[] {
     const snapshots = new Map(this.snapshots.list().map((s) => [s.ref, s]));
-    return this.sandboxes.list().map((r) => {
-      const repos = sourceRepos(r.spec, snapshots);
-      return {
-        id: r.id,
-        status: r.status,
-        createdAt: r.createdAt,
-        annotations: r.spec.annotations,
-        ...(repos.length > 0 ? { repos } : {}),
-      };
-    });
+    const wanted = Object.entries(metadata);
+    return this.sandboxes
+      .list()
+      .filter((r) => wanted.every(([k, v]) => r.metadata[k] === v))
+      .map((r) => {
+        const repos = sourceRepos(r.spec, snapshots);
+        return {
+          id: r.id,
+          status: r.status,
+          createdAt: r.createdAt,
+          metadata: r.metadata,
+          annotations: r.spec.annotations,
+          ...(repos.length > 0 ? { repos } : {}),
+        };
+      });
   }
 
   /**
