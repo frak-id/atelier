@@ -15,7 +15,7 @@ MCP tasks, Launchpad). The first answer wins, from the console or any
 integration.
 
 Using Atelier as a UI's remote compute needs no integration: the UI uses a
-normal API key.
+normal API key (see [host-provider.md](./host-provider.md)).
 
 ## The contract
 

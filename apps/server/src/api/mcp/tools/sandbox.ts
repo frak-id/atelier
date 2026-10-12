@@ -151,8 +151,8 @@ export function registerSandboxTools(
               "owner?}], `processes` [{name, command, cwd?, env?, primary?, " +
               "readiness?, restart?, lazy?}], `ports` [{name, port, " +
               "public?}], `hooks`, `caches`, `timeoutSeconds`, `metadata`, " +
-              "`annotations`. Do NOT put `toolboxes`, `prebuild` or `orgId` " +
-              "in here; they are separate arguments.",
+              "`annotations`. Do NOT put `toolboxes`, `prebuild`, `repo` or " +
+              "`orgId` in here; they are separate arguments.",
           ),
         toolboxes: z
           .array(z.string())
@@ -169,6 +169,14 @@ export function registerSandboxTools(
             "A PrebuildSpec to bake (cached when unchanged) and use as the " +
               "boot source instead of `spec.source`.",
           ),
+        repo: z
+          .object({ url: z.string(), branch: z.string().optional() })
+          .optional()
+          .describe(
+            "A git repo to boot from (a prebuild of it is reused, else one " +
+              "is baked on `spec.source.image`). Not with `prebuild` or a " +
+              "`spec.source.snapshot`.",
+          ),
         orgId: z
           .string()
           .optional()
@@ -178,7 +186,7 @@ export function registerSandboxTools(
           ),
       },
     },
-    safeTool(async ({ spec, toolboxes, prebuild, orgId }) => {
+    safeTool(async ({ spec, toolboxes, prebuild, repo, orgId }) => {
       // Same boundary validation Elysia's schema guard gives the HTTP route.
       const body = parseSpec(
         CreateSandboxRequestSchema,
@@ -186,6 +194,7 @@ export function registerSandboxTools(
           ...spec,
           ...(toolboxes ? { toolboxes } : {}),
           ...(prebuild ? { prebuild } : {}),
+          ...(repo ? { repo } : {}),
           ...(orgId ? { orgId } : {}),
         },
         "CreateSandboxRequest",

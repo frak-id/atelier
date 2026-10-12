@@ -30,11 +30,22 @@ import {
  * and auto-injected toolboxes. The caller must be a member; absent, it's
  * the caller's personal org.
  *
+ * `repo` is sugar over `prebuild`: boot from a git repo (an existing bake of
+ * it, else a quick one-repo prebuild on the `source.image` base). It is
+ * refused together with `prebuild` or a `source.snapshot`.
+ *
  * `resources` is optional here (and each field inside it): the seam fills
  * whatever is missing from the server's `sandbox.defaultVcpus` /
  * `sandbox.defaultMemoryMb` config, so the runtime's `SandboxSpec` still sees
  * a complete `resources`.
  */
+const CreateSandboxRepoSchema = Type.Object(
+  {
+    url: Type.String({ minLength: 1 }),
+    branch: Type.Optional(Type.String({ minLength: 1 })),
+  },
+  { additionalProperties: false },
+);
 export const CreateSandboxRequestSchema = Type.Composite(
   [
     Type.Omit(SandboxSpecSchema, ["resources"]),
@@ -42,6 +53,7 @@ export const CreateSandboxRequestSchema = Type.Composite(
       resources: Type.Optional(Type.Partial(ResourcesSchema)),
       toolboxes: Type.Optional(Type.Array(ToolboxSelectorSchema)),
       prebuild: Type.Optional(PrebuildSpecSchema),
+      repo: Type.Optional(CreateSandboxRepoSchema),
       orgId: Type.Optional(Type.String({ minLength: 1 })),
     }),
   ],

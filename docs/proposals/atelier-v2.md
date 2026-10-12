@@ -246,6 +246,15 @@ so it outlives the source. Its record is visible as `creating` as soon as the
 if the snapshot or boot fails. Also `sandbox_lifecycle` action `fork` (MCP) and
 `atelier fork <id>` (CLI).
 
+**`repo` on the create body** (`POST`, MCP `create_sandbox`):
+`repo: {url, branch?}` is sugar over `prebuild`. An existing bake of that repo
+and branch is booted (the same match as the console and CLI), else a one-repo
+prebuild is baked on `source.image` with the owner's GitHub token. It is a 400
+with `prebuild` or a `source.snapshot`, and never lands in the stored spec.
+The server cannot know a repo's default branch, so an omitted `branch` and an
+explicit `main` are different bakes: keep one spelling, omitting it for the
+default branch.
+
 `resume` accepting `{files, env}` inline is the fix for the industry gap
 (E2B #1279): rotate credentials *as part of* resuming, atomically, before
 processes restart — the clean case, since everything restarts anyway.

@@ -91,7 +91,9 @@ function fakeRuntime() {
     exec: [] as { id: string; req: Record<string, unknown> }[],
     processActions: [] as string[],
     ports: [] as Record<string, unknown>[],
+    baked: [] as Record<string, unknown>[],
   };
+  let bakes: unknown[] = [];
   let logText = "";
   let patchResults: { path: string; success: boolean; error?: string }[] = [];
   let execResult = { exitCode: 0, stdout: "", stderr: "" };
@@ -173,11 +175,19 @@ function fakeRuntime() {
     },
     // createSandboxForUser
     prebuildSurface: () => undefined,
+    listPrebuilds: () => bakes,
+    prebuild: async (spec: Record<string, unknown>) => {
+      calls.baked.push(spec);
+      return { ref: "snap-fresh" };
+    },
     defaultImage: () => "dev-base",
   };
   return {
     runtime,
     calls,
+    setBakes: (v: unknown[]) => {
+      bakes = v;
+    },
     setLogs: (v: string) => {
       logText = v;
     },
@@ -228,6 +238,50 @@ describe("create_sandbox", () => {
       vcpus: 2,
       memoryMb: 4096,
     });
+  });
+
+  test("`repo` reuses a bake of it, else bakes one on the image", async () => {
+    const { call, fake } = await setup();
+    const repo = { url: "https://github.com/acme/app", branch: "dev" };
+    fake.setBakes([
+      {
+        ref: "snap-cached",
+        spec: {
+          source: { image: "dev-base" },
+          repos: [{ url: "git@github.com:acme/app.git", branch: "dev" }],
+        },
+      },
+    ]);
+    const hit = await call("create_sandbox", {
+      spec: { source: { image: "dev-base" } },
+      repo,
+    });
+    expect(hit.isError).toBe(false);
+    expect(fake.calls.baked).toHaveLength(0);
+    expect(fake.calls.created[0]?.source).toEqual({ snapshot: "snap-cached" });
+    expect(fake.calls.created[0]).not.toHaveProperty("repo");
+
+    fake.setBakes([]);
+    await call("create_sandbox", {
+      spec: { source: { image: "dev-base" } },
+      repo,
+    });
+    expect(fake.calls.baked[0]).toMatchObject({
+      source: { image: "dev-base" },
+      repos: [{ url: repo.url, branch: "dev", clonePath: "app" }],
+    });
+    expect(fake.calls.created[1]?.source).toEqual({ snapshot: "snap-fresh" });
+  });
+
+  test("`repo` with a prebuild is refused", async () => {
+    const { call, fake } = await setup();
+    const res = await call("create_sandbox", {
+      spec: { source: { image: "dev-base" } },
+      repo: { url: "https://github.com/acme/app" },
+      prebuild: { source: { image: "dev-base" } },
+    });
+    expect(res.isError).toBe(true);
+    expect(fake.calls.created).toHaveLength(0);
   });
 
   test("a partial resources block keeps what was set", async () => {

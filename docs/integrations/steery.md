@@ -64,7 +64,7 @@ Steery off. The computer that runs the adapter needs an OpenSSH client
 test target/release/steery-adapter-atelier --setting ATELIER_URL=… --setting
 ATELIER_API_KEY`; `cargo test` runs its own tests.
 
-The adapter uses only the public API:
+The adapter uses only the public API ([host-provider.md](host-provider.md)):
 
 - `GET /v1/sandboxes?owner=me&metadata={"steery":"host"}` lists its
   sandboxes, re-checking the labels; each carries `metadata.steery-key`, the

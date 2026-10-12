@@ -11,11 +11,13 @@ import { join } from "node:path";
 import {
   AddPortRequestSchema,
   AddProcessRequestSchema,
+  buildRepoPrebuildSpec,
   type CreateSandboxRequest,
   CreateSandboxRequestSchema,
   ExecRequestSchema,
   type ForkSandboxRequest,
   ForkSandboxRequestSchema,
+  findRepoBranchPrebuild,
   PatchEnvRequestSchema,
   PatchFilesRequestSchema,
   type PrebuildSpec,
@@ -139,6 +141,20 @@ function sandboxLabel(req: CreateSandboxRequest): string {
   );
 }
 
+/** `repo` is sugar over `prebuild` with an image base: both at once, or a
+ * snapshot source, leave no unambiguous recipe (400). */
+function assertRepoRequest(req: CreateSandboxRequest): void {
+  if (!req.repo) return;
+  if (req.prebuild) {
+    throw new ValidationError("`repo` cannot be combined with `prebuild`");
+  }
+  if (!("image" in req.source)) {
+    throw new ValidationError(
+      "`repo` needs an image `source` (the base the repo is baked on)",
+    );
+  }
+}
+
 /** Parse `GET /v1/sandboxes?metadata=`: a JSON object of string → string
  * (already URL-decoded). Absent is no filter; anything else is a 400. */
 export function parseMetadataFilter(raw?: string): Record<string, string> {
@@ -217,12 +233,14 @@ export async function createSandboxForUser(
   onProgress?: (msg: string) => void,
 ) {
   const { runtime, control } = container;
+  assertRepoRequest(body);
   // The body is a spec plus the high-level references the caller picked
-  // (`toolboxes` selectors, a `prebuild` recipe); strip them so the runtime
-  // only ever sees a resolved spec.
+  // (`toolboxes` selectors, a `prebuild` recipe, a `repo`); strip them so the
+  // runtime only ever sees a resolved spec.
   const {
     toolboxes: selectors = [],
-    prebuild,
+    prebuild: bodyPrebuild,
+    repo,
     orgId: requestedOrgId,
     resources,
     metadata,
@@ -250,6 +268,35 @@ export async function createSandboxForUser(
       memoryMb: resources?.memoryMb ?? defaultMemoryMb(),
     },
   };
+  // `repo`: boot from an existing bake of it, else bake a quick one-repo
+  // prebuild below (on `source.image`, the base `assertRepoRequest` checked).
+  let prebuild = bodyPrebuild;
+  if (repo && "image" in spec.source) {
+    // Only a bake on the requested base image: another base is another
+    // environment.
+    const baseImage = spec.source.image;
+    const baked = findRepoBranchPrebuild(
+      runtime
+        .listPrebuilds()
+        .filter(
+          (record) =>
+            record.spec?.source !== undefined &&
+            "image" in record.spec.source &&
+            record.spec.source.image === baseImage,
+        ),
+      repo.url,
+      repo.branch,
+    );
+    if (baked) {
+      spec = { ...spec, source: { snapshot: baked.ref } };
+    } else {
+      prebuild = buildRepoPrebuildSpec({
+        repo: repo.url,
+        branch: repo.branch,
+        image: spec.source.image,
+      });
+    }
+  }
   // A template built from a prebuild carries the recipe, not a pinned ref:
   // resolve it to the current snapshot (idempotent — a cache hit when
   // unchanged) so an updated prebuild is picked up here.
@@ -752,6 +799,9 @@ export function createV1Routes(container: ServerContainer) {
         "/sandboxes",
         ({ body, user, set }) => {
           const req = body as CreateSandboxRequest;
+          // Checked here for a synchronous 400 (the create job re-checks for
+          // MCP).
+          assertRepoRequest(req);
           // Fail an org the caller can't use now (403), not in the job.
           resolveOrgId(control, user.id, req.orgId);
           // Same for a snapshot the caller may not boot from.
