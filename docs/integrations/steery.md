@@ -40,12 +40,12 @@ Check a build against a server with
 
 The adapter uses only the public API:
 
-- `GET /v1/sandboxes?metadata={"steery":"host"}` lists its sandboxes; each
-  carries `metadata.steery-key`, the conversation it belongs to.
+- `GET /v1/sandboxes?owner=me&metadata={"steery":"host"}` lists its
+  sandboxes, re-checking the labels; each carries `metadata.steery-key`, the
+  conversation it belongs to. Ensure finds the one for a key, else creates it.
 - `POST /v1/sandboxes` creates one (a `202` job), `POST
-  /v1/sandboxes/:id/pause` / `resume` / `DELETE` manage it, and
-  `POST /v1/sandboxes/:id/fork` copies one (snapshot + new sandbox with the
-  same spec, a `202` job like create).
+  /v1/sandboxes/:id/pause` / `resume` / `DELETE` manage it, and `POST
+  /v1/sandboxes/:id/fork` copies one into a sandbox the caller owns.
 - `PATCH /v1/sandboxes/:id/files` writes files; commands run over the SSH
   gateway (`ssh -p <port> <sandboxId>@<host>`) with an ed25519 key it
   registers under `POST /api/ssh-keys`. The gateway admits a key only into

@@ -31,9 +31,14 @@ use api::{Atelier, Create, Deadline, Fault, File, Source};
 const MINE: (&str, &str) = ("steery", "host");
 /// The label that finds a host again by the runtime's key.
 const KEY_LABEL: &str = "steery-key";
+/// Metadata keys Atelier owns; a fork's copy gets its own from the server.
+const ATELIER_PREFIX: &str = "atelier.dev/";
 /// Seconds the adapter waits for Atelier, inside the runtime's bounds (§9: 300 s, 60 s).
 const LONG_SECONDS: u64 = 280;
 const CHANGE_SECONDS: u64 = 55;
+/// The time after a budget for the one read of a fork's copy; with [`CHANGE_SECONDS`] it
+/// stays inside the 60 s bound.
+const GRACE_SECONDS: u64 = 3;
 /// The user a host's files are written as: the one SSH and `exec` run as.
 const OWNER: &str = "dev";
 /// The longest line a refusal carries.
@@ -274,15 +279,22 @@ fn setting(name: &str, secret: bool, required: bool, about: &str) -> wire::Setti
 
 /// The refusal a fault is; `otherwise` where it is none of not found, key, down or time.
 /// A refused key is `refused`, never `offline`: it does not heal by waiting, and its line
-/// names the setting to give again. Its line never holds the API key.
+/// names the setting to give again. A denied user (403) or a missing route is `refused`
+/// too, and names neither the key nor a missing host. Its line never holds the API key.
 fn refuse(atelier: &Atelier, fault: Fault, otherwise: &'static str) -> Error {
     let (word, line) = match fault {
         Fault::NotFound(line) => (refusal::NOT_FOUND, format!("Atelier: {line}")),
-        Fault::KeyRefused { status, said } => (
+        Fault::KeyRefused { said } => (
             refusal::REFUSED,
-            format!(
-                "Atelier refused the API key (HTTP {status}: {said}): give ATELIER_API_KEY again"
-            ),
+            format!("Atelier refused the API key (HTTP 401: {said}): give ATELIER_API_KEY again"),
+        ),
+        Fault::Forbidden(line) => (
+            refusal::REFUSED,
+            format!("Atelier denied access to the host or the action: {line}"),
+        ),
+        Fault::NoRoute(line) => (
+            refusal::REFUSED,
+            format!("this Atelier lacks the route (update Atelier): {line}"),
         ),
         Fault::Offline(line) => (refusal::OFFLINE, format!("Atelier: {line}")),
         // Atelier answered, and the host was not there in time.
@@ -487,33 +499,60 @@ async fn delete(atelier: &Atelier, params: hosts::Target) -> Result<hosts::State
     })
 }
 
-/// A new host from a snapshot of `host`, with its spec and its labels but its key's: the
-/// copy is no key's host, and no ensure finds it.
+/// A new host from a snapshot of `host`, with its spec and its labels but its key's and
+/// Atelier's own (`atelier.dev/…`, the server sets those for the copy): the copy is no
+/// key's host, and no ensure finds it.
+///
+/// Waits for the copy's job and for it to run, for [`CHANGE_SECONDS`]. Its snapshot and
+/// boot may take minutes, past this method's 60 s: then the copy is answered as it is,
+/// `creating`, if Atelier has it, and `hosts/start` waits for it to run. An Atelier that
+/// registers the copy only after its snapshot has none to answer: that is a timeout.
 async fn fork(
     adapter: &Adapter,
     atelier: &Atelier,
     params: hosts::Target,
 ) -> Result<hosts::Named, Error> {
+    fork_within(adapter, atelier, params, CHANGE_SECONDS).await
+}
+
+async fn fork_within(
+    adapter: &Adapter,
+    atelier: &Atelier,
+    params: hosts::Target,
+    seconds: u64,
+) -> Result<hosts::Named, Error> {
     let id = named(&params.host)?;
-    let deadline = Deadline::after(CHANGE_SECONDS);
+    let deadline = Deadline::after(seconds);
     let mut metadata = atelier
         .get(id, deadline)
         .await
         .map_err(|fault| refuse(atelier, fault, refusal::REFUSED))?
         .metadata;
     metadata.remove(KEY_LABEL);
+    metadata.retain(|name, _| !name.starts_with(ATELIER_PREFIX));
     metadata.insert(MINE.0.to_owned(), MINE.1.to_owned());
     adapter.identity(atelier, deadline).await?;
-    let forked = async {
-        let job = atelier.fork(id, &metadata, deadline).await?;
-        let host = atelier.finish(job, deadline).await?;
-        atelier.running(&host, deadline).await?;
-        Ok(host)
+    let fail = |fault| refuse(atelier, fault, refusal::START_FAILED);
+    let job = atelier.fork(id, &metadata, deadline).await.map_err(fail)?;
+    let host = Atelier::started(&job).map_err(fail)?;
+    let waited = async {
+        atelier.finish(job, deadline).await?;
+        atelier.running(&host, deadline).await
     };
-    let host = forked
-        .await
-        .map_err(|fault| refuse(atelier, fault, refusal::START_FAILED))?;
-    Ok(hosts::Named { host })
+    match waited.await {
+        Ok(_) => Ok(hosts::Named { host }),
+        Err(Fault::TimedOut(line)) => {
+            match atelier.get(&host, Deadline::after(GRACE_SECONDS)).await {
+                Ok(found) if found.status == "error" => {
+                    Err(fail(Fault::Failed(format!("host {host} is in error"))))
+                }
+                Ok(_) => Ok(hosts::Named { host }),
+                Err(Fault::NotFound(_)) => Err(fail(Fault::TimedOut(line))),
+                Err(fault) => Err(fail(fault)),
+            }
+        }
+        Err(fault) => Err(fail(fault)),
+    }
 }
 
 /// Writes the file. Text goes through Atelier's file write, whose size is then read back
@@ -844,10 +883,15 @@ mod tests {
         String::from_utf8(out).unwrap()
     }
 
-    /// The metadata filter a `GET /v1/sandboxes` request line sends.
+    /// The metadata filter a `GET /v1/sandboxes` request line sends, where it also sends
+    /// `owner=me`.
     fn filter_of(line: &str) -> Option<BTreeMap<String, String>> {
         let query = line.strip_prefix("GET /v1/sandboxes?")?;
-        let value = query.strip_prefix("metadata=")?;
+        let params: Vec<&str> = query.split('&').collect();
+        if !params.contains(&"owner=me") {
+            return None;
+        }
+        let value = params.iter().find_map(|p| p.strip_prefix("metadata="))?;
         serde_json::from_str(&unescaped(value)).ok()
     }
 
@@ -895,13 +939,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_list_keeps_only_hosts_holding_every_label_asked() {
+        // An older Atelier ignores `metadata` and `owner` and lists everything.
+        let url = api::tests::atelier_answering(|_| {
+            Some((
+                200,
+                r#"[{"id":"other","status":"running","createdAt":"2024-10-01T12:00:00Z","metadata":{}},
+                    {"id":"half","status":"running","createdAt":"2024-10-01T12:00:00Z","metadata":{"steery":"host"}},
+                    {"id":"mine","status":"running","createdAt":"2024-10-01T12:00:00Z","metadata":{"steery":"host","steery-key":"k1","x":"y"}}]"#.to_owned(),
+            ))
+        })
+        .await;
+        let atelier = Atelier::new(&url, "atl_k".into()).unwrap();
+        let listed = list(&atelier, hosts::List { labels: None }).await.unwrap();
+        let ids: Vec<_> = listed.hosts.iter().map(|h| h.host.as_str()).collect();
+        assert_eq!(ids, ["half", "mine"]);
+        let adapter = Adapter::default();
+        let asked = hosts::Ensure {
+            key: "k1".into(),
+            source: None,
+            labels: BTreeMap::new(),
+        };
+        assert_eq!(
+            ensure(&adapter, &atelier, asked).await.unwrap(),
+            hosts::Named {
+                host: "mine".into()
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn an_ensure_finds_the_keys_host_without_making_one() {
         let url = api::tests::atelier_answering(|line| {
             let filter = filter_of(line)?;
             assert_eq!(filter.get(KEY_LABEL).map(String::as_str), Some("k1"));
             Some((
                 200,
-                r#"[{"id":"s9","status":"paused","createdAt":"2024-10-01T12:00:00Z","metadata":{}}]"#.to_owned(),
+                r#"[{"id":"s9","status":"paused","createdAt":"2024-10-01T12:00:00Z","metadata":{"steery":"host","steery-key":"k1"}}]"#.to_owned(),
             ))
         })
         .await;
@@ -939,8 +1013,151 @@ mod tests {
                     .to_owned()
             )
         );
-        let (word, _) = listed(403, r#"{"error":"FORBIDDEN","message":"no"}"#).await;
+    }
+
+    #[tokio::test]
+    async fn a_forbidden_user_is_refused_without_asking_for_the_key_again() {
+        let (word, line) = listed(403, r#"{"error":"FORBIDDEN","message":"no"}"#).await;
         assert_eq!(word, refusal::REFUSED);
+        assert_eq!(
+            line,
+            "Atelier denied access to the host or the action: no (HTTP 403)"
+        );
+        assert!(!line.contains("ATELIER_API_KEY"));
+    }
+
+    #[tokio::test]
+    async fn a_missing_route_is_refused_saying_to_update_atelier() {
+        let (word, line) = listed(
+            404,
+            r#"{"error":"NOT_FOUND","message":"Endpoint not found"}"#,
+        )
+        .await;
+        assert_eq!(word, refusal::REFUSED);
+        assert_eq!(
+            line,
+            "this Atelier lacks the route (update Atelier): Endpoint not found (HTTP 404)"
+        );
+    }
+
+    /// An Atelier whose host `s1` carries Atelier's own metadata and a key; its fork job is
+    /// `job` (and `GET /v1/jobs/j1` answers the same), its copy `s2` answers `copy`. What
+    /// `POST …/fork` was sent goes into `posted`.
+    async fn forking(
+        job: &'static str,
+        copy: (u16, &'static str),
+        posted: Arc<Mutex<Vec<String>>>,
+    ) -> String {
+        api::tests::atelier_reading(move |line, body| match line {
+            "GET /v1/sandboxes/s1" => Some((
+                200,
+                r#"{"id":"s1","status":"running","metadata":{"steery":"host","steery-key":"k","steery-machine":"m","atelier.dev/owner-id":"u","atelier.dev/x":"y"}}"#.to_owned(),
+            )),
+            "POST /v1/sandboxes/s1/fork" => {
+                posted.lock().push(body.to_owned());
+                Some((202, job.to_owned()))
+            }
+            "GET /v1/jobs/j1" => Some((200, job.to_owned())),
+            "GET /v1/sandboxes/s2" => Some((copy.0, copy.1.to_owned())),
+            _ => None,
+        })
+        .await
+    }
+
+    const RUNNING_JOB: &str = r#"{"id":"j1","status":"running","metadata":{"sandboxId":"s2"}}"#;
+    const CREATING: (u16, &str) = (200, r#"{"id":"s2","status":"creating"}"#);
+
+    /// An adapter whose SSH key is already registered.
+    fn keyed() -> Adapter {
+        Adapter {
+            key: tokio::sync::Mutex::new(Some(PathBuf::from("/k"))),
+            ..Adapter::default()
+        }
+    }
+
+    fn source() -> hosts::Target {
+        hosts::Target { host: "s1".into() }
+    }
+
+    #[tokio::test]
+    async fn a_fork_that_finishes_in_time_answers_the_running_copy_without_ateliers_own_metadata() {
+        let posted = Arc::new(Mutex::new(Vec::new()));
+        let url = forking(
+            r#"{"id":"j1","status":"succeeded","metadata":{"sandboxId":"s2"}}"#,
+            (200, r#"{"id":"s2","status":"running"}"#),
+            posted.clone(),
+        )
+        .await;
+        let atelier = Atelier::new(&url, "atl_k".into()).unwrap();
+        let named = fork_within(&keyed(), &atelier, source(), 10).await.unwrap();
+        assert_eq!(named, hosts::Named { host: "s2".into() });
+        let sent: Value = serde_json::from_str(&posted.lock()[0]).unwrap();
+        assert_eq!(
+            sent,
+            serde_json::json!({"metadata": {"steery": "host", "steery-machine": "m"}})
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fork_out_of_budget_answers_the_copy_that_is_creating() {
+        let url = forking(RUNNING_JOB, CREATING, Arc::default()).await;
+        let atelier = Atelier::new(&url, "atl_k".into()).unwrap();
+        let named = fork_within(&keyed(), &atelier, source(), 1).await.unwrap();
+        assert_eq!(named, hosts::Named { host: "s2".into() });
+    }
+
+    #[tokio::test]
+    async fn a_fork_out_of_budget_with_no_copy_yet_is_refused_timed_out() {
+        let url = forking(
+            RUNNING_JOB,
+            (
+                404,
+                r#"{"error":"NOT_FOUND","message":"Sandbox 's2' not found"}"#,
+            ),
+            Arc::default(),
+        )
+        .await;
+        let atelier = Atelier::new(&url, "atl_k".into()).unwrap();
+        match fork_within(&keyed(), &atelier, source(), 1).await {
+            Err(Error::Refused { word, line }) => {
+                assert_eq!(word, refusal::REFUSED);
+                assert!(line.unwrap().contains("timed out"));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fork_whose_job_already_failed_is_start_failed() {
+        let url = forking(
+            r#"{"id":"j1","status":"failed","error":"no space","metadata":{"sandboxId":"s2"}}"#,
+            CREATING,
+            Arc::default(),
+        )
+        .await;
+        let atelier = Atelier::new(&url, "atl_k".into()).unwrap();
+        match fork_within(&keyed(), &atelier, source(), 10).await {
+            Err(Error::Refused { word, line }) => {
+                assert_eq!(word, refusal::START_FAILED);
+                assert!(line.unwrap().contains("no space"));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fork_whose_copy_is_in_error_is_start_failed() {
+        let url = forking(
+            RUNNING_JOB,
+            (200, r#"{"id":"s2","status":"error"}"#),
+            Arc::default(),
+        )
+        .await;
+        let atelier = Atelier::new(&url, "atl_k".into()).unwrap();
+        match fork_within(&keyed(), &atelier, source(), 1).await {
+            Err(Error::Refused { word, .. }) => assert_eq!(word, refusal::START_FAILED),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[tokio::test]
