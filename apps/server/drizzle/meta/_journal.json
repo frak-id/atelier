@@ -183,6 +183,13 @@
       "when": 1791728554950,
       "tag": "0025_steery_notify_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791799640091,
+      "tag": "0026_integration_connections",
+      "breakpoints": true
     }
   ]
 }

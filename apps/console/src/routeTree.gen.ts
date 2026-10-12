@@ -18,6 +18,7 @@ import { Route as SettingsIndexRouteImport } from "./routes/settings.index"
 import { Route as SettingsApiKeysRouteImport } from "./routes/settings.api-keys"
 import { Route as SettingsConfigRouteImport } from "./routes/settings.config"
 import { Route as SettingsImagesRouteImport } from "./routes/settings.images"
+import { Route as SettingsIntegrationsRouteImport } from "./routes/settings.integrations"
 import { Route as SettingsLaunchpadRouteImport } from "./routes/settings.launchpad"
 import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
 import { Route as SettingsPolicyRouteImport } from "./routes/settings.policy"
@@ -83,6 +84,11 @@ const SettingsConfigRoute = SettingsConfigRouteImport.update({
 const SettingsImagesRoute = SettingsImagesRouteImport.update({
   id: "/images",
   path: "/images",
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: "/integrations",
+  path: "/integrations",
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsLaunchpadRoute = SettingsLaunchpadRouteImport.update({
@@ -200,6 +206,7 @@ export interface FileRoutesByFullPath {
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/config": typeof SettingsConfigRoute
   "/settings/images": typeof SettingsImagesRoute
+  "/settings/integrations": typeof SettingsIntegrationsRoute
   "/settings/launchpad": typeof SettingsLaunchpadRouteWithChildren
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/config": typeof SettingsConfigRoute
   "/settings/images": typeof SettingsImagesRoute
+  "/settings/integrations": typeof SettingsIntegrationsRoute
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/secrets": typeof SettingsSecretsRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   "/settings/api-keys": typeof SettingsApiKeysRoute
   "/settings/config": typeof SettingsConfigRoute
   "/settings/images": typeof SettingsImagesRoute
+  "/settings/integrations": typeof SettingsIntegrationsRoute
   "/settings/launchpad": typeof SettingsLaunchpadRouteWithChildren
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/policy": typeof SettingsPolicyRoute
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | "/settings/api-keys"
     | "/settings/config"
     | "/settings/images"
+    | "/settings/integrations"
     | "/settings/launchpad"
     | "/settings/organizations"
     | "/settings/policy"
@@ -324,6 +334,7 @@ export interface FileRouteTypes {
     | "/settings/api-keys"
     | "/settings/config"
     | "/settings/images"
+    | "/settings/integrations"
     | "/settings/organizations"
     | "/settings/policy"
     | "/settings/secrets"
@@ -353,6 +364,7 @@ export interface FileRouteTypes {
     | "/settings/api-keys"
     | "/settings/config"
     | "/settings/images"
+    | "/settings/integrations"
     | "/settings/launchpad"
     | "/settings/organizations"
     | "/settings/policy"
@@ -450,6 +462,13 @@ declare module "@tanstack/react-router" {
       path: "/images"
       fullPath: "/settings/images"
       preLoaderRoute: typeof SettingsImagesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    "/settings/integrations": {
+      id: "/settings/integrations"
+      path: "/integrations"
+      fullPath: "/settings/integrations"
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
       parentRoute: typeof SettingsRoute
     }
     "/settings/launchpad": {
@@ -651,6 +670,7 @@ interface SettingsRouteChildren {
   SettingsApiKeysRoute: typeof SettingsApiKeysRoute
   SettingsConfigRoute: typeof SettingsConfigRoute
   SettingsImagesRoute: typeof SettingsImagesRoute
+  SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsLaunchpadRoute: typeof SettingsLaunchpadRouteWithChildren
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsPolicyRoute: typeof SettingsPolicyRoute
@@ -667,6 +687,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsApiKeysRoute: SettingsApiKeysRoute,
   SettingsConfigRoute: SettingsConfigRoute,
   SettingsImagesRoute: SettingsImagesRoute,
+  SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsLaunchpadRoute: SettingsLaunchpadRouteWithChildren,
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsPolicyRoute: SettingsPolicyRoute,

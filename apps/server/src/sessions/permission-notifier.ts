@@ -9,6 +9,8 @@
 export interface PermissionPrompt {
   sandboxId: string;
   sessionId: string;
+  /** The pending permission id — what the public reply route takes. */
+  requestId: string;
   /** The tool call's title, else its kind, else "permission". */
   title: string;
   /** The ACP tool kind (`edit`, `execute`, `fetch`, …), when given. */

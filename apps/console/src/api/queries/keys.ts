@@ -35,6 +35,10 @@ export const queryKeys = {
     all: ["api-keys"] as const,
     list: () => [...queryKeys.apiKeys.all, "list"] as const,
   },
+  integrations: {
+    all: ["integrations"] as const,
+    list: () => [...queryKeys.integrations.all, "list"] as const,
+  },
   sshKeys: {
     all: ["ssh-keys"] as const,
     list: () => [...queryKeys.sshKeys.all, "list"] as const,
@@ -62,9 +66,6 @@ export const queryKeys = {
   orgPolicy: {
     all: ["org-policy"] as const,
     detail: (orgId: string) => [...queryKeys.orgPolicy.all, orgId] as const,
-  },
-  steeryNotify: {
-    detail: (orgId: string) => ["steery-notify", orgId] as const,
   },
   toolsets: {
     all: ["toolsets"] as const,

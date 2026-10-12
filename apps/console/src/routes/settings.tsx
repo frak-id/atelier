@@ -7,6 +7,7 @@ export const Route = createFileRoute("/settings")({
 const TABS = [
   { to: "/settings/api-keys", label: "API Keys" },
   { to: "/settings/ssh-keys", label: "SSH Keys" },
+  { to: "/settings/integrations", label: "Integrations" },
   { to: "/settings/secrets", label: "Secrets" },
   { to: "/settings/users", label: "Users" },
   { to: "/settings/organizations", label: "Organizations" },

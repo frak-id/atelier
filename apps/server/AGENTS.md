@@ -89,6 +89,25 @@ query (e.g. `POST /api/toolboxes/:id/versions/capture`) needs an explicit
 Not covered: `/v1/jobs` (feed unscoped), secrets routes, Launchpad (own
 ownership).
 
+## Integrations
+
+`integrations/` is a registry of compiled-in links to external agent UIs
+(`catalog.ts` lists them; `integration.ts` is the contract). The operator
+enables each with `ATELIER_INTEGRATION_<ID>=true` (read once at boot by
+`registry.ts`, never over the API); each person connects their own account
+(`/api/integrations`, `control/modules/integration-connection/`). Vendor code
+lives only in `integrations/<id>/`.
+
+- **Boundary** (`check:boundary`): `integrations/` never imports `control/`,
+  `sessions/` or `runtime/`; a vendor dir imports only `../integration.ts`,
+  `shared/` and packages; only `catalog.ts` imports a vendor dir. Everything
+  an integration touches arrives as arguments wired in `api/container.ts`.
+- **Outbound:** `IntegrationHub` (`hub.ts`) is the `PermissionNotifier` of
+  `AgentDispatch`. It routes a prompt to the sandbox OWNER's connections,
+  filtered by risk and delay; the first answer wins and never throws.
+
+See `docs/integrations/README.md`.
+
 ## Known gaps (tracked, not silent)
 
 - **M2 COMPLETE — runtime fully on the v2 agent.** `runtime/agent-config.ts`

@@ -32,7 +32,6 @@ export {
   ServerConfigService,
 } from "./modules/server-config/index.ts";
 export { SshKeyService } from "./modules/ssh-key/index.ts";
-export { SteeryNotifier } from "./modules/steery-notify/index.ts";
 export { ToolboxService } from "./modules/toolbox/index.ts";
 export {
   recipeFingerprint,

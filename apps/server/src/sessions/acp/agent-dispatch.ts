@@ -414,6 +414,7 @@ class SandboxAcpConnection {
         {
           sandboxId: this.sandboxId,
           sessionId: request.sessionId,
+          requestId: id,
           title:
             request.toolCall.title ?? request.toolCall.kind ?? "permission",
           kind: request.toolCall.kind ?? undefined,

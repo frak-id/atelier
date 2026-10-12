@@ -15,6 +15,10 @@ import {
 import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import {
+  IntegrationConnectionRepository,
+  IntegrationConnectionService,
+} from "./modules/integration-connection/index.ts";
+import {
   StarterRepository,
   StarterService,
   WorkspaceRepository,
@@ -42,10 +46,6 @@ import {
   ServerConfigService,
 } from "./modules/server-config/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
-import {
-  SteeryNotifyRepository,
-  SteeryNotifyService,
-} from "./modules/steery-notify/index.ts";
 import { ToolboxRepository, ToolboxService } from "./modules/toolbox/index.ts";
 import {
   ToolboxVersionRepository,
@@ -91,11 +91,11 @@ export function createControlContainer() {
   const ownershipTransferService = new OwnershipTransferService(
     new OwnershipTransferRepository(),
   );
+  const integrationConnectionService = new IntegrationConnectionService(
+    new IntegrationConnectionRepository(),
+  );
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
-  const steeryNotifyService = new SteeryNotifyService(
-    new SteeryNotifyRepository(),
-  );
 
   const accessDeps: SandboxAccessDeps = {
     isAuthBypassed,
@@ -119,7 +119,7 @@ export function createControlContainer() {
     starterService,
     workspaceService,
     ownershipTransferService,
-    steeryNotifyService,
+    integrationConnectionService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
     enrichSpec: (

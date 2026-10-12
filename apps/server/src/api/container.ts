@@ -3,19 +3,23 @@
  * (runtime/control/sessions) are wired together. Manual-wiring convention
  * (no DI framework).
  */
-import type {
-  PortEntry,
-  ProcessEntry,
-  RuntimeSurface,
-  ToolboxConfig,
-  ToolboxOwner,
-  ToolsetRef,
-} from "@atelier/spec";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
-  createControlContainer,
-  recipeFingerprint,
-  SteeryNotifier,
-} from "../control/index.ts";
+  type PortEntry,
+  type ProcessEntry,
+  type RuntimeSurface,
+  SANDBOX_NAME_ANNOTATION,
+  type ToolboxConfig,
+  type ToolboxOwner,
+  type ToolsetRef,
+} from "@atelier/spec";
+import { createControlContainer, recipeFingerprint } from "../control/index.ts";
+import {
+  createIntegrationRegistry,
+  INTEGRATIONS,
+  IntegrationHub,
+  type IntegrationRegistry,
+} from "../integrations/index.ts";
 import {
   AgentClient,
   createImageBuilder,
@@ -38,6 +42,7 @@ import {
   SessionService,
   TerminalService,
 } from "../sessions/index.ts";
+import { OWNER_ID_METADATA } from "../shared/lib/git-attribution.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { registryUrl } from "../shared/lib/runtime-config.ts";
 
@@ -69,6 +74,8 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
 const log = createChildLogger("container");
 
 export function createServerContainer() {
+  // The integrations the operator enabled (environment, read once at boot).
+  const integrations = createIntegrationRegistry(INTEGRATIONS);
   const control = createControlContainer();
   // Construct the backend once and dial its resolved endpoint from the agent
   // (pod IP on k8s, mapped host ports on Docker) — the same instance is shared
@@ -98,12 +105,19 @@ export function createServerContainer() {
     // Lazy so a live edit to jobs.concurrency re-bounds the pool.
     concurrency: () => control.serverConfigService.get("jobs.concurrency"),
   });
-  // Permission prompts also go to a person's phone (Steery) when the
-  // sandbox's org policy asks for it; sessions/ only sees the seam.
-  const notifier = new SteeryNotifier({
-    policies: control.steeryNotifyService,
-    secrets: control.secretService,
-    annotations: (sandboxId) => runtime.getLabels(sandboxId)?.annotations,
+  // Permission prompts also go to the sandbox owner's connected integrations;
+  // sessions/ only sees the notifier seam.
+  const notifier = new IntegrationHub({
+    registry: integrations,
+    ownerOf: (sandboxId) =>
+      runtime.getLabels(sandboxId)?.metadata?.[OWNER_ID_METADATA],
+    sandboxName: (sandboxId) =>
+      runtime.getLabels(sandboxId)?.annotations?.[SANDBOX_NAME_ANNOTATION] ??
+      sandboxId,
+    connectionsOf: (userId) =>
+      control.integrationConnectionService.connectionsOf(userId),
+    sleep: (ms, signal) => sleep(ms, undefined, { signal }),
+    log: createChildLogger("integration-hub"),
   });
   const dispatch = new AgentDispatch({ agentClient: agent, notifier });
   const sessions = new SessionService({
@@ -151,6 +165,7 @@ export function createServerContainer() {
     runtime,
     jobs,
     agent,
+    integrations,
     dispatch,
     sessions,
     tasks,
@@ -167,6 +182,8 @@ export interface ServerContainer {
   jobs: JobService;
   images: ImageBuilderService;
   agent: AgentClient;
+  /** The enabled integrations (environment, read once at boot). */
+  integrations: IntegrationRegistry;
   dispatch: AgentDispatch;
   sessions: SessionService;
   tasks: AgentTaskService;

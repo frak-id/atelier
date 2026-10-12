@@ -17,6 +17,9 @@ let ndJsonStream: typeof import("@agentclientprotocol/sdk").ndJsonStream;
 let PROTOCOL_VERSION: typeof import("@agentclientprotocol/sdk").PROTOCOL_VERSION;
 type AgentContext = import("@agentclientprotocol/sdk").AgentContext;
 type AgentClientType = import("../../runtime/index.ts").AgentClient;
+type PermissionNotifier =
+  import("../permission-notifier.ts").PermissionNotifier;
+type PermissionPrompt = import("../permission-notifier.ts").PermissionPrompt;
 
 beforeAll(async () => {
   // ACP_IDLE_TTL_MS is read once at module load, so set it before importing.
@@ -186,7 +189,10 @@ function startFakeAgentServer(fakeAgent: FakeAcpAgent): FakeServer {
   };
 }
 
-function makeDispatch(fakeAgent: FakeAcpAgent): {
+function makeDispatch(
+  fakeAgent: FakeAcpAgent,
+  notifier?: PermissionNotifier,
+): {
   dispatch: InstanceType<typeof AgentDispatch>;
   stop: () => void;
 } {
@@ -194,7 +200,10 @@ function makeDispatch(fakeAgent: FakeAcpAgent): {
   const fakeAgentClient = {
     attachUrl: async () => server.url,
   } as unknown as AgentClientType;
-  const dispatch = new AgentDispatch({ agentClient: fakeAgentClient });
+  const dispatch = new AgentDispatch({
+    agentClient: fakeAgentClient,
+    notifier,
+  });
   return {
     dispatch,
     stop: () => {
@@ -413,7 +422,22 @@ describe("AgentDispatch × session/list", () => {
   });
 });
 
-describe("AgentDispatch × permission requests", () => {
+describe("AgentDispatch × permission notifier race", () => {
+  /** Records every notify() call so a test can answer / inspect it. */
+  function recordingNotifier() {
+    const calls: {
+      prompt: PermissionPrompt;
+      answer: (optionId: string) => void;
+      signal: AbortSignal;
+    }[] = [];
+    const notifier: PermissionNotifier = {
+      notify: (prompt, answer, signal) => {
+        calls.push({ prompt, answer, signal });
+      },
+    };
+    return { calls, notifier };
+  }
+
   async function pendingPrompt(
     fakeAgent: FakeAcpAgent,
     dispatch: AgentDispatchT,
@@ -428,18 +452,70 @@ describe("AgentDispatch × permission requests", () => {
   }
   type AgentDispatchT = InstanceType<typeof AgentDispatch>;
 
-  test("the list is lossless: tool kind and the options the agent offered", async () => {
+  test("the prompt carries requestId, kind and options; list is lossless", async () => {
     const fakeAgent = new FakeAcpAgent();
-    const { dispatch, stop } = makeDispatch(fakeAgent);
+    const { calls, notifier } = recordingNotifier();
+    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
     cleanups.push(stop);
     await pendingPrompt(fakeAgent, dispatch);
 
     const [pending] = dispatch.permissionsFor(SANDBOX_ID);
+    expect(calls[0]?.prompt.requestId).toBe(pending?.id ?? "missing");
+    expect(calls[0]?.prompt.kind).toBe("execute");
     expect(pending?.toolKind).toBe("execute");
     expect(pending?.options).toEqual([
       { optionId: "allow-once", name: "Allow", kind: "allow_once" },
       { optionId: "reject-once", name: "Reject", kind: "reject_once" },
     ]);
+  });
+
+  test("a notifier answer settles the prompt", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { calls, notifier } = recordingNotifier();
+    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
+    cleanups.push(stop);
+    const { answered } = await pendingPrompt(fakeAgent, dispatch);
+
+    calls[0]?.answer("reject-once");
+
+    expect(await answered).toEqual({
+      outcome: { outcome: "selected", optionId: "reject-once" },
+    });
+    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(0);
+    // Settled by the notifier itself: nothing to withdraw.
+    expect(calls[0]?.signal.aborted).toBe(false);
+  });
+
+  test("a console reply aborts the notifier signal", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { calls, notifier } = recordingNotifier();
+    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
+    cleanups.push(stop);
+    const { answered } = await pendingPrompt(fakeAgent, dispatch);
+
+    const id = dispatch.permissionsFor(SANDBOX_ID)[0]?.id ?? "";
+    expect(dispatch.replyPermission(SANDBOX_ID, id, "once")).toEqual({
+      ok: true,
+    });
+
+    expect(calls[0]?.signal.aborted).toBe(true);
+    expect(await answered).toEqual({
+      outcome: { outcome: "selected", optionId: "allow-once" },
+    });
+  });
+
+  test("closing the connection aborts the notifier signal", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { calls, notifier } = recordingNotifier();
+    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
+    cleanups.push(stop);
+    const { session } = await pendingPrompt(fakeAgent, dispatch);
+    expect(calls[0]?.signal.aborted).toBe(false);
+
+    await session.close();
+    await dispatch.closeAll();
+
+    expect(calls[0]?.signal.aborted).toBe(true);
   });
 
   test("an optionId the agent did not offer is rejected (400)", async () => {
@@ -461,5 +537,34 @@ describe("AgentDispatch × permission requests", () => {
     expect(
       dispatch.replyPermission(SANDBOX_ID, id, { optionId: "allow-once" }),
     ).toEqual({ ok: true });
+  });
+
+  test("a notifier answer after the prompt settled is ignored", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { calls, notifier } = recordingNotifier();
+    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
+    cleanups.push(stop);
+    const { answered } = await pendingPrompt(fakeAgent, dispatch);
+    const id = dispatch.permissionsFor(SANDBOX_ID)[0]?.id ?? "";
+
+    dispatch.replyPermission(SANDBOX_ID, id, "once");
+    calls[0]?.answer("reject-once");
+
+    expect(await answered).toEqual({
+      outcome: { outcome: "selected", optionId: "allow-once" },
+    });
+    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(0);
+  });
+
+  test("a notifier answer with an unoffered optionId is ignored", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { calls, notifier } = recordingNotifier();
+    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
+    cleanups.push(stop);
+    await pendingPrompt(fakeAgent, dispatch);
+
+    calls[0]?.answer("nope");
+
+    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(1);
   });
 });
