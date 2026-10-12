@@ -20,6 +20,10 @@ export class SecretRepository {
       .all();
   }
 
+  getById(id: string): SecretRow | undefined {
+    return getDatabase().select().from(secrets).where(eq(secrets.id, id)).get();
+  }
+
   getByName(orgId: string | undefined, name: string): SecretRow | undefined {
     return getDatabase()
       .select()
