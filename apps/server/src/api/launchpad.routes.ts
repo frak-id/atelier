@@ -19,6 +19,7 @@ import {
   LaunchpadLifecycle,
   type WorkspaceDetail,
 } from "./launchpad.lifecycle.ts";
+import { requireSourceAccess } from "./sandbox-guard.ts";
 import { requireToolboxOwnerAccess, resolveOwner } from "./toolbox-access.ts";
 import { createSandboxForUser, withFreshCredentials } from "./v1.routes.ts";
 
@@ -56,6 +57,12 @@ export function createLaunchpadRoutes(container: ServerContainer) {
             "A Launchpad starter belongs to an organization: use owner=org:<id>",
           );
         }
+        requireSourceAccess(
+          container,
+          user.id,
+          body.recipe.source,
+          body.recipe.prebuild?.source,
+        );
         return control.starterService.create(owner, body);
       },
       {
@@ -68,6 +75,12 @@ export function createLaunchpadRoutes(container: ServerContainer) {
       ({ user, params, body }) => {
         const starter = control.starterService.get(params.id);
         requireToolboxOwnerAccess(control, starter, user.id);
+        requireSourceAccess(
+          container,
+          user.id,
+          body.recipe?.source,
+          body.recipe?.prebuild?.source,
+        );
         return control.starterService.update(params.id, body);
       },
       { body: StarterPatchSchema },

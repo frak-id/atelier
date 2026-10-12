@@ -7,6 +7,7 @@ import { Elysia, sse, t } from "elysia";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
+import { requireSandboxAccess, sandboxAccessGuard } from "./sandbox-guard.ts";
 import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
 
 const log = createChildLogger("sessions-routes");
@@ -14,9 +15,13 @@ const log = createChildLogger("sessions-routes");
 export function createSessionsRoutes(container: ServerContainer) {
   const { sessions, terminal, control } = container;
   const authPlugin = createAuthPlugin(control);
+  // Both routers address `:id` as a sandbox id: the one access guard
+  // (control/sandbox-access.ts) covers every agent and terminal route.
+  const accessGuard = sandboxAccessGuard(container, "/sessions/sandboxes/");
 
   const agentRoutes = new Elysia({ prefix: "/sandboxes/:id/agent" })
     .use(authPlugin)
+    .onBeforeHandle(accessGuard)
     .get("/sessions", ({ params }) => sessions.listSessions(params.id))
     .post(
       "/sessions",
@@ -117,6 +122,7 @@ export function createSessionsRoutes(container: ServerContainer) {
 
   const terminalRoutes = new Elysia({ prefix: "/sandboxes/:id/terminal" })
     .use(authPlugin)
+    .onBeforeHandle(accessGuard)
     .get("/sessions", ({ params, user }) =>
       terminal.listSessions(params.id, user.id),
     )
@@ -148,6 +154,8 @@ export function createSessionsRoutes(container: ServerContainer) {
           return;
         }
         try {
+          // The upgrade carries no resolved user, so the guard defers here.
+          requireSandboxAccess(container, user.id, id);
           await terminal.getOwnedSession(id, sessionId, user.id);
           const url = await terminal.bridgeUrl(id, sessionId);
           openUpstreamRelay(ws, url);

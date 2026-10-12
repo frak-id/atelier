@@ -29,6 +29,7 @@ import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
 import { ValidationError } from "../../../shared/errors.ts";
 import type { ServerContainer } from "../../container.ts";
+import { requireSandboxAccess } from "../../sandbox-guard.ts";
 import { keepTail, rejectParams, safeTool, text } from "../format.ts";
 
 /** MCP clients commonly time a request out at 60s; stay safely under it. */
@@ -250,6 +251,7 @@ export function registerTaskTools(
             "Pass `sandboxId` to start a task or `taskId` to continue one",
           );
         }
+        requireSandboxAccess(container, user.id, sandboxId);
         const started = await tasks.dispatchTask(user.id, {
           sandboxId,
           prompt,

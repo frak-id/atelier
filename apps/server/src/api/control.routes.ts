@@ -18,6 +18,7 @@ import { ConflictError, ValidationError } from "../shared/errors.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import { pruneToolboxVersions, type ServerContainer } from "./container.ts";
+import { requireSandboxAccess, requireSourceAccess } from "./sandbox-guard.ts";
 import { requireToolboxOwnerAccess, resolveOwner } from "./toolbox-access.ts";
 
 const log = createChildLogger("control-routes");
@@ -332,6 +333,8 @@ export function createControlRoutes(container: ServerContainer) {
       "/",
       ({ user, query, body }) => {
         const owner = resolveOwner(control, user.id, query.owner, true);
+        // The source is built over at every spawn: check it now, as the writer.
+        requireSourceAccess(container, user.id, body.source);
         const created = control.toolboxService.create(owner, body);
         const autoInjectCount =
           control.toolboxService.listAutoInject(owner).length;
@@ -353,6 +356,7 @@ export function createControlRoutes(container: ServerContainer) {
       ({ user, params, body }) => {
         const existing = control.toolboxService.get(params.id);
         requireToolboxOwnerAccess(control, existing, user.id);
+        requireSourceAccess(container, user.id, body.source);
         return control.toolboxService.update(params.id, body);
       },
       { body: ToolboxConfigPatchSchema },
@@ -368,6 +372,8 @@ export function createControlRoutes(container: ServerContainer) {
       ({ user, params, body, set }) => {
         const tb = control.toolboxService.get(params.id);
         requireToolboxOwnerAccess(control, tb, user.id);
+        // The sandbox arrives in the body, not a guarded `:id` path.
+        requireSandboxAccess(container, user.id, body.sandboxId);
         if (tb.paths.length === 0) {
           throw new ValidationError("toolbox has no paths to capture");
         }

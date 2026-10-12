@@ -67,6 +67,12 @@ import {
   resolveToolboxSurface,
   type ServerContainer,
 } from "./container.ts";
+import {
+  accessibleSandboxes,
+  requireSandboxAccess,
+  requireSourceAccess,
+  sandboxAccessGuard,
+} from "./sandbox-guard.ts";
 import { spawnSurface } from "./spawn-surface.ts";
 import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
 
@@ -155,6 +161,21 @@ export function parseMetadataFilter(raw?: string): Record<string, string> {
   return parsed as Record<string, string>;
 }
 
+/** A copy of `record` without `key` (undefined stays undefined). */
+function withoutKey(
+  record: Record<string, string> | undefined,
+  key: string,
+): Record<string, string> | undefined {
+  if (!record) return record;
+  const { [key]: _dropped, ...rest } = record;
+  return rest;
+}
+
+/** `GET /v1/sandboxes?owner=`: `me` is the caller. */
+function ownerFilter(owner: string | undefined, userId: string) {
+  return owner === "me" ? userId : owner;
+}
+
 /**
  * The org a spawn runs in (whose secrets, policy and auto-injected toolboxes
  * it gets). An explicit `requested` org must be one the caller belongs to.
@@ -203,14 +224,25 @@ export async function createSandboxForUser(
     prebuild,
     orgId: requestedOrgId,
     resources,
+    metadata,
+    annotations,
     ...specFields
   } = body;
+  // A sandbox-scoped snapshot is its sandbox's data (access rule).
+  requireSourceAccess(container, user.id, body.source, body.prebuild?.source);
   // Resolved first: an unauthorized org must fail before any build work.
   const orgId = resolveOrgId(control, user.id, requestedOrgId);
   // `resources` is optional on the request (each field too): fill the gaps
   // from the server's defaults so the runtime always sees a complete spec.
+  // The owner-id metadata and the org annotation are server-owned (access
+  // rule): enrichment sets the owner and the resolved org is applied below,
+  // so a caller-supplied value never survives.
+  const callerMetadata = withoutKey(metadata, OWNER_ID_METADATA);
+  const callerAnnotations = withoutKey(annotations, SANDBOX_ORG_ANNOTATION);
   let spec: SandboxSpec = {
     ...specFields,
+    ...(callerMetadata ? { metadata: callerMetadata } : {}),
+    ...(callerAnnotations ? { annotations: callerAnnotations } : {}),
     resources: {
       ...resources,
       vcpus: resources?.vcpus ?? defaultVcpus(),
@@ -410,6 +442,11 @@ export function createV1Routes(container: ServerContainer) {
     new Elysia({ prefix: "/v1" })
       .use(authPlugin)
       .use(jobRoutes)
+      // The access rule (control/sandbox-access.ts) on every
+      // `/v1/sandboxes/:id/*` path: one guard for all sandbox routes,
+      // fork source and toolsets capture included. The attach socket
+      // re-checks in `open`, where the upgrade carries no resolved user.
+      .onBeforeHandle(sandboxAccessGuard(container, "/v1/sandboxes/"))
       // ── images ─────────────────────────────────────────────────────────
       .get("/images", () => container.images.listImages())
       .get("/images/templates", () => container.images.listTemplates())
@@ -556,6 +593,8 @@ export function createV1Routes(container: ServerContainer) {
         "/prebuilds",
         ({ body, query, user, set }) => {
           const spec = body as PrebuildSpec;
+          // Chained on another sandbox's snapshot? Same rule as a spawn.
+          requireSourceAccess(container, user.id, spec.source);
           // Transient credential for cloning private repos in the build pod;
           // scrubbed before the snapshot (never baked into the shared
           // content-addressed artifact). Resolved now (in request scope), not
@@ -616,8 +655,9 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/toolsets",
-        ({ body, set }) => {
+        ({ body, user, set }) => {
           const req = body as ToolsetBuildRequest;
+          requireSourceAccess(container, user.id, req.source);
           const job = jobs.dispatch(
             {
               kind: "toolset-build",
@@ -660,6 +700,13 @@ export function createV1Routes(container: ServerContainer) {
           const req = body as CreateSandboxRequest;
           // Fail an org the caller can't use now (403), not in the job.
           resolveOrgId(control, user.id, req.orgId);
+          // Same for a snapshot the caller may not boot from.
+          requireSourceAccess(
+            container,
+            user.id,
+            req.source,
+            req.prebuild?.source,
+          );
           // Non-blocking spawn: pre-allocate the id so the `202` job carries
           // `metadata.sandboxId` — the console navigates straight to the detail
           // page and shows its loading state (the `creating` record lands a
@@ -683,12 +730,28 @@ export function createV1Routes(container: ServerContainer) {
         },
         { body: CreateSandboxRequestSchema },
       )
-      // `?metadata=` is a URL-encoded JSON object of string pairs: only
-      // sandboxes whose metadata holds every pair.
+      // Only sandboxes the caller may access. `?metadata=` is a URL-encoded
+      // JSON object of string pairs: only sandboxes whose metadata holds
+      // every pair. `?owner=me|<userId>` keeps those created by that user.
       .get(
         "/sandboxes",
-        ({ query }) => runtime.list(parseMetadataFilter(query.metadata)),
-        { query: t.Object({ metadata: t.Optional(t.String()) }) },
+        ({ query, user }) => {
+          const filter = parseMetadataFilter(query.metadata);
+          const owner = ownerFilter(query.owner, user.id);
+          if (owner !== undefined) {
+            // Both filters name the creator: they must agree.
+            const named = filter[OWNER_ID_METADATA];
+            if (named !== undefined && named !== owner) return [];
+            filter[OWNER_ID_METADATA] = owner;
+          }
+          return accessibleSandboxes(container, user.id, runtime.list(filter));
+        },
+        {
+          query: t.Object({
+            metadata: t.Optional(t.String()),
+            owner: t.Optional(t.String()),
+          }),
+        },
       )
       .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))
       // Display-only edits (today: the name). A blank or `null` name clears
@@ -869,7 +932,8 @@ export function createV1Routes(container: ServerContainer) {
           // The auth plugin's resolve doesn't reliably guard WS upgrades —
           // check the resolved user explicitly (same pattern as the terminal
           // WS route) so an unauthenticated socket never reaches the agent.
-          if (!(ws.data as { user?: { id: string } }).user) {
+          const user = (ws.data as { user?: { id: string } }).user;
+          if (!user) {
             ws.close(4001, "Unauthorized");
             return;
           }
@@ -878,6 +942,7 @@ export function createV1Routes(container: ServerContainer) {
           // writer slot. Pure passthrough — runtime.attach already models both.
           const mode = ws.data.query.mode ?? "rw";
           try {
+            requireSandboxAccess(container, user.id, id);
             const { url } = await runtime.attach(id, name, mode);
             openUpstreamRelay(ws, url);
           } catch (err) {

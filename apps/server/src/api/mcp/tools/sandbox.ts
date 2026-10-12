@@ -18,6 +18,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
 import type { ServerContainer } from "../../container.ts";
+import {
+  accessibleSandboxes,
+  requireSandboxAccess,
+} from "../../sandbox-guard.ts";
 import { createSandboxForUser } from "../../v1.routes.ts";
 import { keepTail, rejectParams, safeTool, text } from "../format.ts";
 import { parseSpec } from "../validate.ts";
@@ -117,6 +121,9 @@ export function registerSandboxTools(
   user: AuthUser,
 ): void {
   const { runtime } = container;
+  /** The access rule (control/sandbox-access.ts): a denied or unknown id is
+   * a NOT_FOUND, like the HTTP routes. Every tool taking an id calls it. */
+  const guard = (id: string) => requireSandboxAccess(container, user.id, id);
 
   server.registerTool(
     "create_sandbox",
@@ -243,6 +250,7 @@ export function registerSandboxTools(
           { status, metadata },
           "only filters the sandbox list (omit `id` to list)",
         );
+        guard(id);
         return text(sandboxView(await runtime.get(id), verbose));
       }
 
@@ -250,7 +258,11 @@ export function registerSandboxTools(
         { verbose },
         "only applies when reading one sandbox (pass `id`)",
       );
-      const all = runtime.list(metadata);
+      const all = accessibleSandboxes(
+        container,
+        user.id,
+        runtime.list(metadata),
+      );
       const rows = (status ? all.filter((s) => s.status === status) : all)
         .map((s) => {
           const name = s.annotations?.[SANDBOX_NAME_ANNOTATION];
@@ -284,6 +296,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, action }) => {
+      guard(id);
       switch (action) {
         case "pause": {
           const { ref } = await runtime.pause(id);
@@ -348,6 +361,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, maxOutputChars, timeoutMs, ...req }) => {
+      guard(id);
       const result = await runtime.exec(id, {
         ...req,
         timeoutMs: timeoutMs ?? EXEC_DEFAULT_TIMEOUT_MS,
@@ -390,6 +404,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, name, action, maxChars }) => {
+      guard(id);
       switch (action) {
         case "logs":
           return text({
@@ -444,6 +459,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, files }) => {
+      guard(id);
       const { results } = await runtime.patchFiles(id, files);
       const failed = results
         .filter((r) => !r.success)
@@ -480,6 +496,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, name, port, public: isPublic }) => {
+      guard(id);
       await runtime.addPort(id, { name, port, public: isPublic });
       const state = await runtime.get(id);
       const url = state.urls.find((u) => u.name === name)?.url;

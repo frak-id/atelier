@@ -294,6 +294,14 @@ export class RuntimeService {
     return spec ? this.recipeSurface(spec) : {};
   }
 
+  /** The sandbox a snapshot belongs to (pause/manual/fork snapshots), or
+   * undefined for a shared prebuild snapshot or an unknown ref. Resolves by
+   * ref or hash like `resolveSource`; a synchronous store read. */
+  snapshotOwner(ref: string): string | undefined {
+    return (this.snapshots.get(ref) ?? this.snapshots.getByHash(ref))
+      ?.sandboxId;
+  }
+
   /** List stored prebuild snapshots, newest first — the read side of
    * `prebuild()`, for the console's prebuild list and one-tap spawn. Each
    * record is flagged `inUse` so the console can offer deletion of the stale,

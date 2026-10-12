@@ -57,6 +57,23 @@ const MAX_LOG_JOBS = 200;
 /** Max log lines retained per job (a ring buffer tail, like image builds). */
 const MAX_LOG_LINES = 1000;
 
+/**
+ * What a job row may keep of a result. Sandbox lifecycle results carry the
+ * runtime's `generated` block (agent password, pod IP, ssh host keys, …):
+ * per-sandbox credentials. The jobs feed (`GET /v1/jobs`, `/jobs/:id`, the
+ * SSE) is readable by every authenticated user, so a stored/emitted result
+ * never includes a top-level `generated`. `track` still returns the full
+ * value to its in-process caller.
+ */
+function feedSafe(result: unknown): unknown {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return result;
+  }
+  if (!("generated" in result)) return result;
+  const { generated: _generated, ...rest } = result as Record<string, unknown>;
+  return rest;
+}
+
 /** Raised by a job body when it observes its own `AbortSignal` and bails —
  * lets `JobService` record `canceled` instead of `failed`. */
 export class JobCanceledError extends Error {
@@ -165,7 +182,7 @@ export class JobService {
     this.emit(job);
     try {
       const result = await fn(controller.signal, this.logSink(job.id));
-      this.settle(job.id, { status: "succeeded", result });
+      this.settle(job.id, { status: "succeeded", result: feedSafe(result) });
       return result;
     } catch (err) {
       const canceled =
@@ -220,7 +237,9 @@ export class JobService {
     const controller = new AbortController();
     this.controllers.set(id, controller);
     void fn(controller.signal, this.logSink(id))
-      .then((result) => this.settle(id, { status: "succeeded", result }))
+      .then((result) =>
+        this.settle(id, { status: "succeeded", result: feedSafe(result) }),
+      )
       .catch((err) => {
         const canceled =
           controller.signal.aborted || err instanceof JobCanceledError;

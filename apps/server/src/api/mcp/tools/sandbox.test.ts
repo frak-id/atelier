@@ -93,7 +93,7 @@ function fakeRuntime() {
         id: "old",
         status: "paused",
         createdAt: "2026-01-01T00:00:00Z",
-        annotations: { "atelier.dev/org-id": "o-1" },
+        annotations: { "atelier.dev/internal": "x" },
       },
       {
         id: "new",
@@ -103,6 +103,7 @@ function fakeRuntime() {
         repos: [{ url: "https://github.com/a/b", branch: "main" }],
       },
     ],
+    getLabels: () => ({ metadata: {}, annotations: {} }),
     get: async () => state,
     pause: async () => ({ ref: "snap-1", hash: "h".repeat(64), parent: "p" }),
     resume: async () => state,

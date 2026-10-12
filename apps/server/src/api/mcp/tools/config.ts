@@ -26,6 +26,10 @@ import { recipeFingerprint } from "../../../control/index.ts";
 import { ValidationError } from "../../../shared/errors.ts";
 import { pruneToolboxVersions, type ServerContainer } from "../../container.ts";
 import {
+  requireSandboxAccess,
+  requireSourceAccess,
+} from "../../sandbox-guard.ts";
+import {
   readableOwners,
   requireToolboxOwnerAccess,
   resolveOwner,
@@ -229,8 +233,14 @@ export function registerConfigTools(
           if (!spec) {
             throw new ValidationError("action=create requires `spec`");
           }
+          const prebuildSpec = parseSpec(
+            PrebuildSpecSchema,
+            spec,
+            "PrebuildSpec",
+          );
+          requireSourceAccess(container, user.id, prebuildSpec.source);
           const { ref: created, parent } = await runtime.prebuild(
-            parseSpec(PrebuildSpecSchema, spec, "PrebuildSpec"),
+            prebuildSpec,
             {
               force,
               githubToken: control.userService.resolveGitHubToken(user.id),
@@ -372,17 +382,16 @@ export function registerConfigTools(
             throw new ValidationError("action=create requires `config`");
           }
           const ownerRef = resolveOwner(control, user.id, owner, true);
+          const input = parseSpec(
+            ToolboxConfigInputSchema,
+            config,
+            "ToolboxConfigInput",
+          );
+          requireSourceAccess(container, user.id, input.source);
           return text(
             toolboxView(
               control,
-              control.toolboxService.create(
-                ownerRef,
-                parseSpec(
-                  ToolboxConfigInputSchema,
-                  config,
-                  "ToolboxConfigInput",
-                ),
-              ),
+              control.toolboxService.create(ownerRef, input),
               roles,
               false,
             ),
@@ -414,17 +423,16 @@ export function registerConfigTools(
             if (!config) {
               throw new ValidationError("action=update requires `config`");
             }
+            const patch = parseSpec(
+              ToolboxConfigPatchSchema,
+              config,
+              "ToolboxConfigPatch",
+            );
+            requireSourceAccess(container, user.id, patch.source);
             return text(
               toolboxView(
                 control,
-                control.toolboxService.update(
-                  id,
-                  parseSpec(
-                    ToolboxConfigPatchSchema,
-                    config,
-                    "ToolboxConfigPatch",
-                  ),
-                ),
+                control.toolboxService.update(id, patch),
                 roles,
                 false,
               ),
@@ -498,6 +506,7 @@ export function registerConfigTools(
             // Server-authoritative capture inputs (docs/toolbox-versions.md
             // §2 invariant): capture the toolbox's OWN paths[], never
             // caller-supplied ones.
+            requireSandboxAccess(container, user.id, sandboxId);
             const { ref } = await runtime.captureToolset(sandboxId, {
               name: toolboxSelector(tb),
               paths: tb.paths,
