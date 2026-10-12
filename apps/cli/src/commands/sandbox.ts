@@ -1,5 +1,5 @@
 /** `atelier` sandbox lifecycle: up, ps, get, logs, exec, pause, resume, rm,
- * attach, ssh, sync, env, expose, snapshot, process. */
+ * attach, ssh, sync, env, expose, snapshot, fork, process. */
 import type {
   AddProcessRequest,
   CreateSandboxResponse,
@@ -353,6 +353,29 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
       const ref = unwrap(await ctx.api().v1.sandboxes({ id }).snapshot.post());
       if (ctx.json) return printJson(ref);
       line(`${ref.ref}\t${ref.hash}`);
+    });
+
+  program
+    .command("fork <id>")
+    .description(
+      "Snapshot a sandbox and boot an independent copy owned by you (same org)",
+    )
+    .option("--name <name>", "display name of the copy (default: none)")
+    .option("--meta <pair>", "KEY=VALUE metadata (repeatable)", collect, [])
+    .action(async (id: string, opts: { name?: string; meta: string[] }) => {
+      const api = ctx.api();
+      const metadata = parseEnvPairs(opts.meta);
+      // Fork answers 202 with a `sandbox-create` job, like `up`.
+      const job = unwrap(
+        await api.v1.sandboxes({ id }).fork.post({
+          ...(opts.name ? { name: opts.name } : {}),
+          ...(opts.meta.length > 0 ? { metadata } : {}),
+        }),
+      );
+      const result = await waitForJob<CreateSandboxResponse>(api, job);
+      if (ctx.json) return printJson(result);
+      line(pc.bold(result.id));
+      for (const u of result.urls) line(`  ${u.name}: ${pc.cyan(u.url)}`);
     });
 
   registerProcess(program, ctx);

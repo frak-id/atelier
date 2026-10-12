@@ -33,7 +33,7 @@ export const OWNER_ID_METADATA = "atelier.dev/owner-id";
 
 /** Credential store file — the ONLY token-bearing file; scrubbed pre-snapshot. */
 export const GIT_CREDENTIALS_PATH = "/etc/sandbox/secrets/git-credentials";
-const GITCONFIG_PATH = "/etc/gitconfig";
+export const GITCONFIG_PATH = "/etc/gitconfig";
 
 export interface GitIdentity {
   name: string;

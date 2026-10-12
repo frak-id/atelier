@@ -7,7 +7,11 @@
 
 import { isAuthBypassed } from "../shared/lib/config.ts";
 import { AuthService } from "./auth.ts";
-import { type EnrichmentOptions, enrichSpec } from "./enrichment.ts";
+import {
+  type EnrichmentOptions,
+  enrichSpec,
+  reattributeSpec,
+} from "./enrichment.ts";
 import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import {
@@ -132,6 +136,8 @@ export function createControlContainer() {
         },
         opts,
       ),
+    /** Re-attribute a stored spec to a new owner (fork); pure, no deps. */
+    reattributeSpec,
     /** The SSH public keys allowed into one sandbox (see sandbox-access.ts). */
     sandboxSshKeys: (labels: SandboxLabels) =>
       sandboxSshKeys({ ...accessDeps, sshKeys: sshKeyService }, labels),

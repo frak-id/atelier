@@ -14,6 +14,7 @@ import {
   type CreateSandboxRequest,
   CreateSandboxRequestSchema,
   ExecRequestSchema,
+  type ForkSandboxRequest,
   ForkSandboxRequestSchema,
   PatchEnvRequestSchema,
   PatchFilesRequestSchema,
@@ -341,6 +342,59 @@ export async function createSandboxForUser(
   // Keys of the people who may reach it (its owner, its org's members).
   const authorizedKeys = control.sandboxSshKeys(withToolboxes);
   return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
+}
+
+/**
+ * Shared by `POST /v1/sandboxes/:id/fork` and the `sandbox_lifecycle` MCP
+ * tool's `fork` action: snapshot the source and boot a copy owned by the
+ * CALLER. The runtime only does the mechanism; the copy's spec is derived here
+ * through control — the source owner's git identity/credentials and owner
+ * annotations are replaced by the caller's, and `metadata` is the body's with
+ * `atelier.dev/owner-id` forced to the caller (an echoed value is overridden).
+ * The copy keeps the source's org annotation (same org, same org secrets —
+ * values resolved at the source's creation carry over). Authorizing access to
+ * the source is the caller's job (the sandbox-access guard).
+ *
+ * Must reach `runtime.fork` without awaiting: the unpooled job relies on it
+ * to register the copy's `creating` record before the route answers.
+ */
+export function forkSandboxForUser(
+  container: ServerContainer,
+  user: { id: string; username: string; email: string },
+  sourceId: string,
+  body: ForkSandboxRequest,
+  id?: string,
+  onProgress?: (msg: string) => void,
+) {
+  const { runtime, control } = container;
+  const owner = {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    githubToken: control.userService.resolveGitHubToken(user.id),
+  };
+  const name = body.name?.trim() || undefined;
+  // The copy's labels until `derive` runs (or if it fails): the caller as
+  // owner, the source's org only, never the source owner's.
+  const org = runtime.getLabels(sourceId)?.annotations[SANDBOX_ORG_ANNOTATION];
+  return runtime.fork(
+    sourceId,
+    {
+      name,
+      initial: {
+        metadata: { [OWNER_ID_METADATA]: user.id },
+        annotations: {
+          ...(org ? { [SANDBOX_ORG_ANNOTATION]: org } : {}),
+          ...(name ? { [SANDBOX_NAME_ANNOTATION]: name } : {}),
+        },
+      },
+      derive: (sourceSpec) => {
+        const spec = control.reattributeSpec(sourceSpec, owner, body.metadata);
+        return { spec, authorizedKeys: control.sandboxSshKeys(spec) };
+      },
+    },
+    { id, onProgress },
+  );
 }
 
 /**
@@ -872,12 +926,12 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/sandboxes/:id/fork",
         ({ params, body, user, set }) => {
-          // An unknown source is a plain 404, not a failed job.
-          const source = runtime.getLabels(params.id);
-          if (!source) throw new NotFoundError("Sandbox", params.id);
-          // The caller owns the copy (resume re-resolves git credentials
-          // from it); it stays in the source's org.
-          const metadata = { ...body.metadata, [OWNER_ID_METADATA]: user.id };
+          // No id is handed out that never gets a record: an unknown (404) or
+          // non-snapshottable (409) source is a plain error, not a failed job.
+          runtime.assertSnapshottable(params.id);
+          // Unpooled dispatch runs the body synchronously up to its first
+          // await, and the runtime registers the copy's `creating` record
+          // before that: the id in this 202 resolves immediately.
           const id = safeNanoid();
           const job = jobs.dispatch(
             {
@@ -887,18 +941,7 @@ export function createV1Routes(container: ServerContainer) {
               unpooled: true,
             },
             (_signal, log) =>
-              runtime.fork(
-                params.id,
-                { metadata, name: body.name?.trim() },
-                {
-                  id,
-                  authorizedKeys: control.sandboxSshKeys({
-                    metadata,
-                    annotations: source.annotations,
-                  }),
-                  onProgress: log,
-                },
-              ),
+              forkSandboxForUser(container, user, params.id, body, id, log),
           );
           set.status = 202;
           return job;

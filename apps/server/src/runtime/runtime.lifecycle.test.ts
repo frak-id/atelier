@@ -571,8 +571,23 @@ describe("list() metadata filter", () => {
   });
 });
 
+/** A fork derivation that keeps the source's spec and sets `metadata`. */
+function keepSpec(metadata: Record<string, string> = {}) {
+  return (source: SandboxSpec) => ({ spec: { ...source, metadata } });
+}
+
+/** Fork arguments: a derive step plus the (empty) initial labels. */
+function forkWith(
+  derive: (source: SandboxSpec) => {
+    spec: SandboxSpec;
+    authorizedKeys?: string[];
+  } = keepSpec(),
+) {
+  return { derive, initial: { metadata: {}, annotations: {} } };
+}
+
 describe("fork()", () => {
-  test("boots a copy from a fresh snapshot with the source's spec", async () => {
+  test("boots a copy from a fresh snapshot with the derived spec", async () => {
     const { runtime, sandboxes } = makeRuntime();
     await runtime.create(
       {
@@ -586,7 +601,10 @@ describe("fork()", () => {
 
     await runtime.fork(
       "src",
-      { metadata: { steery: "host", "steery-key": "k2" }, name: "copy" },
+      {
+        ...forkWith(keepSpec({ steery: "host", "steery-key": "k2" })),
+        name: "copy",
+      },
       { id: "dst" },
     );
 
@@ -611,7 +629,356 @@ describe("fork()", () => {
       { ...spec, annotations: { "atelier.dev/name": "src" } },
       { id: "src" },
     );
-    await runtime.fork("src", { metadata: {} }, { id: "dst" });
+    await runtime.fork("src", forkWith(), { id: "dst" });
     expect(sandboxes.get("dst")?.spec.annotations).toEqual({});
+  });
+
+  test("derive sees the stored spec and its authorizedKeys reach the boot", async () => {
+    const backend = new KubernetesBackend();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes: new stores.InMemorySandboxStore(),
+      snapshots: new stores.InMemorySnapshotStore(),
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create({ ...spec, env: { A: "1" } }, { id: "src" });
+    const boot = backend.boot.bind(backend);
+    let bootKeys: string[] | undefined;
+    backend.boot = (id, bootSpec, opts, agent) => {
+      bootKeys = opts.authorizedKeys;
+      return boot(id, bootSpec, opts, agent);
+    };
+    let seen: SandboxSpec | undefined;
+    await runtime.fork(
+      "src",
+      {
+        ...forkWith((source) => {
+          seen = source;
+          return { spec: source, authorizedKeys: ["ssh-ed25519 AAAA"] };
+        }),
+      },
+      { id: "dst" },
+    );
+    expect(seen?.env).toEqual({ A: "1" });
+    expect(bootKeys).toEqual(["ssh-ed25519 AAAA"]);
+  });
+
+  test("the copy owns its snapshot: row and VolumeSnapshot label are the fork id", async () => {
+    const backend = new KubernetesBackend();
+    const labels: Record<string, string>[] = [];
+    backend.volumes.snapshot = async (_pvc, _ref, l) => {
+      labels.push(l);
+    };
+    const sandboxes = new stores.InMemorySandboxStore();
+    const snapshots = new stores.InMemorySnapshotStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots,
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "src" });
+    await runtime.fork("src", forkWith(), { id: "dst" });
+
+    expect(labels).toEqual([{ "atelier.dev/sandbox": "dst" }]);
+    const source = sandboxes.get("dst")?.spec.source;
+    const ref = source && "snapshot" in source ? source.snapshot : "";
+    expect(snapshots.get(ref)?.sandboxId).toBe("dst");
+  });
+
+  test("destroying the source leaves the copy able to pause, snapshot and fork", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await runtime.create(spec, { id: "src" });
+    await runtime.fork("src", forkWith(), { id: "dst" });
+
+    await runtime.destroy("src");
+    expect(sandboxes.get("dst")?.status).toBe("running");
+
+    await runtime.snapshot("dst");
+    await runtime.fork("dst", forkWith(), { id: "dst2" });
+    expect(sandboxes.get("dst2")?.status).toBe("running");
+    await runtime.pause("dst");
+    await runtime.resume("dst");
+    expect(sandboxes.get("dst")?.status).toBe("running");
+  });
+
+  test("a paused copy resumes from its own snapshot after the source is gone", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await runtime.create(spec, { id: "src" });
+    await runtime.fork("src", forkWith(), { id: "dst" });
+    await runtime.destroy("src");
+    await runtime.pause("dst");
+    // Disk gone too: resume must clone from a snapshot that still exists.
+    sandboxes.update("dst", { pvcName: undefined });
+    await runtime.resume("dst");
+    expect(sandboxes.get("dst")?.status).toBe("running");
+  });
+
+  test("destroying the copy GCs its snapshot row, not the source's", async () => {
+    const { runtime, snapshots } = makeRuntime();
+    await runtime.create(spec, { id: "src" });
+    const own = await runtime.snapshot("src");
+    await runtime.fork("src", forkWith(), { id: "dst" });
+    expect(snapshots.list().filter((s) => s.sandboxId === "dst")).toHaveLength(
+      1,
+    );
+
+    await runtime.destroy("dst");
+    expect(snapshots.list().filter((s) => s.sandboxId === "dst")).toHaveLength(
+      0,
+    );
+    expect(snapshots.get(own.ref)).toBeDefined();
+  });
+
+  test("the copy is `creating` before the snapshot finishes", async () => {
+    const backend = new KubernetesBackend();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    backend.volumes.snapshot = async () => {
+      await gate;
+    };
+    const sandboxes = new stores.InMemorySandboxStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots: new stores.InMemorySnapshotStore(),
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "src" });
+
+    const pending = runtime.fork("src", forkWith(), { id: "dst" });
+    // Synchronously after the call: the record is already there.
+    expect(sandboxes.get("dst")?.status).toBe("creating");
+    await new Promise((r) => setTimeout(r, 5));
+    expect(sandboxes.get("dst")?.status).toBe("creating");
+
+    release();
+    await pending;
+    expect(sandboxes.get("dst")?.status).toBe("running");
+  });
+
+  test("a failing snapshot ends the copy in `error`; resume says the snapshot is gone", async () => {
+    const backend = new KubernetesBackend();
+    backend.volumes.snapshot = async () => {
+      throw new Error("snapshot boom");
+    };
+    const sandboxes = new stores.InMemorySandboxStore();
+    const snapshots = new stores.InMemorySnapshotStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots,
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "src" });
+    await expect(
+      runtime.fork("src", forkWith(), { id: "dst" }),
+    ).rejects.toThrow("snapshot boom");
+    expect(sandboxes.get("dst")?.status).toBe("error");
+    // Never the source's base image: the record points at its own snapshot.
+    expect(sandboxes.get("dst")?.spec.source).toEqual({
+      snapshot: expect.stringMatching(/^snap-/),
+    });
+    expect(snapshots.list().filter((s) => s.sandboxId === "dst")).toHaveLength(
+      0,
+    );
+    await expect(runtime.resume("dst")).rejects.toThrow(
+      /Snapshot .* not found/,
+    );
+    expect(sandboxes.get("src")?.status).toBe("running");
+  });
+
+  test("a failing boot keeps the copy's snapshot: `error`, then resumable", async () => {
+    const backend = new KubernetesBackend();
+    const sandboxes = new stores.InMemorySandboxStore();
+    const snapshots = new stores.InMemorySnapshotStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots,
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "src" });
+    const realBoot = backend.boot.bind(backend);
+    let sweeps = 0;
+    let restartableDeletes = 0;
+    backend.cleanup = async () => {
+      sweeps++;
+      return true;
+    };
+    backend.deleteRestartable = async () => {
+      restartableDeletes++;
+    };
+    const bootInputs: { preserveDisk?: boolean }[] = [];
+    backend.boot = async () => {
+      throw new Error("boot boom");
+    };
+    await expect(
+      runtime.fork("src", forkWith(), { id: "dst" }),
+    ).rejects.toThrow("boot boom");
+    expect(sandboxes.get("dst")?.status).toBe("error");
+    // Pod-level teardown only: the label sweep would delete the snapshot.
+    expect(sweeps).toBe(0);
+    expect(restartableDeletes).toBe(1);
+    expect(snapshots.list().filter((s) => s.sandboxId === "dst")).toHaveLength(
+      1,
+    );
+
+    backend.boot = (id, bootSpec, input, agent) => {
+      bootInputs.push(input);
+      return realBoot(id, bootSpec, input, agent);
+    };
+    await runtime.resume("dst");
+    expect(sandboxes.get("dst")?.status).toBe("running");
+    expect(bootInputs[0]?.preserveDisk).toBe(true);
+
+    // Destroy still GCs it.
+    await runtime.destroy("dst");
+    expect(snapshots.list().filter((s) => s.sandboxId === "dst")).toHaveLength(
+      0,
+    );
+  });
+
+  test("a failing derive ends the copy in `error`", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await runtime.create(spec, { id: "src" });
+    const pending = runtime.fork(
+      "src",
+      {
+        ...forkWith(() => {
+          throw new Error("derive boom");
+        }),
+      },
+      { id: "dst" },
+    );
+    expect(sandboxes.get("dst")?.status).toBe("creating");
+    await expect(pending).rejects.toThrow("derive boom");
+    expect(sandboxes.get("dst")?.status).toBe("error");
+  });
+
+  test("a derive failure leaves the caller's labels, never the source owner's", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await runtime.create(
+      {
+        ...spec,
+        metadata: { "atelier.dev/owner-id": "alice" },
+        files: [
+          { path: "/etc/gitconfig", content: "[user] name = alice" },
+          { path: "/etc/sandbox/secrets/git-credentials", content: "tok" },
+          { path: "/etc/keep", content: "kept" },
+        ],
+        annotations: {
+          "atelier.dev/owner": "alice",
+          "atelier.dev/owner-email": "alice@x.test",
+          "atelier.dev/name": "src",
+        },
+      },
+      { id: "src" },
+    );
+    await expect(
+      runtime.fork(
+        "src",
+        {
+          derive: () => {
+            throw new Error("derive boom");
+          },
+          initial: {
+            metadata: { "atelier.dev/owner-id": "bob" },
+            annotations: { "atelier.dev/name": "copy" },
+          },
+        },
+        { id: "dst" },
+      ),
+    ).rejects.toThrow("derive boom");
+    const copy = sandboxes.get("dst");
+    expect(copy?.status).toBe("error");
+    expect(copy?.metadata).toEqual({ "atelier.dev/owner-id": "bob" });
+    expect(copy?.spec.annotations).toEqual({ "atelier.dev/name": "copy" });
+    expect(copy?.spec.files?.map((f) => f.path)).toEqual(["/etc/keep"]);
+  });
+
+  test("a derived spec with an unresolved secret ends the copy in `error`", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await runtime.create(spec, { id: "src" });
+    await expect(
+      runtime.fork(
+        "src",
+        {
+          ...forkWith((source) => ({
+            spec: { ...source, env: { K: { $secret: "NAME" } } },
+          })),
+        },
+        { id: "dst" },
+      ),
+    ).rejects.toThrow();
+    expect(sandboxes.get("dst")?.status).toBe("error");
+  });
+
+  test("a failing cleanup neither masks the error nor strands `creating`", async () => {
+    const backend = new KubernetesBackend();
+    backend.volumes.snapshot = async () => {
+      throw new Error("snapshot boom");
+    };
+    backend.cleanup = async () => {
+      throw new Error("sweep boom");
+    };
+    const sandboxes = new stores.InMemorySandboxStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots: new stores.InMemorySnapshotStore(),
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "src" });
+    await expect(
+      runtime.fork("src", forkWith(), { id: "dst" }),
+    ).rejects.toThrow("snapshot boom");
+    expect(sandboxes.get("dst")?.status).toBe("error");
+  });
+
+  test("a failing boot teardown does not mask the boot error", async () => {
+    const backend = new KubernetesBackend();
+    const sandboxes = new stores.InMemorySandboxStore();
+    const runtime = new RuntimeService({
+      backend,
+      sandboxes,
+      snapshots: new stores.InMemorySnapshotStore(),
+      toolsets: new stores.InMemoryToolsetStore(),
+      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, { id: "src" });
+    backend.boot = async () => {
+      throw new Error("boot boom");
+    };
+    backend.deleteRestartable = async () => {
+      throw new Error("teardown boom");
+    };
+    await expect(
+      runtime.fork("src", forkWith(), { id: "dst" }),
+    ).rejects.toThrow("boot boom");
+    expect(sandboxes.get("dst")?.status).toBe("error");
+  });
+
+  test("an unknown or non-snapshottable source creates no copy record", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    expect(() => runtime.assertSnapshottable("nope")).toThrow(NotFoundError);
+    await expect(
+      runtime.fork("nope", forkWith(), { id: "dst" }),
+    ).rejects.toThrow(NotFoundError);
+    await runtime.create(spec, { id: "src" });
+    sandboxes.update("src", { status: "error" });
+    expect(() => runtime.assertSnapshottable("src")).toThrow(ConflictError);
+    await expect(
+      runtime.fork("src", forkWith(), { id: "dst" }),
+    ).rejects.toThrow(ConflictError);
+    expect(sandboxes.get("dst")).toBeUndefined();
   });
 });

@@ -237,6 +237,15 @@ POST   /v1/sandboxes/:id/snapshot     promote current disk → snapshotRef
 POST   /v1/sandboxes/:id/fork         { name?, metadata? } → 202 sandbox-create job: snapshot + boot a copy
 ```
 
+`fork` semantics: the copy is **owned by the caller** (their git identity and
+GitHub token replace the source owner's; `atelier.dev/owner-id` is always the
+caller, even if the body echoes another), stays in the **source's org** (secret
+values resolved at the source's creation carry over), and **owns its snapshot**,
+so it outlives the source. Its record is visible as `creating` as soon as the
+`202` answers (`GET /v1/sandboxes/<job.metadata.sandboxId>`), and ends `error`
+if the snapshot or boot fails. Also `sandbox_lifecycle` action `fork` (MCP) and
+`atelier fork <id>` (CLI).
+
 `resume` accepting `{files, env}` inline is the fix for the industry gap
 (E2B #1279): rotate credentials *as part of* resuming, atomically, before
 processes restart — the clean case, since everything restarts anyway.

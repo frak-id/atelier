@@ -13,6 +13,7 @@
 import {
   CreateSandboxRequestSchema,
   SANDBOX_NAME_ANNOTATION,
+  SANDBOX_NAME_MAX_LENGTH,
 } from "@atelier/spec";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -22,7 +23,7 @@ import {
   accessibleSandboxes,
   requireSandboxAccess,
 } from "../../sandbox-guard.ts";
-import { createSandboxForUser } from "../../v1.routes.ts";
+import { createSandboxForUser, forkSandboxForUser } from "../../v1.routes.ts";
 import { keepTail, rejectParams, safeTool, text } from "../format.ts";
 import { parseSpec } from "../validate.ts";
 
@@ -288,16 +289,35 @@ export function registerSandboxTools(
         "the `snapshot` ref); `resume` brings a paused (or errored) one " +
         "back and returns it like `get_sandbox`; `snapshot` saves the disk " +
         "without pausing (returns `snapshot`, usable as `spec.source." +
-        "snapshot`); `destroy` deletes it permanently and irreversibly, " +
-        "with no confirmation. pause/resume can take minutes.",
+        "snapshot`); `fork` snapshots it and boots an independent copy " +
+        "owned by you (your git identity), in the same org, and returns the " +
+        "copy's `id` and `urls` (waits until it is up); `destroy` deletes it " +
+        "permanently and irreversibly, with no confirmation. " +
+        "pause/resume/fork can take minutes.",
       inputSchema: {
         id: z.string().describe("Sandbox id"),
-        action: z.enum(["pause", "resume", "snapshot", "destroy"]),
+        action: z.enum(["pause", "resume", "snapshot", "fork", "destroy"]),
+        name: z
+          .string()
+          .max(SANDBOX_NAME_MAX_LENGTH)
+          .optional()
+          .describe("fork only: display name of the copy (default: none)"),
       },
     },
-    safeTool(async ({ id, action }) => {
+    safeTool(async ({ id, action, name }) => {
       guard(id);
+      if (action !== "fork") rejectParams({ name }, "only applies to `fork`");
       switch (action) {
+        case "fork": {
+          const copy = await forkSandboxForUser(container, user, id, { name });
+          return text({
+            id: copy.id,
+            urls: splitUrls(copy.urls).urls.map(({ name, url }) => ({
+              name,
+              url,
+            })),
+          });
+        }
         case "pause": {
           const { ref } = await runtime.pause(id);
           return text({ id, status: "paused", snapshot: ref });

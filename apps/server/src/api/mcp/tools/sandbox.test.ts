@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxSpec } from "@atelier/spec";
 import type { AuthUser, ControlContainer } from "../../../control/index.ts";
+import { buildGitAttributionFiles } from "../../../shared/lib/git-attribution.ts";
 import type { ServerContainer } from "../../container.ts";
 import { connectMcp } from "./mcp.test-support.ts";
 
@@ -66,10 +67,27 @@ const STATE = {
   annotations: { "atelier.dev/name": "my box", "atelier.dev/org-id": "o-1" },
 };
 
+/** A spec as stored for sandbox owner "alice": her git files + owner tags. */
+const STORED_SOURCE_SPEC: SandboxSpec = {
+  source: { image: "dev-base" },
+  resources: { vcpus: 1, memoryMb: 512 },
+  files: buildGitAttributionFiles({
+    identity: { name: "alice", email: "alice@alice.test" },
+    githubToken: "ghp_alice",
+  }),
+  annotations: {
+    "atelier.dev/owner": "alice",
+    "atelier.dev/owner-email": "alice@alice.test",
+    "atelier.dev/org-id": "org-1",
+  },
+  metadata: { "atelier.dev/owner-id": "u-alice" },
+};
+
 /** A runtime that records what the tools send it. */
 function fakeRuntime() {
   const calls = {
     created: [] as SandboxSpec[],
+    forked: [] as { sourceId: string; name?: string; spec: SandboxSpec }[],
     exec: [] as { id: string; req: Record<string, unknown> }[],
     processActions: [] as string[],
     ports: [] as Record<string, unknown>[],
@@ -108,6 +126,26 @@ function fakeRuntime() {
     pause: async () => ({ ref: "snap-1", hash: "h".repeat(64), parent: "p" }),
     resume: async () => state,
     snapshot: async () => ({ ref: "snap-2", hash: "h".repeat(64) }),
+    // Runs the caller's derive step over a spec stored for another owner.
+    fork: async (
+      sourceId: string,
+      f: {
+        derive: (spec: SandboxSpec) => { spec: SandboxSpec };
+        name?: string;
+      },
+      opts: { id?: string },
+    ) => {
+      calls.forked.push({
+        sourceId,
+        name: f.name,
+        spec: f.derive(STORED_SOURCE_SPEC).spec,
+      });
+      return {
+        id: opts.id ?? "sbx-copy",
+        urls: STATE.urls,
+        generated: STATE.generated,
+      };
+    },
     destroy: async () => undefined,
     exec: async (id: string, req: Record<string, unknown>) => {
       calls.exec.push({ id, req });
@@ -330,6 +368,46 @@ describe("sandbox_lifecycle", () => {
     expect(res.data.ssh).toBe("ssh sbx-1@ssh.example.test -p 2222");
     expect(res.raw).not.toContain(SECRET);
     expect(res.raw).not.toContain("generated");
+  });
+
+  test("fork re-attributes the copy to the caller and returns its id and urls", async () => {
+    const { call, fake, user } = await setup();
+    const res = await call("sandbox_lifecycle", {
+      id: "src",
+      action: "fork",
+      name: "copy",
+    });
+    expect(res.isError).toBe(false);
+    expect(res.data).toEqual({
+      id: expect.any(String),
+      urls: [{ name: "app", url: "https://app-sbx-1.example.test" }],
+    });
+    expect(res.raw).not.toContain(SECRET);
+
+    const [forked] = fake.calls.forked;
+    expect(forked?.sourceId).toBe("src");
+    expect(forked?.name).toBe("copy");
+    const dump = JSON.stringify(forked?.spec);
+    expect(dump).not.toContain("alice@alice.test");
+    expect(dump).not.toContain("u-alice");
+    expect(dump).not.toContain("ghp_alice");
+    expect(forked?.spec.metadata).toEqual({ "atelier.dev/owner-id": user.id });
+    expect(forked?.spec.annotations).toEqual({
+      "atelier.dev/owner": user.username,
+      "atelier.dev/owner-email": user.email,
+      "atelier.dev/org-id": "org-1",
+    });
+  });
+
+  test("name only applies to fork", async () => {
+    const { call } = await setup();
+    const res = await call("sandbox_lifecycle", {
+      id: "s",
+      action: "pause",
+      name: "x",
+    });
+    expect(res.isError).toBe(true);
+    expect(res.data.error).toBe("VALIDATION_ERROR");
   });
 
   test("destroy says so", async () => {

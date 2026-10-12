@@ -161,8 +161,13 @@ export type UpdateSandboxRequest = Static<typeof UpdateSandboxRequestSchema>;
 // ── fork ─────────────────────────────────────────────────────────────────────
 
 /** `POST /v1/sandboxes/:id/fork`: snapshot the sandbox and boot a copy of it
- * from that snapshot with its spec. `name` is the copy's display name;
- * `metadata` replaces the source's. */
+ * from that snapshot with its spec. `name` is the copy's display name (absent:
+ * none); `metadata` replaces the source's, except `atelier.dev/owner-id`,
+ * which is always the caller (a value echoed here is overridden, not
+ * rejected). The copy is owned by the caller — their git identity and token,
+ * not the source owner's — and stays in the source's org. It is visible as
+ * `creating` as soon as the `202` job answers, and owns its snapshot, so it
+ * outlives the source. */
 export const ForkSandboxRequestSchema = Type.Object(
   {
     name: Type.Optional(Type.String({ maxLength: SANDBOX_NAME_MAX_LENGTH })),
